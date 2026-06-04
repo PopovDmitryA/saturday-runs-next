@@ -16,7 +16,9 @@ else
 fi
 
 echo "=== docker stack ==="
-$COMPOSE up -d --build redis api nginx bot worker worker-s95 worker-five-verst worker-parkrun beat
+$COMPOSE up -d --build redis api bot worker worker-s95 worker-five-verst worker-parkrun beat
+# Recreate nginx after api so upstream DNS is fresh (see nginx/conf.d resolver).
+$COMPOSE up -d --force-recreate nginx
 
 echo "=== wait for api health ==="
 for i in $(seq 1 30); do
