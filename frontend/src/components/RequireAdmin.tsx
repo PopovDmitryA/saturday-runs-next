@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ApiError, getCurrentUser, type User } from "../lib/api";
 
 type RequireAdminProps = {
-  children: (user: User) => ReactNode;
+  children: ReactNode | ((user: User) => ReactNode);
 };
 
 export function RequireAdmin({ children }: RequireAdminProps) {
@@ -44,5 +44,9 @@ export function RequireAdmin({ children }: RequireAdminProps) {
     );
   }
 
-  return <>{children(user)}</>;
+  if (typeof children === "function") {
+    return <>{children(user)}</>;
+  }
+
+  return <>{children}</>;
 }

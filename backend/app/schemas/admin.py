@@ -13,11 +13,18 @@ class AdminPlatformLinkBrief(BaseModel):
     sync_status: str
 
 
+class AdminUserAuthBrief(BaseModel):
+    provider: str
+    label: str
+    external_id: str
+
+
 class AdminUserListItem(BaseModel):
     id: str
-    telegram_id: int
+    telegram_id: int | None = None
     telegram_username: str | None = None
     display_name: str | None = None
+    auth_logins: list[AdminUserAuthBrief] = Field(default_factory=list)
     news_subscribed: bool = False
     consent_accepted: bool = False
     created_at: datetime
@@ -59,8 +66,9 @@ class AdminS95ParticipantListResponse(BaseModel):
 
 class AdminUserPreviewUser(BaseModel):
     id: str
-    telegram_id: int
+    telegram_id: int | None = None
     telegram_username: str | None = None
+    auth_logins: list[AdminUserAuthBrief] = Field(default_factory=list)
     display_name: str | None = None
     news_subscribed: bool = False
 

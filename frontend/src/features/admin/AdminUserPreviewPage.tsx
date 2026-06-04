@@ -19,17 +19,20 @@ import {
   type VolunteeringItem,
 } from "../../lib/api";
 import { formatDateTime, formatFinishTimeValue, runsCapLabel, volunteeringCapLabel } from "../../lib/format";
+import { authProviderLabel, userLoginLines } from "./adminUserDisplay";
 
 type PreviewTab = "dashboard" | "runs" | "volunteering" | "map";
 
 function previewUserLabel(user: AdminUserPreviewDashboard["user"]): string {
-  if (user.telegram_username) {
-    return `@${user.telegram_username.replace(/^@/, "")}`;
+  const logins = userLoginLines(user);
+  if (logins.length > 0) {
+    const first = logins[0];
+    return `${authProviderLabel(first.provider)} — ${first.label}`;
   }
   if (user.display_name) {
     return user.display_name;
   }
-  return `ID ${user.telegram_id}`;
+  return `Пользователь ${user.id.slice(0, 8)}`;
 }
 
 function AdminUserPreviewContent({ userId }: { userId: string }) {
@@ -143,7 +146,9 @@ function AdminUserPreviewContent({ userId }: { userId: string }) {
         <section className="card admin-preview-header">
           <h2 className="section-title">{previewUserLabel(dashboard.user)}</h2>
           <p className="muted">
-            Telegram ID {dashboard.user.telegram_id}
+            {userLoginLines(dashboard.user)
+              .map((login) => `${authProviderLabel(login.provider)}: ${login.label}`)
+              .join(" · ") || "Способ входа не указан"}
             {dashboard.computed_at && (
               <> · данные на {formatDateTime(String(dashboard.computed_at))}</>
             )}

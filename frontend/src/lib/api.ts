@@ -695,11 +695,18 @@ export type AdminPlatformLinkBrief = {
   sync_status: string;
 };
 
+export type AdminUserAuthBrief = {
+  provider: string;
+  label: string;
+  external_id: string;
+};
+
 export type AdminUserListItem = {
   id: string;
-  telegram_id: number;
+  telegram_id: number | null;
   telegram_username: string | null;
   display_name: string | null;
+  auth_logins: AdminUserAuthBrief[];
   news_subscribed: boolean;
   consent_accepted: boolean;
   created_at: string;
@@ -742,10 +749,11 @@ export type AdminS95ParticipantListResponse = {
 export type AdminUserPreviewDashboard = {
   user: {
     id: string;
-    telegram_id: number;
+    telegram_id: number | null;
     telegram_username: string | null;
     display_name: string | null;
     news_subscribed: boolean;
+    auth_logins: AdminUserAuthBrief[];
   };
   stats: DashboardStats;
   computed_at: string | null;

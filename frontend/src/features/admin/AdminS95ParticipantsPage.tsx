@@ -128,9 +128,5 @@ function AdminS95ParticipantsContent() {
 }
 
 export function AdminS95ParticipantsPage() {
-  return (
-    <RequireAdmin>
-      <AdminS95ParticipantsContent />
-    </RequireAdmin>
-  );
+  return <RequireAdmin>{() => <AdminS95ParticipantsContent />}</RequireAdmin>;
 }

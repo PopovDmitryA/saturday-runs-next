@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import DashboardCache, Participant, Platform, PlatformLink, User
+from app.models import AuthIdentity, AuthProvider, DashboardCache, Participant, Platform, PlatformLink, User
 from app.services.dashboard_service import get_dashboard_payload, list_user_runs, list_user_volunteering
 
 
@@ -60,12 +60,24 @@ def search_admin_users(
     if normalized:
         like = f"%{normalized}%"
         link_user_ids = select(PlatformLink.user_id).where(PlatformLink.external_user_id.ilike(like)).distinct()
+        identity_user_ids = (
+            select(AuthIdentity.user_id)
+            .where(
+                or_(
+                    AuthIdentity.email.ilike(like),
+                    AuthIdentity.display_name.ilike(like),
+                    AuthIdentity.external_id.ilike(like),
+                )
+            )
+            .distinct()
+        )
         base = base.filter(
             or_(
                 User.telegram_username.ilike(like),
                 User.display_name.ilike(like),
                 cast(User.telegram_id, String).like(like),
                 User.id.in_(link_user_ids),
+                User.id.in_(identity_user_ids),
             )
         )
 
@@ -78,16 +90,28 @@ def search_admin_users(
         for row in db.query(DashboardCache).filter(DashboardCache.user_id.in_(user_ids)).all()
     }
     links_by_user = _load_user_links(db, user_ids)
+    auth_by_user = _load_user_auth_logins(db, user_ids)
 
     items: list[dict[str, object]] = []
     for user in users:
         total_runs, total_volunteering = _stats_from_cache(caches.get(user.id))
+        auth_logins = list(auth_by_user.get(user.id, []))
+        if user.telegram_id is not None and not any(item["provider"] == AuthProvider.telegram.value for item in auth_logins):
+            auth_logins.insert(
+                0,
+                {
+                    "provider": AuthProvider.telegram.value,
+                    "label": user.telegram_username or user.display_name or str(user.telegram_id),
+                    "external_id": str(user.telegram_id),
+                },
+            )
         items.append(
             {
                 "id": str(user.id),
                 "telegram_id": user.telegram_id,
                 "telegram_username": user.telegram_username,
                 "display_name": user.display_name,
+                "auth_logins": auth_logins,
                 "news_subscribed": user.news_subscribed,
                 "consent_accepted": user.consent_accepted,
                 "created_at": user.created_at,
@@ -110,6 +134,18 @@ def get_admin_user_preview_dashboard(db: Session, user_id: UUID) -> dict[str, ob
         return None
     payload = get_dashboard_payload(db, user)
     links = _load_user_links(db, [user.id]).get(user.id, [])
+    auth_logins = list(_load_user_auth_logins(db, [user.id]).get(user.id, []))
+    if user.telegram_id is not None and not any(
+        item["provider"] == AuthProvider.telegram.value for item in auth_logins
+    ):
+        auth_logins.insert(
+            0,
+            {
+                "provider": AuthProvider.telegram.value,
+                "label": user.telegram_username or user.display_name or str(user.telegram_id),
+                "external_id": str(user.telegram_id),
+            },
+        )
     return {
         "user": {
             "id": str(user.id),
@@ -117,6 +153,7 @@ def get_admin_user_preview_dashboard(db: Session, user_id: UUID) -> dict[str, ob
             "telegram_username": user.telegram_username,
             "display_name": user.display_name,
             "news_subscribed": user.news_subscribed,
+            "auth_logins": auth_logins,
         },
         "stats": payload["stats"],
         "computed_at": payload["computed_at"],

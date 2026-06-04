@@ -4,23 +4,7 @@ import { RequireAdmin } from "../../components/RequireAdmin";
 import { AdminSubnav } from "./AdminSubnav";
 import { listAdminUsers, type AdminUserListItem } from "../../lib/api";
 import { formatDateTime, platformCodeLabel } from "../../lib/format";
-
-function telegramLabel(user: AdminUserListItem): string {
-  if (user.telegram_username) {
-    return `@${user.telegram_username.replace(/^@/, "")}`;
-  }
-  if (user.display_name) {
-    return user.display_name;
-  }
-  return String(user.telegram_id);
-}
-
-function telegramUrl(user: AdminUserListItem): string | null {
-  if (user.telegram_username) {
-    return `https://t.me/${user.telegram_username.replace(/^@/, "")}`;
-  }
-  return null;
-}
+import { authProviderLabel, telegramProfileUrl, userLoginLines } from "./adminUserDisplay";
 
 function platformCell(user: AdminUserListItem, code: string) {
   const link = user.platform_links.find((item) => item.platform_code === code);
@@ -57,10 +41,6 @@ function AdminUsersContent() {
   }, []);
 
   useEffect(() => {
-    void load("");
-  }, [load]);
-
-  useEffect(() => {
     const timer = window.setTimeout(() => setQuery(draft.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [draft]);
@@ -78,7 +58,7 @@ function AdminUsersContent() {
           <input
             className="input admin-users-search"
             type="search"
-            placeholder="Telegram, имя, ID или ID профиля на платформе…"
+            placeholder="Почта, VK/Яндекс, Telegram, имя или ID профиля…"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
           />
@@ -117,18 +97,31 @@ function AdminUsersContent() {
                   </tr>
                 )}
                 {items.map((user) => {
-                  const tgUrl = telegramUrl(user);
+                  const logins = userLoginLines(user);
+                  const tgUrl = telegramProfileUrl(user);
                   return (
                     <tr key={user.id}>
                       <td className="admin-users-telegram">
-                        {tgUrl ? (
-                          <a href={tgUrl} target="_blank" rel="noreferrer">
-                            {telegramLabel(user)}
-                          </a>
-                        ) : (
-                          telegramLabel(user)
-                        )}
-                        <span className="muted admin-users-id">{user.telegram_id}</span>
+                        <ul className="admin-users-login-list">
+                          {logins.length === 0 ? (
+                            <li className="muted">—</li>
+                          ) : (
+                            logins.map((login) => (
+                              <li key={`${login.provider}-${login.external_id}`}>
+                                <span className="admin-users-login-provider">
+                                  {authProviderLabel(login.provider)}
+                                </span>
+                                {login.provider === "telegram" && tgUrl ? (
+                                  <a href={tgUrl} target="_blank" rel="noreferrer">
+                                    {login.label}
+                                  </a>
+                                ) : (
+                                  <span>{login.label}</span>
+                                )}
+                              </li>
+                            ))
+                          )}
+                        </ul>
                       </td>
                       <td>{platformCell(user, "five_verst")}</td>
                       <td>{platformCell(user, "s95")}</td>
