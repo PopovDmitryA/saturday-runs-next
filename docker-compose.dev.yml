@@ -1,0 +1,7 @@
+# Optional local dev: VK OAuth redirect on http://localhost (port 80).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  nginx:
+    ports:
+      - "80:80"

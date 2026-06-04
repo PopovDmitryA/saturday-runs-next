@@ -164,8 +164,6 @@ services:
     image: nginx:1.27-alpine
     ports:
       - "8080:80"
-      # VK ID local dev: redirect only allowed on http://localhost (port 80), not :8080
-      - "80:80"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./frontend/dist:/usr/share/nginx/html:ro
