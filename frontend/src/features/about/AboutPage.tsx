@@ -71,7 +71,7 @@ function TelegramIcon({ kind }: { kind: (typeof TELEGRAM_CONTACTS)[number]["icon
       <svg className="about-link-icon-svg" viewBox="0 0 24 24" aria-hidden>
         <path
           fill="currentColor"
-          d="M4 4h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H8l-4 3V5a1 1 0 0 1 1-1Z"
+          d="M18 11c0 2.76-2.24 5-5 5h-1.17L10 21.17V16H5c-2.76 0-5-2.24-5-5s2.24-5 5-5h5V3.83L12.83 2H13c2.76 0 5 2.24 5 5v4zm-2 0V7H7v8h9z"
         />
       </svg>
     );
@@ -80,7 +80,7 @@ function TelegramIcon({ kind }: { kind: (typeof TELEGRAM_CONTACTS)[number]["icon
     <svg className="about-link-icon-svg" viewBox="0 0 24 24" aria-hidden>
       <path
         fill="currentColor"
-        d="M20 2H4a2 2 0 0 0-2 2v14l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Zm0 12H5.17L4 15.17V4h16Z"
+        d="M20 2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h2v2l3.24-3.24C7.58 14.32 8.35 14 9 14c3.87 0 7-3.13 7-7s-3.13-7-7-7-7 3.13-7 7c0 1.04.23 2.03.64 2.92L4 18.83V16H4V4h16v10zm-8 1c2.21 0 4 1.79 4 4s-1.79 4-4 4-4-1.79-4-4 1.79-4 4-4z"
       />
     </svg>
   );
@@ -119,7 +119,10 @@ export function AboutPageContent() {
           <strong>parkrun</strong>: пробежки, волонтёрство, карта локаций и аналитика в одном
           месте — без переключения между сайтами разных систем.
         </p>
-        <p className="about-mission">{PROJECT_MISSION}</p>
+        <blockquote className="about-mission about-mission-quote">
+          <p>{PROJECT_MISSION}</p>
+          <footer>— Дмитрий ПОПОВ, автор проекта</footer>
+        </blockquote>
       </section>
 
       <section className="about-disclaimer card" aria-label="Дисклеймер">
@@ -136,8 +139,9 @@ export function AboutPageContent() {
           <p>
             Все данные на сайте получены из <strong>открытых публичных источников</strong>{" "}
             (официальные сайты беговых систем) и <strong>не принадлежат автору проекта</strong>.
-            В личном кабинете отображается ваша статистика после входа через Telegram и привязки
-            профилей; часть сводных данных может обновляться и без отдельного запроса пользователя.
+            В личном кабинете отображается ваша статистика после входа (Telegram, VK или Яндекс) и
+            привязки профилей; часть сводных данных может обновляться и без отдельного запроса
+            пользователя.
           </p>
         </div>
       </section>
@@ -157,7 +161,10 @@ export function AboutPageContent() {
           </p>
           <h4 className="about-privacy-subtitle">Какие данные обрабатываются</h4>
           <ul>
-            <li>идентификатор, имя пользователя и имя из Telegram;</li>
+            <li>
+              данные учётной записи при входе (Telegram: идентификатор, имя пользователя и отображаемое
+              имя; VK и Яндекс: идентификатор и имя профиля, при наличии — e-mail);
+            </li>
             <li>
               данные публичных профилей в беговых системах, которые вы добровольно привязываете
               (имя, статистика пробежек и волонтёрства, локации, результаты и иные сведения со
@@ -172,7 +179,8 @@ export function AboutPageContent() {
           </p>
           <h4 className="about-privacy-subtitle">Основание и отзыв</h4>
           <p>
-            Согласие даётся добровольным действием: вход через бота и привязка профилей на сайте.
+            Согласие даётся добровольным действием: вход через выбранный способ и привязка профилей на
+            сайте.
             Вы можете прекратить использование сервиса, отвязать профили платформ и написать автору
             через контакты ниже.
           </p>
@@ -211,8 +219,7 @@ export function AboutPageContent() {
               <span className="about-link-card-title">Прежняя версия сайта</span>
               <span className="about-link-card-label about-link-card-label-legacy">{LEGACY_SITE_LABEL}</span>
               <span className="about-link-card-desc">
-                Grafana, рейтинги и дашборды — как на run5k.run до переезда. Сохранили для справки и
-                сравнения с новой версией.
+                Grafana, рейтинги и дашборды — как на run5k.run до переезда.
               </span>
             </span>
             <ExternalLinkIcon />
