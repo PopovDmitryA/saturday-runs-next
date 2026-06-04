@@ -8,10 +8,6 @@ from app.auth.providers.base import OAuthProfile
 from app.config import Settings
 
 
-# Minimum scopes for LK login (must also be enabled in oauth.yandex.ru app settings).
-YANDEX_OAUTH_SCOPES = "login:info login:email"
-
-
 def yandex_authorize_url(settings: Settings, state: str) -> str:
     redirect_uri = yandex_redirect_uri(settings)
     params = {
@@ -19,8 +15,12 @@ def yandex_authorize_url(settings: Settings, state: str) -> str:
         "client_id": settings.yandex_oauth_client_id,
         "redirect_uri": redirect_uri,
         "state": state,
-        "scope": YANDEX_OAUTH_SCOPES,
     }
+    # Only pass scope when explicitly configured AND enabled in oauth.yandex.ru.
+    # Omitting scope uses the rights selected at app registration (default).
+    scopes = settings.yandex_oauth_scopes.strip()
+    if scopes:
+        params["scope"] = scopes
     return f"https://oauth.yandex.ru/authorize?{urlencode(params)}"
 
 
@@ -52,16 +52,18 @@ def yandex_exchange_code(settings: Settings, code: str) -> OAuthProfile:
     profile_response.raise_for_status()
     profile = profile_response.json()
     external_id = str(profile["id"])
-    display_name = profile.get("display_name") or profile.get("real_name") or profile.get("login")
     email = profile.get("default_email")
+    display_name = profile.get("display_name") or profile.get("real_name") or profile.get("login")
+    if not display_name and email:
+        display_name = email.split("@", 1)[0]
+    profile_json: dict[str, object] = {"default_email": email}
+    if profile.get("login"):
+        profile_json["login"] = profile.get("login")
     return OAuthProfile(
         external_id=external_id,
         display_name=display_name,
         email=email,
-        profile_json={
-            "login": profile.get("login"),
-            "default_email": email,
-        },
+        profile_json=profile_json,
     )
 
 
