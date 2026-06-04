@@ -104,15 +104,40 @@ def create_login_request(
     }
 
 
-def get_login_request_status(request_token: str) -> dict[str, str | None]:
+def _rehydrate_login_request_redis(
+    redis_client,
+    login_request: AuthLoginRequest,
+) -> str:
+    redis_key = _login_request_redis_key(login_request.request_token)
+    ttl_seconds = int(
+        (_ensure_utc(login_request.expires_at) - datetime.now(timezone.utc)).total_seconds()
+    )
+    if ttl_seconds > 0:
+        redis_client.setex(redis_key, ttl_seconds, "pending")
+    return redis_key
+
+
+def get_login_request_status(db: Session, request_token: str) -> dict[str, str | None]:
     redis_client = get_redis_client()
     merge_token = redis_client.get(_login_request_merge_redis_key(request_token))
     if merge_token is not None:
         return {"status": "merge_required", "merge_token": merge_token}
     status_value = redis_client.get(_login_request_redis_key(request_token))
-    if status_value is None:
-        return {"status": "expired", "merge_token": None}
-    return {"status": status_value, "merge_token": None}
+    if status_value is not None:
+        return {"status": status_value, "merge_token": None}
+
+    login_request = (
+        db.query(AuthLoginRequest).filter(AuthLoginRequest.request_token == request_token).one_or_none()
+    )
+    if (
+        login_request is not None
+        and login_request.status == AuthLoginRequestStatus.pending
+        and _ensure_utc(login_request.expires_at) >= datetime.now(timezone.utc)
+    ):
+        _rehydrate_login_request_redis(redis_client, login_request)
+        return {"status": "pending", "merge_token": None}
+
+    return {"status": "expired", "merge_token": None}
 
 
 def _telegram_default_display_name(
@@ -155,10 +180,6 @@ def bot_confirm_login(
     redis_client = get_redis_client()
     redis_key = _login_request_redis_key(request_token)
     current_status = redis_client.get(redis_key)
-    if current_status is None:
-        raise AuthError("Login request expired or not found.", 404)
-    if current_status != "pending":
-        raise AuthError("Login request already used.", 409)
 
     login_request = db.query(AuthLoginRequest).filter(AuthLoginRequest.request_token == request_token).one_or_none()
     if login_request is None or login_request.status != AuthLoginRequestStatus.pending:
@@ -169,6 +190,12 @@ def bot_confirm_login(
         redis_client.delete(redis_key)
         db.commit()
         raise AuthError("Login request expired.", 410)
+
+    if current_status is None:
+        redis_key = _rehydrate_login_request_redis(redis_client, login_request)
+        current_status = "pending"
+    elif current_status != "pending":
+        raise AuthError("Login request already used.", 409)
 
     default_name = _telegram_default_display_name(
         first_name=telegram_first_name,

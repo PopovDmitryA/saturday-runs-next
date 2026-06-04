@@ -127,8 +127,11 @@ def login_request(
 
 
 @router.get("/login-request/{request_token}/status", response_model=LoginRequestStatusResponse)
-def login_request_status(request_token: str) -> LoginRequestStatusResponse:
-    return LoginRequestStatusResponse.model_validate(get_login_request_status(request_token))
+def login_request_status(
+    request_token: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> LoginRequestStatusResponse:
+    return LoginRequestStatusResponse.model_validate(get_login_request_status(db, request_token))
 
 
 @router.post("/bot/confirm", response_model=BotConfirmResponse, dependencies=[Depends(_verify_bot_secret)])

@@ -3485,6 +3485,23 @@ body {
   color: #334155;
 }
 
+.about-mission-quote {
+  margin: 1rem 0 0;
+}
+
+.about-mission-quote p {
+  margin: 0;
+  font-style: italic;
+}
+
+.about-mission-quote footer {
+  margin: 0.65rem 0 0;
+  font-size: 0.88rem;
+  font-style: normal;
+  font-weight: 600;
+  color: #64748b;
+}
+
 .about-section-title {
   margin: 0 0 0.5rem;
   font-size: 1.05rem;

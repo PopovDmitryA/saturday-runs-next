@@ -47,7 +47,7 @@ def classify_route(path: str, method: str) -> RouteTier:
     if normalized.startswith("/api/demo"):
         return RouteTier.public_read
 
-    if normalized.startswith("/api/auth/login-request") or normalized.startswith("/api/auth/callback"):
+    if normalized.startswith("/api/auth/"):
         return RouteTier.auth
 
     if method.upper() != "GET" and "/preview" in normalized and normalized.startswith("/api/profiles"):

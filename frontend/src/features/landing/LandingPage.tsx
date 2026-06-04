@@ -72,7 +72,7 @@ export function LandingPage() {
       />
       <main className="landing-page shell-content">
       <section className="landing-hero card">
-        <p className="about-eyebrow">Личный кабинет субботнего бегуна</p>
+        <p className="about-eyebrow">Единый профиль парковых пробежек</p>
         <h1 className="landing-title">Статистика пробежек и волонтёрства — в одном месте</h1>
         <p className="landing-lead">
           {SITE_NAME} собирает ваши данные из <strong>5 вёрст</strong>, <strong>С95</strong> и{" "}
@@ -82,7 +82,7 @@ export function LandingPage() {
         <p className="landing-mission">{PROJECT_MISSION_LANDING}</p>
         <div className="landing-hero-actions">
           <a className="btn primary" href="/login">
-            Войти через Telegram
+            Войти
           </a>
           <a className="btn secondary" href="/demo">
             Посмотреть демо
@@ -134,7 +134,7 @@ export function LandingPage() {
       <section className="landing-footer-links">
         <a href="/about">О проекте, контакты и политика данных</a>
         <span className="muted">·</span>
-        <a href="/login">Вход через Telegram</a>
+        <a href="/login">Войти</a>
       </section>
     </main>
     </>
