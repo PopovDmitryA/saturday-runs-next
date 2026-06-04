@@ -18,6 +18,22 @@ class AccountMergeError(Exception):
         super().__init__(message)
 
 
+def delete_user_with_dependencies(
+    db: Session,
+    merged: User,
+    *,
+    reassign_sync_jobs_to: UUID | None = None,
+) -> None:
+    """Delete user row after clearing rows that cannot be nulled on FK cascade."""
+    db.query(DashboardCache).filter(DashboardCache.user_id == merged.id).delete()
+    if reassign_sync_jobs_to is not None:
+        db.query(SyncJob).filter(SyncJob.user_id == merged.id).update({"user_id": reassign_sync_jobs_to})
+    else:
+        db.query(SyncJob).filter(SyncJob.user_id == merged.id).delete(synchronize_session=False)
+    db.flush()
+    db.delete(merged)
+
+
 def merge_users(db: Session, survivor_id: UUID, merged_id: UUID) -> User:
     if survivor_id == merged_id:
         raise AccountMergeError("Нельзя объединить профиль сам с собой.")
@@ -68,12 +84,7 @@ def merge_users(db: Session, survivor_id: UUID, merged_id: UUID) -> User:
     if merged.news_subscribed and survivor.telegram_chat_id:
         survivor.news_subscribed = True
 
-    db.query(DashboardCache).filter(DashboardCache.user_id == merged.id).delete()
-    db.query(SyncJob).filter(SyncJob.user_id == merged.id).update({"user_id": survivor.id})
-    # Persist identity.user_id changes before deleting merged user; otherwise SQLAlchemy
-    # may null out FK on still-attached AuthIdentity rows during cascade.
-    db.flush()
-    db.delete(merged)
+    delete_user_with_dependencies(db, merged, reassign_sync_jobs_to=survivor.id)
     db.commit()
     db.refresh(survivor)
     recompute_dashboard_cache(db, survivor.id)

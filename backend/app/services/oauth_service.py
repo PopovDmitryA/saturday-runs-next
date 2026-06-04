@@ -13,7 +13,12 @@ from app.config import Settings
 from app.core.redis_client import get_redis_client
 from app.core.security import generate_token
 from app.models import AuthProvider, User
-from app.services.account_merge_service import AccountMergeError, build_merge_preview, merge_users
+from app.services.account_merge_service import (
+    AccountMergeError,
+    build_merge_preview,
+    delete_user_with_dependencies,
+    merge_users,
+)
 from app.services.auth_identity_service import (
     create_oauth_user,
     find_identity,
@@ -160,8 +165,7 @@ def handle_oauth_callback(
                 orphan_identities = list_user_identities(db, merged.id)
                 if len(orphan_identities) == 1 and orphan_identities[0].id == existing.id:
                     upsert_oauth_identity(db, survivor, provider, profile)
-                    db.flush()
-                    db.delete(merged)
+                    delete_user_with_dependencies(db, merged, reassign_sync_jobs_to=survivor.id)
                     survivor.last_login_at = datetime.now(timezone.utc)
                     db.commit()
                     return survivor.id, None, "settings"
