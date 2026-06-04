@@ -1,0 +1,161 @@
+import { useCallback, useEffect, useState } from "react";
+import { AppShell } from "../../components/AppShell";
+import { RequireAdmin } from "../../components/RequireAdmin";
+import { AdminSubnav } from "./AdminSubnav";
+import { listAdminUsers, type AdminUserListItem } from "../../lib/api";
+import { formatDateTime, platformCodeLabel } from "../../lib/format";
+
+function telegramLabel(user: AdminUserListItem): string {
+  if (user.telegram_username) {
+    return `@${user.telegram_username.replace(/^@/, "")}`;
+  }
+  if (user.display_name) {
+    return user.display_name;
+  }
+  return String(user.telegram_id);
+}
+
+function telegramUrl(user: AdminUserListItem): string | null {
+  if (user.telegram_username) {
+    return `https://t.me/${user.telegram_username.replace(/^@/, "")}`;
+  }
+  return null;
+}
+
+function platformCell(user: AdminUserListItem, code: string) {
+  const link = user.platform_links.find((item) => item.platform_code === code);
+  if (!link) {
+    return <span className="muted">—</span>;
+  }
+  return (
+    <a href={link.external_url} target="_blank" rel="noreferrer" className="admin-platform-link">
+      {link.external_user_id}
+    </a>
+  );
+}
+
+function AdminUsersContent() {
+  const [query, setQuery] = useState("");
+  const [draft, setDraft] = useState("");
+  const [items, setItems] = useState<AdminUserListItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async (search: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await listAdminUsers(search);
+      setItems(response.items);
+      setTotal(response.total);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось загрузить пользователей");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load("");
+  }, [load]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(draft.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [draft]);
+
+  useEffect(() => {
+    void load(query);
+  }, [load, query]);
+
+  return (
+    <AppShell title="Пользователи" activePath="/admin">
+      <AdminSubnav activePath="/admin/users" />
+
+      <section className="card">
+        <div className="admin-users-toolbar">
+          <input
+            className="input admin-users-search"
+            type="search"
+            placeholder="Telegram, имя, ID или ID профиля на платформе…"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <span className="muted admin-users-count">Найдено: {total}</span>
+        </div>
+
+        {loading && <p className="muted">Загрузка…</p>}
+        {error && (
+          <div className="card error">
+            <p>{error}</p>
+          </div>
+        )}
+
+        {!loading && !error && (
+          <div className="table-scroll">
+            <table className="data-table admin-users-table">
+              <thead>
+                <tr>
+                  <th>Telegram</th>
+                  <th>{platformCodeLabel("five_verst")}</th>
+                  <th>{platformCodeLabel("s95")}</th>
+                  <th>{platformCodeLabel("parkrun")}</th>
+                  <th>Пробежки</th>
+                  <th>Волонт.</th>
+                  <th>Уведомления</th>
+                  <th>Регистрация</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {items.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="muted">
+                      Пользователи не найдены
+                    </td>
+                  </tr>
+                )}
+                {items.map((user) => {
+                  const tgUrl = telegramUrl(user);
+                  return (
+                    <tr key={user.id}>
+                      <td className="admin-users-telegram">
+                        {tgUrl ? (
+                          <a href={tgUrl} target="_blank" rel="noreferrer">
+                            {telegramLabel(user)}
+                          </a>
+                        ) : (
+                          telegramLabel(user)
+                        )}
+                        <span className="muted admin-users-id">{user.telegram_id}</span>
+                      </td>
+                      <td>{platformCell(user, "five_verst")}</td>
+                      <td>{platformCell(user, "s95")}</td>
+                      <td>{platformCell(user, "parkrun")}</td>
+                      <td>{user.total_runs ?? "—"}</td>
+                      <td>{user.total_volunteering ?? "—"}</td>
+                      <td>{user.news_subscribed ? "Да" : "Нет"}</td>
+                      <td title={formatDateTime(user.created_at)}>
+                        {formatDateTime(user.created_at)}
+                      </td>
+                      <td>
+                        <a className="btn secondary btn-sm" href={`/admin/users/${user.id}/preview`}>
+                          Просмотр
+                        </a>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </AppShell>
+  );
+}
+
+export function AdminUsersPage() {
+  return <RequireAdmin>{() => <AdminUsersContent />}</RequireAdmin>;
+}

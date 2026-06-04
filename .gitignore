@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv-parkrun/
+.conda-parkrun/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+.env.local
+*.ini
+
+# Node
+node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Docker
+postgres_data/
+
+# Local / agent
+.cursor/
+data/parkrun_playwright_state.json

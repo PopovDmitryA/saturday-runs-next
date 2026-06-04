@@ -1,0 +1,227 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import date
+
+from sqlalchemy.orm import Session
+
+from app.models import Event, Location, Participant, Platform, RunResult
+from app.platform_adapters.canonical import CanonicalRunResult, CanonicalVolunteerResult
+from app.sync import upsert
+from app.sync.s95_protocol import fetch_and_upsert_activity_protocol
+from app.sync.s95_protocol_lookup import resolve_s95_protocol
+
+DEFAULT_MISMATCH_CHECK_RUNS = 10
+
+
+@dataclass(frozen=True)
+class ProfileRunMismatch:
+    external_event_key: str
+    location_slug: str
+    event_date: date
+    profile_position: int | None
+    profile_finish_time_sec: int | None
+    db_position: int | None
+    db_finish_time_sec: int | None
+
+
+@dataclass
+class RefetchMismatchedProtocolsResult:
+    checked: int = 0
+    mismatches: list[ProfileRunMismatch] = field(default_factory=list)
+    protocols_refetched: int = 0
+    errors: list[str] = field(default_factory=list)
+
+
+def _find_db_run_result(
+    db: Session,
+    platform: Platform,
+    participant_id,
+    slug: str,
+    event_date: date,
+) -> RunResult | None:
+    location = (
+        db.query(Location)
+        .filter(
+            Location.platform_id == platform.id,
+            Location.external_key == slug,
+        )
+        .one_or_none()
+    )
+    if location is None:
+        return None
+    event = upsert._find_event_by_location_date(db, platform, location.id, event_date)
+    if event is None:
+        event = (
+            db.query(Event)
+            .filter(
+                Event.platform_id == platform.id,
+                Event.external_event_key == f"{slug}:{event_date.isoformat()}",
+            )
+            .one_or_none()
+        )
+    if event is None:
+        return None
+    return (
+        db.query(RunResult)
+        .filter(
+            RunResult.participant_id == participant_id,
+            RunResult.event_id == event.id,
+        )
+        .one_or_none()
+    )
+
+
+def detect_profile_run_mismatches(
+    db: Session,
+    platform: Platform,
+    participant: Participant,
+    profile_runs: list[CanonicalRunResult],
+    *,
+    limit: int = DEFAULT_MISMATCH_CHECK_RUNS,
+) -> list[ProfileRunMismatch]:
+    recent = sorted(profile_runs, key=lambda item: item.event_date, reverse=True)[:limit]
+    mismatches: list[ProfileRunMismatch] = []
+    for profile_run in recent:
+        slug = upsert._normalize_location_slug(
+            profile_run.location_external_key,
+            profile_run.location_name,
+        )
+        if slug == "unknown":
+            continue
+        db_run = _find_db_run_result(db, platform, participant.id, slug, profile_run.event_date)
+        if db_run is None:
+            continue
+        position_mismatch = (
+            profile_run.position is not None
+            and db_run.position is not None
+            and profile_run.position != db_run.position
+        )
+        time_mismatch = (
+            profile_run.finish_time_sec is not None
+            and db_run.finish_time_sec is not None
+            and profile_run.finish_time_sec != db_run.finish_time_sec
+        )
+        if not position_mismatch and not time_mismatch:
+            continue
+        mismatches.append(
+            ProfileRunMismatch(
+                external_event_key=f"{slug}:{profile_run.event_date.isoformat()}",
+                location_slug=slug,
+                event_date=profile_run.event_date,
+                profile_position=profile_run.position,
+                profile_finish_time_sec=profile_run.finish_time_sec,
+                db_position=db_run.position,
+                db_finish_time_sec=db_run.finish_time_sec,
+            )
+        )
+    return mismatches
+
+
+def refetch_mismatched_protocols(
+    db: Session,
+    platform: Platform,
+    participant: Participant,
+    profile_runs: list[CanonicalRunResult],
+    *,
+    limit: int = DEFAULT_MISMATCH_CHECK_RUNS,
+) -> RefetchMismatchedProtocolsResult:
+    result = RefetchMismatchedProtocolsResult()
+    mismatches = detect_profile_run_mismatches(
+        db,
+        platform,
+        participant,
+        profile_runs,
+        limit=limit,
+    )
+    result.checked = min(len(profile_runs), limit)
+    result.mismatches = mismatches
+
+    seen_keys: set[str] = set()
+    for mismatch in mismatches:
+        if mismatch.external_event_key in seen_keys:
+            continue
+        seen_keys.add(mismatch.external_event_key)
+        profile_run = next(
+            (
+                item
+                for item in profile_runs
+                if upsert._normalize_location_slug(item.location_external_key, item.location_name)
+                == mismatch.location_slug
+                and item.event_date == mismatch.event_date
+            ),
+            None,
+        )
+        location_name = profile_run.location_name if profile_run else mismatch.location_slug
+        try:
+            resolved = resolve_s95_protocol(
+                db,
+                platform,
+                location_slug=mismatch.location_slug,
+                location_name=location_name,
+                event_date=mismatch.event_date,
+            )
+            if resolved is None:
+                result.errors.append(f"{mismatch.external_event_key}: protocol not found")
+                continue
+            fetch_and_upsert_activity_protocol(
+                db,
+                platform,
+                resolved.location,
+                resolved.summary,
+                resolved.summary_row,
+                protocol_url=resolved.protocol_url,
+            )
+            result.protocols_refetched += 1
+        except Exception as exc:
+            result.errors.append(f"{mismatch.external_event_key}: {exc}")
+
+    return result
+
+
+def refetch_protocols_for_profile_volunteering(
+    db: Session,
+    platform: Platform,
+    profile_volunteering: list[CanonicalVolunteerResult],
+    *,
+    limit: int = 15,
+) -> RefetchMismatchedProtocolsResult:
+    """Load event protocols for recent profile volunteering rows (team list + cross-check)."""
+    result = RefetchMismatchedProtocolsResult()
+    recent = sorted(profile_volunteering, key=lambda item: item.event_date, reverse=True)[:limit]
+    result.checked = len(recent)
+
+    seen_events: set[str] = set()
+    for vol in recent:
+        slug = upsert._normalize_location_slug(vol.location_external_key, vol.location_name)
+        if slug == "unknown":
+            continue
+        event_key = f"{slug}:{vol.event_date.isoformat()}"
+        if event_key in seen_events:
+            continue
+        seen_events.add(event_key)
+        location_name = vol.location_name or slug
+        try:
+            resolved = resolve_s95_protocol(
+                db,
+                platform,
+                location_slug=slug,
+                location_name=location_name,
+                event_date=vol.event_date,
+            )
+            if resolved is None:
+                result.errors.append(f"{event_key}: protocol not found")
+                continue
+            fetch_and_upsert_activity_protocol(
+                db,
+                platform,
+                resolved.location,
+                resolved.summary,
+                resolved.summary_row,
+                protocol_url=resolved.protocol_url,
+            )
+            result.protocols_refetched += 1
+        except Exception as exc:
+            result.errors.append(f"{event_key}: {exc}")
+
+    return result

@@ -1,0 +1,123 @@
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True)
+
+    app_env: str = "development"
+    app_debug: bool = False
+    app_secret_key: str = "change-me-in-production"
+    app_base_url: str = "http://localhost:8080"
+
+    database_url: str = "postgresql+psycopg://saturday_runs:saturday_runs@localhost:5433/saturday_runs_lk"
+    redis_url: str = "redis://localhost:6379/0"
+
+    api_host: str = "0.0.0.0"
+    api_port: int = 8000
+
+    telegram_bot_token: str = ""
+    telegram_bot_username: str = ""
+    telegram_bot_internal_secret: str = ""
+    telegram_admin_chat_id: int = 0
+    admin_telegram_id: int = 0
+    demo_telegram_id: int = 0
+
+    session_cookie_name: str = "sr_session"
+    session_ttl_seconds: int = 72 * 3600
+    magic_link_ttl_seconds: int = 300
+    login_request_ttl_seconds: int = 600
+
+    auth_rate_limit_login_per_ip: int = 5
+    auth_rate_limit_login_window_seconds: int = 600
+    auth_rate_limit_magic_per_telegram: int = 10
+    auth_rate_limit_magic_window_seconds: int = 3600
+
+    vk_oauth_client_id: str = ""
+    vk_oauth_client_secret: str = ""
+    vk_oauth_redirect_uri: str = ""
+
+    yandex_oauth_client_id: str = ""
+    yandex_oauth_client_secret: str = ""
+    yandex_oauth_redirect_uri: str = ""
+
+    user_login_auto_sync_interval_seconds: int = 86400
+    sync_refresh_rate_limit_per_user: int = 1
+    sync_refresh_rate_limit_window_seconds: int = 1800
+
+    abuse_protection_enabled: bool = True
+    abuse_whitelist_ips: str = ""
+    abuse_global_limit_per_ip: int = 180
+    abuse_global_window_seconds: int = 60
+    abuse_public_limit_per_ip: int = 90
+    abuse_public_window_seconds: int = 60
+    abuse_default_limit_per_ip: int = 120
+    abuse_default_window_seconds: int = 60
+    abuse_auth_limit_per_ip: int = 20
+    abuse_auth_window_seconds: int = 600
+    abuse_expensive_limit_per_ip: int = 20
+    abuse_expensive_window_seconds: int = 60
+    abuse_block_score_threshold: int = 100
+    abuse_block_duration_seconds: int = 900
+    abuse_severe_block_score_threshold: int = 300
+    abuse_severe_block_duration_seconds: int = 86400
+    abuse_score_window_seconds: int = 3600
+    abuse_global_violation_score: int = 15
+    abuse_tier_violation_score: int = 10
+    abuse_blocked_retry_score: int = 5
+
+    s95_fetch_min_interval_seconds: float = 15.0
+    s95_fetch_max_interval_seconds: float = 30.0
+    s95_fetch_lock_timeout_seconds: int = 180
+    s95_fetch_lock_blocking_seconds: int = 300
+    s95_playwright_headless: bool = True
+    s95_playwright_page_wait_ms: int = 5000
+    s95_playwright_athlete_wait_ms: int = 12000
+    s95_playwright_navigation_timeout_ms: int = 60000
+    s95_ban_cooldown_seconds: int = 600
+    s95_parkrun_barcode_max_length: int = 8
+    parkrun_participant_discovery_enabled: bool = True
+    parkrun_participant_discovery_min_refetch_days: int = 7
+    s95_global_sync_locations: str = ""
+    s95_global_sync_protocol_limit: int = 3
+
+    five_verst_fetch_min_interval_seconds: float = 8.0
+    five_verst_fetch_max_interval_seconds: float = 15.0
+    five_verst_fetch_lock_timeout_seconds: int = 120
+    five_verst_fetch_lock_blocking_seconds: int = 600
+    five_verst_ban_cooldown_seconds: int = 600
+    five_verst_sync_protocol_limit: int = 3
+    five_verst_sync_latest_update_limit: int = 20
+    five_verst_fetch_all_protocols_on_change: bool = True
+    s95_sync_protocol_limit: int = 3
+    s95_sync_latest_update_limit: int = 20
+    s95_fetch_all_protocols_on_change: bool = True
+    s95_reconcile_batch_limit: int = 10
+    s95_reconcile_min_check_interval_days: int = 7
+    s95_athletes_registry_batch_limit: int = 10
+    s95_athlete_mismatch_check_runs: int = 10
+    five_verst_reconcile_batch_limit: int = 10
+    five_verst_reconcile_min_check_interval_days: int = 7
+
+    parkrun_base_url: str = "https://www.parkrun.org.uk"
+    parkrun_fetch_min_interval_seconds: float = 25.0
+    parkrun_fetch_max_interval_seconds: float = 55.0
+    parkrun_fetch_between_pages_delay_seconds: float = 10.0
+    parkrun_fetch_lock_timeout_seconds: int = 240
+    parkrun_fetch_lock_blocking_seconds: int = 600
+    parkrun_playwright_headless: bool = True
+    parkrun_playwright_page_wait_ms: int = 8000
+    parkrun_playwright_navigation_timeout_ms: int = 90000
+    # Optional JSON from playwright context.storage_state() after manual captcha (see .env.example)
+    parkrun_playwright_storage_state_path: str = ""
+    # Chrome remote debugging (Mac: host.docker.internal from Docker api)
+    parkrun_cdp_url: str = "http://host.docker.internal:9222"
+    # Mac dev: fetch via Chrome CDP (127.0.0.1:9222) instead of headless Docker — avoids WAF captcha loop
+    parkrun_use_cdp_for_fetch: bool = False
+    parkrun_ban_cooldown_seconds: int = 900
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

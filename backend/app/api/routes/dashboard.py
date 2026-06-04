@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_current_user
+from app.config import Settings, get_settings
+from app.db.session import get_db
+from app.models import User
+from app.schemas.dashboard import DashboardResponse, DashboardStatsResponse
+from app.services.dashboard_service import get_dashboard_payload
+from app.services.sync_trigger_service import maybe_enqueue_login_auto_sync
+
+router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+@router.get("", response_model=DashboardResponse)
+def get_dashboard(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> DashboardResponse:
+    payload = get_dashboard_payload(db, user)
+    sync_enqueued = maybe_enqueue_login_auto_sync(
+        db,
+        user.id,
+        interval_seconds=settings.user_login_auto_sync_interval_seconds,
+    )
+    return DashboardResponse(
+        stats=DashboardStatsResponse.model_validate(payload["stats"]),
+        computed_at=payload["computed_at"],
+        platform_links=payload["platform_links"],  # type: ignore[arg-type]
+        sync_enqueued=sync_enqueued,
+    )
