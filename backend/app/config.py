@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     yandex_oauth_client_id: str = ""
     yandex_oauth_client_secret: str = ""
     yandex_oauth_redirect_uri: str = ""
+    # Empty = omit scope param; Yandex uses rights from app registration (recommended).
+    yandex_oauth_scopes: str = ""
 
     user_login_auto_sync_interval_seconds: int = 86400
     sync_refresh_rate_limit_per_user: int = 1
