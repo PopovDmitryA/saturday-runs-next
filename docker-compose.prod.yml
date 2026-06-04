@@ -93,5 +93,5 @@ services:
         condition: service_healthy
 
   nginx:
-    ports:
+    ports: !reset
       - "127.0.0.1:8080:80"
