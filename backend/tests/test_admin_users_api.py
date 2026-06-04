@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.main import app
-from app.models import Platform, PlatformLink, User
+from app.models import AuthIdentity, AuthProvider, Platform, PlatformLink, User
 
 
 @pytest.fixture
@@ -137,3 +137,29 @@ def test_admin_users_search_and_preview(client: TestClient, db_session: Session)
     visited_map = client.get(f"/api/admin/users/{item['id']}/preview/locations/visited/map")
     assert visited_map.status_code == 200
     assert "points" in visited_map.json()
+
+
+def test_admin_users_lists_oauth_only_user(client: TestClient, db_session: Session) -> None:
+    oauth_user = User(telegram_id=None, display_name="VK Admin Test", consent_accepted=True)
+    db_session.add(oauth_user)
+    db_session.flush()
+    db_session.add(
+        AuthIdentity(
+            user_id=oauth_user.id,
+            provider=AuthProvider.yandex,
+            external_id="yandex-1",
+            display_name="Dmitry",
+            email="popov.dmitii@yandex.ru",
+            profile_json={},
+        )
+    )
+    db_session.commit()
+
+    _login_admin(client)
+
+    list_response = client.get("/api/admin/users", params={"q": "popov.dmitii@yandex.ru"})
+    assert list_response.status_code == 200
+    payload = list_response.json()
+    item = next(row for row in payload["items"] if row["id"] == str(oauth_user.id))
+    assert item["telegram_id"] is None
+    assert any(login["provider"] == "yandex" for login in item["auth_logins"])
