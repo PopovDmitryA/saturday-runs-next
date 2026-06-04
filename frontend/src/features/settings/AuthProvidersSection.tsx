@@ -3,9 +3,7 @@ import { ConfirmModal } from "../../components/ConfirmModal";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import {
   confirmAccountMerge,
-  createLoginRequest,
   getAuthIdentities,
-  getLoginRequestStatus,
   getMergePreview,
   oauthStartUrl,
   unlinkAuthProvider,
@@ -15,7 +13,6 @@ import {
 import { platformCodeLabel } from "../../lib/format";
 
 const PROVIDERS: Array<{ id: AuthIdentity["provider"]; title: string; hint: string }> = [
-  { id: "telegram", title: "Telegram", hint: "Подтверждение через бота" },
   { id: "vk", title: "VK", hint: "Вход через VK ID" },
   { id: "yandex", title: "Яндекс", hint: "Вход через Яндекс ID" },
 ];
@@ -29,7 +26,6 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [linkingProvider, setLinkingProvider] = useState<AuthIdentity["provider"] | null>(null);
-  const [telegramToken, setTelegramToken] = useState<string | null>(null);
   const [mergePreview, setMergePreview] = useState<MergePreview | null>(null);
   const [mergeLoading, setMergeLoading] = useState(false);
   const [mergeConfirmLoading, setMergeConfirmLoading] = useState(false);
@@ -66,51 +62,9 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
       .finally(() => setMergeLoading(false));
   }, [initialMergeToken]);
 
-  useEffect(() => {
-    if (!telegramToken) {
-      return;
-    }
-    const interval = window.setInterval(async () => {
-      try {
-        const status = await getLoginRequestStatus(telegramToken);
-        if (status.status === "linked") {
-          window.clearInterval(interval);
-          setTelegramToken(null);
-          setLinkingProvider(null);
-          void load();
-        } else if (status.status === "merge_required" && status.merge_token) {
-          window.clearInterval(interval);
-          setTelegramToken(null);
-          setLinkingProvider(null);
-          const preview = await getMergePreview(status.merge_token);
-          setMergePreview(preview);
-        } else if (status.status === "expired") {
-          window.clearInterval(interval);
-          setTelegramToken(null);
-          setLinkingProvider(null);
-          setError("Время ожидания Telegram истекло");
-        }
-      } catch {
-        // ignore polling errors
-      }
-    }, 2000);
-    return () => window.clearInterval(interval);
-  }, [telegramToken, load]);
-
-  const handleLink = async (provider: AuthIdentity["provider"]) => {
+  const handleLink = (provider: AuthIdentity["provider"]) => {
     setError(null);
     setLinkingProvider(provider);
-    if (provider === "telegram") {
-      try {
-        const data = await createLoginRequest(true);
-        setTelegramToken(data.request_token);
-        window.open(data.bot_url, "_blank", "noopener,noreferrer");
-      } catch (err) {
-        setLinkingProvider(null);
-        setError(err instanceof Error ? err.message : "Не удалось начать привязку Telegram");
-      }
-      return;
-    }
     window.location.href = oauthStartUrl(provider, "link");
   };
 
@@ -148,8 +102,8 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
     <section className="card">
       <h2 className="section-title">Способы входа</h2>
       <p className="muted settings-lead">
-        Можно войти через Telegram, VK или Яндекс и привязать несколько способов к одному профилю.
-        При объединении аккаунтов привязки 5 вёрст / S95 / parkrun у поглощаемого профиля будут сброшены.
+        Можно войти через VK или Яндекс и привязать оба способа к одному профилю. При объединении аккаунтов
+        привязки 5 вёрст / S95 / parkrun у поглощаемого профиля будут сброшены.
       </p>
 
       {loading && <p className="muted">Загрузка…</p>}
@@ -189,9 +143,9 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
                       type="button"
                       className="btn secondary btn-sm"
                       disabled={linkingProvider === provider.id}
-                      onClick={() => void handleLink(provider.id)}
+                      onClick={() => handleLink(provider.id)}
                     >
-                      {linkingProvider === provider.id ? "Ожидание…" : "Привязать"}
+                      {linkingProvider === provider.id ? "Перенаправление…" : "Привязать"}
                     </button>
                   )}
                 </div>
@@ -199,10 +153,6 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
             );
           })}
         </ul>
-      )}
-
-      {linkingProvider === "telegram" && telegramToken && (
-        <p className="muted auth-provider-wait">Подтвердите привязку в Telegram-боте…</p>
       )}
 
       <ConfirmModal
