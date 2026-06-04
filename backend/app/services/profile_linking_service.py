@@ -19,6 +19,11 @@ from app.platform_adapters.registry import ensure_adapters_registered, get_adapt
 from app.services.participant_profile_service import get_participant_data_freshness, try_profile_preview_from_db
 from app.services.profile_fetch_pending_service import is_fetch_cooldown_error, raise_or_enqueue_fetch_error
 from app.services.profile_preview_cache import get_cached_profile_preview, store_profile_preview
+from app.services.profile_preview_persist import (
+    complete_link_without_sync,
+    linking_sync_should_run,
+    persist_live_profile_preview,
+)
 
 
 class ProfileLinkingError(Exception):
@@ -85,9 +90,11 @@ def preview_profile_link(
         return db_preview
 
     try:
-        preview = adapter.fetch_profile_preview(profile_url)
         if user is not None and platform_code in ("five_verst", "parkrun", "s95"):
+            preview = persist_live_profile_preview(db, platform_code, profile_url, user.id)
             store_profile_preview(user.id, platform_code, profile_url, preview)
+            return preview
+        preview = adapter.fetch_profile_preview(profile_url)
         return preview
     except (InvalidProfileUrlError, ParkrunInvalidProfileUrlError) as exc:
         raise ProfileLinkingError(str(exc), 400) from exc
@@ -324,14 +331,17 @@ def confirm_profile_link(db: Session, user: User, platform_code: str, profile_ur
         enqueue_user_sync,
     )
 
-    job = create_sync_job(db, user.id, SyncJobTrigger.linking, platform_link_id=link.id)
-    db.commit()
-    if platform_code == "s95":
-        enqueue_s95_user_sync(user.id, SyncJobTrigger.linking, job_id=job.id, platform_link_id=link.id)
-    elif platform_code == "parkrun":
-        enqueue_parkrun_user_sync(user.id, SyncJobTrigger.linking, job_id=job.id, platform_link_id=link.id)
+    if linking_sync_should_run(db, platform, participant, preview):
+        job = create_sync_job(db, user.id, SyncJobTrigger.linking, platform_link_id=link.id)
+        db.commit()
+        if platform_code == "s95":
+            enqueue_s95_user_sync(user.id, SyncJobTrigger.linking, job_id=job.id, platform_link_id=link.id)
+        elif platform_code == "parkrun":
+            enqueue_parkrun_user_sync(user.id, SyncJobTrigger.linking, job_id=job.id, platform_link_id=link.id)
+        else:
+            enqueue_user_sync(user.id, SyncJobTrigger.linking, job_id=job.id)
     else:
-        enqueue_user_sync(user.id, SyncJobTrigger.linking, job_id=job.id)
+        complete_link_without_sync(db, link)
 
     return link
 
