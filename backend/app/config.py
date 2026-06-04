@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     telegram_bot_internal_secret: str = ""
     telegram_admin_chat_id: int = 0
     admin_telegram_id: int = 0
+    # Comma-separated emails (OAuth). Grants admin if any linked auth_identity matches (case-insensitive).
+    admin_emails: str = ""
     demo_telegram_id: int = 0
 
     session_cookie_name: str = "sr_session"
