@@ -92,6 +92,3 @@ services:
       redis:
         condition: service_healthy
 
-  nginx:
-    ports: !override
-      - "127.0.0.1:8080:80"
