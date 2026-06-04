@@ -70,6 +70,9 @@ def merge_users(db: Session, survivor_id: UUID, merged_id: UUID) -> User:
 
     db.query(DashboardCache).filter(DashboardCache.user_id == merged.id).delete()
     db.query(SyncJob).filter(SyncJob.user_id == merged.id).update({"user_id": survivor.id})
+    # Persist identity.user_id changes before deleting merged user; otherwise SQLAlchemy
+    # may null out FK on still-attached AuthIdentity rows during cascade.
+    db.flush()
     db.delete(merged)
     db.commit()
     db.refresh(survivor)
