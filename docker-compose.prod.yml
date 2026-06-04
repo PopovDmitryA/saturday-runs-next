@@ -22,7 +22,7 @@ services:
       - ./data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
+    depends_on: !reset
       redis:
         condition: service_healthy
 
@@ -39,7 +39,7 @@ services:
       - ./data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
+    depends_on: !reset
       redis:
         condition: service_healthy
 
@@ -51,7 +51,7 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
+    depends_on: !reset
       redis:
         condition: service_healthy
 
@@ -63,7 +63,7 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
+    depends_on: !reset
       redis:
         condition: service_healthy
 
@@ -76,7 +76,7 @@ services:
       - ./data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
+    depends_on: !reset
       redis:
         condition: service_healthy
 
@@ -88,7 +88,7 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
+    depends_on: !reset
       redis:
         condition: service_healthy
 
