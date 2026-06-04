@@ -4,11 +4,8 @@ import { AuthProvidersSection } from "./AuthProvidersSection";
 import { RequireAuth } from "../../components/RequireAuth";
 import {
   getAutoSyncSettings,
-  getNotificationSettings,
   updateAutoSyncSettings,
-  updateNotificationSettings,
   type AutoSyncSettings,
-  type NotificationSettings,
 } from "../../lib/api";
 import { formatDateTime, platformCodeLabel } from "../../lib/format";
 
@@ -19,25 +16,17 @@ function SettingsContent() {
   );
   const [data, setData] = useState<AutoSyncSettings | null>(null);
   const [draft, setDraft] = useState<Record<string, boolean>>({});
-  const [notifications, setNotifications] = useState<NotificationSettings | null>(null);
-  const [notificationsSaving, setNotificationsSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [notificationsError, setNotificationsError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    setNotificationsError(null);
     try {
-      const [response, notificationSettings] = await Promise.all([
-        getAutoSyncSettings(),
-        getNotificationSettings(),
-      ]);
+      const response = await getAutoSyncSettings();
       setData(response);
-      setNotifications(notificationSettings);
       const next: Record<string, boolean> = {};
       for (const item of response.platforms) {
         next[item.platform_code] =
@@ -79,27 +68,6 @@ function SettingsContent() {
     }
   };
 
-  const handleNotificationsToggle = async (enabled: boolean) => {
-    if (!notifications || notificationsSaving) {
-      return;
-    }
-    const previous = notifications.enabled;
-    setNotifications({ ...notifications, enabled });
-    setNotificationsError(null);
-    setNotificationsSaving(true);
-    try {
-      const updated = await updateNotificationSettings(enabled);
-      setNotifications(updated);
-    } catch (err) {
-      setNotifications({ ...notifications, enabled: previous });
-      setNotificationsError(
-        err instanceof Error ? err.message : "Не удалось сохранить настройку уведомлений",
-      );
-    } finally {
-      setNotificationsSaving(false);
-    }
-  };
-
   const hasChanges =
     data !== null &&
     data.platforms.some(
@@ -125,46 +93,6 @@ function SettingsContent() {
 
       {!loading && !error && data && (
         <>
-          <section className="card">
-            <h2 className="section-title">Уведомления в Telegram</h2>
-            {notifications && (
-              <>
-                <p className="muted settings-lead">{notifications.description}</p>
-                <ul className="settings-platform-list">
-                  <li className="settings-platform-row">
-                    <div className="settings-platform-info">
-                      <span className="settings-platform-name">Уведомления</span>
-                      <span className="muted settings-platform-hint">
-                        Рассылка в Telegram-бот, через который вы входите в сервис
-                      </span>
-                      <span
-                        className={`settings-toggle-label ${notifications.enabled ? "on" : "off"}`}
-                      >
-                        {notifications.enabled ? "Вкл" : "Выкл"}
-                      </span>
-                    </div>
-                    <label
-                      className="toggle-switch"
-                      title={notifications.enabled ? "Выключить" : "Включить"}
-                    >
-                      <input
-                        type="checkbox"
-                        className="toggle-switch-input"
-                        checked={notifications.enabled}
-                        disabled={notificationsSaving}
-                        onChange={(event) => void handleNotificationsToggle(event.target.checked)}
-                      />
-                      <span className="toggle-switch-track" aria-hidden="true">
-                        <span className="toggle-switch-thumb" />
-                      </span>
-                    </label>
-                  </li>
-                </ul>
-                {notificationsError && <p className="error-text">{notificationsError}</p>}
-              </>
-            )}
-          </section>
-
           <section className="card">
             <h2 className="section-title">Автообновление при входе</h2>
             <p className="muted settings-lead">
