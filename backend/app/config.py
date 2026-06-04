@@ -58,17 +58,17 @@ class Settings(BaseSettings):
     abuse_public_window_seconds: int = 60
     abuse_default_limit_per_ip: int = 120
     abuse_default_window_seconds: int = 60
-    abuse_auth_limit_per_ip: int = 20
+    abuse_auth_limit_per_ip: int = 80
     abuse_auth_window_seconds: int = 600
     abuse_expensive_limit_per_ip: int = 20
     abuse_expensive_window_seconds: int = 60
-    abuse_block_score_threshold: int = 100
+    abuse_block_score_threshold: int = 200
     abuse_block_duration_seconds: int = 900
-    abuse_severe_block_score_threshold: int = 300
+    abuse_severe_block_score_threshold: int = 400
     abuse_severe_block_duration_seconds: int = 86400
     abuse_score_window_seconds: int = 3600
     abuse_global_violation_score: int = 15
-    abuse_tier_violation_score: int = 10
+    abuse_tier_violation_score: int = 5
     abuse_blocked_retry_score: int = 5
 
     s95_fetch_min_interval_seconds: float = 15.0

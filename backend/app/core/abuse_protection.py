@@ -31,6 +31,7 @@ def _is_whitelisted(client_ip: str, settings: Settings) -> bool:
 
 def classify_route(path: str, method: str) -> RouteTier:
     normalized = path.rstrip("/") or "/"
+    method_upper = method.upper()
 
     if normalized.startswith("/api/internal/bot") or normalized.startswith("/api/auth/bot"):
         return RouteTier.exempt
@@ -48,6 +49,18 @@ def classify_route(path: str, method: str) -> RouteTier:
         return RouteTier.public_read
 
     if normalized.startswith("/api/auth/"):
+        # Session reads and low-risk writes should not share the tight OAuth/login bucket.
+        if method_upper == "GET" and normalized in {
+            "/api/auth/me",
+            "/api/auth/identities",
+            "/api/auth/merge/preview",
+            "/api/auth/oauth/vk/redirect-uri",
+        }:
+            return RouteTier.default
+        if method_upper == "GET" and normalized.startswith("/api/auth/login-request/") and normalized.endswith("/status"):
+            return RouteTier.default
+        if method_upper in {"POST", "PATCH"} and normalized in {"/api/auth/logout", "/api/auth/me"}:
+            return RouteTier.default
         return RouteTier.auth
 
     if method.upper() != "GET" and "/preview" in normalized and normalized.startswith("/api/profiles"):

@@ -48,6 +48,10 @@ def test_classify_route_tiers() -> None:
     assert classify_route("/api/demo/dashboard", "GET") is RouteTier.public_read
     assert classify_route("/api/auth/login-request", "POST") is RouteTier.auth
     assert classify_route("/api/auth/oauth/vk/start", "GET") is RouteTier.auth
+    assert classify_route("/api/auth/oauth/vk/callback", "GET") is RouteTier.auth
+    assert classify_route("/api/auth/me", "GET") is RouteTier.default
+    assert classify_route("/api/auth/identities", "GET") is RouteTier.default
+    assert classify_route("/api/auth/logout", "POST") is RouteTier.default
     assert classify_route("/api/profiles/s95/preview", "POST") is RouteTier.expensive
     assert classify_route("/api/dashboard", "GET") is RouteTier.default
 
