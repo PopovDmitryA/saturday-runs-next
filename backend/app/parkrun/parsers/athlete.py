@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import date, datetime
 
 from bs4 import BeautifulSoup
@@ -362,7 +363,14 @@ def fetch_athlete_activity(parsed: ParsedParkrunProfile) -> tuple[
     return participant, runs, volunteering, profile_extra
 
 
-def fetch_profile_preview(parsed: ParsedParkrunProfile) -> ProfilePreview:
+@dataclass(frozen=True)
+class ParkrunProfilePreviewFetch:
+    preview: ProfilePreview
+    runs: list[CanonicalRunResult]
+    profile_extra: dict
+
+
+def fetch_profile_preview_activity(parsed: ParsedParkrunProfile) -> ParkrunProfilePreviewFetch:
     import logging
     import time
 
@@ -384,7 +392,7 @@ def fetch_profile_preview(parsed: ParsedParkrunProfile) -> ProfilePreview:
     logger.info("parkrun preview: summary ok (%s)", summary_check.summary)
     participant, profile_extra = parse_profile_summary_html(summary_html, parsed=parsed)
 
-    runs: list = []
+    runs: list[CanonicalRunResult] = []
     delay = settings.parkrun_fetch_between_pages_delay_seconds
     if delay > 0:
         logger.info("parkrun preview: waiting %.1fs before /all", delay)
@@ -407,7 +415,7 @@ def fetch_profile_preview(parsed: ParsedParkrunProfile) -> ProfilePreview:
             exc,
         )
 
-    return ProfilePreview(
+    preview = ProfilePreview(
         platform_code="parkrun",
         external_user_id=participant.external_user_id,
         display_name=participant.display_name,
@@ -419,3 +427,8 @@ def fetch_profile_preview(parsed: ParsedParkrunProfile) -> ProfilePreview:
         parkrun_eligible=False,
         recent_activities=build_recent_preview_activities(runs, []),
     )
+    return ParkrunProfilePreviewFetch(preview=preview, runs=runs, profile_extra=profile_extra)
+
+
+def fetch_profile_preview(parsed: ParsedParkrunProfile) -> ProfilePreview:
+    return fetch_profile_preview_activity(parsed).preview

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from app.platform_adapters.canonical import (
     CanonicalParticipant,
     CanonicalRunResult,
@@ -41,7 +43,14 @@ def fetch_and_parse_profile(parsed_url: ParsedAthleteUrl) -> CanonicalParticipan
         raise ProfileParseError(str(exc)) from exc
 
 
-def fetch_profile_preview(profile_url: str) -> ProfilePreview:
+@dataclass(frozen=True)
+class S95ProfileActivityFetch:
+    preview: ProfilePreview
+    runs: list[CanonicalRunResult]
+    volunteering: list[CanonicalVolunteerResult]
+
+
+def fetch_profile_activity(profile_url: str) -> S95ProfileActivityFetch:
     parsed = parse_athlete_url(profile_url)
     settings = get_settings()
     html = fetch_page_html(
@@ -68,12 +77,17 @@ def fetch_profile_preview(profile_url: str) -> ProfilePreview:
         display_name=participant.display_name,
         profile_url=participant.profile_url or parsed.canonical_url,
     )
-    return participant_to_preview(
+    preview = participant_to_preview(
         participant,
         parkrun_eligible=is_parkrun_eligible_barcode(participant.barcode_id),
         runs=runs,
         volunteering=volunteering,
     )
+    return S95ProfileActivityFetch(preview=preview, runs=runs, volunteering=volunteering)
+
+
+def fetch_profile_preview(profile_url: str) -> ProfilePreview:
+    return fetch_profile_activity(profile_url).preview
 
 
 def fetch_user_profile(external_user_id: str, *, domain: str = "s95.ru") -> CanonicalParticipant:
