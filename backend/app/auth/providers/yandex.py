@@ -8,6 +8,10 @@ from app.auth.providers.base import OAuthProfile
 from app.config import Settings
 
 
+# Minimum scopes for LK login (must also be enabled in oauth.yandex.ru app settings).
+YANDEX_OAUTH_SCOPES = "login:info login:email"
+
+
 def yandex_authorize_url(settings: Settings, state: str) -> str:
     redirect_uri = yandex_redirect_uri(settings)
     params = {
@@ -15,6 +19,7 @@ def yandex_authorize_url(settings: Settings, state: str) -> str:
         "client_id": settings.yandex_oauth_client_id,
         "redirect_uri": redirect_uri,
         "state": state,
+        "scope": YANDEX_OAUTH_SCOPES,
     }
     return f"https://oauth.yandex.ru/authorize?{urlencode(params)}"
 

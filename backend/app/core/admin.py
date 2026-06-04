@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.config import Settings
-from app.models import AuthProvider, User
+from app.models import AuthIdentity, AuthProvider, User
 from app.schemas.auth import AuthIdentityResponse, UserResponse
 from app.services.auth_identity_service import identity_response_payload, list_user_identities
 
@@ -13,7 +13,31 @@ def effective_admin_telegram_id(settings: Settings) -> int:
     return settings.telegram_admin_chat_id
 
 
+def admin_email_set(settings: Settings) -> frozenset[str]:
+    if not settings.admin_emails.strip():
+        return frozenset()
+    return frozenset(part.strip().lower() for part in settings.admin_emails.split(",") if part.strip())
+
+
+def identity_emails(identity: AuthIdentity) -> frozenset[str]:
+    emails: set[str] = set()
+    if identity.email:
+        emails.add(identity.email.strip().lower())
+    profile = identity.profile_json or {}
+    for key in ("default_email", "email"):
+        value = profile.get(key)
+        if isinstance(value, str) and value.strip():
+            emails.add(value.strip().lower())
+    return frozenset(emails)
+
+
 def is_admin_user(user: User, settings: Settings) -> bool:
+    allowed_emails = admin_email_set(settings)
+    if allowed_emails:
+        for identity in user.auth_identities:
+            if allowed_emails.intersection(identity_emails(identity)):
+                return True
+
     admin_id = effective_admin_telegram_id(settings)
     if admin_id <= 0:
         return False
