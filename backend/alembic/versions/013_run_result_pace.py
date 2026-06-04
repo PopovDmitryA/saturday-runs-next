@@ -12,12 +12,15 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("run_results", sa.Column("pace_sec_per_km", sa.Integer(), nullable=True))
-    op.add_column("run_results", sa.Column("pace_display", sa.String(length=16), nullable=True))
+    bind = op.get_bind()
+    columns = {c["name"] for c in sa.inspect(bind).get_columns("run_results")}
+    if "pace_sec_per_km" not in columns:
+        op.add_column("run_results", sa.Column("pace_sec_per_km", sa.Integer(), nullable=True))
+    if "pace_display" not in columns:
+        op.add_column("run_results", sa.Column("pace_display", sa.String(length=16), nullable=True))
 
     from app.pace import resolve_run_pace
 
-    bind = op.get_bind()
     rows = bind.execute(
         sa.text(
             """
