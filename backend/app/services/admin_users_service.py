@@ -48,6 +48,30 @@ def _load_user_links(db: Session, user_ids: list[UUID]) -> dict[UUID, list[dict[
     return grouped
 
 
+def _auth_login_brief(identity: AuthIdentity) -> dict[str, object]:
+    label = identity.email or identity.display_name or identity.external_id
+    return {
+        "provider": identity.provider.value,
+        "label": label,
+        "external_id": identity.external_id,
+    }
+
+
+def _load_user_auth_logins(db: Session, user_ids: list[UUID]) -> dict[UUID, list[dict[str, object]]]:
+    if not user_ids:
+        return {}
+    rows = (
+        db.query(AuthIdentity)
+        .filter(AuthIdentity.user_id.in_(user_ids))
+        .order_by(AuthIdentity.last_login_at.desc().nullslast(), AuthIdentity.linked_at.desc())
+        .all()
+    )
+    grouped: dict[UUID, list[dict[str, object]]] = {user_id: [] for user_id in user_ids}
+    for identity in rows:
+        grouped[identity.user_id].append(_auth_login_brief(identity))
+    return grouped
+
+
 def search_admin_users(
     db: Session,
     *,
