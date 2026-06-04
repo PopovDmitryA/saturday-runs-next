@@ -17,6 +17,8 @@ from app.services.account_merge_service import AccountMergeError, build_merge_pr
 from app.services.auth_identity_service import (
     create_oauth_user,
     find_identity,
+    list_user_identities,
+    list_user_platform_links,
     merge_preview_payload,
     serialize_merge_preview,
     upsert_oauth_identity,
@@ -153,7 +155,19 @@ def handle_oauth_callback(
         if survivor is None:
             raise AuthError("User not found.", 404)
         if existing is not None and existing.user_id != survivor.id:
-            merge_token = _store_merge_token(db, survivor, existing.user)
+            merged = db.query(User).filter(User.id == existing.user_id).one_or_none()
+            if merged is not None and not list_user_platform_links(db, merged.id):
+                orphan_identities = list_user_identities(db, merged.id)
+                if len(orphan_identities) == 1 and orphan_identities[0].id == existing.id:
+                    upsert_oauth_identity(db, survivor, provider, profile)
+                    db.flush()
+                    db.delete(merged)
+                    survivor.last_login_at = datetime.now(timezone.utc)
+                    db.commit()
+                    return survivor.id, None, "settings"
+            if merged is None:
+                raise AuthError("Linked account not found.", 404)
+            merge_token = _store_merge_token(db, survivor, merged)
             return survivor.id, merge_token, "settings"
         upsert_oauth_identity(db, survivor, provider, profile)
         survivor.last_login_at = datetime.now(timezone.utc)
