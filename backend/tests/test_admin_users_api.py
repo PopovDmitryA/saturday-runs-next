@@ -1,0 +1,139 @@
+from __future__ import annotations
+
+from collections.abc import Generator
+from unittest.mock import patch
+from uuid import uuid4
+
+import fakeredis
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from app.config import Settings, get_settings
+from app.db.session import get_db
+from app.main import app
+from app.models import Platform, PlatformLink, User
+
+
+@pytest.fixture
+def fake_redis() -> fakeredis.FakeRedis:
+    return fakeredis.FakeRedis(decode_responses=True)
+
+
+@pytest.fixture
+def auth_settings() -> Settings:
+    return Settings(
+        app_secret_key="test-secret-key",
+        app_debug=True,
+        telegram_bot_internal_secret="bot-secret",
+        telegram_bot_username="TestBot",
+        admin_telegram_id=9001,
+        database_url=get_settings().database_url,
+        redis_url="redis://localhost:6379/0",
+    )
+
+
+@pytest.fixture
+def client(db_session: Session, fake_redis: fakeredis.FakeRedis, auth_settings: Settings) -> Generator[TestClient, None, None]:
+    def override_get_db() -> Generator[Session, None, None]:
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_settings] = lambda: auth_settings
+
+    with patch("app.core.redis_client.get_redis_client", return_value=fake_redis):
+        with TestClient(app) as test_client:
+            yield test_client
+
+    app.dependency_overrides.clear()
+
+
+def _login_admin(client: TestClient) -> None:
+    login_response = client.post("/api/auth/login-request")
+    request_token = login_response.json()["request_token"]
+    confirm_response = client.post(
+        "/api/auth/bot/confirm",
+        json={
+            "request_token": request_token,
+            "telegram_id": 9001,
+            "telegram_username": "admin_user",
+            "telegram_chat_id": 9001,
+            "consent_accepted": True,
+        },
+        headers={"X-Bot-Secret": "bot-secret"},
+    )
+    token = confirm_response.json()["magic_link"].split("token=")[1]
+    client.get("/api/auth/callback", params={"token": token}, follow_redirects=False)
+
+
+def test_admin_users_requires_admin(client: TestClient, db_session: Session) -> None:
+    user = User(telegram_id=int(uuid4().int % 10_000_000_000), telegram_username="regular")
+    db_session.add(user)
+    db_session.flush()
+    login_response = client.post("/api/auth/login-request")
+    request_token = login_response.json()["request_token"]
+    confirm_response = client.post(
+        "/api/auth/bot/confirm",
+        json={
+            "request_token": request_token,
+            "telegram_id": user.telegram_id,
+            "telegram_chat_id": user.telegram_id,
+            "consent_accepted": True,
+        },
+        headers={"X-Bot-Secret": "bot-secret"},
+    )
+    token = confirm_response.json()["magic_link"].split("token=")[1]
+    client.get("/api/auth/callback", params={"token": token}, follow_redirects=False)
+    response = client.get("/api/admin/users")
+    assert response.status_code == 403
+
+
+def test_admin_users_search_and_preview(client: TestClient, db_session: Session) -> None:
+    target = User(
+        telegram_id=int(uuid4().int % 10_000_000_000),
+        telegram_username="runner_target",
+        telegram_chat_id=123,
+        display_name="Target Runner",
+        news_subscribed=True,
+        consent_accepted=True,
+    )
+    db_session.add(target)
+    db_session.flush()
+
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+    external_id = str(uuid4().int % 1_000_000_000)
+    db_session.add(
+        PlatformLink(
+            user_id=target.id,
+            platform_id=platform.id,
+            external_user_id=external_id,
+            external_url=f"https://5verst.ru/userstats/{external_id}/",
+        )
+    )
+    db_session.commit()
+
+    _login_admin(client)
+
+    list_response = client.get("/api/admin/users", params={"q": "runner_target"})
+    assert list_response.status_code == 200
+    payload = list_response.json()
+    assert payload["total"] >= 1
+    item = next(row for row in payload["items"] if row["telegram_username"] == "runner_target")
+    assert item["news_subscribed"] is True
+    assert len(item["platform_links"]) == 1
+    assert item["platform_links"][0]["platform_code"] == "five_verst"
+    assert item["platform_links"][0]["external_user_id"] == external_id
+
+    preview = client.get(f"/api/admin/users/{item['id']}/preview/dashboard")
+    assert preview.status_code == 200
+    preview_payload = preview.json()
+    assert preview_payload["user"]["telegram_username"] == "runner_target"
+    assert "stats" in preview_payload
+
+    runs = client.get(f"/api/admin/users/{item['id']}/preview/runs")
+    assert runs.status_code == 200
+    assert isinstance(runs.json(), list)
+
+    visited_map = client.get(f"/api/admin/users/{item['id']}/preview/locations/visited/map")
+    assert visited_map.status_code == 200
+    assert "points" in visited_map.json()

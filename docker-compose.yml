@@ -1,0 +1,176 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-saturday_runs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-saturday_runs}
+      POSTGRES_DB: ${POSTGRES_DB:-saturday_runs_lk}
+    ports:
+      - "${POSTGRES_PUBLISH_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-saturday_runs} -d ${POSTGRES_DB:-saturday_runs_lk}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
+      REDIS_URL: redis://redis:6379/0
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+      ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID:-}
+      TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
+      DEBUG_AGENT_LOG_PATH: /cursor-debug/debug-31e6fc.log
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./data:/data
+      - ./.env:/app/.env:ro
+      - ./.cursor:/cursor-debug
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  bot:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      API_BASE_URL: http://api:8000
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+      ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID:-}
+      TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - ./.env:/app/.env:ro
+    command: python -m bot_app.main
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - ./.env:/app/.env:ro
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker-s95:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - ./.env:/app/.env:ro
+    command: celery -A app.workers.celery_app worker -Q s95 --concurrency=1 --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker-five-verst:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - ./.env:/app/.env:ro
+    command: celery -A app.workers.celery_app worker -Q five_verst --concurrency=1 --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker-parkrun:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - ./data:/data
+      - ./.env:/app/.env:ro
+    command: celery -A app.workers.celery_app worker -Q parkrun --concurrency=1 --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - ./.env:/app/.env:ro
+    command: celery -A app.workers.celery_app beat --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+      # VK ID local dev: redirect only allowed on http://localhost (port 80), not :8080
+      - "80:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:

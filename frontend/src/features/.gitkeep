@@ -1,0 +1,9 @@
+// Feature modules (Phase 6):
+// - auth/
+// - profiles/
+// - dashboard/
+// - runs/
+// - volunteering/
+// - sync-status/
+
+export {};

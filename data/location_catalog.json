@@ -1,0 +1,1880 @@
+[
+  {
+    "parkrun_location": "Angarskie Prudy",
+    "canonical_name": "Ангарские пруды",
+    "active_platform": "s95",
+    "legacy_parkrun_slug": "angarskieprudy",
+    "is_closed": false,
+    "notes": "В каталоге 5verst (run5k) нет — вероятно перешло на С95 (angarskieprudy). Полное название: Парк Ангарские пруды (Москва).",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "angarskieprudy"
+      },
+      {
+        "platform": "s95",
+        "external_key": "angarskieprudy"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Babushkinsky na Yauze",
+    "canonical_name": "Бабушкинский на Яузе",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "babushkinsky-na-yauze",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (babushkinsky-na-yauze → babushkinskynayauze). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "babushkinsky-na-yauze"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "babushkinskynayauze"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Balashikha Zarechnaya",
+    "canonical_name": "Балашиха Заречная",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "balashikha-zarechnaya",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (balashikha-zarechnaya → balashikhazarechnaya). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "balashikha-zarechnaya"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "balashikhazarechnaya"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Belgorod Park Pobedy",
+    "canonical_name": "Белгород Парк Победы",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "belgorodparkpobedy",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (belgorodparkpobedy → belgorodparkpobedy). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "belgorodparkpobedy"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "belgorodparkpobedy"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Bitsa",
+    "canonical_name": "Битца",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "bitsa",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (bitsa → bitsa). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "bitsa"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "bitsa"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Boeva Dacha",
+    "canonical_name": "Боева Дача",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "boevadacha",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (boevadacha → boevadacha). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "boevadacha"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "boevadacha"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Butovo",
+    "canonical_name": "Бутово",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "butovo",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (butovo → butovo). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "butovo"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "butovo"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Buzuluk Park Pushkina",
+    "canonical_name": "Бузулук парк Пушкина",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "buzulukparkpushkina",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (buzulukparkpushkina → buzulukparkpushkina). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "buzulukparkpushkina"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "buzulukparkpushkina"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Cheboksary naberezhnaya",
+    "canonical_name": "Чебоксары набережная",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "cheboksarynaberezhnaya",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (cheboksarynaberezhnaya → cheboksarynaberezhnaya). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "cheboksarynaberezhnaya"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "cheboksarynaberezhnaya"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Chelyabinsk",
+    "canonical_name": "Челябинск Лесопарковая",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "chelyabinsk",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (chelyabinsk → chelyabinsk). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "chelyabinsk"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "chelyabinsk"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Chelyabinsk Ekopark",
+    "canonical_name": "Челябинск Экопарк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "chelyabinskekopark",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (chelyabinskekopark → chelyabinskekopark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "chelyabinskekopark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "chelyabinskekopark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Chertanovo Pokrovsky Park",
+    "canonical_name": "Чертаново Покровский парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "chertanovopokrovskypark",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (chertanovopokrovskypark → chertanovopokrovskypark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "chertanovopokrovskypark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "chertanovopokrovskypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Dolgoprudny",
+    "canonical_name": "Долгопрудный",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "dolgoprudny",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (dolgoprudny → dolgoprudny). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "dolgoprudny"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "dolgoprudny"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Druzhba",
+    "canonical_name": "Дружба",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "druzhba",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (druzhba → druzhba). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "druzhba"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "druzhba"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Ekaterinburg Zelenaya Roscha",
+    "canonical_name": "Ekaterinburg Zelenaya Roscha",
+    "active_platform": null,
+    "legacy_parkrun_slug": "ekaterinburgzelenayaroscha",
+    "is_closed": true,
+    "notes": "Автосопоставление не найдено (parkrun slug: ekaterinburgzelenayaroscha). Заполните вручную.; не существуюет в других системах",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "ekaterinburgzelenayaroscha"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Elagin Ostrov",
+    "canonical_name": "Елагин остров",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "elaginostrov",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (elaginostrov → elaginostrov). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "elaginostrov"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "elaginostrov"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Filatov Lug",
+    "canonical_name": "Филатов Луг",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "filatovlug",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (filatovlug → filatovlug). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "filatovlug"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "filatovlug"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Fili",
+    "canonical_name": "Фили",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "fili",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (fili → fili). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "fili"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "fili"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Gatchina Prioratsky",
+    "canonical_name": "Гатчина Приоратский",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "gatchina-prioratsky",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (gatchina-prioratsky → gatchinaprioratsky). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "gatchina-prioratsky"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "gatchinaprioratsky"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Gorky Park",
+    "canonical_name": "Парк Горького",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "gorky-park",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (gorky-park → gorkypark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "gorky-park"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "gorkypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Gorodskoy Park Semya",
+    "canonical_name": "Городской парк Семья",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "gorodskoyparksemya",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (gorodskoyparksemya → gorodskoyparksemya). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "gorodskoyparksemya"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "gorodskoyparksemya"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Gubernsky Park",
+    "canonical_name": "Калуга",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "gubernsky-park",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (gubernsky-park → gubernskypark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "gubernsky-park"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "gubernskypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Internatsionalistov",
+    "canonical_name": "Интернационалистов",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "internatsionalistov",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (internatsionalistov → internatsionalistov). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "internatsionalistov"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "internatsionalistov"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Izmailovo",
+    "canonical_name": "Измайлово",
+    "active_platform": "s95",
+    "legacy_parkrun_slug": "izmailovo",
+    "is_closed": false,
+    "notes": "В каталоге 5verst (run5k) нет — вероятно перешло на С95 (izmailovo). Полное название: Парк Измайлово (Москва).",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "izmailovo"
+      },
+      {
+        "platform": "s95",
+        "external_key": "izmailovo"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Kazan Central",
+    "canonical_name": "Казань центральный парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "kazancentral",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (kazancentral → kazancentral). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "kazancentral"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "kazancentral"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Khimki",
+    "canonical_name": "Химки",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "khimki",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (khimki → khimki). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "khimki"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "khimki"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Kimry",
+    "canonical_name": "Кимры",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "kimry",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (kimry → kimry). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "kimry"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "kimry"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Kolchugino City Park",
+    "canonical_name": "Кольчугино Городской парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "kolchuginocitypark",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (kolchuginocitypark → kolchuginocitypark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "kolchuginocitypark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "kolchuginocitypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Kolomenskoe",
+    "canonical_name": "Коломенское",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "kolomenskoe",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (kolomenskoe → kolomenskoe). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "kolomenskoe"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "kolomenskoe"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Kolpino",
+    "canonical_name": "Колпино",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "kolpino",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (kolpino → kolpino). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "kolpino"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "kolpino"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Komsomolsky",
+    "canonical_name": "Комсомольский",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "komsomolsky",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (komsomolsky → komsomolsky). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "komsomolsky"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "komsomolsky"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Korolev",
+    "canonical_name": "Королёв",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "korolev",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (korolev → korolev). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "korolev"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "korolev"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Krasnoyarsk Naberezhnaya",
+    "canonical_name": "Красноярск набережная",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "krasnoyarsknaberezhnaya",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (krasnoyarsknaberezhnaya → krasnoyarsknaberezhnaya). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "krasnoyarsknaberezhnaya"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "krasnoyarsknaberezhnaya"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Krylatskoe",
+    "canonical_name": "Крылатское",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "krylatskoe",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (krylatskoe → krylatskoe). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "krylatskoe"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "krylatskoe"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Kurgan Central Park",
+    "canonical_name": "Курган Центральный парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "kurgancentralpark",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (kurgancentralpark → kurgancentralpark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "kurgancentralpark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "kurgancentralpark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Kuzminki",
+    "canonical_name": "Кузьминки",
+    "active_platform": "s95",
+    "legacy_parkrun_slug": "kuzminki",
+    "is_closed": false,
+    "notes": "В каталоге 5verst (run5k) нет — вероятно перешло на С95 (kuzminki). Полное название: Парк Кузьминки (Москва).",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "kuzminki"
+      },
+      {
+        "platform": "s95",
+        "external_key": "kuzminki"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Lebediny Ray",
+    "canonical_name": "Лебединый Рай",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "lebedinyray",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (lebedinyray → lebedinyray). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "lebedinyray"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "lebedinyray"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Lesopark Severny",
+    "canonical_name": "Лесопарк Северный",
+    "active_platform": "runpark",
+    "legacy_parkrun_slug": "lesopark-severny",
+    "is_closed": false,
+    "notes": "Не найдено в run5k (5verst/s95). Вероятно закрытая или переименованная локация — уточнить вручную.; это runpark, система о которой ты пока не знаешь",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "lesopark-severny"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Lobnya Gorodskoy Park",
+    "canonical_name": "Лобня Городской парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "lobnya-gorodskoy-park",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (lobnya-gorodskoy-park → lobnyagorodskoypark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "lobnya-gorodskoy-park"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "lobnyagorodskoypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Magnitogorsk Ecopark",
+    "canonical_name": "Магнитогорск Экопарк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "magnitogorskecopark",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (magnitogorskecopark → magnitogorskecopark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "magnitogorskecopark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "magnitogorskecopark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Maykop Gorodskoy Park",
+    "canonical_name": "Майкоп Городской парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "maykopgorodskoypark",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (maykopgorodskoypark → maykopgorodskoypark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "maykopgorodskoypark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "maykopgorodskoypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Mega Park Kudrovo",
+    "canonical_name": "Мега Парк Кудрово",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "megaparkkudrovo",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (megaparkkudrovo → megaparkkudrovo). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "megaparkkudrovo"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "megaparkkudrovo"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Memorialny Park",
+    "canonical_name": "Memorialny Park",
+    "active_platform": null,
+    "legacy_parkrun_slug": "memorialnypark",
+    "is_closed": true,
+    "notes": "Автосопоставление не найдено (parkrun slug: memorialnypark). Заполните вручную.; более не существуют",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "memorialnypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Meshchersky",
+    "canonical_name": "Мещерский",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "meshchersky",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (meshchersky → meshchersky). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "meshchersky"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "meshchersky"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Mikhalkovo",
+    "canonical_name": "Михалково",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "mikhalkovo",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (mikhalkovo → mikhalkovo). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "mikhalkovo"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "mikhalkovo"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Mitino",
+    "canonical_name": "Митино",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "mitino",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (mitino → mitino). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "mitino"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "mitino"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Moskovsky Park Pobedy",
+    "canonical_name": "Московский парк Победы",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "moskovsky-park-pobedy",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (moskovsky-park-pobedy → moskovskyparkpobedy). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "moskovsky-park-pobedy"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "moskovskyparkpobedy"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Mytishchi Central Park",
+    "canonical_name": "Мытищи Центральный парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "mytishchicentralpark",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (mytishchicentralpark → mytishchicentralpark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "mytishchicentralpark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "mytishchicentralpark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Naberezhnaya Reki Velikoy",
+    "canonical_name": "Набережная Реки Великой",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "naberezhnayarekivelikoy",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (naberezhnayarekivelikoy → naberezhnayarekivelikoy). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "naberezhnayarekivelikoy"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "naberezhnayarekivelikoy"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Natashinsky",
+    "canonical_name": "Люберцы Наташинский",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "natashinsky",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (natashinsky → natashinsky). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "natashinsky"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "natashinsky"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Nizhny Novgorod Meshchersky",
+    "canonical_name": "Nizhny Novgorod Meshchersky",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "nizhnynovgorodmeshchersky",
+    "is_closed": false,
+    "notes": "Автосопоставление не найдено (parkrun slug: nizhnynovgorodmeshchersky). Заполните вручную.; Это вот эта локация https://5verst.ru/meshcherskoeozero/ в нашей базе по 5 верст она есть",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "nizhnynovgorodmeshchersky"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "meshcherskoeozero"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Nizhny Prud",
+    "canonical_name": "Нижний пруд",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "nizhnyprud",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (nizhnyprud → nizhnyprud). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "nizhnyprud"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "nizhnyprud"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Noginsk Gorodskoy Park",
+    "canonical_name": "Ногинск Городской парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "noginskgorodskoypark",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (noginskgorodskoypark → noginskgorodskoypark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "noginskgorodskoypark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "noginskgorodskoypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Novosibirsk naberezhnaya",
+    "canonical_name": "Новосибирск набережная",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "novosibirsknaberezhnaya",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (novosibirsknaberezhnaya → novosibirsknaberezhnaya). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "novosibirsknaberezhnaya"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "novosibirsknaberezhnaya"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Obninsk",
+    "canonical_name": "Обнинск",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "obninsk",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (obninsk → obninsk). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "obninsk"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "obninsk"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Olimpiyskaya Derevnya",
+    "canonical_name": "Олимпийская Деревня",
+    "active_platform": "s95",
+    "legacy_parkrun_slug": "olimpiyskaya-derevnya",
+    "is_closed": false,
+    "notes": "В каталоге 5verst (run5k) нет — вероятно перешло на С95 (olimpiyskayaderevnya). Полное название: Парк Олимпийской деревни (Москва).",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "olimpiyskaya-derevnya"
+      },
+      {
+        "platform": "s95",
+        "external_key": "olimpiyskaya_derevnya"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Orsk Park Stroiteley",
+    "canonical_name": "Орск парк Строителей",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "orskparkstroiteley",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (orskparkstroiteley → orskparkstroiteley). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "orskparkstroiteley"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "orskparkstroiteley"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "park 850-letiya Moskvy",
+    "canonical_name": "Марьино",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "park-850-letiya-moskvy",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (park-850-letiya-moskvy → park850letiyamoskvy). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "park-850-letiya-moskvy"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "park850letiyamoskvy"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Park Guskova",
+    "canonical_name": "Park Guskova",
+    "active_platform": null,
+    "legacy_parkrun_slug": "parkguskova",
+    "is_closed": true,
+    "notes": "Автосопоставление не найдено (parkrun slug: parkguskova). Заполните вручную.; более не существуют",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "parkguskova"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Park Kirova",
+    "canonical_name": "Парк Кирова",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "parkkirova",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (parkkirova → parkkirova). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "parkkirova"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "parkkirova"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Park Talalikhina",
+    "canonical_name": "Park Talalikhina",
+    "active_platform": "s95",
+    "legacy_parkrun_slug": "parktalalikhina",
+    "is_closed": false,
+    "notes": "Автосопоставление не найдено (parkrun slug: parktalalikhina). Заполните вручную.; Вот эта локация в с95 https://s95.ru/events/podolsk",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "parktalalikhina"
+      },
+      {
+        "platform": "s95",
+        "external_key": "podolsk"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Pavlovsky Posad",
+    "canonical_name": "Павловский Посад",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "pavlovsky-posad",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (pavlovsky-posad → pavlovskyposad). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "pavlovsky-posad"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "pavlovskyposad"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Perm Balatovo",
+    "canonical_name": "Пермь Балатово",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "permbalatovo",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (permbalatovo → permbalatovo). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "permbalatovo"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "permbalatovo"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Petergof Aleksandriysky",
+    "canonical_name": "Петергоф",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "petergofaleksandriysky",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (petergofaleksandriysky → petergofaleksandriysky). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "petergofaleksandriysky"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "petergofaleksandriysky"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Petrovskaya naberezhnaya",
+    "canonical_name": "Петровская набережная",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "petrovskayanaberezhnaya",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (petrovskayanaberezhnaya → petrovskayanaberezhnaya). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "petrovskayanaberezhnaya"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "petrovskayanaberezhnaya"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Plotinka",
+    "canonical_name": "Плотинка",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "plotinka",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (plotinka → plotinka). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "plotinka"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "plotinka"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Pokrovskoe-Streshnevo",
+    "canonical_name": "Покровское-Стрешнево",
+    "active_platform": "runpark",
+    "legacy_parkrun_slug": "pokrovskoe-streshnevo",
+    "is_closed": false,
+    "notes": "Не найдено в run5k (5verst/s95). Вероятно закрытая или переименованная локация — уточнить вручную.; Эта локация есть в четвертой системе runpark, но я о ней тебе еще ничего не рассказывал, поэтому пока оставляем только в паркране",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "pokrovskoe-streshnevo"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Pur-Navolok",
+    "canonical_name": "Пур-Наволок",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "purnavolok",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (purnavolok → purnavolok). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "purnavolok"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "purnavolok"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Pushkin",
+    "canonical_name": "Пушкин",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "pushkin",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (pushkin → pushkin). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "pushkin"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "pushkin"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Ramenskoe Gorodskoy Park",
+    "canonical_name": "Раменское Городской парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "ramenskoegorodskoypark",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (ramenskoegorodskoypark → ramenskoegorodskoypark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "ramenskoegorodskoypark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "ramenskoegorodskoypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Rasskazovka",
+    "canonical_name": "Рассказовка",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "rasskazovka",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (rasskazovka → rasskazovka). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "rasskazovka"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "rasskazovka"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Readovsky Park",
+    "canonical_name": "Реадовский парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "readovskypark",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (readovskypark → readovskypark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "readovskypark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "readovskypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Rostov on Don",
+    "canonical_name": "Ростов-на-Дону",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "rostovondon",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (rostovondon → rostovondon). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "rostovondon"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "rostovondon"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Ryazan Central",
+    "canonical_name": "Ryazan Central",
+    "active_platform": "runpark",
+    "legacy_parkrun_slug": "ryazancentral",
+    "is_closed": false,
+    "notes": "Автосопоставление не найдено (parkrun slug: ryazancentral). Заполните вручную.; Эта локация есть в четвертой системе runpark, но я о ней тебе еще ничего не рассказывал, поэтому пока оставляем только в паркране",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "ryazancentral"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Ryazan Oreshek",
+    "canonical_name": "Ryazan Oreshek",
+    "active_platform": "runpark",
+    "legacy_parkrun_slug": "ryazanoreshek",
+    "is_closed": false,
+    "notes": "Автосопоставление не найдено (parkrun slug: ryazanoreshek). Заполните вручную.; Эта локация есть в четвертой системе runpark, но я о ней тебе еще ничего не рассказывал, поэтому пока оставляем только в паркране",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "ryazanoreshek"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Samara Park Gagarina",
+    "canonical_name": "Самара парк Гагарина",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "samaraparkgagarina",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (samaraparkgagarina → samaraparkgagarina). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "samaraparkgagarina"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "samaraparkgagarina"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Serpukhov Gorodskoy Bor",
+    "canonical_name": "Серпухов Городской бор",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "serpukhov-gorodskoy-bor",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (serpukhov-gorodskoy-bor → serpukhovgorodskoybor). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "serpukhov-gorodskoy-bor"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "serpukhovgorodskoybor"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Severnoe Tushino",
+    "canonical_name": "Северное Тушино",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "severnoe-tushino",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (severnoe-tushino → severnoetushino). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "severnoe-tushino"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "severnoetushino"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Severny Rechnoy Vokzal",
+    "canonical_name": "Severny Rechnoy Vokzal",
+    "active_platform": null,
+    "legacy_parkrun_slug": "severnyrechnoyvokzal",
+    "is_closed": true,
+    "notes": "Автосопоставление не найдено (parkrun slug: severnyrechnoyvokzal). Заполните вручную.; более не существуют",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "severnyrechnoyvokzal"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Shuvalovsky Park",
+    "canonical_name": "Shuvalovsky Park",
+    "active_platform": null,
+    "legacy_parkrun_slug": "shuvalovskypark",
+    "is_closed": true,
+    "notes": "Автосопоставление не найдено (parkrun slug: shuvalovskypark). Заполните вручную.; более не существуют",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "shuvalovskypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Skver Dzerzhinskogo",
+    "canonical_name": "Сквер Дзержинского",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "skverdzerzhinskogo",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (skverdzerzhinskogo → skverdzerzhinskogo). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "skverdzerzhinskogo"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "skverdzerzhinskogo"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Sokolniki",
+    "canonical_name": "Сокольники",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "sokolniki",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (sokolniki → sokolniki). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "sokolniki"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "sokolniki"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Solnechny ostrov",
+    "canonical_name": "Солнечный остров",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "solnechnyostrov",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (solnechnyostrov → solnechnyostrov). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "solnechnyostrov"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "solnechnyostrov"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Sosnovka",
+    "canonical_name": "Сосновка",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "sosnovka",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (sosnovka → sosnovka). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "sosnovka"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "sosnovka"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Starye Sady",
+    "canonical_name": "Starye Sady",
+    "active_platform": null,
+    "legacy_parkrun_slug": "staryesady",
+    "is_closed": true,
+    "notes": "Автосопоставление не найдено (parkrun slug: staryesady). Заполните вручную.; более не существуют",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "staryesady"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Stavropol",
+    "canonical_name": "Ставрополь",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "stavropol",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (stavropol → stavropol). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "stavropol"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "stavropol"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Strelka",
+    "canonical_name": "Стрелка",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "strelka",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (strelka → strelka). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "strelka"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "strelka"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Strezhevoy Gorodskoy Park",
+    "canonical_name": "Стрежевой Городской парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "strezhevoygorodskoypark",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (strezhevoygorodskoypark → strezhevoygorodskoypark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "strezhevoygorodskoypark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "strezhevoygorodskoypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Tambov",
+    "canonical_name": "Тамбов",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "tambov",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (tambov → tambov). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "tambov"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "tambov"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Timiryazevsky",
+    "canonical_name": "Тимирязевский",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "timiryazevsky",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (timiryazevsky → timiryazevsky). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "timiryazevsky"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "timiryazevsky"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Tomsk Stadion Polytechnic",
+    "canonical_name": "Томск Стадион Политехник",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "tomskstadionpolytechnic",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (tomskstadionpolytechnic → tomskstadionpolytechnic). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "tomskstadionpolytechnic"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "tomskstadionpolytechnic"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Tsaritsyno",
+    "canonical_name": "Царицыно",
+    "active_platform": "s95",
+    "legacy_parkrun_slug": "tsaritsyno",
+    "is_closed": false,
+    "notes": "В каталоге 5verst (run5k) нет — вероятно перешло на С95 (tsaritsyno). Полное название: Нижний Царицынский пруд (Москва).",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "tsaritsyno"
+      },
+      {
+        "platform": "s95",
+        "external_key": "tsaritsyno"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Tula Central",
+    "canonical_name": "Тула Центральный парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "tula-central",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (tula-central → tulacentral). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "tula-central"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "tulacentral"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Tver Rechnoy Vokzal",
+    "canonical_name": "Тверь",
+    "active_platform": "s95",
+    "legacy_parkrun_slug": "tver-rechnoy-vokzal",
+    "is_closed": false,
+    "notes": "В каталоге 5verst (run5k) нет — вероятно перешло на С95 (parkzhrun). Полное название: Речной вокзал (Тверь).",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "tver-rechnoy-vokzal"
+      },
+      {
+        "platform": "s95",
+        "external_key": "parkzhrun"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Ufa Botanichesky Sad",
+    "canonical_name": "Ufa Botanichesky Sad",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "ufabotanicheskysad",
+    "is_closed": false,
+    "notes": "Автосопоставление не найдено (parkrun slug: ufabotanicheskysad). Заполните вручную.; Это 5 верст такая локация https://5verst.ru/parklesovodov/",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "ufabotanicheskysad"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "parklesovodov"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Ulitsa Golubaya",
+    "canonical_name": "Улица Голубая",
+    "active_platform": "parkrun",
+    "legacy_parkrun_slug": "ulitsagolubaya",
+    "is_closed": false,
+    "notes": "Только parkrun. Не связана с 5 вёрст Сириус (sirius) — разные локации.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "ulitsagolubaya"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Sirius",
+    "canonical_name": "Сириус",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": null,
+    "is_closed": false,
+    "notes": "5 вёрст (sirius). Отдельная локация, не связана с parkrun Ulitsa Golubaya.",
+    "links": [
+      {
+        "platform": "five_verst",
+        "external_key": "sirius"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Velikiy Novgorod Kremlevsky",
+    "canonical_name": "Velikiy Novgorod Kremlevsky",
+    "active_platform": "s95",
+    "legacy_parkrun_slug": "velikiynovgorodkremlevsky",
+    "is_closed": false,
+    "notes": "Автосопоставление не найдено (parkrun slug: velikiynovgorodkremlevsky). Заполните вручную.; это с95 великий новгород https://s95.ru/events/novgorod в базе должен быть",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "velikiynovgorodkremlevsky"
+      },
+      {
+        "platform": "s95",
+        "external_key": "novgorod"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Vernadskogo",
+    "canonical_name": "Вернадского",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "vernadskogo",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (vernadskogo → vernadskogo). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "vernadskogo"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "vernadskogo"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Volgograd Panorama",
+    "canonical_name": "Волгоград панорама",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "volgogradpanorama",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (volgogradpanorama → volgogradpanorama). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "volgogradpanorama"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "volgogradpanorama"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Voronezh Central Park",
+    "canonical_name": "Воронеж Центральный парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "voronezhcentralpark",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (voronezhcentralpark → voronezhcentralpark). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "voronezhcentralpark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "voronezhcentralpark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Yakutsk Dokhsun",
+    "canonical_name": "Якутск Дохсун",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "yakutskdokhsun",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (yakutskdokhsun → yakutskdokhsun). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "yakutskdokhsun"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "yakutskdokhsun"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Yarmarochnaya Ploshchad",
+    "canonical_name": "Yarmarochnaya Ploshchad",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "yarmarochnayaploshchad",
+    "is_closed": false,
+    "notes": "Автосопоставление не найдено (parkrun slug: yarmarochnayaploshchad). Заполните вручную.; Это 5 верст такая локация https://5verst.ru/innopolis/ Иннополис",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "yarmarochnayaploshchad"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "innopolis"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Yoshkar-Ola Alleya Zdorovya",
+    "canonical_name": "Йошкар-Ола Аллея Здоровья",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "yoshkarolaalleyazdorovya",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (yoshkarolaalleyazdorovya → yoshkarolaalleyazdorovya). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "yoshkarolaalleyazdorovya"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "yoshkarolaalleyazdorovya"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Zatyumensky",
+    "canonical_name": "Затюменский",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "zatyumensky",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (zatyumensky → zatyumensky). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "zatyumensky"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "zatyumensky"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Zelenograd",
+    "canonical_name": "Зеленоград",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "zelenograd",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (zelenograd → zelenograd). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "zelenograd"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "zelenograd"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Zhukovsky",
+    "canonical_name": "Жуковский",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "zhukovsky",
+    "is_closed": false,
+    "notes": "Сопоставлено по slug parkrun → 5verst (zhukovsky → zhukovsky). Источник: run5k general_link.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "zhukovsky"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "zhukovsky"
+      }
+    ]
+  }
+]

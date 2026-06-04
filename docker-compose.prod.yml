@@ -1,0 +1,12 @@
+# Production overrides — extend docker-compose.yml on the server.
+# Phase 7: add worker, beat, bot services here.
+
+services:
+  api:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    volumes: []
+
+  nginx:
+    ports:
+      - "80:80"
+      - "443:443"
