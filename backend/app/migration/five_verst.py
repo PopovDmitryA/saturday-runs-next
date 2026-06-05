@@ -17,7 +17,7 @@ from app.migration.helpers import (
     parse_float,
     slug_from_5verst_url,
 )
-from app.migration.legacy_db import legacy_rows
+from app.migration.legacy_db import legacy_row_stream, legacy_rows
 from app.migration.lookups import FiveVerstLookups, TargetLookups
 from app.migration.stats import MigrationStats
 from app.platform_adapters.canonical import (
@@ -351,7 +351,7 @@ def migrate_runs(
         stats.runs += upsert.upsert_run_results(db, event, platform, batch)
         batch = []
 
-    rows = legacy_rows(conn, sql, params)
+    rows = legacy_row_stream(conn, sql, params)
     for row in rows:
         processed += 1
         name = str(row["name_point"]).strip()
@@ -491,7 +491,7 @@ def migrate_volunteers(
         stats.volunteers += upsert.upsert_volunteer_results(db, event, platform, batch)
         batch = []
 
-    for row in legacy_rows(conn, sql, params):
+    for row in legacy_row_stream(conn, sql, params):
         name = str(row["name_point"]).strip()
         event_date = legacy_timestamp_to_date(row["date_event"])
         if event_date is None:

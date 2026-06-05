@@ -42,3 +42,19 @@ def legacy_rows(
     params: Mapping[str, object] | None = None,
 ) -> list[Mapping[str, Any]]:
     return conn.execute(text(sql), params or {}).mappings().all()
+
+
+def legacy_row_stream(
+    conn: Any,
+    sql: str,
+    params: Mapping[str, object] | None = None,
+    *,
+    chunk_size: int = 5000,
+) -> Iterator[Mapping[str, Any]]:
+    result = conn.execution_options(stream_results=True).execute(text(sql), params or {})
+    while True:
+        rows = result.fetchmany(chunk_size)
+        if not rows:
+            break
+        for row in rows:
+            yield row._mapping

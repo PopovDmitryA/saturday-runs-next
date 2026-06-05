@@ -9,7 +9,7 @@ from app.migration.helpers import (
     legacy_time_to_seconds,
     legacy_timestamp_to_date,
 )
-from app.migration.legacy_db import legacy_rows
+from app.migration.legacy_db import legacy_row_stream, legacy_rows
 from app.migration.lookups import ParkrunLookups, TargetLookups
 from app.migration.stats import MigrationStats
 from app.platform_adapters.canonical import (
@@ -68,7 +68,7 @@ def migrate_participants(
         sql += " LIMIT :limit"
         params["limit"] = limit
 
-    for row in legacy_rows(conn, sql, params):
+    for row in legacy_row_stream(conn, sql, params):
         user_id = str(row["user_id"]).strip()
         display_name = (
             str(row["actual_name_runner"]).strip()
@@ -129,7 +129,7 @@ def migrate_runs(
         params["limit"] = limit
 
     batch: list[CanonicalRunResult] = []
-    for row in legacy_rows(conn, sql, params):
+    for row in legacy_row_stream(conn, sql, params):
         user_id = str(row["user_id"]).strip()
         name_point = str(row["name_point"]).strip()
         event_date = legacy_timestamp_to_date(row["date_event"])
@@ -211,7 +211,7 @@ def migrate_volunteer_summary(
     batch: list[CanonicalVolunteerResult] = []
     participant_cache: dict[str, object] = {}
 
-    for row in legacy_rows(conn, sql, params):
+    for row in legacy_row_stream(conn, sql, params):
         user_id = str(row["user_id"]).strip()
         role = str(row["vol_role"]).strip()
         count = int(row["count_vol"]) if row.get("count_vol") is not None else 0
