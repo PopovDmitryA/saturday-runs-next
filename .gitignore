@@ -33,4 +33,5 @@ postgres_data/
 
 # Local / agent
 .cursor/
+PROJECT_HANDOFF.local.md
 data/parkrun_playwright_state.json
