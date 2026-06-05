@@ -70,6 +70,13 @@ parkrun:
 parkrun-seed-queue:
 	bash scripts/seed_parkrun_queue.sh
 
+# Legacy ETL (needs LEGACY_DATABASE_URL + DATABASE_URL; use --dry-run first)
+migrate-legacy-dry-run:
+	docker compose exec api python scripts/migrate_from_legacy.py --platform five_verst --dry-run --steps locations,events
+
+migrate-legacy-validate:
+	docker compose exec api python scripts/migrate_from_legacy.py --validate --platform all --pretty
+
 # Chrome with --remote-debugging-port=9222 on Mac; bypasses host.docker.internal CDP 500
 parkrun-save-cdp-host:
 	bash scripts/parkrun_save_cdp_host.sh
