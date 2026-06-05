@@ -16,6 +16,7 @@ import { DemoRunsPage, RunsPage } from "./features/runs/RunsPage";
 import { DemoVolunteeringPage, VolunteeringPage } from "./features/volunteering/VolunteeringPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { SharePage } from "./features/share/SharePage";
 import { AboutPage } from "./features/about/AboutPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
@@ -57,6 +58,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/runs": () => <RunsPage />,
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
+  "/share": () => <SharePage />,
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
   "/admin": () => <AdminPage />,
