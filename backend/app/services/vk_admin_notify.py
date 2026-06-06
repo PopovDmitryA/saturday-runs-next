@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.services.sync_report_labels import field_label, format_field_value, pipeline_label
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ def _fmt_errors(errors: list[str] | None, *, limit: int = 5) -> str:
 
 
 def format_sync_started(pipeline: str, *, details: str | None = None) -> str:
-    text = f"▶️ Запуск: {pipeline}"
+    text = f"▶️ Запуск: {pipeline_label(pipeline)}"
     if details:
         text += f"\n{details}"
     return text
@@ -72,7 +73,7 @@ def format_sync_finished(pipeline: str, payload: dict[str, Any]) -> str:
     errors = payload.get("errors")
     error_count = len(errors) if isinstance(errors, list) else 0
     status = "✅" if error_count == 0 else "⚠️"
-    lines = [f"{status} Завершено: {pipeline}"]
+    lines = [f"{status} Завершено: {pipeline_label(pipeline)}"]
 
     skip = {"errors"}
     for key, value in payload.items():
@@ -80,7 +81,9 @@ def format_sync_finished(pipeline: str, payload: dict[str, Any]) -> str:
             continue
         if isinstance(value, list) and not value:
             continue
-        lines.append(f"{key}: {value}")
+        if isinstance(value, (int, float)) and value == 0 and key not in {"rotation_index"}:
+            continue
+        lines.append(f"{field_label(key)}: {format_field_value(key, value)}")
 
     if error_count:
         lines.append(f"ошибок: {error_count}")

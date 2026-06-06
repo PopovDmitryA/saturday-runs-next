@@ -62,8 +62,35 @@ def test_sync_registry_updates_pause_and_name(db_session: Session, five_verst_pl
     assert result.entries_total == 1
     assert result.locations_updated == 1
     assert result.pause_status_changed == 1
+    assert result.cancel_status_changed == 0
     assert location.name == "Мемориальный парк"
     assert location.is_paused is True
+
+
+def test_sync_registry_updates_cancel_status(db_session: Session, five_verst_platform: Platform) -> None:
+    slug = f"cancelpark-{uuid4().hex[:8]}"
+    location = Location(
+        platform_id=five_verst_platform.id,
+        external_key=slug,
+        name="Cancel Park",
+        is_paused=False,
+        source_url=f"https://5verst.ru/{slug}/",
+    )
+    db_session.add(location)
+    db_session.commit()
+
+    page = ParsedEventsPage(
+        entries=[_entry(slug, "Cancel Park", LocationRegistryStatus.cancelled)],
+        saturday_cancellations=[],
+    )
+
+    with patch("app.sync.five_verst_locations.bulk_parser.fetch_events_page", return_value=(page, "<html></html>")):
+        result = sync_locations_registry(
+            db_session,
+            LocationRegistrySyncOptions(fetch_missing_coordinates=False, detect_duplicates=False),
+        )
+
+    assert result.cancel_status_changed == 1
 
 
 def test_sync_registry_backfills_region_for_existing_location(
