@@ -45,7 +45,8 @@ def main() -> int:
             db.commit()
             print(
                 f"{platform_code}: participants_touched={stats['participants_touched']} "
-                f"runs_updated={stats['runs_updated']} pr_runs={stats['pr_runs']}"
+                f"runs_updated={stats['runs_updated']} pr_runs={stats['pr_runs']}",
+                flush=True,
             )
     finally:
         db.close()

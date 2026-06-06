@@ -13,31 +13,49 @@ def recalculate_personal_records(
     platform_code: str,
     *,
     participant_id: UUID | None = None,
+    commit_every: int = 200,
 ) -> dict[str, int]:
     """Mark is_pr when a run is faster than all earlier runs at the same location."""
     platform = upsert.get_platform(db, platform_code)
-    query = (
-        db.query(RunResult, Event)
+    participant_query = (
+        db.query(RunResult.participant_id)
         .join(Event, RunResult.event_id == Event.id)
         .filter(
             Event.platform_id == platform.id,
             RunResult.participant_id.isnot(None),
         )
+        .distinct()
     )
     if participant_id is not None:
-        query = query.filter(RunResult.participant_id == participant_id)
+        participant_query = participant_query.filter(RunResult.participant_id == participant_id)
 
-    grouped: dict[tuple[UUID, UUID], list[tuple[RunResult, Event]]] = {}
-    for run, event in query.all():
-        key = (run.participant_id, event.location_id)
-        grouped.setdefault(key, []).append((run, event))
-
+    participant_ids = [row[0] for row in participant_query.all()]
+    participants_touched = 0
     updated = 0
     pr_runs = 0
-    for items in grouped.values():
-        items.sort(key=lambda pair: (pair[1].event_date, pair[1].event_number or 0))
+
+    for index, current_participant_id in enumerate(participant_ids, start=1):
+        rows = (
+            db.query(RunResult, Event)
+            .join(Event, RunResult.event_id == Event.id)
+            .filter(
+                Event.platform_id == platform.id,
+                RunResult.participant_id == current_participant_id,
+            )
+            .order_by(Event.location_id, Event.event_date, Event.event_number)
+            .all()
+        )
+        if not rows:
+            continue
+
+        participants_touched += 1
+        current_location_id: UUID | None = None
         best_time: int | None = None
-        for run, _event in items:
+        for run, event in rows:
+            if current_location_id != event.location_id:
+                current_location_id = event.location_id
+                best_time = None
+
             new_is_pr = False
             finish_time = run.finish_time_sec
             if finish_time is not None and finish_time > 0:
@@ -50,9 +68,12 @@ def recalculate_personal_records(
             if new_is_pr:
                 pr_runs += 1
 
+        if commit_every > 0 and index % commit_every == 0:
+            db.commit()
+
     return {
         "platform_code": platform_code,
-        "participants_touched": len(grouped),
+        "participants_touched": participants_touched,
         "runs_updated": updated,
         "pr_runs": pr_runs,
     }
