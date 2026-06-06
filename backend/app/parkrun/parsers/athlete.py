@@ -226,7 +226,8 @@ def parse_all_results_html(
             else:
                 _parsed_sec, finish_time_display = parse_finish_time(time_raw)
                 finish_time_sec = _parsed_sec
-            is_pr = bool(pb_raw and pb_raw.strip() and pb_raw.strip().lower() not in {"-", "—", "no"})
+            # Personal records for parkrun are computed in app.services.parkrun_pr_service.
+            is_pr = False
 
             external_result_key = (
                 f"parkrun:{parsed.athlete_id}:{event_slug}:{event_date.isoformat()}:{run_number or 0}"

@@ -25,7 +25,8 @@ HELP_TEXT = (
     "/sync latest — /results/latest/\n"
     "/sync rotation — ротация локаций (20 summary)\n"
     "/sync reconcile — сверка 100 старых протоколов\n"
-    "/sync location <slug> — одна локация\n\n"
+    "/sync location <slug> — одна локация\n"
+    "/sync protocol <url> — протокол 5 вёрst или s95 по ссылке\n\n"
     "Координаты с95: ответьте (Reply) на сообщение бота координатами latitude:longitude, "
     "затем Reply «ок» на проверку карты.\n\n"
     "Отчёты о запуске и завершении пайплайнов приходят автоматически."
@@ -78,6 +79,34 @@ def _fetch_pipeline_status(settings: VkBotSettings) -> str:
         detail = response.json().get("detail", response.text)
         raise RuntimeError(f"sync-status API {response.status_code}: {detail}")
     return format_pipeline_status(response.json())
+
+
+def _sync_protocol_url(settings: VkBotSettings, url: str) -> str:
+    headers = vk_bot_headers(settings)
+    response = httpx.post(
+        f"{settings.api_base_url.rstrip('/')}/api/internal/vk-bot/sync-protocol",
+        params={"vk_user_id": settings.vk_admin_user_id},
+        json={"url": url},
+        headers=headers,
+        timeout=120.0,
+    )
+    if response.status_code != 200:
+        detail = response.json().get("detail", response.text)
+        raise RuntimeError(f"sync-protocol API {response.status_code}: {detail}")
+    data = response.json()
+    platform = data.get("platform", "?")
+    location = data.get("location_slug", "?")
+    event_date = data.get("event_date", "?")
+    runs = data.get("run_results_upserted", 0)
+    vols = data.get("volunteer_results_upserted", 0)
+    changed = "да" if data.get("protocol_changed") else "нет"
+    return (
+        f"✅ Протокол обновлён ({platform})\n"
+        f"Локация: {location}\n"
+        f"Дата: {event_date}\n"
+        f"Пробежек: {runs}, волонтёров: {vols}\n"
+        f"Протокол изменился: {changed}"
+    )
 
 
 def _handle_coordinate_message(
@@ -160,6 +189,21 @@ def _handle_message(peer_id: int, from_id: int, text: str, message: dict) -> Non
                 lines.append(f"• /sync {key} — {label}")
             lines.append("• /sync location <slug> — одна локация")
             send_message(peer_id, "\n".join(lines))
+            return
+        if args[0].lower() == "protocol":
+            if len(args) < 2:
+                send_message(
+                    peer_id,
+                    "Использование: /sync protocol <url>\n"
+                    "Примеры:\n"
+                    "• https://5verst.ru/zil/results/31.05.2025/\n"
+                    "• https://s95.ru/activities/4124",
+                )
+                return
+            try:
+                send_message(peer_id, _sync_protocol_url(settings, args[1]))
+            except Exception as exc:
+                send_message(peer_id, f"Не удалось обновить протокол: {exc}")
             return
         try:
             location_slug = args[1] if args[0].lower() == "location" and len(args) > 1 else None

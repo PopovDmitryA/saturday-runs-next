@@ -6,6 +6,12 @@ def test_pipeline_and_field_labels_russian() -> None:
     started = format_sync_started("5v registry /events/")
     assert "реестр /events/" in started
 
+    started_with_params = format_sync_started(
+        "5v latest /results/latest/",
+        details="Лимит summary на обновление: 20\nЛимит загрузки протоколов: без лимита",
+    )
+    assert "Лимит summary на обновление: 20" in started_with_params
+
     finished = format_sync_finished(
         "5v latest /results/latest/",
         {

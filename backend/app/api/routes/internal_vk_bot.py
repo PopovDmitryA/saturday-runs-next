@@ -12,6 +12,7 @@ from app.core.admin import is_admin_vk_user_id
 from app.db.session import get_db
 from app.schemas.admin_stats import AdminSiteStatsResponse
 from app.services.admin_pipeline_status_service import get_admin_pipeline_status
+from app.services.admin_protocol_sync_service import sync_protocol_from_url
 from app.services.admin_site_stats_service import get_admin_site_stats
 from app.services.location_coordinate_service import handle_admin_coordinate_message
 
@@ -44,6 +45,10 @@ class VkCoordinateMessage(BaseModel):
 class VkCoordinateResponse(BaseModel):
     handled: bool
     reply: str | None = None
+
+
+class VkSyncProtocolRequest(BaseModel):
+    url: str
 
 
 @router.get("/stats", response_model=AdminSiteStatsResponse)
@@ -102,3 +107,17 @@ def vk_coordinate_message(
     if reply is None:
         return VkCoordinateResponse(handled=False)
     return VkCoordinateResponse(handled=True, reply=reply)
+
+
+@router.post("/sync-protocol")
+def vk_sync_protocol(
+    body: VkSyncProtocolRequest,
+    vk_user_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(_verify_vk_bot_secret)],
+) -> dict[str, object]:
+    _require_admin_vk_user(vk_user_id, settings)
+    try:
+        return sync_protocol_from_url(db, body.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

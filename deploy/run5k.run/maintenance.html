@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>run5k.run — скоро обновление</title>
+  <meta name="description" content="Сайт run5k.run временно на обновлении. Скоро запустим новую версию личного кабинета для субботних пробежек.">
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e8edf4;
+      --muted: #9aa8bc;
+      --accent: #3b82f6;
+      --accent-soft: rgba(59, 130, 246, 0.15);
+      --green: #22c55e;
+      --border: rgba(255, 255, 255, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% -10%, rgba(59, 130, 246, 0.18), transparent),
+        radial-gradient(ellipse 60% 40% at 100% 100%, rgba(34, 197, 94, 0.08), transparent),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .wrap {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 48px 24px 64px;
+    }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 40px;
+    }
+
+    .logo-mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), var(--green));
+      display: grid;
+      place-items: center;
+      font-size: 1rem;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px 28px;
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #93c5fd;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      margin: 0 0 16px;
+      font-size: clamp(1.75rem, 5vw, 2.125rem);
+      line-height: 1.2;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      margin: 0 0 28px;
+      color: var(--muted);
+      font-size: 1.0625rem;
+    }
+
+    ul {
+      margin: 0 0 28px;
+      padding-left: 1.25rem;
+      color: var(--muted);
+    }
+
+    li + li { margin-top: 8px; }
+
+    .note {
+      padding: 16px 18px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      font-size: 0.9375rem;
+      color: var(--muted);
+    }
+
+    .note strong { color: var(--text); }
+
+    footer {
+      margin-top: 32px;
+      text-align: center;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+
+    a {
+      color: #93c5fd;
+      text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">
+      <span class="logo-mark" aria-hidden="true">5K</span>
+      <span>run5k.run</span>
+    </div>
+
+    <main class="card">
+      <span class="badge">Обновление сайта</span>
+      <h1>Мы готовим новую версию личного кабинета</h1>
+      <p class="lead">
+        Сайт временно недоступен — мы переносим статистику субботних пробежек
+        на обновлённую платформу. Совсем скоро здесь снова можно будет смотреть
+        результаты, личные рекорды и волонтёрство.
+      </p>
+
+      <ul>
+        <li>Единый профиль для 5&nbsp;вёрst, S95 и parkrun</li>
+        <li>Актуальные протоколы и история пробежек</li>
+        <li>Удобный вход через ВКонтакте и Яндекс</li>
+      </ul>
+
+      <p class="note">
+        <strong>Когда ждать?</strong> Запуск планируем в ближайшие дни.
+        Если вы уже пользовались старой версией — ваши данные сохраняются,
+        повторная регистрация не понадобится.
+      </p>
+    </main>
+
+    <footer>
+      Вопросы — <a href="mailto:admin@run5k.run">admin@run5k.run</a>
+    </footer>
+  </div>
+</body>
+</html>

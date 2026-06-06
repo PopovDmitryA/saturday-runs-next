@@ -6,6 +6,13 @@ from dataclasses import asdict
 from typing import Any
 
 from app.db.session import get_session_factory
+from app.services.sync_run_params import (
+    five_verst_latest_details,
+    five_verst_location_details,
+    five_verst_reconcile_details,
+    five_verst_registry_details,
+    five_verst_rotation_details,
+)
 from app.services.vk_admin_notify import notify_sync_finished, notify_sync_started
 from app.sync.five_verst_latest import LatestResultsSyncOptions, sync_latest_results
 from app.sync.five_verst_location_rotation import sync_next_location_batch
@@ -25,8 +32,13 @@ def _latest_update_limit(settings) -> int | None:
     return settings.five_verst_sync_latest_update_limit
 
 
-def _run_reported(name: str, fn: Callable[[], dict[str, object]]) -> dict[str, object]:
-    notify_sync_started(name)
+def _run_reported(
+    name: str,
+    fn: Callable[[], dict[str, object]],
+    *,
+    details: str | None = None,
+) -> dict[str, object]:
+    notify_sync_started(name, details=details)
     try:
         payload = fn()
         notify_sync_finished(name, payload)
@@ -51,6 +63,12 @@ def sync_location_task(
     if fetch_all_protocols_on_change is None:
         fetch_all_protocols_on_change = settings.five_verst_fetch_all_protocols_on_change
     name = f"5v location {location_slug}"
+    details = five_verst_location_details(
+        location_slug=location_slug,
+        summaries_limit=summaries_limit,
+        protocol_fetch_limit=protocol_fetch_limit,
+        fetch_all_protocols_on_change=fetch_all_protocols_on_change,
+    )
 
     def _run() -> dict[str, object]:
         db = get_session_factory()()
@@ -79,7 +97,7 @@ def sync_location_task(
         finally:
             db.close()
 
-    return _run_reported(name, _run)
+    return _run_reported(name, _run, details=details)
 
 
 @celery_app.task(name="five_verst_sync.sync_location_summaries", queue="five_verst")
@@ -109,6 +127,7 @@ def sync_location_summaries_task(
 @celery_app.task(name="five_verst_sync.sync_locations_registry", queue="five_verst")
 def sync_locations_registry_task(limit: int | None = None) -> dict[str, object]:
     name = "5v registry /events/"
+    details = five_verst_registry_details(limit=limit)
 
     def _run() -> dict[str, object]:
         db = get_session_factory()()
@@ -135,7 +154,7 @@ def sync_locations_registry_task(limit: int | None = None) -> dict[str, object]:
         finally:
             db.close()
 
-    return _run_reported(name, _run)
+    return _run_reported(name, _run, details=details)
 
 
 @celery_app.task(name="five_verst_sync.sync_latest_results", queue="five_verst")
@@ -151,6 +170,11 @@ def sync_latest_results_task(
     if protocol_fetch_limit is None:
         protocol_fetch_limit = _protocol_limit(settings)
     name = "5v latest /results/latest/"
+    details = five_verst_latest_details(
+        update_limit=update_limit,
+        protocol_fetch_limit=protocol_fetch_limit,
+        fetch_all_protocols_on_change=settings.five_verst_fetch_all_protocols_on_change,
+    )
 
     def _run() -> dict[str, object]:
         db = get_session_factory()()
@@ -181,12 +205,18 @@ def sync_latest_results_task(
         finally:
             db.close()
 
-    return _run_reported(name, _run)
+    return _run_reported(name, _run, details=details)
 
 
 @celery_app.task(name="five_verst_sync.sync_location_rotation", queue="five_verst")
 def sync_location_rotation_task() -> dict[str, object]:
+    from app.config import get_settings
+
+    settings = get_settings()
     name = "5v location rotation"
+    details = five_verst_rotation_details(
+        summaries_limit=settings.five_verst_location_batch_summaries_limit,
+    )
 
     def _run() -> dict[str, object]:
         db = get_session_factory()()
@@ -215,7 +245,7 @@ def sync_location_rotation_task() -> dict[str, object]:
         finally:
             db.close()
 
-    return _run_reported(name, _run)
+    return _run_reported(name, _run, details=details)
 
 
 @celery_app.task(name="five_verst_sync.enqueue_all_location_summaries", queue="five_verst")
@@ -273,6 +303,11 @@ def reconcile_stale_protocols_task(
     if min_check_interval_days is None:
         min_check_interval_days = settings.five_verst_reconcile_min_check_interval_days
     name = "5v reconcile protocols"
+    details = five_verst_reconcile_details(
+        limit=limit,
+        min_check_interval_days=min_check_interval_days,
+        location_slug=location_slug,
+    )
 
     def _run() -> dict[str, object]:
         db = get_session_factory()()
@@ -289,7 +324,7 @@ def reconcile_stale_protocols_task(
         finally:
             db.close()
 
-    return _run_reported(name, _run)
+    return _run_reported(name, _run, details=details)
 
 
 @celery_app.task(name="five_verst_sync.enqueue_reconcile_protocols", queue="five_verst")

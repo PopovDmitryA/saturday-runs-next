@@ -29,7 +29,7 @@ def test_parse_all_results_table() -> None:
     assert extra["age_category"] == "SM25-29"
     assert len(runs) == 1
     assert runs[0].finish_time_display == "00:25:30"
-    assert runs[0].is_pr is True
+    assert runs[0].is_pr is False
     assert extra["volunteer_occasions_total"] == 2
 
 

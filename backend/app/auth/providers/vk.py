@@ -64,7 +64,7 @@ def vk_exchange_code(
 
     user_id = str(payload["user_id"])
     access_token = payload["access_token"]
-    display_name, email = _fetch_vk_user_info(settings, access_token)
+    display_name, email = _fetch_vk_user_info(settings, access_token, user_id)
     return OAuthProfile(
         external_id=user_id,
         display_name=display_name,
@@ -73,7 +73,43 @@ def vk_exchange_code(
     )
 
 
-def _fetch_vk_user_info(settings: Settings, access_token: str) -> tuple[str | None, str | None]:
+def _fetch_vk_names_via_api(access_token: str, user_id: str) -> tuple[str | None, str | None]:
+    """VK API users.get with lang=0 returns Cyrillic names (OAuth user_info often transliterates)."""
+    try:
+        response = httpx.get(
+            "https://api.vk.com/method/users.get",
+            params={
+                "user_ids": user_id,
+                "fields": "first_name,last_name",
+                "access_token": access_token,
+                "v": "5.199",
+                "lang": "0",
+            },
+            timeout=20.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("error"):
+            return None, None
+        users = payload.get("response") or []
+        if not users:
+            return None, None
+        user = users[0]
+        return user.get("first_name"), user.get("last_name")
+    except httpx.HTTPError:
+        return None, None
+
+
+def _display_name_from_parts(first_name: str | None, last_name: str | None) -> str | None:
+    parts = [part for part in (first_name, last_name) if part]
+    return " ".join(parts) if parts else None
+
+
+def _fetch_vk_user_info(
+    settings: Settings,
+    access_token: str,
+    user_id: str,
+) -> tuple[str | None, str | None]:
     response = httpx.post(
         VK_USER_INFO_URL,
         data={
@@ -87,9 +123,12 @@ def _fetch_vk_user_info(settings: Settings, access_token: str) -> tuple[str | No
     if "error" in payload:
         return None, None
     user = payload.get("user") or {}
-    parts = [part for part in (user.get("first_name"), user.get("last_name")) if part]
-    display_name = " ".join(parts) if parts else None
     email = user.get("email")
+
+    api_first, api_last = _fetch_vk_names_via_api(access_token, user_id)
+    display_name = _display_name_from_parts(api_first, api_last)
+    if display_name is None:
+        display_name = _display_name_from_parts(user.get("first_name"), user.get("last_name"))
     return display_name, email
 
 
