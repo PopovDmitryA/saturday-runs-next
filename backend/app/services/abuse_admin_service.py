@@ -11,7 +11,6 @@ from app.core.abuse_store import (
     TelegramBanRecord,
     clear_ip_abuse_score,
     get_ip_block_record,
-    get_telegram_ban_record,
     get_user_last_ip,
     is_valid_ip,
     list_ip_blocks,

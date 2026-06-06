@@ -10,20 +10,14 @@ from sqlalchemy.orm import Session
 
 from app.activity_date import has_real_activity_date
 from app.activity_url import resolve_activity_url
-from app.services.location_catalog_service import LocationCatalogIndex
-from app.services.location_map_service import _location_is_cancelled, _location_is_paused
-from app.services.user_location_stats import count_unique_locations_from_rows
-from app.services.sync_error_format import present_sync_error
-from app.time_format import normalize_finish_time_display
 from app.models import (
     DashboardCache,
     Event,
     EventSummary,
     Location,
+    Participant,
     Platform,
     PlatformLink,
-    Participant,
-    PlatformLinkSyncStatus,
     RunResult,
     SyncJob,
     SyncJobStatus,
@@ -31,6 +25,11 @@ from app.models import (
     User,
     VolunteerResult,
 )
+from app.services.location_catalog_service import LocationCatalogIndex
+from app.services.location_map_service import _location_is_cancelled, _location_is_paused
+from app.services.sync_error_format import present_sync_error
+from app.services.user_location_stats import count_unique_locations_from_rows
+from app.time_format import normalize_finish_time_display
 from app.volunteering_occasions import (
     count_volunteering_for_platform,
     count_volunteering_occasions,

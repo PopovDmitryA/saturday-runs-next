@@ -6,13 +6,13 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
+from app.pace import parse_pace_value
 from app.platform_adapters.canonical import (
     CanonicalParticipant,
     CanonicalRunResult,
     CanonicalVolunteerResult,
     ProfilePreview,
 )
-from app.pace import parse_pace_value
 from app.s95.parsers.pr_detection import row_is_pr
 from app.s95.parsers.table_columns import runs_table_column_indexes
 from app.s95.parsers.time_utils import parse_finish_time

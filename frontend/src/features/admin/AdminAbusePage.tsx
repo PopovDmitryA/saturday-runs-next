@@ -49,7 +49,7 @@ function AdminAbuseContent() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const [target, setTarget] = useState("");
-  const [durationSeconds, setDurationSeconds] = useState(DURATION_PRESETS[1].seconds);
+  const [durationSeconds, setDurationSeconds] = useState<number>(DURATION_PRESETS[1].seconds);
   const [reason, setReason] = useState("");
   const [banIp, setBanIp] = useState(true);
   const [banAccount, setBanAccount] = useState(true);

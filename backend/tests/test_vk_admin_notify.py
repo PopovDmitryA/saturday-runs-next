@@ -7,19 +7,31 @@ def test_pipeline_and_field_labels_russian() -> None:
     assert "реестр /events/" in started
 
     finished = format_sync_finished(
+        "5v latest /results/latest/",
+        {
+            "protocols_fetched": 3,
+            "fetched_protocols": ["kopyttse (Копытse): kopyttse-123"],
+            "changed_protocols": ["obninsk (Обнинск): obninsk-456"],
+            "errors": [],
+        },
+    )
+    assert "Загружены протоколы:" in finished
+    assert "• kopyttse" in finished
+    assert "Изменены протоколы:" in finished
+
+    finished = format_sync_finished(
         "5v registry /events/",
         {
             "entries_total": 210,
-            "locations_updated": 99,
-            "pause_status_changed": 2,
-            "cancel_status_changed": 3,
-            "errors": ["pirogovskiy: таймаут"],
+            "locations_updated": 2,
+            "updated_locations": ["kopyttse (Копытse)", "obninsk (Обнинск)"],
+            "created_locations": ["newpark (Новый парк)"],
+            "errors": [],
         },
     )
     assert "записей в реестре: 210" in finished
-    assert "локаций обновлено: 99" in finished
-    assert "изменений статуса «на паузе»: 2" in finished
-    assert "изменений статуса «отмена»: 3" in finished
-    assert "ошибок: 1" in finished
+    assert "Локации обновлены:" in finished
+    assert "• kopyttse" in finished
+    assert "Локации созданы:" in finished
     assert pipeline_label("5v location slug-x") == "5verst: локация slug-x"
     assert field_label("unknown_key") == "unknown_key"

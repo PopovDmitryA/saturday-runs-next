@@ -96,4 +96,4 @@ def _fetch_vk_user_info(settings: Settings, access_token: str) -> tuple[str | No
 def vk_redirect_uri(settings: Settings) -> str:
     if settings.vk_oauth_redirect_uri:
         return settings.vk_oauth_redirect_uri
-    return f"{settings.app_base_url.rstrip('/')}/api/auth/oauth/vk/callback"
+    return f"{settings.app_base_url.rstrip('/')}/oauth/vk/callback"

@@ -6,7 +6,16 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models import Event, EventSummary, Location, Platform, ProtocolSyncState, RunResult, SyncStatus, VolunteerResult
+from app.models import (
+    Event,
+    EventSummary,
+    Location,
+    Platform,
+    ProtocolSyncState,
+    RunResult,
+    SyncStatus,
+    VolunteerResult,
+)
 from app.platform_adapters.canonical import CanonicalEventSummary
 from app.s95.fetch import fetch_page_html
 from app.s95.parsers.protocol import parse_protocol_page

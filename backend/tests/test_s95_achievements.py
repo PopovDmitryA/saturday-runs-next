@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from bs4 import BeautifulSoup
+
 from app.s95.parsers.achievements import parse_event_stats_html, parse_row_achievements
 from app.s95.parsers.protocol import parse_protocol_page
-from bs4 import BeautifulSoup
 
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "s95_protocol.html"
 

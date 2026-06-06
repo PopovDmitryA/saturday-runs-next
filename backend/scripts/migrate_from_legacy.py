@@ -16,7 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.db.session import get_session_factory
-from app.migration import five_verst, parkrun, s95_locations, validate
+from app.migration import five_verst, parkrun, s95, validate
 from app.migration.legacy_db import get_legacy_engine, legacy_connection
 from app.migration.stats import MigrationStats
 
@@ -61,7 +61,7 @@ def main() -> int:
         help="Comma-separated sub-steps. "
         "five_verst: locations,events,runs,volunteers. "
         "parkrun: participants,runs,vol_summary. "
-        "s95: locations",
+        "s95: locations,events,participants,runs,volunteers.",
     )
     parser.add_argument(
         "--validate",
@@ -120,11 +120,20 @@ def main() -> int:
                 _print_stats("parkrun", pr_stats)
 
             if args.platform in ("s95", "all"):
-                steps = _parse_steps(args.steps if args.platform != "all" else None, {"locations"})
-                if "locations" in steps:
-                    s95_stats = s95_locations.migrate_locations(db, conn, dry_run=args.dry_run)
-                    stats.merge(s95_stats)
-                    _print_stats("s95 locations", s95_stats)
+                steps = _parse_steps(
+                    args.steps if args.platform != "all" else None,
+                    {"locations", "events", "participants", "runs", "volunteers"},
+                )
+                s95_stats = s95.migrate_all(
+                    db,
+                    conn,
+                    dry_run=args.dry_run,
+                    batch_size=args.batch_size,
+                    limit=args.limit,
+                    steps=steps,
+                )
+                stats.merge(s95_stats)
+                _print_stats("s95", s95_stats)
 
             if args.dry_run:
                 db.rollback()

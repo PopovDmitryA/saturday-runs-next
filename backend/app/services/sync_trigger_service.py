@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 
 from app.models import Platform, PlatformLink, SyncJobTrigger
 from app.services.celery_queue_inspector import celery_task_id_for_job
-from app.services.dashboard_service import create_sync_job
 
 
 def _apply_task_id(job_id: UUID | None, suffix: str) -> dict[str, str]:

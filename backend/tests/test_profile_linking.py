@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models import Platform, User
-from app.services.profile_linking_service import ProfileLinkingError, confirm_profile_link
 from app.platform_adapters.canonical import ProfilePreview
+from app.services.profile_linking_service import ProfileLinkingError, confirm_profile_link
 
 
 def test_confirm_rejects_external_profile_linked_to_other_user(db_session: Session) -> None:

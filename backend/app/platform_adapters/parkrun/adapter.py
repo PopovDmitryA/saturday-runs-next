@@ -13,7 +13,7 @@ from app.platform_adapters.canonical import (
     ProfilePreview,
 )
 from app.platform_adapters.parkrun import parser as parkrun_parser
-from app.platform_adapters.parkrun.url import InvalidProfileUrlError, is_valid_profile_input, parse_profile_input
+from app.platform_adapters.parkrun.url import is_valid_profile_input
 
 
 class ParkrunAdapter:

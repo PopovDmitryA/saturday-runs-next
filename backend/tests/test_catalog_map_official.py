@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-import pytest
-
 pytest_plugins = ["tests.test_dashboard_api"]
 
 

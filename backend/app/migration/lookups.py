@@ -232,6 +232,16 @@ class ParkrunLookups:
 class S95Lookups:
     def __init__(self) -> None:
         self.slug_by_name: dict[str, str] = {}
+        self.name_by_slug: dict[str, str] = {}
+        self.event_meta_by_name_date: dict[tuple[str, str], LegacyEventMeta] = {}
+
+    def register_name_slug(self, name: str, slug: str) -> None:
+        cleaned_name = name.strip()
+        cleaned_slug = slug.strip()
+        if not cleaned_name or not cleaned_slug:
+            return
+        self.slug_by_name.setdefault(cleaned_name, cleaned_slug)
+        self.name_by_slug.setdefault(cleaned_slug, cleaned_name)
 
     def load_from_legacy(self, conn) -> None:
         for row in legacy_rows(
@@ -245,10 +255,69 @@ class S95Lookups:
             slug = slug_from_s95_url(str(row["link_point"]))
             if not slug:
                 continue
+            display_name = str(row.get("full_name_point") or row.get("name_point") or slug).strip()
             for name_col in ("name_point", "full_name_point"):
                 name = row.get(name_col)
                 if name:
-                    self.slug_by_name[str(name).strip()] = slug
+                    self.register_name_slug(str(name).strip(), slug)
+            if display_name:
+                self.name_by_slug.setdefault(slug, display_name)
+
+        for row in legacy_rows(
+            conn,
+            """
+            SELECT DISTINCT ON (name_point)
+                name_point,
+                link_event
+            FROM s95_list_all_events
+            WHERE name_point IS NOT NULL
+              AND link_event IS NOT NULL
+            ORDER BY name_point, date_event DESC
+            """,
+        ):
+            name = str(row["name_point"]).strip()
+            if name in self.slug_by_name:
+                continue
+            slug = slug_from_s95_url(str(row["link_event"]))
+            if name and slug:
+                self.register_name_slug(name, slug)
+
+        for row in legacy_rows(
+            conn,
+            """
+            SELECT
+                name_point,
+                date_event,
+                index_event,
+                count_runners,
+                count_vol,
+                link_event
+            FROM s95_list_all_events
+            WHERE name_point IS NOT NULL AND date_event IS NOT NULL
+            """,
+        ):
+            name = str(row["name_point"]).strip()
+            slug = self.slug_by_name.get(name)
+            if not slug and row.get("link_event"):
+                slug = slug_from_s95_url(str(row["link_event"]))
+                if slug:
+                    self.register_name_slug(name, slug)
+            if not slug:
+                continue
+            event_date = row["date_event"]
+            if hasattr(event_date, "date"):
+                event_date = event_date.date()
+            date_key = event_date.isoformat()
+            index_event = row.get("index_event")
+            event_number = int(index_event) if index_event is not None else None
+            self.event_meta_by_name_date[(name, date_key)] = LegacyEventMeta(
+                slug=slug,
+                event_number=event_number,
+                is_test_event=False,
+                finishers_count=int(row["count_runners"]) if row.get("count_runners") is not None else None,
+                volunteers_count=int(row["count_vol"]) if row.get("count_vol") is not None else None,
+                source_url=(str(row["link_event"]).strip() if row.get("link_event") else None),
+            )
 
     def resolve_slug(self, name_point: str) -> str | None:
         return self.slug_by_name.get(name_point.strip())

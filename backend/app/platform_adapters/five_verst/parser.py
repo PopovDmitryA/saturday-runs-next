@@ -14,7 +14,7 @@ from app.platform_adapters.canonical import (
     ProfilePreview,
 )
 from app.platform_adapters.five_verst.http import NotFoundError, fetch_html
-from app.platform_adapters.five_verst.url import ParsedProfileUrl, userstats_url
+from app.platform_adapters.five_verst.url import ParsedProfileUrl
 
 RESULTS_LINK_RE = re.compile(
     r"5verst\.ru/(?P<slug>[^/]+)/results/(?P<date>\d{2}\.\d{2}\.\d{4})",

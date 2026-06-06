@@ -17,6 +17,7 @@ from app.services.celery_queue_inspector import celery_task_id_for_job
 from app.services.dashboard_service import recompute_dashboard_cache
 from app.services.profile_linking_service import ProfileLinkingError, _get_active_platform
 from app.services.profile_preview_cache import clear_profile_preview_cache
+
 ACTIVE_SYNC_JOB_STATUSES = frozenset({SyncJobStatus.queued, SyncJobStatus.running})
 
 

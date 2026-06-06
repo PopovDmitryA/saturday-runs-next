@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -9,13 +8,13 @@ from app.models import Participant, Platform, PlatformLink, User
 from app.platform_adapters.canonical import ProfilePreview
 from app.platform_adapters.five_verst.parser import ProfileNotFoundError as FvProfileNotFoundError
 from app.platform_adapters.five_verst.parser import ProfileParseError as FvProfileParseError
-from app.platform_adapters.s95.parser import ProfileNotFoundError as S95ProfileNotFoundError
-from app.platform_adapters.s95.parser import ProfileParseError as S95ProfileParseError
+from app.platform_adapters.five_verst.url import InvalidProfileUrlError
 from app.platform_adapters.parkrun.parser import ProfileNotFoundError as ParkrunProfileNotFoundError
 from app.platform_adapters.parkrun.parser import ProfileParseError as ParkrunProfileParseError
 from app.platform_adapters.parkrun.url import InvalidProfileUrlError as ParkrunInvalidProfileUrlError
-from app.platform_adapters.five_verst.url import InvalidProfileUrlError
 from app.platform_adapters.registry import ensure_adapters_registered, get_adapter
+from app.platform_adapters.s95.parser import ProfileNotFoundError as S95ProfileNotFoundError
+from app.platform_adapters.s95.parser import ProfileParseError as S95ProfileParseError
 from app.services.participant_profile_service import get_participant_data_freshness, try_profile_preview_from_db
 from app.services.profile_fetch_pending_service import is_fetch_cooldown_error, raise_or_enqueue_fetch_error
 from app.services.profile_preview_cache import get_cached_profile_preview, store_profile_preview

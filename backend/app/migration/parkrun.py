@@ -9,15 +9,15 @@ from app.migration.helpers import (
     legacy_time_to_seconds,
     legacy_timestamp_to_date,
 )
-from app.migration.legacy_db import legacy_row_stream, legacy_rows
+from app.migration.legacy_db import legacy_row_stream
 from app.migration.lookups import ParkrunLookups, TargetLookups
 from app.migration.stats import MigrationStats
+from app.parkrun.parsers.athlete import _slugify_event
 from app.platform_adapters.canonical import (
     CanonicalLocation,
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
-from app.parkrun.parsers.athlete import _slugify_event
 from app.sync import upsert
 
 PLATFORM_CODE = "parkrun"

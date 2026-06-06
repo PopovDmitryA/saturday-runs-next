@@ -6,9 +6,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.auth.providers.base import OAuthProfile
 from app.auth.providers import vk as vk_provider
 from app.auth.providers import yandex as yandex_provider
+from app.auth.providers.base import OAuthProfile
 from app.config import Settings
 from app.core.redis_client import get_redis_client
 from app.core.security import generate_token
@@ -25,7 +25,6 @@ from app.services.auth_identity_service import (
     list_user_identities,
     list_user_platform_links,
     merge_preview_payload,
-    serialize_merge_preview,
     upsert_oauth_identity,
 )
 from app.services.auth_service import AuthError

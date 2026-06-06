@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from app.models import EventSummary
 from app.s95.fetch import fetch_page_html
 from app.s95.parsers.location import parse_event_location_page, parse_location_coordinates, parse_map_url
-from app.services.location_coordinate_service import maybe_request_coordinates_for_new_location
 from app.s95.parsers.summary import parse_location_summary_html
+from app.services.location_coordinate_service import maybe_request_coordinates_for_new_location
 from app.sync import upsert
 from app.sync.s95_global_sync import S95LocationSyncResult, _finish_sync_run, _start_sync_run
 from app.sync.s95_protocol import fetch_and_upsert_activity_protocol

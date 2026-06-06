@@ -9,19 +9,19 @@ import httpx
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+
+from app.legal.consent_text import consent_bot_message
 from bot_app.broadcast import (
+    BROADCAST_CANCEL_CALLBACK,
+    BROADCAST_SEND_CALLBACK,
     cmd_broadcast,
     cmd_broadcast_cancel,
     cmd_broadcast_send,
     cmd_broadcast_subscribers,
     handle_broadcast_draft_text,
     on_broadcast_callback,
-    BROADCAST_CANCEL_CALLBACK,
-    BROADCAST_SEND_CALLBACK,
 )
 from bot_app.settings import BotSettings, bot_headers
-
-from app.legal.consent_text import consent_bot_message
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import fakeredis
 import pytest

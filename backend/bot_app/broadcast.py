@@ -113,7 +113,7 @@ async def cmd_broadcast(message: Message, settings: BotSettings) -> None:
         return
 
     data = response.json()
-    count = data.get("count", 0)
+    data.get("count", 0)
     subscribers_block = _format_subscribers_list(data)
     await message.answer(
         f"{subscribers_block}\n\n"

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from unittest.mock import patch
 
 import fakeredis
 import pytest

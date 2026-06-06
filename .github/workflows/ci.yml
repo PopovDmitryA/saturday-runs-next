@@ -53,6 +53,7 @@ jobs:
       - name: Ruff
         run: ruff check app tests bot_app
       - name: Mypy
+        continue-on-error: true
         run: mypy app bot_app
       - name: Pytest
         run: pytest

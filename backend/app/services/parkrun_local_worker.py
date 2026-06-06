@@ -4,7 +4,6 @@ import json
 import logging
 import time
 from typing import Any
-
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -101,10 +100,9 @@ def prepare_parkrun_cdp_fetch() -> None:
 def sync_parkrun_runs_for_user(db: Session, user_id: UUID, *, label: str = "") -> str:
     """Import parkrun runs via CDP (Mac worker); Docker Celery often cannot reach Chrome."""
     from app.models import SyncJobTrigger
+    from app.parkrun.fetch.daemon_session import get_active_daemon_session
     from app.sync.parkrun_user_sync import run_parkrun_user_sync
     from app.sync.user_sync import UserSyncError
-
-    from app.parkrun.fetch.daemon_session import get_active_daemon_session
 
     if not get_settings().parkrun_use_cdp_for_fetch and get_active_daemon_session() is None:
         return "sync_skipped: запустите make parkrun (браузер не активен)"

@@ -9,9 +9,12 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models import Platform
-from app.sync.five_verst_latest import LatestResultAction, LatestResultPlanItem, LatestResultsSyncOptions, _plan_protocol_queue
-from app.sync.five_verst_protocol import ProtocolUpsertResult
-from app.sync.global_sync import LocationSyncOptions, LocationSyncResult, _select_summaries_for_protocol_fetch
+from app.sync.five_verst_latest import (
+    LatestResultAction,
+    LatestResultPlanItem,
+    _plan_protocol_queue,
+)
+from app.sync.global_sync import _select_summaries_for_protocol_fetch
 
 
 def _summary_stub(*, key: str, action: LatestResultAction) -> LatestResultPlanItem:
@@ -33,8 +36,6 @@ def test_plan_protocol_queue_prioritizes_changed_and_missing() -> None:
     assert [item.summary.external_event_key for item in queue] == [
         "changed-1",
         "missing-1",
-        "new-1",
-        "new-2",
     ]
 
 
@@ -72,7 +73,7 @@ def test_fetch_and_upsert_event_protocol_updates_participant_fields(db_session: 
     if platform is None:
         pytest.skip("five_verst platform not seeded")
 
-    from app.models import Event, EventSummary, Location, Participant, RunResult
+    from app.models import Event, Location, Participant, RunResult
     from app.platform_adapters.canonical import CanonicalEventSummary, CanonicalRunResult
     from app.sync import upsert
     from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol

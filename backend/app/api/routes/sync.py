@@ -13,12 +13,12 @@ from app.models import Platform, PlatformLink, PlatformLinkSyncStatus, SyncJobTr
 from app.schemas.dashboard import SyncQueueResponse, SyncRefreshResponse, SyncStatusResponse
 from app.services.dashboard_service import create_sync_job, get_sync_status_payload
 from app.services.sync_enqueue_service import enqueue_manual_sync_for_all_platforms
-from app.services.task_queue_service import get_admin_task_queue_payload
 from app.services.sync_trigger_service import (
     enqueue_parkrun_user_sync,
     enqueue_s95_user_sync,
     enqueue_user_sync,
 )
+from app.services.task_queue_service import get_admin_task_queue_payload
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 

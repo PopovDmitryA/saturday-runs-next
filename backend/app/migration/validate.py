@@ -62,6 +62,30 @@ S95_CHECKS = [
         "s95 locations",
         "SELECT COUNT(*) FROM s95_location WHERE link_point IS NOT NULL",
     ),
+    CountCheck(
+        "s95 events",
+        "SELECT COUNT(*) FROM s95_list_all_events WHERE date_event IS NOT NULL",
+    ),
+    CountCheck(
+        "s95 runs",
+        """
+        SELECT COUNT(*) FROM s95_details_protocol
+        WHERE user_id IS NOT NULL AND TRIM(user_id) <> ''
+           OR status_runner = 'unknown_runner'
+        """,
+    ),
+    CountCheck(
+        "s95 volunteers",
+        """
+        SELECT COUNT(*) FROM s95_details_vol
+        WHERE user_id IS NOT NULL AND TRIM(user_id) <> ''
+          AND vol_role IS NOT NULL AND TRIM(vol_role) <> ''
+        """,
+    ),
+    CountCheck(
+        "s95 runners",
+        "SELECT COUNT(*) FROM s95_runners WHERE s95_id IS NOT NULL AND TRIM(s95_id) <> ''",
+    ),
 ]
 
 
@@ -121,6 +145,10 @@ def validate_platform(db: Session, platform: str) -> list[dict[str, object]]:
                 checks = S95_CHECKS
                 target_fns = {
                     "s95 locations": lambda: _target_location_count(db, "s95"),
+                    "s95 events": lambda: _target_event_count(db, "s95"),
+                    "s95 runs": lambda: _target_run_count(db, "s95"),
+                    "s95 volunteers": lambda: _target_vol_count(db, "s95"),
+                    "s95 runners": lambda: _target_participant_count(db, "s95"),
                 }
             else:
                 raise ValueError(f"Unknown platform for validate: {platform}")

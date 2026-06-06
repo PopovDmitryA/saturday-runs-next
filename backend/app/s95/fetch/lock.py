@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import time
 import uuid
-from contextlib import contextmanager
 from collections.abc import Iterator
+from contextlib import contextmanager
 
 from app.config import get_settings
 from app.core.redis_client import get_redis_client

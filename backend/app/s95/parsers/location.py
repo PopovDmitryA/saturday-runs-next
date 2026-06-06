@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
@@ -77,7 +77,7 @@ def parse_event_location_page(
 
     latitude, longitude = parse_location_coordinates(html)
     map_url = parse_map_url(html)
-    parsed = urlparse(page_url)
+    urlparse(page_url)
     return CanonicalLocation(
         external_key=location_external_key,
         name=name,

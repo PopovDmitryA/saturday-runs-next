@@ -20,13 +20,13 @@ from app.migration.helpers import (
 from app.migration.legacy_db import legacy_row_stream, legacy_rows
 from app.migration.lookups import FiveVerstLookups, TargetLookups
 from app.migration.stats import MigrationStats
+from app.models import Event
 from app.platform_adapters.canonical import (
     CanonicalEventSummary,
     CanonicalLocation,
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
-from app.models import Event
 from app.platform_adapters.five_verst import bulk_parser
 from app.sync import upsert
 

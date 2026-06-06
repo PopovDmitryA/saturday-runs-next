@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.config import Settings
 from app.models import AuthIdentity, AuthProvider, User
 from app.schemas.auth import AuthIdentityResponse, UserResponse
-from app.services.auth_identity_service import identity_response_payload, list_user_identities
+from app.services.auth_identity_service import identity_response_payload
 
 
 def effective_admin_telegram_id(settings: Settings) -> int:

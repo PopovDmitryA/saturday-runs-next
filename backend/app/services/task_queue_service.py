@@ -5,7 +5,6 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models import Platform, PlatformLink, SyncJob, SyncJobStatus, User
-from app.services.sync_error_format import present_sync_error
 from app.services.celery_queue_inspector import (
     PARKRUN_SYNC_QUEUE,
     S95_SYNC_QUEUE,
@@ -14,6 +13,7 @@ from app.services.celery_queue_inspector import (
     get_queue_length,
     inspect_user_task,
 )
+from app.services.sync_error_format import present_sync_error
 
 ACTIVE_JOB_STATUSES = frozenset({SyncJobStatus.queued, SyncJobStatus.running})
 RECENT_JOBS_LIMIT = 30

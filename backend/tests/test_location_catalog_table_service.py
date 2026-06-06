@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 
-import pytest
-
 from app.services.location_catalog_table_service import _build_platform_visit_index
 
 

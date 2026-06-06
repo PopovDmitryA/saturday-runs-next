@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Generator
 from datetime import date
 from uuid import uuid4
 
@@ -10,7 +9,6 @@ from sqlalchemy.orm import Session
 from app.models import Event, Location, Participant, Platform, VolunteerResult
 from app.platform_adapters.canonical import CanonicalVolunteerResult
 from app.sync import upsert
-
 
 
 @pytest.fixture

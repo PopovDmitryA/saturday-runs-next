@@ -6,13 +6,13 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.core.admin import is_admin_telegram_id
-from app.core.site_stats import record_login, record_login_request
-from app.core.rate_limit import check_rate_limit
 from app.core.abuse_store import is_telegram_banned
+from app.core.admin import is_admin_telegram_id
+from app.core.rate_limit import check_rate_limit
 from app.core.redis_client import get_redis_client
 from app.core.security import generate_token, hash_token
 from app.core.session import create_session
+from app.core.site_stats import record_login, record_login_request
 from app.models import (
     AuthLoginRequest,
     AuthLoginRequestStatus,
@@ -221,6 +221,8 @@ def bot_confirm_login(
         if survivor is None:
             raise AuthError("User not found.", 404)
         if existing_user is not None and existing_user.id != survivor.id:
+            from app.services.oauth_service import store_merge_token_for_users
+
             merge_token = store_merge_token_for_users(db, survivor, existing_user)
             redis_client.setex(redis_key, settings.magic_link_ttl_seconds, "merge_required")
             redis_client.setex(

@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from uuid import UUID
 
 from celery.result import AsyncResult
 from sqlalchemy.orm import Session
 
 from app.models import Platform, PlatformLink, SyncJob, SyncJobStatus
-from app.workers.celery_app import celery_app
-from app.services.sync_error_format import humanize_sync_error_message
 from app.services.celery_queue_inspector import (
     TASK_QUEUE_BY_SUFFIX,
     celery_task_id_for_job,
     find_task_queue_position,
     get_celery_task_state,
 )
+from app.services.sync_error_format import humanize_sync_error_message
+from app.workers.celery_app import celery_app
 
 STALE_JOB_SECONDS = 120
 LOST_TASK_SECONDS = 180

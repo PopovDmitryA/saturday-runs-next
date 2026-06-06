@@ -13,7 +13,7 @@ from app.platform_adapters.canonical import (
     ProfilePreview,
 )
 from app.platform_adapters.s95 import parser as s95_parser
-from app.platform_adapters.s95.url import InvalidProfileUrlError, is_valid_profile_url, parse_athlete_url
+from app.platform_adapters.s95.url import InvalidProfileUrlError, is_valid_profile_url
 
 
 class S95Adapter:

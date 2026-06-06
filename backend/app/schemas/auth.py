@@ -84,3 +84,15 @@ class MergePreviewResponse(BaseModel):
 
 class MergeConfirmRequest(BaseModel):
     merge_token: str
+
+
+class OAuthFinishRequest(BaseModel):
+    code: str = Field(min_length=1)
+    state: str = Field(min_length=8)
+    device_id: str | None = None
+    payload: str | None = None
+
+
+class OAuthFinishResponse(BaseModel):
+    redirect: str
+    merge_token: str | None = None

@@ -4,15 +4,13 @@ from datetime import date
 
 import pytest
 
-from app.platform_adapters.canonical import CanonicalVolunteerResult
+from app.platform_adapters.canonical import CanonicalRunResult, CanonicalVolunteerResult
 from app.platform_adapters.five_verst.parser import (
     dedupe_profile_runs,
     dedupe_profile_volunteering,
     parse_userstats_html,
 )
-from app.platform_adapters.canonical import CanonicalRunResult
 from app.platform_adapters.five_verst.url import InvalidProfileUrlError, normalize_profile_url, parse_profile_input
-
 
 SAMPLE_HTML = """
 <html>

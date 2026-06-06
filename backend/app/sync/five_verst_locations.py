@@ -6,21 +6,20 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.geo.reverse_geocode import lookup_address
 from app.models import Location, LocationMergeRequest, LocationMergeRequestStatus, Platform, SyncRun, SyncRunStatus
-from app.services.location_geo_service import apply_reverse_geocode_to_location
 from app.platform_adapters.canonical import CanonicalLocation
 from app.platform_adapters.five_verst import bulk_parser
-from app.platform_adapters.five_verst.http import NotFoundError
 from app.platform_adapters.five_verst.bulk_parser import (
     ParsedRegistryEntry,
     registry_entry_is_cancelled,
     registry_entry_is_paused,
 )
-from app.sync.location_registry_status import apply_location_registry_flags
+from app.platform_adapters.five_verst.http import NotFoundError
+from app.services.location_geo_service import apply_reverse_geocode_to_location
 from app.services.vk_admin_notify import send_vk_admin_message, vk_admin_configured
 from app.sync import upsert
+from app.sync.location_registry_status import apply_location_registry_flags
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +47,19 @@ class LocationRegistrySyncResult:
     cancel_status_changed: int = 0
     merge_requests_created: int = 0
     merge_notifications_sent: int = 0
+    updated_locations: list[str] = field(default_factory=list)
+    created_locations: list[str] = field(default_factory=list)
+    coords_fetched_locations: list[str] = field(default_factory=list)
+    pause_changed_locations: list[str] = field(default_factory=list)
+    cancel_changed_locations: list[str] = field(default_factory=list)
+    merge_request_locations: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+
+
+def _location_label(slug: str, name: str | None = None) -> str:
+    if name and name.strip() and name.strip() != slug:
+        return f"{slug} ({name.strip()})"
+    return slug
 
 
 def _start_sync_run(db: Session, platform: Platform) -> SyncRun:
@@ -258,6 +269,13 @@ def _friendly_fetch_error(exc: Exception) -> str:
     return message
 
 
+def _record_location(result: LocationRegistrySyncResult, field: str, slug: str, name: str | None) -> None:
+    label = _location_label(slug, name)
+    bucket: list[str] = getattr(result, field)
+    if label not in bucket:
+        bucket.append(label)
+
+
 def _process_registry_entry(
     db: Session,
     platform: Platform,
@@ -280,10 +298,13 @@ def _process_registry_entry(
         meta_changed, pause_changed, cancel_changed = _apply_registry_meta(db, row, entry)
         if meta_changed:
             result.locations_updated += 1
+            _record_location(result, "updated_locations", entry.slug, entry.name)
         if pause_changed:
             result.pause_status_changed += 1
+            _record_location(result, "pause_changed_locations", entry.slug, entry.name)
         if cancel_changed:
             result.cancel_status_changed += 1
+            _record_location(result, "cancel_changed_locations", entry.slug, entry.name)
 
         needs_coords = row.latitude is None or row.longitude is None
         if needs_coords and fetch_missing_coordinates:
@@ -301,13 +322,17 @@ def _process_registry_entry(
                     )
                     updated_row.is_official_map = True
                     result.coords_fetched += 1
+                    _record_location(result, "coords_fetched_locations", entry.slug, entry.name)
                     meta_changed, pause_changed, cancel_changed = _apply_registry_meta(db, updated_row, entry)
                     if meta_changed:
                         result.locations_updated += 1
+                        _record_location(result, "updated_locations", entry.slug, entry.name)
                     if pause_changed:
                         result.pause_status_changed += 1
+                        _record_location(result, "pause_changed_locations", entry.slug, entry.name)
                     if cancel_changed:
                         result.cancel_status_changed += 1
+                        _record_location(result, "cancel_changed_locations", entry.slug, entry.name)
                     row = updated_row
             except NotFoundError:
                 result.locations_skipped_no_coords += 1
@@ -317,6 +342,7 @@ def _process_registry_entry(
         if _backfill_geo_for_row(db, row):
             result.regions_backfilled += 1
             result.locations_updated += 1
+            _record_location(result, "updated_locations", entry.slug, entry.name)
         return
 
     try:
@@ -357,9 +383,12 @@ def _process_registry_entry(
     _, pause_changed, cancel_changed = _apply_registry_meta(db, new_row, entry)
     if pause_changed:
         result.pause_status_changed += 1
+        _record_location(result, "pause_changed_locations", entry.slug, entry.name)
     if cancel_changed:
         result.cancel_status_changed += 1
+        _record_location(result, "cancel_changed_locations", entry.slug, entry.name)
     result.locations_created += 1
+    _record_location(result, "created_locations", entry.slug, entry.name)
 
     if detect_duplicates:
         candidate_dates = _candidate_summary_dates(entry.slug, entry.name)
@@ -369,6 +398,7 @@ def _process_registry_entry(
             merge_request = _create_merge_request_if_needed(db, platform, entry, matched, overlap)
             if merge_request is not None:
                 result.merge_requests_created += 1
+                _record_location(result, "merge_request_locations", entry.slug, entry.name)
                 if merge_request.notified_at is None:
                     if _notify_merge_request(merge_request):
                         merge_request.notified_at = datetime.now(timezone.utc)
@@ -392,7 +422,7 @@ def sync_locations_registry(
             entries = entries[: options.limit]
         result.entries_total = len(entries)
 
-        for index, entry in enumerate(entries):
+        for entry in entries:
             try:
                 _process_registry_entry(
                     db,
