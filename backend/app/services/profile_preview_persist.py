@@ -129,9 +129,13 @@ def linking_sync_should_run(
 
 
 def complete_link_without_sync(db: Session, link) -> None:
+    from app.services.dashboard_service import recompute_dashboard_cache
+
     link.sync_status = PlatformLinkSyncStatus.ok
     link.error_message = None
     link.last_user_sync_at = datetime.now(timezone.utc)
+    db.flush()
+    recompute_dashboard_cache(db, link.user_id)
     db.commit()
 
 

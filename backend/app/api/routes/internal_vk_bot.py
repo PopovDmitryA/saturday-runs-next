@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -10,6 +11,7 @@ from app.config import Settings, get_settings
 from app.core.admin import is_admin_vk_user_id
 from app.db.session import get_db
 from app.schemas.admin_stats import AdminSiteStatsResponse
+from app.services.admin_pipeline_status_service import get_admin_pipeline_status
 from app.services.admin_site_stats_service import get_admin_site_stats
 from app.services.location_coordinate_service import handle_admin_coordinate_message
 
@@ -54,6 +56,32 @@ def vk_bot_stats(
     _require_admin_vk_user(vk_user_id, settings)
     payload = get_admin_site_stats(db, period_days=period_days)
     return AdminSiteStatsResponse.model_validate(payload)
+
+
+@router.get("/sync-status")
+def vk_bot_sync_status(
+    vk_user_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(_verify_vk_bot_secret)],
+) -> dict[str, object]:
+    _require_admin_vk_user(vk_user_id, settings)
+    payload = get_admin_pipeline_status(db)
+    running = []
+    for item in payload["running"]:
+        started_at = item.get("started_at")
+        running.append(
+            {
+                **item,
+                "started_at": started_at.isoformat() if started_at is not None else None,
+            }
+        )
+    checked_at = payload["checked_at"]
+    return {
+        "checked_at": checked_at.isoformat() if isinstance(checked_at, datetime) else checked_at,
+        "running": running,
+        "queue_depths": payload["queue_depths"],
+        "parkrun_local_worker": payload["parkrun_local_worker"],
+    }
 
 
 @router.post("/coordinate-message", response_model=VkCoordinateResponse)

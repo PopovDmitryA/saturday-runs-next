@@ -9,6 +9,7 @@ import httpx
 from vk_bot.pipeline import PIPELINES, enqueue_pipeline
 from vk_bot.settings import VkBotSettings, get_vk_bot_settings, vk_bot_headers
 from vk_bot.stats_format import format_admin_stats
+from vk_bot.status_format import format_pipeline_status
 from vk_bot.vk_api import VkApiError, VkLongPoll, send_message
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
@@ -18,6 +19,7 @@ HELP_TEXT = (
     "Бот администратора Saturday Runs (VK).\n\n"
     "Команды:\n"
     "/stats [дней] — статистика ЛК\n"
+    "/status — запущенные пайплайны и время старта\n"
     "/sync — список пайплайнов 5 вёрst\n"
     "/sync registry — реестр /events/\n"
     "/sync latest — /results/latest/\n"
@@ -61,6 +63,21 @@ def _fetch_stats(settings: VkBotSettings, period_days: int) -> str:
         detail = response.json().get("detail", response.text)
         raise RuntimeError(f"stats API {response.status_code}: {detail}")
     return format_admin_stats(response.json())
+
+
+def _fetch_pipeline_status(settings: VkBotSettings) -> str:
+    headers = vk_bot_headers(settings)
+    url = f"{settings.api_base_url.rstrip('/')}/api/internal/vk-bot/sync-status"
+    response = httpx.get(
+        url,
+        params={"vk_user_id": settings.vk_admin_user_id},
+        headers=headers,
+        timeout=30.0,
+    )
+    if response.status_code != 200:
+        detail = response.json().get("detail", response.text)
+        raise RuntimeError(f"sync-status API {response.status_code}: {detail}")
+    return format_pipeline_status(response.json())
 
 
 def _handle_coordinate_message(
@@ -127,6 +144,13 @@ def _handle_message(peer_id: int, from_id: int, text: str, message: dict) -> Non
             send_message(peer_id, _fetch_stats(settings, period_days))
         except Exception as exc:
             send_message(peer_id, f"Не удалось получить статистику: {exc}")
+        return
+
+    if cmd == "status":
+        try:
+            send_message(peer_id, _fetch_pipeline_status(settings))
+        except Exception as exc:
+            send_message(peer_id, f"Не удалось получить статус: {exc}")
         return
 
     if cmd == "sync":

@@ -43,8 +43,8 @@ def test_confirm_s95_skips_enqueue_when_preview_data_in_db(
             "app.services.profile_linking_service.linking_sync_should_run",
             return_value=False,
         ):
-            with patch("app.services.profile_linking_service.create_sync_job") as job_mock:
-                with patch("app.services.profile_linking_service.enqueue_s95_user_sync") as enqueue_mock:
+            with patch("app.services.dashboard_service.create_sync_job") as job_mock:
+                with patch("app.services.sync_trigger_service.enqueue_s95_user_sync") as enqueue_mock:
                     with patch(
                         "app.services.profile_linking_service.complete_link_without_sync",
                     ) as complete_mock:
