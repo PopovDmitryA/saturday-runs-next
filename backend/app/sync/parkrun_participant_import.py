@@ -98,6 +98,9 @@ def import_parkrun_participant_activity(
         participant.id,
         volunteering,
     )
+    from app.services.parkrun_pr_service import recalculate_parkrun_personal_records
+
+    recalculate_parkrun_personal_records(db, participant_id=participant.id)
     return ParkrunParticipantImportResult(
         participant=participant,
         runs_imported=runs_imported,
