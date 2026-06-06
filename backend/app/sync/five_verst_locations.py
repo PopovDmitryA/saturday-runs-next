@@ -18,7 +18,7 @@ from app.platform_adapters.five_verst.bulk_parser import (
     registry_entry_is_paused,
 )
 from app.sync.location_registry_status import apply_location_registry_flags
-from app.services.location_coordinate_service import send_telegram_message_sync
+from app.services.vk_admin_notify import send_vk_admin_message, vk_admin_configured
 from app.sync import upsert
 
 logger = logging.getLogger(__name__)
@@ -224,10 +224,8 @@ def _create_merge_request_if_needed(
 
 
 def _notify_merge_request(request: LocationMergeRequest) -> bool:
-    settings = get_settings()
-    chat_id = settings.telegram_admin_chat_id
-    if not chat_id:
-        logger.info("telegram_admin_chat_id not set, skip merge notification for %s", request.candidate_slug)
+    if not vk_admin_configured():
+        logger.info("VK admin notify not configured, skip merge notification for %s", request.candidate_slug)
         return False
 
     sample_dates = ", ".join(request.overlap_event_dates[:5])
@@ -244,8 +242,7 @@ def _notify_merge_request(request: LocationMergeRequest) -> bool:
         f"Примеры дат: {sample_dates}\n\n"
         "Проверьте вручную: возможно, локация сменила URL/имя."
     )
-    message_id = send_telegram_message_sync(chat_id, text)
-    return message_id is not None
+    return send_vk_admin_message(text) is not None
 
 
 def _process_registry_entry(

@@ -10,6 +10,7 @@ from app.models import EventSummary, Location, Platform, SyncRun, SyncRunStatus,
 from app.platform_adapters.canonical import CanonicalEventSummary, CanonicalLocation
 from app.platform_adapters.five_verst import bulk_parser
 from app.sync import upsert
+from app.five_verst.fetch.protocol_pause import wait_between_protocols
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
 
 PLATFORM_CODE = "five_verst"
@@ -33,7 +34,7 @@ class LatestResultPlanItem:
 class LatestResultsSyncOptions:
     dry_run: bool = False
     update_limit: int | None = None
-    protocol_fetch_limit: int = 0
+    protocol_fetch_limit: int | None = None
     ensure_locations: bool = True
     fetch_all_protocols_on_change: bool = True
 
@@ -180,11 +181,9 @@ def _ensure_location(
 def _plan_protocol_queue(
     apply_items: list[LatestResultPlanItem],
     *,
-    protocol_fetch_limit: int,
+    protocol_fetch_limit: int | None,
     fetch_all_protocols_on_change: bool,
 ) -> list[LatestResultPlanItem]:
-    if protocol_fetch_limit <= 0:
-        return []
     priority = [
         item
         for item in apply_items
@@ -192,8 +191,13 @@ def _plan_protocol_queue(
     ]
     regular = [item for item in apply_items if item.action == LatestResultAction.new_summary]
     if fetch_all_protocols_on_change:
-        return priority + regular[:protocol_fetch_limit]
-    combined = priority + regular
+        combined = priority + regular
+    else:
+        combined = priority + regular
+    if protocol_fetch_limit is None:
+        return combined
+    if protocol_fetch_limit <= 0:
+        return []
     return combined[:protocol_fetch_limit]
 
 
@@ -254,7 +258,7 @@ def sync_latest_results(
         item.summary.external_event_key
         for item in _plan_protocol_queue(
             apply_items,
-            protocol_fetch_limit=max(options.protocol_fetch_limit, 0),
+            protocol_fetch_limit=options.protocol_fetch_limit,
             fetch_all_protocols_on_change=options.fetch_all_protocols_on_change,
         )
     ]
@@ -263,10 +267,9 @@ def sync_latest_results(
         return result
 
     sync_run = _start_sync_run(db, platform)
-    protocol_limit = options.protocol_fetch_limit if options.protocol_fetch_limit > 0 else 0
     protocol_queue = _plan_protocol_queue(
         apply_items,
-        protocol_fetch_limit=protocol_limit,
+        protocol_fetch_limit=options.protocol_fetch_limit,
         fetch_all_protocols_on_change=options.fetch_all_protocols_on_change,
     )
 
@@ -326,6 +329,8 @@ def sync_latest_results(
                     summary_row,
                     result=result,
                 )
+                if index + 1 < len(protocol_queue):
+                    wait_between_protocols(reason="latest")
             except Exception as exc:
                 result.errors.append(f"{summary.external_event_key}: {exc}")
                 summary_row.sync_status = SyncStatus.error

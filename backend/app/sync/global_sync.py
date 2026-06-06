@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import EventSummary, Platform, SyncRun, SyncRunStatus, SyncStatus
 from app.platform_adapters.five_verst import bulk_parser
+from app.five_verst.fetch.protocol_pause import wait_between_protocols
 from app.sync import upsert
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
 
@@ -17,7 +18,7 @@ PLATFORM_CODE = "five_verst"
 class LocationSyncOptions:
     location_slug: str
     summaries_limit: int | None = None
-    protocol_fetch_limit: int | None = 1
+    protocol_fetch_limit: int | None = None
     fetch_all_protocols_on_change: bool = True
 
 
@@ -106,7 +107,7 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
             fetch_all_protocols_on_change=options.fetch_all_protocols_on_change,
         )
 
-        for summary_row, summary in protocol_queue:
+        for index, (summary_row, summary) in enumerate(protocol_queue):
             try:
                 upsert_result = fetch_and_upsert_event_protocol(
                     db,
@@ -118,6 +119,8 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
                 result.run_results_upserted += upsert_result.run_results_upserted
                 result.volunteer_results_upserted += upsert_result.volunteer_results_upserted
                 result.protocols_fetched += 1
+                if index + 1 < len(protocol_queue):
+                    wait_between_protocols(reason="location")
             except Exception as exc:
                 result.errors.append(f"{summary.external_event_key}: {exc}")
                 summary_row.sync_status = SyncStatus.error

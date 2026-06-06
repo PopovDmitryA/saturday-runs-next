@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.config import get_settings
 from app.models import Location, LocationCoordinateRequest, Platform
 from app.geo.reverse_geocode import lookup_region
+from app.services.vk_admin_notify import send_vk_admin_message, vk_admin_configured
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,29 @@ def send_telegram_message_sync(
     return asyncio.run(send_telegram_message(chat_id, text, reply_to_message_id=reply_to_message_id))
 
 
+def send_admin_message_sync(
+    text: str,
+    *,
+    reply_to_message_id: int | None = None,
+) -> tuple[int, int] | None:
+    """Send admin notification via VK."""
+    settings = get_settings()
+    if not vk_admin_configured():
+        logger.warning("VK admin notify not configured, skip message: %s", text[:80])
+        return None
+    message_id = send_vk_admin_message(text, reply_to=reply_to_message_id)
+    if message_id is not None:
+        return settings.vk_admin_user_id, message_id
+    return None
+
+
+def _admin_peer_id() -> int | None:
+    settings = get_settings()
+    if vk_admin_configured():
+        return settings.vk_admin_user_id
+    return None
+
+
 def find_request_by_reply_message(
     db: Session,
     chat_id: int,
@@ -119,9 +143,9 @@ def maybe_request_coordinates_for_new_location(
         return None
 
     settings = get_settings()
-    admin_chat_id = settings.telegram_admin_chat_id
-    if not admin_chat_id:
-        logger.info("telegram_admin_chat_id not set, skip coordinate request for %s", location.external_key)
+    admin_peer_id = _admin_peer_id()
+    if not admin_peer_id:
+        logger.info("admin messenger not configured, skip coordinate request for %s", location.external_key)
         return None
 
     pending = (
@@ -154,7 +178,7 @@ def maybe_request_coordinates_for_new_location(
         location_id=location.id,
         map_url=map_url or location.map_url,
         status="awaiting_coordinates",
-        admin_telegram_chat_id=admin_chat_id,
+        admin_telegram_chat_id=admin_peer_id,
     )
     db.add(request)
     db.flush()
@@ -172,8 +196,9 @@ def maybe_request_coordinates_for_new_location(
         f"Ответьте Reply на это сообщение координатами старта:\n"
         f"latitude:longitude (например 55.703:37.623)"
     )
-    message_id = send_telegram_message_sync(admin_chat_id, message)
-    if message_id is not None:
+    sent = send_admin_message_sync(message)
+    if sent is not None:
+        _, message_id = sent
         request.request_telegram_message_id = message_id
     db.commit()
     return request
@@ -199,8 +224,9 @@ def propose_coordinates(
         f"Ответьте Reply на это сообщение «ок», если точка верна.\n"
         f"Иначе — Reply снова с latitude:longitude."
     )
-    verify_message_id = send_telegram_message_sync(request.admin_telegram_chat_id, verify_text)
-    if verify_message_id is not None:
+    sent = send_admin_message_sync(verify_text)
+    if sent is not None:
+        _, verify_message_id = sent
         request.verify_telegram_message_id = verify_message_id
     db.commit()
     return ""
@@ -237,9 +263,12 @@ def handle_admin_coordinate_message(
     text: str,
     *,
     reply_to_message_id: int | None,
+    messenger: str = "telegram",
 ) -> str | None:
     settings = get_settings()
-    if settings.telegram_admin_chat_id and chat_id != settings.telegram_admin_chat_id:
+    if messenger != "vk":
+        return None
+    if settings.vk_admin_user_id and chat_id != settings.vk_admin_user_id:
         return None
 
     if reply_to_message_id is None:

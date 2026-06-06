@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models import Event, EventSummary, Location, Platform, ProtocolSyncState, RunResult, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalEventSummary
 from app.sync import upsert
+from app.five_verst.fetch.protocol_pause import wait_between_protocols
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol, mark_protocol_check
 
 PLATFORM_CODE = "five_verst"
@@ -107,26 +108,25 @@ def _classify_reconcile_reason(
     *,
     check_cutoff: datetime,
 ) -> ReconcileReason | None:
+    del check_cutoff
     if state is None or state.last_protocol_check_at is None:
         return ReconcileReason.never_checked
-    if state.last_protocol_check_at < check_cutoff:
-        return ReconcileReason.check_due
     if summary_row.finishers_count is not None and state.finishers_at_fetch != summary_row.finishers_count:
         return ReconcileReason.summary_changed
     if summary_row.finishers_count is not None and run_count != summary_row.finishers_count:
         return ReconcileReason.count_mismatch
-    return None
+    return ReconcileReason.check_due
 
 
 def plan_stale_protocol_reconcile(
     db: Session,
     *,
-    limit: int = 10,
-    min_check_interval_days: int = 7,
+    limit: int = 100,
+    min_check_interval_days: int = 0,
     location_slug: str | None = None,
 ) -> list[ReconcileCandidate]:
+    del min_check_interval_days
     platform = upsert.get_platform(db, PLATFORM_CODE)
-    check_cutoff = datetime.now(timezone.utc) - timedelta(days=min_check_interval_days)
     run_counts = (
         db.query(RunResult.event_id, func.count(RunResult.id).label("run_count"))
         .group_by(RunResult.event_id)
@@ -146,27 +146,23 @@ def plan_stale_protocol_reconcile(
     if location_slug:
         query = query.filter(Location.external_key == location_slug)
 
-    rows = query.order_by(ProtocolSyncState.last_protocol_check_at.asc().nullsfirst()).all()
+    rows = query.order_by(ProtocolSyncState.last_protocol_check_at.asc().nullsfirst()).limit(limit).all()
     candidates: list[ReconcileCandidate] = []
     for summary_row, location, state, run_count in rows:
         reason = _classify_reconcile_reason(
             summary_row,
             state,
             int(run_count or 0),
-            check_cutoff=check_cutoff,
+            check_cutoff=datetime.now(timezone.utc),
         )
-        if reason is None:
-            continue
         candidates.append(
             ReconcileCandidate(
                 external_event_key=summary_row.external_event_key,
                 location_external_key=location.external_key,
                 event_date=summary_row.event_date,
-                reason=reason,
+                reason=reason or ReconcileReason.check_due,
             )
         )
-        if len(candidates) >= limit:
-            break
     return candidates
 
 
@@ -190,7 +186,7 @@ def reconcile_stale_protocols(
 
     sync_run = _start_sync_run(db, platform)
     try:
-        for candidate in candidates:
+        for index, candidate in enumerate(candidates):
             summary_row = (
                 db.query(EventSummary)
                 .filter(
@@ -221,6 +217,8 @@ def reconcile_stale_protocols(
                 result.volunteer_results_upserted += upsert_result.volunteer_results_upserted
                 if upsert_result.protocol_changed:
                     result.protocols_changed += 1
+                if index + 1 < len(candidates):
+                    wait_between_protocols(reason="reconcile")
             except Exception as exc:
                 result.errors.append(f"{candidate.external_event_key}: {exc}")
                 if summary_row.event_id is not None:

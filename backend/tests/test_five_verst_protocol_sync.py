@@ -38,6 +38,15 @@ def test_plan_protocol_queue_prioritizes_changed_and_missing() -> None:
     ]
 
 
+def test_plan_protocol_queue_unlimited() -> None:
+    items = [
+        _summary_stub(key=f"new-{index}", action=LatestResultAction.new_summary)
+        for index in range(5)
+    ]
+    queue = _plan_protocol_queue(items, protocol_fetch_limit=None, fetch_all_protocols_on_change=True)
+    assert len(queue) == 5
+
+
 def test_plan_protocol_queue_respects_limit_without_fetch_all() -> None:
     items = [
         _summary_stub(key="changed-1", action=LatestResultAction.changed_summary),
