@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models import Event, EventSummary, Location, Platform, ProtocolSyncState
+from app.models import Event, EventSummary, Location, Platform
 from app.sync.s95_reconcile import (
     ReconcileProtocolsOptions,
     ReconcileReason,

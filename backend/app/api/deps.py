@@ -7,8 +7,8 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
-from app.core.admin import is_admin_user
 from app.core.abuse_store import is_telegram_banned
+from app.core.admin import is_admin_user
 from app.core.session import get_session_user_id
 from app.db.session import get_db
 from app.models import User

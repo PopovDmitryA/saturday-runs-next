@@ -6,11 +6,12 @@ from enum import Enum
 
 from sqlalchemy.orm import Session
 
+from app.five_verst.fetch.protocol_pause import wait_between_protocols
 from app.models import EventSummary, Location, Platform, SyncRun, SyncRunStatus, SyncStatus
 from app.platform_adapters.canonical import CanonicalEventSummary, CanonicalLocation
 from app.platform_adapters.five_verst import bulk_parser
+from app.services.sync_report_labels import protocol_detail_label
 from app.sync import upsert
-from app.five_verst.fetch.protocol_pause import wait_between_protocols
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
 
 PLATFORM_CODE = "five_verst"
@@ -54,6 +55,8 @@ class LatestResultsSyncResult:
     run_results_upserted: int = 0
     volunteer_results_upserted: int = 0
     planned_protocols: list[str] = field(default_factory=list)
+    fetched_protocols: list[str] = field(default_factory=list)
+    changed_protocols: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
 
@@ -220,6 +223,10 @@ def _fetch_protocol_for_summary(
     result.run_results_upserted += upsert_result.run_results_upserted
     result.volunteer_results_upserted += upsert_result.volunteer_results_upserted
     result.protocols_fetched += 1
+    label = protocol_detail_label(location.external_key, summary.external_event_key, location.name)
+    result.fetched_protocols.append(label)
+    if upsert_result.protocol_changed:
+        result.changed_protocols.append(label)
 
 
 def sync_latest_results(

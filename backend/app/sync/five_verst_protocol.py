@@ -5,7 +5,15 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models import Event, EventSummary, Location, Platform, ProtocolSyncState, RunResult, SyncStatus, VolunteerResult
+from app.models import (
+    EventSummary,
+    Location,
+    Platform,
+    ProtocolSyncState,
+    RunResult,
+    SyncStatus,
+    VolunteerResult,
+)
 from app.platform_adapters.canonical import CanonicalEventSummary
 from app.platform_adapters.five_verst import bulk_parser
 from app.sync import upsert

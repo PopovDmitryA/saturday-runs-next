@@ -5,6 +5,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
+from app.platform_adapters.s95.url import parse_athlete_url
 from app.s95.parkrun import is_parkrun_eligible_barcode, normalize_parkrun_athlete_id
 from app.s95.parsers.athlete import (
     enrich_participant_activity_totals,
@@ -15,7 +16,6 @@ from app.s95.parsers.athlete import (
 )
 from app.s95.parsers.protocol import parse_protocol_html
 from app.s95.parsers.summary import parse_location_summary_html
-from app.platform_adapters.s95.url import parse_athlete_url
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

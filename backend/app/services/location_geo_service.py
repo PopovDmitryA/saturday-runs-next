@@ -107,8 +107,8 @@ def backfill_location_geo(
             result.errors.append("fetch_missing_coordinates supports five_verst only")
             return result
 
-        from app.platform_adapters.five_verst import bulk_parser
         from app.platform_adapters.canonical import CanonicalLocation
+        from app.platform_adapters.five_verst import bulk_parser
         from app.sync import upsert
         from app.sync.five_verst_locations import _enrich_location_geo
 

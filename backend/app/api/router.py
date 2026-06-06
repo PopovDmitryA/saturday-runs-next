@@ -1,6 +1,19 @@
 from fastapi import APIRouter
 
-from app.api.routes import admin, auth, dashboard, demo, internal_bot, internal_vk_bot, locations, profiles, runs, settings, stats, sync
+from app.api.routes import (
+    admin,
+    auth,
+    dashboard,
+    demo,
+    internal_bot,
+    internal_vk_bot,
+    locations,
+    profiles,
+    runs,
+    settings,
+    stats,
+    sync,
+)
 
 api_router = APIRouter()
 api_router.include_router(auth.router)

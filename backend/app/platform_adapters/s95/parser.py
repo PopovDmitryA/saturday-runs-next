@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.config import get_settings
 from app.platform_adapters.canonical import (
     CanonicalParticipant,
     CanonicalRunResult,
@@ -11,7 +12,6 @@ from app.platform_adapters.canonical import (
 from app.platform_adapters.s95.url import ParsedAthleteUrl, parse_athlete_url
 from app.s95.fetch import fetch_page_html
 from app.s95.parkrun import is_parkrun_eligible_barcode
-from app.config import get_settings
 from app.s95.parsers.athlete import (
     AthleteParseError,
     enrich_participant_activity_totals,
@@ -20,6 +20,7 @@ from app.s95.parsers.athlete import (
     parse_athlete_volunteering_html,
     participant_to_preview,
 )
+
 
 class ProfileNotFoundError(LookupError):
     pass

@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models import Event, Location, Platform
+from app.models import Event, Platform
 from app.platform_adapters.canonical import CanonicalLocation
 from app.sync import upsert
 

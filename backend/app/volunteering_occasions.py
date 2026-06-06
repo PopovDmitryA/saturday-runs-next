@@ -66,7 +66,7 @@ def volunteer_occasion_dates(
     if platform_code == "five_verst":
         inventory_dates: set[date] = set()
         regular_dates: set[date] = set()
-        for event_date, location_key in rows:
+        for event_date, _location_key in rows:
             if is_inventory_day(event_date):
                 inventory_dates.add(event_date)
             else:

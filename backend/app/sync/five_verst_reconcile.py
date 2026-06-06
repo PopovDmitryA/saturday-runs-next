@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from enum import Enum
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.five_verst.fetch.protocol_pause import wait_between_protocols
 from app.models import Event, EventSummary, Location, Platform, ProtocolSyncState, RunResult, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalEventSummary
+from app.services.sync_report_labels import protocol_detail_label
 from app.sync import upsert
-from app.five_verst.fetch.protocol_pause import wait_between_protocols
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol, mark_protocol_check
 
 PLATFORM_CODE = "five_verst"
@@ -47,6 +48,8 @@ class ReconcileProtocolsResult:
     run_results_upserted: int = 0
     volunteer_results_upserted: int = 0
     planned: list[str] = field(default_factory=list)
+    fetched_protocols: list[str] = field(default_factory=list)
+    changed_protocols: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
 
@@ -213,10 +216,17 @@ def reconcile_stale_protocols(
                     summary_row,
                 )
                 result.protocols_fetched += 1
+                label = protocol_detail_label(
+                    location.external_key,
+                    candidate.external_event_key,
+                    location.name,
+                )
+                result.fetched_protocols.append(label)
                 result.run_results_upserted += upsert_result.run_results_upserted
                 result.volunteer_results_upserted += upsert_result.volunteer_results_upserted
                 if upsert_result.protocol_changed:
                     result.protocols_changed += 1
+                    result.changed_protocols.append(label)
                 if index + 1 < len(candidates):
                     wait_between_protocols(reason="reconcile")
             except Exception as exc:

@@ -70,4 +70,4 @@ def yandex_exchange_code(settings: Settings, code: str) -> OAuthProfile:
 def yandex_redirect_uri(settings: Settings) -> str:
     if settings.yandex_oauth_redirect_uri:
         return settings.yandex_oauth_redirect_uri
-    return f"{settings.app_base_url.rstrip('/')}/api/auth/oauth/yandex/callback"
+    return f"{settings.app_base_url.rstrip('/')}/oauth/yandex/callback"

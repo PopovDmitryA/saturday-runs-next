@@ -101,6 +101,34 @@ def five_verst_volunteer_key(slug: str, event_date: date, user_id: str, role: st
     return f"{slug}:{event_date.isoformat()}:vol:{user_id}:{role_key}"
 
 
+def s95_event_key(slug: str, event_date: date) -> str:
+    return f"{slug}:{event_date.isoformat()}"
+
+
+def s95_run_key(slug: str, event_date: date, user_id: str, position: int | None) -> str:
+    return f"{slug}:{event_date.isoformat()}:{user_id}:{position or 0}"
+
+
+def s95_unknown_user_id(slug: str, event_date: date, position: int) -> str:
+    return f"unknown:{slug}:{event_date.isoformat()}:{position}"
+
+
+def s95_volunteer_key(slug: str, event_date: date, user_id: str, role: str) -> str:
+    """Same shape as app.s95.parsers.protocol — one row per event/role in DB."""
+    return f"vol:{slug}:{event_date.isoformat()}:{user_id}:{role}"
+
+
+def is_s95_unknown_runner(
+    *,
+    user_id: str | None,
+    status_runner: str | None,
+) -> bool:
+    cleaned_user_id = (user_id or "").strip()
+    if cleaned_user_id:
+        return False
+    return (status_runner or "").strip().lower() == "unknown_runner"
+
+
 def legacy_time_to_seconds(value: object | None) -> int | None:
     if value is None:
         return None

@@ -6,12 +6,13 @@ from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_client_ip, get_current_user, get_optional_session_user_id
-from app.core.admin import user_response
+from app.auth.providers import vk as vk_provider
 from app.config import Settings, get_settings
+from app.core.admin import user_response
 from app.core.session import delete_session
 from app.db.session import get_db
 from app.models import AuthProvider, User
@@ -26,10 +27,13 @@ from app.schemas.auth import (
     MergeConfirmRequest,
     MergePreviewResponse,
     MessageResponse,
+    OAuthFinishRequest,
+    OAuthFinishResponse,
     UserDisplayNameUpdate,
     UserResponse,
 )
 from app.services.auth_identity_service import (
+    find_user_by_telegram_id,
     identity_response_payload,
     list_user_identities,
     unlink_provider,
@@ -43,8 +47,6 @@ from app.services.auth_service import (
     get_login_request_status,
     update_user_display_name,
 )
-from app.services.auth_identity_service import find_user_by_telegram_id
-from app.auth.providers import vk as vk_provider
 from app.services.oauth_service import (
     confirm_merge,
     get_merge_preview_by_token,
@@ -106,6 +108,66 @@ def _parse_vk_callback_params(
 def _oauth_login_error_redirect(settings: Settings, message: str) -> RedirectResponse:
     login_url = f"{settings.app_base_url.rstrip('/')}/login?oauth_error={quote(message)}"
     return RedirectResponse(url=login_url, status_code=status.HTTP_302_FOUND)
+
+
+def _oauth_redirect_url(settings: Settings, *, redirect_target: str, merge_token: str | None) -> str:
+    if merge_token:
+        return f"{settings.app_base_url.rstrip('/')}/settings?merge_token={merge_token}"
+    return f"{settings.app_base_url.rstrip('/')}/{redirect_target}"
+
+
+def _oauth_success_response(
+    settings: Settings,
+    signed_session: str,
+    redirect_url: str,
+) -> HTMLResponse:
+    """Return HTML (not 302) so iOS Safari stores the session cookie before navigation."""
+    safe_url = redirect_url.replace("&", "&amp;").replace('"', "&quot;")
+    html = f"""<!DOCTYPE html>
+<html lang="ru"><head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="0;url={safe_url}">
+<title>Вход выполнен</title>
+</head><body>
+<p>Вход выполнен. <a href="{safe_url}">Перейти в личный кабинет</a></p>
+<script>window.location.replace({json.dumps(redirect_url)});</script>
+</body></html>"""
+    response = HTMLResponse(content=html, status_code=status.HTTP_200_OK)
+    _set_session_cookie(response, settings, signed_session)
+    return response
+
+
+def _complete_oauth_login(
+    db: Session,
+    settings: Settings,
+    provider: str,
+    *,
+    code: str,
+    state: str,
+    device_id: str | None = None,
+    payload: str | None = None,
+) -> tuple[str, str | None, str]:
+    if provider == "vk":
+        code_value, state_value, device_id_value = _parse_vk_callback_params(
+            code=code,
+            state=state,
+            device_id=device_id,
+            payload=payload,
+        )
+    else:
+        code_value, state_value, device_id_value = code, state, device_id
+
+    user_id, merge_token, redirect_target = handle_oauth_callback(
+        db,
+        settings,
+        provider,
+        code_value,
+        state_value,
+        device_id=device_id_value,
+    )
+    signed_session = create_user_session(settings, user_id)
+    redirect_url = _oauth_redirect_url(settings, redirect_target=redirect_target, merge_token=merge_token)
+    return signed_session, merge_token, redirect_url
 
 
 @router.post("/login-request", response_model=LoginRequestResponse)
@@ -203,7 +265,35 @@ def vk_oauth_redirect_uri(settings: Annotated[Settings, Depends(get_settings)]) 
     }
 
 
-@router.get("/oauth/{provider}/callback")
+@router.post("/oauth/{provider}/finish", response_model=OAuthFinishResponse)
+def oauth_finish(
+    provider: str,
+    body: OAuthFinishRequest,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    response: Response,
+) -> OAuthFinishResponse:
+    try:
+        signed_session, merge_token, redirect_url = _complete_oauth_login(
+            db,
+            settings,
+            provider,
+            code=body.code,
+            state=body.state,
+            device_id=body.device_id,
+            payload=body.payload,
+        )
+    except (AuthError, json.JSONDecodeError) as exc:
+        if isinstance(exc, json.JSONDecodeError):
+            raise _handle_auth_error(AuthError("Некорректный ответ VK ID.", 400)) from exc
+        raise _handle_auth_error(exc) from exc
+
+    _set_session_cookie(response, settings, signed_session)
+    redirect_path = redirect_url.removeprefix(settings.app_base_url.rstrip("/")).lstrip("/")
+    return OAuthFinishResponse(redirect=redirect_path, merge_token=merge_token)
+
+
+@router.get("/oauth/{provider}/callback", response_model=None)
 def oauth_callback(
     provider: str,
     db: Annotated[Session, Depends(get_db)],
@@ -214,7 +304,7 @@ def oauth_callback(
     payload: Annotated[str | None, Query()] = None,
     error: Annotated[str | None, Query()] = None,
     error_description: Annotated[str | None, Query()] = None,
-) -> RedirectResponse:
+) -> HTMLResponse | RedirectResponse:
     if error:
         message = error_description or error
         return _oauth_login_error_redirect(settings, message)
@@ -232,27 +322,20 @@ def oauth_callback(
                 raise AuthError("OAuth callback is missing code or state.", 400)
             code_value, state_value, device_id_value = code, state, device_id
 
-        user_id, merge_token, redirect_target = handle_oauth_callback(
+        signed_session, _merge_token, redirect_url = _complete_oauth_login(
             db,
             settings,
             provider,
-            code_value,
-            state_value,
+            code=code_value,
+            state=state_value,
             device_id=device_id_value,
         )
-        signed_session = create_user_session(settings, user_id)
     except (AuthError, json.JSONDecodeError) as exc:
         if isinstance(exc, json.JSONDecodeError):
             return _oauth_login_error_redirect(settings, "Некорректный ответ VK ID.")
         return _oauth_login_error_redirect(settings, exc.message)
 
-    if merge_token:
-        redirect_url = f"{settings.app_base_url.rstrip('/')}/settings?merge_token={merge_token}"
-    else:
-        redirect_url = f"{settings.app_base_url.rstrip('/')}/{redirect_target}"
-    response = RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
-    _set_session_cookie(response, settings, signed_session)
-    return response
+    return _oauth_success_response(settings, signed_session, redirect_url)
 
 
 @router.get("/identities", response_model=list[AuthIdentityResponse])

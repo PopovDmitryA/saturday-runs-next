@@ -6,11 +6,11 @@ from uuid import UUID
 from app.db.session import get_session_factory
 from app.models import SyncJob, SyncJobTrigger
 from app.services.sync_job_service import fail_sync_job
+from app.sync.s95_athletes_registry import S95AthletesRegistrySyncOptions, sync_s95_athletes_registry
 from app.sync.s95_global_sync import S95LocationSyncOptions, configured_s95_locations, sync_s95_location
 from app.sync.s95_latest import S95LatestSyncOptions, sync_s95_latest
 from app.sync.s95_locations_registry import S95LocationRegistrySyncOptions, sync_s95_locations_registry
 from app.sync.s95_reconcile import ReconcileProtocolsOptions, reconcile_stale_protocols
-from app.sync.s95_athletes_registry import S95AthletesRegistrySyncOptions, sync_s95_athletes_registry
 from app.sync.s95_user_sync import run_s95_user_sync
 from app.workers.celery_app import celery_app
 

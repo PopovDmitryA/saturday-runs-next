@@ -7,27 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin_user
+from app.config import get_settings
 from app.db.session import get_db
 from app.models import User
-from app.schemas.admin import (
-    AdminS95ParticipantListResponse,
-    AdminUserListResponse,
-    AdminUserPreviewDashboardResponse,
-)
-from app.schemas.dashboard import RunItemResponse, VolunteeringItemResponse
-from app.schemas.locations import CatalogLocationsTableResponse, MapLocationsResponse, UniqueLocationsDetailResponse
-from app.services.admin_users_service import (
-    get_admin_user,
-    get_admin_user_preview_dashboard,
-    get_admin_user_preview_runs,
-    get_admin_user_preview_volunteering,
-    search_admin_users,
-)
-from app.services.admin_s95_participants_service import search_admin_s95_participants
-from app.services.location_catalog_table_service import build_catalog_locations_table
-from app.services.location_map_service import list_user_visited_map_locations
-from app.services.user_unique_locations_detail import build_user_unique_location_details
-from app.config import get_settings
+from app.parkrun.fetch.cdp_session import ParkrunCdpSessionError
 from app.schemas.abuse_admin import (
     AbuseBanCreateRequest,
     AbuseBanCreateResponse,
@@ -36,9 +19,14 @@ from app.schemas.abuse_admin import (
     AbuseMessageResponse,
     AbuseTelegramBanItem,
 )
+from app.schemas.admin import (
+    AdminS95ParticipantListResponse,
+    AdminUserListResponse,
+    AdminUserPreviewDashboardResponse,
+)
 from app.schemas.admin_stats import AdminSiteStatsResponse
-from app.services.admin_site_stats_service import get_admin_site_stats
-from app.parkrun.fetch.cdp_session import ParkrunCdpSessionError
+from app.schemas.dashboard import RunItemResponse, VolunteeringItemResponse
+from app.schemas.locations import CatalogLocationsTableResponse, MapLocationsResponse, UniqueLocationsDetailResponse
 from app.schemas.parkrun_admin import (
     ParkrunCdpSaveRequest,
     ParkrunCdpSaveResponse,
@@ -49,14 +37,6 @@ from app.schemas.parkrun_admin import (
     ParkrunProcessPendingResponse,
     ParkrunSessionStatusResponse,
 )
-from app.services.profile_fetch_pending_service import reset_failed_parkrun_pending
-from app.services.parkrun_admin_service import (
-    clear_parkrun_captcha_wait,
-    get_parkrun_session_status,
-    process_parkrun_pending_queue,
-    save_parkrun_session_from_chrome,
-)
-from app.services.parkrun_local_worker import get_local_worker_status, request_local_worker_run
 from app.services.abuse_admin_service import (
     AbuseAdminError,
     clear_ip_score,
@@ -66,6 +46,26 @@ from app.services.abuse_admin_service import (
     get_ip_block_details,
     list_abuse_blocks,
 )
+from app.services.admin_s95_participants_service import search_admin_s95_participants
+from app.services.admin_site_stats_service import get_admin_site_stats
+from app.services.admin_users_service import (
+    get_admin_user,
+    get_admin_user_preview_dashboard,
+    get_admin_user_preview_runs,
+    get_admin_user_preview_volunteering,
+    search_admin_users,
+)
+from app.services.location_catalog_table_service import build_catalog_locations_table
+from app.services.location_map_service import list_user_visited_map_locations
+from app.services.parkrun_admin_service import (
+    clear_parkrun_captcha_wait,
+    get_parkrun_session_status,
+    process_parkrun_pending_queue,
+    save_parkrun_session_from_chrome,
+)
+from app.services.parkrun_local_worker import get_local_worker_status, request_local_worker_run
+from app.services.profile_fetch_pending_service import reset_failed_parkrun_pending
+from app.services.user_unique_locations_detail import build_user_unique_location_details
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 

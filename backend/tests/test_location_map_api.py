@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 
 pytest_plugins = ["tests.test_dashboard_api"]

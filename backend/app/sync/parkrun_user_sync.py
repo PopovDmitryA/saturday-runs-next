@@ -67,7 +67,6 @@ def run_parkrun_user_sync(
         PlatformLink,
         SyncJob,
         SyncJobStatus,
-        SyncJobTrigger,
         User,
     )
     from app.services.dashboard_service import create_sync_job, recompute_dashboard_cache

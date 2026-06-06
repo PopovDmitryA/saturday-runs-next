@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from uuid import uuid4
 
 import fakeredis
 import pytest
@@ -9,9 +8,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
+from app.core.abuse_store import remember_user_ip, set_ip_block
 from app.db.session import get_db
 from app.main import app
-from app.core.abuse_store import remember_user_ip, set_ip_block
 
 
 @pytest.fixture

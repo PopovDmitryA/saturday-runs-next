@@ -8,6 +8,8 @@ from app.migration.helpers import (
     five_verst_volunteer_key,
     legacy_time_to_seconds,
     legacy_timestamp_to_date,
+    s95_run_key,
+    s95_volunteer_key,
     slug_from_5verst_url,
     slug_from_s95_url,
     slugify_parkrun_name,
@@ -26,7 +28,7 @@ def test_slug_from_s95_url() -> None:
 
 
 def test_is_five_verst_unknown_runner() -> None:
-    from app.migration.helpers import is_five_verst_unknown_runner, five_verst_unknown_user_id
+    from app.migration.helpers import five_verst_unknown_user_id, is_five_verst_unknown_runner
 
     assert is_five_verst_unknown_runner(
         user_id=None,
@@ -68,3 +70,14 @@ def test_five_verst_keys() -> None:
 
 def test_slugify_parkrun_name() -> None:
     assert slugify_parkrun_name("Babushkinsky na Yauze") == "babushkinsky-na-yauze"
+
+
+def test_s95_keys() -> None:
+    slug = "izmailovo"
+    event_date = date(2024, 5, 18)
+    user_id = "12345"
+    assert s95_run_key(slug, event_date, user_id, 7) == "izmailovo:2024-05-18:12345:7"
+    assert (
+        s95_volunteer_key(slug, event_date, user_id, "Сканер")
+        == "vol:izmailovo:2024-05-18:12345:Сканер"
+    )

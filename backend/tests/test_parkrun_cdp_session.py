@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.config import Settings
 from app.parkrun.fetch.cdp_session import (
     _athlete_id_from_url,
     _format_cdp_connect_error,
@@ -7,7 +8,6 @@ from app.parkrun.fetch.cdp_session import (
     _parkrun_host,
     _same_document_url,
 )
-from app.config import Settings
 
 
 def test_is_captcha_title() -> None:

@@ -6,7 +6,6 @@ from app.geo.reverse_geocode import lookup_address, lookup_region
 
 
 def test_lookup_region_prefers_state() -> None:
-    payload = {"address": {"state": "Москва", "country": "Россия"}}
     with patch("app.geo.reverse_geocode._fetch_address", return_value={"state": "Москва", "country": "Россия"}):
         assert lookup_region(55.75, 37.62) == "Москва"
 

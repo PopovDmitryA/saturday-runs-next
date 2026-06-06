@@ -13,8 +13,8 @@ from urllib.request import urlopen
 from app.config import get_settings
 from app.parkrun.errors import ParkrunBanDetected
 from app.parkrun.fetch.captcha_state import clear_captcha_pending, set_captcha_pending
-from app.parkrun.fetch.cdp_fetch import fetch_html_with_cdp_page
 from app.parkrun.fetch.captcha_wait import is_parkrun_page_ready, page_url_matches_target
+from app.parkrun.fetch.cdp_fetch import fetch_html_with_cdp_page
 from app.parkrun.fetch.cdp_session import (
     ParkrunCdpSessionError,
     _format_cdp_connect_error,
@@ -246,7 +246,6 @@ class ParkrunDaemonSession:
         return False
 
     def _ensure_work_page_playwright(self):
-        from playwright.sync_api import Page
 
         if self._context is None:
             raise ParkrunCdpSessionError("Playwright context not started", 500)

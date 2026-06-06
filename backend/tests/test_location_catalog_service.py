@@ -6,12 +6,12 @@ import pytest
 
 pytest_plugins = ["tests.test_dashboard_api"]
 
-from app.services.user_location_stats import count_unique_locations_from_rows
 from app.services.location_catalog_service import (
     LocationCatalogIndex,
     resolve_location_display_name,
     should_use_catalog_display,
 )
+from app.services.user_location_stats import count_unique_locations_from_rows
 
 
 def _catalog(**kwargs: object) -> SimpleNamespace:

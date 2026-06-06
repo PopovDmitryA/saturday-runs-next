@@ -8,8 +8,7 @@ from urllib.parse import urlparse
 from app.config import get_settings
 from app.parkrun.errors import ParkrunBanDetected
 from app.parkrun.fetch.browser import shutdown_browser
-from app.parkrun.fetch.captcha_state import clear_captcha_pending, set_captcha_pending
-from app.parkrun.fetch.diagnostics import inspect_html_response
+from app.parkrun.fetch.captcha_state import clear_captcha_pending
 from app.platform_fetch.cooldown import clear_platform_cooldown
 
 _PARKRUNNER_ID_RE = re.compile(r"/parkrunner/(\d+)", re.IGNORECASE)
@@ -141,6 +140,8 @@ def fetch_html_via_chrome_cdp(
 ) -> str:
     """Load URL via the user's Chrome (CDP). Prefer in-tab fetch over goto to avoid re-captcha."""
     from playwright.sync_api import sync_playwright
+
+    from app.parkrun.fetch.cdp_fetch import fetch_html_with_cdp_page
 
     try:
         with sync_playwright() as playwright:

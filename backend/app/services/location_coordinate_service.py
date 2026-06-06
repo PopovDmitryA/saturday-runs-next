@@ -3,14 +3,13 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timezone
-from uuid import UUID
 
 import httpx
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import get_settings
-from app.models import Location, LocationCoordinateRequest, Platform
 from app.geo.reverse_geocode import lookup_region
+from app.models import Location, LocationCoordinateRequest, Platform
 from app.services.vk_admin_notify import send_vk_admin_message, vk_admin_configured
 
 logger = logging.getLogger(__name__)
@@ -142,7 +141,7 @@ def maybe_request_coordinates_for_new_location(
     if location.latitude is not None and location.longitude is not None:
         return None
 
-    settings = get_settings()
+    get_settings()
     admin_peer_id = _admin_peer_id()
     if not admin_peer_id:
         logger.info("admin messenger not configured, skip coordinate request for %s", location.external_key)

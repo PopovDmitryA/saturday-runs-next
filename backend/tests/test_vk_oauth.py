@@ -26,7 +26,7 @@ def test_vk_authorize_url_uses_vk_id_and_pkce() -> None:
     assert "code_challenge=" in url
     assert "code_challenge_method=S256" in url
     assert "client_id=12345" in url
-    assert "redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fapi%2Fauth%2Foauth%2Fvk%2Fcallback" in url
+    assert "redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Foauth%2Fvk%2Fcallback" in url
 
 
 def test_vk_redirect_uri_for_localhost_port80() -> None:
@@ -34,4 +34,4 @@ def test_vk_redirect_uri_for_localhost_port80() -> None:
         vk_oauth_client_id="1",
         app_base_url="http://localhost",
     )
-    assert vk_provider.vk_redirect_uri(settings) == "http://localhost/api/auth/oauth/vk/callback"
+    assert vk_provider.vk_redirect_uri(settings) == "http://localhost/oauth/vk/callback"

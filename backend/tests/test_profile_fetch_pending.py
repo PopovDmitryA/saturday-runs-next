@@ -15,6 +15,7 @@ from app.services.profile_fetch_pending_service import (
     enqueue_profile_fetch_pending,
     is_fetch_cooldown_error,
     list_pending_rows,
+    requeue_stuck_done_parkrun_pending,
 )
 from app.services.profile_linking_service import ProfileLinkingError, preview_profile_link
 

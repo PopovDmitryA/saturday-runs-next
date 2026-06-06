@@ -4,7 +4,6 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from uuid import uuid4
 
-import pytest
 from sqlalchemy.orm import Session
 
 from app.models import SyncJob, SyncJobStatus, SyncJobTrigger, User

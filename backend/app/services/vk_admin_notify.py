@@ -7,11 +7,18 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
-from app.services.sync_report_labels import field_label, format_field_value, pipeline_label
+from app.services.sync_report_labels import (
+    DETAIL_LIST_KEYS,
+    field_label,
+    format_detail_sections,
+    format_field_value,
+    pipeline_label,
+)
 
 logger = logging.getLogger(__name__)
 
 VK_API_VERSION = "5.199"
+VK_MESSAGE_LIMIT = 4096
 
 
 def vk_admin_configured() -> bool:
@@ -29,7 +36,7 @@ def send_vk_admin_message(text: str, *, reply_to: int | None = None) -> int | No
         "access_token": settings.vk_bot_group_token,
         "v": VK_API_VERSION,
         "peer_id": settings.vk_admin_user_id,
-        "message": text[:4096],
+        "message": text[:VK_MESSAGE_LIMIT],
         "random_id": random.randint(1, 2_000_000_000),
     }
     if reply_to is not None:
@@ -75,7 +82,7 @@ def format_sync_finished(pipeline: str, payload: dict[str, Any]) -> str:
     status = "✅" if error_count == 0 else "⚠️"
     lines = [f"{status} Завершено: {pipeline_label(pipeline)}"]
 
-    skip = {"errors"}
+    skip = {"errors", *DETAIL_LIST_KEYS}
     for key, value in payload.items():
         if key in skip or value is None:
             continue
@@ -85,10 +92,16 @@ def format_sync_finished(pipeline: str, payload: dict[str, Any]) -> str:
             continue
         lines.append(f"{field_label(key)}: {format_field_value(key, value)}")
 
+    lines.extend(format_detail_sections(payload))
+
     if error_count:
         lines.append(f"ошибок: {error_count}")
         lines.append(_fmt_errors(errors if isinstance(errors, list) else None))
-    return "\n".join(lines)
+
+    text = "\n".join(lines)
+    if len(text) > VK_MESSAGE_LIMIT:
+        text = text[: VK_MESSAGE_LIMIT - 20].rstrip() + "\n… (сообщение обрезано)"
+    return text
 
 
 def notify_sync_started(pipeline: str, *, details: str | None = None) -> None:

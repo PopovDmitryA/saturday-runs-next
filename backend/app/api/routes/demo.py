@@ -11,23 +11,23 @@ from app.schemas.dashboard import (
     BestResultResponse,
     PersonalRecordResponse,
     RunItemResponse,
-    VolunteerRoleStatResponse,
     VolunteeringItemResponse,
+    VolunteerRoleStatResponse,
 )
 from app.schemas.locations import CatalogLocationsTableResponse, MapLocationsResponse, UniqueLocationsDetailResponse
-from app.services.demo_service import (
-    get_demo_dashboard,
-    get_demo_user,
-    get_demo_user_id,
+from app.services.admin_users_service import (
+    get_admin_user_preview_runs,
+    get_admin_user_preview_volunteering,
 )
 from app.services.dashboard_service import (
     list_user_best_results,
     list_user_personal_records,
     list_user_volunteer_role_stats,
 )
-from app.services.admin_users_service import (
-    get_admin_user_preview_runs,
-    get_admin_user_preview_volunteering,
+from app.services.demo_service import (
+    get_demo_dashboard,
+    get_demo_user,
+    get_demo_user_id,
 )
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_catalog_map_locations, list_user_visited_map_locations

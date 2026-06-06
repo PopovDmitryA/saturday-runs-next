@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import asdict
-from typing import Any, Callable
+from typing import Any
 
 from app.db.session import get_session_factory
 from app.services.vk_admin_notify import notify_sync_finished, notify_sync_started
@@ -69,6 +70,8 @@ def sync_location_task(
                 "summaries_upserted": result.summaries_upserted,
                 "summaries_unchanged": result.summaries_unchanged,
                 "protocols_fetched": result.protocols_fetched,
+                "fetched_protocols": result.fetched_protocols,
+                "changed_protocols": result.changed_protocols,
                 "run_results_upserted": result.run_results_upserted,
                 "volunteer_results_upserted": result.volunteer_results_upserted,
                 "errors": result.errors,
@@ -116,10 +119,17 @@ def sync_locations_registry_task(limit: int | None = None) -> dict[str, object]:
                 "locations_updated": result.locations_updated,
                 "locations_created": result.locations_created,
                 "locations_skipped_no_coords": result.locations_skipped_no_coords,
+                "coords_fetched": result.coords_fetched,
                 "pause_status_changed": result.pause_status_changed,
                 "cancel_status_changed": result.cancel_status_changed,
                 "merge_requests_created": result.merge_requests_created,
                 "merge_notifications_sent": result.merge_notifications_sent,
+                "updated_locations": result.updated_locations,
+                "created_locations": result.created_locations,
+                "coords_fetched_locations": result.coords_fetched_locations,
+                "pause_changed_locations": result.pause_changed_locations,
+                "cancel_changed_locations": result.cancel_changed_locations,
+                "merge_request_locations": result.merge_request_locations,
                 "errors": result.errors,
             }
         finally:
@@ -161,6 +171,8 @@ def sync_latest_results_task(
                 "changed_summaries": result.changed_summaries,
                 "missing_protocol": result.missing_protocol,
                 "protocols_fetched": result.protocols_fetched,
+                "fetched_protocols": result.fetched_protocols,
+                "changed_protocols": result.changed_protocols,
                 "run_results_upserted": result.run_results_upserted,
                 "volunteer_results_upserted": result.volunteer_results_upserted,
                 "planned_protocols": len(result.planned_protocols),
@@ -193,6 +205,8 @@ def sync_location_rotation_task() -> dict[str, object]:
                         "summaries_upserted": result.sync.summaries_upserted,
                         "summaries_unchanged": result.sync.summaries_unchanged,
                         "protocols_fetched": result.sync.protocols_fetched,
+                        "fetched_protocols": result.sync.fetched_protocols,
+                        "changed_protocols": result.sync.changed_protocols,
                         "run_results_upserted": result.sync.run_results_upserted,
                         "volunteer_results_upserted": result.sync.volunteer_results_upserted,
                     }

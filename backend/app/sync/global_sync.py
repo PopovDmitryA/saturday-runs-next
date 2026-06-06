@@ -5,9 +5,10 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.five_verst.fetch.protocol_pause import wait_between_protocols
 from app.models import EventSummary, Platform, SyncRun, SyncRunStatus, SyncStatus
 from app.platform_adapters.five_verst import bulk_parser
-from app.five_verst.fetch.protocol_pause import wait_between_protocols
+from app.services.sync_report_labels import protocol_detail_label
 from app.sync import upsert
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
 
@@ -30,6 +31,8 @@ class LocationSyncResult:
     summaries_upserted: int = 0
     summaries_unchanged: int = 0
     protocols_fetched: int = 0
+    fetched_protocols: list[str] = field(default_factory=list)
+    changed_protocols: list[str] = field(default_factory=list)
     run_results_upserted: int = 0
     volunteer_results_upserted: int = 0
     errors: list[str] = field(default_factory=list)
@@ -119,6 +122,14 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
                 result.run_results_upserted += upsert_result.run_results_upserted
                 result.volunteer_results_upserted += upsert_result.volunteer_results_upserted
                 result.protocols_fetched += 1
+                label = protocol_detail_label(
+                    location_row.external_key,
+                    summary.external_event_key,
+                    location_row.name,
+                )
+                result.fetched_protocols.append(label)
+                if upsert_result.protocol_changed:
+                    result.changed_protocols.append(label)
                 if index + 1 < len(protocol_queue):
                     wait_between_protocols(reason="location")
             except Exception as exc:

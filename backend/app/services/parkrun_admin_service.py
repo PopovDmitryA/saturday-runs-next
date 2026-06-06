@@ -14,7 +14,7 @@ from app.parkrun.fetch.captcha_state import (
 )
 from app.parkrun.fetch.cdp_session import ParkrunCdpSessionError, save_session_from_chrome_cdp
 from app.platform_fetch.cooldown import clear_platform_cooldown, is_platform_in_cooldown
-from app.services.parkrun_local_worker import get_local_worker_status, request_local_worker_run
+from app.services.parkrun_local_worker import get_local_worker_status
 from app.services.profile_fetch_pending_service import (
     count_stuck_done_parkrun_pending,
     list_pending_rows,

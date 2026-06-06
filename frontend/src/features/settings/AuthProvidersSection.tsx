@@ -12,7 +12,7 @@ import {
 } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
 
-const PROVIDERS: Array<{ id: AuthIdentity["provider"]; title: string; hint: string }> = [
+const PROVIDERS: Array<{ id: "vk" | "yandex"; title: string; hint: string }> = [
   { id: "vk", title: "VK", hint: "Вход через VK ID" },
   { id: "yandex", title: "Яндекс", hint: "Вход через Яндекс ID" },
 ];
@@ -62,7 +62,7 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
       .finally(() => setMergeLoading(false));
   }, [initialMergeToken]);
 
-  const handleLink = (provider: AuthIdentity["provider"]) => {
+  const handleLink = (provider: "vk" | "yandex") => {
     setError(null);
     setLinkingProvider(provider);
     window.location.href = oauthStartUrl(provider, "link");

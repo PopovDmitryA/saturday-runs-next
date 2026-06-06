@@ -129,7 +129,7 @@ def fetch_html_on_page(page, url: str, *, extra_wait_ms: int | None = None):
 
 
 def fetch_html_with_browser(url: str, *, extra_wait_ms: int | None = None) -> str:
-    settings = get_settings()
+    get_settings()
     context = _ensure_context()
     page = context.new_page()
     try:

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any
-
-import os
 
 _LOG_PATH = os.environ.get(
     "DEBUG_AGENT_LOG_PATH",

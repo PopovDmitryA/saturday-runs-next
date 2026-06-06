@@ -23,11 +23,11 @@ from app.models import (
     Platform,
     PlatformLink,
     RunResult,
+    SyncJobTrigger,
     User,
 )
-from app.platform_adapters.canonical import CanonicalParticipant, ProfilePreview
+from app.platform_adapters.canonical import CanonicalParticipant
 from app.sync.user_sync import run_user_sync
-from app.models import SyncJobTrigger
 
 
 @pytest.fixture

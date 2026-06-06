@@ -11,7 +11,7 @@ from collections.abc import Generator
 
 import fakeredis
 import pytest
-from sqlalchemy import event, text
+from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from app.db.session import get_engine

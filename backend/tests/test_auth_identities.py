@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.auth.providers.base import OAuthProfile
 from app.models import AuthIdentity, AuthProvider, User
 from app.services.auth_identity_service import (
     create_oauth_user,
@@ -9,7 +10,6 @@ from app.services.auth_identity_service import (
     list_user_identities,
     upsert_telegram_identity,
 )
-from app.auth.providers.base import OAuthProfile
 
 
 def test_upsert_telegram_identity_creates_user_identity(db_session: Session) -> None:

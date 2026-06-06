@@ -80,8 +80,8 @@ def resolve_s95_protocol(
     location_name: str,
     event_date,
 ) -> ResolvedS95Protocol | None:
-    from app.sync import upsert
     from app.platform_adapters.canonical import CanonicalLocation
+    from app.sync import upsert
 
     location = (
         db.query(Location)

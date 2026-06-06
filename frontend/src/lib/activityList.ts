@@ -158,7 +158,7 @@ export function applyVolunteeringFilters(
   if (!isFullSelection(selectedRoles, allRoles)) {
     result = result.filter((item) => {
       const role = item.role?.trim();
-      return Boolean(role) && selectedRoles.has(role);
+      return Boolean(role) && selectedRoles.has(role as string);
     });
   }
   return result;

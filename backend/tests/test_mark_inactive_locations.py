@@ -41,7 +41,7 @@ def test_mark_inactive_locations_paused_skips_cancelled(db_session: Session, s95
     )
     db_session.commit()
 
-    result = mark_inactive_locations_paused(db_session, inactive_weeks=5, platform_codes=("s95",))
+    mark_inactive_locations_paused(db_session, inactive_weeks=5, platform_codes=("s95",))
     db_session.refresh(location)
     assert location.is_paused is False
 
@@ -69,6 +69,6 @@ def test_mark_inactive_locations_paused_marks_stale_events(db_session: Session, 
     )
     db_session.commit()
 
-    result = mark_inactive_locations_paused(db_session, inactive_weeks=5, platform_codes=("s95",))
+    mark_inactive_locations_paused(db_session, inactive_weeks=5, platform_codes=("s95",))
     db_session.refresh(location)
     assert location.is_paused is True
