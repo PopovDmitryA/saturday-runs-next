@@ -339,6 +339,8 @@ def upsert_run_results(
     event: Event,
     platform: Platform,
     results: list[CanonicalRunResult],
+    *,
+    merge_nullable_fields: bool = False,
 ) -> int:
     upserted = 0
     touched_participant_ids: set = set()
@@ -423,18 +425,44 @@ def upsert_run_results(
         else:
             row.participant_id = participant.id
             row.external_result_key = item.external_result_key
-            row.position = item.position
-            row.finish_time_sec = item.finish_time_sec
-            row.finish_time_display = item.finish_time_display
-            row.pace_sec_per_km = pace_sec_per_km
-            row.pace_display = pace_display
-            row.age_category = item.age_category
-            row.status = item.status
-            row.is_pr = item.is_pr
-            row.is_first_run = item.is_first_run
-            row.is_first_run_at_location = item.is_first_run_at_location
-            row.club_name = item.club_name
-            row.achievement_labels = item.achievement_labels
+            if merge_nullable_fields:
+                if item.position is not None:
+                    row.position = item.position
+                if item.finish_time_sec is not None:
+                    row.finish_time_sec = item.finish_time_sec
+                if item.finish_time_display is not None:
+                    row.finish_time_display = item.finish_time_display
+                if item.age_category is not None:
+                    row.age_category = item.age_category
+                if item.status is not None:
+                    row.status = item.status
+                if item.is_pr:
+                    row.is_pr = True
+                if item.is_first_run:
+                    row.is_first_run = True
+                if item.is_first_run_at_location:
+                    row.is_first_run_at_location = True
+                if item.club_name is not None:
+                    row.club_name = item.club_name
+                if item.achievement_labels:
+                    row.achievement_labels = item.achievement_labels
+                if pace_sec_per_km is not None:
+                    row.pace_sec_per_km = pace_sec_per_km
+                if pace_display is not None:
+                    row.pace_display = pace_display
+            else:
+                row.position = item.position
+                row.finish_time_sec = item.finish_time_sec
+                row.finish_time_display = item.finish_time_display
+                row.pace_sec_per_km = pace_sec_per_km
+                row.pace_display = pace_display
+                row.age_category = item.age_category
+                row.status = item.status
+                row.is_pr = item.is_pr
+                row.is_first_run = item.is_first_run
+                row.is_first_run_at_location = item.is_first_run_at_location
+                row.club_name = item.club_name
+                row.achievement_labels = item.achievement_labels
             row.fetched_at = now
             upserted += 1
     _discover_participants_after_protocol_upsert(db, platform, touched_participant_ids)
@@ -891,7 +919,13 @@ def import_profile_run_results(
             location_slug=slug,
             source_url=source_url,
         )
-        imported += upsert_run_results(db, event, platform, [item])
+        imported += upsert_run_results(
+            db,
+            event,
+            platform,
+            [item],
+            merge_nullable_fields=True,
+        )
     if platform.code == "five_verst":
         participant_ids = {item.external_user_id for item in results}
         for external_user_id in participant_ids:
@@ -907,6 +941,66 @@ def import_profile_run_results(
                 dedupe_five_verst_run_results_in_db(db, platform.id, participant.id)
     db.flush()
     return imported
+
+
+def _volunteer_role_dedupe_key(role: str | None) -> str:
+    if not role:
+        return "volunteer"
+    normalized = re.sub(r"[^\w]+", "_", role.lower(), flags=re.UNICODE).strip("_")
+    return normalized or "volunteer"
+
+
+def _volunteer_result_completeness(vol: VolunteerResult) -> tuple[int, int, int]:
+    key = vol.external_result_key or ""
+    is_protocol = 1 if ":vol:" in key else 0
+    return (
+        -is_protocol,
+        0 if vol.role else 1,
+        0 if vol.fetched_at else 1,
+    )
+
+
+def dedupe_participant_volunteer_results(
+    db: Session,
+    platform_id: UUID,
+    participant_id: UUID,
+) -> int:
+    """One volunteering row per date, location and role."""
+    rows = (
+        db.query(VolunteerResult, Event)
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .filter(
+            VolunteerResult.participant_id == participant_id,
+            Event.platform_id == platform_id,
+        )
+        .all()
+    )
+    groups: dict[tuple[date, UUID, str], list[tuple[VolunteerResult, Event]]] = defaultdict(list)
+    for vol, event in rows:
+        groups[(event.event_date, event.location_id, _volunteer_role_dedupe_key(vol.role))].append(
+            (vol, event)
+        )
+
+    deleted = 0
+    touched_event_ids: set[UUID] = set()
+    for group in groups.values():
+        if len(group) <= 1:
+            continue
+        group.sort(key=lambda pair: _volunteer_result_completeness(pair[0]))
+        for vol, event in group[1:]:
+            touched_event_ids.add(event.id)
+            db.delete(vol)
+            deleted += 1
+
+    for event_id in touched_event_ids:
+        has_runs = db.query(RunResult).filter(RunResult.event_id == event_id).count() > 0
+        has_vol = db.query(VolunteerResult).filter(VolunteerResult.event_id == event_id).count() > 0
+        if not has_runs and not has_vol:
+            db.query(Event).filter(Event.id == event_id).delete()
+
+    if deleted:
+        db.flush()
+    return deleted
 
 
 def dedupe_five_verst_run_results_in_db(
@@ -935,6 +1029,8 @@ def dedupe_five_verst_run_results_in_db(
             continue
         group.sort(
             key=lambda pair: (
+                pair[0].position is None,
+                pair[0].age_category is None,
                 pair[0].finish_time_sec is None,
                 pair[0].fetched_at is None,
             ),
@@ -1015,6 +1111,8 @@ def import_profile_volunteer_results(
         )
         incoming_keys.add(item.external_result_key)
         imported += upsert_volunteer_results(db, event, platform, [item])
+
+    dedupe_participant_volunteer_results(db, platform.id, participant_id)
 
     stale_rows = (
         db.query(VolunteerResult)

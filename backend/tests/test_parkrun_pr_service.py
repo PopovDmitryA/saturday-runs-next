@@ -6,8 +6,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models import Event, Location, Participant, Platform, RunResult
-from app.services.parkrun_pr_service import recalculate_parkrun_personal_records
+from app.models import Location, Participant, Platform, RunResult
+from app.services.personal_record_service import recalculate_personal_records
 from app.sync import upsert
 
 
@@ -84,6 +84,66 @@ def _add_run(
     return run
 
 
+def test_recalculate_parkrun_prs_global_best_across_locations(
+    db_session: Session,
+    parkrun_platform: Platform,
+    parkrun_location: Location,
+) -> None:
+    from app.platform_adapters.canonical import CanonicalLocation
+
+    other_location, _ = upsert.upsert_location(
+        db_session,
+        parkrun_platform,
+        CanonicalLocation(external_key="sokolniki", name="Sokolniki"),
+    )
+    db_session.flush()
+
+    participant = Participant(
+        id=uuid4(),
+        platform_id=parkrun_platform.id,
+        external_user_id=f"pr-test-{uuid4().hex[:8]}",
+        display_name="Test Runner",
+    )
+    db_session.add(participant)
+    db_session.flush()
+
+    first = _add_run(
+        db_session,
+        platform=parkrun_platform,
+        location=parkrun_location,
+        participant=participant,
+        event_date=date(2022, 1, 1),
+        finish_time_sec=1800,
+        is_pr=True,
+    )
+    faster_other_loc = _add_run(
+        db_session,
+        platform=parkrun_platform,
+        location=other_location,
+        participant=participant,
+        event_date=date(2022, 2, 1),
+        finish_time_sec=1700,
+        is_pr=False,
+    )
+    slower_repeat = _add_run(
+        db_session,
+        platform=parkrun_platform,
+        location=parkrun_location,
+        participant=participant,
+        event_date=date(2022, 3, 1),
+        finish_time_sec=1900,
+        is_pr=True,
+    )
+
+    stats = recalculate_personal_records(db_session, "parkrun", participant_id=participant.id)
+    db_session.flush()
+
+    assert stats["pr_runs"] == 2
+    assert first.is_pr is True
+    assert faster_other_loc.is_pr is True
+    assert slower_repeat.is_pr is False
+
+
 def test_recalculate_parkrun_prs_marks_improvements_only(
     db_session: Session,
     parkrun_platform: Platform,
@@ -126,7 +186,7 @@ def test_recalculate_parkrun_prs_marks_improvements_only(
         is_pr=False,
     )
 
-    stats = recalculate_parkrun_personal_records(db_session, participant_id=participant.id)
+    stats = recalculate_personal_records(db_session, "parkrun", participant_id=participant.id)
     db_session.flush()
 
     assert stats["pr_runs"] == 2

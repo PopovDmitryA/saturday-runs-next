@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import pytest
-
 from app.services.sync_run_params import (
     five_verst_latest_details,
     five_verst_reconcile_details,
-    five_verst_rotation_details,
     format_limit,
 )
 

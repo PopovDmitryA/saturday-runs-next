@@ -2,10 +2,21 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Event, RunResult
 from app.sync import upsert
+
+
+def reset_personal_records(db: Session, platform_code: str) -> int:
+    platform = upsert.get_platform(db, platform_code)
+    event_ids = db.query(Event.id).filter(Event.platform_id == platform.id).subquery()
+    return (
+        db.query(RunResult)
+        .filter(RunResult.event_id.in_(event_ids))
+        .update({RunResult.is_pr: False}, synchronize_session=False)
+    )
 
 
 def recalculate_personal_records(
@@ -14,8 +25,13 @@ def recalculate_personal_records(
     *,
     participant_id: UUID | None = None,
     commit_every: int = 200,
+    reset: bool = True,
 ) -> dict[str, int]:
-    """Mark is_pr when a run is faster than all earlier runs at the same location."""
+    """Mark is_pr when a run beats the runner's previous best time at any location."""
+    if reset:
+        reset_personal_records(db, platform_code)
+        db.flush()
+
     platform = upsert.get_platform(db, platform_code)
     participant_query = (
         db.query(RunResult.participant_id)
@@ -42,20 +58,15 @@ def recalculate_personal_records(
                 Event.platform_id == platform.id,
                 RunResult.participant_id == current_participant_id,
             )
-            .order_by(Event.location_id, Event.event_date, Event.event_number)
+            .order_by(Event.event_date, Event.event_number, Event.location_id)
             .all()
         )
         if not rows:
             continue
 
         participants_touched += 1
-        current_location_id: UUID | None = None
         best_time: int | None = None
-        for run, event in rows:
-            if current_location_id != event.location_id:
-                current_location_id = event.location_id
-                best_time = None
-
+        for run, _event in rows:
             new_is_pr = False
             finish_time = run.finish_time_sec
             if finish_time is not None and finish_time > 0:

@@ -39,13 +39,18 @@ def _run_reported(
     details: str | None = None,
 ) -> dict[str, object]:
     notify_sync_started(name, details=details)
+    payload: dict[str, object] = {"errors": ["task did not complete"]}
     try:
         payload = fn()
-        notify_sync_finished(name, payload)
-        return payload
     except Exception as exc:
-        notify_sync_finished(name, {"errors": [str(exc)]})
+        payload = {"errors": [str(exc)]}
         raise
+    finally:
+        try:
+            notify_sync_finished(name, payload)
+        except Exception:
+            logger.exception("Failed to send VK sync finished notification for %s", name)
+    return payload
 
 
 @celery_app.task(name="five_verst_sync.sync_location", queue="five_verst")

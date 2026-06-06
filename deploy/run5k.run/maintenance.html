@@ -115,6 +115,13 @@
       color: var(--muted);
     }
 
+    .contacts {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+    }
+
     a {
       color: #93c5fd;
       text-decoration: none;
@@ -147,13 +154,13 @@
 
       <p class="note">
         <strong>Когда ждать?</strong> Запуск планируем в ближайшие дни.
-        Если вы уже пользовались старой версией — ваши данные сохраняются,
-        повторная регистрация не понадобится.
       </p>
     </main>
 
-    <footer>
-      Вопросы — <a href="mailto:admin@run5k.run">admin@run5k.run</a>
+    <footer class="contacts">
+      <span>Канал: <a href="https://t.me/popov_way" target="_blank" rel="noopener noreferrer">@popov_way</a></span>
+      <span>Чат: <a href="https://t.me/popov_talk" target="_blank" rel="noopener noreferrer">@popov_talk</a></span>
+      <span>Автор: <a href="https://t.me/Popov_Dmitry" target="_blank" rel="noopener noreferrer">@Popov_Dmitry</a></span>
     </footer>
   </div>
 </body>

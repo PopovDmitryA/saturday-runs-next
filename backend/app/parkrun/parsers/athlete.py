@@ -211,7 +211,6 @@ def parse_all_results_html(
             position_raw = _cell_by_header(headers, cells, "pos", "position")
             time_raw = _cell_by_header(headers, cells, "time")
             age_grade = _cell_by_header(headers, cells, "age grade", "age\ngrade")
-            pb_raw = _cell_by_header(headers, cells, "pb?", "pb")
 
             if not event_name or not run_date_raw or not DATE_RE.match(run_date_raw):
                 continue
