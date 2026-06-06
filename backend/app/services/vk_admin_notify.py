@@ -53,7 +53,9 @@ def send_vk_admin_message(text: str, *, reply_to: int | None = None) -> int | No
             logger.warning("VK messages.send error: %s", body["error"])
             return None
         message_id = body.get("response")
-        return int(message_id) if message_id is not None else None
+        result_id = int(message_id) if message_id is not None else None
+        logger.info("VK admin message sent (message_id=%s, len=%d)", result_id, len(text))
+        return result_id
     except Exception:
         logger.exception("Failed to send VK admin message")
         return None

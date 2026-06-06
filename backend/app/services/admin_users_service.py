@@ -6,7 +6,14 @@ from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import AuthIdentity, AuthProvider, DashboardCache, Participant, Platform, PlatformLink, User
-from app.services.dashboard_service import get_dashboard_payload, list_user_runs, list_user_volunteering
+from app.services.dashboard_service import (
+    get_dashboard_payload,
+    list_user_best_results,
+    list_user_personal_records,
+    list_user_runs,
+    list_user_volunteer_role_stats,
+    list_user_volunteering,
+)
 
 
 def _stats_from_cache(cache: DashboardCache | None) -> tuple[int | None, int | None]:
@@ -207,3 +214,36 @@ def get_admin_user_preview_volunteering(
     if get_admin_user(db, user_id) is None:
         return None
     return list_user_volunteering(db, user_id, limit=limit, offset=offset, include_test_events=False)
+
+
+def get_admin_user_preview_best_results(
+    db: Session,
+    user_id: UUID,
+    *,
+    include_test_events: bool = False,
+) -> list[dict[str, object]] | None:
+    if get_admin_user(db, user_id) is None:
+        return None
+    return list_user_best_results(db, user_id, include_test_events=include_test_events)
+
+
+def get_admin_user_preview_personal_records(
+    db: Session,
+    user_id: UUID,
+    *,
+    include_test_events: bool = False,
+) -> list[dict[str, object]] | None:
+    if get_admin_user(db, user_id) is None:
+        return None
+    return list_user_personal_records(db, user_id, include_test_events=include_test_events)
+
+
+def get_admin_user_preview_volunteer_role_stats(
+    db: Session,
+    user_id: UUID,
+    *,
+    include_test_events: bool = False,
+) -> list[dict[str, object]] | None:
+    if get_admin_user(db, user_id) is None:
+        return None
+    return list_user_volunteer_role_stats(db, user_id, include_test_events=include_test_events)

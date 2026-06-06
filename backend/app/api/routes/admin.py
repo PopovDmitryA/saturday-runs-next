@@ -25,7 +25,13 @@ from app.schemas.admin import (
     AdminUserPreviewDashboardResponse,
 )
 from app.schemas.admin_stats import AdminSiteStatsResponse
-from app.schemas.dashboard import RunItemResponse, VolunteeringItemResponse
+from app.schemas.dashboard import (
+    BestResultResponse,
+    PersonalRecordResponse,
+    RunItemResponse,
+    VolunteeringItemResponse,
+    VolunteerRoleStatResponse,
+)
 from app.schemas.locations import CatalogLocationsTableResponse, MapLocationsResponse, UniqueLocationsDetailResponse
 from app.schemas.parkrun_admin import (
     ParkrunCdpSaveRequest,
@@ -50,8 +56,11 @@ from app.services.admin_s95_participants_service import search_admin_s95_partici
 from app.services.admin_site_stats_service import get_admin_site_stats
 from app.services.admin_users_service import (
     get_admin_user,
+    get_admin_user_preview_best_results,
     get_admin_user_preview_dashboard,
+    get_admin_user_preview_personal_records,
     get_admin_user_preview_runs,
+    get_admin_user_preview_volunteer_role_stats,
     get_admin_user_preview_volunteering,
     search_admin_users,
 )
@@ -152,6 +161,48 @@ def admin_user_preview_volunteering(
     if items is None:
         raise HTTPException(status_code=404, detail="User not found")
     return [VolunteeringItemResponse.model_validate(item) for item in items]
+
+
+@router.get("/users/{user_id}/preview/runs/best-results", response_model=list[BestResultResponse])
+def admin_user_preview_best_results(
+    user_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    include_test: Annotated[bool, Query()] = False,
+) -> list[BestResultResponse]:
+    items = get_admin_user_preview_best_results(db, user_id, include_test_events=include_test)
+    if items is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return [BestResultResponse.model_validate(item) for item in items]
+
+
+@router.get("/users/{user_id}/preview/runs/personal-records", response_model=list[PersonalRecordResponse])
+def admin_user_preview_personal_records(
+    user_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    include_test: Annotated[bool, Query()] = False,
+) -> list[PersonalRecordResponse]:
+    items = get_admin_user_preview_personal_records(db, user_id, include_test_events=include_test)
+    if items is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return [PersonalRecordResponse.model_validate(item) for item in items]
+
+
+@router.get(
+    "/users/{user_id}/preview/volunteering/role-stats",
+    response_model=list[VolunteerRoleStatResponse],
+)
+def admin_user_preview_volunteer_role_stats(
+    user_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    include_test: Annotated[bool, Query()] = False,
+) -> list[VolunteerRoleStatResponse]:
+    items = get_admin_user_preview_volunteer_role_stats(db, user_id, include_test_events=include_test)
+    if items is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return [VolunteerRoleStatResponse.model_validate(item) for item in items]
 
 
 @router.get("/users/{user_id}/preview/locations/visited/map", response_model=MapLocationsResponse)
