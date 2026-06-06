@@ -5,6 +5,7 @@ import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAdmin } from "../../components/RequireAdmin";
+import { AppDataSourceProvider, createAdminPreviewDataSource } from "../../lib/appDataSource";
 import { AdminSubnav } from "./AdminSubnav";
 import { UserMapPanel } from "../maps/UserMapPanel";
 import {
@@ -36,6 +37,7 @@ function previewUserLabel(user: AdminUserPreviewDashboard["user"]): string {
 }
 
 function AdminUserPreviewContent({ userId }: { userId: string }) {
+  const previewDataSource = useMemo(() => createAdminPreviewDataSource(userId), [userId]);
   const [tab, setTab] = useState<PreviewTab>("dashboard");
   const [dashboard, setDashboard] = useState<AdminUserPreviewDashboard | null>(null);
   const [runs, setRuns] = useState<RunItem[]>([]);
@@ -180,40 +182,42 @@ function AdminUserPreviewContent({ userId }: { userId: string }) {
       )}
 
       {!loading && !error && tab === "dashboard" && stats && (
-        <>
-          <div className="stats-grid stats-grid-primary">
-            <DashboardStatCard
-              value={stats.total_runs ?? 0}
-              label={runsCapLabel(stats.total_runs ?? 0)}
-              variant="runs"
+        <AppDataSourceProvider source={previewDataSource}>
+          <>
+            <div className="stats-grid stats-grid-primary">
+              <DashboardStatCard
+                value={stats.total_runs ?? 0}
+                label={runsCapLabel(stats.total_runs ?? 0)}
+                variant="runs"
+              />
+              <DashboardStatCard
+                value={stats.total_volunteering ?? 0}
+                label={volunteeringCapLabel(stats.total_volunteering ?? 0)}
+                variant="volunteering"
+              />
+            </div>
+            <DashboardAnalytics
+              analytics={stats.analytics}
+              totalRuns={stats.total_runs ?? 0}
+              totalVolunteering={stats.total_volunteering ?? 0}
             />
-            <DashboardStatCard
-              value={stats.total_volunteering ?? 0}
-              label={volunteeringCapLabel(stats.total_volunteering ?? 0)}
-              variant="volunteering"
-            />
-          </div>
-          <DashboardAnalytics
-            analytics={stats.analytics}
-            totalRuns={stats.total_runs ?? 0}
-            totalVolunteering={stats.total_volunteering ?? 0}
-          />
-          {Object.keys(byPlatform).length > 0 && (
-            <section className="card">
-              <h3 className="section-title">По платформам</h3>
-              <ul className="admin-preview-platform-stats">
-                {Object.entries(byPlatform).map(([code, row]) => (
-                  <li key={code}>
-                    <PlatformBadge code={code} />
-                    <span>
-                      {row.runs ?? 0} / {row.volunteering ?? 0} вол.
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </>
+            {Object.keys(byPlatform).length > 0 && (
+              <section className="card">
+                <h3 className="section-title">По платформам</h3>
+                <ul className="admin-preview-platform-stats">
+                  {Object.entries(byPlatform).map(([code, row]) => (
+                    <li key={code}>
+                      <PlatformBadge code={code} />
+                      <span>
+                        {row.runs ?? 0} / {row.volunteering ?? 0} вол.
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </>
+        </AppDataSourceProvider>
       )}
 
       {!loading && !error && tab === "runs" && (

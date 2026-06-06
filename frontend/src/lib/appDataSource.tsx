@@ -9,6 +9,14 @@ import {
   demoGetVolunteerRoleStats,
   demoListRuns,
   demoListVolunteering,
+  getAdminUserPreviewBestResults,
+  getAdminUserPreviewCatalogTable,
+  getAdminUserPreviewPersonalRecords,
+  getAdminUserPreviewRuns,
+  getAdminUserPreviewVisitedDetail,
+  getAdminUserPreviewVisitedMap,
+  getAdminUserPreviewVolunteering,
+  getAdminUserPreviewVolunteerRoleStats,
   getBestResults,
   getCatalogLocationsMap,
   getCatalogLocationsTable,
@@ -28,8 +36,10 @@ import {
   type VolunteeringItem,
 } from "./api";
 
+export type AppDataSourceMode = "auth" | "demo" | "admin-preview";
+
 export type AppDataSource = {
-  mode: "auth" | "demo";
+  mode: AppDataSourceMode;
   listRuns: (includeTest?: boolean, limit?: number) => Promise<RunItem[]>;
   listVolunteering: (includeTest?: boolean, limit?: number) => Promise<VolunteeringItem[]>;
   getBestResults: (includeTest?: boolean) => Promise<BestResultItem[]>;
@@ -66,6 +76,21 @@ export const demoDataSource: AppDataSource = {
   getCatalogLocationsMap: () => demoGetCatalogLocationsMap(),
   getCatalogLocationsTable: () => demoGetCatalogLocationsTable(),
 };
+
+export function createAdminPreviewDataSource(userId: string): AppDataSource {
+  return {
+    mode: "admin-preview",
+    listRuns: (includeTest, limit) => getAdminUserPreviewRuns(userId, limit ?? 200, 0),
+    listVolunteering: (includeTest, limit) => getAdminUserPreviewVolunteering(userId, limit ?? 200, 0),
+    getBestResults: (includeTest) => getAdminUserPreviewBestResults(userId, includeTest),
+    getPersonalRecords: (includeTest) => getAdminUserPreviewPersonalRecords(userId, includeTest),
+    getVolunteerRoleStats: (includeTest) => getAdminUserPreviewVolunteerRoleStats(userId, includeTest),
+    getUniqueLocationsDetail: (includeTest) => getAdminUserPreviewVisitedDetail(userId, includeTest),
+    getVisitedLocationsMap: (includeTest) => getAdminUserPreviewVisitedMap(userId, includeTest),
+    getCatalogLocationsMap,
+    getCatalogLocationsTable: (includeTest) => getAdminUserPreviewCatalogTable(userId, includeTest),
+  };
+}
 
 const AppDataSourceContext = createContext<AppDataSource>(authDataSource);
 

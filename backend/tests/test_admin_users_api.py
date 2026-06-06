@@ -134,6 +134,18 @@ def test_admin_users_search_and_preview(client: TestClient, db_session: Session)
     assert runs.status_code == 200
     assert isinstance(runs.json(), list)
 
+    best_results = client.get(f"/api/admin/users/{item['id']}/preview/runs/best-results")
+    assert best_results.status_code == 200
+    assert isinstance(best_results.json(), list)
+
+    personal_records = client.get(f"/api/admin/users/{item['id']}/preview/runs/personal-records")
+    assert personal_records.status_code == 200
+    assert isinstance(personal_records.json(), list)
+
+    role_stats = client.get(f"/api/admin/users/{item['id']}/preview/volunteering/role-stats")
+    assert role_stats.status_code == 200
+    assert isinstance(role_stats.json(), list)
+
     visited_map = client.get(f"/api/admin/users/{item['id']}/preview/locations/visited/map")
     assert visited_map.status_code == 200
     assert "points" in visited_map.json()

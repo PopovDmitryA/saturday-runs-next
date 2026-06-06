@@ -1,4 +1,5 @@
 const API_BASE = "/api";
+const DEFAULT_FETCH_TIMEOUT_MS = 20_000;
 
 export class ApiError extends Error {
   status: number;
@@ -323,6 +324,11 @@ function sanitizeApiErrorMessage(message: string): string {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
+  const controller = init?.signal ? null : new AbortController();
+  const timeoutId =
+    controller === null
+      ? null
+      : window.setTimeout(() => controller.abort(), DEFAULT_FETCH_TIMEOUT_MS);
   try {
     response = await fetch(`${API_BASE}${path}`, {
       credentials: "include",
@@ -331,10 +337,17 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
         ...(init?.headers ?? {}),
       },
       ...init,
+      signal: init?.signal ?? controller?.signal,
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw error;
+      if (init?.signal) {
+        throw error;
+      }
+      throw new ApiError(
+        "Сервер не ответил вовремя. Обновите страницу и попробуйте снова.",
+        0,
+      );
     }
     if (error instanceof TypeError) {
       throw new ApiError(
@@ -343,6 +356,10 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
       );
     }
     throw error;
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
   }
 
   const rawText = await response.text();
@@ -374,6 +391,26 @@ export function createLoginRequest(link = false) {
 export function oauthStartUrl(provider: "vk" | "yandex", mode: "login" | "link", consent = false) {
   const params = new URLSearchParams({ mode, consent: consent ? "true" : "false" });
   return `${API_BASE}/auth/oauth/${provider}/start?${params.toString()}`;
+}
+
+export type OAuthFinishResult = {
+  redirect: string;
+  merge_token: string | null;
+};
+
+export function finishOAuthLogin(
+  provider: "vk" | "yandex",
+  payload: {
+    code: string;
+    state: string;
+    device_id?: string | null;
+    payload?: string | null;
+  },
+) {
+  return apiFetch<OAuthFinishResult>(`/auth/oauth/${provider}/finish`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function getAuthIdentities() {
@@ -810,6 +847,23 @@ export function getAdminUserPreviewCatalogTable(userId: string, includeTest = fa
   const query = includeTest ? "?include_test=true" : "";
   return apiFetch<CatalogLocationsTableResponse>(
     `/admin/users/${userId}/preview/locations/catalog/table${query}`,
+  );
+}
+
+export function getAdminUserPreviewBestResults(userId: string, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<BestResultItem[]>(`/admin/users/${userId}/preview/runs/best-results${query}`);
+}
+
+export function getAdminUserPreviewPersonalRecords(userId: string, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<PersonalRecordItem[]>(`/admin/users/${userId}/preview/runs/personal-records${query}`);
+}
+
+export function getAdminUserPreviewVolunteerRoleStats(userId: string, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<VolunteerRoleStatItem[]>(
+    `/admin/users/${userId}/preview/volunteering/role-stats${query}`,
   );
 }
 
