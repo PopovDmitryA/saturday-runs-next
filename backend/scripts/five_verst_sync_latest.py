@@ -28,8 +28,8 @@ def main() -> int:
     parser.add_argument(
         "--protocols",
         type=int,
-        default=settings.five_verst_sync_protocol_limit,
-        help="Fetch full protocols for N new events per run (changed/missing always fetched when enabled)",
+        default=None,
+        help="Max protocols to fetch per run (default: all new/changed/missing)",
     )
     parser.add_argument(
         "--update-limit",
@@ -76,7 +76,7 @@ def main() -> int:
                 LatestResultsSyncOptions(
                     dry_run=False,
                     update_limit=None if args.update_limit == 0 else args.update_limit,
-                    protocol_fetch_limit=args.protocols,
+                    protocol_fetch_limit=args.protocols if args.protocols and args.protocols > 0 else None,
                     ensure_locations=not args.no_ensure_locations,
                     fetch_all_protocols_on_change=settings.five_verst_fetch_all_protocols_on_change,
                 ),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 
 from app.config import get_settings
 from app.platform_adapters.registry import ensure_adapters_registered
@@ -29,6 +30,36 @@ celery_app.conf.update(
         "s95_sync.*": {"queue": "s95"},
         "parkrun_sync.*": {"queue": "parkrun"},
     },
-    # Расписание отключено до деплоя на сервер и согласования cron (см. docs/five_verst_sync_plan.md).
-    beat_schedule={},
+    beat_schedule={
+        "five-verst-registry-daily": {
+            "task": "five_verst_sync.sync_locations_registry",
+            "schedule": crontab(hour=20, minute=0),
+            "options": {"queue": "five_verst"},
+        },
+        "five-verst-latest-weekday-morning": {
+            "task": "five_verst_sync.sync_latest_results",
+            "schedule": crontab(hour=5, minute=0, day_of_week="1-5"),
+            "options": {"queue": "five_verst"},
+        },
+        "five-verst-latest-saturday-hourly": {
+            "task": "five_verst_sync.sync_latest_results",
+            "schedule": crontab(hour="1-23", minute=0, day_of_week=6),
+            "options": {"queue": "five_verst"},
+        },
+        "five-verst-latest-sunday-hourly": {
+            "task": "five_verst_sync.sync_latest_results",
+            "schedule": crontab(hour="0-23", minute=0, day_of_week=0),
+            "options": {"queue": "five_verst"},
+        },
+        "five-verst-location-rotation": {
+            "task": "five_verst_sync.sync_location_rotation",
+            "schedule": crontab(minute=0, hour="*/4"),
+            "options": {"queue": "five_verst"},
+        },
+        "five-verst-reconcile-protocols": {
+            "task": "five_verst_sync.reconcile_stale_protocols",
+            "schedule": crontab(minute=0, hour="*/3"),
+            "options": {"queue": "five_verst"},
+        },
+    },
 )

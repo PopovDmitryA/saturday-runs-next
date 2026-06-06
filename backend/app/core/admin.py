@@ -54,6 +54,10 @@ def is_admin_telegram_id(telegram_id: int, settings: Settings) -> bool:
     return admin_id > 0 and telegram_id == admin_id
 
 
+def is_admin_vk_user_id(vk_user_id: int, settings: Settings) -> bool:
+    return settings.vk_admin_user_id > 0 and vk_user_id == settings.vk_admin_user_id
+
+
 def user_response(user: User, settings: Settings, db_identities: list | None = None) -> UserResponse:
     identities = db_identities or list(user.auth_identities)
     identity_responses = [

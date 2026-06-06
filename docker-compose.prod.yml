@@ -27,6 +27,11 @@ services:
         condition: service_healthy
 
   bot:
+    profiles: ["telegram"]
+    volumes:
+      - ./.env:/app/.env:ro
+
+  vk-bot:
     volumes:
       - ./.env:/app/.env:ro
 

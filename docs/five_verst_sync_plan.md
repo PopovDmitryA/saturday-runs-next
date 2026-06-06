@@ -70,9 +70,18 @@ flowchart TB
 
 ### Очередь `five_verst`
 
-Docker: `worker-five-verst` (`-Q five_verst --concurrency=1`).
+Docker: `worker-five-verst` (`-Q five_verst --concurrency=1`), `beat` — расписание ниже.
 
-**Celery Beat / cron сейчас не настроены** — задачи запускаются вручную (CLI или `apply_async`). Расписание пропишем на сервере после переноса и тестов.
+**Паузы:** между HTTP-запросами 20–30 с; между выкачкой протоколов 30–40 с.
+
+| Celery Beat | Task | Расписание (MSK) |
+|-------------|------|------------------|
+| `five-verst-registry-daily` | `sync_locations_registry` | ежедневно 20:00 |
+| `five-verst-latest-weekday-morning` | `sync_latest_results` | пн–пт 05:00 |
+| `five-verst-latest-saturday-hourly` | `sync_latest_results` | сб 01:00–23:00 каждый час |
+| `five-verst-latest-sunday-hourly` | `sync_latest_results` | вс 00:00–23:00 каждый час |
+| `five-verst-location-rotation` | `sync_location_rotation` | каждые 4 ч, 20 summary одной локации |
+| `five-verst-reconcile-protocols` | `reconcile_stale_protocols` | каждые 3 ч, 100 старейших по `last_protocol_check_at` |
 
 | Celery task | Назначение |
 |-------------|------------|
@@ -83,7 +92,10 @@ Docker: `worker-five-verst` (`-Q five_verst --concurrency=1`).
 | `five_verst_sync.enqueue_all_location_summaries` | Своды всех локаций |
 | `five_verst_sync.enqueue_recent_protocols` | Протоколы по локациям (top-N summaries) |
 | `five_verst_sync.sync_location` | Одна локация (summaries + protocols) |
-| `five_verst_sync.sync_latest_results` | Latest + протоколы (лимиты из env) |
+| `five_verst_sync.sync_latest_results` | Latest + все новые/изменённые протоколы (без лимита) |
+| `five_verst_sync.sync_location_rotation` | Ротация локаций: summary-only, протокол только при изменениях |
+
+Отчёты о запуске/завершении — VK-бот (`vk_admin_notify`). Управление: `/sync`, `/stats` в VK.
 
 Старые имена `global_sync.*` — алиасы на ту же очередь.
 

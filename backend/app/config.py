@@ -86,14 +86,17 @@ class Settings(BaseSettings):
     s95_global_sync_locations: str = ""
     s95_global_sync_protocol_limit: int = 3
 
-    five_verst_fetch_min_interval_seconds: float = 8.0
-    five_verst_fetch_max_interval_seconds: float = 15.0
+    five_verst_fetch_min_interval_seconds: float = 20.0
+    five_verst_fetch_max_interval_seconds: float = 30.0
+    five_verst_protocol_min_interval_seconds: float = 30.0
+    five_verst_protocol_max_interval_seconds: float = 40.0
     five_verst_fetch_lock_timeout_seconds: int = 120
     five_verst_fetch_lock_blocking_seconds: int = 600
     five_verst_ban_cooldown_seconds: int = 600
-    five_verst_sync_protocol_limit: int = 3
-    five_verst_sync_latest_update_limit: int = 20
+    five_verst_sync_protocol_limit: int | None = None
+    five_verst_sync_latest_update_limit: int | None = None
     five_verst_fetch_all_protocols_on_change: bool = True
+    five_verst_location_batch_summaries_limit: int = 20
     s95_sync_protocol_limit: int = 3
     s95_sync_latest_update_limit: int = 20
     s95_fetch_all_protocols_on_change: bool = True
@@ -101,8 +104,13 @@ class Settings(BaseSettings):
     s95_reconcile_min_check_interval_days: int = 7
     s95_athletes_registry_batch_limit: int = 10
     s95_athlete_mismatch_check_runs: int = 10
-    five_verst_reconcile_batch_limit: int = 10
-    five_verst_reconcile_min_check_interval_days: int = 7
+    five_verst_reconcile_batch_limit: int = 100
+    five_verst_reconcile_min_check_interval_days: int = 0
+
+    vk_bot_group_token: str = ""
+    vk_bot_group_id: int = 0
+    vk_admin_user_id: int = 0
+    vk_bot_internal_secret: str = ""
 
     parkrun_base_url: str = "https://www.parkrun.org.uk"
     parkrun_fetch_min_interval_seconds: float = 25.0
