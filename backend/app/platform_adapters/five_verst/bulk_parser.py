@@ -16,7 +16,7 @@ from app.platform_adapters.canonical import (
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
-from app.platform_adapters.five_verst.http import BASE_URL, fetch_html, source_hash
+from app.platform_adapters.five_verst.http import BASE_URL, NotFoundError, fetch_html, source_hash
 
 DATE_IN_URL_RE = re.compile(r"/results/(\d{2}\.\d{2}\.\d{4})/")
 USERSTATS_ID_RE = re.compile(r"/userstats/(\d+)")
@@ -302,12 +302,16 @@ def fetch_location(slug: str) -> tuple[CanonicalLocation, str]:
     source_url = _location_url(slug)
     course_source_url = _course_url(slug)
     home_html = fetch_html(source_url)
-    course_html = fetch_html(course_source_url)
+    course_html = ""
+    try:
+        course_html = fetch_html(course_source_url)
+    except NotFoundError:
+        pass
     location = parse_location_home_html(
         home_html,
         slug,
         source_url,
-        course_html=course_html,
+        course_html=course_html or None,
         course_source_url=course_source_url,
     )
     combined_html = home_html + course_html

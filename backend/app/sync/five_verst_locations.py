@@ -12,6 +12,7 @@ from app.models import Location, LocationMergeRequest, LocationMergeRequestStatu
 from app.services.location_geo_service import apply_reverse_geocode_to_location
 from app.platform_adapters.canonical import CanonicalLocation
 from app.platform_adapters.five_verst import bulk_parser
+from app.platform_adapters.five_verst.http import NotFoundError
 from app.platform_adapters.five_verst.bulk_parser import (
     ParsedRegistryEntry,
     registry_entry_is_cancelled,
@@ -44,6 +45,7 @@ class LocationRegistrySyncResult:
     coords_fetched: int = 0
     regions_backfilled: int = 0
     pause_status_changed: int = 0
+    cancel_status_changed: int = 0
     merge_requests_created: int = 0
     merge_notifications_sent: int = 0
     errors: list[str] = field(default_factory=list)
@@ -245,6 +247,17 @@ def _notify_merge_request(request: LocationMergeRequest) -> bool:
     return send_vk_admin_message(text) is not None
 
 
+def _friendly_fetch_error(exc: Exception) -> str:
+    message = str(exc)
+    if "Read timed out" in message:
+        return "таймаут при загрузке страницы (сайт не ответил вовремя)"
+    if "Страница не найдена" in message:
+        return message
+    if "Rate limit" in message or "429" in message:
+        return "ограничение частоты запросов на 5verst.ru"
+    return message
+
+
 def _process_registry_entry(
     db: Session,
     platform: Platform,
@@ -296,8 +309,10 @@ def _process_registry_entry(
                     if cancel_changed:
                         result.cancel_status_changed += 1
                     row = updated_row
+            except NotFoundError:
+                result.locations_skipped_no_coords += 1
             except Exception as exc:
-                result.errors.append(f"{entry.slug}: coords fetch failed: {exc}")
+                result.errors.append(f"{entry.slug}: координаты — {_friendly_fetch_error(exc)}")
 
         if _backfill_geo_for_row(db, row):
             result.regions_backfilled += 1
@@ -306,8 +321,12 @@ def _process_registry_entry(
 
     try:
         location_data, location_html = bulk_parser.fetch_location(entry.slug)
+    except NotFoundError:
+        logger.info("Skip new location %s: course or home page not found", entry.slug)
+        result.locations_skipped_no_coords += 1
+        return
     except Exception as exc:
-        result.errors.append(f"{entry.slug}: fetch failed: {exc}")
+        result.errors.append(f"{entry.slug}: {_friendly_fetch_error(exc)}")
         return
 
     if location_data.latitude is None or location_data.longitude is None:

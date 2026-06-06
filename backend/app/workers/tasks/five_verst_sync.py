@@ -117,6 +117,7 @@ def sync_locations_registry_task(limit: int | None = None) -> dict[str, object]:
                 "locations_created": result.locations_created,
                 "locations_skipped_no_coords": result.locations_skipped_no_coords,
                 "pause_status_changed": result.pause_status_changed,
+                "cancel_status_changed": result.cancel_status_changed,
                 "merge_requests_created": result.merge_requests_created,
                 "merge_notifications_sent": result.merge_notifications_sent,
                 "errors": result.errors,
