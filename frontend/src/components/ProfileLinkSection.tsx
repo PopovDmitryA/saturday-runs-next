@@ -674,7 +674,7 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLi
     setPendingSyncPlatforms((prev) => new Set(prev).add(platformCode));
     setSyncLoadingPlatform(platformCode);
     try {
-      await triggerSyncRefreshPlatform(platformCode);
+      const response = await triggerSyncRefreshPlatform(platformCode);
       setSyncConfirm(null);
       setLinks((prev) =>
         prev.map((link) =>
@@ -683,8 +683,8 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLi
       );
       showSnackbar({
         variant: "default",
-        title: "Обновление запущено",
-        message: "Данные обновятся в фоне — обычно это занимает несколько минут.",
+        title: "Запрос принят",
+        message: response.message,
       });
       await loadLinks({ background: true });
       onLinksChange?.();

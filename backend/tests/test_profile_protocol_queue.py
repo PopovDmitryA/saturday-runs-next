@@ -121,9 +121,13 @@ def test_is_protocol_fully_loaded_requires_protocol_sync_state(
     )
 
 
+@patch("app.sync.profile_protocol_queue.batch_queue_has_capacity", return_value=True)
+@patch("app.sync.profile_protocol_queue.protocol_fetch_pending_in_broker", return_value=False)
 @patch("app.workers.tasks.five_verst_sync.fetch_protocol_from_profile_task.apply_async")
 def test_enqueue_missing_protocols_for_profile_five_verst(
     apply_async_mock: MagicMock,
+    _pending_mock: MagicMock,
+    _capacity_mock: MagicMock,
     db_session: Session,
     platform: Platform,
 ) -> None:
@@ -139,3 +143,26 @@ def test_enqueue_missing_protocols_for_profile_five_verst(
     assert result.missing == 1
     assert result.enqueued == 1
     apply_async_mock.assert_called_once()
+    assert apply_async_mock.call_args.kwargs["task_id"].startswith("protocol-five_verst-bitsa-")
+
+
+@patch("app.sync.profile_protocol_queue.protocol_fetch_pending_in_broker", return_value=True)
+@patch("app.workers.tasks.five_verst_sync.fetch_protocol_from_profile_task.apply_async")
+def test_enqueue_skips_duplicate_protocol_fetch(
+    apply_async_mock: MagicMock,
+    _pending_mock: MagicMock,
+    db_session: Session,
+    platform: Platform,
+) -> None:
+    runs = [_run(external_user_id="42", external_result_key="42:2026-06-06:bitsa")]
+    result = enqueue_missing_protocols_for_profile(
+        db_session,
+        platform,
+        runs,
+        [],
+        limit=5,
+    )
+    assert result.missing == 1
+    assert result.enqueued == 0
+    assert result.skipped_duplicate == 1
+    apply_async_mock.assert_not_called()

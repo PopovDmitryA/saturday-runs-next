@@ -7,16 +7,18 @@ from sqlalchemy.orm import Session
 
 from app.models import SyncJob, SyncJobStatus, SyncRun, SyncRunStatus
 from app.services.celery_queue_inspector import (
+    FIVE_VERST_BATCH_QUEUE,
+    FIVE_VERST_USER_QUEUE,
     PARKRUN_SYNC_QUEUE,
-    S95_SYNC_QUEUE,
-    USER_SYNC_QUEUE,
+    S95_BATCH_QUEUE,
+    S95_USER_QUEUE,
     get_queue_length,
 )
 from app.services.parkrun_local_worker import get_local_worker_status
 from app.services.sync_run_maintenance import close_stale_sync_runs
 from app.workers.celery_app import celery_app
 
-FIVE_VERST_QUEUE = "five_verst"
+FIVE_VERST_QUEUE = FIVE_VERST_BATCH_QUEUE
 
 PIPELINE_LAST_SUCCESS_TYPES: tuple[str, ...] = (
     "five_verst:latest",
@@ -238,9 +240,10 @@ def get_admin_pipeline_status(db: Session) -> dict[str, Any]:
     )
 
     queue_depths = {
-        FIVE_VERST_QUEUE: get_queue_length(FIVE_VERST_QUEUE),
-        USER_SYNC_QUEUE: get_queue_length(USER_SYNC_QUEUE),
-        S95_SYNC_QUEUE: get_queue_length(S95_SYNC_QUEUE),
+        FIVE_VERST_BATCH_QUEUE: get_queue_length(FIVE_VERST_BATCH_QUEUE),
+        FIVE_VERST_USER_QUEUE: get_queue_length(FIVE_VERST_USER_QUEUE),
+        S95_BATCH_QUEUE: get_queue_length(S95_BATCH_QUEUE),
+        S95_USER_QUEUE: get_queue_length(S95_USER_QUEUE),
         PARKRUN_SYNC_QUEUE: get_queue_length(PARKRUN_SYNC_QUEUE),
     }
 

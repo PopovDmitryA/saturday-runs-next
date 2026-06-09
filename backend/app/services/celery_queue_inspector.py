@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any
 
@@ -8,13 +9,19 @@ from celery.result import AsyncResult
 from app.core.redis_client import get_redis_client
 from app.workers.celery_app import celery_app
 
-USER_SYNC_QUEUE = "celery"
-S95_SYNC_QUEUE = "s95"
+FIVE_VERST_BATCH_QUEUE = "five_verst"
+FIVE_VERST_USER_QUEUE = "five_verst_user"
+S95_BATCH_QUEUE = "s95"
+S95_USER_QUEUE = "s95_user"
 PARKRUN_SYNC_QUEUE = "parkrun"
 
+# Backward-compatible alias used by admin summaries for user profile sync.
+USER_SYNC_QUEUE = FIVE_VERST_USER_QUEUE
+S95_SYNC_QUEUE = S95_USER_QUEUE
+
 TASK_QUEUE_BY_SUFFIX: dict[str, str] = {
-    "five_verst": USER_SYNC_QUEUE,
-    "s95": S95_SYNC_QUEUE,
+    "five_verst": FIVE_VERST_USER_QUEUE,
+    "s95": S95_USER_QUEUE,
     "parkrun": PARKRUN_SYNC_QUEUE,
 }
 
@@ -42,6 +49,28 @@ def extract_task_id_from_broker_message(raw: str) -> str | None:
     headers = _decode_headers(envelope.get("headers"))
     task_id = headers.get("id")
     return str(task_id) if task_id else None
+
+
+def decode_broker_message_body(envelope: dict[str, object]) -> tuple[list[object], dict[str, object]]:
+    body = envelope.get("body")
+    if body is None:
+        return [], {}
+    payload: object
+    if isinstance(body, str):
+        try:
+            payload = json.loads(base64.b64decode(body))
+        except (json.JSONDecodeError, ValueError):
+            try:
+                payload = json.loads(body)
+            except json.JSONDecodeError:
+                return [], {}
+    else:
+        payload = body
+    if not isinstance(payload, list) or len(payload) < 2:
+        return [], {}
+    args = payload[0] if isinstance(payload[0], list) else []
+    kwargs = payload[1] if isinstance(payload[1], dict) else {}
+    return args, kwargs
 
 
 def get_queue_length(queue_name: str) -> int:

@@ -8,6 +8,8 @@
 | `https://grafana.run5k.run` | Legacy Grafana (127.0.0.1:9000) |
 | `https://app.run5k.run` | 301 → run5k.run |
 
+Старые закладки вида `https://run5k.run/d/...` (Grafana на apex-домене) **301 →** `https://grafana.run5k.run/d/...` — см. `deploy/nginx/run5k.run.conf`.
+
 ## 1. DNS
 
 Добавить A/AAAA записи на IP сервера (`195.58.34.112`):

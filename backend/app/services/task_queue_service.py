@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 from app.models import Platform, PlatformLink, SyncJob, SyncJobStatus, User
 from app.services.admin_pipeline_status_service import get_admin_pipeline_status
 from app.services.celery_queue_inspector import (
+    FIVE_VERST_USER_QUEUE,
     PARKRUN_SYNC_QUEUE,
-    S95_SYNC_QUEUE,
+    S95_USER_QUEUE,
     TASK_QUEUE_BY_SUFFIX,
-    USER_SYNC_QUEUE,
     get_queue_length,
     inspect_user_task,
 )
@@ -87,8 +87,8 @@ def _platform_label_for_job(
 
 def _queue_summaries() -> list[dict[str, object]]:
     return [
-        {"queue": USER_SYNC_QUEUE, "label": "профили 5 вёрст", "length": get_queue_length(USER_SYNC_QUEUE)},
-        {"queue": S95_SYNC_QUEUE, "label": "профили с95", "length": get_queue_length(S95_SYNC_QUEUE)},
+        {"queue": FIVE_VERST_USER_QUEUE, "label": "профили 5 вёрст", "length": get_queue_length(FIVE_VERST_USER_QUEUE)},
+        {"queue": S95_USER_QUEUE, "label": "профили с95", "length": get_queue_length(S95_USER_QUEUE)},
         {"queue": PARKRUN_SYNC_QUEUE, "label": "профили parkrun", "length": get_queue_length(PARKRUN_SYNC_QUEUE)},
     ]
 

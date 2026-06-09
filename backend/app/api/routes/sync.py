@@ -9,59 +9,32 @@ from app.api.deps import get_current_admin_user, get_current_user
 from app.config import Settings, get_settings
 from app.core.rate_limit import check_rate_limit
 from app.db.session import get_db
-from app.models import Platform, PlatformLink, PlatformLinkSyncStatus, SyncJobTrigger, User
+from app.models import User
 from app.schemas.dashboard import SyncQueueResponse, SyncRefreshResponse, SyncStatusResponse
-from app.services.dashboard_service import create_sync_job, get_sync_status_payload
-from app.services.sync_enqueue_service import enqueue_manual_sync_for_all_platforms
-from app.services.sync_trigger_service import (
-    enqueue_parkrun_user_sync,
-    enqueue_s95_user_sync,
-    enqueue_user_sync,
+from app.services.dashboard_service import get_sync_status_payload
+from app.services.sync_enqueue_service import (
+    enqueue_manual_platform_sync,
+    enqueue_manual_sync_for_all_platforms,
 )
 from app.services.task_queue_service import get_admin_task_queue_payload
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
 SUPPORTED_SYNC_PLATFORMS = frozenset({"five_verst", "s95", "parkrun"})
+SYNC_REFRESH_QUEUED_MESSAGE = (
+    "Запрос на обновление отправлен. Ожидайте исполнения в ближайшее время."
+)
+SYNC_REFRESH_ALREADY_QUEUED_MESSAGE = (
+    "Обновление уже в очереди. Ожидайте исполнения в ближайшее время."
+)
 
 
-def _enqueue_platform_sync(
-    db: Session,
-    user: User,
-    platform_code: str,
-    *,
-    job_id,
-) -> None:
-    link = (
-        db.query(PlatformLink)
-        .join(Platform, PlatformLink.platform_id == Platform.id)
-        .filter(PlatformLink.user_id == user.id, Platform.code == platform_code)
-        .one_or_none()
+def _refresh_response(result) -> SyncRefreshResponse:
+    return SyncRefreshResponse(
+        job_id=result.job_id,
+        status="already_queued" if result.duplicate else "queued",
+        message=SYNC_REFRESH_ALREADY_QUEUED_MESSAGE if result.duplicate else SYNC_REFRESH_QUEUED_MESSAGE,
     )
-    if link is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Platform link not found")
-
-    if platform_code == "s95":
-        enqueue_s95_user_sync(
-            user.id,
-            SyncJobTrigger.manual,
-            job_id=job_id,
-            platform_link_id=link.id,
-        )
-    elif platform_code == "parkrun":
-        enqueue_parkrun_user_sync(
-            user.id,
-            SyncJobTrigger.manual,
-            job_id=job_id,
-            platform_link_id=link.id,
-        )
-    else:
-        enqueue_user_sync(
-            user.id,
-            SyncJobTrigger.manual,
-            job_id=job_id,
-            platform_link_id=link.id,
-        )
 
 
 @router.get("/status", response_model=SyncStatusResponse)
@@ -100,9 +73,9 @@ def sync_refresh(
             detail="Sync refresh rate limit exceeded (1 per 30 minutes)",
         )
 
-    job_id = enqueue_manual_sync_for_all_platforms(db, user.id)
+    result = enqueue_manual_sync_for_all_platforms(db, user.id)
     db.commit()
-    return SyncRefreshResponse(job_id=job_id, status="queued")
+    return _refresh_response(result)
 
 
 @router.post("/refresh/{platform_code}", response_model=SyncRefreshResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -127,18 +100,9 @@ def sync_refresh_platform(
             detail="Sync refresh rate limit exceeded (1 per 30 minutes)",
         )
 
-    link = (
-        db.query(PlatformLink)
-        .join(Platform, PlatformLink.platform_id == Platform.id)
-        .filter(PlatformLink.user_id == user.id, Platform.code == platform_code)
-        .one_or_none()
-    )
-    if link is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Platform link not found")
-
-    link.sync_status = PlatformLinkSyncStatus.syncing
-    link.error_message = None
-    job = create_sync_job(db, user.id, SyncJobTrigger.manual, platform_link_id=link.id)
+    try:
+        result = enqueue_manual_platform_sync(db, user, platform_code)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Platform link not found") from None
     db.commit()
-    _enqueue_platform_sync(db, user, platform_code, job_id=job.id)
-    return SyncRefreshResponse(job_id=job.id, status="queued")
+    return _refresh_response(result)

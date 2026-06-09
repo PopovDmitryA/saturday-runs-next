@@ -27,7 +27,8 @@ celery_app.conf.update(
     task_routes={
         "five_verst_sync.*": {"queue": "five_verst"},
         "global_sync.*": {"queue": "five_verst"},
-        "user_sync.*": {"queue": "five_verst"},
+        "user_sync.*": {"queue": "five_verst_user"},
+        "s95_sync.run_user_sync": {"queue": "s95_user"},
         "s95_sync.*": {"queue": "s95"},
         "parkrun_sync.*": {"queue": "parkrun"},
     },

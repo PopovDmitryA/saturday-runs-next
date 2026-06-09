@@ -200,7 +200,9 @@ class SyncStatusResponse(BaseModel):
 class SyncRefreshResponse(BaseModel):
     job_id: UUID
     status: str
-    message: str = "sync_enqueued"
+    message: str = (
+        "Запрос на обновление отправлен. Ожидайте исполнения в ближайшее время."
+    )
 
 
 class SyncQueueTaskResponse(BaseModel):

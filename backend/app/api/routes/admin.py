@@ -92,7 +92,7 @@ def list_admin_users(
     db: Annotated[Session, Depends(get_db)],
     _admin: Annotated[User, Depends(get_current_admin_user)],
     q: Annotated[str | None, Query(max_length=128)] = None,
-    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> AdminUserListResponse:
     items, total = search_admin_users(db, query=q, limit=limit, offset=offset)

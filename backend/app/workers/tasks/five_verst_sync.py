@@ -80,7 +80,7 @@ def sync_location_task(
         finally:
             db.close()
 
-    return run_reported_sync(name, _run, details=details)
+    return run_reported_sync(name, _run, details=details, batch_queue_name="five_verst")
 
 
 @celery_app.task(name="five_verst_sync.sync_location_summaries", queue="five_verst")
@@ -104,7 +104,7 @@ def sync_location_summaries_task(
         finally:
             db.close()
 
-    return run_reported_sync(name, _run)
+    return run_reported_sync(name, _run, batch_queue_name="five_verst")
 
 
 @celery_app.task(name="five_verst_sync.sync_locations_registry", queue="five_verst")
@@ -143,6 +143,7 @@ def sync_locations_registry_task(limit: int | None = None, *, force: bool = Fals
         details=details,
         hour_slot_key="five_verst:registry",
         force=force,
+        batch_queue_name="five_verst",
     )
 
 
@@ -202,6 +203,7 @@ def sync_latest_results_task(
         details=details,
         hour_slot_key="five_verst:latest",
         force=force,
+        batch_queue_name="five_verst",
     )
 
 
@@ -248,6 +250,7 @@ def sync_location_rotation_task(*, force: bool = False) -> dict[str, object]:
         details=details,
         hour_slot_key="five_verst:rotation",
         force=force,
+        batch_queue_name="five_verst",
     )
 
 
@@ -335,6 +338,7 @@ def reconcile_stale_protocols_task(
         details=details,
         hour_slot_key="five_verst:reconcile",
         force=force,
+        batch_queue_name="five_verst",
     )
 
 
