@@ -6,7 +6,8 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import User
+from app.core.admin import admin_email_set, effective_admin_telegram_id, find_admin_user
+from app.models import AuthIdentity, AuthProvider, User
 from app.services.admin_users_service import (
     get_admin_user_preview_dashboard,
 )
@@ -15,23 +16,52 @@ from app.services.dashboard_service import (
 )
 
 
-def resolve_demo_telegram_id() -> int:
-    settings = get_settings()
-    if settings.demo_telegram_id:
-        return settings.demo_telegram_id
-    if settings.admin_telegram_id:
-        return settings.admin_telegram_id
-    return 0
+def _user_by_telegram_id(db: Session, telegram_id: int) -> User | None:
+    user = db.query(User).filter(User.telegram_id == telegram_id).one_or_none()
+    if user is not None:
+        return user
+    identity = (
+        db.query(AuthIdentity)
+        .filter(
+            AuthIdentity.provider == AuthProvider.telegram,
+            AuthIdentity.external_id == str(telegram_id),
+        )
+        .one_or_none()
+    )
+    if identity is None:
+        return None
+    return db.query(User).filter(User.id == identity.user_id).one_or_none()
 
 
 def get_demo_user(db: Session) -> User:
-    telegram_id = resolve_demo_telegram_id()
-    if not telegram_id:
+    settings = get_settings()
+
+    if settings.demo_user_id:
+        try:
+            demo_id = UUID(settings.demo_user_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail="Demo profile is not configured") from exc
+        user = db.query(User).filter(User.id == demo_id).one_or_none()
+        if user is not None:
+            return user
+
+    if settings.demo_telegram_id:
+        user = _user_by_telegram_id(db, settings.demo_telegram_id)
+        if user is not None:
+            return user
+
+    user = find_admin_user(db, settings)
+    if user is not None:
+        return user
+
+    if (
+        not settings.demo_user_id
+        and not settings.demo_telegram_id
+        and effective_admin_telegram_id(settings) <= 0
+        and not admin_email_set(settings)
+    ):
         raise HTTPException(status_code=503, detail="Demo profile is not configured")
-    user = db.query(User).filter(User.telegram_id == telegram_id).one_or_none()
-    if user is None:
-        raise HTTPException(status_code=404, detail="Demo profile not found")
-    return user
+    raise HTTPException(status_code=404, detail="Demo profile not found")
 
 
 def get_demo_user_id(db: Session) -> UUID:

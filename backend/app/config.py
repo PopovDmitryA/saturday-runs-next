@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # Comma-separated emails (OAuth). Grants admin if any linked auth_identity matches (case-insensitive).
     admin_emails: str = ""
     demo_telegram_id: int = 0
+    demo_user_id: str = ""
 
     session_cookie_name: str = "sr_session"
     session_ttl_seconds: int = 72 * 3600
