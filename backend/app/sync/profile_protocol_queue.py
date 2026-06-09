@@ -225,7 +225,6 @@ def fetch_five_verst_protocol_for_profile(
     event_number: int | None,
     location_name: str,
 ) -> None:
-    from app.platform_adapters.canonical import CanonicalLocation
     from app.platform_adapters.five_verst import bulk_parser
     from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
     from app.sync.iteration_commit import commit_step

@@ -58,7 +58,6 @@ FIELD_LABELS: dict[str, str] = {
     "protocols_refetched": "протоколов перезагружено",
     "mismatches_found": "расхождений найдено",
     "location_external_key": "локация",
-    "protocols_changed": "протоколов изменено",
 }
 
 DETAIL_SECTION_LABELS: dict[str, str] = {

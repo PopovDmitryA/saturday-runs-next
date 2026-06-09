@@ -10,6 +10,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.activity_url import prefer_event_source_url
 from app.models import (
     Event,
     EventSummary,
@@ -20,9 +21,9 @@ from app.models import (
     SyncStatus,
     VolunteerResult,
 )
-from app.activity_url import prefer_event_source_url
 from app.pace import resolve_run_pace
 from app.platform_adapters.canonical import (
+    CanonicalEventSummary,
     CanonicalLocation,
     CanonicalRunResult,
     CanonicalVolunteerResult,
