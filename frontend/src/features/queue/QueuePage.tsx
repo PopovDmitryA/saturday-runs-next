@@ -12,7 +12,8 @@ import {
   syncTriggerLabel,
 } from "../../lib/format";
 
-const POLL_INTERVAL_MS = 4000;
+const POLL_ACTIVE_MS = 4000;
+const POLL_IDLE_MS = 15000;
 
 function queueUserLabel(user: SyncQueueJobUser): string {
   const customName = user.display_name?.trim();
@@ -105,14 +106,15 @@ function QueueContent() {
   }, [load]);
 
   useEffect(() => {
-    if (!data || data.active_jobs_count === 0) {
+    if (!data) {
       return;
     }
+    const interval = data.active_jobs_count > 0 ? POLL_ACTIVE_MS : POLL_IDLE_MS;
     const timer = window.setInterval(() => {
       void load({ background: true });
-    }, POLL_INTERVAL_MS);
+    }, interval);
     return () => window.clearInterval(timer);
-  }, [data?.active_jobs_count, load]);
+  }, [data, load]);
 
   return (
     <AppShell title="Очередь задач" activePath="/admin">
