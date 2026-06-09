@@ -18,10 +18,6 @@ from app.s95.parsers.athlete import (
 )
 from app.s95.parsers.athlete_stats import parse_athlete_links_html, parse_trophies_html
 from app.sync import upsert
-from app.sync.s95_athlete_mismatch import (
-    refetch_mismatched_protocols,
-    refetch_protocols_for_profile_volunteering,
-)
 from app.sync.s95_participant_sync import (
     apply_s95_participant_profile,
     restore_corrupted_display_name,
@@ -166,7 +162,10 @@ def sync_s95_athlete(
         if mismatch_check_limit is not None
         else settings.s95_athlete_mismatch_check_runs
     )
-    from app.sync.profile_protocol_queue import enqueue_missing_protocols_for_profile
+    from app.sync.profile_protocol_queue import (
+        enqueue_mismatched_protocols_for_profile,
+        enqueue_missing_protocols_for_profile,
+    )
 
     protocol_enqueue = enqueue_missing_protocols_for_profile(
         db,
@@ -175,27 +174,17 @@ def sync_s95_athlete(
         volunteering,
         limit=check_limit,
     )
-    refetch_result = refetch_mismatched_protocols(
+    mismatch_enqueue, mismatch_count = enqueue_mismatched_protocols_for_profile(
         db,
         platform,
         row,
         runs,
-        limit=check_limit,
-    )
-    vol_refetch = refetch_protocols_for_profile_volunteering(
-        db,
-        platform,
         volunteering,
         limit=check_limit,
     )
-    refetch_result.protocols_refetched += vol_refetch.protocols_refetched
-    if vol_refetch.errors:
-        refetch_result.errors.extend(vol_refetch.errors)
-    result.mismatches_found = len(refetch_result.mismatches)
-    result.protocols_refetched = refetch_result.protocols_refetched
-    result.protocols_enqueued = protocol_enqueue.enqueued
-    if refetch_result.errors:
-        result.errors.extend(refetch_result.errors)
+    result.mismatches_found = mismatch_count
+    result.protocols_refetched = 0
+    result.protocols_enqueued = protocol_enqueue.enqueued + mismatch_enqueue.enqueued
 
     from app.sync.parkrun_participant_discovery import discover_parkrun_participant_from_barcode
 

@@ -115,6 +115,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  worker-s95-user:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - ./.env:/app/.env:ro
+    command: celery -A app.workers.celery_app worker -Q s95_user --concurrency=1 --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   worker-s95:
     build:
       context: ./backend
@@ -125,7 +143,25 @@ services:
     volumes:
       - ./backend:/app
       - ./.env:/app/.env:ro
-    command: celery -A app.workers.celery_app worker -Q s95_user,s95 --concurrency=1 --loglevel=info
+    command: celery -A app.workers.celery_app worker -Q s95 --concurrency=1 --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker-five-verst-user:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - ./.env:/app/.env:ro
+    command: celery -A app.workers.celery_app worker -Q five_verst_user --concurrency=1 --loglevel=info
     depends_on:
       postgres:
         condition: service_healthy
@@ -143,7 +179,7 @@ services:
     volumes:
       - ./backend:/app
       - ./.env:/app/.env:ro
-    command: celery -A app.workers.celery_app worker -Q five_verst_user,five_verst --concurrency=1 --loglevel=info
+    command: celery -A app.workers.celery_app worker -Q five_verst --concurrency=1 --loglevel=info
     depends_on:
       postgres:
         condition: service_healthy

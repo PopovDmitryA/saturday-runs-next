@@ -16,9 +16,9 @@ from app.platform_adapters.s95 import parser as s95_parser
 from app.platform_adapters.s95.url import parse_athlete_url
 from app.sync import upsert as sync_upsert
 from app.sync.profile_check_limits import profile_activity_check_limit
-from app.sync.s95_athlete_mismatch import (
-    refetch_mismatched_protocols,
-    refetch_protocols_for_profile_volunteering,
+from app.sync.profile_protocol_queue import (
+    enqueue_mismatched_protocols_for_profile,
+    enqueue_missing_protocols_for_profile,
 )
 from app.sync.s95_participant_sync import apply_s95_participant_profile
 from app.sync.user_sync import UserSyncError, _count_participant_runs
@@ -66,7 +66,6 @@ def sync_s95_platform_link(
     )
 
     from app.config import get_settings
-    from app.sync.profile_protocol_queue import enqueue_missing_protocols_for_profile
 
     settings = get_settings()
     check_limit = profile_activity_check_limit(
@@ -80,22 +79,14 @@ def sync_s95_platform_link(
         volunteering,
         limit=check_limit,
     )
-    refetch_result = refetch_mismatched_protocols(
+    mismatch_enqueue, mismatch_count = enqueue_mismatched_protocols_for_profile(
         db,
         platform,
         participant,
         runs,
-        limit=check_limit,
-    )
-    vol_refetch = refetch_protocols_for_profile_volunteering(
-        db,
-        platform,
         volunteering,
         limit=check_limit,
     )
-    refetch_result.protocols_refetched += vol_refetch.protocols_refetched
-    if vol_refetch.errors:
-        refetch_result.errors.extend(vol_refetch.errors)
 
     from app.sync.parkrun_participant_discovery import discover_parkrun_participant_from_barcode
 
@@ -120,10 +111,10 @@ def sync_s95_platform_link(
         "missing_runs": missing_runs,
         "runs_imported": runs_imported,
         "volunteering_imported": volunteering_imported,
-        "mismatches_found": len(refetch_result.mismatches),
-        "protocols_refetched": refetch_result.protocols_refetched,
-        "protocols_enqueued": protocol_enqueue.enqueued,
-        "protocols_enqueue_checked": protocol_enqueue.checked,
+        "mismatches_found": mismatch_count,
+        "protocols_refetched": 0,
+        "protocols_enqueued": protocol_enqueue.enqueued + mismatch_enqueue.enqueued,
+        "protocols_enqueue_checked": protocol_enqueue.checked + mismatch_enqueue.checked,
         "parkrun_participant_discovered": parkrun_discovery.found,
         "parkrun_participant_id": parkrun_discovery.participant_id,
         "parkrun_runs_imported": parkrun_discovery.runs_imported,

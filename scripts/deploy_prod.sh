@@ -43,6 +43,7 @@ rsync_to backend/app/ "${REMOTE}/backend/app/"
 rsync_to backend/vk_bot/ "${REMOTE}/backend/vk_bot/"
 rsync_to deploy/ "${REMOTE}/deploy/"
 rsync_to docker-compose.yml "${REMOTE}/docker-compose.yml"
+rsync_to docker-compose.prod.yml "${REMOTE}/docker-compose.prod.yml"
 rsync_to frontend/src/ "${REMOTE}/frontend/src/"
 
 echo "=== remote build & restart ==="
@@ -60,8 +61,9 @@ echo "--- queue lengths before ---"
 echo "--- frontend build ---"
 docker run --rm -v "\$PWD/frontend:/app" -w /app node:22-alpine sh -c "npm ci && npm run build"
 
-echo "--- docker services ---"
-\$COMPOSE up -d --build api worker-five-verst worker-s95 nginx beat vk-bot
+echo "--- docker services (rolling: user workers first, then batch) ---"
+\$COMPOSE up -d --build worker-s95-user worker-five-verst-user
+\$COMPOSE up -d --build worker-s95 worker-five-verst api nginx beat vk-bot
 
 echo "--- host nginx (run5k.run Grafana redirects) ---"
 if sudo -n cp deploy/nginx/run5k.run.conf /etc/nginx/sites-available/run5k.run 2>/dev/null; then
