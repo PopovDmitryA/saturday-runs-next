@@ -166,6 +166,9 @@ def _process_registry_entry(
 
     if row is not None:
         meta_changed, pause_changed, cancel_changed = _apply_registry_meta(db, row, entry)
+        if row.latitude is not None and row.longitude is not None and not row.is_official_map:
+            row.is_official_map = True
+            meta_changed = True
         if meta_changed:
             result.locations_updated += 1
         if pause_changed:
