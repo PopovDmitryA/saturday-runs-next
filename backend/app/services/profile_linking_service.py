@@ -322,23 +322,11 @@ def confirm_profile_link(db: Session, user: User, platform_code: str, profile_ur
     db.commit()
     db.refresh(link)
 
-    from app.models import SyncJobTrigger
-    from app.services.dashboard_service import create_sync_job
-    from app.services.sync_trigger_service import (
-        enqueue_parkrun_user_sync,
-        enqueue_s95_user_sync,
-        enqueue_user_sync,
-    )
+    from app.services.sync_enqueue_service import enqueue_linking_platform_sync
 
     if linking_sync_should_run(db, platform, participant, preview):
-        job = create_sync_job(db, user.id, SyncJobTrigger.linking, platform_link_id=link.id)
+        enqueue_linking_platform_sync(db, user.id, link, platform)
         db.commit()
-        if platform_code == "s95":
-            enqueue_s95_user_sync(user.id, SyncJobTrigger.linking, job_id=job.id, platform_link_id=link.id)
-        elif platform_code == "parkrun":
-            enqueue_parkrun_user_sync(user.id, SyncJobTrigger.linking, job_id=job.id, platform_link_id=link.id)
-        else:
-            enqueue_user_sync(user.id, SyncJobTrigger.linking, job_id=job.id)
     else:
         complete_link_without_sync(db, link)
 

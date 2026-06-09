@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { AdminSubnav } from "./AdminSubnav";
@@ -18,19 +18,25 @@ function platformCell(user: AdminUserListItem, code: string) {
   );
 }
 
+const USERS_PAGE_SIZE = 100;
+
 function AdminUsersContent() {
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
+  const [page, setPage] = useState(1);
   const [items, setItems] = useState<AdminUserListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (search: string) => {
+  const offset = (page - 1) * USERS_PAGE_SIZE;
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / USERS_PAGE_SIZE)), [total]);
+
+  const load = useCallback(async (search: string, pageOffset: number) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await listAdminUsers(search);
+      const response = await listAdminUsers(search, USERS_PAGE_SIZE, pageOffset);
       setItems(response.items);
       setTotal(response.total);
     } catch (err) {
@@ -41,13 +47,21 @@ function AdminUsersContent() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setQuery(draft.trim()), 300);
+    const timer = window.setTimeout(() => {
+      const trimmed = draft.trim();
+      setQuery((prev) => {
+        if (trimmed !== prev) {
+          setPage(1);
+        }
+        return trimmed;
+      });
+    }, 300);
     return () => window.clearTimeout(timer);
   }, [draft]);
 
   useEffect(() => {
-    void load(query);
-  }, [load, query]);
+    void load(query, (page - 1) * USERS_PAGE_SIZE);
+  }, [load, query, page]);
 
   return (
     <AppShell title="Пользователи" activePath="/admin">
@@ -62,8 +76,36 @@ function AdminUsersContent() {
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
           />
-          <span className="muted admin-users-count">Найдено: {total}</span>
+          <span className="muted admin-users-count">
+            {total === 0
+              ? "Найдено: 0"
+              : `Показано ${offset + 1}–${offset + items.length} из ${total}`}
+          </span>
         </div>
+
+        {!loading && !error && total > USERS_PAGE_SIZE && (
+          <div className="admin-users-pagination">
+            <button
+              type="button"
+              className="btn secondary btn-sm"
+              disabled={page <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              Назад
+            </button>
+            <span className="muted admin-users-pagination-label">
+              Страница {page} из {totalPages}
+            </span>
+            <button
+              type="button"
+              className="btn secondary btn-sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            >
+              Вперёд
+            </button>
+          </div>
+        )}
 
         {loading && <p className="muted">Загрузка…</p>}
         {error && (

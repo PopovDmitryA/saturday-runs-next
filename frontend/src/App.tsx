@@ -23,6 +23,7 @@ import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
 import { useAppPath } from "./hooks/useAppPath";
 import { getCurrentUser, recordSitePageview } from "./lib/api";
+import { isLegacyGrafanaPath, legacyGrafanaHref } from "./lib/siteBrand";
 import { buildVisitorKey } from "./lib/siteVisitor";
 
 function useSitePageviewTracking(path: string) {
@@ -75,6 +76,22 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/about": () => <AboutPage />,
 };
 
+function LegacyGrafanaRedirect() {
+  useEffect(() => {
+    const target = legacyGrafanaHref(
+      window.location.pathname,
+      window.location.search,
+      window.location.hash,
+    );
+    window.location.replace(target);
+  }, []);
+  return (
+    <main className="app">
+      <p className="muted">Переход на прежний сайт (Grafana)…</p>
+    </main>
+  );
+}
+
 function ApiPathRedirect() {
   useEffect(() => {
     window.location.replace(`${window.location.pathname}${window.location.search}${window.location.hash}`);
@@ -87,6 +104,9 @@ function ApiPathRedirect() {
 }
 
 function renderRoute(path: string): ReactElement {
+  if (isLegacyGrafanaPath(path)) {
+    return <LegacyGrafanaRedirect />;
+  }
   if (path.startsWith("/api/")) {
     return <ApiPathRedirect />;
   }

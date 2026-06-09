@@ -109,6 +109,7 @@ def _reconcile_job(db: Session, job: SyncJob) -> bool:
     states: list[str] = []
     failure_messages: list[str] = []
     pending_lost = True
+    waiting_in_queue = False
 
     for suffix in suffixes:
         task_id = celery_task_id_for_job(job.id, suffix)
@@ -124,6 +125,7 @@ def _reconcile_job(db: Session, job: SyncJob) -> bool:
             queue_name = TASK_QUEUE_BY_SUFFIX[suffix]
             if find_task_queue_position(queue_name, task_id) is not None:
                 pending_lost = False
+                waiting_in_queue = True
         else:
             pending_lost = False
 
@@ -162,7 +164,11 @@ def _reconcile_job(db: Session, job: SyncJob) -> bool:
             job.started_at = job.finished_at
         return True
 
-    if age_seconds >= STALE_JOB_SECONDS * 15 and all(state == "PENDING" for state in states):
+    if (
+        age_seconds >= STALE_JOB_SECONDS * 15
+        and all(state == "PENDING" for state in states)
+        and not waiting_in_queue
+    ):
         job.status = SyncJobStatus.failed
         job.error_message = "Превышено время ожидания в очереди"
         job.finished_at = _utcnow()

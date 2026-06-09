@@ -9,7 +9,7 @@ from app.sync.user_sync import run_user_sync
 from app.workers.celery_app import celery_app
 
 
-@celery_app.task(name="user_sync.run", queue="five_verst")
+@celery_app.task(name="user_sync.run", queue="five_verst_user")
 def user_sync_task(
     user_id: str,
     trigger: str,

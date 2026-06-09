@@ -130,8 +130,14 @@ function QueueContent() {
           <h2 className="section-title">Пайплайн протоколов</h2>
           <p className="muted queue-pipeline-queues">
             Очередь протоколов 5&nbsp;вёрст: <strong>{data.pipeline.queue_depths.five_verst ?? 0}</strong>
+            {data.pipeline.queue_depths.five_verst_user != null && (
+              <> · профили 5&nbsp;вёрст: {data.pipeline.queue_depths.five_verst_user}</>
+            )}
             {data.pipeline.queue_depths.s95 != null && (
-              <> · s95: {data.pipeline.queue_depths.s95}</>
+              <> · s95 (протоколы): {data.pipeline.queue_depths.s95}</>
+            )}
+            {data.pipeline.queue_depths.s95_user != null && (
+              <> · s95 (профили): {data.pipeline.queue_depths.s95_user}</>
             )}
             {data.pipeline.queue_depths.parkrun != null && (
               <> · parkrun: {data.pipeline.queue_depths.parkrun}</>

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
+from app.services.batch_queue_guard import batch_queue_has_capacity
 from app.services.scheduled_sync_guard import release_hourly_sync_slot, try_claim_hourly_sync_slot
 from app.services.vk_admin_notify import notify_sync_finished, notify_sync_started
 
@@ -16,7 +17,19 @@ def run_reported_sync(
     details: str | None = None,
     hour_slot_key: str | None = None,
     force: bool = False,
+    batch_queue_name: str | None = None,
+    batch_queue_max_depth: int = 120,
 ) -> dict[str, object]:
+    if batch_queue_name and not batch_queue_has_capacity(
+        batch_queue_name,
+        max_depth=batch_queue_max_depth,
+    ):
+        return {
+            "skipped": True,
+            "reason": "batch_queue_full",
+            "errors": [],
+        }
+
     if hour_slot_key and not try_claim_hourly_sync_slot(hour_slot_key, force=force):
         return {
             "skipped": True,

@@ -819,7 +819,7 @@ export type AdminUserPreviewDashboard = {
   platform_links: AdminPlatformLinkBrief[];
 };
 
-export function listAdminUsers(query = "", limit = 25, offset = 0) {
+export function listAdminUsers(query = "", limit = 100, offset = 0) {
   const params = new URLSearchParams();
   if (query.trim()) {
     params.set("q", query.trim());

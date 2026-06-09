@@ -14,6 +14,12 @@ from app.platform_adapters.canonical import (
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
+from app.services.batch_queue_guard import batch_queue_has_capacity
+from app.services.celery_queue_inspector import FIVE_VERST_BATCH_QUEUE, S95_BATCH_QUEUE
+from app.services.protocol_queue_dedup import (
+    protocol_fetch_pending_in_broker,
+    protocol_fetch_task_id,
+)
 from app.sync import upsert
 
 logger = logging.getLogger(__name__)
@@ -36,6 +42,7 @@ class ProfileProtocolEnqueueResult:
     missing: int = 0
     enqueued: int = 0
     skipped_loaded: int = 0
+    skipped_duplicate: int = 0
     event_keys: list[str] = field(default_factory=list)
 
 
@@ -46,6 +53,7 @@ def is_protocol_fully_loaded(
     location_slug: str,
     event_date: date,
 ) -> bool:
+    """True when the full event protocol was fetched at least once (not just userstats rows)."""
     location = (
         db.query(Location)
         .filter(
@@ -151,7 +159,7 @@ def enqueue_missing_protocols_for_profile(
             result.skipped_loaded += 1
             continue
         result.missing += 1
-        if _dispatch_protocol_fetch(ref):
+        if _dispatch_protocol_fetch(ref, result=result):
             result.enqueued += 1
             result.event_keys.append(f"{ref.location_slug}:{ref.event_date.isoformat()}")
 
@@ -166,8 +174,36 @@ def enqueue_missing_protocols_for_profile(
     return result
 
 
-def _dispatch_protocol_fetch(ref: ProfileEventRef) -> bool:
+def _dispatch_protocol_fetch(
+    ref: ProfileEventRef,
+    *,
+    result: ProfileProtocolEnqueueResult | None = None,
+) -> bool:
+    if protocol_fetch_pending_in_broker(
+        ref.platform_code,
+        ref.location_slug,
+        ref.event_date,
+    ):
+        if result is not None:
+            result.skipped_duplicate += 1
+        logger.debug(
+            "skip duplicate protocol fetch %s %s %s",
+            ref.platform_code,
+            ref.location_slug,
+            ref.event_date.isoformat(),
+        )
+        return False
+
+    task_id = protocol_fetch_task_id(ref.platform_code, ref.location_slug, ref.event_date)
+
     if ref.platform_code == "five_verst":
+        if not batch_queue_has_capacity(FIVE_VERST_BATCH_QUEUE):
+            logger.info(
+                "skip profile protocol enqueue for %s %s: five_verst batch queue full",
+                ref.location_slug,
+                ref.event_date.isoformat(),
+            )
+            return False
         from app.workers.tasks.five_verst_sync import fetch_protocol_from_profile_task
 
         fetch_protocol_from_profile_task.apply_async(
@@ -177,10 +213,18 @@ def _dispatch_protocol_fetch(ref: ProfileEventRef) -> bool:
                 "event_number": ref.event_number,
                 "location_name": ref.location_name,
             },
-            queue="five_verst",
+            queue=FIVE_VERST_BATCH_QUEUE,
+            task_id=task_id,
         )
         return True
     if ref.platform_code == "s95":
+        if not batch_queue_has_capacity(S95_BATCH_QUEUE):
+            logger.info(
+                "skip profile protocol enqueue for %s %s: s95 batch queue full",
+                ref.location_slug,
+                ref.event_date.isoformat(),
+            )
+            return False
         from app.workers.tasks.s95_sync import fetch_protocol_from_profile_task
 
         fetch_protocol_from_profile_task.apply_async(
@@ -189,7 +233,8 @@ def _dispatch_protocol_fetch(ref: ProfileEventRef) -> bool:
                 "event_date_iso": ref.event_date.isoformat(),
                 "location_name": ref.location_name,
             },
-            queue="s95",
+            queue=S95_BATCH_QUEUE,
+            task_id=task_id,
         )
         return True
     return False

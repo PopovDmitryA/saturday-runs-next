@@ -27,7 +27,7 @@ from app.workers.tasks.sync_task_reporting import run_reported_sync
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="s95_sync.run_user_sync", queue="s95")
+@celery_app.task(name="s95_sync.run_user_sync", queue="s95_user")
 def s95_user_sync_task(
     user_id: str,
     trigger: str,
@@ -94,7 +94,7 @@ def s95_sync_location_task(
         finally:
             db.close()
 
-    return run_reported_sync(name, _run)
+    return run_reported_sync(name, _run, batch_queue_name="s95")
 
 
 @celery_app.task(name="s95_sync.enqueue_global_pipeline", queue="s95")
@@ -154,6 +154,7 @@ def s95_sync_location_rotation_task(*, force: bool = False) -> dict[str, object]
         details=details,
         hour_slot_key="s95:rotation",
         force=force,
+        batch_queue_name="s95",
     )
 
 
@@ -179,6 +180,7 @@ def s95_sync_locations_registry_task(limit: int | None = None, *, force: bool = 
         details=details,
         hour_slot_key="s95:registry",
         force=force,
+        batch_queue_name="s95",
     )
 
 
@@ -230,6 +232,7 @@ def s95_sync_latest_task(
         details=details,
         hour_slot_key="s95:latest",
         force=force,
+        batch_queue_name="s95",
     )
 
 
@@ -282,6 +285,7 @@ def s95_reconcile_stale_protocols_task(
         details=details,
         hour_slot_key="s95:reconcile",
         force=force,
+        batch_queue_name="s95",
     )
 
 
@@ -318,6 +322,7 @@ def s95_sync_athletes_registry_task(limit: int | None = None, *, force: bool = F
         details=details,
         hour_slot_key="s95:athletes",
         force=force,
+        batch_queue_name="s95",
     )
 
 

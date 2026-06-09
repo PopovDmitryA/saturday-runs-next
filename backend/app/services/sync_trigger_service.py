@@ -5,7 +5,11 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models import Platform, PlatformLink, SyncJobTrigger
-from app.services.celery_queue_inspector import celery_task_id_for_job
+from app.services.celery_queue_inspector import (
+    FIVE_VERST_USER_QUEUE,
+    S95_USER_QUEUE,
+    celery_task_id_for_job,
+)
 
 
 def _apply_task_id(job_id: UUID | None, suffix: str) -> dict[str, str]:
@@ -26,7 +30,7 @@ def enqueue_user_sync(
     user_sync_task.apply_async(
         args=[str(user_id), trigger.value, str(job_id) if job_id else None],
         kwargs={"platform_link_id": str(platform_link_id) if platform_link_id else None},
-        queue="five_verst",
+        queue=FIVE_VERST_USER_QUEUE,
         **_apply_task_id(job_id, "five_verst"),
     )
 
@@ -60,7 +64,7 @@ def enqueue_s95_user_sync(
     s95_user_sync_task.apply_async(
         args=[str(user_id), trigger.value, str(job_id) if job_id else None],
         kwargs={"platform_link_id": str(platform_link_id) if platform_link_id else None},
-        queue="s95",
+        queue=S95_USER_QUEUE,
         **_apply_task_id(job_id, "s95"),
     )
 
