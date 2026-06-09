@@ -77,11 +77,13 @@ def sync_platform_link(
     db: Session,
     link: PlatformLink,
     platform: Platform,
+    *,
+    trigger: SyncJobTrigger | None = None,
 ) -> dict[str, object]:
     if platform.code == "s95":
         from app.sync.s95_user_sync import sync_s95_platform_link
 
-        return sync_s95_platform_link(db, link, platform)
+        return sync_s95_platform_link(db, link, platform, trigger=trigger)
 
     if platform.code != "five_verst":
         ensure_adapters_registered()
@@ -124,15 +126,20 @@ def sync_platform_link(
     )
 
     from app.config import get_settings
+    from app.sync.profile_check_limits import profile_activity_check_limit
     from app.sync.profile_protocol_queue import enqueue_missing_protocols_for_profile
 
     settings = get_settings()
+    check_limit = profile_activity_check_limit(
+        trigger,
+        default=settings.s95_athlete_mismatch_check_runs,
+    )
     protocol_enqueue = enqueue_missing_protocols_for_profile(
         db,
         platform,
         runs,
         volunteering,
-        limit=settings.s95_athlete_mismatch_check_runs,
+        limit=check_limit,
     )
 
     link.sync_status = PlatformLinkSyncStatus.ok
@@ -206,7 +213,7 @@ def run_user_sync(
         link.sync_status = PlatformLinkSyncStatus.syncing
         db.commit()
         try:
-            results.append(sync_platform_link(db, link, platform))
+            results.append(sync_platform_link(db, link, platform, trigger=trigger))
         except Exception as exc:
             db.rollback()
             link = db.query(PlatformLink).filter(PlatformLink.id == link.id).one()

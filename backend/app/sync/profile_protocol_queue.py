@@ -87,7 +87,7 @@ def collect_profile_event_refs(
     volunteering: list[CanonicalVolunteerResult],
     *,
     platform_code: str,
-    limit: int = DEFAULT_PROFILE_PROTOCOL_ENQUEUE_LIMIT,
+    limit: int | None = DEFAULT_PROFILE_PROTOCOL_ENQUEUE_LIMIT,
 ) -> list[ProfileEventRef]:
     seen: set[tuple[str, date]] = set()
     refs: list[ProfileEventRef] = []
@@ -112,13 +112,13 @@ def collect_profile_event_refs(
     for item in sorted(runs, key=lambda row: row.event_date, reverse=True):
         slug = upsert._normalize_location_slug(item.location_external_key, item.location_name)
         _add(slug, item.location_name or slug, item.event_date, item.event_number)
-        if len(refs) >= limit:
+        if limit is not None and len(refs) >= limit:
             return refs
 
     for item in sorted(volunteering, key=lambda row: row.event_date, reverse=True):
         slug = upsert._normalize_location_slug(item.location_external_key, item.location_name)
         _add(slug, item.location_name or slug, item.event_date, None)
-        if len(refs) >= limit:
+        if limit is not None and len(refs) >= limit:
             break
 
     return refs
@@ -130,7 +130,7 @@ def enqueue_missing_protocols_for_profile(
     runs: list[CanonicalRunResult],
     volunteering: list[CanonicalVolunteerResult],
     *,
-    limit: int = DEFAULT_PROFILE_PROTOCOL_ENQUEUE_LIMIT,
+    limit: int | None = DEFAULT_PROFILE_PROTOCOL_ENQUEUE_LIMIT,
 ) -> ProfileProtocolEnqueueResult:
     result = ProfileProtocolEnqueueResult()
     refs = collect_profile_event_refs(

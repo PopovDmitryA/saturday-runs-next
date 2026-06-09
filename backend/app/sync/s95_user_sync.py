@@ -10,6 +10,7 @@ from app.models import (
     Platform,
     PlatformLink,
     PlatformLinkSyncStatus,
+    SyncJobTrigger,
 )
 from app.platform_adapters.s95 import parser as s95_parser
 from app.platform_adapters.s95.url import parse_athlete_url
@@ -18,6 +19,7 @@ from app.sync.s95_athlete_mismatch import (
     refetch_mismatched_protocols,
     refetch_protocols_for_profile_volunteering,
 )
+from app.sync.profile_check_limits import profile_activity_check_limit
 from app.sync.s95_participant_sync import apply_s95_participant_profile
 from app.sync.user_sync import UserSyncError, _count_participant_runs
 
@@ -39,7 +41,13 @@ def _apply_s95_participant(db: Session, platform: Platform, profile) -> Particip
     return row
 
 
-def sync_s95_platform_link(db: Session, link: PlatformLink, platform: Platform) -> dict[str, object]:
+def sync_s95_platform_link(
+    db: Session,
+    link: PlatformLink,
+    platform: Platform,
+    *,
+    trigger: SyncJobTrigger | None = None,
+) -> dict[str, object]:
     if platform.code != "s95":
         raise UserSyncError(f"Expected s95 platform, got {platform.code}")
 
@@ -61,25 +69,29 @@ def sync_s95_platform_link(db: Session, link: PlatformLink, platform: Platform) 
     from app.sync.profile_protocol_queue import enqueue_missing_protocols_for_profile
 
     settings = get_settings()
+    check_limit = profile_activity_check_limit(
+        trigger,
+        default=settings.s95_athlete_mismatch_check_runs,
+    )
     protocol_enqueue = enqueue_missing_protocols_for_profile(
         db,
         platform,
         runs,
         volunteering,
-        limit=settings.s95_athlete_mismatch_check_runs,
+        limit=check_limit,
     )
     refetch_result = refetch_mismatched_protocols(
         db,
         platform,
         participant,
         runs,
-        limit=settings.s95_athlete_mismatch_check_runs,
+        limit=check_limit,
     )
     vol_refetch = refetch_protocols_for_profile_volunteering(
         db,
         platform,
         volunteering,
-        limit=settings.s95_athlete_mismatch_check_runs,
+        limit=check_limit,
     )
     refetch_result.protocols_refetched += vol_refetch.protocols_refetched
     if vol_refetch.errors:
@@ -172,7 +184,7 @@ def run_s95_user_sync(
         link.sync_status = PlatformLinkSyncStatus.syncing
         db.commit()
         try:
-            sync_s95_platform_link(db, link, platform)
+            sync_s95_platform_link(db, link, platform, trigger=trigger)
         except Exception as exc:
             db.rollback()
             link = db.query(PlatformLink).filter(PlatformLink.id == link.id).one()

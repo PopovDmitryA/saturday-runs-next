@@ -8,7 +8,7 @@ from app.platform_adapters.canonical import ProfilePreview
 from app.services.profile_preview_persist import linking_sync_should_run
 
 
-def test_linking_sync_skipped_when_runs_already_imported(db_session) -> None:
+def test_linking_sync_skipped_when_live_preview_already_persisted_runs(db_session) -> None:
     platform = db_session.query(Platform).filter(Platform.code == "s95").one_or_none()
     if platform is None:
         return
@@ -20,12 +20,34 @@ def test_linking_sync_skipped_when_runs_already_imported(db_session) -> None:
         profile_url="https://s95.ru/athletes/123/",
         total_runs=50,
         platform_code="s95",
+        data_source="live",
     )
     with patch(
         "app.services.profile_preview_persist._count_participant_runs",
         return_value=12,
     ):
         assert linking_sync_should_run(db_session, platform, participant, preview) is False
+
+
+def test_linking_sync_runs_when_preview_from_database(db_session) -> None:
+    platform = db_session.query(Platform).filter(Platform.code == "s95").one_or_none()
+    if platform is None:
+        return
+    participant = MagicMock()
+    participant.id = uuid4()
+    preview = ProfilePreview(
+        external_user_id="11",
+        display_name="Runner",
+        profile_url="https://s95.ru/athletes/11/",
+        total_runs=1,
+        platform_code="s95",
+        data_source="database",
+    )
+    with patch(
+        "app.services.profile_preview_persist._count_participant_runs",
+        return_value=1,
+    ):
+        assert linking_sync_should_run(db_session, platform, participant, preview) is True
 
 
 def test_linking_sync_runs_for_s95_when_no_runs_in_db(db_session) -> None:

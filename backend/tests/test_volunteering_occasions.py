@@ -28,6 +28,15 @@ def test_count_inventory_day_one_per_location() -> None:
     assert count_volunteering_occasions(rows) == 2
 
 
+def test_count_inventory_day_same_location_different_years() -> None:
+    rows = [
+        (date(2024, 1, 1), "park850letiyamoskvy"),
+        (date(2025, 1, 1), "park850letiyamoskvy"),
+        (date(2024, 1, 1), "vernadskogo"),
+    ]
+    assert count_volunteering_occasions(rows) == 3
+
+
 def test_count_same_day_different_locations_is_one_occasion() -> None:
     rows = [
         (date(2025, 10, 11), "petergofaleksandriysky"),

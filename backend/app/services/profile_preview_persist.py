@@ -116,13 +116,16 @@ def linking_sync_should_run(
     participant: Participant,
     preview: ProfilePreview,
 ) -> bool:
-    """Skip Celery user sync only when activity is already in DB for this participant."""
+    """Skip Celery user sync only when a live preview already persisted full activity."""
     runs_in_db = _count_participant_runs(db, participant.id, platform.id)
-    if runs_in_db > 0:
-        return False
 
     if platform.code in ("s95", "five_verst"):
-        return True
+        if preview.data_source == "database":
+            return True
+        return runs_in_db == 0
+
+    if runs_in_db > 0:
+        return False
 
     expected = preview.total_runs
     if platform.code == "parkrun" and expected is not None and expected > 0:
