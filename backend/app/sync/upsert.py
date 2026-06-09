@@ -105,7 +105,7 @@ def upsert_location(
 
     row.name = location.name
     row.country = location.country
-    row.city = location.city
+    row.city = location.city or row.city
     row.region = region or row.region
     row.latitude = location.latitude or row.latitude
     row.longitude = location.longitude or row.longitude

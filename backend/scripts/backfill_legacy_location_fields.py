@@ -22,6 +22,9 @@ from app.migration.helpers import (
 )
 from app.migration.legacy_db import legacy_connection, legacy_rows
 from app.models import Location, Platform
+from app.services.official_map_locations import DEFAULT_FIVE_VERST_CSV, DEFAULT_S95_CSV
+
+import csv
 
 BELARUS_SLUGS = frozenset({"brest", "gomel", "grodno"})
 
@@ -57,6 +60,53 @@ def _clean_text(value: object | None) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def load_locations_csv(platform_code: str) -> dict[str, LegacyLocationFields]:
+    path = DEFAULT_S95_CSV if platform_code == "s95" else DEFAULT_FIVE_VERST_CSV
+    if not path.is_file():
+        return {}
+
+    result: dict[str, LegacyLocationFields] = {}
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            link = (row.get("link_point") or "").strip()
+            if platform_code == "s95":
+                slug = slug_from_s95_url(link)
+                country = s95_country_from_url(link)
+            else:
+                slug = slug_from_5verst_url(link)
+                country = "Россия"
+            if not slug:
+                continue
+            result[slug] = LegacyLocationFields(
+                city=_clean_text(row.get("city")),
+                region=_clean_text(row.get("region")),
+                country=country,
+                latitude=parse_float(row.get("latitude")),
+                longitude=parse_float(row.get("longitude")),
+            )
+    return result
+
+
+def merge_legacy_maps(
+    primary: dict[str, LegacyLocationFields],
+    secondary: dict[str, LegacyLocationFields],
+) -> dict[str, LegacyLocationFields]:
+    merged = dict(primary)
+    for slug, fields in secondary.items():
+        existing = merged.get(slug)
+        if existing is None:
+            merged[slug] = fields
+            continue
+        merged[slug] = LegacyLocationFields(
+            city=existing.city or fields.city,
+            region=existing.region or fields.region,
+            country=existing.country or fields.country,
+            latitude=existing.latitude if existing.latitude is not None else fields.latitude,
+            longitude=existing.longitude if existing.longitude is not None else fields.longitude,
+        )
+    return merged
 
 
 def load_five_verst_legacy(conn) -> dict[str, LegacyLocationFields]:
@@ -224,24 +274,32 @@ def main() -> int:
     Session = get_session_factory()
     stats = BackfillStats()
 
-    with legacy_connection() as conn:
-        five_verst_legacy = load_five_verst_legacy(conn)
-        s95_legacy = load_s95_legacy(conn)
+    five_verst_legacy: dict[str, LegacyLocationFields] = {}
+    s95_legacy: dict[str, LegacyLocationFields] = {}
+    try:
+        with legacy_connection() as conn:
+            five_verst_legacy = load_five_verst_legacy(conn)
+            s95_legacy = load_s95_legacy(conn)
+    except Exception as exc:
+        stats.errors.append(f"legacy db unavailable: {exc}")
 
-        with Session() as db:
-            for code, legacy_map in (("five_verst", five_verst_legacy), ("s95", s95_legacy)):
-                platform = db.query(Platform).filter(Platform.code == code).one_or_none()
-                if platform is None:
-                    stats.errors.append(f"platform missing: {code}")
-                    continue
-                backfill_platform(db, platform, legacy_map, stats, dry_run=args.dry_run)
+    five_verst_legacy = merge_legacy_maps(five_verst_legacy, load_locations_csv("five_verst"))
+    s95_legacy = merge_legacy_maps(s95_legacy, load_locations_csv("s95"))
 
-            apply_city_overrides(db, stats, dry_run=args.dry_run)
+    with Session() as db:
+        for code, legacy_map in (("five_verst", five_verst_legacy), ("s95", s95_legacy)):
+            platform = db.query(Platform).filter(Platform.code == code).one_or_none()
+            if platform is None:
+                stats.errors.append(f"platform missing: {code}")
+                continue
+            backfill_platform(db, platform, legacy_map, stats, dry_run=args.dry_run)
 
-            if args.dry_run:
-                db.rollback()
-            else:
-                db.commit()
+        apply_city_overrides(db, stats, dry_run=args.dry_run)
+
+        if args.dry_run:
+            db.rollback()
+        else:
+            db.commit()
 
     print(
         f"five_verst matched={stats.five_verst_matched} "
