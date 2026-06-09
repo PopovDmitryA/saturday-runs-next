@@ -15,11 +15,11 @@ from app.models import (
 from app.platform_adapters.s95 import parser as s95_parser
 from app.platform_adapters.s95.url import parse_athlete_url
 from app.sync import upsert as sync_upsert
+from app.sync.profile_check_limits import profile_activity_check_limit
 from app.sync.s95_athlete_mismatch import (
     refetch_mismatched_protocols,
     refetch_protocols_for_profile_volunteering,
 )
-from app.sync.profile_check_limits import profile_activity_check_limit
 from app.sync.s95_participant_sync import apply_s95_participant_profile
 from app.sync.user_sync import UserSyncError, _count_participant_runs
 
