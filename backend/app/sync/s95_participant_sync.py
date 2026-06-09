@@ -63,7 +63,7 @@ def set_barcode_lookup_status(
     now: datetime | None = None,
     error_message: str | None = None,
 ) -> None:
-    observed_at = mark_profile_checked(row, now=now)
+    mark_profile_checked(row, now=now)
     merge_profile_extra(
         row,
         {

@@ -9,7 +9,12 @@ from app.config import get_settings
 from app.core.redis_client import get_redis_client
 from app.models import Location, Platform
 from app.sync import upsert
-from app.sync.s95_global_sync import S95LocationSyncOptions, S95LocationSyncResult, configured_s95_locations, sync_s95_location
+from app.sync.s95_global_sync import (
+    S95LocationSyncOptions,
+    S95LocationSyncResult,
+    configured_s95_locations,
+    sync_s95_location,
+)
 
 logger = logging.getLogger(__name__)
 

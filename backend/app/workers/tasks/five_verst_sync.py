@@ -13,12 +13,12 @@ from app.services.sync_run_params import (
     five_verst_rotation_details,
 )
 from app.sync.five_verst_latest import LatestResultsSyncOptions, sync_latest_results
-from app.workers.tasks.sync_task_reporting import run_reported_sync
 from app.sync.five_verst_location_rotation import sync_next_location_batch
 from app.sync.five_verst_locations import LocationRegistrySyncOptions, sync_locations_registry
 from app.sync.five_verst_reconcile import ReconcileProtocolsOptions, reconcile_stale_protocols
 from app.sync.global_sync import LocationSyncOptions, sync_location, sync_location_summaries_only
 from app.workers.celery_app import celery_app
+from app.workers.tasks.sync_task_reporting import run_reported_sync
 
 logger = logging.getLogger(__name__)
 
