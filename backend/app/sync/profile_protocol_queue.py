@@ -8,7 +8,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.models import EventSummary, Location, Platform, ProtocolSyncState
+from app.models import EventSummary, Location, Participant, Platform, ProtocolSyncState
 from app.platform_adapters.canonical import (
     CanonicalEventSummary,
     CanonicalRunResult,
@@ -178,6 +178,7 @@ def _dispatch_protocol_fetch(
     ref: ProfileEventRef,
     *,
     result: ProfileProtocolEnqueueResult | None = None,
+    force: bool = False,
 ) -> bool:
     if protocol_fetch_pending_in_broker(
         ref.platform_code,
@@ -232,12 +233,97 @@ def _dispatch_protocol_fetch(
                 "location_slug": ref.location_slug,
                 "event_date_iso": ref.event_date.isoformat(),
                 "location_name": ref.location_name,
+                "force": force,
             },
             queue=S95_BATCH_QUEUE,
             task_id=task_id,
         )
         return True
     return False
+
+
+def enqueue_mismatched_protocols_for_profile(
+    db: Session,
+    platform: Platform,
+    participant: Participant,
+    profile_runs: list[CanonicalRunResult],
+    profile_volunteering: list[CanonicalVolunteerResult],
+    *,
+    limit: int | None = None,
+) -> tuple[ProfileProtocolEnqueueResult, int]:
+    """Enqueue protocol refetch for mismatched runs and recent volunteering (no inline fetch)."""
+    from app.sync.s95_athlete_mismatch import detect_profile_run_mismatches
+
+    if platform.code != "s95":
+        return ProfileProtocolEnqueueResult(), 0
+
+    mismatches = detect_profile_run_mismatches(
+        db,
+        platform,
+        participant,
+        profile_runs,
+        limit=limit,
+    )
+    result = ProfileProtocolEnqueueResult()
+    result.checked = len(mismatches)
+
+    seen: set[tuple[str, date]] = set()
+    for mismatch in mismatches:
+        key = (mismatch.location_slug, mismatch.event_date)
+        if key in seen:
+            continue
+        seen.add(key)
+        profile_run = next(
+            (
+                item
+                for item in profile_runs
+                if upsert._normalize_location_slug(item.location_external_key, item.location_name)
+                == mismatch.location_slug
+                and item.event_date == mismatch.event_date
+            ),
+            None,
+        )
+        ref = ProfileEventRef(
+            platform_code=platform.code,
+            location_slug=mismatch.location_slug,
+            location_name=(profile_run.location_name if profile_run else mismatch.location_slug),
+            event_date=mismatch.event_date,
+            event_number=profile_run.event_number if profile_run else None,
+        )
+        if _dispatch_protocol_fetch(ref, result=result, force=True):
+            result.enqueued += 1
+            result.event_keys.append(f"{ref.location_slug}:{ref.event_date.isoformat()}")
+
+    recent_vol = sorted(profile_volunteering, key=lambda item: item.event_date, reverse=True)
+    if limit is not None:
+        recent_vol = recent_vol[:limit]
+    for vol in recent_vol:
+        slug = upsert._normalize_location_slug(vol.location_external_key, vol.location_name)
+        if slug == "unknown":
+            continue
+        key = (slug, vol.event_date)
+        if key in seen:
+            continue
+        seen.add(key)
+        ref = ProfileEventRef(
+            platform_code=platform.code,
+            location_slug=slug,
+            location_name=vol.location_name or slug,
+            event_date=vol.event_date,
+        )
+        if _dispatch_protocol_fetch(ref, result=result, force=True):
+            result.enqueued += 1
+            result.event_keys.append(f"{ref.location_slug}:{ref.event_date.isoformat()}")
+
+    if result.enqueued:
+        logger.info(
+            "profile mismatch protocol enqueue %s participant=%s: mismatches=%d enqueued=%d",
+            platform.code,
+            participant.id,
+            len(mismatches),
+            result.enqueued,
+        )
+    return result, len(mismatches)
 
 
 def _summary_row_to_canonical(summary_row: EventSummary, location: Location) -> CanonicalEventSummary:
@@ -335,13 +421,16 @@ def fetch_s95_protocol_for_profile(
     location_slug: str,
     event_date: date,
     location_name: str,
+    force: bool = False,
 ) -> None:
     from app.sync.iteration_commit import commit_step
     from app.sync.s95_protocol import fetch_and_upsert_activity_protocol
     from app.sync.s95_protocol_lookup import resolve_s95_protocol
 
     platform = upsert.get_platform(db, "s95")
-    if is_protocol_fully_loaded(db, platform, location_slug=location_slug, event_date=event_date):
+    if not force and is_protocol_fully_loaded(
+        db, platform, location_slug=location_slug, event_date=event_date
+    ):
         return
 
     resolved = resolve_s95_protocol(

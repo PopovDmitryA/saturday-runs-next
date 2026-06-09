@@ -36,7 +36,31 @@ services:
   worker:
     profiles: ["dev-default-worker"]
 
+  worker-s95-user:
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./.env:/app/.env:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !reset
+      redis:
+        condition: service_healthy
+
   worker-s95:
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./.env:/app/.env:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !reset
+      redis:
+        condition: service_healthy
+
+  worker-five-verst-user:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://redis:6379/0

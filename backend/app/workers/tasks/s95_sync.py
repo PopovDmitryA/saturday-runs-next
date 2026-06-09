@@ -337,6 +337,7 @@ def fetch_protocol_from_profile_task(
     location_slug: str,
     event_date_iso: str,
     location_name: str | None = None,
+    force: bool = False,
 ) -> dict[str, object]:
     from datetime import date
 
@@ -349,6 +350,7 @@ def fetch_protocol_from_profile_task(
             location_slug=location_slug,
             event_date=date.fromisoformat(event_date_iso),
             location_name=location_name or location_slug,
+            force=force,
         )
         return {
             "location_slug": location_slug,
