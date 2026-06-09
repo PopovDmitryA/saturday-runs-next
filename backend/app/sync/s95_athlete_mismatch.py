@@ -79,9 +79,11 @@ def detect_profile_run_mismatches(
     participant: Participant,
     profile_runs: list[CanonicalRunResult],
     *,
-    limit: int = DEFAULT_MISMATCH_CHECK_RUNS,
+    limit: int | None = DEFAULT_MISMATCH_CHECK_RUNS,
 ) -> list[ProfileRunMismatch]:
-    recent = sorted(profile_runs, key=lambda item: item.event_date, reverse=True)[:limit]
+    recent = sorted(profile_runs, key=lambda item: item.event_date, reverse=True)
+    if limit is not None:
+        recent = recent[:limit]
     mismatches: list[ProfileRunMismatch] = []
     for profile_run in recent:
         slug = upsert._normalize_location_slug(
@@ -125,7 +127,7 @@ def refetch_mismatched_protocols(
     participant: Participant,
     profile_runs: list[CanonicalRunResult],
     *,
-    limit: int = DEFAULT_MISMATCH_CHECK_RUNS,
+    limit: int | None = DEFAULT_MISMATCH_CHECK_RUNS,
 ) -> RefetchMismatchedProtocolsResult:
     result = RefetchMismatchedProtocolsResult()
     mismatches = detect_profile_run_mismatches(
@@ -135,7 +137,10 @@ def refetch_mismatched_protocols(
         profile_runs,
         limit=limit,
     )
-    result.checked = min(len(profile_runs), limit)
+    if limit is None:
+        result.checked = len(profile_runs)
+    else:
+        result.checked = min(len(profile_runs), limit)
     result.mismatches = mismatches
 
     seen_keys: set[str] = set()
@@ -187,11 +192,13 @@ def refetch_protocols_for_profile_volunteering(
     platform: Platform,
     profile_volunteering: list[CanonicalVolunteerResult],
     *,
-    limit: int = 15,
+    limit: int | None = 15,
 ) -> RefetchMismatchedProtocolsResult:
     """Load event protocols for recent profile volunteering rows (team list + cross-check)."""
     result = RefetchMismatchedProtocolsResult()
-    recent = sorted(profile_volunteering, key=lambda item: item.event_date, reverse=True)[:limit]
+    recent = sorted(profile_volunteering, key=lambda item: item.event_date, reverse=True)
+    if limit is not None:
+        recent = recent[:limit]
     result.checked = len(recent)
 
     seen_events: set[str] = set()

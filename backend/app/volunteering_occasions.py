@@ -10,15 +10,15 @@ def is_inventory_day(event_date: date) -> bool:
 
 
 def count_volunteering_occasions(rows: list[tuple[date, str]]) -> int:
-    """One volunteering per calendar day; inventory day counts one per location."""
-    inventory_locations: set[str] = set()
+    """One volunteering per calendar day; inventory day counts one per (date, location)."""
+    inventory_occasions: set[tuple[date, str]] = set()
     regular_dates: set[date] = set()
     for event_date, location_key in rows:
         if is_inventory_day(event_date):
-            inventory_locations.add(location_key or "unknown")
+            inventory_occasions.add((event_date, location_key or "unknown"))
         else:
             regular_dates.add(event_date)
-    return len(regular_dates) + len(inventory_locations)
+    return len(regular_dates) + len(inventory_occasions)
 
 
 def volunteering_occasions_by_month(rows: list[tuple[date, str]]) -> Counter[str]:
