@@ -37,9 +37,9 @@ celery_app.conf.update(
             "schedule": crontab(hour=20, minute=0),
             "options": {"queue": "five_verst"},
         },
-        "five-verst-latest-weekday-morning": {
+        "five-verst-latest-weekday": {
             "task": "five_verst_sync.sync_latest_results",
-            "schedule": crontab(hour=5, minute=0, day_of_week="1-5"),
+            "schedule": crontab(hour="0,5,10,15,20", minute=0, day_of_week="1-5"),
             "options": {"queue": "five_verst"},
         },
         "five-verst-latest-saturday-hourly": {
@@ -67,9 +67,9 @@ celery_app.conf.update(
             "schedule": crontab(hour=20, minute=30),
             "options": {"queue": "s95"},
         },
-        "s95-latest-weekday-morning": {
+        "s95-latest-weekday": {
             "task": "s95_sync.sync_latest",
-            "schedule": crontab(hour=5, minute=30, day_of_week="1-5"),
+            "schedule": crontab(hour="0,5,10,15,20", minute=30, day_of_week="1-5"),
             "options": {"queue": "s95"},
         },
         "s95-latest-saturday-hourly": {

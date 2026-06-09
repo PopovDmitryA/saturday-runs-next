@@ -288,11 +288,13 @@ export type SyncQueueJob = {
 export type SyncQueuePipelineTask = {
   label: string;
   started_at: string | null;
+  finished_at?: string | null;
   source: string | null;
 };
 
 export type SyncQueuePipeline = {
   running: SyncQueuePipelineTask[];
+  last_success?: SyncQueuePipelineTask[];
   queue_depths: Record<string, number>;
   checked_at: string | null;
 };

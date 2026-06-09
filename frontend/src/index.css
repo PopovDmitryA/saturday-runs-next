@@ -1997,6 +1997,23 @@ body {
   font-size: 0.875rem;
 }
 
+.queue-pipeline-panel .queue-pipeline-subtitle {
+  margin: 1rem 0 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.queue-pipeline-running,
+.queue-pipeline-last-success {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.queue-pipeline-last-success {
+  color: #166534;
+}
+
 .queue-actions {
   align-items: center;
   gap: 1rem;
