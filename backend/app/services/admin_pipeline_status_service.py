@@ -13,9 +13,17 @@ from app.services.celery_queue_inspector import (
     get_queue_length,
 )
 from app.services.parkrun_local_worker import get_local_worker_status
+from app.services.sync_run_maintenance import close_stale_sync_runs
 from app.workers.celery_app import celery_app
 
 FIVE_VERST_QUEUE = "five_verst"
+
+PIPELINE_LAST_SUCCESS_TYPES: tuple[str, ...] = (
+    "five_verst:latest",
+    "five_verst:reconcile_protocols",
+    "s95:latest",
+    "s95:athletes_registry",
+)
 
 CELERY_TASK_LABELS: dict[str, str] = {
     "five_verst_sync.sync_locations_registry": "5verst: реестр /events/",
@@ -135,8 +143,33 @@ def _inspect_active_celery_tasks() -> list[dict[str, Any]]:
     return items
 
 
+def _last_successful_runs(db: Session) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for sync_type in PIPELINE_LAST_SUCCESS_TYPES:
+        row = (
+            db.query(SyncRun)
+            .filter(
+                SyncRun.sync_type == sync_type,
+                SyncRun.status == SyncRunStatus.success,
+            )
+            .order_by(SyncRun.finished_at.desc().nullslast(), SyncRun.started_at.desc())
+            .first()
+        )
+        if row is None:
+            continue
+        items.append(
+            {
+                "label": sync_run_type_label(sync_type),
+                "sync_type": sync_type,
+                "finished_at": row.finished_at or row.started_at,
+            }
+        )
+    return items
+
+
 def get_admin_pipeline_status(db: Session) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
+    close_stale_sync_runs(db, now=now)
 
     sync_runs = (
         db.query(SyncRun)
@@ -214,6 +247,7 @@ def get_admin_pipeline_status(db: Session) -> dict[str, Any]:
     return {
         "checked_at": now,
         "running": running_items,
+        "last_success": _last_successful_runs(db),
         "queue_depths": queue_depths,
         "parkrun_local_worker": parkrun_worker,
     }

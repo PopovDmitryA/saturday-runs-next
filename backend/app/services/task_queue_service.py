@@ -104,8 +104,18 @@ def _pipeline_payload(db: Session) -> dict[str, object]:
                 "source": item.get("source"),
             }
         )
+    last_success: list[dict[str, object]] = []
+    for item in status.get("last_success") or []:
+        last_success.append(
+            {
+                "label": item.get("label"),
+                "finished_at": item.get("finished_at"),
+                "source": "sync_run",
+            }
+        )
     return {
         "running": running,
+        "last_success": last_success,
         "queue_depths": status.get("queue_depths") or {},
         "checked_at": status.get("checked_at"),
     }

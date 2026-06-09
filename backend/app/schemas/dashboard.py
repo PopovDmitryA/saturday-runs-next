@@ -242,10 +242,12 @@ class SyncQueuePipelineTaskResponse(BaseModel):
     label: str
     started_at: datetime | None = None
     source: str | None = None
+    finished_at: datetime | None = None
 
 
 class SyncQueuePipelineResponse(BaseModel):
     running: list[SyncQueuePipelineTaskResponse] = Field(default_factory=list)
+    last_success: list[SyncQueuePipelineTaskResponse] = Field(default_factory=list)
     queue_depths: dict[str, int] = Field(default_factory=dict)
     checked_at: datetime | None = None
 

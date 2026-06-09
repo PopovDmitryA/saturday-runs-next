@@ -149,6 +149,21 @@ function QueueContent() {
               ))}
             </ul>
           )}
+          {(data.pipeline.last_success?.length ?? 0) > 0 && (
+            <>
+              <h3 className="queue-pipeline-subtitle">Последние успешные прогоны</h3>
+              <ul className="queue-pipeline-last-success">
+                {data.pipeline.last_success!.map((item, index) => (
+                  <li key={`${item.label}-ok-${index}`}>
+                    <span>{item.label}</span>
+                    {item.finished_at && (
+                      <span className="muted"> · {formatDateTime(item.finished_at)}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </section>
       )}
 
