@@ -45,8 +45,9 @@
 ## 2. Топология на сервере
 
 ```
-run5k.run              → Grafana + legacy Telegram-бот (без изменений)
-app.run5k.run          → Nginx → React (dist) + FastAPI
+run5k.run              → Nginx → React (dist) + FastAPI (новый ЛК)
+grafana.run5k.run      → Nginx → Grafana (127.0.0.1:9000), legacy дашборды
+app.run5k.run          → 301 redirect → run5k.run (старый URL ЛК)
 195.58.34.112:5432
   ├── five_verst_stats     (legacy, read-only для ETL)
   └── saturday_runs_lk     (новая, read-write)
@@ -188,13 +189,13 @@ Legacy и новая БД могут жить **на одном PostgreSQL-ин�
 
 ### Фаза A. Подготовка сервера (1 день)
 
-1. DNS: `app.run5k.run` → сервер.
+1. DNS: `run5k.run`, `www.run5k.run`, `grafana.run5k.run` → сервер.
 2. Создать БД `saturday_runs_lk` + пользователя с write-доступом.
-3. Read-only доступ к `five_verst_stats` для ETL (отдельный пользователь).
+3. Read-only доступ к `five_verst_stats` for ETL (отдельный пользователь).
 4. Зарегистрировать **нового** Telegram-бота (не legacy).
 5. Production `.env`:
    - `APP_ENV=production`, `APP_DEBUG=false`
-   - `APP_BASE_URL=https://app.run5k.run`
+   - `APP_BASE_URL=https://run5k.run`
    - сильные секреты (`APP_SECRET_KEY`, `TELEGRAM_BOT_INTERNAL_SECRET`)
    - `ADMIN_TELEGRAM_ID`, `DEMO_TELEGRAM_ID`
 
@@ -204,9 +205,10 @@ Legacy и новая БД могут жить **на одном PostgreSQL-ин�
    - `api`, `nginx`, `bot`, `worker`, `worker-s95`, `worker-parkrun`, `beat`
    - без bind-mount исходников; образы через `build`
    - `uvicorn --workers 2`, без `--reload`
-2. Nginx + Let's Encrypt для `app.run5k.run`.
-3. GitHub Actions `deploy.yml`: build frontend → rsync/SSH → `docker compose up -d`.
-4. Smoke: `/health`, вход через Telegram, пустой dashboard.
+2. Nginx + Let's Encrypt для `run5k.run` и `grafana.run5k.run`.
+3. OAuth redirect URIs: `https://run5k.run/oauth/vk/callback`, `https://run5k.run/oauth/yandex/callback`.
+4. GitHub Actions `deploy.yml`: build frontend → rsync/SSH → `docker compose up -d`.
+5. Smoke: `/health`, вход через Telegram, пустой dashboard.
 
 ### Фаза C. Пустая новая БД + справочники (полдня)
 

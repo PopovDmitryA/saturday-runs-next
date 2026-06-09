@@ -12,6 +12,7 @@ from app.s95.parsers.location import parse_event_location_page, parse_location_c
 from app.s95.parsers.summary import parse_location_summary_html
 from app.services.location_coordinate_service import maybe_request_coordinates_for_new_location
 from app.sync import upsert
+from app.sync.iteration_commit import commit_step, persist_summary_error, rollback_step
 from app.sync.s95_global_sync import S95LocationSyncResult, _finish_sync_run, _start_sync_run
 from app.sync.s95_protocol import fetch_and_upsert_activity_protocol
 from app.sync.s95_summary_plan import SummarySyncAction, classify_event_summary, plan_protocol_queue
@@ -51,6 +52,7 @@ def sync_s95_event_location(
     platform = upsert.get_platform(db, PLATFORM_CODE)
     result = S95LocationSyncResult(location_external_key=location_external_key)
     sync_run = _start_sync_run(db, platform, f"s95:event:{location_external_key}")
+    db.commit()
 
     try:
         map_html = fetch_page_html(
@@ -83,6 +85,7 @@ def sync_s95_event_location(
                 is_new=location_is_new,
                 map_url=canonical.map_url or parse_map_url(map_html),
             )
+        commit_step(db)
 
         summary_html = fetch_page_html(location_source_url, reason="location_summary")
         summaries = parse_location_summary_html(
@@ -97,14 +100,19 @@ def sync_s95_event_location(
         result.summaries_total = len(summaries)
         apply_items = []
         for summary in summaries:
-            plan_item = classify_event_summary(db, platform, summary)
-            summary_row, changed = upsert.upsert_event_summary(db, platform, location_row, summary)
-            if changed or plan_item.action != SummarySyncAction.unchanged:
-                result.summaries_upserted += 1
-            elif plan_item.action == SummarySyncAction.unchanged:
-                result.summaries_unchanged += 1
-            if plan_item.action != SummarySyncAction.unchanged:
-                apply_items.append(plan_item)
+            try:
+                plan_item = classify_event_summary(db, platform, summary)
+                summary_row, changed = upsert.upsert_event_summary(db, platform, location_row, summary)
+                if changed or plan_item.action != SummarySyncAction.unchanged:
+                    result.summaries_upserted += 1
+                elif plan_item.action == SummarySyncAction.unchanged:
+                    result.summaries_unchanged += 1
+                if plan_item.action != SummarySyncAction.unchanged:
+                    apply_items.append(plan_item)
+                commit_step(db)
+            except Exception as exc:
+                rollback_step(db)
+                result.errors.append(f"{summary.external_event_key}: {exc}")
 
         protocol_queue = plan_protocol_queue(
             apply_items,
@@ -135,8 +143,15 @@ def sync_s95_event_location(
                 result.run_results_upserted += upsert_result.run_results_upserted
                 result.volunteer_results_upserted += upsert_result.volunteer_results_upserted
                 result.protocols_fetched += 1
+                commit_step(db)
             except Exception as exc:
                 result.errors.append(f"{summary.external_event_key}: {exc}")
+                persist_summary_error(
+                    db,
+                    platform_id=platform.id,
+                    external_event_key=summary.external_event_key,
+                    message=str(exc),
+                )
 
         sync_run.records_fetched = result.summaries_total
         sync_run.records_upserted = result.summaries_upserted + result.protocols_fetched

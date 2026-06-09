@@ -61,6 +61,8 @@ export type ShareFieldId =
   | "total_volunteering"
   | "unique_locations"
   | "unique_run_locations"
+  | "unique_run_regions"
+  | "unique_run_cities"
   | "total_distance_km"
   | "saturday_streak"
   | "saturday_consistency"
@@ -84,6 +86,8 @@ export const SHARE_FIELDS: ShareFieldDef[] = [
   { id: "total_volunteering", label: "Волонтёрств", hint: "Смены и роли" },
   { id: "unique_locations", label: "Уникальных локаций", hint: "Пробежки и волонтёрство" },
   { id: "unique_run_locations", label: "Локаций с пробежками", hint: "География стартов" },
+  { id: "unique_run_regions", label: "Регионов с пробежками", hint: "Где бегали" },
+  { id: "unique_run_cities", label: "Городов с пробежками", hint: "Где бегали" },
   { id: "total_distance_km", label: "Дистанция", hint: "Примерно, 5 км × пробежки" },
   { id: "saturday_streak", label: "Серия суббот", hint: "Подряд с активностью" },
   { id: "saturday_consistency", label: "Субботы за год", hint: "Доля суббот с пробежкой/волонтёрством" },
@@ -118,9 +122,9 @@ export const SHARE_PRESETS: SharePreset[] = [
   {
     id: "tourist",
     title: "Турист",
-    description: "Много локаций и любимые парки",
-    fields: ["unique_locations", "total_runs"],
-    primaryFieldId: "unique_locations",
+    description: "География пробежек",
+    fields: ["unique_run_regions", "unique_run_locations", "unique_run_cities"],
+    primaryFieldId: "unique_run_locations",
   },
   {
     id: "runner",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -7,14 +8,16 @@ from enum import Enum
 from sqlalchemy.orm import Session
 
 from app.five_verst.fetch.protocol_pause import wait_between_protocols
-from app.models import EventSummary, Location, Platform, SyncRun, SyncRunStatus, SyncStatus
+from app.models import EventSummary, Location, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalEventSummary, CanonicalLocation
 from app.platform_adapters.five_verst import bulk_parser
 from app.services.sync_report_labels import protocol_detail_label
 from app.sync import upsert
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
+from app.sync.iteration_commit import commit_step, persist_summary_error, rollback_step
 
 PLATFORM_CODE = "five_verst"
+logger = logging.getLogger(__name__)
 
 
 class LatestResultAction(str, Enum):
@@ -258,6 +261,13 @@ def sync_latest_results(
             to_update.append(item)
 
     result.needs_update = len(to_update)
+    logger.info(
+        "latest sync: plan unchanged=%d new=%d changed=%d missing_protocol=%d",
+        result.unchanged,
+        result.new_summaries,
+        result.changed_summaries,
+        result.missing_protocol,
+    )
     apply_items = to_update
     if options.update_limit is not None:
         apply_items = to_update[: options.update_limit]
@@ -274,6 +284,7 @@ def sync_latest_results(
         return result
 
     sync_run = _start_sync_run(db, platform)
+    db.commit()
     protocol_queue = _plan_protocol_queue(
         apply_items,
         protocol_fetch_limit=options.protocol_fetch_limit,
@@ -283,31 +294,44 @@ def sync_latest_results(
     try:
         for item in apply_items:
             summary = item.summary
-            location: Location | None = None
-            if options.ensure_locations:
-                location = _ensure_location(db, platform, summary, result=result)
-                if location is None:
-                    continue
-            else:
-                location = (
-                    db.query(Location)
-                    .filter(
-                        Location.platform_id == platform.id,
-                        Location.external_key == summary.location_external_key,
+            try:
+                location: Location | None = None
+                if options.ensure_locations:
+                    location = _ensure_location(db, platform, summary, result=result)
+                    if location is None:
+                        continue
+                else:
+                    location = (
+                        db.query(Location)
+                        .filter(
+                            Location.platform_id == platform.id,
+                            Location.external_key == summary.location_external_key,
+                        )
+                        .one_or_none()
                     )
-                    .one_or_none()
-                )
-                if location is None:
-                    result.locations_missing += 1
-                    result.errors.append(f"{summary.external_event_key}: location not in database")
-                    continue
+                    if location is None:
+                        result.locations_missing += 1
+                        result.errors.append(f"{summary.external_event_key}: location not in database")
+                        continue
 
-            summary_row, changed = upsert.upsert_event_summary(db, platform, location, summary)
-            if changed or item.action != LatestResultAction.unchanged:
-                result.summaries_upserted += 1
+                summary_row, changed = upsert.upsert_event_summary(db, platform, location, summary)
+                if changed or item.action != LatestResultAction.unchanged:
+                    result.summaries_upserted += 1
+                commit_step(db)
+            except Exception as exc:
+                rollback_step(db)
+                result.errors.append(f"{summary.external_event_key}: {exc}")
 
+        logger.info("latest sync: fetching %d protocols", len(protocol_queue))
         for index, item in enumerate(protocol_queue):
             summary = item.summary
+            logger.info(
+                "latest sync: protocol %d/%d %s (%s)",
+                index + 1,
+                len(protocol_queue),
+                summary.location_external_key,
+                summary.external_event_key,
+            )
             location = (
                 db.query(Location)
                 .filter(
@@ -338,10 +362,15 @@ def sync_latest_results(
                 )
                 if index + 1 < len(protocol_queue):
                     wait_between_protocols(reason="latest")
+                commit_step(db)
             except Exception as exc:
                 result.errors.append(f"{summary.external_event_key}: {exc}")
-                summary_row.sync_status = SyncStatus.error
-                summary_row.error_message = str(exc)
+                persist_summary_error(
+                    db,
+                    platform_id=platform.id,
+                    external_event_key=summary.external_event_key,
+                    message=str(exc),
+                )
 
         _finish_sync_run(
             db,

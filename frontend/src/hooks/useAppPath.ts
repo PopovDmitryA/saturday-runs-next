@@ -42,6 +42,11 @@ export function useAppPath(): string {
         return;
       }
 
+      // API and other non-SPA paths must use a full navigation (OAuth, downloads, etc.).
+      if (url.pathname.startsWith("/api/") || anchor.hasAttribute("data-full-nav")) {
+        return;
+      }
+
       const nextPath = normalizeAppPath(url.pathname);
       if (nextPath === normalizeAppPath() && url.search === window.location.search) {
         return;

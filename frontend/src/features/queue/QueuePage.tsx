@@ -119,9 +119,38 @@ function QueueContent() {
       <AdminSubnav activePath="/admin/queue" />
 
       <p className="muted queue-intro">
-        Все заявки на обновление данных от пользователей. Статус обновляется автоматически, пока есть
-        активные задачи.
+        Заявки пользователей на обновление профилей — ниже. Отдельно от них работает фоновый пайплайн
+        протоколов 5&nbsp;вёрст (субботние старты, реестр локаций).
       </p>
+
+      {data?.pipeline && (
+        <section className="card queue-pipeline-panel">
+          <h2 className="section-title">Пайплайн протоколов</h2>
+          <p className="muted queue-pipeline-queues">
+            Очередь протоколов 5&nbsp;вёрст: <strong>{data.pipeline.queue_depths.five_verst ?? 0}</strong>
+            {data.pipeline.queue_depths.s95 != null && (
+              <> · s95: {data.pipeline.queue_depths.s95}</>
+            )}
+            {data.pipeline.queue_depths.parkrun != null && (
+              <> · parkrun: {data.pipeline.queue_depths.parkrun}</>
+            )}
+          </p>
+          {data.pipeline.running.length === 0 ? (
+            <p className="muted">Сейчас ничего не выполняется.</p>
+          ) : (
+            <ul className="queue-pipeline-running">
+              {data.pipeline.running.map((item, index) => (
+                <li key={`${item.label}-${index}`}>
+                  <span>{item.label}</span>
+                  {item.started_at && (
+                    <span className="muted"> · с {formatDateTime(item.started_at)}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <div className="actions-row queue-actions">
         <button

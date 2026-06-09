@@ -96,7 +96,11 @@ export type DashboardAnalytics = {
   analytics_version?: number;
   unique_locations: number;
   unique_run_locations: number;
+  unique_run_regions: number;
+  unique_run_cities: number;
   unique_volunteer_locations: number;
+  unique_volunteer_regions: number;
+  unique_volunteer_cities: number;
   avg_finish_time_sec: number | null;
   best_finish_time_sec: number | null;
   best_results_platform_count?: number;
@@ -123,6 +127,7 @@ export type DashboardAnalytics = {
   next_milestone_runs: number | null;
   runs_to_next_milestone: number | null;
   last_pr_date: string | null;
+  last_global_pr_date: string | null;
   pr_last_12_months: number;
   new_locations_last_12_months: number;
   run_clubs_earned: number[];
@@ -173,6 +178,7 @@ export type RunItem = {
   pace_sec_per_km: number | null;
   age_category: string | null;
   is_pr: boolean;
+  is_global_pr: boolean;
   is_first_run: boolean;
   is_first_run_at_location: boolean;
   club_name: string | null;
@@ -199,6 +205,7 @@ export type PersonalRecordItem = {
   location_city: string | null;
   finish_time_display: string | null;
   finish_time_sec: number | null;
+  is_global_pr: boolean;
   event_url?: string | null;
 };
 
@@ -278,10 +285,23 @@ export type SyncQueueJob = {
   user?: SyncQueueJobUser | null;
 };
 
+export type SyncQueuePipelineTask = {
+  label: string;
+  started_at: string | null;
+  source: string | null;
+};
+
+export type SyncQueuePipeline = {
+  running: SyncQueuePipelineTask[];
+  queue_depths: Record<string, number>;
+  checked_at: string | null;
+};
+
 export type SyncQueueResponse = {
   jobs: SyncQueueJob[];
   queues: Array<{ queue: string; label: string; length: number }>;
   active_jobs_count: number;
+  pipeline?: SyncQueuePipeline | null;
 };
 
 function extractApiErrorDetail(body: unknown, status: number, rawText: string): string {

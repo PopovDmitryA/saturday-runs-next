@@ -193,3 +193,49 @@ def test_recalculate_parkrun_prs_marks_improvements_only(
     assert slow.is_pr is True
     assert wrong_pr.is_pr is False
     assert fast.is_pr is True
+
+
+def test_recalculate_parkrun_prs_single_participant_does_not_reset_others(
+    db_session: Session,
+    parkrun_platform: Platform,
+    parkrun_location: Location,
+) -> None:
+    participant_a = Participant(
+        id=uuid4(),
+        platform_id=parkrun_platform.id,
+        external_user_id=f"pr-test-a-{uuid4().hex[:8]}",
+        display_name="Runner A",
+    )
+    participant_b = Participant(
+        id=uuid4(),
+        platform_id=parkrun_platform.id,
+        external_user_id=f"pr-test-b-{uuid4().hex[:8]}",
+        display_name="Runner B",
+    )
+    db_session.add_all([participant_a, participant_b])
+    db_session.flush()
+
+    run_a = _add_run(
+        db_session,
+        platform=parkrun_platform,
+        location=parkrun_location,
+        participant=participant_a,
+        event_date=date(2022, 1, 1),
+        finish_time_sec=1800,
+        is_pr=True,
+    )
+    run_b = _add_run(
+        db_session,
+        platform=parkrun_platform,
+        location=parkrun_location,
+        participant=participant_b,
+        event_date=date(2022, 1, 1),
+        finish_time_sec=1700,
+        is_pr=True,
+    )
+
+    recalculate_personal_records(db_session, "parkrun", participant_id=participant_a.id)
+    db_session.flush()
+
+    assert run_a.is_pr is True
+    assert run_b.is_pr is True

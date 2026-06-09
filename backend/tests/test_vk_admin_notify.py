@@ -40,4 +40,5 @@ def test_pipeline_and_field_labels_russian() -> None:
     assert "• kopyttse" in finished
     assert "Локации созданы:" in finished
     assert pipeline_label("5v location slug-x") == "5verst: локация slug-x"
-    assert field_label("unknown_key") == "unknown_key"
+    assert pipeline_label("s95 latest /activities") == "s95: свежие /activities"
+    assert field_label("participants_synced") == "профилей обновлено"

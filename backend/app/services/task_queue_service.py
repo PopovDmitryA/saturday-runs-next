@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models import Platform, PlatformLink, SyncJob, SyncJobStatus, User
+from app.services.admin_pipeline_status_service import get_admin_pipeline_status
 from app.services.celery_queue_inspector import (
     PARKRUN_SYNC_QUEUE,
     S95_SYNC_QUEUE,
@@ -86,10 +87,28 @@ def _platform_label_for_job(
 
 def _queue_summaries() -> list[dict[str, object]]:
     return [
-        {"queue": USER_SYNC_QUEUE, "label": "5 вёрст", "length": get_queue_length(USER_SYNC_QUEUE)},
-        {"queue": S95_SYNC_QUEUE, "label": "с95", "length": get_queue_length(S95_SYNC_QUEUE)},
-        {"queue": PARKRUN_SYNC_QUEUE, "label": "parkrun", "length": get_queue_length(PARKRUN_SYNC_QUEUE)},
+        {"queue": USER_SYNC_QUEUE, "label": "профили 5 вёрст", "length": get_queue_length(USER_SYNC_QUEUE)},
+        {"queue": S95_SYNC_QUEUE, "label": "профили с95", "length": get_queue_length(S95_SYNC_QUEUE)},
+        {"queue": PARKRUN_SYNC_QUEUE, "label": "профили parkrun", "length": get_queue_length(PARKRUN_SYNC_QUEUE)},
     ]
+
+
+def _pipeline_payload(db: Session) -> dict[str, object]:
+    status = get_admin_pipeline_status(db)
+    running: list[dict[str, object]] = []
+    for item in status.get("running") or []:
+        running.append(
+            {
+                "label": item.get("label"),
+                "started_at": item.get("started_at"),
+                "source": item.get("source"),
+            }
+        )
+    return {
+        "running": running,
+        "queue_depths": status.get("queue_depths") or {},
+        "checked_at": status.get("checked_at"),
+    }
 
 
 def _serialize_job(
@@ -193,4 +212,5 @@ def get_admin_task_queue_payload(db: Session) -> dict[str, object]:
         "queues": _queue_summaries(),
         "active_jobs_count": active_count,
         "task_queue_by_suffix": TASK_QUEUE_BY_SUFFIX,
+        "pipeline": _pipeline_payload(db),
     }

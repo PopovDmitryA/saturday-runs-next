@@ -13,6 +13,7 @@ from app.platform_adapters.canonical import CanonicalEventSummary
 from app.services.sync_report_labels import protocol_detail_label
 from app.sync import upsert
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol, mark_protocol_check
+from app.sync.iteration_commit import commit_step, persist_step_error, rollback_step
 
 PLATFORM_CODE = "five_verst"
 
@@ -188,6 +189,7 @@ def reconcile_stale_protocols(
         return result
 
     sync_run = _start_sync_run(db, platform)
+    db.commit()
     try:
         for index, candidate in enumerate(candidates):
             summary_row = (
@@ -207,6 +209,7 @@ def reconcile_stale_protocols(
                 .one()
             )
             summary = _summary_to_canonical(summary_row, location)
+            event_id = summary_row.event_id
             try:
                 upsert_result = fetch_and_upsert_event_protocol(
                     db,
@@ -229,10 +232,16 @@ def reconcile_stale_protocols(
                     result.changed_protocols.append(label)
                 if index + 1 < len(candidates):
                     wait_between_protocols(reason="reconcile")
+                commit_step(db)
             except Exception as exc:
                 result.errors.append(f"{candidate.external_event_key}: {exc}")
-                if summary_row.event_id is not None:
-                    mark_protocol_check(db, summary_row.event_id)
+                if event_id is not None:
+                    persist_step_error(
+                        db,
+                        apply=lambda session, eid=event_id: mark_protocol_check(session, eid),
+                    )
+                else:
+                    rollback_step(db)
 
         _finish_sync_run(
             db,

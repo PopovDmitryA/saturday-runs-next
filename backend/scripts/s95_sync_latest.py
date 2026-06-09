@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.script_runtime import add_bootstrap_args, apply_bootstrap_args, bootstrap_from_env
 from app.config import get_settings
 from app.db.session import get_session_factory
 from app.sync.s95_latest import S95LatestSyncOptions, fetch_latest_activity_summaries, sync_s95_latest
@@ -18,24 +19,32 @@ from app.sync.s95_summary_plan import plan_event_summaries_sync
 
 
 def main() -> int:
-    settings = get_settings()
+    bootstrap_from_env()
     parser = argparse.ArgumentParser(description="Sync S95 latest activities from /activities")
+    add_bootstrap_args(parser)
     parser.add_argument("--dry-run", action="store_true", help="Classify rows without writing to database")
     parser.add_argument(
         "--protocols",
         type=int,
-        default=settings.s95_sync_protocol_limit,
+        default=None,
         help="Fetch full protocols for N new events per run",
     )
     parser.add_argument(
         "--update-limit",
         type=int,
-        default=settings.s95_sync_latest_update_limit,
+        default=None,
         help="Max summaries to upsert per run (0 = all pending)",
     )
     parser.add_argument("--no-ensure-locations", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     args = parser.parse_args()
+    apply_bootstrap_args(args)
+
+    settings = get_settings()
+    if args.protocols is None:
+        args.protocols = settings.s95_sync_protocol_limit
+    if args.update_limit is None:
+        args.update_limit = settings.s95_sync_latest_update_limit
 
     db = get_session_factory()()
     try:

@@ -8,11 +8,12 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import EventSummary, Location, Platform, SyncRun, SyncRunStatus, SyncStatus
+from app.models import EventSummary, Location, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalLocation
 from app.s95.fetch import fetch_page_html
 from app.s95.parsers.summary import parse_location_summary_html
 from app.sync import upsert
+from app.sync.iteration_commit import commit_step, persist_summary_error, rollback_step
 from app.sync.s95_protocol import fetch_and_upsert_activity_protocol
 from app.sync.s95_summary_plan import SummarySyncAction, classify_event_summary, plan_protocol_queue
 
@@ -92,6 +93,7 @@ def sync_s95_location(db: Session, options: S95LocationSyncOptions) -> S95Locati
     platform = upsert.get_platform(db, PLATFORM_CODE)
     result = S95LocationSyncResult(location_external_key=options.location_external_key)
     sync_run = _start_sync_run(db, platform, f"s95:location:{options.location_external_key}")
+    db.commit()
 
     try:
         location_row = _ensure_location_row(db, platform, options)
@@ -110,14 +112,19 @@ def sync_s95_location(db: Session, options: S95LocationSyncOptions) -> S95Locati
         result.summaries_total = len(summaries)
         apply_items = []
         for summary in summaries:
-            plan_item = classify_event_summary(db, platform, summary)
-            summary_row, changed = upsert.upsert_event_summary(db, platform, location_row, summary)
-            if changed or plan_item.action != SummarySyncAction.unchanged:
-                result.summaries_upserted += 1
-            elif plan_item.action == SummarySyncAction.unchanged:
-                result.summaries_unchanged += 1
-            if plan_item.action != SummarySyncAction.unchanged:
-                apply_items.append(plan_item)
+            try:
+                plan_item = classify_event_summary(db, platform, summary)
+                summary_row, changed = upsert.upsert_event_summary(db, platform, location_row, summary)
+                if changed or plan_item.action != SummarySyncAction.unchanged:
+                    result.summaries_upserted += 1
+                elif plan_item.action == SummarySyncAction.unchanged:
+                    result.summaries_unchanged += 1
+                if plan_item.action != SummarySyncAction.unchanged:
+                    apply_items.append(plan_item)
+                commit_step(db)
+            except Exception as exc:
+                rollback_step(db)
+                result.errors.append(f"{summary.external_event_key}: {exc}")
 
         protocol_queue = plan_protocol_queue(
             apply_items,
@@ -148,14 +155,20 @@ def sync_s95_location(db: Session, options: S95LocationSyncOptions) -> S95Locati
                 result.run_results_upserted += upsert_result.run_results_upserted
                 result.volunteer_results_upserted += upsert_result.volunteer_results_upserted
                 result.protocols_fetched += 1
+                commit_step(db)
             except Exception as exc:
                 result.errors.append(f"{summary.external_event_key}: {exc}")
-                summary_row.sync_status = SyncStatus.error
-                summary_row.error_message = str(exc)
+                persist_summary_error(
+                    db,
+                    platform_id=platform.id,
+                    external_event_key=summary.external_event_key,
+                    message=str(exc),
+                )
 
         location_row.source_hash = source_hash
         location_row.fetched_at = datetime.now(timezone.utc)
         db.flush()
+        commit_step(db)
 
         sync_run.records_fetched = result.summaries_total
         sync_run.records_upserted = result.summaries_upserted + result.protocols_fetched

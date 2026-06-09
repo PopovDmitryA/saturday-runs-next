@@ -54,7 +54,7 @@ S95: парсер реестра `/events` → те же поля.
 | Sync athlete | ✅ `sync/s95_athletes_sync.py` | Auto re-parse протоколов |
 | User sync | ✅ `sync/s95_user_sync.py` | `missing_runs` → fetch protocol |
 | Protocol sync state | ✅ таблица `protocol_sync_states` | Только 5verst использует |
-| Celery | ✅ `user`, `location`, `global_pipeline` | activities, registry, reconcile |
+| Celery | ✅ `user`, `location`, `global_pipeline`, beat (+30 мин vs 5v) | — |
 | Локации в БД | CSV import | Live registry |
 
 ---
@@ -212,3 +212,23 @@ flowchart TB
 | `s95_locations_registry.py` | `five_verst_locations.py` |
 | `s95_latest.py` | `five_verst_latest.py` + `s95_activities_sync.py` |
 | Achievements в protocol | `five_verst/bulk_parser.py` + HTML S95 activity page |
+
+---
+
+## Celery Beat (prod, MSK)
+
+Расписание S95 — **+30 мин** относительно 5verst (см. `celery_app.py`):
+
+| Beat key | Task | Расписание |
+|----------|------|------------|
+| `s95-registry-daily` | `sync_locations_registry` | 20:30 |
+| `s95-latest-*` | `sync_latest` | :30 (hourly в сб/вс, 05:30 пн–пт) |
+| `s95-location-rotation` | `sync_location_rotation` | каждые 4 ч, :30 |
+| `s95-reconcile-protocols` | `reconcile_stale_protocols` | каждые 3 ч, :30 |
+| `s95-athletes-registry` | `sync_athletes_registry` | каждые 2 ч, :30, batch 50 |
+
+VK-репорты: `run_reported_sync()` для всех scheduled tasks. Dedup: `scheduled_sync_guard.py` (1 прогон/pipeline/час MSK).
+
+Athletes: `profile_checked_at` в `profile_extra`, перепроверка через `s95_athlete_profile_recheck_interval_days` (default 30).
+
+**Справочник для агентов:** [AGENTS.md](../AGENTS.md)

@@ -133,6 +133,8 @@ export function pluralizeRu(count: number, forms: readonly [string, string, stri
 }
 
 const LOCATION_CAP_FORMS = ["Локация", "Локации", "Локаций"] as const;
+const REGION_CAP_FORMS = ["Регион", "Региона", "Регионов"] as const;
+const CITY_CAP_FORMS = ["Город", "Города", "Городов"] as const;
 const RUN_FORMS = ["пробежка", "пробежки", "пробежек"] as const;
 const RUN_CAP_FORMS = ["Пробежка", "Пробежки", "Пробежек"] as const;
 const VOLUNTEERING_FORMS = ["волонтёрство", "волонтёрства", "волонтёрств"] as const;
@@ -150,6 +152,22 @@ export function locationsWithRunsLabel(count: number): string {
 
 export function locationsWithVolunteeringLabel(count: number): string {
   return `${pluralFormRu(count, LOCATION_CAP_FORMS)} с волонтёрством`;
+}
+
+export function regionsWithRunsLabel(count: number): string {
+  return `${pluralFormRu(count, REGION_CAP_FORMS)} с пробежками`;
+}
+
+export function citiesWithRunsLabel(count: number): string {
+  return `${pluralFormRu(count, CITY_CAP_FORMS)} с пробежками`;
+}
+
+export function regionsWithVolunteeringLabel(count: number): string {
+  return `${pluralFormRu(count, REGION_CAP_FORMS)} с волонтёрством`;
+}
+
+export function citiesWithVolunteeringLabel(count: number): string {
+  return `${pluralFormRu(count, CITY_CAP_FORMS)} с волонтёрством`;
 }
 
 export function locationsWithRunsSummary(count: number): string {

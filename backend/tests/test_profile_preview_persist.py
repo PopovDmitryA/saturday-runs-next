@@ -28,6 +28,46 @@ def test_linking_sync_skipped_when_runs_already_imported(db_session) -> None:
         assert linking_sync_should_run(db_session, platform, participant, preview) is False
 
 
+def test_linking_sync_runs_for_s95_when_no_runs_in_db(db_session) -> None:
+    platform = db_session.query(Platform).filter(Platform.code == "s95").one_or_none()
+    if platform is None:
+        return
+    participant = MagicMock()
+    participant.id = uuid4()
+    preview = ProfilePreview(
+        external_user_id="6290",
+        display_name="Runner",
+        profile_url="https://s95.ru/athletes/6290/",
+        total_runs=None,
+        platform_code="s95",
+    )
+    with patch(
+        "app.services.profile_preview_persist._count_participant_runs",
+        return_value=0,
+    ):
+        assert linking_sync_should_run(db_session, platform, participant, preview) is True
+
+
+def test_linking_sync_runs_for_five_verst_when_no_runs_in_db(db_session) -> None:
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        return
+    participant = MagicMock()
+    participant.id = uuid4()
+    preview = ProfilePreview(
+        external_user_id="123",
+        display_name="Runner",
+        profile_url="https://5verst.ru/userstats/123/",
+        total_runs=0,
+        platform_code="five_verst",
+    )
+    with patch(
+        "app.services.profile_preview_persist._count_participant_runs",
+        return_value=0,
+    ):
+        assert linking_sync_should_run(db_session, platform, participant, preview) is True
+
+
 def test_linking_sync_runs_for_parkrun_when_only_summary_counts(db_session) -> None:
     platform = db_session.query(Platform).filter(Platform.code == "parkrun").one_or_none()
     if platform is None:

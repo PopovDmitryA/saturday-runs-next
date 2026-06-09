@@ -645,6 +645,34 @@ def parse_run_protocol_html(
     return results
 
 
+def fetch_event_protocol(
+    slug: str,
+    event_date: date,
+    event_number: int | None,
+    *,
+    run_limit: int | None = None,
+    volunteer_limit: int | None = None,
+) -> tuple[list[CanonicalRunResult], list[CanonicalVolunteerResult], str]:
+    """One HTTP request per event page — runs and volunteers share the same HTML."""
+    source_url = _results_date_url(slug, event_date)
+    html = fetch_html(source_url, reason="protocol")
+    run_results = parse_run_protocol_html(
+        html,
+        slug=slug,
+        event_date=event_date,
+        event_number=event_number,
+        limit=run_limit,
+    )
+    volunteers = parse_volunteers_from_event_html(
+        html,
+        slug=slug,
+        event_date=event_date,
+        event_number=event_number,
+        limit=volunteer_limit,
+    )
+    return run_results, volunteers, html
+
+
 def fetch_run_protocol(
     slug: str,
     event_date: date,

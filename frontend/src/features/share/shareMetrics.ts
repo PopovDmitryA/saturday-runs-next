@@ -34,6 +34,17 @@ function yearRuns(runs: RunItem[], year: number): RunItem[] {
   return runs.filter((run) => run.event_date >= yearStart);
 }
 
+function uniqueGeoFromRuns(runs: RunItem[]): { regions: number; cities: number } {
+  const cities = new Set<string>();
+  for (const run of runs) {
+    const city = run.location_city?.trim();
+    if (city) {
+      cities.add(city);
+    }
+  }
+  return { regions: 0, cities: cities.size };
+}
+
 function topLocationFromRuns(runs: RunItem[]): ShareMetricRow | null {
   if (runs.length === 0) {
     return null;
@@ -164,6 +175,28 @@ function metricValue(
               : `Уникальных локаций в ${context.currentYear}`,
         };
       }
+      case "unique_run_regions": {
+        const geo = uniqueGeoFromRuns(runsInYear);
+        if (geo.regions <= 0) {
+          return null;
+        }
+        return {
+          id: fieldId,
+          value: String(geo.regions),
+          label: `Регионов с пробежками в ${context.currentYear}`,
+        };
+      }
+      case "unique_run_cities": {
+        const geo = uniqueGeoFromRuns(runsInYear);
+        if (geo.cities <= 0) {
+          return null;
+        }
+        return {
+          id: fieldId,
+          value: String(geo.cities),
+          label: `Городов с пробежками в ${context.currentYear}`,
+        };
+      }
       case "total_distance_km": {
         const km = runsInYear.length * 5;
         return { id: fieldId, value: String(km), label: `Километров в ${context.currentYear}` };
@@ -234,6 +267,28 @@ function metricValue(
         value: String(analytics.unique_run_locations ?? 0),
         label: shareFieldLabel(fieldId),
       };
+    case "unique_run_regions": {
+      const count = analytics.unique_run_regions ?? 0;
+      if (count <= 0) {
+        return null;
+      }
+      return {
+        id: fieldId,
+        value: String(count),
+        label: shareFieldLabel(fieldId),
+      };
+    }
+    case "unique_run_cities": {
+      const count = analytics.unique_run_cities ?? 0;
+      if (count <= 0) {
+        return null;
+      }
+      return {
+        id: fieldId,
+        value: String(count),
+        label: shareFieldLabel(fieldId),
+      };
+    }
     case "total_distance_km": {
       const km = Math.round(analytics.total_distance_km ?? 0);
       return { id: fieldId, value: String(km), label: "Километров пробега" };

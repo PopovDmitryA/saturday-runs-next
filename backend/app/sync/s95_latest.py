@@ -5,11 +5,12 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models import EventSummary, Location, Platform, SyncRun, SyncRunStatus, SyncStatus
+from app.models import EventSummary, Location, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalEventSummary, CanonicalLocation
 from app.s95.fetch import fetch_page_html
 from app.s95.parsers.activities import parse_recent_activities_html
 from app.sync import upsert
+from app.sync.iteration_commit import commit_step, persist_summary_error, rollback_step
 from app.sync.s95_protocol import fetch_and_upsert_activity_protocol
 from app.sync.s95_summary_plan import (
     SummarySyncAction,
@@ -167,30 +168,36 @@ def sync_s95_latest(
         return result
 
     sync_run = _start_sync_run(db, platform)
+    db.commit()
     try:
         for item in apply_items:
             summary = item.summary
-            if options.ensure_locations:
-                location = _ensure_location(db, platform, summary, result=result)
-                if location is None:
-                    continue
-            else:
-                location = (
-                    db.query(Location)
-                    .filter(
-                        Location.platform_id == platform.id,
-                        Location.external_key == summary.location_external_key,
+            try:
+                if options.ensure_locations:
+                    location = _ensure_location(db, platform, summary, result=result)
+                    if location is None:
+                        continue
+                else:
+                    location = (
+                        db.query(Location)
+                        .filter(
+                            Location.platform_id == platform.id,
+                            Location.external_key == summary.location_external_key,
+                        )
+                        .one_or_none()
                     )
-                    .one_or_none()
-                )
-                if location is None:
-                    result.locations_missing += 1
-                    result.errors.append(f"{summary.external_event_key}: location not in database")
-                    continue
+                    if location is None:
+                        result.locations_missing += 1
+                        result.errors.append(f"{summary.external_event_key}: location not in database")
+                        continue
 
-            summary_row, _ = upsert.upsert_event_summary(db, platform, location, summary)
-            if item.action != SummarySyncAction.unchanged:
-                result.summaries_upserted += 1
+                summary_row, _ = upsert.upsert_event_summary(db, platform, location, summary)
+                if item.action != SummarySyncAction.unchanged:
+                    result.summaries_upserted += 1
+                commit_step(db)
+            except Exception as exc:
+                rollback_step(db)
+                result.errors.append(f"{summary.external_event_key}: {exc}")
 
         for item in protocol_queue:
             summary = item.summary
@@ -224,10 +231,15 @@ def sync_s95_latest(
                 result.run_results_upserted += upsert_result.run_results_upserted
                 result.volunteer_results_upserted += upsert_result.volunteer_results_upserted
                 result.protocols_fetched += 1
+                commit_step(db)
             except Exception as exc:
                 result.errors.append(f"{summary.external_event_key}: {exc}")
-                summary_row.sync_status = SyncStatus.error
-                summary_row.error_message = str(exc)
+                persist_summary_error(
+                    db,
+                    platform_id=platform.id,
+                    external_event_key=summary.external_event_key,
+                    message=str(exc),
+                )
 
         _finish_sync_run(
             db,

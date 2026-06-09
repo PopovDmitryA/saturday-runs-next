@@ -270,13 +270,16 @@ function ModalContent({
                   <tr key={row.location.catalog_identity_key}>
                     <td className="col-location">
                       <span className="unique-locations-name">{row.location.name}</span>
-                      {!row.location.has_coordinates && (
+                      {activityFilter !== "volunteering" && !row.location.has_coordinates && (
                         <span className="unique-locations-badge-muted">нет на карте</span>
                       )}
-                      {row.location.has_coordinates && row.location.is_cancelled && (
+                      {activityFilter !== "volunteering" &&
+                        row.location.has_coordinates &&
+                        row.location.is_cancelled && (
                         <span className="unique-locations-badge-cancelled">отменена</span>
                       )}
-                      {row.location.has_coordinates &&
+                      {activityFilter !== "volunteering" &&
+                        row.location.has_coordinates &&
                         !row.location.is_cancelled &&
                         row.location.is_paused && (
                         <span className="unique-locations-badge-paused">на паузе</span>

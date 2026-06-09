@@ -68,12 +68,7 @@ def fetch_and_upsert_event_protocol(
     summary_row: EventSummary,
 ) -> ProtocolUpsertResult:
     slug = summary.location_external_key
-    run_results, protocol_html = bulk_parser.fetch_run_protocol(
-        slug,
-        summary.event_date,
-        summary.event_number,
-    )
-    volunteer_results, _ = bulk_parser.fetch_volunteers(
+    run_results, volunteer_results, protocol_html = bulk_parser.fetch_event_protocol(
         slug,
         summary.event_date,
         summary.event_number,

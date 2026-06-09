@@ -20,6 +20,7 @@ from app.s95.parsers.events_registry import (
 from app.s95.parsers.location import parse_event_location_page, parse_location_coordinates, parse_map_url
 from app.services.location_geo_service import apply_reverse_geocode_to_location
 from app.sync import upsert
+from app.sync.iteration_commit import commit_step, rollback_step
 from app.sync.location_registry_status import apply_location_registry_flags
 
 logger = logging.getLogger(__name__)
@@ -243,6 +244,7 @@ def sync_s95_locations_registry(
     platform = upsert.get_platform(db, PLATFORM_CODE)
     result = S95LocationRegistrySyncResult()
     sync_run = _start_sync_run(db, platform)
+    db.commit()
 
     try:
         html = fetch_page_html(EVENTS_PAGE_URL, reason="events_registry")
@@ -262,7 +264,9 @@ def sync_s95_locations_registry(
                     fetch_missing_coordinates=options.fetch_missing_coordinates,
                     result=result,
                 )
+                commit_step(db)
             except Exception as exc:
+                rollback_step(db)
                 result.errors.append(f"{entry.slug}: {exc}")
 
         unchanged = max(

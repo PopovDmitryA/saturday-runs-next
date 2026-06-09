@@ -26,6 +26,7 @@ def enqueue_user_sync(
     user_sync_task.apply_async(
         args=[str(user_id), trigger.value, str(job_id) if job_id else None],
         kwargs={"platform_link_id": str(platform_link_id) if platform_link_id else None},
+        queue="five_verst",
         **_apply_task_id(job_id, "five_verst"),
     )
 

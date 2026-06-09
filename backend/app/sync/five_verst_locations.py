@@ -19,6 +19,7 @@ from app.platform_adapters.five_verst.http import NotFoundError
 from app.services.location_geo_service import apply_reverse_geocode_to_location
 from app.services.vk_admin_notify import send_vk_admin_message, vk_admin_configured
 from app.sync import upsert
+from app.sync.iteration_commit import commit_step, rollback_step
 from app.sync.location_registry_status import apply_location_registry_flags
 
 logger = logging.getLogger(__name__)
@@ -414,6 +415,7 @@ def sync_locations_registry(
     platform = upsert.get_platform(db, PLATFORM_CODE)
     result = LocationRegistrySyncResult()
     sync_run = _start_sync_run(db, platform)
+    db.commit()
 
     try:
         page, _ = bulk_parser.fetch_events_page()
@@ -432,7 +434,9 @@ def sync_locations_registry(
                     detect_duplicates=options.detect_duplicates,
                     result=result,
                 )
+                commit_step(db)
             except Exception as exc:
+                rollback_step(db)
                 result.errors.append(f"{entry.slug}: {exc}")
 
         unchanged = max(

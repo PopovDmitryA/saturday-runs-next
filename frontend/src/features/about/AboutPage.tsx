@@ -219,7 +219,7 @@ export function AboutPageContent() {
               <span className="about-link-card-title">Прежняя версия сайта</span>
               <span className="about-link-card-label about-link-card-label-legacy">{LEGACY_SITE_LABEL}</span>
               <span className="about-link-card-desc">
-                Grafana, рейтинги и дашборды — как на run5k.run до переезда.
+                Grafana, рейтинги и дашборды — прежняя версия на grafana.run5k.run.
               </span>
             </span>
             <ExternalLinkIcon />
