@@ -121,12 +121,8 @@ def test_fetch_and_upsert_event_protocol_updates_participant_fields(db_session: 
 
     with (
         patch(
-            "app.sync.five_verst_protocol.bulk_parser.fetch_run_protocol",
-            return_value=([run_result], "<html></html>"),
-        ),
-        patch(
-            "app.sync.five_verst_protocol.bulk_parser.fetch_volunteers",
-            return_value=([], "<html></html>"),
+            "app.sync.five_verst_protocol.bulk_parser.fetch_event_protocol",
+            return_value=([run_result], [], "<html></html>"),
         ),
         patch(
             "app.sync.five_verst_protocol.bulk_parser.source_hash",

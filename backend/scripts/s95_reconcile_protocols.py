@@ -11,30 +11,39 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.script_runtime import add_bootstrap_args, apply_bootstrap_args, bootstrap_from_env
 from app.config import get_settings
 from app.db.session import get_session_factory
 from app.sync.s95_reconcile import ReconcileProtocolsOptions, plan_stale_protocol_reconcile, reconcile_stale_protocols
 
 
 def main() -> int:
-    settings = get_settings()
+    bootstrap_from_env()
     parser = argparse.ArgumentParser(description="Re-fetch stale S95 activity protocols")
+    add_bootstrap_args(parser)
     parser.add_argument("--dry-run", action="store_true", help="Only plan candidates, do not fetch")
     parser.add_argument(
         "--limit",
         type=int,
-        default=settings.s95_reconcile_batch_limit,
+        default=None,
         help="Max protocols to reconcile in one run",
     )
     parser.add_argument(
         "--min-age-days",
         type=int,
-        default=settings.s95_reconcile_min_check_interval_days,
+        default=None,
         help="Re-check protocols older than N days",
     )
     parser.add_argument("--slug", default=None, help="Limit reconcile to one location slug")
     parser.add_argument("--pretty", action="store_true")
     args = parser.parse_args()
+    apply_bootstrap_args(args)
+
+    settings = get_settings()
+    if args.limit is None:
+        args.limit = settings.s95_reconcile_batch_limit
+    if args.min_age_days is None:
+        args.min_age_days = settings.s95_reconcile_min_check_interval_days
 
     db = get_session_factory()()
     try:

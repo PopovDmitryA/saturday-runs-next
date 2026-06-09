@@ -58,8 +58,16 @@ def sync_s95_platform_link(db: Session, link: PlatformLink, platform: Platform) 
     )
 
     from app.config import get_settings
+    from app.sync.profile_protocol_queue import enqueue_missing_protocols_for_profile
 
     settings = get_settings()
+    protocol_enqueue = enqueue_missing_protocols_for_profile(
+        db,
+        platform,
+        runs,
+        volunteering,
+        limit=settings.s95_athlete_mismatch_check_runs,
+    )
     refetch_result = refetch_mismatched_protocols(
         db,
         platform,
@@ -102,6 +110,8 @@ def sync_s95_platform_link(db: Session, link: PlatformLink, platform: Platform) 
         "volunteering_imported": volunteering_imported,
         "mismatches_found": len(refetch_result.mismatches),
         "protocols_refetched": refetch_result.protocols_refetched,
+        "protocols_enqueued": protocol_enqueue.enqueued,
+        "protocols_enqueue_checked": protocol_enqueue.checked,
         "parkrun_participant_discovered": parkrun_discovery.found,
         "parkrun_participant_id": parkrun_discovery.participant_id,
         "parkrun_runs_imported": parkrun_discovery.runs_imported,

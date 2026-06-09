@@ -8,6 +8,8 @@ from bs4 import BeautifulSoup
 from app.platform_adapters.s95.url import parse_athlete_url
 from app.s95.parkrun import is_parkrun_eligible_barcode, normalize_parkrun_athlete_id
 from app.s95.parsers.athlete import (
+    AthletePageNotFoundError,
+    AthletePageUnavailableError,
     enrich_participant_activity_totals,
     parse_athlete_html,
     parse_athlete_runs_html,
@@ -47,6 +49,32 @@ def test_parse_athlete_profile_fixture() -> None:
     barcode, planning = parse_barcode_and_planning(BeautifulSoup(html, "html.parser"))
     assert barcode == "A7035519"
     assert planning == "Парк Горького"
+
+
+def test_parse_athlete_html_rejects_404_page() -> None:
+    html = (FIXTURES / "s95_athlete_404.html").read_text(encoding="utf-8")
+    try:
+        parse_athlete_html(html, "https://s95.ru/athletes/25070/", "25070")
+        raise AssertionError("expected AthletePageNotFoundError")
+    except AthletePageNotFoundError:
+        pass
+
+
+def test_parse_athlete_html_rejects_registration_page() -> None:
+    html = (FIXTURES / "s95_athlete_registration.html").read_text(encoding="utf-8")
+    try:
+        parse_athlete_html(html, "https://s95.ru/athletes/27530/", "27530")
+        raise AssertionError("expected AthletePageUnavailableError")
+    except AthletePageUnavailableError:
+        pass
+
+
+def test_parse_athlete_html_allows_profile_without_barcode() -> None:
+    html = (FIXTURES / "s95_athlete_no_barcode.html").read_text(encoding="utf-8")
+    profile = parse_athlete_html(html, "https://s95.ru/athletes/9999/", "9999")
+    assert profile.display_name == "Мария ТЕСТОВА"
+    assert profile.barcode_id is None
+    assert profile.total_runs == 5
 
 
 def test_parse_athlete_runs_modern_table_columns() -> None:

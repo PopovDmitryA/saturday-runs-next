@@ -11,17 +11,21 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.script_runtime import add_bootstrap_args, apply_bootstrap_args, bootstrap_from_env
 from app.db.session import get_session_factory
 from app.sync.s95_locations_registry import S95LocationRegistrySyncOptions, sync_s95_locations_registry
 
 
 def main() -> int:
+    bootstrap_from_env()
     parser = argparse.ArgumentParser(description="Sync S95 location registry from /events")
+    add_bootstrap_args(parser)
     parser.add_argument("--limit", type=int, default=None, help="Process only first N registry entries")
     parser.add_argument("--no-new-fetch", action="store_true", help="Do not fetch detail pages for new slugs")
     parser.add_argument("--no-coords-fetch", action="store_true", help="Do not fetch coords for existing rows missing them")
     parser.add_argument("--pretty", action="store_true")
     args = parser.parse_args()
+    apply_bootstrap_args(args)
 
     db = get_session_factory()()
     try:

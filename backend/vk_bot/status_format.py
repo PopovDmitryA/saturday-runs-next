@@ -37,10 +37,10 @@ def format_pipeline_status(payload: dict[str, Any]) -> str:
             lines.append(f"   {started_text}")
 
     queue_parts = [
-        f"5verst: {queues.get('five_verst', 0)}",
-        f"профили: {queues.get('celery', 0)}",
-        f"с95: {queues.get('s95', 0)}",
-        f"parkrun: {queues.get('parkrun', 0)}",
+        f"5verst протоколы: {queues.get('five_verst', 0)}",
+        f"профили 5v: {queues.get('celery', 0)}",
+        f"профили s95: {queues.get('s95', 0)}",
+        f"профили parkrun: {queues.get('parkrun', 0)}",
     ]
     lines.extend(["", "Очереди: " + ", ".join(queue_parts)])
     return "\n".join(lines)

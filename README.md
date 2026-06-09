@@ -66,3 +66,11 @@ See [architecture plan](.cursor/plans/lk_architecture_plan_f0bd90e1.plan.md).
 - **Phase 2:** 5verst adapter + profile linking  
 - **Phase 3:** Global sync (5verst)  
 - **Phase 5:** User sync + Dashboard API
+
+## Agent / maintainer docs
+
+**[AGENTS.md](AGENTS.md)** — единый справочник для AI-агентов: prod, Celery beat, VK-бот, dedup sync, user vs bulk sync, deploy, типичные задачи.
+
+Планы по платформам: [docs/five_verst_sync_plan.md](docs/five_verst_sync_plan.md), [docs/s95_sync_plan.md](docs/s95_sync_plan.md), [docs/deploy_and_migration_plan.md](docs/deploy_and_migration_plan.md).
+
+Переключение доменов (run5k.run / grafana.run5k.run): [deploy/DOMAINS.md](deploy/DOMAINS.md).

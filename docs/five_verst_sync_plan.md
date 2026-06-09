@@ -95,7 +95,9 @@ Docker: `worker-five-verst` (`-Q five_verst --concurrency=1`), `beat` — рас
 | `five_verst_sync.sync_latest_results` | Latest + все новые/изменённые протоколы (без лимита) |
 | `five_verst_sync.sync_location_rotation` | Ротация локаций: summary-only, протокол только при изменениях |
 
-Отчёты о запуске/завершении — VK-бот (`vk_admin_notify`). Управление: `/sync`, `/stats` в VK.
+Отчёты о запуске/завершении — VK-бот (`vk_admin_notify`, `run_reported_sync`). Управление: `/sync`, `/stats` в VK.
+
+Scheduled dedup: один прогон на pipeline за московский час (`scheduled_sync_guard.py`). Подробнее: [AGENTS.md](../AGENTS.md).
 
 Старые имена `global_sync.*` — алиасы на ту же очередь.
 

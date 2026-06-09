@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -39,7 +39,11 @@ class DashboardAnalyticsResponse(BaseModel):
     analytics_version: int = 1
     unique_locations: int = 0
     unique_run_locations: int = 0
+    unique_run_regions: int = 0
+    unique_run_cities: int = 0
     unique_volunteer_locations: int = 0
+    unique_volunteer_regions: int = 0
+    unique_volunteer_cities: int = 0
     avg_finish_time_sec: int | None = None
     best_finish_time_sec: int | None = None
     best_results_platform_count: int = 0
@@ -66,6 +70,7 @@ class DashboardAnalyticsResponse(BaseModel):
     next_milestone_runs: int | None = None
     runs_to_next_milestone: int | None = None
     last_pr_date: date | None = None
+    last_global_pr_date: date | None = None
     pr_last_12_months: int = 0
     new_locations_last_12_months: int = 0
     run_clubs_earned: list[int] = Field(default_factory=list)
@@ -115,6 +120,7 @@ class RunItemResponse(BaseModel):
     pace_sec_per_km: int | None = None
     age_category: str | None = None
     is_pr: bool = False
+    is_global_pr: bool = False
     is_first_run: bool = False
     is_first_run_at_location: bool = False
     club_name: str | None = None
@@ -141,6 +147,7 @@ class PersonalRecordResponse(BaseModel):
     location_city: str | None = None
     finish_time_display: str | None = None
     finish_time_sec: int | None = None
+    is_global_pr: bool = False
     event_url: str | None = None
 
 
@@ -231,7 +238,20 @@ class SyncQueueSummaryResponse(BaseModel):
     length: int
 
 
+class SyncQueuePipelineTaskResponse(BaseModel):
+    label: str
+    started_at: datetime | None = None
+    source: str | None = None
+
+
+class SyncQueuePipelineResponse(BaseModel):
+    running: list[SyncQueuePipelineTaskResponse] = Field(default_factory=list)
+    queue_depths: dict[str, int] = Field(default_factory=dict)
+    checked_at: datetime | None = None
+
+
 class SyncQueueResponse(BaseModel):
     jobs: list[SyncQueueJobResponse] = Field(default_factory=list)
     queues: list[SyncQueueSummaryResponse] = Field(default_factory=list)
     active_jobs_count: int = 0
+    pipeline: SyncQueuePipelineResponse | None = None

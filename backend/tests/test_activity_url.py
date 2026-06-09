@@ -63,6 +63,31 @@ def test_s95_without_protocol_url_returns_none() -> None:
     assert url is None
 
 
+def test_s95_uses_summary_protocol_url_when_event_has_location_page() -> None:
+    url = resolve_activity_url(
+        platform_code="s95",
+        event_date=date(2023, 6, 17),
+        event_number=34,
+        event_source_url="https://s95.ru/events/kuzminki",
+        location_external_key="kuzminki",
+        summary_source_url="https://s95.ru/activities/460",
+    )
+    assert url == "https://s95.ru/activities/460"
+
+
+def test_prefer_event_source_url_keeps_s95_activity_link() -> None:
+    from app.activity_url import prefer_event_source_url
+
+    assert (
+        prefer_event_source_url(
+            "s95",
+            "https://s95.ru/activities/460",
+            "https://s95.ru/events/kuzminki",
+        )
+        == "https://s95.ru/activities/460"
+    )
+
+
 def test_parkrun_uses_all_results_url() -> None:
     profile = "https://www.parkrun.org.uk/parkrunner/7035519/"
     url = resolve_activity_url(

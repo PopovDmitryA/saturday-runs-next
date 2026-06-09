@@ -8,6 +8,7 @@ type RequireAuthProps = {
 export function RequireAuth({ children }: RequireAuthProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getCurrentUser()
@@ -17,7 +18,7 @@ export function RequireAuth({ children }: RequireAuthProps) {
           window.location.href = "/login";
           return;
         }
-        window.location.href = "/login";
+        setError(err instanceof Error ? err.message : "Не удалось проверить сессию");
       })
       .finally(() => setLoading(false));
   }, []);
@@ -26,6 +27,21 @@ export function RequireAuth({ children }: RequireAuthProps) {
     return (
       <main className="app">
         <p className="muted">Загрузка…</p>
+      </main>
+    );
+  }
+
+  if (error) {
+    return (
+      <main className="app">
+        <div className="card error">
+          <p>{error}</p>
+          <p>
+            <a className="btn secondary" href="/login">
+              Перейти ко входу
+            </a>
+          </p>
+        </div>
       </main>
     );
   }

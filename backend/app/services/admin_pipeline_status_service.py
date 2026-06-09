@@ -22,6 +22,11 @@ CELERY_TASK_LABELS: dict[str, str] = {
     "five_verst_sync.sync_latest_results": "5verst: свежие результаты /results/latest/",
     "five_verst_sync.sync_location_rotation": "5verst: ротация локаций",
     "five_verst_sync.reconcile_stale_protocols": "5verst: сверка протоколов",
+    "s95_sync.sync_locations_registry": "s95: реестр /events",
+    "s95_sync.sync_latest": "s95: свежие /activities",
+    "s95_sync.sync_location_rotation": "s95: ротация локаций",
+    "s95_sync.reconcile_stale_protocols": "s95: сверка протоколов",
+    "s95_sync.sync_athletes_registry": "s95: проверка профилей athletes",
     "five_verst_sync.sync_location": "5verst: локация",
     "five_verst_sync.sync_location_summaries": "5verst: своды локации",
     "user_sync.run_user_sync": "синхронизация профиля (5verst)",
@@ -37,6 +42,16 @@ def sync_run_type_label(sync_type: str) -> str:
         return "5verst: свежие результаты /results/latest/"
     if sync_type == "five_verst:reconcile_protocols":
         return "5verst: сверка протоколов"
+    if sync_type == "s95:registry":
+        return "s95: реестр /events"
+    if sync_type == "s95:latest":
+        return "s95: свежие /activities"
+    if sync_type == "s95:reconcile_protocols":
+        return "s95: сверка протоколов"
+    if sync_type == "s95:athletes_registry":
+        return "s95: проверка профилей athletes"
+    if sync_type.startswith("s95:location:"):
+        return f"s95: локация {sync_type.removeprefix('s95:location:')}"
     if sync_type.startswith("five_verst:location:"):
         return f"5verst: локация {sync_type.removeprefix('five_verst:location:')}"
     if sync_type.startswith("five_verst:"):
@@ -102,6 +117,10 @@ def _inspect_active_celery_tasks() -> list[dict[str, Any]]:
                 label = f"5verst: локация {kwargs['location_slug']}"
             elif task_name == "five_verst_sync.sync_location_summaries" and kwargs.get("location_slug"):
                 label = f"5verst: своды {kwargs['location_slug']}"
+            elif task_name == "s95_sync.sync_location" and kwargs.get("location_external_key"):
+                label = f"s95: локация {kwargs['location_external_key']}"
+            elif task_name == "s95_sync.sync_location_rotation" and kwargs.get("location_external_key"):
+                label = f"s95: локация {kwargs['location_external_key']}"
             items.append(
                 {
                     "source": "celery",

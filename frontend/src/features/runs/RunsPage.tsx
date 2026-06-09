@@ -5,9 +5,9 @@ import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
 import { AppShell } from "../../components/AppShell";
 import { EmptyActivityState } from "../../components/EmptyActivityState";
+import { GlobalPrFinishTime } from "../../components/GlobalPrFinishTime";
 import { RequireAuth } from "../../components/RequireAuth";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { useActivityFilters } from "../../hooks/useActivityFilters";
 import { listProfileLinks, type RunItem } from "../../lib/api";
 import { useAppDataSource, AppDataSourceProvider, demoDataSource } from "../../lib/appDataSource";
@@ -211,33 +211,16 @@ function RunsContent() {
                         <ActivityDateLink date={run.event_date} url={run.event_url} />
                         {run.is_test_event && <span className="badge">тест</span>}
                         {run.is_pr && <span className="badge badge-pr">PR</span>}
-                        {run.is_first_run && <span className="badge">1-й финиш</span>}
-                        {run.is_first_run_at_location && <span className="badge">1-й в парке</span>}
                       </td>
                       <td className="td-platform">
                         <PlatformBadge code={run.platform_code} />
                       </td>
-                      <td className="td-location">
-                        {run.location_name}
-                        {(run.location_is_paused || run.location_is_cancelled) && (
-                          <span className="block">
-                            <LocationStatusBadge
-                              isPaused={run.location_is_paused}
-                              isCancelled={run.location_is_cancelled}
-                            />
-                          </span>
-                        )}
-                        {run.location_city && (
-                          <span className="muted block">{run.location_city}</span>
-                        )}
-                        {run.club_name && <span className="muted block">{run.club_name}</span>}
-                      </td>
-                      <td className="td-compact">
-                        {run.position ?? "—"}
-                        {run.age_category && <span className="muted block">{run.age_category}</span>}
-                      </td>
+                      <td className="td-location">{run.location_name}</td>
+                      <td className="td-compact">{run.position ?? "—"}</td>
                       <td className="td-time">
-                        {formatFinishTimeValue(run.finish_time_display, run.finish_time_sec)}
+                        <GlobalPrFinishTime isGlobalPr={run.is_global_pr}>
+                          {formatFinishTimeValue(run.finish_time_display, run.finish_time_sec)}
+                        </GlobalPrFinishTime>
                       </td>
                       <td className="td-pace">
                         {run.pace_display ? `${run.pace_display} /км` : "—"}

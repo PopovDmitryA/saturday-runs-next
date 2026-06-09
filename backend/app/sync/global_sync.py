@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from app.five_verst.fetch.protocol_pause import wait_between_protocols
-from app.models import EventSummary, Platform, SyncRun, SyncRunStatus, SyncStatus
+from app.models import EventSummary, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.five_verst import bulk_parser
 from app.services.sync_report_labels import protocol_detail_label
 from app.sync import upsert
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
+from app.sync.iteration_commit import commit_step, persist_summary_error, rollback_step
 
 PLATFORM_CODE = "five_verst"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -75,9 +78,12 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
     platform = upsert.get_platform(db, PLATFORM_CODE)
     result = LocationSyncResult(location_slug=options.location_slug)
     sync_run = _start_sync_run(db, platform, f"five_verst:location:{options.location_slug}")
+    db.commit()
 
     try:
+        logger.info("location sync: %s — fetch location page", options.location_slug)
         location_data, location_html = bulk_parser.fetch_location(options.location_slug)
+        logger.info("location sync: %s — upsert location to DB", options.location_slug)
         location_row, location_changed = upsert.upsert_location(
             db,
             platform,
@@ -85,7 +91,9 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
             source_hash=bulk_parser.source_hash(location_html),
         )
         result.location_upserted = location_changed
+        commit_step(db)
 
+        logger.info("location sync: %s — fetch event summaries", options.location_slug)
         summaries, _ = bulk_parser.fetch_event_summaries(
             options.location_slug,
             location_data.name,
@@ -95,22 +103,40 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
 
         summaries_to_fetch: list[tuple[EventSummary, object]] = []
         for summary in summaries:
-            summary_row, changed = upsert.upsert_event_summary(db, platform, location_row, summary)
-            if changed:
-                result.summaries_upserted += 1
-                summaries_to_fetch.append((summary_row, summary))
-            elif summary_row.event_id is None:
-                summaries_to_fetch.append((summary_row, summary))
-            else:
-                result.summaries_unchanged += 1
+            try:
+                summary_row, changed = upsert.upsert_event_summary(db, platform, location_row, summary)
+                if changed:
+                    result.summaries_upserted += 1
+                    summaries_to_fetch.append((summary_row, summary))
+                elif summary_row.event_id is None:
+                    summaries_to_fetch.append((summary_row, summary))
+                else:
+                    result.summaries_unchanged += 1
+                commit_step(db)
+            except Exception as exc:
+                rollback_step(db)
+                result.errors.append(f"{summary.external_event_key}: {exc}")
 
         protocol_queue = _select_summaries_for_protocol_fetch(
             summaries_to_fetch,
             protocol_fetch_limit=options.protocol_fetch_limit,
             fetch_all_protocols_on_change=options.fetch_all_protocols_on_change,
         )
+        logger.info(
+            "location sync: %s — %d summaries, fetching %d protocols",
+            options.location_slug,
+            len(summaries),
+            len(protocol_queue),
+        )
 
         for index, (summary_row, summary) in enumerate(protocol_queue):
+            logger.info(
+                "location sync: %s protocol %d/%d %s",
+                options.location_slug,
+                index + 1,
+                len(protocol_queue),
+                summary.external_event_key,
+            )
             try:
                 upsert_result = fetch_and_upsert_event_protocol(
                     db,
@@ -132,10 +158,15 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
                     result.changed_protocols.append(label)
                 if index + 1 < len(protocol_queue):
                     wait_between_protocols(reason="location")
+                commit_step(db)
             except Exception as exc:
                 result.errors.append(f"{summary.external_event_key}: {exc}")
-                summary_row.sync_status = SyncStatus.error
-                summary_row.error_message = str(exc)
+                persist_summary_error(
+                    db,
+                    platform_id=platform.id,
+                    external_event_key=summary.external_event_key,
+                    message=str(exc),
+                )
 
         sync_run.records_fetched = result.summaries_total
         sync_run.records_upserted = result.summaries_upserted + result.protocols_fetched

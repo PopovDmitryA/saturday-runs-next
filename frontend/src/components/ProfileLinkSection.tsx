@@ -196,9 +196,13 @@ function PlatformSpoiler({
         </span>
         {linked && (
           <span className="profile-sync-time-wrap">
+            <span className="profile-sync-updated" title="Последнее обновление данных с сайта">
+              {syncTimeLabel}
+            </span>
             <button
               type="button"
-              className="profile-sync-time profile-sync-time-inline"
+              className={`profile-sync-refresh-btn${isSyncing ? " profile-sync-refresh-btn-spinning" : ""}`}
+              aria-label={`Обновить данные ${platformCodeLabel(config.code)}`}
               aria-describedby={`profile-sync-tooltip-${config.code}`}
               disabled={isSyncing || syncLoading}
               onClick={(event) => {
@@ -206,15 +210,22 @@ function PlatformSpoiler({
                 onSyncRequest();
               }}
             >
-              {syncTimeLabel}
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08a5.99 5.99 0 0 1-5.65 4c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+                />
+              </svg>
             </button>
             <span
               id={`profile-sync-tooltip-${config.code}`}
               className="profile-sync-tooltip"
               role="tooltip"
             >
-              <span className="profile-sync-tooltip-title">Последнее обновление данных с сайта</span>
-              <span className="profile-sync-tooltip-hint">Нажмите, чтобы запросить обновление</span>
+              <span className="profile-sync-tooltip-title">Обновить данные с сайта</span>
+              <span className="profile-sync-tooltip-hint">
+                Нажмите на иконку — запросим свежие результаты (не чаще раза в сутки)
+              </span>
             </span>
           </span>
         )}

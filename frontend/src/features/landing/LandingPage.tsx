@@ -41,12 +41,16 @@ export function LandingPage() {
       setCheckingAuth(false);
       return;
     }
+    const timeoutId = window.setTimeout(() => setCheckingAuth(false), 12_000);
     getCurrentUser()
       .then(() => {
         window.location.href = "/dashboard";
       })
       .catch(() => {
         setCheckingAuth(false);
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId);
       });
   }, []);
 

@@ -27,7 +27,7 @@ def test_format_pipeline_status_empty() -> None:
         }
     )
     assert "ничего не выполняется" in text
-    assert "профили: 1" in text
+    assert "профили 5v: 1" in text
 
 
 def test_format_pipeline_status_with_items() -> None:

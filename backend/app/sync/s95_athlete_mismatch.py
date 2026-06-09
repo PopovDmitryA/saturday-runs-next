@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models import Event, Location, Participant, Platform, RunResult
 from app.platform_adapters.canonical import CanonicalRunResult, CanonicalVolunteerResult
 from app.sync import upsert
+from app.sync.iteration_commit import commit_step, rollback_step
 from app.sync.s95_protocol import fetch_and_upsert_activity_protocol
 from app.sync.s95_protocol_lookup import resolve_s95_protocol
 
@@ -173,7 +174,9 @@ def refetch_mismatched_protocols(
                 protocol_url=resolved.protocol_url,
             )
             result.protocols_refetched += 1
+            commit_step(db)
         except Exception as exc:
+            rollback_step(db)
             result.errors.append(f"{mismatch.external_event_key}: {exc}")
 
     return result
@@ -221,7 +224,9 @@ def refetch_protocols_for_profile_volunteering(
                 protocol_url=resolved.protocol_url,
             )
             result.protocols_refetched += 1
+            commit_step(db)
         except Exception as exc:
+            rollback_step(db)
             result.errors.append(f"{event_key}: {exc}")
 
     return result

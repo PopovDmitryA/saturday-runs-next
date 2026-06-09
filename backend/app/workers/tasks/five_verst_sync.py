@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import asdict
 from typing import Any
 
@@ -13,8 +12,8 @@ from app.services.sync_run_params import (
     five_verst_registry_details,
     five_verst_rotation_details,
 )
-from app.services.vk_admin_notify import notify_sync_finished, notify_sync_started
 from app.sync.five_verst_latest import LatestResultsSyncOptions, sync_latest_results
+from app.workers.tasks.sync_task_reporting import run_reported_sync
 from app.sync.five_verst_location_rotation import sync_next_location_batch
 from app.sync.five_verst_locations import LocationRegistrySyncOptions, sync_locations_registry
 from app.sync.five_verst_reconcile import ReconcileProtocolsOptions, reconcile_stale_protocols
@@ -30,27 +29,6 @@ def _protocol_limit(settings) -> int | None:
 
 def _latest_update_limit(settings) -> int | None:
     return settings.five_verst_sync_latest_update_limit
-
-
-def _run_reported(
-    name: str,
-    fn: Callable[[], dict[str, object]],
-    *,
-    details: str | None = None,
-) -> dict[str, object]:
-    notify_sync_started(name, details=details)
-    payload: dict[str, object] = {"errors": ["task did not complete"]}
-    try:
-        payload = fn()
-    except Exception as exc:
-        payload = {"errors": [str(exc)]}
-        raise
-    finally:
-        try:
-            notify_sync_finished(name, payload)
-        except Exception:
-            logger.exception("Failed to send VK sync finished notification for %s", name)
-    return payload
 
 
 @celery_app.task(name="five_verst_sync.sync_location", queue="five_verst")
@@ -102,7 +80,7 @@ def sync_location_task(
         finally:
             db.close()
 
-    return _run_reported(name, _run, details=details)
+    return run_reported_sync(name, _run, details=details)
 
 
 @celery_app.task(name="five_verst_sync.sync_location_summaries", queue="five_verst")
@@ -126,11 +104,11 @@ def sync_location_summaries_task(
         finally:
             db.close()
 
-    return _run_reported(name, _run)
+    return run_reported_sync(name, _run)
 
 
 @celery_app.task(name="five_verst_sync.sync_locations_registry", queue="five_verst")
-def sync_locations_registry_task(limit: int | None = None) -> dict[str, object]:
+def sync_locations_registry_task(limit: int | None = None, *, force: bool = False) -> dict[str, object]:
     name = "5v registry /events/"
     details = five_verst_registry_details(limit=limit)
 
@@ -159,13 +137,21 @@ def sync_locations_registry_task(limit: int | None = None) -> dict[str, object]:
         finally:
             db.close()
 
-    return _run_reported(name, _run, details=details)
+    return run_reported_sync(
+        name,
+        _run,
+        details=details,
+        hour_slot_key="five_verst:registry",
+        force=force,
+    )
 
 
 @celery_app.task(name="five_verst_sync.sync_latest_results", queue="five_verst")
 def sync_latest_results_task(
     update_limit: int | None = None,
     protocol_fetch_limit: int | None = None,
+    *,
+    force: bool = False,
 ) -> dict[str, object]:
     from app.config import get_settings
 
@@ -210,11 +196,17 @@ def sync_latest_results_task(
         finally:
             db.close()
 
-    return _run_reported(name, _run, details=details)
+    return run_reported_sync(
+        name,
+        _run,
+        details=details,
+        hour_slot_key="five_verst:latest",
+        force=force,
+    )
 
 
 @celery_app.task(name="five_verst_sync.sync_location_rotation", queue="five_verst")
-def sync_location_rotation_task() -> dict[str, object]:
+def sync_location_rotation_task(*, force: bool = False) -> dict[str, object]:
     from app.config import get_settings
 
     settings = get_settings()
@@ -250,7 +242,13 @@ def sync_location_rotation_task() -> dict[str, object]:
         finally:
             db.close()
 
-    return _run_reported(name, _run, details=details)
+    return run_reported_sync(
+        name,
+        _run,
+        details=details,
+        hour_slot_key="five_verst:rotation",
+        force=force,
+    )
 
 
 @celery_app.task(name="five_verst_sync.enqueue_all_location_summaries", queue="five_verst")
@@ -290,7 +288,7 @@ def enqueue_locations_registry() -> dict[str, object]:
 
 @celery_app.task(name="five_verst_sync.enqueue_latest_results", queue="five_verst")
 def enqueue_latest_results() -> dict[str, object]:
-    sync_latest_results_task.apply_async(queue="five_verst")
+    sync_latest_results_task.apply_async(kwargs={"force": True}, queue="five_verst")
     return {"enqueued": 1}
 
 
@@ -299,6 +297,8 @@ def reconcile_stale_protocols_task(
     limit: int | None = None,
     min_check_interval_days: int | None = None,
     location_slug: str | None = None,
+    *,
+    force: bool = False,
 ) -> dict[str, object]:
     from app.config import get_settings
 
@@ -329,10 +329,53 @@ def reconcile_stale_protocols_task(
         finally:
             db.close()
 
-    return _run_reported(name, _run, details=details)
+    return run_reported_sync(
+        name,
+        _run,
+        details=details,
+        hour_slot_key="five_verst:reconcile",
+        force=force,
+    )
 
 
 @celery_app.task(name="five_verst_sync.enqueue_reconcile_protocols", queue="five_verst")
 def enqueue_reconcile_protocols() -> dict[str, object]:
     reconcile_stale_protocols_task.apply_async(queue="five_verst")
     return {"enqueued": 1}
+
+
+@celery_app.task(name="five_verst_sync.fetch_protocol_from_profile", queue="five_verst")
+def fetch_protocol_from_profile_task(
+    location_slug: str,
+    event_date_iso: str,
+    event_number: int | None = None,
+    location_name: str | None = None,
+) -> dict[str, object]:
+    from datetime import date
+
+    from app.sync.profile_protocol_queue import fetch_five_verst_protocol_for_profile
+
+    db = get_session_factory()()
+    try:
+        fetch_five_verst_protocol_for_profile(
+            db,
+            location_slug=location_slug,
+            event_date=date.fromisoformat(event_date_iso),
+            event_number=event_number,
+            location_name=location_name or location_slug,
+        )
+        return {
+            "location_slug": location_slug,
+            "event_date": event_date_iso,
+            "status": "ok",
+        }
+    except Exception as exc:
+        db.rollback()
+        return {
+            "location_slug": location_slug,
+            "event_date": event_date_iso,
+            "status": "error",
+            "error": str(exc),
+        }
+    finally:
+        db.close()

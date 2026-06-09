@@ -9,6 +9,7 @@ import { AdminUserPreviewPage } from "./features/admin/AdminUserPreviewPage";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { LoginPage } from "./features/auth/LoginPage";
+import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
 import { DemoDashboardPage } from "./features/demo/DemoDashboardPage";
 import { LandingPage } from "./features/landing/LandingPage";
 import { DemoMapsPage, MapsPage } from "./features/maps/MapsPage";
@@ -49,6 +50,8 @@ function QueueRedirect() {
 const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/": () => <LandingPage />,
   "/login": () => <LoginPage />,
+  "/oauth/yandex/callback": () => <OAuthCallbackPage provider="yandex" />,
+  "/oauth/vk/callback": () => <OAuthCallbackPage provider="vk" />,
   "/demo": () => <DemoDashboardPage />,
   "/demo/runs": () => <DemoRunsPage />,
   "/demo/volunteering": () => <DemoVolunteeringPage />,
@@ -72,7 +75,21 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/about": () => <AboutPage />,
 };
 
+function ApiPathRedirect() {
+  useEffect(() => {
+    window.location.replace(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+  }, []);
+  return (
+    <main className="app">
+      <p className="muted">Переход…</p>
+    </main>
+  );
+}
+
 function renderRoute(path: string): ReactElement {
+  if (path.startsWith("/api/")) {
+    return <ApiPathRedirect />;
+  }
   const previewMatch = path.match(/^\/admin\/users\/([0-9a-f-]{36})\/preview$/i);
   if (previewMatch) {
     return <AdminUserPreviewPage userId={previewMatch[1]} />;

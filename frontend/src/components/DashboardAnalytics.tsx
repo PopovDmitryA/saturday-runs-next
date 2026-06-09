@@ -21,8 +21,12 @@ import {
   formatPace,
   daysCapLabel,
   kilometersLabel,
+  citiesWithRunsLabel,
+  citiesWithVolunteeringLabel,
   locationsWithRunsLabel,
   locationsWithVolunteeringLabel,
+  regionsWithRunsLabel,
+  regionsWithVolunteeringLabel,
   pluralizeRu,
   prRunsLabel,
   runsCapLabel,
@@ -114,6 +118,24 @@ function buildAnalyticsCards(
     });
   }
 
+  if ((analytics.unique_run_regions ?? 0) > 0) {
+    cards.push({
+      key: "unique_run_regions",
+      value: String(analytics.unique_run_regions),
+      label: regionsWithRunsLabel(analytics.unique_run_regions ?? 0),
+      category: "runs",
+    });
+  }
+
+  if ((analytics.unique_run_cities ?? 0) > 0) {
+    cards.push({
+      key: "unique_run_cities",
+      value: String(analytics.unique_run_cities),
+      label: citiesWithRunsLabel(analytics.unique_run_cities ?? 0),
+      category: "runs",
+    });
+  }
+
   if (analytics.unique_volunteer_locations > 0) {
     cards.push({
       key: "unique_volunteer_locations",
@@ -123,6 +145,24 @@ function buildAnalyticsCards(
       clickable: true,
       modalTarget: "unique_locations",
       modalActivity: "volunteering",
+    });
+  }
+
+  if ((analytics.unique_volunteer_regions ?? 0) > 0) {
+    cards.push({
+      key: "unique_volunteer_regions",
+      value: String(analytics.unique_volunteer_regions),
+      label: regionsWithVolunteeringLabel(analytics.unique_volunteer_regions ?? 0),
+      category: "volunteering",
+    });
+  }
+
+  if ((analytics.unique_volunteer_cities ?? 0) > 0) {
+    cards.push({
+      key: "unique_volunteer_cities",
+      value: String(analytics.unique_volunteer_cities),
+      label: citiesWithVolunteeringLabel(analytics.unique_volunteer_cities ?? 0),
+      category: "volunteering",
     });
   }
 
@@ -252,11 +292,11 @@ function buildAnalyticsCards(
     });
   }
 
-  if ((analytics.pr_last_12_months ?? 0) > 0) {
+  if (analytics.last_global_pr_date) {
     cards.push({
-      key: "pr_last_12_months",
-      value: String(analytics.pr_last_12_months),
-      label: `${prRunsLabel(analytics.pr_last_12_months ?? 0)} за 12 мес.`,
+      key: "last_global_pr_date",
+      value: formatDate(analytics.last_global_pr_date),
+      label: "Последний глобальный PR",
       category: "runs",
       clickable: true,
       modalTarget: "personal_records",

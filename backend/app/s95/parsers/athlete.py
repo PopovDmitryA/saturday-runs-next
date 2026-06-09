@@ -33,6 +33,42 @@ class AthleteParseError(ValueError):
     pass
 
 
+class AthletePageNotFoundError(AthleteParseError):
+    pass
+
+
+class AthletePageUnavailableError(AthleteParseError):
+    """Login/registration stub — profile is not accessible anonymously."""
+
+
+NOT_FOUND_MARKERS = (
+    "404",
+    "не существует",
+    "not found",
+    "страница не найдена",
+)
+LOGIN_PAGE_TITLES = frozenset({"регистрация", "registration", "вход", "login"})
+
+
+def classify_athlete_page(html: str, *, display_name: str | None = None) -> str:
+    """Return athlete page kind: ok | not_found | unavailable."""
+    lowered = html[:8000].lower()
+    title_match = re.search(r"<title[^>]*>([^<]+)</title>", html, re.I)
+    title = title_match.group(1).strip().lower() if title_match else ""
+    name = (display_name or "").strip().lower()
+
+    for marker in NOT_FOUND_MARKERS:
+        if marker in title or marker in name:
+            return "not_found"
+        if marker in lowered[:3000]:
+            return "not_found"
+
+    if title.split("|")[0].strip() in LOGIN_PAGE_TITLES or name in LOGIN_PAGE_TITLES:
+        return "unavailable"
+
+    return "ok"
+
+
 def parse_barcode_and_planning(soup: BeautifulSoup) -> tuple[str | None, str | None]:
     barcode_element = soup.find("h5", id="barcodeModalLabel")
     barcode = barcode_element.get_text(strip=True) if barcode_element else None
@@ -479,6 +515,11 @@ def parse_athlete_volunteering_html(
 def parse_athlete_html(html: str, profile_url: str, external_user_id: str) -> CanonicalParticipant:
     soup = BeautifulSoup(html, "html.parser")
     display_name = _parse_display_name(soup)
+    page_kind = classify_athlete_page(html, display_name=display_name)
+    if page_kind == "not_found":
+        raise AthletePageNotFoundError(f"Athlete page not found: {external_user_id}")
+    if page_kind == "unavailable":
+        raise AthletePageUnavailableError(f"Athlete page unavailable (login/registration): {external_user_id}")
     if not display_name:
         raise AthleteParseError("Не удалось определить имя участника")
 

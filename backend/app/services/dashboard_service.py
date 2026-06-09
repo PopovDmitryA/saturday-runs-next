@@ -28,7 +28,7 @@ from app.models import (
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.location_map_service import _location_is_cancelled, _location_is_paused
 from app.services.sync_error_format import present_sync_error
-from app.services.user_location_stats import count_unique_locations_from_rows
+from app.services.user_location_stats import count_unique_geo_from_rows, count_unique_locations_from_rows
 from app.time_format import normalize_finish_time_display
 from app.volunteering_occasions import (
     count_volunteering_for_platform,
@@ -42,7 +42,7 @@ class SyncRefreshRateLimitedError(Exception):
     pass
 
 
-ANALYTICS_VERSION = 11
+ANALYTICS_VERSION = 13
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -346,7 +346,10 @@ def _compute_dashboard_analytics(
         .join(Location, Event.location_id == Location.id)
         .join(Platform, Event.platform_id == Platform.id)
         .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
-        .filter(PlatformLink.user_id == user_id)
+        .filter(
+            PlatformLink.user_id == user_id,
+            PlatformLink.platform_id == Platform.id,
+        )
     )
     vol_query = (
         db.query(VolunteerResult, Event, Location, Platform)
@@ -374,6 +377,8 @@ def _compute_dashboard_analytics(
         catalog_index,
         run_location_rows + vol_location_rows,
     )
+    unique_run_regions, unique_run_cities = count_unique_geo_from_rows(run_location_rows)
+    unique_volunteer_regions, unique_volunteer_cities = count_unique_geo_from_rows(vol_location_rows)
 
     timed_runs = runs_query.filter(RunResult.finish_time_sec.isnot(None))
     paced_runs = runs_query.filter(RunResult.pace_sec_per_km.isnot(None))
@@ -388,6 +393,16 @@ def _compute_dashboard_analytics(
     last_pr_date = (
         runs_query.filter(RunResult.is_pr.is_(True)).with_entities(func.max(Event.event_date)).scalar()
     )
+    from app.services.personal_record_service import global_personal_record_run_ids
+
+    global_pr_ids = global_personal_record_run_ids(db, user_id, include_test_events=include_test_events)
+    last_global_pr_date = None
+    if global_pr_ids:
+        last_global_pr_date = (
+            runs_query.filter(RunResult.id.in_(global_pr_ids))
+            .with_entities(func.max(Event.event_date))
+            .scalar()
+        )
     pr_last_12_months = (
         runs_query.filter(RunResult.is_pr.is_(True), Event.event_date >= twelve_months_ago)
         .with_entities(func.count(RunResult.id))
@@ -566,7 +581,11 @@ def _compute_dashboard_analytics(
         "analytics_version": ANALYTICS_VERSION,
         "unique_locations": all_unique_counts.unique_total,
         "unique_run_locations": run_unique_counts.unique_total,
+        "unique_run_regions": unique_run_regions,
+        "unique_run_cities": unique_run_cities,
         "unique_volunteer_locations": vol_unique_counts.unique_total,
+        "unique_volunteer_regions": unique_volunteer_regions,
+        "unique_volunteer_cities": unique_volunteer_cities,
         "avg_finish_time_sec": _to_int(avg_finish),
         "best_finish_time_sec": _to_int(best_finish),
         "best_results_platform_count": int(best_results_platform_count),
@@ -596,6 +615,7 @@ def _compute_dashboard_analytics(
         "saturday_consistency_active": saturday_consistency_active,
         "saturday_consistency_total": saturday_consistency_total,
         "last_pr_date": last_pr_date.isoformat() if last_pr_date else None,
+        "last_global_pr_date": last_global_pr_date.isoformat() if last_global_pr_date else None,
         "pr_last_12_months": pr_last_12_months,
         "new_locations_last_12_months": new_locations_last_12_months,
         "run_clubs_earned": run_clubs_earned,
@@ -625,6 +645,7 @@ def _activity_event_url(
     event: Event,
     location: Location,
     profile_url: str | None,
+    summary_source_url: str | None = None,
 ) -> str | None:
     return resolve_activity_url(
         platform_code=platform_code,
@@ -633,7 +654,27 @@ def _activity_event_url(
         event_source_url=event.source_url,
         location_external_key=location.external_key,
         profile_url=profile_url,
+        summary_source_url=summary_source_url,
     )
+
+
+def _event_summary_source_urls(
+    db: Session,
+    events: list[Event],
+) -> dict[tuple[UUID, UUID, date], str | None]:
+    from sqlalchemy import tuple_
+
+    keys = {(event.platform_id, event.location_id, event.event_date) for event in events}
+    if not keys:
+        return {}
+    rows = (
+        db.query(EventSummary)
+        .filter(
+            tuple_(EventSummary.platform_id, EventSummary.location_id, EventSummary.event_date).in_(keys)
+        )
+        .all()
+    )
+    return {(row.platform_id, row.location_id, row.event_date): row.source_url for row in rows}
 
 
 def _location_status_fields(
@@ -670,7 +711,11 @@ def list_user_runs(
         query = query.filter(Event.is_test_event.is_(False))
     rows = query.order_by(Event.event_date.desc(), RunResult.position.asc()).offset(offset).limit(limit).all()
 
+    from app.services.personal_record_service import global_personal_record_run_ids
+
+    global_pr_ids = global_personal_record_run_ids(db, user_id, include_test_events=include_test_events)
     catalog_index = LocationCatalogIndex(db)
+    summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
     return [
         {
             "platform_code": platform.code,
@@ -690,6 +735,7 @@ def list_user_runs(
             "pace_sec_per_km": run.pace_sec_per_km,
             "age_category": run.age_category,
             "is_pr": run.is_pr,
+            "is_global_pr": run.id in global_pr_ids,
             "is_first_run": run.is_first_run,
             "is_first_run_at_location": run.is_first_run_at_location,
             "club_name": run.club_name,
@@ -701,6 +747,9 @@ def list_user_runs(
                 event=event,
                 location=location,
                 profile_url=platform_link.external_url,
+                summary_source_url=summary_urls.get(
+                    (event.platform_id, event.location_id, event.event_date)
+                ),
             ),
             **_location_status_fields(catalog_index, location, platform.code),
         }
@@ -736,6 +785,7 @@ def list_user_best_results(
     ).all()
 
     catalog_index = LocationCatalogIndex(db)
+    summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
     best_by_platform: dict[str, dict[str, object]] = {}
     platform_order = {"five_verst": 0, "s95": 1, "parkrun": 2, "runpark": 3}
 
@@ -757,6 +807,9 @@ def list_user_best_results(
                 event=event,
                 location=location,
                 profile_url=platform_link.external_url,
+                summary_source_url=summary_urls.get(
+                    (event.platform_id, event.location_id, event.event_date)
+                ),
             ),
         }
 
@@ -791,14 +844,17 @@ def list_user_personal_records(
         query = query.filter(Event.is_test_event.is_(False))
 
     rows = query.order_by(
-        Platform.code.asc(),
         Event.event_date.desc(),
+        Platform.code.asc(),
         RunResult.position.asc(),
     ).all()
 
+    from app.services.personal_record_service import global_personal_record_run_ids
+
+    global_pr_ids = global_personal_record_run_ids(db, user_id, include_test_events=include_test_events)
     catalog_index = LocationCatalogIndex(db)
-    platform_order = {"five_verst": 0, "s95": 1, "parkrun": 2, "runpark": 3}
-    items = [
+    summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
+    return [
         {
             "platform_code": platform.code,
             "event_date": event.event_date,
@@ -809,16 +865,19 @@ def list_user_personal_records(
                 run.finish_time_display,
             ),
             "finish_time_sec": run.finish_time_sec,
+            "is_global_pr": run.id in global_pr_ids,
             "event_url": _activity_event_url(
                 platform_code=platform.code,
                 event=event,
                 location=location,
                 profile_url=platform_link.external_url,
+                summary_source_url=summary_urls.get(
+                    (event.platform_id, event.location_id, event.event_date)
+                ),
             ),
         }
         for run, event, location, platform, platform_link in rows
     ]
-    return sorted(items, key=lambda item: platform_order.get(str(item["platform_code"]), 99))
 
 
 def list_user_volunteering(
@@ -846,6 +905,7 @@ def list_user_volunteering(
     rows = query.order_by(Event.event_date.desc()).offset(offset).limit(limit).all()
 
     catalog_index = LocationCatalogIndex(db)
+    summary_urls = _event_summary_source_urls(db, [event for _vol, event, _loc, _plat, _link in rows])
     return [
         {
             "platform_code": platform.code,
@@ -862,6 +922,9 @@ def list_user_volunteering(
                 event=event,
                 location=location,
                 profile_url=platform_link.external_url,
+                summary_source_url=summary_urls.get(
+                    (event.platform_id, event.location_id, event.event_date)
+                ),
             ),
             **_location_status_fields(catalog_index, location, platform.code),
         }

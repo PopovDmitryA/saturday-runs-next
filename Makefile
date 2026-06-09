@@ -1,4 +1,4 @@
-.PHONY: up down migrate test lint backend-test frontend-build location-mapping
+.PHONY: up down migrate test lint backend-test frontend-build location-mapping sync
 
 up:
 	docker compose up --build
@@ -25,6 +25,10 @@ frontend-build:
 
 location-mapping:
 	python3 backend/scripts/build_location_mapping_xlsx.py
+
+# Интерактивное меню обновления (prod/local, dry-run, выбор цифрами)
+sync:
+	bash scripts/sync.sh
 
 location-catalog-import:
 	python3 backend/scripts/import_location_catalog.py --import-db
@@ -84,6 +88,19 @@ parkrun-save-cdp-host:
 # Process parkrun pending queue through open Chrome (Mac; LIMIT=5 by default)
 process-pending-parkrun-host:
 	bash scripts/process_pending_parkrun_host.sh
+
+# Local script runs against prod PostgreSQL (SSH tunnel from .env TEMP_SSH_* / TEMP_PROD_PG_*).
+# Needs local Redis: docker compose up -d redis
+# Dry-run (no DB writes): make prod-run ARGS="scripts/five_verst_sync_latest.py --dry-run --pretty"
+# Write to prod:           CONFIRM_PROD=1 make prod-run ARGS="scripts/five_verst_sync_location.py --slug bitsa --protocols 1"
+prod-run:
+	bash scripts/run_prod_script.sh $(ARGS)
+
+prod-tunnel:
+	bash -c 'source scripts/prod_db_env.sh && start_prod_db_tunnel'
+
+prod-tunnel-stop:
+	bash -c 'source scripts/prod_db_env.sh && stop_prod_db_tunnel'
 
 # Long-running worker for admin button (keep terminal open)
 parkrun-local-worker:

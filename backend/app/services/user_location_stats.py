@@ -88,6 +88,28 @@ def aggregate_user_location_stats(
     return stats
 
 
+def _normalize_geo_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def count_unique_geo_from_rows(
+    rows: list[tuple[Location, str]],
+) -> tuple[int, int]:
+    cities: set[str] = set()
+    regions: set[str] = set()
+    for location, _platform_code in rows:
+        city = _normalize_geo_value(location.city)
+        region = _normalize_geo_value(location.region)
+        if city is not None:
+            cities.add(city)
+        if region is not None:
+            regions.add(region)
+    return len(regions), len(cities)
+
+
 def count_unique_locations_from_rows(
     catalog_index: LocationCatalogIndex,
     rows: list[tuple[Location, str]],

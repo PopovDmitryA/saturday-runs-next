@@ -4,6 +4,7 @@ import { useAppDataSource } from "../lib/appDataSource";
 import { formatFinishTimeValue, platformCodeLabel } from "../lib/format";
 import { ActivityDateLink } from "./ActivityDateLink";
 import { ColumnHeader } from "./activityTable/ColumnHeader";
+import { GlobalPrFinishTime } from "./GlobalPrFinishTime";
 import { PlatformBadge } from "./PlatformBadge";
 import { DetailModal } from "./DetailModal";
 
@@ -53,36 +54,37 @@ function sortPersonalRecords(
   const filtered =
     platformFilter === "all" ? items : items.filter((item) => item.platform_code === platformFilter);
 
-  if (platformFilter === "all") {
-    return [...filtered].sort((left, right) => {
-      const platformDiff = platformSortIndex(left.platform_code) - platformSortIndex(right.platform_code);
-      if (platformDiff !== 0) {
-        return platformDiff;
+  const sorted = [...filtered].sort((left, right) => {
+    const dateDiff = right.event_date.localeCompare(left.event_date);
+    if (dateDiff !== 0) {
+      return dateDiff;
+    }
+    return platformSortIndex(left.platform_code) - platformSortIndex(right.platform_code);
+  });
+
+  if (platformFilter !== "all") {
+    if (sortKey === "date") {
+      return sortAsc ? [...sorted].reverse() : sorted;
+    }
+    const customSorted = [...filtered].sort((left, right) => {
+      if (sortKey === "location") {
+        const nameDiff = left.location_name.localeCompare(right.location_name, "ru");
+        if (nameDiff !== 0) {
+          return nameDiff;
+        }
+        return right.event_date.localeCompare(left.event_date);
+      }
+      const leftSec = left.finish_time_sec ?? Number.MAX_SAFE_INTEGER;
+      const rightSec = right.finish_time_sec ?? Number.MAX_SAFE_INTEGER;
+      if (leftSec !== rightSec) {
+        return leftSec - rightSec;
       }
       return right.event_date.localeCompare(left.event_date);
     });
+    return sortAsc ? customSorted : customSorted.reverse();
   }
 
-  const sorted = [...filtered].sort((left, right) => {
-    if (sortKey === "date") {
-      return left.event_date.localeCompare(right.event_date);
-    }
-    if (sortKey === "location") {
-      const nameDiff = left.location_name.localeCompare(right.location_name, "ru");
-      if (nameDiff !== 0) {
-        return nameDiff;
-      }
-      return left.event_date.localeCompare(right.event_date);
-    }
-    const leftSec = left.finish_time_sec ?? Number.MAX_SAFE_INTEGER;
-    const rightSec = right.finish_time_sec ?? Number.MAX_SAFE_INTEGER;
-    if (leftSec !== rightSec) {
-      return leftSec - rightSec;
-    }
-    return left.event_date.localeCompare(right.event_date);
-  });
-
-  return sortAsc ? sorted : sorted.reverse();
+  return sorted;
 }
 
 export function PersonalRecordsModal({ open, onClose, includeTest = false }: PersonalRecordsModalProps) {
@@ -153,8 +155,8 @@ export function PersonalRecordsModal({ open, onClose, includeTest = false }: Per
       {!loading && !error && items.length > 0 && (
         <>
           <p className="muted personal-records-hint">
-            Личный рекорд считается отдельно в каждой системе. Выберите систему, чтобы увидеть
-            хронологию PR; в общем списке пробежки сгруппированы по системам.
+            Личный рекорд в системе — лучший результат среди всех ваших пробежек в этой системе.
+            Оранжевым выделено время — общий рекорд по всем системам на момент той пробежки.
           </p>
 
           <div className="unique-locations-filters" role="tablist" aria-label="Фильтр по системам">
@@ -235,14 +237,15 @@ export function PersonalRecordsModal({ open, onClose, includeTest = false }: Per
                       </td>
                       <td className="col-location">
                         <span className="unique-locations-name">{item.location_name}</span>
-                        {item.location_city && (
-                          <span className="muted best-results-city">{item.location_city}</span>
-                        )}
                       </td>
                       <td className="col-platform">
                         <PlatformBadge code={item.platform_code} />
                       </td>
-                      <td className="col-result">{formatResult(item)}</td>
+                      <td className="col-result">
+                        <GlobalPrFinishTime isGlobalPr={item.is_global_pr}>
+                          {formatResult(item)}
+                        </GlobalPrFinishTime>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

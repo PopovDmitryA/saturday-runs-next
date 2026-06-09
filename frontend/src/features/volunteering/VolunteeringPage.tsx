@@ -7,7 +7,6 @@ import { AppShell } from "../../components/AppShell";
 import { EmptyActivityState } from "../../components/EmptyActivityState";
 import { RequireAuth } from "../../components/RequireAuth";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { useVolunteeringFilters } from "../../hooks/useVolunteeringFilters";
 import { listProfileLinks, type VolunteeringItem } from "../../lib/api";
 import { useAppDataSource, AppDataSourceProvider, demoDataSource } from "../../lib/appDataSource";
@@ -205,20 +204,7 @@ function VolunteeringContent() {
                       <td className="td-platform">
                         <PlatformBadge code={item.platform_code} />
                       </td>
-                      <td className="td-location">
-                        {item.location_name}
-                        {(item.location_is_paused || item.location_is_cancelled) && (
-                          <span className="block">
-                            <LocationStatusBadge
-                              isPaused={item.location_is_paused}
-                              isCancelled={item.location_is_cancelled}
-                            />
-                          </span>
-                        )}
-                        {item.location_city && (
-                          <span className="muted block">{item.location_city}</span>
-                        )}
-                      </td>
+                      <td className="td-location">{item.location_name}</td>
                       <td className="td-role">{item.role ?? "—"}</td>
                     </tr>
                   ))

@@ -191,9 +191,11 @@ def test_dashboard_returns_stats_from_global_core(authenticated_client: TestClie
     analytics = data["stats"]["analytics"]
     assert analytics["unique_locations"] == 1
     assert analytics["unique_run_locations"] == 1
+    assert analytics["unique_run_regions"] == 0
+    assert analytics["unique_run_cities"] == 1
     assert analytics["best_finish_time_sec"] == 18 * 60 + 59
     assert analytics["pr_count"] == 1
-    assert analytics["analytics_version"] == 11
+    assert analytics["analytics_version"] == 13
     assert analytics["best_results_platform_count"] == 1
     assert analytics["runs_current_year"] == 1
     assert analytics["total_distance_km"] == 5
@@ -201,6 +203,7 @@ def test_dashboard_returns_stats_from_global_core(authenticated_client: TestClie
     assert analytics["runs_to_next_milestone"] == 9
     assert analytics["new_locations_last_12_months"] == 1
     assert analytics["last_pr_date"] == "2099-06-01"
+    assert analytics["last_global_pr_date"] == "2099-06-01"
     assert analytics["pr_last_12_months"] == 1
     assert analytics["avg_vs_field_pct"] == 5.1
     assert analytics["runs_with_field_avg_count"] == 1
@@ -724,10 +727,11 @@ def test_personal_records_lists_pr_runs_per_platform(
     assert response.status_code == 200
     items = response.json()
     assert len(items) == 3
-    assert [item["platform_code"] for item in items] == ["five_verst", "five_verst", "parkrun"]
-    assert items[0]["event_date"] == "2024-05-11"
-    assert items[1]["event_date"] == "2023-04-08"
-    assert items[2]["event_date"] == "2025-01-04"
+    assert [item["event_date"] for item in items] == ["2025-01-04", "2024-05-11", "2023-04-08"]
+    global_flags = {item["event_date"]: item["is_global_pr"] for item in items}
+    assert global_flags["2023-04-08"] is True
+    assert global_flags["2024-05-11"] is True
+    assert global_flags["2025-01-04"] is False
 
 
 def test_dashboard_unique_locations_merged_by_catalog(

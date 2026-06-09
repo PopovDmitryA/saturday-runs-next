@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models import Event, EventSummary, Location, Platform, ProtocolSyncState, RunResult, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalEventSummary
 from app.sync import upsert
+from app.sync.iteration_commit import commit_step, persist_step_error, rollback_step
 from app.sync.s95_protocol import fetch_and_upsert_activity_protocol, mark_protocol_check
 
 PLATFORM_CODE = "s95"
@@ -190,6 +191,7 @@ def reconcile_stale_protocols(
         return result
 
     sync_run = _start_sync_run(db, platform)
+    db.commit()
     try:
         for candidate in candidates:
             summary_row = (
@@ -209,6 +211,7 @@ def reconcile_stale_protocols(
                 .one()
             )
             summary = _summary_to_canonical(summary_row, location)
+            event_id = summary_row.event_id
             try:
                 upsert_result = fetch_and_upsert_activity_protocol(
                     db,
@@ -222,10 +225,16 @@ def reconcile_stale_protocols(
                 result.volunteer_results_upserted += upsert_result.volunteer_results_upserted
                 if upsert_result.protocol_changed:
                     result.protocols_changed += 1
+                commit_step(db)
             except Exception as exc:
                 result.errors.append(f"{candidate.external_event_key}: {exc}")
-                if summary_row.event_id is not None:
-                    mark_protocol_check(db, summary_row.event_id)
+                if event_id is not None:
+                    persist_step_error(
+                        db,
+                        apply=lambda session, eid=event_id: mark_protocol_check(session, eid),
+                    )
+                else:
+                    rollback_step(db)
 
         _finish_sync_run(
             db,

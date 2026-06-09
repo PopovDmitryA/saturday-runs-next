@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections import defaultdict
 from datetime import date, datetime, timezone
@@ -19,15 +20,16 @@ from app.models import (
     SyncStatus,
     VolunteerResult,
 )
+from app.activity_url import prefer_event_source_url
 from app.pace import resolve_run_pace
 from app.platform_adapters.canonical import (
-    CanonicalEventSummary,
     CanonicalLocation,
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
 
 PARSER_VERSION = "0.3.2"
+logger = logging.getLogger(__name__)
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -69,6 +71,8 @@ def upsert_location(
     )
     now = datetime.now(timezone.utc)
     changed = False
+    if location.latitude is not None and location.longitude is not None and location.region is None:
+        logger.info("geocode region for %s", location.external_key)
     region = _resolve_region(location)
 
     if row is None:
@@ -113,6 +117,7 @@ def upsert_location(
     row.sync_status = SyncStatus.ok
     row.error_message = None
     changed = True
+    logger.info("DB flush location %s", location.external_key)
     db.flush()
     return row, changed
 
@@ -340,7 +345,8 @@ def upsert_run_results(
     platform: Platform,
     results: list[CanonicalRunResult],
     *,
-    merge_nullable_fields: bool = False,
+    from_profile: bool = False,
+    recalculate_pr: bool = True,
 ) -> int:
     upserted = 0
     touched_participant_ids: set = set()
@@ -350,8 +356,8 @@ def upsert_run_results(
             platform,
             external_user_id=item.external_user_id,
             display_name=item.participant_name,
-            club_name=item.club_name,
-            age_category=item.age_category,
+            club_name=None if from_profile else item.club_name,
+            age_category=None if from_profile else item.age_category,
         )
         touched_participant_ids.add(participant.id)
         row = (
@@ -425,27 +431,11 @@ def upsert_run_results(
         else:
             row.participant_id = participant.id
             row.external_result_key = item.external_result_key
-            if merge_nullable_fields:
-                if item.position is not None:
-                    row.position = item.position
+            if from_profile:
                 if item.finish_time_sec is not None:
                     row.finish_time_sec = item.finish_time_sec
                 if item.finish_time_display is not None:
                     row.finish_time_display = item.finish_time_display
-                if item.age_category is not None:
-                    row.age_category = item.age_category
-                if item.status is not None:
-                    row.status = item.status
-                if item.is_pr:
-                    row.is_pr = True
-                if item.is_first_run:
-                    row.is_first_run = True
-                if item.is_first_run_at_location:
-                    row.is_first_run_at_location = True
-                if item.club_name is not None:
-                    row.club_name = item.club_name
-                if item.achievement_labels:
-                    row.achievement_labels = item.achievement_labels
                 if pace_sec_per_km is not None:
                     row.pace_sec_per_km = pace_sec_per_km
                 if pace_display is not None:
@@ -466,6 +456,10 @@ def upsert_run_results(
             row.fetched_at = now
             upserted += 1
     _discover_participants_after_protocol_upsert(db, platform, touched_participant_ids)
+    if recalculate_pr and touched_participant_ids:
+        from app.services.personal_record_service import recalculate_participants_personal_records
+
+        recalculate_participants_personal_records(db, platform.code, touched_participant_ids)
     db.flush()
     return upserted
 
@@ -735,6 +729,7 @@ def _assign_external_event_key(
 def _apply_event_fields(
     row: Event,
     *,
+    platform_code: str,
     location: Location,
     event_date: date,
     event_number: int | None,
@@ -749,8 +744,9 @@ def _apply_event_fields(
     row.event_number = event_number
     row.is_test_event = is_test_event
     row.title = title
-    if source_url:
-        row.source_url = source_url
+    preferred_source_url = prefer_event_source_url(platform_code, row.source_url, source_url)
+    if preferred_source_url:
+        row.source_url = preferred_source_url
     if finishers_count is not None:
         row.finishers_count = finishers_count
         row.runners_count = finishers_count
@@ -822,6 +818,7 @@ def upsert_event_for_profile(
     _assign_external_event_key(db, platform, row, external_event_key)
     _apply_event_fields(
         row,
+        platform_code=platform.code,
         location=location,
         event_date=event_date,
         event_number=event_number,
@@ -848,6 +845,7 @@ def upsert_event_for_profile(
         _assign_external_event_key(db, platform, row, external_event_key)
         _apply_event_fields(
             row,
+            platform_code=platform.code,
             location=location,
             event_date=event_date,
             event_number=event_number,
@@ -865,6 +863,7 @@ def import_profile_run_results(
     results: list[CanonicalRunResult],
 ) -> int:
     imported = 0
+    touched_participant_ids: set[UUID] = set()
     for item in results:
         slug = _normalize_location_slug(item.location_external_key, item.location_name)
         display_name = item.location_name or slug
@@ -924,8 +923,19 @@ def import_profile_run_results(
             event,
             platform,
             [item],
-            merge_nullable_fields=True,
+            from_profile=True,
+            recalculate_pr=False,
         )
+        participant = (
+            db.query(Participant)
+            .filter(
+                Participant.platform_id == platform.id,
+                Participant.external_user_id == item.external_user_id,
+            )
+            .one_or_none()
+        )
+        if participant is not None:
+            touched_participant_ids.add(participant.id)
     if platform.code == "five_verst":
         participant_ids = {item.external_user_id for item in results}
         for external_user_id in participant_ids:
@@ -939,6 +949,10 @@ def import_profile_run_results(
             )
             if participant is not None:
                 dedupe_five_verst_run_results_in_db(db, platform.id, participant.id)
+    if touched_participant_ids:
+        from app.services.personal_record_service import recalculate_participants_personal_records
+
+        recalculate_participants_personal_records(db, platform.code, touched_participant_ids)
     db.flush()
     return imported
 

@@ -123,6 +123,18 @@ def sync_platform_link(
         db, platform, participant.id, volunteering
     )
 
+    from app.config import get_settings
+    from app.sync.profile_protocol_queue import enqueue_missing_protocols_for_profile
+
+    settings = get_settings()
+    protocol_enqueue = enqueue_missing_protocols_for_profile(
+        db,
+        platform,
+        runs,
+        volunteering,
+        limit=settings.s95_athlete_mismatch_check_runs,
+    )
+
     link.sync_status = PlatformLinkSyncStatus.ok
     link.error_message = None
     link.last_user_sync_at = _utcnow()
@@ -141,6 +153,8 @@ def sync_platform_link(
         "missing_runs": missing_runs,
         "runs_imported": runs_imported,
         "volunteering_imported": volunteering_imported,
+        "protocols_enqueued": protocol_enqueue.enqueued,
+        "protocols_enqueue_checked": protocol_enqueue.checked,
     }
 
 

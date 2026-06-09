@@ -140,12 +140,8 @@ def test_sync_location_fetches_protocol_only_for_pending_summaries(
             return_value=([summary], "<table></table>"),
         ),
         patch(
-            "app.sync.five_verst_protocol.bulk_parser.fetch_run_protocol",
-            return_value=([run_result], "<table></table>"),
-        ),
-        patch(
-            "app.sync.five_verst_protocol.bulk_parser.fetch_volunteers",
-            return_value=([volunteer], "<table></table>"),
+            "app.sync.five_verst_protocol.bulk_parser.fetch_event_protocol",
+            return_value=([run_result], [volunteer], "<table></table>"),
         ),
         patch(
             "app.sync.five_verst_protocol.bulk_parser.source_hash",

@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.script_runtime import add_bootstrap_args, apply_bootstrap_args, bootstrap_from_env
 from app.config import get_settings
 from app.db.session import get_session_factory
 from app.sync.five_verst_latest import LatestResultsSyncOptions, plan_latest_results_sync, sync_latest_results
@@ -18,8 +19,9 @@ from app.platform_adapters.five_verst import bulk_parser
 
 
 def main() -> int:
-    settings = get_settings()
+    bootstrap_from_env()
     parser = argparse.ArgumentParser(description="Sync 5verst latest results from /results/latest/")
+    add_bootstrap_args(parser)
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -34,7 +36,7 @@ def main() -> int:
     parser.add_argument(
         "--update-limit",
         type=int,
-        default=settings.five_verst_sync_latest_update_limit,
+        default=None,
         help="Max latest summaries to upsert per run (0 = all pending)",
     )
     parser.add_argument(
@@ -44,6 +46,11 @@ def main() -> int:
     )
     parser.add_argument("--pretty", action="store_true")
     args = parser.parse_args()
+    apply_bootstrap_args(args)
+
+    settings = get_settings()
+    if args.update_limit is None:
+        args.update_limit = settings.five_verst_sync_latest_update_limit
 
     db = get_session_factory()()
     try:

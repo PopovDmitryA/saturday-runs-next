@@ -45,7 +45,7 @@ erDiagram
 | Legacy таблица | Причина |
 |----------------|---------|
 | `tg_user_profile`, `users`, `platform_links` | На новом сайте пока нет Telegram-логина; глобальные participants/results достаточны до OAuth |
-| `s95_details_protocol`, `s95_details_vol`, `s95_list_all_events` | Legacy S95 не обновлялся — в фазе 1 только `s95_location` |
+| `s95_details_protocol`, `s95_details_vol`, `s95_list_all_events` | ~~Legacy S95 не обновлялся~~ — **переносим в фазе 1b** (2026-06) |
 | RunPark events/runs | Только локации через `import_runpark_location_mappings.py` |
 | `parkrun_old_details` | ~588k мёртвых строк, 0 пересечений с актуальными пользователями |
 | `archive_*`, `change_log`, `club_*`, `january2025/2026`, `update_table` | служебные / снимки |
@@ -72,9 +72,9 @@ RunPark и каталог локаций — **не из legacy**, а из ск�
 9. dashboard_cache    ← пересчёт для пользователей с привязками
 ```
 
-Подфазы ETL (можно запускать отдельно): `five_verst` → `parkrun` → `s95_locations` → `validate`.
+Подфазы ETL (можно запускать отдельно): `five_verst` → `parkrun` → `s95` → `validate`.
 
-**Фаза 1 (утверждено):** users/platform_links и S95 events/runs **пропускаем**.
+**Фаза 1 (утверждено):** users/platform_links **пропускаем** до отдельного захода.
 
 ---
 
@@ -337,12 +337,12 @@ Upsert через существующий `app/sync/upsert.py` — **предп
 | **2** | `migrate_from_legacy.py --platform five_verst --dry-run` | лог counts, без записи |
 | **3** | ETL 5v (locations → events → runs → vols) | ~1,64M строк |
 | **4** | ETL parkrun runs + vol_summary + parkrun_users | ~783k + 50k |
-| **5** | ETL s95 locations only | справочник парков |
+| **5** | ETL s95 (locations → events → runs → vols + s95_runners) | ~164k строк |
 | **6** | `--validate` SQL-сверка counts (§8) | отчёт расхождений |
 | **7** | Spot-check дашбордов | ручная сверка |
 | **8** | Celery beat + delta sync | догон после cutoff legacy |
 
-**Отложено:** users/platform_links (до Telegram/OAuth), S95 events/runs (до обновления legacy).
+**Отложено:** users/platform_links (до Telegram/OAuth merge).
 
 Оценка: **3–5 дней** на скрипт + **0,5–1 день** на прогон/валидацию на prod.
 
@@ -355,8 +355,8 @@ Upsert через существующий `app/sync/upsert.py` — **предп
 | 5v runs | 1 187 621 | `run_results` + platform five_verst |
 | 5v vols | 453 052 | `volunteer_results` |
 | 5v prod events | 28 965 | `events` where not test |
-| s95 runs | 130 591 | |
-| s95 vols | 33 197 | |
+| s95 runs | 133 925 | |
+| s95 vols | 34 233 | |
 | parkrun runs | 729 020 | |
 | parkrun vol summary rows | 49 581 | |
 | users | 265 | |
@@ -378,9 +378,12 @@ python scripts/migrate_from_legacy.py --platform five_verst --steps locations,ev
 # Полный 5v (долго: ~1.6M runs)
 python scripts/migrate_from_legacy.py --platform five_verst
 
-# parkrun + s95 locations
+# parkrun + s95 (полный заход)
 python scripts/migrate_from_legacy.py --platform parkrun
 python scripts/migrate_from_legacy.py --platform s95
+
+# только пробежки S95 (локации и события уже есть)
+python scripts/migrate_from_legacy.py --platform s95 --steps events,participants,runs,volunteers
 
 # Сверка counts
 python scripts/migrate_from_legacy.py --validate --platform all --pretty

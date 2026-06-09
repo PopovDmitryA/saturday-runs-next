@@ -7,11 +7,17 @@ PIPELINE_LABELS: dict[str, str] = {
     "5v latest /results/latest/": "5verst: свежие результаты /results/latest/",
     "5v location rotation": "5verst: ротация локаций",
     "5v reconcile protocols": "5verst: сверка протоколов",
+    "s95 registry /activities": "s95: реестр /activities",
+    "s95 latest /activities": "s95: свежие /activities",
+    "s95 location rotation": "s95: ротация локаций",
+    "s95 reconcile protocols": "s95: сверка протоколов",
+    "s95 athletes registry": "s95: реестр атлетов",
 }
 
 PIPELINE_PREFIX_LABELS: tuple[tuple[str, str], ...] = (
     ("5v location ", "5verst: локация "),
     ("5v summaries ", "5verst: своды "),
+    ("s95 location ", "s95: локация "),
 )
 
 FIELD_LABELS: dict[str, str] = {
@@ -44,6 +50,15 @@ FIELD_LABELS: dict[str, str] = {
     "locations_total": "локаций в ротации",
     "location_upserted": "локация обновлена",
     "enqueued": "поставлено в очередь",
+    "unchanged": "сводок без изменений",
+    "participants_total": "участников в пакете",
+    "participants_synced": "профилей обновлено",
+    "participants_skipped": "профилей пропущено",
+    "runs_imported": "пробежек импортировано",
+    "protocols_refetched": "протоколов перезагружено",
+    "mismatches_found": "расхождений найдено",
+    "location_external_key": "локация",
+    "protocols_changed": "протоколов изменено",
 }
 
 DETAIL_SECTION_LABELS: dict[str, str] = {
@@ -55,6 +70,7 @@ DETAIL_SECTION_LABELS: dict[str, str] = {
     "merge_request_locations": "Заявки на слияние дублей",
     "fetched_protocols": "Загружены протоколы",
     "changed_protocols": "Изменены протоколы",
+    "planned_protocols": "Протоколы в плане",
 }
 
 DETAIL_LIST_KEYS = frozenset(DETAIL_SECTION_LABELS.keys())

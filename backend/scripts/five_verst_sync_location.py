@@ -11,14 +11,16 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.script_runtime import add_bootstrap_args, apply_bootstrap_args, bootstrap_from_env
 from app.config import get_settings
 from app.db.session import get_session_factory
 from app.sync.global_sync import LocationSyncOptions, sync_location
 
 
 def main() -> int:
-    settings = get_settings()
+    bootstrap_from_env()
     parser = argparse.ArgumentParser(description="Sync one 5verst location into the database")
+    add_bootstrap_args(parser)
     parser.add_argument("--slug", required=True, help="Park slug")
     parser.add_argument("--summaries", type=int, default=5, help="Max summaries from /results/all/ (0 = all)")
     parser.add_argument(
@@ -34,6 +36,9 @@ def main() -> int:
     )
     parser.add_argument("--pretty", action="store_true")
     args = parser.parse_args()
+    apply_bootstrap_args(args)
+
+    settings = get_settings()
 
     summaries_limit = None if args.summaries == 0 else args.summaries
     db = get_session_factory()()
