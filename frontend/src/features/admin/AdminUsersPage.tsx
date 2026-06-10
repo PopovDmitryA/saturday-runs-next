@@ -11,9 +11,17 @@ function platformCell(user: AdminUserListItem, code: string) {
   if (!link) {
     return <span className="muted">—</span>;
   }
+  const label = link.display_name?.trim();
+  if (!label) {
+    return (
+      <a href={link.external_url} target="_blank" rel="noreferrer" className="admin-platform-link muted">
+        Профиль
+      </a>
+    );
+  }
   return (
     <a href={link.external_url} target="_blank" rel="noreferrer" className="admin-platform-link">
-      {link.external_user_id}
+      {label}
     </a>
   );
 }
@@ -72,7 +80,7 @@ function AdminUsersContent() {
           <input
             className="input admin-users-search"
             type="search"
-            placeholder="Почта, VK/Яндекс, Telegram, имя или ID профиля…"
+            placeholder="Почта, VK/Яндекс, Telegram, имя в ЛК или ФИО в 5 вёрst/S95/parkrun…"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
           />

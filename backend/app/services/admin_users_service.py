@@ -91,6 +91,12 @@ def search_admin_users(
     if normalized:
         like = f"%{normalized}%"
         link_user_ids = select(PlatformLink.user_id).where(PlatformLink.external_user_id.ilike(like)).distinct()
+        participant_user_ids = (
+            select(PlatformLink.user_id)
+            .join(Participant, PlatformLink.participant_id == Participant.id)
+            .where(Participant.display_name.ilike(like))
+            .distinct()
+        )
         identity_user_ids = (
             select(AuthIdentity.user_id)
             .where(
@@ -108,6 +114,7 @@ def search_admin_users(
                 User.display_name.ilike(like),
                 cast(User.telegram_id, String).like(like),
                 User.id.in_(link_user_ids),
+                User.id.in_(participant_user_ids),
                 User.id.in_(identity_user_ids),
             )
         )
