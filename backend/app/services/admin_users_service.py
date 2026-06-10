@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import AuthIdentity, AuthProvider, DashboardCache, Participant, Platform, PlatformLink, User
@@ -38,13 +38,20 @@ def _link_brief(link: PlatformLink, platform: Platform, participant: Participant
     }
 
 
+def _participant_join():
+    return and_(
+        PlatformLink.platform_id == Participant.platform_id,
+        PlatformLink.external_user_id == Participant.external_user_id,
+    )
+
+
 def _load_user_links(db: Session, user_ids: list[UUID]) -> dict[UUID, list[dict[str, object]]]:
     if not user_ids:
         return {}
     rows = (
         db.query(PlatformLink, Platform, Participant)
         .join(Platform, PlatformLink.platform_id == Platform.id)
-        .outerjoin(Participant, PlatformLink.participant_id == Participant.id)
+        .outerjoin(Participant, _participant_join())
         .filter(PlatformLink.user_id.in_(user_ids))
         .order_by(PlatformLink.linked_at.desc())
         .all()
@@ -93,7 +100,10 @@ def search_admin_users(
         link_user_ids = select(PlatformLink.user_id).where(PlatformLink.external_user_id.ilike(like)).distinct()
         participant_user_ids = (
             select(PlatformLink.user_id)
-            .join(Participant, PlatformLink.participant_id == Participant.id)
+            .join(
+                Participant,
+                _participant_join(),
+            )
             .where(Participant.display_name.ilike(like))
             .distinct()
         )
