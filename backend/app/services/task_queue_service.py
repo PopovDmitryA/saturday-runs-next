@@ -93,6 +93,32 @@ def _queue_summaries() -> list[dict[str, object]]:
     ]
 
 
+def _parkrun_queue_payload(db: Session) -> dict[str, object]:
+    from app.models import ProfileFetchPending, ProfileFetchPendingStatus
+    from app.services.parkrun_admin_service import get_parkrun_session_status
+
+    status = get_parkrun_session_status(db)
+    processing = (
+        db.query(ProfileFetchPending)
+        .filter(
+            ProfileFetchPending.platform_code == "parkrun",
+            ProfileFetchPending.status == ProfileFetchPendingStatus.processing,
+        )
+        .count()
+    )
+    return {
+        "pending": int(status.get("pending_queue_count") or 0),
+        "failed": int(status.get("failed_queue_count") or 0),
+        "stuck_done": int(status.get("stuck_done_queue_count") or 0),
+        "processing": processing,
+        "celery_sync": get_queue_length(PARKRUN_SYNC_QUEUE),
+        "captcha_pending": bool(status.get("captcha_pending")),
+        "cooldown_remaining_seconds": status.get("cooldown_remaining_seconds"),
+        "worker_alive": bool(status.get("worker_alive")),
+        "worker_status": str(status.get("worker_status") or "idle"),
+    }
+
+
 def _pipeline_payload(db: Session) -> dict[str, object]:
     status = get_admin_pipeline_status(db)
     running: list[dict[str, object]] = []
@@ -223,4 +249,5 @@ def get_admin_task_queue_payload(db: Session) -> dict[str, object]:
         "active_jobs_count": active_count,
         "task_queue_by_suffix": TASK_QUEUE_BY_SUFFIX,
         "pipeline": _pipeline_payload(db),
+        "parkrun_queue": _parkrun_queue_payload(db),
     }

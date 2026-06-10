@@ -254,8 +254,21 @@ class SyncQueuePipelineResponse(BaseModel):
     checked_at: datetime | None = None
 
 
+class SyncQueueParkrunQueueResponse(BaseModel):
+    pending: int = 0
+    failed: int = 0
+    stuck_done: int = 0
+    processing: int = 0
+    celery_sync: int = 0
+    captcha_pending: bool = False
+    cooldown_remaining_seconds: int | None = None
+    worker_alive: bool = False
+    worker_status: str = "idle"
+
+
 class SyncQueueResponse(BaseModel):
     jobs: list[SyncQueueJobResponse] = Field(default_factory=list)
     queues: list[SyncQueueSummaryResponse] = Field(default_factory=list)
     active_jobs_count: int = 0
     pipeline: SyncQueuePipelineResponse | None = None
+    parkrun_queue: SyncQueueParkrunQueueResponse | None = None
