@@ -3,10 +3,11 @@ import { AppShell } from "../../components/AppShell";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { AdminSubnav } from "../admin/AdminSubnav";
-import { getSyncQueue, type SyncQueueJob, type SyncQueueJobUser, type SyncQueueResponse } from "../../lib/api";
+import { getSyncQueue, type SyncQueueJob, type SyncQueueJobUser, type SyncQueueParkrunQueue, type SyncQueueResponse } from "../../lib/api";
 import {
   celeryStateLabel,
   formatDateTime,
+  formatDurationShort,
   platformCodeLabel,
   syncStatusLabel,
   syncTriggerLabel,
@@ -74,6 +75,86 @@ function jobStatusClass(status: string): string {
   return "";
 }
 
+function parkrunStatClass(value: number | boolean): string {
+  if (typeof value === "boolean") {
+    return value ? "queue-parkrun-stat-alert" : "";
+  }
+  return value > 0 ? "queue-parkrun-stat-alert" : "";
+}
+
+function ParkrunQueuePanel({ stats }: { stats: SyncQueueParkrunQueue }) {
+  const needsAttention =
+    stats.pending > 0 ||
+    stats.failed > 0 ||
+    stats.stuck_done > 0 ||
+    stats.captcha_pending ||
+    (stats.cooldown_remaining_seconds ?? 0) > 0;
+
+  const workerLabel =
+    stats.worker_status === "running"
+      ? "работает"
+      : stats.worker_status === "queued"
+        ? "в очереди"
+        : stats.worker_alive
+          ? "ожидает"
+          : "не запущен";
+
+  return (
+    <section className={`card queue-parkrun-panel${needsAttention ? " queue-parkrun-panel-alert" : ""}`}>
+      <div className="queue-parkrun-panel-head">
+        <h2 className="section-title">Очередь parkrun</h2>
+        <a href="/admin/parkrun" className="btn secondary btn-sm">
+          Управление parkrun
+        </a>
+      </div>
+      <p className="muted queue-parkrun-intro">
+        Заявки на обновление профилей parkrun (капча, очередь <code>profile_fetch_pending</code>). При
+        ненулевых значениях нужна реакция — обработка на Mac через Chrome CDP.
+      </p>
+      <div className="queue-parkrun-stats">
+        <div className={`queue-parkrun-stat ${parkrunStatClass(stats.pending)}`}>
+          <span className="queue-parkrun-stat-value">{stats.pending}</span>
+          <span className="queue-parkrun-stat-label">ожидают</span>
+        </div>
+        <div className={`queue-parkrun-stat ${parkrunStatClass(stats.failed)}`}>
+          <span className="queue-parkrun-stat-value">{stats.failed}</span>
+          <span className="queue-parkrun-stat-label">ошибка</span>
+        </div>
+        <div className={`queue-parkrun-stat ${parkrunStatClass(stats.stuck_done)}`}>
+          <span className="queue-parkrun-stat-value">{stats.stuck_done}</span>
+          <span className="queue-parkrun-stat-label">застряли done</span>
+        </div>
+        <div className={`queue-parkrun-stat ${parkrunStatClass(stats.processing)}`}>
+          <span className="queue-parkrun-stat-value">{stats.processing}</span>
+          <span className="queue-parkrun-stat-label">в обработке</span>
+        </div>
+        <div className={`queue-parkrun-stat ${parkrunStatClass(stats.celery_sync)}`}>
+          <span className="queue-parkrun-stat-value">{stats.celery_sync}</span>
+          <span className="queue-parkrun-stat-label">Celery sync</span>
+        </div>
+        <div className={`queue-parkrun-stat ${parkrunStatClass(stats.captcha_pending)}`}>
+          <span className="queue-parkrun-stat-value">{stats.captcha_pending ? "да" : "нет"}</span>
+          <span className="queue-parkrun-stat-label">капча</span>
+        </div>
+        <div
+          className={`queue-parkrun-stat ${parkrunStatClass((stats.cooldown_remaining_seconds ?? 0) > 0)}`}
+        >
+          <span className="queue-parkrun-stat-value">
+            {stats.cooldown_remaining_seconds != null && stats.cooldown_remaining_seconds > 0
+              ? formatDurationShort(stats.cooldown_remaining_seconds)
+              : "—"}
+          </span>
+          <span className="queue-parkrun-stat-label">cooldown</span>
+        </div>
+        <div className="queue-parkrun-stat">
+          <span className="queue-parkrun-stat-value">{workerLabel}</span>
+          <span className="queue-parkrun-stat-label">Mac worker</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function QueueContent() {
   const [data, setData] = useState<SyncQueueResponse | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -124,6 +205,8 @@ function QueueContent() {
         Заявки пользователей на обновление профилей — ниже. Отдельно от них работает фоновый пайплайн
         протоколов 5&nbsp;вёрст (субботние старты, реестр локаций).
       </p>
+
+      {data?.parkrun_queue && <ParkrunQueuePanel stats={data.parkrun_queue} />}
 
       {data?.pipeline && (
         <section className="card queue-pipeline-panel">

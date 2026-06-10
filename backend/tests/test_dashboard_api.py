@@ -929,6 +929,8 @@ def test_sync_queue_admin_lists_jobs(
     assert "jobs" in payload
     assert "queues" in payload
     assert len(payload["queues"]) == 3
+    assert "parkrun_queue" in payload
+    assert payload["parkrun_queue"]["pending"] == 0
 
 
 def test_sync_queue_admin_accepts_user_without_telegram_id(

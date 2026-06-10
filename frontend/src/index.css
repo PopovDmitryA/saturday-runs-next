@@ -1997,6 +1997,72 @@ body {
   font-size: 0.875rem;
 }
 
+.queue-parkrun-panel {
+  margin-bottom: 1rem;
+  border-color: #e2e8f0;
+}
+
+.queue-parkrun-panel-alert {
+  border-color: #f59e0b;
+  background: linear-gradient(180deg, #fffbeb 0%, #ffffff 48%);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.15);
+}
+
+.queue-parkrun-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.queue-parkrun-panel-head .section-title {
+  margin: 0;
+}
+
+.queue-parkrun-intro {
+  margin: 0 0 0.85rem;
+  font-size: 0.875rem;
+}
+
+.queue-parkrun-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: 0.55rem;
+}
+
+.queue-parkrun-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.queue-parkrun-stat-alert {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.queue-parkrun-stat-alert .queue-parkrun-stat-label {
+  color: #b45309;
+}
+
+.queue-parkrun-stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.queue-parkrun-stat-label {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
 .queue-pipeline-panel .queue-pipeline-subtitle {
   margin: 1rem 0 0.35rem;
   font-size: 0.9rem;

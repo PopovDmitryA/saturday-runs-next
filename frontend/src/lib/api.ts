@@ -299,11 +299,24 @@ export type SyncQueuePipeline = {
   checked_at: string | null;
 };
 
+export type SyncQueueParkrunQueue = {
+  pending: number;
+  failed: number;
+  stuck_done: number;
+  processing: number;
+  celery_sync: number;
+  captcha_pending: boolean;
+  cooldown_remaining_seconds: number | null;
+  worker_alive: boolean;
+  worker_status: string;
+};
+
 export type SyncQueueResponse = {
   jobs: SyncQueueJob[];
   queues: Array<{ queue: string; label: string; length: number }>;
   active_jobs_count: number;
   pipeline?: SyncQueuePipeline | null;
+  parkrun_queue?: SyncQueueParkrunQueue | null;
 };
 
 function extractApiErrorDetail(body: unknown, status: number, rawText: string): string {
