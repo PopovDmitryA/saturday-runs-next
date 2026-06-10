@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import Date, cast, distinct, func
 from sqlalchemy.orm import Session
 
-from app.core.site_stats import read_daily_series, read_pageviews_by_day
+from app.core.site_stats import read_pageviews_by_day
 from app.models import (
     AuthLoginRequest,
     Event,
@@ -37,9 +37,6 @@ def get_admin_site_stats(db: Session, *, period_days: int = 30) -> dict[str, obj
 
     users_total = db.query(func.count(User.id)).scalar() or 0
     users_with_consent = db.query(func.count(User.id)).filter(User.consent_accepted.is_(True)).scalar() or 0
-    users_news_subscribed = (
-        db.query(func.count(User.id)).filter(User.news_subscribed.is_(True)).scalar() or 0
-    )
     users_active_period = (
         db.query(func.count(User.id))
         .filter(User.last_login_at.isnot(None), User.last_login_at >= since)
@@ -73,10 +70,11 @@ def get_admin_site_stats(db: Session, *, period_days: int = 30) -> dict[str, obj
         or 0
     )
 
+    pageviews_by_day = read_pageviews_by_day(days=period_days)
+
     overview = {
         "users_total": users_total,
         "users_with_consent": users_with_consent,
-        "users_news_subscribed": users_news_subscribed,
         "users_active_period": users_active_period,
         "users_with_any_link": users_with_any_link,
         "users_with_all_three_links": users_with_all_three,
@@ -95,6 +93,8 @@ def get_admin_site_stats(db: Session, *, period_days: int = 30) -> dict[str, obj
         .filter(AuthLoginRequest.created_at >= since)
         .scalar()
         or 0,
+        "pageviews_period": sum(int(row.get("total", 0)) for row in pageviews_by_day),
+        "unique_visitors_period": sum(int(row.get("unique_visitors", 0)) for row in pageviews_by_day),
     }
 
     users_new_by_day = _series_from_db(
@@ -109,13 +109,23 @@ def get_admin_site_stats(db: Session, *, period_days: int = 30) -> dict[str, obj
         since=since,
         period_days=period_days,
     )
-    logins_by_day_db = _series_from_db(
+    logins_by_day = _series_from_db(
         db,
         User.last_login_at,
         since=since,
         period_days=period_days,
         not_null_column=User.last_login_at,
     )
+    login_requests_by_day = _series_from_db(
+        db,
+        AuthLoginRequest.created_at,
+        since=since,
+        period_days=period_days,
+    )
+
+    overview["users_new_period"] = sum(int(row["value"]) for row in users_new_by_day)
+    overview["links_new_period"] = sum(int(row["value"]) for row in links_new_by_day)
+    overview["logins_period"] = sum(int(row["value"]) for row in logins_by_day)
 
     return {
         "period_days": period_days,
@@ -123,10 +133,9 @@ def get_admin_site_stats(db: Session, *, period_days: int = 30) -> dict[str, obj
         "overview": overview,
         "users_new_by_day": users_new_by_day,
         "links_new_by_day": links_new_by_day,
-        "logins_by_day_db": logins_by_day_db,
-        "logins_by_day": read_daily_series("login", days=period_days),
-        "login_requests_by_day": read_daily_series("login_request", days=period_days),
-        "pageviews_by_day": read_pageviews_by_day(days=period_days),
+        "logins_by_day": logins_by_day,
+        "login_requests_by_day": login_requests_by_day,
+        "pageviews_by_day": pageviews_by_day,
     }
 
 

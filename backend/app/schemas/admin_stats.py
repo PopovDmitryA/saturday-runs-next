@@ -8,12 +8,16 @@ from pydantic import BaseModel, Field
 class AdminSiteStatsOverview(BaseModel):
     users_total: int
     users_with_consent: int
-    users_news_subscribed: int
     users_active_period: int
+    users_new_period: int = 0
     users_with_any_link: int
     users_with_all_three_links: int
     platform_links_total: int
+    links_new_period: int = 0
     links_by_platform: dict[str, int]
+    pageviews_period: int = 0
+    unique_visitors_period: int = 0
+    logins_period: int = 0
     participants_total: int
     events_total: int
     run_results_total: int
@@ -49,7 +53,6 @@ class AdminSiteStatsResponse(BaseModel):
     overview: AdminSiteStatsOverview
     users_new_by_day: list[AdminSiteStatsDayPoint]
     links_new_by_day: list[AdminSiteStatsDayPoint]
-    logins_by_day_db: list[AdminSiteStatsDayPoint]
     logins_by_day: list[AdminSiteStatsDayPoint]
     login_requests_by_day: list[AdminSiteStatsDayPoint]
     pageviews_by_day: list[AdminSiteStatsPageviewsDay]

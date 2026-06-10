@@ -344,13 +344,18 @@ function sanitizeApiErrorMessage(message: string): string {
   return trimmed.length > 500 ? `${trimmed.slice(0, 497)}…` : trimmed;
 }
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+async function apiFetch<T>(
+  path: string,
+  init?: RequestInit,
+  options?: { timeoutMs?: number },
+): Promise<T> {
   let response: Response;
   const controller = init?.signal ? null : new AbortController();
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
   const timeoutId =
     controller === null
       ? null
-      : window.setTimeout(() => controller.abort(), DEFAULT_FETCH_TIMEOUT_MS);
+      : window.setTimeout(() => controller.abort(), timeoutMs);
   try {
     response = await fetch(`${API_BASE}${path}`, {
       credentials: "include",
@@ -954,12 +959,16 @@ export function clearAdminIpAbuseScore(ip: string) {
 export type AdminSiteStatsOverview = {
   users_total: number;
   users_with_consent: number;
-  users_news_subscribed: number;
   users_active_period: number;
+  users_new_period: number;
   users_with_any_link: number;
   users_with_all_three_links: number;
   platform_links_total: number;
+  links_new_period: number;
   links_by_platform: Record<string, number>;
+  pageviews_period: number;
+  unique_visitors_period: number;
+  logins_period: number;
   participants_total: number;
   events_total: number;
   run_results_total: number;
@@ -992,7 +1001,6 @@ export type AdminSiteStatsResponse = {
   overview: AdminSiteStatsOverview;
   users_new_by_day: AdminSiteStatsDayPoint[];
   links_new_by_day: AdminSiteStatsDayPoint[];
-  logins_by_day_db: AdminSiteStatsDayPoint[];
   logins_by_day: AdminSiteStatsDayPoint[];
   login_requests_by_day: AdminSiteStatsDayPoint[];
   pageviews_by_day: AdminSiteStatsPageviewsDay[];
@@ -1124,4 +1132,32 @@ export function demoGetCatalogLocationsMap() {
 
 export function demoGetCatalogLocationsTable() {
   return apiFetch<CatalogLocationsTableResponse>("/demo/locations/catalog/table");
+}
+
+export type RunCountRatingRow = {
+  rank: number;
+  runner_name: string;
+  run_count: number;
+  ran_on_latest_date: boolean;
+  latest_location: string | null;
+  skipped_above_count: number;
+};
+
+export type RunCountRatingResponse = {
+  title: string;
+  description: string;
+  platform_code: string;
+  data_source: string;
+  latest_event_date: string | null;
+  data_updated_at: string | null;
+  cached_at: string | null;
+  rows: RunCountRatingRow[];
+};
+
+export function getFiveVerstRunCountRating(limit = 1000) {
+  return apiFetch<RunCountRatingResponse>(
+    `/public/ratings/five-verst/run-count?limit=${limit}`,
+    undefined,
+    { timeoutMs: 120_000 },
+  );
 }

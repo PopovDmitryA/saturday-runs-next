@@ -330,7 +330,7 @@ def admin_get_ip_block(
 def admin_site_stats(
     db: Annotated[Session, Depends(get_db)],
     _admin: Annotated[User, Depends(get_current_admin_user)],
-    period_days: Annotated[int, Query(ge=7, le=365)] = 30,
+    period_days: Annotated[int, Query(ge=1, le=365)] = 30,
 ) -> AdminSiteStatsResponse:
     payload = get_admin_site_stats(db, period_days=period_days)
     return AdminSiteStatsResponse.model_validate(payload)

@@ -124,8 +124,26 @@ def test_admin_stats_for_admin(admin_client: TestClient) -> None:
     payload = response.json()
     assert "overview" in payload
     assert "users_total" in payload["overview"]
+    assert "pageviews_period" in payload["overview"]
+    assert "users_news_subscribed" not in payload["overview"]
     assert len(payload["users_new_by_day"]) == 30
     assert len(payload["pageviews_by_day"]) == 30
+    assert len(payload["logins_by_day"]) == 30
+    assert "logins_by_day_db" not in payload
+
+
+def test_admin_stats_period_one_day(admin_client: TestClient) -> None:
+    response = admin_client.get("/api/admin/stats?period_days=1")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["period_days"] == 1
+    assert len(payload["users_new_by_day"]) == 1
+    assert len(payload["pageviews_by_day"]) == 1
+
+
+def test_admin_stats_rejects_zero_period(admin_client: TestClient) -> None:
+    response = admin_client.get("/api/admin/stats?period_days=0")
+    assert response.status_code == 422
 
 
 def test_pageview_endpoint(client: TestClient, fake_redis: fakeredis.FakeRedis, monkeypatch: pytest.MonkeyPatch) -> None:
