@@ -133,7 +133,6 @@ function AdminUsersContent() {
                   <th>{platformCodeLabel("parkrun")}</th>
                   <th>Пробежки</th>
                   <th>Волонт.</th>
-                  <th>Уведомления</th>
                   <th>Регистрация</th>
                   <th />
                 </tr>
@@ -141,7 +140,7 @@ function AdminUsersContent() {
               <tbody>
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="muted">
+                    <td colSpan={8} className="muted">
                       Пользователи не найдены
                     </td>
                   </tr>
@@ -178,7 +177,6 @@ function AdminUsersContent() {
                       <td>{platformCell(user, "parkrun")}</td>
                       <td>{user.total_runs ?? "—"}</td>
                       <td>{user.total_volunteering ?? "—"}</td>
-                      <td>{user.news_subscribed ? "Да" : "Нет"}</td>
                       <td title={formatDateTime(user.created_at)}>
                         {formatDateTime(user.created_at)}
                       </td>

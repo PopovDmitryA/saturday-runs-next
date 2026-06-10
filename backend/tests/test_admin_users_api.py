@@ -229,7 +229,7 @@ def test_admin_users_search_by_platform_participant_name(client: TestClient, db_
         PlatformLink(
             user_id=target.id,
             platform_id=platform.id,
-            participant_id=participant.id,
+            participant_id=None,
             external_user_id=external_id,
             external_url=f"https://5verst.ru/userstats/{external_id}/",
         )

@@ -62,7 +62,8 @@ echo "--- frontend build ---"
 docker run --rm -v "\$PWD/frontend:/app" -w /app node:22-alpine sh -c "npm ci && npm run build"
 
 echo "--- docker services ---"
-\$COMPOSE up -d --build worker-s95 worker-five-verst api nginx beat vk-bot
+\$COMPOSE up -d --build worker-s95 worker-five-verst worker-parkrun api nginx beat vk-bot
+\$COMPOSE restart nginx api
 \$COMPOSE stop worker-s95-user worker-five-verst-user 2>/dev/null || true
 \$COMPOSE rm -f worker-s95-user worker-five-verst-user 2>/dev/null || true
 
