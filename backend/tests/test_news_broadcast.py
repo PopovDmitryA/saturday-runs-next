@@ -48,10 +48,8 @@ def client(db_session: Session, fake_redis: fakeredis.FakeRedis, bot_settings: S
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_settings] = lambda: bot_settings
 
-    with patch("app.core.redis_client.get_redis_client", return_value=fake_redis):
-        with patch("app.services.broadcast_compose_state.get_redis_client", return_value=fake_redis):
-            with TestClient(app) as test_client:
-                yield test_client
+    with TestClient(app) as test_client:
+        yield test_client
 
     app.dependency_overrides.clear()
 

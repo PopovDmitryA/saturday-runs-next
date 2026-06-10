@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from app.core.redis_client import get_redis_client
+from app.core import redis_client
 
 
 def get_redis():
-    return get_redis_client()
+    return redis_client.get_redis_client()
 
 
 def increment_counter(key: str, window_seconds: int) -> int:

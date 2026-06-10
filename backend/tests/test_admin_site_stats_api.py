@@ -46,10 +46,6 @@ def client(
     app.dependency_overrides[get_settings] = lambda: admin_settings
 
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("app.core.rate_limit.get_redis_client", lambda: fake_redis)
-        mp.setattr("app.core.site_stats.get_redis", lambda: fake_redis)
-        mp.setattr("app.core.abuse_store.get_redis", lambda: fake_redis)
-        mp.setattr("app.core.abuse_protection.get_redis", lambda: fake_redis)
         mp.setattr("app.services.auth_service.check_rate_limit", lambda *_args, **_kwargs: True)
         with TestClient(app) as test_client:
             yield test_client
@@ -85,9 +81,7 @@ def admin_client(client: TestClient, admin_settings: Settings) -> TestClient:
 
 def test_record_pageview_increments_counters(
     fake_redis: fakeredis.FakeRedis,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("app.core.site_stats.get_redis", lambda: fake_redis)
     record_pageview("/demo", authenticated=False, visitor_key="a:anon-11111111")
     record_pageview(
         "/dashboard",
@@ -105,9 +99,7 @@ def test_record_pageview_increments_counters(
 
 def test_record_pageview_rejects_invalid_visitor_key(
     fake_redis: fakeredis.FakeRedis,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("app.core.site_stats.get_redis", lambda: fake_redis)
     record_pageview("/", authenticated=False, visitor_key="invalid")
     today = datetime.now(timezone.utc).date().isoformat()
     assert fake_redis.pfcount(f"stats:day:{today}:uv") == 0
@@ -146,9 +138,7 @@ def test_admin_stats_rejects_zero_period(admin_client: TestClient) -> None:
     assert response.status_code == 422
 
 
-def test_pageview_endpoint(client: TestClient, fake_redis: fakeredis.FakeRedis, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.core.rate_limit.get_redis_client", lambda: fake_redis)
-    monkeypatch.setattr("app.core.site_stats.get_redis", lambda: fake_redis)
+def test_pageview_endpoint(client: TestClient, fake_redis: fakeredis.FakeRedis) -> None:
     response = client.post(
         "/api/stats/pageview",
         json={"path": "/", "authenticated": False, "visitor_key": "a:test-visitor-1"},
