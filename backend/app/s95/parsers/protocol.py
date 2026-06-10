@@ -12,6 +12,7 @@ from app.platform_adapters.canonical import CanonicalRunResult, CanonicalVolunte
 from app.s95.parsers.achievements import ParsedEventStats, parse_event_stats_html, parse_row_achievements
 from app.s95.parsers.table_columns import runs_table_column_indexes
 from app.s95.parsers.time_utils import parse_finish_time
+from app.s95.parsers.volunteer_roles import canonical_s95_volunteer_role, s95_volunteer_role_key
 
 ATHLETE_LINK_RE = re.compile(r"/athletes/(\d+)", re.IGNORECASE)
 CLUB_LINK_RE = re.compile(r"/clubs/", re.I)
@@ -262,9 +263,11 @@ def _parse_protocol_tables(
             name = athlete_link.get_text(strip=True) if athlete_link else cols[0].get_text(strip=True) or None
             link = urljoin(base_url, athlete_link["href"]) if athlete_link and athlete_link.has_attr("href") else None
             user_id = _athlete_id_from_href(link)
-            role = cols[1].get_text(" ", strip=True)
+            role_raw = cols[1].get_text(" ", strip=True)
+            role = canonical_s95_volunteer_role(role_raw) or role_raw
+            role_key = s95_volunteer_role_key(role)
             external_result_key = (
-                f"vol:{location_external_key}:{event_date.isoformat()}:{user_id or name}:{role}"
+                f"vol:{location_external_key}:{event_date.isoformat()}:{user_id or name}:{role_key}"
             )
             volunteer_results.append(
                 CanonicalVolunteerResult(

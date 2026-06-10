@@ -120,7 +120,7 @@ def test_parse_athlete_runs_and_volunteering_fixture() -> None:
     )
     assert len(vols) == 1
     assert vols[0].role == "Маршал"
-    assert vols[0].external_result_key == "vol:парк_горького:2025-01-05:5207:Маршал"
+    assert vols[0].external_result_key == "vol:парк_горького:2025-01-05:5207:маршал"
 
 
 def test_parse_athlete_volunteering_accordion_fixture() -> None:
@@ -136,6 +136,20 @@ def test_parse_athlete_volunteering_accordion_fixture() -> None:
     assert roles == {"Замыкающий", "Разметка трассы"}
     assert all(item.external_result_key.startswith("vol:troitsk:") for item in vols)
     assert all(item.external_user_id == "7054" for item in vols)
+
+
+def test_parse_athlete_volunteering_serbian_roles_to_russian() -> None:
+    html = (FIXTURES / "s95_athlete_volunteering_serbian.html").read_text(encoding="utf-8")
+    vols = parse_athlete_volunteering_html(
+        html,
+        external_user_id="7777",
+        display_name="Serbian Tester",
+        profile_url="https://s95.rs/athletes/7777/",
+    )
+    roles = {item.role for item in vols}
+    assert roles == {"Проведение разминки", "Фотограф"}
+    assert all("zagrevanje" not in (item.external_result_key or "") for item in vols)
+    assert all("fotograf" not in (item.external_result_key or "") for item in vols)
 
 
 def test_parse_summary_fixture() -> None:

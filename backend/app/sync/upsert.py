@@ -602,19 +602,27 @@ def upsert_volunteer_results(
             .one_or_none()
         )
         now = datetime.now(timezone.utc)
+        role = item.role
+        if platform.code == "s95":
+            from app.s95.parsers.volunteer_roles import canonical_s95_volunteer_role, prefer_s95_volunteer_role
+
+            role = canonical_s95_volunteer_role(role) or role
         if row is None:
             row = VolunteerResult(
                 event_id=event.id,
                 participant_id=participant_id,
                 external_result_key=item.external_result_key,
-                role=item.role,
+                role=role,
                 fetched_at=now,
             )
             db.add(row)
             upserted += 1
         else:
             row.participant_id = participant_id
-            row.role = _prefer_volunteer_role(row.role, item.role)
+            if platform.code == "s95":
+                row.role = prefer_s95_volunteer_role(row.role, role)
+            else:
+                row.role = _prefer_volunteer_role(row.role, role)
             row.fetched_at = now
             upserted += 1
     db.flush()
@@ -958,17 +966,24 @@ def import_profile_run_results(
     return imported
 
 
-def _volunteer_role_dedupe_key(role: str | None) -> str:
+def _volunteer_role_dedupe_key(role: str | None, *, platform_code: str | None = None) -> str:
     if not role:
         return "volunteer"
+    if platform_code == "s95":
+        from app.s95.parsers.volunteer_roles import s95_volunteer_role_key
+
+        return s95_volunteer_role_key(role)
     normalized = re.sub(r"[^\w]+", "_", role.lower(), flags=re.UNICODE).strip("_")
     return normalized or "volunteer"
 
 
-def _volunteer_result_completeness(vol: VolunteerResult) -> tuple[int, int, int]:
+def _volunteer_result_completeness(vol: VolunteerResult) -> tuple[int, int, int, int]:
+    role = vol.role or ""
+    cyrillic_chars = sum(1 for char in role if "\u0400" <= char <= "\u04FF")
     key = vol.external_result_key or ""
     is_protocol = 1 if ":vol:" in key else 0
     return (
+        cyrillic_chars,
         -is_protocol,
         0 if vol.role else 1,
         0 if vol.fetched_at else 1,
@@ -981,6 +996,7 @@ def dedupe_participant_volunteer_results(
     participant_id: UUID,
 ) -> int:
     """One volunteering row per date, location and role."""
+    platform = db.query(Platform).filter(Platform.id == platform_id).one()
     rows = (
         db.query(VolunteerResult, Event)
         .join(Event, VolunteerResult.event_id == Event.id)
@@ -992,9 +1008,9 @@ def dedupe_participant_volunteer_results(
     )
     groups: dict[tuple[date, UUID, str], list[tuple[VolunteerResult, Event]]] = defaultdict(list)
     for vol, event in rows:
-        groups[(event.event_date, event.location_id, _volunteer_role_dedupe_key(vol.role))].append(
-            (vol, event)
-        )
+        groups[
+            (event.event_date, event.location_id, _volunteer_role_dedupe_key(vol.role, platform_code=platform.code))
+        ].append((vol, event))
 
     deleted = 0
     touched_event_ids: set[UUID] = set()
@@ -1002,6 +1018,15 @@ def dedupe_participant_volunteer_results(
         if len(group) <= 1:
             continue
         group.sort(key=lambda pair: _volunteer_result_completeness(pair[0]))
+        keeper, _keeper_event = group[0]
+        canonical_role = keeper.role
+        if platform.code == "s95":
+            from app.s95.parsers.volunteer_roles import canonical_s95_volunteer_role, prefer_s95_volunteer_role
+
+            for vol, _event in group:
+                canonical_role = prefer_s95_volunteer_role(canonical_role, vol.role)
+            if canonical_role:
+                keeper.role = canonical_s95_volunteer_role(canonical_role) or canonical_role
         for vol, event in group[1:]:
             touched_event_ids.add(event.id)
             db.delete(vol)
