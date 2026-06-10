@@ -47,25 +47,25 @@ rsync_to docker-compose.prod.yml "${REMOTE}/docker-compose.prod.yml"
 rsync_to frontend/src/ "${REMOTE}/frontend/src/"
 
 echo "=== remote build & restart ==="
-sshpass -e ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" bash -s <<REMOTE_SCRIPT
+sshpass -e ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
+  "REMOTE=${REMOTE} COMPOSE=${COMPOSE@Q} bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
-cd "${REMOTE}"
-COMPOSE="${COMPOSE}"
+cd "$REMOTE"
 
 echo "--- queue lengths before ---"
-\$COMPOSE exec -T redis redis-cli LLEN five_verst || true
-\$COMPOSE exec -T redis redis-cli LLEN five_verst_user || true
-\$COMPOSE exec -T redis redis-cli LLEN s95 || true
-\$COMPOSE exec -T redis redis-cli LLEN s95_user || true
+eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst || true
+eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst_user || true
+eval "$COMPOSE" exec -T redis redis-cli LLEN s95 || true
+eval "$COMPOSE" exec -T redis redis-cli LLEN s95_user || true
 
 echo "--- frontend build ---"
-docker run --rm -v "\$PWD/frontend:/app" -w /app node:22-alpine sh -c "npm ci && npm run build"
+docker run --rm -v "$PWD/frontend:/app" -w /app node:22-alpine sh -c "npm ci && npm run build"
 
 echo "--- docker services ---"
-\$COMPOSE up -d --build worker-s95 worker-five-verst worker-parkrun api nginx beat vk-bot
-\$COMPOSE restart nginx api
-\$COMPOSE stop worker-s95-user worker-five-verst-user 2>/dev/null || true
-\$COMPOSE rm -f worker-s95-user worker-five-verst-user 2>/dev/null || true
+eval "$COMPOSE" up -d --build worker-s95 worker-five-verst worker-parkrun api nginx beat vk-bot
+eval "$COMPOSE" restart nginx api
+eval "$COMPOSE" stop worker-s95-user worker-five-verst-user 2>/dev/null || true
+eval "$COMPOSE" rm -f worker-s95-user worker-five-verst-user 2>/dev/null || true
 
 echo "--- host nginx (run5k.run Grafana redirects) ---"
 if sudo -n cp deploy/nginx/run5k.run.conf /etc/nginx/sites-available/run5k.run 2>/dev/null; then
@@ -79,8 +79,8 @@ else
 fi
 
 echo "--- queue lengths after ---"
-\$COMPOSE exec -T redis redis-cli LLEN five_verst || true
-\$COMPOSE exec -T redis redis-cli LLEN five_verst_user || true
+eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst || true
+eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst_user || true
 
 echo "--- smoke ---"
 curl -sf http://127.0.0.1:8080/health | head -c 200 || true
