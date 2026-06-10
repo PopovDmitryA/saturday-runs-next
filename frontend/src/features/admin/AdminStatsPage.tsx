@@ -1,17 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AppShell } from "../../components/AppShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
 import { getAdminSiteStats, type AdminSiteStatsResponse } from "../../lib/api";
-import { formatDate, formatDateTime, platformCodeLabel } from "../../lib/format";
+import { formatChartDay, formatDate, formatDateTime, platformCodeLabel } from "../../lib/format";
 import { AdminSubnav } from "./AdminSubnav";
 
 const PERIODS = [
+  { label: "1 день", days: 1 },
+  { label: "3 дня", days: 3 },
   { label: "7 дней", days: 7 },
   { label: "30 дней", days: 30 },
   { label: "90 дней", days: 90 },
 ] as const;
+
+const CHART_BAR_AREA_PX = 112;
 
 type DayPoint = { date: string; value: number };
 
@@ -23,22 +27,31 @@ function sumValues(items: DayPoint[]): number {
   return items.reduce((sum, item) => sum + item.value, 0);
 }
 
+function chartGridStyle(count: number): CSSProperties {
+  return {
+    gridTemplateColumns: `repeat(${Math.max(count, 1)}, minmax(0, 1fr))`,
+  };
+}
+
 function DailyBarChart({
   title,
   data,
   ariaLabel,
   barClassName = "analytics-chart-bar-run",
   valueLabel,
+  chartKey,
 }: {
   title: string;
   data: DayPoint[];
   ariaLabel: string;
   barClassName?: string;
   valueLabel?: (value: number) => string;
+  chartKey: string;
 }) {
   const peak = maxValue(data);
   const periodTotal = sumValues(data);
   const formatValue = valueLabel ?? ((value: number) => String(value));
+  const showBarValues = data.length <= 14;
 
   if (peak === 0) {
     return (
@@ -50,26 +63,36 @@ function DailyBarChart({
   }
 
   return (
-    <section className="card admin-stats-chart-card">
+    <section className="card admin-stats-chart-card" key={chartKey}>
       <h3 className="admin-stats-chart-title">{title}</h3>
       <p className="admin-stats-chart-summary muted">За период: {formatValue(periodTotal)}</p>
       <div className="analytics-chart">
-        <div className="analytics-chart-bars admin-stats-daily-bars" role="img" aria-label={ariaLabel}>
+        <div
+          className="analytics-chart-bars admin-stats-daily-bars"
+          style={chartGridStyle(data.length)}
+          role="img"
+          aria-label={ariaLabel}
+        >
           {data.map((item) => {
-            const height = Math.max(4, Math.round((item.value / peak) * 100));
+            const barHeight = Math.max(4, Math.round((item.value / peak) * CHART_BAR_AREA_PX));
             const dateLabel = formatDate(item.date);
             const tooltipLines = [formatValue(item.value)];
             return (
               <div key={item.date} className="analytics-chart-bar-wrap">
                 <ChartColumnTooltip title={dateLabel} lines={tooltipLines}>
-                  <div className="analytics-chart-bar-stack" style={{ height: `${height}%` }}>
-                    {item.value > 0 && (
+                  <div className="analytics-chart-bar-stack" style={{ height: `${CHART_BAR_AREA_PX}px` }}>
+                    {showBarValues && item.value > 0 && (
                       <span className="analytics-chart-bar-value">{formatValue(item.value)}</span>
                     )}
-                    <span className={`analytics-chart-bar ${barClassName}`} style={{ flex: 1 }} />
+                    <span
+                      className={`analytics-chart-bar ${barClassName}`}
+                      style={{ height: `${barHeight}px`, flex: "none" }}
+                    />
                   </div>
                 </ChartColumnTooltip>
-                <span className="analytics-chart-label admin-stats-day-label">{dateLabel.slice(0, 5)}</span>
+                <span className="analytics-chart-label admin-stats-day-label">
+                  {formatChartDay(item.date)}
+                </span>
               </div>
             );
           })}
@@ -79,27 +102,25 @@ function DailyBarChart({
   );
 }
 
-function PageviewsChart({ data }: { data: AdminSiteStatsResponse["pageviews_by_day"] }) {
+function PageviewsChart({
+  data,
+  chartKey,
+}: {
+  data: AdminSiteStatsResponse["pageviews_by_day"];
+  chartKey: string;
+}) {
   const peak = useMemo(
     () => data.reduce((max, row) => Math.max(max, row.total, row.unique_visitors), 0),
     [data],
   );
-  const periodTotal = useMemo(
-    () => data.reduce((sum, row) => sum + row.total, 0),
-    [data],
-  );
+  const periodTotal = useMemo(() => data.reduce((sum, row) => sum + row.total, 0), [data]);
   const periodUnique = useMemo(
     () => data.reduce((sum, row) => sum + row.unique_visitors, 0),
     [data],
   );
-  const periodApp = useMemo(
-    () => data.reduce((sum, row) => sum + row.app, 0),
-    [data],
-  );
-  const periodDemo = useMemo(
-    () => data.reduce((sum, row) => sum + row.demo, 0),
-    [data],
-  );
+  const periodApp = useMemo(() => data.reduce((sum, row) => sum + row.app, 0), [data]);
+  const periodDemo = useMemo(() => data.reduce((sum, row) => sum + row.demo, 0), [data]);
+  const showBarValues = data.length <= 14;
 
   if (peak === 0) {
     return (
@@ -113,7 +134,7 @@ function PageviewsChart({ data }: { data: AdminSiteStatsResponse["pageviews_by_d
   }
 
   return (
-    <section className="card admin-stats-chart-card">
+    <section className="card admin-stats-chart-card admin-stats-pageviews-card" key={chartKey}>
       <h3 className="admin-stats-chart-title">Просмотры страниц</h3>
       <p className="admin-stats-chart-summary muted">
         За период: {periodTotal} просмотров, {periodUnique} уникальных по дням (ЛК {periodApp}, демо{" "}
@@ -122,14 +143,15 @@ function PageviewsChart({ data }: { data: AdminSiteStatsResponse["pageviews_by_d
       <div className="analytics-chart">
         <div
           className="analytics-chart-bars admin-stats-daily-bars admin-stats-pageview-bars"
+          style={chartGridStyle(data.length)}
           role="img"
           aria-label="Просмотры и уникальные посетители по дням"
         >
           {data.map((row) => {
-            const stackHeight = Math.max(4, Math.round((row.total / peak) * 100));
+            const totalHeight = Math.max(4, Math.round((row.total / peak) * CHART_BAR_AREA_PX));
             const uvHeight =
               row.unique_visitors > 0
-                ? Math.max(4, Math.round((row.unique_visitors / peak) * 100))
+                ? Math.max(4, Math.round((row.unique_visitors / peak) * CHART_BAR_AREA_PX))
                 : 0;
             const dateLabel = formatDate(row.date);
             const tooltipLines = [
@@ -141,21 +163,26 @@ function PageviewsChart({ data }: { data: AdminSiteStatsResponse["pageviews_by_d
             return (
               <div key={row.date} className="analytics-chart-bar-wrap admin-stats-dual-bar-wrap">
                 <ChartColumnTooltip title={dateLabel} lines={tooltipLines}>
-                  <div className="admin-stats-dual-bars" style={{ height: `${stackHeight}%` }}>
-                    {row.total > 0 && (
+                  <div className="admin-stats-dual-bars" style={{ height: `${CHART_BAR_AREA_PX}px` }}>
+                    {showBarValues && row.total > 0 && (
                       <span className="analytics-chart-bar-value">{row.total}</span>
                     )}
-                    <span className="analytics-chart-bar analytics-chart-bar-run" style={{ flex: 1 }} />
+                    <span
+                      className="analytics-chart-bar analytics-chart-bar-run"
+                      style={{ height: `${totalHeight}px`, flex: "none" }}
+                    />
                   </div>
                   {uvHeight > 0 && (
                     <div
                       className="admin-stats-uv-bar"
-                      style={{ height: `${uvHeight}%` }}
+                      style={{ height: `${uvHeight}px` }}
                       title={`Уникальных: ${row.unique_visitors}`}
                     />
                   )}
                 </ChartColumnTooltip>
-                <span className="analytics-chart-label admin-stats-day-label">{dateLabel.slice(0, 5)}</span>
+                <span className="analytics-chart-label admin-stats-day-label">
+                  {formatChartDay(row.date)}
+                </span>
               </div>
             );
           })}
@@ -186,20 +213,31 @@ function StatCard({ label, value, hint }: { label: string; value: string | numbe
 }
 
 function AdminStatsContent() {
-  const [periodDays, setPeriodDays] = useState(30);
+  const [periodDays, setPeriodDays] = useState(7);
   const [data, setData] = useState<AdminSiteStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const loadSeq = useRef(0);
 
   const load = useCallback(async (days: number) => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError(null);
     try {
-      setData(await getAdminSiteStats(days));
+      const payload = await getAdminSiteStats(days);
+      if (seq !== loadSeq.current) {
+        return;
+      }
+      setData(payload);
     } catch (err) {
+      if (seq !== loadSeq.current) {
+        return;
+      }
       setError(err instanceof Error ? err.message : "Не удалось загрузить статистику");
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -208,6 +246,7 @@ function AdminStatsContent() {
   }, [load, periodDays]);
 
   const overview = data?.overview;
+  const chartKey = `${periodDays}-${data?.generated_at ?? "pending"}`;
 
   return (
     <AppShell title="Статистика сайта" activePath="/admin">
@@ -241,32 +280,26 @@ function AdminStatsContent() {
       {!loading && !error && overview && data && (
         <>
           <section className="admin-stats-grid">
-            <StatCard label="Учётных записей" value={overview.users_total} />
+            <StatCard label="Просмотров за период" value={overview.pageviews_period} />
             <StatCard
-              label="Новых за период"
-              value={data.users_new_by_day.reduce((sum, item) => sum + item.value, 0)}
+              label="Уникальных посетителей"
+              value={overview.unique_visitors_period}
+              hint="Сумма по дням, один человек может учитываться несколько раз"
             />
+            <StatCard label="Входов за период" value={overview.logins_period} hint="Успешные авторизации" />
+            <StatCard label="Запросов на вход" value={overview.login_requests_period} hint="Кнопка «Войти»" />
+            <StatCard label="Новых пользователей" value={overview.users_new_period} />
+            <StatCard label="Новых привязок" value={overview.links_new_period} />
+            <StatCard label="Учётных записей" value={overview.users_total} />
             <StatCard
               label="Активных за период"
               value={overview.users_active_period}
               hint="Заходили на сайт (last_login_at)"
             />
             <StatCard label="С согласием на данные" value={overview.users_with_consent} />
-            <StatCard label="Подписаны на новости" value={overview.users_news_subscribed} />
             <StatCard label="Привязок профилей" value={overview.platform_links_total} />
-            <StatCard
-              label="Пользователей с привязками"
-              value={overview.users_with_any_link}
-            />
-            <StatCard
-              label="Во всех 3 системах"
-              value={overview.users_with_all_three_links}
-            />
-            <StatCard
-              label="Запросов на вход"
-              value={overview.login_requests_period}
-              hint="Кнопка «Войти через Telegram»"
-            />
+            <StatCard label="С хотя бы одной привязкой" value={overview.users_with_any_link} />
+            <StatCard label="Во всех 3 системах" value={overview.users_with_all_three_links} />
             <StatCard label="Синхронизаций в очереди" value={overview.sync_jobs_active} />
           </section>
 
@@ -296,35 +329,38 @@ function AdminStatsContent() {
           </section>
 
           <div className="admin-stats-charts">
-            <PageviewsChart data={data.pageviews_by_day} />
+            <PageviewsChart data={data.pageviews_by_day} chartKey={`pv-${chartKey}`} />
             <DailyBarChart
               title="Новые пользователи"
               data={data.users_new_by_day}
               ariaLabel="Новые пользователи по дням"
+              chartKey={`users-${chartKey}`}
             />
             <DailyBarChart
               title="Новые привязки профилей"
               data={data.links_new_by_day}
               ariaLabel="Новые привязки по дням"
               barClassName="analytics-chart-bar-vol"
+              chartKey={`links-${chartKey}`}
             />
             <DailyBarChart
               title="Входы на сайт"
               data={data.logins_by_day}
               ariaLabel="Успешные входы по дням"
+              chartKey={`logins-${chartKey}`}
             />
             <DailyBarChart
               title="Запросы на вход"
               data={data.login_requests_by_day}
               ariaLabel="Запросы login-request по дням"
               barClassName="analytics-chart-bar-vol"
+              chartKey={`login-req-${chartKey}`}
             />
           </div>
 
           <p className="muted admin-stats-footnote">
-            Просмотры и уникальные посетители считаются с момента включения счётчика (посетитель = аккаунт
-            или браузер в localStorage). Сумма «уникальных по дням» может считать одного человека несколько
-            раз, если он заходил в разные дни. Регистрации и привязки — из базы данных.
+            Просмотры и уникальные посетители — из Redis-счётчика (посетитель = аккаунт или браузер в
+            localStorage). Входы, регистрации и привязки — из базы данных.
           </p>
         </>
       )}

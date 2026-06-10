@@ -1,5 +1,5 @@
 export function formatDate(value: string): string {
-  const date = new Date(value);
+  const date = parseIsoDate(value) ?? new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;
   }
@@ -8,6 +8,23 @@ export function formatDate(value: string): string {
     month: "2-digit",
     year: "numeric",
   });
+}
+
+/** ISO YYYY-MM-DD without UTC timezone shift (for chart axis labels). */
+export function parseIsoDate(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return null;
+  }
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+export function formatChartDay(value: string): string {
+  const date = parseIsoDate(value);
+  if (!date || Number.isNaN(date.getTime())) {
+    return value.slice(5).replace("-", ".");
+  }
+  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
 }
 
 export function formatDateTime(value: string | null | undefined): string {
