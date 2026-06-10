@@ -42,11 +42,10 @@ def client(db_session: Session, fake_redis: fakeredis.FakeRedis, auth_settings: 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_settings] = lambda: auth_settings
 
-    with patch("app.core.redis_client.get_redis_client", return_value=fake_redis):
-        with patch("app.services.auth_service.check_rate_limit", return_value=True):
-            with patch("app.services.sync_trigger_service.enqueue_user_sync"):
-                with TestClient(app) as test_client:
-                    yield test_client
+    with patch("app.services.auth_service.check_rate_limit", return_value=True):
+        with patch("app.services.sync_trigger_service.enqueue_user_sync"):
+            with TestClient(app) as test_client:
+                yield test_client
 
     app.dependency_overrides.clear()
 

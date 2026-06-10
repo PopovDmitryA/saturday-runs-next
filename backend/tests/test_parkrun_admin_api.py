@@ -47,10 +47,6 @@ def client(
     app.dependency_overrides[get_settings] = lambda: admin_settings
 
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("app.core.redis_client.get_redis_client", lambda: fake_redis)
-        mp.setattr("app.core.rate_limit.get_redis_client", lambda: fake_redis)
-        mp.setattr("app.parkrun.fetch.captcha_state.get_redis_client", lambda: fake_redis)
-        mp.setattr("app.platform_fetch.cooldown.get_redis_client", lambda: fake_redis)
         mp.setattr("app.services.parkrun_admin_service.get_settings", lambda: admin_settings)
         mp.setattr("app.services.auth_service.check_rate_limit", lambda *_a, **_k: True)
         with TestClient(app) as test_client:

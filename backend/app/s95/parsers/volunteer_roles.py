@@ -160,6 +160,9 @@ def s95_volunteer_role_key(role: str | None) -> str:
     canonical = canonical_s95_volunteer_role(role)
     if not canonical:
         return "volunteer"
+    if _contains_cyrillic(canonical):
+        # Keep canonical Russian labels as-is (e.g. «Сканер», not «сканер»).
+        return re.sub(r"[^\w]+", "_", canonical, flags=re.UNICODE).strip("_") or "volunteer"
     return normalize_role_key(canonical)
 
 

@@ -45,9 +45,6 @@ def client(
     app.dependency_overrides[get_settings] = lambda: admin_settings
 
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("app.core.rate_limit.get_redis_client", lambda: fake_redis)
-        mp.setattr("app.core.abuse_store.get_redis", lambda: fake_redis)
-        mp.setattr("app.core.abuse_protection.get_redis", lambda: fake_redis)
         mp.setattr("app.services.auth_service.check_rate_limit", lambda *_args, **_kwargs: True)
         with TestClient(app) as test_client:
             yield test_client

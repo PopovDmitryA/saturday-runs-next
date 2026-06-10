@@ -58,11 +58,10 @@ def client(db_session: Session, fake_redis: fakeredis.FakeRedis, auth_settings: 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_settings] = lambda: auth_settings
 
-    with patch("app.core.redis_client.get_redis_client", return_value=fake_redis):
-        with patch("app.services.auth_service.check_rate_limit", return_value=True):
-            with patch("app.services.sync_trigger_service.enqueue_user_sync"):
-                with TestClient(app) as test_client:
-                    yield test_client
+    with patch("app.services.auth_service.check_rate_limit", return_value=True):
+        with patch("app.services.sync_trigger_service.enqueue_user_sync"):
+            with TestClient(app) as test_client:
+                yield test_client
 
     app.dependency_overrides.clear()
 
@@ -983,10 +982,9 @@ def test_sync_queue_admin_accepts_user_without_telegram_id(
     assert job["user"]["display_name"] == "VK Only"
 
 
-def test_sync_refresh_rate_limited(authenticated_client: TestClient, fake_redis: fakeredis.FakeRedis) -> None:
-    with patch("app.api.routes.sync.enqueue_user_sync"):
-        with patch("app.core.rate_limit.get_redis_client", return_value=fake_redis):
-            first = authenticated_client.post("/api/sync/refresh")
-            second = authenticated_client.post("/api/sync/refresh")
+def test_sync_refresh_rate_limited(authenticated_client: TestClient) -> None:
+    with patch("app.services.sync_enqueue_service.enqueue_manual_sync_for_all_platforms"):
+        first = authenticated_client.post("/api/sync/refresh")
+        second = authenticated_client.post("/api/sync/refresh")
     assert first.status_code == 202
     assert second.status_code == 429

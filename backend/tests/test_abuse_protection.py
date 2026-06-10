@@ -59,10 +59,7 @@ def test_classify_route_tiers() -> None:
 def test_global_rate_limit_blocks(
     fake_redis: fakeredis.FakeRedis,
     abuse_settings: Settings,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("app.core.rate_limit.get_redis_client", lambda: fake_redis)
-
     for _ in range(5):
         decision = check_abuse_request("1.2.3.4", "/api/dashboard", "GET", abuse_settings)
         assert decision.allowed is True
@@ -75,12 +72,7 @@ def test_global_rate_limit_blocks(
 def test_abuse_score_triggers_block(
     fake_redis: fakeredis.FakeRedis,
     abuse_settings: Settings,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("app.core.rate_limit.get_redis_client", lambda: fake_redis)
-    monkeypatch.setattr("app.core.abuse_protection.get_redis", lambda: fake_redis)
-    monkeypatch.setattr("app.core.abuse_store.get_redis", lambda: fake_redis)
-
     record_abuse_score("9.9.9.9", 10, abuse_settings)
     blocked, retry_after = is_client_blocked("9.9.9.9")
     assert blocked is True
@@ -92,7 +84,6 @@ def test_middleware_returns_429(
     abuse_settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("app.core.rate_limit.get_redis_client", lambda: fake_redis)
     monkeypatch.setattr("app.middleware.abuse_middleware.get_settings", lambda: abuse_settings)
 
     app = FastAPI()

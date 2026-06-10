@@ -6,7 +6,6 @@ from uuid import uuid4
 pytest_plugins = ["tests.test_dashboard_api"]
 
 from app.models import Event, Location, Participant, Platform, VolunteerResult
-from app.platform_adapters.canonical import CanonicalVolunteerResult
 from app.s95.parsers.volunteer_roles import (
     canonical_s95_volunteer_role,
     prefer_s95_volunteer_role,

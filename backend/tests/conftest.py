@@ -17,12 +17,16 @@ from sqlalchemy.orm import Session
 from app.db.session import get_engine
 
 
+@pytest.fixture
+def fake_redis() -> fakeredis.FakeRedis:
+    return fakeredis.FakeRedis(decode_responses=True)
+
+
 @pytest.fixture(autouse=True)
-def _isolated_abuse_redis(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep rate-limit / abuse counters out of the dev Redis instance."""
-    redis = fakeredis.FakeRedis(decode_responses=True)
-    monkeypatch.setattr("app.core.abuse_store.get_redis", lambda: redis)
-    monkeypatch.setattr("app.core.abuse_protection.get_redis", lambda: redis)
+def _isolated_redis(monkeypatch: pytest.MonkeyPatch, fake_redis: fakeredis.FakeRedis) -> None:
+    """Keep rate-limit / abuse counters out of the dev and CI Redis instances."""
+    fake_redis.flushdb()
+    monkeypatch.setattr("app.core.redis_client._test_redis_override", fake_redis)
 
 
 @pytest.fixture(scope="function")

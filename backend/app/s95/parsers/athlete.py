@@ -7,7 +7,6 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup, Tag
 
 from app.pace import parse_pace_value
-from app.s95.parsers.volunteer_roles import canonical_s95_volunteer_role, s95_volunteer_role_key
 from app.platform_adapters.canonical import (
     CanonicalParticipant,
     CanonicalRunResult,
@@ -17,6 +16,7 @@ from app.platform_adapters.canonical import (
 from app.s95.parsers.pr_detection import row_is_pr
 from app.s95.parsers.table_columns import runs_table_column_indexes
 from app.s95.parsers.time_utils import parse_finish_time
+from app.s95.parsers.volunteer_roles import canonical_s95_volunteer_role, s95_volunteer_role_key
 
 ATHLETE_ID_RE = re.compile(r"/athletes/(\d+)", re.IGNORECASE)
 DATE_RE = re.compile(r"(\d{2})\.(\d{2})\.(\d{4})")

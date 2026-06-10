@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from unittest.mock import patch
 from uuid import uuid4
 
 import fakeredis
@@ -40,9 +39,8 @@ def client(db_session: Session, fake_redis: fakeredis.FakeRedis, auth_settings: 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_settings] = lambda: auth_settings
 
-    with patch("app.core.redis_client.get_redis_client", return_value=fake_redis):
-        with TestClient(app) as test_client:
-            yield test_client
+    with TestClient(app) as test_client:
+        yield test_client
 
     app.dependency_overrides.clear()
 
