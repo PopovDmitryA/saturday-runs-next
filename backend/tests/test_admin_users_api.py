@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.main import app
-from app.models import AuthIdentity, AuthProvider, Platform, PlatformLink, User
+from app.models import AuthIdentity, AuthProvider, Participant, Platform, PlatformLink, User
 
 
 @pytest.fixture
@@ -203,3 +203,45 @@ def test_admin_users_lists_oauth_only_user(client: TestClient, db_session: Sessi
     item = next(row for row in payload["items"] if row["id"] == str(oauth_user.id))
     assert item["telegram_id"] is None
     assert any(login["provider"] == "yandex" for login in item["auth_logins"])
+
+
+def test_admin_users_search_by_platform_participant_name(client: TestClient, db_session: Session) -> None:
+    target = User(
+        telegram_id=int(uuid4().int % 10_000_000_000),
+        telegram_username="other_account",
+        display_name="Совсем другое имя",
+        consent_accepted=True,
+    )
+    db_session.add(target)
+    db_session.flush()
+
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+    external_id = str(uuid4().int % 1_000_000_000)
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=external_id,
+        display_name="Кузин Олег",
+        profile_url=f"https://5verst.ru/userstats/{external_id}/",
+    )
+    db_session.add(participant)
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=target.id,
+            platform_id=platform.id,
+            participant_id=participant.id,
+            external_user_id=external_id,
+            external_url=f"https://5verst.ru/userstats/{external_id}/",
+        )
+    )
+    db_session.commit()
+
+    _login_admin(client)
+
+    list_response = client.get("/api/admin/users", params={"q": "Кузин"})
+    assert list_response.status_code == 200
+    payload = list_response.json()
+    item = next(row for row in payload["items"] if row["id"] == str(target.id))
+    link = next(link for link in item["platform_links"] if link["platform_code"] == "five_verst")
+    assert link["display_name"] == "Кузин Олег"
+    assert link["external_user_id"] == external_id
