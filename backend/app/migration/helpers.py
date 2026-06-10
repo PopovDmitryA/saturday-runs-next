@@ -115,7 +115,10 @@ def s95_unknown_user_id(slug: str, event_date: date, position: int) -> str:
 
 def s95_volunteer_key(slug: str, event_date: date, user_id: str, role: str) -> str:
     """Same shape as app.s95.parsers.protocol — one row per event/role in DB."""
-    return f"vol:{slug}:{event_date.isoformat()}:{user_id}:{role}"
+    from app.s95.parsers.volunteer_roles import s95_volunteer_role_key
+
+    role_key = s95_volunteer_role_key(role)
+    return f"vol:{slug}:{event_date.isoformat()}:{user_id}:{role_key}"
 
 
 def is_s95_unknown_runner(

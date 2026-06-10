@@ -7,6 +7,7 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup, Tag
 
 from app.pace import parse_pace_value
+from app.s95.parsers.volunteer_roles import canonical_s95_volunteer_role, s95_volunteer_role_key
 from app.platform_adapters.canonical import (
     CanonicalParticipant,
     CanonicalRunResult,
@@ -148,7 +149,12 @@ def _s95_volunteer_external_result_key(
     role: str,
 ) -> str:
     """Same shape as protocol parser — one row per event/role in DB."""
-    return f"vol:{location_slug}:{event_date.isoformat()}:{external_user_id}:{role}"
+    role_key = s95_volunteer_role_key(role)
+    return f"vol:{location_slug}:{event_date.isoformat()}:{external_user_id}:{role_key}"
+
+
+def _canonical_volunteer_role(role: str) -> str:
+    return canonical_s95_volunteer_role(role) or role
 
 
 def _location_from_event_href(href: str, base_url: str) -> tuple[str, str]:
@@ -187,7 +193,7 @@ def _parse_volunteering_accordion(
         button = item.find("button", class_=lambda c: c and "accordion-button" in c)
         if button is None:
             continue
-        role = _parse_volunteering_role_from_button(button)
+        role = _canonical_volunteer_role(_parse_volunteering_role_from_button(button))
         if not role:
             continue
 
@@ -257,7 +263,7 @@ def _parse_volunteering_tables(
             event_date = _parse_date_cell(cells[0].get_text(" ", strip=True))
             if event_date is None:
                 continue
-            role = cells[-1].get_text(" ", strip=True)
+            role = _canonical_volunteer_role(cells[-1].get_text(" ", strip=True))
             location_name = cells[1].get_text(" ", strip=True) if len(cells) > 2 else ""
             location_slug = (location_name or "unknown").lower().replace(" ", "_")
             dedupe_key = (event_date, location_slug, role)
