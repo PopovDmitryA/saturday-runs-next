@@ -46,9 +46,12 @@ rsync_to docker-compose.yml "${REMOTE}/docker-compose.yml"
 rsync_to docker-compose.prod.yml "${REMOTE}/docker-compose.prod.yml"
 rsync_to frontend/src/ "${REMOTE}/frontend/src/"
 
+REMOTE_QUOTED=$(printf '%q' "$REMOTE")
+COMPOSE_QUOTED=$(printf '%q' "$COMPOSE")
+
 echo "=== remote build & restart ==="
 sshpass -e ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
-  "REMOTE=${REMOTE} COMPOSE=${COMPOSE@Q} bash -s" <<'REMOTE_SCRIPT'
+  "REMOTE=${REMOTE_QUOTED} COMPOSE=${COMPOSE_QUOTED} bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 cd "$REMOTE"
 
