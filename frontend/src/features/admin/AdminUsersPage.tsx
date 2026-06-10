@@ -73,9 +73,10 @@ function AdminUsersContent() {
 
   return (
     <AppShell title="Пользователи" activePath="/admin">
+      <div className="admin-users-page">
       <AdminSubnav activePath="/admin/users" />
 
-      <section className="card">
+      <section className="card admin-users-card">
         <div className="admin-users-toolbar">
           <input
             className="input admin-users-search"
@@ -193,6 +194,7 @@ function AdminUsersContent() {
           </div>
         )}
       </section>
+      </div>
     </AppShell>
   );
 }
