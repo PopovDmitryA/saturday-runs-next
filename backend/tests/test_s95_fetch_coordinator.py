@@ -37,3 +37,21 @@ def test_fetch_detects_ban(fake_redis: fakeredis.FakeRedis) -> None:
     ):
         with pytest.raises(S95BanDetected):
             fetch_page_html("https://s95.ru/athletes/1/", reason="test")
+
+
+def test_fetch_detects_forbidden_page(fake_redis: fakeredis.FakeRedis) -> None:
+    forbidden_html = (
+        '<html><head><meta name="color-scheme" content="light dark"></head>'
+        '<body><pre>Forbidden</pre></body></html>'
+    )
+    with (
+        patch("app.s95.fetch.coordinator.get_redis_client", return_value=fake_redis),
+        patch("app.s95.fetch.rate_limit.get_redis_client", return_value=fake_redis),
+        patch("app.s95.fetch.lock.get_redis_client", return_value=fake_redis),
+        patch(
+            "app.s95.fetch.coordinator.fetch_html_with_browser",
+            return_value=forbidden_html,
+        ),
+    ):
+        with pytest.raises(S95BanDetected, match="403"):
+            fetch_page_html("https://s95.ru/athletes/1/", reason="test")

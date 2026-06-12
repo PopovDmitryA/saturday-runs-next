@@ -2,13 +2,41 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Event, Platform, PlatformLink, RunResult
 from app.sync import upsert
 
 TIME_BASED_PR_PLATFORMS = frozenset({"parkrun", "s95", "five_verst"})
+
+
+def _five_verst_protocol_personal_record(run: RunResult) -> bool:
+    for label in run.achievement_labels or []:
+        if "личный рекорд" in str(label).casefold():
+            return True
+    return False
+
+
+def run_shows_personal_record(platform_code: str, run: RunResult) -> bool:
+    if run.is_pr or run.is_first_run:
+        return True
+    if platform_code == "five_verst" and _five_verst_protocol_personal_record(run):
+        return True
+    return False
+
+
+def run_is_personal_record_sql_filter():
+    """SQL filter matching run_shows_personal_record (requires Platform join)."""
+    five_verst_achievement_pr = and_(
+        Platform.code == "five_verst",
+        func.lower(cast(RunResult.achievement_labels, String)).like("%личный рекорд%"),
+    )
+    return or_(
+        RunResult.is_pr.is_(True),
+        RunResult.is_first_run.is_(True),
+        five_verst_achievement_pr,
+    )
 
 
 def reset_personal_records(
@@ -33,7 +61,7 @@ def recalculate_personal_records(
     commit_every: int = 200,
     reset: bool = True,
 ) -> dict[str, int]:
-    """Mark is_pr when a run beats the runner's previous best time at any location."""
+    """Mark is_pr on time improvements, first platform run, and 5verst protocol PR labels."""
     if reset:
         reset_personal_records(db, platform_code, participant_id=participant_id)
         db.flush()
@@ -72,13 +100,17 @@ def recalculate_personal_records(
 
         participants_touched += 1
         best_time: int | None = None
-        for run, _event in rows:
-            new_is_pr = False
+        for run_index, (run, _event) in enumerate(rows):
+            is_first_on_platform = run_index == 0
+            time_based_pr = False
             finish_time = run.finish_time_sec
             if finish_time is not None and finish_time > 0:
                 if best_time is None or finish_time < best_time:
-                    new_is_pr = True
+                    time_based_pr = True
                     best_time = finish_time
+            new_is_pr = time_based_pr or is_first_on_platform or run.is_first_run
+            if platform.code == "five_verst" and _five_verst_protocol_personal_record(run):
+                new_is_pr = True
             if run.is_pr != new_is_pr:
                 run.is_pr = new_is_pr
                 updated += 1

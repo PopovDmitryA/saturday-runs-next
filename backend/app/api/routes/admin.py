@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin_user
@@ -29,6 +29,7 @@ from app.schemas.dashboard import (
     BestResultResponse,
     PersonalRecordResponse,
     RunItemResponse,
+    SyncRefreshResponse,
     VolunteeringItemResponse,
     VolunteerRoleStatResponse,
 )
@@ -74,9 +75,29 @@ from app.services.parkrun_admin_service import (
 )
 from app.services.parkrun_local_worker import get_local_worker_status, request_local_worker_run
 from app.services.profile_fetch_pending_service import reset_failed_parkrun_pending
+from app.services.sync_enqueue_service import (
+    enqueue_manual_platform_sync,
+    enqueue_manual_sync_for_all_platforms,
+)
 from app.services.user_unique_locations_detail import build_user_unique_location_details
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+ADMIN_SUPPORTED_SYNC_PLATFORMS = frozenset({"five_verst", "s95", "parkrun"})
+ADMIN_SYNC_QUEUED_MESSAGE = (
+    "Запрос на обновление отправлен. Ожидайте исполнения в ближайшее время."
+)
+ADMIN_SYNC_ALREADY_QUEUED_MESSAGE = (
+    "Обновление уже в очереди. Ожидайте исполнения в ближайшее время."
+)
+
+
+def _admin_sync_refresh_response(result) -> SyncRefreshResponse:
+    return SyncRefreshResponse(
+        job_id=result.job_id,
+        status="already_queued" if result.duplicate else "queued",
+        message=ADMIN_SYNC_ALREADY_QUEUED_MESSAGE if result.duplicate else ADMIN_SYNC_QUEUED_MESSAGE,
+    )
 
 
 def _handle_abuse_admin_error(exc: AbuseAdminError) -> HTTPException:
@@ -203,6 +224,47 @@ def admin_user_preview_volunteer_role_stats(
     if items is None:
         raise HTTPException(status_code=404, detail="User not found")
     return [VolunteerRoleStatResponse.model_validate(item) for item in items]
+
+
+@router.post(
+    "/users/{user_id}/sync",
+    response_model=SyncRefreshResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def admin_user_sync_all(
+    user_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> SyncRefreshResponse:
+    if get_admin_user(db, user_id) is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    result = enqueue_manual_sync_for_all_platforms(db, user_id)
+    db.commit()
+    return _admin_sync_refresh_response(result)
+
+
+@router.post(
+    "/users/{user_id}/sync/{platform_code}",
+    response_model=SyncRefreshResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def admin_user_sync_platform(
+    user_id: UUID,
+    platform_code: str,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> SyncRefreshResponse:
+    if platform_code not in ADMIN_SUPPORTED_SYNC_PLATFORMS:
+        raise HTTPException(status_code=404, detail="Unknown platform")
+    user = get_admin_user(db, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        result = enqueue_manual_platform_sync(db, user, platform_code)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Platform link not found") from None
+    db.commit()
+    return _admin_sync_refresh_response(result)
 
 
 @router.get("/users/{user_id}/preview/locations/visited/map", response_model=MapLocationsResponse)

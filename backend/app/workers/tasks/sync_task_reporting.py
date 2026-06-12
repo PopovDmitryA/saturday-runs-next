@@ -4,6 +4,7 @@ import logging
 from collections.abc import Callable
 
 from app.services.batch_queue_guard import batch_queue_has_capacity
+from app.platform_fetch.cooldown import is_platform_in_cooldown, platform_cooldown_until
 from app.services.scheduled_sync_guard import release_hourly_sync_slot, try_claim_hourly_sync_slot
 from app.services.vk_admin_notify import notify_sync_finished, notify_sync_started
 
@@ -27,6 +28,15 @@ def run_reported_sync(
         return {
             "skipped": True,
             "reason": "batch_queue_full",
+            "errors": [],
+        }
+
+    if batch_queue_name == "s95" and is_platform_in_cooldown("s95"):
+        until = platform_cooldown_until("s95")
+        return {
+            "skipped": True,
+            "reason": "s95_fetch_cooldown",
+            "cooldown_until": until,
             "errors": [],
         }
 

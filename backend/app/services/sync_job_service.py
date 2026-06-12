@@ -12,6 +12,7 @@ from app.services.celery_queue_inspector import (
     celery_task_id_for_job,
     find_task_queue_position,
     get_celery_task_state,
+    task_is_worker_reserved,
 )
 from app.services.sync_error_format import humanize_sync_error_message
 from app.workers.celery_app import celery_app
@@ -126,6 +127,8 @@ def _reconcile_job(db: Session, job: SyncJob) -> bool:
             if find_task_queue_position(queue_name, task_id) is not None:
                 pending_lost = False
                 waiting_in_queue = True
+            elif task_is_worker_reserved(task_id):
+                pending_lost = False
         else:
             pending_lost = False
 

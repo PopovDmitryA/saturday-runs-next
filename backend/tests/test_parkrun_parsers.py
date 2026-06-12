@@ -38,3 +38,29 @@ def test_parse_profile_volunteer_summary() -> None:
     participant, extra = parse_profile_summary_html(SAMPLE_ALL_HEAD, parsed=parsed)
     assert participant.external_user_id == "7035519"
     assert extra["volunteer_summary"][0]["role"] == "Run Director"
+
+
+SAMPLE_TOTAL_CREDITS_HEAD = """
+<html><body>
+<h2>Александр НАЗАРОВ (A3308077)</h2>
+<h3>70 parkruns total</h3>
+<h3>Volunteer Summary</h3>
+<table>
+<thead><tr><th>Role</th><th>Occasions</th></tr></thead>
+<tbody>
+<tr><td>Run Director</td><td>13</td></tr>
+<tr><td>Timekeeper</td><td>38</td></tr>
+<tr><td>Marshal</td><td>1</td></tr>
+</tbody>
+<tfoot><tr><td><strong>Total Credits</strong></td><td><strong>78</strong></td></tr></tfoot>
+</table>
+</body></html>
+"""
+
+
+def test_parse_volunteer_summary_uses_total_credits_footer() -> None:
+    parsed = parse_profile_url("https://www.parkrun.org.uk/parkrunner/3308077/")
+    _participant, extra = parse_profile_summary_html(SAMPLE_TOTAL_CREDITS_HEAD, parsed=parsed)
+    assert extra["volunteer_occasions_total"] == 78
+    assert len(extra["volunteer_summary"]) == 3
+    assert sum(int(item["occasions"]) for item in extra["volunteer_summary"]) == 52

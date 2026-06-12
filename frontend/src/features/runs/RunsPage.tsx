@@ -3,6 +3,7 @@ import { ActivityTableCols } from "../../components/activityTable/ActivityTableC
 import { CheckboxListFilter } from "../../components/activityTable/CheckboxListFilter";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
+import { ActivityDateCell } from "../../components/ActivityDateCell";
 import { AppShell } from "../../components/AppShell";
 import { EmptyActivityState } from "../../components/EmptyActivityState";
 import { GlobalPrFinishTime } from "../../components/GlobalPrFinishTime";
@@ -208,9 +209,15 @@ function RunsContent() {
                   displayedRuns.map((run, index) => (
                     <tr key={`${run.platform_code}-${run.event_date}-${run.location_name}-${index}`}>
                       <td className="td-date">
-                        <ActivityDateLink date={run.event_date} url={run.event_url} />
-                        {run.is_test_event && <span className="badge">тест</span>}
-                        {run.is_pr && <span className="badge badge-pr">PR</span>}
+                        <ActivityDateCell
+                          date={<ActivityDateLink date={run.event_date} url={run.event_url} />}
+                          badges={
+                            <>
+                              {run.is_test_event && <span className="badge">тест</span>}
+                              {run.is_pr && <span className="badge badge-pr">PR</span>}
+                            </>
+                          }
+                        />
                       </td>
                       <td className="td-platform">
                         <PlatformBadge code={run.platform_code} />

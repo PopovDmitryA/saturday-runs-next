@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.activity_date import has_real_activity_date
 from app.models import Event, Location, Participant, Platform, RunResult, VolunteerResult
+from app.parkrun.volunteer_credits import count_parkrun_volunteering
 from app.platform_adapters.canonical import (
     CanonicalRunResult,
     CanonicalVolunteerResult,
@@ -151,6 +152,9 @@ def _count_participant_volunteering(
     platform_code: str,
     platform_id: UUID,
 ) -> int:
+    if platform_code == "parkrun":
+        return count_parkrun_volunteering(db, participant, platform_id)
+
     vol_rows = (
         db.query(Event.event_date, Location.external_key)
         .select_from(VolunteerResult)
@@ -164,12 +168,7 @@ def _count_participant_volunteering(
         )
         .all()
     )
-    db_count = count_volunteering_for_platform(platform_code, vol_rows)
-    if platform_code == "parkrun":
-        extra_total = (participant.profile_extra or {}).get("volunteer_occasions_total")
-        if isinstance(extra_total, int) and extra_total > db_count:
-            return extra_total
-    return db_count
+    return count_volunteering_for_platform(platform_code, vol_rows)
 
 
 def _load_recent_runs(

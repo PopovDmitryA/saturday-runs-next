@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
+import { ActivityDateCell } from "../../components/ActivityDateCell";
 import { AppShell } from "../../components/AppShell";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
+import { GlobalPrFinishTime } from "../../components/GlobalPrFinishTime";
 import { PlatformBadge } from "../../components/PlatformBadge";
+import { ActivityTableCols } from "../../components/activityTable/ActivityTableCols";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { AppDataSourceProvider, createAdminPreviewDataSource } from "../../lib/appDataSource";
+import { AdminPreviewPlatformLinks } from "./AdminPreviewPlatformLinks";
 import { AdminSubnav } from "./AdminSubnav";
 import { UserMapPanel } from "../maps/UserMapPanel";
 import {
   getAdminUserPreviewDashboard,
-  getAdminUserPreviewRuns,
-  getAdminUserPreviewVolunteering,
+  getAllAdminUserPreviewRuns,
+  getAllAdminUserPreviewVolunteering,
   getAdminUserPreviewVisitedMap,
   getAdminUserPreviewCatalogTable,
   getCatalogLocationsMap,
@@ -62,7 +66,7 @@ function AdminUserPreviewContent({ userId }: { userId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const response = await getAdminUserPreviewRuns(userId);
+      const response = await getAllAdminUserPreviewRuns(userId);
       setRuns(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить пробежки");
@@ -75,7 +79,7 @@ function AdminUserPreviewContent({ userId }: { userId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const response = await getAdminUserPreviewVolunteering(userId);
+      const response = await getAllAdminUserPreviewVolunteering(userId);
       setVolunteering(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить волонтёрство");
@@ -109,29 +113,13 @@ function AdminUserPreviewContent({ userId }: { userId: string }) {
   );
 
   const stats = dashboard?.stats;
-  const byPlatform = stats?.by_platform ?? {};
+  const byPlatform = (stats?.by_platform ?? {}) as Record<
+    string,
+    { runs?: number; volunteering?: number }
+  >;
 
   const tabClass = (value: PreviewTab) =>
     tab === value ? "admin-preview-tab active" : "admin-preview-tab";
-
-  const platformLinksBlock = useMemo(() => {
-    if (!dashboard?.platform_links.length) {
-      return <p className="muted">Профили не привязаны.</p>;
-    }
-    return (
-      <ul className="admin-preview-links">
-        {dashboard.platform_links.map((link) => (
-          <li key={`${link.platform_code}-${link.external_user_id}`}>
-            <PlatformBadge code={link.platform_code} />
-            <a href={link.external_url} target="_blank" rel="noreferrer">
-              {link.external_user_id}
-            </a>
-            {link.display_name && <span className="muted"> · {link.display_name}</span>}
-          </li>
-        ))}
-      </ul>
-    );
-  }, [dashboard?.platform_links]);
 
   return (
     <AppShell title="Просмотр пользователя" activePath="/admin">
@@ -155,7 +143,12 @@ function AdminUserPreviewContent({ userId }: { userId: string }) {
               <> · данные на {formatDateTime(String(dashboard.computed_at))}</>
             )}
           </p>
-          {platformLinksBlock}
+          <AdminPreviewPlatformLinks
+            userId={userId}
+            links={dashboard.platform_links}
+            byPlatform={byPlatform}
+            onSyncQueued={() => void loadDashboard()}
+          />
         </section>
       )}
 
@@ -201,21 +194,6 @@ function AdminUserPreviewContent({ userId }: { userId: string }) {
               totalRuns={stats.total_runs ?? 0}
               totalVolunteering={stats.total_volunteering ?? 0}
             />
-            {Object.keys(byPlatform).length > 0 && (
-              <section className="card">
-                <h3 className="section-title">По платформам</h3>
-                <ul className="admin-preview-platform-stats">
-                  {Object.entries(byPlatform).map(([code, row]) => (
-                    <li key={code}>
-                      <PlatformBadge code={code} />
-                      <span>
-                        {row.runs ?? 0} / {row.volunteering ?? 0} вол.
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
           </>
         </AppDataSourceProvider>
       )}
@@ -226,7 +204,8 @@ function AdminUserPreviewContent({ userId }: { userId: string }) {
             <p className="muted">Пробежек нет.</p>
           ) : (
             <div className="table-scroll">
-              <table className="data-table">
+              <table className="data-table data-table-layout-fixed">
+                <ActivityTableCols variant="runs" />
                 <thead>
                   <tr>
                     <th>Дата</th>
@@ -239,15 +218,27 @@ function AdminUserPreviewContent({ userId }: { userId: string }) {
                 <tbody>
                   {runs.map((run) => (
                     <tr key={`${run.platform_code}-${run.event_date}-${run.location_name}-${run.finish_time_display ?? ""}`}>
-                      <td>
-                        <ActivityDateLink date={run.event_date} url={run.event_url} />
+                      <td className="td-date">
+                        <ActivityDateCell
+                          date={<ActivityDateLink date={run.event_date} url={run.event_url} />}
+                          badges={
+                            <>
+                              {run.is_test_event && <span className="badge">тест</span>}
+                              {run.is_pr && <span className="badge badge-pr">PR</span>}
+                            </>
+                          }
+                        />
                       </td>
-                      <td>
+                      <td className="td-platform">
                         <PlatformBadge code={run.platform_code} />
                       </td>
-                      <td>{run.location_name}</td>
-                      <td>{formatFinishTimeValue(run.finish_time_display, run.finish_time_sec)}</td>
-                      <td>{run.position ?? "—"}</td>
+                      <td className="td-location">{run.location_name}</td>
+                      <td className="td-time">
+                        <GlobalPrFinishTime isGlobalPr={run.is_global_pr}>
+                          {formatFinishTimeValue(run.finish_time_display, run.finish_time_sec)}
+                        </GlobalPrFinishTime>
+                      </td>
+                      <td className="td-compact">{run.position ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>

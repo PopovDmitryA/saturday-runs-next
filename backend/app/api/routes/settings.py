@@ -15,6 +15,8 @@ from app.schemas.settings import (
     AutoSyncSettingsUpdateRequest,
     NotificationSettingsResponse,
     NotificationSettingsUpdateRequest,
+    PrivacySettingsResponse,
+    PrivacySettingsUpdateRequest,
 )
 from app.services.user_auto_sync_service import (
     AUTO_SYNC_PLATFORM_CODES,
@@ -86,3 +88,22 @@ def update_notification_settings(
     db.commit()
     db.refresh(user)
     return NotificationSettingsResponse(enabled=user.news_subscribed)
+
+
+@router.get("/privacy", response_model=PrivacySettingsResponse)
+def get_privacy_settings(
+    user: Annotated[User, Depends(get_current_user)],
+) -> PrivacySettingsResponse:
+    return PrivacySettingsResponse(enabled=user.profile_private)
+
+
+@router.put("/privacy", response_model=PrivacySettingsResponse)
+def update_privacy_settings(
+    body: PrivacySettingsUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> PrivacySettingsResponse:
+    user.profile_private = body.enabled
+    db.commit()
+    db.refresh(user)
+    return PrivacySettingsResponse(enabled=user.profile_private)

@@ -1,0 +1,1599 @@
+{
+  "generatedAt": "2026-06-09T21:51:02.486576+00:00",
+  "grafanaOrigin": "https://grafana.run5k.run",
+  "categories": [
+    {
+      "id": "main",
+      "label": "Обзор"
+    },
+    {
+      "id": "maps",
+      "label": "Карты"
+    },
+    {
+      "id": "ratings",
+      "label": "Рейтинги"
+    },
+    {
+      "id": "journals",
+      "label": "Журналы"
+    },
+    {
+      "id": "records",
+      "label": "Рекорды"
+    },
+    {
+      "id": "stats",
+      "label": "Статистика и отчёты"
+    },
+    {
+      "id": "challenges",
+      "label": "Челленджи"
+    },
+    {
+      "id": "other",
+      "label": "Прочее"
+    }
+  ],
+  "dashboards": [
+    {
+      "uid": "3e54a2d8-ef9f-4743-8117-4a2ddb47d6a7",
+      "slug": "chellendzhi",
+      "title": "Челленджи",
+      "description": "",
+      "category": "challenges",
+      "categoryLabel": "Челленджи",
+      "grafanaUrl": "https://grafana.run5k.run/d/3e54a2d8-ef9f-4743-8117-4a2ddb47d6a7/chellendzhi",
+      "updatedAt": "2025-10-14T22:30:41+03:00",
+      "panelCount": 37,
+      "panelTypes": [
+        "stat",
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "Сводная статистика",
+          "type": "table",
+          "description": "Детали по каждому челленджу прописаны в подробной информации о нем"
+        },
+        {
+          "title": "Совпадение времени финиша",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Суть челленджа ----- - Финишировать в каждую секунду минуты :00, :01, :02 и т.д. - В таблице приведён прогресс по данному челленджу, а также детали, когда и где пробежали с определенным результатом по каждой секунде"
+        },
+        {
+          "title": "60 сек челлендж (общее)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "60 сек челлендж (детали)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Суть челленджа ----- - Финишировать в каждый из порядковых номеров стартов - Есть отдельная таблица, которая выводит информацию в каких локациях какой порядковый номер старта будет следующий. Это поможет найти локацию, где будет нужный для вас порядковый номер старта"
+        },
+        {
+          "title": "Свод по порядковому номеру старта (общее)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Порядковый номер старта (детали)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Порядковый номер следующей пробежки",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Суть челленджа ----- - Финишировать в каждую из дат в году - В таблице с деталями есть информация, когда была закрыта определенная дата - Для дат, которые не закрыты в отдельном столбце выводится информация, когда в следующий раз будет возможность ее закрыть - Последний сто"
+        },
+        {
+          "title": "Все дни в году (общее)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Все дни в году (детали)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Суть челленджа ----- - Финишировать в локации, первая буква названия которой, начинается на каждую из букв алфавита - В таблице с деталями есть информация, когда была закрыта определенная буква - Есть таблица со списком локаций на каждую доступную букву"
+        },
+        {
+          "title": "Алфавит (общее)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Алфавит (детали)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Доступные по алфавиту локации",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Суть челленджа ----- - Финишировать на каждой позиции в протоколе от 0 до 99 - Берем последние две цифры вашей финишной позиции, например цифру 18 можно получить финишировав 18-ым, 118, 218 и т.д. - В таблице с деталями есть информация, когда была закрыта определенная позиц"
+        },
+        {
+          "title": "Место в протоколе (общая)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Место в протоколе (детали)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Количество раз занимал ту или иную позицию",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Суть челленджа ----- - Пробежать 5 вёрст в каждый из дней недели"
+        },
+        {
+          "title": "Все дни недели (общее)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Все дни недели (детали)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Суть челленджа ----- - Участие в пробежке, порядковый номер которой, совпадает с порядковым номером забега у участника - В таблице с деталями выводится информация, когда и где была пробежка"
+        },
+        {
+          "title": "Совпадение порядкового номера (количество)",
+          "type": "stat",
+          "description": ""
+        },
+        {
+          "title": "Совпадение порядкового номера (детали)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Порядковый номер следующей пробежки",
+          "type": "table",
+          "description": "Таблица показывает старты, находящиеся в пределах +-10 по порядковому номеру от количества пробежек участника"
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Суть челленджа ----- - p-индекс показывает максимальное число, где вы пробежали в (p) уникальных локаций не менее (p) раз - Пример: если ваш p-индекс = 3, значит у вас есть минимум 3 локации, на каждой из которых вы пробежали минимум 3 раза."
+        },
+        {
+          "title": "p-индекс",
+          "type": "stat",
+          "description": ""
+        },
+        {
+          "title": "p-индекс детали",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Суть челленджа ----- - Иметь финишное время, в котором минуты и секунды зеркальны, например 23:32, 21:12 и т.д. - В таблице с деталями есть информация, когда были финиши с палиндромом в результатах"
+        },
+        {
+          "title": "Палиндром Челлендж количество",
+          "type": "stat",
+          "description": ""
+        },
+        {
+          "title": "Палиндром Челлендж",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Совпадающее время финиша",
+          "type": "table",
+          "description": "Финиш с одинаковым временем"
+        },
+        {
+          "title": "Совпадения времени в одной локации",
+          "type": "table",
+          "description": "Финиш с одинаковым временем в рамках одной локации"
+        },
+        {
+          "title": "Совпадения времени на последовательных пробежках",
+          "type": "table",
+          "description": "Финиш с одинаковым временем в двух последовательных пробежках у участника"
+        },
+        {
+          "title": "Совпадения времени в последовательных пробежках в одной локации",
+          "type": "table",
+          "description": "Финиш с одинаковым временем в двух последовательных пробежках внутри одной локации"
+        }
+      ],
+      "variables": [
+        {
+          "name": "name",
+          "label": "Участник",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "65e77df2-2222-4167-8e11-929a081e9553",
+      "slug": "zhurnal-poseschaemosti-lokacii",
+      "title": "Журнал посещаемости локации",
+      "description": "",
+      "category": "journals",
+      "categoryLabel": "Журналы",
+      "grafanaUrl": "https://grafana.run5k.run/d/65e77df2-2222-4167-8e11-929a081e9553/zhurnal-poseschaemosti-lokacii",
+      "updatedAt": "2026-05-11T18:38:29+03:00",
+      "panelCount": 3,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Описание ----- Представьте школьный журнал посещаемости. В данном дэшборде реализовано нечто похожее. Вы можете выбрать локацию и период и по бегунам и волонтерам посмотреть факт участия в мероприятии 5 вёрст 1 - участвовал 0 - отсутствовал"
+        },
+        {
+          "title": "Волонтёры",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Бегуны",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "park",
+          "label": "Локация",
+          "type": "query"
+        },
+        {
+          "name": "year",
+          "label": "Год",
+          "type": "query"
+        },
+        {
+          "name": "month",
+          "label": "Месяц",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "b5142ff6-1991-4c8c-b432-7c69fb27fbed",
+      "slug": "zhurnal-poseschaemosti-probezhek",
+      "title": "Журнал посещаемости пробежек",
+      "description": "",
+      "category": "journals",
+      "categoryLabel": "Журналы",
+      "grafanaUrl": "https://grafana.run5k.run/d/b5142ff6-1991-4c8c-b432-7c69fb27fbed/zhurnal-poseschaemosti-probezhek",
+      "updatedAt": "2026-05-11T18:40:52+03:00",
+      "panelCount": 3,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Описание ----- Представьте школьный журнал посещаемости. В данном дэшборде реализовано нечто похожее. Вы можете выбрать период и по участникам ТОП-500 по количеству пробежек посмотреть факт участия в мероприятии 5 вёрст 1 - участвовал 0 - отсутствовал При клике на участника"
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Детали по участнику",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "year",
+          "label": "Год",
+          "type": "query"
+        },
+        {
+          "name": "month",
+          "label": "Месяц",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "2c979df9-0a15-42ee-83a9-e46ecf318027",
+      "slug": "zhurnal-turizma",
+      "title": "Журнал туризма",
+      "description": "",
+      "category": "journals",
+      "categoryLabel": "Журналы",
+      "grafanaUrl": "https://grafana.run5k.run/d/2c979df9-0a15-42ee-83a9-e46ecf318027/zhurnal-turizma",
+      "updatedAt": "2026-05-11T18:40:36+03:00",
+      "panelCount": 3,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Описание ----- Представьте школьный журнал посещаемости. В данном дэшборде реализовано нечто похожее. Вы можете выбрать период и по бегунам из ТОП-200 туристов посмотреть факт участия в мероприятии 5 вёрст в новой локации 1 - участвовал 0 - отсутствовал При клике на участни"
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Детали по участнику",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "year",
+          "label": "Год",
+          "type": "query"
+        },
+        {
+          "name": "month",
+          "label": "Месяц",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "ce5xtszxy4074e",
+      "slug": "glavnaja",
+      "title": "ГЛАВНАЯ",
+      "description": "",
+      "category": "main",
+      "categoryLabel": "Обзор",
+      "grafanaUrl": "https://grafana.run5k.run/d/ce5xtszxy4074e/glavnaja",
+      "updatedAt": "2026-05-11T18:25:17+03:00",
+      "panelCount": 1,
+      "panelTypes": [
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Главная О ресурсе: Данный сайт представляет собой набор дэшбордов, которые собраны на основании данных из открытых источников. Ниже представлены ссылки на дэшборды + краткое описание. Также я постарался предположить, кто является целевой аудиторией тех или иных статистик, которые"
+        }
+      ],
+      "variables": []
+    },
+    {
+      "uid": "de6y9kfuym8sgf",
+      "slug": "karta-vseh-sistem-parkovyh-zabegov",
+      "title": "Карта всех систем парковых забегов",
+      "description": "",
+      "category": "maps",
+      "categoryLabel": "Карты",
+      "grafanaUrl": "https://grafana.run5k.run/d/de6y9kfuym8sgf/karta-vseh-sistem-parkovyh-zabegov",
+      "updatedAt": "2026-02-28T23:41:37+03:00",
+      "panelCount": 3,
+      "panelTypes": [
+        "geomap",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание На карте размещены локации всех парковых систем субботних парковых пробежек Цветом отражается принадлежность локации к той или иной системе парковых пробежек Информация на карте обновляется вручную, если вы нашли неточность, напишите в чат по данному ресурсу ВАЖНО! На да"
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Розовым - точки системы S95 Темно-синим - точки системы 5 вёрст Бирюзовым - точки системы runpark Красным - точки иных систем"
+        },
+        {
+          "title": "Карта туристов",
+          "type": "geomap",
+          "description": "Карта стартов 5 вёрст с отметкой факта посещения по туристам"
+        }
+      ],
+      "variables": []
+    },
+    {
+      "uid": "4469d2d0-c3ec-487b-85cf-190526e52993",
+      "slug": "karta-moih-startov",
+      "title": "Карта моих стартов",
+      "description": "",
+      "category": "maps",
+      "categoryLabel": "Карты",
+      "grafanaUrl": "https://grafana.run5k.run/d/4469d2d0-c3ec-487b-85cf-190526e52993/karta-moih-startov",
+      "updatedAt": "2026-01-31T17:56:07+03:00",
+      "panelCount": 2,
+      "panelTypes": [
+        "geomap",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Описание ----- 1. Выбираем участника в фильтре. *ВАЖНО!* Поиск регистрозависимый, нужно писать ФИО как в вашем личном кабинете, имя с большой буквы, фамилия КАПСОМ 2. Наслаждаемся картой локаций, где вы бегали 3. Планируем новые туристические маршруты ВАЖНО! На карте отраже"
+        },
+        {
+          "title": "Карта туристов",
+          "type": "geomap",
+          "description": "Карта стартов 5 вёрст с отметкой факта посещения по туристам"
+        }
+      ],
+      "variables": [
+        {
+          "name": "name",
+          "label": "Участник",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "be6upw8hxplvka",
+      "slug": "karta-startov-1-janvarja",
+      "title": "Карта стартов 1 января",
+      "description": "",
+      "category": "maps",
+      "categoryLabel": "Карты",
+      "grafanaUrl": "https://grafana.run5k.run/d/be6upw8hxplvka/karta-startov-1-janvarja",
+      "updatedAt": "2025-12-03T00:04:54+03:00",
+      "panelCount": 4,
+      "panelTypes": [
+        "geomap",
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание Дэшборд показывает локации, которые планирует проведение старта 1 января. Цветом отражается время, в которое будет стартовать пробежка в выбранной локации Красным - точки, стартующие в 9:00 Желтым - точки, стартующие в 10:00 Фиолетовым - точки, стартующие в 11:00 Синим -"
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Карта стартов 1 января",
+          "type": "geomap",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "name",
+          "label": "Участник",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "de1hu8dabny80c",
+      "slug": "karta-turistov",
+      "title": "Карта туристов",
+      "description": "Выберите в фильтре фамилию 5 вёрст туриста, чтобы посмотреть на карте, какие локации он уже посетил",
+      "category": "maps",
+      "categoryLabel": "Карты",
+      "grafanaUrl": "https://grafana.run5k.run/d/de1hu8dabny80c/karta-turistov",
+      "updatedAt": "2026-02-21T15:38:57+03:00",
+      "panelCount": 7,
+      "panelTypes": [
+        "geomap",
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание Дэшборд выводит информацию только по ТОП 100 туристам по количеству уникальных локаций 5 Вёрст. Число рядом с каждой точкой на карте – количество туристов из ТОП-100, бегавших в данной локации. При выбранном фильтре All красными точками отражаются локации, где ни разу не"
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Карта туристов",
+          "type": "geomap",
+          "description": "Карта стартов 5 вёрст с отметкой факта посещения по туристам"
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание Дэшборд визуализирует результаты последней пробежки по туристам. Можно посмотреть, где бегал турист и была ли это новая уникальная локация в его списке."
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Общее число локаций",
+          "type": "table",
+          "description": "Таблица демонстрирует количество локаций, регионов и городов присутствия 5 вёрст, исключая точки, которые находятся на паузе (более 5 недель нет пробежек)"
+        },
+        {
+          "title": "Рейтинг туристов",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "name",
+          "label": "ТУРИСТ",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "de96ruht0r0n4c",
+      "slug": "karta-turistov-volonterov",
+      "title": "Карта туристов волонтеров",
+      "description": "Выберите в фильтре фамилию 5 вёрст туриста, чтобы посмотреть на карте, какие локации он уже посетил",
+      "category": "maps",
+      "categoryLabel": "Карты",
+      "grafanaUrl": "https://grafana.run5k.run/d/de96ruht0r0n4c/karta-turistov-volonterov",
+      "updatedAt": "2025-03-29T16:17:18+03:00",
+      "panelCount": 6,
+      "panelTypes": [
+        "geomap",
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание Дэшборд выводит информацию только по ТОП 100 туристам-волонтерам по количеству уникальных локаций 5 Вёрст. Число рядом с каждой точкой на карте – количество туристов из ТОП-100, волонтёривших в данной локации. При выбранном фильтре All красными точками отражаются локации"
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Карта туристов",
+          "type": "geomap",
+          "description": "Карта стартов 5 вёрст с отметкой факта посещения по туристам"
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание Дэшборд визуализирует результаты последнего волонтерства по туристам. Можно посмотреть, где волонтерил турист и была ли это новая уникальная локация в его списке. Если волонтерство в рассматриваемую дату было зачтено в нескольких локациях, то в таблицу в приоритете будет"
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Статистика последней пробежки",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "name",
+          "label": "ТУРИСТ",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "be51fcfw6ejggb",
+      "slug": "lokacij-5-verst-po-regionam",
+      "title": "Локаций 5 Верст по регионам",
+      "description": "Дэшборд формирует рейтинг количества локаций 5 Верст по регионам",
+      "category": "other",
+      "categoryLabel": "Прочее",
+      "grafanaUrl": "https://grafana.run5k.run/d/be51fcfw6ejggb/lokacij-5-verst-po-regionam",
+      "updatedAt": "2024-12-12T00:23:10+03:00",
+      "panelCount": 2,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "Описание",
+          "type": "text",
+          "description": ""
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": []
+    },
+    {
+      "uid": "86bf8188-e70b-4e14-8997-6a8893142f55",
+      "slug": "schjot-po-lichnym-vstrecham",
+      "title": "Счёт по личным встречам",
+      "description": "",
+      "category": "other",
+      "categoryLabel": "Прочее",
+      "grafanaUrl": "https://grafana.run5k.run/d/86bf8188-e70b-4e14-8997-6a8893142f55/schjot-po-lichnym-vstrecham",
+      "updatedAt": "2025-12-07T11:19:55+03:00",
+      "panelCount": 5,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание На данной странице при выборе двух участников можно посмотреть, где бегали совместно и какой счет по встречам . В фильтрах можно выбрать данные как по id бегуна, так и по имени фамилии Обратите внимание, при поиске в фильтре важен регистр, в системе 5 вёрст имя пишется с"
+        },
+        {
+          "title": "Итог по встречам",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Детально пересечения",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "С учетом волонтерских пересечений",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Только пробежки",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "name_runner_1",
+          "label": "Выберите участника 1",
+          "type": "query"
+        },
+        {
+          "name": "name_runner_2",
+          "label": "Выберите участника 2",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "feb3hdye0fhtse",
+      "slug": "rejting-kolichestva-volonterstv",
+      "title": "Рейтинг количества волонтерств",
+      "description": "",
+      "category": "ratings",
+      "categoryLabel": "Рейтинги",
+      "grafanaUrl": "https://grafana.run5k.run/d/feb3hdye0fhtse/rejting-kolichestva-volonterstv",
+      "updatedAt": "2025-07-12T22:14:38+03:00",
+      "panelCount": 2,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание В рейтинге отражен ТОП-1000 участников по количеству волонтёрств в системе 5 вёрст. Логика учёта волонтёрств аналогична официальному сайту 5 вёрст."
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": []
+    },
+    {
+      "uid": "beb3dpef24r28a",
+      "slug": "rejting-kolichestva-probezhek",
+      "title": "Рейтинг количества пробежек",
+      "description": "",
+      "category": "ratings",
+      "categoryLabel": "Рейтинги",
+      "grafanaUrl": "https://grafana.run5k.run/d/beb3dpef24r28a/rejting-kolichestva-probezhek",
+      "updatedAt": "2025-03-29T10:23:49+03:00",
+      "panelCount": 4,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание В рейтинге отражен ТОП-1000 участников забегов 5 вёрст по количеству пробежек. Более подробный рейтинг с разрезами по неделям прогресса набора текущего показателя можно посмотреть на личной странице Алексея Савчука , который с момента запуска проекта 5 вёрст ведет этот р"
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": []
+    },
+    {
+      "uid": "deprgii19fdoga",
+      "slug": "rejting-po-vremeni-finisha",
+      "title": "Рейтинг по времени финиша",
+      "description": "",
+      "category": "ratings",
+      "categoryLabel": "Рейтинги",
+      "grafanaUrl": "https://grafana.run5k.run/d/deprgii19fdoga/rejting-po-vremeni-finisha",
+      "updatedAt": "2025-06-26T22:39:49+03:00",
+      "panelCount": 5,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание В первой таблице 1000 самых быстрых результатов в системе 5 вёрст за все время существования проекта. Разделение идет по полу. Во второй таблице 1000 самых быстрых бегуна и их личные рекорды В каждой из таблиц есть детали, сколько пробежек было проведено после результата"
+        },
+        {
+          "title": "1000 самых быстрых результатов (мужчины)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "1000 самых быстрых результатов (женщины)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "1000 самых быстрых бегунов (Женщины)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "1000 самых быстрых бегунов (Мужчины)",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": []
+    },
+    {
+      "uid": "fehx3pjkvj56oa",
+      "slug": "rejting-po-kolichestvu-unikal-nyh-lokacij",
+      "title": "Рейтинг по количеству уникальных локаций",
+      "description": "",
+      "category": "ratings",
+      "categoryLabel": "Рейтинги",
+      "grafanaUrl": "https://grafana.run5k.run/d/fehx3pjkvj56oa/rejting-po-kolichestvu-unikal-nyh-lokacij",
+      "updatedAt": "2025-04-14T21:10:33+03:00",
+      "panelCount": 2,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание В рейтинге отражен ТОП-200 участников забегов 5 вёрст по количеству уникальных локаций, в которых они бегали. В фильтре можно выбрать, какое количество пробежек в каждой из локаций должно быть, чтобы она пошла в учет в рейтинге Например, при выборе значения \"3\" рейтинг б"
+        },
+        {
+          "title": "Рейтинг количества уникальных локаций",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "five_point",
+          "label": "Кол-во повторений каждой из локаций",
+          "type": "custom"
+        }
+      ]
+    },
+    {
+      "uid": "feitbfpcwwb28a",
+      "slug": "rejting-pobeditelej-na-probezhkah",
+      "title": "Рейтинг победителей на пробежках",
+      "description": "",
+      "category": "ratings",
+      "categoryLabel": "Рейтинги",
+      "grafanaUrl": "https://grafana.run5k.run/d/feitbfpcwwb28a/rejting-pobeditelej-na-probezhkah",
+      "updatedAt": "2025-08-30T22:20:05+03:00",
+      "panelCount": 7,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание В таблицах ниже приведено 2 вида рейтингов: Рейтинг по количеству побед на пробежках 5 вёрст и аналогичный рейтинг только по количеству уникальных локаций с победами В каждом рейтинге есть дополнительные рейтинги отдельно по полу В рейтинге абсолюта информация берётся по"
+        },
+        {
+          "title": "Рейтинг количества побед на 5 вёрст (Абсолют)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Рейтинг количества побед по мужчинам",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Рейтинг количества побед по женщинам",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Рейтинг количества локаций, где участник являлся победителем (Абсолют)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Рейтинг количества локаций, где участник победил (Мужчины)",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Рейтинг количества локаций, где участник победил (Женщины)",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": []
+    },
+    {
+      "uid": "dekvyyrwadwjkb",
+      "slug": "89bc50f",
+      "title": "Рейтинг расстояния посещенных локаций от Москвы",
+      "description": "",
+      "category": "ratings",
+      "categoryLabel": "Рейтинги",
+      "grafanaUrl": "https://grafana.run5k.run/d/dekvyyrwadwjkb/89bc50f",
+      "updatedAt": "2025-06-05T22:23:21+03:00",
+      "panelCount": 3,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание Данный рейтинг считает прямое расстояние до каждой локации от Москвы (Московский Кремль) и суммирует по каждому бегуну по посещенным им локациям В рейтинг попали бегуны только с 10+ локаций Нет разницы, участник живет в Москве или в другом регионе, расстояние до каждой т"
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": []
+    },
+    {
+      "uid": "ae5xf2cebu3gga",
+      "slug": "rejting-uchastnikov-i-volontjorov-vnutri-lokacii",
+      "title": "Рейтинг участников и волонтёров внутри локации",
+      "description": "",
+      "category": "ratings",
+      "categoryLabel": "Рейтинги",
+      "grafanaUrl": "https://grafana.run5k.run/d/ae5xf2cebu3gga/rejting-uchastnikov-i-volontjorov-vnutri-lokacii",
+      "updatedAt": "2026-03-11T00:09:21+03:00",
+      "panelCount": 11,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание Дэшборд формирует таблицу с рейтингом участников и волонтёров по выбранной локации Выберите в фильтре интересующую вас локацию Два столбца в таблице покажут количество пробежек/волонтерств в выбанной локации и общее количество пробежек/волонтёрств у участника В таблицу п"
+        },
+        {
+          "title": "Рейтинг пробежек",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Рейтинг волонтеров",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание Дэшборд демонстрирует в разбивке по полу 100 самых быстрых результатов в выбранной локации"
+        },
+        {
+          "title": "100 самых быстрых результатов. МУЖЧИНЫ",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "100 самых быстрых результатов. ЖЕНЩИНЫ",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание Дэшборд демонстрирует в разбивке по полу 20 самых быстрых участников в выбранной локации"
+        },
+        {
+          "title": "20 самых быстрых бегунов локации. МУЖЧИНЫ",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "20 самых быстрых бегунов локации. ЖЕНЩИНЫ",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Рейтинг количества побед по мужчинам",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Рейтинг количества побед по женщинам",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "point",
+          "label": "Выберите парк",
+          "type": "query"
+        },
+        {
+          "name": "gender",
+          "label": "Пол",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "f813e098-c800-412d-b177-8e85a8521d69",
+      "slug": "turisticheskij-rejting-otkrytij",
+      "title": "Туристический рейтинг открытий",
+      "description": "",
+      "category": "ratings",
+      "categoryLabel": "Рейтинги",
+      "grafanaUrl": "https://grafana.run5k.run/d/f813e098-c800-412d-b177-8e85a8521d69/turisticheskij-rejting-otkrytij",
+      "updatedAt": "2026-01-31T16:09:40+03:00",
+      "panelCount": 3,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "Описание",
+          "type": "text",
+          "description": ""
+        },
+        {
+          "title": "Рейтинг",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Детали по выбранному участнику",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": []
+    },
+    {
+      "uid": "d615a771-0ea5-4559-ac97-536e08662a96",
+      "slug": "rekordy-po-vozrastnym-gruppam-v-lokacijah",
+      "title": "Рекорды по возрастным группам в локациях",
+      "description": "",
+      "category": "records",
+      "categoryLabel": "Рекорды",
+      "grafanaUrl": "https://grafana.run5k.run/d/d615a771-0ea5-4559-ac97-536e08662a96/rekordy-po-vozrastnym-gruppam-v-lokacijah",
+      "updatedAt": "2026-05-11T19:04:01+03:00",
+      "panelCount": 2,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание В дэшборде можно посмотреть рекорды по возрастным группам в каждой из локаций Есть возможность фильтровать по возрастной группе Есть возможность сортировать по всем столбцам (например по времени финиша) Есть возможность фильтровать по всем столбцам (выбрать интересующий "
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "age_category",
+          "label": "Возрастная группа",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "55057462-8a8b-4ebb-96ae-bad7ef356a3d",
+      "slug": "rekordy-poseschaemosti-lokacij",
+      "title": "Рекорды посещаемости локаций",
+      "description": "",
+      "category": "records",
+      "categoryLabel": "Рекорды",
+      "grafanaUrl": "https://grafana.run5k.run/d/55057462-8a8b-4ebb-96ae-bad7ef356a3d/rekordy-poseschaemosti-lokacij",
+      "updatedAt": "2026-02-28T23:50:55+03:00",
+      "panelCount": 4,
+      "panelTypes": [
+        "table",
+        "text",
+        "timeseries"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Описание ----- В таблице приведен список всех локаций с действующими рекордами посещаемости. Есть информация о дате рекорда, порядковом номере старта и сколько мероприятий проведено после рекордного события"
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Динамика посещаемости для ${location:doublesinglequote}"
+        },
+        {
+          "title": "timeseries",
+          "type": "timeseries",
+          "description": ""
+        }
+      ],
+      "variables": []
+    },
+    {
+      "uid": "cea88eb2-47e4-4334-bfd6-e13ad11f5e3a",
+      "slug": "dolgaja-pauza",
+      "title": "Долгая пауза",
+      "description": "",
+      "category": "stats",
+      "categoryLabel": "Статистика и отчёты",
+      "grafanaUrl": "https://grafana.run5k.run/d/cea88eb2-47e4-4334-bfd6-e13ad11f5e3a/dolgaja-pauza",
+      "updatedAt": "2025-11-11T21:10:08+03:00",
+      "panelCount": 2,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "##### Описание ----- - С помощью фильтров в верхней части страницы можно настроить выгрузку под ваш запрос - Получившаяся таблица позволяет выявить участников, кто регулярно посещал старты в локации, но уже длительное время отсутствует - Таким образом можно провести работу, если "
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "point",
+          "label": "Локация",
+          "type": "query"
+        },
+        {
+          "name": "count_runs",
+          "label": "Пробежек в локации",
+          "type": "query"
+        },
+        {
+          "name": "count_missing",
+          "label": "Недель пропусков",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "4a385e6f-5cb6-4e7d-914f-8fbee0b34bba",
+      "slug": "edinyj-protokol",
+      "title": "Единый протокол",
+      "description": "",
+      "category": "stats",
+      "categoryLabel": "Статистика и отчёты",
+      "grafanaUrl": "https://grafana.run5k.run/d/4a385e6f-5cb6-4e7d-914f-8fbee0b34bba/edinyj-protokol",
+      "updatedAt": "2025-08-18T00:34:21+03:00",
+      "panelCount": 3,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание Данный дэшборд представляет собой сквозной протокол по всем участникам на всех локациях за определенную дату. Выбираем дату пробежки, смотрим отдельно протокол по мужчинам и женщинам Можно фильтровать и сортировать по всем столбцам. Найти себя и посмотреть, каким прибежа"
+        },
+        {
+          "title": "Мужской протокол",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Женский протокол",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "date_event",
+          "label": "Дата мероприятия",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "eeqquzpgqp88wd",
+      "slug": "kalendar--pervyh-startov-lokacij-5-vjorst",
+      "title": "Календарь первых стартов локаций 5 вёрст",
+      "description": "",
+      "category": "stats",
+      "categoryLabel": "Статистика и отчёты",
+      "grafanaUrl": "https://grafana.run5k.run/d/eeqquzpgqp88wd/kalendar--pervyh-startov-lokacij-5-vjorst",
+      "updatedAt": "2026-02-28T23:40:55+03:00",
+      "panelCount": 2,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "Описание",
+          "type": "text",
+          "description": ""
+        },
+        {
+          "title": "Даты первых стартов в локациях 5 вёрст",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": []
+    },
+    {
+      "uid": "03450385-0269-4509-873f-1423067b5c7f",
+      "slug": "kluby-5-vjorst",
+      "title": "Клубы 5 вёрст",
+      "description": "",
+      "category": "stats",
+      "categoryLabel": "Статистика и отчёты",
+      "grafanaUrl": "https://grafana.run5k.run/d/03450385-0269-4509-873f-1423067b5c7f/kluby-5-vjorst",
+      "updatedAt": "2025-11-24T17:48:22+03:00",
+      "panelCount": 5,
+      "panelTypes": [
+        "stat",
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Данный дэшборд не является официальным функционалом клубов 5 вёрст. Вступить в клуб можно в телеграм боте t.me/weekend_runs_bot предварительно привязав свой профиль на сайте 5 вёрст Если вашего клуба нет в списке, напишите автору t.me/popov_dmitry название клуба и пришлите свой п"
+        },
+        {
+          "title": "Участников",
+          "type": "stat",
+          "description": ""
+        },
+        {
+          "title": "Всего пробежек",
+          "type": "stat",
+          "description": ""
+        },
+        {
+          "title": "Всего волонтёрств",
+          "type": "stat",
+          "description": ""
+        },
+        {
+          "title": "Статистика",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "Club5",
+          "label": "Выберите клуб",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "eednttn3wos1sf",
+      "slug": "prognoz-daty-zavershenija-turizma",
+      "title": "Прогноз даты завершения туризма",
+      "description": "",
+      "category": "stats",
+      "categoryLabel": "Статистика и отчёты",
+      "grafanaUrl": "https://grafana.run5k.run/d/eednttn3wos1sf/prognoz-daty-zavershenija-turizma",
+      "updatedAt": "2025-11-12T22:20:56+03:00",
+      "panelCount": 2,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание Дэшборд выводит прогнозную дату прохождения квеста под названием 5 вёрст туризм В дэшборде выведена информация о туристах из ТОП-100 по количеству уникальных локаций Дэшборд берет в учет все локации, которые не закрыты у участника и не находящиеся на паузе Прогнозная дат"
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": []
+    },
+    {
+      "uid": "516a514a-fe34-4cbd-baa7-2f87cd5464a0",
+      "slug": "svod-po-probezhke-dlja-otchetov",
+      "title": "Свод по пробежке для отчетов",
+      "description": "",
+      "category": "stats",
+      "categoryLabel": "Статистика и отчёты",
+      "grafanaUrl": "https://grafana.run5k.run/d/516a514a-fe34-4cbd-baa7-2f87cd5464a0/svod-po-probezhke-dlja-otchetov",
+      "updatedAt": "2026-03-14T22:00:50+03:00",
+      "panelCount": 2,
+      "panelTypes": [
+        "table"
+      ],
+      "panels": [
+        {
+          "title": "Волонтеры",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Бегуны",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "point",
+          "label": "Локация",
+          "type": "query"
+        },
+        {
+          "name": "date_event",
+          "label": "Выберите дату пробежки",
+          "type": "query"
+        }
+      ]
+    },
+    {
+      "uid": "be93qjtcg4av4e",
+      "slug": "statistika-2024",
+      "title": "Статистика 2024",
+      "description": "",
+      "category": "stats",
+      "categoryLabel": "Статистика и отчёты",
+      "grafanaUrl": "https://grafana.run5k.run/d/be93qjtcg4av4e/statistika-2024",
+      "updatedAt": "2025-07-01T21:59:27+03:00",
+      "panelCount": 2,
+      "panelTypes": [
+        "table",
+        "text"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "Описание В таблице сведена статистика проведенных за 2024 год мероприятий 5 вёрст отсортированная по общему количеству участников Неизвестные участники исключены из статистики В столбце \"вернувшиеся\" учтены участники, которые 2 и более раз бегали в указанной локации"
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": []
+    },
+    {
+      "uid": "bepnuz4ecveo0f",
+      "slug": "statistika-po-lokacijam",
+      "title": "Статистика по локациям",
+      "description": "",
+      "category": "stats",
+      "categoryLabel": "Статистика и отчёты",
+      "grafanaUrl": "https://grafana.run5k.run/d/bepnuz4ecveo0f/statistika-po-lokacijam",
+      "updatedAt": "2025-10-10T22:05:20+03:00",
+      "panelCount": 35,
+      "panelTypes": [
+        "barchart",
+        "stat",
+        "table",
+        "text",
+        "timeseries"
+      ],
+      "panels": [
+        {
+          "title": "text",
+          "type": "text",
+          "description": "#### Описание ----- - В данном блоке приведена общая информация о забегах. Гиперссылки по парку и дате пробежки кликабельные и применяют фильтр во всех дэшбордах. Гиперссылки на бегунах ведут на страницу участника на сайте 5 вёрст - Фильтр внутри таблицы с поиском по названию пар"
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "История забегов",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Протокол забега",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "#### Описание ----- - В данном блоке демонстрируются общие новости по пробежке: новые участники, личные рекорды - В первой таблице агрегированная информация, во второй и третьей детально можно посмотреть пофамильно, кто попал в тот или иной блок - Последний столбец в детальных та"
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Детали по волонтёрам",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Детали по бегунам",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Количество участников по возрастным группам",
+          "type": "barchart",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "#### Описание ----- - На графике необходимо нажать на кнопку \"zoom to data\", чтобы отобразилась информация - Зеленым отображается количество участников, желтым - волонтёров"
+        },
+        {
+          "title": "Посещаемость за пол года",
+          "type": "timeseries",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "#### Описание ----- 1. Рекорды по возрастным категориями с деталями, когда они были установлены 2. Рекорды по полу 3. ТОП-10 по посещаемости"
+        },
+        {
+          "title": "Рекорды по возрастным категориям",
+          "type": "table",
+          "description": "Первые 2 столбца - сводная статистика количества финишей всех участников в данной локации, в этой возрастной категории. \nДалее информация о держателе рекорда в категории и сроке жизни рекорда"
+        },
+        {
+          "title": "Рекорды по полу",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "ТОП 10 посещаемости",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Серии пробежек по количеству участников",
+          "type": "table",
+          "description": "Количество пробежек подряд с 50/100/200 + участников на пробежке"
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "#### Описание ----- В данном блоке сводная информация по всем пробежкам о: - Количестве проведенных мероприятий - Количестве финишей в разбивке по полу и возрастным категориями - Количестве уникальных участников в разбивке по возрастным категориям"
+        },
+        {
+          "title": "Количество мероприятий 5 вёрст",
+          "type": "stat",
+          "description": ""
+        },
+        {
+          "title": "table",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Финишей по полу",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Уникальных участников по полу",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Волонтёрств в локации",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Уникальных волонтёров",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Финишей по возрастным категориям",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Участников по возрастным категориям",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "text",
+          "type": "text",
+          "description": "#### Описание ----- Далее идут 3 больших блока разделенных по способу подсчета \"круглого\" участия в мероприятии 5 вёрст: - Учёт участий идет *только* внутри локации, участия вне, не учитываются - Учет идет по всем участиям, выводятся \"круглые\" числа участников выбранной пробежки "
+        },
+        {
+          "title": "Юбилейные пробежки",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "На расстоянии 1 пробежки до юбилейной",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Юбилейные волонтёрства",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "На расстоянии 1 волонтёрства до юбилейного",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Достижения внутри локации по состоянию на выбранную дату",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Юбилейные пробежки",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Юбилейные волонтёрства",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Юбилейные пробежки",
+          "type": "table",
+          "description": ""
+        },
+        {
+          "title": "Юбилейные волонтёрства",
+          "type": "table",
+          "description": ""
+        }
+      ],
+      "variables": [
+        {
+          "name": "point",
+          "label": "Выберите парк",
+          "type": "query"
+        },
+        {
+          "name": "date_event",
+          "label": "Дата пробежки",
+          "type": "query"
+        }
+      ]
+    }
+  ]
+}

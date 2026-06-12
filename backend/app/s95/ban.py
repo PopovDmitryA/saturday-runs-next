@@ -11,6 +11,7 @@ BAN_MARKERS = (
     "access denied",
     "too many requests",
     "captcha",
+    "forbidden",
 )
 
 
@@ -18,4 +19,7 @@ def is_ban_or_protection_html(html: str) -> bool:
     if not html:
         return True
     text_value = html.lower()
-    return any(marker in text_value for marker in BAN_MARKERS)
+    if any(marker in text_value for marker in BAN_MARKERS):
+        return True
+    # Chromium wraps HTTP 403 in a tiny error page with <pre>Forbidden</pre>.
+    return len(html) < 400 and "forbidden" in text_value

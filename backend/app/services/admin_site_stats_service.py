@@ -36,6 +36,10 @@ def get_admin_site_stats(db: Session, *, period_days: int = 30) -> dict[str, obj
     since = _since(period_days)
 
     users_total = db.query(func.count(User.id)).scalar() or 0
+    users_profile_private = (
+        db.query(func.count(User.id)).filter(User.profile_private.is_(True)).scalar() or 0
+    )
+    users_profile_public = users_total - users_profile_private
     users_with_consent = db.query(func.count(User.id)).filter(User.consent_accepted.is_(True)).scalar() or 0
     users_active_period = (
         db.query(func.count(User.id))
@@ -74,6 +78,8 @@ def get_admin_site_stats(db: Session, *, period_days: int = 30) -> dict[str, obj
 
     overview = {
         "users_total": users_total,
+        "users_profile_public": users_profile_public,
+        "users_profile_private": users_profile_private,
         "users_with_consent": users_with_consent,
         "users_active_period": users_active_period,
         "users_with_any_link": users_with_any_link,

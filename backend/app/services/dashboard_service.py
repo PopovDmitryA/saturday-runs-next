@@ -298,14 +298,18 @@ def compute_dashboard_stats(db: Session, user_id: UUID, *, include_test_events: 
                     for event_date, location_key in vol_rows_query.all()
                 ]
             )
+        elif platform.code == "parkrun" and link.participant_id is not None:
+            participant = (
+                db.query(Participant).filter(Participant.id == link.participant_id).one_or_none()
+            )
+            if participant is None:
+                vol_count = 0
+            else:
+                from app.parkrun.volunteer_credits import count_parkrun_volunteering
+
+                vol_count = count_parkrun_volunteering(db, participant, platform.id)
         else:
             vol_count = vol_query.scalar() or 0
-        if platform.code == "parkrun" and link.participant_id is not None:
-            participant = db.query(Participant).filter(Participant.id == link.participant_id).one_or_none()
-            if participant is not None:
-                extra_total = (participant.profile_extra or {}).get("volunteer_occasions_total")
-                if isinstance(extra_total, int) and extra_total > vol_count:
-                    vol_count = extra_total
         by_platform[platform.code] = {"runs": runs_count, "volunteering": vol_count}
         total_runs += runs_count
         total_volunteering += vol_count
@@ -336,6 +340,11 @@ def _compute_dashboard_analytics(
     by_platform: dict[str, dict[str, int]],
     include_test_events: bool = False,
 ) -> dict[str, object]:
+    from app.services.personal_record_service import (
+        global_personal_record_run_ids,
+        run_is_personal_record_sql_filter,
+    )
+
     today = date.today()
     twelve_months_ago = today - timedelta(days=365)
     year_start = date(today.year, 1, 1)
@@ -389,11 +398,17 @@ def _compute_dashboard_analytics(
     best_results_platform_count = timed_runs.with_entities(Platform.code).distinct().count()
     avg_pace = paced_runs.with_entities(func.avg(RunResult.pace_sec_per_km)).scalar()
     avg_position = positioned_runs.with_entities(func.avg(RunResult.position)).scalar()
-    pr_count = runs_query.filter(RunResult.is_pr.is_(True)).with_entities(func.count(RunResult.id)).scalar() or 0
-    last_pr_date = (
-        runs_query.filter(RunResult.is_pr.is_(True)).with_entities(func.max(Event.event_date)).scalar()
+    pr_count = (
+        runs_query.filter(run_is_personal_record_sql_filter())
+        .with_entities(func.count(RunResult.id))
+        .scalar()
+        or 0
     )
-    from app.services.personal_record_service import global_personal_record_run_ids
+    last_pr_date = (
+        runs_query.filter(run_is_personal_record_sql_filter())
+        .with_entities(func.max(Event.event_date))
+        .scalar()
+    )
 
     global_pr_ids = global_personal_record_run_ids(db, user_id, include_test_events=include_test_events)
     last_global_pr_date = None
@@ -404,7 +419,7 @@ def _compute_dashboard_analytics(
             .scalar()
         )
     pr_last_12_months = (
-        runs_query.filter(RunResult.is_pr.is_(True), Event.event_date >= twelve_months_ago)
+        runs_query.filter(run_is_personal_record_sql_filter(), Event.event_date >= twelve_months_ago)
         .with_entities(func.count(RunResult.id))
         .scalar()
         or 0
@@ -711,7 +726,10 @@ def list_user_runs(
         query = query.filter(Event.is_test_event.is_(False))
     rows = query.order_by(Event.event_date.desc(), RunResult.position.asc()).offset(offset).limit(limit).all()
 
-    from app.services.personal_record_service import global_personal_record_run_ids
+    from app.services.personal_record_service import (
+        global_personal_record_run_ids,
+        run_shows_personal_record,
+    )
 
     global_pr_ids = global_personal_record_run_ids(db, user_id, include_test_events=include_test_events)
     catalog_index = LocationCatalogIndex(db)
@@ -734,7 +752,7 @@ def list_user_runs(
             "pace_display": run.pace_display,
             "pace_sec_per_km": run.pace_sec_per_km,
             "age_category": run.age_category,
-            "is_pr": run.is_pr,
+            "is_pr": run_shows_personal_record(platform.code, run),
             "is_global_pr": run.id in global_pr_ids,
             "is_first_run": run.is_first_run,
             "is_first_run_at_location": run.is_first_run_at_location,
@@ -828,6 +846,11 @@ def list_user_personal_records(
     *,
     include_test_events: bool = False,
 ) -> list[dict[str, object]]:
+    from app.services.personal_record_service import (
+        global_personal_record_run_ids,
+        run_is_personal_record_sql_filter,
+    )
+
     query = (
         db.query(RunResult, Event, Location, Platform, PlatformLink)
         .join(Event, RunResult.event_id == Event.id)
@@ -837,7 +860,7 @@ def list_user_personal_records(
         .filter(
             PlatformLink.user_id == user_id,
             PlatformLink.platform_id == Platform.id,
-            RunResult.is_pr.is_(True),
+            run_is_personal_record_sql_filter(),
         )
     )
     if not include_test_events:
@@ -848,8 +871,6 @@ def list_user_personal_records(
         Platform.code.asc(),
         RunResult.position.asc(),
     ).all()
-
-    from app.services.personal_record_service import global_personal_record_run_ids
 
     global_pr_ids = global_personal_record_run_ids(db, user_id, include_test_events=include_test_events)
     catalog_index = LocationCatalogIndex(db)
