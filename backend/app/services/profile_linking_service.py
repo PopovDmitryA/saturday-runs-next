@@ -34,7 +34,7 @@ class ProfileLinkingError(Exception):
 
 def _raise_profile_linking_for_fetch_error(exc: Exception) -> None:
     from app.s95.errors import S95BanDetected, S95FetchTimeout
-from app.s95.messages import s95_user_facing_error
+    from app.s95.messages import s95_user_facing_error
 
     if isinstance(exc, S95BanDetected):
         raise ProfileLinkingError(s95_user_facing_error(exc), 503) from exc
