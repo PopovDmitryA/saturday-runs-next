@@ -764,6 +764,22 @@ export function updateNotificationSettings(enabled: boolean) {
   });
 }
 
+export type PrivacySettings = {
+  enabled: boolean;
+  description: string;
+};
+
+export function getPrivacySettings() {
+  return apiFetch<PrivacySettings>("/settings/privacy");
+}
+
+export function updatePrivacySettings(enabled: boolean) {
+  return apiFetch<PrivacySettings>("/settings/privacy", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 export type AdminPlatformLinkBrief = {
   platform_code: string;
   external_user_id: string;
@@ -861,14 +877,54 @@ export function getAdminUserPreviewDashboard(userId: string) {
   return apiFetch<AdminUserPreviewDashboard>(`/admin/users/${userId}/preview/dashboard`);
 }
 
-export function getAdminUserPreviewRuns(userId: string, limit = 50, offset = 0) {
+export function triggerAdminUserSync(userId: string) {
+  return apiFetch<SyncRefreshResponse>(`/admin/users/${userId}/sync`, { method: "POST" });
+}
+
+export function triggerAdminUserSyncPlatform(userId: string, platformCode: string) {
+  return apiFetch<SyncRefreshResponse>(`/admin/users/${userId}/sync/${platformCode}`, {
+    method: "POST",
+  });
+}
+
+export function getAdminUserPreviewRuns(userId: string, limit = 200, offset = 0) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   return apiFetch<RunItem[]>(`/admin/users/${userId}/preview/runs?${params.toString()}`);
 }
 
-export function getAdminUserPreviewVolunteering(userId: string, limit = 50, offset = 0) {
+export function getAdminUserPreviewVolunteering(userId: string, limit = 200, offset = 0) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   return apiFetch<VolunteeringItem[]>(`/admin/users/${userId}/preview/volunteering?${params.toString()}`);
+}
+
+const ADMIN_PREVIEW_PAGE_SIZE = 200;
+
+async function fetchAllAdminPreviewPages<T>(
+  fetchPage: (limit: number, offset: number) => Promise<T[]>,
+): Promise<T[]> {
+  const items: T[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await fetchPage(ADMIN_PREVIEW_PAGE_SIZE, offset);
+    items.push(...page);
+    if (page.length < ADMIN_PREVIEW_PAGE_SIZE) {
+      break;
+    }
+    offset += page.length;
+  }
+  return items;
+}
+
+export function getAllAdminUserPreviewRuns(userId: string) {
+  return fetchAllAdminPreviewPages((limit, offset) =>
+    getAdminUserPreviewRuns(userId, limit, offset),
+  );
+}
+
+export function getAllAdminUserPreviewVolunteering(userId: string) {
+  return fetchAllAdminPreviewPages((limit, offset) =>
+    getAdminUserPreviewVolunteering(userId, limit, offset),
+  );
 }
 
 export function getAdminUserPreviewVisitedMap(userId: string, includeTest = false) {
@@ -971,6 +1027,8 @@ export function clearAdminIpAbuseScore(ip: string) {
 
 export type AdminSiteStatsOverview = {
   users_total: number;
+  users_profile_public: number;
+  users_profile_private: number;
   users_with_consent: number;
   users_active_period: number;
   users_new_period: number;

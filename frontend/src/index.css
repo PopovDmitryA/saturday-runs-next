@@ -1103,6 +1103,7 @@ body {
   color: #2563eb;
   text-decoration: none;
   border-bottom: 1px solid transparent;
+  font-variant-numeric: tabular-nums;
 }
 
 .activity-date-link:hover {
@@ -1129,7 +1130,7 @@ body {
 }
 
 .data-table-layout-fixed .col-date {
-  width: 8.5rem;
+  width: 10rem;
 }
 
 .data-table-layout-fixed .col-platform {
@@ -1193,6 +1194,7 @@ body {
 .data-table-layout-fixed .td-compact,
 .data-table-layout-fixed .td-time {
   white-space: nowrap;
+  vertical-align: middle;
 }
 
 .data-table th,
@@ -1460,6 +1462,33 @@ body {
 .badge-pr {
   background: #fef3c7;
   color: #92400e;
+}
+
+.activity-date-cell {
+  display: grid;
+  grid-template-columns: 5.85rem 2.75rem;
+  align-items: center;
+  column-gap: 0.35rem;
+  min-width: 0;
+}
+
+.activity-date-value {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-date-badges {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 0.25rem;
+  min-height: 1.2rem;
+  overflow: hidden;
+}
+
+.activity-date-badges .badge {
+  margin-left: 0;
 }
 
 .badge-platform {
@@ -2146,6 +2175,19 @@ body {
   font-size: 0.75rem;
 }
 
+.queue-error-tooltip-trigger {
+  display: block;
+  max-width: 100%;
+  cursor: help;
+}
+
+.queue-error-tooltip-trigger .unique-locations-count-tooltip {
+  max-width: min(28rem, calc(100vw - 2rem));
+  white-space: normal;
+  text-align: left;
+  line-height: 1.35;
+}
+
 .queue-row-active {
   background: #eff6ff;
 }
@@ -2378,6 +2420,10 @@ body {
 
 .settings-toggle-label.off {
   color: #94a3b8;
+}
+
+.privacy-settings-row {
+  margin-top: 1rem;
 }
 
 .toggle-switch {
@@ -4679,14 +4725,52 @@ body {
   padding: 0;
   margin: 0.75rem 0 0;
   display: grid;
-  gap: 0.45rem;
+  gap: 0.65rem;
+}
+
+.admin-preview-links-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
 }
 
 .admin-preview-links li {
   display: flex;
   flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.65rem;
+  background: #fafafa;
+}
+
+.admin-preview-link-main {
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.45rem;
   align-items: center;
+  min-width: 0;
+}
+
+.admin-preview-link-stats {
+  color: #4b5563;
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+.admin-preview-link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  margin-left: auto;
+}
+
+.admin-preview-link-status {
+  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
 .admin-preview-platform-stats {

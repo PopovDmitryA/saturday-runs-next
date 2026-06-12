@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from app.config import get_settings
 from app.core.request_cancel import check_cancelled
+from app.s95.errors import S95BanDetected
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Playwright
@@ -50,11 +51,16 @@ def fetch_html_with_browser(url: str, *, extra_wait_ms: int | None = None, click
     browser = _ensure_browser()
     page = browser.new_page()
     try:
-        page.goto(
+        response = page.goto(
             url,
             wait_until="domcontentloaded",
             timeout=settings.s95_playwright_navigation_timeout_ms,
         )
+        status = response.status if response is not None else None
+        if status in {403, 429}:
+            raise S95BanDetected(f"HTTP {status} Forbidden from S95 for {url}")
+        if status is not None and status >= 500:
+            raise S95BanDetected(f"HTTP {status} from S95 for {url}")
         wait_ms = extra_wait_ms if extra_wait_ms is not None else settings.s95_playwright_page_wait_ms
         _page_wait(page, wait_ms)
         if click_map_tab:

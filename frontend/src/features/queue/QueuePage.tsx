@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { PlatformBadge } from "../../components/PlatformBadge";
+import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { AdminSubnav } from "../admin/AdminSubnav";
 import { getSyncQueue, type SyncQueueJob, type SyncQueueJobUser, type SyncQueueParkrunQueue, type SyncQueueResponse } from "../../lib/api";
@@ -347,12 +348,14 @@ function QueueContent() {
                           {formatDateTime(job.created_at)}
                         </td>
                         <td className="queue-cell-queue">{taskQueueSummary(job)}</td>
-                        <td
-                          className="queue-cell-error"
-                          title={errorText || undefined}
-                        >
+                        <td className="queue-cell-error">
                           {errorText ? (
-                            <span className="queue-error-text">{errorText}</span>
+                            <StatHintTooltip
+                              text={errorText}
+                              className="queue-error-tooltip-trigger"
+                            >
+                              <span className="queue-error-text">{errorText}</span>
+                            </StatHintTooltip>
                           ) : (
                             "—"
                           )}

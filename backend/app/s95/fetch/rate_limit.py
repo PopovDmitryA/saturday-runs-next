@@ -6,6 +6,7 @@ import time
 from app.config import get_settings
 from app.core.redis_client import get_redis_client
 from app.core.request_cancel import check_cancelled, interruptible_sleep
+from app.s95.fetch.priority import check_yield_for_user_sync
 
 LAST_FETCH_KEY = "s95:fetch:last_completed_at"
 
@@ -21,6 +22,7 @@ def wait_for_turn(*, reason: str) -> None:
 
     while True:
         check_cancelled()
+        check_yield_for_user_sync()
         raw = redis.get(LAST_FETCH_KEY)
         if raw is None:
             return

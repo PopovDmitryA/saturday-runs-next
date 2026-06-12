@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import Participant, Platform, SyncRun, SyncRunStatus
 from app.sync import upsert
+from app.s95.fetch.priority import S95YieldForUserSync
 from app.sync.s95_athletes_sync import sync_s95_athlete
 from app.sync.s95_participant_sync import (
     BARCODE_LOOKUP_CHECKED_AT_KEY,
@@ -138,6 +139,7 @@ def sync_s95_athletes_registry(
     )
     result.participants_total = len(participants)
 
+    yielded_for_user = False
     for participant in participants:
         try:
             athlete_result = sync_s95_athlete(
@@ -154,6 +156,9 @@ def sync_s95_athletes_registry(
             result.mismatches_found += athlete_result.mismatches_found
             if athlete_result.errors and not athlete_result.skipped:
                 result.errors.extend(athlete_result.errors)
+        except S95YieldForUserSync:
+            yielded_for_user = True
+            break
         except Exception as exc:
             logger.exception("S95 athlete registry sync failed for %s", participant.external_user_id)
             result.errors.append(f"{participant.external_user_id}: {exc}")
@@ -161,10 +166,12 @@ def sync_s95_athletes_registry(
     _finish_sync_run(
         db,
         sync_run,
-        success=not result.errors,
+        success=not result.errors and not yielded_for_user,
         fetched=result.participants_total,
         upserted=result.participants_synced + result.participants_skipped,
         error="; ".join(result.errors) or None,
     )
     db.commit()
+    if yielded_for_user:
+        raise S95YieldForUserSync()
     return result

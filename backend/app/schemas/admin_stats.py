@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 class AdminSiteStatsOverview(BaseModel):
     users_total: int
+    users_profile_public: int
+    users_profile_private: int
     users_with_consent: int
     users_active_period: int
     users_new_period: int = 0

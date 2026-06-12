@@ -95,6 +95,13 @@ def _normalize_geo_value(value: str | None) -> str | None:
     return normalized or None
 
 
+def _canonical_region(region: str) -> str:
+    lowered = region.casefold()
+    if lowered in {"московская область", "московская обл.", "московская обл"}:
+        return "Московская"
+    return region
+
+
 def count_unique_geo_from_rows(
     rows: list[tuple[Location, str]],
 ) -> tuple[int, int]:
@@ -106,7 +113,7 @@ def count_unique_geo_from_rows(
         if city is not None:
             cities.add(city)
         if region is not None:
-            regions.add(region)
+            regions.add(_canonical_region(region))
     return len(regions), len(cities)
 
 

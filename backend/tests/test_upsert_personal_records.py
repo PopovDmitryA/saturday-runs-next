@@ -133,6 +133,7 @@ def test_protocol_upsert_recalculates_s95_pr_from_finish_times(
                 event_date=date(2022, 1, 1),
                 external_user_id=participant.external_user_id,
                 participant_name=participant.display_name,
+                position=slow.position,
                 finish_time_sec=1800,
                 finish_time_display="00:30:00",
                 is_pr=False,
@@ -192,3 +193,304 @@ def test_recalculate_s95_single_participant_does_not_reset_others(
 
     assert run_a.is_pr is True
     assert run_b.is_pr is True
+
+
+@pytest.fixture
+def five_verst_platform(db_session: Session) -> Platform:
+    return upsert.get_platform(db_session, "five_verst")
+
+
+@pytest.fixture
+def five_verst_location(db_session: Session, five_verst_platform: Platform) -> Location:
+    from app.platform_adapters.canonical import CanonicalLocation
+
+    location, _ = upsert.upsert_location(
+        db_session,
+        five_verst_platform,
+        CanonicalLocation(external_key="natashinsky", name="Наташинский"),
+    )
+    db_session.flush()
+    return location
+
+
+def _add_five_verst_run(
+    db: Session,
+    *,
+    platform: Platform,
+    location: Location,
+    participant: Participant,
+    event_date: date,
+    finish_time_sec: int | None,
+    achievement_labels: list[str] | None = None,
+    is_first_run: bool = False,
+) -> RunResult:
+    from app.platform_adapters.canonical import CanonicalEventSummary
+
+    summary, _ = upsert.upsert_event_summary(
+        db,
+        platform,
+        location,
+        CanonicalEventSummary(
+            external_event_key=f"natashinsky:{event_date.isoformat()}",
+            event_date=event_date,
+            event_number=None,
+            location_external_key=location.external_key,
+            location_name=location.name,
+            source_url=f"https://5verst.ru/events/natashinsky/{event_date.isoformat()}",
+            summary_hash=f"hash-{event_date.isoformat()}",
+        ),
+    )
+    event = upsert.upsert_event_for_summary(
+        db,
+        platform,
+        location,
+        CanonicalEventSummary(
+            external_event_key=summary.external_event_key,
+            event_date=event_date,
+            event_number=None,
+            location_external_key=location.external_key,
+            location_name=location.name,
+            source_url=summary.source_url or "",
+            summary_hash=summary.summary_hash,
+        ),
+        summary,
+    )
+    run = RunResult(
+        id=uuid4(),
+        event_id=event.id,
+        participant_id=participant.id,
+        finish_time_sec=finish_time_sec,
+        finish_time_display=(
+            f"00:{finish_time_sec // 60:02d}:{finish_time_sec % 60:02d}" if finish_time_sec is not None else None
+        ),
+        is_pr=False,
+        is_first_run=is_first_run,
+        achievement_labels=achievement_labels or [],
+        external_result_key=f"test:{participant.id}:{event_date.isoformat()}",
+    )
+    db.add(run)
+    db.flush()
+    return run
+
+
+def test_recalculate_five_verst_preserves_protocol_personal_record_labels(
+    db_session: Session,
+    five_verst_platform: Platform,
+    five_verst_location: Location,
+) -> None:
+    participant = Participant(
+        id=uuid4(),
+        platform_id=five_verst_platform.id,
+        external_user_id=f"5v-pr-{uuid4().hex[:8]}",
+        display_name="5verst Runner",
+    )
+    db_session.add(participant)
+    db_session.flush()
+
+    first = _add_five_verst_run(
+        db_session,
+        platform=five_verst_platform,
+        location=five_verst_location,
+        participant=participant,
+        event_date=date(2022, 5, 21),
+        finish_time_sec=1256,
+    )
+    faster = _add_five_verst_run(
+        db_session,
+        platform=five_verst_platform,
+        location=five_verst_location,
+        participant=participant,
+        event_date=date(2022, 6, 4),
+        finish_time_sec=1161,
+    )
+    slower_with_label = _add_five_verst_run(
+        db_session,
+        platform=five_verst_platform,
+        location=five_verst_location,
+        participant=participant,
+        event_date=date(2022, 6, 18),
+        finish_time_sec=1183,
+        achievement_labels=["Личный рекорд!", "Первый финиш на Раменское Городской парк"],
+    )
+
+    stats = recalculate_personal_records(db_session, "five_verst", participant_id=participant.id)
+    db_session.flush()
+
+    assert stats["pr_runs"] == 3
+    assert first.is_pr is True
+    assert faster.is_pr is True
+    assert slower_with_label.is_pr is True
+
+
+def test_recalculate_five_verst_marks_first_finisher_run_as_pr(
+    db_session: Session,
+    five_verst_platform: Platform,
+    five_verst_location: Location,
+) -> None:
+    participant = Participant(
+        id=uuid4(),
+        platform_id=five_verst_platform.id,
+        external_user_id=f"5v-first-{uuid4().hex[:8]}",
+        display_name="5verst First Timer",
+    )
+    db_session.add(participant)
+    db_session.flush()
+
+    earlier_without_time = _add_five_verst_run(
+        db_session,
+        platform=five_verst_platform,
+        location=five_verst_location,
+        participant=participant,
+        event_date=date(2022, 5, 7),
+        finish_time_sec=None,
+    )
+    first_finisher = _add_five_verst_run(
+        db_session,
+        platform=five_verst_platform,
+        location=five_verst_location,
+        participant=participant,
+        event_date=date(2022, 6, 11),
+        finish_time_sec=1424,
+        achievement_labels=["Первый финиш на 5 вёрст"],
+        is_first_run=True,
+    )
+    slower_repeat = _add_five_verst_run(
+        db_session,
+        platform=five_verst_platform,
+        location=five_verst_location,
+        participant=participant,
+        event_date=date(2022, 6, 25),
+        finish_time_sec=1500,
+    )
+
+    stats = recalculate_personal_records(db_session, "five_verst", participant_id=participant.id)
+    db_session.flush()
+
+    assert stats["pr_runs"] == 2
+    assert earlier_without_time.is_pr is True
+    assert first_finisher.is_pr is True
+    assert slower_repeat.is_pr is False
+
+
+def test_recalculate_parkrun_marks_first_run_without_time_as_pr(
+    db_session: Session,
+    s95_platform: Platform,
+    s95_location: Location,
+) -> None:
+    participant = Participant(
+        id=uuid4(),
+        platform_id=s95_platform.id,
+        external_user_id=f"s95-first-{uuid4().hex[:8]}",
+        display_name="S95 First Timer",
+    )
+    db_session.add(participant)
+    db_session.flush()
+
+    first = _add_s95_run(
+        db_session,
+        platform=s95_platform,
+        location=s95_location,
+        participant=participant,
+        event_date=date(2022, 1, 1),
+        finish_time_sec=0,
+        is_pr=False,
+    )
+    first.finish_time_sec = None
+    first.finish_time_display = None
+    second = _add_s95_run(
+        db_session,
+        platform=s95_platform,
+        location=s95_location,
+        participant=participant,
+        event_date=date(2022, 2, 1),
+        finish_time_sec=1700,
+        is_pr=False,
+    )
+
+    stats = recalculate_personal_records(db_session, "s95", participant_id=participant.id)
+    db_session.flush()
+
+    assert stats["pr_runs"] == 2
+    assert first.is_pr is True
+    assert second.is_pr is True
+
+
+def test_protocol_upsert_marks_first_run_as_pr_for_new_participant(
+    db_session: Session,
+    five_verst_platform: Platform,
+    five_verst_location: Location,
+) -> None:
+    from app.models import Event
+    from app.platform_adapters.canonical import CanonicalEventSummary, CanonicalRunResult
+
+    external_user_id = f"5v-new-{uuid4().hex[:8]}"
+    participant = Participant(
+        id=uuid4(),
+        platform_id=five_verst_platform.id,
+        external_user_id=external_user_id,
+        display_name="New 5verst Runner",
+    )
+    db_session.add(participant)
+    db_session.flush()
+
+    summary, _ = upsert.upsert_event_summary(
+        db_session,
+        five_verst_platform,
+        five_verst_location,
+        CanonicalEventSummary(
+            external_event_key="natashinsky:2024-06-01",
+            event_date=date(2024, 6, 1),
+            event_number=None,
+            location_external_key=five_verst_location.external_key,
+            location_name=five_verst_location.name,
+            source_url="https://5verst.ru/events/natashinsky/2024-06-01",
+            summary_hash="hash-new-runner",
+        ),
+    )
+    event = upsert.upsert_event_for_summary(
+        db_session,
+        five_verst_platform,
+        five_verst_location,
+        CanonicalEventSummary(
+            external_event_key=summary.external_event_key,
+            event_date=date(2024, 6, 1),
+            event_number=None,
+            location_external_key=five_verst_location.external_key,
+            location_name=five_verst_location.name,
+            source_url=summary.source_url or "",
+            summary_hash=summary.summary_hash,
+        ),
+        summary,
+    )
+    upsert.upsert_run_results(
+        db_session,
+        event,
+        five_verst_platform,
+        [
+            CanonicalRunResult(
+                external_result_key=f"protocol:{external_user_id}:2024-06-01",
+                event_date=date(2024, 6, 1),
+                external_user_id=external_user_id,
+                participant_name=participant.display_name,
+                position=42,
+                finish_time_sec=1500,
+                finish_time_display="00:25:00",
+                is_pr=False,
+                location_external_key=five_verst_location.external_key,
+                location_name=five_verst_location.name,
+            )
+        ],
+        from_profile=False,
+    )
+    db_session.flush()
+
+    run = (
+        db_session.query(RunResult)
+        .join(Event, RunResult.event_id == Event.id)
+        .filter(
+            Event.id == event.id,
+            RunResult.participant_id == participant.id,
+        )
+        .one()
+    )
+    assert run.is_pr is True

@@ -29,3 +29,17 @@ class NotificationSettingsResponse(BaseModel):
 
 class NotificationSettingsUpdateRequest(BaseModel):
     enabled: bool
+
+
+class PrivacySettingsResponse(BaseModel):
+    enabled: bool
+    description: str = (
+        "По умолчанию ваш профиль виден другим участникам: вас можно будет найти в общем поиске, "
+        "а в рейтингах появится ссылка на профиль. Если включить приватный профиль, вы не будете "
+        "отображаться в поиске по участникам и не попадёте в выдачу для других пользователей; "
+        "в рейтингах ссылка на ваш профиль показываться не будет. Отключить приватность можно в любой момент."
+    )
+
+
+class PrivacySettingsUpdateRequest(BaseModel):
+    enabled: bool

@@ -180,9 +180,11 @@ def run_s95_user_sync(
             db.rollback()
             link = db.query(PlatformLink).filter(PlatformLink.id == link.id).one()
             job = db.query(SyncJob).filter(SyncJob.id == job.id).one()
-            errors.append(f"{platform_code}: {exc}")
+            from app.s95.messages import s95_user_facing_error
+
+            errors.append(f"{platform_code}: {s95_user_facing_error(exc)}")
             link.sync_status = PlatformLinkSyncStatus.error
-            link.error_message = str(exc)[:2000]
+            link.error_message = s95_user_facing_error(exc)[:2000]
             db.commit()
 
     recompute_dashboard_cache(db, user_id)

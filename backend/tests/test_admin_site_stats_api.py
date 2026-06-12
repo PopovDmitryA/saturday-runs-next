@@ -116,6 +116,11 @@ def test_admin_stats_for_admin(admin_client: TestClient) -> None:
     payload = response.json()
     assert "overview" in payload
     assert "users_total" in payload["overview"]
+    assert "users_profile_public" in payload["overview"]
+    assert "users_profile_private" in payload["overview"]
+    assert payload["overview"]["users_profile_public"] + payload["overview"]["users_profile_private"] == payload[
+        "overview"
+    ]["users_total"]
     assert "pageviews_period" in payload["overview"]
     assert "users_news_subscribed" not in payload["overview"]
     assert len(payload["users_new_by_day"]) == 30

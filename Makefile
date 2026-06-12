@@ -102,6 +102,17 @@ prod-tunnel:
 prod-tunnel-stop:
 	bash -c 'source scripts/prod_db_env.sh && stop_prod_db_tunnel'
 
+# Local site (http://localhost:8080) with API on prod DB via SSH tunnel — read-only viewing.
+dev-prod-db:
+	bash scripts/dev_prod_db.sh
+
+dev-local-db:
+	bash scripts/dev_local_db.sh
+
+dev-local-db-full:
+	bash scripts/dev_local_db.sh
+	bash -c 'source scripts/prod_db_env.sh && stop_prod_db_tunnel'
+
 # Long-running worker for admin button (keep terminal open)
 parkrun-local-worker:
 	bash scripts/parkrun_local_worker.sh

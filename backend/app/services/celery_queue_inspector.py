@@ -91,6 +91,22 @@ def get_celery_task_state(task_id: str) -> str:
     return AsyncResult(task_id, app=celery_app).state
 
 
+def task_is_worker_reserved(task_id: str) -> bool:
+    """True when Celery dequeued the task but the worker has not started it yet."""
+    try:
+        inspect = celery_app.control.inspect(timeout=0.5)
+        if inspect is None:
+            return False
+        reserved = inspect.reserved() or {}
+        for worker_tasks in reserved.values():
+            for meta in worker_tasks:
+                if meta.get("id") == task_id:
+                    return True
+    except Exception:
+        return False
+    return False
+
+
 def inspect_user_task(
     job_id: object,
     suffix: str,

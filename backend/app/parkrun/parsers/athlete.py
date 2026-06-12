@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 
 from app.parkrun.errors import ParkrunProfileNotFound, ParkrunProfileParseError
 from app.parkrun.fetch.coordinator import fetch_page_html
+from app.parkrun.volunteer_credits import is_total_credits_label
 from app.platform_adapters.canonical import (
     CanonicalParticipant,
     CanonicalRunResult,
@@ -118,19 +119,53 @@ def _parse_profile_meta(soup: BeautifulSoup, athlete_id: str) -> tuple[int | Non
     age_match = AGE_CATEGORY_RE.search(page_text)
     age_category = age_match.group(1) if age_match else None
 
-    volunteer_total = 0
     volunteer_table = _find_table_by_heading(soup, "volunteer summary")
+    volunteer_total = 0
     if volunteer_table is not None:
-        headers = _table_headers(volunteer_table)
-        for row in volunteer_table.find_all("tr"):
-            cells = _row_cells(row)
-            if not cells or cells == headers:
-                continue
-            occasions_raw = _cell_by_header(headers, cells, "occasions")
-            if occasions_raw and occasions_raw.isdigit():
-                volunteer_total += int(occasions_raw)
+        _summary, volunteer_total = _parse_volunteer_summary_table(volunteer_table)
 
     return total_runs, age_category, volunteer_total
+
+
+def _parse_volunteer_summary_table(
+    volunteer_table: BeautifulSoup,
+) -> tuple[list[dict[str, object]], int]:
+    summary: list[dict[str, object]] = []
+    occasions_sum = 0
+    total_credits: int | None = None
+    headers = _table_headers(volunteer_table)
+
+    body = volunteer_table.find("tbody")
+    body_rows = body.find_all("tr") if body is not None else volunteer_table.find_all("tr")
+    for row in body_rows:
+        if row.find_parent("tfoot") is not None:
+            continue
+        cells = _row_cells(row)
+        if not cells or cells == headers:
+            continue
+        if row.find("th") and not row.find("td"):
+            continue
+        role_raw = _cell_by_header(headers, cells, "role")
+        occasions_raw = _cell_by_header(headers, cells, "occasions")
+        role = (role_raw or "").strip()
+        if not role or role.lower() == "role" or is_total_credits_label(role):
+            continue
+        occasions = int(occasions_raw) if occasions_raw and occasions_raw.isdigit() else 0
+        occasions_sum += occasions
+        summary.append({"role": role, "occasions": occasions})
+
+    tfoot = volunteer_table.find("tfoot")
+    if tfoot is not None:
+        for row in tfoot.find_all("tr"):
+            cells = _row_cells(row)
+            if len(cells) < 2:
+                continue
+            if is_total_credits_label(cells[0]):
+                digits = re.search(r"\d+", cells[1])
+                if digits:
+                    total_credits = int(digits.group())
+
+    return summary, total_credits if total_credits is not None else occasions_sum
 
 
 def _parse_volunteer_summary(
@@ -139,27 +174,11 @@ def _parse_volunteer_summary(
     athlete_id: str,
     display_name: str,
 ) -> tuple[list[dict[str, object]], int]:
-    summary: list[dict[str, object]] = []
-    total = 0
     volunteer_table = _find_table_by_heading(soup, "volunteer summary")
     if volunteer_table is None:
-        return summary, total
-
-    headers = _table_headers(volunteer_table)
-    for row in volunteer_table.find_all("tr"):
-        cells = _row_cells(row)
-        if not cells or cells == headers:
-            continue
-        role = _cell_by_header(headers, cells, "role")
-        occasions_raw = _cell_by_header(headers, cells, "occasions")
-        if not role or role.lower() == "role":
-            continue
-        occasions = int(occasions_raw) if occasions_raw and occasions_raw.isdigit() else 0
-        total += occasions
-        summary.append({"role": role, "occasions": occasions})
-
+        return [], 0
     del display_name, athlete_id
-    return summary, total
+    return _parse_volunteer_summary_table(volunteer_table)
 
 
 def parse_all_results_html(

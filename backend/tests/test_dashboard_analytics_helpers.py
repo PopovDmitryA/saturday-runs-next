@@ -1,5 +1,6 @@
 from datetime import date
 
+from app.models import Location
 from app.services.dashboard_service import (
     _avg_vs_field_pct,
     _collect_field_comparison_pairs,
@@ -9,6 +10,7 @@ from app.services.dashboard_service import (
     _resolve_field_avg_sec,
     _saturday_consistency,
 )
+from app.services.user_location_stats import count_unique_geo_from_rows
 
 
 def test_next_run_milestone() -> None:
@@ -49,3 +51,23 @@ def test_saturday_consistency() -> None:
     assert active == 2
     assert total >= 50
     assert pct == round(active / total * 100, 1)
+
+
+def test_count_unique_geo_merges_moscow_region_variants() -> None:
+    loc_mo = Location(
+        platform_id=__import__("uuid").uuid4(),
+        external_key="a",
+        name="A",
+        region="Московская область",
+        city="Мытищи",
+    )
+    loc_m = Location(
+        platform_id=__import__("uuid").uuid4(),
+        external_key="b",
+        name="B",
+        region="Московская",
+        city="Королёв",
+    )
+    regions, cities = count_unique_geo_from_rows([(loc_mo, "five_verst"), (loc_m, "five_verst")])
+    assert regions == 1
+    assert cities == 2

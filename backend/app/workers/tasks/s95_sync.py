@@ -21,8 +21,9 @@ from app.sync.s95_location_rotation import sync_next_s95_location_batch
 from app.sync.s95_locations_registry import S95LocationRegistrySyncOptions, sync_s95_locations_registry
 from app.sync.s95_reconcile import ReconcileProtocolsOptions, reconcile_stale_protocols
 from app.sync.s95_user_sync import run_s95_user_sync
+from app.s95.fetch.priority import s95_user_sync_context
 from app.workers.celery_app import celery_app
-from app.workers.tasks.sync_task_reporting import run_reported_sync
+from app.workers.s95_batch_yield import run_s95_batch_reported_sync
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +42,14 @@ def s95_user_sync_task(
         if job_id:
             existing_job = db.query(SyncJob).filter(SyncJob.id == UUID(job_id)).one_or_none()
 
-        job = run_s95_user_sync(
-            db,
-            UUID(user_id),
-            SyncJobTrigger(trigger),
-            platform_link_id=UUID(platform_link_id) if platform_link_id else None,
-            existing_job=existing_job,
-        )
+        with s95_user_sync_context():
+            job = run_s95_user_sync(
+                db,
+                UUID(user_id),
+                SyncJobTrigger(trigger),
+                platform_link_id=UUID(platform_link_id) if platform_link_id else None,
+                existing_job=existing_job,
+            )
         return {
             "job_id": str(job.id),
             "status": job.status.value,
@@ -70,6 +72,14 @@ def s95_sync_location_task(
     protocol_fetch_limit: int = 3,
 ) -> dict[str, object]:
     name = f"s95 location {location_external_key}"
+
+    location_kwargs = {
+        "location_external_key": location_external_key,
+        "location_name": location_name,
+        "location_source_url": location_source_url,
+        "summaries_limit": summaries_limit,
+        "protocol_fetch_limit": protocol_fetch_limit,
+    }
 
     def _run() -> dict[str, object]:
         db = get_session_factory()()
@@ -94,7 +104,11 @@ def s95_sync_location_task(
         finally:
             db.close()
 
-    return run_reported_sync(name, _run, batch_queue_name="s95")
+    return run_s95_batch_reported_sync(
+        name,
+        _run,
+        reenqueue=lambda: s95_sync_location_task.apply_async(kwargs=location_kwargs, queue="s95"),
+    )
 
 
 @celery_app.task(name="s95_sync.enqueue_global_pipeline", queue="s95")
@@ -148,13 +162,13 @@ def s95_sync_location_rotation_task(*, force: bool = False) -> dict[str, object]
         finally:
             db.close()
 
-    return run_reported_sync(
+    return run_s95_batch_reported_sync(
         name,
         _run,
         details=details,
         hour_slot_key="s95:rotation",
         force=force,
-        batch_queue_name="s95",
+        reenqueue=lambda: s95_sync_location_rotation_task.apply_async(kwargs={"force": force}, queue="s95"),
     )
 
 
@@ -174,13 +188,16 @@ def s95_sync_locations_registry_task(limit: int | None = None, *, force: bool = 
         finally:
             db.close()
 
-    return run_reported_sync(
+    return run_s95_batch_reported_sync(
         name,
         _run,
         details=details,
         hour_slot_key="s95:registry",
         force=force,
-        batch_queue_name="s95",
+        reenqueue=lambda: s95_sync_locations_registry_task.apply_async(
+            kwargs={"limit": limit, "force": force},
+            queue="s95",
+        ),
     )
 
 
@@ -226,13 +243,20 @@ def s95_sync_latest_task(
         finally:
             db.close()
 
-    return run_reported_sync(
+    return run_s95_batch_reported_sync(
         name,
         _run,
         details=details,
         hour_slot_key="s95:latest",
         force=force,
-        batch_queue_name="s95",
+        reenqueue=lambda: s95_sync_latest_task.apply_async(
+            kwargs={
+                "protocol_fetch_limit": protocol_fetch_limit,
+                "update_limit": update_limit,
+                "force": force,
+            },
+            queue="s95",
+        ),
     )
 
 
@@ -279,13 +303,21 @@ def s95_reconcile_stale_protocols_task(
         finally:
             db.close()
 
-    return run_reported_sync(
+    return run_s95_batch_reported_sync(
         name,
         _run,
         details=details,
         hour_slot_key="s95:reconcile",
         force=force,
-        batch_queue_name="s95",
+        reenqueue=lambda: s95_reconcile_stale_protocols_task.apply_async(
+            kwargs={
+                "limit": limit,
+                "min_check_interval_days": min_check_interval_days,
+                "location_slug": location_slug,
+                "force": force,
+            },
+            queue="s95",
+        ),
     )
 
 
@@ -316,13 +348,16 @@ def s95_sync_athletes_registry_task(limit: int | None = None, *, force: bool = F
         finally:
             db.close()
 
-    return run_reported_sync(
+    return run_s95_batch_reported_sync(
         name,
         _run,
         details=details,
         hour_slot_key="s95:athletes",
         force=force,
-        batch_queue_name="s95",
+        reenqueue=lambda: s95_sync_athletes_registry_task.apply_async(
+            kwargs={"limit": limit, "force": force},
+            queue="s95",
+        ),
     )
 
 

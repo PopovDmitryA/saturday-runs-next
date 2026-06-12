@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from unittest.mock import patch
 from uuid import uuid4
 
 import fakeredis
@@ -143,6 +144,17 @@ def test_admin_users_search_and_preview(client: TestClient, db_session: Session)
     role_stats = client.get(f"/api/admin/users/{item['id']}/preview/volunteering/role-stats")
     assert role_stats.status_code == 200
     assert isinstance(role_stats.json(), list)
+
+    with patch("app.services.sync_enqueue_service.enqueue_user_sync") as enqueue_mock:
+        sync_all = client.post(f"/api/admin/users/{item['id']}/sync")
+        assert sync_all.status_code == 202
+        assert sync_all.json()["status"] == "queued"
+        enqueue_mock.assert_called()
+
+    with patch("app.services.sync_enqueue_service.enqueue_user_sync") as enqueue_mock:
+        sync_platform = client.post(f"/api/admin/users/{item['id']}/sync/five_verst")
+        assert sync_platform.status_code == 202
+        enqueue_mock.assert_called_once()
 
     visited_map = client.get(f"/api/admin/users/{item['id']}/preview/locations/visited/map")
     assert visited_map.status_code == 200

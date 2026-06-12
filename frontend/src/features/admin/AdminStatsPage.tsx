@@ -292,6 +292,16 @@ function AdminStatsContent() {
             <StatCard label="Новых привязок" value={overview.links_new_period} />
             <StatCard label="Учётных записей" value={overview.users_total} />
             <StatCard
+              label="Публичных профилей"
+              value={overview.users_profile_public}
+              hint="Видны в поиске и рейтингах"
+            />
+            <StatCard
+              label="Приватных профилей"
+              value={overview.users_profile_private}
+              hint="Скрыты из поиска и рейтингов"
+            />
+            <StatCard
               label="Активных за период"
               value={overview.users_active_period}
               hint="Заходили на сайт (last_login_at)"

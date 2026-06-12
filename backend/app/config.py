@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     s95_playwright_page_wait_ms: int = 5000
     s95_playwright_athlete_wait_ms: int = 12000
     s95_playwright_navigation_timeout_ms: int = 60000
-    s95_ban_cooldown_seconds: int = 600
+    s95_ban_cooldown_seconds: int = 3600
     s95_parkrun_barcode_max_length: int = 8
     parkrun_participant_discovery_enabled: bool = True
     parkrun_participant_discovery_min_refetch_days: int = 7
