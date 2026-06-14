@@ -449,6 +449,25 @@ def reset_failed_parkrun_pending(db: Session) -> int:
     return len(rows)
 
 
+def reset_failed_pending(db: Session, platform_code: str) -> int:
+    """Re-open failed rows for a platform so the daemon retries them."""
+    rows = (
+        db.query(ProfileFetchPending)
+        .filter(
+            ProfileFetchPending.platform_code == platform_code,
+            ProfileFetchPending.status == ProfileFetchPendingStatus.failed,
+        )
+        .all()
+    )
+    for row in rows:
+        row.status = ProfileFetchPendingStatus.pending
+        row.attempts = 0
+        row.last_error = None
+    if rows:
+        db.commit()
+    return len(rows)
+
+
 def list_pending_rows(
     db: Session,
     *,

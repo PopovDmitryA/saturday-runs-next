@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -118,7 +119,7 @@ def run_parkrun_queue_daemon(
     db: Session,
     session: ParkrunDaemonSession,
     items: list[ParkrunWorkItem],
-) -> dict[str, int | list[str]]:
+) -> dict[str, object]:
     summary: dict[str, int] = {}
     details: list[str] = []
     total = len(items)
@@ -151,6 +152,19 @@ def run_parkrun_queue_daemon(
     return {"summary": summary, "details": details, "total": total}
 
 
+def _merge_results(*results: Mapping[str, object]) -> dict[str, object]:
+    summary: dict[str, int] = {}
+    details: list[str] = []
+    total = 0
+    for res in results:
+        res_summary = cast("dict[str, int]", res.get("summary") or {})
+        for key, value in res_summary.items():
+            summary[key] = summary.get(key, 0) + value
+        details.extend(cast("list[str]", res.get("details") or []))
+        total += cast("int", res.get("total") or 0)
+    return {"summary": summary, "details": details, "total": total}
+
+
 def run_daemon(
     db: Session,
     *,
@@ -159,10 +173,19 @@ def run_daemon(
     launch_chrome: bool = True,
     limit_pending: int = 50,
     include_sync: bool = True,
-) -> dict[str, int | list[str]]:
+) -> dict[str, object]:
     from app.config import get_settings
+    from app.services.s95_queue_daemon import run_s95_pending_queue
 
     prepare_parkrun_cdp_fetch()
+
+    # s95 uses its own fetch (no parkrun browser needed) — drain it first.
+    s95_result = run_s95_pending_queue(db, limit_pending=limit_pending)
+    if s95_result["total"]:
+        print(f"s95 очередь: {s95_result['total']} задач(и), {s95_result['summary']}", flush=True)
+        for line in cast("list[str]", s95_result["details"]):
+            print("  ", line, flush=True)
+
     items = build_parkrun_work_queue(
         db,
         limit_pending=limit_pending,
@@ -170,7 +193,7 @@ def run_daemon(
     )
     if not items:
         print("Очередь parkrun пуста (pending и sync).", flush=True)
-        return {"summary": {}, "details": [], "total": 0}
+        return _merge_results(s95_result, {"summary": {}, "details": [], "total": 0})
 
     settings = get_settings()
     cdp = use_cdp if use_cdp is not None else bool(
@@ -185,6 +208,7 @@ def run_daemon(
     ) as browser_session:
         token = activate_daemon_session(browser_session)
         try:
-            return run_parkrun_queue_daemon(db, browser_session, items)
+            parkrun_result = run_parkrun_queue_daemon(db, browser_session, items)
         finally:
             deactivate_daemon_session(token)
+    return _merge_results(s95_result, parkrun_result)
