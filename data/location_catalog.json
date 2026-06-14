@@ -889,7 +889,7 @@
   },
   {
     "parkrun_location": "Nizhny Novgorod Meshchersky",
-    "canonical_name": "Nizhny Novgorod Meshchersky",
+    "canonical_name": "Мещерское озеро",
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "nizhnynovgorodmeshchersky",
     "is_closed": false,
@@ -1789,7 +1789,7 @@
   },
   {
     "parkrun_location": "Yarmarochnaya Ploshchad",
-    "canonical_name": "Yarmarochnaya Ploshchad",
+    "canonical_name": "Иннополис",
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "yarmarochnayaploshchad",
     "is_closed": false,
