@@ -111,6 +111,27 @@ function ExternalLinkIcon() {
 export function AboutPageContent() {
   return (
     <div className="about-page">
+      <section className="about-section about-section-legacy-top">
+        <a
+          className="about-link-card about-link-card-legacy"
+          href={LEGACY_SITE_HREF}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <span className="about-link-icon about-link-icon-legacy">
+            <HistorySiteIcon />
+          </span>
+          <span className="about-link-card-body">
+            <span className="about-link-card-title">Прежняя версия сайта</span>
+            <span className="about-link-card-label about-link-card-label-legacy">{LEGACY_SITE_LABEL}</span>
+            <span className="about-link-card-desc">
+              Grafana, рейтинги и дашборды — прежняя версия на grafana.run5k.run.
+            </span>
+          </span>
+          <ExternalLinkIcon />
+        </a>
+      </section>
+
       <section className="about-hero card">
         <p className="about-eyebrow">{SITE_NAME}</p>
         <h2 className="about-hero-title">Единая статистика субботних пробежек</h2>
@@ -206,24 +227,6 @@ export function AboutPageContent() {
       <section className="about-section">
         <h3 className="about-section-title">Контакты</h3>
         <div className="about-link-grid">
-          <a
-            className="about-link-card about-link-card-legacy"
-            href={LEGACY_SITE_HREF}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <span className="about-link-icon about-link-icon-legacy">
-              <HistorySiteIcon />
-            </span>
-            <span className="about-link-card-body">
-              <span className="about-link-card-title">Прежняя версия сайта</span>
-              <span className="about-link-card-label about-link-card-label-legacy">{LEGACY_SITE_LABEL}</span>
-              <span className="about-link-card-desc">
-                Grafana, рейтинги и дашборды — прежняя версия на grafana.run5k.run.
-              </span>
-            </span>
-            <ExternalLinkIcon />
-          </a>
           {TELEGRAM_CONTACTS.map((item) => (
             <a
               key={item.href}
