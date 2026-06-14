@@ -49,9 +49,29 @@ rsync_to frontend/src/ "${REMOTE}/frontend/src/"
 REMOTE_QUOTED=$(printf '%q' "$REMOTE")
 COMPOSE_QUOTED=$(printf '%q' "$COMPOSE")
 
+# Keep prod git in sync with what we deploy. rsync only writes files to disk and
+# never advances prod's git HEAD, so prod git silently drifts (stale HEAD + a pile
+# of "modified"/untracked noise). To stop that, after the deploy we reset prod git
+# to the exact commit we shipped — but ONLY when this deploy came from a clean tree
+# that is already on origin/main. Otherwise (dirty/unpushed = hotfix testing) we
+# skip and leave prod git alone, so the reset can never clobber un-pushed changes.
+git fetch origin --quiet 2>/dev/null || true
+LOCAL_SHA="$(git rev-parse HEAD)"
+GIT_ALIGN=0
+# Align only if HEAD is on origin/main AND the rsynced paths have no *tracked*
+# modifications vs HEAD (untracked local files like backend/scripts/* are not
+# deployed and must not block alignment — hence --quiet on the exact paths).
+if git branch -r --contains "$LOCAL_SHA" 2>/dev/null | grep -q 'origin/main' \
+  && git diff --quiet HEAD -- backend/app backend/vk_bot deploy frontend/src \
+       docker-compose.yml docker-compose.prod.yml; then
+  GIT_ALIGN=1
+else
+  echo "WARN: HEAD not on origin/main or deployed paths have tracked changes — prod git left as-is (no align)"
+fi
+
 echo "=== remote build & restart ==="
 sshpass -e ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
-  "REMOTE=${REMOTE_QUOTED} COMPOSE=${COMPOSE_QUOTED} bash -s" <<'REMOTE_SCRIPT'
+  "REMOTE=${REMOTE_QUOTED} COMPOSE=${COMPOSE_QUOTED} LOCAL_SHA=${LOCAL_SHA} GIT_ALIGN=${GIT_ALIGN} bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 cd "$REMOTE"
 
@@ -88,6 +108,16 @@ fi
 echo "--- queue lengths after ---"
 eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst </dev/null || true
 eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst_user </dev/null || true
+
+echo "--- git align (keep prod git == deployed commit) ---"
+if [ "${GIT_ALIGN:-0}" = "1" ]; then
+  git fetch origin --quiet \
+    && git reset --hard "${LOCAL_SHA}" \
+    && echo "prod git aligned to ${LOCAL_SHA}" \
+    || echo "WARN: git align failed — prod git left as-is"
+else
+  echo "skipped git align (deploy not from a clean origin/main tree); prod git unchanged"
+fi
 
 echo "--- smoke ---"
 curl -sf http://127.0.0.1:8080/health | head -c 200 || true
