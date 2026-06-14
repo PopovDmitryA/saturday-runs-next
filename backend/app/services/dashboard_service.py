@@ -640,6 +640,21 @@ def _compute_dashboard_analytics(
     }
 
 
+def invalidate_dashboard_cache_for_platform(db: Session, platform_code: str) -> int:
+    """Delete dashboard_cache for all users linked to the given platform.
+
+    Called after bulk sync that upserted new run results so the cache is
+    lazily recomputed on the next profile page load.
+    """
+    platform = db.query(Platform).filter(Platform.code == platform_code).one_or_none()
+    if platform is None:
+        return 0
+    user_ids = db.query(PlatformLink.user_id).filter(PlatformLink.platform_id == platform.id).subquery()
+    deleted = db.query(DashboardCache).filter(DashboardCache.user_id.in_(user_ids)).delete(synchronize_session=False)
+    db.flush()
+    return deleted
+
+
 def recompute_dashboard_cache(db: Session, user_id: UUID) -> DashboardCache:
     stats = compute_dashboard_stats(db, user_id)
     row = db.query(DashboardCache).filter(DashboardCache.user_id == user_id).one_or_none()

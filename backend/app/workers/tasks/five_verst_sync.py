@@ -5,6 +5,7 @@ from dataclasses import asdict
 from typing import Any
 
 from app.db.session import get_session_factory
+from app.services.dashboard_service import invalidate_dashboard_cache_for_platform
 from app.services.sync_run_params import (
     five_verst_latest_details,
     five_verst_location_details,
@@ -65,6 +66,9 @@ def sync_location_task(
                     fetch_all_protocols_on_change=fetch_all_protocols_on_change,
                 ),
             )
+            if result.run_results_upserted > 0:
+                invalidate_dashboard_cache_for_platform(db, "five_verst")
+                db.commit()
             return {
                 "location_slug": result.location_slug,
                 "summaries_total": result.summaries_total,
@@ -179,6 +183,9 @@ def sync_latest_results_task(
                     fetch_all_protocols_on_change=settings.five_verst_fetch_all_protocols_on_change,
                 ),
             )
+            if result.run_results_upserted > 0:
+                invalidate_dashboard_cache_for_platform(db, "five_verst")
+                db.commit()
             return {
                 "summaries_total": result.summaries_total,
                 "needs_update": result.needs_update,
@@ -221,6 +228,9 @@ def sync_location_rotation_task(*, force: bool = False) -> dict[str, object]:
         db = get_session_factory()()
         try:
             result = sync_next_location_batch(db)
+            if result.sync is not None and result.sync.run_results_upserted > 0:
+                invalidate_dashboard_cache_for_platform(db, "five_verst")
+                db.commit()
             payload: dict[str, Any] = {
                 "location_slug": result.location_slug,
                 "rotation_index": result.rotation_index,
