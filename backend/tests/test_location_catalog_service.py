@@ -42,6 +42,52 @@ def test_runpark_keeps_source_name() -> None:
     )
 
 
+def test_catalog_lookup_matches_hyphenated_parkrun_slug(db_session) -> None:
+    from uuid import uuid4
+
+    from app.models import Location, LocationCatalog, LocationCatalogLink, Platform
+
+    try:
+        parkrun = db_session.query(Platform).filter(Platform.code == "parkrun").one_or_none()
+    except Exception:
+        pytest.skip("Database not available")
+
+    if parkrun is None:
+        parkrun = Platform(code="parkrun", name="parkrun")
+        db_session.add(parkrun)
+        db_session.flush()
+
+    suffix = uuid4().hex[:8]
+    hyphenated = Location(
+        platform_id=parkrun.id,
+        external_key=f"readovsky-park-{suffix}",
+        name="Readovsky Park",
+    )
+    db_session.add(hyphenated)
+    db_session.flush()
+
+    catalog = LocationCatalog(
+        canonical_name="Реадовский парк",
+        legacy_parkrun_slug=f"readovskypark{suffix}",
+        active_platform="five_verst",
+        is_closed=False,
+    )
+    db_session.add(catalog)
+    db_session.flush()
+    db_session.add(
+        LocationCatalogLink(
+            catalog_id=catalog.id,
+            platform_id=parkrun.id,
+            external_key=f"readovskypark{suffix}",
+        )
+    )
+    db_session.commit()
+
+    index = LocationCatalogIndex(db_session)
+    assert index.display_name(hyphenated, "parkrun") == "Реадовский парк"
+    assert index.canonical_identity_key(hyphenated, "parkrun") == f"catalog:{catalog.id}"
+
+
 def test_canonical_identity_key_uses_catalog_id(db_session) -> None:
     from uuid import uuid4
 

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.activity_date import has_real_activity_date
 from app.location_page_url import location_page_url
 from app.models import Event, Location, Platform, PlatformLink, RunResult, VolunteerResult
-from app.services.location_catalog_service import LocationCatalogIndex
+from app.services.location_catalog_service import LocationCatalogIndex, should_use_catalog_display
 from app.services.user_location_stats import count_unique_locations_from_rows
 
 PLATFORM_ORDER = ("five_verst", "s95", "parkrun", "runpark")
@@ -57,6 +57,9 @@ def _finalize_bucket(
     catalog_index: LocationCatalogIndex,
 ) -> None:
     identity_key = str(bucket["catalog_identity_key"])
+    catalog = catalog_index.get_for_identity_key(identity_key)
+    if catalog is not None and catalog.canonical_name:
+        bucket["name"] = catalog.canonical_name
     if bucket["latitude"] is None or bucket["longitude"] is None:
         latitude, longitude = catalog_index.coordinates_for_identity_key(identity_key)
         if latitude is not None and longitude is not None:
@@ -125,7 +128,7 @@ def build_user_unique_location_details(
 
     def _ensure_platform(bucket: dict[str, object], platform_code: str, location: Location) -> dict[str, object]:
         platforms: dict[str, dict[str, object]] = bucket["platforms"]  # type: ignore[assignment]
-        location_name = location.name
+        location_name = catalog_index.display_name(location, platform_code)
         platform_bucket = platforms.get(platform_code)
         page_url = location_page_url(platform_code, location.external_key, location.source_url)
         if platform_bucket is None:
@@ -139,7 +142,10 @@ def build_user_unique_location_details(
             }
             platforms[platform_code] = platform_bucket
         else:
-            if len(location_name) > len(str(platform_bucket["location_name"])):
+            catalog = catalog_index.get_for_location(location, platform_code)
+            if catalog is not None and should_use_catalog_display(catalog, platform_code):
+                platform_bucket["location_name"] = catalog.canonical_name
+            elif len(location_name) > len(str(platform_bucket["location_name"])):
                 platform_bucket["location_name"] = location_name
             if page_url and not platform_bucket.get("location_url"):
                 platform_bucket["location_url"] = page_url
@@ -156,7 +162,10 @@ def build_user_unique_location_details(
         identity_key = catalog_index.canonical_identity_key(location, platform_code)
         bucket = _ensure_bucket(identity_key)
         display_name = catalog_index.display_name(location, platform_code)
-        if len(display_name) >= len(str(bucket["name"])):
+        catalog = catalog_index.get_for_location(location, platform_code)
+        if catalog is not None and should_use_catalog_display(catalog, platform_code):
+            bucket["name"] = catalog.canonical_name
+        elif len(display_name) >= len(str(bucket["name"])):
             bucket["name"] = display_name
         if location.city and not bucket["city"]:
             bucket["city"] = location.city
