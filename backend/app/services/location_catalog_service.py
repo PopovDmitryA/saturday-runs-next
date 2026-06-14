@@ -158,3 +158,37 @@ class LocationCatalogIndex:
         if catalog is not None:
             return f"catalog:{catalog.id}"
         return f"location:{location.id}"
+
+
+def backfill_city_from_catalog(db: Session, location: Location) -> bool:
+    """If location.city is None, look up the catalog for a linked location that has a city.
+
+    Useful for parkrun locations whose source pages don't expose a city field.
+    Returns True if the city was updated.
+    """
+    if location.city is not None:
+        return False
+    link = (
+        db.query(LocationCatalogLink)
+        .filter(LocationCatalogLink.location_id == location.id)
+        .one_or_none()
+    )
+    if link is None:
+        return False
+    city: str | None = (
+        db.query(Location.city)
+        .join(LocationCatalogLink, LocationCatalogLink.location_id == Location.id)
+        .filter(
+            LocationCatalogLink.catalog_id == link.catalog_id,
+            LocationCatalogLink.location_id != location.id,
+            Location.city.isnot(None),
+        )
+        .order_by(Location.city)
+        .limit(1)
+        .scalar()
+    )
+    if city is None:
+        return False
+    location.city = city
+    db.flush()
+    return True

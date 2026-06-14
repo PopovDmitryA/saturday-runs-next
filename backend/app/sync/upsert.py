@@ -28,6 +28,7 @@ from app.platform_adapters.canonical import (
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
+from app.services.location_catalog_service import backfill_city_from_catalog
 
 PARSER_VERSION = "0.3.2"
 logger = logging.getLogger(__name__)
@@ -897,6 +898,8 @@ def import_profile_run_results(
                 source_url=location_source_url,
             ),
         )
+        if platform.code == "parkrun" and location.city is None:
+            backfill_city_from_catalog(db, location)
         external_event_key = _profile_external_event_key(item.event_date, slug)
         if platform.code == "s95":
             source_url = (
@@ -1132,6 +1135,8 @@ def import_profile_volunteer_results(
                 source_url=default_source,
             ),
         )
+        if platform.code == "parkrun" and location.city is None:
+            backfill_city_from_catalog(db, location)
         external_event_key = _profile_external_event_key(item.event_date, slug)
         source_url = item.source_url or (
             f"https://5verst.ru/{slug}/results/{item.event_date.strftime('%d.%m.%Y')}/"
