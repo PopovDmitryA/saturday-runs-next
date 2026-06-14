@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -7,6 +8,11 @@ from sqlalchemy.orm import Session
 from app.models import Location, LocationCatalog, LocationCatalogLink, Platform
 
 DISPLAY_OVERRIDE_PLATFORMS = frozenset({"five_verst", "s95"})
+
+
+def normalize_location_slug(value: str) -> str:
+    """Collapse slug variants: readovsky-park, readovskypark → readovskypark."""
+    return re.sub(r"[^a-z0-9]", "", value.lower())
 
 
 def normalize_platform_code(value: str | None) -> str | None:
@@ -55,6 +61,14 @@ class LocationCatalogIndex:
         self._catalog_paused: dict[UUID, bool] = {}
         self._load(db)
 
+    def _index_platform_slug(self, platform_code: str, slug: str, catalog: LocationCatalog) -> None:
+        if not slug:
+            return
+        self._by_platform_slug[(platform_code, slug)] = catalog
+        normalized = normalize_location_slug(slug)
+        if normalized:
+            self._by_platform_slug[(platform_code, normalized)] = catalog
+
     def _load(self, db: Session) -> None:
         rows = (
             db.query(LocationCatalogLink, LocationCatalog, Platform, Location)
@@ -65,9 +79,13 @@ class LocationCatalogIndex:
         )
         for link, catalog, platform, location in rows:
             self._catalogs[catalog.id] = catalog
-            self._by_platform_slug[(platform.code, link.external_key)] = catalog
+            self._index_platform_slug(platform.code, link.external_key, catalog)
+            if catalog.legacy_parkrun_slug:
+                self._index_platform_slug(platform.code, catalog.legacy_parkrun_slug, catalog)
             if link.location_id is not None:
                 self._by_location_id[link.location_id] = catalog
+            if location is not None:
+                self._index_platform_slug(platform.code, location.external_key, catalog)
             if location is not None and location.latitude is not None and location.longitude is not None:
                 self._catalog_coords.setdefault(catalog.id, (location.latitude, location.longitude))
             if location is not None and getattr(location, "is_paused", False):
@@ -76,7 +94,13 @@ class LocationCatalogIndex:
     def get_for_location(self, location: Location, platform_code: str) -> LocationCatalog | None:
         if location.id in self._by_location_id:
             return self._by_location_id[location.id]
-        return self._by_platform_slug.get((platform_code, location.external_key))
+        catalog = self._by_platform_slug.get((platform_code, location.external_key))
+        if catalog is not None:
+            return catalog
+        normalized = normalize_location_slug(location.external_key)
+        if normalized:
+            return self._by_platform_slug.get((platform_code, normalized))
+        return None
 
     def get_for_identity_key(self, identity_key: str) -> LocationCatalog | None:
         if not identity_key.startswith("catalog:"):
