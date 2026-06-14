@@ -2658,31 +2658,94 @@ body {
   color: #fff;
 }
 
-.map-platform-filters {
+.map-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.65rem 1rem;
+  gap: 0.35rem 0.6rem;
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.75rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.map-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.map-toolbar-sep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 1.6rem;
+  background: #cbd5e1;
+  margin: 0 0.25rem;
+}
+
+.map-platform-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
   margin-bottom: 0.75rem;
 }
 
-.map-platform-filters-label {
-  font-size: 0.92rem;
-  color: #475569;
+.map-stats-line {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
 }
 
-.map-platform-filter {
+.location-map-legend {
+  position: absolute;
+  left: 0.6rem;
+  bottom: 0.6rem;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem 0.65rem;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.15);
+  font-size: 0.82rem;
+  color: #475569;
+  pointer-events: none;
+}
+
+.location-map-legend .map-legend-item {
+  gap: 0.4rem;
+}
+
+.location-map-legend .map-legend-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+.map-platform-filter-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  padding: 0.4rem 0.8rem;
+  font: inherit;
   font-size: 0.92rem;
-  color: #334155;
   cursor: pointer;
   user-select: none;
 }
 
-.map-platform-filter input {
-  margin: 0;
+.map-platform-filter-btn.active {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #1e293b;
+}
+
+.map-platform-filter-btn:not(.active) {
+  opacity: 0.55;
 }
 
 .map-stats-card {
@@ -2809,6 +2872,20 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+}
+
+.map-legend-note {
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.map-legend-note .map-legend-dot {
+  display: inline-block;
+  vertical-align: middle;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-right: 0.2rem;
+  box-shadow: none;
 }
 
 .map-legend-dot {
