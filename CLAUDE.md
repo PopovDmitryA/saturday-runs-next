@@ -152,20 +152,15 @@ sudo nginx -t && sudo systemctl reload nginx
 
 **Важно:** live `/etc/nginx/sites-available/run5k.run` может отличаться от файла в репо — перед `cp` делать `diff`.
 
-## git pull на prod
+## git на prod
 
-Prod на `474518e` — отстаёт от `origin/main` на 18 коммитов (на 14.06.2026). ~70 файлов изменены rsync без commit. Перед `git pull` на сервере:
+**Состояние (14.06.2026):** prod git выровнен — HEAD == `origin/main` (`ca6e78a`), 0/0. Прошлый дрейф (HEAD отставал на 26 коммитов, ~148 «изменённых» rsync-файлов) устранён: `git reset --hard origin/main` + `git clean` мёртвых дублей в `backend/app` и `frontend/src`. Точка отката — ветка `prod-pre-realign-backup` (на старом `474518e`).
 
-```bash
-git status -sb
-git diff --stat HEAD origin/main
-# stash rsync-путей если нужно сохранить
-git stash push -m 'pre-pull prod drift' -- backend/app backend/vk_bot deploy docker-compose.yml docker-compose.prod.yml frontend/src
-```
+**Чтобы дрейф не вернулся:** `scripts/deploy_prod.sh` после деплоя сам выравнивает prod git к задеплоенному коммиту (`git reset --hard $LOCAL_SHA`) — но только если деплой с чистого дерева, уже запушенного в `origin/main`. При грязном/незапушенном дереве шаг пропускается с WARN (чтобы не затереть непушенный хотфикс). Так что при нормальном workflow (коммит → push → `deploy_prod.sh`) git на проде остаётся правдой и `git diff` снова осмысленный.
 
-Основной workflow деплоя — `bash scripts/deploy_prod.sh` с Mac (rsync + remote build). `git pull` на prod только осознанно.
+Основной workflow деплоя — `bash scripts/deploy_prod.sh` с Mac (rsync + remote build + авто-align git).
 
-Junk на сервере (не коммитить, не трогать): `AboutPage.tsx` в корне, `backend/dashboard_service.py` (дубль), `data/migration_*.log`.
+Junk на сервере (untracked, осознанно НЕ трогаем при clean — операционные файлы и логи): `nginx/*.conf`, `grafana/`, `deploy/nginx/*.sh`, `data/migration_*.log`, корневые `deploy_*.sh`, `backend/scripts/*` (диагностика, в т.ч. `check_failed_sync_jobs.py` из этого файла). Чистили только дубли исходников в `backend/app` и `frontend/src`.
 
 ## Parkrun cookies
 
