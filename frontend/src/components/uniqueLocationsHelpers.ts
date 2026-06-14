@@ -8,6 +8,7 @@ export type UniqueLocationRow = {
   location: UniqueLocationDetail;
   activePlatforms: MapLocationPlatformVisit[];
   dates: string[];
+  visitCount: number;
 };
 
 export type SortKey = "first_visit" | "last_visit" | "name" | "city" | "visit_count";
@@ -90,17 +91,41 @@ export function locationMatchesPlatformFilter(
   );
 }
 
-export function datesForLocation(
-  location: UniqueLocationDetail,
+export function datesForPlatforms(
+  platforms: MapLocationPlatformVisit[],
   activityFilter: ActivityFilter,
 ): string[] {
   const dates = new Set<string>();
-  for (const platform of activePlatformsForLocation(location, activityFilter)) {
+  for (const platform of platforms) {
     for (const value of datesForActivity(platform, activityFilter)) {
       dates.add(value);
     }
   }
   return [...dates].sort((left, right) => right.localeCompare(left));
+}
+
+export function datesForLocation(
+  location: UniqueLocationDetail,
+  activityFilter: ActivityFilter,
+): string[] {
+  return datesForPlatforms(activePlatformsForLocation(location, activityFilter), activityFilter);
+}
+
+export function visitCountForPlatforms(
+  platforms: MapLocationPlatformVisit[],
+  activityFilter: ActivityFilter,
+): number {
+  let count = 0;
+  for (const platform of platforms) {
+    if (activityFilter === "runs") {
+      count += platform.run_dates.length;
+    } else if (activityFilter === "volunteering") {
+      count += platform.volunteer_dates.length;
+    } else {
+      count += platform.run_dates.length + platform.volunteer_dates.length;
+    }
+  }
+  return count;
 }
 
 export function volunteerRolesTooltipLines(location: UniqueLocationDetail): string[] | null {
@@ -152,11 +177,15 @@ export function buildUniqueLocationRows(
     if (!locationMatchesPlatformFilter(location, activityFilter, platformFilter)) {
       continue;
     }
-    const activePlatforms = activePlatformsForLocation(location, activityFilter);
+    const allActivePlatforms = activePlatformsForLocation(location, activityFilter);
+    const activePlatforms =
+      platformFilter === "all"
+        ? allActivePlatforms
+        : allActivePlatforms.filter((platform) => platform.platform_code === platformFilter);
     if (activePlatforms.length === 0) {
       continue;
     }
-    const dates = datesForLocation(location, activityFilter);
+    const dates = datesForPlatforms(activePlatforms, activityFilter);
     if (firstVisitSince) {
       const first = firstDate(dates);
       if (first === null || first < firstVisitSince) {
@@ -167,30 +196,17 @@ export function buildUniqueLocationRows(
       location,
       activePlatforms,
       dates,
+      visitCount: visitCountForPlatforms(activePlatforms, activityFilter),
     });
   }
 
   return rows;
 }
 
-export function visitCountForLocation(
-  location: UniqueLocationDetail,
-  activityFilter: ActivityFilter,
-): number {
-  if (activityFilter === "runs") {
-    return location.run_count;
-  }
-  if (activityFilter === "volunteering") {
-    return location.volunteer_count;
-  }
-  return location.run_count + location.volunteer_count;
-}
-
 export function sortUniqueLocationRows(
   rows: UniqueLocationRow[],
   sortKey: SortKey,
   sortAsc: boolean,
-  activityFilter: ActivityFilter,
 ): UniqueLocationRow[] {
   const sorted = [...rows];
   sorted.sort((left, right) => {
@@ -206,9 +222,7 @@ export function sortUniqueLocationRows(
         break;
       }
       case "visit_count": {
-        result =
-          visitCountForLocation(left.location, activityFilter) -
-          visitCountForLocation(right.location, activityFilter);
+        result = left.visitCount - right.visitCount;
         break;
       }
       case "city": {

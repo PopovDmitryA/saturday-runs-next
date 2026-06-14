@@ -24,7 +24,6 @@ import {
   sortUniqueLocationRows,
   toggleColumnSort,
   uniqueLocationCountForActivity,
-  visitCountForLocation,
   type ActivityFilter,
   type PlatformFilter,
   type SortKey,
@@ -112,7 +111,7 @@ function VisitCountTooltip({ lines, children }: { lines: string[]; children: Rea
 }
 
 function VisitCountCell({ row, activityFilter }: { row: UniqueLocationRow; activityFilter: ActivityFilter }) {
-  const count = visitCountForLocation(row.location, activityFilter);
+  const count = row.visitCount;
   if (count === 0) {
     return <>—</>;
   }
@@ -166,7 +165,7 @@ function ModalContent({
       platformFilter,
       firstVisitSince,
     );
-    return sortUniqueLocationRows(built, sortKey, sortAsc, activityFilter);
+    return sortUniqueLocationRows(built, sortKey, sortAsc);
   }, [activityFilter, data.locations, firstVisitSince, platformFilter, sortAsc, sortKey]);
 
   const filteredLocationCount = useMemo(() => {
