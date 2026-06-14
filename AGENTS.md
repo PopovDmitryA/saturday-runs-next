@@ -3,22 +3,26 @@
 Документ для AI-агентов и разработчиков: архитектура, prod, синхронизация, типичные задачи.  
 Обновлено: **июнь 2026**.
 
+**Секреты и пароли:** локальный файл [`PROJECT_HANDOFF.local.md`](PROJECT_HANDOFF.local.md) (в `.gitignore`, не коммитить). Там SSH, prod PG, OAuth, нюансы деплоя.
+
 Связанные документы:
 
 | Документ | Содержание |
 |----------|------------|
 | [README.md](README.md) | Quick start, auth flow |
-| [docs/five_verst_sync_plan.md](docs/five_verst_sync_plan.md) | Конвейеры 5 вёрst (детали парсеров) |
+| [PROJECT_HANDOFF.local.md](PROJECT_HANDOFF.local.md) | **Credentials, SSH, prod нюансы** (gitignored) |
+| [docs/five_verst_sync_plan.md](docs/five_verst_sync_plan.md) | Конвейеры 5 вёрst |
 | [docs/s95_sync_plan.md](docs/s95_sync_plan.md) | Конвейеры S95 |
-| [docs/deploy_and_migration_plan.md](docs/deploy_and_migration_plan.md) | Legacy ETL, миграция данных |
+| [docs/deploy_and_migration_plan.md](docs/deploy_and_migration_plan.md) | Legacy ETL |
 | [docs/parkrun_pipeline.md](docs/parkrun_pipeline.md) | Parkrun (Mac + Chromium) |
 | [docs/legacy_etl_mapping.md](docs/legacy_etl_mapping.md) | Маппинг legacy → новая схема |
+| [deploy/DOMAINS.md](deploy/DOMAINS.md) | run5k.run / grafana.run5k.run |
 
 ---
 
 ## 1. Назначение проекта
 
-**Saturday Runs** — личный кабинет участника субботних парковых пробежек + global data core.
+**Saturday Runs** (`run5k.run`) — личный кабинет участника субботних парковых пробежек + global data core.
 
 Платформы:
 
@@ -26,7 +30,7 @@
 - **S95** (`s95`) — s95.ru / s95.by
 - **parkrun** — parkrun.org.uk (fetch с Mac, не из prod API)
 
-Стек: Python 3.12, FastAPI, SQLAlchemy, Alembic, Celery, Redis, PostgreSQL 16, React 19, Nginx, Docker Compose.
+Стек: Python 3.12, FastAPI, SQLAlchemy, Alembic, Celery, Redis, PostgreSQL 16, React 19, Vite, Nginx, Docker Compose.
 
 ---
 
@@ -34,20 +38,32 @@
 
 ```
 backend/
-  app/                    # FastAPI, модели, sync, parsers, services
-  app/workers/            # Celery app + tasks (five_verst_sync, s95_sync, …)
-  app/workers/tasks/      # sync_task_reporting.py — VK-репорты + dedup
-  vk_bot/                 # VK admin bot (long poll, /sync, /stats)
-  bot_app/                # Telegram auth bot (legacy auth-only)
-  scripts/                # CLI sync-скрипты (dry-run, prod-run)
+  app/                    # FastAPI, models, sync, parsers, services
+  app/workers/celery_app.py
+  app/workers/tasks/      # five_verst_sync, s95_sync, parkrun_sync, sync_task_reporting
+  app/s95/fetch/          # Playwright + Redis lock + priority yield
+  app/services/           # dashboard, location_catalog, sync_job, personal_record
+  vk_bot/                 # VK admin bot (/stats, /sync)
+  bot_app/                # Telegram auth bot
+  scripts/                # CLI, backfill, check_failed_sync_jobs.py
   tests/
-frontend/src/             # React dashboard
-docs/                     # Планы и маппинги
+  alembic/versions/       # миграции (027 — profile_private)
+frontend/src/
+  features/               # runs, admin, settings, queue, about, …
+  components/             # ActivityDateCell, PlatformBadge, …
+data/
+  location_catalog.json   # cross-platform location mapping (105 parkrun RU)
+docs/
 docker-compose.yml        # Dev
-docker-compose.prod.yml   # Prod overlay (host PG, no exposed ports)
-scripts/run_prod_script.sh
-Makefile                  # backend-test, prod-run, sync menu
+docker-compose.prod.yml   # Prod overlay (host PG)
+docker-compose.dev.yml    # VK OAuth на :80
+scripts/deploy_prod.sh
+Makefile
+AGENTS.md                 # этот файл
+PROJECT_HANDOFF.local.md  # credentials (gitignored)
 ```
+
+GitHub: `PopovDmitryA/saturday-runs-next`, branch `main`.
 
 ---
 
@@ -58,66 +74,45 @@ Makefile                  # backend-test, prod-run, sync menu
 | Хост | `195.58.34.112` |
 | Путь | `/opt/saturday-runs-next` |
 | **Основной сайт** | **https://run5k.run** |
-| Legacy Grafana | **https://grafana.run5k.run** (Grafana :9000) |
-| Старый URL ЛК | `app.run5k.run` → 301 на run5k.run |
-| SSH user | `viewer` |
+| Legacy Grafana | **https://grafana.run5k.run** |
+| Старый URL ЛK | `app.run5k.run` → 301 на run5k.run |
+| SSH user | `viewer` (пароль в PROJECT_HANDOFF.local.md) |
 | Compose | `docker compose -f docker-compose.yml -f docker-compose.prod.yml` |
-| БД | Host PostgreSQL (`DATABASE_URL` в `.env`), не контейнер postgres |
-| Web | Nginx → React dist + API |
+| БД | Host PostgreSQL (`DATABASE_URL` в prod `.env`) |
+| Web | Host nginx (TLS) → Docker nginx :8080 → API + static |
 
-**Контейнеры (prod):**
+### Контейнеры (prod)
 
 | Сервис | Назначение |
 |--------|------------|
-| `api` | FastAPI, 2 workers |
-| `nginx` | Статика + reverse proxy |
-| `redis` | Sessions, Celery broker, locks, dedup slots — **не публиковать :6379 наружу** (см. `deploy/redis/redis.conf`) |
+| `api` | FastAPI, 2 uvicorn workers |
+| `nginx` | React `frontend/dist` + proxy `/api` |
+| `redis` | Sessions, Celery, locks, cooldown — **не публиковать :6379** |
+| `beat` | Celery Beat (Europe/Moscow) |
+| `worker-five-verst` | `-Q five_verst_user,five_verst --concurrency=1` |
+| `worker-s95` | `-Q s95_user,s95 --concurrency=1` |
+| `worker-parkrun` | `-Q parkrun` |
+| `vk-bot` | VK long poll |
+| ~~`worker`~~ | **Отключён на prod** |
 
-### PR (`is_pr`) по платформам
-
-| Платформа | Источник PR | После синка |
-|-----------|-------------|-------------|
-| parkrun | пересчёт по `finish_time_sec` | `recalculate_parkrun_personal_records(participant_id=…)` |
-| s95, five_verst | пересчёт по времени (протокол может затереть флаг) | автоматически в `upsert_run_results` / `import_profile_run_results` |
-
-Скрипты: `scripts/recalculate_parkrun_prs.py`, `scripts/recalculate_s95_prs.py`, `scripts/recalculate_personal_records.py --platform all`.
-
-**Не вызывать** `recalculate_personal_records(..., participant_id=X)` со старым кодом, который сбрасывал PR всей платформы — исправлено: reset только по participant.
-
-| `beat` | Celery Beat (MSK timezone) |
-| `worker-five-verst` | Очередь `five_verst`, concurrency=1 (+ user_sync 5verst) |
-| `worker-s95` | Очередь `s95`, concurrency=1 |
-| `worker-parkrun` | Очередь `parkrun` |
-| ~~`worker`~~ | **Отключён на prod** — очередь `celery` не используется |
-| `vk-bot` | VK admin long poll |
-
-**Деплой доменов и стека:**
+### Деплой
 
 ```bash
-bash scripts/deploy_run5k_domains.sh   # на сервере в /opt/saturday-runs-next
+# С Mac (нужны TEMP_SSH_* в .env, sshpass):
+bash scripts/deploy_prod.sh
 ```
 
-Конфиги host nginx: `deploy/nginx/run5k.run.conf`, `grafana.run5k.run.conf`, `app.run5k.run.conf`.  
-Grafana `root_url`: `deploy/grafana/systemd-override.conf`.
+Rsync: `backend/app/`, `backend/vk_bot/`, `deploy/`, compose files, `frontend/src/`.  
+На сервере: `npm ci && npm run build` в Docker node, rebuild workers + api + nginx.
 
-**Деплой (типичный, точечный):** rsync изменённых файлов + rebuild нужных контейнеров.  
-Фронт на prod часто собирают на сервере: `docker run node:22-alpine npm ci && npm run build`.
+**Если фронт не обновился** — remote build мог не выполниться; см. PROJECT_HANDOFF.local.md §1.
+
+**Фронт локально:**
 
 ```bash
-# Пример: backend + workers
-sshpass -e rsync -avz -e "ssh …" backend/app/ viewer@195.58.34.112:/opt/saturday-runs-next/backend/app/
-ssh viewer@195.58.34.112 'cd /opt/saturday-runs-next && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build worker-five-verst worker-s95 beat vk-bot'
+make frontend-build   # или docker run node:22-alpine …
+docker compose restart nginx
 ```
-
-**Логи:**
-
-```bash
-docker compose … logs worker-five-verst --since 1h | grep -E "received|succeeded|VK admin|Skip duplicate"
-docker compose … logs worker-s95 --since 1h
-docker compose … logs beat --since 1h | grep "Scheduler: Sending"
-```
-
-**Важно:** часть изменений может быть на prod через rsync, но **не закоммичена** в git — перед `git pull` на сервере сверять состояние.
 
 ---
 
@@ -127,216 +122,221 @@ docker compose … logs beat --since 1h | grep "Scheduler: Sending"
 
 | Очередь | Worker | Задачи |
 |---------|--------|--------|
-| `five_verst` | worker-five-verst | registry, latest, rotation, reconcile, location |
-| `s95` | worker-s95 | то же для S95 + athletes_registry |
-| `parkrun` | worker-parkrun | parkrun fetch |
-| default | worker | user_sync, прочее |
+| `five_verst_user` | worker-five-verst | user profile sync (приоритетная) |
+| `five_verst` | worker-five-verst | registry, latest, rotation, reconcile |
+| `s95_user` | worker-s95 | user profile sync (приоритетная) |
+| `s95` | worker-s95 | batch S95 + athletes_registry |
+| `parkrun` | worker-parkrun | parkrun user sync |
+
+### S95 user priority (cooperative yield)
+
+Один worker, один поток fetch (Redis lock). Batch-задачи **не параллелят** запросы.
+
+При появлении задачи в `s95_user` batch прерывается (`S95YieldForUserSync` в `app/s95/fetch/priority.py`), ставится обратно в очередь, user sync выполняется первым.
+
+Код: `coordinator.py`, `rate_limit.py`, `s95_athletes_registry.py`, `workers/s95_batch_yield.py`.
 
 ### Beat schedule (MSK)
 
-**5 verst** — минуты `:00`:
+**5 verst** — `:00`:
 
-| Beat key | Task | Расписание |
-|----------|------|------------|
-| `five-verst-registry-daily` | `sync_locations_registry` | 20:00 ежедневно |
-| `five-verst-latest-weekday-morning` | `sync_latest_results` | пн–пт 05:00 |
-| `five-verst-latest-saturday-hourly` | `sync_latest_results` | сб 01:00–23:00 |
-| `five-verst-latest-sunday-hourly` | `sync_latest_results` | вс 00:00–23:00 |
-| `five-verst-location-rotation` | `sync_location_rotation` | каждые 4 ч |
-| `five-verst-reconcile-protocols` | `reconcile_stale_protocols` | каждые 3 ч |
+| Task | Расписание |
+|------|------------|
+| registry | 20:00 daily |
+| latest | пн–пт 0,5,10,15,20; сб/вс hourly |
+| rotation | каждые 4 ч |
+| reconcile | каждые 3 ч |
 
-**S95** — те же слоты, **+30 мин** (чтобы не биться с 5verst):
+**S95** — **+30 мин** к 5verst:
 
-| Beat key | Task | Расписание |
-|----------|------|------------|
-| `s95-registry-daily` | `sync_locations_registry` | 20:30 |
-| `s95-latest-*` | `sync_latest` | :30 (аналогично 5v по дням) |
-| `s95-location-rotation` | `sync_location_rotation` | каждые 4 ч, :30 |
-| `s95-reconcile-protocols` | `reconcile_stale_protocols` | каждые 3 ч, :30 |
-| `s95-athletes-registry` | `sync_athletes_registry` | каждые 2 ч, :30, batch 50 |
+| Task | Расписание |
+|------|------------|
+| registry | 20:30 |
+| latest | :30 (аналогично дням) |
+| rotation | :30 каждые 4 ч |
+| reconcile | :30 каждые 3 ч |
+| athletes_registry | :30 каждые 2 ч, batch 50 |
 
 ---
 
-## 5. VK admin: уведомления и управление
+## 5. S95: блокировка IP и cooldown
 
-**Код:** `backend/app/services/vk_admin_notify.py`, `backend/app/workers/tasks/sync_task_reporting.py`, `backend/vk_bot/`.
+**Prod IP `195.58.34.112` может быть заблокирован s95.ru (HTTP 403).**
 
-Env (prod `.env`):
+| Механизм | Где |
+|----------|-----|
+| Детект 403 / Forbidden | `app/s95/ban.py`, `fetch/browser.py`, `fetch/coordinator.py` |
+| Cooldown 1 час | Redis `s95:fetch:ban_cooldown_until`, `s95_ban_cooldown_seconds=3600` |
+| Пропуск batch при cooldown | `sync_task_reporting.py` |
+| Текст ошибки пользователю | `app/s95/messages.py`, `sync_error_format.py` |
 
-- `VK_BOT_GROUP_TOKEN`, `VK_BOT_GROUP_ID`, `VK_ADMIN_USER_ID`, `VK_BOT_INTERNAL_SECRET`
-
-Поведение:
-
-- Scheduled sync-задачи оборачиваются в `run_reported_sync()` → **▶️ старт** и **✅/⚠️ финиш** в VK.
-- Работает для **5verst и S95** (registry, latest, rotation, reconcile, athletes).
-- Мелкие задачи (`fetch_protocol_from_profile`, user sync) — **без** VK-репортов.
-
-**VK-бот команды** (`vk_bot/main.py`, `vk_bot/pipeline.py`):
-
-```
-/stats [дней]
-/status
-/sync registry | latest | rotation | reconcile | location <slug>
-/sync s95-latest | s95-rotation | s95-reconcile | s95-athletes | s95-registry
-/sync protocol <url>
-```
-
-Ручной `/sync` ставит задачу с `force=True` (обходит dedup, см. ниже).
-
----
-
-## 6. Dedup scheduled sync (защита от дублей)
-
-**Проблема:** один worker на очередь + длинные задачи (athletes_registry ~1–2 ч) → latest копится в очереди; Celery redelivery → один task id может выполниться дважды → лишние HTTP-запросы.
-
-**Решение:** `backend/app/services/scheduled_sync_guard.py`
-
-- Redis-ключ `sync-hour-slot:{pipeline_key}:{YYYY-MM-DDTHH}` (MSK, TTL 3 ч)
-- Не больше **одного успешного** scheduled-прогона на pipeline за час
-- Повтор → `{"skipped": true, "reason": "duplicate_hour_slot"}` без запросов к сайту
-- `force=True` — для ручного `/sync` из VK
-
-Pipeline keys: `five_verst:latest`, `five_verst:reconcile`, `five_verst:rotation`, `five_verst:registry`, `s95:latest`, `s95:reconcile`, `s95:rotation`, `s95:registry`, `s95:athletes`.
-
-**Beat шлёт ровно одну задачу в час** — дубли в worker-логах почти всегда backlog/redelivery, не двойной cron.
-
----
-
-## 7. Синхронизация: три уровня данных
-
-### 7.1. Bulk sync (протоколы, summaries) — автоматический Celery
-
-| Что | 5 verst | S95 |
-|-----|---------|-----|
-| Latest | `/results/latest/` | `/activities` |
-| Registry | `/events/` | `/events` |
-| Протокол | `/{slug}/results/{date}/` | `/activities/{id}` |
-| Reconcile | `protocol_sync_states.last_protocol_check_at` | то же |
-| Участники из протокола | `upsert_participant()` inline | то же |
-
-Трекинг прогона: таблица `sync_runs` (status, sync_type, started_at).
-
-### 7.2. User sync — только по запросу пользователя ЛК
-
-**Не** массовый обход профилей.
-
-| Поле | Таблица | Когда обновляется |
-|------|---------|-------------------|
-| `last_user_sync_at` | `platform_links` | Пользователь нажал «Обновить», auto-sync при логине, OAuth-привязка |
-
-Код: `app/sync/user_sync.py`, `app/sync/s95_user_sync.py`, `app/sync/parkrun_user_sync.py`.  
-5verst user sync качает `/user/{id}/` (userstats). **Массового crawl юзеров 5verst нет.**
-
-### 7.3. S95 athletes registry — периодическая перепроверка профилей
-
-Код: `app/sync/s95_athletes_registry.py`, `app/sync/s95_participant_sync.py`.
-
-- В `participants.profile_extra` пишется **`profile_checked_at`** при каждой проверке (в т.ч. 404, «Регистрация», нет штрихкода)
-- Очередь: numeric athlete id без штрихкода или с `profile_checked_at` старше **`s95_athlete_profile_recheck_interval_days`** (default 30)
-- Beat: каждые 2 ч, до **50** профилей (`s95_athletes_registry_batch_limit`)
-
-### 7.4. Profile → protocol queue
-
-Если при парсинге профиля участника нет полного протокола в БД — ставится задача `fetch_protocol_from_profile` (5v / s95).
-
-Код: `app/sync/profile_protocol_queue.py`.
-
----
-
-## 8. Fetch locks и rate limit
-
-| Платформа | Lock | Интервал между запросами |
-|-----------|------|--------------------------|
-| 5 verst | `app/five_verst/fetch/` Redis | 20–30 с |
-| S95 | `app/s95/fetch/lock.py` Playwright + Redis | 15–30 с |
-
-Один активный fetch на платформу cluster-wide. S95 — headless Chromium.
-
----
-
-## 9. Dashboard и API
-
-- Analytics cache: `dashboard_cache`, версия в `ANALYTICS_VERSION` (`dashboard_service.py`)
-- При изменении полей аналитики — **инкрементировать версию** (иначе stale cache на клиентах)
-- Поля: `last_pr_date`, `last_global_pr_date`, и др. — см. `app/schemas/dashboard.py`
-
-Admin sync queue: `/api/admin/sync-queue` (нужен admin telegram/vk id).
-
----
-
-## 10. Ключевые env-переменные
-
-См. `.env.example`. Важные для sync:
+Диагностика:
 
 ```bash
-# 5 verst
-FIVE_VERST_SYNC_PROTOCOL_LIMIT=
-FIVE_VERST_SYNC_LATEST_UPDATE_LIMIT=
-FIVE_VERST_RECONCILE_BATCH_LIMIT=100
-
-# S95
-S95_SYNC_PROTOCOL_LIMIT=3
-S95_SYNC_LATEST_UPDATE_LIMIT=20
-S95_ATHLETES_REGISTRY_BATCH_LIMIT=50
-S95_ATHLETE_PROFILE_RECHECK_INTERVAL_DAYS=30
-S95_RECONCILE_BATCH_LIMIT=10
-
-# VK admin
-VK_BOT_GROUP_TOKEN=
-VK_ADMIN_USER_ID=
+scripts/check_failed_sync_jobs.py   # полные тексты ошибок sync_jobs
+redis-cli GET s95:fetch:ban_cooldown_until
 ```
-
-Prod DB: `PROD_DB_TARGET=1` включает `lock_timeout=30s` в SQLAlchemy session.
 
 ---
 
-## 11. Тесты и локальная разработка
+## 6. Синхронизация: три уровня
+
+### 6.1 Bulk sync (Celery, автомат)
+
+Latest, registry, reconcile, rotation — см. docs по платформам. Трекинг: таблица `sync_runs`.
+
+### 6.2 User sync (по запросу пользователя)
+
+`platform_links.last_user_sync_at` — кнопка «Обновить», OAuth-привязка, auto-sync.
+
+Код: `app/sync/user_sync.py`, `s95_user_sync.py`, `parkrun_user_sync.py`.
+
+Admin queue: `/admin/queue`, API `/api/admin/sync-queue`.
+
+**Reconcile «задача не была обработана воркером»:** задача dequeued, но worker занят long batch; исправлено проверкой `task_is_worker_reserved` + S95 yield.
+
+### 6.3 S95 athletes registry
+
+Перепроверка профилей без штрихкода / stale `profile_checked_at`. До 50 за прогон, ~30 мин.
+
+---
+
+## 7. Personal records (PR)
+
+| Тип | Логика | UI |
+|-----|--------|-----|
+| PR | Улучшение на платформе, метка протокола 5v «Личный рекорд!», первая пробежка | плашка **PR** |
+| Global PR | Первое улучшение лучшего времени среди всех систем | **оранжевый жирный** финиш |
+
+Код: `personal_record_service.py`, `dashboard_service.py`, `GlobalPrFinishTime.tsx`.
+
+Backfill: `scripts/recalculate_personal_records.py --platform all`.
+
+**Не вызывать** старый reset PR всей платформы по participant — исправлено.
+
+---
+
+## 8. Location catalog (русские названия parkrun)
+
+`data/location_catalog.json` + таблицы `location_catalog`, `location_catalog_links`.
+
+Для parkrun-локаций с аналогом в 5v/s95 показывается `canonical_name` (русское).
+
+**Slug mismatch:** parkrun parser даёт `readovsky-park`, каталог — `readovskypark`. Lookup нормализует slug (`normalize_location_slug` в `location_catalog_service.py`).
+
+Import: `make location-catalog-import-docker`.
+
+---
+
+## 9. Privacy, UI (июнь 2026)
+
+| Фича | Файлы |
+|------|-------|
+| Приватный профиль | migration `027`, `PrivacySettingsSection.tsx`, `profile_private` |
+| PR badge alignment | `ActivityDateCell.tsx`, grid в `index.css` |
+| Admin queue error tooltip | `QueuePage.tsx` + `StatHintTooltip` |
+| About: legacy site link сверху | `AboutPage.tsx` |
+| Убран раздел «Справочник» (/insights) | routes в `App.tsx` |
+
+---
+
+## 10. VK admin
+
+Env: `VK_BOT_GROUP_TOKEN`, `VK_BOT_GROUP_ID`, `VK_ADMIN_USER_ID`, `VK_BOT_INTERNAL_SECRET`.
+
+Scheduled sync → VK через `run_reported_sync()` + dedup `scheduled_sync_guard.py`.
+
+Команды: `/stats`, `/status`, `/sync registry|latest|…`, `/sync s95-latest|…`.
+
+---
+
+## 11. Fetch locks
+
+| Платформа | Lock | Интервал |
+|-----------|------|----------|
+| 5 verst | Redis | 20–30 с |
+| S95 | Playwright + Redis | 15–30 с, concurrency=1 cluster-wide |
+| parkrun | Mac Chromium | см. docs/parkrun_pipeline.md |
+
+---
+
+## 12. Dashboard / API
+
+- Cache: `dashboard_cache`, `ANALYTICS_VERSION` — инкрементировать при смене полей аналитики
+- Admin: `/admin/stats`, `/admin/queue`, `/admin/users`
+- Settings: `/api/settings/privacy`
+
+---
+
+## 13. Локальная разработка
 
 ```bash
-cd backend && pytest                          # или: docker compose run --rm api pytest
+cp .env.example .env   # + PROJECT_HANDOFF.local.md для prod credentials
+docker compose up --build
+docker compose exec api alembic upgrade head
+make frontend-build && docker compose restart nginx
+```
+
+| URL | Назначение |
+|-----|------------|
+| http://localhost:8080 | сайт |
+| http://localhost:8080/about | О проекте |
+| http://localhost/login | VK нужен порт 80 (`docker-compose.dev.yml`) |
+| localhost:5433 | Postgres (DBeaver) |
+
+Тесты:
+
+```bash
+docker compose run --rm api pytest
 cd backend && ruff check app tests
-make backend-test
-```
-
-Релевантные тесты для sync/VK:
-
-- `tests/test_scheduled_sync_guard.py`
-- `tests/test_vk_admin_notify.py`
-- `tests/test_celery_beat_schedule.py`
-- `tests/test_s95_athletes_registry.py`
-- `tests/test_profile_protocol_queue.py`
-
-CLI dry-run:
-
-```bash
-make prod-run ARGS="scripts/five_verst_sync_latest.py --dry-run -v"
-make prod-run ARGS="scripts/s95_sync_latest.py --dry-run -v"
 ```
 
 ---
 
-## 12. Типичные задачи агента
+## 14. Типичные задачи агента
 
 | Задача | Действие |
 |--------|----------|
-| Проверить, отработал ли latest | `logs worker-* --since 1h`, beat logs, `sync_runs` в БД |
-| Дубли latest | Искать `Skip duplicate` или один task id × N succeeded; проверить очередь athletes |
-| Нет VK по S95 | Проверить env, логи `VK admin message sent` в worker-s95 |
-| Добавить VK для новой задачи | Обернуть в `run_reported_sync`, добавить label в `sync_report_labels.py` |
-| Deploy fix | rsync → rebuild worker/beat/vk-bot; frontend — build на сервере |
-| S95 phantom athletes | 404 / «Регистрация» — `classify_athlete_page()`, не ломать display_name |
+| S95 все sync failed | Проверить 403 с prod IP, cooldown Redis, писать админам S95 |
+| Очередь admin — длинные ошибки | tooltip в QueuePage; полный текст в `error_message` |
+| Parkrun English names | catalog link + norm slug; import catalog |
+| PR не показывается | `is_pr`, five_verst protocol label, backfill PR |
+| Deploy | `deploy_prod.sh`; verify build + health |
+| API 502 | `docker compose logs api` — часто SyntaxError после деплоя |
+| Prod DB query | SSH + `docker compose exec api python -c "…"` |
 
 ---
 
-## 13. Git и prod drift
+## 15. Git и prod
 
-- Origin/main может отставать от prod (деploy через rsync без commit).
-- **Не делать `git pull` на prod** без сверки — можно затереть rsync-изменения.
-- Коммиты создавать **только по явной просьбе** пользователя.
+- Коммиты — **только по просьбе** пользователя
+- Prod `.env` не в git; локальный `.env` и `PROJECT_HANDOFF.local.md` — gitignored
+- Перед `git pull` на сервере — сверка с rsync-состоянием
 
 ---
 
-## 14. Parkrun (отдельно)
+## 16. Parkrun (отдельно)
 
-Prod API **не** ходит на parkrun.org.uk. Очередь `profile_fetch_pending` → fetch на Mac (`make parkrun`).  
+Prod API **не** fetch'ит parkrun.org.uk. Очередь `profile_fetch_pending` → **`make parkrun`** на Mac.
+
 Подробнее: [docs/parkrun_pipeline.md](docs/parkrun_pipeline.md).
+
+---
+
+## 17. Полезные скрипты
+
+| Скрипт | Назначение |
+|--------|------------|
+| `scripts/check_failed_sync_jobs.py` | failed sync_jobs за 7 дней |
+| `scripts/recalculate_personal_records.py` | backfill PR |
+| `scripts/import_location_catalog.py` | catalog → DB |
+| `scripts/deploy_prod.sh` | rsync + prod deploy |
+| `scripts/dev_prod_db.sh` | локальный сайт на prod DB (read-only tunnel) |
+| `make parkrun` | Mac parkrun fetch daemon |
+
+---
+
+## 18. Контакт
+
+Автор: **Дмитрий ПОПОВ** (@Popov_Dmitry, popov.dmitii@yandex.ru).  
+При блокерах в Claude Code — пользователь может вернуться в Cursor с вопросами.
