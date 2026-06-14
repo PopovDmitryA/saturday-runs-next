@@ -137,7 +137,7 @@ def raise_or_enqueue_fetch_error(
     if not is_fetch_cooldown_error(exc):
         raise exc
 
-    row = enqueue_profile_fetch_pending(
+    enqueue_profile_fetch_pending(
         db,
         platform_code=platform_code,
         profile_input=profile_input,
@@ -146,11 +146,8 @@ def raise_or_enqueue_fetch_error(
         exc=exc,
     )
     db.commit()
-    external = row.external_user_id or profile_input
     raise ProfileLinkingError(
-        "parkrun временно недоступен (капча/защита). Профиль добавлен в очередь. "
-        f"ID: {external}. На Mac обработайте очередь: make parkrun "
-        "(откроется Chromium — пройдите капчу в окне).",
+        "Не удалось обновить профиль. Операция добавлена в очередь, ожидайте.",
         503,
     ) from exc
 
