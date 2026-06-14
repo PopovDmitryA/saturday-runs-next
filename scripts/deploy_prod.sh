@@ -55,11 +55,15 @@ sshpass -e ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
 set -euo pipefail
 cd "$REMOTE"
 
+# NB: `docker compose exec -T` still attaches the container to stdin. This script
+# is fed to `bash -s` over the SSH stdin, so every exec MUST redirect stdin from
+# /dev/null — otherwise it swallows the rest of the script and the deploy stops
+# silently right here.
 echo "--- queue lengths before ---"
-eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst || true
-eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst_user || true
-eval "$COMPOSE" exec -T redis redis-cli LLEN s95 || true
-eval "$COMPOSE" exec -T redis redis-cli LLEN s95_user || true
+eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst </dev/null || true
+eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst_user </dev/null || true
+eval "$COMPOSE" exec -T redis redis-cli LLEN s95 </dev/null || true
+eval "$COMPOSE" exec -T redis redis-cli LLEN s95_user </dev/null || true
 
 echo "--- frontend build ---"
 docker run --rm -v "$PWD/frontend:/app" -w /app node:22-alpine sh -c "npm ci && npm run build"
@@ -82,8 +86,8 @@ else
 fi
 
 echo "--- queue lengths after ---"
-eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst || true
-eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst_user || true
+eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst </dev/null || true
+eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst_user </dev/null || true
 
 echo "--- smoke ---"
 curl -sf http://127.0.0.1:8080/health | head -c 200 || true
