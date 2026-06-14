@@ -12,8 +12,8 @@ import { PlatformBadge } from "../../components/PlatformBadge";
 import { useActivityFilters } from "../../hooks/useActivityFilters";
 import { listProfileLinks, type RunItem } from "../../lib/api";
 import { useAppDataSource, AppDataSourceProvider, demoDataSource } from "../../lib/appDataSource";
-import { sortRuns, toggleDateSort, toggleFinishSort, togglePaceSort, togglePositionSort } from "../../lib/activityList";
-import { formatFinishTimeValue } from "../../lib/format";
+import { createFullSelection, sortRuns, toggleDateSort, toggleFinishSort, togglePaceSort, togglePositionSort, uniquePlatforms } from "../../lib/activityList";
+import { formatFinishTimeValue, platformCodeLabel } from "../../lib/format";
 import { DemoShell } from "../demo/DemoShell";
 
 function RunsContent() {
@@ -57,6 +57,21 @@ function RunsContent() {
   const paceSortActive = filters.sort === "pace_asc" || filters.sort === "pace_desc";
   const positionSortActive = filters.sort === "position_asc" || filters.sort === "position_desc";
 
+  const allPlatforms = useMemo(() => uniquePlatforms(runs), [runs]);
+
+  const platformRunCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const run of runs) {
+      counts[run.platform_code] = (counts[run.platform_code] ?? 0) + 1;
+    }
+    return allPlatforms.map((code) => ({ code, count: counts[code] ?? 0 }));
+  }, [runs, allPlatforms]);
+
+  const activePlatformFilter =
+    filters.platformFilterActive
+      ? [...filters.selectedPlatforms][0] ?? "all"
+      : "all";
+
   const pageBody = (
     <>
       {!isDemo && (
@@ -92,6 +107,30 @@ function RunsContent() {
 
       {!loading && !error && runs.length > 0 && (
         <>
+          <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по системам">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activePlatformFilter === "all"}
+              className={activePlatformFilter === "all" ? "map-mode-tab active" : "map-mode-tab"}
+              onClick={() => filters.setSelectedPlatforms(createFullSelection(allPlatforms))}
+            >
+              Все ({runs.length})
+            </button>
+            {platformRunCounts.map(({ code, count }) => (
+              <button
+                key={code}
+                type="button"
+                role="tab"
+                aria-selected={activePlatformFilter === code}
+                className={activePlatformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
+                onClick={() => filters.setSelectedPlatforms(new Set([code]))}
+              >
+                {platformCodeLabel(code)} ({count})
+              </button>
+            ))}
+          </div>
+
           <div className="table-wrap">
             <table className="data-table data-table-filterable data-table-layout-fixed">
               <ActivityTableCols variant="runs" />
@@ -143,15 +182,7 @@ function RunsContent() {
                   />
                   <ColumnHeader
                     label="Система"
-                    filterActive={filters.platformFilterActive}
-                    filterTitle="Фильтр по системе"
-                    filterContent={
-                      <CheckboxListFilter
-                        options={filters.platformOptions}
-                        selected={filters.selectedPlatforms}
-                        onSelectedChange={filters.setSelectedPlatforms}
-                      />
-                    }
+                    filterable={false}
                   />
                   <ColumnHeader
                     label="Локация"
