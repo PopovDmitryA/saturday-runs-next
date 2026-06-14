@@ -23,23 +23,10 @@ import {
 } from "./catalogLocationsTableHelpers";
 import type { PlatformFilters } from "./mapFilters";
 
-const VISITED_FILTER_LABELS: Record<VisitedFilter, string> = {
-  all: "Все",
-  visited: "Посещал",
-  not_visited: "Не посещал",
-};
-
-function visitedFilterLabel(value: VisitedFilter): string {
-  return VISITED_FILTER_LABELS[value];
-}
-
-type MapMode = "all" | "unvisited" | "visited";
-
 type CatalogLocationsTableProps = {
   data: CatalogLocationsTableResponse | null;
   loading: boolean;
   error: string | null;
-  mapMode: MapMode;
   platformFilters: PlatformFilters;
 };
 
@@ -54,7 +41,6 @@ export function CatalogLocationsTable({
   data,
   loading,
   error,
-  mapMode,
   platformFilters,
 }: CatalogLocationsTableProps) {
   const [sortKey, setSortKey] = useState<CatalogTableSortKey>("name");
@@ -71,11 +57,11 @@ export function CatalogLocationsTable({
   const filteredRows = useMemo(() => {
     const filtered = filterCatalogTableRows(baseRows, {
       platformFilters,
-      mapMode,
+      mapMode: "all",
       tableFilters,
     });
     return sortCatalogTableRows(filtered, sortKey, sortAsc);
-  }, [baseRows, mapMode, platformFilters, sortAsc, sortKey, tableFilters]);
+  }, [baseRows, platformFilters, sortAsc, sortKey, tableFilters]);
 
   const handleSort = (column: CatalogTableSortKey) => {
     const next = toggleCatalogTableSort(sortKey, sortAsc, column);
@@ -314,14 +300,6 @@ export function CatalogLocationsTable({
                 </tbody>
               </table>
             </div>
-            {mapMode !== "all" && (
-              <p className="muted map-locations-table-hint table-foot">
-                Таблица синхронизирована с режимом карты:{" "}
-                {mapMode === "visited" ? "только посещённые" : "только непосещённые"}.
-                {tableFilters.visited !== "all" &&
-                  ` Доп. фильтр: ${visitedFilterLabel(tableFilters.visited)}.`}
-              </p>
-            )}
           </>
         )}
       </div>

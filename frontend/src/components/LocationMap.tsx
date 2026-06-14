@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { MapLocationPoint } from "../lib/api";
@@ -119,6 +119,7 @@ type LocationMapProps = {
   variant: "visited" | "catalog";
   emptyMessage: string;
   visitedByIdentity?: Map<string, MapLocationPoint>;
+  legend?: ReactNode;
 };
 
 function fitMapToPoints(map: L.Map, points: MapLocationPoint[]) {
@@ -262,6 +263,7 @@ export function LocationMap({
   variant,
   emptyMessage,
   visitedByIdentity,
+  legend,
 }: LocationMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -345,6 +347,11 @@ export function LocationMap({
     <div className="location-map-shell">
       {points.length === 0 ? <p className="location-map-empty">{emptyMessage}</p> : null}
       <div ref={containerRef} className="location-map-canvas" aria-label="Карта локаций" />
+      {legend && points.length > 0 ? (
+        <div className="location-map-legend" aria-label="Легенда карты">
+          {legend}
+        </div>
+      ) : null}
     </div>
   );
 }
