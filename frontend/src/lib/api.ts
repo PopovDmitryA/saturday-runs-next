@@ -309,6 +309,9 @@ export type SyncQueueParkrunQueue = {
   cooldown_remaining_seconds: number | null;
   worker_alive: boolean;
   worker_status: string;
+  s95_pending: number;
+  s95_failed: number;
+  s95_processing: number;
 };
 
 export type SyncQueueResponse = {

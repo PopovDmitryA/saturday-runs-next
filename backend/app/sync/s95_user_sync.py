@@ -203,7 +203,7 @@ def run_s95_user_sync(
                 )
                 message = (
                     f"{platform_code}: С95 недоступен с сервера — обновление поставлено "
-                    "в очередь и обработается автоматически (с Mac)."
+                    "в очередь и обработается позднее, пожалуйста, ожидайте."
                 )
                 errors.append(message)
                 link.sync_status = PlatformLinkSyncStatus.error

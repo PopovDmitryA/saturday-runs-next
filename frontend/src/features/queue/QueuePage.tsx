@@ -100,7 +100,10 @@ function ParkrunQueuePanel({ stats }: { stats: SyncQueueParkrunQueue }) {
     stats.failed > 0 ||
     stats.stuck_done > 0 ||
     stats.captcha_pending ||
-    (stats.cooldown_remaining_seconds ?? 0) > 0;
+    (stats.cooldown_remaining_seconds ?? 0) > 0 ||
+    stats.s95_pending > 0 ||
+    stats.s95_failed > 0 ||
+    stats.s95_processing > 0;
 
   const workerLabel =
     stats.worker_status === "running"
@@ -114,31 +117,32 @@ function ParkrunQueuePanel({ stats }: { stats: SyncQueueParkrunQueue }) {
   return (
     <section className={`card queue-parkrun-panel${needsAttention ? " queue-parkrun-panel-alert" : ""}`}>
       <div className="queue-parkrun-panel-head">
-        <h2 className="section-title">Очередь parkrun</h2>
+        <h2 className="section-title">Очередь ручной обработки (Mac)</h2>
         <a href="/admin/parkrun" className="btn secondary btn-sm">
           Управление parkrun
         </a>
       </div>
       <p className="muted queue-parkrun-intro">
-        Заявки на обновление профилей parkrun (капча, очередь <code>profile_fetch_pending</code>). При
-        ненулевых значениях нужна реакция — обработка на Mac через Chrome CDP.
+        Заявки на обновление профилей parkrun и s95 (очередь <code>profile_fetch_pending</code>). При
+        ненулевых значениях нужна реакция — обработка на Mac (<code>make parkrun</code>): parkrun через
+        Chrome CDP, s95 — обычным фетчем.
       </p>
       <div className="queue-parkrun-stats">
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.pending)}`}>
           <span className="queue-parkrun-stat-value">{stats.pending}</span>
-          <span className="queue-parkrun-stat-label">ожидают</span>
+          <span className="queue-parkrun-stat-label">parkrun ожидают</span>
         </div>
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.failed)}`}>
           <span className="queue-parkrun-stat-value">{stats.failed}</span>
-          <span className="queue-parkrun-stat-label">ошибка</span>
+          <span className="queue-parkrun-stat-label">parkrun ошибка</span>
         </div>
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.stuck_done)}`}>
           <span className="queue-parkrun-stat-value">{stats.stuck_done}</span>
-          <span className="queue-parkrun-stat-label">застряли done</span>
+          <span className="queue-parkrun-stat-label">parkrun застряли done</span>
         </div>
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.processing)}`}>
           <span className="queue-parkrun-stat-value">{stats.processing}</span>
-          <span className="queue-parkrun-stat-label">в обработке</span>
+          <span className="queue-parkrun-stat-label">parkrun в обработке</span>
         </div>
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.celery_sync)}`}>
           <span className="queue-parkrun-stat-value">{stats.celery_sync}</span>
@@ -161,6 +165,18 @@ function ParkrunQueuePanel({ stats }: { stats: SyncQueueParkrunQueue }) {
         <div className="queue-parkrun-stat">
           <span className="queue-parkrun-stat-value">{workerLabel}</span>
           <span className="queue-parkrun-stat-label">Mac worker</span>
+        </div>
+        <div className={`queue-parkrun-stat ${parkrunStatClass(stats.s95_pending)}`}>
+          <span className="queue-parkrun-stat-value">{stats.s95_pending}</span>
+          <span className="queue-parkrun-stat-label">s95 ожидают</span>
+        </div>
+        <div className={`queue-parkrun-stat ${parkrunStatClass(stats.s95_failed)}`}>
+          <span className="queue-parkrun-stat-value">{stats.s95_failed}</span>
+          <span className="queue-parkrun-stat-label">s95 ошибка</span>
+        </div>
+        <div className={`queue-parkrun-stat ${parkrunStatClass(stats.s95_processing)}`}>
+          <span className="queue-parkrun-stat-value">{stats.s95_processing}</span>
+          <span className="queue-parkrun-stat-label">s95 в обработке</span>
         </div>
       </div>
     </section>
