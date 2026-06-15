@@ -49,6 +49,7 @@ def s95_user_sync_task(
                 SyncJobTrigger(trigger),
                 platform_link_id=UUID(platform_link_id) if platform_link_id else None,
                 existing_job=existing_job,
+                enqueue_on_ban=True,
             )
         return {
             "job_id": str(job.id),
