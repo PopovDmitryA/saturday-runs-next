@@ -4,7 +4,7 @@ import { RequireAdmin } from "../../components/RequireAdmin";
 import { AdminSubnav } from "./AdminSubnav";
 import { listAdminUsers, type AdminUserListItem } from "../../lib/api";
 import { formatDateTime, platformCodeLabel } from "../../lib/format";
-import { authProviderLabel, telegramProfileUrl, userLoginLines } from "./adminUserDisplay";
+import { authLoginUrl, authProviderLabel, userLoginLines } from "./adminUserDisplay";
 
 function platformCell(user: AdminUserListItem, code: string) {
   const link = user.platform_links.find((item) => item.platform_code === code);
@@ -133,7 +133,7 @@ function AdminUsersContent() {
             <table className="data-table admin-users-table">
               <thead>
                 <tr>
-                  <th>Telegram</th>
+                  <th>Сервисы входа</th>
                   <th>{platformCodeLabel("five_verst")}</th>
                   <th>{platformCodeLabel("s95")}</th>
                   <th>{platformCodeLabel("parkrun")}</th>
@@ -153,7 +153,6 @@ function AdminUsersContent() {
                 )}
                 {items.map((user) => {
                   const logins = userLoginLines(user);
-                  const tgUrl = telegramProfileUrl(user);
                   return (
                     <tr key={user.id}>
                       <td className="admin-users-telegram">
@@ -161,20 +160,23 @@ function AdminUsersContent() {
                           {logins.length === 0 ? (
                             <li className="muted">—</li>
                           ) : (
-                            logins.map((login) => (
-                              <li key={`${login.provider}-${login.external_id}`}>
-                                <span className="admin-users-login-provider">
-                                  {authProviderLabel(login.provider)}
-                                </span>
-                                {login.provider === "telegram" && tgUrl ? (
-                                  <a href={tgUrl} target="_blank" rel="noreferrer">
-                                    {login.label}
-                                  </a>
-                                ) : (
-                                  <span>{login.label}</span>
-                                )}
-                              </li>
-                            ))
+                            logins.map((login) => {
+                              const loginUrl = authLoginUrl(login, user);
+                              return (
+                                <li key={`${login.provider}-${login.external_id}`}>
+                                  <span className="admin-users-login-provider">
+                                    {authProviderLabel(login.provider)}
+                                  </span>
+                                  {loginUrl ? (
+                                    <a href={loginUrl} target="_blank" rel="noreferrer">
+                                      {login.label}
+                                    </a>
+                                  ) : (
+                                    <span>{login.label}</span>
+                                  )}
+                                </li>
+                              );
+                            })
                           )}
                         </ul>
                       </td>

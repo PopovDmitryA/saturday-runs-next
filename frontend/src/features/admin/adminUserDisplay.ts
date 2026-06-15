@@ -43,3 +43,16 @@ export function telegramProfileUrl(user: Pick<AdminUserListItem, "telegram_usern
   }
   return `https://t.me/${user.telegram_username.replace(/^@/, "")}`;
 }
+
+export function authLoginUrl(
+  login: AdminUserAuthBrief,
+  user: Pick<AdminUserListItem, "telegram_username">,
+): string | null {
+  if (login.provider === "telegram") {
+    return telegramProfileUrl(user);
+  }
+  if (login.provider === "vk" && login.external_id) {
+    return `https://vk.com/id${login.external_id}`;
+  }
+  return null;
+}
