@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
@@ -40,6 +40,17 @@ function platformCell(code: string | null): string {
     return "Все";
   }
   return platformCodeLabel(code);
+}
+
+const PLATFORM_FILTER_NONE = "__none__";
+const PLATFORM_FILTER_ORDER = ["five_verst", "s95", "parkrun", "all", PLATFORM_FILTER_NONE];
+
+function jobPlatformKey(job: SyncQueueJob): string {
+  return job.platform_code ?? PLATFORM_FILTER_NONE;
+}
+
+function platformFilterLabel(key: string): string {
+  return key === PLATFORM_FILTER_NONE ? "—" : platformCell(key);
 }
 
 function taskQueueSummary(job: SyncQueueJob): string {
@@ -161,7 +172,27 @@ function QueueContent() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [platformFilter, setPlatformFilter] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
+
+  const jobs = data?.jobs ?? [];
+
+  const platformCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const job of jobs) {
+      const key = jobPlatformKey(job);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return PLATFORM_FILTER_ORDER.filter((key) => counts.has(key)).map((key) => ({
+      key,
+      count: counts.get(key) ?? 0,
+    }));
+  }, [jobs]);
+
+  const visibleJobs = useMemo(
+    () => (platformFilter === null ? jobs : jobs.filter((job) => jobPlatformKey(job) === platformFilter)),
+    [jobs, platformFilter],
+  );
 
   const load = useCallback(async (options?: { background?: boolean }) => {
     const background = options?.background ?? hasLoadedRef.current;
@@ -295,11 +326,39 @@ function QueueContent() {
         <>
           {refreshing && <p className="muted page-refresh-hint">Обновляем очередь…</p>}
 
-          {data.jobs.length === 0 ? (
+          {jobs.length === 0 ? (
             <p className="muted">Заявок на обновление пока нет.</p>
           ) : (
-            <div className="table-wrap">
-              <table className="data-table queue-table">
+            <>
+              <div className="map-mode-tabs queue-platform-filter" role="tablist" aria-label="Фильтр по системам">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={platformFilter === null}
+                  className={platformFilter === null ? "map-mode-tab active" : "map-mode-tab"}
+                  onClick={() => setPlatformFilter(null)}
+                >
+                  Все ({jobs.length})
+                </button>
+                {platformCounts.map(({ key, count }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={platformFilter === key}
+                    className={platformFilter === key ? "map-mode-tab active" : "map-mode-tab"}
+                    onClick={() => setPlatformFilter(key)}
+                  >
+                    {platformFilterLabel(key)} ({count})
+                  </button>
+                ))}
+              </div>
+
+              {visibleJobs.length === 0 ? (
+                <p className="muted">Нет заявок по выбранной системе.</p>
+              ) : (
+                <div className="table-wrap">
+                  <table className="data-table queue-table">
                 <thead>
                   <tr>
                     <th>Пользователь</th>
@@ -312,7 +371,7 @@ function QueueContent() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.jobs.map((job) => {
+                  {visibleJobs.map((job) => {
                     const isActive = job.status === "queued" || job.status === "running";
                     const user = job.user;
                     const errorText = job.error_message ?? job.error_details ?? "";
@@ -363,9 +422,11 @@ function QueueContent() {
                       </tr>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </>
       )}
