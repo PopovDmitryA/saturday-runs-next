@@ -5,7 +5,18 @@ from uuid import UUID
 from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import AuthIdentity, AuthProvider, DashboardCache, Participant, Platform, PlatformLink, User
+from app.models import (
+    AuthIdentity,
+    AuthProvider,
+    DashboardCache,
+    Event,
+    Participant,
+    Platform,
+    PlatformLink,
+    RunResult,
+    User,
+    VolunteerResult,
+)
 from app.services.dashboard_service import (
     get_dashboard_payload,
     list_user_best_results,
@@ -27,14 +38,47 @@ def _stats_from_cache(cache: DashboardCache | None) -> tuple[int | None, int | N
     )
 
 
-def _link_brief(link: PlatformLink, platform: Platform, participant: Participant | None) -> dict[str, object]:
+def _link_brief(
+    link: PlatformLink,
+    platform: Platform,
+    participant: Participant | None,
+    counts: dict[UUID, tuple[int, int]],
+) -> dict[str, object]:
     display_name = participant.display_name if participant else None
+    run_count, volunteer_count = counts.get(participant.id, (0, 0)) if participant else (0, 0)
     return {
         "platform_code": platform.code,
         "external_user_id": link.external_user_id,
         "external_url": link.external_url,
         "display_name": display_name,
         "sync_status": link.sync_status.value,
+        "run_count": run_count,
+        "volunteer_count": volunteer_count,
+    }
+
+
+def _load_participant_counts(
+    db: Session, participant_ids: list[UUID]
+) -> dict[UUID, tuple[int, int]]:
+    """Non-test run and volunteer counts per participant (matches profile totals)."""
+    if not participant_ids:
+        return {}
+    runs = dict(
+        db.query(RunResult.participant_id, func.count(RunResult.id))
+        .join(Event, Event.id == RunResult.event_id)
+        .filter(RunResult.participant_id.in_(participant_ids), Event.is_test_event.is_(False))
+        .group_by(RunResult.participant_id)
+        .all()
+    )
+    volunteers = dict(
+        db.query(VolunteerResult.participant_id, func.count(VolunteerResult.id))
+        .join(Event, Event.id == VolunteerResult.event_id)
+        .filter(VolunteerResult.participant_id.in_(participant_ids), Event.is_test_event.is_(False))
+        .group_by(VolunteerResult.participant_id)
+        .all()
+    )
+    return {
+        pid: (int(runs.get(pid, 0)), int(volunteers.get(pid, 0))) for pid in participant_ids
     }
 
 
@@ -56,9 +100,11 @@ def _load_user_links(db: Session, user_ids: list[UUID]) -> dict[UUID, list[dict[
         .order_by(PlatformLink.linked_at.desc())
         .all()
     )
+    participant_ids = [participant.id for _, _, participant in rows if participant is not None]
+    counts = _load_participant_counts(db, participant_ids)
     grouped: dict[UUID, list[dict[str, object]]] = {user_id: [] for user_id in user_ids}
     for link, platform, participant in rows:
-        grouped[link.user_id].append(_link_brief(link, platform, participant))
+        grouped[link.user_id].append(_link_brief(link, platform, participant, counts))
     return grouped
 
 

@@ -11,6 +11,8 @@ class AdminPlatformLinkBrief(BaseModel):
     external_url: str
     display_name: str | None = None
     sync_status: str
+    run_count: int = 0
+    volunteer_count: int = 0
 
 
 class AdminUserAuthBrief(BaseModel):
