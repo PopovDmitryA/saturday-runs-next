@@ -106,6 +106,17 @@ def _parkrun_queue_payload(db: Session) -> dict[str, object]:
         )
         .count()
     )
+
+    def _s95_count(*statuses: ProfileFetchPendingStatus) -> int:
+        return (
+            db.query(ProfileFetchPending)
+            .filter(
+                ProfileFetchPending.platform_code == "s95",
+                ProfileFetchPending.status.in_(statuses),
+            )
+            .count()
+        )
+
     return {
         "pending": int(status.get("pending_queue_count") or 0),
         "failed": int(status.get("failed_queue_count") or 0),
@@ -116,6 +127,9 @@ def _parkrun_queue_payload(db: Session) -> dict[str, object]:
         "cooldown_remaining_seconds": status.get("cooldown_remaining_seconds"),
         "worker_alive": bool(status.get("worker_alive")),
         "worker_status": str(status.get("worker_status") or "idle"),
+        "s95_pending": _s95_count(ProfileFetchPendingStatus.pending),
+        "s95_failed": _s95_count(ProfileFetchPendingStatus.failed),
+        "s95_processing": _s95_count(ProfileFetchPendingStatus.processing),
     }
 
 
