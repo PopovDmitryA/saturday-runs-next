@@ -2115,6 +2115,10 @@ body {
   margin-bottom: 0.75rem;
 }
 
+.queue-platform-filter {
+  margin-bottom: 0.75rem;
+}
+
 .queue-summary-inline {
   margin: 0;
   font-size: 0.8125rem;
