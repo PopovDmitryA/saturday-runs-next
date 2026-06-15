@@ -129,6 +129,7 @@ def run_s95_user_sync(
     *,
     platform_link_id: UUID | None = None,
     existing_job=None,
+    enqueue_on_ban: bool = False,
 ):
     from app.models import (
         Platform,
@@ -181,6 +182,34 @@ def run_s95_user_sync(
             link = db.query(PlatformLink).filter(PlatformLink.id == link.id).one()
             job = db.query(SyncJob).filter(SyncJob.id == job.id).one()
             from app.s95.messages import s95_user_facing_error
+            from app.services.profile_fetch_pending_service import is_fetch_cooldown_error
+
+            # Prod's IP is banned by s95. When a manual/scheduled refresh hits the
+            # ban, hand the work off to the profile_fetch_pending queue so the Mac
+            # daemon (which can reach s95) imports the activity instead of failing.
+            if enqueue_on_ban and is_fetch_cooldown_error(exc):
+                from app.models import ProfileFetchPendingOperation
+                from app.services.profile_fetch_pending_service import (
+                    enqueue_profile_fetch_pending,
+                )
+
+                enqueue_profile_fetch_pending(
+                    db,
+                    platform_code=platform_code,
+                    profile_input=link.external_url or link.external_user_id,
+                    user_id=user_id,
+                    operation=ProfileFetchPendingOperation.activity_import,
+                    exc=exc,
+                )
+                message = (
+                    f"{platform_code}: С95 недоступен с сервера — обновление поставлено "
+                    "в очередь и обработается автоматически (с Mac)."
+                )
+                errors.append(message)
+                link.sync_status = PlatformLinkSyncStatus.error
+                link.error_message = message[:2000]
+                db.commit()
+                continue
 
             errors.append(f"{platform_code}: {s95_user_facing_error(exc)}")
             link.sync_status = PlatformLinkSyncStatus.error
