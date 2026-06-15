@@ -68,7 +68,7 @@ parkrun-save-browser-state:
 
 # Mac: one command — DB queue, Chrome, wait for captcha, sync runs (run daily)
 parkrun:
-	bash scripts/parkrun_daemon.sh
+	bash scripts/parkrun_mac.sh
 
 # Seed 5 parkrun profiles from legacy five_verst_stats into LK queue (needs LEGACY_DATABASE_URL)
 parkrun-seed-queue:
