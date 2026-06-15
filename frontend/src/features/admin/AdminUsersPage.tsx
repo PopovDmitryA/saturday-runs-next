@@ -11,17 +11,22 @@ function platformCell(user: AdminUserListItem, code: string) {
   if (!link) {
     return <span className="muted">—</span>;
   }
+  const counts = (
+    <span className="admin-platform-counts muted"> ({link.run_count}/{link.volunteer_count})</span>
+  );
   const label = link.display_name?.trim();
   if (!label) {
     return (
       <a href={link.external_url} target="_blank" rel="noreferrer" className="admin-platform-link muted">
         Профиль
+        {counts}
       </a>
     );
   }
   return (
     <a href={link.external_url} target="_blank" rel="noreferrer" className="admin-platform-link">
       {label}
+      {counts}
     </a>
   );
 }

@@ -786,6 +786,8 @@ export type AdminPlatformLinkBrief = {
   external_url: string;
   display_name: string | null;
   sync_status: string;
+  run_count: number;
+  volunteer_count: number;
 };
 
 export type AdminUserAuthBrief = {
