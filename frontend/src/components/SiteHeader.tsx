@@ -34,7 +34,7 @@ function navClassName(item: SiteNavItem, isActive: boolean): string {
 }
 
 function isNavActive(path: string, href: string): boolean {
-  if (href === "/admin") {
+  if (href.startsWith("/admin")) {
     return path === href || path.startsWith("/admin");
   }
   return path === href;

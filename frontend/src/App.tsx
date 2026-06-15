@@ -1,7 +1,6 @@
 import type { ReactElement } from "react";
 import { useEffect } from "react";
 import { AdminAbusePage } from "./features/admin/AdminAbusePage";
-import { AdminPage } from "./features/admin/AdminPage";
 import { AdminS95ParticipantsPage } from "./features/admin/AdminS95ParticipantsPage";
 import { AdminParkrunPage } from "./features/admin/AdminParkrunPage";
 import { AdminStatsPage } from "./features/admin/AdminStatsPage";
@@ -48,6 +47,13 @@ function QueueRedirect() {
   return null;
 }
 
+function AdminRedirect() {
+  useEffect(() => {
+    window.location.replace("/admin/users");
+  }, []);
+  return null;
+}
+
 const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/": () => <LandingPage />,
   "/login": () => <LoginPage />,
@@ -65,7 +71,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/share": () => <SharePage />,
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
-  "/admin": () => <AdminPage />,
+  "/admin": () => <AdminRedirect />,
   "/admin/queue": () => <QueuePage />,
   "/admin/users": () => <AdminUsersPage />,
   "/admin/s95-participants": () => <AdminS95ParticipantsPage />,
