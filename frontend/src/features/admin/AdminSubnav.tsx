@@ -3,11 +3,10 @@ type AdminSubnavProps = {
 };
 
 const LINKS = [
-  { href: "/admin", label: "Обзор" },
-  { href: "/admin/stats", label: "Статистика" },
-  { href: "/admin/queue", label: "Очередь" },
-  { href: "/admin/parkrun", label: "Parkrun" },
   { href: "/admin/users", label: "Пользователи" },
+  { href: "/admin/queue", label: "Очередь" },
+  { href: "/admin/stats", label: "Статистика" },
+  { href: "/admin/parkrun", label: "Parkrun" },
   { href: "/admin/s95-participants", label: "S95 участники" },
   { href: "/admin/abuse", label: "Блокировки" },
 ] as const;

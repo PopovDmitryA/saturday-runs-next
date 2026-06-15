@@ -6,7 +6,7 @@ export const APP_NAV_ITEMS: SiteNavItem[] = [
   { href: "/volunteering", label: "Волонтёрство" },
   { href: "/maps", label: "Карта" },
   { href: "/share", label: "Поделиться" },
-  { href: "/admin", label: "Админка", adminOnly: true, adminStyle: true },
+  { href: "/admin/users", label: "Админка", adminOnly: true, adminStyle: true },
   { href: "/settings", label: "Настройки" },
   { href: "/about", label: "О проекте" },
 ];
