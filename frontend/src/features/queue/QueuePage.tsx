@@ -118,9 +118,6 @@ function ParkrunQueuePanel({ stats }: { stats: SyncQueueParkrunQueue }) {
     <section className={`card queue-parkrun-panel${needsAttention ? " queue-parkrun-panel-alert" : ""}`}>
       <div className="queue-parkrun-panel-head">
         <h2 className="section-title">Очередь ручной обработки (Mac)</h2>
-        <a href="/admin/parkrun" className="btn secondary btn-sm">
-          Управление parkrun
-        </a>
       </div>
       <p className="muted queue-parkrun-intro">
         Заявки на обновление профилей parkrun и s95 (очередь <code>profile_fetch_pending</code>). При
