@@ -855,13 +855,24 @@ export type AdminUserPreviewDashboard = {
   platform_links: AdminPlatformLinkBrief[];
 };
 
-export function listAdminUsers(query = "", limit = 100, offset = 0) {
+export type AdminUsersSort = "created" | "runs" | "volunteering";
+export type AdminUsersSortDirection = "asc" | "desc";
+
+export function listAdminUsers(
+  query = "",
+  limit = 100,
+  offset = 0,
+  sort: AdminUsersSort = "created",
+  direction: AdminUsersSortDirection = "desc",
+) {
   const params = new URLSearchParams();
   if (query.trim()) {
     params.set("q", query.trim());
   }
   params.set("limit", String(limit));
   params.set("offset", String(offset));
+  params.set("sort", sort);
+  params.set("direction", direction);
   return apiFetch<AdminUserListResponse>(`/admin/users?${params.toString()}`);
 }
 

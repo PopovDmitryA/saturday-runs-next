@@ -115,8 +115,12 @@ def list_admin_users(
     q: Annotated[str | None, Query(max_length=128)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
+    sort: Annotated[str, Query(pattern="^(created|runs|volunteering)$")] = "created",
+    direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
 ) -> AdminUserListResponse:
-    items, total = search_admin_users(db, query=q, limit=limit, offset=offset)
+    items, total = search_admin_users(
+        db, query=q, limit=limit, offset=offset, sort=sort, direction=direction
+    )
     return AdminUserListResponse(
         items=items,  # type: ignore[arg-type]
         total=total,

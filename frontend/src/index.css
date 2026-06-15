@@ -4599,6 +4599,33 @@ body {
   line-height: 1.35;
 }
 
+.admin-platform-counts {
+  white-space: nowrap;
+}
+
+.admin-sort-th {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.admin-sort-th:hover {
+  color: #2563eb;
+}
+
+.admin-sort-th.active {
+  color: #2563eb;
+}
+
 .admin-abuse-form-hint {
   margin: 0 0 1rem;
   line-height: 1.45;
