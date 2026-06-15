@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { AdminSubnav } from "./AdminSubnav";
-import { listAdminUsers, type AdminUserListItem } from "../../lib/api";
+import {
+  listAdminUsers,
+  type AdminUserListItem,
+  type AdminUsersSort,
+  type AdminUsersSortDirection,
+} from "../../lib/api";
 import { formatDateTime, platformCodeLabel } from "../../lib/format";
 import { authLoginUrl, authProviderLabel, userLoginLines } from "./adminUserDisplay";
 
@@ -41,23 +46,38 @@ function AdminUsersContent() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sort, setSort] = useState<AdminUsersSort>("created");
+  const [direction, setDirection] = useState<AdminUsersSortDirection>("desc");
 
   const offset = (page - 1) * USERS_PAGE_SIZE;
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / USERS_PAGE_SIZE)), [total]);
 
-  const load = useCallback(async (search: string, pageOffset: number) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await listAdminUsers(search, USERS_PAGE_SIZE, pageOffset);
-      setItems(response.items);
-      setTotal(response.total);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось загрузить пользователей");
-    } finally {
-      setLoading(false);
+  const load = useCallback(
+    async (search: string, pageOffset: number, sortKey: AdminUsersSort, sortDir: AdminUsersSortDirection) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await listAdminUsers(search, USERS_PAGE_SIZE, pageOffset, sortKey, sortDir);
+        setItems(response.items);
+        setTotal(response.total);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Не удалось загрузить пользователей");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  const handleSort = (key: AdminUsersSort) => {
+    if (sort === key) {
+      setDirection((current) => (current === "desc" ? "asc" : "desc"));
+    } else {
+      setSort(key);
+      setDirection("desc");
     }
-  }, []);
+    setPage(1);
+  };
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -73,8 +93,8 @@ function AdminUsersContent() {
   }, [draft]);
 
   useEffect(() => {
-    void load(query, (page - 1) * USERS_PAGE_SIZE);
-  }, [load, query, page]);
+    void load(query, (page - 1) * USERS_PAGE_SIZE, sort, direction);
+  }, [load, query, page, sort, direction]);
 
   return (
     <AppShell title="Пользователи" activePath="/admin">
@@ -137,9 +157,33 @@ function AdminUsersContent() {
                   <th>{platformCodeLabel("five_verst")}</th>
                   <th>{platformCodeLabel("s95")}</th>
                   <th>{platformCodeLabel("parkrun")}</th>
-                  <th>Пробежки</th>
-                  <th>Волонт.</th>
-                  <th>Регистрация</th>
+                  <th>
+                    <button
+                      type="button"
+                      className={`admin-sort-th${sort === "runs" ? " active" : ""}`}
+                      onClick={() => handleSort("runs")}
+                    >
+                      Пробежки {sort === "runs" ? (direction === "asc" ? "▲" : "▼") : ""}
+                    </button>
+                  </th>
+                  <th>
+                    <button
+                      type="button"
+                      className={`admin-sort-th${sort === "volunteering" ? " active" : ""}`}
+                      onClick={() => handleSort("volunteering")}
+                    >
+                      Волонт. {sort === "volunteering" ? (direction === "asc" ? "▲" : "▼") : ""}
+                    </button>
+                  </th>
+                  <th>
+                    <button
+                      type="button"
+                      className={`admin-sort-th${sort === "created" ? " active" : ""}`}
+                      onClick={() => handleSort("created")}
+                    >
+                      Регистрация {sort === "created" ? (direction === "asc" ? "▲" : "▼") : ""}
+                    </button>
+                  </th>
                   <th />
                 </tr>
               </thead>
