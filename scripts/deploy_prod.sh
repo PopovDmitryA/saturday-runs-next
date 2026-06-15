@@ -89,8 +89,11 @@ echo "--- frontend build ---"
 docker run --rm -v "$PWD/frontend:/app" -w /app node:22-alpine sh -c "npm ci && npm run build"
 
 echo "--- docker services ---"
-eval "$COMPOSE" up -d --build worker-s95 worker-five-verst worker-parkrun api nginx beat vk-bot
-eval "$COMPOSE" restart nginx api
+# --force-recreate guarantees containers restart with the freshly built code
+# (a plain `up -d --build` can leave the old process running if Docker reuses
+# the container), so backend changes always take effect after a deploy.
+eval "$COMPOSE" up -d --build --force-recreate worker-s95 worker-five-verst worker-parkrun api nginx beat vk-bot
+eval "$COMPOSE" restart nginx
 eval "$COMPOSE" stop worker-s95-user worker-five-verst-user 2>/dev/null || true
 eval "$COMPOSE" rm -f worker-s95-user worker-five-verst-user 2>/dev/null || true
 
