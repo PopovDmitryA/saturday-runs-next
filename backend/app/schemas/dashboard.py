@@ -264,6 +264,9 @@ class SyncQueueParkrunQueueResponse(BaseModel):
     cooldown_remaining_seconds: int | None = None
     worker_alive: bool = False
     worker_status: str = "idle"
+    s95_pending: int = 0
+    s95_failed: int = 0
+    s95_processing: int = 0
 
 
 class SyncQueueResponse(BaseModel):
