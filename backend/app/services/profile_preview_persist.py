@@ -127,10 +127,13 @@ def linking_sync_should_run(
     if runs_in_db > 0:
         return False
 
+    # Prod server can't reach parkrun.org.uk (WAF/captcha), so only enqueue a
+    # Celery sync when there are actually runs to import. Zero-run profiles are
+    # fully represented by the already-persisted preview — no sync needed.
     expected = preview.total_runs
-    if platform.code == "parkrun" and expected is not None and expected > 0:
-        return True
-    return platform.code == "parkrun"
+    if platform.code == "parkrun":
+        return expected is not None and expected > 0
+    return False
 
 
 def complete_link_without_sync(db: Session, link) -> None:
