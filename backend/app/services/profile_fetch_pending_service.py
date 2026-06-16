@@ -207,7 +207,7 @@ def _import_s95_activity(db: Session, platform: Platform, external_user_id: str)
     from app.sync import upsert
 
     profile, runs, volunteering = fetch_athlete_activity(external_user_id)
-    participant, _created = upsert.upsert_participant(
+    participant = upsert.upsert_participant(
         db,
         platform,
         external_user_id=profile.external_user_id,
@@ -225,7 +225,7 @@ def _import_five_verst_activity(db: Session, platform: Platform, profile_input: 
 
     identity = resolve_profile_identity(platform.code, profile_input)
     profile, runs, volunteering = fetch_athlete_activity(identity.external_user_id)
-    participant, _created = upsert.upsert_participant(
+    participant = upsert.upsert_participant(
         db,
         platform,
         external_user_id=profile.external_user_id,
