@@ -10,59 +10,43 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT}/scripts/prod_db_env.sh"
 
-REDIS_TUNNEL_PORT="${PROD_REDIS_TUNNEL_PORT:-6379}"
-REDIS_REMOTE_HOST="${PROD_REDIS_REMOTE_HOST:-127.0.0.1}"
-REDIS_REMOTE_PORT="${PROD_REDIS_REMOTE_PORT:-6379}"
+LOCAL_REDIS_PORT="${LOCAL_REDIS_PORT:-6399}"
 
-_redis_tunnel_running() {
-  lsof -iTCP:"${REDIS_TUNNEL_PORT}" -sTCP:LISTEN >/dev/null 2>&1
+_local_redis_running() {
+  lsof -iTCP:"${LOCAL_REDIS_PORT}" -sTCP:LISTEN >/dev/null 2>&1
 }
 
-start_redis_tunnel() {
-  if _redis_tunnel_running; then
-    echo "prod-redis tunnel: already listening on 127.0.0.1:${REDIS_TUNNEL_PORT}" >&2
+start_local_redis() {
+  if _local_redis_running; then
+    echo "local redis: already running on 127.0.0.1:${LOCAL_REDIS_PORT}" >&2
     return 0
   fi
-
-  echo "prod-redis tunnel: ${SSH_USER}@${SSH_HOST} → 127.0.0.1:${REDIS_TUNNEL_PORT}" >&2
-
-  if [[ -n "${TEMP_SSH_PASSWORD:-}" ]] && command -v sshpass >/dev/null 2>&1; then
-    SSHPASS="${TEMP_SSH_PASSWORD}" sshpass -e ssh -f -N \
-      -o StrictHostKeyChecking=no \
-      -L "${REDIS_TUNNEL_PORT}:${REDIS_REMOTE_HOST}:${REDIS_REMOTE_PORT}" \
-      "${SSH_USER}@${SSH_HOST}"
-  else
-    ssh -f -N \
-      -L "${REDIS_TUNNEL_PORT}:${REDIS_REMOTE_HOST}:${REDIS_REMOTE_PORT}" \
-      "${SSH_USER}@${SSH_HOST}"
-  fi
-
-  sleep 0.5
-  if ! _redis_tunnel_running; then
-    echo "parkrun_mac: redis tunnel failed to start" >&2
+  echo "local redis: starting on 127.0.0.1:${LOCAL_REDIS_PORT}…" >&2
+  docker run -d --rm --name parkrun-mac-redis \
+    -p "127.0.0.1:${LOCAL_REDIS_PORT}:6379" \
+    redis:7-alpine --save "" --appendonly no >/dev/null
+  sleep 1
+  if ! _local_redis_running; then
+    echo "parkrun_mac: local redis failed to start" >&2
     exit 1
   fi
 }
 
-stop_redis_tunnel() {
-  pids="$(lsof -t -iTCP:"${REDIS_TUNNEL_PORT}" -sTCP:LISTEN 2>/dev/null || true)"
-  if [[ -n "${pids}" ]]; then
-    kill ${pids} 2>/dev/null || true
-    echo "prod-redis tunnel: stopped" >&2
-  fi
+stop_local_redis() {
+  docker stop parkrun-mac-redis 2>/dev/null || true
 }
 
 cleanup() {
   stop_prod_db_tunnel
-  stop_redis_tunnel
+  stop_local_redis
 }
 trap cleanup EXIT
 
-# Open both tunnels
+# Open DB tunnel + local Redis
 export_prod_database_url
-start_redis_tunnel
+start_local_redis
 
-export REDIS_URL="redis://127.0.0.1:${REDIS_TUNNEL_PORT}/0"
+export REDIS_URL="redis://127.0.0.1:${LOCAL_REDIS_PORT}/0"
 export PYTHONPATH="${ROOT}/backend"
 export PARKRUN_PLAYWRIGHT_STORAGE_STATE_PATH="${ROOT}/data/parkrun_playwright_state.json"
 export PARKRUN_PLAYWRIGHT_HEADLESS=false
@@ -84,7 +68,7 @@ mkdir -p "${ROOT}/data"
 echo "════════════════════════════════════════════════════════════"
 echo " Parkrun + S95: очередь из prod БД → Chromium (Playwright)"
 echo " DB:    ${DATABASE_URL%@*}@…  (prod)"
-echo " Redis: redis://127.0.0.1:${REDIS_TUNNEL_PORT}/0  (prod, туннель)"
+echo " Redis: redis://127.0.0.1:${LOCAL_REDIS_PORT}/0  (локальный, только для cooldown)"
 echo " Сессия: ${PARKRUN_PLAYWRIGHT_STORAGE_STATE_PATH}"
 echo " Ctrl+C — остановить"
 echo "════════════════════════════════════════════════════════════"
