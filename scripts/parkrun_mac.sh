@@ -104,4 +104,4 @@ if [[ "${PENDING_ONLY:-}" == "1" ]]; then
   ARGS+=(--pending-only)
 fi
 
-exec "${CONDA_ENV}/bin/python" "${ROOT}/backend/scripts/parkrun_queue_daemon.py" "${ARGS[@]}"
+exec "${CONDA_ENV}/bin/python" "${ROOT}/backend/scripts/parkrun_queue_daemon.py" ${ARGS[@]+"${ARGS[@]}"}
