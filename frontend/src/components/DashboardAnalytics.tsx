@@ -551,6 +551,8 @@ export function DashboardAnalytics({
   const [bestResultsOpen, setBestResultsOpen] = useState(false);
   const [personalRecordsOpen, setPersonalRecordsOpen] = useState(false);
   const [volunteerRolesOpen, setVolunteerRolesOpen] = useState(false);
+  const [regionsCitiesOpen, setRegionsCitiesOpen] = useState(false);
+  const [regionsCitiesGroupBy, setRegionsCitiesGroupBy] = useState<GroupBy>("region");
   const [modalActivity, setModalActivity] = useState<"all" | "runs" | "volunteering">("all");
   const [uniqueLocationsFirstVisitSince, setUniqueLocationsFirstVisitSince] = useState<
     string | undefined
@@ -576,6 +578,18 @@ export function DashboardAnalytics({
     }
     if (card.modalTarget === "volunteer_roles") {
       setVolunteerRolesOpen(true);
+      return;
+    }
+    if (card.modalTarget === "unique_regions") {
+      setRegionsCitiesGroupBy("region");
+      setModalActivity(card.modalActivity ?? "all");
+      setRegionsCitiesOpen(true);
+      return;
+    }
+    if (card.modalTarget === "unique_cities") {
+      setRegionsCitiesGroupBy("city");
+      setModalActivity(card.modalActivity ?? "all");
+      setRegionsCitiesOpen(true);
       return;
     }
     openUniqueLocations(card.modalActivity ?? "all", card.firstVisitSince);
@@ -730,6 +744,13 @@ export function DashboardAnalytics({
       />
 
       <VolunteerRolesModal open={volunteerRolesOpen} onClose={() => setVolunteerRolesOpen(false)} />
+
+      <RegionsCitiesModal
+        open={regionsCitiesOpen}
+        onClose={() => setRegionsCitiesOpen(false)}
+        activityFilter={modalActivity}
+        groupBy={regionsCitiesGroupBy}
+      />
     </section>
   );
 }
