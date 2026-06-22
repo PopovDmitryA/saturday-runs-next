@@ -3305,6 +3305,20 @@ tr.run-crosslinked td {
   line-height: 1.5;
 }
 
+.geo-groups-table .geo-groups-row-unknown td {
+  color: #94a3b8;
+}
+
+.geo-groups-table .geo-groups-row-unknown .geo-groups-name {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.geo-groups-hint {
+  font-size: 0.8em;
+  opacity: 0.75;
+}
+
 .map-locations-table-spoiler {
   margin-top: 1rem;
 }
