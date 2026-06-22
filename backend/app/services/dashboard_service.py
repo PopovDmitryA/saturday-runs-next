@@ -783,6 +783,17 @@ def list_user_runs(
         query = query.filter(Event.is_test_event.is_(False))
     rows = query.order_by(Event.event_date.desc(), RunResult.position.asc()).offset(offset).limit(limit).all()
 
+    # Collect event IDs that are secondary in event_crosslinks
+    event_ids = [event.id for _run, event, _loc, _plat, _link in rows]
+    crosslinked_event_ids: set[UUID] = set()
+    if event_ids:
+        cl_rows = (
+            db.query(EventCrosslink.secondary_event_id)
+            .filter(EventCrosslink.secondary_event_id.in_(event_ids))
+            .all()
+        )
+        crosslinked_event_ids = {row[0] for row in cl_rows}
+
     from app.services.personal_record_service import (
         global_personal_record_run_ids,
         run_shows_personal_record,
@@ -811,6 +822,7 @@ def list_user_runs(
             "age_category": run.age_category,
             "is_pr": run_shows_personal_record(platform.code, run),
             "is_global_pr": run.id in global_pr_ids,
+            "is_crosslinked": event.id in crosslinked_event_ids,
             "is_first_run": run.is_first_run,
             "is_first_run_at_location": run.is_first_run_at_location,
             "club_name": run.club_name,

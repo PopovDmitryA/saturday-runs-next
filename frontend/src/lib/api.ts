@@ -179,6 +179,7 @@ export type RunItem = {
   age_category: string | null;
   is_pr: boolean;
   is_global_pr: boolean;
+  is_crosslinked: boolean;
   is_first_run: boolean;
   is_first_run_at_location: boolean;
   club_name: string | null;

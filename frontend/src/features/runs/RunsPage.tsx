@@ -60,11 +60,19 @@ function RunsContent() {
   const allPlatforms = useMemo(() => uniquePlatforms(runs), [runs]);
 
   const platformRunCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
+    const total: Record<string, number> = {};
+    const counted: Record<string, number> = {};
     for (const run of runs) {
-      counts[run.platform_code] = (counts[run.platform_code] ?? 0) + 1;
+      total[run.platform_code] = (total[run.platform_code] ?? 0) + 1;
+      if (!run.is_crosslinked) {
+        counted[run.platform_code] = (counted[run.platform_code] ?? 0) + 1;
+      }
     }
-    return allPlatforms.map((code) => ({ code, count: counts[code] ?? 0 }));
+    return allPlatforms.map((code) => ({
+      code,
+      total: total[code] ?? 0,
+      counted: counted[code] ?? total[code] ?? 0,
+    }));
   }, [runs, allPlatforms]);
 
   const activePlatformFilter =
@@ -117,7 +125,7 @@ function RunsContent() {
             >
               Все ({runs.length})
             </button>
-            {platformRunCounts.map(({ code, count }) => (
+            {platformRunCounts.map(({ code, total, counted }) => (
               <button
                 key={code}
                 type="button"
@@ -125,8 +133,14 @@ function RunsContent() {
                 aria-selected={activePlatformFilter === code}
                 className={activePlatformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
                 onClick={() => filters.setSelectedPlatforms(new Set([code]))}
+                title={
+                  counted < total
+                    ? `${counted} пробежек учтено в общем зачёте, ${total} всего в системе`
+                    : undefined
+                }
               >
-                {platformCodeLabel(code)} ({count})
+                {platformCodeLabel(code)}{" "}
+                {counted < total ? `(${counted}/${total})` : `(${total})`}
               </button>
             ))}
           </div>
@@ -238,7 +252,10 @@ function RunsContent() {
                   </tr>
                 ) : (
                   displayedRuns.map((run, index) => (
-                    <tr key={`${run.platform_code}-${run.event_date}-${run.location_name}-${index}`}>
+                    <tr
+                      key={`${run.platform_code}-${run.event_date}-${run.location_name}-${index}`}
+                      className={run.is_crosslinked ? "run-crosslinked" : undefined}
+                    >
                       <td className="td-date">
                         <ActivityDateCell
                           date={<ActivityDateLink date={run.event_date} url={run.event_url} />}
@@ -246,6 +263,14 @@ function RunsContent() {
                             <>
                               {run.is_test_event && <span className="badge">тест</span>}
                               {run.is_pr && <span className="badge badge-pr">PR</span>}
+                              {run.is_crosslinked && (
+                                <span
+                                  className="badge badge-crosslinked"
+                                  title="Пробежка не учтена в общем зачёте — в этот день учтена пробежка по другой системе на той же локации"
+                                >
+                                  не в зачёте
+                                </span>
+                              )}
                             </>
                           }
                         />
