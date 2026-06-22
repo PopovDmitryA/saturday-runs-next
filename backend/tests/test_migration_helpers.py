@@ -79,5 +79,5 @@ def test_s95_keys() -> None:
     assert s95_run_key(slug, event_date, user_id, 7) == "izmailovo:2024-05-18:12345:7"
     assert (
         s95_volunteer_key(slug, event_date, user_id, "Сканер")
-        == "vol:izmailovo:2024-05-18:12345:Сканер"
+        == "vol:izmailovo:2024-05-18:12345:сканер"
     )

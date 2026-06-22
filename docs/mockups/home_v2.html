@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light" data-view="guest">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>run5k.run — концепт главной</title>
+<style>
+  /* ====================== ТЕМА / ТОКЕНЫ ====================== */
+  :root {
+    --accent: #6366f1;            /* энергичный индиго */
+    --accent-2: #8b5cf6;
+    --accent-grad: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    --accent-rgb: 99, 102, 241;
+
+    --p-5v: #2563eb;              /* 5 вёрст — синий */
+    --p-s95: #ec4899;            /* S95 — розовый */
+    --p-parkrun: #16a34a;        /* parkrun — зелёный */
+    --p-runpark: #14b8a6;        /* runpark — бирюзовый */
+
+    --bg: #f6f7fb;
+    --bg-soft: #eef1f7;
+    --surface: #ffffff;
+    --surface-2: #f9fafc;
+    --border: #e3e7ee;
+    --text: #11161f;
+    --muted: #5c6675;
+    --shadow: 0 10px 30px rgba(20, 30, 60, 0.08);
+    --shadow-lg: 0 20px 50px rgba(20, 30, 60, 0.14);
+    --radius: 18px;
+    --radius-sm: 12px;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0e14;
+    --bg-soft: #11151d;
+    --surface: #141923;
+    --surface-2: #1a2030;
+    --border: #242b39;
+    --text: #eef1f6;
+    --muted: #9aa6b8;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
+    --p-5v: #5b8dff;
+    --p-s95: #f472b6;
+    --p-parkrun: #34d27e;
+    --p-runpark: #2dd4bf;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    transition: background .25s ease, color .25s ease;
+  }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+  section { margin: 56px 0; }
+  @media (max-width: 700px){ section { margin: 40px 0; } }
+
+  /* ====================== ХЕДЕР ====================== */
+  header.site {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: saturate(180%) blur(14px);
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav { display: flex; align-items: center; gap: 18px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.02em; font-size: 18px; }
+  .brand .logo {
+    width: 32px; height: 32px; border-radius: 9px; background: var(--accent-grad);
+    display: grid; place-items: center; color: #fff; font-size: 18px; box-shadow: 0 4px 12px rgba(var(--accent-rgb),.4);
+  }
+  .brand small { display:block; font-weight:600; font-size:11px; color: var(--muted); letter-spacing: 0; }
+  .nav-links { display: flex; gap: 4px; margin-left: 14px; }
+  .nav-links a {
+    padding: 8px 12px; border-radius: 10px; font-size: 14px; font-weight: 600; color: var(--muted);
+    transition: .15s;
+  }
+  .nav-links a:hover, .nav-links a.active { color: var(--text); background: var(--bg-soft); }
+  .nav-spacer { flex: 1; }
+  .icon-btn {
+    width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); cursor: pointer; display: grid; place-items: center;
+    font-size: 16px; transition: .15s;
+  }
+  .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn {
+    border: none; cursor: pointer; font-weight: 700; font-size: 14px; padding: 10px 18px;
+    border-radius: 11px; transition: transform .12s ease, box-shadow .2s ease; font-family: inherit;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--accent-grad); color: #fff; box-shadow: 0 6px 18px rgba(var(--accent-rgb),.35); }
+  .btn.primary:hover { box-shadow: 0 10px 26px rgba(var(--accent-rgb),.45); }
+  .btn.ghost { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+  .btn.ghost:hover { border-color: var(--accent); }
+  .nav-links.mobile { display: none; }
+  @media (max-width: 860px){
+    .nav-links { display: none; }
+    .brand small { display: none; }
+  }
+
+  /* «Смотреть как» переключатель (демо) */
+  .viewtoggle { display:flex; gap:4px; background: var(--bg-soft); padding:3px; border-radius:10px; border:1px solid var(--border); }
+  .viewtoggle button { border:none; background:transparent; font-family:inherit; font-weight:700; font-size:12px; color:var(--muted); padding:6px 10px; border-radius:8px; cursor:pointer; }
+  .viewtoggle button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+  @media (max-width: 560px){ .viewtoggle { display:none; } }
+
+  /* ====================== HERO ====================== */
+  .hero { position: relative; overflow: hidden; padding: 64px 0 40px; }
+  .hero::before {
+    content:""; position:absolute; inset:-40% -10% auto auto; width: 620px; height: 620px;
+    background: radial-gradient(circle, rgba(var(--accent-rgb),.22), transparent 62%); filter: blur(6px); z-index:0;
+  }
+  .hero::after {
+    content:""; position:absolute; inset:auto auto -50% -15%; width: 560px; height: 560px;
+    background: radial-gradient(circle, rgba(37,99,235,.16), transparent 62%); z-index:0;
+  }
+  .hero-inner { position: relative; z-index: 1; }
+  .eyebrow {
+    display:inline-flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent); padding:6px 12px; border-radius:999px; margin-bottom:18px;
+  }
+  .eyebrow .dot { width:7px; height:7px; border-radius:50%; background: var(--accent); box-shadow:0 0 0 0 var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(var(--accent-rgb),.6);} 70%{box-shadow:0 0 0 9px rgba(var(--accent-rgb),0);} 100%{box-shadow:0 0 0 0 rgba(var(--accent-rgb),0);} }
+  h1.hero-title { font-size: clamp(34px, 5vw, 58px); line-height: 1.04; letter-spacing: -.03em; margin: 0 0 18px; font-weight: 850; max-width: 14ch; }
+  h1.hero-title .grad { background: var(--accent-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero-lead { font-size: clamp(16px, 2vw, 19px); color: var(--muted); max-width: 56ch; line-height: 1.55; margin: 0 0 26px; }
+  .hero-cta { display: flex; gap: 12px; flex-wrap: wrap; align-items:center; }
+  .hero-note { font-size:13px; color: var(--muted); margin-top:14px; }
+
+  .platform-chips { display:flex; gap:8px; margin-top: 26px; flex-wrap: wrap; }
+  .chip { display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:700; padding:6px 12px; border-radius:999px; border:1px solid var(--border); background: var(--surface); }
+  .chip .sw { width:10px; height:10px; border-radius:50%; }
+
+  /* ====================== ЖИВЫЕ СЧЁТЧИКИ ====================== */
+  .pulse-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:14px; margin-top: 40px; }
+  @media (max-width: 820px){ .pulse-grid { grid-template-columns: repeat(2,1fr); } }
+  .pulse-card {
+    background: var(--surface); border:1px solid var(--border); border-radius: var(--radius); padding:20px;
+    box-shadow: var(--shadow); position:relative; overflow:hidden;
+  }
+  .pulse-card .k { font-size: clamp(26px, 3.4vw, 38px); font-weight: 850; letter-spacing:-.02em; line-height:1; }
+  .pulse-card .l { font-size:13px; color: var(--muted); margin-top:8px; font-weight:600; }
+  .pulse-card .spark { position:absolute; right:14px; top:14px; font-size:18px; opacity:.9; }
+  .pulse-card .trend { font-size:12px; font-weight:700; margin-top:6px; color: var(--p-parkrun); }
+
+  /* ====================== ОБЩИЕ КАРТОЧКИ-СЕКЦИИ ====================== */
+  .sec-head { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:22px; flex-wrap:wrap; }
+  .sec-head h2 { font-size: clamp(24px, 3vw, 32px); margin:0; letter-spacing:-.02em; font-weight: 820; }
+  .sec-head p { margin:6px 0 0; color: var(--muted); font-size:15px; max-width: 60ch; }
+  .sec-link { font-size:14px; font-weight:700; color: var(--accent); white-space:nowrap; }
+
+  .card { background: var(--surface); border:1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+
+  /* Сводка по движению — большая карта с графиком */
+  .movement { display:grid; grid-template-columns: 1.4fr 1fr; gap:18px; }
+  @media (max-width: 900px){ .movement { grid-template-columns: 1fr; } }
+  .chart-card { padding: 24px; }
+  .chart-card h3 { margin:0 0 4px; font-size:17px; font-weight:750; }
+  .chart-card .sub { color: var(--muted); font-size:13px; margin:0 0 20px; }
+  .bars { display:flex; align-items:flex-end; gap:8px; height: 200px; }
+  .bars .col { flex:1; display:flex; flex-direction:column; align-items:center; gap:8px; height:100%; justify-content:flex-end; }
+  .bars .bar { width:100%; border-radius:7px 7px 3px 3px; background: var(--accent-grad); position:relative; transition: height .8s cubic-bezier(.2,.8,.2,1); }
+  .bars .bar.vol { background: linear-gradient(135deg, var(--p-5v), #7aa8ff); opacity:.85; }
+  .bars .mlabel { font-size:11px; color: var(--muted); font-weight:600; }
+  .legend { display:flex; gap:16px; margin-top:16px; font-size:12px; color: var(--muted); font-weight:600; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:middle; }
+
+  .stat-stack { display:flex; flex-direction:column; gap:12px; }
+  .ministat { padding:18px 20px; display:flex; align-items:center; gap:14px; }
+  .ministat .ico { width:44px; height:44px; border-radius:12px; display:grid; place-items:center; font-size:20px; flex:none; }
+  .ministat .k { font-size:24px; font-weight:820; letter-spacing:-.02em; line-height:1; }
+  .ministat .l { font-size:13px; color: var(--muted); margin-top:4px; }
+
+  /* ====================== РЕЙТИНГИ ====================== */
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:18px; }
+  .tab { border:1px solid var(--border); background:var(--surface); color:var(--muted); font-weight:700; font-size:13px; padding:8px 14px; border-radius:999px; cursor:pointer; font-family:inherit; transition:.15s; }
+  .tab.on { background: var(--accent-grad); color:#fff; border-color:transparent; box-shadow:0 4px 12px rgba(var(--accent-rgb),.3); }
+  .board { padding: 8px; display:none; }
+  .board.on { display:block; }
+  .row {
+    display:grid; grid-template-columns: 44px 1fr auto; align-items:center; gap:14px;
+    padding:13px 14px; border-radius: 12px; transition: background .15s;
+  }
+  .row:hover { background: var(--bg-soft); }
+  .row + .row { border-top:1px solid var(--border); }
+  .rank { font-weight:850; font-size:16px; width:34px; height:34px; border-radius:10px; display:grid; place-items:center; background: var(--bg-soft); color: var(--muted); }
+  .row.top1 .rank { background: linear-gradient(135deg,#ffd54a,#ffb300); color:#5a3c00; }
+  .row.top2 .rank { background: linear-gradient(135deg,#e0e6ee,#bcc6d4); color:#3a4250; }
+  .row.top3 .rank { background: linear-gradient(135deg,#f3b98a,#e08e54); color:#5a2f0e; }
+  .person { display:flex; align-items:center; gap:12px; min-width:0; }
+  .avatar { width:38px; height:38px; border-radius:50%; flex:none; display:grid; place-items:center; font-weight:800; font-size:14px; color:#fff; }
+  .person .nm { font-weight:700; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .person .meta { font-size:12px; color:var(--muted); }
+  .val { font-weight:850; font-size:17px; text-align:right; }
+  .val small { display:block; font-size:11px; color:var(--muted); font-weight:600; }
+  .row.you { background: color-mix(in srgb, var(--accent) 9%, transparent); border:1px dashed color-mix(in srgb, var(--accent) 45%, transparent); }
+
+  /* ====================== ЧЕЛЛЕНДЖИ ====================== */
+  .chal-grid { display:grid; grid-template-columns: repeat(3,1fr); gap:16px; }
+  @media (max-width: 900px){ .chal-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 620px){ .chal-grid { grid-template-columns: 1fr; } }
+  .chal { padding:22px; position:relative; overflow:hidden; }
+  .chal .emoji { font-size:26px; }
+  .chal h4 { margin:12px 0 6px; font-size:17px; font-weight:780; }
+  .chal p { margin:0 0 16px; font-size:13px; color:var(--muted); line-height:1.5; }
+  .progress { height:9px; border-radius:999px; background: var(--bg-soft); overflow:hidden; }
+  .progress > i { display:block; height:100%; border-radius:999px; background: var(--accent-grad); }
+  .chal .pmeta { display:flex; justify-content:space-between; margin-top:10px; font-size:12px; font-weight:700; color:var(--muted); }
+  .chal .pmeta b { color: var(--text); }
+
+  /* ====================== КАРТА ====================== */
+  .mapsec { display:grid; grid-template-columns: 1.5fr 1fr; gap:18px; align-items:stretch; }
+  @media (max-width: 900px){ .mapsec { grid-template-columns:1fr; } }
+  .map-card { padding:0; overflow:hidden; position:relative; min-height:340px; display:grid; }
+  .map-card svg { width:100%; height:100%; display:block; }
+  .map-side { padding:24px; display:flex; flex-direction:column; gap:14px; }
+  .map-side .biglabel { font-size:13px; color:var(--muted); font-weight:600; }
+  .map-side .bignum { font-size:40px; font-weight:850; letter-spacing:-.03em; line-height:1; }
+  .map-legend { display:flex; flex-direction:column; gap:10px; margin-top:6px; }
+  .map-legend .li { display:flex; align-items:center; justify-content:space-between; font-size:14px; font-weight:600; }
+  .map-legend .li span { display:flex; align-items:center; gap:8px; }
+  .map-legend .li i { width:12px; height:12px; border-radius:50%; }
+
+  /* ====================== ЛИЧНАЯ КАРТОЧКА ====================== */
+  .guest-only, .member-only { display:none; }
+  :root[data-view="guest"] .guest-only { display:block; }
+  :root[data-view="member"] .member-only { display:block; }
+
+  .personal {
+    background: radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--accent) 16%, var(--surface)), var(--surface) 55%);
+    border:1px solid var(--border); border-radius: 26px; padding: 40px; box-shadow: var(--shadow-lg); text-align:center;
+  }
+  .personal h2 { font-size: clamp(24px, 3vw, 34px); margin:0 0 12px; letter-spacing:-.02em; }
+  .personal p.lead { color:var(--muted); font-size:16px; max-width:54ch; margin:0 auto 26px; line-height:1.55; }
+
+  .mystats { display:grid; grid-template-columns: repeat(4,1fr); gap:14px; margin: 8px 0 26px; text-align:left; }
+  @media (max-width: 760px){ .mystats { grid-template-columns: repeat(2,1fr); } }
+  .mystat { background: var(--surface); border:1px solid var(--border); border-radius:16px; padding:18px; }
+  .mystat .k { font-size:28px; font-weight:850; letter-spacing:-.02em; }
+  .mystat .l { font-size:12px; color:var(--muted); margin-top:6px; font-weight:600; }
+  .mystat .k.pr { color: var(--accent); }
+  .myhead { display:flex; align-items:center; gap:16px; justify-content:center; margin-bottom:24px; }
+  .myhead .avatar { width:58px; height:58px; font-size:22px; }
+  .myhead .hi { text-align:left; }
+  .myhead .hi b { font-size:20px; font-weight:820; }
+  .myhead .hi span { display:block; font-size:13px; color:var(--muted); }
+
+  /* ====================== ФУТЕР ====================== */
+  footer.site { border-top:1px solid var(--border); padding:40px 0; margin-top:60px; color:var(--muted); font-size:14px; }
+  .foot { display:flex; justify-content:space-between; gap:20px; flex-wrap:wrap; align-items:center; }
+  .foot a { font-weight:600; }
+  .foot a:hover { color: var(--accent); }
+
+  .mission { background: var(--surface); border:1px dashed var(--border); border-radius: var(--radius); padding:26px; font-size:16px; line-height:1.6; color:var(--muted); }
+  .mission b { color: var(--text); }
+</style>
+</head>
+<body>
+
+<!-- ===================== HEADER ===================== -->
+<header class="site">
+  <div class="wrap nav">
+    <a class="brand" href="#">
+      <span class="logo">🏃</span>
+      <span>run5k.run<small>статистика парковых пробежек</small></span>
+    </a>
+    <nav class="nav-links">
+      <a class="active" href="#">Главная</a>
+      <a href="#ratings">Рейтинги</a>
+      <a href="#challenges">Челленджи</a>
+      <a href="#map">Карта</a>
+      <a href="#">О проекте</a>
+    </nav>
+    <span class="nav-spacer"></span>
+    <div class="viewtoggle" title="Демо: как видит страницу гость и участник">
+      <button id="vGuest" class="on" onclick="setView('guest')">Гость</button>
+      <button id="vMember" onclick="setView('member')">Участник</button>
+    </div>
+    <button class="icon-btn" id="themeBtn" onclick="toggleTheme()" title="Сменить тему">🌙</button>
+    <button class="btn primary guest-only" onclick="setView('member')">Войти</button>
+    <button class="btn ghost member-only" onclick="setView('guest')">Выйти</button>
+  </div>
+</header>
+
+<!-- ===================== HERO ===================== -->
+<section class="hero">
+  <div class="wrap hero-inner">
+    <span class="eyebrow"><span class="dot"></span> Живая статистика субботних пробежек</span>
+    <h1 class="hero-title">Всё движение <span class="grad">в одном месте</span></h1>
+    <p class="hero-lead">
+      5 вёрст, S95 и parkrun — рейтинги, челленджи, карта площадок и ваша личная история финишей
+      и волонтёрства. Без переключений между сайтами и таблицами.
+    </p>
+    <div class="hero-cta">
+      <button class="btn primary guest-only" onclick="setView('member')">Войти и привязать профиль</button>
+      <button class="btn primary member-only" onclick="document.getElementById('personal').scrollIntoView()">Моя статистика</button>
+      <a class="btn ghost" href="#ratings">Смотреть рейтинги</a>
+    </div>
+    <p class="hero-note">Цифры ниже доступны всем — даже без входа. Войдите, чтобы увидеть себя в рейтингах.</p>
+
+    <div class="platform-chips">
+      <span class="chip"><span class="sw" style="background:var(--p-5v)"></span> 5 вёрст</span>
+      <span class="chip"><span class="sw" style="background:var(--p-s95)"></span> S95</span>
+      <span class="chip"><span class="sw" style="background:var(--p-parkrun)"></span> parkrun</span>
+      <span class="chip"><span class="sw" style="background:var(--p-runpark)"></span> RunPark <small style="color:var(--muted);font-weight:600">скоро</small></span>
+    </div>
+
+    <!-- живые счётчики движения -->
+    <div class="pulse-grid">
+      <div class="pulse-card"><span class="spark">👥</span><div class="k" data-count="8742">0</div><div class="l">участников движения</div><div class="trend">▲ +126 за месяц</div></div>
+      <div class="pulse-card"><span class="spark">🏁</span><div class="k" data-count="241338">0</div><div class="l">всего пробежек</div><div class="trend">▲ +3 410 за месяц</div></div>
+      <div class="pulse-card"><span class="spark">📍</span><div class="k" data-count="214">0</div><div class="l">локаций на карте</div><div class="trend">4 системы</div></div>
+      <div class="pulse-card"><span class="spark">🙌</span><div class="k" data-count="38904">0</div><div class="l">волонтёрств</div><div class="trend">▲ +540 за месяц</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== СВОДКА ПО ДВИЖЕНИЮ ===================== -->
+<section class="wrap" id="movement">
+  <div class="sec-head">
+    <div>
+      <h2>Пульс движения</h2>
+      <p>Как растёт сообщество субботних пробежек — активность за последний год по всем системам.</p>
+    </div>
+    <a class="sec-link" href="#">Все отчёты →</a>
+  </div>
+  <div class="movement">
+    <div class="card chart-card">
+      <h3>Активность по месяцам</h3>
+      <p class="sub">Пробежки и волонтёрства, суммарно по 5 вёрст, S95 и parkrun</p>
+      <div class="bars" id="bars"></div>
+      <div class="legend">
+        <span><i style="background:var(--accent)"></i>Пробежки</span>
+        <span><i style="background:var(--p-5v)"></i>Волонтёрства</span>
+      </div>
+    </div>
+    <div class="stat-stack">
+      <div class="card ministat"><div class="ico" style="background:color-mix(in srgb,var(--p-parkrun) 16%,transparent);color:var(--p-parkrun)">📈</div><div><div class="k">23:48</div><div class="l">средний финиш по движению</div></div></div>
+      <div class="card ministat"><div class="ico" style="background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)">🔥</div><div><div class="k">3 410</div><div class="l">пробежек в прошлую субботу</div></div></div>
+      <div class="card ministat"><div class="ico" style="background:color-mix(in srgb,var(--p-5v) 16%,transparent);color:var(--p-5v)">🗺️</div><div><div class="k">61</div><div class="l">город в 5 системах</div></div></div>
+      <div class="card ministat"><div class="ico" style="background:color-mix(in srgb,var(--p-s95) 16%,transparent);color:var(--p-s95)">⏱️</div><div><div class="k">16:12</div><div class="l">лучший результат недели</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== РЕЙТИНГИ ===================== -->
+<section class="wrap" id="ratings">
+  <div class="sec-head">
+    <div>
+      <h2>Рейтинги</h2>
+      <p>Лидеры движения — по пробежкам, времени финиша, уникальным локациям, победам и волонтёрству.</p>
+    </div>
+    <a class="sec-link" href="#">Все рейтинги →</a>
+  </div>
+  <div class="tabs">
+    <button class="tab on" onclick="showBoard(0,this)">🏁 Пробежки</button>
+    <button class="tab" onclick="showBoard(1,this)">⏱️ Время финиша</button>
+    <button class="tab" onclick="showBoard(2,this)">📍 Локации</button>
+    <button class="tab" onclick="showBoard(3,this)">🏆 Победы</button>
+    <button class="tab" onclick="showBoard(4,this)">🙌 Волонтёрство</button>
+  </div>
+  <div class="card" style="padding:8px;">
+    <div class="board on" id="b0"></div>
+    <div class="board" id="b1"></div>
+    <div class="board" id="b2"></div>
+    <div class="board" id="b3"></div>
+    <div class="board" id="b4"></div>
+  </div>
+</section>
+
+<!-- ===================== ЧЕЛЛЕНДЖИ ===================== -->
+<section class="wrap" id="challenges">
+  <div class="sec-head">
+    <div>
+      <h2>Челленджи</h2>
+      <p>Игровые цели движения: соберите все секунды финиша, закройте каждый день года, пробегите все буквы алфавита.</p>
+    </div>
+    <a class="sec-link" href="#">Все челленджи →</a>
+  </div>
+  <div class="chal-grid">
+    <div class="card chal"><span class="emoji">⏱️</span><h4>60 секунд</h4><p>Финишировать в каждую секунду минуты: :00, :01 … :59.</p><div class="progress"><i style="width:72%"></i></div><div class="pmeta"><span><b>43</b>/60 секунд</span><span>72%</span></div></div>
+    <div class="card chal"><span class="emoji">📅</span><h4>Все дни года</h4><p>Закрыть пробежкой каждую из 366 дат календаря.</p><div class="progress"><i style="width:31%"></i></div><div class="pmeta"><span><b>114</b>/366 дней</span><span>31%</span></div></div>
+    <div class="card chal"><span class="emoji">🔤</span><h4>Алфавит локаций</h4><p>Финишировать в локации на каждую букву алфавита.</p><div class="progress"><i style="width:88%"></i></div><div class="pmeta"><span><b>29</b>/33 букв</span><span>88%</span></div></div>
+    <div class="card chal"><span class="emoji">#️⃣</span><h4>Номера стартов</h4><p>Поймать каждый порядковый номер старта локации.</p><div class="progress"><i style="width:54%"></i></div><div class="pmeta"><span><b>108</b>/200</span><span>54%</span></div></div>
+    <div class="card chal"><span class="emoji">🎆</span><h4>Старты 1 января</h4><p>Новогодние пробежки в разных локациях движения.</p><div class="progress"><i style="width:40%"></i></div><div class="pmeta"><span><b>4</b>/10 лет</span><span>40%</span></div></div>
+    <div class="card chal"><span class="emoji">🌍</span><h4>Туризм</h4><p>Открыть как можно больше уникальных площадок.</p><div class="progress"><i style="width:23%"></i></div><div class="pmeta"><span><b>49</b>/214 локаций</span><span>23%</span></div></div>
+  </div>
+</section>
+
+<!-- ===================== КАРТА ===================== -->
+<section class="wrap" id="map">
+  <div class="sec-head">
+    <div>
+      <h2>Карта площадок</h2>
+      <p>Все локации 5 вёрст, S95, parkrun и RunPark на одной карте. Отметьте, где уже были, и спланируйте поездку.</p>
+    </div>
+    <a class="sec-link" href="#">Открыть карту →</a>
+  </div>
+  <div class="mapsec">
+    <div class="card map-card">
+      <svg viewBox="0 0 600 360" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="mg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="color-mix(in srgb, var(--p-5v) 10%, var(--surface-2))"/>
+            <stop offset="1" stop-color="var(--surface-2)"/>
+          </linearGradient>
+        </defs>
+        <rect width="600" height="360" fill="url(#mg)"/>
+        <!-- стилизованные «реки/дороги» -->
+        <path d="M-20 120 C120 90 180 200 320 170 S520 110 640 150" fill="none" stroke="var(--border)" stroke-width="2"/>
+        <path d="M-20 250 C140 230 220 300 360 270 S540 240 640 280" fill="none" stroke="var(--border)" stroke-width="2"/>
+        <g id="pins"></g>
+      </svg>
+    </div>
+    <div class="card map-side">
+      <div>
+        <div class="biglabel">Локаций на карте</div>
+        <div class="bignum">214</div>
+      </div>
+      <div class="map-legend">
+        <div class="li"><span><i style="background:var(--p-5v)"></i>5 вёрст</span><b>156</b></div>
+        <div class="li"><span><i style="background:var(--p-s95)"></i>S95</span><b>34</b></div>
+        <div class="li"><span><i style="background:var(--p-parkrun)"></i>parkrun</span><b>14</b></div>
+        <div class="li"><span><i style="background:var(--p-runpark)"></i>RunPark</span><b>10</b></div>
+      </div>
+      <div class="member-only" style="margin-top:auto;padding-top:14px;border-top:1px solid var(--border)">
+        <div class="biglabel">Вы посетили</div>
+        <div class="bignum" style="color:var(--accent)">49 <small style="font-size:16px;color:var(--muted);font-weight:700">/ 214</small></div>
+      </div>
+      <button class="btn primary guest-only" style="margin-top:auto" onclick="setView('member')">Войти и отметить свои</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== ЛИЧНАЯ КАРТОЧКА ===================== -->
+<section class="wrap" id="personal">
+  <div class="personal">
+    <!-- ГОСТЬ -->
+    <div class="guest-only">
+      <h2>Ваша история — в одном профиле</h2>
+      <p class="lead">
+        Привяжите профили 5 вёрст, S95 и parkrun один раз — и видите свои финиши, PR, серии суббот,
+        темп и волонтёрство вместе. Данные подтягиваются из публичных страниц автоматически.
+      </p>
+      <div class="hero-cta" style="justify-content:center">
+        <button class="btn primary" onclick="setView('member')">Войти через VK</button>
+        <a class="btn ghost" href="#">Посмотреть демо-профиль</a>
+      </div>
+    </div>
+    <!-- УЧАСТНИК -->
+    <div class="member-only">
+      <div class="myhead">
+        <div class="avatar" style="background:var(--accent-grad)">ДП</div>
+        <div class="hi"><b>С возвращением, Дмитрий!</b><span>Последняя пробежка: суббота, Мещерское озеро · 22:14</span></div>
+      </div>
+      <div class="mystats">
+        <div class="mystat"><div class="k">187</div><div class="l">всего пробежек</div></div>
+        <div class="mystat"><div class="k pr">20:42</div><div class="l">личный рекорд (Global PR)</div></div>
+        <div class="mystat"><div class="k">49</div><div class="l">уникальных локаций</div></div>
+        <div class="mystat"><div class="k">63</div><div class="l">волонтёрств</div></div>
+        <div class="mystat"><div class="k">14</div><div class="l">серия суббот 🔥</div></div>
+        <div class="mystat"><div class="k">#312</div><div class="l">в рейтинге пробежек</div></div>
+        <div class="mystat"><div class="k">5:41</div><div class="l">средний темп /км</div></div>
+        <div class="mystat"><div class="k">23%</div><div class="l">прогресс туризма</div></div>
+      </div>
+      <div class="hero-cta" style="justify-content:center">
+        <a class="btn primary" href="#">Открыть личный кабинет</a>
+        <a class="btn ghost" href="#">Поделиться карточкой</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== МИССИЯ ===================== -->
+<section class="wrap">
+  <div class="mission">
+    <b>Зачем это.</b> Объединение статистики в одном месте помогает преодолеть барьер у тех,
+    кому непросто решиться начать вести учёт в новой беговой системе: когда путь виден целиком,
+    первая пробежка перестаёт казаться «с нуля». Проект неофициальный — для участников движения.
+  </div>
+</section>
+
+<!-- ===================== FOOTER ===================== -->
+<footer class="site">
+  <div class="wrap foot">
+    <div class="brand"><span class="logo">🏃</span><span>run5k.run</span></div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap">
+      <a href="#">О проекте</a><a href="#">Политика данных</a><a href="#">Контакты</a><a href="#">grafana.run5k.run</a>
+    </div>
+    <span>© 2026 · неофициальный проект сообщества</span>
+  </div>
+</footer>
+
+<script>
+  /* ---------- ТЕМА ---------- */
+  function toggleTheme(){
+    const r = document.documentElement;
+    const next = r.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    r.setAttribute('data-theme', next);
+    document.getElementById('themeBtn').textContent = next === 'dark' ? '☀️' : '🌙';
+    localStorage.setItem('theme', next);
+  }
+  (function(){ const t = localStorage.getItem('theme'); if(t){ document.documentElement.setAttribute('data-theme',t); document.getElementById('themeBtn').textContent = t==='dark'?'☀️':'🌙'; } })();
+
+  /* ---------- ВИД (гость / участник) ---------- */
+  function setView(v){
+    document.documentElement.setAttribute('data-view', v);
+    document.getElementById('vGuest').classList.toggle('on', v==='guest');
+    document.getElementById('vMember').classList.toggle('on', v==='member');
+  }
+
+  /* ---------- АНИМИРОВАННЫЕ СЧЁТЧИКИ ---------- */
+  function animateCount(el){
+    const target = +el.dataset.count; const dur = 1400; const start = performance.now();
+    function step(now){
+      const p = Math.min((now-start)/dur, 1);
+      const eased = 1 - Math.pow(1-p, 3);
+      el.textContent = Math.floor(target*eased).toLocaleString('ru-RU');
+      if(p<1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+  const io = new IntersectionObserver((es)=>es.forEach(e=>{ if(e.isIntersecting){ animateCount(e.target); io.unobserve(e.target);} }));
+  document.querySelectorAll('[data-count]').forEach(el=>io.observe(el));
+
+  /* ---------- ГРАФИК АКТИВНОСТИ ---------- */
+  const months = ['Июл','Авг','Сен','Окт','Ноя','Дек','Янв','Фев','Мар','Апр','Май','Июн'];
+  const runs = [82,90,86,94,71,64,58,69,88,103,118,126];
+  const vols = [12,13,12,14,10,9,8,10,13,15,17,18];
+  const maxV = Math.max(...runs);
+  const bars = document.getElementById('bars');
+  months.forEach((m,i)=>{
+    const col = document.createElement('div'); col.className='col';
+    const h = Math.round(runs[i]/maxV*100);
+    const hv = Math.round(vols[i]/maxV*100);
+    col.innerHTML = `<div style="display:flex;gap:3px;align-items:flex-end;width:100%;height:100%;justify-content:center">
+        <div class="bar" style="height:0;width:55%" data-h="${h}"></div>
+        <div class="bar vol" style="height:0;width:30%" data-h="${hv}"></div>
+      </div><div class="mlabel">${m}</div>`;
+    bars.appendChild(col);
+  });
+  const barIO = new IntersectionObserver((es)=>es.forEach(e=>{ if(e.isIntersecting){ bars.querySelectorAll('.bar').forEach(b=>b.style.height=b.dataset.h+'%'); barIO.disconnect(); } }));
+  barIO.observe(bars);
+
+  /* ---------- РЕЙТИНГИ ---------- */
+  const palette = ['#6366f1','#2563eb','#ec4899','#16a34a','#8b5cf6','#f59e0b','#14b8a6','#ef4444'];
+  function initials(n){ return n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+  const boards = [
+    { unit:'пробежек', data:[['Анна Соколова',412],['Игорь Петров',389],['Мария Ким',377],['Сергей Волков',361],['Дмитрий Попов',187,true],['Олег Лебедев',158]] },
+    { unit:'', data:[['Артём Зайцев','15:42'],['Павел Орлов','15:58'],['Никита Громов','16:11'],['Денис Рыбин','16:24'],['Дмитрий Попов','20:42',true]] },
+    { unit:'локаций', data:[['Елена Морозова',98],['Андрей Котов',91],['Юлия Белова',87],['Роман Дятлов',79],['Дмитрий Попов',49,true]] },
+    { unit:'побед', data:[['Артём Зайцев',64],['Павел Орлов',51],['Анна Соколова',47],['Никита Громов',33],['Дмитрий Попов',5,true]] },
+    { unit:'волонтёрств', data:[['Татьяна Жук',204],['Виктор Сомов',188],['Ирина Гусева',171],['Мария Ким',150],['Дмитрий Попов',63,true]] },
+  ];
+  boards.forEach((b,bi)=>{
+    const wrap = document.getElementById('b'+bi);
+    b.data.forEach((row,i)=>{
+      const [name,val,you] = row;
+      const div = document.createElement('div');
+      div.className = 'row' + (i<3?' top'+(i+1):'') + (you?' you':'');
+      div.innerHTML = `
+        <div class="rank">${i+1}</div>
+        <div class="person">
+          <div class="avatar" style="background:${palette[i%palette.length]}">${initials(name)}</div>
+          <div style="min-width:0"><div class="nm">${name}${you?' · вы':''}</div><div class="meta">5 вёрст · S95 · parkrun</div></div>
+        </div>
+        <div class="val">${val}<small>${b.unit}</small></div>`;
+      wrap.appendChild(div);
+    });
+  });
+  function showBoard(i,el){
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+    el.classList.add('on');
+    document.querySelectorAll('.board').forEach((b,bi)=>b.classList.toggle('on', bi===i));
+  }
+
+  /* ---------- ПИНЫ НА КАРТЕ ---------- */
+  const pinColors = {f:'var(--p-5v)',s:'var(--p-s95)',p:'var(--p-parkrun)',r:'var(--p-runpark)'};
+  const pins = [[90,110,'f'],[160,180,'f'],[240,90,'s'],[300,200,'f'],[360,130,'p'],[420,230,'f'],[480,120,'s'],[150,260,'f'],[260,280,'r'],[400,80,'f'],[520,260,'p'],[70,210,'f'],[330,300,'f'],[450,170,'s'],[200,140,'f']];
+  const g = document.getElementById('pins');
+  pins.forEach(([x,y,t])=>{
+    g.insertAdjacentHTML('beforeend',
+      `<circle cx="${x}" cy="${y}" r="7" fill="${pinColors[t]}" stroke="var(--surface)" stroke-width="2"><animate attributeName="r" values="7;9;7" dur="3s" repeatCount="indefinite" begin="${Math.random()}s"/></circle>`);
+  });
+</script>
+</body>
+</html>

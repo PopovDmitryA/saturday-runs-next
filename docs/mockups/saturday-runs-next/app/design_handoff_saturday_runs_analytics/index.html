@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Saturday Runs · Аналитика</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geologica:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    @keyframes viewIn {
+      from { transform: translateY(10px); }
+      to { transform: none; }
+    }
+    #root { min-height: 100vh; }
+    /* #still — snap all entrance animations to final state (verification + reduced-motion safety) */
+    .still *, .still *::before, .still *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+    .still .line-path { stroke-dashoffset: 0 !important; }
+    .still .area-path { opacity: 1 !important; }
+  </style>
+  <script>
+    if (location.hash.indexOf("still") !== -1) {
+      window.__SR_STILL = true;
+      document.documentElement.classList.add("still");
+    }
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <!-- mock data (plain JS) -->
+  <script src="data.js"></script>
+
+  <!-- app (Babel) -->
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="charts.jsx"></script>
+  <script type="text/babel" src="community.jsx"></script>
+  <script type="text/babel" src="personal.jsx"></script>
+  <script type="text/babel" src="runs.jsx"></script>
+  <script type="text/babel" src="profiles.jsx"></script>
+  <script type="text/babel" src="about.jsx"></script>
+  <script type="text/babel" src="main.jsx"></script>
+</body>
+</html>

@@ -13,6 +13,7 @@ from app.activity_url import resolve_activity_url
 from app.models import (
     DashboardCache,
     Event,
+    EventCrosslink,
     EventSummary,
     Location,
     Participant,
@@ -241,6 +242,32 @@ def get_latest_sync_job(db: Session, user_id: UUID) -> SyncJob | None:
     )
 
 
+def _count_runpark_duplicates(
+    db: Session,
+    runpark_participant_id: UUID,
+    *,
+    include_test_events: bool,
+) -> tuple[int, int]:
+    """Count RunPark runs/volunteering that are duplicates of primary-platform events (via event_crosslinks).
+    Returns (duplicate_runs, duplicate_vols)."""
+    base_run = (
+        db.query(func.count(RunResult.id))
+        .join(Event, RunResult.event_id == Event.id)
+        .join(EventCrosslink, EventCrosslink.secondary_event_id == Event.id)
+        .filter(RunResult.participant_id == runpark_participant_id)
+    )
+    base_vol = (
+        db.query(func.count(VolunteerResult.id))
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .join(EventCrosslink, EventCrosslink.secondary_event_id == Event.id)
+        .filter(VolunteerResult.participant_id == runpark_participant_id)
+    )
+    if not include_test_events:
+        base_run = base_run.filter(Event.is_test_event.is_(False))
+        base_vol = base_vol.filter(Event.is_test_event.is_(False))
+    return (base_run.scalar() or 0), (base_vol.scalar() or 0)
+
+
 def compute_dashboard_stats(db: Session, user_id: UUID, *, include_test_events: bool = False) -> dict[str, object]:
     links = (
         db.query(PlatformLink, Platform)
@@ -313,6 +340,21 @@ def compute_dashboard_stats(db: Session, user_id: UUID, *, include_test_events: 
         by_platform[platform.code] = {"runs": runs_count, "volunteering": vol_count}
         total_runs += runs_count
         total_volunteering += vol_count
+
+    # Dedup: subtract RunPark results that are secondary in event_crosslinks,
+    # but only if the user also has a primary platform (five_verst or s95) linked.
+    linked_platforms = {p.code for _, p in links}
+    if "runpark" in linked_platforms and linked_platforms & {"five_verst", "s95"}:
+        runpark_link = next((lnk for lnk, p in links if p.code == "runpark"), None)
+        if runpark_link and runpark_link.participant_id:
+            dup_runs, dup_vols = _count_runpark_duplicates(
+                db, runpark_link.participant_id, include_test_events=include_test_events
+            )
+            if dup_runs or dup_vols:
+                # by_platform keeps gross counts (shown per-platform in profile card)
+                # total_runs/total_volunteering are deduplicated (shown in overall stats)
+                total_runs = max(0, total_runs - dup_runs)
+                total_volunteering = max(0, total_volunteering - dup_vols)
 
     analytics = _compute_dashboard_analytics(
         db,
@@ -937,7 +979,10 @@ def list_user_volunteering(
     )
     if not include_test_events:
         query = query.filter(Event.is_test_event.is_(False))
-    query = query.filter(Event.event_date > date(1970, 1, 1))
+    # parkrun volunteer summaries are stored at 1970-01-01 by design — include them
+    query = query.filter(
+        (Platform.code == "parkrun") | (Event.event_date > date(1970, 1, 1))
+    )
     rows = query.order_by(Event.event_date.desc()).offset(offset).limit(limit).all()
 
     catalog_index = LocationCatalogIndex(db)

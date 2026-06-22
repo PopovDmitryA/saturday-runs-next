@@ -17,6 +17,7 @@
 | [docs/parkrun_pipeline.md](docs/parkrun_pipeline.md) | Parkrun (Mac + Chromium) |
 | [docs/legacy_etl_mapping.md](docs/legacy_etl_mapping.md) | Маппинг legacy → новая схема |
 | [deploy/DOMAINS.md](deploy/DOMAINS.md) | run5k.run / grafana.run5k.run |
+| [docs/runpark/README.md](docs/runpark/README.md) | **RunPark** — локации, маппинг, контракт view |
 
 ---
 

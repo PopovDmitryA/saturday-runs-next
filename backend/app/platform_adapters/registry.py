@@ -8,6 +8,7 @@ _PLATFORM_ADAPTER_CLASSES: tuple[tuple[str, str], ...] = (
     ("five_verst", "app.platform_adapters.five_verst.adapter.FiveVerstAdapter"),
     ("s95", "app.platform_adapters.s95.adapter.S95Adapter"),
     ("parkrun", "app.platform_adapters.parkrun.adapter.ParkrunAdapter"),
+    ("runpark", "app.platform_adapters.runpark.adapter.RunparkAdapter"),
 )
 
 

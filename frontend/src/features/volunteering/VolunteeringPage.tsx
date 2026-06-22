@@ -10,7 +10,8 @@ import { PlatformBadge } from "../../components/PlatformBadge";
 import { useVolunteeringFilters } from "../../hooks/useVolunteeringFilters";
 import { listProfileLinks, type VolunteeringItem } from "../../lib/api";
 import { useAppDataSource, AppDataSourceProvider, demoDataSource } from "../../lib/appDataSource";
-import { sortVolunteering, toggleDateSort } from "../../lib/activityList";
+import { createFullSelection, sortVolunteering, toggleDateSort, uniquePlatforms } from "../../lib/activityList";
+import { platformCodeLabel } from "../../lib/format";
 import { DemoShell } from "../demo/DemoShell";
 
 function VolunteeringContent() {
@@ -22,11 +23,35 @@ function VolunteeringContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const filters = useVolunteeringFilters(items);
+  // parkrun volunteering: counted but not shown in table
+  // count taken from "Total Credits" summary row, e.g. role = "Total Credits (2×)"
+  const tableItems = useMemo(() => items.filter((i) => i.platform_code !== "parkrun"), [items]);
+  const parkrunCount = useMemo(() => {
+    const totalCreditsRow = items.find(
+      (i) => i.platform_code === "parkrun" && i.role?.startsWith("Total Credits"),
+    );
+    if (totalCreditsRow?.role) {
+      const match = /\((\d+)×\)/.exec(totalCreditsRow.role);
+      if (match) return parseInt(match[1], 10);
+    }
+    return items.filter((i) => i.platform_code === "parkrun").length;
+  }, [items]);
+
+  const filters = useVolunteeringFilters(tableItems);
   const displayedItems = useMemo(
     () => sortVolunteering(filters.filtered, filters.sort),
     [filters.filtered, filters.sort],
   );
+
+  const allPlatforms = useMemo(() => uniquePlatforms(tableItems), [tableItems]);
+  const platformCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const item of tableItems) counts[item.platform_code] = (counts[item.platform_code] ?? 0) + 1;
+    return allPlatforms.map((code) => ({ code, count: counts[code] ?? 0 }));
+  }, [tableItems, allPlatforms]);
+
+  const activePlatformFilter =
+    filters.platformFilterActive ? [...filters.selectedPlatforms][0] ?? "all" : "all";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,6 +114,42 @@ function VolunteeringContent() {
 
       {!loading && !error && items.length > 0 && (
         <>
+          <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по системам">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activePlatformFilter === "all"}
+              className={activePlatformFilter === "all" ? "map-mode-tab active" : "map-mode-tab"}
+              onClick={() => filters.setSelectedPlatforms(createFullSelection(allPlatforms))}
+            >
+              Все ({tableItems.length})
+            </button>
+            {platformCounts.map(({ code, count }) => (
+              <button
+                key={code}
+                type="button"
+                role="tab"
+                aria-selected={activePlatformFilter === code}
+                className={activePlatformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
+                onClick={() => filters.setSelectedPlatforms(new Set([code]))}
+              >
+                {platformCodeLabel(code)} ({count})
+              </button>
+            ))}
+            {parkrunCount > 0 && (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={false}
+                className="map-mode-tab"
+                disabled
+                title="Волонтёрства parkrun учтены в общей статистике, но не отображаются в таблице"
+              >
+                parkrun ({parkrunCount})
+              </button>
+            )}
+          </div>
+
           <div className="table-wrap">
             <table className="data-table data-table-filterable data-table-layout-fixed data-table-volunteering">
               <ActivityTableCols variant="volunteering" />
@@ -140,15 +201,7 @@ function VolunteeringContent() {
                   />
                   <ColumnHeader
                     label="Система"
-                    filterActive={filters.platformFilterActive}
-                    filterTitle="Фильтр по системе"
-                    filterContent={
-                      <CheckboxListFilter
-                        options={filters.platformOptions}
-                        selected={filters.selectedPlatforms}
-                        onSelectedChange={filters.setSelectedPlatforms}
-                      />
-                    }
+                    filterable={false}
                   />
                   <ColumnHeader
                     label="Локация"
@@ -215,7 +268,7 @@ function VolunteeringContent() {
 
           <p className="table-foot muted">
             <span>
-              Показано: {displayedItems.length} из {items.length}
+              Показано: {displayedItems.length} из {tableItems.length}
             </span>
             {filters.hasActiveFilters && (
               <button type="button" className="btn btn-ghost btn-sm" onClick={filters.resetAll}>

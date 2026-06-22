@@ -5,10 +5,12 @@ import {
   ApiError,
   confirmFiveVerstProfile,
   confirmParkrunProfile,
+  confirmRunparkProfile,
   confirmS95Profile,
   listProfileLinks,
   previewFiveVerstProfile,
   previewParkrunProfile,
+  previewRunparkProfile,
   previewS95Profile,
   triggerSyncRefreshPlatform,
   unlinkProfile,
@@ -75,6 +77,17 @@ const PLATFORMS: PlatformConfig[] = [
     confirmSuccess:
       "Профиль parkrun привязан. Синхронизация в очереди (запросы к parkrun.org.uk идут с паузой).",
   },
+  {
+    code: "runpark",
+    hint: "Введите штрихкод участника RunPark — буква A и цифры, например A6871786.",
+    placeholder: "A6871786",
+    openLabel: "Открыть на runpark.ru",
+    inputMode: "text",
+    preview: previewRunparkProfile,
+    confirm: confirmRunparkProfile,
+    emptyInputError: "Введите штрихкод участника RunPark",
+    confirmSuccess: "Профиль RunPark привязан.",
+  },
 ];
 
 type PlatformFormState = {
@@ -114,9 +127,6 @@ function ProfileDataFreshness({
   }
   return (
     <div className="profile-data-freshness" role="note">
-      {dataSource === "database" && (
-        <p className="profile-data-freshness-source">Найдено в базе сайта — загрузка без запроса к платформе.</p>
-      )}
       {updatedLine && <p className="muted">{updatedLine}</p>}
       {throughLine && <p className="muted">{throughLine}</p>}
     </div>
@@ -241,9 +251,11 @@ function PlatformSpoiler({
               dataUpdatedAt={linked.data_updated_at}
               dataThroughDate={linked.data_through_date}
             />
-            <a className="link" href={linked.external_url} target="_blank" rel="noreferrer">
-              {config.openLabel}
-            </a>
+            {linked.external_url.startsWith("http") && (
+              <a className="link" href={linked.external_url} target="_blank" rel="noreferrer">
+                {config.openLabel}
+              </a>
+            )}
             <div className="actions-row profile-linked-actions">
               <button
                 type="button"
@@ -305,7 +317,6 @@ function PlatformSpoiler({
                 <p>
                   <strong>{form.preview.display_name}</strong>
                 </p>
-                <p className="muted">ID: {form.preview.external_user_id}</p>
                 {form.preview.barcode_id && <p>Штрихкод: {form.preview.barcode_id}</p>}
                 {form.preview.platform_code === "s95" && form.preview.planning_location && (
                   <p>
@@ -368,7 +379,6 @@ function PlatformSpoiler({
                     <p>
                       <strong>{form.preview.parkrun_match.display_name}</strong>
                     </p>
-                    <p className="muted">ID: {form.preview.parkrun_match.external_user_id}</p>
                     {form.preview.parkrun_match.age_category && (
                       <p>Возрастная группа: {form.preview.parkrun_match.age_category}</p>
                     )}

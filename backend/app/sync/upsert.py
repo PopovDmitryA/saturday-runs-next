@@ -300,6 +300,7 @@ def upsert_participant(
     profile_url: str | None = None,
     club_name: str | None = None,
     age_category: str | None = None,
+    barcode_id: str | None = None,
 ) -> Participant:
     row = (
         db.query(Participant)
@@ -321,6 +322,7 @@ def upsert_participant(
             profile_url=profile_url or default_profile_url,
             club_name=club_name,
             age_category=age_category,
+            barcode_id=barcode_id,
             source_url=profile_url,
             parser_version=PARSER_VERSION,
             fetched_at=now,
@@ -335,6 +337,8 @@ def upsert_participant(
             row.club_name = club_name
         if age_category:
             row.age_category = age_category
+        if barcode_id:
+            row.barcode_id = barcode_id
         row.fetched_at = now
         row.sync_status = SyncStatus.ok
     db.flush()
@@ -360,6 +364,7 @@ def upsert_run_results(
             display_name=item.participant_name,
             club_name=None if from_profile else item.club_name,
             age_category=None if from_profile else item.age_category,
+            barcode_id=item.barcode_id if not from_profile else None,
         )
         touched_participant_ids.add(participant.id)
         row = (

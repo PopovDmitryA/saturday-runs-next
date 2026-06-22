@@ -18,6 +18,7 @@ dependencies = [
     "cloudscraper>=1.2.71",
     "celery[redis]>=5.4.0",
     "playwright>=1.49.0",
+    "pymssql>=2.3.0",
 ]
 
 [project.optional-dependencies]
@@ -57,6 +58,10 @@ plugins = []
 [[tool.mypy.overrides]]
 module = ["alembic.*", "bot_app.main"]
 ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["pymssql.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

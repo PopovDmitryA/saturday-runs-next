@@ -28,6 +28,7 @@ from app.services.profile_linking_service import (
     confirm_s95_profile_link,
     list_user_profile_links,
     preview_profile_link,
+    preview_runpark_profile_link,
     preview_s95_profile_link,
 )
 from app.services.profile_unlink_service import unlink_user_profile
@@ -38,6 +39,7 @@ logger = logging.getLogger(__name__)
 FIVE_VERST_CODE = "five_verst"
 S95_CODE = "s95"
 PARKRUN_CODE = "parkrun"
+RUNPARK_CODE = "runpark"
 
 
 def _handle_linking_error(exc: ProfileLinkingError) -> HTTPException:
@@ -249,6 +251,39 @@ def parkrun_confirm(
     return ProfileLinkConfirmResponse(link=PlatformLinkResponse.model_validate(link_data))
 
 
+@router.post("/runpark/preview", response_model=ProfilePreviewResponse)
+async def runpark_preview(
+    request: Request,
+    body: ProfileUrlRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ProfilePreviewResponse | Response:
+    try:
+        result = await _run_with_cancel(request, preview_runpark_profile_link, db, body.profile_url, user=user)
+        if result is None:
+            return Response(status_code=499)
+    except ProfileLinkingError as exc:
+        raise _handle_linking_error(exc) from exc
+    from dataclasses import asdict
+    return ProfilePreviewResponse.model_validate(asdict(result))
+
+
+@router.post("/runpark/confirm", response_model=ProfileLinkConfirmResponse)
+def runpark_confirm(
+    body: ProfileUrlRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ProfileLinkConfirmResponse:
+    try:
+        link = confirm_profile_link(db, user, RUNPARK_CODE, body.profile_url)
+    except ProfileLinkingError as exc:
+        raise _handle_linking_error(exc) from exc
+
+    links = list_user_profile_links(db, user)
+    link_data = next(item for item in links if item["id"] == link.id)
+    return ProfileLinkConfirmResponse(link=PlatformLinkResponse.model_validate(link_data))
+
+
 @router.get("", response_model=list[PlatformLinkResponse])
 def list_profiles(
     db: Annotated[Session, Depends(get_db)],
@@ -258,7 +293,7 @@ def list_profiles(
     return [PlatformLinkResponse.model_validate(item) for item in links]
 
 
-SUPPORTED_UNLINK_PLATFORMS = frozenset({FIVE_VERST_CODE, S95_CODE, PARKRUN_CODE})
+SUPPORTED_UNLINK_PLATFORMS = frozenset({FIVE_VERST_CODE, S95_CODE, PARKRUN_CODE, RUNPARK_CODE})
 
 
 @router.delete("/{platform_code}", response_model=ProfileUnlinkResponse)

@@ -132,6 +132,12 @@ class Settings(BaseSettings):
     parkrun_use_cdp_for_fetch: bool = False
     parkrun_ban_cooldown_seconds: int = 900
 
+    runpark_mssql_server: str = "runpark.ru"
+    runpark_mssql_database: str = "ParkrunLive"
+    runpark_mssql_user: str = ""
+    runpark_mssql_password: str = ""
+    runpark_mssql_timeout: int = 30
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -8,6 +8,7 @@ const PLATFORM_VARIANT: Record<string, string> = {
   five_verst: "badge-platform-five-verst",
   s95: "badge-platform-s95",
   parkrun: "badge-platform-parkrun",
+  runpark: "badge-platform-runpark",
 };
 
 export function PlatformBadge({ code }: PlatformBadgeProps) {

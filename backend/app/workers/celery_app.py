@@ -23,6 +23,7 @@ celery_app.conf.update(
         "app.workers.tasks.user_sync",
         "app.workers.tasks.s95_sync",
         "app.workers.tasks.parkrun_sync",
+        "app.workers.tasks.runpark_sync",
     ),
     task_routes={
         "five_verst_sync.*": {"queue": "five_verst"},
@@ -31,6 +32,7 @@ celery_app.conf.update(
         "s95_sync.run_user_sync": {"queue": "s95_user"},
         "s95_sync.*": {"queue": "s95"},
         "parkrun_sync.*": {"queue": "parkrun"},
+        "runpark_sync.*": {"queue": "runpark"},
     },
     beat_schedule={
         "five-verst-registry-daily": {
@@ -97,6 +99,11 @@ celery_app.conf.update(
             "task": "s95_sync.sync_athletes_registry",
             "schedule": crontab(minute=30, hour="*/2"),
             "options": {"queue": "s95"},
+        },
+        "runpark-latest": {
+            "task": "runpark_sync.sync_latest",
+            "schedule": crontab(hour="3,8,13,18,23", minute=0),
+            "options": {"queue": "runpark"},
         },
     },
 )

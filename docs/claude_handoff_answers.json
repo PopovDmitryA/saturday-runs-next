@@ -1,0 +1,184 @@
+{
+  "meta": {
+    "title": "Ответы на вопросы Claude Code по Saturday Runs",
+    "created_at": "2026-06-14",
+    "verified_on": "2026-06-14T13:30:51Z",
+    "author": "Cursor agent (по запросу Дмитрия)",
+    "related_docs": [
+      "AGENTS.md",
+      "PROJECT_HANDOFF.local.md",
+      "scripts/deploy_prod.sh",
+      "deploy/DOMAINS.md"
+    ]
+  },
+  "questions": [
+    {
+      "id": "host_nginx_sudo",
+      "question": "Host nginx sudo — настроен ли passwordless sudo для viewer на prod, или деплой host nginx нужно делать вручную через root?",
+      "answer": {
+        "summary": "Passwordless sudo для viewer НЕ настроен. Host nginx деплоится вручную с паролем sudo (или через root).",
+        "passwordless_sudo": false,
+        "verification": {
+          "command": "sudo -n nginx -t",
+          "result": "sudo: a password is required",
+          "exit_code": 1
+        },
+        "viewer_groups": ["viewer", "adm", "sudo", "systemd-journal", "docker"],
+        "deploy_script_behavior": {
+          "script": "scripts/deploy_prod.sh",
+          "host_nginx_step": "Пробует sudo -n cp deploy/nginx/run5k.run.conf … && sudo -n nginx -t && sudo -n systemctl reload nginx",
+          "on_failure": "Пишет WARN и продолжает — docker nginx (:8080) перезапускается, host nginx (TLS, Grafana redirects) — нет"
+        },
+        "manual_steps": [
+          "sudo cp deploy/nginx/run5k.run.conf /etc/nginx/sites-available/run5k.run",
+          "sudo nginx -t",
+          "sudo systemctl reload nginx"
+        ],
+        "live_host_nginx_state": {
+          "sites_enabled_date": "2026-06-09",
+          "note": "Live /etc/nginx/sites-available/run5k.run отличается от deploy/nginx/run5k.run.conf в репо — вероятно правили вручную при переключении доменов. Перед cp из репо — diff."
+        }
+      }
+    },
+    {
+      "id": "git_pull_rsync",
+      "question": "git pull на prod — какие именно файлы исторически заливались rsync без commit? Чтобы знать, что проверять перед git pull.",
+      "answer": {
+        "summary": "Два канала деплоя: git pull и rsync (deploy_prod.sh). Часто rsync заливал код без commit на сервере. Перед git pull — проверять drift в rsync-путях; .env и frontend/dist не трогать.",
+        "rsync_paths_from_deploy_prod_sh": [
+          {
+            "local": "backend/app/",
+            "remote": "/opt/saturday-runs-next/backend/app/",
+            "description": "Весь Python backend (API, workers, sync, parsers, services)"
+          },
+          {
+            "local": "backend/vk_bot/",
+            "remote": "/opt/saturday-runs-next/backend/vk_bot/",
+            "description": "VK admin bot"
+          },
+          {
+            "local": "deploy/",
+            "remote": "/opt/saturday-runs-next/deploy/",
+            "description": "Nginx-конфиги, DOMAINS.md"
+          },
+          {
+            "local": "docker-compose.yml",
+            "remote": "/opt/saturday-runs-next/docker-compose.yml"
+          },
+          {
+            "local": "docker-compose.prod.yml",
+            "remote": "/opt/saturday-runs-next/docker-compose.prod.yml"
+          },
+          {
+            "local": "frontend/src/",
+            "remote": "/opt/saturday-runs-next/frontend/src/",
+            "description": "Исходники React (dist собирается на сервере отдельно)"
+          }
+        ],
+        "not_rsynced_safe_to_ignore_on_pull": [
+          ".env",
+          "frontend/dist/",
+          "backend/scripts/",
+          "backend/tests/",
+          "backend/alembic/",
+          "data/",
+          "/etc/nginx/ (host nginx, вне репо)"
+        ],
+        "prod_git_state_as_of_2026_06_14": {
+          "path": "/opt/saturday-runs-next",
+          "local_head": "474518e",
+          "local_head_message": "Fix official map visibility and preserve location city on upsert.",
+          "origin_main": "3256a65",
+          "origin_main_message": "Move legacy site link to the top of the About page.",
+          "commits_behind_origin_main": 18,
+          "modified_tracked_files_count": "~70",
+          "modified_paths_match_rsync": true,
+          "untracked_junk_examples": [
+            "AboutPage.tsx (в корне, не там где надо)",
+            "backend/dashboard_service.py (дубль, должен быть в app/services/)",
+            "data/migration_*.log",
+            "data/run_migration.sh"
+          ]
+        },
+        "before_git_pull_checklist": [
+          "git status -sb",
+          "git diff --stat HEAD origin/main",
+          "git stash push -m 'pre-pull prod drift' -- backend/app backend/vk_bot deploy docker-compose.yml docker-compose.prod.yml frontend/src",
+          ".env НЕ трогать",
+          "git pull origin main",
+          "git stash pop (или drop, если rsync-версия не нужна)",
+          "npm ci && npm run build в frontend (через docker node:22-alpine)",
+          "docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build api worker-s95 worker-five-verst worker-parkrun beat vk-bot",
+          "docker compose restart nginx"
+        ],
+        "recommended_deploy_workflow": "Основной деплой — bash scripts/deploy_prod.sh с Mac (rsync + remote build). git pull на prod — только когда осознанно синхронизируете с GitHub; иначе следующий rsync снова перезапишет файлы поверх git."
+      }
+    },
+    {
+      "id": "parkrun_playwright_state",
+      "question": "parkrun_playwright_state.json — он актуален, cookies не протухли? Когда последний раз обновлялись?",
+      "answer": {
+        "summary": "Файл не обновлялся 10 дней. WAF-токен протух; долгоживущие cookies ещё valid, но fetch скорее всего упадёт — нужно обновить сессию на Mac.",
+        "file_path": "data/parkrun_playwright_state.json",
+        "gitignored": true,
+        "last_modified": "2026-06-04T08:08:18",
+        "file_size_bytes": 3775,
+        "cookies_count": 7,
+        "cookies": [
+          {
+            "name": "aws-waf-token",
+            "domain": ".www.parkrun.org.uk",
+            "expires": "2026-06-08T05:08:07+00:00",
+            "status_as_of_2026_06_14": "expired",
+            "note": "Критичный для fetch; протух ~6 дней назад"
+          },
+          {
+            "name": "psc",
+            "domain": ".www.parkrun.org.uk",
+            "expires": "2026-12-02T08:50:45+00:00",
+            "status_as_of_2026_06_14": "valid"
+          },
+          {
+            "name": "im_youtube",
+            "domain": ".www.parkrun.org.uk",
+            "expires": "2026-12-02T08:50:45+00:00",
+            "status_as_of_2026_06_14": "valid"
+          },
+          {
+            "name": "AEC",
+            "domain": ".google.com",
+            "expires": "2026-11-30T12:20:50+00:00",
+            "status_as_of_2026_06_14": "valid"
+          },
+          {
+            "name": "__Secure-ENID",
+            "domain": ".google.com",
+            "expires": "2027-07-04T04:39:00+00:00",
+            "status_as_of_2026_06_14": "valid"
+          },
+          {
+            "name": "_ga",
+            "domain": ".parkrun.org.uk",
+            "expires": "2027-07-08T08:50:45+00:00",
+            "status_as_of_2026_06_14": "valid"
+          },
+          {
+            "name": "_ga_MG7X4X82TB",
+            "domain": ".parkrun.org.uk",
+            "expires": "2027-07-09T05:08:10+00:00",
+            "status_as_of_2026_06_14": "valid"
+          }
+        ],
+        "refresh_commands": [
+          "bash scripts/parkrun_save_session_mac.sh",
+          "make parkrun"
+        ],
+        "after_refresh_verify": [
+          "Проверить mtime файла data/parkrun_playwright_state.json",
+          "Проверить expiry aws-waf-token (короткоживущий)"
+        ],
+        "note": "В conversation transcript нет записей об успешном parkrun-fetch после 2026-06-04."
+      }
+    }
+  ]
+}

@@ -73,6 +73,19 @@ services:
       redis:
         condition: service_healthy
 
+  worker-runpark:
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !reset
+      redis:
+        condition: service_healthy
+
   beat:
     environment:
       DATABASE_URL: ${DATABASE_URL}

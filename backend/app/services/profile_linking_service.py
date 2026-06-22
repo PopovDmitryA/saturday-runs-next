@@ -255,6 +255,32 @@ def confirm_s95_profile_link(
     return s95_link, parkrun_link
 
 
+def preview_runpark_profile_link(
+    db: Session,
+    barcode_id: str,
+    *,
+    user: User,
+) -> ProfilePreview:
+    from app.platform_adapters.runpark.adapter import (
+        RunparkInvalidBarcodeError,
+        RunparkProfileNotFoundError,
+        lookup_profile_preview_from_db,
+    )
+
+    _require_personal_data_consent(user)
+    _get_active_platform(db, "runpark")
+
+    try:
+        preview = lookup_profile_preview_from_db(db, barcode_id)
+    except RunparkInvalidBarcodeError as exc:
+        raise ProfileLinkingError(str(exc), 400) from exc
+    except RunparkProfileNotFoundError as exc:
+        raise ProfileLinkingError(str(exc), 404) from exc
+
+    store_profile_preview(user.id, "runpark", barcode_id.strip().upper(), preview)
+    return preview
+
+
 def confirm_profile_link(db: Session, user: User, platform_code: str, profile_url: str) -> PlatformLink:
     _require_personal_data_consent(user)
     ensure_adapters_registered()
@@ -274,8 +300,9 @@ def confirm_profile_link(db: Session, user: User, platform_code: str, profile_ur
 
     try:
         preview = None
-        if platform_code in ("five_verst", "parkrun", "s95"):
-            preview = get_cached_profile_preview(user.id, platform_code, profile_url)
+        if platform_code in ("five_verst", "parkrun", "s95", "runpark"):
+            cache_key = profile_url.strip().upper() if platform_code == "runpark" else profile_url
+            preview = get_cached_profile_preview(user.id, platform_code, cache_key)
             if preview is None:
                 raise ProfileLinkingError(
                     "Сначала нажмите «Предпросмотр» (данные действуют 15 минут), затем подтвердите привязку.",
