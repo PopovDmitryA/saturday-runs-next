@@ -35,3 +35,4 @@ postgres_data/
 .cursor/
 PROJECT_HANDOFF.local.md
 data/parkrun_playwright_state.json
+data/grafana/dashboards/

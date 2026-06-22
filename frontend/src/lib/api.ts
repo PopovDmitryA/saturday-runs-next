@@ -544,6 +544,21 @@ export function confirmParkrunProfile(profileUrl: string) {
   });
 }
 
+export function previewRunparkProfile(profileUrl: string, signal?: AbortSignal) {
+  return apiFetch<ProfilePreview>("/profiles/runpark/preview", {
+    method: "POST",
+    body: JSON.stringify({ profile_url: profileUrl }),
+    signal,
+  });
+}
+
+export function confirmRunparkProfile(profileUrl: string) {
+  return apiFetch<{ link: PlatformLink; message: string }>("/profiles/runpark/confirm", {
+    method: "POST",
+    body: JSON.stringify({ profile_url: profileUrl }),
+  });
+}
+
 export function listProfileLinks() {
   return apiFetch<PlatformLink[]>("/profiles");
 }

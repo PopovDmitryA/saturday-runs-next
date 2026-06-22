@@ -393,6 +393,20 @@ class Event(Base):
     )
 
 
+class EventCrosslink(Base):
+    __tablename__ = "event_crosslinks"
+    __table_args__ = (
+        UniqueConstraint("primary_event_id", "secondary_event_id"),
+        Index("ix_event_crosslinks_primary", "primary_event_id"),
+        Index("ix_event_crosslinks_secondary", "secondary_event_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    primary_event_id: Mapped[UUID] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    secondary_event_id: Mapped[UUID] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class ProtocolSyncState(Base):
     __tablename__ = "protocol_sync_states"
     __table_args__ = (

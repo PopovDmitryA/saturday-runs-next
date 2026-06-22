@@ -13,6 +13,7 @@ import { StatHintTooltip } from "./StatHintTooltip";
 import { TopLocationValue } from "./TopLocationValue";
 import { VolunteerRolesModal } from "./VolunteerRolesModal";
 import { UniqueLocationsModal } from "./UniqueLocationsModal";
+import { RegionsCitiesModal, type GroupBy } from "./RegionsCitiesModal";
 import {
   formatDate,
   formatDuration,
@@ -51,7 +52,7 @@ type AnalyticsCard = {
   category?: AnalyticsCardCategory;
   wide?: boolean;
   clickable?: boolean;
-  modalTarget?: "unique_locations" | "best_results" | "personal_records" | "volunteer_roles";
+  modalTarget?: "unique_locations" | "best_results" | "personal_records" | "volunteer_roles" | "unique_regions" | "unique_cities";
   modalActivity?: "all" | "runs" | "volunteering";
   firstVisitSince?: string;
   tooltipContent?: ReactNode;
@@ -124,6 +125,9 @@ function buildAnalyticsCards(
       value: String(analytics.unique_run_regions),
       label: regionsWithRunsLabel(analytics.unique_run_regions ?? 0),
       category: "runs",
+      clickable: true,
+      modalTarget: "unique_regions",
+      modalActivity: "runs",
     });
   }
 
@@ -133,6 +137,9 @@ function buildAnalyticsCards(
       value: String(analytics.unique_run_cities),
       label: citiesWithRunsLabel(analytics.unique_run_cities ?? 0),
       category: "runs",
+      clickable: true,
+      modalTarget: "unique_cities",
+      modalActivity: "runs",
     });
   }
 
@@ -154,6 +161,9 @@ function buildAnalyticsCards(
       value: String(analytics.unique_volunteer_regions),
       label: regionsWithVolunteeringLabel(analytics.unique_volunteer_regions ?? 0),
       category: "volunteering",
+      clickable: true,
+      modalTarget: "unique_regions",
+      modalActivity: "volunteering",
     });
   }
 
@@ -163,6 +173,9 @@ function buildAnalyticsCards(
       value: String(analytics.unique_volunteer_cities),
       label: citiesWithVolunteeringLabel(analytics.unique_volunteer_cities ?? 0),
       category: "volunteering",
+      clickable: true,
+      modalTarget: "unique_cities",
+      modalActivity: "volunteering",
     });
   }
 

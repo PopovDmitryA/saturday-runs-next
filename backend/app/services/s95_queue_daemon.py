@@ -52,7 +52,17 @@ def run_s95_pending_queue(
                 outcome = process_pending_row(db, row)
                 summary[outcome] = summary.get(outcome, 0) + 1
                 details.append(f"{outcome}: s95 {label}")
-                if outcome == "done" and user_id is not None:
+                # activity_import rows already fetched and imported all data inside
+                # process_pending_row — no additional sync needed. Only run the
+                # full user sync for profile_preview rows (where process_pending_row
+                # only created the PlatformLink but did not import run history).
+                from app.models import ProfileFetchPendingOperation
+                needs_sync = (
+                    outcome == "done"
+                    and user_id is not None
+                    and row.operation != ProfileFetchPendingOperation.activity_import
+                )
+                if needs_sync:
                     job = run_s95_user_sync(db, user_id, SyncJobTrigger.linking)
                     key = (
                         "s95_sync_ok"

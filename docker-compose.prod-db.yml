@@ -1,0 +1,15 @@
+# Local dev: API reads prod PostgreSQL through SSH tunnel on the host.
+#
+# Usage:
+#   make dev-prod-db    # starts tunnel + recreates api against prod (read-only intent)
+#   make dev-local-db   # api back to local postgres container
+#
+# Requires TEMP_PROD_PG_* / TEMP_SSH_* in .env (see scripts/prod_db_env.sh).
+
+services:
+  api:
+    environment:
+      DATABASE_URL: postgresql+psycopg://${PROD_DB_USER}:${PROD_DB_PASSWORD}@host.docker.internal:${PROD_TUNNEL_LOCAL_PORT:-5434}/${PROD_DB_DATABASE}
+      APP_ENV: prod-db-readonly
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -86,10 +86,7 @@ def build_parkrun_work_queue(
         runs = 0
         if link.participant_id is not None:
             runs = _count_participant_runs(db, link.participant_id)
-        needs_sync = (
-            link.sync_status == PlatformLinkSyncStatus.error
-            or runs == 0
-        )
+        needs_sync = link.sync_status == PlatformLinkSyncStatus.error
         if not needs_sync:
             continue
         items.append(

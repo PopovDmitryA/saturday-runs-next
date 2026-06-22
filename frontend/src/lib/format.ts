@@ -271,7 +271,7 @@ export function platformCodeLabel(code: string): string {
     five_verst: "5 вёрст",
     s95: "С95",
     parkrun: "parkrun",
-    runpark: "Runpark",
+    runpark: "RunPark",
   };
   return labels[code] ?? code;
 }

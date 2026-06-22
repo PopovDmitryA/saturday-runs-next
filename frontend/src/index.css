@@ -1511,6 +1511,11 @@ body {
   color: #5b21b6;
 }
 
+.badge-platform-runpark {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
 .badge-platform-default {
   background: #e2e8f0;
   color: #475569;
@@ -2660,6 +2665,11 @@ body {
   background: #2563eb;
   border-color: #2563eb;
   color: #fff;
+}
+
+.map-mode-tab:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .map-toolbar {

@@ -111,6 +111,7 @@ class CanonicalRunResult:
     is_first_run: bool = False
     is_first_run_at_location: bool = False
     club_name: str | None = None
+    barcode_id: str | None = None
     achievement_labels: list[str] = field(default_factory=list)
     location_external_key: str = ""
     location_name: str = ""
