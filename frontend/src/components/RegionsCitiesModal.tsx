@@ -14,9 +14,17 @@ type RegionsCitiesModalProps = {
   groupBy: GroupBy;
 };
 
+const UNKNOWN_GEO = "Не заполнено";
+
+type GeoLocationEntry = {
+  name: string;
+  hint: string | null;
+};
+
 type GeoGroup = {
   name: string;
-  locationNames: string[];
+  locations: GeoLocationEntry[];
+  isUnknown: boolean;
 };
 
 function buildGroups(
@@ -24,28 +32,35 @@ function buildGroups(
   activityFilter: ActivityFilter,
   groupBy: GroupBy,
 ): GeoGroup[] {
-  const map = new Map<string, string[]>();
+  const map = new Map<string, GeoLocationEntry[]>();
 
   for (const loc of data.locations) {
     if (!matchesActivity(loc, activityFilter)) {
       continue;
     }
     const rawKey = groupBy === "region" ? (loc.region ?? null) : loc.city;
-    const name = rawKey ?? (groupBy === "region" ? "Не указан" : "Не указан");
+    const name = rawKey ?? UNKNOWN_GEO;
+    const isUnknown = rawKey === null;
+    const hint = isUnknown ? (groupBy === "region" ? loc.city : loc.region) ?? null : null;
 
-    let names = map.get(name);
-    if (!names) {
-      names = [];
-      map.set(name, names);
+    let entries = map.get(name);
+    if (!entries) {
+      entries = [];
+      map.set(name, entries);
     }
-    names.push(loc.name);
+    entries.push({ name: loc.name, hint });
   }
 
   return Array.from(map.entries())
-    .map(([name, locationNames]) => ({ name, locationNames: locationNames.sort() }))
+    .map(([name, locations]) => ({
+      name,
+      locations: locations.sort((a, b) => a.name.localeCompare(b.name, "ru")),
+      isUnknown: name === UNKNOWN_GEO,
+    }))
     .sort((a, b) => {
-      if (b.locationNames.length !== a.locationNames.length) {
-        return b.locationNames.length - a.locationNames.length;
+      if (a.isUnknown !== b.isUnknown) return a.isUnknown ? 1 : -1;
+      if (b.locations.length !== a.locations.length) {
+        return b.locations.length - a.locations.length;
       }
       return a.name.localeCompare(b.name, "ru");
     });
@@ -59,7 +74,7 @@ function modalTitle(groupBy: GroupBy, activityFilter: ActivityFilter): string {
 }
 
 function summaryText(groups: GeoGroup[], groupBy: GroupBy): string {
-  const count = groups.length;
+  const count = groups.filter((g) => !g.isUnknown).length;
   if (groupBy === "region") {
     return pluralizeRu(count, ["регион", "региона", "регионов"]);
   }
@@ -100,10 +115,22 @@ function ModalContent({
           </thead>
           <tbody>
             {groups.map((group) => (
-              <tr key={group.name}>
+              <tr key={group.name} className={group.isUnknown ? "geo-groups-row-unknown" : undefined}>
                 <td className="geo-groups-name">{group.name}</td>
-                <td className="col-count">{group.locationNames.length}</td>
-                <td className="geo-groups-locations muted">{group.locationNames.join(", ")}</td>
+                <td className="col-count">{group.locations.length}</td>
+                <td className="geo-groups-locations muted">
+                  {group.isUnknown
+                    ? group.locations.map((loc, i) => (
+                        <span key={loc.name}>
+                          {i > 0 && ", "}
+                          {loc.name}
+                          {loc.hint && (
+                            <span className="geo-groups-hint"> ({loc.hint})</span>
+                          )}
+                        </span>
+                      ))
+                    : group.locations.map((loc) => loc.name).join(", ")}
+                </td>
               </tr>
             ))}
           </tbody>
