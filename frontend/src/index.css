@@ -1464,6 +1464,16 @@ body {
   color: #92400e;
 }
 
+.badge-crosslinked {
+  background: #f3f4f6;
+  color: #6b7280;
+  cursor: default;
+}
+
+tr.run-crosslinked td {
+  opacity: 0.5;
+}
+
 .activity-date-cell {
   display: grid;
   grid-template-columns: 5.85rem 2.75rem;
@@ -3282,6 +3292,17 @@ body {
   text-align: right;
   white-space: nowrap;
   color: #64748b;
+}
+
+.geo-groups-table .geo-groups-name {
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.geo-groups-table .geo-groups-locations {
+  font-size: 0.84rem;
+  line-height: 1.5;
 }
 
 .map-locations-table-spoiler {
