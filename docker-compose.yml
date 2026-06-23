@@ -154,7 +154,7 @@ services:
   worker-parkrun:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.parkrun
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
       REDIS_URL: redis://redis:6379/0
