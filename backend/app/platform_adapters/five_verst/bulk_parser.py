@@ -278,7 +278,9 @@ def parse_location_home_html(
     title = soup.title.string.strip() if soup.title and soup.title.string else slug
     title_parts = [part.strip() for part in title.split("|")]
     name = title_parts[1] if len(title_parts) > 1 else slug
-    city = title_parts[2] if len(title_parts) > 2 else None
+    _city_raw = title_parts[2] if len(title_parts) > 2 else None
+    # "Суббота, утро, парк, 5 км" is the site tagline, not a city name
+    city = _city_raw if _city_raw and "Суббота" not in _city_raw else None
     country = "Россия"
 
     latitude: float | None = None
