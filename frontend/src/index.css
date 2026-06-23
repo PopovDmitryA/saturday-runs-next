@@ -1831,6 +1831,15 @@ tr.run-crosslinked td {
   background: #fff;
 }
 
+.profile-participant-id {
+  font-family: monospace;
+  font-size: 0.95em;
+  background: #f1f5f9;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  user-select: all;
+}
+
 .profile-preview-block {
   margin-top: 1rem;
 }

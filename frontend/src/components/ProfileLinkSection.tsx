@@ -37,6 +37,7 @@ type PlatformConfig = {
   emptyInputError: string;
   confirmSuccess: string;
   confirmSuccessBoth?: string;
+  hasPublicProfile?: boolean;
 };
 
 const PLATFORMS: PlatformConfig[] = [
@@ -87,6 +88,7 @@ const PLATFORMS: PlatformConfig[] = [
     confirm: confirmRunparkProfile,
     emptyInputError: "Введите штрихкод участника RunPark",
     confirmSuccess: "Профиль RunPark привязан.",
+    hasPublicProfile: false,
   },
 ];
 
@@ -251,10 +253,15 @@ function PlatformSpoiler({
               dataUpdatedAt={linked.data_updated_at}
               dataThroughDate={linked.data_through_date}
             />
-            {linked.external_url.startsWith("http") && (
+            {config.hasPublicProfile !== false && linked.external_url.startsWith("http") && (
               <a className="link" href={linked.external_url} target="_blank" rel="noreferrer">
                 {config.openLabel}
               </a>
+            )}
+            {config.hasPublicProfile === false && (
+              <p className="muted">
+                ID участника: <span className="profile-participant-id">{linked.external_user_id}</span>
+              </p>
             )}
             <div className="actions-row profile-linked-actions">
               <button
