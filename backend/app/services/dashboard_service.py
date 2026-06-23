@@ -242,25 +242,48 @@ def get_latest_sync_job(db: Session, user_id: UUID) -> SyncJob | None:
     )
 
 
-def _count_runpark_duplicates(
+def _count_secondary_crosslinked_results(
     db: Session,
-    runpark_participant_id: UUID,
+    participant_id: UUID,
+    user_id: UUID,
     *,
     include_test_events: bool,
 ) -> tuple[int, int]:
-    """Count RunPark runs/volunteering that are duplicates of primary-platform events (via event_crosslinks).
+    """Count runs/volunteering that are in secondary crosslink events AND the user
+    also has a run/vol in the corresponding primary event.
     Returns (duplicate_runs, duplicate_vols)."""
+    # Primary-event subquery: any run/vol by any of user's participants in the primary event
+    primary_run_sq = (
+        db.query(RunResult.id)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
+        .filter(PlatformLink.user_id == user_id)
+        .filter(Event.id == EventCrosslink.primary_event_id)
+        .correlate(EventCrosslink)
+        .exists()
+    )
     base_run = (
         db.query(func.count(RunResult.id))
         .join(Event, RunResult.event_id == Event.id)
         .join(EventCrosslink, EventCrosslink.secondary_event_id == Event.id)
-        .filter(RunResult.participant_id == runpark_participant_id)
+        .filter(RunResult.participant_id == participant_id)
+        .filter(primary_run_sq)
+    )
+    primary_vol_sq = (
+        db.query(VolunteerResult.id)
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .join(PlatformLink, PlatformLink.participant_id == VolunteerResult.participant_id)
+        .filter(PlatformLink.user_id == user_id)
+        .filter(Event.id == EventCrosslink.primary_event_id)
+        .correlate(EventCrosslink)
+        .exists()
     )
     base_vol = (
         db.query(func.count(VolunteerResult.id))
         .join(Event, VolunteerResult.event_id == Event.id)
         .join(EventCrosslink, EventCrosslink.secondary_event_id == Event.id)
-        .filter(VolunteerResult.participant_id == runpark_participant_id)
+        .filter(VolunteerResult.participant_id == participant_id)
+        .filter(primary_vol_sq)
     )
     if not include_test_events:
         base_run = base_run.filter(Event.is_test_event.is_(False))
@@ -341,20 +364,18 @@ def compute_dashboard_stats(db: Session, user_id: UUID, *, include_test_events: 
         total_runs += runs_count
         total_volunteering += vol_count
 
-    # Dedup: subtract RunPark results that are secondary in event_crosslinks,
-    # but only if the user also has a primary platform (five_verst or s95) linked.
-    linked_platforms = {p.code for _, p in links}
-    if "runpark" in linked_platforms and linked_platforms & {"five_verst", "s95"}:
-        runpark_link = next((lnk for lnk, p in links if p.code == "runpark"), None)
-        if runpark_link and runpark_link.participant_id:
-            dup_runs, dup_vols = _count_runpark_duplicates(
-                db, runpark_link.participant_id, include_test_events=include_test_events
-            )
-            if dup_runs or dup_vols:
-                # by_platform keeps gross counts (shown per-platform in profile card)
-                # total_runs/total_volunteering are deduplicated (shown in overall stats)
-                total_runs = max(0, total_runs - dup_runs)
-                total_volunteering = max(0, total_volunteering - dup_vols)
+    # Dedup: subtract results that are secondary in event_crosslinks,
+    # but only if the user also has a run in the corresponding primary event.
+    # by_platform keeps gross counts; total_* are deduplicated.
+    for link, _platform in links:
+        if link.participant_id is None:
+            continue
+        dup_runs, dup_vols = _count_secondary_crosslinked_results(
+            db, link.participant_id, user_id, include_test_events=include_test_events
+        )
+        if dup_runs or dup_vols:
+            total_runs = max(0, total_runs - dup_runs)
+            total_volunteering = max(0, total_volunteering - dup_vols)
 
     analytics = _compute_dashboard_analytics(
         db,
