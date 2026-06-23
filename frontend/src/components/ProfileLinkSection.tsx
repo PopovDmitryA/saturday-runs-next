@@ -260,7 +260,7 @@ function PlatformSpoiler({
             )}
             {config.hasPublicProfile === false && (
               <p className="muted">
-                ID участника: <span className="profile-participant-id">{linked.external_user_id}</span>
+                Штрихкод: <span className="profile-participant-id">{linked.external_user_id}</span>
               </p>
             )}
             <div className="actions-row profile-linked-actions">
