@@ -20,6 +20,7 @@ function VolunteeringContent() {
   const [items, setItems] = useState<VolunteeringItem[]>([]);
   const [hasProfileLink, setHasProfileLink] = useState(false);
   const [includeTest, setIncludeTest] = useState(false);
+  const [includeDuplicates, setIncludeDuplicates] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,18 +38,30 @@ function VolunteeringContent() {
     return items.filter((i) => i.platform_code === "parkrun").length;
   }, [items]);
 
+  const allPlatforms = useMemo(() => uniquePlatforms(tableItems), [tableItems]);
+
   const filters = useVolunteeringFilters(tableItems);
+
   const displayedItems = useMemo(
-    () => sortVolunteering(filters.filtered, filters.sort),
-    [filters.filtered, filters.sort],
+    () =>
+      sortVolunteering(
+        includeDuplicates ? filters.filtered : filters.filtered.filter((i) => !i.is_crosslinked),
+        filters.sort,
+      ),
+    [filters.filtered, filters.sort, includeDuplicates],
   );
 
-  const allPlatforms = useMemo(() => uniquePlatforms(tableItems), [tableItems]);
+  const visibleVolCount = useMemo(
+    () => (includeDuplicates ? tableItems : tableItems.filter((i) => !i.is_crosslinked)).length,
+    [tableItems, includeDuplicates],
+  );
+
   const platformCounts = useMemo(() => {
+    const base = includeDuplicates ? tableItems : tableItems.filter((i) => !i.is_crosslinked);
     const counts: Record<string, number> = {};
-    for (const item of tableItems) counts[item.platform_code] = (counts[item.platform_code] ?? 0) + 1;
+    for (const item of base) counts[item.platform_code] = (counts[item.platform_code] ?? 0) + 1;
     return allPlatforms.map((code) => ({ code, count: counts[code] ?? 0 }));
-  }, [tableItems, allPlatforms]);
+  }, [tableItems, includeDuplicates, allPlatforms]);
 
   const activePlatformFilter =
     filters.platformFilterActive ? [...filters.selectedPlatforms][0] ?? "all" : "all";
@@ -82,14 +95,24 @@ function VolunteeringContent() {
   const pageBody = (
     <>
       {!isDemo && (
-        <label className="checkbox-row">
-          <input
-            type="checkbox"
-            checked={includeTest}
-            onChange={(event) => setIncludeTest(event.target.checked)}
-          />
-          Показывать тестовые мероприятия
-        </label>
+        <div className="checkbox-row-group">
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={includeTest}
+              onChange={(event) => setIncludeTest(event.target.checked)}
+            />
+            Показывать тестовые мероприятия
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={includeDuplicates}
+              onChange={(event) => setIncludeDuplicates(event.target.checked)}
+            />
+            Показывать незачётные волонтёрства
+          </label>
+        </div>
       )}
 
       {loading && <p className="muted">Загрузка…</p>}
@@ -122,7 +145,7 @@ function VolunteeringContent() {
               className={activePlatformFilter === "all" ? "map-mode-tab active" : "map-mode-tab"}
               onClick={() => filters.setSelectedPlatforms(createFullSelection(allPlatforms))}
             >
-              Все ({tableItems.length})
+              Все ({visibleVolCount})
             </button>
             {platformCounts.map(({ code, count }) => (
               <button
@@ -249,10 +272,21 @@ function VolunteeringContent() {
                   </tr>
                 ) : (
                   displayedItems.map((item, index) => (
-                    <tr key={`${item.platform_code}-${item.event_date}-${item.location_name}-${index}`}>
+                    <tr
+                      key={`${item.platform_code}-${item.event_date}-${item.location_name}-${index}`}
+                      className={item.is_crosslinked ? "run-crosslinked" : undefined}
+                    >
                       <td className="td-date">
                         <ActivityDateLink date={item.event_date} url={item.event_url} />
                         {item.is_test_event && <span className="badge">тест</span>}
+                        {item.is_crosslinked && (
+                          <span
+                            className="badge badge-crosslinked"
+                            title="Волонтёрство не учтено в общем зачёте — в этот день учтено волонтёрство по другой системе на той же локации"
+                          >
+                            не в зачёте
+                          </span>
+                        )}
                       </td>
                       <td className="td-platform">
                         <PlatformBadge code={item.platform_code} />
@@ -268,7 +302,7 @@ function VolunteeringContent() {
 
           <p className="table-foot muted">
             <span>
-              Показано: {displayedItems.length} из {tableItems.length}
+              Показано: {displayedItems.length} из {visibleVolCount}
             </span>
             {filters.hasActiveFilters && (
               <button type="button" className="btn btn-ghost btn-sm" onClick={filters.resetAll}>

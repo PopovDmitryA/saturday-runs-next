@@ -169,6 +169,7 @@ class VolunteeringItemResponse(BaseModel):
     location_is_paused: bool = False
     location_is_cancelled: bool = False
     role: str | None = None
+    is_crosslinked: bool = False
     is_test_event: bool = False
     event_url: str | None = None
 
