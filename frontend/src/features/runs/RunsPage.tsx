@@ -28,13 +28,16 @@ function RunsContent() {
 
   const allPlatforms = useMemo(() => uniquePlatforms(runs), [runs]);
 
-  const visibleRuns = useMemo(
-    () => (includeDuplicates ? runs : runs.filter((r) => !r.is_crosslinked)),
-    [runs, includeDuplicates],
-  );
+  const filters = useActivityFilters(runs);
 
-  const filters = useActivityFilters(visibleRuns);
-  const displayedRuns = useMemo(() => sortRuns(filters.filtered, filters.sort), [filters.filtered, filters.sort]);
+  const displayedRuns = useMemo(
+    () =>
+      sortRuns(
+        includeDuplicates ? filters.filtered : filters.filtered.filter((r) => !r.is_crosslinked),
+        filters.sort,
+      ),
+    [filters.filtered, filters.sort, includeDuplicates],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,13 +68,19 @@ function RunsContent() {
   const paceSortActive = filters.sort === "pace_asc" || filters.sort === "pace_desc";
   const positionSortActive = filters.sort === "position_asc" || filters.sort === "position_desc";
 
+  const visibleRunCount = useMemo(
+    () => (includeDuplicates ? runs : runs.filter((r) => !r.is_crosslinked)).length,
+    [runs, includeDuplicates],
+  );
+
   const platformRunCounts = useMemo(() => {
+    const base = includeDuplicates ? runs : runs.filter((r) => !r.is_crosslinked);
     const counts: Record<string, number> = {};
-    for (const run of visibleRuns) {
+    for (const run of base) {
       counts[run.platform_code] = (counts[run.platform_code] ?? 0) + 1;
     }
     return allPlatforms.map((code) => ({ code, count: counts[code] ?? 0 }));
-  }, [visibleRuns, allPlatforms]);
+  }, [runs, includeDuplicates, allPlatforms]);
 
   const activePlatformFilter =
     filters.platformFilterActive
@@ -131,7 +140,7 @@ function RunsContent() {
               className={activePlatformFilter === "all" ? "map-mode-tab active" : "map-mode-tab"}
               onClick={() => filters.setSelectedPlatforms(createFullSelection(allPlatforms))}
             >
-              Все ({visibleRuns.length})
+              Все ({visibleRunCount})
             </button>
             {platformRunCounts.map(({ code, count }) => (
               <button
@@ -299,7 +308,7 @@ function RunsContent() {
 
           <p className="table-foot muted">
             <span>
-              Показано: {displayedRuns.length} из {visibleRuns.length}
+              Показано: {displayedRuns.length} из {visibleRunCount}
             </span>
             {filters.hasActiveFilters && (
               <button type="button" className="btn btn-ghost btn-sm" onClick={filters.resetAll}>
