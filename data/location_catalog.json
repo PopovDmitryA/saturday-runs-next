@@ -667,11 +667,15 @@
     "active_platform": "runpark",
     "legacy_parkrun_slug": "lesopark-severny",
     "is_closed": false,
-    "notes": "Не найдено в run5k (5verst/s95). Вероятно закрытая или переименованная локация — уточнить вручную.; это runpark, система о которой ты пока не знаешь",
+    "notes": "Parkrun → RunPark: lesopark-severny → PushKino",
     "links": [
       {
         "platform": "parkrun",
         "external_key": "lesopark-severny"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "PushKino"
       }
     ]
   },
@@ -1177,11 +1181,15 @@
     "active_platform": "runpark",
     "legacy_parkrun_slug": "pokrovskoe-streshnevo",
     "is_closed": false,
-    "notes": "Не найдено в run5k (5verst/s95). Вероятно закрытая или переименованная локация — уточнить вручную.; Эта локация есть в четвертой системе runpark, но я о ней тебе еще ничего не рассказывал, поэтому пока оставляем только в паркране",
+    "notes": "Parkrun → RunPark: pokrovskoe-streshnevo → pokrovskostreshnevo",
     "links": [
       {
         "platform": "parkrun",
         "external_key": "pokrovskoe-streshnevo"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "pokrovskostreshnevo"
       }
     ]
   },
