@@ -22,10 +22,18 @@ function RunsContent() {
   const [runs, setRuns] = useState<RunItem[]>([]);
   const [hasProfileLink, setHasProfileLink] = useState(false);
   const [includeTest, setIncludeTest] = useState(false);
+  const [includeDuplicates, setIncludeDuplicates] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const filters = useActivityFilters(runs);
+  const allPlatforms = useMemo(() => uniquePlatforms(runs), [runs]);
+
+  const visibleRuns = useMemo(
+    () => (includeDuplicates ? runs : runs.filter((r) => !r.is_crosslinked)),
+    [runs, includeDuplicates],
+  );
+
+  const filters = useActivityFilters(visibleRuns);
   const displayedRuns = useMemo(() => sortRuns(filters.filtered, filters.sort), [filters.filtered, filters.sort]);
 
   const load = useCallback(async () => {
@@ -57,23 +65,13 @@ function RunsContent() {
   const paceSortActive = filters.sort === "pace_asc" || filters.sort === "pace_desc";
   const positionSortActive = filters.sort === "position_asc" || filters.sort === "position_desc";
 
-  const allPlatforms = useMemo(() => uniquePlatforms(runs), [runs]);
-
   const platformRunCounts = useMemo(() => {
-    const total: Record<string, number> = {};
-    const counted: Record<string, number> = {};
-    for (const run of runs) {
-      total[run.platform_code] = (total[run.platform_code] ?? 0) + 1;
-      if (!run.is_crosslinked) {
-        counted[run.platform_code] = (counted[run.platform_code] ?? 0) + 1;
-      }
+    const counts: Record<string, number> = {};
+    for (const run of visibleRuns) {
+      counts[run.platform_code] = (counts[run.platform_code] ?? 0) + 1;
     }
-    return allPlatforms.map((code) => ({
-      code,
-      total: total[code] ?? 0,
-      counted: counted[code] ?? total[code] ?? 0,
-    }));
-  }, [runs, allPlatforms]);
+    return allPlatforms.map((code) => ({ code, count: counts[code] ?? 0 }));
+  }, [visibleRuns, allPlatforms]);
 
   const activePlatformFilter =
     filters.platformFilterActive
@@ -83,14 +81,24 @@ function RunsContent() {
   const pageBody = (
     <>
       {!isDemo && (
-        <label className="checkbox-row">
-          <input
-            type="checkbox"
-            checked={includeTest}
-            onChange={(event) => setIncludeTest(event.target.checked)}
-          />
-          Показывать тестовые мероприятия
-        </label>
+        <div className="checkbox-row-group">
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={includeTest}
+              onChange={(event) => setIncludeTest(event.target.checked)}
+            />
+            Показывать тестовые мероприятия
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={includeDuplicates}
+              onChange={(event) => setIncludeDuplicates(event.target.checked)}
+            />
+            Показывать незачётные пробежки
+          </label>
+        </div>
       )}
 
       {loading && <p className="muted">Загрузка…</p>}
@@ -123,9 +131,9 @@ function RunsContent() {
               className={activePlatformFilter === "all" ? "map-mode-tab active" : "map-mode-tab"}
               onClick={() => filters.setSelectedPlatforms(createFullSelection(allPlatforms))}
             >
-              Все ({runs.length})
+              Все ({visibleRuns.length})
             </button>
-            {platformRunCounts.map(({ code, total, counted }) => (
+            {platformRunCounts.map(({ code, count }) => (
               <button
                 key={code}
                 type="button"
@@ -133,14 +141,8 @@ function RunsContent() {
                 aria-selected={activePlatformFilter === code}
                 className={activePlatformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
                 onClick={() => filters.setSelectedPlatforms(new Set([code]))}
-                title={
-                  counted < total
-                    ? `${counted} пробежек учтено в общем зачёте, ${total} всего в системе`
-                    : undefined
-                }
               >
-                {platformCodeLabel(code)}{" "}
-                {counted < total ? `(${counted}/${total})` : `(${total})`}
+                {platformCodeLabel(code)} ({count})
               </button>
             ))}
           </div>
@@ -297,7 +299,7 @@ function RunsContent() {
 
           <p className="table-foot muted">
             <span>
-              Показано: {displayedRuns.length} из {runs.length}
+              Показано: {displayedRuns.length} из {visibleRuns.length}
             </span>
             {filters.hasActiveFilters && (
               <button type="button" className="btn btn-ghost btn-sm" onClick={filters.resetAll}>
