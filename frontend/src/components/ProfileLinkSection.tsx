@@ -26,6 +26,12 @@ import {
   syncStatusLabel,
 } from "../lib/format";
 
+type ParticipantIdConfig = {
+  label: string;
+  field: "barcode_id" | "external_user_id";
+  show?: (value: string) => boolean;
+};
+
 type PlatformConfig = {
   code: string;
   hint: string;
@@ -38,6 +44,7 @@ type PlatformConfig = {
   confirmSuccess: string;
   confirmSuccessBoth?: string;
   hasPublicProfile?: boolean;
+  participantId?: ParticipantIdConfig;
 };
 
 const PLATFORMS: PlatformConfig[] = [
@@ -51,6 +58,11 @@ const PLATFORMS: PlatformConfig[] = [
     confirm: confirmFiveVerstProfile,
     emptyInputError: "Введите ссылку на профиль 5 вёрст или код участника",
     confirmSuccess: "Профиль 5 вёрст привязан. Синхронизация запущена.",
+    participantId: {
+      label: "Код участника",
+      field: "external_user_id",
+      show: (v) => /^\d+$/.test(v),
+    },
   },
   {
     code: "s95",
@@ -65,6 +77,7 @@ const PLATFORMS: PlatformConfig[] = [
       "Профиль С95 привязан. Синхронизация поставлена в очередь (может занять несколько минут).",
     confirmSuccessBoth:
       "Профили С95 и parkrun привязаны. Синхронизация поставлена в очередь (может занять несколько минут).",
+    participantId: { label: "Штрихкод", field: "barcode_id" },
   },
   {
     code: "parkrun",
@@ -77,6 +90,7 @@ const PLATFORMS: PlatformConfig[] = [
     emptyInputError: "Введите ссылку parkrun или штрихкод",
     confirmSuccess:
       "Профиль parkrun привязан. Синхронизация в очереди (запросы к parkrun.org.uk идут с паузой).",
+    participantId: { label: "Штрихкод", field: "barcode_id" },
   },
   {
     code: "runpark",
@@ -89,6 +103,7 @@ const PLATFORMS: PlatformConfig[] = [
     emptyInputError: "Введите штрихкод участника RunPark",
     confirmSuccess: "Профиль RunPark привязан.",
     hasPublicProfile: false,
+    participantId: { label: "Штрихкод", field: "barcode_id" },
   },
 ];
 
@@ -257,11 +272,17 @@ function PlatformSpoiler({
                 {config.openLabel}
               </a>
             )}
-            {config.hasPublicProfile === false && linked.barcode_id && (
-              <p className="muted">
-                Штрихкод: <span className="profile-participant-id">{linked.barcode_id}</span>
-              </p>
-            )}
+            {config.participantId && (() => {
+              const id = linked[config.participantId.field];
+              if (!id) return null;
+              if (config.participantId.show && !config.participantId.show(id)) return null;
+              return (
+                <p className="muted">
+                  {config.participantId.label}:{" "}
+                  <span className="profile-participant-id">{id}</span>
+                </p>
+              );
+            })()}
             <div className="actions-row profile-linked-actions">
               <button
                 type="button"
