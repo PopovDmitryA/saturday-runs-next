@@ -123,14 +123,13 @@ function ProfileDataFreshness({
   dataThroughDate?: string | null;
   dataSource?: string | null;
 }) {
-  const { updatedLine, throughLine } = profileDataFreshnessLines(dataUpdatedAt, dataThroughDate);
-  if (!updatedLine && !throughLine) {
+  const { updatedLine } = profileDataFreshnessLines(dataUpdatedAt, dataThroughDate);
+  if (!updatedLine) {
     return null;
   }
   return (
     <div className="profile-data-freshness" role="note">
-      {updatedLine && <p className="muted">{updatedLine}</p>}
-      {throughLine && <p className="muted">{throughLine}</p>}
+      <p className="muted">{updatedLine}</p>
     </div>
   );
 }
@@ -258,9 +257,9 @@ function PlatformSpoiler({
                 {config.openLabel}
               </a>
             )}
-            {config.hasPublicProfile === false && (
+            {config.hasPublicProfile === false && linked.barcode_id && (
               <p className="muted">
-                Штрихкод: <span className="profile-participant-id">{linked.external_user_id}</span>
+                Штрихкод: <span className="profile-participant-id">{linked.barcode_id}</span>
               </p>
             )}
             <div className="actions-row profile-linked-actions">
