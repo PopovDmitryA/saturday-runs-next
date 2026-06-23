@@ -52,6 +52,7 @@ class PlatformLinkResponse(BaseModel):
     external_user_id: str
     external_url: str
     display_name: str | None = None
+    barcode_id: str | None = None
     sync_status: str
     last_user_sync_at: object | None = None
     data_updated_at: object | None = None

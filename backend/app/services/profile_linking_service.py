@@ -388,6 +388,7 @@ def list_user_profile_links(db: Session, user: User) -> list[dict[str, object]]:
                 "external_user_id": link.external_user_id,
                 "external_url": link.external_url,
                 "display_name": participant.display_name if participant else None,
+                "barcode_id": participant.barcode_id if participant else None,
                 "sync_status": link.sync_status.value,
                 "last_user_sync_at": link.last_user_sync_at,
                 "data_updated_at": data_updated_at,

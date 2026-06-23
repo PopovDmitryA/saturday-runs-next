@@ -86,6 +86,7 @@ export type PlatformLink = {
   external_user_id: string;
   external_url: string;
   display_name: string | null;
+  barcode_id: string | null;
   sync_status: string;
   last_user_sync_at: string | null;
   data_updated_at?: string | null;
