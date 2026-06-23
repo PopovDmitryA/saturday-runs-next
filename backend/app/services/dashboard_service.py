@@ -1018,6 +1018,16 @@ def list_user_volunteering(
     )
     rows = query.order_by(Event.event_date.desc()).offset(offset).limit(limit).all()
 
+    event_ids = [event.id for _vol, event, _loc, _plat, _link in rows]
+    crosslinked_event_ids: set[UUID] = set()
+    if event_ids:
+        cl_rows = (
+            db.query(EventCrosslink.secondary_event_id)
+            .filter(EventCrosslink.secondary_event_id.in_(event_ids))
+            .all()
+        )
+        crosslinked_event_ids = {row[0] for row in cl_rows}
+
     catalog_index = LocationCatalogIndex(db)
     summary_urls = _event_summary_source_urls(db, [event for _vol, event, _loc, _plat, _link in rows])
     return [
@@ -1030,6 +1040,7 @@ def list_user_volunteering(
             "location_city": location.city,
             "location_country": location.country,
             "role": volunteer.role,
+            "is_crosslinked": event.id in crosslinked_event_ids,
             "is_test_event": event.is_test_event,
             "event_url": _activity_event_url(
                 platform_code=platform.code,
