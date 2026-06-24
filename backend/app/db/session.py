@@ -20,7 +20,12 @@ def _engine_connect_args() -> dict[str, object]:
 def get_engine() -> Engine:
     settings = get_settings()
     connect_args = _engine_connect_args()
-    kwargs: dict[str, object] = {"pool_pre_ping": True}
+    kwargs: dict[str, object] = {
+        "pool_pre_ping": True,
+        "pool_size": 2,
+        "max_overflow": 2,
+        "pool_recycle": 300,
+    }
     if connect_args:
         kwargs["connect_args"] = connect_args
     return create_engine(settings.database_url, **kwargs)
