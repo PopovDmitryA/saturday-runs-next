@@ -9,6 +9,21 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
 USER_AGENT = "saturday-runs-stats/1.0 (local dev; contact: info@5verst.ru)"
 _last_request_at: float = 0.0
 
+_REGION_SUFFIXES = (" область", " край")
+
+
+def normalize_region(region: str) -> str:
+    """Strip common Russian administrative suffixes for display consistency.
+
+    Nominatim returns "Краснодарский край", "Московская область" etc.,
+    while legacy data uses short forms "Краснодарский", "Московская".
+    Autonomous okrugs are kept in full as their short form is ambiguous.
+    """
+    for suffix in _REGION_SUFFIXES:
+        if region.endswith(suffix):
+            return region[: -len(suffix)]
+    return region
+
 
 def _fetch_address(latitude: float, longitude: float) -> dict[str, str]:
     global _last_request_at
@@ -44,7 +59,7 @@ def lookup_region(latitude: float, longitude: float) -> str | None:
     for key in ("state", "region", "ISO3166-2-lvl4", "county"):
         value = address.get(key)
         if value:
-            return value
+            return normalize_region(value)
     return None
 
 
@@ -56,7 +71,7 @@ def lookup_address(latitude: float, longitude: float) -> dict[str, str | None]:
     for key in ("state", "region", "ISO3166-2-lvl4", "county"):
         value = address.get(key)
         if value:
-            region = value
+            region = normalize_region(value)
             break
 
     city = None

@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 from app.db.session import get_session_factory
 from app.services.personal_record_service import recalculate_personal_records
 
-SUPPORTED = ("five_verst", "s95", "parkrun")
+SUPPORTED = ("five_verst", "s95", "parkrun", "runpark")
 
 
 def main() -> int:
