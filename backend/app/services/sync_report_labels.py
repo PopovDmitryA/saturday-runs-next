@@ -12,6 +12,7 @@ PIPELINE_LABELS: dict[str, str] = {
     "s95 location rotation": "s95: ротация локаций",
     "s95 reconcile protocols": "s95: сверка протоколов",
     "s95 athletes registry": "s95: реестр атлетов",
+    "runpark latest": "RunPark: свежие события",
 }
 
 PIPELINE_PREFIX_LABELS: tuple[tuple[str, str], ...] = (
@@ -40,6 +41,8 @@ FIELD_LABELS: dict[str, str] = {
     "missing_protocol": "без протокола в БД",
     "protocols_fetched": "протоколов загружено",
     "protocols_changed": "протоколов изменено",
+    "events_total": "событий проверено",
+    "events_upserted": "событий обновлено",
     "run_results_upserted": "результатов пробежек записано",
     "volunteer_results_upserted": "результатов волонтёров записано",
     "planned_protocols": "протоколов в плане",
