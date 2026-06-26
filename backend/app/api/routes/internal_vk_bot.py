@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 from datetime import datetime
 from typing import Annotated
 
@@ -14,6 +15,7 @@ from app.schemas.admin_stats import AdminSiteStatsResponse
 from app.services.admin_pipeline_status_service import get_admin_pipeline_status
 from app.services.admin_protocol_sync_service import sync_protocol_from_url
 from app.services.admin_site_stats_service import get_admin_site_stats
+from app.services.admin_sync_service import enqueue_pipeline, list_pipelines
 from app.services.location_coordinate_service import handle_admin_coordinate_message
 
 router = APIRouter(prefix="/internal/vk-bot", tags=["internal-vk-bot"])
@@ -26,7 +28,7 @@ def _verify_vk_bot_secret(
     secret = settings.vk_bot_internal_secret or settings.telegram_bot_internal_secret
     if not secret:
         raise HTTPException(status_code=503, detail="VK bot internal API disabled")
-    if x_bot_secret != secret:
+    if x_bot_secret is None or not hmac.compare_digest(x_bot_secret, secret):
         raise HTTPException(status_code=403, detail="Invalid bot secret")
     return settings
 
@@ -49,6 +51,11 @@ class VkCoordinateResponse(BaseModel):
 
 class VkSyncProtocolRequest(BaseModel):
     url: str
+
+
+class VkSyncEnqueueRequest(BaseModel):
+    pipeline: str
+    location_slug: str | None = None
 
 
 @router.get("/stats", response_model=AdminSiteStatsResponse)
@@ -107,6 +114,29 @@ def vk_coordinate_message(
     if reply is None:
         return VkCoordinateResponse(handled=False)
     return VkCoordinateResponse(handled=True, reply=reply)
+
+
+@router.get("/sync-pipelines")
+def vk_bot_sync_pipelines(
+    vk_user_id: int,
+    settings: Annotated[Settings, Depends(_verify_vk_bot_secret)],
+) -> list[dict[str, str]]:
+    _require_admin_vk_user(vk_user_id, settings)
+    return list_pipelines()
+
+
+@router.post("/sync-enqueue")
+def vk_bot_sync_enqueue(
+    body: VkSyncEnqueueRequest,
+    vk_user_id: int,
+    settings: Annotated[Settings, Depends(_verify_vk_bot_secret)],
+) -> dict[str, str]:
+    _require_admin_vk_user(vk_user_id, settings)
+    try:
+        message = enqueue_pipeline(body.pipeline, location_slug=body.location_slug)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"message": message}
 
 
 @router.post("/sync-protocol")

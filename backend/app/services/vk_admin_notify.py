@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import logging
-import random
 from typing import Any
-
-import httpx
 
 from app.config import get_settings
 from app.services.sync_report_labels import (
@@ -14,11 +11,9 @@ from app.services.sync_report_labels import (
     format_field_value,
     pipeline_label,
 )
+from app.services.vk_client import VK_MESSAGE_LIMIT, send_vk_message
 
 logger = logging.getLogger(__name__)
-
-VK_API_VERSION = "5.199"
-VK_MESSAGE_LIMIT = 4096
 
 
 def vk_admin_configured() -> bool:
@@ -32,28 +27,14 @@ def send_vk_admin_message(text: str, *, reply_to: int | None = None) -> int | No
         logger.info("VK admin notify skipped: token or admin user id not configured")
         return None
 
-    payload: dict[str, object] = {
-        "access_token": settings.vk_bot_group_token,
-        "v": VK_API_VERSION,
-        "peer_id": settings.vk_admin_user_id,
-        "message": text[:VK_MESSAGE_LIMIT],
-        "random_id": random.randint(1, 2_000_000_000),
-    }
-    if reply_to is not None:
-        payload["reply_to"] = reply_to
     try:
-        response = httpx.post(
-            "https://api.vk.com/method/messages.send",
-            data=payload,
+        result_id = send_vk_message(
+            settings.vk_bot_group_token,
+            settings.vk_admin_user_id,
+            text,
+            reply_to=reply_to,
             timeout=30.0,
         )
-        response.raise_for_status()
-        body = response.json()
-        if "error" in body:
-            logger.warning("VK messages.send error: %s", body["error"])
-            return None
-        message_id = body.get("response")
-        result_id = int(message_id) if message_id is not None else None
         logger.info("VK admin message sent (message_id=%s, len=%d)", result_id, len(text))
         return result_id
     except Exception:
