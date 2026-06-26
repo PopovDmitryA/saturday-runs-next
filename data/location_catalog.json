@@ -1942,7 +1942,10 @@
         "platform": "runpark",
         "external_key": "runpark-zheleznovodsky"
       }
-    ]
+    ],
+    "parkrun_location": "",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": ""
   },
   {
     "canonical_name": "Киров Набережная Грина",
@@ -1957,6 +1960,9 @@
         "platform": "runpark",
         "external_key": "runpark-naberezhnayagrina"
       }
-    ]
+    ],
+    "parkrun_location": "",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": ""
   }
 ]
