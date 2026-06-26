@@ -2838,7 +2838,8 @@ tr.run-crosslinked td {
   left: 1rem;
 }
 
-.map-panel-fullscreen .map-stats-line {
+.map-panel-fullscreen .map-stats-line,
+.map-panel-fullscreen .map-locations-list-spoiler {
   display: none;
 }
 
