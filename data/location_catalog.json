@@ -1964,5 +1964,23 @@
     "parkrun_location": "",
     "active_platform": "five_verst",
     "legacy_parkrun_slug": ""
+  },
+  {
+    "canonical_name": "Швейцария",
+    "parkrun_location": "",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "",
+    "is_closed": false,
+    "notes": "Нижний Новгород. 5verst + RunPark (ШвейцRUN).",
+    "links": [
+      {
+        "platform": "five_verst",
+        "external_key": "shveytsariya"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-shveytsariya"
+      }
+    ]
   }
 ]
