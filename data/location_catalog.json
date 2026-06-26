@@ -398,6 +398,24 @@
     ]
   },
   {
+    "parkrun_location": "",
+    "canonical_name": "Липецк Парк Победы",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "",
+    "is_closed": false,
+    "notes": "",
+    "links": [
+      {
+        "platform": "five_verst",
+        "external_key": "lipetskparkpobedy"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-lipetskparkpobedy"
+      }
+    ]
+  },
+  {
     "parkrun_location": "Gubernsky Park",
     "canonical_name": "Калуга",
     "active_platform": "five_verst",
