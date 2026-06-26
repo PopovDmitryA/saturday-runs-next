@@ -1,47 +1,23 @@
 from __future__ import annotations
 
 import logging
-import random
 from typing import Any
 
 import httpx
 
+from app.services.vk_client import VkApiError, call_vk_api, send_vk_message
 from vk_bot.settings import get_vk_bot_settings
 
 logger = logging.getLogger(__name__)
 
-VK_API_VERSION = "5.199"
-
-
-class VkApiError(RuntimeError):
-    pass
-
-
-def _api(method: str, **params: Any) -> Any:
-    settings = get_vk_bot_settings()
-    payload = {
-        "access_token": settings.vk_bot_group_token,
-        "v": VK_API_VERSION,
-        **params,
-    }
-    response = httpx.post(f"https://api.vk.com/method/{method}", data=payload, timeout=60.0)
-    response.raise_for_status()
-    body = response.json()
-    if "error" in body:
-        raise VkApiError(str(body["error"]))
-    return body["response"]
+__all__ = ["VkApiError", "VkLongPoll", "send_message"]
 
 
 def send_message(peer_id: int, text: str, *, reply_to: int | None = None) -> int | None:
-    params: dict[str, Any] = {
-        "peer_id": peer_id,
-        "message": text[:4096],
-        "random_id": random.randint(1, 2_000_000_000),
-    }
-    if reply_to is not None:
-        params["reply_to"] = reply_to
-    message_id = _api("messages.send", **params)
-    return int(message_id) if message_id is not None else None
+    settings = get_vk_bot_settings()
+    return send_vk_message(
+        settings.vk_bot_group_token, peer_id, text, reply_to=reply_to
+    )
 
 
 class VkLongPoll:
@@ -50,26 +26,47 @@ class VkLongPoll:
         self._key: str | None = None
         self._ts: str | None = None
 
-    def _ensure_server(self) -> None:
+    def _request_server(self, *, keep_ts: bool) -> None:
+        """Запросить параметры Long Poll сервера.
+
+        ``keep_ts`` сохраняет текущий ``ts`` (failed:2 — протух только key),
+        иначе берём ``ts`` из ответа (первый запуск / failed:3).
+        """
         settings = get_vk_bot_settings()
         if not settings.vk_bot_group_id:
             raise VkApiError("VK_BOT_GROUP_ID is not set")
-        response = _api("groups.getLongPollServer", group_id=abs(settings.vk_bot_group_id))
+        response = call_vk_api(
+            "groups.getLongPollServer",
+            settings.vk_bot_group_token,
+            group_id=abs(settings.vk_bot_group_id),
+        )
         self._server = str(response["server"])
         self._key = str(response["key"])
-        self._ts = str(response["ts"])
+        if not keep_ts or self._ts is None:
+            self._ts = str(response["ts"])
 
     def poll(self) -> list[dict[str, Any]]:
         if not self._server or not self._key or not self._ts:
-            self._ensure_server()
+            self._request_server(keep_ts=False)
         assert self._server and self._key and self._ts
         url = f"{self._server}?act=a_check&key={self._key}&ts={self._ts}&wait=25"
         response = httpx.get(url, timeout=60.0)
         response.raise_for_status()
         data = response.json()
-        if data.get("failed"):
-            self._ensure_server()
+
+        failed = data.get("failed")
+        if failed:
+            # 1 — устарел ts: берём новый из ответа, сервер/key валидны.
+            # 2 — протух key: перезапрашиваем сервер, ts сохраняем.
+            # 3 (и прочее) — потеряна история: полный сброс.
+            if failed == 1 and data.get("ts") is not None:
+                self._ts = str(data["ts"])
+            elif failed == 2:
+                self._request_server(keep_ts=True)
+            else:
+                self._request_server(keep_ts=False)
             return []
+
         self._ts = str(data["ts"])
         updates = data.get("updates") or []
         parsed: list[dict[str, Any]] = []

@@ -18,7 +18,7 @@ def format_admin_stats(payload: dict[str, Any]) -> str:
         f"  все 3 платформы: {overview.get('users_with_all_three_links', 0)}",
         "",
         f"Привязки: {overview.get('platform_links_total', 0)}",
-        f"  5 вёрst: {links.get('five_verst', 0)}",
+        f"  5 вёрст: {links.get('five_verst', 0)}",
         f"  с95: {links.get('s95', 0)}",
         f"  parkrun: {links.get('parkrun', 0)}",
         "",

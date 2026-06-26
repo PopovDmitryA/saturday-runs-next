@@ -247,7 +247,7 @@ def _notify_merge_request(request: LocationMergeRequest) -> bool:
         sample_dates += ", …"
 
     text = (
-        "⚠️ Возможный дубль локации 5 вёрst\n\n"
+        "⚠️ Возможный дубль локации 5 вёрст\n\n"
         f"Новый slug: {request.candidate_slug}\n"
         f"Имя: {request.candidate_name}\n"
         f"URL: {request.candidate_source_url or '—'}\n\n"

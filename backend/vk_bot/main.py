@@ -6,7 +6,7 @@ import time
 
 import httpx
 
-from vk_bot.pipeline import PIPELINES, enqueue_pipeline
+from vk_bot.pipeline import enqueue_pipeline, list_pipelines
 from vk_bot.settings import VkBotSettings, get_vk_bot_settings, vk_bot_headers
 from vk_bot.stats_format import format_admin_stats
 from vk_bot.status_format import format_pipeline_status
@@ -15,12 +15,15 @@ from vk_bot.vk_api import VkApiError, VkLongPoll, send_message
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
+BACKOFF_BASE_SECONDS = 5
+BACKOFF_MAX_SECONDS = 60
+
 HELP_TEXT = (
     "Бот администратора Saturday Runs (VK).\n\n"
     "Команды:\n"
     "/stats [дней] — статистика ЛК\n"
     "/status — запущенные пайплайны и время старта\n"
-    "/sync — список пайплайнов 5 вёрst и s95\n"
+    "/sync — список пайплайнов 5 вёрст и s95\n"
     "/sync registry — реестр /events/\n"
     "/sync latest — /results/latest/\n"
     "/sync rotation — ротация локаций (20 summary)\n"
@@ -31,7 +34,7 @@ HELP_TEXT = (
     "/sync s95-athletes — s95 реестр атлетов\n"
     "/sync s95-registry — s95 реестр /activities\n"
     "/sync location <slug> — одна локация\n"
-    "/sync protocol <url> — протокол 5 вёрst или s95 по ссылке\n\n"
+    "/sync protocol <url> — протокол 5 вёрст или s95 по ссылке\n\n"
     "Координаты с95: ответьте (Reply) на сообщение бота координатами latitude:longitude, "
     "затем Reply «ок» на проверку карты.\n\n"
     "Отчёты о запуске и завершении пайплайнов приходят автоматически."
@@ -189,8 +192,13 @@ def _handle_message(peer_id: int, from_id: int, text: str, message: dict) -> Non
 
     if cmd == "sync":
         if not args:
-            lines = ["Пайплайны 5 вёрst:"]
-            for key, (label, _) in sorted(PIPELINES.items()):
+            try:
+                pipelines = list_pipelines(settings)
+            except Exception as exc:
+                send_message(peer_id, f"Не удалось получить список пайплайнов: {exc}")
+                return
+            lines = ["Пайплайны 5 вёрст и s95:"]
+            for key, label in pipelines:
                 lines.append(f"• /sync {key} — {label}")
             lines.append("• /sync location <slug> — одна локация")
             send_message(peer_id, "\n".join(lines))
@@ -212,10 +220,12 @@ def _handle_message(peer_id: int, from_id: int, text: str, message: dict) -> Non
             return
         try:
             location_slug = args[1] if args[0].lower() == "location" and len(args) > 1 else None
-            reply = enqueue_pipeline(args[0], location_slug=location_slug)
+            reply = enqueue_pipeline(settings, args[0], location_slug=location_slug)
             send_message(peer_id, reply)
         except ValueError as exc:
             send_message(peer_id, str(exc))
+        except Exception as exc:
+            send_message(peer_id, f"Не удалось поставить в очередь: {exc}")
         return
 
     send_message(peer_id, "Неизвестная команда. /help")
@@ -245,6 +255,7 @@ def run() -> None:
 
     logger.info("Starting VK admin bot (group_id=%s)", settings.vk_bot_group_id)
     long_poll = VkLongPoll()
+    backoff = BACKOFF_BASE_SECONDS
     while True:
         try:
             for update in long_poll.poll():
@@ -252,12 +263,11 @@ def run() -> None:
                     _handle_update(update)
                 except Exception:
                     logger.exception("Failed to handle VK update")
-        except VkApiError:
-            logger.exception("VK long poll error, retry in 5s")
-            time.sleep(5)
-        except httpx.HTTPError:
-            logger.exception("VK long poll HTTP error, retry in 5s")
-            time.sleep(5)
+            backoff = BACKOFF_BASE_SECONDS
+        except (VkApiError, httpx.HTTPError):
+            logger.exception("VK long poll error, retry in %ss", backoff)
+            time.sleep(backoff)
+            backoff = min(backoff * 2, BACKOFF_MAX_SECONDS)
 
 
 if __name__ == "__main__":
