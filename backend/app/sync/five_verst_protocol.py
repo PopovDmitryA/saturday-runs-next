@@ -81,8 +81,8 @@ def fetch_and_upsert_event_protocol(
         event_summary_id=summary_row.id,
     )
     previous_hash = state.protocol_source_hash
-    run_results_upserted = upsert.upsert_run_results(db, event_row, platform, run_results)
-    volunteer_results_upserted = upsert.upsert_volunteer_results(db, event_row, platform, volunteer_results)
+    run_results_upserted = upsert.replace_event_run_results(db, event_row, platform, run_results)
+    volunteer_results_upserted = upsert.replace_event_volunteer_results(db, event_row, platform, volunteer_results)
     run_results_count = (
         db.query(RunResult).filter(RunResult.event_id == event_row.id).count()
     )

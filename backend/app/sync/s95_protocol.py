@@ -108,8 +108,8 @@ def fetch_and_upsert_activity_protocol(
     )
     previous_hash = state.protocol_source_hash
 
-    run_results_upserted = upsert.upsert_run_results(db, event_row, platform, parsed.run_results)
-    volunteer_results_upserted = upsert.upsert_volunteer_results(
+    run_results_upserted = upsert.replace_event_run_results(db, event_row, platform, parsed.run_results)
+    volunteer_results_upserted = upsert.replace_event_volunteer_results(
         db, event_row, platform, parsed.volunteer_results
     )
     _apply_event_stats(summary_row, event_row, parsed.event_stats)
