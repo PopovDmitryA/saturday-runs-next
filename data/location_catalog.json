@@ -412,6 +412,10 @@
       {
         "platform": "five_verst",
         "external_key": "gubernskypark"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "parkbeg40"
       }
     ]
   },
