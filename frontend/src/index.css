@@ -2803,6 +2803,45 @@ tr.run-crosslinked td {
   position: relative;
 }
 
+.map-panel-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.map-panel-fullscreen .map-toolbar {
+  flex-shrink: 0;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.5rem 1rem;
+  background: #fff;
+}
+
+.map-panel-fullscreen .location-map-shell {
+  flex: 1;
+  min-height: 0;
+}
+
+.map-panel-fullscreen .location-map-canvas {
+  height: 100%;
+  border-radius: 0;
+  border: none;
+}
+
+.map-panel-fullscreen .location-map-legend {
+  position: absolute;
+  bottom: 2.5rem;
+  left: 1rem;
+}
+
+.map-panel-fullscreen .map-stats-line {
+  display: none;
+}
+
 .location-map-empty {
   margin: 0 0 0.75rem;
   color: #64748b;
@@ -2816,6 +2855,36 @@ tr.run-crosslinked td {
   border-radius: 12px;
   overflow: hidden;
   background: #f8fafc;
+}
+
+.location-map-fullscreen-btn {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  z-index: 1001;
+  width: 2rem;
+  height: 2rem;
+  padding: 0.3rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  transition: background 0.15s, color 0.15s;
+}
+
+.location-map-fullscreen-btn:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.location-map-fullscreen-btn svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .map-marker {
