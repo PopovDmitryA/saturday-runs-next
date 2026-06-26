@@ -41,6 +41,16 @@ export function UserMapPanel({
 }: UserMapPanelProps) {
   const [mode, setMode] = useState<MapMode>("all");
   const [platformFilters, setPlatformFilters] = useState<PlatformFilters>(DEFAULT_PLATFORM_FILTERS);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const toggleFullscreen = useCallback(() => setIsFullscreen((v) => !v), []);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setIsFullscreen(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isFullscreen]);
   const [visited, setVisited] = useState<MapLocationsResponse | null>(null);
   const [catalog, setCatalog] = useState<MapLocationsResponse | null>(null);
   const [catalogTable, setCatalogTable] = useState<CatalogLocationsTableResponse | null>(null);
@@ -140,7 +150,7 @@ export function UserMapPanel({
   );
 
   return (
-    <>
+    <div className={isFullscreen ? "map-panel-fullscreen" : undefined}>
       <div className="map-toolbar">
         <div className="map-toolbar-group" role="tablist" aria-label="Режим карты">
           {MODE_DEFS.map(({ mode: m, label }) => (
@@ -238,6 +248,8 @@ export function UserMapPanel({
             variant={isCatalogMode ? "catalog" : "visited"}
             visitedByIdentity={mode === "all" ? visitedByIdentity : undefined}
             legend={mapLegend}
+            isFullscreen={isFullscreen}
+            onToggleFullscreen={toggleFullscreen}
             emptyMessage={
               !filtersActive
                 ? "Выберите хотя бы одну систему."
@@ -258,6 +270,6 @@ export function UserMapPanel({
           )}
         </>
       )}
-    </>
+    </div>
   );
 }
