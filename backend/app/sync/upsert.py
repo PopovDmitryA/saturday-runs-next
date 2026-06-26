@@ -635,6 +635,62 @@ def upsert_volunteer_results(
     return upserted
 
 
+def replace_event_volunteer_results(
+    db: Session,
+    event: Event,
+    platform: Platform,
+    results: list[CanonicalVolunteerResult],
+) -> int:
+    """Upsert incoming volunteer results for an event and delete any that are no longer present.
+
+    Use for protocol-based syncs where the fetched page is the complete authoritative list.
+    Prevents stale records when roles or participants are removed from a protocol.
+    """
+    incoming_keys = {item.external_result_key for item in results}
+    upserted = upsert_volunteer_results(db, event, platform, results)
+    deleted = 0
+    for row in db.query(VolunteerResult).filter(VolunteerResult.event_id == event.id).all():
+        if row.external_result_key not in incoming_keys:
+            db.delete(row)
+            deleted += 1
+    if deleted:
+        db.flush()
+    return upserted
+
+
+def replace_event_run_results(
+    db: Session,
+    event: Event,
+    platform: Platform,
+    results: list[CanonicalRunResult],
+    *,
+    from_profile: bool = False,
+    recalculate_pr: bool = False,
+) -> int:
+    """Upsert incoming run results for an event and delete any that are no longer present.
+
+    Use for protocol-based syncs where the fetched page is the complete authoritative list.
+    Prevents stale records when results are corrected or participants are removed.
+    """
+    incoming_keys = {item.external_result_key for item in results}
+    upserted = upsert_run_results(
+        db,
+        event,
+        platform,
+        results,
+        from_profile=from_profile,
+        recalculate_pr=recalculate_pr,
+    )
+    deleted = 0
+    for row in db.query(RunResult).filter(RunResult.event_id == event.id).all():
+        if row.external_result_key not in incoming_keys:
+            db.delete(row)
+            deleted += 1
+    if deleted:
+        db.flush()
+    return upserted
+
+
 def _profile_event_title(location_name: str, event_number: int | None) -> str:
     if event_number is not None:
         return f"{location_name} #{event_number}"
