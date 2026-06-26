@@ -245,7 +245,7 @@ def import_to_db(entries: list[CatalogEntry], *, replace: bool = True) -> dict[s
         for entry in entries:
             catalog = LocationCatalog(
                 canonical_name=entry.canonical_name,
-                legacy_parkrun_slug=entry.legacy_parkrun_slug,
+                legacy_parkrun_slug=entry.legacy_parkrun_slug or None,
                 active_platform=entry.active_platform,
                 is_closed=entry.is_closed,
                 notes=entry.notes or None,
