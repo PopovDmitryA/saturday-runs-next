@@ -13,6 +13,7 @@ class AdminPlatformLinkBrief(BaseModel):
     sync_status: str
     run_count: int = 0
     volunteer_count: int = 0
+    barcode_id: str | None = None
 
 
 class AdminUserAuthBrief(BaseModel):

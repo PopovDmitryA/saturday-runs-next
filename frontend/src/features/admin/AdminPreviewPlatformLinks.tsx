@@ -122,9 +122,13 @@ export function AdminPreviewPlatformLinks({
             <li key={`${link.platform_code}-${link.external_user_id}`}>
               <div className="admin-preview-link-main">
                 <PlatformBadge code={link.platform_code} />
-                <a href={link.external_url} target="_blank" rel="noreferrer">
-                  {link.external_user_id}
-                </a>
+                {link.platform_code === "runpark" ? (
+                  <span>{link.barcode_id ?? link.external_user_id}</span>
+                ) : (
+                  <a href={link.external_url} target="_blank" rel="noreferrer">
+                    {link.external_user_id}
+                  </a>
+                )}
                 {link.display_name && <span className="muted"> · {link.display_name}</span>}
                 {statsLabel && <span className="admin-preview-link-stats">{statsLabel}</span>}
               </div>

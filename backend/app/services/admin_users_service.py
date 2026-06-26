@@ -35,6 +35,7 @@ def _link_brief(
 ) -> dict[str, object]:
     display_name = participant.display_name if participant else None
     run_count, volunteer_count = counts.get(participant.id, (0, 0)) if participant else (0, 0)
+    barcode_id = participant.barcode_id if participant else None
     return {
         "platform_code": platform.code,
         "external_user_id": link.external_user_id,
@@ -43,6 +44,7 @@ def _link_brief(
         "sync_status": link.sync_status.value,
         "run_count": run_count,
         "volunteer_count": volunteer_count,
+        "barcode_id": barcode_id,
     }
 
 

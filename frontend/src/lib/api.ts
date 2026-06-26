@@ -809,6 +809,7 @@ export type AdminPlatformLinkBrief = {
   sync_status: string;
   run_count: number;
   volunteer_count: number;
+  barcode_id: string | null;
 };
 
 export type AdminUserAuthBrief = {
