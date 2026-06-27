@@ -13,6 +13,7 @@ from app.services.sync_dedup_service import (
 )
 from app.services.sync_trigger_service import (
     enqueue_parkrun_user_sync,
+    enqueue_runpark_user_sync,
     enqueue_s95_user_sync,
     enqueue_user_sync,
 )
@@ -35,6 +36,13 @@ def _dispatch_platform_sync(
         )
     elif platform.code == "parkrun":
         enqueue_parkrun_user_sync(
+            user_id,
+            trigger,
+            job_id=job_id,
+            platform_link_id=platform_link_id,
+        )
+    elif platform.code == "runpark":
+        enqueue_runpark_user_sync(
             user_id,
             trigger,
             job_id=job_id,

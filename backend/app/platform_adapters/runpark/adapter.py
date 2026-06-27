@@ -124,11 +124,12 @@ def _try_import_from_runpark(db: Session, platform: object, barcode_id: str) -> 
             log.exception("Error importing RunPark event %s during barcode lookup: %s", external_event_key, exc)
             rollback_step(db)
 
+    # Look up by participant_id UUID (external_user_id), not barcode — one participant can have many barcodes
     participant = (
         db.query(Participant)
         .filter(
             Participant.platform_id == platform.id,  # type: ignore[attr-defined]
-            Participant.barcode_id == barcode_id,
+            Participant.external_user_id == participant_id,
         )
         .first()
     )
@@ -153,6 +154,7 @@ def lookup_profile_preview_from_db(db: Session, barcode_id: str) -> ProfilePrevi
     if platform is None:
         raise RunparkProfileNotFoundError("Платформа RunPark не найдена в системе.")
 
+    # Try by barcode_id first; if not found, resolve via participant_id UUID (one participant → many barcodes)
     participant = (
         db.query(Participant)
         .filter(
@@ -161,6 +163,31 @@ def lookup_profile_preview_from_db(db: Session, barcode_id: str) -> ProfilePrevi
         )
         .first()
     )
+    if participant is None:
+        # barcode might belong to a participant stored under a different barcode — resolve via RunPark
+        try:
+            from app.runpark.mssql_client import runpark_query as _rq
+            rows = _rq(
+                "SELECT TOP 1 participant_id FROM api.vw_run_results WHERE barcode_id = %s",
+                (normalized,),
+            )
+            if not rows:
+                rows = _rq(
+                    "SELECT TOP 1 participant_id FROM api.vw_volunteer_results WHERE barcode_id = %s",
+                    (normalized,),
+                )
+            if rows and rows[0].get("participant_id"):
+                pid = str(rows[0]["participant_id"]).upper()
+                participant = (
+                    db.query(Participant)
+                    .filter(
+                        Participant.platform_id == platform.id,
+                        Participant.external_user_id == pid,
+                    )
+                    .first()
+                )
+        except Exception:
+            pass
     if participant is None:
         participant = _try_import_from_runpark(db, platform, normalized)
     if participant is None:

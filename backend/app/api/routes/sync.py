@@ -20,7 +20,7 @@ from app.services.task_queue_service import get_admin_task_queue_payload
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
-SUPPORTED_SYNC_PLATFORMS = frozenset({"five_verst", "s95", "parkrun"})
+SUPPORTED_SYNC_PLATFORMS = frozenset({"five_verst", "s95", "parkrun", "runpark"})
 SYNC_REFRESH_QUEUED_MESSAGE = (
     "Запрос на обновление отправлен. Ожидайте исполнения в ближайшее время."
 )

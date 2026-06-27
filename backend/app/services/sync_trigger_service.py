@@ -79,6 +79,23 @@ def _user_has_platform_link(db: Session, user_id: UUID, platform_code: str) -> b
     )
 
 
+def enqueue_runpark_user_sync(
+    user_id: UUID,
+    trigger: SyncJobTrigger,
+    *,
+    job_id: UUID | None = None,
+    platform_link_id: UUID | None = None,
+) -> None:
+    from app.workers.tasks.runpark_sync import runpark_user_sync_task
+
+    runpark_user_sync_task.apply_async(
+        args=[str(user_id), trigger.value, str(job_id) if job_id else None],
+        kwargs={"platform_link_id": str(platform_link_id) if platform_link_id else None},
+        queue="runpark",
+        **_apply_task_id(job_id, "runpark"),
+    )
+
+
 def maybe_enqueue_login_auto_sync(db: Session, user_id: UUID, *, interval_seconds: int) -> bool:
     from app.services.user_auto_sync_service import maybe_enqueue_login_auto_sync
 
