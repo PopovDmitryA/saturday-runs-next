@@ -9,6 +9,7 @@ from app.api.routes import (
     internal_vk_bot,
     locations,
     profiles,
+    public_profiles,
     runs,
     settings,
     stats,
@@ -26,5 +27,6 @@ api_router.include_router(runs.router)
 api_router.include_router(locations.router)
 api_router.include_router(sync.router)
 api_router.include_router(settings.router)
+api_router.include_router(public_profiles.router)
 api_router.include_router(internal_bot.router)
 api_router.include_router(internal_vk_bot.router)

@@ -998,6 +998,67 @@ export function getAdminUserPreviewVolunteerRoleStats(userId: string, includeTes
   );
 }
 
+// Public profile API (serial_id — числовой ID пользователя)
+export function getPublicProfileDashboard(serialId: number) {
+  return apiFetch<AdminUserPreviewDashboard>(`/users/${serialId}/profile/dashboard`);
+}
+
+export function getPublicProfileRuns(serialId: number, limit = 200, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return apiFetch<RunItem[]>(`/users/${serialId}/profile/runs?${params.toString()}`);
+}
+
+export function getPublicProfileVolunteering(serialId: number, limit = 200, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return apiFetch<VolunteeringItem[]>(`/users/${serialId}/profile/volunteering?${params.toString()}`);
+}
+
+export function getAllPublicProfileRuns(serialId: number) {
+  return fetchAllAdminPreviewPages((limit, offset) => getPublicProfileRuns(serialId, limit, offset));
+}
+
+export function getAllPublicProfileVolunteering(serialId: number) {
+  return fetchAllAdminPreviewPages((limit, offset) =>
+    getPublicProfileVolunteering(serialId, limit, offset),
+  );
+}
+
+export function getPublicProfileVisitedMap(serialId: number, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<MapLocationsResponse>(`/users/${serialId}/profile/locations/visited/map${query}`);
+}
+
+export function getPublicProfileVisitedDetail(serialId: number, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<UniqueLocationsDetailResponse>(
+    `/users/${serialId}/profile/locations/visited/detail${query}`,
+  );
+}
+
+export function getPublicProfileCatalogTable(serialId: number, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<CatalogLocationsTableResponse>(
+    `/users/${serialId}/profile/locations/catalog/table${query}`,
+  );
+}
+
+export function getPublicProfileBestResults(serialId: number, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<BestResultItem[]>(`/users/${serialId}/profile/runs/best-results${query}`);
+}
+
+export function getPublicProfilePersonalRecords(serialId: number, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<PersonalRecordItem[]>(`/users/${serialId}/profile/runs/personal-records${query}`);
+}
+
+export function getPublicProfileVolunteerRoleStats(serialId: number, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<VolunteerRoleStatItem[]>(
+    `/users/${serialId}/profile/volunteering/role-stats${query}`,
+  );
+}
+
 export type AbuseIpBlockItem = {
   ip: string;
   ttl_seconds: number | null;

@@ -17,6 +17,14 @@ import {
   getAdminUserPreviewVolunteerRoleStats,
   getAllAdminUserPreviewRuns,
   getAllAdminUserPreviewVolunteering,
+  getPublicProfileBestResults,
+  getPublicProfileCatalogTable,
+  getPublicProfilePersonalRecords,
+  getPublicProfileVisitedDetail,
+  getPublicProfileVisitedMap,
+  getPublicProfileVolunteerRoleStats,
+  getAllPublicProfileRuns,
+  getAllPublicProfileVolunteering,
   getBestResults,
   getCatalogLocationsMap,
   getCatalogLocationsTable,
@@ -36,7 +44,7 @@ import {
   type VolunteeringItem,
 } from "./api";
 
-export type AppDataSourceMode = "auth" | "demo" | "admin-preview";
+export type AppDataSourceMode = "auth" | "demo" | "admin-preview" | "public-profile";
 
 export type AppDataSource = {
   mode: AppDataSourceMode;
@@ -89,6 +97,21 @@ export function createAdminPreviewDataSource(userId: string): AppDataSource {
     getVisitedLocationsMap: (includeTest) => getAdminUserPreviewVisitedMap(userId, includeTest),
     getCatalogLocationsMap,
     getCatalogLocationsTable: (includeTest) => getAdminUserPreviewCatalogTable(userId, includeTest),
+  };
+}
+
+export function createPublicProfileDataSource(serialId: number): AppDataSource {
+  return {
+    mode: "public-profile",
+    listRuns: () => getAllPublicProfileRuns(serialId),
+    listVolunteering: () => getAllPublicProfileVolunteering(serialId),
+    getBestResults: (includeTest) => getPublicProfileBestResults(serialId, includeTest),
+    getPersonalRecords: (includeTest) => getPublicProfilePersonalRecords(serialId, includeTest),
+    getVolunteerRoleStats: (includeTest) => getPublicProfileVolunteerRoleStats(serialId, includeTest),
+    getUniqueLocationsDetail: (includeTest) => getPublicProfileVisitedDetail(serialId, includeTest),
+    getVisitedLocationsMap: (includeTest) => getPublicProfileVisitedMap(serialId, includeTest),
+    getCatalogLocationsMap,
+    getCatalogLocationsTable: (includeTest) => getPublicProfileCatalogTable(serialId, includeTest),
   };
 }
 
