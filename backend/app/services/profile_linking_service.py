@@ -86,6 +86,11 @@ def preview_profile_link(
             store_profile_preview(user.id, platform_code, profile_url, db_preview)
         return db_preview
 
+    if platform_code == "s95":
+        from app.s95.messages import S95_MAINTENANCE, S95_MAINTENANCE_MESSAGE
+        if S95_MAINTENANCE:
+            raise ProfileLinkingError(S95_MAINTENANCE_MESSAGE, 503)
+
     try:
         if user is not None and platform_code in ("five_verst", "parkrun", "s95"):
             preview = persist_live_profile_preview(db, platform_code, profile_url, user.id)
