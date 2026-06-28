@@ -28,6 +28,10 @@ def _dispatch_platform_sync(
     platform_link_id: UUID,
 ) -> None:
     if platform.code == "s95":
+        from app.s95.messages import S95_MAINTENANCE
+        if S95_MAINTENANCE:
+            # Job stays pending in DB — will be dispatched when maintenance ends
+            return
         enqueue_s95_user_sync(
             user_id,
             trigger,
