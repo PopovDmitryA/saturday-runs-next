@@ -19,9 +19,11 @@ function platformCell(user: AdminUserListItem, code: string) {
   const counts = (
     <span className="admin-platform-counts muted"> ({link.run_count}/{link.volunteer_count})</span>
   );
-  const label = (link.display_name?.trim()) || (code === "runpark" ? (link.barcode_id ?? link.external_user_id) : null);
-  const hasUrl = link.external_url && code !== "runpark";
-  if (!hasUrl) {
+  const label = link.display_name?.trim() || (code === "runpark" ? (link.barcode_id ?? link.external_user_id) : null);
+  const url = code === "runpark"
+    ? `https://runpark.ru/Account/Karmas/${link.external_user_id}`
+    : link.external_url || null;
+  if (!url) {
     return (
       <span className="admin-platform-link">
         {label ?? <span className="muted">Профиль</span>}
@@ -30,7 +32,7 @@ function platformCell(user: AdminUserListItem, code: string) {
     );
   }
   return (
-    <a href={link.external_url} target="_blank" rel="noreferrer" className="admin-platform-link">
+    <a href={url} target="_blank" rel="noreferrer" className="admin-platform-link">
       {label ?? <span className="muted">Профиль</span>}
       {counts}
     </a>
