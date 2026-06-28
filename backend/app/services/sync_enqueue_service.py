@@ -199,11 +199,6 @@ def enqueue_linking_platform_sync(
     )
 
 
-def enqueue_manual_sync_for_all_platforms(db: Session, user_id: UUID) -> SyncEnqueueResult:
-    return enqueue_sync_for_all_platforms(
-        db, user_id, SyncJobTrigger.manual, mark_syncing=True
-    )
-
 
 def enqueue_manual_platform_sync(
     db: Session,

@@ -908,10 +908,6 @@ export function getAdminUserPreviewDashboard(userId: string) {
   return apiFetch<AdminUserPreviewDashboard>(`/admin/users/${userId}/preview/dashboard`);
 }
 
-export function triggerAdminUserSync(userId: string) {
-  return apiFetch<SyncRefreshResponse>(`/admin/users/${userId}/sync`, { method: "POST" });
-}
-
 export function triggerAdminUserSyncPlatform(userId: string, platformCode: string) {
   return apiFetch<SyncRefreshResponse>(`/admin/users/${userId}/sync/${platformCode}`, {
     method: "POST",

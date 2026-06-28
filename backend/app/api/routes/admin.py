@@ -75,10 +75,7 @@ from app.services.parkrun_admin_service import (
 )
 from app.services.parkrun_local_worker import get_local_worker_status, request_local_worker_run
 from app.services.profile_fetch_pending_service import reset_failed_parkrun_pending
-from app.services.sync_enqueue_service import (
-    enqueue_manual_platform_sync,
-    enqueue_manual_sync_for_all_platforms,
-)
+from app.services.sync_enqueue_service import enqueue_manual_platform_sync
 from app.services.user_unique_locations_detail import build_user_unique_location_details
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -228,23 +225,6 @@ def admin_user_preview_volunteer_role_stats(
     if items is None:
         raise HTTPException(status_code=404, detail="User not found")
     return [VolunteerRoleStatResponse.model_validate(item) for item in items]
-
-
-@router.post(
-    "/users/{user_id}/sync",
-    response_model=SyncRefreshResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-)
-def admin_user_sync_all(
-    user_id: UUID,
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-) -> SyncRefreshResponse:
-    if get_admin_user(db, user_id) is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    result = enqueue_manual_sync_for_all_platforms(db, user_id)
-    db.commit()
-    return _admin_sync_refresh_response(result)
 
 
 @router.post(
