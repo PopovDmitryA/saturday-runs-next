@@ -264,6 +264,7 @@ def search_admin_users(
         items.append(
             {
                 "id": str(user.id),
+                "serial_id": user.serial_id,
                 "telegram_id": user.telegram_id,
                 "telegram_username": user.telegram_username,
                 "display_name": user.display_name,

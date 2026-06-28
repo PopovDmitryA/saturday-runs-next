@@ -4698,6 +4698,12 @@ tr.run-crosslinked td {
   min-width: 9rem;
 }
 
+.admin-users-actions {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: nowrap;
+}
+
 .admin-users-telegram a {
   font-weight: 600;
 }

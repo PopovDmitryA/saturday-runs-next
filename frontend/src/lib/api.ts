@@ -816,6 +816,7 @@ export type AdminUserAuthBrief = {
 
 export type AdminUserListItem = {
   id: string;
+  serial_id: number | null;
   telegram_id: number | null;
   telegram_username: string | null;
   display_name: string | null;
