@@ -21,6 +21,12 @@ from app.services.task_queue_service import get_admin_task_queue_payload
 router = APIRouter(prefix="/sync", tags=["sync"])
 
 SUPPORTED_SYNC_PLATFORMS = frozenset({"five_verst", "s95", "parkrun", "runpark"})
+
+
+def _check_s95_maintenance(platform_code: str | None = None) -> None:
+    from app.s95.messages import S95_MAINTENANCE, S95_MAINTENANCE_MESSAGE
+    if S95_MAINTENANCE and platform_code in (None, "s95"):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=S95_MAINTENANCE_MESSAGE)
 SYNC_REFRESH_QUEUED_MESSAGE = (
     "Запрос на обновление отправлен. Ожидайте исполнения в ближайшее время."
 )
@@ -61,6 +67,7 @@ def sync_refresh(
     user: Annotated[User, Depends(get_current_user)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SyncRefreshResponse:
+    _check_s95_maintenance()
     rate_key = f"sync_refresh:{user.id}"
     allowed = check_rate_limit(
         rate_key,
@@ -88,6 +95,7 @@ def sync_refresh_platform(
     if platform_code not in SUPPORTED_SYNC_PLATFORMS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown platform")
 
+    _check_s95_maintenance(platform_code)
     rate_key = f"sync_refresh:{user.id}:{platform_code}"
     allowed = check_rate_limit(
         rate_key,
