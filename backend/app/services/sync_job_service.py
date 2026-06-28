@@ -42,6 +42,8 @@ def _task_suffixes_for_job(db: Session, job: SyncJob) -> list[str]:
             return ["s95"]
         if code == "parkrun":
             return ["parkrun"]
+        if code == "runpark":
+            return ["runpark"]
         return []
 
     rows = (
@@ -58,6 +60,8 @@ def _task_suffixes_for_job(db: Session, job: SyncJob) -> list[str]:
         suffixes.append("s95")
     if "parkrun" in codes:
         suffixes.append("parkrun")
+    if "runpark" in codes:
+        suffixes.append("runpark")
     return suffixes
 
 
