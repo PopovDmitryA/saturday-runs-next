@@ -116,6 +116,7 @@ def build_user_unique_location_details(
                 "latitude": None,
                 "longitude": None,
                 "run_count": 0,
+                "run_dates": set(),
                 "volunteer_count": 0,
                 "first_visit_date": None,
                 "last_visit_date": None,
@@ -185,7 +186,10 @@ def build_user_unique_location_details(
         platform_bucket = _ensure_platform(bucket, platform_code, location)
         if kind == "run":
             platform_bucket["run_dates"].add(event_date)  # type: ignore[union-attr]
-            bucket["run_count"] = int(bucket["run_count"]) + 1
+            all_run_dates: set[date] = bucket["run_dates"]  # type: ignore[assignment]
+            if event_date not in all_run_dates:
+                all_run_dates.add(event_date)
+                bucket["run_count"] = int(bucket["run_count"]) + 1
         else:
             dates_set = platform_bucket["volunteer_dates"]  # type: ignore[assignment]
             is_new_date = event_date not in dates_set
