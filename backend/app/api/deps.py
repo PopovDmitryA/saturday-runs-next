@@ -61,6 +61,15 @@ def get_current_user_response(user: Annotated[User, Depends(get_current_user)]) 
     return UserResponse.model_validate(user)
 
 
+def get_optional_user(
+    db: Annotated[Session, Depends(get_db)],
+    user_id: Annotated[UUID | None, Depends(get_optional_session_user_id)],
+) -> User | None:
+    if user_id is None:
+        return None
+    return db.query(User).filter(User.id == user_id).one_or_none()
+
+
 def get_current_admin_user(
     user: Annotated[User, Depends(get_current_user)],
     settings: Annotated[Settings, Depends(get_settings)],

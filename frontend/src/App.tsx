@@ -5,6 +5,7 @@ import { AdminS95ParticipantsPage } from "./features/admin/AdminS95ParticipantsP
 import { AdminParkrunPage } from "./features/admin/AdminParkrunPage";
 import { AdminStatsPage } from "./features/admin/AdminStatsPage";
 import { AdminUserPreviewPage } from "./features/admin/AdminUserPreviewPage";
+import { PublicProfilePage } from "./features/public_profile/PublicProfilePage";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { LoginPage } from "./features/auth/LoginPage";
@@ -119,6 +120,10 @@ function renderRoute(path: string): ReactElement {
   const previewMatch = path.match(/^\/admin\/users\/([0-9a-f-]{36})\/preview$/i);
   if (previewMatch) {
     return <AdminUserPreviewPage userId={previewMatch[1]} />;
+  }
+  const publicProfileMatch = path.match(/^\/users\/(\d+)$/);
+  if (publicProfileMatch) {
+    return <PublicProfilePage serialId={Number(publicProfileMatch[1])} />;
   }
   const render = STATIC_ROUTES[path];
   if (render) {

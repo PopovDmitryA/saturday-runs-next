@@ -574,6 +574,7 @@ class User(Base):
     consent_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     news_subscribed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     profile_private: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    serial_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

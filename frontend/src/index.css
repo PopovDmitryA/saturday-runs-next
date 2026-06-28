@@ -4923,6 +4923,20 @@ tr.run-crosslinked td {
   font-size: 0.88rem;
 }
 
+.public-profile-locked {
+  text-align: center;
+  padding: 3rem 1.5rem;
+}
+
+.public-profile-locked-icon {
+  font-size: 3rem;
+  margin: 0 0 1rem;
+}
+
+.public-profile-locked h2 {
+  margin: 0 0 0.5rem;
+}
+
 .admin-preview-banner {
   display: flex;
   flex-wrap: wrap;
