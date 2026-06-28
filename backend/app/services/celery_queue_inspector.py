@@ -19,10 +19,13 @@ PARKRUN_SYNC_QUEUE = "parkrun"
 USER_SYNC_QUEUE = FIVE_VERST_USER_QUEUE
 S95_SYNC_QUEUE = S95_USER_QUEUE
 
+RUNPARK_SYNC_QUEUE = "runpark"
+
 TASK_QUEUE_BY_SUFFIX: dict[str, str] = {
     "five_verst": FIVE_VERST_USER_QUEUE,
     "s95": S95_USER_QUEUE,
     "parkrun": PARKRUN_SYNC_QUEUE,
+    "runpark": RUNPARK_SYNC_QUEUE,
 }
 
 
