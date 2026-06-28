@@ -19,18 +19,19 @@ function platformCell(user: AdminUserListItem, code: string) {
   const counts = (
     <span className="admin-platform-counts muted"> ({link.run_count}/{link.volunteer_count})</span>
   );
-  const label = link.display_name?.trim();
-  if (!label) {
+  const label = (link.display_name?.trim()) || (code === "runpark" ? (link.barcode_id ?? link.external_user_id) : null);
+  const hasUrl = link.external_url && code !== "runpark";
+  if (!hasUrl) {
     return (
-      <a href={link.external_url} target="_blank" rel="noreferrer" className="admin-platform-link muted">
-        Профиль
+      <span className="admin-platform-link">
+        {label ?? <span className="muted">Профиль</span>}
         {counts}
-      </a>
+      </span>
     );
   }
   return (
     <a href={link.external_url} target="_blank" rel="noreferrer" className="admin-platform-link">
-      {label}
+      {label ?? <span className="muted">Профиль</span>}
       {counts}
     </a>
   );
@@ -157,6 +158,7 @@ function AdminUsersContent() {
                   <th>{platformCodeLabel("five_verst")}</th>
                   <th>{platformCodeLabel("s95")}</th>
                   <th>{platformCodeLabel("parkrun")}</th>
+                  <th>{platformCodeLabel("runpark")}</th>
                   <th>
                     <button
                       type="button"
@@ -190,7 +192,7 @@ function AdminUsersContent() {
               <tbody>
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="muted">
+                    <td colSpan={9} className="muted">
                       Пользователи не найдены
                     </td>
                   </tr>
@@ -227,15 +229,23 @@ function AdminUsersContent() {
                       <td>{platformCell(user, "five_verst")}</td>
                       <td>{platformCell(user, "s95")}</td>
                       <td>{platformCell(user, "parkrun")}</td>
+                      <td>{platformCell(user, "runpark")}</td>
                       <td>{user.total_runs ?? "—"}</td>
                       <td>{user.total_volunteering ?? "—"}</td>
                       <td title={formatDateTime(user.created_at)}>
                         {formatDateTime(user.created_at)}
                       </td>
                       <td>
-                        <a className="btn secondary btn-sm" href={`/admin/users/${user.id}/preview`}>
-                          Просмотр
-                        </a>
+                        <div className="admin-users-actions">
+                          <a className="btn secondary btn-sm" href={`/admin/users/${user.id}/preview`}>
+                            Просмотр
+                          </a>
+                          {user.serial_id != null && (
+                            <a className="btn btn-ghost btn-sm" href={`/users/${user.serial_id}`} target="_blank" rel="noreferrer">
+                              Профиль
+                            </a>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

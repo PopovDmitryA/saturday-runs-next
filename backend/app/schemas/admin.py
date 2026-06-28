@@ -24,6 +24,7 @@ class AdminUserAuthBrief(BaseModel):
 
 class AdminUserListItem(BaseModel):
     id: str
+    serial_id: int | None = None
     telegram_id: int | None = None
     telegram_username: str | None = None
     display_name: str | None = None
