@@ -115,17 +115,19 @@ export function visitCountForPlatforms(
   platforms: MapLocationPlatformVisit[],
   activityFilter: ActivityFilter,
 ): number {
-  let count = 0;
+  const runDates = new Set<string>();
+  const volDates = new Set<string>();
   for (const platform of platforms) {
-    if (activityFilter === "runs") {
-      count += platform.run_dates.length;
-    } else if (activityFilter === "volunteering") {
-      count += platform.volunteer_dates.length;
-    } else {
-      count += platform.run_dates.length + platform.volunteer_dates.length;
+    if (activityFilter !== "volunteering") {
+      for (const d of platform.run_dates) runDates.add(d);
+    }
+    if (activityFilter !== "runs") {
+      for (const d of platform.volunteer_dates) volDates.add(d);
     }
   }
-  return count;
+  if (activityFilter === "runs") return runDates.size;
+  if (activityFilter === "volunteering") return volDates.size;
+  return new Set([...runDates, ...volDates]).size;
 }
 
 export function volunteerRolesTooltipLines(location: UniqueLocationDetail): string[] | null {
