@@ -628,10 +628,6 @@ export function getSyncQueue() {
   return apiFetch<SyncQueueResponse>("/sync/queue");
 }
 
-export function triggerSyncRefresh() {
-  return apiFetch<SyncRefreshResponse>("/sync/refresh", { method: "POST" });
-}
-
 export function triggerSyncRefreshPlatform(platformCode: string) {
   return apiFetch<SyncRefreshResponse>(`/sync/refresh/${platformCode}`, { method: "POST" });
 }

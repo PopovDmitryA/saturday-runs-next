@@ -12,27 +12,24 @@ from app.db.session import get_db
 from app.models import User
 from app.schemas.dashboard import SyncQueueResponse, SyncRefreshResponse, SyncStatusResponse
 from app.services.dashboard_service import get_sync_status_payload
-from app.services.sync_enqueue_service import (
-    enqueue_manual_platform_sync,
-    enqueue_manual_sync_for_all_platforms,
-)
+from app.services.sync_enqueue_service import enqueue_manual_platform_sync
 from app.services.task_queue_service import get_admin_task_queue_payload
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
 SUPPORTED_SYNC_PLATFORMS = frozenset({"five_verst", "s95", "parkrun", "runpark"})
-
-
-def _check_s95_maintenance(platform_code: str | None = None) -> None:
-    from app.s95.messages import S95_MAINTENANCE, S95_MAINTENANCE_MESSAGE
-    if S95_MAINTENANCE and platform_code in (None, "s95"):
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=S95_MAINTENANCE_MESSAGE)
 SYNC_REFRESH_QUEUED_MESSAGE = (
     "Запрос на обновление отправлен. Ожидайте исполнения в ближайшее время."
 )
 SYNC_REFRESH_ALREADY_QUEUED_MESSAGE = (
     "Обновление уже в очереди. Ожидайте исполнения в ближайшее время."
 )
+
+
+def _check_s95_maintenance(platform_code: str) -> None:
+    from app.s95.messages import S95_MAINTENANCE, S95_MAINTENANCE_MESSAGE
+    if S95_MAINTENANCE and platform_code == "s95":
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=S95_MAINTENANCE_MESSAGE)
 
 
 def _refresh_response(result) -> SyncRefreshResponse:
@@ -59,30 +56,6 @@ def sync_queue(
 ) -> SyncQueueResponse:
     payload = get_admin_task_queue_payload(db)
     return SyncQueueResponse.model_validate(payload)
-
-
-@router.post("/refresh", response_model=SyncRefreshResponse, status_code=status.HTTP_202_ACCEPTED)
-def sync_refresh(
-    db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> SyncRefreshResponse:
-    _check_s95_maintenance()
-    rate_key = f"sync_refresh:{user.id}"
-    allowed = check_rate_limit(
-        rate_key,
-        settings.sync_refresh_rate_limit_per_user,
-        settings.sync_refresh_rate_limit_window_seconds,
-    )
-    if not allowed:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Sync refresh rate limit exceeded (1 per 30 minutes)",
-        )
-
-    result = enqueue_manual_sync_for_all_platforms(db, user.id)
-    db.commit()
-    return _refresh_response(result)
 
 
 @router.post("/refresh/{platform_code}", response_model=SyncRefreshResponse, status_code=status.HTTP_202_ACCEPTED)
