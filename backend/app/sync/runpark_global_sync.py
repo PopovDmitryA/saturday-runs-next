@@ -284,3 +284,83 @@ def sync_runpark_batch(db: Session, since_date: date) -> RunparkSyncResult:
         result.errors.append(str(exc))
 
     return result
+
+
+def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyncResult:
+    """Sync all events for a specific participant (by RunPark participant_id UUID)."""
+    result = RunparkSyncResult()
+    platform = upsert.get_platform(db, PLATFORM_CODE)
+    location_map = _get_location_mapping(db)
+
+    if not location_map:
+        logger.warning("No RunPark locations with show_on_map=true found")
+        return result
+
+    pid_upper = participant_id.upper()
+
+    # Find all event_ids where this participant has run or volunteered
+    run_events = runpark_query(
+        "SELECT DISTINCT event_id FROM api.vw_run_results WHERE UPPER(CAST(participant_id AS nvarchar(64))) = %s",
+        (pid_upper,),
+    )
+    vol_events = runpark_query(
+        "SELECT DISTINCT event_id FROM api.vw_volunteer_results WHERE UPPER(CAST(participant_id AS nvarchar(64))) = %s",
+        (pid_upper,),
+    )
+    event_ids = {str(r["event_id"]).upper() for r in run_events + vol_events}
+
+    if not event_ids:
+        logger.info("RunPark: no events found for participant %s", pid_upper)
+        return result
+
+    result.events_total = len(event_ids)
+    logger.info("RunPark user sync: %d events for participant %s", len(event_ids), pid_upper)
+
+    for external_event_key in event_ids:
+        events = runpark_query(
+            "SELECT * FROM api.vw_events WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s",
+            (external_event_key,),
+        )
+        if not events:
+            continue
+        ev = events[0]
+        location_id_key = str(ev["location_id"]).upper()
+        location = location_map.get(location_id_key)
+        if location is None:
+            continue  # not a tracked location
+
+        try:
+            event_row = _ensure_event(db, platform, location, ev)
+            _delete_event_results(db, event_row)
+
+            run_rows = runpark_query(
+                "SELECT * FROM api.vw_run_results WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s",
+                (external_event_key,),
+            )
+            canonical_runs = [_to_canonical_run(r) for r in run_rows]
+            result.run_results_upserted += upsert.upsert_run_results(
+                db, event_row, platform, canonical_runs, recalculate_pr=True
+            )
+
+            vol_rows = runpark_query(
+                "SELECT * FROM api.vw_volunteer_results WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s",
+                (external_event_key,),
+            )
+            canonical_vols = [
+                v for r in vol_rows
+                if (v := _to_canonical_volunteer(r, external_event_key)) is not None
+            ]
+            result.volunteer_results_upserted += upsert.upsert_volunteer_results(
+                db, event_row, platform, canonical_vols
+            )
+
+            _upsert_crosslinks_for_event(db, event_row)
+            result.events_upserted += 1
+            commit_step(db)
+        except Exception as exc:
+            msg = f"Event {external_event_key}: {exc}"
+            logger.exception(msg)
+            result.errors.append(msg)
+            rollback_step(db)
+
+    return result
