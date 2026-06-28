@@ -2,7 +2,6 @@ import { useState } from "react";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { Snackbar } from "../../components/Snackbar";
 import {
-  triggerAdminUserSync,
   triggerAdminUserSyncPlatform,
   type AdminPlatformLinkBrief,
   type SyncRefreshResponse,
@@ -50,7 +49,6 @@ export function AdminPreviewPlatformLinks({
   byPlatform,
   onSyncQueued,
 }: AdminPreviewPlatformLinksProps) {
-  const [syncingAll, setSyncingAll] = useState(false);
   const [syncingPlatform, setSyncingPlatform] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState<SnackbarState>(closedSnackbar);
 
@@ -73,18 +71,6 @@ export function AdminPreviewPlatformLinks({
     });
   };
 
-  const handleSyncAll = async () => {
-    setSyncingAll(true);
-    try {
-      const response = await triggerAdminUserSync(userId);
-      handleSyncResponse(response);
-    } catch (err) {
-      handleSyncError(err);
-    } finally {
-      setSyncingAll(false);
-    }
-  };
-
   const handleSyncPlatform = async (platformCode: string) => {
     setSyncingPlatform(platformCode);
     try {
@@ -103,16 +89,6 @@ export function AdminPreviewPlatformLinks({
 
   return (
     <>
-      <div className="admin-preview-links-toolbar">
-        <button
-          type="button"
-          className="btn secondary btn-sm"
-          disabled={syncingAll || syncingPlatform !== null}
-          onClick={() => void handleSyncAll()}
-        >
-          {syncingAll ? "Отправка…" : "Обновить все профили"}
-        </button>
-      </div>
       <ul className="admin-preview-links">
         {links.map((link) => {
           const statsLabel = platformStatsLabel(byPlatform[link.platform_code]);
@@ -139,7 +115,7 @@ export function AdminPreviewPlatformLinks({
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  disabled={isSyncing || syncingAll}
+                  disabled={isSyncing}
                   aria-label={`Обновить ${platformCodeLabel(link.platform_code)}`}
                   onClick={() => void handleSyncPlatform(link.platform_code)}
                 >
