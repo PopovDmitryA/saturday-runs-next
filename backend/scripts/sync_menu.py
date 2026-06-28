@@ -439,11 +439,7 @@ def _run_s95_registry(cfg: SessionConfig) -> None:
             return
         result = sync_s95_locations_registry(
             db,
-            S95LocationRegistrySyncOptions(
-                fetch_new_location_details=True,
-                fetch_missing_coordinates=True,
-                limit=limit if limit > 0 else None,
-            ),
+            S95LocationRegistrySyncOptions(limit=limit if limit > 0 else None),
         )
         _print_result(result)
     finally:

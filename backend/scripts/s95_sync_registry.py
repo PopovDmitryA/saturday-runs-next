@@ -18,11 +18,9 @@ from app.sync.s95_locations_registry import S95LocationRegistrySyncOptions, sync
 
 def main() -> int:
     bootstrap_from_env()
-    parser = argparse.ArgumentParser(description="Sync S95 location registry from /events")
+    parser = argparse.ArgumentParser(description="Sync S95 location registry via JSON API")
     add_bootstrap_args(parser)
-    parser.add_argument("--limit", type=int, default=None, help="Process only first N registry entries")
-    parser.add_argument("--no-new-fetch", action="store_true", help="Do not fetch detail pages for new slugs")
-    parser.add_argument("--no-coords-fetch", action="store_true", help="Do not fetch coords for existing rows missing them")
+    parser.add_argument("--limit", type=int, default=None, help="Process only first N entries")
     parser.add_argument("--pretty", action="store_true")
     args = parser.parse_args()
     apply_bootstrap_args(args)
@@ -31,11 +29,7 @@ def main() -> int:
     try:
         result = sync_s95_locations_registry(
             db,
-            S95LocationRegistrySyncOptions(
-                fetch_new_location_details=not args.no_new_fetch,
-                fetch_missing_coordinates=not args.no_coords_fetch,
-                limit=args.limit,
-            ),
+            S95LocationRegistrySyncOptions(limit=args.limit),
         )
     except Exception as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
