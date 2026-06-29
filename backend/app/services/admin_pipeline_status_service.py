@@ -36,7 +36,6 @@ CELERY_TASK_LABELS: dict[str, str] = {
     "s95_sync.sync_latest": "s95: свежие /activities",
     "s95_sync.sync_location_rotation": "s95: ротация локаций",
     "s95_sync.reconcile_stale_protocols": "s95: сверка протоколов",
-    "s95_sync.sync_athletes_registry": "s95: проверка профилей athletes",
     "five_verst_sync.sync_location": "5verst: локация",
     "five_verst_sync.sync_location_summaries": "5verst: своды локации",
     "user_sync.run_user_sync": "синхронизация профиля (5verst)",

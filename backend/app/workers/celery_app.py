@@ -65,39 +65,43 @@ celery_app.conf.update(
             "schedule": crontab(minute=0, hour="*/3"),
             "options": {"queue": "five_verst"},
         },
+        # S95 location registry — daily via JSON API (s95.ru/by/rs).
         "s95-registry-daily": {
             "task": "s95_sync.sync_locations_registry",
             "schedule": crontab(hour=20, minute=30),
             "options": {"queue": "s95"},
         },
-        "s95-latest-weekday": {
-            "task": "s95_sync.sync_latest",
-            "schedule": crontab(hour="0,5,10,15,20", minute=30, day_of_week="1-5"),
+        # New protocols scan (JSON API) — Sat & Sun at 11:00 / 17:00 / 23:00 MSK.
+        "s95-api-new-protocols-weekend": {
+            "task": "s95_sync.api_new_protocols",
+            "schedule": crontab(hour="11,17,23", minute=0, day_of_week="6,0"),
             "options": {"queue": "s95"},
         },
-        "s95-latest-saturday-hourly": {
-            "task": "s95_sync.sync_latest",
-            "schedule": crontab(hour="1-23", minute=30, day_of_week=6),
+        # Reconcile latest Saturday's protocols (late edits) — Mon & Thu night.
+        "s95-api-reconcile-latest-mon": {
+            "task": "s95_sync.api_reconcile_date",
+            "schedule": crontab(hour=3, minute=0, day_of_week=1),
+            "kwargs": {"weeks_ago": 0},
             "options": {"queue": "s95"},
         },
-        "s95-latest-sunday-hourly": {
-            "task": "s95_sync.sync_latest",
-            "schedule": crontab(hour="0-23", minute=30, day_of_week=0),
+        "s95-api-reconcile-latest-thu": {
+            "task": "s95_sync.api_reconcile_date",
+            "schedule": crontab(hour=3, minute=0, day_of_week=4),
+            "kwargs": {"weeks_ago": 0},
             "options": {"queue": "s95"},
         },
-        "s95-location-rotation": {
-            "task": "s95_sync.sync_location_rotation",
-            "schedule": crontab(minute=30, hour="*/4"),
+        # Reconcile Saturday -1 week — Tue night.
+        "s95-api-reconcile-week-1-tue": {
+            "task": "s95_sync.api_reconcile_date",
+            "schedule": crontab(hour=3, minute=0, day_of_week=2),
+            "kwargs": {"weeks_ago": 1},
             "options": {"queue": "s95"},
         },
-        "s95-reconcile-protocols": {
-            "task": "s95_sync.reconcile_stale_protocols",
-            "schedule": crontab(minute=30, hour="*/3"),
-            "options": {"queue": "s95"},
-        },
-        "s95-athletes-registry": {
-            "task": "s95_sync.sync_athletes_registry",
-            "schedule": crontab(minute=30, hour="*/2"),
+        # Reconcile Saturday -2 weeks — Wed night.
+        "s95-api-reconcile-week-2-wed": {
+            "task": "s95_sync.api_reconcile_date",
+            "schedule": crontab(hour=3, minute=0, day_of_week=3),
+            "kwargs": {"weeks_ago": 2},
             "options": {"queue": "s95"},
         },
         "runpark-latest": {

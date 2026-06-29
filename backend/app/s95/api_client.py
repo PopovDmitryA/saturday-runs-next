@@ -33,10 +33,40 @@ def _get(url: str) -> list | dict:
         return resp.json()
 
 
+@dataclass(frozen=True)
+class S95ApiActivityRef:
+    date: str  # YYYY-MM-DD as returned by the list endpoint
+    url: str   # full URL to /activities/{id}.json
+
+
 def fetch_pages(domain: str) -> list[dict]:
     """GET /pages.json — all locations including those without coordinates."""
     data = _get(f"{domain}/pages.json")
     return data.get("events", [])
+
+
+def fetch_event_activities(event_url: str) -> list[S95ApiActivityRef]:
+    """GET /events/{slug}.json — list of (date, activity_url) for a location.
+
+    `event_url` is the full URL from pages.json (already ends with .json).
+    Order is NOT chronological — caller must sort if needed.
+    """
+    data = _get(event_url)
+    refs: list[S95ApiActivityRef] = []
+    for item in data.get("activities", []) or []:
+        url = item.get("url")
+        date_str = item.get("date")
+        if url and date_str:
+            refs.append(S95ApiActivityRef(date=date_str, url=url))
+    return refs
+
+
+def fetch_activity(activity_url: str) -> dict:
+    """GET /activities/{id}.json — full protocol payload."""
+    data = _get(activity_url)
+    if not isinstance(data, dict):
+        raise ValueError(f"Unexpected activity payload for {activity_url}")
+    return data
 
 
 def fetch_events(domain: str) -> list[dict]:

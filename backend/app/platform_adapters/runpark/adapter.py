@@ -34,13 +34,13 @@ def _try_import_from_runpark(db: Session, platform: object, barcode_id: str) -> 
     from app.models import Participant, RunparkLocationMapping
     from app.runpark.mssql_client import runpark_query
     from app.sync import upsert
+    from app.sync.iteration_commit import commit_step, rollback_step
     from app.sync.runpark_global_sync import (
         _delete_event_results,
         _ensure_event,
         _to_canonical_run,
         _to_canonical_volunteer,
     )
-    from app.sync.iteration_commit import commit_step, rollback_step
 
     log = logging.getLogger(__name__)
 
