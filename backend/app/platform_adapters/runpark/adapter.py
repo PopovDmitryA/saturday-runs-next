@@ -28,30 +28,29 @@ class RunparkInvalidBarcodeError(Exception):
 
 
 def _try_import_from_runpark(db: Session, platform: object, barcode_id: str) -> object:
-    """Query RunPark MSSQL by barcode, import matching events into our DB, return Participant or None."""
+    """Resolve a barcode to a RunPark participant_id, import only THAT participant's events
+    into our DB (not the whole location), and return the Participant or None.
+
+    Preview must stay cheap: importing every event of every tracked location synchronously
+    (thousands of remote MSSQL round-trips) froze the request. We reuse the same scoped,
+    participant-only import that the user-sync worker runs.
+    """
     import logging
 
-    from app.models import Participant, RunparkLocationMapping
+    from app.models import Participant
     from app.runpark.mssql_client import runpark_query
-    from app.sync import upsert
-    from app.sync.iteration_commit import commit_step, rollback_step
-    from app.sync.runpark_global_sync import (
-        _delete_event_results,
-        _ensure_event,
-        _to_canonical_run,
-        _to_canonical_volunteer,
-    )
+    from app.sync.runpark_global_sync import sync_runpark_for_participant
 
     log = logging.getLogger(__name__)
 
     try:
         run_rows = runpark_query(
-            "SELECT TOP 1 participant_id, participant_name FROM api.vw_run_results WHERE barcode_id = %s",
+            "SELECT TOP 1 participant_id FROM api.vw_run_results WHERE barcode_id = %s",
             (barcode_id,),
         )
         if not run_rows:
             vol_rows = runpark_query(
-                "SELECT TOP 1 participant_id, participant_name FROM api.vw_volunteer_results WHERE barcode_id = %s",
+                "SELECT TOP 1 participant_id FROM api.vw_volunteer_results WHERE barcode_id = %s",
                 (barcode_id,),
             )
             if not vol_rows:
@@ -67,62 +66,10 @@ def _try_import_from_runpark(db: Session, platform: object, barcode_id: str) -> 
     if not participant_id:
         return None
 
-    location_map: dict[str, object] = {}
-    mappings = (
-        db.query(RunparkLocationMapping)
-        .filter(
-            (RunparkLocationMapping.show_on_map == True)  # noqa: E712
-            | (RunparkLocationMapping.decision == "dual_load")
-            | (RunparkLocationMapping.decision == "transitioned_to_primary")
-        )
-        .all()
-    )
-    for m in mappings:
-        if m.runpark_location_row is not None:
-            location_map[m.runpark_location_id.upper()] = m.runpark_location_row
-
-    if not location_map:
-        return None
-
-    location_ids_sql = ", ".join(f"'{lid}'" for lid in location_map)
-
     try:
-        events = runpark_query(
-            f"SELECT * FROM api.vw_events "
-            f"WHERE UPPER(CAST(location_id AS nvarchar(64))) IN ({location_ids_sql})"
-        )
+        sync_runpark_for_participant(db, participant_id)
     except Exception as exc:
-        log.warning("RunPark MSSQL events lookup failed: %s", exc)
-        return None
-
-    for ev in events:
-        location_id_key = str(ev["location_id"]).upper()
-        location = location_map.get(location_id_key)
-        if location is None:
-            continue
-        external_event_key = str(ev["event_id"]).upper()
-        try:
-            event_row = _ensure_event(db, platform, location, ev)  # type: ignore[arg-type]
-            _delete_event_results(db, event_row)
-
-            er = runpark_query(
-                "SELECT * FROM api.vw_run_results WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s",
-                (external_event_key,),
-            )
-            upsert.upsert_run_results(db, event_row, platform, [_to_canonical_run(r) for r in er], recalculate_pr=False)  # type: ignore[arg-type]
-
-            vr = runpark_query(
-                "SELECT * FROM api.vw_volunteer_results WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s",
-                (external_event_key,),
-            )
-            canonical_vols = [
-                v for r in vr if (v := _to_canonical_volunteer(r, external_event_key)) is not None
-            ]
-            upsert.upsert_volunteer_results(db, event_row, platform, canonical_vols)  # type: ignore[arg-type]
-            commit_step(db)
-        except Exception as exc:
-            log.exception("Error importing RunPark event %s during barcode lookup: %s", external_event_key, exc)
-            rollback_step(db)
+        log.exception("Error importing RunPark participant %s during barcode lookup: %s", participant_id, exc)
 
     # Look up by participant_id UUID (external_user_id), not barcode — one participant can have many barcodes
     participant = (
