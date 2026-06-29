@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -22,9 +23,15 @@ logger = logging.getLogger(__name__)
 
 PLATFORM_CODE = "s95"
 
-# Gentle pacing between protocol fetches. IPs are whitelisted, but we avoid hammering.
-DEFAULT_REQUEST_DELAY_SEC = 0.5
-BACKFILL_REQUEST_DELAY_SEC = 1.0
+# Gentle randomised pacing between protocol fetches (seconds). IPs are whitelisted,
+# but we deliberately keep requests sparse to stay friendly to s95.ru.
+DELAY_MIN_SEC = 10.0
+DELAY_MAX_SEC = 40.0
+
+
+def _pace(delay_min_sec: float, delay_max_sec: float) -> None:
+    if delay_max_sec > 0:
+        time.sleep(random.uniform(delay_min_sec, delay_max_sec))
 
 
 def most_recent_saturday(today: date) -> date:
@@ -151,7 +158,12 @@ def _already_checked(db: Session, platform: Platform, location: Location, ref) -
     return state is not None and state.last_protocol_check_at is not None
 
 
-def sync_new_protocols(db: Session, *, request_delay_sec: float = DEFAULT_REQUEST_DELAY_SEC) -> S95ApiSyncResult:
+def sync_new_protocols(
+    db: Session,
+    *,
+    delay_min_sec: float = DELAY_MIN_SEC,
+    delay_max_sec: float = DELAY_MAX_SEC,
+) -> S95ApiSyncResult:
     """Find and import protocols that are not yet in our DB. Cheap: skips known events
     without fetching their protocol body."""
     platform = upsert.get_platform(db, PLATFORM_CODE)
@@ -178,8 +190,7 @@ def sync_new_protocols(db: Session, *, request_delay_sec: float = DEFAULT_REQUES
                 if key in existing:
                     continue
                 _apply_protocol(db, platform, location, ref, result)
-                if request_delay_sec:
-                    time.sleep(request_delay_sec)
+                _pace(delay_min_sec, delay_max_sec)
         _finish_run(db, run, result)
         db.commit()
         return result
@@ -197,7 +208,8 @@ def reconcile_protocols_for_date(
     db: Session,
     target_date: date,
     *,
-    request_delay_sec: float = DEFAULT_REQUEST_DELAY_SEC,
+    delay_min_sec: float = DELAY_MIN_SEC,
+    delay_max_sec: float = DELAY_MAX_SEC,
 ) -> S95ApiSyncResult:
     """Re-fetch every protocol dated target_date across all locations, updating any that
     changed and bumping the check timestamp on those that did not."""
@@ -224,8 +236,7 @@ def reconcile_protocols_for_date(
                 if ref.date != date_str:
                     continue
                 _apply_protocol(db, platform, location, ref, result)
-                if request_delay_sec:
-                    time.sleep(request_delay_sec)
+                _pace(delay_min_sec, delay_max_sec)
         _finish_run(db, run, result)
         db.commit()
         return result
@@ -243,8 +254,8 @@ def full_backfill(
     db: Session,
     *,
     limit_per_location: int | None = None,
-    delay_min_sec: float = 15.0,
-    delay_max_sec: float = 30.0,
+    delay_min_sec: float = DELAY_MIN_SEC,
+    delay_max_sec: float = DELAY_MAX_SEC,
     resume: bool = True,
     reset_dates: bool = False,
 ) -> S95ApiSyncResult:
@@ -256,8 +267,6 @@ def full_backfill(
     - PR is recomputed once at the end (not per protocol) for efficiency.
     - On full success records the reconciled-through watermark for future ?since= sync.
     """
-    import random
-
     platform = upsert.get_platform(db, PLATFORM_CODE)
     result = S95ApiSyncResult()
     started_at = datetime.now(timezone.utc)
@@ -290,8 +299,7 @@ def full_backfill(
                     result.protocols_unchanged += 1
                     continue
                 _apply_protocol(db, platform, location, ref, result, recalculate_pr=False)
-                if delay_max_sec > 0:
-                    time.sleep(random.uniform(delay_min_sec, delay_max_sec))
+                _pace(delay_min_sec, delay_max_sec)
 
         # Recompute personal records once over the whole platform after the bulk load.
         if not result.errors:
