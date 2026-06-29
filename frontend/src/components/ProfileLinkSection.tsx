@@ -21,9 +21,7 @@ import {
   formatDate,
   formatDateTime,
   platformCodeLabel,
-  profileDataFreshnessLines,
   profilePlatformSummaryLabel,
-  syncStatusLabel,
 } from "../lib/format";
 
 type ParticipantIdConfig = {
@@ -262,13 +260,18 @@ function PlatformSpoiler({
             <p>
               <strong>{linked.display_name ?? linked.external_user_id}</strong>
             </p>
-            <p className="muted">Статус: {isSyncing ? syncStatusLabel("syncing") : syncStatusLabel(linked.sync_status)}</p>
-            <ProfileDataFreshness
-              dataUpdatedAt={linked.data_updated_at}
-              dataThroughDate={linked.data_through_date}
-            />
             {config.hasPublicProfile !== false && linked.external_url.startsWith("http") && (
               <a className="link" href={linked.external_url} target="_blank" rel="noreferrer">
+                {config.openLabel}
+              </a>
+            )}
+            {config.code === "runpark" && linked.external_user_id && (
+              <a
+                className="link"
+                href={`https://runpark.ru/Account/Karmas/${linked.external_user_id}`}
+                target="_blank"
+                rel="noreferrer"
+              >
                 {config.openLabel}
               </a>
             )}
