@@ -101,6 +101,7 @@ class DashboardResponse(BaseModel):
     computed_at: object
     platform_links: list[DashboardLinkSummary] = Field(default_factory=list)
     sync_enqueued: bool = False
+    serial_id: int | None = None
 
 
 class RunItemResponse(BaseModel):

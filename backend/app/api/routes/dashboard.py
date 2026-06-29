@@ -33,4 +33,5 @@ def get_dashboard(
         computed_at=payload["computed_at"],
         platform_links=payload["platform_links"],  # type: ignore[arg-type]
         sync_enqueued=sync_enqueued,
+        serial_id=user.serial_id,
     )
