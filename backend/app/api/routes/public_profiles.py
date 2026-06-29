@@ -17,10 +17,9 @@ from app.services.admin_users_service import (
     get_admin_user_preview_best_results,
     get_admin_user_preview_dashboard,
     get_admin_user_preview_personal_records,
-    get_admin_user_preview_runs,
     get_admin_user_preview_volunteer_role_stats,
-    get_admin_user_preview_volunteering,
 )
+from app.services.dashboard_service import list_user_runs, list_user_volunteering
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_user_visited_map_locations
 from app.services.user_unique_locations_detail import build_user_unique_location_details
@@ -70,9 +69,10 @@ def public_profile_runs(
     settings: Annotated[Settings, Depends(get_settings)],
     limit: int = 200,
     offset: int = 0,
+    include_test: bool = False,
 ) -> list[RunItemResponse]:
     user_id = _get_user_uuid(serial_id, db, requester, settings)
-    items = get_admin_user_preview_runs(db, user_id, limit=limit, offset=offset)
+    items = list_user_runs(db, user_id, limit=limit, offset=offset, include_test_events=include_test)
     return [RunItemResponse.model_validate(i) for i in items]
 
 
@@ -84,9 +84,10 @@ def public_profile_volunteering(
     settings: Annotated[Settings, Depends(get_settings)],
     limit: int = 200,
     offset: int = 0,
+    include_test: bool = False,
 ) -> list[VolunteeringItemResponse]:
     user_id = _get_user_uuid(serial_id, db, requester, settings)
-    items = get_admin_user_preview_volunteering(db, user_id, limit=limit, offset=offset)
+    items = list_user_volunteering(db, user_id, limit=limit, offset=offset, include_test_events=include_test)
     return [VolunteeringItemResponse.model_validate(i) for i in items]
 
 

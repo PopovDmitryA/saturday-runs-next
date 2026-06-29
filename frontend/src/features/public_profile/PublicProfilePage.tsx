@@ -1,30 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityDateCell } from "../../components/ActivityDateCell";
-import { ActivityDateLink } from "../../components/ActivityDateLink";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
-import { GlobalPrFinishTime } from "../../components/GlobalPrFinishTime";
-import { PlatformBadge } from "../../components/PlatformBadge";
 import { SiteHeader } from "../../components/SiteHeader";
-import { ActivityTableCols } from "../../components/activityTable/ActivityTableCols";
 import { AppDataSourceProvider, createPublicProfileDataSource } from "../../lib/appDataSource";
 import { UserMapPanel } from "../maps/UserMapPanel";
+import { RunsContent } from "../runs/RunsPage";
+import { VolunteeringContent } from "../volunteering/VolunteeringPage";
 import {
   ApiError,
   getCurrentUser,
   logout,
   getPublicProfileDashboard,
-  getAllPublicProfileRuns,
-  getAllPublicProfileVolunteering,
   getPublicProfileVisitedMap,
   getPublicProfileCatalogTable,
   getCatalogLocationsMap,
   type AdminUserPreviewDashboard,
-  type RunItem,
-  type VolunteeringItem,
   type User,
 } from "../../lib/api";
-import { formatFinishTimeValue, runsCapLabel, volunteeringCapLabel } from "../../lib/format";
+import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 import { APP_NAV_ITEMS, PUBLIC_NAV_ITEMS } from "../../lib/siteNav";
 import { SITE_HOME_HREF, SITE_PUBLIC_HOME_HREF } from "../../lib/siteBrand";
 
@@ -87,8 +80,6 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
   const dataSource = useMemo(() => createPublicProfileDataSource(serialId), [serialId]);
   const [tab, setTab] = useState<ProfileTab>("dashboard");
   const [dashboard, setDashboard] = useState<AdminUserPreviewDashboard | null>(null);
-  const [runs, setRuns] = useState<RunItem[]>([]);
-  const [volunteering, setVolunteering] = useState<VolunteeringItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
@@ -117,35 +108,9 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
     }
   }, [serialId]);
 
-  const loadRuns = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setRuns(await getAllPublicProfileRuns(serialId));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось загрузить пробежки");
-    } finally {
-      setLoading(false);
-    }
-  }, [serialId]);
-
-  const loadVolunteering = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setVolunteering(await getAllPublicProfileVolunteering(serialId));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось загрузить волонтёрство");
-    } finally {
-      setLoading(false);
-    }
-  }, [serialId]);
-
   useEffect(() => {
     if (tab === "dashboard") void loadDashboard();
-    else if (tab === "runs") void loadRuns();
-    else if (tab === "volunteering") void loadVolunteering();
-  }, [tab, loadDashboard, loadRuns, loadVolunteering]);
+  }, [tab, loadDashboard]);
 
   const loadVisitedMap = useCallback(() => getPublicProfileVisitedMap(serialId, false), [serialId]);
   const loadCatalogTable = useCallback(() => getPublicProfileCatalogTable(serialId, false), [serialId]);
@@ -199,8 +164,8 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
         </button>
       </div>
 
-      {loading && tab !== "map" && <p className="muted">Загрузка…</p>}
-      {error && tab !== "map" && <div className="card error"><p>{error}</p></div>}
+      {loading && tab === "dashboard" && <p className="muted">Загрузка…</p>}
+      {error && tab === "dashboard" && <div className="card error"><p>{error}</p></div>}
 
       {!loading && !error && tab === "dashboard" && stats && (
         <AppDataSourceProvider source={dataSource}>
@@ -226,83 +191,16 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
         </AppDataSourceProvider>
       )}
 
-      {!loading && !error && tab === "runs" && (
-        <section className="card">
-          {runs.length === 0 ? (
-            <p className="muted">Пробежек нет.</p>
-          ) : (
-            <div className="table-scroll">
-              <table className="data-table data-table-layout-fixed">
-                <ActivityTableCols variant="runs" />
-                <thead>
-                  <tr>
-                    <th>Дата</th>
-                    <th>Платформа</th>
-                    <th>Локация</th>
-                    <th>Время</th>
-                    <th>Место</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {runs.map((run) => (
-                    <tr key={`${run.platform_code}-${run.event_date}-${run.location_name}-${run.finish_time_display ?? ""}`}>
-                      <td className="td-date">
-                        <ActivityDateCell
-                          date={<ActivityDateLink date={run.event_date} url={run.event_url} />}
-                          badges={
-                            <>
-                              {run.is_test_event && <span className="badge">тест</span>}
-                              {run.is_pr && <span className="badge badge-pr">PR</span>}
-                            </>
-                          }
-                        />
-                      </td>
-                      <td className="td-platform"><PlatformBadge code={run.platform_code} /></td>
-                      <td className="td-location">{run.location_name}</td>
-                      <td className="td-time">
-                        <GlobalPrFinishTime isGlobalPr={run.is_global_pr}>
-                          {formatFinishTimeValue(run.finish_time_display, run.finish_time_sec)}
-                        </GlobalPrFinishTime>
-                      </td>
-                      <td className="td-compact">{run.position ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+      {tab === "runs" && (
+        <AppDataSourceProvider source={dataSource}>
+          <RunsContent />
+        </AppDataSourceProvider>
       )}
 
-      {!loading && !error && tab === "volunteering" && (
-        <section className="card">
-          {volunteering.length === 0 ? (
-            <p className="muted">Записей о волонтёрстве нет.</p>
-          ) : (
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Дата</th>
-                    <th>Платформа</th>
-                    <th>Локация</th>
-                    <th>Роль</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {volunteering.map((item) => (
-                    <tr key={`${item.platform_code}-${item.event_date}-${item.location_name}-${item.role}`}>
-                      <td><ActivityDateLink date={item.event_date} url={item.event_url} /></td>
-                      <td><PlatformBadge code={item.platform_code} /></td>
-                      <td>{item.location_name}</td>
-                      <td>{item.role ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+      {tab === "volunteering" && (
+        <AppDataSourceProvider source={dataSource}>
+          <VolunteeringContent />
+        </AppDataSourceProvider>
       )}
 
       {tab === "map" && (

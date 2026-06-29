@@ -45,8 +45,8 @@ function RunsContent() {
     try {
       const data = await listRuns(includeTest);
       setRuns(data);
-      if (isDemo) {
-        setHasProfileLink(true);
+      if (isDemo || mode === "public-profile") {
+        setHasProfileLink(false);
       } else {
         const links = await listProfileLinks();
         setHasProfileLink(links.length > 0);
@@ -56,7 +56,7 @@ function RunsContent() {
     } finally {
       setLoading(false);
     }
-  }, [includeTest, isDemo, listRuns]);
+  }, [includeTest, isDemo, mode, listRuns]);
 
   useEffect(() => {
     void load();
@@ -325,8 +325,14 @@ function RunsContent() {
     return <DemoShell title="Пробежки">{pageBody}</DemoShell>;
   }
 
+  if (mode === "public-profile") {
+    return <>{pageBody}</>;
+  }
+
   return <AppShell title="Пробежки">{pageBody}</AppShell>;
 }
+
+export { RunsContent };
 
 export function RunsPage() {
   return <RequireAuth>{() => <RunsContent />}</RequireAuth>;
