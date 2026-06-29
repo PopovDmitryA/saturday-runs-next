@@ -682,6 +682,26 @@ class AuthOneTimeToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class SyncWatermark(Base):
+    """Key/value sync progress markers, e.g. the timestamp through which all S95
+    protocols have been reconciled (for future ?since= incremental sync)."""
+
+    __tablename__ = "sync_watermarks"
+    __table_args__ = (
+        UniqueConstraint("platform_id", "key", name="uq_sync_watermarks_platform_key"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    platform_id: Mapped[UUID] = mapped_column(ForeignKey("platforms.id", ondelete="CASCADE"), nullable=False)
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    value_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class SyncRun(Base):
     __tablename__ = "sync_runs"
     __table_args__ = (Index("ix_sync_runs_platform_started_at", "platform_id", "started_at"),)

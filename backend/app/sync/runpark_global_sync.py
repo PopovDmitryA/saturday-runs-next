@@ -4,13 +4,22 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
-from uuid import UUID
 
 _BARCODE_RE = re.compile(r"^A?\d{4,}$", re.IGNORECASE)
 
 from sqlalchemy.orm import Session
 
-from app.models import Event, EventCrosslink, Location, Platform, RunResult, RunparkLocationMapping, SyncRun, SyncRunStatus, VolunteerResult
+from app.models import (
+    Event,
+    EventCrosslink,
+    Location,
+    Platform,
+    RunparkLocationMapping,
+    RunResult,
+    SyncRun,
+    SyncRunStatus,
+    VolunteerResult,
+)
 from app.platform_adapters.canonical import CanonicalRunResult, CanonicalVolunteerResult
 from app.runpark.mssql_client import fix_varchar_encoding, runpark_query
 from app.sync import upsert

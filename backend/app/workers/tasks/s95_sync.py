@@ -6,22 +6,20 @@ from uuid import UUID
 
 from app.db.session import get_session_factory
 from app.models import SyncJob, SyncJobTrigger
+from app.s95.fetch.priority import s95_user_sync_context
 from app.services.sync_job_service import fail_sync_job
 from app.services.sync_run_params import (
-    s95_athletes_registry_details,
     s95_latest_details,
     s95_reconcile_details,
     s95_registry_details,
     s95_rotation_details,
 )
-from app.sync.s95_athletes_registry import S95AthletesRegistrySyncOptions, sync_s95_athletes_registry
 from app.sync.s95_global_sync import S95LocationSyncOptions, configured_s95_locations, sync_s95_location
 from app.sync.s95_latest import S95LatestSyncOptions, sync_s95_latest
 from app.sync.s95_location_rotation import sync_next_s95_location_batch
 from app.sync.s95_locations_registry import S95LocationRegistrySyncOptions, sync_s95_locations_registry
 from app.sync.s95_reconcile import ReconcileProtocolsOptions, reconcile_stale_protocols
 from app.sync.s95_user_sync import run_s95_user_sync
-from app.s95.fetch.priority import s95_user_sync_context
 from app.workers.celery_app import celery_app
 from app.workers.s95_batch_yield import run_s95_batch_reported_sync
 
@@ -208,6 +206,46 @@ def s95_enqueue_locations_registry() -> dict[str, object]:
     return {"enqueued": 1}
 
 
+@celery_app.task(name="s95_sync.api_new_protocols", queue="s95")
+def s95_api_new_protocols_task() -> dict[str, object]:
+    """Import protocols (via JSON API) that are not yet in our DB. Cheap weekend scan."""
+    from app.sync.s95_global_sync_api import sync_new_protocols
+
+    db = get_session_factory()()
+    try:
+        return asdict(sync_new_protocols(db))
+    finally:
+        db.close()
+
+
+@celery_app.task(name="s95_sync.api_reconcile_date", queue="s95")
+def s95_api_reconcile_date_task(weeks_ago: int = 0) -> dict[str, object]:
+    """Re-fetch all protocols dated (most recent Saturday - weeks_ago weeks) to pick up
+    late edits. Updates changed protocols and bumps the reviewed timestamp on the rest."""
+    from datetime import date, timedelta
+
+    from app.sync.s95_global_sync_api import most_recent_saturday, reconcile_protocols_for_date
+
+    target = most_recent_saturday(date.today()) - timedelta(weeks=weeks_ago)
+    db = get_session_factory()()
+    try:
+        return asdict(reconcile_protocols_for_date(db, target))
+    finally:
+        db.close()
+
+
+@celery_app.task(name="s95_sync.api_full_backfill", queue="s95")
+def s95_api_full_backfill_task(limit_per_location: int | None = None) -> dict[str, object]:
+    """One-time full pass over every protocol. Run manually, not on a schedule."""
+    from app.sync.s95_global_sync_api import full_backfill
+
+    db = get_session_factory()()
+    try:
+        return asdict(full_backfill(db, limit_per_location=limit_per_location))
+    finally:
+        db.close()
+
+
 @celery_app.task(name="s95_sync.sync_latest", queue="s95")
 def s95_sync_latest_task(
     protocol_fetch_limit: int | None = None,
@@ -325,46 +363,6 @@ def s95_reconcile_stale_protocols_task(
 @celery_app.task(name="s95_sync.enqueue_reconcile_protocols", queue="s95")
 def s95_enqueue_reconcile_protocols() -> dict[str, object]:
     s95_reconcile_stale_protocols_task.apply_async(kwargs={"force": True}, queue="s95")
-    return {"enqueued": 1}
-
-
-@celery_app.task(name="s95_sync.sync_athletes_registry", queue="s95")
-def s95_sync_athletes_registry_task(limit: int | None = None, *, force: bool = False) -> dict[str, object]:
-    from app.config import get_settings
-
-    settings = get_settings()
-    if limit is None:
-        limit = settings.s95_athletes_registry_batch_limit
-    name = "s95 athletes registry"
-    details = s95_athletes_registry_details(limit=limit)
-
-    def _run() -> dict[str, object]:
-        db = get_session_factory()()
-        try:
-            result = sync_s95_athletes_registry(
-                db,
-                S95AthletesRegistrySyncOptions(limit=limit),
-            )
-            return asdict(result)
-        finally:
-            db.close()
-
-    return run_s95_batch_reported_sync(
-        name,
-        _run,
-        details=details,
-        hour_slot_key="s95:athletes",
-        force=force,
-        reenqueue=lambda: s95_sync_athletes_registry_task.apply_async(
-            kwargs={"limit": limit, "force": force},
-            queue="s95",
-        ),
-    )
-
-
-@celery_app.task(name="s95_sync.enqueue_athletes_registry", queue="s95")
-def s95_enqueue_athletes_registry() -> dict[str, object]:
-    s95_sync_athletes_registry_task.apply_async(kwargs={"force": True}, queue="s95")
     return {"enqueued": 1}
 
 

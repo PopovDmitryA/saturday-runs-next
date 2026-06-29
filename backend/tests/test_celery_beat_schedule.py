@@ -3,14 +3,47 @@ from __future__ import annotations
 from app.workers.celery_app import celery_app
 
 
-def test_s95_beat_schedule_offset_from_five_verst() -> None:
+def test_s95_registry_offset_from_five_verst() -> None:
     schedule = celery_app.conf.beat_schedule
     assert schedule["s95-registry-daily"]["schedule"].minute == {30}
     assert schedule["five-verst-registry-daily"]["schedule"].minute == {0}
     assert schedule["five-verst-latest-weekday"]["schedule"].hour == {0, 5, 10, 15, 20}
     assert schedule["five-verst-latest-weekday"]["schedule"].day_of_week == {1, 2, 3, 4, 5}
-    assert schedule["s95-latest-weekday"]["schedule"].hour == {0, 5, 10, 15, 20}
-    assert schedule["s95-latest-weekday"]["schedule"].minute == {30}
-    assert schedule["s95-athletes-registry"]["task"] == "s95_sync.sync_athletes_registry"
-    assert schedule["s95-athletes-registry"]["schedule"].hour == set(range(0, 24, 2))
-    assert schedule["s95-athletes-registry"]["schedule"].minute == {30}
+
+
+def test_s95_api_protocol_schedule() -> None:
+    schedule = celery_app.conf.beat_schedule
+
+    # New protocols scan — Sat & Sun at 11/17/23.
+    new_scan = schedule["s95-api-new-protocols-weekend"]
+    assert new_scan["task"] == "s95_sync.api_new_protocols"
+    assert new_scan["schedule"].hour == {11, 17, 23}
+    assert new_scan["schedule"].day_of_week == {6, 0}
+
+    # Reconcile latest Saturday — Mon & Thu nights, weeks_ago=0.
+    for key, dow in (("s95-api-reconcile-latest-mon", 1), ("s95-api-reconcile-latest-thu", 4)):
+        entry = schedule[key]
+        assert entry["task"] == "s95_sync.api_reconcile_date"
+        assert entry["schedule"].hour == {3}
+        assert entry["schedule"].day_of_week == {dow}
+        assert entry["kwargs"]["weeks_ago"] == 0
+
+    # Reconcile older Saturdays — Tue (-1 week), Wed (-2 weeks).
+    assert schedule["s95-api-reconcile-week-1-tue"]["kwargs"]["weeks_ago"] == 1
+    assert schedule["s95-api-reconcile-week-1-tue"]["schedule"].day_of_week == {2}
+    assert schedule["s95-api-reconcile-week-2-wed"]["kwargs"]["weeks_ago"] == 2
+    assert schedule["s95-api-reconcile-week-2-wed"]["schedule"].day_of_week == {3}
+
+
+def test_s95_playwright_batch_schedules_removed() -> None:
+    """Old Playwright-based S95 batch jobs must no longer be scheduled."""
+    schedule = celery_app.conf.beat_schedule
+    for removed in (
+        "s95-latest-weekday",
+        "s95-latest-saturday-hourly",
+        "s95-latest-sunday-hourly",
+        "s95-location-rotation",
+        "s95-reconcile-protocols",
+        "s95-athletes-registry",
+    ):
+        assert removed not in schedule

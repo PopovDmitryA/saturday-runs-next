@@ -34,5 +34,6 @@ postgres_data/
 # Local / agent
 .cursor/
 PROJECT_HANDOFF.local.md
+S95_API.md
 data/parkrun_playwright_state.json
 data/grafana/dashboards/

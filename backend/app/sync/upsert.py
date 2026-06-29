@@ -215,7 +215,10 @@ def upsert_event_for_summary(
         location_name=summary.location_name,
     )
     now = datetime.now(timezone.utc)
-    title = f"{summary.location_name} #{summary.event_number}"
+    if summary.event_number is not None:
+        title = f"{summary.location_name} #{summary.event_number}"
+    else:
+        title = summary.location_name
     if summary.is_test_event:
         title = f"{summary.location_name} (тестовый)"
 

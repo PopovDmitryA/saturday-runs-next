@@ -108,7 +108,3 @@ def s95_registry_details(*, limit: int | None) -> str:
     if limit is None:
         return "Обработка: весь реестр /activities"
     return f"Лимит записей реестра: {limit}"
-
-
-def s95_athletes_registry_details(*, limit: int) -> str:
-    return f"Пакет профилей без штрихкода / на перепроверку: {limit}"

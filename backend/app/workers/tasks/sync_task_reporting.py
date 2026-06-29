@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from app.services.batch_queue_guard import batch_queue_has_capacity
 from app.platform_fetch.cooldown import is_platform_in_cooldown, platform_cooldown_until
+from app.services.batch_queue_guard import batch_queue_has_capacity
 from app.services.scheduled_sync_guard import release_hourly_sync_slot, try_claim_hourly_sync_slot
 from app.services.vk_admin_notify import notify_sync_finished, notify_sync_started
 

@@ -16,7 +16,6 @@ from app.workers.tasks.five_verst_sync import (
 )
 from app.workers.tasks.s95_sync import (
     s95_reconcile_stale_protocols_task,
-    s95_sync_athletes_registry_task,
     s95_sync_latest_task,
     s95_sync_location_rotation_task,
     s95_sync_locations_registry_task,
@@ -31,7 +30,6 @@ PIPELINES: dict[str, tuple[str, object, str]] = {
     "s95-latest": ("s95 latest /activities", s95_sync_latest_task, "s95"),
     "s95-rotation": ("s95 location rotation", s95_sync_location_rotation_task, "s95"),
     "s95-reconcile": ("s95 reconcile protocols", s95_reconcile_stale_protocols_task, "s95"),
-    "s95-athletes": ("s95 athletes registry", s95_sync_athletes_registry_task, "s95"),
 }
 
 

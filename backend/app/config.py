@@ -104,8 +104,6 @@ class Settings(BaseSettings):
     s95_reconcile_batch_limit: int = 10
     s95_reconcile_min_check_interval_days: int = 7
     s95_location_batch_summaries_limit: int = 20
-    s95_athlete_profile_recheck_interval_days: int = 30
-    s95_athletes_registry_batch_limit: int = 50
     s95_athlete_mismatch_check_runs: int = 10
     five_verst_reconcile_batch_limit: int = 100
     five_verst_reconcile_min_check_interval_days: int = 0

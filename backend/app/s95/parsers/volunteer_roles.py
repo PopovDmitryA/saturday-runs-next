@@ -140,6 +140,48 @@ def _contains_cyrillic(value: str) -> bool:
     return any("\u0400" <= char <= "\u04FF" for char in value)
 
 
+# Authoritative S95 volunteer role enum (app/models/volunteer.rb in vol1ura/Sat_9am_5km).
+# The JSON API returns these English slugs verbatim. Mapped to canonical Russian labels
+# from config/locales/ru.yml (the labels s95.ru itself displays).
+S95_API_ROLE_LABELS: dict[str, str] = {
+    "director": "Директор",
+    "marshal": "Маршал",
+    "timer": "Секундомер",
+    "photograph": "Фотограф",
+    "tokens": "Раздача карточек позиций",
+    "scanner": "Сканер",
+    "instructor": "Инструктаж новичков",
+    "marking_maker": "Разметка трассы",
+    "event_closer": "Замыкающий",
+    "marking_picker": "Сбор разметки",
+    "cards_sorter": "Сортировка карточек",
+    "bike_leader": "Ведущий велосипед",
+    "pacemaker": "Пейсмейкер",
+    "results_handler": "Обработка результатов",
+    "equipment_supplier": "Доставка оборудования",
+    "public_relations": "Связи с общественностью",
+    "warm_up": "Проведение разминки",
+    "other": "Разное",
+    "attendant": "Сопровождающий",
+    "finish_maker": "Организация финиша",
+    "volunteer_coordinator": "Координатор волонтёров",
+    "food_maker": "Организация питания",
+    "videographer": "Видеограф",
+    "designer": "Дизайнер",
+    "event_preparation": "Подготовка забега",
+}
+
+
+def canonical_s95_api_role(slug: str | None) -> str:
+    """Map an API volunteer role slug to its canonical Russian label.
+
+    Unknown slugs fall back to the generic role label so data is never dropped.
+    """
+    if not slug:
+        return S95_API_ROLE_LABELS["other"]
+    return S95_API_ROLE_LABELS.get(slug.strip().lower(), slug.strip())
+
+
 def canonical_s95_volunteer_role(role: str | None) -> str | None:
     if role is None:
         return None
