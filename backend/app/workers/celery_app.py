@@ -65,10 +65,10 @@ celery_app.conf.update(
             "schedule": crontab(minute=0, hour="*/3"),
             "options": {"queue": "five_verst"},
         },
-        # S95 location registry — daily via JSON API (s95.ru/by/rs).
-        "s95-registry-daily": {
+        # S95 location registry — every 3 days at 20:30 MSK via JSON API (s95.ru/by/rs).
+        "s95-registry-3days": {
             "task": "s95_sync.sync_locations_registry",
-            "schedule": crontab(hour=20, minute=30),
+            "schedule": crontab(hour=20, minute=30, day_of_month="*/3"),
             "options": {"queue": "s95"},
         },
         # New protocols scan (JSON API) — Sat & Sun at 11:00 / 17:00 / 23:00 MSK.
