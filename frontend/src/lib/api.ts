@@ -161,6 +161,7 @@ export type DashboardResponse = {
     last_user_sync_at: string | null;
   }>;
   sync_enqueued: boolean;
+  serial_id: number | null;
 };
 
 export type RunItem = {

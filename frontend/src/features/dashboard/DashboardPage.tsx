@@ -79,6 +79,14 @@ function DashboardContent({ isAdmin }: { isAdmin: boolean }) {
             totalVolunteering={stats?.total_volunteering ?? 0}
           />
 
+          {data.serial_id != null && (
+            <div className="banner info">
+              <a href={`/users/${data.serial_id}`} target="_blank" rel="noreferrer">
+                Открыть мой публичный профиль →
+              </a>
+            </div>
+          )}
+
           {isAdmin && data.sync_enqueued && (
             <div className="banner info">
               Запущено автообновление (не чаще раза в сутки). Прогресс можно посмотреть в разделе{" "}
