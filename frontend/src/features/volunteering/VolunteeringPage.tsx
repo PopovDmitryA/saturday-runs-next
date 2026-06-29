@@ -72,8 +72,8 @@ function VolunteeringContent() {
     try {
       const data = await listVolunteering(includeTest);
       setItems(data);
-      if (isDemo) {
-        setHasProfileLink(true);
+      if (isDemo || mode === "public-profile") {
+        setHasProfileLink(false);
       } else {
         const links = await listProfileLinks();
         setHasProfileLink(links.length > 0);
@@ -83,7 +83,7 @@ function VolunteeringContent() {
     } finally {
       setLoading(false);
     }
-  }, [includeTest, isDemo, listVolunteering]);
+  }, [includeTest, isDemo, mode, listVolunteering]);
 
   useEffect(() => {
     void load();
@@ -319,8 +319,14 @@ function VolunteeringContent() {
     return <DemoShell title="Волонтёрство">{pageBody}</DemoShell>;
   }
 
+  if (mode === "public-profile") {
+    return <>{pageBody}</>;
+  }
+
   return <AppShell title="Волонтёрство">{pageBody}</AppShell>;
 }
+
+export { VolunteeringContent };
 
 export function VolunteeringPage() {
   return <RequireAuth>{() => <VolunteeringContent />}</RequireAuth>;

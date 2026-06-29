@@ -103,8 +103,8 @@ export function createAdminPreviewDataSource(userId: string): AppDataSource {
 export function createPublicProfileDataSource(serialId: number): AppDataSource {
   return {
     mode: "public-profile",
-    listRuns: () => getAllPublicProfileRuns(serialId),
-    listVolunteering: () => getAllPublicProfileVolunteering(serialId),
+    listRuns: (includeTest) => getAllPublicProfileRuns(serialId, includeTest),
+    listVolunteering: (includeTest) => getAllPublicProfileVolunteering(serialId, includeTest),
     getBestResults: (includeTest) => getPublicProfileBestResults(serialId, includeTest),
     getPersonalRecords: (includeTest) => getPublicProfilePersonalRecords(serialId, includeTest),
     getVolunteerRoleStats: (includeTest) => getPublicProfileVolunteerRoleStats(serialId, includeTest),

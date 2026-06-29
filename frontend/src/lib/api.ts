@@ -996,23 +996,25 @@ export function getPublicProfileDashboard(serialId: number) {
   return apiFetch<AdminUserPreviewDashboard>(`/users/${serialId}/profile/dashboard`);
 }
 
-export function getPublicProfileRuns(serialId: number, limit = 200, offset = 0) {
+export function getPublicProfileRuns(serialId: number, limit = 200, offset = 0, includeTest = false) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (includeTest) params.set("include_test", "true");
   return apiFetch<RunItem[]>(`/users/${serialId}/profile/runs?${params.toString()}`);
 }
 
-export function getPublicProfileVolunteering(serialId: number, limit = 200, offset = 0) {
+export function getPublicProfileVolunteering(serialId: number, limit = 200, offset = 0, includeTest = false) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (includeTest) params.set("include_test", "true");
   return apiFetch<VolunteeringItem[]>(`/users/${serialId}/profile/volunteering?${params.toString()}`);
 }
 
-export function getAllPublicProfileRuns(serialId: number) {
-  return fetchAllAdminPreviewPages((limit, offset) => getPublicProfileRuns(serialId, limit, offset));
+export function getAllPublicProfileRuns(serialId: number, includeTest = false) {
+  return fetchAllAdminPreviewPages((limit, offset) => getPublicProfileRuns(serialId, limit, offset, includeTest));
 }
 
-export function getAllPublicProfileVolunteering(serialId: number) {
+export function getAllPublicProfileVolunteering(serialId: number, includeTest = false) {
   return fetchAllAdminPreviewPages((limit, offset) =>
-    getPublicProfileVolunteering(serialId, limit, offset),
+    getPublicProfileVolunteering(serialId, limit, offset, includeTest),
   );
 }
 
