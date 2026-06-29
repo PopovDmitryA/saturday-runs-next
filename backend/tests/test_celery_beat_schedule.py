@@ -3,9 +3,18 @@ from __future__ import annotations
 from app.workers.celery_app import celery_app
 
 
-def test_s95_registry_offset_from_five_verst() -> None:
+def test_s95_registry_every_3_days() -> None:
     schedule = celery_app.conf.beat_schedule
-    assert schedule["s95-registry-daily"]["schedule"].minute == {30}
+    reg = schedule["s95-registry-3days"]
+    assert reg["task"] == "s95_sync.sync_locations_registry"
+    assert reg["schedule"].minute == {30}
+    assert reg["schedule"].hour == {20}
+    assert reg["schedule"].day_of_month == set(range(1, 32, 3))
+    assert "s95-registry-daily" not in schedule
+
+
+def test_five_verst_schedule_intact() -> None:
+    schedule = celery_app.conf.beat_schedule
     assert schedule["five-verst-registry-daily"]["schedule"].minute == {0}
     assert schedule["five-verst-latest-weekday"]["schedule"].hour == {0, 5, 10, 15, 20}
     assert schedule["five-verst-latest-weekday"]["schedule"].day_of_week == {1, 2, 3, 4, 5}
