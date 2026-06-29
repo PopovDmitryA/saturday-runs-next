@@ -77,15 +77,67 @@ def _get_location_mapping(db: Session) -> dict[str, Location]:
     return result
 
 
+def _build_mapping_index(db: Session) -> dict[str, RunparkLocationMapping]:
+    """{runpark_location_id (upper) -> mapping} for ALL RunPark locations."""
+    return {m.runpark_location_id.upper(): m for m in db.query(RunparkLocationMapping).all()}
+
+
+def _resolve_participant_location(
+    db: Session,
+    platform: Platform,
+    mapping: RunparkLocationMapping,
+    cache: dict[str, Location | None],
+) -> Location | None:
+    """Return the RunPark Location for a mapping, materialising a hidden one if needed.
+
+    Locations that are duplicates of an existing primary park (decision=remove_from_runpark /
+    transitional) have no standalone Location and are not shown on the map. To still import a
+    participant's full run history there, we create a hidden Location (is_official_map=False)
+    on demand and back-fill the mapping so crosslinking can find it. Events imported here are
+    crosslinked to the primary park (see _upsert_crosslinks_for_event), so they are deduped
+    out of totals when the user also has the primary 5verst result.
+    """
+    key = mapping.runpark_location_id.upper()
+    if key in cache:
+        return cache[key]
+
+    location = mapping.runpark_location_row
+    if location is None and mapping.runpark_slug:
+        location = (
+            db.query(Location)
+            .filter(Location.platform_id == platform.id, Location.external_key == mapping.runpark_slug)
+            .one_or_none()
+        )
+        if location is None:
+            location = Location(
+                platform_id=platform.id,
+                external_key=mapping.runpark_slug,
+                name=mapping.display_name or mapping.runpark_name,
+                country=mapping.country,
+                city=mapping.city,
+                region=mapping.region,
+                latitude=mapping.latitude,
+                longitude=mapping.longitude,
+                is_official_map=False,  # duplicate of a primary park — hidden from map/lists
+                source_url=mapping.public_url,
+            )
+            db.add(location)
+            db.flush()
+        if mapping.runpark_location_row_id != location.id:
+            mapping.runpark_location_row_id = location.id
+            db.flush()
+
+    cache[key] = location
+    return location
+
+
 def _upsert_crosslinks_for_event(db: Session, runpark_event: Event) -> None:
-    """For dual_load RunPark events: find matching primary-platform event by date and create crosslink."""
+    """For a RunPark event at a location that duplicates a primary park: find the matching
+    primary-platform event by date and crosslink it (RunPark event = secondary)."""
     mapping = (
         db.query(RunparkLocationMapping)
-        .filter(
-            RunparkLocationMapping.runpark_location_row_id == runpark_event.location_id,
-            RunparkLocationMapping.decision == "dual_load",
-        )
-        .one_or_none()
+        .filter(RunparkLocationMapping.runpark_location_row_id == runpark_event.location_id)
+        .first()
     )
     if mapping is None or mapping.matched_location_id is None:
         return
@@ -296,15 +348,22 @@ def sync_runpark_batch(db: Session, since_date: date) -> RunparkSyncResult:
 
 
 def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyncResult:
-    """Sync all events for a specific participant (by RunPark participant_id UUID)."""
+    """Sync all events for a specific participant (by RunPark participant_id UUID).
+
+    Imports the participant's full RunPark history across ALL mapped locations — including
+    parks that duplicate an existing 5verst/parkrun location. Those duplicate parks get a
+    hidden Location and their events are crosslinked to the primary park, so the runs are
+    deduped out of totals when the user also has the primary result.
+    """
     result = RunparkSyncResult()
     platform = upsert.get_platform(db, PLATFORM_CODE)
-    location_map = _get_location_mapping(db)
+    mapping_index = _build_mapping_index(db)
 
-    if not location_map:
-        logger.warning("No RunPark locations with show_on_map=true found")
+    if not mapping_index:
+        logger.warning("No RunPark location mappings found")
         return result
 
+    location_cache: dict[str, Location | None] = {}
     pid_upper = participant_id.upper()
 
     # Find all event_ids where this participant has run or volunteered
@@ -333,12 +392,17 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
         if not events:
             continue
         ev = events[0]
-        location_id_key = str(ev["location_id"]).upper()
-        location = location_map.get(location_id_key)
-        if location is None:
-            continue  # not a tracked location
+        mapping = mapping_index.get(str(ev["location_id"]).upper())
+        if mapping is None:
+            continue  # location has no mapping at all
 
+        loc_key = mapping.runpark_location_id.upper()
         try:
+            # Resolve inside the try: materialising a hidden Location and the per-event
+            # import share one transaction, so a failure rolls both back atomically.
+            location = _resolve_participant_location(db, platform, mapping, location_cache)
+            if location is None:
+                continue  # mapping without a runpark_slug — cannot materialise a location
             event_row = _ensure_event(db, platform, location, ev)
             _delete_event_results(db, event_row)
 
@@ -371,5 +435,7 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
             logger.exception(msg)
             result.errors.append(msg)
             rollback_step(db)
+            # A location created in this rolled-back step is gone — drop the stale cache entry.
+            location_cache.pop(loc_key, None)
 
     return result
