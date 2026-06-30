@@ -16,7 +16,7 @@ S95_PROTECTION_MESSAGE = (
     "С95 временно недоступен — сработала защита сайта. Попробуйте позже."
 )
 
-S95_MAINTENANCE = True
+S95_MAINTENANCE = False
 
 S95_MAINTENANCE_MESSAGE = (
     "Обновление данных С95 временно недоступно. "
