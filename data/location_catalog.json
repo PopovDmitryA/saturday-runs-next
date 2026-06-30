@@ -76,6 +76,10 @@
       {
         "platform": "five_verst",
         "external_key": "belgorodparkpobedy"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-belgorodparkpobedy"
       }
     ]
   },
