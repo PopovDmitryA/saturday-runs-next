@@ -169,6 +169,7 @@ type PlatformSpoilerProps = {
   onConfirm: (linkParkrun?: boolean) => void;
   onUnlink: () => void;
   onSyncRequest: () => void;
+  previewBlockRef?: (el: HTMLDivElement | null) => void;
 };
 
 function PlatformSpoiler({
@@ -185,6 +186,7 @@ function PlatformSpoiler({
   onConfirm,
   onUnlink,
   onSyncRequest,
+  previewBlockRef,
 }: PlatformSpoilerProps) {
   const skipParkrunLookup = config.code === "s95" && parkrunLinked;
   const linkedDetailsLabel = linked
@@ -338,7 +340,7 @@ function PlatformSpoiler({
               </p>
             )}
             {form.preview && (
-              <div className="profile-preview-block">
+              <div className="profile-preview-block" ref={previewBlockRef}>
                 <ProfileDataFreshness
                   dataUpdatedAt={form.preview.data_updated_at}
                   dataThroughDate={form.preview.data_through_date}
@@ -486,6 +488,7 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLi
   const hasLoadedLinksRef = useRef(false);
   const didScrollToProfilesRef = useRef(false);
   const previewAbortControllersRef = useRef<Partial<Record<string, AbortController>>>({});
+  const previewBlockRefs = useRef<Partial<Record<string, HTMLDivElement | null>>>({});
 
   useEffect(() => {
     return () => {
@@ -637,6 +640,9 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLi
         return;
       }
       updateForm(config.code, { preview });
+      setTimeout(() => {
+        previewBlockRefs.current[config.code]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }, 50);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         return;
@@ -784,6 +790,7 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLi
                   onConfirm={(linkParkrun) => void handleConfirm(config, linkParkrun)}
                   onUnlink={() => requestUnlink(config.code)}
                   onSyncRequest={() => requestSync(config.code)}
+                  previewBlockRef={(el) => { previewBlockRefs.current[config.code] = el; }}
                 />
               );
             })}
