@@ -37,3 +37,7 @@ PROJECT_HANDOFF.local.md
 S95_API.md
 data/parkrun_playwright_state.json
 data/grafana/dashboards/
+
+# Local club-stats outputs (not for repo)
+.club_members.json
+psb_sport_club_stats.csv
