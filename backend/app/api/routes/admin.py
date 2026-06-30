@@ -164,8 +164,9 @@ def admin_user_preview_runs(
     _admin: Annotated[User, Depends(get_current_admin_user)],
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    include_test: Annotated[bool, Query()] = False,
 ) -> list[RunItemResponse]:
-    items = get_admin_user_preview_runs(db, user_id, limit=limit, offset=offset)
+    items = get_admin_user_preview_runs(db, user_id, limit=limit, offset=offset, include_test=include_test)
     if items is None:
         raise HTTPException(status_code=404, detail="User not found")
     return [RunItemResponse.model_validate(item) for item in items]
@@ -178,8 +179,9 @@ def admin_user_preview_volunteering(
     _admin: Annotated[User, Depends(get_current_admin_user)],
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    include_test: Annotated[bool, Query()] = False,
 ) -> list[VolunteeringItemResponse]:
-    items = get_admin_user_preview_volunteering(db, user_id, limit=limit, offset=offset)
+    items = get_admin_user_preview_volunteering(db, user_id, limit=limit, offset=offset, include_test=include_test)
     if items is None:
         raise HTTPException(status_code=404, detail="User not found")
     return [VolunteeringItemResponse.model_validate(item) for item in items]

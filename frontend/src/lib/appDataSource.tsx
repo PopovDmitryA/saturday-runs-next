@@ -88,8 +88,8 @@ export const demoDataSource: AppDataSource = {
 export function createAdminPreviewDataSource(userId: string): AppDataSource {
   return {
     mode: "admin-preview",
-    listRuns: () => getAllAdminUserPreviewRuns(userId),
-    listVolunteering: () => getAllAdminUserPreviewVolunteering(userId),
+    listRuns: (includeTest) => getAllAdminUserPreviewRuns(userId, includeTest),
+    listVolunteering: (includeTest) => getAllAdminUserPreviewVolunteering(userId, includeTest),
     getBestResults: (includeTest) => getAdminUserPreviewBestResults(userId, includeTest),
     getPersonalRecords: (includeTest) => getAdminUserPreviewPersonalRecords(userId, includeTest),
     getVolunteerRoleStats: (includeTest) => getAdminUserPreviewVolunteerRoleStats(userId, includeTest),

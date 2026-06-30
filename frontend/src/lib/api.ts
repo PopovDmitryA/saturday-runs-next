@@ -916,13 +916,15 @@ export function triggerAdminUserSyncPlatform(userId: string, platformCode: strin
   });
 }
 
-export function getAdminUserPreviewRuns(userId: string, limit = 200, offset = 0) {
+export function getAdminUserPreviewRuns(userId: string, limit = 200, offset = 0, includeTest = false) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (includeTest) params.set("include_test", "true");
   return apiFetch<RunItem[]>(`/admin/users/${userId}/preview/runs?${params.toString()}`);
 }
 
-export function getAdminUserPreviewVolunteering(userId: string, limit = 200, offset = 0) {
+export function getAdminUserPreviewVolunteering(userId: string, limit = 200, offset = 0, includeTest = false) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (includeTest) params.set("include_test", "true");
   return apiFetch<VolunteeringItem[]>(`/admin/users/${userId}/preview/volunteering?${params.toString()}`);
 }
 
@@ -944,15 +946,15 @@ async function fetchAllAdminPreviewPages<T>(
   return items;
 }
 
-export function getAllAdminUserPreviewRuns(userId: string) {
+export function getAllAdminUserPreviewRuns(userId: string, includeTest = false) {
   return fetchAllAdminPreviewPages((limit, offset) =>
-    getAdminUserPreviewRuns(userId, limit, offset),
+    getAdminUserPreviewRuns(userId, limit, offset, includeTest),
   );
 }
 
-export function getAllAdminUserPreviewVolunteering(userId: string) {
+export function getAllAdminUserPreviewVolunteering(userId: string, includeTest = false) {
   return fetchAllAdminPreviewPages((limit, offset) =>
-    getAdminUserPreviewVolunteering(userId, limit, offset),
+    getAdminUserPreviewVolunteering(userId, limit, offset, includeTest),
   );
 }
 

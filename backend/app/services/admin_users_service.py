@@ -324,10 +324,11 @@ def get_admin_user_preview_runs(
     *,
     limit: int,
     offset: int,
+    include_test: bool = False,
 ) -> list[dict[str, object]] | None:
     if get_admin_user(db, user_id) is None:
         return None
-    return list_user_runs(db, user_id, limit=limit, offset=offset, include_test_events=False)
+    return list_user_runs(db, user_id, limit=limit, offset=offset, include_test_events=include_test)
 
 
 def get_admin_user_preview_volunteering(
@@ -336,10 +337,11 @@ def get_admin_user_preview_volunteering(
     *,
     limit: int,
     offset: int,
+    include_test: bool = False,
 ) -> list[dict[str, object]] | None:
     if get_admin_user(db, user_id) is None:
         return None
-    return list_user_volunteering(db, user_id, limit=limit, offset=offset, include_test_events=False)
+    return list_user_volunteering(db, user_id, limit=limit, offset=offset, include_test_events=include_test)
 
 
 def get_admin_user_preview_best_results(
