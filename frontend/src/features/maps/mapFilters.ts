@@ -75,6 +75,18 @@ export function hasActivePlatformFilter(filters: PlatformFilters): boolean {
   return filters.five_verst || filters.s95 || filters.runpark;
 }
 
+export type ActivityFilter = "runs" | "volunteering";
+
+export function filterPointsByActivity(
+  points: MapLocationPoint[],
+  activity: ActivityFilter,
+): MapLocationPoint[] {
+  if (activity === "runs") {
+    return points.filter((p) => (p.run_dates?.length ?? 0) > 0);
+  }
+  return points.filter((p) => (p.volunteer_dates?.length ?? 0) > 0);
+}
+
 export function excludeVisitedPoints(
   points: MapLocationPoint[],
   visitedByIdentity: Map<string, MapLocationPoint>,

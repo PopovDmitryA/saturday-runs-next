@@ -7,8 +7,10 @@ import {
   buildVisitedByIdentity,
   DEFAULT_PLATFORM_FILTERS,
   excludeVisitedPoints,
+  filterPointsByActivity,
   filterPointsByPlatform,
   hasActivePlatformFilter,
+  type ActivityFilter,
   type PlatformFilters,
 } from "./mapFilters";
 
@@ -40,6 +42,7 @@ export function UserMapPanel({
   visitedTabLabel = "Мои визиты",
 }: UserMapPanelProps) {
   const [mode, setMode] = useState<MapMode>("all");
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>("runs");
   const [platformFilters, setPlatformFilters] = useState<PlatformFilters>(DEFAULT_PLATFORM_FILTERS);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -87,26 +90,32 @@ export function UserMapPanel({
     void load();
   }, [load]);
 
-  const visitedByIdentity = useMemo(
-    () => buildVisitedByIdentity(visited?.points ?? []),
-    [visited?.points],
+  const isCatalogMode = mode === "all" || mode === "unvisited";
+
+  const visitedActivityPoints = useMemo(
+    () => filterPointsByActivity(visited?.points ?? [], activityFilter),
+    [visited?.points, activityFilter],
   );
 
-  const isCatalogMode = mode === "all" || mode === "unvisited";
-  const sourcePoints = mode === "visited" ? visited?.points ?? [] : catalog?.points ?? [];
+  const visitedActivityByIdentity = useMemo(
+    () => buildVisitedByIdentity(visitedActivityPoints),
+    [visitedActivityPoints],
+  );
+
+  const sourcePoints = mode === "visited" ? visitedActivityPoints : catalog?.points ?? [];
   const filteredPoints = useMemo(() => {
     let points = filterPointsByPlatform(sourcePoints, platformFilters, {
       onlyMapPlatforms: isCatalogMode,
     });
     if (mode === "unvisited") {
-      points = excludeVisitedPoints(points, visitedByIdentity);
+      points = excludeVisitedPoints(points, visitedActivityByIdentity);
     }
     return points;
-  }, [isCatalogMode, mode, platformFilters, sourcePoints, visitedByIdentity]);
+  }, [isCatalogMode, mode, platformFilters, sourcePoints, visitedActivityByIdentity]);
 
   const filteredVisitedOnMap = useMemo(
-    () => filterPointsByPlatform(visited?.points ?? [], platformFilters),
-    [platformFilters, visited?.points],
+    () => filterPointsByPlatform(visitedActivityPoints, platformFilters),
+    [platformFilters, visitedActivityPoints],
   );
 
   const togglePlatformFilter = (code: keyof PlatformFilters) => {
@@ -121,8 +130,6 @@ export function UserMapPanel({
 
   const filtersActive = hasActivePlatformFilter(platformFilters);
   const active = isCatalogMode ? catalog : visited;
-  const uniqueTotal = visited?.total_locations ?? 0;
-  const uniqueWithoutCoords = visited?.unmapped_locations ?? 0;
 
   const mapLegend = (
     <>
@@ -152,6 +159,27 @@ export function UserMapPanel({
   return (
     <div className={isFullscreen ? "map-panel-fullscreen" : undefined}>
       <div className="map-toolbar">
+        <div className="map-toolbar-group" role="tablist" aria-label="Активность">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activityFilter === "runs"}
+            className={activityFilter === "runs" ? "map-mode-tab active" : "map-mode-tab"}
+            onClick={() => setActivityFilter("runs")}
+          >
+            Пробежки
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activityFilter === "volunteering"}
+            className={activityFilter === "volunteering" ? "map-mode-tab active" : "map-mode-tab"}
+            onClick={() => setActivityFilter("volunteering")}
+          >
+            Волонтёрство
+          </button>
+        </div>
+        <span className="map-toolbar-sep" aria-hidden />
         <div className="map-toolbar-group" role="tablist" aria-label="Режим карты">
           {MODE_DEFS.map(({ mode: m, label }) => (
             <button
@@ -207,13 +235,12 @@ export function UserMapPanel({
                   "площадок",
                 ])}{" "}
                 на карте
-                {mode === "all" && filtersActive && uniqueTotal > 0 && (
-                  <>
-                    {" · "}уникальных локаций {uniqueTotal}
-                    {uniqueWithoutCoords > 0 && ` (${uniqueWithoutCoords} не на карте)`}
-                  </>
+                {mode === "all" && filtersActive && visitedActivityPoints.length > 0 && (
+                  <> · уникальных локаций {visitedActivityPoints.length}</>
                 )}
-                {mode === "unvisited" && filtersActive && <> · без пробежек и волонтёрств</>}
+                {mode === "unvisited" && filtersActive && (
+                  <> · {activityFilter === "runs" ? "без пробежек" : "без волонтёрства"}</>
+                )}
               </>
             ) : (
               <>
@@ -223,20 +250,25 @@ export function UserMapPanel({
                   "локаций",
                 ])}{" "}
                 на карте
-                {uniqueTotal > 0 && (
+                {visitedActivityPoints.length > 0 && (
                   <>
-                    {" · "}уникальных локаций {uniqueTotal}
-                    {uniqueWithoutCoords > 0 && ` (${uniqueWithoutCoords} не на карте)`}
+                    {" · "}уникальных локаций {visitedActivityPoints.length}
+                    {(() => {
+                      const unmapped = visitedActivityPoints.filter((p) => !p.latitude).length;
+                      return unmapped > 0 ? ` (${unmapped} не на карте)` : null;
+                    })()}
                   </>
                 )}
               </>
             )}
           </p>
 
-          {mode === "visited" && active.total_locations === 0 && (
+          {mode === "visited" && visitedActivityPoints.length === 0 && (
             <p className="muted">
-              Пока нет пробежек или волонтёрств с привязанными локациями. Переключитесь на «Все
-              площадки» или «Где не был», чтобы увидеть полный список.
+              {activityFilter === "runs"
+                ? "Пока нет пробежек с привязанными локациями."
+                : "Пока нет волонтёрств с привязанными локациями."}
+              {" "}Переключитесь на «Все площадки» или «Где не был», чтобы увидеть полный список.
             </p>
           )}
           {!filtersActive && (
@@ -246,7 +278,7 @@ export function UserMapPanel({
           <LocationMap
             points={filtersActive ? filteredPoints : []}
             variant={isCatalogMode ? "catalog" : "visited"}
-            visitedByIdentity={mode === "all" ? visitedByIdentity : undefined}
+            visitedByIdentity={mode === "all" ? visitedActivityByIdentity : undefined}
             legend={mapLegend}
             isFullscreen={isFullscreen}
             onToggleFullscreen={toggleFullscreen}
@@ -254,9 +286,13 @@ export function UserMapPanel({
               !filtersActive
                 ? "Выберите хотя бы одну систему."
                 : mode === "visited"
-                  ? "Нет посещённых локаций с координатами для выбранных систем."
+                  ? activityFilter === "runs"
+                    ? "Нет локаций пробежек с координатами для выбранных систем."
+                    : "Нет локаций волонтёрств с координатами для выбранных систем."
                   : mode === "unvisited"
-                    ? "Нет непосещённых площадок с координатами для выбранных систем."
+                    ? activityFilter === "runs"
+                      ? "Нет площадок без пробежек с координатами для выбранных систем."
+                      : "Нет площадок без волонтёрства с координатами для выбранных систем."
                     : "Нет локаций с координатами для выбранных систем."
             }
           />
