@@ -21,6 +21,7 @@ import {
   formatDate,
   formatDateTime,
   platformCodeLabel,
+  profileDataFreshnessLines,
   profilePlatformSummaryLabel,
 } from "../lib/format";
 
