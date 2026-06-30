@@ -22,6 +22,7 @@ from app.sync.s95_reconcile import ReconcileProtocolsOptions, reconcile_stale_pr
 from app.sync.s95_user_sync import run_s95_user_sync
 from app.workers.celery_app import celery_app
 from app.workers.s95_batch_yield import run_s95_batch_reported_sync
+from app.workers.tasks.sync_task_reporting import run_reported_sync
 
 logger = logging.getLogger(__name__)
 
@@ -211,11 +212,14 @@ def s95_api_new_protocols_task() -> dict[str, object]:
     """Import protocols (via JSON API) that are not yet in our DB. Cheap weekend scan."""
     from app.sync.s95_global_sync_api import sync_new_protocols
 
-    db = get_session_factory()()
-    try:
-        return asdict(sync_new_protocols(db))
-    finally:
-        db.close()
+    def _run() -> dict[str, object]:
+        db = get_session_factory()()
+        try:
+            return asdict(sync_new_protocols(db))
+        finally:
+            db.close()
+
+    return run_reported_sync("s95 API: новые протоколы", _run)
 
 
 @celery_app.task(name="s95_sync.api_reconcile_date", queue="s95")
@@ -227,11 +231,19 @@ def s95_api_reconcile_date_task(weeks_ago: int = 0) -> dict[str, object]:
     from app.sync.s95_global_sync_api import most_recent_saturday, reconcile_protocols_for_date
 
     target = most_recent_saturday(date.today()) - timedelta(weeks=weeks_ago)
-    db = get_session_factory()()
-    try:
-        return asdict(reconcile_protocols_for_date(db, target))
-    finally:
-        db.close()
+
+    def _run() -> dict[str, object]:
+        db = get_session_factory()()
+        try:
+            return asdict(reconcile_protocols_for_date(db, target))
+        finally:
+            db.close()
+
+    return run_reported_sync(
+        "s95 API: сверка протоколов",
+        _run,
+        details=f"дата {target.isoformat()} (−{weeks_ago} нед)",
+    )
 
 
 @celery_app.task(name="s95_sync.api_full_backfill", queue="s95")
@@ -239,11 +251,14 @@ def s95_api_full_backfill_task(limit_per_location: int | None = None) -> dict[st
     """One-time full pass over every protocol. Run manually, not on a schedule."""
     from app.sync.s95_global_sync_api import full_backfill
 
-    db = get_session_factory()()
-    try:
-        return asdict(full_backfill(db, limit_per_location=limit_per_location))
-    finally:
-        db.close()
+    def _run() -> dict[str, object]:
+        db = get_session_factory()()
+        try:
+            return asdict(full_backfill(db, limit_per_location=limit_per_location))
+        finally:
+            db.close()
+
+    return run_reported_sync("s95 API: полный backfill", _run)
 
 
 @celery_app.task(name="s95_sync.sync_latest", queue="s95")
