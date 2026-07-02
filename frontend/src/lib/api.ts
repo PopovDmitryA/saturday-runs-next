@@ -122,6 +122,14 @@ export type DashboardAnalytics = {
   volunteering_current_year: number;
   volunteering_index: string | null;
   saturday_streak: number;
+  saturday_streak_max?: number;
+  activity_calendar?: Array<{
+    date: string;
+    runs: number;
+    volunteering: number;
+    run_items?: Array<{ platform_code: string; location: string }>;
+    volunteer_items?: Array<{ platform_code: string; location: string }>;
+  }>;
   saturday_consistency_pct: number | null;
   saturday_consistency_active: number;
   saturday_consistency_total: number;

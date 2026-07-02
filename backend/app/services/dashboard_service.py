@@ -43,7 +43,7 @@ class SyncRefreshRateLimitedError(Exception):
     pass
 
 
-ANALYTICS_VERSION = 16
+ANALYTICS_VERSION = 18
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -90,6 +90,18 @@ def _saturday_streak(activity_dates: set[date]) -> int:
         streak += 1
         expected -= timedelta(days=7)
     return streak
+
+
+def _max_saturday_streak(activity_dates: set[date]) -> int:
+    saturdays = sorted(value for value in activity_dates if value.weekday() == 5)
+    best = 0
+    current = 0
+    previous: date | None = None
+    for value in saturdays:
+        current = current + 1 if previous is not None and value - previous == timedelta(days=7) else 1
+        best = max(best, current)
+        previous = value
+    return best
 
 
 def _saturdays_in_range(start: date, end: date) -> list[date]:
@@ -605,6 +617,46 @@ def _compute_dashboard_analytics(
         for event_date in volunteer_occasion_dates(platform_code, rows)
     }
 
+    run_visit_rows = runs_query.with_entities(Event.event_date, Location, Platform.code).all()
+    vol_visit_rows = vol_query.with_entities(Event.event_date, Location, Platform.code).all()
+
+    runs_per_date: Counter[date] = Counter(d for d in run_dates if has_real_activity_date(d))
+    vols_per_date: Counter[date] = Counter()
+    for platform_code, rows in vol_rows_by_platform.items():
+        vols_per_date.update(volunteer_occasion_dates(platform_code, rows))
+
+    run_items_by_date: dict[date, list[dict[str, str]]] = defaultdict(list)
+    for event_date, location, platform_code in run_visit_rows:
+        if has_real_activity_date(event_date):
+            run_items_by_date[event_date].append(
+                {
+                    "platform_code": platform_code,
+                    "location": catalog_index.display_name(location, platform_code),
+                }
+            )
+    vol_items_by_date: dict[date, list[dict[str, str]]] = defaultdict(list)
+    seen_vol_items: set[tuple[date, str, str]] = set()
+    for event_date, location, platform_code in vol_visit_rows:
+        display_name = catalog_index.display_name(location, platform_code)
+        dedup_key = (event_date, platform_code, display_name)
+        if dedup_key in seen_vol_items:
+            continue
+        seen_vol_items.add(dedup_key)
+        vol_items_by_date[event_date].append(
+            {"platform_code": platform_code, "location": display_name}
+        )
+
+    activity_calendar = [
+        {
+            "date": value.isoformat(),
+            "runs": int(runs_per_date.get(value, 0)),
+            "volunteering": int(vols_per_date.get(value, 0)),
+            "run_items": run_items_by_date.get(value, []),
+            "volunteer_items": vol_items_by_date.get(value, []),
+        }
+        for value in sorted(set(runs_per_date) | set(vols_per_date))
+    ]
+
     run_month_rows = runs_query.with_entities(Event.event_date, RunResult.pace_sec_per_km).all()
     runs_by_month: Counter[str] = Counter(_month_key(row[0]) for row in run_month_rows)
     pace_by_month: dict[str, list[int]] = defaultdict(list)
@@ -642,10 +694,7 @@ def _compute_dashboard_analytics(
         since=year_start,
     )
 
-    visit_rows = (
-        list(runs_query.with_entities(Event.event_date, Location, Platform.code).all())
-        + list(vol_query.with_entities(Event.event_date, Location, Platform.code).all())
-    )
+    visit_rows = list(run_visit_rows) + list(vol_visit_rows)
     first_visits = _first_visits_by_catalog_key(catalog_index, visit_rows)
     new_locations_last_12_months = sum(
         1 for first_visit in first_visits.values() if first_visit >= twelve_months_ago
@@ -687,6 +736,8 @@ def _compute_dashboard_analytics(
         "runs_current_year": runs_current_year,
         "volunteering_index": _format_volunteering_index(total_runs, total_volunteering),
         "saturday_streak": _saturday_streak(all_activity_dates),
+        "saturday_streak_max": _max_saturday_streak(all_activity_dates),
+        "activity_calendar": activity_calendar,
         "platform_metrics": platform_metrics,
         "activity_by_month": activity_by_month,
         "pace_trend": pace_trend,

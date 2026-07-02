@@ -1081,6 +1081,137 @@ body {
   font-size: 0.82rem;
 }
 
+.activity-cal {
+  margin-top: 0.5rem;
+  min-width: 0;
+}
+
+/*
+ * Горизонтальный скролл на узких экранах. overflow-x обрезал бы тултипы,
+ * которые всплывают над ячейками, поэтому сверху оставлен запас
+ * (padding-top + компенсирующий отрицательный margin-top).
+ */
+.activity-cal-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+  padding-top: 5.5rem;
+  margin-top: -5.5rem;
+  padding-bottom: 0.25rem;
+}
+
+.activity-cal-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 560px;
+}
+
+.activity-cal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.activity-cal-year {
+  flex: 0 0 2.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  text-align: right;
+}
+
+.activity-cal-cells {
+  display: grid;
+  grid-template-columns: repeat(53, minmax(0, 1fr));
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.activity-cal-cell-wrap {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+}
+
+.activity-cal-cell-wrap .analytics-chart-tooltip-wrap {
+  height: 100%;
+}
+
+/* Скрытые тултипы (opacity: 0) расширяли scrollWidth скролл-контейнера
+   и включали горизонтальный скроллбар даже там, где сетка помещается. */
+.activity-cal-cell-wrap .analytics-chart-tooltip {
+  display: none;
+}
+
+.activity-cal-cell-wrap .analytics-chart-tooltip-wrap:hover .analytics-chart-tooltip,
+.activity-cal-cell-wrap .analytics-chart-tooltip-wrap:focus-within .analytics-chart-tooltip {
+  display: flex;
+  opacity: 1;
+}
+
+/* У крайних колонок центрированный тултип выходит за границы скролл-контейнера
+   и обрезается — прижимаем его к ближнему краю ячейки вместе со стрелкой. */
+.activity-cal-cell-wrap:nth-child(-n + 8) .analytics-chart-tooltip {
+  left: 0;
+  transform: none;
+}
+
+.activity-cal-cell-wrap:nth-child(-n + 8) .analytics-chart-tooltip::after {
+  left: 0.9rem;
+  transform: none;
+}
+
+.activity-cal-cell-wrap:nth-child(n + 45) .analytics-chart-tooltip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.activity-cal-cell-wrap:nth-child(n + 45) .analytics-chart-tooltip::after {
+  left: auto;
+  right: 0.9rem;
+  transform: none;
+}
+
+.activity-cal-cell {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.activity-cal-cell-wrap:hover .activity-cal-cell {
+  filter: brightness(0.85);
+}
+
+.activity-cal-cell-run {
+  background: #16a34a;
+}
+
+.activity-cal-cell-vol {
+  background: #2563eb;
+}
+
+.activity-cal-cell-both,
+.activity-cal-swatch-both {
+  background: linear-gradient(135deg, #16a34a 50%, #2563eb 50%);
+}
+
+.activity-cal-cell-miss,
+.activity-cal-swatch-miss {
+  background: #e2e8f0;
+}
+
+.activity-cal-cell-off {
+  background: #f1f5f9;
+  opacity: 0.6;
+}
+
+.activity-cal-legend {
+  margin-top: 0.75rem;
+}
+
 .section-title {
   margin: 0;
   font-size: 1rem;

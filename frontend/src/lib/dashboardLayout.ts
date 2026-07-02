@@ -33,6 +33,7 @@ export const DASHBOARD_ANALYTICS_CARD_ORDER = [
 export const DASHBOARD_ANALYTICS_PANEL_ORDER = [
   "platform_metrics",
   "activity_chart",
+  "activity_calendar",
   "pace_trend",
 ] as const;
 

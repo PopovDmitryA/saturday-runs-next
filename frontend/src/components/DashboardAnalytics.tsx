@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { ActivityCalendarHeatmap } from "./ActivityCalendarHeatmap";
 import { ChartColumnTooltip } from "./ChartColumnTooltip";
 import type { DashboardAnalytics as DashboardAnalyticsData } from "../lib/api";
 import {
@@ -610,8 +611,16 @@ export function DashboardAnalytics({
   );
   const hasPlatformMetrics = analytics.platform_metrics.length > 0;
   const hasPaceTrend = analytics.pace_trend.length > 1;
+  const activityCalendar = analytics.activity_calendar ?? [];
+  const hasActivityCalendar = activityCalendar.length > 0;
 
-  if (cards.length === 0 && !hasActivityChart && !hasPlatformMetrics && !hasPaceTrend) {
+  if (
+    cards.length === 0 &&
+    !hasActivityChart &&
+    !hasPlatformMetrics &&
+    !hasPaceTrend &&
+    !hasActivityCalendar
+  ) {
     return null;
   }
 
@@ -698,6 +707,20 @@ export function DashboardAnalytics({
         <>
           <h2 className="section-title">Активность по месяцам</h2>
           <ActivityMonthChart data={analytics.activity_by_month} />
+        </>
+      ),
+    });
+  }
+  if (hasActivityCalendar) {
+    panels.push({
+      key: "activity_calendar",
+      node: (
+        <>
+          <h2 className="section-title">Календарь суббот</h2>
+          <ActivityCalendarHeatmap
+            days={activityCalendar}
+            saturdayStreakMax={analytics.saturday_streak_max ?? 0}
+          />
         </>
       ),
     });

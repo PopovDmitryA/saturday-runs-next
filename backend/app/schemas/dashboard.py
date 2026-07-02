@@ -35,6 +35,19 @@ class MonthlyPaceResponse(BaseModel):
     avg_pace_sec_per_km: int | None = None
 
 
+class ActivityCalendarItemResponse(BaseModel):
+    platform_code: str
+    location: str
+
+
+class ActivityCalendarDayResponse(BaseModel):
+    date: date
+    runs: int = 0
+    volunteering: int = 0
+    run_items: list[ActivityCalendarItemResponse] = Field(default_factory=list)
+    volunteer_items: list[ActivityCalendarItemResponse] = Field(default_factory=list)
+
+
 class DashboardAnalyticsResponse(BaseModel):
     analytics_version: int = 1
     unique_locations: int = 0
@@ -64,6 +77,8 @@ class DashboardAnalyticsResponse(BaseModel):
     volunteering_current_year: int = 0
     volunteering_index: str | None = None
     saturday_streak: int = 0
+    saturday_streak_max: int = 0
+    activity_calendar: list[ActivityCalendarDayResponse] = Field(default_factory=list)
     saturday_consistency_pct: float | None = None
     saturday_consistency_active: int = 0
     saturday_consistency_total: int = 0

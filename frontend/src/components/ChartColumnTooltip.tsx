@@ -14,8 +14,8 @@ export function ChartColumnTooltip({
       {children}
       <div className="analytics-chart-tooltip" role="tooltip">
         <span className="analytics-chart-tooltip-title">{title}</span>
-        {lines.map((line) => (
-          <span key={line} className="analytics-chart-tooltip-line">
+        {lines.map((line, index) => (
+          <span key={`${index}-${line}`} className="analytics-chart-tooltip-line">
             {line}
           </span>
         ))}

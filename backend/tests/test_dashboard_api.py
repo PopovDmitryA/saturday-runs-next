@@ -194,7 +194,9 @@ def test_dashboard_returns_stats_from_global_core(authenticated_client: TestClie
     assert analytics["unique_run_cities"] == 1
     assert analytics["best_finish_time_sec"] == 18 * 60 + 59
     assert analytics["pr_count"] == 1
-    assert analytics["analytics_version"] == 13
+    from app.services.dashboard_service import ANALYTICS_VERSION
+
+    assert analytics["analytics_version"] == ANALYTICS_VERSION
     assert analytics["best_results_platform_count"] == 1
     assert analytics["runs_current_year"] == 1
     assert analytics["total_distance_km"] == 5
