@@ -27,6 +27,8 @@ from app.models import (
     User,
 )
 from app.platform_adapters.canonical import CanonicalParticipant
+from app.services.dashboard_service import ANALYTICS_VERSION
+from app.services.sync_dedup_service import SyncEnqueueResult
 from app.sync.user_sync import run_user_sync
 
 
@@ -194,8 +196,6 @@ def test_dashboard_returns_stats_from_global_core(authenticated_client: TestClie
     assert analytics["unique_run_cities"] == 1
     assert analytics["best_finish_time_sec"] == 18 * 60 + 59
     assert analytics["pr_count"] == 1
-    from app.services.dashboard_service import ANALYTICS_VERSION
-
     assert analytics["analytics_version"] == ANALYTICS_VERSION
     assert analytics["best_results_platform_count"] == 1
     assert analytics["runs_current_year"] == 1
@@ -985,8 +985,9 @@ def test_sync_queue_admin_accepts_user_without_telegram_id(
 
 
 def test_sync_refresh_rate_limited(authenticated_client: TestClient) -> None:
-    with patch("app.services.sync_enqueue_service.enqueue_manual_sync_for_all_platforms"):
-        first = authenticated_client.post("/api/sync/refresh")
-        second = authenticated_client.post("/api/sync/refresh")
+    result = SyncEnqueueResult(job_id=uuid4(), duplicate=False)
+    with patch("app.api.routes.sync.enqueue_manual_platform_sync", return_value=result):
+        first = authenticated_client.post("/api/sync/refresh/five_verst")
+        second = authenticated_client.post("/api/sync/refresh/five_verst")
     assert first.status_code == 202
     assert second.status_code == 429

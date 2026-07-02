@@ -26,7 +26,6 @@ from app.services.profile_fetch_pending_service import (
     requeue_stuck_done_parkrun_pending,
     reset_failed_parkrun_pending,
 )
-from app.sync.user_sync import _count_participant_runs
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +82,6 @@ def build_parkrun_work_queue(
     for link in links:
         if link.user_id in seen_sync_users:
             continue
-        runs = 0
-        if link.participant_id is not None:
-            runs = _count_participant_runs(db, link.participant_id)
         needs_sync = link.sync_status == PlatformLinkSyncStatus.error
         if not needs_sync:
             continue
