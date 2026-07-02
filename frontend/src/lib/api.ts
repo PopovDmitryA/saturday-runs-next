@@ -130,6 +130,7 @@ export type DashboardAnalytics = {
     run_items?: Array<{ platform_code: string; location: string }>;
     volunteer_items?: Array<{ platform_code: string; location: string }>;
   }>;
+  finish_times_sec?: number[];
   saturday_consistency_pct: number | null;
   saturday_consistency_active: number;
   saturday_consistency_total: number;

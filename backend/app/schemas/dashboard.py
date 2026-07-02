@@ -79,6 +79,7 @@ class DashboardAnalyticsResponse(BaseModel):
     saturday_streak: int = 0
     saturday_streak_max: int = 0
     activity_calendar: list[ActivityCalendarDayResponse] = Field(default_factory=list)
+    finish_times_sec: list[int] = Field(default_factory=list)
     saturday_consistency_pct: float | None = None
     saturday_consistency_active: int = 0
     saturday_consistency_total: int = 0

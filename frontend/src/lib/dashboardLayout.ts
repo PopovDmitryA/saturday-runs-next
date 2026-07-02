@@ -35,6 +35,7 @@ export const DASHBOARD_ANALYTICS_PANEL_ORDER = [
   "activity_chart",
   "activity_calendar",
   "pace_trend",
+  "finish_distribution",
 ] as const;
 
 export function sortByLayoutOrder<T extends { key: string }>(

@@ -43,7 +43,7 @@ class SyncRefreshRateLimitedError(Exception):
     pass
 
 
-ANALYTICS_VERSION = 18
+ANALYTICS_VERSION = 19
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -468,6 +468,9 @@ def _compute_dashboard_analytics(
     paced_runs = runs_query.filter(RunResult.pace_sec_per_km.isnot(None))
     positioned_runs = runs_query.filter(RunResult.position.isnot(None))
 
+    finish_times_sec = sorted(
+        int(row[0]) for row in timed_runs.with_entities(RunResult.finish_time_sec).all()
+    )
     avg_finish = timed_runs.with_entities(func.avg(RunResult.finish_time_sec)).scalar()
     best_finish = timed_runs.with_entities(func.min(RunResult.finish_time_sec)).scalar()
     best_results_platform_count = timed_runs.with_entities(Platform.code).distinct().count()
@@ -738,6 +741,7 @@ def _compute_dashboard_analytics(
         "saturday_streak": _saturday_streak(all_activity_dates),
         "saturday_streak_max": _max_saturday_streak(all_activity_dates),
         "activity_calendar": activity_calendar,
+        "finish_times_sec": finish_times_sec,
         "platform_metrics": platform_metrics,
         "activity_by_month": activity_by_month,
         "pace_trend": pace_trend,

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { ActivityCalendarHeatmap } from "./ActivityCalendarHeatmap";
 import { ChartColumnTooltip } from "./ChartColumnTooltip";
+import { FinishTimeDistribution } from "./FinishTimeDistribution";
 import type { DashboardAnalytics as DashboardAnalyticsData } from "../lib/api";
 import {
   DASHBOARD_ANALYTICS_CARD_ORDER,
@@ -613,13 +614,16 @@ export function DashboardAnalytics({
   const hasPaceTrend = analytics.pace_trend.length > 1;
   const activityCalendar = analytics.activity_calendar ?? [];
   const hasActivityCalendar = activityCalendar.length > 0;
+  const finishTimes = analytics.finish_times_sec ?? [];
+  const hasFinishDistribution = finishTimes.length >= 3;
 
   if (
     cards.length === 0 &&
     !hasActivityChart &&
     !hasPlatformMetrics &&
     !hasPaceTrend &&
-    !hasActivityCalendar
+    !hasActivityCalendar &&
+    !hasFinishDistribution
   ) {
     return null;
   }
@@ -732,6 +736,18 @@ export function DashboardAnalytics({
         <>
           <h2 className="section-title">Динамика темпа за год</h2>
           <PaceTrendChart data={analytics.pace_trend} />
+        </>
+      ),
+    });
+  }
+
+  if (hasFinishDistribution) {
+    panels.push({
+      key: "finish_distribution",
+      node: (
+        <>
+          <h2 className="section-title">Распределение результатов</h2>
+          <FinishTimeDistribution times={finishTimes} />
         </>
       ),
     });

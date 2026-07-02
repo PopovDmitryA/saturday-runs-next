@@ -1212,6 +1212,55 @@ body {
   margin-top: 0.75rem;
 }
 
+.finish-dist-bars {
+  display: grid;
+  gap: 2px;
+  align-items: end;
+  height: 150px;
+  padding: 0.25rem 0;
+}
+
+.finish-dist-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  min-width: 0;
+  position: relative;
+}
+
+.finish-dist-bar {
+  display: block;
+  width: 100%;
+  max-width: 34px;
+  border-radius: 4px 4px 0 0;
+  background: #16a34a;
+  opacity: 0.85;
+}
+
+.finish-dist-bar-wrap:hover .finish-dist-bar {
+  opacity: 1;
+}
+
+.finish-dist-bar-best {
+  background: #f59e0b;
+  opacity: 1;
+}
+
+.finish-dist-swatch-best {
+  background: #f59e0b;
+}
+
+.finish-dist-label {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.finish-dist-summary {
+  margin-top: 0.75rem;
+}
+
 .section-title {
   margin: 0;
   font-size: 1rem;
