@@ -2,8 +2,10 @@
 
 Пол финишёра:
 - five_verst — первая буква age_category (М/Ж);
+- runpark — вторая буква age_category (M/W); категория есть у ~41% строк,
+  место считается только среди известных полов (с погрешностью);
 - s95 — participants.profile_extra->platform_codes->gender (male/female);
-- parkrun, runpark — не считаем (у runpark категория есть лишь у 41% строк).
+- parkrun — данных о поле нет, пропускается.
 
 Запуск:
     docker compose exec api python scripts/backfill_gender_positions.py
@@ -42,16 +44,7 @@ WHERE rr.id = ranked.id
 """
 
 FIVE_VERST_GENDER = "(CASE left(rr.age_category, 1) WHEN 'М' THEN 'male' WHEN 'Ж' THEN 'female' END)"
-
-CLEAR_SQL = """
-UPDATE run_results rr
-SET gender_position = NULL
-FROM events e
-JOIN platforms p ON e.platform_id = p.id
-WHERE rr.event_id = e.id
-  AND p.code = :platform_code
-  AND rr.gender_position IS NOT NULL
-"""
+RUNPARK_GENDER = "(CASE substring(rr.age_category, 2, 1) WHEN 'M' THEN 'male' WHEN 'W' THEN 'female' END)"
 
 S95_SQL = """
 WITH ranked AS (
@@ -80,8 +73,8 @@ def main() -> None:
     db = get_session_factory()()
     steps = [
         ("five_verst", text(AGE_CATEGORY_SQL.format(gender_expr=FIVE_VERST_GENDER)), {"platform_code": "five_verst"}),
+        ("runpark", text(AGE_CATEGORY_SQL.format(gender_expr=RUNPARK_GENDER)), {"platform_code": "runpark"}),
         ("s95", text(S95_SQL), {}),
-        ("runpark (clear)", text(CLEAR_SQL), {"platform_code": "runpark"}),
     ]
     for name, sql, params in steps:
         started = time.monotonic()

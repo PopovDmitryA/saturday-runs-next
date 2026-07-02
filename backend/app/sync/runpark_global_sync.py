@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.platform_adapters.canonical import CanonicalRunResult, CanonicalVolunteerResult
 from app.runpark.mssql_client import fix_varchar_encoding, runpark_query
+from app.services.gender_position_service import recalculate_event_gender_positions
 from app.sync import upsert
 from app.sync.iteration_commit import commit_step, rollback_step
 
@@ -258,6 +259,7 @@ def sync_runpark_batch(db: Session, since_date: date) -> RunparkSyncResult:
                 )
                 canonical_runs = [_to_canonical_run(r) for r in run_rows]
                 run_count = upsert.upsert_run_results(db, event_row, platform, canonical_runs, recalculate_pr=False)
+                recalculate_event_gender_positions(db, event_row.id, PLATFORM_CODE)
                 result.run_results_upserted += run_count
 
                 vol_rows = runpark_query(
@@ -350,6 +352,7 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
             result.run_results_upserted += upsert.upsert_run_results(
                 db, event_row, platform, canonical_runs, recalculate_pr=True
             )
+            recalculate_event_gender_positions(db, event_row.id, PLATFORM_CODE)
 
             vol_rows = runpark_query(
                 "SELECT * FROM api.vw_volunteer_results WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s",

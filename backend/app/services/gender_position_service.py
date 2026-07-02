@@ -5,9 +5,10 @@
 - s95: в протоколе категории нет, пол берётся из participants.profile_extra
   ["platform_codes"]["gender"] («male» / «female»), который сохраняет
   _store_athlete_codes при апсерте JSON-протокола;
-- parkrun: данных о поле нет, gender_position всегда NULL;
-- runpark: категория (VM35-39/SW30-34) есть только у 41% строк — слишком
-  неполные протоколы, место по полу не считаем (NULL).
+- runpark: вторая буква age_category («VM35-39» / «SW30-34» → M / W);
+  категория есть только у ~41% строк, так что метрика считается с
+  погрешностью — только среди финишёров с известным полом;
+- parkrun: данных о поле нет, gender_position всегда NULL.
 
 Бегуны без известного пола не участвуют в ранжировании (место считается
 только среди тех, чей пол известен).
@@ -25,6 +26,7 @@ GENDER_MALE = "male"
 GENDER_FEMALE = "female"
 
 _FIVE_VERST_LETTERS = {"М": GENDER_MALE, "Ж": GENDER_FEMALE}
+_RUNPARK_LETTERS = {"M": GENDER_MALE, "W": GENDER_FEMALE}
 
 
 def gender_from_age_category(platform_code: str, age_category: str | None) -> str | None:
@@ -32,6 +34,10 @@ def gender_from_age_category(platform_code: str, age_category: str | None) -> st
         return None
     if platform_code == "five_verst":
         return _FIVE_VERST_LETTERS.get(age_category[:1])
+    if platform_code == "runpark":
+        if len(age_category) >= 2:
+            return _RUNPARK_LETTERS.get(age_category[1])
+        return None
     return None
 
 
@@ -53,7 +59,7 @@ def _s95_participant_genders(db: Session, participant_ids: list[UUID]) -> dict[U
 
 def recalculate_event_gender_positions(db: Session, event_id: UUID, platform_code: str) -> None:
     """Пересчитать gender_position для всех результатов одного события."""
-    if platform_code not in ("five_verst", "s95"):
+    if platform_code not in ("five_verst", "s95", "runpark"):
         return
     rows = db.query(RunResult).filter(RunResult.event_id == event_id).all()
     if not rows:
