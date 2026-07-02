@@ -19,13 +19,21 @@ const UNKNOWN_GEO = "Не заполнено";
 type GeoLocationEntry = {
   name: string;
   hint: string | null;
+  visitCount: number;
 };
 
 type GeoGroup = {
   name: string;
   locations: GeoLocationEntry[];
   isUnknown: boolean;
+  totalVisits: number;
 };
+
+function locationVisitCount(loc: UniqueLocationsDetailResponse["locations"][number], activityFilter: ActivityFilter): number {
+  if (activityFilter === "runs") return loc.run_count;
+  if (activityFilter === "volunteering") return loc.volunteer_count;
+  return loc.run_count + loc.volunteer_count;
+}
 
 function buildGroups(
   data: UniqueLocationsDetailResponse,
@@ -48,7 +56,7 @@ function buildGroups(
       entries = [];
       map.set(name, entries);
     }
-    entries.push({ name: loc.name, hint });
+    entries.push({ name: loc.name, hint, visitCount: locationVisitCount(loc, activityFilter) });
   }
 
   return Array.from(map.entries())
@@ -56,6 +64,7 @@ function buildGroups(
       name,
       locations: locations.sort((a, b) => a.name.localeCompare(b.name, "ru")),
       isUnknown: name === UNKNOWN_GEO,
+      totalVisits: locations.reduce((sum, l) => sum + l.visitCount, 0),
     }))
     .sort((a, b) => {
       if (a.isUnknown !== b.isUnknown) return a.isUnknown ? 1 : -1;
@@ -110,6 +119,7 @@ function ModalContent({
             <tr>
               <th>{colLabel}</th>
               <th className="col-count">Локаций</th>
+              <th className="col-count">Визитов</th>
               <th>Локации</th>
             </tr>
           </thead>
@@ -118,6 +128,7 @@ function ModalContent({
               <tr key={group.name} className={group.isUnknown ? "geo-groups-row-unknown" : undefined}>
                 <td className="geo-groups-name">{group.name}</td>
                 <td className="col-count">{group.locations.length}</td>
+                <td className="col-count">{group.totalVisits}</td>
                 <td className="geo-groups-locations muted">
                   {group.isUnknown
                     ? group.locations.map((loc, i) => (
@@ -127,9 +138,20 @@ function ModalContent({
                           {loc.hint && (
                             <span className="geo-groups-hint"> ({loc.hint})</span>
                           )}
+                          {loc.visitCount > 1 && (
+                            <span className="geo-groups-visit-count"> ×{loc.visitCount}</span>
+                          )}
                         </span>
                       ))
-                    : group.locations.map((loc) => loc.name).join(", ")}
+                    : group.locations.map((loc, i) => (
+                        <span key={loc.name}>
+                          {i > 0 && ", "}
+                          {loc.name}
+                          {loc.visitCount > 1 && (
+                            <span className="geo-groups-visit-count"> ×{loc.visitCount}</span>
+                          )}
+                        </span>
+                      ))}
                 </td>
               </tr>
             ))}

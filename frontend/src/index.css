@@ -3426,6 +3426,11 @@ tr.run-crosslinked td {
   opacity: 0.75;
 }
 
+.geo-groups-visit-count {
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+
 .map-locations-table-spoiler {
   margin-top: 1rem;
 }
