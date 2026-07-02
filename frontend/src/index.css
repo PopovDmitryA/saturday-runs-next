@@ -469,6 +469,28 @@ body {
   background: #fef2f2;
 }
 
+.public-profile-share {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.public-profile-share-title {
+  font-weight: 600;
+  margin: 0;
+}
+
+.public-profile-share-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.public-profile-share-row .input {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
 .banner {
   padding: 0.75rem 1rem;
   border-radius: 10px;

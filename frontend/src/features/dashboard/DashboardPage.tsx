@@ -7,6 +7,37 @@ import { RequireAuth } from "../../components/RequireAuth";
 import { getDashboard, type DashboardResponse } from "../../lib/api";
 import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 
+function PublicProfileShareBlock({ serialId }: { serialId: number }) {
+  const [copied, setCopied] = useState(false);
+  const url = `${window.location.origin}/users/${serialId}`;
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // ignore — clipboard API unavailable, user can still select the link text
+    }
+  }, [url]);
+
+  return (
+    <div className="card public-profile-share">
+      <p className="public-profile-share-title">Мой публичный профиль</p>
+      <p className="muted">Поделитесь ссылкой — по ней видна ваша статистика пробежек и волонтёрств.</p>
+      <div className="public-profile-share-row">
+        <input className="input" type="text" value={url} readOnly onFocus={(e) => e.target.select()} />
+        <button type="button" className="btn secondary" onClick={() => void handleCopy()}>
+          {copied ? "Скопировано ✓" : "Скопировать"}
+        </button>
+        <a className="btn btn-ghost" href={url} target="_blank" rel="noreferrer">
+          Открыть →
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function DashboardContent({ isAdmin }: { isAdmin: boolean }) {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -79,13 +110,7 @@ function DashboardContent({ isAdmin }: { isAdmin: boolean }) {
             totalVolunteering={stats?.total_volunteering ?? 0}
           />
 
-          {data.serial_id != null && (
-            <div className="banner info">
-              <a href={`/users/${data.serial_id}`} target="_blank" rel="noreferrer">
-                Открыть мой публичный профиль →
-              </a>
-            </div>
-          )}
+          {data.serial_id != null && <PublicProfileShareBlock serialId={data.serial_id} />}
 
           {isAdmin && data.sync_enqueued && (
             <div className="banner info">
