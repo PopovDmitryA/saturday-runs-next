@@ -107,6 +107,7 @@ export type DashboardAnalytics = {
   best_results_platform_count?: number;
   avg_pace_sec_per_km: number | null;
   avg_position: number | null;
+  avg_gender_position?: number | null;
   pr_count: number;
   unique_volunteer_roles: number;
   first_activity_date: string | null;
@@ -174,6 +175,7 @@ export type RunItem = {
   location_is_paused?: boolean;
   location_is_cancelled?: boolean;
   position: number | null;
+  gender_position?: number | null;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   pace_display: string | null;

@@ -515,6 +515,7 @@ class RunResult(Base):
     participant_id: Mapped[UUID | None] = mapped_column(ForeignKey("participants.id"))
     external_result_key: Mapped[str] = mapped_column(String(512), nullable=False)
     position: Mapped[int | None] = mapped_column(Integer)
+    gender_position: Mapped[int | None] = mapped_column(Integer)
     finish_time_sec: Mapped[int | None] = mapped_column(Integer)
     finish_time_display: Mapped[str | None] = mapped_column(String(32))
     pace_sec_per_km: Mapped[int | None] = mapped_column(Integer)

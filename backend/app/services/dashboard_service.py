@@ -43,7 +43,7 @@ class SyncRefreshRateLimitedError(Exception):
     pass
 
 
-ANALYTICS_VERSION = 14
+ANALYTICS_VERSION = 15
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -461,6 +461,11 @@ def _compute_dashboard_analytics(
     best_results_platform_count = timed_runs.with_entities(Platform.code).distinct().count()
     avg_pace = paced_runs.with_entities(func.avg(RunResult.pace_sec_per_km)).scalar()
     avg_position = positioned_runs.with_entities(func.avg(RunResult.position)).scalar()
+    avg_gender_position = (
+        runs_query.filter(RunResult.gender_position.isnot(None))
+        .with_entities(func.avg(RunResult.gender_position))
+        .scalar()
+    )
     pr_count = (
         runs_query.filter(run_is_personal_record_sql_filter())
         .with_entities(func.count(RunResult.id))
@@ -669,6 +674,7 @@ def _compute_dashboard_analytics(
         "best_results_platform_count": int(best_results_platform_count),
         "avg_pace_sec_per_km": _to_int(avg_pace),
         "avg_position": _to_float(avg_position),
+        "avg_gender_position": _to_float(avg_gender_position),
         "pr_count": pr_count,
         "unique_volunteer_roles": unique_volunteer_roles,
         "first_activity_date": first_activity.isoformat() if first_activity else None,
@@ -833,6 +839,7 @@ def list_user_runs(
             "location_city": location.city,
             "location_country": location.country,
             "position": run.position,
+            "gender_position": run.gender_position,
             "finish_time_display": normalize_finish_time_display(
                 run.finish_time_sec,
                 run.finish_time_display,

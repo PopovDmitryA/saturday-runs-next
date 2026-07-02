@@ -16,6 +16,7 @@ from app.models import (
 )
 from app.platform_adapters.canonical import CanonicalEventSummary
 from app.platform_adapters.five_verst import bulk_parser
+from app.services.gender_position_service import recalculate_event_gender_positions
 from app.sync import upsert
 
 
@@ -82,6 +83,7 @@ def fetch_and_upsert_event_protocol(
     )
     previous_hash = state.protocol_source_hash
     run_results_upserted = upsert.replace_event_run_results(db, event_row, platform, run_results)
+    recalculate_event_gender_positions(db, event_row.id, platform.code)
     volunteer_results_upserted = upsert.replace_event_volunteer_results(db, event_row, platform, volunteer_results)
     run_results_count = (
         db.query(RunResult).filter(RunResult.event_id == event_row.id).count()

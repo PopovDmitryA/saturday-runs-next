@@ -188,6 +188,15 @@ function buildAnalyticsCards(
     });
   }
 
+  if (totalRuns > 0 && analytics.avg_gender_position != null) {
+    cards.push({
+      key: "avg_gender_position",
+      value: String(analytics.avg_gender_position),
+      label: "Среднее место по полу",
+      category: "runs",
+    });
+  }
+
   if (totalRuns > 0 && analytics.avg_finish_time_sec != null) {
     cards.push({
       key: "avg_finish",
@@ -296,14 +305,7 @@ function buildAnalyticsCards(
     });
   }
 
-  if (analytics.last_pr_date) {
-    cards.push({
-      key: "last_pr_date",
-      value: formatDate(analytics.last_pr_date),
-      label: "Последний PR",
-      category: "runs",
-    });
-  }
+  // Плашка «Последний PR» временно скрыта (02.07.2026) — вернём, если попросят пользователи.
 
   if (analytics.last_global_pr_date) {
     cards.push({

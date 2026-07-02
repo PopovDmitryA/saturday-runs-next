@@ -131,7 +131,6 @@ const closedSnackbar = (): SnackbarState => ({
 function ProfileDataFreshness({
   dataUpdatedAt,
   dataThroughDate,
-  dataSource,
 }: {
   dataUpdatedAt?: string | null;
   dataThroughDate?: string | null;

@@ -49,6 +49,7 @@ class DashboardAnalyticsResponse(BaseModel):
     best_results_platform_count: int = 0
     avg_pace_sec_per_km: int | None = None
     avg_position: float | None = None
+    avg_gender_position: float | None = None
     pr_count: int = 0
     unique_volunteer_roles: int = 0
     first_activity_date: date | None = None
@@ -115,6 +116,7 @@ class RunItemResponse(BaseModel):
     location_is_paused: bool = False
     location_is_cancelled: bool = False
     position: int | None = None
+    gender_position: int | None = None
     finish_time_display: str | None = None
     finish_time_sec: int | None = None
     pace_display: str | None = None

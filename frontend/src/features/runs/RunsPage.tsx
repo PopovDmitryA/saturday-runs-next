@@ -229,6 +229,7 @@ function RunsContent() {
                     sortAsc={filters.sort === "position_asc"}
                     onSort={() => filters.setSort((current) => togglePositionSort(current))}
                   />
+                  <ColumnHeader label="Место (пол)" filterable={false} />
                   <ColumnHeader
                     label="Время"
                     filterable={false}
@@ -248,7 +249,7 @@ function RunsContent() {
               <tbody>
                 {displayedRuns.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="table-empty-cell">
+                    <td colSpan={7} className="table-empty-cell">
                       <span className="muted">Нет строк по фильтрам</span>
                       {filters.hasActiveFilters && (
                         <button
@@ -291,6 +292,7 @@ function RunsContent() {
                       </td>
                       <td className="td-location">{run.location_name}</td>
                       <td className="td-compact">{run.position ?? "—"}</td>
+                      <td className="td-compact">{run.gender_position ?? "—"}</td>
                       <td className="td-time">
                         <GlobalPrFinishTime isGlobalPr={run.is_global_pr}>
                           {formatFinishTimeValue(run.finish_time_display, run.finish_time_sec)}

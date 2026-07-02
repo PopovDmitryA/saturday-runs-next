@@ -19,6 +19,7 @@ from app.models import (
 from app.platform_adapters.canonical import CanonicalEventSummary
 from app.s95.fetch import fetch_page_html
 from app.s95.parsers.protocol import parse_protocol_page
+from app.services.gender_position_service import recalculate_event_gender_positions
 from app.sync import upsert
 
 # S95 event key: {location_slug}:{YYYY-MM-DD}; activity id lives in event_number / source_url.
@@ -109,6 +110,7 @@ def fetch_and_upsert_activity_protocol(
     previous_hash = state.protocol_source_hash
 
     run_results_upserted = upsert.replace_event_run_results(db, event_row, platform, parsed.run_results)
+    recalculate_event_gender_positions(db, event_row.id, platform.code)
     volunteer_results_upserted = upsert.replace_event_volunteer_results(
         db, event_row, platform, parsed.volunteer_results
     )

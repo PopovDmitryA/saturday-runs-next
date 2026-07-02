@@ -18,6 +18,7 @@ from app.models import (
 from app.platform_adapters.canonical import CanonicalEventSummary
 from app.s95.api_client import S95ApiActivityRef, fetch_activity
 from app.s95.parsers.api_protocol import ParsedApiProtocol, parse_s95_activity
+from app.services.gender_position_service import recalculate_event_gender_positions
 from app.sync import upsert
 
 
@@ -142,6 +143,8 @@ def upsert_activity_protocol_api(
     )
     upsert.replace_event_volunteer_results(db, event_row, platform, parsed.volunteer_results)
     _store_athlete_codes(db, platform, parsed)
+    # После _store_athlete_codes: пол берётся из participants.profile_extra.
+    recalculate_event_gender_positions(db, event_row.id, platform.code)
 
     run_count = db.query(RunResult).filter(RunResult.event_id == event_row.id).count()
     vol_count = db.query(VolunteerResult).filter(VolunteerResult.event_id == event_row.id).count()
