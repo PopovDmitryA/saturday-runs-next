@@ -171,6 +171,31 @@ class PersonalRecordResponse(BaseModel):
     event_url: str | None = None
 
 
+class CoRunnerResponse(BaseModel):
+    participant_key: str
+    display_name: str | None = None
+    profile_url: str | None = None
+    platform_codes: list[str] = Field(default_factory=list)
+    site_serial_id: int | None = None
+    meetings: int = 0
+    my_wins: int = 0
+    their_wins: int = 0
+    timed_meetings: int = 0
+    first_meeting_date: date | None = None
+    last_meeting_date: date | None = None
+
+
+class CoRunnerMeetingResponse(BaseModel):
+    event_date: date
+    platform_code: str
+    location_name: str
+    my_time_sec: int | None = None
+    their_time_sec: int | None = None
+    my_position: int | None = None
+    their_position: int | None = None
+    event_url: str | None = None
+
+
 class VolunteerRoleStatResponse(BaseModel):
     platform_code: str
     role: str

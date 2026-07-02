@@ -589,6 +589,39 @@ export function getDashboard() {
   return apiFetch<DashboardResponse>("/dashboard");
 }
 
+export type CoRunnerItem = {
+  participant_key: string;
+  display_name: string | null;
+  profile_url: string | null;
+  platform_codes: string[];
+  site_serial_id: number | null;
+  meetings: number;
+  my_wins: number;
+  their_wins: number;
+  timed_meetings: number;
+  first_meeting_date: string | null;
+  last_meeting_date: string | null;
+};
+
+export type CoRunnerMeetingItem = {
+  event_date: string;
+  platform_code: string;
+  location_name: string;
+  my_time_sec: number | null;
+  their_time_sec: number | null;
+  my_position: number | null;
+  their_position: number | null;
+  event_url: string | null;
+};
+
+export function getCoRunners(limit = 100) {
+  return apiFetch<CoRunnerItem[]>(`/runs/co-runners?limit=${limit}`);
+}
+
+export function getCoRunnerMeetings(participantKey: string) {
+  return apiFetch<CoRunnerMeetingItem[]>(`/runs/co-runners/${participantKey}/meetings`);
+}
+
 export function listRuns(includeTest = false, limit = 200) {
   const params = new URLSearchParams({ limit: String(limit) });
   if (includeTest) {
@@ -1276,6 +1309,14 @@ export function getDemoDashboard() {
 
 export function demoListRuns(limit = 200) {
   return apiFetch<RunItem[]>(`/demo/runs?limit=${limit}`);
+}
+
+export function demoGetCoRunners(limit = 100) {
+  return apiFetch<CoRunnerItem[]>(`/demo/runs/co-runners?limit=${limit}`);
+}
+
+export function demoGetCoRunnerMeetings(participantKey: string) {
+  return apiFetch<CoRunnerMeetingItem[]>(`/demo/runs/co-runners/${participantKey}/meetings`);
 }
 
 export function demoListVolunteering(limit = 200) {

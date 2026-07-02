@@ -10,11 +10,14 @@ from app.db.session import get_db
 from app.models import User
 from app.schemas.dashboard import (
     BestResultResponse,
+    CoRunnerMeetingResponse,
+    CoRunnerResponse,
     PersonalRecordResponse,
     RunItemResponse,
     VolunteeringItemResponse,
     VolunteerRoleStatResponse,
 )
+from app.services.co_runners_service import list_co_runner_meetings, list_co_runners
 from app.services.dashboard_service import (
     list_user_best_results,
     list_user_personal_records,
@@ -42,6 +45,28 @@ def list_runs(
         include_test_events=include_test,
     )
     return [RunItemResponse.model_validate(item) for item in items]
+
+
+@router.get("/runs/co-runners", response_model=list[CoRunnerResponse])
+def list_run_co_runners(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    include_test: Annotated[bool, Query()] = False,
+) -> list[CoRunnerResponse]:
+    items = list_co_runners(db, user.id, include_test_events=include_test, limit=limit)
+    return [CoRunnerResponse.model_validate(item) for item in items]
+
+
+@router.get("/runs/co-runners/{participant_key}/meetings", response_model=list[CoRunnerMeetingResponse])
+def list_run_co_runner_meetings(
+    participant_key: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    include_test: Annotated[bool, Query()] = False,
+) -> list[CoRunnerMeetingResponse]:
+    items = list_co_runner_meetings(db, user.id, participant_key, include_test_events=include_test)
+    return [CoRunnerMeetingResponse.model_validate(item) for item in items]
 
 
 @router.get("/runs/best-results", response_model=list[BestResultResponse])

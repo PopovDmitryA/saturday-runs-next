@@ -1261,6 +1261,82 @@ body {
   margin-top: 0.75rem;
 }
 
+.co-runners-intro {
+  margin: 0.35rem 0 1rem;
+}
+
+.co-runners-search {
+  max-width: 320px;
+  margin-bottom: 0.85rem;
+}
+
+.co-runners-score {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.co-runners-score-win {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.co-runners-score-loss {
+  color: #b91c1c;
+}
+
+.co-runners-row {
+  cursor: pointer;
+}
+
+.co-runners-row:hover {
+  background: #f8fafc;
+}
+
+.co-runners-row-expanded {
+  background: #f1f5f9;
+}
+
+.co-runners-caret {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-right: 0.5rem;
+  border-left: 5px solid #94a3b8;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s ease;
+  vertical-align: middle;
+}
+
+.co-runners-caret-open {
+  transform: rotate(90deg);
+}
+
+.co-runners-site-link {
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.co-runners-badges {
+  display: inline-flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.co-runners-detail-row > td {
+  padding: 0.35rem 0.75rem 0.9rem;
+  background: #f8fafc;
+}
+
+.co-runners-detail-note {
+  margin: 0.5rem 0;
+}
+
+.co-runners-meetings-table {
+  margin-top: 0.25rem;
+  font-size: 0.92rem;
+}
+
 .section-title {
   margin: 0;
   font-size: 1rem;

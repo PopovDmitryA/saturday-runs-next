@@ -13,6 +13,7 @@ import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
 import { DemoDashboardPage } from "./features/demo/DemoDashboardPage";
 import { LandingPage } from "./features/landing/LandingPage";
 import { DemoMapsPage, MapsPage } from "./features/maps/MapsPage";
+import { CoRunnersPage, DemoCoRunnersPage } from "./features/co_runners/CoRunnersPage";
 import { DemoRunsPage, RunsPage } from "./features/runs/RunsPage";
 import { DemoVolunteeringPage, VolunteeringPage } from "./features/volunteering/VolunteeringPage";
 import { QueuePage } from "./features/queue/QueuePage";
@@ -62,11 +63,13 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/oauth/vk/callback": () => <OAuthCallbackPage provider="vk" />,
   "/demo": () => <DemoDashboardPage />,
   "/demo/runs": () => <DemoRunsPage />,
+  "/demo/co-runners": () => <DemoCoRunnersPage />,
   "/demo/volunteering": () => <DemoVolunteeringPage />,
   "/demo/maps": () => <DemoMapsPage />,
   "/dashboard": () => <DashboardPage />,
   "/profiles": () => <DashboardPage />,
   "/runs": () => <RunsPage />,
+  "/co-runners": () => <CoRunnersPage />,
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
   "/share": () => <SharePage />,

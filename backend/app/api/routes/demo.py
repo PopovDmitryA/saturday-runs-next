@@ -9,6 +9,8 @@ from app.db.session import get_db
 from app.schemas.admin import AdminUserPreviewDashboardResponse
 from app.schemas.dashboard import (
     BestResultResponse,
+    CoRunnerMeetingResponse,
+    CoRunnerResponse,
     PersonalRecordResponse,
     RunItemResponse,
     VolunteeringItemResponse,
@@ -19,6 +21,7 @@ from app.services.admin_users_service import (
     get_admin_user_preview_runs,
     get_admin_user_preview_volunteering,
 )
+from app.services.co_runners_service import list_co_runner_meetings, list_co_runners
 from app.services.dashboard_service import (
     list_user_best_results,
     list_user_personal_records,
@@ -53,6 +56,26 @@ def demo_runs(
     if items is None:
         raise HTTPException(status_code=404, detail="Demo profile not found")
     return [RunItemResponse.model_validate(item) for item in items]
+
+
+@router.get("/runs/co-runners", response_model=list[CoRunnerResponse])
+def demo_co_runners(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> list[CoRunnerResponse]:
+    user_id = get_demo_user_id(db)
+    items = list_co_runners(db, user_id, include_test_events=False, limit=limit)
+    return [CoRunnerResponse.model_validate(item) for item in items]
+
+
+@router.get("/runs/co-runners/{participant_key}/meetings", response_model=list[CoRunnerMeetingResponse])
+def demo_co_runner_meetings(
+    participant_key: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[CoRunnerMeetingResponse]:
+    user_id = get_demo_user_id(db)
+    items = list_co_runner_meetings(db, user_id, participant_key, include_test_events=False)
+    return [CoRunnerMeetingResponse.model_validate(item) for item in items]
 
 
 @router.get("/runs/best-results", response_model=list[BestResultResponse])
