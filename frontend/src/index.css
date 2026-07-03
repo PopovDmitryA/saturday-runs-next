@@ -1341,8 +1341,39 @@ body {
   border-left-color: #4f46e5;
 }
 
-.co-runners-name-link {
+.co-runners-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-weight: 500;
+}
+
+.co-runners-profile-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.co-runners-profile-icon a {
+  display: inline-flex;
+  padding: 0.1rem;
+  border-radius: 4px;
+  transition: background 0.12s ease;
+}
+
+.co-runners-profile-icon-site a {
+  color: #4f46e5;
+}
+
+.co-runners-profile-icon-site a:hover {
+  background: #e0e7ff;
+}
+
+.co-runners-profile-icon-external a {
+  color: #0d9488;
+}
+
+.co-runners-profile-icon-external a:hover {
+  background: #ccfbf1;
 }
 
 .co-runners-badges {

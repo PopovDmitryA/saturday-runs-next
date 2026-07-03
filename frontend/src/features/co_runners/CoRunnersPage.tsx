@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { AppShell } from "../../components/AppShell";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { RequireAdmin } from "../../components/RequireAdmin";
+import { RequireAuth } from "../../components/RequireAuth";
+import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
   demoGetCoRunnerMeetings,
   demoGetCoRunners,
@@ -10,8 +11,40 @@ import {
   type CoRunnerItem,
   type CoRunnerMeetingItem,
 } from "../../lib/api";
-import { formatDate, formatDuration, pluralizeRu } from "../../lib/format";
+import { formatDate, formatDuration, platformCodeLabel, pluralizeRu } from "../../lib/format";
 import { DemoShell } from "../demo/DemoShell";
+
+function SiteProfileIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+      <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="10" cy="8.2" r="2.3" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M5.3 14.8c1-2.1 3-3.2 4.7-3.2s3.7 1.1 4.7 3.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ExternalProfileIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+      <path
+        d="M8.2 5H5.7A1.7 1.7 0 0 0 4 6.7v7.6A1.7 1.7 0 0 0 5.7 16h7.6a1.7 1.7 0 0 0 1.7-1.7v-2.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <path d="M11 4h5v5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M15.5 4.5 9.3 10.7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function scoreLabel(item: CoRunnerItem): string {
   if (item.timed_meetings === 0) {
@@ -46,33 +79,34 @@ function meetingOutcome(meeting: CoRunnerMeetingItem): {
 function ParticipantName({ item }: { item: CoRunnerItem }) {
   const name = item.display_name ?? "Без имени";
   const stop = (event: MouseEvent) => event.stopPropagation();
-  if (item.site_serial_id != null) {
-    return (
-      <a
-        className="co-runners-name-link"
-        href={`/users/${item.site_serial_id}`}
-        title="Профиль на этом сайте"
-        onClick={stop}
-      >
-        {name}
-      </a>
-    );
-  }
-  if (item.profile_url && item.platform_codes.length === 1) {
-    return (
-      <a
-        className="co-runners-name-link"
-        href={item.profile_url}
-        target="_blank"
-        rel="noreferrer"
-        title="Профиль в системе"
-        onClick={stop}
-      >
-        {name}
-      </a>
-    );
-  }
-  return <span className="co-runners-name-plain">{name}</span>;
+  const externalLabel =
+    item.platform_codes.length === 1 ? platformCodeLabel(item.platform_codes[0]) : "системе";
+
+  return (
+    <span className="co-runners-name">
+      <span>{name}</span>
+      {item.site_serial_id != null && (
+        <StatHintTooltip
+          text="Откроется профиль участника на этом сайте"
+          className="co-runners-profile-icon co-runners-profile-icon-site"
+        >
+          <a href={`/users/${item.site_serial_id}`} onClick={stop} aria-label="Профиль на сайте">
+            <SiteProfileIcon />
+          </a>
+        </StatHintTooltip>
+      )}
+      {item.profile_url != null && (
+        <StatHintTooltip
+          text={`Откроется профиль в ${externalLabel} в новой вкладке`}
+          className="co-runners-profile-icon co-runners-profile-icon-external"
+        >
+          <a href={item.profile_url} target="_blank" rel="noreferrer" onClick={stop} aria-label="Профиль в системе">
+            <ExternalProfileIcon />
+          </a>
+        </StatHintTooltip>
+      )}
+    </span>
+  );
 }
 
 function timeWithPosition(timeSec: number | null, position: number | null): string {
@@ -304,9 +338,8 @@ function CoRunnersContent({ demo }: { demo: boolean }) {
   return <AppShell title="Встречи">{pageBody}</AppShell>;
 }
 
-// Пока фича скрыта: страница и пункт меню доступны только админу.
 export function CoRunnersPage() {
-  return <RequireAdmin>{() => <CoRunnersContent demo={false} />}</RequireAdmin>;
+  return <RequireAuth>{() => <CoRunnersContent demo={false} />}</RequireAuth>;
 }
 
 export function DemoCoRunnersPage() {
