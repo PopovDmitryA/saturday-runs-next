@@ -842,6 +842,36 @@ export function updatePrivacySettings(enabled: boolean) {
   });
 }
 
+export type HomeLocationCandidate = {
+  catalog_identity_key: string;
+  name: string;
+  city: string | null;
+  region: string | null;
+  run_count: number;
+  volunteer_count: number;
+  platform_codes: string[];
+};
+
+export type HomeLocationSettings = {
+  location: HomeLocationCandidate | null;
+  is_auto: boolean;
+};
+
+export function getHomeLocation() {
+  return apiFetch<HomeLocationSettings>("/settings/home-location");
+}
+
+export function getHomeLocationCandidates() {
+  return apiFetch<HomeLocationCandidate[]>("/settings/home-location/candidates");
+}
+
+export function updateHomeLocation(catalogIdentityKey: string | null) {
+  return apiFetch<HomeLocationSettings>("/settings/home-location", {
+    method: "PUT",
+    body: JSON.stringify({ catalog_identity_key: catalogIdentityKey }),
+  });
+}
+
 export type AdminPlatformLinkBrief = {
   platform_code: string;
   external_user_id: string;

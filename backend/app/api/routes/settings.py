@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -13,10 +13,19 @@ from app.schemas.settings import (
     AutoSyncPlatformPreference,
     AutoSyncSettingsResponse,
     AutoSyncSettingsUpdateRequest,
+    HomeLocationCandidateResponse,
+    HomeLocationResponse,
+    HomeLocationUpdateRequest,
     NotificationSettingsResponse,
     NotificationSettingsUpdateRequest,
     PrivacySettingsResponse,
     PrivacySettingsUpdateRequest,
+)
+from app.services.home_location_service import (
+    UnknownHomeLocationError,
+    list_home_location_candidates,
+    resolve_home_location,
+    set_home_location,
 )
 from app.services.user_auto_sync_service import (
     AUTO_SYNC_PLATFORM_CODES,
@@ -107,3 +116,42 @@ def update_privacy_settings(
     db.commit()
     db.refresh(user)
     return PrivacySettingsResponse(enabled=user.profile_private)
+
+
+@router.get("/home-location", response_model=HomeLocationResponse)
+def get_home_location(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> HomeLocationResponse:
+    candidate, is_auto = resolve_home_location(db, user)
+    return HomeLocationResponse(
+        location=HomeLocationCandidateResponse.model_validate(candidate) if candidate else None,
+        is_auto=is_auto,
+    )
+
+
+@router.get("/home-location/candidates", response_model=list[HomeLocationCandidateResponse])
+def get_home_location_candidates(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> list[HomeLocationCandidateResponse]:
+    candidates = list_home_location_candidates(db, user.id)
+    return [HomeLocationCandidateResponse.model_validate(candidate) for candidate in candidates]
+
+
+@router.put("/home-location", response_model=HomeLocationResponse)
+def update_home_location(
+    body: HomeLocationUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> HomeLocationResponse:
+    try:
+        set_home_location(db, user, body.catalog_identity_key)
+    except UnknownHomeLocationError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Локация не найдена среди ваших посещённых",
+        ) from err
+    db.commit()
+    db.refresh(user)
+    return get_home_location(db, user)

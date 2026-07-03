@@ -576,6 +576,7 @@ class User(Base):
     consent_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     news_subscribed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     profile_private: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    home_location_key: Mapped[str | None] = mapped_column(String(255))
     serial_id: Mapped[int] = mapped_column(
         BigInteger,
         nullable=False,

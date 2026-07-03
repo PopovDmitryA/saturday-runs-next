@@ -43,3 +43,24 @@ class PrivacySettingsResponse(BaseModel):
 
 class PrivacySettingsUpdateRequest(BaseModel):
     enabled: bool
+
+
+class HomeLocationCandidateResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    catalog_identity_key: str
+    name: str
+    city: str | None = None
+    region: str | None = None
+    run_count: int = 0
+    volunteer_count: int = 0
+    platform_codes: list[str] = Field(default_factory=list)
+
+
+class HomeLocationResponse(BaseModel):
+    location: HomeLocationCandidateResponse | None = None
+    is_auto: bool = True
+
+
+class HomeLocationUpdateRequest(BaseModel):
+    catalog_identity_key: str | None = None
