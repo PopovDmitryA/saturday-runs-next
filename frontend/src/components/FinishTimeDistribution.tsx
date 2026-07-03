@@ -34,24 +34,22 @@ function pickBinSizeSec(spreadSec: number): number {
   return 120;
 }
 
-function buildBins(times: number[]): Bin[] {
-  const best = times[0];
+function buildBins(times: number[], globalBest: number): Bin[] {
+  const lowest = times[0];
   const worst = times[times.length - 1];
-  const binSize = pickBinSizeSec(worst - best);
-  const firstBinStart = Math.floor(best / binSize) * binSize;
+  const binSize = pickBinSizeSec(worst - lowest);
+  const firstBinStart = Math.floor(lowest / binSize) * binSize;
   const binCount = Math.floor((worst - firstBinStart) / binSize) + 1;
   const bins: Bin[] = Array.from({ length: binCount }, (_, index) => ({
     startSec: firstBinStart + index * binSize,
     endSec: firstBinStart + (index + 1) * binSize,
     count: 0,
-    hasBest: false,
+    // Оранжевым помечаем только столбец с реальным лучшим результатом за всё
+    // время, а не первый столбец текущего диапазона.
+    hasBest: firstBinStart + index * binSize <= globalBest && globalBest < firstBinStart + (index + 1) * binSize,
   }));
   for (const value of times) {
-    const bin = bins[Math.floor((value - firstBinStart) / binSize)];
-    bin.count += 1;
-    if (value === best) {
-      bin.hasBest = true;
-    }
+    bins[Math.floor((value - firstBinStart) / binSize)].count += 1;
   }
   return bins;
 }
@@ -73,12 +71,14 @@ export function FinishTimeDistribution({ times }: FinishTimeDistributionProps) {
     return null;
   }
 
+  const globalBest = sorted[0];
   const visible = range
     ? sorted.filter((value) => value >= range.startSec && value < range.endSec)
     : sorted;
-  const bins = visible.length > 0 ? buildBins(visible) : [];
+  const bins = visible.length > 0 ? buildBins(visible, globalBest) : [];
   const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
-  const best = visible[0];
+  const bestInView = visible[0];
+  const showsGlobalBest = globalBest >= (range?.startSec ?? -Infinity) && globalBest < (range?.endSec ?? Infinity);
   const labelEvery = bins.length > 16 ? 2 : 1;
 
   const resetZoom = () => {
@@ -150,7 +150,7 @@ export function FinishTimeDistribution({ times }: FinishTimeDistributionProps) {
                   title={`${formatMinSec(bin.startSec)}–${formatMinSec(bin.endSec)}`}
                   lines={[
                     pluralizeRu(bin.count, ["пробежка", "пробежки", "пробежек"]),
-                    ...(bin.hasBest ? [`Лучший результат: ${formatMinSec(best)}`] : []),
+                    ...(bin.hasBest ? [`Лучший результат: ${formatMinSec(globalBest)}`] : []),
                   ]}
                 >
                   <span
@@ -167,10 +167,16 @@ export function FinishTimeDistribution({ times }: FinishTimeDistributionProps) {
             ))}
           </div>
           <div className="analytics-chart-legend finish-dist-summary">
-            <span className="analytics-legend-item">
-              <span className="analytics-legend-swatch finish-dist-swatch-best" />
-              Лучшее {formatMinSec(best)}
-            </span>
+            {showsGlobalBest ? (
+              <span className="analytics-legend-item">
+                <span className="analytics-legend-swatch finish-dist-swatch-best" />
+                Лучшее {formatMinSec(globalBest)}
+              </span>
+            ) : (
+              <span className="analytics-legend-item">
+                Быстрейшее в диапазоне {formatMinSec(bestInView)}
+              </span>
+            )}
             <span className="analytics-legend-item">Медиана {formatMinSec(median(visible))}</span>
             <span className="analytics-legend-item">
               Среднее{" "}

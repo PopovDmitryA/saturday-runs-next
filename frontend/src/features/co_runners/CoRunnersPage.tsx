@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { AppShell } from "../../components/AppShell";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAdmin } from "../../components/RequireAdmin";
@@ -41,6 +41,38 @@ function meetingOutcome(meeting: CoRunnerMeetingItem): {
     return { label: "Участник быстрее", tone: " co-runners-score-loss" };
   }
   return { label: "Вровень", tone: "" };
+}
+
+function ParticipantName({ item }: { item: CoRunnerItem }) {
+  const name = item.display_name ?? "Без имени";
+  const stop = (event: MouseEvent) => event.stopPropagation();
+  if (item.site_serial_id != null) {
+    return (
+      <a
+        className="co-runners-name-link"
+        href={`/users/${item.site_serial_id}`}
+        title="Профиль на этом сайте"
+        onClick={stop}
+      >
+        {name}
+      </a>
+    );
+  }
+  if (item.profile_url && item.platform_codes.length === 1) {
+    return (
+      <a
+        className="co-runners-name-link"
+        href={item.profile_url}
+        target="_blank"
+        rel="noreferrer"
+        title="Профиль в системе"
+        onClick={stop}
+      >
+        {name}
+      </a>
+    );
+  }
+  return <span className="co-runners-name-plain">{name}</span>;
 }
 
 function timeWithPosition(timeSec: number | null, position: number | null): string {
@@ -208,33 +240,17 @@ function CoRunnersContent({ demo }: { demo: boolean }) {
                       >
                         <td className="td-num muted">{index + 1}</td>
                         <td>
-                          <span className={`co-runners-caret${expanded ? " co-runners-caret-open" : ""}`} aria-hidden="true" />
-                          {item.display_name ?? "Без имени"}
-                          {item.site_serial_id != null && (
-                            <a
-                              className="co-runners-site-link"
-                              href={`/users/${item.site_serial_id}`}
-                              title="Профиль на этом сайте"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              профиль
-                            </a>
-                          )}
+                          <span
+                            className={`co-runners-caret${expanded ? " co-runners-caret-open" : ""}`}
+                            aria-hidden="true"
+                          />
+                          <ParticipantName item={item} />
                         </td>
                         <td>
                           <span className="co-runners-badges">
-                            {item.profile_url && item.platform_codes.length === 1 ? (
-                              <a
-                                href={item.profile_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={(event) => event.stopPropagation()}
-                              >
-                                <PlatformBadge code={item.platform_codes[0]} />
-                              </a>
-                            ) : (
-                              item.platform_codes.map((code) => <PlatformBadge key={code} code={code} />)
-                            )}
+                            {item.platform_codes.map((code) => (
+                              <PlatformBadge key={code} code={code} />
+                            ))}
                           </span>
                         </td>
                         <td className="td-num">{item.meetings}</td>
@@ -247,15 +263,20 @@ function CoRunnersContent({ demo }: { demo: boolean }) {
                       expanded ? (
                         <tr key={`${item.participant_key}-detail`} className="co-runners-detail-row">
                           <td colSpan={7}>
-                            {meetingsLoadingKey === item.participant_key && (
-                              <p className="muted co-runners-detail-note">Загрузка встреч…</p>
-                            )}
-                            {meetingsError && (
-                              <p className="error-text co-runners-detail-note">{meetingsError}</p>
-                            )}
-                            {meetingsByKey[item.participant_key] && (
-                              <MeetingsDetail meetings={meetingsByKey[item.participant_key]} />
-                            )}
+                            <div className="co-runners-detail-card">
+                              <p className="co-runners-detail-title">
+                                Встречи с участником · {item.display_name ?? "Без имени"}
+                              </p>
+                              {meetingsLoadingKey === item.participant_key && (
+                                <p className="muted co-runners-detail-note">Загрузка встреч…</p>
+                              )}
+                              {meetingsError && (
+                                <p className="error-text co-runners-detail-note">{meetingsError}</p>
+                              )}
+                              {meetingsByKey[item.participant_key] && (
+                                <MeetingsDetail meetings={meetingsByKey[item.participant_key]} />
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ) : null,

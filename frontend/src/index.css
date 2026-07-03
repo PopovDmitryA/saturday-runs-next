@@ -1217,7 +1217,7 @@ body {
   gap: 2px;
   align-items: end;
   height: 150px;
-  padding: 0.25rem 0;
+  padding: 0.25rem 0 1.4rem;
 }
 
 .finish-dist-bar-wrap {
@@ -1269,8 +1269,13 @@ body {
 }
 
 .finish-dist-label {
+  position: absolute;
+  bottom: -1.3rem;
+  left: 50%;
+  transform: translateX(-50%);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 .finish-dist-summary {
@@ -1302,35 +1307,42 @@ body {
 
 .co-runners-row {
   cursor: pointer;
+  transition: background 0.12s ease;
 }
 
 .co-runners-row:hover {
   background: #f8fafc;
 }
 
-.co-runners-row-expanded {
-  background: #f1f5f9;
+.co-runners-row-expanded,
+.co-runners-row-expanded:hover {
+  background: #eef2ff;
+  box-shadow: inset 3px 0 0 #4f46e5;
+}
+
+.co-runners-row-expanded td {
+  border-bottom-color: transparent;
 }
 
 .co-runners-caret {
   display: inline-block;
   width: 0;
   height: 0;
-  margin-right: 0.5rem;
-  border-left: 5px solid #94a3b8;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
+  margin-right: 0.55rem;
+  border-left: 6px solid #64748b;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
   transition: transform 0.15s ease;
   vertical-align: middle;
 }
 
 .co-runners-caret-open {
   transform: rotate(90deg);
+  border-left-color: #4f46e5;
 }
 
-.co-runners-site-link {
-  margin-left: 0.5rem;
-  font-size: 0.8rem;
+.co-runners-name-link {
+  font-weight: 500;
 }
 
 .co-runners-badges {
@@ -1339,9 +1351,28 @@ body {
   flex-wrap: wrap;
 }
 
+/* Раскрытые детали — вложенная карточка с акцентной левой полосой,
+   визуально «пристёгнутая» к своей строке. */
 .co-runners-detail-row > td {
-  padding: 0.35rem 0.75rem 0.9rem;
-  background: #f8fafc;
+  padding: 0 0.75rem 0.9rem;
+  background: #eef2ff;
+  box-shadow: inset 3px 0 0 #4f46e5;
+}
+
+.co-runners-detail-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem 0.7rem;
+}
+
+.co-runners-detail-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4f46e5;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .co-runners-detail-note {
