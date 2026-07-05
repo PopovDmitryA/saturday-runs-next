@@ -10,24 +10,27 @@ from app.config import get_settings
 
 
 def _engine_connect_args() -> dict[str, object]:
-    if os.environ.get("PROD_DB_TARGET") != "1":
-        return {}
-    # Локальные прогоны на prod: не висеть бесконечно на lock от worker-five-verst.
-    return {"options": "-c lock_timeout=30s -c statement_timeout=600s"}
+    # idle_in_transaction_session_timeout: Postgres сам закрывает соединение,
+    # зависшее "idle in transaction" (утёкшая сессия), — иначе оно держит слот
+    # пула и коннект навсегда (см. инцидент 04.07.2026: логин лёг из-за 8 таких).
+    server_opts = ["-c idle_in_transaction_session_timeout=60s"]
+    if os.environ.get("PROD_DB_TARGET") == "1":
+        # Локальные прогоны на prod: не висеть бесконечно на lock от worker-five-verst.
+        server_opts += ["-c lock_timeout=30s", "-c statement_timeout=600s"]
+    return {"options": " ".join(server_opts)}
 
 
 @lru_cache
 def get_engine() -> Engine:
     settings = get_settings()
-    connect_args = _engine_connect_args()
     kwargs: dict[str, object] = {
         "pool_pre_ping": True,
-        "pool_size": 2,
-        "max_overflow": 2,
+        "pool_size": 5,
+        "max_overflow": 10,
         "pool_recycle": 300,
+        "pool_timeout": 10,
+        "connect_args": _engine_connect_args(),
     }
-    if connect_args:
-        kwargs["connect_args"] = connect_args
     return create_engine(settings.database_url, **kwargs)
 
 
