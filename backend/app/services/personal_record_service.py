@@ -99,8 +99,32 @@ def recalculate_personal_records(
             continue
 
         participants_touched += 1
+
+        # "Не в зачёте" duplicates (secondary crosslink events) must never carry a PR
+        # marker — even inside their own system — because the same protocol is counted
+        # on the primary platform. Force is_pr=False on them and exclude them from the
+        # best-time / first-run computation so the PR lands on the counted run instead.
+        row_event_ids = [event.id for _run, event in rows]
+        secondary_event_ids: set[UUID] = set()
+        if row_event_ids:
+            secondary_event_ids = {
+                cl_row[0]
+                for cl_row in db.query(EventCrosslink.secondary_event_id)
+                .filter(EventCrosslink.secondary_event_id.in_(row_event_ids))
+                .all()
+            }
+
+        counted_rows = []
+        for run, event in rows:
+            if event.id in secondary_event_ids:
+                if run.is_pr:
+                    run.is_pr = False
+                    updated += 1
+                continue
+            counted_rows.append((run, event))
+
         best_time: int | None = None
-        for run_index, (run, _event) in enumerate(rows):
+        for run_index, (run, _event) in enumerate(counted_rows):
             is_first_on_platform = run_index == 0
             time_based_pr = False
             finish_time = run.finish_time_sec

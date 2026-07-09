@@ -494,3 +494,52 @@ def test_protocol_upsert_marks_first_run_as_pr_for_new_participant(
         .one()
     )
     assert run.is_pr is True
+
+
+def test_recalculate_skips_secondary_crosslink_duplicate(
+    db_session: Session,
+    s95_platform: Platform,
+    s95_location: Location,
+) -> None:
+    """A duplicate run (secondary in event_crosslinks) must not carry is_pr, even if
+    its finish time is the fastest — the PR stays on the counted run."""
+    from app.models import EventCrosslink
+
+    participant = Participant(
+        id=uuid4(),
+        platform_id=s95_platform.id,
+        external_user_id=f"s95-dup-{uuid4().hex[:8]}",
+        display_name="Dup Runner",
+    )
+    db_session.add(participant)
+    db_session.flush()
+
+    counted = _add_s95_run(
+        db_session,
+        platform=s95_platform,
+        location=s95_location,
+        participant=participant,
+        event_date=date(2022, 1, 1),
+        finish_time_sec=1800,
+        is_pr=True,
+    )
+    duplicate = _add_s95_run(
+        db_session,
+        platform=s95_platform,
+        location=s95_location,
+        participant=participant,
+        event_date=date(2022, 2, 1),
+        finish_time_sec=1700,  # faster, but it's a "не в зачёте" duplicate
+        is_pr=True,
+    )
+    # Mark the faster run's event as a secondary crosslink duplicate.
+    db_session.add(
+        EventCrosslink(primary_event_id=counted.event_id, secondary_event_id=duplicate.event_id)
+    )
+    db_session.flush()
+
+    recalculate_personal_records(db_session, "s95", participant_id=participant.id)
+    db_session.flush()
+
+    assert duplicate.is_pr is False  # duplicate never a PR, despite the best time
+    assert counted.is_pr is True     # counted run keeps its PR
