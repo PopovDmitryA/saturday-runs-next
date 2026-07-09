@@ -209,17 +209,34 @@ def s95_enqueue_locations_registry() -> dict[str, object]:
 
 @celery_app.task(name="s95_sync.api_new_protocols", queue="s95")
 def s95_api_new_protocols_task() -> dict[str, object]:
-    """Import protocols (via JSON API) that are not yet in our DB. Cheap weekend scan."""
-    from app.sync.s95_global_sync_api import sync_new_protocols
+    """Import new protocols and refresh changed ones (via JSON API updated_at). Weekend scan —
+    catches same-day results and same-day edits."""
+    from app.sync.s95_global_sync_api import sync_updated_protocols
 
     def _run() -> dict[str, object]:
         db = get_session_factory()()
         try:
-            return asdict(sync_new_protocols(db))
+            return asdict(sync_updated_protocols(db))
         finally:
             db.close()
 
     return run_reported_sync("s95 API: новые протоколы", _run)
+
+
+@celery_app.task(name="s95_sync.api_sync_updated", queue="s95")
+def s95_api_sync_updated_task() -> dict[str, object]:
+    """Import new protocols and refresh any whose server-side updated_at moved past what we
+    have stored. Runs 3x/week across all locations."""
+    from app.sync.s95_global_sync_api import sync_updated_protocols
+
+    def _run() -> dict[str, object]:
+        db = get_session_factory()()
+        try:
+            return asdict(sync_updated_protocols(db))
+        finally:
+            db.close()
+
+    return run_reported_sync("s95 API: обновлённые протоколы", _run)
 
 
 @celery_app.task(name="s95_sync.api_reconcile_date", queue="s95")

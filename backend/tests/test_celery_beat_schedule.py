@@ -29,19 +29,21 @@ def test_s95_api_protocol_schedule() -> None:
     assert new_scan["schedule"].hour == {11, 17, 23}
     assert new_scan["schedule"].day_of_week == {6, 0}
 
-    # Reconcile latest Saturday — Mon & Thu nights, weeks_ago=0.
-    for key, dow in (("s95-api-reconcile-latest-mon", 1), ("s95-api-reconcile-latest-thu", 4)):
-        entry = schedule[key]
-        assert entry["task"] == "s95_sync.api_reconcile_date"
-        assert entry["schedule"].hour == {3}
-        assert entry["schedule"].day_of_week == {dow}
-        assert entry["kwargs"]["weeks_ago"] == 0
+    # Sync new + updated protocols (updated_at-aware) — Mon/Wed/Fri 03:00.
+    sync_updated = schedule["s95-api-sync-updated"]
+    assert sync_updated["task"] == "s95_sync.api_sync_updated"
+    assert sync_updated["schedule"].hour == {3}
+    assert sync_updated["schedule"].minute == {0}
+    assert sync_updated["schedule"].day_of_week == {1, 3, 5}
 
-    # Reconcile older Saturdays — Tue (-1 week), Wed (-2 weeks).
-    assert schedule["s95-api-reconcile-week-1-tue"]["kwargs"]["weeks_ago"] == 1
-    assert schedule["s95-api-reconcile-week-1-tue"]["schedule"].day_of_week == {2}
-    assert schedule["s95-api-reconcile-week-2-wed"]["kwargs"]["weeks_ago"] == 2
-    assert schedule["s95-api-reconcile-week-2-wed"]["schedule"].day_of_week == {3}
+    # Old per-Saturday reconcile schedule is retired in favour of updated_at.
+    for removed in (
+        "s95-api-reconcile-latest-mon",
+        "s95-api-reconcile-latest-thu",
+        "s95-api-reconcile-week-1-tue",
+        "s95-api-reconcile-week-2-wed",
+    ):
+        assert removed not in schedule
 
 
 def test_s95_playwright_batch_schedules_removed() -> None:

@@ -91,13 +91,38 @@ def _ensure_location(db: Session, platform: Platform, api_loc: S95ApiLocation) -
     return row
 
 
-def _existing_event_keys(db: Session, platform: Platform, location: Location) -> set[str]:
+def _protocol_freshness_map(
+    db: Session, platform: Platform, location: Location
+) -> dict[str, tuple[datetime | None, datetime | None]]:
+    """external_event_key -> (source_updated_at, last_protocol_fetched_at) for every event
+    we already have at this location. Missing key means the protocol is unknown to us."""
+    from app.models import ProtocolSyncState
+
     rows = (
-        db.query(Event.external_event_key)
+        db.query(
+            Event.external_event_key,
+            ProtocolSyncState.source_updated_at,
+            ProtocolSyncState.last_protocol_fetched_at,
+        )
+        .outerjoin(ProtocolSyncState, ProtocolSyncState.event_id == Event.id)
         .filter(Event.platform_id == platform.id, Event.location_id == location.id)
         .all()
     )
-    return {r[0] for r in rows}
+    return {key: (source_updated_at, last_fetched_at) for key, source_updated_at, last_fetched_at in rows}
+
+
+def _seed_source_updated_at(db: Session, platform: Platform, external_event_key: str, value: datetime) -> None:
+    from app.models import ProtocolSyncState
+
+    state = (
+        db.query(ProtocolSyncState)
+        .join(Event, ProtocolSyncState.event_id == Event.id)
+        .filter(Event.platform_id == platform.id, Event.external_event_key == external_event_key)
+        .one_or_none()
+    )
+    if state is not None:
+        state.source_updated_at = value
+        db.flush()
 
 
 def _apply_protocol(
@@ -158,17 +183,25 @@ def _already_checked(db: Session, platform: Platform, location: Location, ref) -
     return state is not None and state.last_protocol_check_at is not None
 
 
-def sync_new_protocols(
+def sync_updated_protocols(
     db: Session,
     *,
     delay_min_sec: float = DELAY_MIN_SEC,
     delay_max_sec: float = DELAY_MAX_SEC,
 ) -> S95ApiSyncResult:
-    """Find and import protocols that are not yet in our DB. Cheap: skips known events
-    without fetching their protocol body."""
+    """Import new protocols and refresh any whose server-side `updated_at` moved past what
+    we've stored, across every location. Cheap: a protocol body is only fetched when it is
+    new or its `updated_at` advanced; everything else is decided from the list response.
+
+    Protocols synced before this field existed have `source_updated_at IS NULL` — those are
+    seeded from `last_protocol_fetched_at` without a fetch when the server's `updated_at` is
+    not newer than the moment we last actually fetched them; otherwise they are fetched once
+    to establish a baseline.
+    """
     platform = upsert.get_platform(db, PLATFORM_CODE)
     result = S95ApiSyncResult()
-    run = _start_run(db, platform, "s95:api:new_protocols")
+    started_at = datetime.now(timezone.utc)
+    run = _start_run(db, platform, "s95:api:sync_updated")
     db.commit()
     try:
         locations = fetch_all_locations()
@@ -184,19 +217,53 @@ def sync_new_protocols(
                 result.errors.append(f"{api_loc.slug}: list fetch failed: {exc}")
                 continue
 
-            existing = _existing_event_keys(db, platform, location)
+            freshness = _protocol_freshness_map(db, platform, location)
             for ref in refs:
                 key = f"{api_loc.slug}:{ref.date}"
-                if key in existing:
+                known = freshness.get(key)
+                if known is None:
+                    # Not in our DB yet.
+                    _apply_protocol(db, platform, location, ref, result)
+                    _pace(delay_min_sec, delay_max_sec)
                     continue
-                _apply_protocol(db, platform, location, ref, result)
-                _pace(delay_min_sec, delay_max_sec)
+
+                source_updated_at, last_fetched_at = known
+                ref_updated_at = ref.updated_at_dt()
+                if ref_updated_at is None:
+                    # Server omitted updated_at this time — nothing to compare against, skip.
+                    result.protocols_unchanged += 1
+                    continue
+
+                if source_updated_at is not None:
+                    if ref_updated_at > source_updated_at:
+                        _apply_protocol(db, platform, location, ref, result)
+                        _pace(delay_min_sec, delay_max_sec)
+                    else:
+                        result.protocols_unchanged += 1
+                    continue
+
+                # source_updated_at is NULL: protocol synced before this column existed.
+                if last_fetched_at is not None and ref_updated_at <= last_fetched_at:
+                    _seed_source_updated_at(db, platform, key, ref_updated_at)
+                    result.protocols_unchanged += 1
+                else:
+                    _apply_protocol(db, platform, location, ref, result)
+                    _pace(delay_min_sec, delay_max_sec)
+
+        if not result.errors:
+            set_watermark(
+                db,
+                platform,
+                S95_PROTOCOLS_RECONCILED_THROUGH,
+                started_at,
+                note="sync_updated",
+            )
         _finish_run(db, run, result)
         db.commit()
         return result
     except Exception as exc:
         db.rollback()
-        failed = _start_run(db, platform, "s95:api:new_protocols")
+        failed = _start_run(db, platform, "s95:api:sync_updated")
         failed.status = SyncRunStatus.failed
         failed.finished_at = datetime.now(timezone.utc)
         failed.error_message = str(exc)

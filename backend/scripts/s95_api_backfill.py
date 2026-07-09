@@ -21,7 +21,7 @@ from app.db.session import get_session_factory
 from app.sync.s95_global_sync_api import (
     full_backfill,
     reconcile_protocols_for_date,
-    sync_new_protocols,
+    sync_updated_protocols,
 )
 from scripts.script_runtime import add_bootstrap_args, apply_bootstrap_args, bootstrap_from_env
 
@@ -32,9 +32,9 @@ def main() -> int:
     add_bootstrap_args(parser)
     parser.add_argument(
         "--mode",
-        choices=["backfill", "new", "reconcile"],
+        choices=["backfill", "updated", "reconcile"],
         default="backfill",
-        help="backfill = all protocols (one-time); new = only missing; reconcile = a given date",
+        help="backfill = all protocols (one-time); updated = new + changed via updated_at; reconcile = a given date",
     )
     parser.add_argument("--limit-per-location", type=int, default=None)
     parser.add_argument("--date", type=str, default=None, help="YYYY-MM-DD for --mode reconcile")
@@ -57,8 +57,8 @@ def main() -> int:
                 resume=not args.no_resume,
                 reset_dates=args.reset_dates,
             )
-        elif args.mode == "new":
-            result = sync_new_protocols(db)
+        elif args.mode == "updated":
+            result = sync_updated_protocols(db)
         else:
             from datetime import date
 

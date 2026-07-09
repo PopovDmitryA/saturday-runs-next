@@ -117,6 +117,9 @@ def upsert_activity_protocol_api(
         )
         if state is not None and state.protocol_source_hash == content_hash:
             state.last_protocol_check_at = datetime.now(timezone.utc)
+            ref_updated_at = activity_ref.updated_at_dt()
+            if ref_updated_at is not None:
+                state.source_updated_at = ref_updated_at
             db.flush()
             return S95ApiProtocolResult(
                 external_event_key=external_event_key,
@@ -153,6 +156,9 @@ def upsert_activity_protocol_api(
     now = datetime.now(timezone.utc)
     state.last_protocol_fetched_at = now
     state.last_protocol_check_at = now
+    ref_updated_at = activity_ref.updated_at_dt()
+    if ref_updated_at is not None:
+        state.source_updated_at = ref_updated_at
     state.protocol_source_hash = content_hash
     state.run_results_count = run_count
     state.volunteer_results_count = vol_count

@@ -422,6 +422,7 @@ class ProtocolSyncState(Base):
     event_summary_id: Mapped[UUID | None] = mapped_column(ForeignKey("event_summaries.id", ondelete="SET NULL"))
     last_protocol_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_protocol_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     protocol_source_hash: Mapped[str | None] = mapped_column(String(64))
     finishers_at_fetch: Mapped[int | None] = mapped_column(Integer)
     run_results_count: Mapped[int | None] = mapped_column(Integer)

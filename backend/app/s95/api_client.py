@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import httpx
 
@@ -37,6 +38,18 @@ def _get(url: str) -> list | dict:
 class S95ApiActivityRef:
     date: str  # YYYY-MM-DD as returned by the list endpoint
     url: str   # full URL to /activities/{id}.json
+    updated_at: str | None = None  # ISO 8601 with offset, e.g. "2026-03-16T16:50:14+03:00"
+
+    def updated_at_dt(self) -> datetime | None:
+        if not self.updated_at:
+            return None
+        try:
+            dt = datetime.fromisoformat(self.updated_at)
+        except ValueError:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
 
 
 def fetch_pages(domain: str) -> list[dict]:
@@ -46,7 +59,7 @@ def fetch_pages(domain: str) -> list[dict]:
 
 
 def fetch_event_activities(event_url: str) -> list[S95ApiActivityRef]:
-    """GET /events/{slug}.json — list of (date, activity_url) for a location.
+    """GET /events/{slug}.json — list of (date, activity_url, updated_at) for a location.
 
     `event_url` is the full URL from pages.json (already ends with .json).
     Order is NOT chronological — caller must sort if needed.
@@ -57,7 +70,7 @@ def fetch_event_activities(event_url: str) -> list[S95ApiActivityRef]:
         url = item.get("url")
         date_str = item.get("date")
         if url and date_str:
-            refs.append(S95ApiActivityRef(date=date_str, url=url))
+            refs.append(S95ApiActivityRef(date=date_str, url=url, updated_at=item.get("updated_at")))
     return refs
 
 

@@ -71,37 +71,16 @@ celery_app.conf.update(
             "schedule": crontab(hour=20, minute=30, day_of_month="*/3"),
             "options": {"queue": "s95"},
         },
-        # New protocols scan (JSON API) — Sat & Sun at 11:00 / 17:00 / 23:00 MSK.
+        # New protocols scan (JSON API, updated_at-aware) — Sat & Sun at 11:00 / 17:00 / 23:00 MSK.
         "s95-api-new-protocols-weekend": {
             "task": "s95_sync.api_new_protocols",
             "schedule": crontab(hour="11,17,23", minute=0, day_of_week="6,0"),
             "options": {"queue": "s95"},
         },
-        # Reconcile latest Saturday's protocols (late edits) — Mon & Thu night.
-        "s95-api-reconcile-latest-mon": {
-            "task": "s95_sync.api_reconcile_date",
-            "schedule": crontab(hour=3, minute=0, day_of_week=1),
-            "kwargs": {"weeks_ago": 0},
-            "options": {"queue": "s95"},
-        },
-        "s95-api-reconcile-latest-thu": {
-            "task": "s95_sync.api_reconcile_date",
-            "schedule": crontab(hour=3, minute=0, day_of_week=4),
-            "kwargs": {"weeks_ago": 0},
-            "options": {"queue": "s95"},
-        },
-        # Reconcile Saturday -1 week — Tue night.
-        "s95-api-reconcile-week-1-tue": {
-            "task": "s95_sync.api_reconcile_date",
-            "schedule": crontab(hour=3, minute=0, day_of_week=2),
-            "kwargs": {"weeks_ago": 1},
-            "options": {"queue": "s95"},
-        },
-        # Reconcile Saturday -2 weeks — Wed night.
-        "s95-api-reconcile-week-2-wed": {
-            "task": "s95_sync.api_reconcile_date",
-            "schedule": crontab(hour=3, minute=0, day_of_week=3),
-            "kwargs": {"weeks_ago": 2},
+        # Sync new + updated protocols across all locations via updated_at — Mon/Wed/Fri 03:00 MSK.
+        "s95-api-sync-updated": {
+            "task": "s95_sync.api_sync_updated",
+            "schedule": crontab(hour=3, minute=0, day_of_week="1,3,5"),
             "options": {"queue": "s95"},
         },
         "runpark-latest": {
