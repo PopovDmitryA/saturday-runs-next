@@ -580,6 +580,9 @@ class User(Base):
     news_subscribed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     profile_private: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     home_location_key: Mapped[str | None] = mapped_column(String(255))
+    # Уникальная НЕцифровая ссылка на публичный профиль (/users/{public_slug});
+    # хранится в нижнем регистре, уникальность регистронезависима. NULL — не задана.
+    public_slug: Mapped[str | None] = mapped_column(String(64), unique=True)
     serial_id: Mapped[int] = mapped_column(
         BigInteger,
         nullable=False,

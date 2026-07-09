@@ -140,6 +140,8 @@ class DashboardResponse(BaseModel):
     platform_links: list[DashboardLinkSummary] = Field(default_factory=list)
     sync_enqueued: bool = False
     serial_id: int | None = None
+    # Уникальная vanity-ссылка на профиль; если задана — используется вместо serial_id.
+    public_slug: str | None = None
 
 
 class RunItemResponse(BaseModel):

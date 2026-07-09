@@ -3036,6 +3036,51 @@ tr.run-crosslinked td {
   margin: 0;
 }
 
+.profile-slug-current {
+  margin: 0.75rem 0 0;
+}
+
+.profile-slug-field {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-top: 0.75rem;
+  max-width: 26rem;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: var(--surface, #fff);
+}
+
+.profile-slug-prefix {
+  padding: 0.5rem 0.4rem 0.5rem 0.7rem;
+  color: var(--text-muted, #6b7280);
+  font-size: 0.95rem;
+  white-space: nowrap;
+  background: var(--surface-muted, #f3f4f6);
+}
+
+.profile-slug-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.95rem;
+  background: transparent;
+  color: inherit;
+  min-width: 0;
+}
+
+.profile-slug-status {
+  min-height: 1.25rem;
+  margin-top: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.profile-slug-ok {
+  color: var(--success, #16a34a);
+}
+
 .settings-platform-list {
   list-style: none;
   margin: 0;

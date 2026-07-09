@@ -64,3 +64,21 @@ class HomeLocationResponse(BaseModel):
 
 class HomeLocationUpdateRequest(BaseModel):
     catalog_identity_key: str | None = None
+
+
+class ProfileSlugResponse(BaseModel):
+    slug: str | None = None
+    public_url: str | None = None
+    min_length: int
+    max_length: int
+
+
+class ProfileSlugCheckResponse(BaseModel):
+    normalized: str
+    available: bool
+    reason: str | None = None
+
+
+class ProfileSlugUpdateRequest(BaseModel):
+    # None или пустая строка — очистить ссылку.
+    slug: str | None = None

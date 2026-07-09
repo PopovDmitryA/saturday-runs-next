@@ -35,6 +35,7 @@ def get_dashboard(
         platform_links=payload["platform_links"],  # type: ignore[arg-type]
         sync_enqueued=sync_enqueued,
         serial_id=user.serial_id,
+        public_slug=user.public_slug,
     )
 
 

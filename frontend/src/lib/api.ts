@@ -172,6 +172,7 @@ export type DashboardResponse = {
   }>;
   sync_enqueued: boolean;
   serial_id: number | null;
+  public_slug: string | null;
 };
 
 export type RunItem = {
@@ -1030,6 +1031,43 @@ export function getHomeLocation() {
 
 export function getHomeLocationCandidates() {
   return apiFetch<HomeLocationCandidate[]>("/settings/home-location/candidates");
+}
+
+export type ProfileSlugSettings = {
+  slug: string | null;
+  public_url: string | null;
+  min_length: number;
+  max_length: number;
+};
+
+export type ProfileSlugCheck = {
+  normalized: string;
+  available: boolean;
+  reason: string | null;
+};
+
+export function getProfileSlug() {
+  return apiFetch<ProfileSlugSettings>("/settings/profile-slug");
+}
+
+export function checkProfileSlug(slug: string) {
+  return apiFetch<ProfileSlugCheck>(`/settings/profile-slug/check?slug=${encodeURIComponent(slug)}`);
+}
+
+export function updateProfileSlug(slug: string | null) {
+  return apiFetch<ProfileSlugSettings>("/settings/profile-slug", {
+    method: "PUT",
+    body: JSON.stringify({ slug }),
+  });
+}
+
+export type ProfileHandleResolve = {
+  serial_id: number;
+  display_name: string | null;
+};
+
+export function resolveProfileHandle(handle: string) {
+  return apiFetch<ProfileHandleResolve>(`/users/resolve/${encodeURIComponent(handle)}`);
 }
 
 export function updateHomeLocation(catalogIdentityKey: string | null) {

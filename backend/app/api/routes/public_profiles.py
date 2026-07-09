@@ -4,6 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_optional_user
@@ -22,9 +23,32 @@ from app.services.admin_users_service import (
 from app.services.dashboard_service import list_user_runs, list_user_volunteering
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_user_visited_map_locations
+from app.services.profile_slug_service import resolve_profile_handle
 from app.services.user_unique_locations_detail import build_user_unique_location_details
 
 router = APIRouter(prefix="/users", tags=["public-profiles"])
+
+
+class ProfileHandleResolveResponse(BaseModel):
+    serial_id: int
+    display_name: str | None = None
+
+
+@router.get("/resolve/{handle}", response_model=ProfileHandleResolveResponse)
+def resolve_public_profile_handle(
+    handle: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> ProfileHandleResolveResponse:
+    """Резолв vanity-ссылки (slug) или числового serial_id в serial_id профиля.
+
+    Доступ к самим данным профиля проверяется на конкретных эндпоинтах ниже
+    (приватный профиль → 403), поэтому резолв не раскрывает приватные данные —
+    только сопоставляет хэндл с serial_id, как и числовой роут.
+    """
+    target = resolve_profile_handle(db, handle)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    return ProfileHandleResolveResponse(serial_id=target.serial_id, display_name=target.display_name)
 
 
 def _resolve_user(serial_id: int, db: Session) -> User:

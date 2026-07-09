@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -20,12 +20,22 @@ from app.schemas.settings import (
     NotificationSettingsUpdateRequest,
     PrivacySettingsResponse,
     PrivacySettingsUpdateRequest,
+    ProfileSlugCheckResponse,
+    ProfileSlugResponse,
+    ProfileSlugUpdateRequest,
 )
 from app.services.home_location_service import (
     UnknownHomeLocationError,
     list_home_location_candidates,
     resolve_home_location,
     set_home_location,
+)
+from app.services.profile_slug_service import (
+    SLUG_MAX_LEN,
+    SLUG_MIN_LEN,
+    SlugError,
+    check_slug_availability,
+    set_profile_slug,
 )
 from app.services.user_auto_sync_service import (
     AUTO_SYNC_PLATFORM_CODES,
@@ -34,6 +44,20 @@ from app.services.user_auto_sync_service import (
 )
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+
+def _profile_slug_response(user: User, settings: Settings) -> ProfileSlugResponse:
+    public_url = (
+        f"{settings.app_base_url.rstrip('/')}/users/{user.public_slug}"
+        if user.public_slug
+        else None
+    )
+    return ProfileSlugResponse(
+        slug=user.public_slug,
+        public_url=public_url,
+        min_length=SLUG_MIN_LEN,
+        max_length=SLUG_MAX_LEN,
+    )
 
 
 @router.get("/auto-sync", response_model=AutoSyncSettingsResponse)
@@ -155,3 +179,37 @@ def update_home_location(
     db.commit()
     db.refresh(user)
     return get_home_location(db, user)
+
+
+@router.get("/profile-slug", response_model=ProfileSlugResponse)
+def get_profile_slug(
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ProfileSlugResponse:
+    return _profile_slug_response(user, settings)
+
+
+@router.get("/profile-slug/check", response_model=ProfileSlugCheckResponse)
+def check_profile_slug(
+    slug: Annotated[str, Query()],
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ProfileSlugCheckResponse:
+    available, reason, normalized = check_slug_availability(db, user, slug)
+    return ProfileSlugCheckResponse(normalized=normalized, available=available, reason=reason)
+
+
+@router.put("/profile-slug", response_model=ProfileSlugResponse)
+def update_profile_slug(
+    body: ProfileSlugUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ProfileSlugResponse:
+    try:
+        set_profile_slug(db, user, body.slug)
+    except SlugError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err
+    db.commit()
+    db.refresh(user)
+    return _profile_slug_response(user, settings)

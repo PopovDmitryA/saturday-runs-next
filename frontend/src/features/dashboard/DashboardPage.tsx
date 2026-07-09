@@ -9,9 +9,10 @@ import { RequireAuth } from "../../components/RequireAuth";
 import { getDashboard, getOnThisDay, type DashboardResponse } from "../../lib/api";
 import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 
-function PublicProfileShareBlock({ serialId }: { serialId: number }) {
+function PublicProfileShareBlock({ handle }: { handle: string | number }) {
   const [copied, setCopied] = useState(false);
-  const url = `${window.location.origin}/users/${serialId}`;
+  // Если задан уникальный slug — ссылка на него, иначе на числовой serial_id.
+  const url = `${window.location.origin}/users/${handle}`;
 
   const handleCopy = useCallback(async () => {
     try {
@@ -116,7 +117,9 @@ function DashboardContent({ isAdmin }: { isAdmin: boolean }) {
             totalVolunteering={stats?.total_volunteering ?? 0}
           />
 
-          {data.serial_id != null && <PublicProfileShareBlock serialId={data.serial_id} />}
+          {(data.public_slug ?? data.serial_id) != null && (
+            <PublicProfileShareBlock handle={data.public_slug ?? data.serial_id!} />
+          )}
 
           {isAdmin && data.sync_enqueued && (
             <div className="banner info">

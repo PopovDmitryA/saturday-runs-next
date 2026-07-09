@@ -14,6 +14,7 @@ import {
   getPublicProfileVisitedMap,
   getPublicProfileCatalogTable,
   getCatalogLocationsMap,
+  resolveProfileHandle,
   type AdminUserPreviewDashboard,
   type User,
 } from "../../lib/api";
@@ -217,6 +218,54 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
   );
 }
 
-export function PublicProfilePage({ serialId }: { serialId: number }) {
+// Хэндл из URL (/users/{handle}) — либо числовой serial_id, либо vanity-slug.
+// Числовой используем напрямую; slug сначала резолвим в serial_id.
+export function PublicProfilePage({ handle }: { handle: string }) {
+  const isNumeric = /^\d+$/.test(handle);
+  const [serialId, setSerialId] = useState<number | null>(isNumeric ? Number(handle) : null);
+  const [state, setState] = useState<"ready" | "resolving" | "not-found">(
+    isNumeric ? "ready" : "resolving",
+  );
+
+  useEffect(() => {
+    if (isNumeric) {
+      setSerialId(Number(handle));
+      setState("ready");
+      return;
+    }
+    let cancelled = false;
+    setState("resolving");
+    resolveProfileHandle(handle)
+      .then((res) => {
+        if (cancelled) return;
+        setSerialId(res.serial_id);
+        setState("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setState("not-found");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [handle, isNumeric]);
+
+  if (state === "resolving") {
+    return (
+      <main className="app">
+        <p className="muted">Загрузка…</p>
+      </main>
+    );
+  }
+  if (state === "not-found" || serialId == null) {
+    return (
+      <div className="shell">
+        <div className="shell-content">
+          <div className="card">
+            <p className="muted">Участник не найден.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return <PublicProfileContent serialId={serialId} />;
 }

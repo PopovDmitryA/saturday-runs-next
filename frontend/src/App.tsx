@@ -126,9 +126,9 @@ function renderRoute(path: string): ReactElement {
   if (previewMatch) {
     return <AdminUserPreviewPage userId={previewMatch[1]} />;
   }
-  const publicProfileMatch = path.match(/^\/users\/(\d+)$/);
+  const publicProfileMatch = path.match(/^\/users\/([^/]+)$/);
   if (publicProfileMatch) {
-    return <PublicProfilePage serialId={Number(publicProfileMatch[1])} />;
+    return <PublicProfilePage handle={decodeURIComponent(publicProfileMatch[1])} />;
   }
   const render = STATIC_ROUTES[path];
   if (render) {
