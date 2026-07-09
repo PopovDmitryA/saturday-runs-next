@@ -627,8 +627,13 @@ export function demoGetOnThisDay() {
 
 // ── Оценки стартов (рейтинг парков) ─────────────────────────────────────────
 
+export type ParticipationType = "run" | "volunteer";
+
 export type RunRating = {
-  run_result_id: string;
+  // Опаковый id старта: 'run:<uuid>' (бегун) / 'vol:<uuid>' (волонтёр).
+  entry_id: string;
+  participation_type: ParticipationType;
+  run_result_id: string | null;
   score_overall: number;
   score_organization: number | null;
   score_route: number | null;
@@ -683,6 +688,7 @@ export type AdminRatingRow = {
   comment: string | null;
   is_public: boolean;
   editable: boolean;
+  participation_type: ParticipationType;
   created_at: string;
 };
 
@@ -717,7 +723,9 @@ export function getAdminLocationRatings(excludeLocals: boolean) {
 }
 
 export type EligibleRun = {
-  run_result_id: string;
+  entry_id: string;
+  participation_type: ParticipationType;
+  run_result_id: string | null;
   event_date: string;
   platform_code: string;
   location_name: string;
@@ -750,15 +758,22 @@ export function getEligibleRuns() {
   return apiFetch<RatingEligibility>("/ratings/eligible-runs");
 }
 
-export function putRunRating(runResultId: string, body: RatingUpsert) {
-  return apiFetch<RunRating>(`/ratings/run/${runResultId}`, {
+// Опаковый id старта для оценки бегуна (для волонтёра приходит с бэка).
+export function runEntryId(runResultId: string) {
+  return `run:${runResultId}`;
+}
+
+export function putRunRating(entryId: string, body: RatingUpsert) {
+  return apiFetch<RunRating>(`/ratings/entry/${encodeURIComponent(entryId)}`, {
     method: "PUT",
     body: JSON.stringify(body),
   });
 }
 
-export function deleteRunRating(runResultId: string) {
-  return apiFetch<void>(`/ratings/run/${runResultId}`, { method: "DELETE" });
+export function deleteRunRating(entryId: string) {
+  return apiFetch<void>(`/ratings/entry/${encodeURIComponent(entryId)}`, {
+    method: "DELETE",
+  });
 }
 
 export type CoRunnerItem = {

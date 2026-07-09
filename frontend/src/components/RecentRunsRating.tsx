@@ -22,13 +22,13 @@ export function RecentRunsRating() {
     };
   }, []);
 
-  const applyRating = useCallback((runResultId: string, rating: RunRating | null) => {
+  const applyRating = useCallback((entryId: string, rating: RunRating | null) => {
     setData((prev) =>
       prev
         ? {
             ...prev,
             runs: prev.runs.map((run) =>
-              run.run_result_id === runResultId ? { ...run, my_rating: rating } : run,
+              run.entry_id === entryId ? { ...run, my_rating: rating } : run,
             ),
           }
         : prev,
@@ -46,7 +46,7 @@ export function RecentRunsRating() {
   return (
     <section className="recent-ratings" aria-label="Оценка недавних пробежек">
       <div className="recent-ratings-head">
-        <h2 className="recent-ratings-title">Оцените недавние пробежки</h2>
+        <h2 className="recent-ratings-title">Оцените недавние старты</h2>
         <p className="recent-ratings-lead">
           Старты за последние {data.window_days} дней — оцените, как всё прошло.
         </p>
@@ -62,10 +62,11 @@ export function RecentRunsRating() {
       <ul className="recent-ratings-list">
         {pending.map((run) => {
           const details: string[] = [];
+          if (run.participation_type === "volunteer") details.push("волонтёрство");
           if (run.finish_time_display) details.push(run.finish_time_display);
           if (run.position != null) details.push(`${run.position} место`);
           return (
-            <li key={run.run_result_id} className="recent-ratings-item">
+            <li key={run.entry_id} className="recent-ratings-item">
               <div className="recent-ratings-info">
                 <div className="recent-ratings-loc">
                   <span className="recent-ratings-name">{run.location_name}</span>
@@ -96,11 +97,11 @@ export function RecentRunsRating() {
           run={activeRun}
           onClose={() => setActiveRun(null)}
           onSaved={(rating) => {
-            applyRating(activeRun.run_result_id, rating);
+            applyRating(activeRun.entry_id, rating);
             setActiveRun(null);
           }}
           onDeleted={() => {
-            applyRating(activeRun.run_result_id, null);
+            applyRating(activeRun.entry_id, null);
             setActiveRun(null);
           }}
         />

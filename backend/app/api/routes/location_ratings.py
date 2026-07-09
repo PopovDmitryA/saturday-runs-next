@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -42,9 +41,9 @@ def get_my_ratings(
     return MyRatingsResponse.model_validate(list_my_ratings(db, user.id))
 
 
-@router.put("/run/{run_result_id}", response_model=RatingResponse)
+@router.put("/entry/{entry_id}", response_model=RatingResponse)
 def put_rating(
-    run_result_id: UUID,
+    entry_id: str,
     payload: RatingUpsertRequest,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
@@ -53,7 +52,7 @@ def put_rating(
         result = upsert_rating(
             db,
             user,
-            run_result_id,
+            entry_id,
             score_overall=payload.score_overall,
             score_organization=payload.score_organization,
             score_route=payload.score_route,
@@ -67,14 +66,14 @@ def put_rating(
     return RatingResponse.model_validate(result)
 
 
-@router.delete("/run/{run_result_id}", status_code=204)
+@router.delete("/entry/{entry_id}", status_code=204)
 def remove_rating(
-    run_result_id: UUID,
+    entry_id: str,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> None:
     try:
-        deleted = delete_rating(db, user.id, run_result_id)
+        deleted = delete_rating(db, user.id, entry_id)
     except RatingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not deleted:

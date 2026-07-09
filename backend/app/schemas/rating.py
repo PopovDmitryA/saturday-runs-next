@@ -35,7 +35,10 @@ class RatingUpsertRequest(BaseModel):
 
 
 class RatingResponse(BaseModel):
-    run_result_id: UUID
+    # Опаковый id старта: 'run:<uuid>' (бегун) / 'vol:<uuid>' (волонтёр).
+    entry_id: str
+    participation_type: str = "run"
+    run_result_id: UUID | None = None
     score_overall: int
     score_organization: int | None = None
     score_route: int | None = None
@@ -84,6 +87,7 @@ class AdminRatingRow(BaseModel):
     comment: str | None = None
     is_public: bool = False
     editable: bool = True
+    participation_type: str = "run"
     created_at: datetime
 
 
@@ -110,7 +114,9 @@ class AdminLocationRatingsResponse(BaseModel):
 
 
 class EligibleRunResponse(BaseModel):
-    run_result_id: UUID
+    entry_id: str
+    participation_type: str = "run"
+    run_result_id: UUID | None = None
     event_date: date
     platform_code: str
     location_name: str

@@ -80,7 +80,7 @@ export function RateRunModal({ run, onClose, onSaved, onDeleted }: RateRunModalP
     setSaving(true);
     setError(null);
     try {
-      const rating = await putRunRating(run.run_result_id, {
+      const rating = await putRunRating(run.entry_id, {
         score_overall: overall,
         score_organization: organization || null,
         score_route: route || null,
@@ -100,7 +100,7 @@ export function RateRunModal({ run, onClose, onSaved, onDeleted }: RateRunModalP
     setDeleting(true);
     setError(null);
     try {
-      await deleteRunRating(run.run_result_id);
+      await deleteRunRating(run.entry_id);
       onDeleted();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось удалить оценку");
@@ -108,7 +108,9 @@ export function RateRunModal({ run, onClose, onSaved, onDeleted }: RateRunModalP
     }
   };
 
+  const isVolunteer = run.participation_type === "volunteer";
   const details: string[] = [];
+  if (isVolunteer) details.push("волонтёрство");
   if (run.finish_time_display) details.push(run.finish_time_display);
   if (run.position != null) details.push(`${run.position} место`);
 

@@ -14,6 +14,7 @@ import { useActivityFilters } from "../../hooks/useActivityFilters";
 import {
   getMyRatings,
   listProfileLinks,
+  runEntryId,
   type EligibleRun,
   type MyRating,
   type RunItem,
@@ -140,7 +141,15 @@ function RunsContent() {
         }
         setCanRate(res.can_rate);
         setCreateWindowDays(res.create_window_days);
-        setRatingsMap(new Map(res.ratings.map((item) => [item.run_result_id, item])));
+        // В таблице пробежек показываем только оценки-пробежки (у волонтёрских
+        // run_result_id пуст — они живут в блоке «Оцените недавние старты»).
+        setRatingsMap(
+          new Map(
+            res.ratings
+              .filter((item) => item.run_result_id != null)
+              .map((item) => [item.run_result_id as string, item]),
+          ),
+        );
       })
       .catch(() => {
         // тихо — звёзды просто не покажутся
@@ -164,7 +173,9 @@ function RunsContent() {
 
   const buildEligibleRun = useCallback(
     (run: RunItem, rating: MyRating | undefined): EligibleRun => ({
-      run_result_id: run.run_result_id ?? "",
+      entry_id: runEntryId(run.run_result_id ?? ""),
+      participation_type: "run",
+      run_result_id: run.run_result_id ?? null,
       event_date: run.event_date,
       platform_code: run.platform_code,
       location_name: run.location_name,

@@ -1,5 +1,6 @@
 import enum
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -13,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     SmallInteger,
     String,
     Text,
@@ -248,6 +250,123 @@ class LocationCatalogLink(Base):
     __table_args__ = (
         UniqueConstraint("platform_id", "external_key", name="uq_location_catalog_links_platform_external_key"),
         Index("ix_location_catalog_links_catalog_id", "catalog_id"),
+    )
+
+
+class Club(Base):
+    """Running club parsed from a platform clubs listing (5verst /clubs/, later s95.ru/clubs)."""
+
+    __tablename__ = "clubs"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    platform_id: Mapped[UUID] = mapped_column(ForeignKey("platforms.id"), nullable=False)
+    external_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    logo_url: Mapped[str | None] = mapped_column(String(1024))
+    # Stats from the clubs list table (5verst columns + S95 columns for the future).
+    members_count: Mapped[int | None] = mapped_column(Integer)
+    finishes_count: Mapped[int | None] = mapped_column(Integer)
+    volunteerings_count: Mapped[int | None] = mapped_column(Integer)
+    avg_time_seconds: Mapped[int | None] = mapped_column(Integer)
+    best_female_time_seconds: Mapped[int | None] = mapped_column(Integer)
+    best_male_time_seconds: Mapped[int | None] = mapped_column(Integer)
+    best_time_seconds: Mapped[int | None] = mapped_column(Integer)
+    avg_finishes_per_member: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    avg_volunteerings_per_member: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    external_links: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    stats_extra: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
+    # List-sync bookkeeping: row hash detects column changes, detail_synced_at drives rotation.
+    list_row_hash: Mapped[str | None] = mapped_column(String(64))
+    list_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    needs_detail_sync: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    detail_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    detail_source_hash: Mapped[str | None] = mapped_column(String(64))
+    source_url: Mapped[str | None] = mapped_column(String(1024))
+    parser_version: Mapped[str | None] = mapped_column(String(32))
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    platform: Mapped["Platform"] = relationship()
+    members: Mapped[list["ClubMember"]] = relationship(back_populates="club", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("platform_id", "external_key", name="uq_clubs_platform_external_key"),
+        Index("ix_clubs_rotation", "platform_id", "is_active", "needs_detail_sync", "detail_synced_at"),
+    )
+
+
+class ClubMember(Base):
+    """Club roster membership (composition only, no per-member stats)."""
+
+    __tablename__ = "club_members"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    club_id: Mapped[UUID] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    participant_id: Mapped[UUID] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    club: Mapped["Club"] = relationship(back_populates="members")
+    participant: Mapped["Participant"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("club_id", "participant_id", name="uq_club_members_club_participant"),
+        Index("ix_club_members_participant_id", "participant_id"),
+    )
+
+
+class ClubCatalog(Base):
+    """Canonical club identity for cross-platform merging (5verst ↔ s95)."""
+
+    __tablename__ = "club_catalog"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    canonical_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    links: Mapped[list["ClubCatalogLink"]] = relationship(
+        back_populates="catalog",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (Index("ix_club_catalog_normalized_name", "normalized_name"),)
+
+
+class ClubCatalogLink(Base):
+    """Maps a platform club slug to a catalog entry; manual links are never overridden by auto-match."""
+
+    __tablename__ = "club_catalog_links"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    catalog_id: Mapped[UUID] = mapped_column(ForeignKey("club_catalog.id", ondelete="CASCADE"), nullable=False)
+    platform_id: Mapped[UUID] = mapped_column(ForeignKey("platforms.id", ondelete="CASCADE"), nullable=False)
+    external_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    club_id: Mapped[UUID | None] = mapped_column(ForeignKey("clubs.id", ondelete="SET NULL"))
+    link_source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="auto_name")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    catalog: Mapped["ClubCatalog"] = relationship(back_populates="links")
+    platform: Mapped["Platform"] = relationship()
+    club: Mapped["Club | None"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("platform_id", "external_key", name="uq_club_catalog_links_platform_external_key"),
+        Index("ix_club_catalog_links_catalog_id", "catalog_id"),
     )
 
 
@@ -779,7 +898,25 @@ class SyncLogEntry(Base):
 class LocationRating(Base):
     __tablename__ = "location_ratings"
     __table_args__ = (
-        UniqueConstraint("user_id", "run_result_id", name="uq_location_ratings_user_run"),
+        # Уникальность по типу участия: два частичных индекса (см. миграцию 039).
+        Index(
+            "uq_location_ratings_user_run",
+            "user_id",
+            "run_result_id",
+            unique=True,
+            postgresql_where=text("run_result_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_location_ratings_user_volunteer",
+            "user_id",
+            "volunteer_result_id",
+            unique=True,
+            postgresql_where=text("volunteer_result_id IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "(run_result_id IS NOT NULL) <> (volunteer_result_id IS NOT NULL)",
+            name="ck_location_ratings_one_source",
+        ),
         CheckConstraint("score_overall BETWEEN 1 AND 5", name="ck_location_ratings_overall"),
         CheckConstraint(
             "score_organization IS NULL OR score_organization BETWEEN 1 AND 5",
@@ -799,8 +936,17 @@ class LocationRating(Base):
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    run_result_id: Mapped[UUID] = mapped_column(
-        ForeignKey("run_results.id", ondelete="CASCADE"), nullable=False
+    # Оценка привязана либо к пробежке (бегун), либо к волонтёрству — ровно одно
+    # из двух заполнено (CHECK ck_location_ratings_one_source).
+    run_result_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("run_results.id", ondelete="CASCADE"), nullable=True
+    )
+    volunteer_result_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("volunteer_results.id", ondelete="CASCADE"), nullable=True
+    )
+    # 'run' | 'volunteer' — как участник был на старте.
+    participation_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="run"
     )
     location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id"), nullable=False)
     # canonical identity key локации (как home_location_key) — для агрегации рейтинга
