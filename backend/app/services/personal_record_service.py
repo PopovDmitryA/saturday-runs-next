@@ -5,10 +5,10 @@ from uuid import UUID
 from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Event, Platform, PlatformLink, RunResult
+from app.models import Event, EventCrosslink, Platform, PlatformLink, RunResult
 from app.sync import upsert
 
-TIME_BASED_PR_PLATFORMS = frozenset({"parkrun", "s95", "five_verst"})
+TIME_BASED_PR_PLATFORMS = frozenset({"parkrun", "s95", "five_verst", "runpark"})
 
 
 def _five_verst_protocol_personal_record(run: RunResult) -> bool:
@@ -140,13 +140,50 @@ def recalculate_participants_personal_records(
         recalculate_personal_records(db, platform_code, participant_id=participant_id)
 
 
+def user_secondary_crosslinked_run_ids(
+    db: Session,
+    user_id: UUID,
+    *,
+    include_test_events: bool = False,
+) -> set[UUID]:
+    """Run IDs that are duplicates via event_crosslinks: the user's run sits in a
+    secondary crosslink event AND the user also has a run in the primary event (i.e. the
+    "не в зачёте" runs shown in the runs list). These must not participate in any personal
+    record calculation — neither the per-system PR nor the global all-systems record."""
+    primary_run_sq = (
+        db.query(RunResult.id)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
+        .filter(PlatformLink.user_id == user_id)
+        .filter(Event.id == EventCrosslink.primary_event_id)
+        .correlate(EventCrosslink)
+        .exists()
+    )
+    query = (
+        db.query(RunResult.id)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(EventCrosslink, EventCrosslink.secondary_event_id == Event.id)
+        .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
+        .filter(PlatformLink.user_id == user_id)
+        .filter(primary_run_sq)
+    )
+    if not include_test_events:
+        query = query.filter(Event.is_test_event.is_(False))
+    return {row[0] for row in query.distinct().all()}
+
+
 def global_personal_record_run_ids(
     db: Session,
     user_id: UUID,
     *,
     include_test_events: bool = False,
 ) -> set[UUID]:
-    """Run IDs where the athlete set a new all-systems best finish time (chronological)."""
+    """Run IDs where the athlete set a new all-systems best finish time (chronological).
+    Secondary crosslink duplicates ("не в зачёте") are excluded so a duplicate protocol
+    a second faster cannot steal the global record from the counted run."""
+    excluded_ids = user_secondary_crosslinked_run_ids(
+        db, user_id, include_test_events=include_test_events
+    )
     query = (
         db.query(RunResult.id, RunResult.finish_time_sec)
         .join(Event, RunResult.event_id == Event.id)
@@ -162,6 +199,8 @@ def global_personal_record_run_ids(
     )
     if not include_test_events:
         query = query.filter(Event.is_test_event.is_(False))
+    if excluded_ids:
+        query = query.filter(RunResult.id.notin_(excluded_ids))
 
     global_best: int | None = None
     global_pr_ids: set[UUID] = set()

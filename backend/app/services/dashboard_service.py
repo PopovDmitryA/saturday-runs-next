@@ -43,7 +43,7 @@ class SyncRefreshRateLimitedError(Exception):
     pass
 
 
-ANALYTICS_VERSION = 19
+ANALYTICS_VERSION = 21
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -418,6 +418,7 @@ def _compute_dashboard_analytics(
     from app.services.personal_record_service import (
         global_personal_record_run_ids,
         run_is_personal_record_sql_filter,
+        user_secondary_crosslinked_run_ids,
     )
 
     today = date.today()
@@ -463,6 +464,12 @@ def _compute_dashboard_analytics(
     )
     unique_run_regions, unique_run_cities = count_unique_geo_from_rows(run_location_rows)
     unique_volunteer_regions, unique_volunteer_cities = count_unique_geo_from_rows(vol_location_rows)
+
+    secondary_crosslinked_ids = user_secondary_crosslinked_run_ids(
+        db, user_id, include_test_events=include_test_events
+    )
+    if secondary_crosslinked_ids:
+        runs_query = runs_query.filter(RunResult.id.notin_(secondary_crosslinked_ids))
 
     timed_runs = runs_query.filter(RunResult.finish_time_sec.isnot(None))
     paced_runs = runs_query.filter(RunResult.pace_sec_per_km.isnot(None))
@@ -1002,6 +1009,7 @@ def list_user_personal_records(
     from app.services.personal_record_service import (
         global_personal_record_run_ids,
         run_is_personal_record_sql_filter,
+        user_secondary_crosslinked_run_ids,
     )
 
     query = (
@@ -1018,6 +1026,13 @@ def list_user_personal_records(
     )
     if not include_test_events:
         query = query.filter(Event.is_test_event.is_(False))
+
+    # "Не в зачёте" duplicates (secondary crosslink) never count as personal records.
+    excluded_ids = user_secondary_crosslinked_run_ids(
+        db, user_id, include_test_events=include_test_events
+    )
+    if excluded_ids:
+        query = query.filter(RunResult.id.notin_(excluded_ids))
 
     rows = query.order_by(
         Event.event_date.desc(),

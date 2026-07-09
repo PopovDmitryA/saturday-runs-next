@@ -147,7 +147,7 @@ export function FinishTimeDistribution({ times }: FinishTimeDistributionProps) {
                 onClick={() => handleBinClick(bin)}
               >
                 <ChartColumnTooltip
-                  title={`${formatMinSec(bin.startSec)}–${formatMinSec(bin.endSec)}`}
+                  title={`${formatMinSec(bin.startSec)}–${formatMinSec(bin.endSec - 1)}`}
                   lines={[
                     pluralizeRu(bin.count, ["пробежка", "пробежки", "пробежек"]),
                     ...(bin.hasBest ? [`Лучший результат: ${formatMinSec(globalBest)}`] : []),
