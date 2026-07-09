@@ -31,8 +31,13 @@ frontend/dist/
 # Docker
 postgres_data/
 
+# Runtime artifacts / operational backups
+backend/celerybeat-schedule
+backend/scripts/backups/
+
 # Local / agent
 .cursor/
+.claude/
 PROJECT_HANDOFF.local.md
 S95_API.md
 data/parkrun_playwright_state.json
