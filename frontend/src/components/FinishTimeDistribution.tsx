@@ -104,7 +104,7 @@ export function FinishTimeDistribution({ times }: FinishTimeDistributionProps) {
         {range ? (
           <>
             <span>
-              Диапазон {formatMinSec(range.startSec)}–{formatMinSec(range.endSec)}
+              Диапазон {formatMinSec(range.startSec)}–{formatMinSec(range.endSec - 1)}
             </span>
             <button type="button" className="btn btn-ghost btn-sm" onClick={resetZoom}>
               Сбросить
