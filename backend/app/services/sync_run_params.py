@@ -69,6 +69,16 @@ def five_verst_registry_details(*, limit: int | None) -> str:
     return f"Лимит записей реестра: {limit}"
 
 
+def five_verst_clubs_registry_details(*, limit: int | None) -> str:
+    if limit is None:
+        return "Обработка: весь список /clubs/"
+    return f"Лимит клубов из списка: {limit}"
+
+
+def five_verst_clubs_details_details(*, limit: int) -> str:
+    return f"Пакет: {limit} клубов (самые давно не обновлявшиеся, изменённые — вне очереди)"
+
+
 def s95_latest_details(
     *,
     update_limit: int | None,

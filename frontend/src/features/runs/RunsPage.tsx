@@ -183,6 +183,7 @@ function RunsContent() {
       finish_time_display: run.finish_time_display,
       position: run.position,
       is_pr: run.is_pr,
+      volunteer_role: null,
       event_url: run.event_url ?? null,
       my_rating: rating ?? null,
     }),

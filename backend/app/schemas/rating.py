@@ -124,6 +124,7 @@ class EligibleRunResponse(BaseModel):
     finish_time_display: str | None = None
     position: int | None = None
     is_pr: bool = False
+    volunteer_role: str | None = None
     event_url: str | None = None
     my_rating: RatingResponse | None = None
 

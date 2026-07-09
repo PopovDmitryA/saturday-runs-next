@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { PlatformBadge } from "./PlatformBadge";
+import { ParticipationBadge } from "./ParticipationBadge";
 import { RateRunModal } from "./RateRunModal";
 import { getEligibleRuns, type EligibleRun, type RatingEligibility, type RunRating } from "../lib/api";
 import { formatDateLong } from "../lib/format";
@@ -62,15 +63,19 @@ export function RecentRunsRating() {
       <ul className="recent-ratings-list">
         {pending.map((run) => {
           const details: string[] = [];
-          if (run.participation_type === "volunteer") details.push("волонтёрство");
-          if (run.finish_time_display) details.push(run.finish_time_display);
-          if (run.position != null) details.push(`${run.position} место`);
+          if (run.participation_type === "volunteer") {
+            if (run.volunteer_role) details.push(run.volunteer_role);
+          } else {
+            if (run.finish_time_display) details.push(run.finish_time_display);
+            if (run.position != null) details.push(`${run.position} место`);
+          }
           return (
             <li key={run.entry_id} className="recent-ratings-item">
               <div className="recent-ratings-info">
                 <div className="recent-ratings-loc">
                   <span className="recent-ratings-name">{run.location_name}</span>
                   <PlatformBadge code={run.platform_code} />
+                  <ParticipationBadge type={run.participation_type} />
                 </div>
                 <div className="recent-ratings-meta">
                   {formatDateLong(run.event_date)}

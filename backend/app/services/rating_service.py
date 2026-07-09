@@ -180,12 +180,30 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
         )
         .all()
     )
+    # На одном событии участник мог волонтёрить в нескольких ролях (несколько
+    # VolunteerResult). Группируем по (дата, площадка): canonical vol_id —
+    # наименьший (стабильно между рендерами), роли собираем все в подпись.
+    vol_groups: dict[
+        tuple[date, str],
+        list[tuple[VolunteerResult, Event, Location, str, Participant]],
+    ] = {}
     for vol, event, location, platform_code, participant in vol_rows:
         identity = catalog_index.canonical_identity_key(location, platform_code)
         key = (event.event_date, identity)
         if key in by_key:
             # В этот день на этой площадке уже есть пробежка — оцениваем как бегун.
             continue
+        vol_groups.setdefault(key, []).append(
+            (vol, event, location, platform_code, participant)
+        )
+    for key, group in vol_groups.items():
+        group.sort(key=lambda g: str(g[0].id))
+        vol, event, location, platform_code, participant = group[0]
+        roles: list[str] = []
+        for g in group:
+            role = (g[0].role or "").strip()
+            if role and role not in roles:
+                roles.append(role)
         by_key[key] = {
             "entry_id": _entry_id(PARTICIPATION_VOLUNTEER, vol.id),
             "participation_type": PARTICIPATION_VOLUNTEER,
@@ -197,6 +215,7 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
             "finish_time_display": None,
             "position": None,
             "is_pr": False,
+            "volunteer_role": ", ".join(roles) if roles else None,
             "event_url": resolve_activity_url(
                 platform_code=platform_code,
                 event_date=event.event_date,

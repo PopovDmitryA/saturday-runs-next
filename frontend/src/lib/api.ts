@@ -733,6 +733,7 @@ export type EligibleRun = {
   finish_time_display: string | null;
   position: number | null;
   is_pr: boolean;
+  volunteer_role: string | null;
   event_url: string | null;
   my_rating: RunRating | null;
 };

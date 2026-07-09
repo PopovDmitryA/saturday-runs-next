@@ -107,6 +107,7 @@ class Settings(BaseSettings):
     s95_athlete_mismatch_check_runs: int = 10
     five_verst_reconcile_batch_limit: int = 100
     five_verst_reconcile_min_check_interval_days: int = 0
+    five_verst_clubs_batch_limit: int = 20
 
     vk_bot_group_token: str = ""
     vk_bot_group_id: int = 0

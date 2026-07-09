@@ -7,12 +7,15 @@ from typing import Any
 from app.db.session import get_session_factory
 from app.services.dashboard_service import invalidate_dashboard_cache_for_platform
 from app.services.sync_run_params import (
+    five_verst_clubs_details_details,
+    five_verst_clubs_registry_details,
     five_verst_latest_details,
     five_verst_location_details,
     five_verst_reconcile_details,
     five_verst_registry_details,
     five_verst_rotation_details,
 )
+from app.sync.five_verst_clubs import ClubsRegistrySyncOptions, sync_club_details_batch, sync_clubs_registry
 from app.sync.five_verst_latest import LatestResultsSyncOptions, sync_latest_results
 from app.sync.five_verst_location_rotation import sync_next_location_batch
 from app.sync.five_verst_locations import LocationRegistrySyncOptions, sync_locations_registry
@@ -356,6 +359,82 @@ def reconcile_stale_protocols_task(
 def enqueue_reconcile_protocols() -> dict[str, object]:
     reconcile_stale_protocols_task.apply_async(queue="five_verst")
     return {"enqueued": 1}
+
+
+@celery_app.task(name="five_verst_sync.sync_clubs_registry", queue="five_verst")
+def sync_clubs_registry_task(limit: int | None = None, *, force: bool = False) -> dict[str, object]:
+    name = "5v clubs registry /clubs/"
+    details = five_verst_clubs_registry_details(limit=limit)
+
+    def _run() -> dict[str, object]:
+        db = get_session_factory()()
+        try:
+            result = sync_clubs_registry(db, ClubsRegistrySyncOptions(limit=limit))
+            return {
+                "entries_total": result.entries_total,
+                "clubs_created": result.clubs_created,
+                "clubs_updated": result.clubs_updated,
+                "clubs_unchanged": result.clubs_unchanged,
+                "clubs_deactivated": result.clubs_deactivated,
+                "clubs_reactivated": result.clubs_reactivated,
+                "catalog_links_created": result.catalog_links_created,
+                "marked_for_detail_sync": result.marked_for_detail_sync,
+                "created_clubs": result.created_clubs,
+                "updated_clubs": result.updated_clubs,
+                "deactivated_clubs": result.deactivated_clubs,
+                "errors": result.errors,
+            }
+        finally:
+            db.close()
+
+    return run_reported_sync(
+        name,
+        _run,
+        details=details,
+        hour_slot_key="five_verst:clubs_registry",
+        force=force,
+        batch_queue_name="five_verst",
+    )
+
+
+@celery_app.task(name="five_verst_sync.sync_club_details", queue="five_verst")
+def sync_club_details_task(limit: int | None = None, *, force: bool = False) -> dict[str, object]:
+    from app.config import get_settings
+
+    settings = get_settings()
+    if limit is None:
+        limit = settings.five_verst_clubs_batch_limit
+    name = "5v clubs details"
+    details = five_verst_clubs_details_details(limit=limit)
+
+    def _run() -> dict[str, object]:
+        db = get_session_factory()()
+        try:
+            result = sync_club_details_batch(db, limit=limit)
+            return {
+                "clubs_planned": result.clubs_planned,
+                "clubs_synced": result.clubs_synced,
+                "clubs_not_found": result.clubs_not_found,
+                "members_seen": result.members_seen,
+                "members_added": result.members_added,
+                "members_deactivated": result.members_deactivated,
+                "participants_created": result.participants_created,
+                "members_skipped": result.members_skipped,
+                "slug_change_alerts": result.slug_change_alerts,
+                "synced_clubs": result.synced_clubs,
+                "errors": result.errors,
+            }
+        finally:
+            db.close()
+
+    return run_reported_sync(
+        name,
+        _run,
+        details=details,
+        hour_slot_key="five_verst:clubs_details",
+        force=force,
+        batch_queue_name="five_verst",
+    )
 
 
 @celery_app.task(name="five_verst_sync.fetch_protocol_from_profile", queue="five_verst")

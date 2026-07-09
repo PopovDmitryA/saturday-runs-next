@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { DetailModal } from "./DetailModal";
 import { StarRating } from "./StarRating";
 import { PlatformBadge } from "./PlatformBadge";
+import { ParticipationBadge } from "./ParticipationBadge";
 import {
   deleteRunRating,
   putRunRating,
@@ -110,9 +111,12 @@ export function RateRunModal({ run, onClose, onSaved, onDeleted }: RateRunModalP
 
   const isVolunteer = run.participation_type === "volunteer";
   const details: string[] = [];
-  if (isVolunteer) details.push("волонтёрство");
-  if (run.finish_time_display) details.push(run.finish_time_display);
-  if (run.position != null) details.push(`${run.position} место`);
+  if (isVolunteer) {
+    if (run.volunteer_role) details.push(run.volunteer_role);
+  } else {
+    if (run.finish_time_display) details.push(run.finish_time_display);
+    if (run.position != null) details.push(`${run.position} место`);
+  }
 
   return (
     <DetailModal open title="Оценка старта" onClose={onClose}>
@@ -120,6 +124,7 @@ export function RateRunModal({ run, onClose, onSaved, onDeleted }: RateRunModalP
         <div className="rate-run-head">
           <span className="rate-run-location">{run.location_name}</span>
           <PlatformBadge code={run.platform_code} />
+          <ParticipationBadge type={run.participation_type} />
           <span className="rate-run-date">{formatDateLong(run.event_date)}</span>
           {details.length > 0 && <span className="rate-run-details">{details.join(" · ")}</span>}
         </div>

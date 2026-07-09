@@ -65,6 +65,18 @@ celery_app.conf.update(
             "schedule": crontab(minute=0, hour="*/3"),
             "options": {"queue": "five_verst"},
         },
+        # Clubs list (/clubs/) — twice a week; changed rows are queued for detail re-sync.
+        "five-verst-clubs-registry": {
+            "task": "five_verst_sync.sync_clubs_registry",
+            "schedule": crontab(hour=21, minute=30, day_of_week="1,4"),
+            "options": {"queue": "five_verst"},
+        },
+        # Club detail rotation — 3×/day, 20 stalest clubs per run (changed ones jump the queue).
+        "five-verst-clubs-details": {
+            "task": "five_verst_sync.sync_club_details",
+            "schedule": crontab(hour="9,15,23", minute=30),
+            "options": {"queue": "five_verst"},
+        },
         # S95 location registry — every 3 days at 20:30 MSK via JSON API (s95.ru/by/rs).
         "s95-registry-3days": {
             "task": "s95_sync.sync_locations_registry",
