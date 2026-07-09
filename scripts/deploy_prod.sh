@@ -41,6 +41,7 @@ rsync_to() {
 echo "=== rsync to ${SSH_USER}@${SSH_HOST}:${REMOTE} ==="
 rsync_to backend/app/ "${REMOTE}/backend/app/"
 rsync_to backend/vk_bot/ "${REMOTE}/backend/vk_bot/"
+rsync_to backend/alembic/ "${REMOTE}/backend/alembic/"
 rsync_to backend/Dockerfile "${REMOTE}/backend/Dockerfile"
 rsync_to backend/Dockerfile.parkrun "${REMOTE}/backend/Dockerfile.parkrun"
 rsync_to backend/pyproject.toml "${REMOTE}/backend/pyproject.toml"
@@ -48,6 +49,9 @@ rsync_to deploy/ "${REMOTE}/deploy/"
 rsync_to docker-compose.yml "${REMOTE}/docker-compose.yml"
 rsync_to docker-compose.prod.yml "${REMOTE}/docker-compose.prod.yml"
 rsync_to frontend/src/ "${REMOTE}/frontend/src/"
+# public/ — рантайм-статики (geojson карт и т.п.): Vite копирует их в dist при
+# сборке, без rsync новые файлы не попадут в бандл (git align идёт ПОСЛЕ сборки).
+rsync_to frontend/public/ "${REMOTE}/frontend/public/"
 
 REMOTE_QUOTED=$(printf '%q' "$REMOTE")
 COMPOSE_QUOTED=$(printf '%q' "$COMPOSE")
@@ -65,8 +69,8 @@ GIT_ALIGN=0
 # modifications vs HEAD (untracked local files like backend/scripts/* are not
 # deployed and must not block alignment — hence --quiet on the exact paths).
 if git branch -r --contains "$LOCAL_SHA" 2>/dev/null | grep -q 'origin/main' \
-  && git diff --quiet HEAD -- backend/app backend/vk_bot deploy frontend/src \
-       docker-compose.yml docker-compose.prod.yml; then
+  && git diff --quiet HEAD -- backend/app backend/vk_bot backend/alembic deploy \
+       frontend/src frontend/public docker-compose.yml docker-compose.prod.yml; then
   GIT_ALIGN=1
 else
   echo "WARN: HEAD not on origin/main or deployed paths have tracked changes — prod git left as-is (no align)"
