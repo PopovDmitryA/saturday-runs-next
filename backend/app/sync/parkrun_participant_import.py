@@ -61,16 +61,53 @@ def apply_parkrun_participant(
     return row, created
 
 
+def _participant_fetched_within(
+    db: Session, platform: Platform, athlete_id: str, max_age_seconds: float
+) -> Participant | None:
+    """Участник, загруженный не позже max_age_seconds назад, иначе None."""
+    existing = (
+        db.query(Participant)
+        .filter(
+            Participant.platform_id == platform.id,
+            Participant.external_user_id == str(athlete_id),
+        )
+        .one_or_none()
+    )
+    if existing is None or existing.fetched_at is None:
+        return None
+    fetched_at = existing.fetched_at
+    if fetched_at.tzinfo is None:
+        fetched_at = fetched_at.replace(tzinfo=timezone.utc)
+    if (_utcnow() - fetched_at).total_seconds() > max_age_seconds:
+        return None
+    return existing
+
+
 def import_parkrun_participant_activity(
     db: Session,
     platform: Platform,
     athlete_id: str,
     *,
     user_id: UUID | None = None,
+    max_age_seconds: float | None = None,
 ) -> ParkrunParticipantImportResult:
     from app.models import ProfileFetchPendingOperation
     from app.parkrun.errors import ParkrunBanDetected
     from app.services.profile_fetch_pending_service import enqueue_profile_fetch_pending
+
+    # Пропускаем повторный фетч, если участник только что был загружен: демон
+    # обрабатывает pending-строку (импорт), а сразу за ней — user-sync того же
+    # атлета; без этого одни и те же страницы parkrun тянулись дважды за проход.
+    if max_age_seconds is not None:
+        fresh = _participant_fetched_within(db, platform, athlete_id, max_age_seconds)
+        if fresh is not None:
+            return ParkrunParticipantImportResult(
+                participant=fresh,
+                runs_imported=0,
+                volunteering_imported=0,
+                created=False,
+                expected_runs=None,
+            )
 
     try:
         profile, runs, _volunteering, profile_extra = parkrun_parser.fetch_athlete_by_id(athlete_id)

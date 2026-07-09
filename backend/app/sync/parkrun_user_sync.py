@@ -19,7 +19,13 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def sync_parkrun_platform_link(db: Session, link: PlatformLink, platform: Platform) -> dict[str, object]:
+def sync_parkrun_platform_link(
+    db: Session,
+    link: PlatformLink,
+    platform: Platform,
+    *,
+    max_age_seconds: float | None = None,
+) -> dict[str, object]:
     if platform.code != "parkrun":
         raise UserSyncError(f"Expected parkrun platform, got {platform.code}")
 
@@ -29,6 +35,7 @@ def sync_parkrun_platform_link(db: Session, link: PlatformLink, platform: Platfo
         platform,
         parsed.athlete_id,
         user_id=link.user_id,
+        max_age_seconds=max_age_seconds,
     )
     participant = imported.participant
     link.participant_id = participant.id
@@ -61,6 +68,7 @@ def run_parkrun_user_sync(
     *,
     platform_link_id: UUID | None = None,
     existing_job=None,
+    reuse_fresh_seconds: float | None = None,
 ):
     from app.models import (
         Platform,
@@ -107,7 +115,7 @@ def run_parkrun_user_sync(
         link.sync_status = PlatformLinkSyncStatus.syncing
         db.commit()
         try:
-            sync_parkrun_platform_link(db, link, platform)
+            sync_parkrun_platform_link(db, link, platform, max_age_seconds=reuse_fresh_seconds)
         except Exception as exc:
             db.rollback()
             link = db.query(PlatformLink).filter(PlatformLink.id == link.id).one()

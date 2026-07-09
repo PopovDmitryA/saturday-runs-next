@@ -10,13 +10,27 @@ from app.config import get_settings
 
 
 def _engine_connect_args() -> dict[str, object]:
+    server_opts: list[str] = []
+
     # idle_in_transaction_session_timeout: Postgres сам закрывает соединение,
     # зависшее "idle in transaction" (утёкшая сессия), — иначе оно держит слот
     # пула и коннект навсегда (см. инцидент 04.07.2026: логин лёг из-за 8 таких).
-    server_opts = ["-c idle_in_transaction_session_timeout=60s"]
+    #
+    # НО parkrun/S95 Mac-демон легитимно держит транзакцию открытой во время
+    # 60-90s браузерного фетча: process_pending_row коммитит статус 'processing',
+    # затем _get_platform() открывает новую транзакцию, которая простаивает весь
+    # фетч. 60s-таймаут убивал коннект ровно в момент записи результата — успешно
+    # спарсенный профиль не доходил до 'done', а строка зависала в 'processing'.
+    # Для такого клиента (одно соединение, один прогон, локально) таймаут отключаем.
+    if os.environ.get("DB_DISABLE_IDLE_TX_TIMEOUT") != "1":
+        server_opts.append("-c idle_in_transaction_session_timeout=60s")
+
     if os.environ.get("PROD_DB_TARGET") == "1":
         # Локальные прогоны на prod: не висеть бесконечно на lock от worker-five-verst.
         server_opts += ["-c lock_timeout=30s", "-c statement_timeout=600s"]
+
+    if not server_opts:
+        return {}
     return {"options": " ".join(server_opts)}
 
 

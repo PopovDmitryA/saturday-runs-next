@@ -47,6 +47,10 @@ export_prod_database_url
 start_local_redis
 
 export REDIS_URL="redis://127.0.0.1:${LOCAL_REDIS_PORT}/0"
+# Демон держит транзакцию открытой во время 60-90s браузерного фетча — отключаем
+# idle_in_transaction_session_timeout, иначе Postgres рвёт коннект на записи
+# результата (см. app/db/session.py).
+export DB_DISABLE_IDLE_TX_TIMEOUT=1
 export PYTHONPATH="${ROOT}/backend"
 export PARKRUN_PLAYWRIGHT_STORAGE_STATE_PATH="${ROOT}/data/parkrun_playwright_state.json"
 export PARKRUN_PLAYWRIGHT_HEADLESS=false

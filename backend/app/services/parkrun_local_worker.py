@@ -16,6 +16,7 @@ from app.services.profile_fetch_pending_service import (
     list_pending_rows,
     process_pending_row,
     requeue_stuck_done_parkrun_pending,
+    requeue_stuck_processing_parkrun_pending,
     reset_failed_parkrun_pending,
 )
 
@@ -97,8 +98,15 @@ def prepare_parkrun_cdp_fetch() -> None:
     clear_platform_cooldown("parkrun")
 
 
-def sync_parkrun_runs_for_user(db: Session, user_id: UUID, *, label: str = "") -> str:
-    """Import parkrun runs via CDP (Mac worker); Docker Celery often cannot reach Chrome."""
+def sync_parkrun_runs_for_user(
+    db: Session, user_id: UUID, *, label: str = "", reuse_fresh_seconds: float | None = None
+) -> str:
+    """Import parkrun runs via CDP (Mac worker); Docker Celery often cannot reach Chrome.
+
+    reuse_fresh_seconds: если участник был загружен не позже указанного окна назад,
+    user-sync переиспользует эти данные вместо повторного фетча (демон вызывает
+    sync сразу после pending-импорта того же атлета).
+    """
     from app.models import SyncJobTrigger
     from app.parkrun.fetch.daemon_session import get_active_daemon_session
     from app.sync.parkrun_user_sync import run_parkrun_user_sync
@@ -110,7 +118,9 @@ def sync_parkrun_runs_for_user(db: Session, user_id: UUID, *, label: str = "") -
     prepare_parkrun_cdp_fetch()
     tag = label or str(user_id)
     try:
-        job = run_parkrun_user_sync(db, user_id, SyncJobTrigger.linking)
+        job = run_parkrun_user_sync(
+            db, user_id, SyncJobTrigger.linking, reuse_fresh_seconds=reuse_fresh_seconds
+        )
     except UserSyncError as exc:
         return f"sync_error: {tag} — {exc}"
     except Exception as exc:
@@ -132,6 +142,7 @@ def run_pending_parkrun_batch(db: Session, *, limit: int = 20, reset_failed: boo
     if reset_failed:
         requeued_failed = reset_failed_parkrun_pending(db)
         requeued_stuck_done = requeue_stuck_done_parkrun_pending(db)
+        requeue_stuck_processing_parkrun_pending(db)
     prepare_parkrun_cdp_fetch()
 
     rows = list_pending_rows(db, platform_code="parkrun", limit=limit)

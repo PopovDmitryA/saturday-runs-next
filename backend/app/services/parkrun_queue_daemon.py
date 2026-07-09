@@ -24,6 +24,7 @@ from app.services.profile_fetch_pending_service import (
     list_pending_rows,
     process_pending_row,
     requeue_stuck_done_parkrun_pending,
+    requeue_stuck_processing_parkrun_pending,
     reset_failed_parkrun_pending,
 )
 
@@ -40,6 +41,32 @@ class ParkrunWorkItem:
     pending_id: UUID | None = None
 
 
+def _requeue_stuck_syncing_parkrun_links(db: Session) -> int:
+    """Линки, зависшие в 'syncing' (краш/обрыв во время user-sync), очередь не
+    подхватывает — build_parkrun_work_queue берёт только 'error'. Сбрасываем в
+    'error', чтобы sync переотработался. Демон не работает конкурентно, поэтому
+    любой 'syncing' на старте прогона — устаревший.
+    """
+    parkrun = db.query(Platform).filter(Platform.code == "parkrun").one_or_none()
+    if parkrun is None:
+        return 0
+    rows = (
+        db.query(PlatformLink)
+        .filter(
+            PlatformLink.platform_id == parkrun.id,
+            PlatformLink.sync_status == PlatformLinkSyncStatus.syncing,
+        )
+        .all()
+    )
+    for link in rows:
+        link.sync_status = PlatformLinkSyncStatus.error
+        if not link.error_message:
+            link.error_message = "reset from stuck 'syncing' state"
+    if rows:
+        db.commit()
+    return len(rows)
+
+
 def build_parkrun_work_queue(
     db: Session,
     *,
@@ -50,6 +77,8 @@ def build_parkrun_work_queue(
     if reset_failed:
         reset_failed_parkrun_pending(db)
         requeue_stuck_done_parkrun_pending(db)
+        requeue_stuck_processing_parkrun_pending(db)
+        _requeue_stuck_syncing_parkrun_links(db)
 
     items: list[ParkrunWorkItem] = []
     seen_sync_users: set[UUID] = set()
@@ -125,7 +154,11 @@ def run_parkrun_queue_daemon(
                 summary[outcome] = summary.get(outcome, 0) + 1
                 details.append(f"{outcome}: {item.label}")
                 if outcome == "done" and user_id is not None:
-                    sync_line = sync_parkrun_runs_for_user(db, user_id, label=item.label)
+                    # Импорт только что стянул страницы атлета — user-sync
+                    # переиспользует их (в пределах окна) вместо второго фетча.
+                    sync_line = sync_parkrun_runs_for_user(
+                        db, user_id, label=item.label, reuse_fresh_seconds=600
+                    )
                     details.append(sync_line)
                     key = "sync_ok" if sync_line.startswith("sync_ok") else "sync_error"
                     summary[key] = summary.get(key, 0) + 1
@@ -135,6 +168,7 @@ def run_parkrun_queue_daemon(
                 key = "sync_ok" if sync_line.startswith("sync_ok") else "sync_error"
                 summary[key] = summary.get(key, 0) + 1
         except Exception as exc:
+            db.rollback()
             logger.exception("parkrun queue item failed: %s", item.label)
             summary["error"] = summary.get("error", 0) + 1
             details.append(f"error: {item.label} — {exc}")

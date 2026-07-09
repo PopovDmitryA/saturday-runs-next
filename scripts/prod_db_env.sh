@@ -45,13 +45,26 @@ start_prod_db_tunnel() {
 
   echo "prod-db tunnel: ${SSH_USER}@${SSH_HOST} → 127.0.0.1:${PROD_TUNNEL_LOCAL_PORT}" >&2
 
+  # Keepalive: длинные прогоны (parkrun daemon, ~1ч+) простаивают по 25-53s между
+  # задачами — без этого сервер/NAT рвёт idle SSH-сессию и туннель отваливается
+  # посреди работы ("Connection refused" на 5434). ExitOnForwardFailure — не давать
+  # SSH висеть в фоне, если порт занять не удалось.
+  local ka_opts=(
+    -o ServerAliveInterval=15
+    -o ServerAliveCountMax=4
+    -o ExitOnForwardFailure=yes
+    -o TCPKeepAlive=yes
+  )
+
   if [[ -n "${TEMP_SSH_PASSWORD:-}" ]] && command -v sshpass >/dev/null 2>&1; then
     SSHPASS="${TEMP_SSH_PASSWORD}" sshpass -e ssh -f -N \
       -o StrictHostKeyChecking=no \
+      "${ka_opts[@]}" \
       -L "${PROD_TUNNEL_LOCAL_PORT}:${PROD_TUNNEL_REMOTE_HOST}:${PROD_TUNNEL_REMOTE_PORT}" \
       "${SSH_USER}@${SSH_HOST}"
   else
     ssh -f -N \
+      "${ka_opts[@]}" \
       -L "${PROD_TUNNEL_LOCAL_PORT}:${PROD_TUNNEL_REMOTE_HOST}:${PROD_TUNNEL_REMOTE_PORT}" \
       "${SSH_USER}@${SSH_HOST}"
   fi

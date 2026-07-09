@@ -189,7 +189,14 @@ def parse_all_results_html(
     barcode_id: str = "",
 ) -> tuple[CanonicalParticipant, list[CanonicalRunResult], dict[str, object]]:
     soup = BeautifulSoup(html, "html.parser")
-    if "403 forbidden" in soup.get_text(" ", strip=True).lower()[:200]:
+    title_text = soup.title.get_text(strip=True).lower() if soup.title else ""
+    if (
+        "403 forbidden" in soup.get_text(" ", strip=True).lower()[:200]
+        # 404-страница parkrun: title "Page not found | parkrun UK | Page <id>".
+        # Без этой ветки 404 проваливался в _parse_name_barcode как parse-ошибка
+        # и бесконечно ретраился в pending вместо терминального failed.
+        or "page not found" in title_text
+    ):
         raise ParkrunProfileNotFound("Профиль parkrun не найден или недоступен")
 
     name, athlete_from_page = _parse_name_barcode(soup)
@@ -277,7 +284,14 @@ def parse_all_results_html(
 
 def parse_profile_summary_html(html: str, *, parsed: ParsedParkrunProfile) -> tuple[CanonicalParticipant, dict[str, object]]:
     soup = BeautifulSoup(html, "html.parser")
-    if "403 forbidden" in soup.get_text(" ", strip=True).lower()[:200]:
+    title_text = soup.title.get_text(strip=True).lower() if soup.title else ""
+    if (
+        "403 forbidden" in soup.get_text(" ", strip=True).lower()[:200]
+        # 404-страница parkrun: title "Page not found | parkrun UK | Page <id>".
+        # Без этой ветки 404 проваливался в _parse_name_barcode как parse-ошибка
+        # и бесконечно ретраился в pending вместо терминального failed.
+        or "page not found" in title_text
+    ):
         raise ParkrunProfileNotFound("Профиль parkrun не найден или недоступен")
 
     name, athlete_from_page = _parse_name_barcode(soup)

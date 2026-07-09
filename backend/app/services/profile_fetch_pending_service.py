@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -16,7 +16,7 @@ from app.models import (
     ProfileFetchPendingStatus,
     User,
 )
-from app.parkrun.errors import ParkrunBanDetected
+from app.parkrun.errors import ParkrunBanDetected, ParkrunProfileNotFound
 from app.platform_adapters.registry import ensure_adapters_registered, get_adapter
 from app.platform_fetch.cooldown import is_platform_in_cooldown, parse_cooldown_until_from_message
 from app.s95.errors import S95BanDetected, S95FetchTimeout
@@ -237,6 +237,26 @@ def _import_five_verst_activity(db: Session, platform: Platform, profile_input: 
     return participant.external_user_id
 
 
+def _is_permanent_profile_error(exc: BaseException) -> bool:
+    """Профиль не существует (404) — терминальная ошибка, ретраи не помогут.
+
+    Ловим ParkrunProfileNotFound где угодно в цепочке __cause__ (прямой импорт
+    поднимает его напрямую; preview-путь заворачивает в ProfileLinkingError с
+    from exc). Плюс общий сигнал: ProfileLinkingError со status_code 404 —
+    так же маппятся not-found у five_verst и s95.
+    """
+    cursor: BaseException | None = exc
+    for _ in range(10):
+        if cursor is None:
+            break
+        if isinstance(cursor, ParkrunProfileNotFound):
+            return True
+        if getattr(cursor, "status_code", None) == 404:
+            return True
+        cursor = cursor.__cause__
+    return False
+
+
 def process_pending_row(db: Session, row: ProfileFetchPending) -> str:
     if row.status not in (ProfileFetchPendingStatus.pending, ProfileFetchPendingStatus.processing):
         return "skipped_status"
@@ -292,6 +312,21 @@ def process_pending_row(db: Session, row: ProfileFetchPending) -> str:
                 row.external_user_id or row.profile_input,
             )
             return "cooldown"
+        if _is_permanent_profile_error(exc):
+            # Профиль не существует (404) — ретраи бессмысленны, сразу failed,
+            # иначе строка 5 раз крутится в pending (жалоба про 790115304).
+            row.status = ProfileFetchPendingStatus.failed
+            row.reason = ProfileFetchPendingReason.error
+            row.last_error = str(exc)
+            row.attempts += 1
+            row.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            logger.info(
+                "pending profile fetch: профиль не найден, помечаю failed: %s %s",
+                row.platform_code,
+                row.external_user_id or row.profile_input,
+            )
+            return "not_found"
         row.status = ProfileFetchPendingStatus.pending
         row.reason = ProfileFetchPendingReason.error
         row.last_error = str(exc)
@@ -444,6 +479,34 @@ def reset_failed_parkrun_pending(db: Session) -> int:
         row.status = ProfileFetchPendingStatus.pending
         row.attempts = 0
         row.last_error = None
+    if rows:
+        db.commit()
+    return len(rows)
+
+
+# Строка помечается 'processing' и коммитится до фетча (process_pending_row).
+# Если демон падает на этом шаге (упавший туннель, Ctrl+C, краш браузера), строка
+# навсегда виснет в 'processing' — list_pending_rows её не выбирает, и профиль
+# теряется. Реквьюем «протухшие» processing на старте демона. Порог нужен, чтобы
+# не тронуть строку, которую прямо сейчас обрабатывает живой демон; один элемент
+# берётся ощутимо быстрее, так что 15 минут — заведомо безопасно.
+STUCK_PROCESSING_AGE = timedelta(minutes=15)
+
+
+def requeue_stuck_processing_parkrun_pending(db: Session) -> int:
+    cutoff = datetime.now(timezone.utc) - STUCK_PROCESSING_AGE
+    rows = (
+        db.query(ProfileFetchPending)
+        .filter(
+            ProfileFetchPending.platform_code == "parkrun",
+            ProfileFetchPending.status == ProfileFetchPendingStatus.processing,
+            ProfileFetchPending.updated_at < cutoff,
+        )
+        .all()
+    )
+    for row in rows:
+        row.status = ProfileFetchPendingStatus.pending
+        row.updated_at = datetime.now(timezone.utc)
     if rows:
         db.commit()
     return len(rows)
