@@ -116,6 +116,22 @@ def _upsert_crosslinks_for_event(db: Session, runpark_event: Event) -> None:
         db.flush()
 
 
+def _recalculate_event_prs(db: Session, event_row: Event) -> None:
+    """Recalculate is_pr for every participant of the event. Must run AFTER
+    _upsert_crosslinks_for_event: the PR computation skips secondary-crosslink
+    duplicates, so the crosslink has to exist before is_pr is assigned."""
+    from app.services.personal_record_service import recalculate_participants_personal_records
+
+    participant_ids = {
+        row[0]
+        for row in db.query(RunResult.participant_id)
+        .filter(RunResult.event_id == event_row.id, RunResult.participant_id.isnot(None))
+        .all()
+    }
+    if participant_ids:
+        recalculate_participants_personal_records(db, PLATFORM_CODE, participant_ids)
+
+
 def _ensure_event(db: Session, platform: Platform, location: Location, row: dict) -> Event:
     external_event_key = str(row["event_id"]).upper()
     event_date = row["event_date"].date() if hasattr(row["event_date"], "date") else row["event_date"]
@@ -274,6 +290,7 @@ def sync_runpark_batch(db: Session, since_date: date) -> RunparkSyncResult:
                 result.volunteer_results_upserted += vol_count
 
                 _upsert_crosslinks_for_event(db, event_row)
+                _recalculate_event_prs(db, event_row)
                 result.events_upserted += 1
                 commit_step(db)
                 logger.info(
@@ -349,8 +366,10 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
                 (external_event_key,),
             )
             canonical_runs = [_to_canonical_run(r) for r in run_rows]
+            # recalculate_pr=False: PRs are recalculated after crosslinks are upserted
+            # (below) so "не в зачёте" duplicates never get the PR marker.
             result.run_results_upserted += upsert.upsert_run_results(
-                db, event_row, platform, canonical_runs, recalculate_pr=True
+                db, event_row, platform, canonical_runs, recalculate_pr=False
             )
             recalculate_event_gender_positions(db, event_row.id, PLATFORM_CODE)
 
@@ -367,6 +386,7 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
             )
 
             _upsert_crosslinks_for_event(db, event_row)
+            _recalculate_event_prs(db, event_row)
             result.events_upserted += 1
             commit_step(db)
         except Exception as exc:

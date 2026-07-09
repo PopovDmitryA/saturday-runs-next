@@ -967,6 +967,8 @@ def list_user_best_results(
     *,
     include_test_events: bool = False,
 ) -> list[dict[str, object]]:
+    from app.services.personal_record_service import user_secondary_crosslinked_run_ids
+
     query = (
         db.query(RunResult, Event, Location, Platform, PlatformLink)
         .join(Event, RunResult.event_id == Event.id)
@@ -981,6 +983,14 @@ def list_user_best_results(
     )
     if not include_test_events:
         query = query.filter(Event.is_test_event.is_(False))
+
+    # "Не в зачёте" duplicates (secondary crosslink) can't be the best result of a
+    # system — the same protocol is counted on the primary platform.
+    excluded_ids = user_secondary_crosslinked_run_ids(
+        db, user_id, include_test_events=include_test_events
+    )
+    if excluded_ids:
+        query = query.filter(RunResult.id.notin_(excluded_ids))
 
     rows = query.order_by(
         Platform.code.asc(),
