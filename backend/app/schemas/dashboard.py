@@ -78,6 +78,11 @@ class DashboardAnalyticsResponse(BaseModel):
     volunteering_index: str | None = None
     saturday_streak: int = 0
     saturday_streak_max: int = 0
+    saturday_run_streak_max: int = 0
+    saturday_vol_streak_max: int = 0
+    saturday_streak_current: int = 0
+    saturday_run_streak_current: int = 0
+    saturday_vol_streak_current: int = 0
     activity_calendar: list[ActivityCalendarDayResponse] = Field(default_factory=list)
     finish_times_sec: list[int] = Field(default_factory=list)
     saturday_consistency_pct: float | None = None

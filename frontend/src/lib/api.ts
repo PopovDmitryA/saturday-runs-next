@@ -123,6 +123,11 @@ export type DashboardAnalytics = {
   volunteering_index: string | null;
   saturday_streak: number;
   saturday_streak_max?: number;
+  saturday_run_streak_max?: number;
+  saturday_vol_streak_max?: number;
+  saturday_streak_current?: number;
+  saturday_run_streak_current?: number;
+  saturday_vol_streak_current?: number;
   activity_calendar?: Array<{
     date: string;
     runs: number;

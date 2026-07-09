@@ -724,6 +724,16 @@ export function DashboardAnalytics({
           <ActivityCalendarHeatmap
             days={activityCalendar}
             saturdayStreakMax={analytics.saturday_streak_max ?? 0}
+            bestStreak={{
+              total: analytics.saturday_streak_max ?? 0,
+              runs: analytics.saturday_run_streak_max ?? 0,
+              volunteering: analytics.saturday_vol_streak_max ?? 0,
+            }}
+            currentStreak={{
+              total: analytics.saturday_streak_current ?? 0,
+              runs: analytics.saturday_run_streak_current ?? 0,
+              volunteering: analytics.saturday_vol_streak_current ?? 0,
+            }}
           />
         </>
       ),

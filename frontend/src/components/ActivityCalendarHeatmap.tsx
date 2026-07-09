@@ -11,9 +11,17 @@ type CalendarDay = {
   volunteer_items?: CalendarItem[];
 };
 
+type StreakBreakdown = {
+  total: number;
+  runs: number;
+  volunteering: number;
+};
+
 type ActivityCalendarHeatmapProps = {
   days: CalendarDay[];
   saturdayStreakMax: number;
+  bestStreak?: StreakBreakdown;
+  currentStreak?: StreakBreakdown;
 };
 
 type CellStatus = "run" | "vol" | "both" | "miss" | "off";
@@ -113,7 +121,19 @@ function cellTooltipLines(aggregate: WeekAggregate | undefined): string[] {
   return lines.length > 0 ? lines : ["Без активности"];
 }
 
-export function ActivityCalendarHeatmap({ days, saturdayStreakMax }: ActivityCalendarHeatmapProps) {
+function streakLine(label: string, streak: StreakBreakdown): string {
+  const parts = [`${label} — ${streak.total} ${saturdaysLabel(streak.total)} подряд`];
+  parts.push(`пробежки — ${streak.runs}`);
+  parts.push(`волонтёрства — ${streak.volunteering}`);
+  return parts.join(" · ");
+}
+
+export function ActivityCalendarHeatmap({
+  days,
+  saturdayStreakMax,
+  bestStreak,
+  currentStreak,
+}: ActivityCalendarHeatmapProps) {
   const byWeekSaturday = new Map<string, WeekAggregate>();
   let firstActivity: Date | null = null;
 
@@ -216,10 +236,17 @@ export function ActivityCalendarHeatmap({ days, saturdayStreakMax }: ActivityCal
           Пропуск
         </span>
       </div>
-      {saturdayStreakMax > 0 && (
-        <p className="muted analytics-chart-caption">
-          Лучшая серия — {saturdayStreakMax} {saturdaysLabel(saturdayStreakMax)} подряд
-        </p>
+      {bestStreak && bestStreak.total > 0 ? (
+        <div className="muted analytics-chart-caption activity-cal-streaks">
+          <p>{streakLine("Лучшая серия", bestStreak)}</p>
+          <p>{streakLine("Текущая серия", currentStreak ?? { total: 0, runs: 0, volunteering: 0 })}</p>
+        </div>
+      ) : (
+        saturdayStreakMax > 0 && (
+          <p className="muted analytics-chart-caption">
+            Лучшая серия — {saturdayStreakMax} {saturdaysLabel(saturdayStreakMax)} подряд
+          </p>
+        )
       )}
     </div>
   );

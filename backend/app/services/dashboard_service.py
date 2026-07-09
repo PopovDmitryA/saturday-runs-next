@@ -43,7 +43,7 @@ class SyncRefreshRateLimitedError(Exception):
     pass
 
 
-ANALYTICS_VERSION = 21
+ANALYTICS_VERSION = 22
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -86,6 +86,25 @@ def _saturday_streak(activity_dates: set[date]) -> int:
         return 0
     streak = 0
     expected = max(saturdays)
+    while expected in saturdays:
+        streak += 1
+        expected -= timedelta(days=7)
+    return streak
+
+
+def _current_saturday_streak(activity_dates: set[date], today: date) -> int:
+    """Streak that is alive *now*: counts back from the most recent past Saturday.
+    Unlike _saturday_streak (which counts from the last active Saturday whenever it
+    was), a missed last Saturday breaks the streak. The very last Saturday is allowed
+    to be missing for one week — protocols are often synced with a delay."""
+    saturdays = {value for value in activity_dates if value.weekday() == 5}
+    if not saturdays:
+        return 0
+    last_saturday = today - timedelta(days=(today.weekday() - 5) % 7)
+    expected = last_saturday
+    if expected not in saturdays:
+        expected -= timedelta(days=7)
+    streak = 0
     while expected in saturdays:
         streak += 1
         expected -= timedelta(days=7)
@@ -621,11 +640,13 @@ def _compute_dashboard_analytics(
     vols_by_month: Counter[str] = Counter()
     for platform_code, rows in vol_rows_by_platform.items():
         vols_by_month.update(volunteering_by_month_for_platform(platform_code, rows))
-    all_activity_dates = set(run_dates) | {
+    run_activity_dates = set(run_dates)
+    vol_activity_dates = {
         event_date
         for platform_code, rows in vol_rows_by_platform.items()
         for event_date in volunteer_occasion_dates(platform_code, rows)
     }
+    all_activity_dates = run_activity_dates | vol_activity_dates
 
     run_visit_rows = runs_query.with_entities(Event.event_date, Location, Platform.code).all()
     vol_visit_rows = vol_query.with_entities(Event.event_date, Location, Platform.code).all()
@@ -747,6 +768,11 @@ def _compute_dashboard_analytics(
         "volunteering_index": _format_volunteering_index(total_runs, total_volunteering),
         "saturday_streak": _saturday_streak(all_activity_dates),
         "saturday_streak_max": _max_saturday_streak(all_activity_dates),
+        "saturday_run_streak_max": _max_saturday_streak(run_activity_dates),
+        "saturday_vol_streak_max": _max_saturday_streak(vol_activity_dates),
+        "saturday_streak_current": _current_saturday_streak(all_activity_dates, today),
+        "saturday_run_streak_current": _current_saturday_streak(run_activity_dates, today),
+        "saturday_vol_streak_current": _current_saturday_streak(vol_activity_dates, today),
         "activity_calendar": activity_calendar,
         "finish_times_sec": finish_times_sec,
         "platform_metrics": platform_metrics,
