@@ -99,6 +99,27 @@ class DashboardAnalyticsResponse(BaseModel):
     pace_trend: list[MonthlyPaceResponse] = Field(default_factory=list)
 
 
+class OnThisDayRunResponse(BaseModel):
+    years_ago: int
+    event_date: date
+    location_name: str
+    location_city: str | None = None
+    platform_code: str
+    finish_time_display: str | None = None
+    finish_time_sec: int | None = None
+    position: int | None = None
+    is_pr: bool = False
+    event_url: str | None = None
+
+
+class OnThisDayResponse(BaseModel):
+    kind: str | None = None
+    run: OnThisDayRunResponse | None = None
+    runs: list[OnThisDayRunResponse] = Field(default_factory=list)
+    also_count: int = 0
+    today_iso: str
+
+
 class DashboardStatsResponse(BaseModel):
     total_runs: int = 0
     total_volunteering: int = 0
@@ -122,6 +143,7 @@ class DashboardResponse(BaseModel):
 
 
 class RunItemResponse(BaseModel):
+    run_result_id: UUID | None = None
     platform_code: str
     event_date: date
     event_number: int | None = None

@@ -12,6 +12,8 @@ type ColumnHeaderProps = {
   filterTitle?: string;
   filterContent?: ReactNode;
   filterFooter?: ReactNode;
+  /** Нативный тултип на всю ячейку заголовка (для компактных заголовков-иконок). */
+  headerTitle?: string;
 };
 
 function ColumnHeaderText({ label }: { label: string }) {
@@ -54,13 +56,14 @@ export function ColumnHeader({
   filterTitle,
   filterContent,
   filterFooter,
+  headerTitle,
 }: ColumnHeaderProps) {
   const [open, setOpen] = useState(false);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
   const showFilter = filterable && filterContent;
 
   return (
-    <th className="th-col">
+    <th className="th-col" title={headerTitle}>
       <div className="th-col-inner">
         {onSort ? (
           <button

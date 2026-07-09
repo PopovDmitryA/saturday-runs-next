@@ -10,6 +10,30 @@ export function formatDate(value: string): string {
   });
 }
 
+const MONTHS_GENITIVE = [
+  "января",
+  "февраля",
+  "марта",
+  "апреля",
+  "мая",
+  "июня",
+  "июля",
+  "августа",
+  "сентября",
+  "октября",
+  "ноября",
+  "декабря",
+] as const;
+
+/** «2023-07-02» → «2 июля 2023». */
+export function formatDateLong(value: string): string {
+  const date = parseIsoDate(value) ?? new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return `${date.getDate()} ${MONTHS_GENITIVE[date.getMonth()]} ${date.getFullYear()}`;
+}
+
 /** ISO YYYY-MM-DD without UTC timezone shift (for chart axis labels). */
 export function parseIsoDate(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);

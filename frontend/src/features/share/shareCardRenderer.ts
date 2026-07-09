@@ -9,6 +9,8 @@ export type ShareCardInput = {
   backgroundImage: HTMLImageElement | null;
   textColor: ShareTextColor;
   summaryLine?: string | null;
+  /** Яркая плашка-акцент над именем (например «2 года назад» для годовщины). */
+  accentLabel?: string | null;
 };
 
 const FONT = "system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
@@ -187,6 +189,55 @@ function drawTextWithShadow(
   ctx.shadowOffsetY = 0;
 }
 
+// Яркая плашка-акцент (например «В ЭТОТ ДЕНЬ · 2 ГОДА НАЗАД») по центру.
+// Ужимает шрифт, чтобы плашка влезла в maxWidth. Возвращает высоту.
+function drawAccentPill(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  topY: number,
+  label: string,
+  headerH: number,
+  maxWidth: number,
+): number {
+  const text = label.toUpperCase();
+  let fontSize = Math.max(Math.round(headerH * 0.135), 22);
+  const minSize = 18;
+  ctx.letterSpacing = "0.06em";
+  let textW = 0;
+  let padX = fontSize * 0.85;
+  while (fontSize >= minSize) {
+    ctx.font = `800 ${fontSize}px ${FONT}`;
+    textW = ctx.measureText(text).width;
+    padX = fontSize * 0.85;
+    if (textW + padX * 2 <= maxWidth) {
+      break;
+    }
+    fontSize -= 2;
+  }
+  ctx.font = `800 ${fontSize}px ${FONT}`;
+  const padY = fontSize * 0.46;
+  const pillW = Math.min(textW + padX * 2, maxWidth);
+  const pillH = fontSize + padY * 2;
+  const pillX = (w - pillW) / 2;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 18;
+  ctx.shadowOffsetY = 4;
+  drawRoundedRect(ctx, pillX, topY, pillW, pillH, pillH / 2);
+  ctx.fillStyle = "#f59e0b";
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = "#1f2937";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, w / 2, topY + pillH / 2 + fontSize * 0.04);
+  ctx.textBaseline = "alphabetic";
+  ctx.letterSpacing = "0px";
+  return pillH;
+}
+
 function drawHeader(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -196,13 +247,23 @@ function drawHeader(
   displayName: string,
   palette: TextPalette,
   summaryLine: string | null,
+  accentLabel: string | null,
 ) {
   const innerW = w - pad * 2;
+  const contentTop = headerTop + headerH * (accentLabel ? 0.12 : 0.28);
+  let cursorY = contentTop;
+
+  if (accentLabel) {
+    const pillH = drawAccentPill(ctx, w, cursorY, accentLabel, headerH, innerW);
+    cursorY += pillH + headerH * 0.06;
+  }
+
+  const nameMaxH = headerH * (accentLabel ? 0.3 : 0.52);
   const nameLines = wrapText(ctx, displayName, innerW).slice(0, 2);
-  const nameSize = fitMultilineFontSize(ctx, nameLines, innerW, headerH * 0.52, "700", headerH * 0.22, 28, 1.08);
+  const nameSize = fitMultilineFontSize(ctx, nameLines, innerW, nameMaxH, "700", headerH * 0.22, 28, 1.08);
   ctx.font = `700 ${nameSize}px ${FONT}`;
   const nameBlockH = nameLines.length * nameSize * 1.08;
-  let y = headerTop + headerH * 0.28 + nameSize;
+  let y = cursorY + nameSize;
 
   for (const line of nameLines) {
     drawTextWithShadow(ctx, line, w / 2, y, palette);
@@ -210,9 +271,9 @@ function drawHeader(
   }
 
   const tagText = summaryLine ?? SHARE_TAGLINE;
-  const tagSize = fitFontSize(ctx, tagText, innerW, headerH * 0.22, "500", nameSize * 0.42, 16);
+  const tagSize = fitFontSize(ctx, tagText, innerW, headerH * 0.2, "500", nameSize * 0.42, 16);
   ctx.font = `500 ${tagSize}px ${FONT}`;
-  const tagY = headerTop + headerH * 0.28 + nameBlockH + tagSize * 1.35;
+  const tagY = cursorY + nameBlockH + tagSize * 1.35;
   drawTextWithShadow(ctx, tagText, w / 2, tagY, palette, "center", palette.secondary);
 }
 
@@ -396,7 +457,15 @@ export function renderShareCard(
   input: ShareCardInput,
   options?: { scale?: number },
 ): void {
-  const { format, displayName, metrics, backgroundImage, textColor, summaryLine = null } = input;
+  const {
+    format,
+    displayName,
+    metrics,
+    backgroundImage,
+    textColor,
+    summaryLine = null,
+    accentLabel = null,
+  } = input;
   const scale = options?.scale ?? 1;
   const w = format.width;
   const h = format.height;
@@ -422,7 +491,7 @@ export function renderShareCard(
 
   drawPhotoBackground(ctx, w, h, backgroundImage);
   drawEdgeGradients(ctx, w, h, headerH, palette.treatment);
-  drawHeader(ctx, w, 0, headerH, pad, displayName, palette, summaryLine);
+  drawHeader(ctx, w, 0, headerH, pad, displayName, palette, summaryLine, accentLabel);
   drawMetricZones(ctx, w, middleTop, middleH, metrics, horizontal, palette);
   drawFooter(ctx, w, h, footerH, pad);
 }

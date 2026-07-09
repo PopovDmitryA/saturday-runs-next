@@ -3,6 +3,8 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { MapLocationPoint } from "../lib/api";
 import { formatDate, platformCodeLabel } from "../lib/format";
+import type { MapViewportRef } from "../lib/mapViewport";
+import { MapFullscreenButton } from "./MapFullscreenButton";
 
 const visitedIcon = L.divIcon({
   className: "map-marker map-marker-visited",
@@ -122,18 +124,24 @@ type LocationMapProps = {
   legend?: ReactNode;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  /** Панель видна: при активации карта пересчитывает размер и применяет общий вьюпорт. */
+  active?: boolean;
+  /** Общий с картой регионов вьюпорт — чтобы положение сохранялось при переключении. */
+  viewportRef?: MapViewportRef;
 };
 
 function fitMapToPoints(map: L.Map, points: MapLocationPoint[]) {
+  // Без анимации: moveend срабатывает синхронно, и общий вьюпорт записывается
+  // сразу (анимированный fit мог не завершиться в фоновой вкладке).
   if (points.length === 1) {
-    map.setView([points[0].latitude, points[0].longitude], 12);
+    map.setView([points[0].latitude, points[0].longitude], 12, { animate: false });
     return;
   }
   const bounds = L.latLngBounds([]);
   for (const point of points) {
     bounds.extend([point.latitude, point.longitude]);
   }
-  map.fitBounds(bounds.pad(0.12));
+  map.fitBounds(bounds.pad(0.12), { animate: false });
 }
 
 function formatPopupDates(dates: string[] | undefined, limit = 8): string {
@@ -268,17 +276,38 @@ export function LocationMap({
   legend,
   isFullscreen = false,
   onToggleFullscreen,
+  active = true,
+  viewportRef,
 }: LocationMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<L.LayerGroup | null>(null);
   const hasFittedInitialViewRef = useRef(false);
+  // Актуальное значение active для обработчика moveend (он регистрируется один раз).
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     setTimeout(() => map.invalidateSize(), 50);
   }, [isFullscreen]);
+
+  // При активации панели (переключение вкладки) карта была скрыта — пересчитываем
+  // размер и подхватываем общий вьюпорт, чтобы положение сохранилось.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !active) return;
+    setTimeout(() => {
+      // Читаем общий вьюпорт ДО invalidateSize: тот может дёрнуть moveend уже
+      // активной карты и перезаписать shared её собственным (устаревшим) видом.
+      const shared = viewportRef?.current;
+      map.invalidateSize();
+      if (shared) {
+        map.setView([shared.lat, shared.lng], shared.zoom, { animate: false });
+      }
+    }, 30);
+  }, [active, viewportRef]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -300,12 +329,23 @@ export function LocationMap({
     markersRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
+    // Видимая карта — источник правды общего вьюпорта: пишем его при каждом
+    // moveend (включая программный первичный fit), чтобы вторая карта открывалась
+    // ровно в том же месте — и в дефолтном состоянии, и после зума пользователя.
+    const writeViewport = () => {
+      if (!viewportRef || !activeRef.current) return;
+      const center = map.getCenter();
+      viewportRef.current = { lat: center.lat, lng: center.lng, zoom: map.getZoom() };
+    };
+    map.on("moveend", writeViewport);
+
     return () => {
+      map.off("moveend", writeViewport);
       map.remove();
       mapRef.current = null;
       markersRef.current = null;
     };
-  }, []);
+  }, [viewportRef]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -348,10 +388,15 @@ export function LocationMap({
     }
 
     if (!hasFittedInitialViewRef.current) {
-      fitMapToPoints(map, points);
+      const shared = viewportRef?.current;
+      if (shared) {
+        map.setView([shared.lat, shared.lng], shared.zoom, { animate: false });
+      } else {
+        fitMapToPoints(map, points);
+      }
       hasFittedInitialViewRef.current = true;
     }
-  }, [points, variant, visitedByIdentity]);
+  }, [points, variant, visitedByIdentity, viewportRef]);
 
   return (
     <div className="location-map-shell">
@@ -363,28 +408,7 @@ export function LocationMap({
         </div>
       ) : null}
       {onToggleFullscreen && (
-        <button
-          className="location-map-fullscreen-btn"
-          onClick={onToggleFullscreen}
-          title={isFullscreen ? "Свернуть карту" : "Развернуть карту на весь экран"}
-          aria-label={isFullscreen ? "Свернуть карту" : "Развернуть карту на весь экран"}
-        >
-          {isFullscreen ? (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polyline points="4 14 10 14 10 20" />
-              <polyline points="20 10 14 10 14 4" />
-              <line x1="10" y1="14" x2="3" y2="21" />
-              <line x1="21" y1="3" x2="14" y2="10" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polyline points="15 3 21 3 21 9" />
-              <polyline points="9 21 3 21 3 15" />
-              <line x1="21" y1="3" x2="14" y2="10" />
-              <line x1="3" y1="21" x2="10" y2="14" />
-            </svg>
-          )}
-        </button>
+        <MapFullscreenButton isFullscreen={isFullscreen} onToggle={onToggleFullscreen} />
       )}
     </div>
   );

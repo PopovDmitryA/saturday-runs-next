@@ -77,6 +77,30 @@ export function hasActivePlatformFilter(filters: PlatformFilters): boolean {
 
 export type ActivityFilter = "runs" | "volunteering";
 
+export type MapView = "locations" | "regions";
+
+// Режим карты локаций хранится одним значением, но в UI это два независимых
+// тумблера «Где не был» и «Мои визиты»: оба нажаты = "all".
+export type MapMode = "all" | "unvisited" | "visited";
+
+export type MapModeToggle = "unvisited" | "visited";
+
+export function isModeTogglePressed(mode: MapMode, which: MapModeToggle): boolean {
+  return which === "unvisited" ? mode !== "visited" : mode !== "unvisited";
+}
+
+export function toggleMapMode(mode: MapMode, which: MapModeToggle): MapMode {
+  if (which === "unvisited") {
+    if (mode === "all") return "visited";
+    if (mode === "visited") return "all";
+  } else {
+    if (mode === "all") return "unvisited";
+    if (mode === "unvisited") return "all";
+  }
+  // Единственный включённый тумблер не отжимается — хотя бы один активен.
+  return mode;
+}
+
 export function filterPointsByActivity(
   points: MapLocationPoint[],
   activity: ActivityFilter,

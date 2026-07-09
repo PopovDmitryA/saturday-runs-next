@@ -1,0 +1,244 @@
+import { useEffect, useState } from "react";
+import { PlatformBadge } from "./PlatformBadge";
+import { DetailModal } from "./DetailModal";
+import type { OnThisDay, OnThisDayRun } from "../lib/api";
+import { formatDateLong, formatFinishTimeValue, pluralFormRu } from "../lib/format";
+
+type OnThisDayCardProps = {
+  load: () => Promise<OnThisDay>;
+  /** База ссылки «Поделиться»; добавляется ?story=on_this_day + пробежка в sessionStorage. */
+  shareBase: string;
+};
+
+const YEAR_FORMS = ["год", "года", "лет"] as const;
+const RUN_FORMS = ["пробежка", "пробежки", "пробежек"] as const;
+
+// Ключ, по которому карточка «В этот день» передаёт конкретную историческую
+// пробежку в мастер «Поделиться» (SharePage читает его при ?story=on_this_day).
+export const ON_THIS_DAY_SHARE_KEY = "shareOnThisDayRun";
+// localStorage: today_iso, на который карточку закрыли (скрываем до следующего дня).
+const ON_THIS_DAY_DISMISS_KEY = "onThisDayDismissedDate";
+
+// Компактное время: «00:23:04» → «23:04».
+function compactTime(display: string | null, sec: number | null): string | null {
+  const value = formatFinishTimeValue(display, sec);
+  if (!value || value === "—") {
+    return null;
+  }
+  return value.replace(/^00:/, "");
+}
+
+// «год назад» / «2 года назад» / «5 лет назад».
+function yearsAgoPhrase(years: number): string {
+  if (years <= 0) {
+    return "сегодня";
+  }
+  if (years === 1) {
+    return "год назад";
+  }
+  return `${years} ${pluralFormRu(years, YEAR_FORMS)} назад`;
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+// «23:04 · 6 место» — детали одной пробежки.
+function runDetailsLine(run: OnThisDayRun): string {
+  const parts: string[] = [];
+  const time = compactTime(run.finish_time_display, run.finish_time_sec);
+  if (time) {
+    parts.push(time);
+  }
+  if (run.position != null) {
+    parts.push(`${run.position} место`);
+  }
+  return parts.join(" · ");
+}
+
+function ShareIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <line x1="8.6" y1="13.5" x2="15.4" y2="17.5" />
+      <line x1="15.4" y1="6.5" x2="8.6" y2="10.5" />
+    </svg>
+  );
+}
+
+function RunLocation({ run }: { run: OnThisDayRun }) {
+  return run.event_url ? (
+    <a
+      href={run.event_url}
+      target="_blank"
+      rel="noreferrer"
+      className="on-this-day-location"
+      onClick={(event) => event.stopPropagation()}
+    >
+      {run.location_name}
+    </a>
+  ) : (
+    <span className="on-this-day-location">{run.location_name}</span>
+  );
+}
+
+export function OnThisDayCard({ load, shareBase }: OnThisDayCardProps) {
+  const [data, setData] = useState<OnThisDay | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  // Дата (today_iso), на которую карточку закрыли крестиком. Пока совпадает с
+  // сегодняшней — карточку не показываем; на следующий день today_iso другой →
+  // карточка снова появится со свежими данными.
+  const [dismissedDate, setDismissedDate] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(ON_THIS_DAY_DISMISS_KEY);
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    load()
+      .then((result) => {
+        if (!cancelled) {
+          setData(result);
+        }
+      })
+      .catch(() => {
+        // тихо — карточка просто не покажется
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
+  if (!data || !data.run || data.kind === null) {
+    return null;
+  }
+  if (dismissedDate === data.today_iso) {
+    return null;
+  }
+
+  const run = data.run;
+  const todayIso = data.today_iso;
+  const dismiss = () => {
+    try {
+      localStorage.setItem(ON_THIS_DAY_DISMISS_KEY, todayIso);
+    } catch {
+      // приватный режим — просто скроем на эту сессию
+    }
+    setDismissedDate(todayIso);
+  };
+  const shareHref = `${shareBase}?story=on_this_day`;
+  const runs = data.runs.length > 0 ? data.runs : [run];
+  const otherCount = Math.max(runs.length - 1, data.also_count);
+  const hasMore = otherCount > 0;
+
+  // «Поделиться» кладёт конкретную пробежку в sessionStorage — SharePage
+  // подхватит её по ?story=on_this_day и откроет мастер с ней в главной роли.
+  const storeShareRun = (target: OnThisDayRun) => {
+    try {
+      sessionStorage.setItem(ON_THIS_DAY_SHARE_KEY, JSON.stringify(target));
+    } catch {
+      // приватный режим/переполнение — не критично, мастер откроется без пресета
+    }
+  };
+
+  const detailsLine = runDetailsLine(run);
+
+  return (
+    <>
+      <section
+        className={`on-this-day on-this-day-anniversary${hasMore ? " on-this-day-clickable" : ""}`}
+        aria-label="В этот день"
+        onClick={hasMore ? () => setModalOpen(true) : undefined}
+        role={hasMore ? "button" : undefined}
+        tabIndex={hasMore ? 0 : undefined}
+        onKeyDown={
+          hasMore
+            ? (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setModalOpen(true);
+                }
+              }
+            : undefined
+        }
+      >
+        <button
+          type="button"
+          className="on-this-day-close"
+          aria-label="Скрыть до завтра"
+          title="Скрыть до завтра"
+          onClick={(event) => {
+            event.stopPropagation();
+            dismiss();
+          }}
+        >
+          ×
+        </button>
+        <div className="on-this-day-body">
+          <p className="on-this-day-headline">
+            В этот день {yearsAgoPhrase(run.years_ago)}{" "}
+            <span className="on-this-day-date">({formatDateLong(run.event_date)})</span>
+          </p>
+          <p className="on-this-day-run">
+            <RunLocation run={run} />
+            <PlatformBadge code={run.platform_code} />
+            {run.is_pr && <span className="on-this-day-pr">PR</span>}
+            {detailsLine && <span className="on-this-day-details">{detailsLine}</span>}
+          </p>
+          {hasMore && (
+            <span className="on-this-day-more">
+              И ещё {otherCount} {pluralFormRu(otherCount, RUN_FORMS)} в этот день — показать все
+            </span>
+          )}
+        </div>
+        <a
+          className="btn on-this-day-share"
+          href={shareHref}
+          onClick={(event) => {
+            event.stopPropagation();
+            storeShareRun(run);
+          }}
+        >
+          <ShareIcon />
+          Поделиться
+        </a>
+      </section>
+
+      <DetailModal open={modalOpen} title="Пробежки в этот день" onClose={() => setModalOpen(false)}>
+        <ul className="on-this-day-list">
+          {runs.map((item, index) => {
+            const line = runDetailsLine(item);
+            return (
+              <li key={`${item.event_date}-${item.platform_code}-${index}`} className="on-this-day-list-item">
+                <div className="on-this-day-list-info">
+                  <p className="on-this-day-list-when">
+                    {capitalize(yearsAgoPhrase(item.years_ago))} · {formatDateLong(item.event_date)}
+                  </p>
+                  <p className="on-this-day-list-run">
+                    <RunLocation run={item} />
+                    <PlatformBadge code={item.platform_code} />
+                    {item.is_pr && <span className="on-this-day-list-pr">PR</span>}
+                    {line && <span className="on-this-day-list-details">{line}</span>}
+                  </p>
+                </div>
+                <a
+                  className="btn secondary on-this-day-list-share"
+                  href={shareHref}
+                  onClick={() => storeShareRun(item)}
+                >
+                  <ShareIcon />
+                  Поделиться
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </DetailModal>
+    </>
+  );
+}

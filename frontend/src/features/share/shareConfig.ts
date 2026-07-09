@@ -101,6 +101,38 @@ export const SHARE_FIELDS: ShareFieldDef[] = [
   { id: "next_run_club", label: "До клуба", hint: "Следующий рубеж по пробежкам" },
 ];
 
+// Поля для постера ОДНОЙ пробежки (последняя / «В этот день N лет назад») —
+// в отличие от агрегатных SHARE_FIELDS это атрибуты конкретного забега.
+export type RunFieldId =
+  | "location"
+  | "finish_time"
+  | "position"
+  | "gender_position"
+  | "pace"
+  | "date"
+  | "city";
+
+export const RUN_SHARE_FIELDS: { id: RunFieldId; label: string; hint: string }[] = [
+  { id: "location", label: "Локация", hint: "Где бежали" },
+  { id: "finish_time", label: "Финишное время", hint: "Результат на дистанции" },
+  { id: "position", label: "Место в протоколе", hint: "Абсолютное место" },
+  { id: "gender_position", label: "Место по полу", hint: "Если есть данные" },
+  { id: "pace", label: "Темп", hint: "Мин/км" },
+  { id: "date", label: "Дата", hint: "Когда была пробежка" },
+  { id: "city", label: "Город", hint: "Город локации" },
+];
+
+// По умолчанию — локация, время, место (как было в last_run).
+export const RUN_DEFAULT_FIELDS: RunFieldId[] = ["location", "finish_time", "position"];
+
+// Центральная (главная) метрика постера пробежки.
+export function runPrimaryFieldId(fields: RunFieldId[]): RunFieldId | null {
+  if (fields.includes("finish_time")) {
+    return "finish_time";
+  }
+  return fields[0] ?? null;
+}
+
 export type SharePresetId =
   | "tourist"
   | "runner"

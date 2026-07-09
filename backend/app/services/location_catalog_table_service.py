@@ -85,6 +85,7 @@ def build_catalog_locations_table(
                 "name": catalog_index.display_name(location, platform_code),
                 "city": location.city,
                 "region": location.region,
+                "country": location.country,
                 "platform_code": platform_code,
                 "is_paused": _location_is_paused(location, catalog_index, platform_code),
                 "is_cancelled": _location_is_cancelled(location),

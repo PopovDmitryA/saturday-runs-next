@@ -93,6 +93,7 @@ class CatalogLocationTableRowResponse(BaseModel):
     name: str
     city: str | None = None
     region: str | None = None
+    country: str | None = None
     platform_code: str
     is_paused: bool = False
     is_cancelled: bool = False

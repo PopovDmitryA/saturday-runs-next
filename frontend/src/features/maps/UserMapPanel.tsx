@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LocationMap } from "../../components/LocationMap";
 import type { CatalogLocationsTableResponse, MapLocationsResponse } from "../../lib/api";
+import type { MapViewportRef } from "../../lib/mapViewport";
 import { pluralizeRu } from "../../lib/format";
 import { CatalogLocationsTable } from "./CatalogLocationsTable";
+import { MapModeToggles } from "./MapFilterBar";
 import {
   buildVisitedByIdentity,
   DEFAULT_PLATFORM_FILTERS,
@@ -10,24 +12,32 @@ import {
   filterPointsByActivity,
   filterPointsByPlatform,
   hasActivePlatformFilter,
+  toggleMapMode,
   type ActivityFilter,
+  type MapMode,
   type PlatformFilters,
 } from "./mapFilters";
-
-type MapMode = "all" | "unvisited" | "visited";
 
 export type UserMapPanelProps = {
   loadVisitedMap: () => Promise<MapLocationsResponse>;
   loadCatalogMap: () => Promise<MapLocationsResponse>;
   loadCatalogTable?: () => Promise<CatalogLocationsTableResponse>;
   visitedTabLabel?: string;
+  active?: boolean;
+  viewportRef?: MapViewportRef;
+  // Если переданы — фильтры контролирует родитель (общий фильтр-бар), и панель
+  // не рисует свои группы «активность/системы». Иначе — свои внутренние.
+  activityFilter?: ActivityFilter;
+  platformFilters?: PlatformFilters;
+  // Аналогично для тумблеров «Где не был»/«Мои визиты»: при переданных пропсах
+  // тулбар панели не рисуется вовсе — фильтры показывает родитель.
+  mapMode?: MapMode;
+  onMapModeChange?: (mode: MapMode) => void;
+  // Fullscreen тоже может контролировать родитель (общий полноэкранный блок
+  // с фильтр-баром на /maps); без пропсов — свой внутренний, как раньше.
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 };
-
-const MODE_DEFS: { mode: MapMode; label: string }[] = [
-  { mode: "all", label: "Все площадки" },
-  { mode: "unvisited", label: "Где не был" },
-  { mode: "visited", label: "Мои визиты" },
-];
 
 const PLATFORM_DEFS = [
   { code: "five_verst" as const, label: "5 вёрст", dot: "map-legend-dot-five-verst" },
@@ -36,24 +46,43 @@ const PLATFORM_DEFS = [
 ];
 
 export function UserMapPanel({
+  active: isActive = true,
+  viewportRef,
   loadVisitedMap,
   loadCatalogMap,
   loadCatalogTable,
   visitedTabLabel = "Мои визиты",
+  activityFilter: activityFilterProp,
+  platformFilters: platformFiltersProp,
+  mapMode: mapModeProp,
+  onMapModeChange,
+  isFullscreen: isFullscreenProp,
+  onToggleFullscreen,
 }: UserMapPanelProps) {
-  const [mode, setMode] = useState<MapMode>("all");
-  const [activityFilter, setActivityFilter] = useState<ActivityFilter>("runs");
-  const [platformFilters, setPlatformFilters] = useState<PlatformFilters>(DEFAULT_PLATFORM_FILTERS);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  const toggleFullscreen = useCallback(() => setIsFullscreen((v) => !v), []);
+  // Контролируемый режим (общий фильтр-бар) vs автономный (admin/public-profile).
+  const controlled = activityFilterProp !== undefined && platformFiltersProp !== undefined;
+  const modeControlled = mapModeProp !== undefined && onMapModeChange !== undefined;
+  const [modeInternal, setModeInternal] = useState<MapMode>("all");
+  const mode = mapModeProp ?? modeInternal;
+  const setMode = modeControlled ? onMapModeChange : setModeInternal;
+  const [activityInternal, setActivityInternal] = useState<ActivityFilter>("runs");
+  const [platformsInternal, setPlatformsInternal] =
+    useState<PlatformFilters>(DEFAULT_PLATFORM_FILTERS);
+  const activityFilter = activityFilterProp ?? activityInternal;
+  const platformFilters = platformFiltersProp ?? platformsInternal;
+  const fullscreenControlled = isFullscreenProp !== undefined && onToggleFullscreen !== undefined;
+  const [fullscreenInternal, setFullscreenInternal] = useState(false);
+  const isFullscreen = isFullscreenProp ?? fullscreenInternal;
+  const toggleFullscreenInternal = useCallback(() => setFullscreenInternal((v) => !v), []);
+  const toggleFullscreen = onToggleFullscreen ?? toggleFullscreenInternal;
 
   useEffect(() => {
-    if (!isFullscreen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setIsFullscreen(false); };
+    // Escape обрабатывает владелец состояния; при контролируемом fullscreen — родитель.
+    if (fullscreenControlled || !isFullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFullscreenInternal(false); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [isFullscreen]);
+  }, [fullscreenControlled, isFullscreen]);
   const [visited, setVisited] = useState<MapLocationsResponse | null>(null);
   const [catalog, setCatalog] = useState<MapLocationsResponse | null>(null);
   const [catalogTable, setCatalogTable] = useState<CatalogLocationsTableResponse | null>(null);
@@ -119,7 +148,7 @@ export function UserMapPanel({
   );
 
   const togglePlatformFilter = (code: keyof PlatformFilters) => {
-    setPlatformFilters((current) => {
+    setPlatformsInternal((current) => {
       const next = { ...current, [code]: !current[code] };
       if (!hasActivePlatformFilter(next)) {
         return current;
@@ -157,61 +186,64 @@ export function UserMapPanel({
   );
 
   return (
-    <div className={isFullscreen ? "map-panel-fullscreen" : undefined}>
+    <div className={!fullscreenControlled && isFullscreen ? "map-panel-fullscreen" : undefined}>
+      {!modeControlled && (
       <div className="map-toolbar">
-        <div className="map-toolbar-group" role="tablist" aria-label="Активность">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activityFilter === "runs"}
-            className={activityFilter === "runs" ? "map-mode-tab active" : "map-mode-tab"}
-            onClick={() => setActivityFilter("runs")}
-          >
-            Пробежки
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activityFilter === "volunteering"}
-            className={activityFilter === "volunteering" ? "map-mode-tab active" : "map-mode-tab"}
-            onClick={() => setActivityFilter("volunteering")}
-          >
-            Волонтёрство
-          </button>
-        </div>
-        <span className="map-toolbar-sep" aria-hidden />
-        <div className="map-toolbar-group" role="tablist" aria-label="Режим карты">
-          {MODE_DEFS.map(({ mode: m, label }) => (
-            <button
-              key={m}
-              type="button"
-              role="tab"
-              aria-selected={mode === m}
-              className={mode === m ? "map-mode-tab active" : "map-mode-tab"}
-              onClick={() => setMode(m)}
-            >
-              {m === "visited" ? visitedTabLabel : label}
-            </button>
-          ))}
-        </div>
-        <span className="map-toolbar-sep" aria-hidden />
-        <div className="map-toolbar-group" role="group" aria-label="Системы">
-          {PLATFORM_DEFS.map(({ code, label, dot }) => (
-            <button
-              key={code}
-              type="button"
-              className={
-                platformFilters[code] ? "map-platform-filter-btn active" : "map-platform-filter-btn"
-              }
-              onClick={() => togglePlatformFilter(code)}
-              aria-pressed={platformFilters[code]}
-            >
-              <span className={`map-legend-dot ${dot}`} aria-hidden />
-              {label}
-            </button>
-          ))}
-        </div>
+        {!controlled && (
+          <>
+            <div className="map-toolbar-group" role="tablist" aria-label="Активность">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activityFilter === "runs"}
+                className={activityFilter === "runs" ? "map-mode-tab active" : "map-mode-tab"}
+                onClick={() => setActivityInternal("runs")}
+              >
+                Пробежки
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activityFilter === "volunteering"}
+                className={activityFilter === "volunteering" ? "map-mode-tab active" : "map-mode-tab"}
+                onClick={() => setActivityInternal("volunteering")}
+              >
+                Волонтёрство
+              </button>
+            </div>
+            <span className="map-toolbar-sep" aria-hidden />
+          </>
+        )}
+        <MapModeToggles
+          mode={mode}
+          onToggle={(which) => setMode(toggleMapMode(mode, which))}
+          visitedLabel={visitedTabLabel}
+        />
+        {!controlled && (
+          <>
+            <span className="map-toolbar-sep" aria-hidden />
+            <div className="map-toolbar-group" role="group" aria-label="Системы">
+              {PLATFORM_DEFS.map(({ code, label, dot }) => (
+                <button
+                  key={code}
+                  type="button"
+                  className={
+                    platformFilters[code]
+                      ? "map-platform-filter-btn active"
+                      : "map-platform-filter-btn"
+                  }
+                  onClick={() => togglePlatformFilter(code)}
+                  aria-pressed={platformFilters[code]}
+                >
+                  <span className={`map-legend-dot ${dot}`} aria-hidden />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
+      )}
 
       {loading && !active && <p className="muted">Загрузка карты…</p>}
 
@@ -282,6 +314,8 @@ export function UserMapPanel({
             legend={mapLegend}
             isFullscreen={isFullscreen}
             onToggleFullscreen={toggleFullscreen}
+            active={isActive}
+            viewportRef={viewportRef}
             emptyMessage={
               !filtersActive
                 ? "Выберите хотя бы одну систему."

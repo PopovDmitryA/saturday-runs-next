@@ -4,6 +4,7 @@ import { AdminAbusePage } from "./features/admin/AdminAbusePage";
 import { AdminS95ParticipantsPage } from "./features/admin/AdminS95ParticipantsPage";
 import { AdminParkrunPage } from "./features/admin/AdminParkrunPage";
 import { AdminStatsPage } from "./features/admin/AdminStatsPage";
+import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
 import { AdminUserPreviewPage } from "./features/admin/AdminUserPreviewPage";
 import { PublicProfilePage } from "./features/public_profile/PublicProfilePage";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
@@ -81,6 +82,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/s95-participants": () => <AdminS95ParticipantsPage />,
   "/admin/abuse": () => <AdminAbusePage />,
   "/admin/stats": () => <AdminStatsPage />,
+  "/admin/ratings": () => <AdminRatingsPage />,
   "/admin/parkrun": () => <AdminParkrunPage />,
   "/settings": () => <SettingsPage />,
   "/about": () => <AboutPage />,

@@ -6,12 +6,14 @@ from uuid import UUID
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
     ForeignKey,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -768,3 +770,47 @@ class SyncLogEntry(Base):
 
     sync_run: Mapped["SyncRun | None"] = relationship(back_populates="log_entries")
     sync_job: Mapped["SyncJob | None"] = relationship(back_populates="log_entries")
+
+
+class LocationRating(Base):
+    __tablename__ = "location_ratings"
+    __table_args__ = (
+        UniqueConstraint("user_id", "run_result_id", name="uq_location_ratings_user_run"),
+        CheckConstraint("score_overall BETWEEN 1 AND 5", name="ck_location_ratings_overall"),
+        CheckConstraint(
+            "score_organization IS NULL OR score_organization BETWEEN 1 AND 5",
+            name="ck_location_ratings_organization",
+        ),
+        CheckConstraint(
+            "score_route IS NULL OR score_route BETWEEN 1 AND 5",
+            name="ck_location_ratings_route",
+        ),
+        CheckConstraint(
+            "score_community IS NULL OR score_community BETWEEN 1 AND 5",
+            name="ck_location_ratings_community",
+        ),
+        Index("ix_location_ratings_location_key", "location_key"),
+        Index("ix_location_ratings_user", "user_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    run_result_id: Mapped[UUID] = mapped_column(
+        ForeignKey("run_results.id", ondelete="CASCADE"), nullable=False
+    )
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    # canonical identity key локации (как home_location_key) — для агрегации рейтинга
+    location_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    platform_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    score_overall: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    score_organization: Mapped[int | None] = mapped_column(SmallInteger)
+    score_route: Mapped[int | None] = mapped_column(SmallInteger)
+    score_community: Mapped[int | None] = mapped_column(SmallInteger)
+    comment: Mapped[str | None] = mapped_column(Text)
+    # Показывать ли автора наружу; в БД оценка всегда не анонимна.
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

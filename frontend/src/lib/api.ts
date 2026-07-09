@@ -175,6 +175,7 @@ export type DashboardResponse = {
 };
 
 export type RunItem = {
+  run_result_id?: string | null;
   platform_code: string;
   event_date: string;
   event_number: number | null;
@@ -589,6 +590,171 @@ export function getDashboard() {
   return apiFetch<DashboardResponse>("/dashboard");
 }
 
+export type OnThisDayRun = {
+  years_ago: number;
+  event_date: string;
+  location_name: string;
+  location_city: string | null;
+  platform_code: string;
+  finish_time_display: string | null;
+  finish_time_sec: number | null;
+  position: number | null;
+  is_pr: boolean;
+  event_url: string | null;
+};
+
+export type OnThisDay = {
+  kind: "anniversary" | null;
+  run: OnThisDayRun | null;
+  runs: OnThisDayRun[];
+  also_count: number;
+  today_iso: string;
+};
+
+export function getOnThisDay() {
+  return apiFetch<OnThisDay>("/dashboard/on-this-day");
+}
+
+export function demoGetOnThisDay() {
+  return apiFetch<OnThisDay>("/demo/dashboard/on-this-day");
+}
+
+// ── Оценки стартов (рейтинг парков) ─────────────────────────────────────────
+
+export type RunRating = {
+  run_result_id: string;
+  score_overall: number;
+  score_organization: number | null;
+  score_route: number | null;
+  score_community: number | null;
+  comment: string | null;
+  is_public: boolean;
+  // можно ли ещё исправить/удалить (в пределах 3 месяцев) или уже зафиксировано
+  editable: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MyRating = RunRating & {
+  event_date: string;
+  platform_code: string;
+  location_name: string;
+  location_city: string | null;
+  finish_time_display: string | null;
+  position: number | null;
+  is_pr: boolean;
+  event_url: string | null;
+};
+
+export type MyRatings = {
+  can_rate: boolean;
+  total_runs: number;
+  min_runs_required: number;
+  create_window_days: number;
+  edit_window_days: number;
+  ratings: MyRating[];
+};
+
+export function getMyRatings() {
+  return apiFetch<MyRatings>("/ratings/mine");
+}
+
+// ── Админка: рейтинг ────────────────────────────────────────────────────────
+
+export type AdminRatingRow = {
+  id: string;
+  user_id: string;
+  user_display: string;
+  user_serial: number | null;
+  event_date: string;
+  platform_code: string;
+  location_key: string;
+  location_name: string;
+  score_overall: number;
+  score_organization: number | null;
+  score_route: number | null;
+  score_community: number | null;
+  comment: string | null;
+  is_public: boolean;
+  editable: boolean;
+  created_at: string;
+};
+
+export type AdminRatings = { ratings: AdminRatingRow[] };
+
+export function getAdminRatings() {
+  return apiFetch<AdminRatings>("/admin/ratings");
+}
+
+export type AdminLocationRatingRow = {
+  location_key: string;
+  location_name: string;
+  voters: number;
+  ratings: number;
+  avg_overall: number | null;
+  avg_organization: number | null;
+  avg_route: number | null;
+  avg_community: number | null;
+  meets_threshold: boolean;
+};
+
+export type AdminLocationRatings = {
+  excluded_locals: boolean;
+  min_voters: number;
+  locations: AdminLocationRatingRow[];
+};
+
+export function getAdminLocationRatings(excludeLocals: boolean) {
+  return apiFetch<AdminLocationRatings>(
+    `/admin/ratings/locations?exclude_locals=${excludeLocals ? "true" : "false"}`,
+  );
+}
+
+export type EligibleRun = {
+  run_result_id: string;
+  event_date: string;
+  platform_code: string;
+  location_name: string;
+  location_city: string | null;
+  finish_time_display: string | null;
+  position: number | null;
+  is_pr: boolean;
+  event_url: string | null;
+  my_rating: RunRating | null;
+};
+
+export type RatingEligibility = {
+  can_rate: boolean;
+  total_runs: number;
+  min_runs_required: number;
+  window_days: number;
+  runs: EligibleRun[];
+};
+
+export type RatingUpsert = {
+  score_overall: number;
+  score_organization?: number | null;
+  score_route?: number | null;
+  score_community?: number | null;
+  comment?: string | null;
+  is_public: boolean;
+};
+
+export function getEligibleRuns() {
+  return apiFetch<RatingEligibility>("/ratings/eligible-runs");
+}
+
+export function putRunRating(runResultId: string, body: RatingUpsert) {
+  return apiFetch<RunRating>(`/ratings/run/${runResultId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteRunRating(runResultId: string) {
+  return apiFetch<void>(`/ratings/run/${runResultId}`, { method: "DELETE" });
+}
+
 export type CoRunnerItem = {
   participant_key: string;
   display_name: string | null;
@@ -768,6 +934,7 @@ export type CatalogLocationTableRow = {
   name: string;
   city: string | null;
   region: string | null;
+  country: string | null;
   platform_code: string;
   is_paused: boolean;
   is_cancelled: boolean;

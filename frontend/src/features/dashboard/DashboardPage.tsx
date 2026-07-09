@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
+import { OnThisDayCard } from "../../components/OnThisDayCard";
 import { ProfileLinkSection } from "../../components/ProfileLinkSection";
+import { RecentRunsRating } from "../../components/RecentRunsRating";
 import { RequireAuth } from "../../components/RequireAuth";
-import { getDashboard, type DashboardResponse } from "../../lib/api";
+import { getDashboard, getOnThisDay, type DashboardResponse } from "../../lib/api";
 import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 
 function PublicProfileShareBlock({ serialId }: { serialId: number }) {
@@ -89,6 +91,8 @@ function DashboardContent({ isAdmin }: { isAdmin: boolean }) {
 
       {data && !error && (
         <>
+          <OnThisDayCard load={getOnThisDay} shareBase="/share" />
+
           <div className="stats-grid stats-grid-primary">
             <DashboardStatCard
               href="/runs"
@@ -103,6 +107,8 @@ function DashboardContent({ isAdmin }: { isAdmin: boolean }) {
               variant="volunteering"
             />
           </div>
+
+          <RecentRunsRating />
 
           <DashboardAnalytics
             analytics={stats?.analytics}

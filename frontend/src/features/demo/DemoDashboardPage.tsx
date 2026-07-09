@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
+import { OnThisDayCard } from "../../components/OnThisDayCard";
 import { AppDataSourceProvider, demoDataSource } from "../../lib/appDataSource";
 import {
+  demoGetOnThisDay,
   getDemoDashboard,
   type AdminUserPreviewDashboard,
 } from "../../lib/api";
@@ -61,6 +63,8 @@ function DemoDashboardContent() {
 
       {data && !error && (
         <>
+          <OnThisDayCard load={demoGetOnThisDay} shareBase="/share" />
+
           <div className="stats-grid stats-grid-primary">
             <DashboardStatCard
               href="/demo/runs"

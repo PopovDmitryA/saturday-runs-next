@@ -9,12 +9,71 @@ import { EmptyActivityState } from "../../components/EmptyActivityState";
 import { GlobalPrFinishTime } from "../../components/GlobalPrFinishTime";
 import { RequireAuth } from "../../components/RequireAuth";
 import { PlatformBadge } from "../../components/PlatformBadge";
+import { RateRunModal } from "../../components/RateRunModal";
 import { useActivityFilters } from "../../hooks/useActivityFilters";
-import { listProfileLinks, type RunItem } from "../../lib/api";
+import {
+  getMyRatings,
+  listProfileLinks,
+  type EligibleRun,
+  type MyRating,
+  type RunItem,
+} from "../../lib/api";
 import { useAppDataSource, AppDataSourceProvider, demoDataSource } from "../../lib/appDataSource";
 import { createFullSelection, sortRuns, toggleDateSort, toggleFinishSort, togglePaceSort, togglePositionSort, uniquePlatforms } from "../../lib/activityList";
 import { formatFinishTimeValue, platformCodeLabel } from "../../lib/format";
 import { DemoShell } from "../demo/DemoShell";
+
+function RunRatingStar({
+  rating,
+  canCreate,
+  canRate,
+  onOpen,
+}: {
+  rating: MyRating | undefined;
+  canCreate: boolean;
+  canRate: boolean;
+  onOpen: () => void;
+}) {
+  // Звезда только если старт оценён (любой давности) или его ещё можно оценить.
+  if (!rating && !canCreate) {
+    return (
+      <span
+        className="run-rate-na"
+        title="Оценить можно только старты за последние 30 дней"
+      >
+        —
+      </span>
+    );
+  }
+  const rated = rating != null;
+  const frozen = rated && !rating.editable;
+  return (
+    <button
+      type="button"
+      className={`run-rate-star ${rated ? "rated" : ""}`}
+      disabled={!canRate}
+      title={
+        frozen
+          ? `Оценка зафиксирована (старту > 3 мес): ${rating.score_overall}★`
+          : rated
+            ? `Ваша оценка: ${rating.score_overall}★ — изменить`
+            : "Оценить старт"
+      }
+      aria-label={rated ? (frozen ? "Посмотреть оценку" : "Изменить оценку старта") : "Оценить старт"}
+      onClick={onOpen}
+    >
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <path
+          d="M12 2.5l2.9 6.06 6.6.86-4.85 4.55 1.24 6.53L12 17.9l-5.89 3.06 1.24-6.53L2.5 9.42l6.6-.86L12 2.5z"
+          fill={rated ? "currentColor" : "none"}
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+}
 
 function RunsContent() {
   const { listRuns, mode } = useAppDataSource();
@@ -25,6 +84,13 @@ function RunsContent() {
   const [includeDuplicates, setIncludeDuplicates] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Оценка стартов — только в своём разделе пробежек.
+  const showRating = mode === "auth";
+  const [ratingsMap, setRatingsMap] = useState<Map<string, MyRating>>(new Map());
+  const [canRate, setCanRate] = useState(false);
+  const [createWindowDays, setCreateWindowDays] = useState(30);
+  const [ratingsVersion, setRatingsVersion] = useState(0);
+  const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
 
   const allPlatforms = useMemo(() => uniquePlatforms(runs), [runs]);
 
@@ -61,6 +127,56 @@ function RunsContent() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!showRating) {
+      return;
+    }
+    let cancelled = false;
+    getMyRatings()
+      .then((res) => {
+        if (cancelled) {
+          return;
+        }
+        setCanRate(res.can_rate);
+        setCreateWindowDays(res.create_window_days);
+        setRatingsMap(new Map(res.ratings.map((item) => [item.run_result_id, item])));
+      })
+      .catch(() => {
+        // тихо — звёзды просто не покажутся
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showRating, ratingsVersion]);
+
+  // После сохранения/удаления перечитываем оценки (проще, чем мержить локально).
+  const reloadRatings = useCallback(() => setRatingsVersion((v) => v + 1), []);
+
+  // Свежий старт, который ещё можно оценить (в пределах окна создания).
+  const isWithinCreateWindow = useCallback(
+    (eventDate: string) => {
+      const days = (Date.now() - new Date(`${eventDate}T00:00:00`).getTime()) / 86_400_000;
+      return days <= createWindowDays;
+    },
+    [createWindowDays],
+  );
+
+  const buildEligibleRun = useCallback(
+    (run: RunItem, rating: MyRating | undefined): EligibleRun => ({
+      run_result_id: run.run_result_id ?? "",
+      event_date: run.event_date,
+      platform_code: run.platform_code,
+      location_name: run.location_name,
+      location_city: run.location_city,
+      finish_time_display: run.finish_time_display,
+      position: run.position,
+      is_pr: run.is_pr,
+      event_url: run.event_url ?? null,
+      my_rating: rating ?? null,
+    }),
+    [],
+  );
 
   const showEmpty = !loading && !error && runs.length === 0;
   const dateSortActive = filters.sort === "date_desc" || filters.sort === "date_asc";
@@ -158,7 +274,7 @@ function RunsContent() {
 
           <div className="table-wrap">
             <table className="data-table data-table-filterable data-table-layout-fixed">
-              <ActivityTableCols variant="runs" />
+              <ActivityTableCols variant="runs" withRating={showRating} />
               <thead>
                 <tr>
                   <ColumnHeader
@@ -244,12 +360,19 @@ function RunsContent() {
                     sortAsc={filters.sort === "pace_asc"}
                     onSort={() => filters.setSort((current) => togglePaceSort(current))}
                   />
+                  {showRating && (
+                    <ColumnHeader
+                      label="★"
+                      filterable={false}
+                      headerTitle="Оценка старта — жёлтая звезда, если вы оценили"
+                    />
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {displayedRuns.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="table-empty-cell">
+                    <td colSpan={showRating ? 8 : 7} className="table-empty-cell">
                       <span className="muted">Нет строк по фильтрам</span>
                       {filters.hasActiveFilters && (
                         <button
@@ -301,6 +424,27 @@ function RunsContent() {
                       <td className="td-pace">
                         {run.pace_display ? `${run.pace_display} /км` : "—"}
                       </td>
+                      {showRating &&
+                        (() => {
+                          const rating = run.run_result_id
+                            ? ratingsMap.get(run.run_result_id)
+                            : undefined;
+                          const canCreate =
+                            canRate &&
+                            !rating &&
+                            !!run.run_result_id &&
+                            isWithinCreateWindow(run.event_date);
+                          return (
+                            <td className="td-rating">
+                              <RunRatingStar
+                                rating={rating}
+                                canCreate={canCreate}
+                                canRate={canRate}
+                                onOpen={() => setActiveRun(buildEligibleRun(run, rating))}
+                              />
+                            </td>
+                          );
+                        })()}
                     </tr>
                   ))
                 )}
@@ -319,6 +463,21 @@ function RunsContent() {
             )}
           </p>
         </>
+      )}
+
+      {activeRun && (
+        <RateRunModal
+          run={activeRun}
+          onClose={() => setActiveRun(null)}
+          onSaved={() => {
+            reloadRatings();
+            setActiveRun(null);
+          }}
+          onDeleted={() => {
+            reloadRatings();
+            setActiveRun(null);
+          }}
+        />
       )}
     </>
   );

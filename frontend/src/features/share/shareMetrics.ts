@@ -5,10 +5,16 @@ import {
   platformCodeLabel,
   timesLabel,
 } from "../../lib/format";
-import { SHARE_FIELDS, type ShareFieldId, type SharePeriodId } from "./shareConfig";
+import {
+  SHARE_FIELDS,
+  type RunFieldId,
+  type ShareFieldId,
+  type SharePeriodId,
+} from "./shareConfig";
 
 export type ShareMetricRow = {
-  id: ShareFieldId;
+  // ShareFieldId для агрегатных карточек либо RunFieldId для постера одной пробежки.
+  id: string;
   value: string;
   label: string;
 };
@@ -390,7 +396,7 @@ function metricValue(
   }
 }
 
-export function defaultPrimaryFieldId(fields: ShareFieldId[]): ShareFieldId | null {
+export function defaultPrimaryFieldId<T>(fields: T[]): T | null {
   if (fields.length === 0) {
     return null;
   }
@@ -404,10 +410,10 @@ export function defaultPrimaryFieldId(fields: ShareFieldId[]): ShareFieldId | nu
 }
 
 /** Top / center (primary) / bottom slots for share cards. */
-export function layoutMetricZones(
-  fields: ShareFieldId[],
-  primaryFieldId: ShareFieldId | null,
-  resolveRow: (fieldId: ShareFieldId) => ShareMetricRow | null,
+export function layoutMetricZones<T>(
+  fields: T[],
+  primaryFieldId: T | null,
+  resolveRow: (fieldId: T) => ShareMetricRow | null,
 ): (ShareMetricRow | null)[] {
   const zones: (ShareMetricRow | null)[] = [null, null, null];
   if (fields.length === 0) {
@@ -431,6 +437,38 @@ export function layoutMetricZones(
     zones[2] = resolveRow(others[1]);
   }
   return zones;
+}
+
+// Метрика постера ОДНОЙ пробежки по выбранному run-полю.
+export function buildRunMetricRow(run: RunItem, fieldId: RunFieldId): ShareMetricRow | null {
+  switch (fieldId) {
+    case "location":
+      return { id: fieldId, value: run.location_name, label: platformCodeLabel(run.platform_code) };
+    case "finish_time":
+      return run.finish_time_display
+        ? { id: fieldId, value: run.finish_time_display, label: "Финишное время" }
+        : null;
+    case "position":
+      return run.position != null
+        ? { id: fieldId, value: String(run.position), label: run.is_pr ? "Личный рекорд" : "Место" }
+        : null;
+    case "gender_position":
+      return run.gender_position != null
+        ? { id: fieldId, value: String(run.gender_position), label: "Место по полу" }
+        : null;
+    case "pace":
+      return run.pace_display
+        ? { id: fieldId, value: run.pace_display, label: "Темп /км" }
+        : null;
+    case "date":
+      return { id: fieldId, value: formatDate(run.event_date), label: "Дата" };
+    case "city":
+      return run.location_city
+        ? { id: fieldId, value: run.location_city, label: "Город" }
+        : null;
+    default:
+      return null;
+  }
 }
 
 export const LAST_RUN_METRIC_FIELDS: ShareFieldId[] = [

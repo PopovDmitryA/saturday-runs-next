@@ -11,6 +11,7 @@ from app.schemas.dashboard import (
     BestResultResponse,
     CoRunnerMeetingResponse,
     CoRunnerResponse,
+    OnThisDayResponse,
     PersonalRecordResponse,
     RunItemResponse,
     VolunteeringItemResponse,
@@ -34,6 +35,7 @@ from app.services.demo_service import (
 )
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_catalog_map_locations, list_user_visited_map_locations
+from app.services.on_this_day_service import get_on_this_day
 from app.services.user_unique_locations_detail import build_user_unique_location_details
 
 router = APIRouter(prefix="/demo", tags=["demo"])
@@ -43,6 +45,21 @@ router = APIRouter(prefix="/demo", tags=["demo"])
 def demo_dashboard(db: Annotated[Session, Depends(get_db)]) -> AdminUserPreviewDashboardResponse:
     payload = get_demo_dashboard(db)
     return AdminUserPreviewDashboardResponse.model_validate(payload)
+
+
+@router.get("/dashboard/on-this-day", response_model=OnThisDayResponse)
+def demo_on_this_day(
+    db: Annotated[Session, Depends(get_db)],
+    date: Annotated[str | None, Query()] = None,
+) -> OnThisDayResponse:
+    from datetime import date as _date
+
+    user_id = get_demo_user_id(db)
+    try:
+        today = _date.fromisoformat(date) if date else None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="date должен быть в формате YYYY-MM-DD") from exc
+    return OnThisDayResponse.model_validate(get_on_this_day(db, user_id, today=today))
 
 
 @router.get("/runs", response_model=list[RunItemResponse])

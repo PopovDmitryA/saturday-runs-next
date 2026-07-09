@@ -1,8 +1,10 @@
 type ActivityTableColsProps = {
   variant: "runs" | "volunteering";
+  /** Доп. узкая колонка со звездой-оценкой (только свой раздел пробежек). */
+  withRating?: boolean;
 };
 
-export function ActivityTableCols({ variant }: ActivityTableColsProps) {
+export function ActivityTableCols({ variant, withRating = false }: ActivityTableColsProps) {
   if (variant === "volunteering") {
     return (
       <colgroup>
@@ -22,6 +24,10 @@ export function ActivityTableCols({ variant }: ActivityTableColsProps) {
       <col className="col-compact" />
       <col className="col-time" />
       <col className="col-pace" />
+      {/* «Темп» без своего col тянется на остаток; при рейтинге держим это
+          пустым col, а последним ставим узкий col-rating. */}
+      {withRating && <col />}
+      {withRating && <col className="col-rating" />}
     </colgroup>
   );
 }

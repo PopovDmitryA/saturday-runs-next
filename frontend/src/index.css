@@ -550,6 +550,211 @@ body {
   gap: 0.75rem;
 }
 
+/* «В этот день» — самый заметный блок дашборда */
+.on-this-day {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+  padding: 0.75rem 2rem 0.75rem 1.05rem;
+  border-radius: 14px;
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(22, 101, 52, 0.22);
+}
+
+.on-this-day-close {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.on-this-day-close:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.on-this-day-anniversary {
+  background: linear-gradient(135deg, #7c3aed 0%, #2563eb 100%);
+  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.2);
+}
+
+.on-this-day-clickable {
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.on-this-day-clickable:hover {
+  box-shadow: 0 12px 26px rgba(79, 70, 229, 0.32);
+  transform: translateY(-1px);
+}
+
+.on-this-day-body {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.on-this-day-headline {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+/* Дата — инлайн-приглушённо в скобках сразу за «N лет назад» */
+.on-this-day-date {
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.on-this-day-run {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.on-this-day-location {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+a.on-this-day-location {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.on-this-day-pr {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.on-this-day-details {
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.95;
+}
+
+.on-this-day-more {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.on-this-day-share {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: #fff;
+  color: #0f172a;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  border: none;
+}
+
+.on-this-day-share:hover {
+  background: #f1f5f9;
+}
+
+/* PlatformBadge внутри тёмной карточки — светлее */
+.on-this-day-run .badge-platform {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+/* Модалка «Пробежки в этот день» */
+.on-this-day-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.on-this-day-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.on-this-day-list-info {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.on-this-day-list-when {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #4f46e5;
+}
+
+.on-this-day-list-run {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.on-this-day-list-run .on-this-day-location {
+  color: #0f172a;
+  font-size: 0.98rem;
+}
+
+.on-this-day-list-pr {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.on-this-day-list-details {
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+  color: #475569;
+}
+
+.on-this-day-list-share {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .stat-card {
   position: relative;
   background: #fff;
@@ -1003,6 +1208,75 @@ body {
 
 .analytics-legend-swatch-vol {
   background: #2563eb;
+}
+
+/* Высота и рамка — как у .location-map-canvas: при переключении вида карта
+   остаётся на том же месте страницы. */
+.region-choropleth-map {
+  width: 100%;
+  height: 28rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #eef2f7;
+}
+
+.region-choropleth-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.region-choropleth-ramp {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+.region-ramp-bar {
+  display: inline-block;
+  width: 90px;
+  height: 0.7rem;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+.region-ramp-sep {
+  width: 1px;
+  height: 1rem;
+  background: #e2e8f0;
+}
+
+.region-swatch-impossible {
+  background: #e5e9ef;
+}
+
+.region-choropleth-count {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.region-pct-label {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: #0f172a;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow:
+    0 0 3px rgba(255, 255, 255, 0.95),
+    0 0 3px rgba(255, 255, 255, 0.95),
+    0 0 3px rgba(255, 255, 255, 0.95);
 }
 
 .analytics-chart-bars-pace {
@@ -3217,6 +3491,28 @@ tr.run-crosslinked td {
   opacity: 0.55;
 }
 
+.map-platform-filter-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.map-platform-filter-btn.active:disabled {
+  opacity: 0.65;
+}
+
+/* Галочка в тумблерах «Где не был»/«Мои визиты»: место занято всегда,
+   видима только у нажатого — ширина кнопки не прыгает. */
+.map-toggle-check {
+  display: inline-block;
+  width: 0.9em;
+  font-weight: 700;
+  opacity: 0;
+}
+
+.map-platform-filter-btn.active .map-toggle-check {
+  opacity: 1;
+}
+
 .map-stats-card {
   margin-bottom: 0.75rem;
 }
@@ -3271,6 +3567,32 @@ tr.run-crosslinked td {
 .map-panel-fullscreen .map-stats-line,
 .map-panel-fullscreen .map-locations-list-spoiler {
   display: none;
+}
+
+/* Fullscreen страницы /maps: в оверлее общий фильтр-бар + активная панель;
+   растягиваем цепочку до карты. */
+.map-panel-fullscreen .maps-view-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.map-panel-fullscreen .maps-view-panel > div {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.map-panel-fullscreen .region-choropleth-map {
+  height: 100%;
+  border-radius: 0;
+  border: none;
+}
+
+.map-panel-fullscreen .region-choropleth-footer {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.45rem 1rem;
+  border-top: 1px solid #e2e8f0;
 }
 
 .location-map-empty {
@@ -6242,4 +6564,345 @@ tr.run-crosslinked td {
     max-width: 320px;
     margin: 0 auto;
   }
+}
+
+/* ── Оценки стартов (рейтинг парков) ─────────────────────────────────────── */
+.star-rating {
+  display: inline-flex;
+  gap: 0.15rem;
+  color: #f59e0b;
+}
+
+.star-btn {
+  background: none;
+  border: none;
+  padding: 0.1rem;
+  cursor: pointer;
+  color: #cbd5e1;
+  line-height: 0;
+  display: inline-flex;
+}
+
+.star-btn.filled {
+  color: #f59e0b;
+}
+
+.star-btn:hover {
+  transform: scale(1.08);
+}
+
+.recent-ratings {
+  margin-bottom: 1rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.recent-ratings-head {
+  margin-bottom: 0.75rem;
+}
+
+.recent-ratings-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.recent-ratings-lead {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.recent-ratings-gate {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+}
+
+.recent-ratings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.recent-ratings-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #eef2f7;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.recent-ratings-loc {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.recent-ratings-name {
+  font-weight: 600;
+}
+
+.recent-ratings-meta {
+  font-size: 0.82rem;
+  color: #64748b;
+  margin-top: 0.15rem;
+}
+
+.recent-ratings-action {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.recent-ratings-stars {
+  color: #f59e0b;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+}
+
+.recent-ratings-stars-empty {
+  color: #cbd5e1;
+}
+
+/* Модалка оценки */
+.rate-run {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.rate-run-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.rate-run-location {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.rate-run-date {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.rate-run-details {
+  color: #475569;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rate-run-criterion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.rate-run-criterion-text {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.rate-run-criterion-label {
+  font-weight: 600;
+}
+
+.rate-run-criterion-hint {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.rate-run-required {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #dc2626;
+  margin-left: 0.3rem;
+}
+
+.rate-run-comment-label {
+  display: grid;
+  gap: 0.3rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.rate-run-comment {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+  font-weight: 400;
+}
+
+.rate-run-comment-count {
+  justify-self: end;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.rate-run-public {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.rate-run-public .rate-run-criterion-hint {
+  display: block;
+  font-weight: 400;
+  margin-top: 0.1rem;
+}
+
+.rate-run-actions {
+  flex-wrap: wrap;
+}
+
+.rate-run-delete {
+  margin-right: auto;
+  color: #b91c1c;
+}
+
+/* Звезда-оценка в таблице пробежек */
+.col-rating { width: 36px; }
+.td-rating { text-align: center; padding-left: 0; padding-right: 0; }
+
+/* На всю ширину ячейки + центрирование — чтобы звезда и «—» имели ОДИН центр
+   по горизонтали, и высота как у текстовой строки (ячейки vertical-align: top). */
+.run-rate-star,
+.run-rate-na {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  height: 1.4rem;
+}
+
+.run-rate-star {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: #cbd5e1;
+  transition: color 0.12s, transform 0.12s;
+}
+
+.run-rate-star svg {
+  width: 20px;
+  height: 20px;
+}
+
+.run-rate-star:hover:not(:disabled) {
+  color: #f59e0b;
+  transform: scale(1.12);
+}
+
+.run-rate-star.rated {
+  color: #f59e0b;
+}
+
+.run-rate-star:disabled {
+  cursor: not-allowed;
+  color: #e2e8f0;
+}
+
+.run-rate-na {
+  color: #cbd5e1;
+}
+
+/* Зафиксированная оценка (только просмотр) */
+.rate-run-frozen {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.85rem;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+}
+
+.star-rating.disabled .star-btn {
+  cursor: default;
+}
+
+.star-rating.disabled .star-btn:hover {
+  transform: none;
+}
+
+.star-btn:disabled {
+  cursor: default;
+}
+
+/* Режим просмотра зафиксированной оценки — поля выглядят задизейбленными */
+.rate-run-readonly .rate-run-criterion-label,
+.rate-run-readonly .rate-run-comment-label {
+  color: #94a3b8;
+}
+
+.rate-run-readonly .star-rating.disabled {
+  opacity: 0.6;
+}
+
+.rate-run-readonly .rate-run-comment:disabled {
+  background: #f1f5f9;
+  color: #64748b;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
+  resize: none;
+}
+
+.rate-run-readonly .rate-run-public {
+  color: #94a3b8;
+}
+
+.rate-run-readonly .rate-run-public input:disabled {
+  cursor: not-allowed;
+}
+
+/* Админка: рейтинг */
+.admin-ratings-section { margin-bottom: 1.2rem; }
+.admin-ratings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.admin-ratings-lead { margin: 0.3rem 0 0.8rem; font-size: 0.85rem; }
+.admin-ratings-avg { font-weight: 700; font-variant-numeric: tabular-nums; }
+.admin-ratings-threshold {
+  margin-left: 0.4rem;
+  background: #dcfce7;
+  color: #166534;
+}
+.admin-ratings-comment {
+  max-width: 280px;
+  white-space: normal;
+  color: #475569;
+  font-size: 0.85rem;
 }

@@ -886,6 +886,7 @@ def list_user_runs(
     summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
     return [
         {
+            "run_result_id": run.id,
             "platform_code": platform.code,
             "event_date": event.event_date,
             "event_number": event.event_number,

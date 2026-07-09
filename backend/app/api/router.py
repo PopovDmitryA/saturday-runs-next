@@ -7,6 +7,7 @@ from app.api.routes import (
     demo,
     internal_bot,
     internal_vk_bot,
+    location_ratings,
     locations,
     profiles,
     public_profiles,
@@ -24,6 +25,7 @@ api_router.include_router(admin.router)
 api_router.include_router(profiles.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(runs.router)
+api_router.include_router(location_ratings.router)
 api_router.include_router(locations.router)
 api_router.include_router(sync.router)
 api_router.include_router(settings.router)
