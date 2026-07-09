@@ -47,7 +47,7 @@ def s95_link(db_session: Session) -> tuple[PlatformLink, Platform, Participant]:
     return link, platform, participant
 
 
-@patch("app.sync.parkrun_participant_discovery.discover_parkrun_participant_from_barcode")
+@patch("app.sync.parkrun_participant_discovery.enqueue_parkrun_discovery_from_barcode")
 @patch("app.workers.tasks.s95_sync.fetch_protocol_from_profile_task.apply_async")
 @patch("app.sync.s95_protocol.fetch_and_upsert_activity_protocol")
 @patch("app.sync.s95_user_sync.s95_parser.fetch_athlete_activity")

@@ -88,9 +88,11 @@ def sync_s95_platform_link(
         limit=check_limit,
     )
 
-    from app.sync.parkrun_participant_discovery import discover_parkrun_participant_from_barcode
+    # parkrun-discovery развязан от S95: не тянем parkrun инлайн (это вешало
+    # worker-s95), а ставим в очередь profile_fetch_pending для Mac-демона.
+    from app.sync.parkrun_participant_discovery import enqueue_parkrun_discovery_from_barcode
 
-    parkrun_discovery = discover_parkrun_participant_from_barcode(db, profile.barcode_id)
+    parkrun_discovery = enqueue_parkrun_discovery_from_barcode(db, profile.barcode_id)
 
     link.sync_status = PlatformLinkSyncStatus.ok
     link.error_message = None

@@ -126,6 +126,57 @@ def discover_parkrun_participant_from_barcode(
     )
 
 
+def enqueue_parkrun_discovery_from_barcode(
+    db: Session,
+    barcode_id: str | None,
+) -> ParkrunParticipantDiscoveryResult:
+    """Развязанный parkrun-discovery для S95-синка (батч-протоколы и синк профиля).
+
+    НИКОГДА не тянет parkrun инлайн: браузерный fetch parkrun.org.uk не должен
+    выполняться на серверном worker-s95 — Chromium там нет, а смешение sync/async
+    Playwright вешает процесс воркера намертво. Barcode → parkrun athlete id
+    резолвится офлайн; если участник отсутствует или протух — строка ставится в
+    profile_fetch_pending, и её подхватывает Mac parkrun-демон. Так parkrun-синк
+    полностью отвязан от S95 и не может уронить/подвесить S95-воркер.
+    """
+    settings = get_settings()
+    if not settings.parkrun_participant_discovery_enabled:
+        return ParkrunParticipantDiscoveryResult()
+
+    if not is_parkrun_eligible_barcode(barcode_id):
+        return ParkrunParticipantDiscoveryResult()
+
+    athlete_id = normalize_parkrun_athlete_id(barcode_id or "")
+    if not athlete_id or athlete_id.startswith("unknown:"):
+        return ParkrunParticipantDiscoveryResult()
+
+    platform = _get_parkrun_platform(db)
+    if platform is None or not platform.is_active:
+        return ParkrunParticipantDiscoveryResult()
+
+    result = ParkrunParticipantDiscoveryResult(attempted=True)
+    existing = _find_parkrun_participant(db, platform, athlete_id)
+    if existing is not None:
+        result.found = True
+        result.participant_id = str(existing.id)
+        if _participant_is_fresh(
+            existing,
+            min_refetch_days=settings.parkrun_participant_discovery_min_refetch_days,
+        ):
+            # Свежий профиль — заново тянуть не нужно, очередь не засоряем.
+            result.skipped_recent = True
+            return result
+
+    from app.services.profile_fetch_pending_service import ensure_parkrun_pending_queue_row
+
+    ensure_parkrun_pending_queue_row(
+        db,
+        athlete_id,
+        note="queued by s95 sync (parkrun decoupled from s95)",
+    )
+    return result
+
+
 def enrich_parkrun_protocol_participant(
     db: Session,
     participant: Participant,

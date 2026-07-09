@@ -482,23 +482,27 @@ def _discover_participants_after_protocol_upsert(
     if not participant_ids:
         return
     from app.sync.parkrun_participant_discovery import (
-        discover_parkrun_participant_from_barcode,
+        enqueue_parkrun_discovery_from_barcode,
         enrich_parkrun_protocol_participant,
     )
 
     rows = db.query(Participant).filter(Participant.id.in_(participant_ids)).all()
     if platform.code == "parkrun":
+        # Свой протокол parkrun обрабатывает Mac-воркер (очередь parkrun) — там
+        # браузер уместен, тянем инлайн.
         for row in rows:
             enrich_parkrun_protocol_participant(db, row, platform)
         return
     if platform.code == "s95":
+        # parkrun-discovery по barcode финишёров развязан от S95: не тянем parkrun
+        # инлайн (это вешало worker-s95), а ставим в очередь для Mac-демона.
         seen_barcodes: set[str] = set()
         for row in rows:
             barcode = (row.barcode_id or "").strip()
             if not barcode or barcode in seen_barcodes:
                 continue
             seen_barcodes.add(barcode)
-            discover_parkrun_participant_from_barcode(db, barcode)
+            enqueue_parkrun_discovery_from_barcode(db, barcode)
 
 
 def _volunteer_role_rank(role: str | None) -> int:
