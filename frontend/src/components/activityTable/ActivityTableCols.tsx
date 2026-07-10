@@ -12,6 +12,7 @@ export function ActivityTableCols({ variant, withRating = false }: ActivityTable
         <col className="col-platform" />
         <col className="col-location" />
         <col className="col-role" />
+        {withRating && <col className="col-rating" />}
       </colgroup>
     );
   }

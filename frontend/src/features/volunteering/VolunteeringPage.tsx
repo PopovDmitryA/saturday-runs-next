@@ -7,8 +7,16 @@ import { AppShell } from "../../components/AppShell";
 import { EmptyActivityState } from "../../components/EmptyActivityState";
 import { RequireAuth } from "../../components/RequireAuth";
 import { PlatformBadge } from "../../components/PlatformBadge";
+import { RateRunModal } from "../../components/RateRunModal";
+import { RunRatingStar } from "../../components/RunRatingStar";
 import { useVolunteeringFilters } from "../../hooks/useVolunteeringFilters";
-import { listProfileLinks, type VolunteeringItem } from "../../lib/api";
+import {
+  getMyRatings,
+  listProfileLinks,
+  type EligibleRun,
+  type MyRating,
+  type VolunteeringItem,
+} from "../../lib/api";
 import { useAppDataSource, AppDataSourceProvider, demoDataSource } from "../../lib/appDataSource";
 import { createFullSelection, sortVolunteering, toggleDateSort, uniquePlatforms } from "../../lib/activityList";
 import { platformCodeLabel } from "../../lib/format";
@@ -23,6 +31,14 @@ function VolunteeringContent() {
   const [includeDuplicates, setIncludeDuplicates] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Оценка стартов — только в своём разделе волонтёрств.
+  const showRating = mode === "auth";
+  const [ratingsMap, setRatingsMap] = useState<Map<string, MyRating>>(new Map());
+  const [canRate, setCanRate] = useState(false);
+  const [createWindowDays, setCreateWindowDays] = useState(30);
+  const [ratingsVersion, setRatingsVersion] = useState(0);
+  const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
 
   // parkrun volunteering: counted but not shown in table
   // count taken from "Total Credits" summary row, e.g. role = "Total Credits (2×)"
@@ -88,6 +104,66 @@ function VolunteeringContent() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!showRating) {
+      return;
+    }
+    let cancelled = false;
+    getMyRatings()
+      .then((res) => {
+        if (cancelled) {
+          return;
+        }
+        setCanRate(res.can_rate);
+        setCreateWindowDays(res.create_window_days);
+        // В таблице волонтёрств показываем только волонтёрские оценки
+        // (run_result_id пуст), keyed по entry_id.
+        setRatingsMap(
+          new Map(
+            res.ratings
+              .filter((item) => item.participation_type === "volunteer")
+              .map((item) => [item.entry_id, item]),
+          ),
+        );
+      })
+      .catch(() => {
+        // тихо — звёзды просто не покажутся
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showRating, ratingsVersion]);
+
+  const reloadRatings = useCallback(() => setRatingsVersion((v) => v + 1), []);
+
+  // Свежее волонтёрство, которое ещё можно оценить (в пределах окна создания).
+  const isWithinCreateWindow = useCallback(
+    (eventDate: string) => {
+      const days = (Date.now() - new Date(`${eventDate}T00:00:00`).getTime()) / 86_400_000;
+      return days <= createWindowDays;
+    },
+    [createWindowDays],
+  );
+
+  const buildEligibleRun = useCallback(
+    (item: VolunteeringItem, rating: MyRating | undefined): EligibleRun => ({
+      entry_id: item.rating_entry_id ?? "",
+      participation_type: "volunteer",
+      run_result_id: null,
+      event_date: item.event_date,
+      platform_code: item.platform_code,
+      location_name: item.location_name,
+      location_city: item.location_city,
+      finish_time_display: null,
+      position: null,
+      is_pr: false,
+      volunteer_role: item.role,
+      event_url: item.event_url ?? null,
+      my_rating: rating ?? null,
+    }),
+    [],
+  );
 
   const showEmpty = !loading && !error && items.length === 0;
   const dateSortActive = filters.sort === "date_desc" || filters.sort === "date_asc";
@@ -175,7 +251,7 @@ function VolunteeringContent() {
 
           <div className="table-wrap">
             <table className="data-table data-table-filterable data-table-layout-fixed data-table-volunteering">
-              <ActivityTableCols variant="volunteering" />
+              <ActivityTableCols variant="volunteering" withRating={showRating} />
               <thead>
                 <tr>
                   <ColumnHeader
@@ -252,12 +328,19 @@ function VolunteeringContent() {
                       />
                     }
                   />
+                  {showRating && (
+                    <ColumnHeader
+                      label="★"
+                      filterable={false}
+                      headerTitle="Оценка старта — жёлтая звезда, если вы оценили"
+                    />
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {displayedItems.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="table-empty-cell">
+                    <td colSpan={showRating ? 5 : 4} className="table-empty-cell">
                       <span className="muted">Нет строк по фильтрам</span>
                       {filters.hasActiveFilters && (
                         <button
@@ -293,6 +376,28 @@ function VolunteeringContent() {
                       </td>
                       <td className="td-location">{item.location_name}</td>
                       <td className="td-role">{item.role ?? "—"}</td>
+                      {showRating &&
+                        (() => {
+                          const rating = item.rating_entry_id
+                            ? ratingsMap.get(item.rating_entry_id)
+                            : undefined;
+                          const canCreate =
+                            canRate &&
+                            !rating &&
+                            !!item.rating_entry_id &&
+                            !item.is_crosslinked &&
+                            isWithinCreateWindow(item.event_date);
+                          return (
+                            <td className="td-rating">
+                              <RunRatingStar
+                                rating={rating}
+                                canCreate={canCreate}
+                                canRate={canRate}
+                                onOpen={() => setActiveRun(buildEligibleRun(item, rating))}
+                              />
+                            </td>
+                          );
+                        })()}
                     </tr>
                   ))
                 )}
@@ -311,6 +416,21 @@ function VolunteeringContent() {
             )}
           </p>
         </>
+      )}
+
+      {activeRun && (
+        <RateRunModal
+          run={activeRun}
+          onClose={() => setActiveRun(null)}
+          onSaved={() => {
+            reloadRatings();
+            setActiveRun(null);
+          }}
+          onDeleted={() => {
+            reloadRatings();
+            setActiveRun(null);
+          }}
+        />
       )}
     </>
   );

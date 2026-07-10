@@ -1144,31 +1144,52 @@ def list_user_volunteering(
 
     catalog_index = LocationCatalogIndex(db)
     summary_urls = _event_summary_source_urls(db, [event for _vol, event, _loc, _plat, _link in rows])
-    return [
-        {
-            "platform_code": platform.code,
-            "event_date": event.event_date,
-            "event_number": event.event_number,
-            "location_name": catalog_index.display_name(location, platform.code),
-            "location_source_name": location.name,
-            "location_city": location.city,
-            "location_country": location.country,
-            "role": volunteer.role,
-            "is_crosslinked": event.id in crosslinked_event_ids,
-            "is_test_event": event.is_test_event,
-            "event_url": _activity_event_url(
-                platform_code=platform.code,
-                event=event,
-                location=location,
-                profile_url=platform_link.external_url,
-                summary_source_url=summary_urls.get(
-                    (event.platform_id, event.location_id, event.event_date)
+
+    # Canonical volunteer_result_id для оценки одной физической площадки: min id
+    # среди строк с одним (дата, каноническая локация) — так волонтёрство с
+    # несколькими ролями (или кросслинк) оценивается один раз. Логика совпадает
+    # с rating_service.list_eligible_runs, чтобы звезда была одинаковой на
+    # дашборде и в таблице.
+    canonical_by_group: dict[tuple[date, str], str] = {}
+    for volunteer, event, location, platform, _link in rows:
+        identity = catalog_index.canonical_identity_key(location, platform.code)
+        key = (event.event_date, identity)
+        vid = str(volunteer.id)
+        if key not in canonical_by_group or vid < canonical_by_group[key]:
+            canonical_by_group[key] = vid
+
+    result: list[dict[str, object]] = []
+    for volunteer, event, location, platform, platform_link in rows:
+        identity = catalog_index.canonical_identity_key(location, platform.code)
+        canonical_vol_id = canonical_by_group[(event.event_date, identity)]
+        result.append(
+            {
+                "platform_code": platform.code,
+                "event_date": event.event_date,
+                "event_number": event.event_number,
+                "location_name": catalog_index.display_name(location, platform.code),
+                "location_source_name": location.name,
+                "location_city": location.city,
+                "location_country": location.country,
+                "role": volunteer.role,
+                "volunteer_result_id": volunteer.id,
+                # Опаковый id для оценки (общий на все роли одного старта).
+                "rating_entry_id": f"vol:{canonical_vol_id}",
+                "is_crosslinked": event.id in crosslinked_event_ids,
+                "is_test_event": event.is_test_event,
+                "event_url": _activity_event_url(
+                    platform_code=platform.code,
+                    event=event,
+                    location=location,
+                    profile_url=platform_link.external_url,
+                    summary_source_url=summary_urls.get(
+                        (event.platform_id, event.location_id, event.event_date)
+                    ),
                 ),
-            ),
-            **_location_status_fields(catalog_index, location, platform.code),
-        }
-        for volunteer, event, location, platform, platform_link in rows
-    ]
+                **_location_status_fields(catalog_index, location, platform.code),
+            }
+        )
+    return result
 
 
 def list_user_volunteer_role_stats(

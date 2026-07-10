@@ -246,6 +246,8 @@ export type VolunteeringItem = {
   location_is_paused?: boolean;
   location_is_cancelled?: boolean;
   role: string | null;
+  volunteer_result_id?: string | null;
+  rating_entry_id?: string | null;
   is_crosslinked: boolean;
   is_test_event: boolean;
   event_url?: string | null;
