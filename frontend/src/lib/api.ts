@@ -1123,6 +1123,7 @@ export type AdminUserListItem = {
   telegram_id: number | null;
   telegram_username: string | null;
   display_name: string | null;
+  public_slug: string | null;
   auth_logins: AdminUserAuthBrief[];
   news_subscribed: boolean;
   consent_accepted: boolean;
@@ -1418,6 +1419,34 @@ export function deleteAdminTelegramBan(telegramId: number) {
 export function clearAdminIpAbuseScore(ip: string) {
   return apiFetch<{ message: string }>(`/admin/abuse/blocks/ip/${encodeURIComponent(ip)}/clear-score`, {
     method: "POST",
+  });
+}
+
+export type BlockedSlugItem = {
+  id: string;
+  slug: string;
+  comment: string | null;
+  created_at: string;
+};
+
+export type BlockedSlugListResponse = {
+  items: BlockedSlugItem[];
+};
+
+export function listAdminBlockedSlugs() {
+  return apiFetch<BlockedSlugListResponse>("/admin/profile-slugs/blocked");
+}
+
+export function createAdminBlockedSlug(body: { slug: string; comment?: string | null }) {
+  return apiFetch<BlockedSlugItem>("/admin/profile-slugs/blocked", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteAdminBlockedSlug(entryId: string) {
+  return apiFetch<{ message: string }>(`/admin/profile-slugs/blocked/${encodeURIComponent(entryId)}`, {
+    method: "DELETE",
   });
 }
 

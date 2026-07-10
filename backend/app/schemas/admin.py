@@ -28,6 +28,7 @@ class AdminUserListItem(BaseModel):
     telegram_id: int | None = None
     telegram_username: str | None = None
     display_name: str | None = None
+    public_slug: str | None = None
     auth_logins: list[AdminUserAuthBrief] = Field(default_factory=list)
     news_subscribed: bool = False
     consent_accepted: bool = False
