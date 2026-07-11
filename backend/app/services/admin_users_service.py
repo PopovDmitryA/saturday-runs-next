@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import String, and_, cast, func, or_, select
+from sqlalchemy import String, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -169,7 +169,7 @@ def _user_result_count_subquery(result_model: type[RunResult] | type[VolunteerRe
     )
 
 
-SORT_KEYS = {"created", "runs", "volunteering"}
+SORT_KEYS = {"created", "runs", "volunteering", "profile"}
 
 
 def search_admin_users(
@@ -231,6 +231,9 @@ def search_admin_users(
         sort_col = func.coalesce(runs_sq.c.cnt, 0)
     elif sort == "volunteering":
         sort_col = func.coalesce(vol_sq.c.cnt, 0)
+    elif sort == "profile":
+        # 1 — есть ссылка на профиль (public_slug), 0 — нет; desc = непустые сверху.
+        sort_col = case((User.public_slug.isnot(None), 1), else_=0)
     else:
         sort_col = User.created_at
     order_clause = sort_col.desc() if descending else sort_col.asc()
@@ -268,6 +271,7 @@ def search_admin_users(
                 "telegram_id": user.telegram_id,
                 "telegram_username": user.telegram_username,
                 "display_name": user.display_name,
+                "public_slug": user.public_slug,
                 "auth_logins": auth_logins,
                 "news_subscribed": user.news_subscribed,
                 "consent_accepted": user.consent_accepted,

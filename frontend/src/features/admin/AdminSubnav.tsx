@@ -7,9 +7,8 @@ const LINKS = [
   { href: "/admin/queue", label: "Очередь" },
   { href: "/admin/stats", label: "Статистика" },
   { href: "/admin/ratings", label: "Рейтинг" },
-  { href: "/admin/parkrun", label: "Parkrun" },
-  { href: "/admin/s95-participants", label: "S95 участники" },
   { href: "/admin/abuse", label: "Блокировки" },
+  { href: "/admin/profile-slugs", label: "Резерв ссылок" },
 ] as const;
 
 export function AdminSubnav({ activePath }: AdminSubnavProps) {

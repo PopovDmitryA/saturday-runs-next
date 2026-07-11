@@ -188,13 +188,23 @@ function AdminUsersContent() {
                       Регистрация {sort === "created" ? (direction === "asc" ? "▲" : "▼") : ""}
                     </button>
                   </th>
+                  <th>
+                    <button
+                      type="button"
+                      className={`admin-sort-th${sort === "profile" ? " active" : ""}`}
+                      onClick={() => handleSort("profile")}
+                      title="Сортировка: сначала пользователи со ссылкой на профиль"
+                    >
+                      Ссылка профиля {sort === "profile" ? (direction === "asc" ? "▲" : "▼") : ""}
+                    </button>
+                  </th>
                   <th />
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="muted">
+                    <td colSpan={10} className="muted">
                       Пользователи не найдены
                     </td>
                   </tr>
@@ -236,6 +246,20 @@ function AdminUsersContent() {
                       <td>{user.total_volunteering ?? "—"}</td>
                       <td title={formatDateTime(user.created_at)}>
                         {formatDateTime(user.created_at)}
+                      </td>
+                      <td>
+                        {user.public_slug ? (
+                          <a
+                            href={`/users/${user.public_slug}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="admin-platform-link"
+                          >
+                            /{user.public_slug}
+                          </a>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
                       </td>
                       <td>
                         <div className="admin-users-actions">

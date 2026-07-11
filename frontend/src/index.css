@@ -5720,6 +5720,21 @@ tr.run-crosslinked td {
   margin: 0.5rem 0 0.75rem;
 }
 
+.admin-system-slugs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+}
+
+.admin-system-slug {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border, #d0d7de);
+  border-radius: 6px;
+  background: var(--surface-muted, rgba(127, 127, 127, 0.08));
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
 .admin-abuse-table td,
 .admin-abuse-table th {
   vertical-align: top;
@@ -7108,6 +7123,98 @@ tr.run-crosslinked td {
   color: var(--text-3);
   font-size: 0.85rem;
 }
+.admin-ratings-comment-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  cursor: help;
+}
+.admin-ratings-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.6rem 0 0.2rem;
+}
+.admin-ratings-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 6.5rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--bg);
+}
+.admin-ratings-stat-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.admin-ratings-stat-label {
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+/* Full-width layout for the ratings admin (matches users page). */
+.shell-content:has(.admin-ratings-page) {
+  max-width: none;
+  width: 100%;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+.admin-ratings-page {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+.admin-ratings-stat-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem 2rem;
+  margin-top: 0.5rem;
+}
+.admin-ratings-stat-group {
+  flex: 1 1 320px;
+}
+.admin-ratings-stat-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.admin-ratings-stat-group-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.admin-ratings-stat-group-hint {
+  font-size: 0.8rem;
+}
+.admin-ratings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.admin-ratings-search {
+  flex: 1 1 280px;
+}
+.admin-ratings-platform {
+  flex: 0 0 auto;
+  min-width: 10rem;
+}
+.admin-ratings-count {
+  font-size: 0.92rem;
+}
+.admin-ratings-raw-table td,
+.admin-ratings-raw-table th {
+  vertical-align: top;
+}
+.admin-ratings-nowrap {
+  white-space: nowrap;
 
 /* ===== Переключатель темы ===== */
 

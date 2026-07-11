@@ -4,7 +4,11 @@ import re
 
 from sqlalchemy.orm import Session
 
-from app.models import User
+from app.models import BlockedProfileSlug, User
+
+# Сообщение, когда slug свободен по формату, но занят в ручном блок-листе.
+# Причину (комментарий админа) конечному пользователю не раскрываем.
+BLOCKED_SLUG_MESSAGE = "Эта ссылка недоступна, выберите другую"
 
 # Длина slug.
 SLUG_MIN_LEN = 3
@@ -63,6 +67,16 @@ def _owner_of_slug(db: Session, slug: str) -> User | None:
     return db.query(User).filter(User.public_slug == slug).one_or_none()
 
 
+def is_slug_blocked(db: Session, slug: str) -> bool:
+    """True, если slug (в нижнем регистре) есть в ручном блок-листе."""
+    return (
+        db.query(BlockedProfileSlug.id)
+        .filter(BlockedProfileSlug.slug == slug)
+        .first()
+        is not None
+    )
+
+
 def check_slug_availability(db: Session, user: User, raw: str) -> tuple[bool, str | None, str]:
     """Возвращает (доступен, причина_если_нет, нормализованный_slug)."""
     try:
@@ -72,6 +86,10 @@ def check_slug_availability(db: Session, user: User, raw: str) -> tuple[bool, st
     owner = _owner_of_slug(db, slug)
     if owner is not None and owner.id != user.id:
         return False, "Эта ссылка уже занята", slug
+    # Ручной блок-лист: не даём занять чужой зарезервированный ник. Если slug уже
+    # принадлежит этому пользователю (owner is user) — не мешаем его сохранить.
+    if owner is None and is_slug_blocked(db, slug):
+        return False, BLOCKED_SLUG_MESSAGE, slug
     return True, None, slug
 
 
@@ -88,6 +106,8 @@ def set_profile_slug(db: Session, user: User, raw: str | None) -> None:
     owner = _owner_of_slug(db, slug)
     if owner is not None and owner.id != user.id:
         raise SlugError("Эта ссылка уже занята")
+    if owner is None and is_slug_blocked(db, slug):
+        raise SlugError(BLOCKED_SLUG_MESSAGE)
     user.public_slug = slug
 
 

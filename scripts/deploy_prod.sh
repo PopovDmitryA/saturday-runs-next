@@ -28,6 +28,35 @@ if ! command -v sshpass >/dev/null 2>&1; then
 fi
 
 export SSHPASS="${TEMP_SSH_PASSWORD}"
+
+# --- Deploy lock -------------------------------------------------------------
+# Serialize concurrent deploys (two sessions / worktrees могут стартовать rsync +
+# git-align на проде одновременно и затереть друг друга). Замок — в фиксированном
+# месте вне проекта, чтобы разные worktree-папки контендили за ОДИН замок.
+# macOS без flock, поэтому используем атомарный mkdir. Второй деплой ждёт первого.
+LOCK_DIR="${DEPLOY_LOCK_DIR:-/tmp/saturday-runs-deploy.lock}"
+lock_waited=0
+while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+  holder="$(cat "$LOCK_DIR/pid" 2>/dev/null || echo '?')"
+  # Зависший замок от упавшего деплоя (процесса уже нет) — забираем себе.
+  if [[ "$holder" =~ ^[0-9]+$ ]] && ! kill -0 "$holder" 2>/dev/null; then
+    echo "deploy_prod: stale lock (dead pid $holder) — reclaiming" >&2
+    rm -rf "$LOCK_DIR"
+    continue
+  fi
+  if (( lock_waited == 0 )); then
+    echo "deploy_prod: another deploy in progress (pid $holder) — waiting..." >&2
+  fi
+  sleep 5
+  lock_waited=$(( lock_waited + 5 ))
+  if (( lock_waited >= 1800 )); then
+    echo "deploy_prod: waited 30m for deploy lock, giving up." >&2
+    exit 1
+  fi
+done
+echo "$$" > "$LOCK_DIR/pid"
+trap 'rm -rf "$LOCK_DIR"' EXIT
+# -----------------------------------------------------------------------------
 SSH_OPTS=(-o StrictHostKeyChecking=no)
 
 rsync_to() {

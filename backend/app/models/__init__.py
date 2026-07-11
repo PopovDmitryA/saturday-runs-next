@@ -726,6 +726,24 @@ class User(Base):
     auth_identities: Mapped[list["AuthIdentity"]] = relationship(back_populates="user")
 
 
+class BlockedProfileSlug(Base):
+    """Slug'и публичного профиля, зарезервированные вручную (нельзя занять).
+
+    В отличие от статического RESERVED_SLUGS (служебные пути приложения), это
+    редактируемый через админку список: чей-то ник, который мы держим свободным
+    по просьбе/на будущее. Хранится в нижнем регистре — сравнение с public_slug
+    регистронезависимо.
+    """
+
+    __tablename__ = "blocked_profile_slugs"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    slug: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    comment: Mapped[str | None] = mapped_column(Text)
+    created_by_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class AuthIdentity(Base):
     __tablename__ = "auth_identities"
     __table_args__ = (

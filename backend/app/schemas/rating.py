@@ -80,6 +80,7 @@ class AdminRatingRow(BaseModel):
     platform_code: str
     location_key: str
     location_name: str
+    location_city: str | None = None
     score_overall: int
     score_organization: int | None = None
     score_route: int | None = None
@@ -91,8 +92,21 @@ class AdminRatingRow(BaseModel):
     created_at: datetime
 
 
+class AdminRatingsStatGroup(BaseModel):
+    last_1d: int = 0
+    last_7d: int = 0
+    last_30d: int = 0
+    total: int = 0
+
+
+class AdminRatingsStats(BaseModel):
+    by_rating_date: AdminRatingsStatGroup = Field(default_factory=AdminRatingsStatGroup)
+    by_event_date: AdminRatingsStatGroup = Field(default_factory=AdminRatingsStatGroup)
+
+
 class AdminRatingsResponse(BaseModel):
     ratings: list[AdminRatingRow] = Field(default_factory=list)
+    stats: AdminRatingsStats = Field(default_factory=AdminRatingsStats)
 
 
 class AdminLocationRatingRow(BaseModel):
