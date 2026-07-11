@@ -33,9 +33,7 @@ def create_blocked_slug(
     comment: str | None,
 ) -> BlockedProfileSlug:
     try:
-        # allow_reserved: в блок-лист можно занести и системное слово (admin и т.п.) —
-        # цель ручного списка как раз держать ник недоступным, а не отдать его юзеру.
-        slug = validate_slug(raw_slug, allow_reserved=True)
+        slug = validate_slug(raw_slug)
     except SlugError as exc:
         raise BlockedSlugError(str(exc)) from exc
 
