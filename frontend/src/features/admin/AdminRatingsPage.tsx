@@ -50,8 +50,16 @@ type RawSortKey =
   | "location"
   | "city"
   | "platform"
-  | "overall";
+  | "overall"
+  | "organization"
+  | "route"
+  | "community";
 type SortDir = "asc" | "desc";
+
+// Незаполненный критерий (null) считаем самым низким: при ▼ он внизу, при ▲ — вверху.
+function cmpNullableScore(a: number | null, b: number | null): number {
+  return (a ?? -1) - (b ?? -1);
+}
 
 function compareRows(a: AdminRatingRow, b: AdminRatingRow, key: RawSortKey): number {
   switch (key) {
@@ -69,6 +77,12 @@ function compareRows(a: AdminRatingRow, b: AdminRatingRow, key: RawSortKey): num
       return a.platform_code.localeCompare(b.platform_code);
     case "overall":
       return a.score_overall - b.score_overall;
+    case "organization":
+      return cmpNullableScore(a.score_organization, b.score_organization);
+    case "route":
+      return cmpNullableScore(a.score_route, b.score_route);
+    case "community":
+      return cmpNullableScore(a.score_community, b.score_community);
     default:
       return 0;
   }
@@ -110,7 +124,15 @@ function AdminRatingsContent() {
       setDirection((current) => (current === "desc" ? "asc" : "desc"));
     } else {
       setSort(key);
-      setDirection(key === "created_at" || key === "event_date" || key === "overall" ? "desc" : "asc");
+      const numericDesc: RawSortKey[] = [
+        "created_at",
+        "event_date",
+        "overall",
+        "organization",
+        "route",
+        "community",
+      ];
+      setDirection(numericDesc.includes(key) ? "desc" : "asc");
     }
   };
 
@@ -280,9 +302,9 @@ function AdminRatingsContent() {
                   <SortTh label="Город" sortKey="city" />
                   <SortTh label="Система" sortKey="platform" />
                   <SortTh label="Общая" sortKey="overall" />
-                  <th>Орг.</th>
-                  <th>Трасса</th>
-                  <th>Сообщ.</th>
+                  <SortTh label="Орг." sortKey="organization" />
+                  <SortTh label="Трасса" sortKey="route" />
+                  <SortTh label="Сообщ." sortKey="community" />
                   <th>Публично</th>
                   <th>Статус</th>
                   <th>Комментарий</th>
