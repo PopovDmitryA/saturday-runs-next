@@ -93,6 +93,7 @@ from app.services.profile_fetch_pending_service import reset_failed_parkrun_pend
 from app.services.rating_service import (
     list_all_ratings,
     location_rating_aggregates,
+    ratings_stats,
 )
 from app.services.sync_enqueue_service import enqueue_manual_platform_sync
 from app.services.user_unique_locations_detail import build_user_unique_location_details
@@ -524,7 +525,9 @@ def admin_ratings(
     db: Annotated[Session, Depends(get_db)],
     _admin: Annotated[User, Depends(get_current_admin_user)],
 ) -> AdminRatingsResponse:
-    return AdminRatingsResponse.model_validate({"ratings": list_all_ratings(db)})
+    return AdminRatingsResponse.model_validate(
+        {"ratings": list_all_ratings(db), "stats": ratings_stats(db)}
+    )
 
 
 @router.get("/ratings/locations", response_model=AdminLocationRatingsResponse)

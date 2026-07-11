@@ -107,6 +107,26 @@ function AdminRatingsContent() {
 
       <section className="card admin-ratings-section">
         <h2 className="section-title">Все оценки (сырьё)</h2>
+        {raw && (
+          <div className="admin-ratings-stats">
+            <div className="admin-ratings-stat">
+              <span className="admin-ratings-stat-value">{raw.stats.last_1d}</span>
+              <span className="admin-ratings-stat-label">за сутки</span>
+            </div>
+            <div className="admin-ratings-stat">
+              <span className="admin-ratings-stat-value">{raw.stats.last_7d}</span>
+              <span className="admin-ratings-stat-label">за 7 дней</span>
+            </div>
+            <div className="admin-ratings-stat">
+              <span className="admin-ratings-stat-value">{raw.stats.last_30d}</span>
+              <span className="admin-ratings-stat-label">за 30 дней</span>
+            </div>
+            <div className="admin-ratings-stat">
+              <span className="admin-ratings-stat-value">{raw.stats.total}</span>
+              <span className="admin-ratings-stat-label">всего в базе</span>
+            </div>
+          </div>
+        )}
         <p className="muted admin-ratings-lead">
           От новых к старым, {raw?.ratings.length ?? 0} шт. Замороженные — старту больше 3 месяцев.
         </p>
@@ -148,7 +168,15 @@ function AdminRatingsContent() {
                   <td>{r.score_community ?? "—"}</td>
                   <td>{r.is_public ? "да" : "аноним"}</td>
                   <td>{r.editable ? "можно менять" : "заморожена"}</td>
-                  <td className="admin-ratings-comment">{r.comment ?? "—"}</td>
+                  <td className="admin-ratings-comment">
+                    {r.comment ? (
+                      <span className="admin-ratings-comment-text" title={r.comment}>
+                        {r.comment}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

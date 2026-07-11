@@ -91,8 +91,16 @@ class AdminRatingRow(BaseModel):
     created_at: datetime
 
 
+class AdminRatingsStats(BaseModel):
+    last_1d: int = 0
+    last_7d: int = 0
+    last_30d: int = 0
+    total: int = 0
+
+
 class AdminRatingsResponse(BaseModel):
     ratings: list[AdminRatingRow] = Field(default_factory=list)
+    stats: AdminRatingsStats = Field(default_factory=AdminRatingsStats)
 
 
 class AdminLocationRatingRow(BaseModel):

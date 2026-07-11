@@ -694,7 +694,14 @@ export type AdminRatingRow = {
   created_at: string;
 };
 
-export type AdminRatings = { ratings: AdminRatingRow[] };
+export type AdminRatingsStats = {
+  last_1d: number;
+  last_7d: number;
+  last_30d: number;
+  total: number;
+};
+
+export type AdminRatings = { ratings: AdminRatingRow[]; stats: AdminRatingsStats };
 
 export function getAdminRatings() {
   return apiFetch<AdminRatings>("/admin/ratings");

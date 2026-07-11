@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.activity_url import resolve_activity_url
@@ -577,6 +577,24 @@ def list_all_ratings(db: Session) -> list[dict[str, object]]:
             }
         )
     return result
+
+
+def ratings_stats(db: Session) -> dict[str, int]:
+    """Счётчики оценок для админки: новых за 1/7/30 дней (по created_at) и всего."""
+    now = datetime.now(timezone.utc)
+
+    def _count_since(days: int | None) -> int:
+        query = db.query(func.count(LocationRating.id))
+        if days is not None:
+            query = query.filter(LocationRating.created_at >= now - timedelta(days=days))
+        return int(query.scalar() or 0)
+
+    return {
+        "last_1d": _count_since(1),
+        "last_7d": _count_since(7),
+        "last_30d": _count_since(30),
+        "total": _count_since(None),
+    }
 
 
 def _user_home_keys(db: Session, user_ids: set[UUID]) -> dict[UUID, str | None]:

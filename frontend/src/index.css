@@ -6983,3 +6983,37 @@ tr.run-crosslinked td {
   color: #475569;
   font-size: 0.85rem;
 }
+.admin-ratings-comment-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  cursor: help;
+}
+.admin-ratings-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.6rem 0 0.2rem;
+}
+.admin-ratings-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 6.5rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.6rem;
+  background: #f8fafc;
+}
+.admin-ratings-stat-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.admin-ratings-stat-label {
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: #64748b;
+}
