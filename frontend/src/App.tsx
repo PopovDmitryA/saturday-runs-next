@@ -2,8 +2,6 @@ import type { ReactElement } from "react";
 import { useEffect } from "react";
 import { AdminAbusePage } from "./features/admin/AdminAbusePage";
 import { AdminBlockedSlugsPage } from "./features/admin/AdminBlockedSlugsPage";
-import { AdminS95ParticipantsPage } from "./features/admin/AdminS95ParticipantsPage";
-import { AdminParkrunPage } from "./features/admin/AdminParkrunPage";
 import { AdminStatsPage } from "./features/admin/AdminStatsPage";
 import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
 import { AdminUserPreviewPage } from "./features/admin/AdminUserPreviewPage";
@@ -80,12 +78,10 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin": () => <AdminRedirect />,
   "/admin/queue": () => <QueuePage />,
   "/admin/users": () => <AdminUsersPage />,
-  "/admin/s95-participants": () => <AdminS95ParticipantsPage />,
   "/admin/abuse": () => <AdminAbusePage />,
   "/admin/profile-slugs": () => <AdminBlockedSlugsPage />,
   "/admin/stats": () => <AdminStatsPage />,
   "/admin/ratings": () => <AdminRatingsPage />,
-  "/admin/parkrun": () => <AdminParkrunPage />,
   "/settings": () => <SettingsPage />,
   "/about": () => <AboutPage />,
 };

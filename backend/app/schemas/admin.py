@@ -47,28 +47,6 @@ class AdminUserListResponse(BaseModel):
     query: str | None = None
 
 
-class AdminS95ParticipantListItem(BaseModel):
-    id: str
-    external_user_id: str
-    display_name: str | None = None
-    profile_url: str | None = None
-    barcode_id: str | None = None
-    club_name: str | None = None
-    planning_location: str | None = None
-    planning_location_seen_at: datetime | None = None
-    fetched_at: datetime | None = None
-    sync_status: str
-    error_message: str | None = None
-
-
-class AdminS95ParticipantListResponse(BaseModel):
-    items: list[AdminS95ParticipantListItem]
-    total: int
-    limit: int
-    offset: int
-    query: str | None = None
-
-
 class AdminUserPreviewUser(BaseModel):
     id: str
     telegram_id: int | None = None

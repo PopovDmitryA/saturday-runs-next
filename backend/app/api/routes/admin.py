@@ -10,7 +10,6 @@ from app.api.deps import get_current_admin_user
 from app.config import get_settings
 from app.db.session import get_db
 from app.models import User
-from app.parkrun.fetch.cdp_session import ParkrunCdpSessionError
 from app.schemas.abuse_admin import (
     AbuseBanCreateRequest,
     AbuseBanCreateResponse,
@@ -20,7 +19,6 @@ from app.schemas.abuse_admin import (
     AbuseTelegramBanItem,
 )
 from app.schemas.admin import (
-    AdminS95ParticipantListResponse,
     AdminUserListResponse,
     AdminUserPreviewDashboardResponse,
 )
@@ -39,16 +37,6 @@ from app.schemas.dashboard import (
     VolunteerRoleStatResponse,
 )
 from app.schemas.locations import CatalogLocationsTableResponse, MapLocationsResponse, UniqueLocationsDetailResponse
-from app.schemas.parkrun_admin import (
-    ParkrunCdpSaveRequest,
-    ParkrunCdpSaveResponse,
-    ParkrunLocalWorkerStartRequest,
-    ParkrunLocalWorkerStartResponse,
-    ParkrunLocalWorkerStatusResponse,
-    ParkrunProcessPendingRequest,
-    ParkrunProcessPendingResponse,
-    ParkrunSessionStatusResponse,
-)
 from app.schemas.rating import (
     AdminLocationRatingsResponse,
     AdminRatingsResponse,
@@ -62,7 +50,6 @@ from app.services.abuse_admin_service import (
     get_ip_block_details,
     list_abuse_blocks,
 )
-from app.services.admin_s95_participants_service import search_admin_s95_participants
 from app.services.admin_site_stats_service import get_admin_site_stats
 from app.services.admin_users_service import (
     get_admin_user,
@@ -83,14 +70,6 @@ from app.services.blocked_slug_admin_service import (
 )
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_user_visited_map_locations
-from app.services.parkrun_admin_service import (
-    clear_parkrun_captcha_wait,
-    get_parkrun_session_status,
-    process_parkrun_pending_queue,
-    save_parkrun_session_from_chrome,
-)
-from app.services.parkrun_local_worker import get_local_worker_status, request_local_worker_run
-from app.services.profile_fetch_pending_service import reset_failed_parkrun_pending
 from app.services.rating_service import (
     list_all_ratings,
     location_rating_aggregates,
@@ -122,10 +101,6 @@ def _handle_abuse_admin_error(exc: AbuseAdminError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
-def _handle_parkrun_admin_error(exc: ParkrunCdpSessionError) -> HTTPException:
-    return HTTPException(status_code=exc.status_code, detail=exc.message)
-
-
 @router.get("/users", response_model=AdminUserListResponse)
 def list_admin_users(
     db: Annotated[Session, Depends(get_db)],
@@ -140,24 +115,6 @@ def list_admin_users(
         db, query=q, limit=limit, offset=offset, sort=sort, direction=direction
     )
     return AdminUserListResponse(
-        items=items,  # type: ignore[arg-type]
-        total=total,
-        limit=limit,
-        offset=offset,
-        query=q,
-    )
-
-
-@router.get("/s95/participants", response_model=AdminS95ParticipantListResponse)
-def list_admin_s95_participants(
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-    q: Annotated[str | None, Query(max_length=128)] = None,
-    limit: Annotated[int, Query(ge=1, le=100)] = 25,
-    offset: Annotated[int, Query(ge=0)] = 0,
-) -> AdminS95ParticipantListResponse:
-    items, total = search_admin_s95_participants(db, query=q, limit=limit, offset=offset)
-    return AdminS95ParticipantListResponse(
         items=items,  # type: ignore[arg-type]
         total=total,
         limit=limit,
@@ -454,72 +411,6 @@ def admin_site_stats(
 ) -> AdminSiteStatsResponse:
     payload = get_admin_site_stats(db, period_days=period_days)
     return AdminSiteStatsResponse.model_validate(payload)
-
-
-@router.get("/parkrun/session", response_model=ParkrunSessionStatusResponse)
-def admin_parkrun_session_status(
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-) -> ParkrunSessionStatusResponse:
-    return ParkrunSessionStatusResponse.model_validate(get_parkrun_session_status(db))
-
-
-@router.post("/parkrun/save-session", response_model=ParkrunCdpSaveResponse)
-def admin_parkrun_save_session(
-    body: ParkrunCdpSaveRequest,
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-) -> ParkrunCdpSaveResponse:
-    try:
-        payload = save_parkrun_session_from_chrome(body.cdp_url or None)
-    except ParkrunCdpSessionError as exc:
-        raise _handle_parkrun_admin_error(exc) from exc
-    return ParkrunCdpSaveResponse.model_validate(payload)
-
-
-@router.post("/parkrun/clear-captcha-wait")
-def admin_parkrun_clear_captcha_wait(
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-) -> dict[str, str]:
-    clear_parkrun_captcha_wait()
-    return {"message": "captcha_wait_cleared"}
-
-
-@router.post("/parkrun/process-pending", response_model=ParkrunProcessPendingResponse)
-def admin_parkrun_process_pending(
-    body: ParkrunProcessPendingRequest,
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-) -> ParkrunProcessPendingResponse:
-    try:
-        payload = process_parkrun_pending_queue(db, limit=body.limit)
-    except ParkrunCdpSessionError as exc:
-        raise _handle_parkrun_admin_error(exc) from exc
-    return ParkrunProcessPendingResponse.model_validate(payload)
-
-
-@router.post("/parkrun/reset-failed-pending")
-def admin_parkrun_reset_failed_pending(
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-) -> dict[str, int | str]:
-    count = reset_failed_parkrun_pending(db)
-    return {"reset": count, "message": f"В очередь возвращено профилей: {count}"}
-
-
-@router.get("/parkrun/local-worker", response_model=ParkrunLocalWorkerStatusResponse)
-def admin_parkrun_local_worker_status(
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-) -> ParkrunLocalWorkerStatusResponse:
-    return ParkrunLocalWorkerStatusResponse.model_validate(get_local_worker_status())
-
-
-@router.post("/parkrun/local-worker/start", response_model=ParkrunLocalWorkerStartResponse)
-def admin_parkrun_local_worker_start(
-    body: ParkrunLocalWorkerStartRequest,
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-) -> ParkrunLocalWorkerStartResponse:
-    payload = request_local_worker_run(reset_failed=body.reset_failed)
-    return ParkrunLocalWorkerStartResponse.model_validate(payload)
 
 
 @router.get("/ratings", response_model=AdminRatingsResponse)
