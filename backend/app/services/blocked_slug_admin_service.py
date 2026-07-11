@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models import BlockedProfileSlug, User
-from app.services.profile_slug_service import SlugError, validate_slug
+from app.services.profile_slug_service import RESERVED_SLUGS, SlugError, validate_slug
 
 
 class BlockedSlugError(ValueError):
@@ -23,6 +23,15 @@ def list_blocked_slugs(db: Session) -> list[BlockedProfileSlug]:
         .order_by(BlockedProfileSlug.created_at.desc(), BlockedProfileSlug.slug)
         .all()
     )
+
+
+def list_reserved_slugs() -> list[str]:
+    """Системные зарезервированные слова из кода (RESERVED_SLUGS), read-only.
+
+    Показываются в админке отдельным блоком: удалить нельзя — блокировка живёт
+    в коде (см. profile_slug_service.RESERVED_SLUGS).
+    """
+    return sorted(RESERVED_SLUGS)
 
 
 def create_blocked_slug(

@@ -1438,6 +1438,7 @@ export type BlockedSlugItem = {
 
 export type BlockedSlugListResponse = {
   items: BlockedSlugItem[];
+  system_slugs: string[];
 };
 
 export function listAdminBlockedSlugs() {

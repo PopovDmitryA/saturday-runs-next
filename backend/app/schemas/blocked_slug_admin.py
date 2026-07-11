@@ -16,6 +16,8 @@ class BlockedSlugItem(BaseModel):
 
 class BlockedSlugListResponse(BaseModel):
     items: list[BlockedSlugItem] = Field(default_factory=list)
+    # Системные зарезервированные слова из кода (RESERVED_SLUGS) — read-only.
+    system_slugs: list[str] = Field(default_factory=list)
 
 
 class BlockedSlugCreateRequest(BaseModel):

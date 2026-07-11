@@ -79,6 +79,7 @@ from app.services.blocked_slug_admin_service import (
     create_blocked_slug,
     delete_blocked_slug,
     list_blocked_slugs,
+    list_reserved_slugs,
 )
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_user_visited_map_locations
@@ -409,7 +410,8 @@ def admin_list_blocked_slugs(
                 created_at=item.created_at,
             )
             for item in items
-        ]
+        ],
+        system_slugs=list_reserved_slugs(),
     )
 
 

@@ -5595,6 +5595,21 @@ tr.run-crosslinked td {
   margin: 0.5rem 0 0.75rem;
 }
 
+.admin-system-slugs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+}
+
+.admin-system-slug {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border, #d0d7de);
+  border-radius: 6px;
+  background: var(--surface-muted, rgba(127, 127, 127, 0.08));
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
 .admin-abuse-table td,
 .admin-abuse-table th {
   vertical-align: top;

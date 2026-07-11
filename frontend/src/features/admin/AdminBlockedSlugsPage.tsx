@@ -13,6 +13,7 @@ import { AdminSubnav } from "./AdminSubnav";
 
 function AdminBlockedSlugsContent() {
   const [items, setItems] = useState<BlockedSlugItem[]>([]);
+  const [systemSlugs, setSystemSlugs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -30,6 +31,7 @@ function AdminBlockedSlugsContent() {
     try {
       const response = await listAdminBlockedSlugs();
       setItems(response.items);
+      setSystemSlugs(response.system_slugs ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить блок-лист");
     } finally {
@@ -175,6 +177,21 @@ function AdminBlockedSlugsContent() {
               </table>
             </div>
           )}
+        </section>
+      )}
+
+      {!loading && !error && systemSlugs.length > 0 && (
+        <section className="card">
+          <h2 className="section-title">Системные ссылки ({systemSlugs.length})</h2>
+          <p className="muted admin-abuse-form-hint">
+            Служебные пути приложения (роуты, спецстраницы). Заблокированы в коде и недоступны
+            пользователям всегда — здесь показаны для наглядности, удалить нельзя.
+          </p>
+          <div className="admin-system-slugs">
+            {systemSlugs.map((slug) => (
+              <code key={slug} className="admin-system-slug">/{slug}</code>
+            ))}
+          </div>
         </section>
       )}
 

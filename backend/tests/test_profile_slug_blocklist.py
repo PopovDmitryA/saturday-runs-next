@@ -133,6 +133,24 @@ def test_admin_can_manage_blocklist(client: TestClient) -> None:
     assert all(item["slug"] != "customreserved" for item in after.json()["items"])
 
 
+def test_blocklist_response_includes_system_slugs(client: TestClient) -> None:
+    _login_admin(client)
+    resp = client.get("/api/admin/profile-slugs/blocked")
+    assert resp.status_code == 200
+    system = resp.json()["system_slugs"]
+    assert "admin" in system
+    assert "settings" in system
+
+
+def test_migration_seeds_antisquat_handles(client: TestClient) -> None:
+    """Ники из миграции 042 (антисквоттинг) недоступны пользователю."""
+    _login_regular(client)
+    for handle in ("official", "run5k", "administrator"):
+        r = client.get("/api/settings/profile-slug/check", params={"slug": handle})
+        assert r.status_code == 200
+        assert r.json()["available"] is False, handle
+
+
 def test_blocklist_requires_admin(client: TestClient) -> None:
     _login_regular(client)
     assert client.get("/api/admin/profile-slugs/blocked").status_code == 403
