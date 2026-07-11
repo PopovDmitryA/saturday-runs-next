@@ -67,8 +67,13 @@ function compareRows(a: AdminRatingRow, b: AdminRatingRow, key: RawSortKey): num
       return a.created_at.localeCompare(b.created_at);
     case "event_date":
       return a.event_date.localeCompare(b.event_date);
-    case "user":
+    case "user": {
+      // Сначала строки со ссылкой на профиль (есть serial), потом по имени.
+      const rank = (r: AdminRatingRow) => (r.user_serial != null ? 0 : 1);
+      const byLink = rank(a) - rank(b);
+      if (byLink !== 0) return byLink;
       return (a.user_display ?? "").localeCompare(b.user_display ?? "", "ru");
+    }
     case "location":
       return (a.location_name ?? "").localeCompare(b.location_name ?? "", "ru");
     case "city":
@@ -162,12 +167,21 @@ function AdminRatingsContent() {
   const sortArrow = (key: RawSortKey) =>
     sort === key ? (direction === "asc" ? " ▲" : " ▼") : "";
 
-  const SortTh = ({ label, sortKey }: { label: string; sortKey: RawSortKey }) => (
+  const SortTh = ({
+    label,
+    sortKey,
+    title,
+  }: {
+    label: string;
+    sortKey: RawSortKey;
+    title?: string;
+  }) => (
     <th>
       <button
         type="button"
         className={`admin-sort-th${sort === sortKey ? " active" : ""}`}
         onClick={() => handleSort(sortKey)}
+        title={title}
       >
         {label}
         {sortArrow(sortKey)}
@@ -297,7 +311,11 @@ function AdminRatingsContent() {
                 <tr>
                   <SortTh label="Дата оценки" sortKey="created_at" />
                   <SortTh label="Дата пробежки" sortKey="event_date" />
-                  <SortTh label="Пользователь" sortKey="user" />
+                  <SortTh
+                    label="Пользователь"
+                    sortKey="user"
+                    title="Сортировка: сначала строки со ссылкой на профиль (▲), затем по имени"
+                  />
                   <SortTh label="Локация" sortKey="location" />
                   <SortTh label="Город" sortKey="city" />
                   <SortTh label="Система" sortKey="platform" />
