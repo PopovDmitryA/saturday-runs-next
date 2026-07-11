@@ -106,6 +106,21 @@ def test_blocked_slug_cannot_be_claimed(client: TestClient, db_session: Session)
     assert response.status_code == 400
 
 
+def test_admin_can_reserve_system_reserved_word(client: TestClient) -> None:
+    """В ручной блок-лист можно занести системное слово (admin), хотя обычному
+    пользователю оно как public_slug запрещено."""
+    _login_admin(client)
+    create = client.post("/api/admin/profile-slugs/blocked", json={"slug": "admin"})
+    assert create.status_code == 201, create.text
+    assert create.json()["slug"] == "admin"
+
+
+def test_reserved_word_still_forbidden_for_user_slug(client: TestClient) -> None:
+    _login_regular(client)
+    response = client.put("/api/settings/profile-slug", json={"slug": "admin"})
+    assert response.status_code == 400
+
+
 def test_admin_can_manage_blocklist(client: TestClient) -> None:
     _login_admin(client)
 

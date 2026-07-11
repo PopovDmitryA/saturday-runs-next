@@ -38,10 +38,14 @@ def normalize_slug(raw: str) -> str:
     return raw.strip().lower()
 
 
-def validate_slug(raw: str) -> str:
+def validate_slug(raw: str, *, allow_reserved: bool = False) -> str:
     """Проверяет формат slug и возвращает нормализованное значение.
 
     Бросает SlugError с человекочитаемым сообщением при нарушении правил.
+    ``allow_reserved`` пропускает проверку RESERVED_SLUGS: нужен ручному
+    блок-листу в админке (там цель — наоборот, занять/зарезервировать ник,
+    в т.ч. системное слово), тогда как для пользовательской ссылки reserved
+    остаётся запрещённым.
     """
     slug = normalize_slug(raw)
     if not slug:
@@ -58,7 +62,7 @@ def validate_slug(raw: str) -> str:
             "Только латинские буквы, цифры, дефис и подчёркивание; "
             "начинаться и заканчиваться буквой или цифрой"
         )
-    if slug in RESERVED_SLUGS:
+    if not allow_reserved and slug in RESERVED_SLUGS:
         raise SlugError("Эта ссылка зарезервирована, выберите другую")
     return slug
 
