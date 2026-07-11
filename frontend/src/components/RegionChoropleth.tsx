@@ -341,7 +341,13 @@ export function RegionChoropleth({
           });
           const runnable = Boolean(area && area.available > 0);
           featureLayer.on({
-            mouseover: () => (featureLayer as L.Path).setStyle({ weight: 2, color: "#0f172a" }),
+            // Цвет обводки читаем в момент ховера: тема может переключиться
+            // после отрисовки слоя.
+            mouseover: () =>
+              (featureLayer as L.Path).setStyle({
+                weight: 2,
+                color: document.documentElement.dataset.theme === "dark" ? "#e6ecf7" : "#0f172a",
+              }),
             mouseout: () =>
               (featureLayer as L.Path).setStyle(
                 runnable ? { weight: 1, color: "#ffffff" } : { weight: 0.6, color: "#94a3b8" },
