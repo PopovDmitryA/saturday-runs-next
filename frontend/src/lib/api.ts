@@ -1169,7 +1169,7 @@ export type AdminUserPreviewDashboard = {
   platform_links: AdminPlatformLinkBrief[];
 };
 
-export type AdminUsersSort = "created" | "runs" | "volunteering";
+export type AdminUsersSort = "created" | "runs" | "volunteering" | "profile";
 export type AdminUsersSortDirection = "asc" | "desc";
 
 export function listAdminUsers(

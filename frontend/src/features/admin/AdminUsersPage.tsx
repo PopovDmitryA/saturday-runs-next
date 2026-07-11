@@ -188,7 +188,16 @@ function AdminUsersContent() {
                       Регистрация {sort === "created" ? (direction === "asc" ? "▲" : "▼") : ""}
                     </button>
                   </th>
-                  <th>Ссылка профиля</th>
+                  <th>
+                    <button
+                      type="button"
+                      className={`admin-sort-th${sort === "profile" ? " active" : ""}`}
+                      onClick={() => handleSort("profile")}
+                      title="Сортировка: сначала пользователи со ссылкой на профиль"
+                    >
+                      Ссылка профиля {sort === "profile" ? (direction === "asc" ? "▲" : "▼") : ""}
+                    </button>
+                  </th>
                   <th />
                 </tr>
               </thead>
