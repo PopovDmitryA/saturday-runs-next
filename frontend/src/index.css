@@ -7032,3 +7032,62 @@ tr.run-crosslinked td {
   font-size: 0.78rem;
   color: #64748b;
 }
+/* Full-width layout for the ratings admin (matches users page). */
+.shell-content:has(.admin-ratings-page) {
+  max-width: none;
+  width: 100%;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+.admin-ratings-page {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+.admin-ratings-stat-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem 2rem;
+  margin-top: 0.5rem;
+}
+.admin-ratings-stat-group {
+  flex: 1 1 320px;
+}
+.admin-ratings-stat-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.admin-ratings-stat-group-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.admin-ratings-stat-group-hint {
+  font-size: 0.8rem;
+}
+.admin-ratings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.admin-ratings-search {
+  flex: 1 1 280px;
+}
+.admin-ratings-platform {
+  flex: 0 0 auto;
+  min-width: 10rem;
+}
+.admin-ratings-count {
+  font-size: 0.92rem;
+}
+.admin-ratings-raw-table td,
+.admin-ratings-raw-table th {
+  vertical-align: top;
+}
+.admin-ratings-nowrap {
+  white-space: nowrap;
+}

@@ -566,6 +566,7 @@ def list_all_ratings(db: Session) -> list[dict[str, object]]:
                 "platform_code": rating.platform_code,
                 "location_key": rating.location_key,
                 "location_name": catalog_index.display_name(location, rating.platform_code),
+                "location_city": location.city,
                 "score_overall": rating.score_overall,
                 "score_organization": rating.score_organization,
                 "score_route": rating.score_route,
@@ -579,21 +580,39 @@ def list_all_ratings(db: Session) -> list[dict[str, object]]:
     return result
 
 
-def ratings_stats(db: Session) -> dict[str, int]:
-    """Счётчики оценок для админки: новых за 1/7/30 дней (по created_at) и всего."""
-    now = datetime.now(timezone.utc)
+def ratings_stats(db: Session) -> dict[str, dict[str, int]]:
+    """Счётчики оценок для админки: за 1/7/30 дней и всего.
 
-    def _count_since(days: int | None) -> int:
+    Две группы: по дате оценки (`created_at`) и по дате пробежки (`event_date`).
+    """
+    now = datetime.now(timezone.utc)
+    today = date.today()
+
+    def _count_by_created(days: int | None) -> int:
         query = db.query(func.count(LocationRating.id))
         if days is not None:
             query = query.filter(LocationRating.created_at >= now - timedelta(days=days))
         return int(query.scalar() or 0)
 
+    def _count_by_event(days: int | None) -> int:
+        query = db.query(func.count(LocationRating.id))
+        if days is not None:
+            query = query.filter(LocationRating.event_date >= today - timedelta(days=days))
+        return int(query.scalar() or 0)
+
     return {
-        "last_1d": _count_since(1),
-        "last_7d": _count_since(7),
-        "last_30d": _count_since(30),
-        "total": _count_since(None),
+        "by_rating_date": {
+            "last_1d": _count_by_created(1),
+            "last_7d": _count_by_created(7),
+            "last_30d": _count_by_created(30),
+            "total": _count_by_created(None),
+        },
+        "by_event_date": {
+            "last_1d": _count_by_event(1),
+            "last_7d": _count_by_event(7),
+            "last_30d": _count_by_event(30),
+            "total": _count_by_event(None),
+        },
     }
 
 

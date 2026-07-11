@@ -683,6 +683,7 @@ export type AdminRatingRow = {
   platform_code: string;
   location_key: string;
   location_name: string;
+  location_city: string | null;
   score_overall: number;
   score_organization: number | null;
   score_route: number | null;
@@ -694,11 +695,16 @@ export type AdminRatingRow = {
   created_at: string;
 };
 
-export type AdminRatingsStats = {
+export type AdminRatingsStatGroup = {
   last_1d: number;
   last_7d: number;
   last_30d: number;
   total: number;
+};
+
+export type AdminRatingsStats = {
+  by_rating_date: AdminRatingsStatGroup;
+  by_event_date: AdminRatingsStatGroup;
 };
 
 export type AdminRatings = { ratings: AdminRatingRow[]; stats: AdminRatingsStats };
