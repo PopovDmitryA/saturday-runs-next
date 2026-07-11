@@ -78,6 +78,9 @@ rsync_to deploy/ "${REMOTE}/deploy/"
 rsync_to docker-compose.yml "${REMOTE}/docker-compose.yml"
 rsync_to docker-compose.prod.yml "${REMOTE}/docker-compose.prod.yml"
 rsync_to frontend/src/ "${REMOTE}/frontend/src/"
+# index.html — шаблон Vite: inline-скрипты/меты попадают в собранный HTML,
+# без rsync сборка на сервере идёт со старым шаблоном.
+rsync_to frontend/index.html "${REMOTE}/frontend/index.html"
 # public/ — рантайм-статики (geojson карт и т.п.): Vite копирует их в dist при
 # сборке, без rsync новые файлы не попадут в бандл (git align идёт ПОСЛЕ сборки).
 rsync_to frontend/public/ "${REMOTE}/frontend/public/"
@@ -99,7 +102,7 @@ GIT_ALIGN=0
 # deployed and must not block alignment — hence --quiet on the exact paths).
 if git branch -r --contains "$LOCAL_SHA" 2>/dev/null | grep -q 'origin/main' \
   && git diff --quiet HEAD -- backend/app backend/vk_bot backend/alembic deploy \
-       frontend/src frontend/public docker-compose.yml docker-compose.prod.yml; then
+       frontend/src frontend/index.html frontend/public docker-compose.yml docker-compose.prod.yml; then
   GIT_ALIGN=1
 else
   echo "WARN: HEAD not on origin/main or deployed paths have tracked changes — prod git left as-is (no align)"
