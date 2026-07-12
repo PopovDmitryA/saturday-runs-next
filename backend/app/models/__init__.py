@@ -964,3 +964,20 @@ class LocationRating(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class HistoryMilestoneSetting(Base):
+    """Вкл/выкл конкретного вида вехи «Моя история» (админ-переключатель).
+
+    Строка существует только для вех, которые администратор явно выключил —
+    отсутствие строки для kind означает enabled=true (значение по умолчанию).
+    Канонический список kind'ов — app.history_milestone_kinds.MILESTONE_KINDS.
+    """
+
+    __tablename__ = "history_milestone_settings"
+
+    kind: Mapped[str] = mapped_column(String(64), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

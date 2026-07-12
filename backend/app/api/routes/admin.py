@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin_user
 from app.config import get_settings
 from app.db.session import get_db
+from app.history_milestone_kinds import MILESTONE_KIND_REGISTRY
 from app.models import User
 from app.parkrun.fetch.cdp_session import ParkrunCdpSessionError
 from app.schemas.abuse_admin import (
@@ -23,6 +24,9 @@ from app.schemas.admin import (
     AdminS95ParticipantListResponse,
     AdminUserListResponse,
     AdminUserPreviewDashboardResponse,
+    HistoryMilestoneKindSettingResponse,
+    HistoryMilestoneKindSettingsResponse,
+    HistoryMilestoneKindUpdateRequest,
 )
 from app.schemas.admin_stats import AdminSiteStatsResponse
 from app.schemas.dashboard import (
@@ -68,6 +72,11 @@ from app.services.admin_users_service import (
     get_admin_user_preview_volunteer_role_stats,
     get_admin_user_preview_volunteering,
     search_admin_users,
+)
+from app.services.history_milestone_settings_service import (
+    UnknownMilestoneKindError,
+    list_milestone_kind_settings,
+    set_milestone_kind_enabled,
 )
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_user_visited_map_locations
@@ -474,4 +483,31 @@ def admin_ratings_locations(
 ) -> AdminLocationRatingsResponse:
     return AdminLocationRatingsResponse.model_validate(
         location_rating_aggregates(db, exclude_locals=exclude_locals)
+    )
+
+
+@router.get("/history-milestones", response_model=HistoryMilestoneKindSettingsResponse)
+def admin_history_milestones(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> HistoryMilestoneKindSettingsResponse:
+    return HistoryMilestoneKindSettingsResponse.model_validate(
+        {"kinds": list_milestone_kind_settings(db)}
+    )
+
+
+@router.put("/history-milestones/{kind}", response_model=HistoryMilestoneKindSettingResponse)
+def admin_update_history_milestone(
+    kind: str,
+    payload: HistoryMilestoneKindUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> HistoryMilestoneKindSettingResponse:
+    try:
+        result = set_milestone_kind_enabled(db, kind, payload.enabled)
+    except UnknownMilestoneKindError as exc:
+        raise HTTPException(status_code=404, detail="Неизвестный вид вехи") from exc
+    info = next(item for item in MILESTONE_KIND_REGISTRY if item.kind == kind)
+    return HistoryMilestoneKindSettingResponse.model_validate(
+        {**result, "label": info.label, "description": info.description}
     )

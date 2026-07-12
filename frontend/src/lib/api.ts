@@ -627,6 +627,86 @@ export function demoGetOnThisDay() {
   return apiFetch<OnThisDay>("/demo/dashboard/on-this-day");
 }
 
+// ── «Моя история» — таймлайн вех ─────────────────────────────────────────────
+
+export type MyHistoryMilestoneKind =
+  | "first_run"
+  | "first_run_platform"
+  | "run_club"
+  | "run_club_platform"
+  | "location_club"
+  | "volunteer_location_club"
+  | "global_pr"
+  | "pr"
+  | "first_foreign_parkrun"
+  | "first_foreign_run"
+  | "new_region"
+  | "new_city"
+  | "new_country"
+  | "new_location"
+  | "first_volunteer"
+  | "volunteer_club"
+  | "volunteer_club_platform";
+
+export type MyHistoryMilestone = {
+  kind: MyHistoryMilestoneKind;
+  // Номер пробежки/клуба/волонтёрства (для юбилеев и клубов).
+  number: number | null;
+  event_date: string;
+  platform_code: string;
+  location_name: string;
+  location_city: string | null;
+  finish_time_display: string | null;
+  finish_time_sec: number | null;
+  position: number | null;
+  gender_position: number | null;
+  pace_display: string | null;
+  // На сколько секунд улучшен личный рекорд (kind=pr).
+  delta_sec: number | null;
+  is_global_pr: boolean;
+  region: string | null;
+  country: string | null;
+  role: string | null;
+  event_url: string | null;
+};
+
+export type MyHistory = {
+  milestones: MyHistoryMilestone[];
+  total: number;
+};
+
+export function getMyHistory() {
+  return apiFetch<MyHistory>("/dashboard/my-history");
+}
+
+export function demoGetMyHistory() {
+  return apiFetch<MyHistory>("/demo/dashboard/my-history");
+}
+
+// ── Админка: виды вех «Моя история» (вкл/выкл) ──────────────────────────────
+
+export type HistoryMilestoneKindSetting = {
+  kind: MyHistoryMilestoneKind;
+  label: string;
+  description: string;
+  enabled: boolean;
+};
+
+export type HistoryMilestoneKindSettings = {
+  kinds: HistoryMilestoneKindSetting[];
+};
+
+export function getAdminHistoryMilestones() {
+  return apiFetch<HistoryMilestoneKindSettings>("/admin/history-milestones");
+}
+
+export function setAdminHistoryMilestoneEnabled(kind: string, enabled: boolean) {
+  return apiFetch<HistoryMilestoneKindSetting>(`/admin/history-milestones/${kind}`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 // ── Оценки стартов (рейтинг парков) ─────────────────────────────────────────
 
 export type ParticipationType = "run" | "volunteer";

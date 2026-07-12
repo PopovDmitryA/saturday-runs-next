@@ -27,7 +27,6 @@ export const DASHBOARD_ANALYTICS_CARD_ORDER = [
   "unique_roles",
   "top_role",
   "top_location",
-  "activity_period",
 ] as const;
 
 export const DASHBOARD_ANALYTICS_PANEL_ORDER = [
