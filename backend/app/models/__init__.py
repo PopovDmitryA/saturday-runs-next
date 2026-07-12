@@ -611,6 +611,9 @@ class Participant(Base):
     parser_version: Mapped[str | None] = mapped_column(String(32))
     source_hash: Mapped[str | None] = mapped_column(String(64))
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Когда страницу профиля реально открывали и парсили (в отличие от fetched_at,
+    # который обновляется при любом касании строки, в т.ч. из импорта результатов).
+    profile_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sync_status: Mapped[SyncStatus | None] = mapped_column(Enum(SyncStatus, name="sync_status_enum", create_constraint=False))
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
