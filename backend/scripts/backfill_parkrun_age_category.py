@@ -173,7 +173,7 @@ def main() -> None:
         for start in range(0, len(updates), BATCH_SIZE):
             chunk = updates[start : start + BATCH_SIZE]
             db.execute(
-                text("UPDATE participants SET age_category = :age WHERE id = :id::uuid"),
+                text("UPDATE participants SET age_category = :age WHERE id = CAST(:id AS uuid)"),
                 chunk,
             )
             db.commit()
