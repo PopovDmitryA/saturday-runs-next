@@ -6,7 +6,7 @@ fetched_at: тот обновляется при любом касании ст�
 профиль». Нужен для повторного обхода всех parkrun-профилей: обходить от
 самых давно просмотренных.
 
-Revision ID: 043_participants_profile_checked_at
+Revision ID: 043_profile_checked_at
 Revises: 042_seed_blocked_profile_slugs
 Create Date: 2026-07-12
 """
@@ -14,7 +14,7 @@ Create Date: 2026-07-12
 
 from alembic import op
 
-revision = "043_participants_profile_checked_at"
+revision = "043_profile_checked_at"
 down_revision = "042_seed_blocked_profile_slugs"
 branch_labels = None
 depends_on = None
