@@ -28,7 +28,7 @@ from app.platform_adapters.canonical import (
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
-from app.services.location_catalog_service import backfill_city_from_catalog
+from app.services.location_catalog_service import backfill_city_from_catalog, backfill_region_from_catalog
 
 PARSER_VERSION = "0.3.2"
 logger = logging.getLogger(__name__)
@@ -176,7 +176,9 @@ def upsert_event_summary(
 
     row.location_id = location.id
     row.event_date = summary.event_date
-    row.event_number = summary.event_number
+    # None не затирает уже известный номер: часть источников (JSON API s95) его не отдаёт.
+    if summary.event_number is not None:
+        row.event_number = summary.event_number
     row.is_test_event = summary.is_test_event
     row.finishers_count = summary.finishers_count
     row.volunteers_count = summary.volunteers_count
@@ -260,7 +262,11 @@ def upsert_event_for_summary(
     _assign_external_event_key(db, platform, row, summary.external_event_key)
     row.location_id = location.id
     row.event_date = summary.event_date
-    row.event_number = summary.event_number
+    # None не затирает уже известный номер: часть источников (JSON API s95) его не отдаёт.
+    if summary.event_number is not None:
+        row.event_number = summary.event_number
+    if row.event_number is not None and not summary.is_test_event:
+        title = f"{summary.location_name} #{row.event_number}"
     row.is_test_event = summary.is_test_event
     row.title = title
     row.finishers_count = summary.finishers_count
@@ -968,6 +974,8 @@ def import_profile_run_results(
         )
         if platform.code == "parkrun" and location.city is None:
             backfill_city_from_catalog(db, location)
+        if platform.code == "parkrun" and location.region is None:
+            backfill_region_from_catalog(db, location)
         external_event_key = _profile_external_event_key(item.event_date, slug)
         if platform.code == "s95":
             source_url = (
@@ -1205,6 +1213,8 @@ def import_profile_volunteer_results(
         )
         if platform.code == "parkrun" and location.city is None:
             backfill_city_from_catalog(db, location)
+        if platform.code == "parkrun" and location.region is None:
+            backfill_region_from_catalog(db, location)
         external_event_key = _profile_external_event_key(item.event_date, slug)
         source_url = item.source_url or (
             f"https://5verst.ru/{slug}/results/{item.event_date.strftime('%d.%m.%Y')}/"

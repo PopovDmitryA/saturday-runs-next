@@ -40,6 +40,7 @@ backend/scripts/backups/
 .claude/
 PROJECT_HANDOFF.local.md
 S95_API.md
+docs/release_posts_style.md
 data/parkrun_playwright_state.json
 data/grafana/dashboards/
 

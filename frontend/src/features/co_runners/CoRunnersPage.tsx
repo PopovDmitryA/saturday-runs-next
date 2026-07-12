@@ -73,6 +73,11 @@ function meetingOutcome(meeting: CoRunnerMeetingItem): {
   if (meeting.my_time_sec > meeting.their_time_sec) {
     return { label: "Участник быстрее", tone: " co-runners-score-loss" };
   }
+  if (meeting.my_position != null && meeting.their_position != null && meeting.my_position !== meeting.their_position) {
+    return meeting.my_position < meeting.their_position
+      ? { label: "Вы быстрее", tone: " co-runners-score-win" }
+      : { label: "Участник быстрее", tone: " co-runners-score-loss" };
+  }
   return { label: "Вровень", tone: "" };
 }
 

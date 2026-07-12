@@ -237,10 +237,18 @@ def import_to_db(entries: list[CatalogEntry], *, replace: bool = True) -> dict[s
             db.query(LocationCatalog).delete()
             db.flush()
 
-        location_index: dict[tuple[str, str], Location] = {}
+        # Отдельные словари для точного и нормализованного slug: если у одной
+        # платформы несколько Location с разными реальными external_key нормализуются
+        # в одинаковый слаг (легаси-дубли вроде "voronezh-central-park" и
+        # "voronezhcentralpark"), точное совпадение не должно затираться более
+        # поздним по итерации нормализованным совпадением от другой локации.
+        location_by_exact_key: dict[tuple[str, str], Location] = {}
+        location_by_norm_key: dict[tuple[str, str], Location] = {}
         for loc, platform in db.query(Location, Platform).join(Platform, Location.platform_id == Platform.id):
-            location_index[(platform.code, loc.external_key)] = loc
-            location_index[(platform.code, norm_slug(loc.external_key))] = loc
+            location_by_exact_key[(platform.code, loc.external_key)] = loc
+            normalized = norm_slug(loc.external_key)
+            if normalized:
+                location_by_norm_key.setdefault((platform.code, normalized), loc)
 
         for entry in entries:
             catalog = LocationCatalog(
@@ -267,7 +275,9 @@ def import_to_db(entries: list[CatalogEntry], *, replace: bool = True) -> dict[s
                 if platform is None:
                     continue
 
-                location = location_index.get(key) or location_index.get((platform_code, norm_slug(external_key)))
+                location = location_by_exact_key.get(key) or location_by_norm_key.get(
+                    (platform_code, norm_slug(external_key))
+                )
                 db.add(
                     LocationCatalogLink(
                         catalog_id=catalog.id,

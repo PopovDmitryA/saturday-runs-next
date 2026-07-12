@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.activity_url import resolve_activity_url
@@ -566,6 +566,7 @@ def list_all_ratings(db: Session) -> list[dict[str, object]]:
                 "platform_code": rating.platform_code,
                 "location_key": rating.location_key,
                 "location_name": catalog_index.display_name(location, rating.platform_code),
+                "location_city": location.city,
                 "score_overall": rating.score_overall,
                 "score_organization": rating.score_organization,
                 "score_route": rating.score_route,
@@ -577,6 +578,42 @@ def list_all_ratings(db: Session) -> list[dict[str, object]]:
             }
         )
     return result
+
+
+def ratings_stats(db: Session) -> dict[str, dict[str, int]]:
+    """Счётчики оценок для админки: за 1/7/30 дней и всего.
+
+    Две группы: по дате оценки (`created_at`) и по дате пробежки (`event_date`).
+    """
+    now = datetime.now(timezone.utc)
+    today = date.today()
+
+    def _count_by_created(days: int | None) -> int:
+        query = db.query(func.count(LocationRating.id))
+        if days is not None:
+            query = query.filter(LocationRating.created_at >= now - timedelta(days=days))
+        return int(query.scalar() or 0)
+
+    def _count_by_event(days: int | None) -> int:
+        query = db.query(func.count(LocationRating.id))
+        if days is not None:
+            query = query.filter(LocationRating.event_date >= today - timedelta(days=days))
+        return int(query.scalar() or 0)
+
+    return {
+        "by_rating_date": {
+            "last_1d": _count_by_created(1),
+            "last_7d": _count_by_created(7),
+            "last_30d": _count_by_created(30),
+            "total": _count_by_created(None),
+        },
+        "by_event_date": {
+            "last_1d": _count_by_event(1),
+            "last_7d": _count_by_event(7),
+            "last_30d": _count_by_event(30),
+            "total": _count_by_event(None),
+        },
+    }
 
 
 def _user_home_keys(db: Session, user_ids: set[UUID]) -> dict[UUID, str | None]:

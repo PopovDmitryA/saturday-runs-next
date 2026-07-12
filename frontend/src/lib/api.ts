@@ -114,7 +114,7 @@ export type DashboardAnalytics = {
   last_activity_date: string | null;
   first_run_date: string | null;
   days_since_first_run: number | null;
-  top_location: { name: string; platform_code: string; count: number; tied_count: number } | null;
+  top_location: { name: string; platform_codes: string[]; count: number; tied_count: number } | null;
   top_volunteer_role: { role: string; count: number } | null;
   runs_last_12_months: number;
   runs_current_year: number;
@@ -763,6 +763,7 @@ export type AdminRatingRow = {
   platform_code: string;
   location_key: string;
   location_name: string;
+  location_city: string | null;
   score_overall: number;
   score_organization: number | null;
   score_route: number | null;
@@ -774,7 +775,19 @@ export type AdminRatingRow = {
   created_at: string;
 };
 
-export type AdminRatings = { ratings: AdminRatingRow[] };
+export type AdminRatingsStatGroup = {
+  last_1d: number;
+  last_7d: number;
+  last_30d: number;
+  total: number;
+};
+
+export type AdminRatingsStats = {
+  by_rating_date: AdminRatingsStatGroup;
+  by_event_date: AdminRatingsStatGroup;
+};
+
+export type AdminRatings = { ratings: AdminRatingRow[]; stats: AdminRatingsStats };
 
 export function getAdminRatings() {
   return apiFetch<AdminRatings>("/admin/ratings");
@@ -1203,6 +1216,7 @@ export type AdminUserListItem = {
   telegram_id: number | null;
   telegram_username: string | null;
   display_name: string | null;
+  public_slug: string | null;
   auth_logins: AdminUserAuthBrief[];
   news_subscribed: boolean;
   consent_accepted: boolean;
@@ -1215,28 +1229,6 @@ export type AdminUserListItem = {
 
 export type AdminUserListResponse = {
   items: AdminUserListItem[];
-  total: number;
-  limit: number;
-  offset: number;
-  query: string | null;
-};
-
-export type AdminS95ParticipantListItem = {
-  id: string;
-  external_user_id: string;
-  display_name: string | null;
-  profile_url: string | null;
-  barcode_id: string | null;
-  club_name: string | null;
-  planning_location: string | null;
-  planning_location_seen_at: string | null;
-  fetched_at: string | null;
-  sync_status: string;
-  error_message: string | null;
-};
-
-export type AdminS95ParticipantListResponse = {
-  items: AdminS95ParticipantListItem[];
   total: number;
   limit: number;
   offset: number;
@@ -1257,7 +1249,7 @@ export type AdminUserPreviewDashboard = {
   platform_links: AdminPlatformLinkBrief[];
 };
 
-export type AdminUsersSort = "created" | "runs" | "volunteering";
+export type AdminUsersSort = "created" | "runs" | "volunteering" | "profile";
 export type AdminUsersSortDirection = "asc" | "desc";
 
 export function listAdminUsers(
@@ -1276,16 +1268,6 @@ export function listAdminUsers(
   params.set("sort", sort);
   params.set("direction", direction);
   return apiFetch<AdminUserListResponse>(`/admin/users?${params.toString()}`);
-}
-
-export function listAdminS95Participants(query = "", limit = 25, offset = 0) {
-  const params = new URLSearchParams();
-  if (query.trim()) {
-    params.set("q", query.trim());
-  }
-  params.set("limit", String(limit));
-  params.set("offset", String(offset));
-  return apiFetch<AdminS95ParticipantListResponse>(`/admin/s95/participants?${params.toString()}`);
 }
 
 export function getAdminUserPreviewDashboard(userId: string) {
@@ -1501,6 +1483,35 @@ export function clearAdminIpAbuseScore(ip: string) {
   });
 }
 
+export type BlockedSlugItem = {
+  id: string;
+  slug: string;
+  comment: string | null;
+  created_at: string;
+};
+
+export type BlockedSlugListResponse = {
+  items: BlockedSlugItem[];
+  system_slugs: string[];
+};
+
+export function listAdminBlockedSlugs() {
+  return apiFetch<BlockedSlugListResponse>("/admin/profile-slugs/blocked");
+}
+
+export function createAdminBlockedSlug(body: { slug: string; comment?: string | null }) {
+  return apiFetch<BlockedSlugItem>("/admin/profile-slugs/blocked", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteAdminBlockedSlug(entryId: string) {
+  return apiFetch<{ message: string }>(`/admin/profile-slugs/blocked/${encodeURIComponent(entryId)}`, {
+    method: "DELETE",
+  });
+}
+
 export type AdminSiteStatsOverview = {
   users_total: number;
   users_profile_public: number;
@@ -1555,81 +1566,6 @@ export type AdminSiteStatsResponse = {
 
 export function getAdminSiteStats(periodDays = 30) {
   return apiFetch<AdminSiteStatsResponse>(`/admin/stats?period_days=${periodDays}`);
-}
-
-export type ParkrunSessionStatus = {
-  captcha_pending: boolean;
-  captcha_message: string | null;
-  cooldown_remaining_seconds: number | null;
-  storage_state_configured: boolean;
-  storage_state_exists: boolean;
-  storage_state_path: string;
-  default_cdp_url: string;
-  pending_queue_count: number;
-  failed_queue_count: number;
-  stuck_done_queue_count: number;
-  worker_alive: boolean;
-  worker_status: string;
-  worker_requested_at: string | null;
-  worker_last_handled_at: string | null;
-  worker_progress: Record<string, unknown>;
-};
-
-export type ParkrunLocalWorkerStartResponse = {
-  queued: boolean;
-  message: string;
-  requested_at?: string | null;
-};
-
-export type ParkrunCdpSaveResponse = {
-  storage_path: string;
-  page_title: string | null;
-  cdp_url: string;
-  message: string;
-};
-
-export type ParkrunProcessPendingResponse = {
-  summary: Record<string, number>;
-  details: string[];
-};
-
-export function getAdminParkrunSessionStatus() {
-  return apiFetch<ParkrunSessionStatus>("/admin/parkrun/session");
-}
-
-export function saveAdminParkrunSession(cdpUrl = "") {
-  return apiFetch<ParkrunCdpSaveResponse>("/admin/parkrun/save-session", {
-    method: "POST",
-    body: JSON.stringify({ cdp_url: cdpUrl }),
-  });
-}
-
-export function clearAdminParkrunCaptchaWait() {
-  return apiFetch<{ message: string }>("/admin/parkrun/clear-captcha-wait", {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
-}
-
-export function processAdminParkrunPending(limit = 10) {
-  return apiFetch<ParkrunProcessPendingResponse>("/admin/parkrun/process-pending", {
-    method: "POST",
-    body: JSON.stringify({ limit }),
-  });
-}
-
-export function resetAdminParkrunFailedPending() {
-  return apiFetch<{ reset: number; message: string }>("/admin/parkrun/reset-failed-pending", {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
-}
-
-export function startAdminParkrunLocalWorker(resetFailed = true) {
-  return apiFetch<ParkrunLocalWorkerStartResponse>("/admin/parkrun/local-worker/start", {
-    method: "POST",
-    body: JSON.stringify({ reset_failed: resetFailed }),
-  });
 }
 
 export function recordSitePageview(path: string, authenticated: boolean, visitorKey: string) {

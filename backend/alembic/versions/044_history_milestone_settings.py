@@ -1,15 +1,15 @@
 """Add history_milestone_settings table for admin on/off toggle per milestone kind
 
-Revision ID: 041_history_milestone_settings
-Revises: 040_clubs
+Revision ID: 044_history_milestone_settings
+Revises: 043_profile_checked_at
 Create Date: 2026-07-12
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "041_history_milestone_settings"
-down_revision = "040_clubs"
+revision = "044_history_milestone_settings"
+down_revision = "043_profile_checked_at"
 branch_labels = None
 depends_on = None
 

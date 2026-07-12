@@ -200,13 +200,18 @@ def list_co_runners(
         first_meeting: date | None = None
         last_meeting: date | None = None
         for canonical, meeting in stats.meetings_by_event.items():
-            my_time = user_results.get(canonical, (None, None))[0]
+            my_time, my_position = user_results.get(canonical, (None, None))
             if my_time is not None and meeting.their_time_sec is not None:
                 timed += 1
                 if my_time < meeting.their_time_sec:
                     my_wins += 1
                 elif meeting.their_time_sec < my_time:
                     their_wins += 1
+                elif my_position is not None and meeting.their_position is not None:
+                    if my_position < meeting.their_position:
+                        my_wins += 1
+                    elif meeting.their_position < my_position:
+                        their_wins += 1
             if first_meeting is None or meeting.event_date < first_meeting:
                 first_meeting = meeting.event_date
             if last_meeting is None or meeting.event_date > last_meeting:
@@ -281,11 +286,17 @@ def list_co_runner_meetings(
 
     catalog_index = LocationCatalogIndex(db)
     by_canonical: dict[UUID, dict[str, object]] = {}
+    # Приоритет строк на канонический event: событие-первоисточник (event.id ==
+    # canonical) важнее кросслинкнутого дубля (напр. RunPark), а среди равных по
+    # этому критерию — строка с известным временем финиша.
+    best_rank: dict[UUID, tuple[int, int]] = {}
     for run, event, location, platform_code in their_rows:
         canonical = canonical_map.get(event.id, event.id)
-        existing = by_canonical.get(canonical)
-        if existing is not None and existing["their_time_sec"] is not None:
+        rank = (0 if event.id == canonical else 1, 0 if run.finish_time_sec is not None else 1)
+        current_best = best_rank.get(canonical)
+        if current_best is not None and current_best <= rank:
             continue
+        best_rank[canonical] = rank
         my_time, my_position = user_results.get(canonical, (None, None))
         by_canonical[canonical] = {
             "event_date": event.event_date,

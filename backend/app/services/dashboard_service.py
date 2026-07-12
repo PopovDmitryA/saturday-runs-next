@@ -30,6 +30,7 @@ from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.location_map_service import _location_is_cancelled, _location_is_paused
 from app.services.sync_error_format import present_sync_error
 from app.services.user_location_stats import count_unique_geo_from_rows, count_unique_locations_from_rows
+from app.services.user_unique_locations_detail import _platform_sort_key
 from app.time_format import normalize_finish_time_display
 from app.volunteering_occasions import (
     count_volunteering_for_platform,
@@ -43,7 +44,7 @@ class SyncRefreshRateLimitedError(Exception):
     pass
 
 
-ANALYTICS_VERSION = 22
+ANALYTICS_VERSION = 23
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -573,20 +574,36 @@ def _compute_dashboard_analytics(
     )
     unique_volunteer_roles = len({row[0].strip() for row in role_rows if row[0] and row[0].strip()})
 
-    location_count_rows = (
-        runs_query.with_entities(Location, Platform.code, func.count(RunResult.id).label("visit_count"))
-        .group_by(Location.id, Platform.code)
-        .order_by(func.count(RunResult.id).desc(), Location.name.asc())
-        .all()
-    )
+    run_dates_for_top_location = runs_query.with_entities(Event.event_date, Location, Platform.code).all()
+    top_location_dates: dict[str, set[date]] = defaultdict(set)
+    top_location_platform_codes: dict[str, set[str]] = defaultdict(set)
+    top_location_sample: dict[str, tuple[Location, str]] = {}
+    for event_date, location, platform_code in run_dates_for_top_location:
+        identity_key = catalog_index.canonical_identity_key(location, platform_code)
+        top_location_dates[identity_key].add(event_date)
+        top_location_platform_codes[identity_key].add(platform_code)
+        top_location_sample.setdefault(identity_key, (location, platform_code))
+
     top_location = None
-    if location_count_rows:
-        location, platform_code, visit_count = location_count_rows[0]
-        max_count = int(visit_count)
-        tied_count = sum(1 for row in location_count_rows if int(row.visit_count) == max_count)
+    if top_location_dates:
+        top_identity_key = sorted(
+            top_location_dates,
+            key=lambda key: (
+                -len(top_location_dates[key]),
+                catalog_index.display_name(*top_location_sample[key]),
+            ),
+        )[0]
+        max_count = len(top_location_dates[top_identity_key])
+        tied_count = sum(1 for dates in top_location_dates.values() if len(dates) == max_count)
+        catalog = catalog_index.get_for_identity_key(top_identity_key)
+        display_name = (
+            catalog.canonical_name
+            if catalog is not None and catalog.canonical_name
+            else catalog_index.display_name(*top_location_sample[top_identity_key])
+        )
         top_location = {
-            "name": catalog_index.display_name(location, platform_code),
-            "platform_code": platform_code,
+            "name": display_name,
+            "platform_codes": sorted(top_location_platform_codes[top_identity_key], key=_platform_sort_key),
             "count": max_count,
             "tied_count": tied_count,
         }

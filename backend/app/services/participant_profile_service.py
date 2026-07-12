@@ -281,10 +281,14 @@ def build_profile_preview_from_db(
 
     profile_url = participant.profile_url or identity.canonical_profile_url
     age_category = participant.age_category
-    if platform.code == "parkrun" and not age_category:
-        extra_age = (participant.profile_extra or {}).get("age_category")
-        if isinstance(extra_age, str) and extra_age.strip():
-            age_category = extra_age.strip()
+    if platform.code == "parkrun":
+        from app.parkrun.age_category import normalize_parkrun_age_group
+
+        # Старый код записывал сюда age grade («50.59%») — такие значения не показываем,
+        # берём группу из profile_extra, если она там есть.
+        age_category = normalize_parkrun_age_group(age_category) or normalize_parkrun_age_group(
+            (participant.profile_extra or {}).get("age_category")
+        )
 
     return ProfilePreview(
         external_user_id=participant.external_user_id,

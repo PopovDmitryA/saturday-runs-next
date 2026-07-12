@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 class TopLocationResponse(BaseModel):
     name: str
-    platform_code: str
+    platform_codes: list[str]
     count: int
     tied_count: int = 1
 

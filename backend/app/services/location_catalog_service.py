@@ -190,5 +190,38 @@ def backfill_city_from_catalog(db: Session, location: Location) -> bool:
     if city is None:
         return False
     location.city = city
+    return True
+
+
+def backfill_region_from_catalog(db: Session, location: Location) -> bool:
+    """If location.region is None, look up the catalog for a linked location that has a region.
+
+    Useful for parkrun locations whose source pages don't expose a region field.
+    Returns True if the region was updated.
+    """
+    if location.region is not None:
+        return False
+    link = (
+        db.query(LocationCatalogLink)
+        .filter(LocationCatalogLink.location_id == location.id)
+        .one_or_none()
+    )
+    if link is None:
+        return False
+    region: str | None = (
+        db.query(Location.region)
+        .join(LocationCatalogLink, LocationCatalogLink.location_id == Location.id)
+        .filter(
+            LocationCatalogLink.catalog_id == link.catalog_id,
+            LocationCatalogLink.location_id != location.id,
+            Location.region.isnot(None),
+        )
+        .order_by(Location.region)
+        .limit(1)
+        .scalar()
+    )
+    if region is None:
+        return False
+    location.region = region
     db.flush()
     return True
