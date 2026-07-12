@@ -114,7 +114,7 @@ export type DashboardAnalytics = {
   last_activity_date: string | null;
   first_run_date: string | null;
   days_since_first_run: number | null;
-  top_location: { name: string; platform_code: string; count: number; tied_count: number } | null;
+  top_location: { name: string; platform_codes: string[]; count: number; tied_count: number } | null;
   top_volunteer_role: { role: string; count: number } | null;
   runs_last_12_months: number;
   runs_current_year: number;
