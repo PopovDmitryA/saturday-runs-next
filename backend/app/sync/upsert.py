@@ -176,7 +176,9 @@ def upsert_event_summary(
 
     row.location_id = location.id
     row.event_date = summary.event_date
-    row.event_number = summary.event_number
+    # None не затирает уже известный номер: часть источников (JSON API s95) его не отдаёт.
+    if summary.event_number is not None:
+        row.event_number = summary.event_number
     row.is_test_event = summary.is_test_event
     row.finishers_count = summary.finishers_count
     row.volunteers_count = summary.volunteers_count
@@ -260,7 +262,11 @@ def upsert_event_for_summary(
     _assign_external_event_key(db, platform, row, summary.external_event_key)
     row.location_id = location.id
     row.event_date = summary.event_date
-    row.event_number = summary.event_number
+    # None не затирает уже известный номер: часть источников (JSON API s95) его не отдаёт.
+    if summary.event_number is not None:
+        row.event_number = summary.event_number
+    if row.event_number is not None and not summary.is_test_event:
+        title = f"{summary.location_name} #{row.event_number}"
     row.is_test_event = summary.is_test_event
     row.title = title
     row.finishers_count = summary.finishers_count

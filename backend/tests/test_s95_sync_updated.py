@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.models import Event, Location, Platform, ProtocolSyncState, SyncWatermark
 from app.s95.api_client import S95ApiActivityRef, S95ApiLocation
 from app.services.sync_watermark_service import S95_PROTOCOLS_RECONCILED_THROUGH
-from app.sync.s95_global_sync_api import sync_updated_protocols
+from app.sync.s95_global_sync_api import event_numbers_by_date, sync_updated_protocols
 from app.sync.s95_protocol_api import upsert_activity_protocol_api
 
 # Same trimmed shape as test_s95_api_protocol.py's ACTIVITY_JSON (Пенза, 26.10.2024).
@@ -93,6 +93,19 @@ def test_sync_updated_fetches_new_protocol(
     ).one()
     state = db_session.query(ProtocolSyncState).filter(ProtocolSyncState.event_id == event.id).one()
     assert state.source_updated_at == ref.updated_at_dt()
+    # Единственная активность локации → забег №1 (номер выводится из хронологии списка).
+    assert event.event_number == 1
+    assert event.title == "Пенза #1"
+
+
+def test_event_numbers_by_date_ranks_chronologically():
+    refs = [
+        S95ApiActivityRef(date="2024-04-13", url="https://s95.ru/activities/1276.json"),
+        S95ApiActivityRef(date="2023-12-16", url="https://s95.ru/activities/962.json"),
+        S95ApiActivityRef(date="2024-01-20", url="https://s95.ru/activities/1060.json"),
+    ]
+    numbers = event_numbers_by_date(refs)
+    assert numbers == {"2023-12-16": 1, "2024-01-20": 2, "2024-04-13": 3}
 
 
 def test_sync_updated_skips_when_updated_at_not_newer(db_session: Session, s95_platform: Platform):

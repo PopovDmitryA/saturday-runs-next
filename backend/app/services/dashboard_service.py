@@ -44,7 +44,7 @@ class SyncRefreshRateLimitedError(Exception):
     pass
 
 
-ANALYTICS_VERSION = 22
+ANALYTICS_VERSION = 23
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
