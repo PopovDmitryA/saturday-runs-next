@@ -304,6 +304,11 @@ function ChallengeCard({ challenge }: { challenge: Challenge }) {
               </span>
             )}
             {challenge.detail.platform_code && <PlatformBadge code={challenge.detail.platform_code} />}
+            {challenge.recent_delta > 0 && (
+              <span className="recent-delta-badge" title="Продвинула последняя пробежка">
+                ↑ +{challenge.recent_delta}
+              </span>
+            )}
           </div>
           <p className="challenge-description">{challenge.description}</p>
         </div>

@@ -200,6 +200,9 @@ def _challenge(
         "unit": unit,
         "detail": detail or {},
         "level_dates": level_dates or {"bronze": None, "silver": None, "gold": None},
+        # Насколько последняя пробежка продвинула счётчик — проставляется
+        # снаружи (compute_challenges), по умолчанию 0.
+        "recent_delta": 0,
     }
 
 
@@ -914,12 +917,13 @@ def _compute_clubs(
     return {"overall": overall, "platforms": platforms}
 
 
-def compute_challenges(db: Session, user_id: UUID) -> dict[str, object]:
-    rows = _collect_run_rows(db, user_id)
-    vol_rows = _collect_volunteer_rows(db, user_id)
-    upcoming = _upcoming_event_numbers(db)
-
-    challenges = [
+def _build_challenge_list(
+    db: Session,
+    rows: list[RunRow],
+    vol_rows: dict[str, list[tuple[date, str]]],
+    upcoming: dict[tuple[str, int], list[tuple[date, str]]],
+) -> list[dict[str, object]]:
+    return [
         _seconds_challenge(rows),
         _positions_challenge(rows),
         _alphabet_challenge(db, rows),
@@ -955,6 +959,34 @@ def compute_challenges(db: Session, user_id: UUID) -> dict[str, object]:
         _streak_challenge(rows, vol_rows),
         _best_year_challenge(rows),
     ]
+
+
+def _rows_before_last_activity(rows: list[RunRow]) -> list[RunRow] | None:
+    """Пробежки без самого последнего дня активности — чтобы вычислить, что
+    именно продвинулось благодаря последней пробежке. None, если пробежек нет."""
+    if not rows:
+        return None
+    last_date = rows[-1].event_date  # rows уже отсортированы по event_date
+    return [row for row in rows if row.event_date < last_date]
+
+
+def compute_challenges(db: Session, user_id: UUID) -> dict[str, object]:
+    rows = _collect_run_rows(db, user_id)
+    vol_rows = _collect_volunteer_rows(db, user_id)
+    upcoming = _upcoming_event_numbers(db)
+
+    challenges = _build_challenge_list(db, rows, vol_rows, upcoming)
+
+    rows_before = _rows_before_last_activity(rows)
+    if rows_before is not None and len(rows_before) < len(rows):
+        previous: dict[str, int] = {
+            str(c["code"]): int(c["current"])  # type: ignore[call-overload]
+            for c in _build_challenge_list(db, rows_before, vol_rows, upcoming)
+        }
+        for challenge in challenges:
+            code = str(challenge["code"])
+            delta = int(challenge["current"]) - previous.get(code, int(challenge["current"]))  # type: ignore[call-overload]
+            challenge["recent_delta"] = max(delta, 0)
 
     summary = Counter(challenge["level"] for challenge in challenges if challenge["level"])
     badges = [
@@ -1183,6 +1215,7 @@ def _goal_progress(
     rows: list[RunRow],
     vol_rows: dict[str, list[tuple[date, str]]],
     today: date,
+    rows_before: list[RunRow] | None = None,
 ) -> dict[str, object]:
     preset = GOAL_PRESETS[goal.goal_type]
     year = goal.year
@@ -1190,6 +1223,16 @@ def _goal_progress(
     on_track: bool | None = None
     forecast_value: int | None = None
     target_display: str | None = None
+
+    # Насколько последняя пробежка продвинула именно эту цель — считается
+    # одинаково для всех типов, кроме finish_under (там меньше = лучше).
+    recent_delta = 0
+    if rows_before is not None:
+        current_before, _ = _preset_current(goal.goal_type, year, rows=rows_before, vol_rows=vol_rows, today=today)
+        if goal.goal_type == "finish_under":
+            recent_delta = max(current_before - current, 0) if current_before > 0 and current > 0 else 0
+        else:
+            recent_delta = max(current - current_before, 0)
 
     if goal.goal_type == "finish_under":
         best = current or None
@@ -1201,7 +1244,9 @@ def _goal_progress(
         else:
             pct = round(goal.target_value / best * 100, 1)
         done = best is not None and best <= goal.target_value
-        return _goal_payload(goal, preset, current, pct, done, on_track, forecast_value, current_display, target_display)
+        return _goal_payload(
+            goal, preset, current, pct, done, on_track, forecast_value, current_display, target_display, recent_delta
+        )
 
     if goal.goal_type == "saturday_streak":
         year_dates = _year_activity_dates(year, rows, vol_rows)
@@ -1219,7 +1264,7 @@ def _goal_progress(
                 expected -= timedelta(days=7)
             on_track = live_streak + _saturdays_left(today) >= goal.target_value
         pct = round(min(current / goal.target_value, 1.0) * 100, 1)
-        return _goal_payload(goal, preset, current, pct, done, on_track, forecast_value, None, None)
+        return _goal_payload(goal, preset, current, pct, done, on_track, forecast_value, None, None, recent_delta)
 
     if goal.goal_type == "saturday_consistency_year":
         all_saturdays = _saturdays_of_year(year)
@@ -1231,7 +1276,9 @@ def _goal_progress(
             remaining = sum(1 for day in all_saturdays if day > today)
             on_track = current + remaining >= target_count
         target_display = f"{goal.target_value}%"
-        return _goal_payload(goal, preset, current, pct, done, on_track, forecast_value, current_display, target_display)
+        return _goal_payload(
+            goal, preset, current, pct, done, on_track, forecast_value, current_display, target_display, recent_delta
+        )
 
     # count-цели: прогресс + линейный прогноз к концу года
     pct = round(min(current / goal.target_value, 1.0) * 100, 1)
@@ -1239,7 +1286,7 @@ def _goal_progress(
     if not done and today.year == year:
         forecast_value = round(current / _year_fraction_elapsed(today))
         on_track = forecast_value >= goal.target_value
-    return _goal_payload(goal, preset, current, pct, done, on_track, forecast_value, None, None)
+    return _goal_payload(goal, preset, current, pct, done, on_track, forecast_value, None, None, recent_delta)
 
 
 def _goal_payload(
@@ -1252,6 +1299,7 @@ def _goal_payload(
     forecast_value: int | None,
     current_display: str | None,
     target_display: str | None,
+    recent_delta: int = 0,
 ) -> dict[str, object]:
     return {
         "goal_type": goal.goal_type,
@@ -1268,6 +1316,9 @@ def _goal_payload(
         "forecast_value": forecast_value,
         "current_display": current_display,
         "target_display": target_display,
+        # Насколько последняя пробежка продвинула цель (0, если не продвинула
+        # или дельта не считалась — см. rows_before в _goal_progress).
+        "recent_delta": recent_delta,
     }
 
 
@@ -1306,11 +1357,12 @@ def get_goals_payload(db: Session, user_id: UUID, *, today: date | None = None) 
     )
     rows = _collect_run_rows(db, user_id)
     vol_rows = _collect_volunteer_rows(db, user_id)
+    rows_before = _rows_before_last_activity(rows)
     return {
         "year": year,
         "max_goals": len(GOAL_PRESETS),
         "goals": [
-            _goal_progress(goal, rows=rows, vol_rows=vol_rows, today=today)
+            _goal_progress(goal, rows=rows, vol_rows=vol_rows, today=today, rows_before=rows_before)
             for goal in goals
             if goal.goal_type in GOAL_PRESETS
         ],

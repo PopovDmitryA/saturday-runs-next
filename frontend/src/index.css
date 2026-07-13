@@ -7916,6 +7916,35 @@ tr.run-crosslinked td {
   color: var(--text-3);
 }
 
+/* Зелёная стрелка-дельта: сколько прогресса дала последняя пробежка —
+   у целей (GoalCard) и у челленджей (ChallengeCard) */
+.recent-delta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-green-text);
+  background: var(--tint-green-bg-strong);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+  flex: none;
+  animation: recent-delta-pop 0.4s ease-out;
+}
+
+@keyframes recent-delta-pop {
+  from {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 .goal-bar {
   height: 0.55rem;
   border-radius: 999px;

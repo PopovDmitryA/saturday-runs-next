@@ -22,6 +22,7 @@ from app.services.achievements_service import (
     _palindrome_challenge,
     _positions_challenge,
     _resolve_level,
+    _rows_before_last_activity,
     _runs_needed_for_p,
     _saturdays_left,
     _saturdays_of_year,
@@ -352,3 +353,75 @@ def test_best_year_level_dates_earliest_year_wins() -> None:
     assert result["bronze"] == date(2024, 1, 3).isoformat()
     assert result["silver"] == date(2025, 2, 5).isoformat()
     assert result["gold"] is None
+
+
+def test_rows_before_last_activity_empty() -> None:
+    assert _rows_before_last_activity([]) is None
+
+
+def test_rows_before_last_activity_drops_last_day_only() -> None:
+    rows = [
+        _row(event_date=date(2026, 1, 3)),
+        _row(event_date=date(2026, 1, 10)),
+        _row(event_date=date(2026, 1, 17)),
+    ]
+    before = _rows_before_last_activity(rows)
+    assert before is not None
+    assert [row.event_date for row in before] == [date(2026, 1, 3), date(2026, 1, 10)]
+
+
+def test_rows_before_last_activity_drops_whole_last_day_even_if_multiple_platforms() -> None:
+    # Два старта в один день на разных системах (например, двойной старт) —
+    # оба должны уйти вместе, а не только один.
+    rows = [
+        _row(event_date=date(2026, 1, 3), platform_code="five_verst"),
+        _row(event_date=date(2026, 1, 10), platform_code="five_verst"),
+        _row(event_date=date(2026, 1, 10), platform_code="s95"),
+    ]
+    before = _rows_before_last_activity(rows)
+    assert before is not None
+    assert len(before) == 1
+    assert before[0].event_date == date(2026, 1, 3)
+
+
+def test_challenge_recent_delta_via_manual_diff() -> None:
+    """Механика recent_delta в compute_challenges — сравнение current с
+    результатом того же челленджа без последнего дня активности."""
+    rows = [
+        _row(finish_time_sec=25 * 60 + 13, event_date=date(2026, 1, 3)),
+        _row(finish_time_sec=26 * 60 + 14, event_date=date(2026, 1, 10)),
+    ]
+    full = _seconds_challenge(rows)
+    before = _seconds_challenge(_rows_before_last_activity(rows) or [])
+    assert full["current"] - before["current"] == 1
+
+
+def test_goal_progress_runs_year_recent_delta() -> None:
+    goal = UserGoal(year=2026, goal_type="runs_year", target_value=50)
+    rows_before = [_row(event_date=date(2026, 1, 3))]
+    rows = rows_before + [_row(event_date=date(2026, 1, 10))]
+    result = _goal_progress(goal, rows=rows, vol_rows={}, today=date(2026, 1, 10), rows_before=rows_before)
+    assert result["recent_delta"] == 1
+
+
+def test_goal_progress_no_rows_before_gives_zero_delta() -> None:
+    goal = UserGoal(year=2026, goal_type="runs_year", target_value=50)
+    rows = [_row(event_date=date(2026, 1, 3))]
+    result = _goal_progress(goal, rows=rows, vol_rows={}, today=date(2026, 1, 10))
+    assert result["recent_delta"] == 0
+
+
+def test_goal_progress_finish_under_recent_delta_on_improvement() -> None:
+    goal = UserGoal(year=2026, goal_type="finish_under", target_value=1500)
+    rows_before = [_row(event_date=date(2026, 1, 3), finish_time_sec=1600)]
+    rows = rows_before + [_row(event_date=date(2026, 1, 10), finish_time_sec=1550)]
+    result = _goal_progress(goal, rows=rows, vol_rows={}, today=date(2026, 1, 10), rows_before=rows_before)
+    assert result["recent_delta"] == 50
+
+
+def test_goal_progress_finish_under_recent_delta_zero_if_slower() -> None:
+    goal = UserGoal(year=2026, goal_type="finish_under", target_value=1500)
+    rows_before = [_row(event_date=date(2026, 1, 3), finish_time_sec=1550)]
+    rows = rows_before + [_row(event_date=date(2026, 1, 10), finish_time_sec=1600)]
+    result = _goal_progress(goal, rows=rows, vol_rows={}, today=date(2026, 1, 10), rows_before=rows_before)
+    assert result["recent_delta"] == 0

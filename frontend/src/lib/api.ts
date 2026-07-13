@@ -692,6 +692,8 @@ export type Challenge = {
   unit: string | null;
   detail: ChallengeDetail;
   level_dates: ChallengeLevelDates;
+  // Насколько последняя пробежка продвинула счётчик (0 — не продвинула)
+  recent_delta: number;
 };
 
 export type ClubEntry = {
@@ -765,6 +767,8 @@ export type GoalProgress = {
   forecast_value: number | null;
   current_display: string | null;
   target_display: string | null;
+  // Насколько последняя пробежка продвинула цель (0 — не продвинула)
+  recent_delta: number;
 };
 
 export type GoalsResponse = {

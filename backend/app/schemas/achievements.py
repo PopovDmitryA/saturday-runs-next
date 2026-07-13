@@ -38,6 +38,8 @@ class ChallengeResponse(BaseModel):
     # Челлендж-специфичные детали: cells/letters/days/items — рисуются на фронте
     detail: dict[str, object] = Field(default_factory=dict)
     level_dates: ChallengeLevelDatesResponse
+    # Насколько последняя пробежка продвинула счётчик (0 — не продвинула)
+    recent_delta: int = 0
 
 
 class BadgeResponse(BaseModel):
@@ -124,6 +126,9 @@ class GoalProgressResponse(BaseModel):
     # Для целей на время: человекочитаемые значения (24:31)
     current_display: str | None = None
     target_display: str | None = None
+    # Насколько последняя пробежка продвинула цель (0 — не продвинула;
+    # для finish_under — насколько быстрее нового личного лучшего за год)
+    recent_delta: int = 0
 
 
 class GoalsResponse(BaseModel):
