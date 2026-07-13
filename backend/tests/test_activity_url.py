@@ -28,12 +28,11 @@ def test_five_verst_prefers_stored_protocol_url() -> None:
     assert url == stored
 
 
-def test_s95_builds_human_readable_results_url_ignoring_stored_json_api_link() -> None:
-    """source_url на s95-событиях после перехода на JSON API часто хранит
+def test_s95_strips_json_suffix_from_activities_api_url() -> None:
+    """source_url на s95-событиях после перехода на JSON API хранит технический
 
-    технический .../activities/{id}.json (нужен для внутреннего дозапроса
-    протокола, не для показа пользователю) — всегда строим человекочитаемую
-    страницу результатов по slug локации и дате, как и для five_verst.
+    .../activities/{id}.json (адрес самого API-запроса) — страница той же
+    гонки на сайте отличается только отсутствием суффикса ".json".
     """
     stored = "https://s95.ru/activities/3022.json"
     url = resolve_activity_url(
@@ -43,10 +42,10 @@ def test_s95_builds_human_readable_results_url_ignoring_stored_json_api_link() -
         event_source_url=stored,
         location_external_key="penza",
     )
-    assert url == "https://s95.ru/events/penza/results/12.04.2025/"
+    assert url == "https://s95.ru/activities/3022"
 
 
-def test_s95_builds_results_url_even_with_legacy_protocol_stored() -> None:
+def test_s95_keeps_legacy_protocol_url_without_json_suffix() -> None:
     stored = "https://s95.ru/events/100/protocol/"
     url = resolve_activity_url(
         platform_code="s95",
@@ -55,28 +54,16 @@ def test_s95_builds_results_url_even_with_legacy_protocol_stored() -> None:
         event_source_url=stored,
         location_external_key="troitsk",
     )
-    assert url == "https://s95.ru/events/troitsk/results/23.05.2026/"
-
-
-def test_s95_without_location_slug_falls_back_to_stored_protocol_url() -> None:
-    stored = "https://s95.ru/activities/460"
-    url = resolve_activity_url(
-        platform_code="s95",
-        event_date=date(2025, 4, 12),
-        event_number=100,
-        event_source_url=stored,
-        location_external_key="unknown",
-    )
     assert url == stored
 
 
-def test_s95_without_location_slug_or_protocol_url_returns_none() -> None:
+def test_s95_without_protocol_url_returns_none() -> None:
     url = resolve_activity_url(
         platform_code="s95",
         event_date=date(2025, 4, 12),
         event_number=100,
         event_source_url="https://s95.ru/events/penza",
-        location_external_key="unknown",
+        location_external_key="penza",
     )
     assert url is None
 
