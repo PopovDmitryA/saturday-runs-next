@@ -49,7 +49,7 @@ export function MyHistoryTeaser({ load, href }: MyHistoryTeaserProps) {
   if (milestones.length === 0) {
     return null;
   }
-  const last = milestones[milestones.length - 1];
+  const last = milestones[0];
   const age = daysSince(last.event_date);
   // Свежих вех больше месяца не было — тизер прячем с дашборда, вся история
   // всё равно остаётся доступной на /history.
