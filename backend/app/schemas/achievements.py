@@ -9,6 +9,14 @@ class ChallengeLevelsResponse(BaseModel):
     gold: int
 
 
+class ChallengeLevelDatesResponse(BaseModel):
+    """Дата достижения каждого уровня (ISO-дата или null, если не достигнут)."""
+
+    bronze: str | None = None
+    silver: str | None = None
+    gold: str | None = None
+
+
 class ChallengeResponse(BaseModel):
     code: str
     title: str
@@ -29,6 +37,7 @@ class ChallengeResponse(BaseModel):
     unit: str | None = None
     # Челлендж-специфичные детали: cells/letters/days/items — рисуются на фронте
     detail: dict[str, object] = Field(default_factory=dict)
+    level_dates: ChallengeLevelDatesResponse
 
 
 class BadgeResponse(BaseModel):
@@ -36,6 +45,8 @@ class BadgeResponse(BaseModel):
     title: str
     icon: str
     level: str
+    # Дата, когда был получен именно этот уровень
+    achieved_at: str | None = None
 
 
 class AchievementsSummaryResponse(BaseModel):
@@ -57,6 +68,8 @@ class ClubEntryResponse(BaseModel):
     to_next: int | None = None
     # Прогресс от предыдущего клуба к следующему
     pct_to_next: float = 0.0
+    # Дата достижения каждого порога, ключ — строковое значение порога ("10", "25"…)
+    level_dates: dict[str, str | None] = Field(default_factory=dict)
 
 
 class ClubPlatformResponse(BaseModel):
@@ -83,12 +96,16 @@ class GoalPresetResponse(BaseModel):
     title: str
     icon: str
     unit: str
-    # count | time | streak
+    # count | time | streak | percent
     kind: str
     default_target: int
     min: int
     max: int
     description: str
+    # Текущий показатель по этому пресету за год — не требует, чтобы цель была
+    # выбрана: помогает адекватно выставить target при настройке.
+    current_value: int = 0
+    current_display: str | None = None
 
 
 class GoalProgressResponse(BaseModel):

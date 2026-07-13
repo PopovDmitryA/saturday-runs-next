@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from app.models import UserGoal
 from app.services.achievements_service import (
     RunRow,
     _best_year_challenge,
+    _best_year_level_dates,
     _calendar_days_challenge,
     _club_entry,
     _deja_vu_challenge,
     _first_letter,
     _goal_progress,
+    _level_dates,
     _max_saturday_streak,
     _number_match_challenge,
     _p_index_challenge,
+    _p_index_level_dates,
     _palindrome_challenge,
     _positions_challenge,
     _resolve_level,
@@ -24,6 +27,8 @@ from app.services.achievements_service import (
     _saturdays_of_year,
     _seconds_challenge,
     _start_numbers_range_challenge,
+    _streak_level_dates,
+    _threshold_dates,
     _time_display,
     _upcoming_hint,
     _weekdays_challenge,
@@ -205,14 +210,21 @@ def test_runs_needed_for_p() -> None:
     assert _runs_needed_for_p([10, 10, 10], 3) == 0
 
 
+def _dates_seq(count: int, start: date = date(2018, 1, 1)) -> list[date]:
+    return [start + timedelta(days=i) for i in range(count)]
+
+
 def test_club_entry_thresholds() -> None:
-    entry = _club_entry("runs", "Пробежки", "🏃", 254)
+    entry = _club_entry("runs", "Пробежки", "🏃", _dates_seq(254))
     assert entry["earned"] == [10, 25, 50, 100, 250]
     assert entry["next_threshold"] == 500
     assert entry["to_next"] == 246
-    empty = _club_entry("runs", "Пробежки", "🏃", 0)
+    assert entry["level_dates"]["10"] == (date(2018, 1, 1) + timedelta(days=9)).isoformat()
+    assert entry["level_dates"]["250"] == (date(2018, 1, 1) + timedelta(days=249)).isoformat()
+    assert entry["level_dates"]["500"] is None
+    empty = _club_entry("runs", "Пробежки", "🏃", [])
     assert empty["earned"] == [] and empty["next_threshold"] == 10
-    maxed = _club_entry("runs", "Пробежки", "🏃", 1500)
+    maxed = _club_entry("runs", "Пробежки", "🏃", _dates_seq(1500))
     assert maxed["next_threshold"] is None and maxed["pct_to_next"] == 100.0
 
 
@@ -270,3 +282,57 @@ def test_goal_progress_saturday_consistency_year_not_achievable() -> None:
     result = _goal_progress(goal, rows=rows, vol_rows={}, today=date(2026, 7, 13))
     assert result["done"] is False
     assert result["on_track"] is False
+
+
+def test_level_dates_generic_helper() -> None:
+    levels = {"bronze": 2, "silver": 4, "gold": 6}
+    dates = _dates_seq(5)  # только 5 событий — золото (6) недостижимо
+    result = _level_dates(dates, levels)
+    assert result["bronze"] == dates[1].isoformat()
+    assert result["silver"] == dates[3].isoformat()
+    assert result["gold"] is None
+
+
+def test_threshold_dates_helper() -> None:
+    dates = _dates_seq(30)
+    result = _threshold_dates(dates, (10, 25, 50))
+    assert result["10"] == dates[9].isoformat()
+    assert result["25"] == dates[24].isoformat()
+    assert result["50"] is None
+
+
+def test_p_index_level_dates_matches_current() -> None:
+    # 3 локации по 3 пробежки каждая — p-индекс должен стать 3 сразу после
+    # третьего финиша в третьей локации (девятая пробежка по счёту).
+    rows: list[RunRow] = []
+    day = date(2020, 1, 1)
+    for loc in ("a", "b", "c"):
+        for _ in range(3):
+            rows.append(_row(event_date=day, location_key=loc))
+            day += timedelta(days=1)
+    levels = {"bronze": 3, "silver": 5, "gold": 10}
+    result = _p_index_level_dates(rows, levels)
+    assert result["bronze"] == rows[8].event_date.isoformat()
+    assert result["silver"] is None
+
+
+def test_streak_level_dates_records_first_crossing() -> None:
+    saturdays = {date(2026, 1, 3) + timedelta(days=7 * i) for i in range(5)}
+    levels = {"bronze": 3, "silver": 5, "gold": 10}
+    result = _streak_level_dates(saturdays, levels)
+    sorted_saturdays = sorted(saturdays)
+    assert result["bronze"] == sorted_saturdays[2].isoformat()
+    assert result["silver"] == sorted_saturdays[4].isoformat()
+    assert result["gold"] is None
+
+
+def test_best_year_level_dates_earliest_year_wins() -> None:
+    levels = {"bronze": 3, "silver": 5, "gold": 10}
+    rows = (
+        [_row(event_date=date(2024, 1, d)) for d in range(1, 4)]  # 2024: только 3
+        + [_row(event_date=date(2025, 2, d)) for d in range(1, 6)]  # 2025: 5
+    )
+    result = _best_year_level_dates(rows, levels)
+    assert result["bronze"] == date(2024, 1, 3).isoformat()
+    assert result["silver"] == date(2025, 2, 5).isoformat()
+    assert result["gold"] is None

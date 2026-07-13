@@ -40,6 +40,19 @@ type DraftGoal = {
   raw: string;
 };
 
+/** «Сейчас: …» — текущий показатель пресета за год, виден даже до выбора цели,
+ * чтобы адекватно выставить target. */
+function presetCurrentLabel(preset: GoalPreset): string {
+  if (preset.kind === "time") {
+    return preset.current_display ? `Сейчас: ${preset.current_display}` : "Пока нет результатов в этом году";
+  }
+  if (preset.kind === "percent") {
+    return `Сейчас: ${preset.current_display ?? "0%"}`;
+  }
+  const unitSuffix = preset.unit ? ` ${preset.unit}` : "";
+  return `Сейчас: ${preset.current_value}${unitSuffix}`;
+}
+
 export function GoalsEditModal({
   open,
   goals,
@@ -184,6 +197,7 @@ export function GoalsEditModal({
               <span className="goal-preset-text">
                 <span className="goal-preset-title">{preset.title}</span>
                 <span className="goal-preset-description muted">{preset.description}</span>
+                <span className="goal-preset-current muted">{presetCurrentLabel(preset)}</span>
               </span>
               <span className="goal-preset-input-wrap">
                 <input

@@ -666,6 +666,12 @@ export type ChallengeDetail = {
   example?: { value: string; location: string; note: string };
 };
 
+export type ChallengeLevelDates = {
+  bronze: string | null;
+  silver: string | null;
+  gold: string | null;
+};
+
 export type Challenge = {
   code: string;
   title: string;
@@ -682,6 +688,7 @@ export type Challenge = {
   pct: number;
   unit: string | null;
   detail: ChallengeDetail;
+  level_dates: ChallengeLevelDates;
 };
 
 export type ClubEntry = {
@@ -694,6 +701,7 @@ export type ClubEntry = {
   next_threshold: number | null;
   to_next: number | null;
   pct_to_next: number;
+  level_dates: Record<string, string | null>;
 };
 
 export type ClubPlatform = {
@@ -711,6 +719,7 @@ export type AchievementBadge = {
   title: string;
   icon: string;
   level: ChallengeLevel;
+  achieved_at: string | null;
 };
 
 export type AchievementsResponse = {
@@ -734,6 +743,8 @@ export type GoalPreset = {
   min: number;
   max: number;
   description: string;
+  current_value: number;
+  current_display: string | null;
 };
 
 export type GoalProgress = {
@@ -1550,6 +1561,10 @@ export function getPublicProfileCatalogTable(serialId: number, includeTest = fal
   return apiFetch<CatalogLocationsTableResponse>(
     `/users/${serialId}/profile/locations/catalog/table${query}`,
   );
+}
+
+export function getPublicProfileAchievements(serialId: number) {
+  return apiFetch<AchievementsResponse>(`/users/${serialId}/profile/achievements`);
 }
 
 export function getPublicProfileBestResults(serialId: number, includeTest = false) {
