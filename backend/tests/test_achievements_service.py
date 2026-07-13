@@ -184,9 +184,9 @@ def test_saturdays_left_end_of_year() -> None:
     assert _saturdays_left(date(2026, 12, 27)) == 0
 
 
-def test_start_numbers_range_scoped_per_platform() -> None:
-    # Номер старта — внутри своей системы: три закрытых номера на five_verst
-    # и один на s95 не должны складываться в одну ячейку/счётчик.
+def test_start_numbers_range_counts_any_platform() -> None:
+    # Число засчитывается, если получено В ЛЮБОЙ системе: три закрытых номера
+    # на five_verst и один на s95 складываются в общий счётчик диапазона.
     rows = [
         _row(event_number=50, platform_code="five_verst"),
         _row(event_number=51, platform_code="five_verst"),
@@ -197,10 +197,11 @@ def test_start_numbers_range_scoped_per_platform() -> None:
     result = _start_numbers_range_challenge(
         rows, {}, code="start_numbers", title="Нумератор", description="", low=1, high=200, levels=levels
     )
-    assert result["current"] == 3
-    assert result["detail"]["platform_code"] == "five_verst"  # type: ignore[index]
+    assert result["current"] == 4
     assert result["detail"]["cells"][49]["done"] is True  # type: ignore[index]
-    assert result["detail"]["cells"][59]["done"] is False  # type: ignore[index]
+    assert result["detail"]["cells"][49]["platform_code"] == "five_verst"  # type: ignore[index]
+    assert result["detail"]["cells"][59]["done"] is True  # type: ignore[index]
+    assert result["detail"]["cells"][59]["platform_code"] == "s95"  # type: ignore[index]
 
 
 def test_start_numbers_pro_range() -> None:

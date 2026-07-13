@@ -633,6 +633,7 @@ export type ChallengeCell = {
   date: string | null;
   location: string | null;
   hint: string | null;
+  platform_code: string | null;
 };
 
 export type ChallengeLetter = {
@@ -664,9 +665,6 @@ export type ChallengeDetail = {
   days?: ChallengeDay[];
   items?: ChallengeDetailItem[];
   example?: { value: string; location: string; note: string };
-  // Нумератор/Нумератор ПРО: система, по которой сейчас лучший результат
-  // (номер старта — внутри своей системы, платформы не смешиваются)
-  platform_code?: string | null;
 };
 
 export type ChallengeLevelDates = {

@@ -242,6 +242,7 @@ def _cell(
         "date": row.event_date.isoformat() if row else None,
         "location": row.location_name if row else None,
         "hint": hint,
+        "platform_code": row.platform_code if row else None,
     }
 
 
@@ -465,22 +466,27 @@ def _start_numbers_range_challenge(
     levels: dict[str, int],
 ) -> dict[str, object]:
     """Номер старта считается ВНУТРИ одной системы (каждая платформа нумерует
-    события независимо — см. _upcoming_event_numbers), поэтому смешивать номера
-    разных систем в одной ячейке было бы бессмысленно: "старт №50" на five_verst
-    и "старт №50" на s95 — два разных, никак не связанных события. Берём
-    систему, где закрыто больше всего номеров (лучший результат в одной
-    системе), и считаем прогресс только по ней."""
-    by_platform: dict[str, dict[int, RunRow]] = {}
+    события независимо — см. _upcoming_event_numbers), но само число в
+    диапазоне засчитывается в общий счётчик, если получено В ЛЮБОЙ системе:
+    старт №4 на s95 закрывает клетку "4" точно так же, как старт №4 на
+    five_verst — платформы здесь не соревнуются друг с другом, просто у
+    каждой цифры своя (первая по дате) система-источник, которая видна в
+    подсказке ячейки."""
+    first_by_number: dict[int, RunRow] = {}
     for row in rows:
         if row.event_number is not None and low <= row.event_number <= high:
-            by_platform.setdefault(row.platform_code, {}).setdefault(row.event_number, row)
-    best_platform = max(by_platform, key=lambda code: len(by_platform[code]), default=None)
-    first_by_number = by_platform.get(best_platform, {}) if best_platform else {}
+            first_by_number.setdefault(row.event_number, row)
+    upcoming_by_number: dict[int, list[tuple[date, str]]] = {}
+    for (_platform_code, number), entries in upcoming.items():
+        if low <= number <= high:
+            upcoming_by_number.setdefault(number, []).extend(entries)
+    for entries in upcoming_by_number.values():
+        entries.sort()
     cells = [
         _cell(
             str(number),
             first_by_number.get(number),
-            hint=_upcoming_hint(upcoming.get((best_platform, number))) if best_platform else None,
+            hint=_upcoming_hint(upcoming_by_number.get(number)),
         )
         for number in range(low, high + 1)
     ]
@@ -494,7 +500,7 @@ def _start_numbers_range_challenge(
         current=len(first_by_number),
         levels=levels,
         unit="номеров",
-        detail={"cells": cells, "platform_code": best_platform},
+        detail={"cells": cells},
         level_dates=_level_dates(sorted_dates, levels),
     )
 
@@ -933,7 +939,7 @@ def _build_challenge_list(
             upcoming,
             code="start_numbers",
             title="Нумератор",
-            description="Прими участие в стартах с порядковыми номерами от №1 до №200 — в рамках одной системы.",
+            description="Прими участие в стартах с порядковыми номерами от №1 до №200 — неважно, в какой системе получен каждый номер.",
             low=1,
             high=200,
             levels={"bronze": 50, "silver": 100, "gold": 200},
@@ -943,7 +949,7 @@ def _build_challenge_list(
             upcoming,
             code="start_numbers_pro",
             title="Нумератор ПРО",
-            description="Для тех, кому мало двух сотен: старты с порядковыми номерами от №201 до №400 — в рамках одной системы.",
+            description="Для тех, кому мало двух сотен: старты с порядковыми номерами от №201 до №400 — неважно, в какой системе получен каждый номер.",
             low=201,
             high=400,
             levels={"bronze": 50, "silver": 100, "gold": 200},

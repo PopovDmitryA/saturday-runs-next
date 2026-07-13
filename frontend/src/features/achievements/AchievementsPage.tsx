@@ -13,7 +13,7 @@ import {
   type Clubs,
   type GoalsResponse,
 } from "../../lib/api";
-import { formatDate, pluralizeRu } from "../../lib/format";
+import { formatDate, platformCodeLabel, pluralizeRu } from "../../lib/format";
 import { GoalCard } from "./GoalCard";
 import { GoalsEditModal } from "./GoalsEditModal";
 
@@ -68,7 +68,8 @@ export function MedalIcon({
 
 function cellTitle(cell: ChallengeCell): string {
   if (cell.done && cell.date) {
-    return `${cell.label} — закрыто ${formatDate(cell.date)} · ${cell.location ?? ""}`.trim();
+    const platform = cell.platform_code ? ` (${platformCodeLabel(cell.platform_code)})` : "";
+    return `${cell.label} — закрыто ${formatDate(cell.date)} · ${cell.location ?? ""}${platform}`.trim();
   }
   if (cell.hint) {
     return `${cell.label} — не закрыто. ${cell.hint}`;
@@ -303,7 +304,6 @@ function ChallengeCard({ challenge }: { challenge: Challenge }) {
                 {LEVEL_LABELS[challenge.level]}
               </span>
             )}
-            {challenge.detail.platform_code && <PlatformBadge code={challenge.detail.platform_code} />}
             {challenge.recent_delta > 0 && (
               <span className="recent-delta-badge" title="Продвинула последняя пробежка">
                 ↑ +{challenge.recent_delta}
