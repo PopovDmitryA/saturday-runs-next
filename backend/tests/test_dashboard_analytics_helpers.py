@@ -4,11 +4,15 @@ from app.models import Location
 from app.services.dashboard_service import (
     _avg_vs_field_pct,
     _collect_field_comparison_pairs,
+    _current_saturday_streak,
     _earned_run_clubs,
+    _max_saturday_streak,
     _next_run_club,
     _next_run_milestone,
     _resolve_field_avg_sec,
     _saturday_consistency,
+    _saturday_streak,
+    _week_saturday,
 )
 from app.services.user_location_stats import count_unique_geo_from_rows
 
@@ -51,6 +55,37 @@ def test_saturday_consistency() -> None:
     assert active == 2
     assert total >= 50
     assert pct == round(active / total * 100, 1)
+
+
+def test_week_saturday_maps_any_weekday_to_closing_saturday() -> None:
+    saturday = date(2026, 5, 23)
+    assert _week_saturday(saturday) == saturday
+    assert _week_saturday(date(2026, 5, 20)) == saturday  # Wednesday, same week
+    assert _week_saturday(date(2026, 5, 17)) == saturday  # Sunday, same week (opens it)
+    assert _week_saturday(date(2026, 5, 24)) == date(2026, 5, 30)  # Sunday, next week
+
+
+def test_saturday_streak_counts_by_week_not_extra_starts_same_week() -> None:
+    # Суббота 23.05 + внеплановый старт в среду той же недели (20.05) — одна
+    # неделя, не должно давать +1 к серии сверх обычного.
+    activity_dates = {date(2026, 5, 9), date(2026, 5, 16), date(2026, 5, 20), date(2026, 5, 23)}
+    assert _saturday_streak(activity_dates) == 3
+
+
+def test_max_saturday_streak_merges_same_week_dates() -> None:
+    # 02.05 (суббота) и 06.05 (среда той же недели, закрывается субботой 09.05)
+    # вместе с 09.05 (суббота) должны дать серию 2, а не 3 — 06.05 и 09.05
+    # это один и тот же старт-неделя. 30.05 — отдельная несмежная неделя.
+    activity_dates = {date(2026, 5, 2), date(2026, 5, 6), date(2026, 5, 9), date(2026, 5, 30)}
+    assert _max_saturday_streak(activity_dates) == 2
+
+
+def test_current_saturday_streak_counts_midweek_start_toward_its_week() -> None:
+    today = date(2026, 5, 16)  # Saturday
+    # Старт в среду 13.05 закрывается субботой 16.05 (той же неделей, что и
+    # today) — этого достаточно, отдельного старта в саму субботу не нужно.
+    activity_dates = {date(2026, 5, 9), date(2026, 5, 13)}
+    assert _current_saturday_streak(activity_dates, today) == 2
 
 
 def test_count_unique_geo_merges_moscow_region_variants() -> None:

@@ -81,8 +81,20 @@ def _format_volunteering_index(runs: int, volunteering: int) -> str | None:
     return f"{round(ratio * 100)}%"
 
 
+def _week_saturday(value: date) -> date:
+    """Saturday closing the Sunday-Saturday week that contains the given date.
+
+    Календарь суббот считает по неделям, а не по буквальной дате старта: если
+    в одну и ту же неделю пришлось два старта (та же суббота двумя протоколами
+    или, например, суббота + внеплановый будний старт), это одна и та же
+    неделя — засчитываем её один раз. Совпадает с weekSaturday() во
+    фронтенд-виджете (ActivityCalendarHeatmap.tsx).
+    """
+    return value + timedelta(days=(5 - value.weekday()) % 7)
+
+
 def _saturday_streak(activity_dates: set[date]) -> int:
-    saturdays = {value for value in activity_dates if value.weekday() == 5}
+    saturdays = {_week_saturday(value) for value in activity_dates}
     if not saturdays:
         return 0
     streak = 0
@@ -98,7 +110,7 @@ def _current_saturday_streak(activity_dates: set[date], today: date) -> int:
     Unlike _saturday_streak (which counts from the last active Saturday whenever it
     was), a missed last Saturday breaks the streak. The very last Saturday is allowed
     to be missing for one week — protocols are often synced with a delay."""
-    saturdays = {value for value in activity_dates if value.weekday() == 5}
+    saturdays = {_week_saturday(value) for value in activity_dates}
     if not saturdays:
         return 0
     last_saturday = today - timedelta(days=(today.weekday() - 5) % 7)
@@ -113,7 +125,7 @@ def _current_saturday_streak(activity_dates: set[date], today: date) -> int:
 
 
 def _max_saturday_streak(activity_dates: set[date]) -> int:
-    saturdays = sorted(value for value in activity_dates if value.weekday() == 5)
+    saturdays = sorted({_week_saturday(value) for value in activity_dates})
     best = 0
     current = 0
     previous: date | None = None
@@ -139,7 +151,8 @@ def _saturday_consistency(activity_dates: set[date], today: date) -> tuple[float
     saturdays = _saturdays_in_range(window_start, today)
     if not saturdays:
         return None, 0, 0
-    active = sum(1 for value in saturdays if value in activity_dates)
+    active_weeks = {_week_saturday(value) for value in activity_dates}
+    active = sum(1 for value in saturdays if value in active_weeks)
     pct = round(active / len(saturdays) * 100, 1)
     return pct, active, len(saturdays)
 
