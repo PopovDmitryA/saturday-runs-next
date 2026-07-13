@@ -85,11 +85,21 @@ export function RecentRunsRating() {
               <div className="recent-ratings-action">
                 <button
                   type="button"
-                  className="btn primary"
+                  className="recent-ratings-rate-btn"
                   disabled={!data.can_rate}
                   onClick={() => setActiveRun(run)}
+                  title="Оценить старт"
+                  aria-label="Оценить старт"
                 >
-                  Оценить
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M12 2.5l2.9 6.06 6.6.86-4.85 4.55 1.24 6.53L12 17.9l-5.89 3.06 1.24-6.53L2.5 9.42l6.6-.86L12 2.5z"
+                      fill="currentColor"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 </button>
               </div>
             </li>
