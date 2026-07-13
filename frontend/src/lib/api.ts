@@ -623,6 +623,154 @@ export function getOnThisDay() {
   return apiFetch<OnThisDay>("/dashboard/on-this-day");
 }
 
+// ── Цели и достижения ────────────────────────────────────────────────────────
+
+export type ChallengeLevel = "bronze" | "silver" | "gold";
+
+export type ChallengeCell = {
+  label: string;
+  done: boolean;
+  date: string | null;
+  location: string | null;
+  hint: string | null;
+};
+
+export type ChallengeLetter = {
+  letter: string;
+  done: boolean;
+  date: string | null;
+  location: string | null;
+  locations: string[];
+  locations_more: number;
+};
+
+export type ChallengeDay = {
+  key: string;
+  date: string;
+  location: string;
+};
+
+export type ChallengeDetailItem = {
+  date?: string;
+  value?: string;
+  location?: string;
+  count?: number;
+  occurrences?: Array<{ date: string; location: string }>;
+};
+
+export type ChallengeDetail = {
+  cells?: ChallengeCell[];
+  letters?: ChallengeLetter[];
+  days?: ChallengeDay[];
+  items?: ChallengeDetailItem[];
+  example?: { value: string; location: string; note: string };
+};
+
+export type Challenge = {
+  code: string;
+  title: string;
+  icon: string;
+  description: string;
+  category: "collection" | "coincidence" | "scale";
+  current: number;
+  target: number;
+  levels: { bronze: number; silver: number; gold: number };
+  level: ChallengeLevel | null;
+  next_level: ChallengeLevel | null;
+  to_next_level: number | null;
+  to_next_label: string | null;
+  pct: number;
+  unit: string | null;
+  detail: ChallengeDetail;
+};
+
+export type ClubEntry = {
+  code: "runs" | "volunteering";
+  title: string;
+  icon: string;
+  current: number;
+  thresholds: number[];
+  earned: number[];
+  next_threshold: number | null;
+  to_next: number | null;
+  pct_to_next: number;
+};
+
+export type ClubPlatform = {
+  platform_code: string;
+  entries: ClubEntry[];
+};
+
+export type Clubs = {
+  overall: ClubEntry[];
+  platforms: ClubPlatform[];
+};
+
+export type AchievementBadge = {
+  code: string;
+  title: string;
+  icon: string;
+  level: ChallengeLevel;
+};
+
+export type AchievementsResponse = {
+  challenges: Challenge[];
+  badges: AchievementBadge[];
+  summary: { gold: number; silver: number; bronze: number; total: number };
+  clubs: Clubs;
+};
+
+export function getAchievements() {
+  return apiFetch<AchievementsResponse>("/achievements");
+}
+
+export type GoalPreset = {
+  goal_type: string;
+  title: string;
+  icon: string;
+  unit: string;
+  kind: "count" | "time" | "streak" | "percent";
+  default_target: number;
+  min: number;
+  max: number;
+  description: string;
+};
+
+export type GoalProgress = {
+  goal_type: string;
+  year: number;
+  target_value: number;
+  title: string;
+  icon: string;
+  unit: string;
+  kind: "count" | "time" | "streak" | "percent";
+  current_value: number;
+  pct: number;
+  done: boolean;
+  on_track: boolean | null;
+  forecast_value: number | null;
+  current_display: string | null;
+  target_display: string | null;
+};
+
+export type GoalsResponse = {
+  year: number;
+  max_goals: number;
+  goals: GoalProgress[];
+  presets: GoalPreset[];
+};
+
+export function getGoals() {
+  return apiFetch<GoalsResponse>("/achievements/goals");
+}
+
+export function saveGoals(goals: Array<{ goal_type: string; target_value: number }>) {
+  return apiFetch<GoalsResponse>("/achievements/goals", {
+    method: "PUT",
+    body: JSON.stringify({ goals }),
+  });
+}
+
 export function demoGetOnThisDay() {
   return apiFetch<OnThisDay>("/demo/dashboard/on-this-day");
 }
