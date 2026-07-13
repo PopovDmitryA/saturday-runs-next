@@ -8,6 +8,7 @@ import { AdminHistoryMilestonesPage } from "./features/admin/AdminHistoryMilesto
 import { AdminUserPreviewPage } from "./features/admin/AdminUserPreviewPage";
 import { PublicProfilePage } from "./features/public_profile/PublicProfilePage";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
+import { AchievementsPage } from "./features/achievements/AchievementsPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { LoginPage } from "./features/auth/LoginPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
@@ -72,6 +73,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/dashboard": () => <DashboardPage />,
   "/profiles": () => <DashboardPage />,
   "/runs": () => <RunsPage />,
+  "/achievements": () => <AchievementsPage />,
   "/co-runners": () => <CoRunnersPage />,
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,

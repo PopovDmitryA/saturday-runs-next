@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 type DetailModalProps = {
@@ -10,6 +10,11 @@ type DetailModalProps = {
 };
 
 export function DetailModal({ open, title, children, onClose, footer }: DetailModalProps) {
+  // Закрывать оверлей только если и mousedown, и click пришлись мимо панели —
+  // иначе выделение текста мышью (drag начался внутри, отпустили за пределами)
+  // закрывает модалку и сбрасывает несохранённый ввод.
+  const overlayMouseDownRef = useRef(false);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -33,7 +38,17 @@ export function DetailModal({ open, title, children, onClose, footer }: DetailMo
   }
 
   return createPortal(
-    <div className="modal-overlay" onClick={onClose}>
+    <div
+      className="modal-overlay"
+      onMouseDown={(event) => {
+        overlayMouseDownRef.current = event.target === event.currentTarget;
+      }}
+      onClick={(event) => {
+        if (overlayMouseDownRef.current && event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <div
         className="modal-panel modal-panel-wide"
         role="dialog"

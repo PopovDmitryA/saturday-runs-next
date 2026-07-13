@@ -8,6 +8,7 @@ import { ProfileLinkSection } from "../../components/ProfileLinkSection";
 import { RecentRunsRating } from "../../components/RecentRunsRating";
 import { RequireAuth } from "../../components/RequireAuth";
 import { getDashboard, getMyHistory, getOnThisDay, type DashboardResponse } from "../../lib/api";
+import { GoalsTeaser } from "./GoalsTeaser";
 import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 
 function PublicProfileShareBlock({ handle }: { handle: string | number }) {
@@ -109,6 +110,8 @@ function DashboardContent({ isAdmin }: { isAdmin: boolean }) {
               variant="volunteering"
             />
           </div>
+
+          <GoalsTeaser />
 
           <RecentRunsRating />
 

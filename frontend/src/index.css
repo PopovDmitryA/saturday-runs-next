@@ -6849,11 +6849,10 @@ tr.run-crosslinked td {
 }
 
 .recent-ratings-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-  flex-wrap: wrap;
+  gap: 0.5rem 0.6rem;
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--border-soft);
   border-radius: 10px;
@@ -6862,7 +6861,6 @@ tr.run-crosslinked td {
 
 .recent-ratings-info {
   min-width: 0;
-  flex: 1 1 auto;
 }
 
 .recent-ratings-loc {
@@ -6885,8 +6883,37 @@ tr.run-crosslinked td {
 .recent-ratings-action {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  justify-content: flex-end;
   flex-shrink: 0;
+}
+
+.recent-ratings-rate-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 999px;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.12s, filter 0.12s;
+}
+
+.recent-ratings-rate-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: scale(1.05);
+}
+
+.recent-ratings-rate-btn:disabled {
+  background: var(--neutral-soft);
+  cursor: not-allowed;
+}
+
+.recent-ratings-rate-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .recent-ratings-stars {
@@ -7693,4 +7720,837 @@ tr.run-crosslinked td {
     stroke 0.25s ease,
     filter 0.25s ease !important;
   transition-delay: 0s !important;
+}
+
+/* ── Цели и достижения (/achievements) ─────────────────────────────────────── */
+
+/* Медаль-ачивка: металлическое кольцо по уровню, эмодзи-иконка внутри */
+.medal {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  position: relative;
+  background: var(--bg-muted);
+  border: 2px dashed var(--border-strong);
+}
+
+.medal-emoji {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.medal-lg {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
+.medal-lg .medal-emoji {
+  font-size: 1.6rem;
+}
+
+.medal-locked .medal-emoji {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+
+.medal-bronze,
+.medal-silver,
+.medal-gold {
+  border: none;
+  box-shadow: inset 0 1px 2px rgb(255 255 255 / 45%), 0 1px 3px rgb(0 0 0 / 25%);
+}
+
+.medal-bronze {
+  background: radial-gradient(circle at 30% 25%, #e8b28a, #c0784a 55%, #8f5430);
+}
+
+.medal-silver {
+  background: radial-gradient(circle at 30% 25%, #f3f6fa, #b9c4d2 55%, #8494a9);
+}
+
+.medal-gold {
+  background: radial-gradient(circle at 30% 25%, #ffe9a3, #f5b93f 55%, #c47f16);
+}
+
+.medal-bronze::after,
+.medal-silver::after,
+.medal-gold::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  border: 1px solid rgb(255 255 255 / 35%);
+  pointer-events: none;
+}
+
+/* Витрина достижений */
+.achv-showcase-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.achv-summary {
+  display: inline-flex;
+  gap: 0.65rem;
+  align-items: baseline;
+  font-size: 0.9rem;
+}
+
+.achv-summary-item {
+  font-weight: 600;
+}
+
+.achv-badges {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: 0.75rem;
+}
+
+.achv-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.6rem 0.35rem;
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--text);
+  text-align: center;
+  border: 1px solid transparent;
+}
+
+.achv-badge:hover {
+  background: var(--bg-muted);
+  border-color: var(--border);
+}
+
+.achv-badge-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.achv-badge-level {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.achv-badge-level-gold { color: var(--accent-amber-text); }
+.achv-badge-level-silver { color: var(--text-muted); }
+.achv-badge-level-bronze { color: var(--tint-orange-text); }
+
+.achv-section {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.achv-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.achv-goals-empty p {
+  margin: 0;
+}
+
+.achv-goals-empty .btn {
+  justify-self: start;
+}
+
+/* Карточки целей */
+.goal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.75rem;
+}
+
+.goal-card {
+  gap: 0.55rem;
+}
+
+.goal-card-done {
+  border-color: var(--tint-green-border-strong);
+  background: var(--tint-green-bg);
+}
+
+.goal-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.goal-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.goal-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.goal-pct {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.goal-bar {
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.goal-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38bdf8, #2563eb);
+  transition: width 0.4s ease;
+}
+
+.goal-bar-fill.goal-bar-done {
+  background: linear-gradient(90deg, #4ade80, #16a34a);
+}
+
+.goal-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.goal-progress-label {
+  color: var(--text-2);
+}
+
+.goal-chip {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.goal-chip-ok {
+  background: var(--tint-green-bg-strong);
+  color: var(--tint-green-text);
+}
+
+.goal-chip-warn {
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
+}
+
+.goal-chip-done {
+  background: var(--tint-green-bg-strong);
+  color: var(--tint-green-text);
+}
+
+/* Челленджи */
+.challenge-group {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.challenge-group-title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.challenge-group-hint {
+  margin: -0.35rem 0 0;
+  font-size: 0.85rem;
+}
+
+.challenge-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .challenge-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.challenge-card {
+  gap: 0.6rem;
+  scroll-margin-top: 5rem;
+  min-width: 0;
+}
+
+.challenge-card-locked {
+  background: color-mix(in srgb, var(--surface) 88%, var(--bg-muted));
+}
+
+.challenge-head {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
+.challenge-head-text {
+  min-width: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.challenge-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.challenge-title {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.challenge-level-chip {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+}
+
+.challenge-level-gold {
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
+}
+
+.challenge-level-silver {
+  background: var(--chip-bg);
+  color: var(--text-3);
+}
+
+.challenge-level-bronze {
+  background: var(--tint-orange-bg);
+  color: var(--tint-orange-text);
+}
+
+.challenge-description {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.challenge-bar {
+  position: relative;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--bg-muted);
+}
+
+.challenge-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #94a3b8, #64748b);
+  transition: width 0.4s ease;
+}
+
+.challenge-bar-fill.challenge-bar-bronze {
+  background: linear-gradient(90deg, #e8b28a, #b06a3b);
+}
+
+.challenge-bar-fill.challenge-bar-silver {
+  background: linear-gradient(90deg, #d7dee8, #94a3b8);
+}
+
+.challenge-bar-fill.challenge-bar-gold {
+  background: linear-gradient(90deg, #fcd34d, #d97706);
+}
+
+.challenge-bar-marker {
+  position: absolute;
+  top: -0.15rem;
+  width: 2px;
+  height: 0.8rem;
+  border-radius: 1px;
+  transform: translateX(-1px);
+}
+
+.challenge-bar-marker-bronze { background: #c0784a; }
+.challenge-bar-marker-silver { background: #94a3b8; }
+
+.challenge-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.84rem;
+}
+
+.challenge-progress-label {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.challenge-next {
+  font-size: 0.8rem;
+}
+
+.challenge-toggle {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--link);
+  justify-self: start;
+}
+
+.challenge-toggle:hover {
+  color: var(--link-strong);
+  text-decoration: underline;
+}
+
+/* Сетки коллекций (секунды/позиции/номера/буквы) */
+.challenge-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.challenge-cell {
+  min-width: 1.6rem;
+  height: 1.6rem;
+  padding: 0 0.25rem;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-muted);
+  color: var(--text-faint);
+  border: 1px solid var(--border-soft);
+}
+
+.challenge-cells-dense .challenge-cell {
+  min-width: 1.45rem;
+  height: 1.45rem;
+  font-size: 0.66rem;
+}
+
+.challenge-cell.done {
+  background: var(--tint-green-bg-strong);
+  border-color: var(--tint-green-border);
+  color: var(--tint-green-text);
+}
+
+/* «Круглый год»: календарная сетка 12 месяцев с горизонтальным скроллом */
+.challenge-year-scroll {
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+}
+
+.challenge-year {
+  display: flex;
+  gap: 0.45rem;
+  min-width: 34rem;
+}
+
+.challenge-year-month {
+  display: grid;
+  gap: 0.2rem;
+  justify-items: center;
+  flex: 1;
+}
+
+.challenge-year-month-label {
+  font-size: 0.66rem;
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.challenge-year-month-count {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.challenge-year-days {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+}
+
+.challenge-year-day {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 2px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-soft);
+}
+
+.challenge-year-day.done {
+  background: var(--accent-green-text);
+  border-color: var(--accent-green-text);
+}
+
+/* Списки находок (палиндромы, дежавю, юбилеи) */
+.challenge-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.challenge-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.6rem;
+  font-size: 0.84rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 8px;
+  background: var(--bg-muted);
+  min-width: 0;
+}
+
+.challenge-item-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.challenge-item-location {
+  color: var(--text-2);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.challenge-item-count {
+  color: var(--text-muted);
+  flex: none;
+}
+
+.challenge-item-date {
+  color: var(--text-muted);
+  flex: none;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Дежавю: несколько мест/дат одного совпадения — переносятся, не растягивают карточку */
+.challenge-item-occurrences {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.5rem;
+  min-width: 0;
+}
+
+.challenge-occurrence {
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 0.1rem 0.4rem;
+  white-space: nowrap;
+}
+
+.challenge-occurrence-more {
+  color: var(--text-muted);
+  align-self: center;
+}
+
+.challenge-empty {
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+/* Модалка выбора целей */
+.goal-modal-hint {
+  margin-top: 0;
+}
+
+.goal-preset-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.goal-preset {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.goal-preset-selected {
+  border-color: var(--tint-blue-border-strong);
+  background: var(--tint-blue-bg);
+}
+
+.goal-preset-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.goal-preset input[type="checkbox"] {
+  flex: none;
+}
+
+.goal-preset-icon {
+  font-size: 1.15rem;
+  flex: none;
+}
+
+.goal-preset-text {
+  display: grid;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.goal-preset-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.goal-preset-description {
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.goal-preset-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: none;
+}
+
+.goal-preset-input {
+  width: 5.2rem;
+  text-align: right;
+  padding: 0.35rem 0.5rem;
+}
+
+.goal-preset-unit {
+  font-size: 0.75rem;
+  max-width: 5.5rem;
+}
+
+.goal-modal-footer {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.goal-modal-error {
+  margin: 0;
+  color: var(--accent-red-text);
+  font-size: 0.85rem;
+}
+
+.goal-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.goal-modal-actions .muted {
+  margin-right: auto;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 560px) {
+  .goal-preset {
+    flex-wrap: wrap;
+  }
+
+  .goal-preset-input-wrap {
+    margin-left: 2.1rem;
+  }
+}
+
+/* Тизер целей на главной */
+.goals-teaser-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.goals-teaser-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.6rem;
+}
+
+.goals-teaser-grid .goal-card {
+  border: 1px solid var(--border-soft);
+  background: var(--bg-muted);
+  padding: 0.7rem 0.8rem;
+  gap: 0.4rem;
+}
+
+.goals-teaser-empty .btn {
+  justify-self: start;
+}
+
+/* Серые клетки с подсказкой (нумератор: скоро такой старт; алфавит: список локаций) */
+.challenge-cell.has-hint {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+  cursor: help;
+}
+
+.challenge-items-empty {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.challenge-item-example {
+  flex-wrap: wrap;
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  opacity: 0.85;
+}
+
+.challenge-item-example-note {
+  flex-basis: 100%;
+  font-size: 0.76rem;
+}
+
+/* Клубы: сквозные и по системам */
+.club-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .club-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.club-card {
+  gap: 0.9rem;
+  align-content: start;
+}
+
+.club-card-platform {
+  display: flex;
+}
+
+.club-row {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.club-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.club-row-icon {
+  font-size: 1rem;
+}
+
+.club-row-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+  flex: 1;
+}
+
+.club-row-current {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
+}
+
+.club-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.club-chip {
+  min-width: 2.2rem;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-muted);
+  color: var(--text-faint);
+  border: 1px solid var(--border-soft);
+}
+
+.club-chip-earned {
+  background: radial-gradient(circle at 30% 25%, #ffe9a3, #f5b93f 70%, #d99a1f);
+  border-color: #c47f16;
+  color: #6b4507;
+}
+
+.club-chip-next {
+  border-style: dashed;
+  border-color: var(--border-heavy);
+  color: var(--text-2);
+}
+
+.club-progress {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.club-bar {
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.club-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #fcd34d, #d97706);
+}
+
+.club-progress-label {
+  font-size: 0.78rem;
+  white-space: nowrap;
 }

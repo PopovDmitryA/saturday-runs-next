@@ -987,6 +987,32 @@ class LocationRating(Base):
     )
 
 
+class UserGoal(Base):
+    """Цель пользователя на календарный год.
+
+    goal_type — код пресета из achievements_service.GOAL_PRESETS (свободного
+    текста нет). target_value — планка в единицах пресета: штуки для объёмных
+    целей, секунды для целей на время. Прогресс считается на лету.
+    """
+
+    __tablename__ = "user_goals"
+    __table_args__ = (
+        UniqueConstraint("user_id", "year", "goal_type", name="uq_user_goals_user_year_type"),
+        Index("ix_user_goals_user_year", "user_id", "year"),
+        CheckConstraint("target_value > 0", name="ck_user_goals_target_positive"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    goal_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_value: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class HistoryMilestoneSetting(Base):
     """Вкл/выкл конкретного вида вехи «Моя история» (админ-переключатель).
 
