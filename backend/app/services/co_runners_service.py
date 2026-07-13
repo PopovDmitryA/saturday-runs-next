@@ -172,8 +172,28 @@ def list_co_runners(
 
     site_by_participant = _site_identities(db, {row[3] for row in other_rows})
 
+    # RunPark republishes finishers of the primary-platform event as its own
+    # crosslinked (secondary) copy. Если у соперника нет единого сайт-аккаунта,
+    # его RunPark- и основная запись — два разных Participant без явной связи,
+    # и без дедупликации гонка засчиталась бы дважды (в бакете основной
+    # платформы и отдельно в бакете RunPark). Position в рамках одного
+    # события уникален, поэтому совпадение (событие, место, время) между
+    # секондари- и основной записью однозначно указывает на одного и того же
+    # человека — переносим такую RunPark-строку в бакет основного участника.
+    primary_result_owner: dict[tuple[UUID, int, int], UUID] = {}
+    for event_id, their_time, their_position, participant_id, _, _, _, _ in other_rows:
+        if event_id in canonical_map:
+            continue  # это сама вторичная (RunPark) запись, не основная
+        if their_time is not None and their_position is not None:
+            primary_result_owner[(event_id, their_position, their_time)] = participant_id
+
     stats_by_key: dict[str, _CoRunnerStats] = {}
     for event_id, their_time, their_position, participant_id, display_name, profile_url, platform_code, event_date in other_rows:
+        primary_event_id = canonical_map.get(event_id)
+        if primary_event_id is not None and their_time is not None and their_position is not None:
+            duplicate_owner = primary_result_owner.get((primary_event_id, their_position, their_time))
+            if duplicate_owner is not None and duplicate_owner != participant_id:
+                participant_id = duplicate_owner
         site = site_by_participant.get(participant_id)
         key = (
             f"{SITE_USER_KEY_PREFIX}{site.user_id}"

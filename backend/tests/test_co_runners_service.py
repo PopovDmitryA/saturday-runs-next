@@ -274,3 +274,130 @@ def test_unknown_participant_names_excluded_from_list(db_session: Session) -> No
     assert "Реальный Соперник" in names
     assert "НЕИЗВЕСТНЫЙ" not in names
     assert "Runner Unknown" not in names
+
+
+def test_runpark_crosslink_duplicate_merges_into_primary_rival_bucket(db_session: Session) -> None:
+    """RunPark republishes the primary event's finishers as a secondary event.
+
+    A rival without a unified site account shows up as two unrelated
+    Participant rows (one per platform) — without dedup each shared race
+    would be counted twice: once in the "5 вёрст" bucket, once in "RunPark".
+    """
+    suffix = str(uuid4().int % 1_000_000)
+    five_verst = _get_platform(db_session, "five_verst", "5 верст")
+    runpark = _get_platform(db_session, "runpark", "RunPark")
+
+    location = Location(
+        platform_id=five_verst.id,
+        external_key=f"loc-dup-{suffix}",
+        name="Druzhba",
+        city="Москва",
+        country="Россия",
+    )
+    runpark_location = Location(
+        platform_id=runpark.id,
+        external_key=f"loc-dup-runpark-{suffix}",
+        name="Druzhba RunPark",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add_all([location, runpark_location])
+    db_session.flush()
+
+    user = User()
+    db_session.add(user)
+    db_session.flush()
+
+    me_participant = _make_participant(db_session, five_verst, f"me4-{suffix}", "Me")
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=five_verst.id,
+            participant_id=me_participant.id,
+            external_user_id=me_participant.external_user_id,
+            external_url=me_participant.profile_url,
+        )
+    )
+
+    rival_fv = _make_participant(db_session, five_verst, f"rival-fv-{suffix}", "Сергей ГОРИНОВ")
+    rival_rp = _make_participant(db_session, runpark, f"rival-rp-{suffix}", "Сергей Горинов")
+
+    # Races that only exist on the primary platform (no RunPark crosslink).
+    for i in range(2):
+        event = _make_event(
+            db_session, five_verst, location, f"dup-fv-only-{i}-{suffix}", date(2022, 4, 9 + i * 7), 900_300 + i
+        )
+        db_session.add(
+            RunResult(
+                event_id=event.id,
+                participant_id=me_participant.id,
+                external_result_key=f"dup-me-fv-{i}-{suffix}",
+                position=1,
+                finish_time_sec=18 * 60,
+                finish_time_display="00:18:00",
+                status="finished",
+            )
+        )
+        db_session.add(
+            RunResult(
+                event_id=event.id,
+                participant_id=rival_fv.id,
+                external_result_key=f"dup-rival-fv-{i}-{suffix}",
+                position=2,
+                finish_time_sec=19 * 60,
+                finish_time_display="00:19:00",
+                status="finished",
+            )
+        )
+
+    # A race that RunPark republishes as a crosslinked duplicate: same
+    # position and time for the rival, but recorded under their separate
+    # RunPark Participant row — must not be counted as a second meeting.
+    primary_event = _make_event(db_session, five_verst, location, f"dup-primary-{suffix}", date(2022, 5, 14), 900_310)
+    runpark_event = _make_event(
+        db_session, runpark, runpark_location, f"dup-runpark-{suffix}", date(2022, 5, 14), 900_311
+    )
+    db_session.add(EventCrosslink(primary_event_id=primary_event.id, secondary_event_id=runpark_event.id))
+    db_session.add(
+        RunResult(
+            event_id=primary_event.id,
+            participant_id=me_participant.id,
+            external_result_key=f"dup-me-primary-{suffix}",
+            position=1,
+            finish_time_sec=18 * 60 + 30,
+            finish_time_display="00:18:30",
+            status="finished",
+        )
+    )
+    db_session.add(
+        RunResult(
+            event_id=primary_event.id,
+            participant_id=rival_fv.id,
+            external_result_key=f"dup-rival-primary-{suffix}",
+            position=2,
+            finish_time_sec=19 * 60 + 7,
+            finish_time_display="00:19:07",
+            status="finished",
+        )
+    )
+    db_session.add(
+        RunResult(
+            event_id=runpark_event.id,
+            participant_id=rival_rp.id,
+            external_result_key=f"dup-rival-runpark-{suffix}",
+            position=2,
+            finish_time_sec=19 * 60 + 7,
+            finish_time_display="00:19:07",
+            status="finished",
+        )
+    )
+    db_session.commit()
+
+    items = list_co_runners(db_session, user.id)
+    matching = [item for item in items if item["display_name"] == "Сергей ГОРИНОВ"]
+    assert len(matching) == 1
+    item = matching[0]
+    assert item["meetings"] == 3
+    assert sorted(item["platform_codes"]) == ["five_verst", "runpark"]
+    assert item["my_wins"] == 3
+    assert item["their_wins"] == 0
