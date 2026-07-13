@@ -1,0 +1,16 @@
+services:
+  api:
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@host.docker.internal:${POSTGRES_PUBLISH_PORT:-5433}/${POSTGRES_DB:-saturday_runs_lk}
+      # REDIS_PUBLISH_PORT плавает (в .env не зафиксирован, докер назначает
+      # заново при каждом пересоздании общего redis-контейнера). Если api не
+      # видит редис — узнать текущий порт: `docker port saturday_runs_stats-redis-1`
+      # и перезапустить: `REDIS_PUBLISH_PORT=<порт> docker compose -p srs_my_history
+      # -f docker-compose.yml -f docker-compose.worktree-override.yml up -d --no-deps api`
+      REDIS_URL: redis://host.docker.internal:${REDIS_PUBLISH_PORT:-49517}/0
+    ports: !override
+      - "8002:8000"
+
+  nginx:
+    ports: !override
+      - "8081:80"

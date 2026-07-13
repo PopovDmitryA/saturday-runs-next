@@ -208,7 +208,7 @@ def test_dashboard_returns_stats_from_global_core(authenticated_client: TestClie
     assert analytics["pr_last_12_months"] == 1
     assert analytics["avg_vs_field_pct"] == 5.1
     assert analytics["runs_with_field_avg_count"] == 1
-    assert analytics["top_location"]["platform_code"] == "five_verst"
+    assert analytics["top_location"]["platform_codes"] == ["five_verst"]
     assert analytics["top_location"]["tied_count"] == 1
     assert analytics["avg_position"] == 1
 
@@ -793,26 +793,44 @@ def test_dashboard_unique_locations_merged_by_catalog(
         ]
     )
 
-    participant = Participant(
+    five_verst_participant = Participant(
         platform_id=five_verst.id,
         external_user_id=f"merge-user-{suffix}",
         display_name="Merge Tester",
         profile_url=f"https://5verst.ru/userstats/merge-user-{suffix}/",
     )
-    db_session.add(participant)
+    parkrun_participant = Participant(
+        platform_id=parkrun.id,
+        external_user_id=f"merge-parkrun-user-{suffix}",
+        display_name="Merge Tester",
+        profile_url=f"https://www.parkrun.ru/parkrunner/merge-parkrun-user-{suffix}/",
+    )
+    db_session.add_all([five_verst_participant, parkrun_participant])
     db_session.flush()
-    db_session.add(
-        PlatformLink(
-            user_id=user.id,
-            platform_id=five_verst.id,
-            participant_id=participant.id,
-            external_user_id=participant.external_user_id,
-            external_url=participant.profile_url,
-        )
+    db_session.add_all(
+        [
+            PlatformLink(
+                user_id=user.id,
+                platform_id=five_verst.id,
+                participant_id=five_verst_participant.id,
+                external_user_id=five_verst_participant.external_user_id,
+                external_url=five_verst_participant.profile_url,
+            ),
+            PlatformLink(
+                user_id=user.id,
+                platform_id=parkrun.id,
+                participant_id=parkrun_participant.id,
+                external_user_id=parkrun_participant.external_user_id,
+                external_url=parkrun_participant.profile_url,
+            ),
+        ]
     )
 
-    for index, (platform, location) in enumerate(
-        [(parkrun, parkrun_location), (five_verst, five_verst_location)],
+    for index, (platform, location, participant) in enumerate(
+        [
+            (parkrun, parkrun_location, parkrun_participant),
+            (five_verst, five_verst_location, five_verst_participant),
+        ],
         start=1,
     ):
         event = Event(
@@ -846,6 +864,9 @@ def test_dashboard_unique_locations_merged_by_catalog(
     analytics = response.json()["stats"]["analytics"]
     assert analytics["unique_locations"] == 1
     assert analytics["unique_run_locations"] == 1
+    assert analytics["top_location"]["name"] == "Merge Test Park"
+    assert analytics["top_location"]["count"] == 2
+    assert sorted(analytics["top_location"]["platform_codes"]) == ["five_verst", "parkrun"]
 
     detail = authenticated_client.get("/api/locations/visited/detail")
     assert detail.status_code == 200

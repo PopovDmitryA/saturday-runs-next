@@ -7,6 +7,7 @@ export const APP_NAV_ITEMS: SiteNavItem[] = [
   { href: "/achievements", label: "Достижения" },
   { href: "/co-runners", label: "Встречи" },
   { href: "/maps", label: "Карта" },
+  { href: "/history", label: "Моя история" },
   { href: "/share", label: "Поделиться" },
   { href: "/admin/users", label: "Админка", adminOnly: true, adminStyle: true },
   { href: "/settings", label: "Настройки" },
@@ -19,6 +20,7 @@ export const DEMO_NAV_ITEMS: SiteNavItem[] = [
   { href: "/demo/volunteering", label: "Волонтёрство" },
   { href: "/demo/co-runners", label: "Встречи" },
   { href: "/demo/maps", label: "Карта" },
+  { href: "/demo/history", label: "Моя история" },
   { href: "/about", label: "О проекте", muted: true },
 ];
 

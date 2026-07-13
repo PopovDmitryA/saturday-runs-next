@@ -611,6 +611,9 @@ class Participant(Base):
     parser_version: Mapped[str | None] = mapped_column(String(32))
     source_hash: Mapped[str | None] = mapped_column(String(64))
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Когда страницу профиля реально открывали и парсили (в отличие от fetched_at,
+    # который обновляется при любом касании строки, в т.ч. из импорта результатов).
+    profile_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sync_status: Mapped[SyncStatus | None] = mapped_column(Enum(SyncStatus, name="sync_status_enum", create_constraint=False))
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -1005,6 +1008,23 @@ class UserGoal(Base):
     goal_type: Mapped[str] = mapped_column(String(64), nullable=False)
     target_value: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class HistoryMilestoneSetting(Base):
+    """Вкл/выкл конкретного вида вехи «Моя история» (админ-переключатель).
+
+    Строка существует только для вех, которые администратор явно выключил —
+    отсутствие строки для kind означает enabled=true (значение по умолчанию).
+    Канонический список kind'ов — app.history_milestone_kinds.MILESTONE_KINDS.
+    """
+
+    __tablename__ = "history_milestone_settings"
+
+    kind: Mapped[str] = mapped_column(String(64), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

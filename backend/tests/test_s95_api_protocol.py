@@ -7,7 +7,16 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models import Event, Location, Participant, Platform, ProtocolSyncState, RunResult, VolunteerResult
+from app.models import (
+    Event,
+    EventSummary,
+    Location,
+    Participant,
+    Platform,
+    ProtocolSyncState,
+    RunResult,
+    VolunteerResult,
+)
 from app.s95.api_client import S95ApiActivityRef, fetch_event_activities
 from app.s95.parsers.api_protocol import parse_s95_activity
 from app.sync.s95_protocol_api import upsert_activity_protocol_api
@@ -156,3 +165,106 @@ def test_upsert_protocol_creates_then_unchanged(db_session: Session, s95_platfor
     db_session.refresh(state)
     assert state.last_protocol_check_at >= first_check
     assert state.source_updated_at == later_ref.updated_at_dt()
+
+
+def _edited_activity() -> dict:
+    edited = dict(ACTIVITY_JSON)
+    edited["results"] = [
+        {"total_time": "23:59", "position": 1, "athlete": {"id": 15512, "name": "Наталия МАШТАКОВА", "gender": "female"}},
+    ]
+    edited["volunteers"] = []
+    return edited
+
+
+def test_upsert_protocol_sets_event_number_and_title(db_session: Session, s95_platform: Platform):
+    location = _make_location(db_session, s95_platform)
+    ref = S95ApiActivityRef(
+        date="2024-10-26", url="https://s95.ru/activities/1855.json", updated_at="2026-01-01T00:00:00+03:00"
+    )
+
+    upsert_activity_protocol_api(
+        db_session, s95_platform, location, ref, activity_json=dict(ACTIVITY_JSON), event_number=42
+    )
+    db_session.flush()
+
+    event = db_session.query(Event).filter(
+        Event.platform_id == s95_platform.id,
+        Event.external_event_key == f"{location.external_key}:2024-10-26",
+    ).one()
+    assert event.event_number == 42
+    assert event.title == "Пенза #42"
+
+    summary = db_session.query(EventSummary).filter(
+        EventSummary.platform_id == s95_platform.id,
+        EventSummary.external_event_key == f"{location.external_key}:2024-10-26",
+    ).one()
+    assert summary.event_number == 42
+
+
+def test_upsert_protocol_unchanged_fast_path_backfills_event_number(
+    db_session: Session, s95_platform: Platform
+):
+    location = _make_location(db_session, s95_platform)
+    ref = S95ApiActivityRef(
+        date="2024-10-26", url="https://s95.ru/activities/1855.json", updated_at="2026-01-01T00:00:00+03:00"
+    )
+
+    # Событие создано без номера (например, синком до появления нумерации).
+    upsert_activity_protocol_api(
+        db_session, s95_platform, location, ref, activity_json=dict(ACTIVITY_JSON)
+    )
+    db_session.flush()
+
+    # Контент не изменился → fast-path, но номер должен дозаписаться.
+    res = upsert_activity_protocol_api(
+        db_session, s95_platform, location, ref, activity_json=dict(ACTIVITY_JSON), event_number=42
+    )
+    db_session.flush()
+    assert res.changed is False
+
+    event = db_session.query(Event).filter(
+        Event.platform_id == s95_platform.id,
+        Event.external_event_key == f"{location.external_key}:2024-10-26",
+    ).one()
+    assert event.event_number == 42
+    assert event.title == "Пенза #42"
+
+    summary = db_session.query(EventSummary).filter(
+        EventSummary.platform_id == s95_platform.id,
+        EventSummary.external_event_key == f"{location.external_key}:2024-10-26",
+    ).one()
+    assert summary.event_number == 42
+
+
+def test_upsert_protocol_none_event_number_does_not_wipe_existing(
+    db_session: Session, s95_platform: Platform
+):
+    location = _make_location(db_session, s95_platform)
+    ref = S95ApiActivityRef(
+        date="2024-10-26", url="https://s95.ru/activities/1855.json", updated_at="2026-01-01T00:00:00+03:00"
+    )
+
+    upsert_activity_protocol_api(
+        db_session, s95_platform, location, ref, activity_json=dict(ACTIVITY_JSON), event_number=42
+    )
+    db_session.flush()
+
+    # Повторный upsert с реально изменившимся контентом, но без номера — номер и титул остаются.
+    res = upsert_activity_protocol_api(
+        db_session, s95_platform, location, ref, activity_json=_edited_activity()
+    )
+    db_session.flush()
+    assert res.changed is True
+
+    event = db_session.query(Event).filter(
+        Event.platform_id == s95_platform.id,
+        Event.external_event_key == f"{location.external_key}:2024-10-26",
+    ).one()
+    assert event.event_number == 42
+    assert event.title == "Пенза #42"
+
+    summary = db_session.query(EventSummary).filter(
+        EventSummary.platform_id == s95_platform.id,
+        EventSummary.external_event_key == f"{location.external_key}:2024-10-26",
+    ).one()
+    assert summary.event_number == 42

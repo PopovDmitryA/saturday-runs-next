@@ -142,6 +142,12 @@ def _upsert_participant(
     )
     now = datetime.now(timezone.utc)
     preserve_fetched_at = preview.data_source == "database"
+    preview_age_category = preview.age_category
+    if platform.code == "parkrun":
+        # Не даём протечь age grade («50.59%») в возрастную группу участника.
+        from app.parkrun.age_category import normalize_parkrun_age_group
+
+        preview_age_category = normalize_parkrun_age_group(preview_age_category)
     if participant is None:
         participant = Participant(
             platform_id=platform.id,
@@ -156,10 +162,11 @@ def _upsert_participant(
                 if preserve_fetched_at and preview.planning_location
                 else (now if preview.planning_location else None)
             ),
-            age_category=preview.age_category,
+            age_category=preview_age_category,
             source_url=preview.profile_url,
             parser_version=parser_version,
             fetched_at=preview.data_updated_at if preserve_fetched_at else now,
+            profile_checked_at=None if preserve_fetched_at else now,
         )
         db.add(participant)
     else:
@@ -174,12 +181,13 @@ def _upsert_participant(
             )
         else:
             participant.planning_location_seen_at = None
-        if preview.age_category is not None:
-            participant.age_category = preview.age_category
+        if preview_age_category is not None:
+            participant.age_category = preview_age_category
         participant.source_url = preview.profile_url
         participant.parser_version = parser_version
         if not preserve_fetched_at:
             participant.fetched_at = now
+            participant.profile_checked_at = now
 
     db.flush()
     return participant

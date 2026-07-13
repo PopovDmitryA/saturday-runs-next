@@ -1078,6 +1078,10 @@ a.on-this-day-location {
   grid-column: 1 / -1;
 }
 
+.stats-grid-halves {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
 .stat-value-location {
   display: inline-flex;
   flex-wrap: wrap;
@@ -7123,6 +7127,323 @@ tr.run-crosslinked td {
   color: var(--text-3);
   font-size: 0.85rem;
 }
+
+/* ── «Моя история» — таймлайн вех ─────────────────────────────────────────── */
+
+.history-intro .section-title {
+  margin-bottom: 0.35rem;
+}
+
+.history-intro p {
+  margin: 0.35rem 0 0;
+}
+
+.history-summary {
+  margin: 0.55rem 0 0;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.history-timeline {
+  margin-top: 1rem;
+}
+
+.history-year {
+  position: relative;
+}
+
+.history-year-label {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 2;
+  display: inline-block;
+  margin: 0 0 0.6rem;
+  padding: 0.2rem 0.75rem;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--surface);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.history-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0 0 0 1.1rem;
+  border-left: 3px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.history-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+
+.history-marker {
+  position: absolute;
+  left: -1.98rem;
+  top: 0.28rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--history-marker-bg, var(--bg-muted));
+  border: 2px solid var(--history-marker-border, var(--border-strong));
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.history-kind-start { --history-marker-bg: var(--tint-green-bg); --history-marker-border: var(--tint-green-border-strong); }
+.history-kind-club { --history-marker-bg: var(--tint-amber-bg); --history-marker-border: var(--tint-amber-border-strong); }
+.history-kind-anniversary { --history-marker-bg: var(--tint-violet-bg); --history-marker-border: var(--tint-violet-border); }
+.history-kind-pr { --history-marker-bg: var(--tint-orange-bg); --history-marker-border: var(--tint-orange-text); }
+.history-kind-pr-global { --history-marker-bg: var(--tint-amber-bg-strong); --history-marker-border: var(--tint-amber-border-strong); }
+.history-kind-location-club { --history-marker-bg: var(--tint-teal-bg); --history-marker-border: var(--accent-teal-text); }
+.history-kind-geo { --history-marker-bg: var(--tint-blue-bg); --history-marker-border: var(--tint-blue-border-strong); }
+.history-kind-volunteer { --history-marker-bg: var(--tint-blue-bg-strong); --history-marker-border: var(--tint-blue-border-strong); }
+
+.history-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 1.4rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.4rem 0.7rem;
+}
+
+.history-kind-pr-global .history-card {
+  border-color: var(--tint-amber-border-strong);
+  background: var(--tint-amber-bg);
+}
+
+.history-line {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-2);
+}
+
+.history-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.history-hint {
+  font-size: 0.82rem;
+  color: var(--tint-amber-text);
+  font-weight: 600;
+}
+
+.history-location {
+  font-weight: 600;
+}
+
+.history-details-line {
+  color: var(--text-3);
+}
+
+/* Правый столбец карточки: дата + «Поделиться», центр по вертикали;
+   левая часть при нехватке ширины переносится, столбец остаётся на месте. */
+.history-line-right {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.history-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 0.15rem 0.45rem;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.history-share:hover {
+  color: var(--link-strong);
+  background: var(--tint-blue-bg);
+}
+
+.history-date-short {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .history-share-label {
+    display: none;
+  }
+  .history-date-full {
+    display: none;
+  }
+  .history-date-short {
+    display: inline;
+  }
+}
+
+.history-date-inline {
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+/* Тизер на дашборде */
+.history-teaser {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+  padding: 0.65rem 0.9rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.history-teaser:hover {
+  border-color: var(--border-heavy);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+}
+
+.history-teaser-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  background: var(--history-marker-bg, var(--bg-muted));
+  border: 2px solid var(--history-marker-border, var(--border-strong));
+  font-size: 1.05rem;
+}
+
+.history-teaser-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.history-teaser-title {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.history-teaser-last {
+  font-size: 0.85rem;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-teaser-more {
+  flex: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--link-strong);
+  white-space: nowrap;
+}
+
+/* ── Админка: виды вех «Моя история» ─────────────────────────────────────── */
+
+.admin-milestones-lead {
+  margin: 0.3rem 0 1rem;
+}
+
+.admin-milestones-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-milestone-row {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  transition: opacity 0.15s ease;
+}
+
+.admin-milestone-row.disabled {
+  opacity: 0.55;
+}
+
+.admin-milestone-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.65rem 0.9rem;
+  cursor: pointer;
+}
+
+.admin-milestone-toggle input[type="checkbox"] {
+  margin-top: 0.2rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+
+.admin-milestone-icon {
+  flex: none;
+  font-size: 1.15rem;
+  line-height: 1.4;
+}
+
+.admin-milestone-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 0.6rem;
+  min-width: 0;
+}
+
+.admin-milestone-label {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.admin-milestone-kind {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+.admin-milestone-description {
+  flex-basis: 100%;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
 .admin-ratings-comment-text {
   display: -webkit-box;
   -webkit-line-clamp: 3;

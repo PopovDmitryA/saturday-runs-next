@@ -4,6 +4,7 @@ import { AdminAbusePage } from "./features/admin/AdminAbusePage";
 import { AdminBlockedSlugsPage } from "./features/admin/AdminBlockedSlugsPage";
 import { AdminStatsPage } from "./features/admin/AdminStatsPage";
 import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
+import { AdminHistoryMilestonesPage } from "./features/admin/AdminHistoryMilestonesPage";
 import { AdminUserPreviewPage } from "./features/admin/AdminUserPreviewPage";
 import { PublicProfilePage } from "./features/public_profile/PublicProfilePage";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
@@ -16,6 +17,7 @@ import { LandingPage } from "./features/landing/LandingPage";
 import { DemoMapsPage, MapsPage } from "./features/maps/MapsPage";
 import { CoRunnersPage, DemoCoRunnersPage } from "./features/co_runners/CoRunnersPage";
 import { DemoRunsPage, RunsPage } from "./features/runs/RunsPage";
+import { DemoHistoryPage, HistoryPage } from "./features/history/HistoryPage";
 import { DemoVolunteeringPage, VolunteeringPage } from "./features/volunteering/VolunteeringPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
@@ -67,6 +69,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/demo/co-runners": () => <DemoCoRunnersPage />,
   "/demo/volunteering": () => <DemoVolunteeringPage />,
   "/demo/maps": () => <DemoMapsPage />,
+  "/demo/history": () => <DemoHistoryPage />,
   "/dashboard": () => <DashboardPage />,
   "/profiles": () => <DashboardPage />,
   "/runs": () => <RunsPage />,
@@ -74,6 +77,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/co-runners": () => <CoRunnersPage />,
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
+  "/history": () => <HistoryPage />,
   "/share": () => <SharePage />,
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
@@ -84,6 +88,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/profile-slugs": () => <AdminBlockedSlugsPage />,
   "/admin/stats": () => <AdminStatsPage />,
   "/admin/ratings": () => <AdminRatingsPage />,
+  "/admin/history-milestones": () => <AdminHistoryMilestonesPage />,
   "/settings": () => <SettingsPage />,
   "/about": () => <AboutPage />,
 };

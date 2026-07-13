@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
+import { MyHistoryTeaser } from "../../components/MyHistoryTeaser";
 import { OnThisDayCard } from "../../components/OnThisDayCard";
 import { ProfileLinkSection } from "../../components/ProfileLinkSection";
 import { RecentRunsRating } from "../../components/RecentRunsRating";
 import { RequireAuth } from "../../components/RequireAuth";
-import { getDashboard, getOnThisDay, type DashboardResponse } from "../../lib/api";
+import { getDashboard, getMyHistory, getOnThisDay, type DashboardResponse } from "../../lib/api";
 import { GoalsTeaser } from "./GoalsTeaser";
 import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 
@@ -113,6 +114,8 @@ function DashboardContent({ isAdmin }: { isAdmin: boolean }) {
           <GoalsTeaser />
 
           <RecentRunsRating />
+
+          <MyHistoryTeaser load={getMyHistory} href="/history" />
 
           <DashboardAnalytics
             analytics={stats?.analytics}

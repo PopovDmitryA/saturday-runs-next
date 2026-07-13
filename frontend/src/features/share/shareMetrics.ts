@@ -359,7 +359,7 @@ function metricValue(
       return {
         id: fieldId,
         value: top.name,
-        label: `${platformCodeLabel(top.platform_code)}${visits}`,
+        label: `${top.platform_codes.map(platformCodeLabel).join(", ")}${visits}`,
       };
     }
     case "top_volunteer_role": {
