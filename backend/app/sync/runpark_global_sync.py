@@ -120,7 +120,10 @@ def _recalculate_event_prs(db: Session, event_row: Event) -> None:
     """Recalculate is_pr for every participant of the event. Must run AFTER
     _upsert_crosslinks_for_event: the PR computation skips secondary-crosslink
     duplicates, so the crosslink has to exist before is_pr is assigned."""
-    from app.services.personal_record_service import recalculate_participants_personal_records
+    from app.services.personal_record_service import (
+        recalculate_participants_first_run_flags,
+        recalculate_participants_personal_records,
+    )
 
     participant_ids = {
         row[0]
@@ -129,6 +132,7 @@ def _recalculate_event_prs(db: Session, event_row: Event) -> None:
         .all()
     }
     if participant_ids:
+        recalculate_participants_first_run_flags(db, PLATFORM_CODE, participant_ids)
         recalculate_participants_personal_records(db, PLATFORM_CODE, participant_ids)
 
 

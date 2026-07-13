@@ -10,6 +10,13 @@ from app.sync import upsert
 
 TIME_BASED_PR_PLATFORMS = frozenset({"parkrun", "s95", "five_verst", "runpark"})
 
+# five_verst и HTML-протокол s95 уже проставляют is_first_run/is_first_run_at_location
+# из иконок достижений на самом сайте — это авторитетный источник, трогать его не нужно.
+# Для остальных путей синка (s95 JSON API, parkrun, runpark) поля никогда не заполняются,
+# поэтому там флаг выводим сами: хронологически первый (не "не в зачёте") протокол
+# участника на платформе / на локации.
+FIRST_RUN_DERIVED_PLATFORMS = frozenset({"s95", "parkrun", "runpark"})
+
 
 def _five_verst_protocol_personal_record(run: RunResult) -> bool:
     for label in run.achievement_labels or []:
@@ -162,6 +169,105 @@ def recalculate_participants_personal_records(
         return
     for participant_id in set(participant_ids):
         recalculate_personal_records(db, platform_code, participant_id=participant_id)
+
+
+def recalculate_first_run_flags(
+    db: Session,
+    platform_code: str,
+    *,
+    participant_id: UUID | None = None,
+    commit_every: int = 200,
+) -> dict[str, int]:
+    """Derive is_first_run / is_first_run_at_location from chronological run order.
+
+    For each participant on the platform, orders their (non "не в зачёте") runs by
+    event_date/event_number/location_id: the first one is is_first_run=True, and the
+    first run at each distinct location is is_first_run_at_location=True. Secondary
+    crosslink duplicates never carry either flag.
+    """
+    platform = upsert.get_platform(db, platform_code)
+    participant_query = (
+        db.query(RunResult.participant_id)
+        .join(Event, RunResult.event_id == Event.id)
+        .filter(
+            Event.platform_id == platform.id,
+            RunResult.participant_id.isnot(None),
+        )
+        .distinct()
+    )
+    if participant_id is not None:
+        participant_query = participant_query.filter(RunResult.participant_id == participant_id)
+
+    participant_ids = [row[0] for row in participant_query.all()]
+    participants_touched = 0
+    updated = 0
+
+    for index, current_participant_id in enumerate(participant_ids, start=1):
+        rows = (
+            db.query(RunResult, Event)
+            .join(Event, RunResult.event_id == Event.id)
+            .filter(
+                Event.platform_id == platform.id,
+                RunResult.participant_id == current_participant_id,
+            )
+            .order_by(Event.event_date, Event.event_number, Event.location_id)
+            .all()
+        )
+        if not rows:
+            continue
+
+        participants_touched += 1
+
+        row_event_ids = [event.id for _run, event in rows]
+        secondary_event_ids: set[UUID] = set()
+        if row_event_ids:
+            secondary_event_ids = {
+                cl_row[0]
+                for cl_row in db.query(EventCrosslink.secondary_event_id)
+                .filter(EventCrosslink.secondary_event_id.in_(row_event_ids))
+                .all()
+            }
+
+        counted_rows = [(run, event) for run, event in rows if event.id not in secondary_event_ids]
+
+        seen_locations: set[UUID] = set()
+        for run_index, (run, event) in enumerate(counted_rows):
+            new_is_first_run = run_index == 0
+            new_is_first_run_at_location = event.location_id not in seen_locations
+            seen_locations.add(event.location_id)
+            if run.is_first_run != new_is_first_run:
+                run.is_first_run = new_is_first_run
+                updated += 1
+            if run.is_first_run_at_location != new_is_first_run_at_location:
+                run.is_first_run_at_location = new_is_first_run_at_location
+                updated += 1
+
+        for run, event in rows:
+            if event.id in secondary_event_ids and (run.is_first_run or run.is_first_run_at_location):
+                run.is_first_run = False
+                run.is_first_run_at_location = False
+                updated += 1
+
+        if commit_every > 0 and index % commit_every == 0:
+            db.commit()
+
+    return {
+        "platform_code": platform_code,
+        "participants_touched": participants_touched,
+        "runs_updated": updated,
+    }
+
+
+def recalculate_participants_first_run_flags(
+    db: Session,
+    platform_code: str,
+    participant_ids: set[UUID] | list[UUID],
+) -> None:
+    """Recalculate first-run flags for specific participants (safe after protocol sync)."""
+    if platform_code not in FIRST_RUN_DERIVED_PLATFORMS:
+        return
+    for participant_id in set(participant_ids):
+        recalculate_first_run_flags(db, platform_code, participant_id=participant_id)
 
 
 def user_secondary_crosslinked_run_ids(

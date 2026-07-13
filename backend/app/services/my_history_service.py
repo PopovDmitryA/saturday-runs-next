@@ -642,7 +642,11 @@ def get_my_history(
     if disabled_kinds:
         milestones = [item for item in milestones if str(item["kind"]) not in disabled_kinds]
 
-    milestones.sort(
-        key=lambda item: (item["event_date"], _KIND_ORDER.get(str(item["kind"]), 99))
-    )
+    # От новых к старым — при открытии страницы видна самая свежая веха, а не
+    # начало пути. Сортировка в два стабильных прохода: сперва kind_order по
+    # возрастанию (крупная веха раньше мелкой в рамках одного дня), затем дата
+    # по убыванию — стабильность sort() сохраняет уже расставленный порядок
+    # внутри одной даты.
+    milestones.sort(key=lambda item: _KIND_ORDER.get(str(item["kind"]), 99))
+    milestones.sort(key=lambda item: item["event_date"], reverse=True)
     return {"milestones": milestones, "total": len(milestones)}
