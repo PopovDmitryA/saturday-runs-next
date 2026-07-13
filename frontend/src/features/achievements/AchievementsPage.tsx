@@ -49,6 +49,34 @@ const CATEGORY_HINTS: Record<Challenge["category"], string> = {
   scale: "Долгие челленджи на объём: локации, регионы и серии.",
 };
 
+// Клетка коллекции красится в цвет системы, в которой она была закрыта раньше всего.
+const PLATFORM_CELL_CLASS: Record<string, string> = {
+  five_verst: "cell-plat-five-verst",
+  s95: "cell-plat-s95",
+  parkrun: "cell-plat-parkrun",
+  runpark: "cell-plat-runpark",
+};
+
+function platformCellClass(code: string | null | undefined): string {
+  if (!code) {
+    return "";
+  }
+  return PLATFORM_CELL_CLASS[code] ?? "";
+}
+
+function PlatformColorLegend() {
+  return (
+    <div className="platform-color-legend">
+      {(["five_verst", "s95", "parkrun", "runpark"] as const).map((code) => (
+        <span key={code} className={`platform-color-legend-item ${PLATFORM_CELL_CLASS[code]}`}>
+          <span className="platform-color-legend-dot" />
+          {platformCodeLabel(code)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function MedalIcon({
   icon,
   level,
@@ -84,7 +112,9 @@ function ChallengeCells({ cells }: { cells: ChallengeCell[] }) {
       {cells.map((cell) => (
         <span
           key={cell.label}
-          className={`challenge-cell${cell.done ? " done" : ""}${!cell.done && cell.hint ? " has-hint" : ""}`}
+          className={`challenge-cell${cell.done ? ` done ${platformCellClass(cell.platform_code)}` : ""}${
+            !cell.done && cell.hint ? " has-hint" : ""
+          }`}
           title={cellTitle(cell)}
         >
           {cell.label}
@@ -107,7 +137,7 @@ function ChallengeLetters({ challenge }: { challenge: Challenge }) {
         return (
           <span
             key={item.letter}
-            className={`challenge-cell${item.done ? " done" : " has-hint"}`}
+            className={`challenge-cell${item.done ? ` done ${platformCellClass(item.platform_code)}` : " has-hint"}`}
             title={title}
           >
             {item.letter}
@@ -143,13 +173,16 @@ function ChallengeDays({ challenge }: { challenge: Challenge }) {
                   const key = `${String(monthIndex + 1).padStart(2, "0")}-${String(dayIndex + 1).padStart(2, "0")}`;
                   const info = byKey.get(key);
                   const label = `${String(dayIndex + 1).padStart(2, "0")}.${String(monthIndex + 1).padStart(2, "0")}`;
+                  const platformLabel = info?.platform_code ? ` (${platformCodeLabel(info.platform_code)})` : "";
                   return (
                     <span
                       key={key}
-                      className={info ? "challenge-year-day done" : "challenge-year-day"}
+                      className={
+                        info ? `challenge-year-day done ${platformCellClass(info.platform_code)}` : "challenge-year-day"
+                      }
                       title={
                         info
-                          ? `${label} — закрыто ${formatDate(info.date)} · ${info.location}`
+                          ? `${label} — закрыто ${formatDate(info.date)} · ${info.location}${platformLabel}`
                           : `${label} — ещё не закрыто`
                       }
                     />
@@ -551,6 +584,7 @@ export function AchievementsShowcase({
               <div key={category} className="challenge-group">
                 <h3 className="challenge-group-title">{CATEGORY_TITLES[category]}</h3>
                 <p className="muted challenge-group-hint">{CATEGORY_HINTS[category]}</p>
+                {category === "collection" && <PlatformColorLegend />}
                 <div className="challenge-grid">
                   {grouped[category].map((challenge) => (
                     <div key={challenge.code} id={`challenge-${challenge.code}`}>

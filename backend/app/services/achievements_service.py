@@ -315,6 +315,8 @@ def _positions_challenge(rows: list[RunRow]) -> dict[str, object]:
 
 
 def _alphabet_challenge(db: Session, rows: list[RunRow]) -> dict[str, object]:
+    """Parkrun-локации не считаются: у parkrun имена латиницей/местные, они
+    искажали бы букву старта — challenge остаётся про русский алфавит."""
     available_names: dict[str, set[str]] = {}
     for (name,) in db.query(Location.name).filter(Location.name.isnot(None)).all():
         letter = _first_letter(name or "")
@@ -322,6 +324,8 @@ def _alphabet_challenge(db: Session, rows: list[RunRow]) -> dict[str, object]:
             available_names.setdefault(letter, set()).add((name or "").strip())
     first_by_letter: dict[str, RunRow] = {}
     for row in rows:
+        if row.platform_code == "parkrun":
+            continue
         letter = _first_letter(row.location_name)
         if letter is not None and letter in available_names:
             first_by_letter.setdefault(letter, row)
@@ -339,6 +343,7 @@ def _alphabet_challenge(db: Session, rows: list[RunRow]) -> dict[str, object]:
                 "location": first_row.location_name if first_row else None,
                 "locations": names[:8],
                 "locations_more": max(len(names) - 8, 0),
+                "platform_code": first_row.platform_code if first_row else None,
             }
         )
     levels = {"bronze": 10, "silver": 17, "gold": 28}
@@ -347,7 +352,7 @@ def _alphabet_challenge(db: Session, rows: list[RunRow]) -> dict[str, object]:
         code="alphabet",
         title="Алфавит",
         icon="🔤",
-        description="Финишируй в локациях на каждую букву алфавита (считаются буквы, на которые есть хотя бы одна локация).",
+        description="Финишируй в локациях на каждую букву алфавита (считаются буквы, на которые есть хотя бы одна локация; parkrun в этом челлендже не учитывается).",
         category="collection",
         current=len(first_by_letter),
         levels=levels,
@@ -366,6 +371,7 @@ def _calendar_days_challenge(rows: list[RunRow]) -> dict[str, object]:
             "key": key,
             "date": row.event_date.isoformat(),
             "location": row.location_name,
+            "platform_code": row.platform_code,
         }
         for key, row in sorted(first_by_day.items())
     ]

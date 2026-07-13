@@ -8226,10 +8226,68 @@ tr.run-crosslinked td {
   font-size: 0.66rem;
 }
 
-.challenge-cell.done {
+.challenge-cell.done,
+.challenge-cell.done.cell-plat-five-verst {
   background: var(--tint-green-bg-strong);
   border-color: var(--tint-green-border);
   color: var(--tint-green-text);
+}
+
+.challenge-cell.done.cell-plat-s95 {
+  background: var(--tint-blue-bg-strong);
+  border-color: var(--tint-blue-border);
+  color: var(--link-strong);
+}
+
+.challenge-cell.done.cell-plat-parkrun {
+  background: var(--tint-violet-bg-strong);
+  border-color: var(--tint-violet-border);
+  color: var(--tint-violet-text);
+}
+
+.challenge-cell.done.cell-plat-runpark {
+  background: var(--tint-orange-bg);
+  border-color: var(--tint-orange-text);
+  color: var(--tint-orange-text);
+}
+
+/* Легенда цветов систем над коллекционными челленджами */
+.platform-color-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.35rem 0 0.75rem;
+}
+
+.platform-color-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-3);
+}
+
+.platform-color-legend-dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: var(--tint-green-bg-strong);
+  border: 1px solid var(--tint-green-border);
+}
+
+.platform-color-legend-item.cell-plat-s95 .platform-color-legend-dot {
+  background: var(--tint-blue-bg-strong);
+  border-color: var(--tint-blue-border);
+}
+
+.platform-color-legend-item.cell-plat-parkrun .platform-color-legend-dot {
+  background: var(--tint-violet-bg-strong);
+  border-color: var(--tint-violet-border);
+}
+
+.platform-color-legend-item.cell-plat-runpark .platform-color-legend-dot {
+  background: var(--tint-orange-bg);
+  border-color: var(--tint-orange-text);
 }
 
 /* «Круглый год»: календарная сетка 12 месяцев с горизонтальным скроллом */
@@ -8277,9 +8335,25 @@ tr.run-crosslinked td {
   border: 1px solid var(--border-soft);
 }
 
-.challenge-year-day.done {
+.challenge-year-day.done,
+.challenge-year-day.done.cell-plat-five-verst {
   background: var(--accent-green-text);
   border-color: var(--accent-green-text);
+}
+
+.challenge-year-day.done.cell-plat-s95 {
+  background: var(--link-strong);
+  border-color: var(--link-strong);
+}
+
+.challenge-year-day.done.cell-plat-parkrun {
+  background: var(--tint-violet-text);
+  border-color: var(--tint-violet-text);
+}
+
+.challenge-year-day.done.cell-plat-runpark {
+  background: var(--tint-orange-text);
+  border-color: var(--tint-orange-text);
 }
 
 /* Списки находок (палиндромы, дежавю, юбилеи) */

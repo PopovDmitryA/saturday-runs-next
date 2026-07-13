@@ -108,11 +108,15 @@ def test_weekdays_challenge() -> None:
 
 def test_calendar_days_ignores_year() -> None:
     rows = [
-        _row(event_date=date(2024, 3, 8)),
-        _row(event_date=date(2026, 3, 8)),  # тот же день года
-        _row(event_date=date(2026, 3, 9)),
+        _row(event_date=date(2024, 3, 8), platform_code="five_verst"),
+        _row(event_date=date(2026, 3, 8), platform_code="s95"),  # тот же день года
+        _row(event_date=date(2026, 3, 9), platform_code="s95"),
     ]
-    assert _calendar_days_challenge(rows)["current"] == 2
+    result = _calendar_days_challenge(rows)
+    assert result["current"] == 2
+    days = result["detail"]["days"]  # type: ignore[index]
+    assert days[0]["platform_code"] == "five_verst"
+    assert days[1]["platform_code"] == "s95"
 
 
 def test_palindrome_challenge_mirrors_minutes_seconds() -> None:

@@ -643,12 +643,14 @@ export type ChallengeLetter = {
   location: string | null;
   locations: string[];
   locations_more: number;
+  platform_code: string | null;
 };
 
 export type ChallengeDay = {
   key: string;
   date: string;
   location: string;
+  platform_code: string | null;
 };
 
 export type ChallengeDetailItem = {
