@@ -206,3 +206,71 @@ def test_meeting_detail_prefers_primary_platform_over_runpark_crosslink(db_sessi
     assert len(meetings) == 1
     assert meetings[0]["platform_code"] == "five_verst"
     assert meetings[0]["location_name"] == "Primary Location"
+
+
+def test_unknown_participant_names_excluded_from_list(db_session: Session) -> None:
+    suffix = str(uuid4().int % 1_000_000)
+    five_verst = _get_platform(db_session, "five_verst", "5 верст")
+    runpark = _get_platform(db_session, "runpark", "RunPark")
+    s95 = _get_platform(db_session, "s95", "C95")
+
+    location = Location(
+        platform_id=five_verst.id,
+        external_key=f"loc-unknown-{suffix}",
+        name="Unknown Filter Location",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    user = User()
+    db_session.add(user)
+    db_session.flush()
+
+    me_participant = _make_participant(db_session, five_verst, f"me3-{suffix}", "Me")
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=five_verst.id,
+            participant_id=me_participant.id,
+            external_user_id=me_participant.external_user_id,
+            external_url=me_participant.profile_url,
+        )
+    )
+
+    real_rival = _make_participant(db_session, five_verst, f"real-{suffix}", "Реальный Соперник")
+    unknown_s95 = _make_participant(db_session, s95, f"unk-s95-{suffix}", "НЕИЗВЕСТНЫЙ")
+    unknown_runpark = _make_participant(db_session, runpark, f"unk-rp-{suffix}", "Runner Unknown")
+
+    my_event = _make_event(db_session, five_verst, location, f"unk-my-{suffix}", date(2024, 6, 1), 900_201)
+    db_session.add(
+        RunResult(
+            event_id=my_event.id,
+            participant_id=me_participant.id,
+            external_result_key=f"unk-me-{suffix}",
+            position=1,
+            finish_time_sec=18 * 60,
+            finish_time_display="00:18:00",
+            status="finished",
+        )
+    )
+    for i, rival in enumerate((real_rival, unknown_s95, unknown_runpark), start=1):
+        db_session.add(
+            RunResult(
+                event_id=my_event.id,
+                participant_id=rival.id,
+                external_result_key=f"unk-rival-{i}-{suffix}",
+                position=i + 1,
+                finish_time_sec=19 * 60,
+                finish_time_display="00:19:00",
+                status="finished",
+            )
+        )
+    db_session.commit()
+
+    items = list_co_runners(db_session, user.id)
+    names = {item["display_name"] for item in items}
+    assert "Реальный Соперник" in names
+    assert "НЕИЗВЕСТНЫЙ" not in names
+    assert "Runner Unknown" not in names

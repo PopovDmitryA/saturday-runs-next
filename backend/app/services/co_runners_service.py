@@ -14,6 +14,21 @@ from app.services.location_catalog_service import LocationCatalogIndex
 PARTICIPANT_KEY_PREFIX = "p:"
 SITE_USER_KEY_PREFIX = "u:"
 
+# Плейсхолдеры вместо реального имени участника: платформа не смогла его
+# распознать (пустой протокол, битая строка и т.п.). Это не настоящий человек,
+# такие строки не должны попадать в топ "Встреч на стартах".
+_UNKNOWN_PARTICIPANT_NAMES = {"неизвестный", "nepoznato", "unknown", "runner unknown"}
+_UNKNOWN_PARTICIPANT_PREFIX = "unknown #"
+
+
+def _is_unknown_participant_name(name: str | None) -> bool:
+    normalized = (name or "").strip().casefold()
+    if not normalized:
+        return True
+    if normalized in _UNKNOWN_PARTICIPANT_NAMES:
+        return True
+    return normalized.startswith(_UNKNOWN_PARTICIPANT_PREFIX)
+
 
 @dataclass
 class _SiteIdentity:
@@ -187,8 +202,13 @@ def list_co_runners(
                 event_date=event_date,
             )
 
+    known_stats = {
+        key: stats
+        for key, stats in stats_by_key.items()
+        if not _is_unknown_participant_name(stats.display_name)
+    }
     ranked = sorted(
-        stats_by_key.items(),
+        known_stats.items(),
         key=lambda item: (-len(item[1].meetings_by_event), item[1].display_name or ""),
     )[:limit]
 

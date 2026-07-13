@@ -5,6 +5,7 @@ from datetime import date
 from app.platform_adapters.parkrun.url import InvalidProfileUrlError, parse_profile_url
 
 FIVE_VERST_BASE = "https://5verst.ru"
+S95_BASE = "https://s95.ru"
 
 
 def _s95_protocol_url(url: str) -> bool:
@@ -67,6 +68,12 @@ def resolve_activity_url(
     summary = (summary_source_url or "").strip()
 
     if platform_code == "s95":
+        # source_url на s95-событиях после перехода на JSON API часто хранит
+        # технический /activities/{id}.json (для внутреннего дозапроса протокола,
+        # не для показа пользователю) — человекочитаемая страница результатов
+        # всегда строится по slug локации и дате, как и для five_verst.
+        if slug:
+            return f"{S95_BASE}/events/{slug}/results/{event_date.strftime('%d.%m.%Y')}/"
         for candidate in (stored, summary):
             if candidate and _s95_protocol_url(candidate):
                 return candidate
