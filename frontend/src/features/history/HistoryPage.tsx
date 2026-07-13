@@ -380,7 +380,7 @@ export function HistoryContent({
     }
     const firstYear = Number(milestones[0].event_date.slice(0, 4));
     const lastYear = Number(milestones[milestones.length - 1].event_date.slice(0, 4));
-    const years = Math.max(lastYear - firstYear + 1, 1);
+    const years = Math.max(Math.abs(lastYear - firstYear) + 1, 1);
     const count = milestones.length;
     return `${count} ${pluralFormRu(count, MILESTONE_FORMS)} за ${years} ${pluralFormRu(years, YEAR_FORMS)}`;
   }, [data]);
