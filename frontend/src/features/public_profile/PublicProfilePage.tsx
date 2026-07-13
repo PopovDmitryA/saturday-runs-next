@@ -3,6 +3,7 @@ import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
 import { SiteHeader } from "../../components/SiteHeader";
 import { AppDataSourceProvider, createPublicProfileDataSource } from "../../lib/appDataSource";
+import { AchievementsShowcase } from "../achievements/AchievementsPage";
 import { UserMapPanel } from "../maps/UserMapPanel";
 import { RunsContent } from "../runs/RunsPage";
 import { VolunteeringContent } from "../volunteering/VolunteeringPage";
@@ -15,8 +16,10 @@ import {
   getPublicProfileHistory,
   getPublicProfileVisitedMap,
   getPublicProfileCatalogTable,
+  getPublicProfileAchievements,
   getCatalogLocationsMap,
   resolveProfileHandle,
+  type AchievementsResponse,
   type AdminUserPreviewDashboard,
   type User,
 } from "../../lib/api";
@@ -24,7 +27,7 @@ import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 import { APP_NAV_ITEMS, PUBLIC_NAV_ITEMS } from "../../lib/siteNav";
 import { SITE_HOME_HREF, SITE_PUBLIC_HOME_HREF } from "../../lib/siteBrand";
 
-type ProfileTab = "dashboard" | "runs" | "volunteering" | "map" | "history";
+type ProfileTab = "dashboard" | "runs" | "volunteering" | "map" | "achievements" | "history";
 
 function profileDisplayName(user: AdminUserPreviewDashboard["user"]): string {
   if (user.display_name) return user.display_name;
@@ -115,6 +118,24 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
     if (tab === "dashboard") void loadDashboard();
   }, [tab, loadDashboard]);
 
+  const [achievements, setAchievements] = useState<AchievementsResponse | null>(null);
+  const [achievementsError, setAchievementsError] = useState<string | null>(null);
+
+  const loadAchievements = useCallback(async () => {
+    setAchievementsError(null);
+    try {
+      setAchievements(await getPublicProfileAchievements(serialId));
+    } catch (err) {
+      setAchievementsError(err instanceof Error ? err.message : "Не удалось загрузить достижения");
+    }
+  }, [serialId]);
+
+  useEffect(() => {
+    if (tab === "achievements" && !achievements && !achievementsError) {
+      void loadAchievements();
+    }
+  }, [tab, achievements, achievementsError, loadAchievements]);
+
   const loadVisitedMap = useCallback(() => getPublicProfileVisitedMap(serialId, false), [serialId]);
   const loadCatalogTable = useCallback(() => getPublicProfileCatalogTable(serialId, false), [serialId]);
   const loadHistory = useCallback(() => getPublicProfileHistory(serialId, false), [serialId]);
@@ -165,6 +186,9 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
         </button>
         <button type="button" className={tabClass("map")} onClick={() => setTab("map")}>
           Карта
+        </button>
+        <button type="button" className={tabClass("achievements")} onClick={() => setTab("achievements")}>
+          Достижения
         </button>
         <button type="button" className={tabClass("history")} onClick={() => setTab("history")}>
           История
@@ -219,6 +243,21 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
             visitedTabLabel="Визиты"
           />
         </section>
+      )}
+
+      {tab === "achievements" && (
+        <>
+          {achievementsError && (
+            <div className="card error">
+              <p>{achievementsError}</p>
+              <button type="button" className="btn secondary" onClick={() => void loadAchievements()}>
+                Повторить
+              </button>
+            </div>
+          )}
+          {!achievementsError && !achievements && <p className="muted">Загрузка…</p>}
+          {achievements && <AchievementsShowcase data={achievements} />}
+        </>
       )}
 
       {tab === "history" && (

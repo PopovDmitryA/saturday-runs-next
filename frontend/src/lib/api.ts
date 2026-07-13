@@ -664,6 +664,15 @@ export type ChallengeDetail = {
   days?: ChallengeDay[];
   items?: ChallengeDetailItem[];
   example?: { value: string; location: string; note: string };
+  // Нумератор/Нумератор ПРО: система, по которой сейчас лучший результат
+  // (номер старта — внутри своей системы, платформы не смешиваются)
+  platform_code?: string | null;
+};
+
+export type ChallengeLevelDates = {
+  bronze: string | null;
+  silver: string | null;
+  gold: string | null;
 };
 
 export type Challenge = {
@@ -682,6 +691,9 @@ export type Challenge = {
   pct: number;
   unit: string | null;
   detail: ChallengeDetail;
+  level_dates: ChallengeLevelDates;
+  // Насколько последняя пробежка продвинула счётчик (0 — не продвинула)
+  recent_delta: number;
 };
 
 export type ClubEntry = {
@@ -694,6 +706,7 @@ export type ClubEntry = {
   next_threshold: number | null;
   to_next: number | null;
   pct_to_next: number;
+  level_dates: Record<string, string | null>;
 };
 
 export type ClubPlatform = {
@@ -711,6 +724,7 @@ export type AchievementBadge = {
   title: string;
   icon: string;
   level: ChallengeLevel;
+  achieved_at: string | null;
 };
 
 export type AchievementsResponse = {
@@ -734,6 +748,8 @@ export type GoalPreset = {
   min: number;
   max: number;
   description: string;
+  current_value: number;
+  current_display: string | null;
 };
 
 export type GoalProgress = {
@@ -751,6 +767,8 @@ export type GoalProgress = {
   forecast_value: number | null;
   current_display: string | null;
   target_display: string | null;
+  // Насколько последняя пробежка продвинула цель (0 — не продвинула)
+  recent_delta: number;
 };
 
 export type GoalsResponse = {
@@ -1555,6 +1573,10 @@ export function getPublicProfileCatalogTable(serialId: number, includeTest = fal
   return apiFetch<CatalogLocationsTableResponse>(
     `/users/${serialId}/profile/locations/catalog/table${query}`,
   );
+}
+
+export function getPublicProfileAchievements(serialId: number) {
+  return apiFetch<AchievementsResponse>(`/users/${serialId}/profile/achievements`);
 }
 
 export function getPublicProfileBestResults(serialId: number, includeTest = false) {

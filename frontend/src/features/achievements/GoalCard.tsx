@@ -28,6 +28,21 @@ function forecastChip(goal: GoalProgress) {
   return null;
 }
 
+function recentDeltaLabel(goal: GoalProgress): string {
+  return goal.kind === "time" ? `+${goal.recent_delta}с быстрее` : `+${goal.recent_delta}`;
+}
+
+function RecentDeltaBadge({ goal }: { goal: GoalProgress }) {
+  if (!goal.recent_delta) {
+    return null;
+  }
+  return (
+    <span className="recent-delta-badge" title="Продвинула последняя пробежка">
+      ↑ {recentDeltaLabel(goal)}
+    </span>
+  );
+}
+
 function progressLabel(goal: GoalProgress): string {
   if (goal.kind === "time") {
     if (!goal.current_display) {
@@ -49,6 +64,7 @@ export function GoalCard({ goal, compact }: { goal: GoalProgress; compact?: bool
           {goal.icon}
         </span>
         <span className="goal-title">{goal.title}</span>
+        <RecentDeltaBadge goal={goal} />
         <span className="goal-pct">{Math.round(goal.pct)}%</span>
       </div>
       <div className="goal-bar">

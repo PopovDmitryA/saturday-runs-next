@@ -11,9 +11,11 @@ from app.api.deps import get_db, get_optional_user
 from app.config import Settings, get_settings
 from app.core.admin import is_admin_user
 from app.models import User
+from app.schemas.achievements import AchievementsResponse
 from app.schemas.admin import AdminUserPreviewDashboardResponse
 from app.schemas.dashboard import MyHistoryResponse, RunItemResponse, VolunteeringItemResponse
 from app.schemas.locations import CatalogLocationsTableResponse, MapLocationsResponse, UniqueLocationsDetailResponse
+from app.services.achievements_service import compute_challenges
 from app.services.admin_users_service import (
     get_admin_user_preview_best_results,
     get_admin_user_preview_dashboard,
@@ -201,3 +203,16 @@ def public_profile_catalog_table(
     user_id = _get_user_uuid(serial_id, db, requester, settings)
     payload = build_catalog_locations_table(db, user_id, include_test_events=include_test)
     return CatalogLocationsTableResponse.model_validate(payload)
+
+
+@router.get("/{serial_id}/profile/achievements", response_model=AchievementsResponse)
+def public_profile_achievements(
+    serial_id: int,
+    db: Session = Depends(get_db),
+    requester: User | None = Depends(get_optional_user),
+    settings: Settings = Depends(get_settings),
+) -> AchievementsResponse:
+    """Челленджи и клубы участника — без личных целей на год (те остаются
+    приватными, задать их можно только себе)."""
+    user_id = _get_user_uuid(serial_id, db, requester, settings)
+    return AchievementsResponse.model_validate(compute_challenges(db, user_id))

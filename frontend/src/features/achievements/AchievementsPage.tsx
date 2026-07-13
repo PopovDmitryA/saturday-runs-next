@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AppShell } from "../../components/AppShell";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAuth } from "../../components/RequireAuth";
@@ -28,6 +28,14 @@ const LEVEL_LABELS_TO: Record<ChallengeLevel, string> = {
   silver: "серебра",
   gold: "золота",
 };
+
+const LEVEL_MEDAL_EMOJI: Record<ChallengeLevel, string> = {
+  bronze: "🥉",
+  silver: "🥈",
+  gold: "🥇",
+};
+
+const LEVEL_SEQUENCE: ChallengeLevel[] = ["bronze", "silver", "gold"];
 
 const CATEGORY_TITLES: Record<Challenge["category"], string> = {
   collection: "Коллекции",
@@ -235,17 +243,43 @@ function ChallengeProgressBar({ challenge }: { challenge: Challenge }) {
         className={`challenge-bar-fill${challenge.level ? ` challenge-bar-${challenge.level}` : ""}`}
         style={{ width: `${challenge.pct}%` }}
       />
-      {markers.map(
-        (marker) =>
-          marker.at < target && (
-            <span
-              key={marker.level}
-              className={`challenge-bar-marker challenge-bar-marker-${marker.level}`}
-              style={{ left: `${(marker.at / target) * 100}%` }}
-              title={`${LEVEL_LABELS[marker.level]}: ${marker.at}`}
-            />
-          ),
-      )}
+      {markers.map((marker) => {
+        if (marker.at >= target) {
+          return null;
+        }
+        const achievedDate = challenge.level_dates[marker.level];
+        const title = achievedDate
+          ? `${LEVEL_LABELS[marker.level]}: ${marker.at} — получено ${formatDate(achievedDate)}`
+          : `${LEVEL_LABELS[marker.level]}: ${marker.at}`;
+        return (
+          <span
+            key={marker.level}
+            className={`challenge-bar-marker challenge-bar-marker-${marker.level}`}
+            style={{ left: `${(marker.at / target) * 100}%` }}
+            title={title}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function ChallengeLevelTimeline({ challenge }: { challenge: Challenge }) {
+  return (
+    <div className="challenge-level-timeline">
+      {LEVEL_SEQUENCE.map((level) => {
+        const achievedDate = challenge.level_dates[level];
+        return (
+          <span
+            key={level}
+            className={`challenge-level-timeline-item${achievedDate ? " done" : ""}`}
+            title={`${LEVEL_LABELS[level]} (${challenge.levels[level]} ${challenge.unit ?? ""})`.trim()}
+          >
+            <span className="challenge-level-timeline-icon">{LEVEL_MEDAL_EMOJI[level]}</span>
+            {achievedDate ? formatDate(achievedDate) : "—"}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -269,6 +303,12 @@ function ChallengeCard({ challenge }: { challenge: Challenge }) {
                 {LEVEL_LABELS[challenge.level]}
               </span>
             )}
+            {challenge.detail.platform_code && <PlatformBadge code={challenge.detail.platform_code} />}
+            {challenge.recent_delta > 0 && (
+              <span className="recent-delta-badge" title="Продвинула последняя пробежка">
+                ↑ +{challenge.recent_delta}
+              </span>
+            )}
           </div>
           <p className="challenge-description">{challenge.description}</p>
         </div>
@@ -281,6 +321,7 @@ function ChallengeCard({ challenge }: { challenge: Challenge }) {
         </span>
         <span className="challenge-next muted">{nextHint}</span>
       </div>
+      <ChallengeLevelTimeline challenge={challenge} />
       {hasDetail(challenge) && (
         <>
           {expanded && <ChallengeDetailBlock challenge={challenge} />}
@@ -311,17 +352,19 @@ function ClubRow({ entry }: { entry: ClubEntry }) {
         {entry.thresholds.map((threshold) => {
           const earned = entry.earned.includes(threshold);
           const isNext = entry.next_threshold === threshold;
+          const achievedDate = entry.level_dates[String(threshold)];
+          const title = earned
+            ? achievedDate
+              ? `Клуб ${threshold} — получено ${formatDate(achievedDate)}`
+              : `Клуб ${threshold} — есть!`
+            : isNext
+              ? `Следующий клуб: ${threshold}, осталось ${entry.to_next}`
+              : `Клуб ${threshold}`;
           return (
             <span
               key={threshold}
               className={`club-chip${earned ? " club-chip-earned" : ""}${isNext ? " club-chip-next" : ""}`}
-              title={
-                earned
-                  ? `Клуб ${threshold} — есть!`
-                  : isNext
-                    ? `Следующий клуб: ${threshold}, осталось ${entry.to_next}`
-                    : `Клуб ${threshold}`
-              }
+              title={title}
             >
               {threshold}
             </span>
@@ -409,12 +452,18 @@ function BadgesShowcase({ data }: { data: AchievementsResponse }) {
       ) : (
         <div className="achv-badges">
           {badges.map((badge) => (
-            <a key={badge.code} className="achv-badge" href={`#challenge-${badge.code}`}>
+            <a
+              key={badge.code}
+              className="achv-badge"
+              href={`#challenge-${badge.code}`}
+              title={badge.achieved_at ? `Получено ${formatDate(badge.achieved_at)}` : undefined}
+            >
               <MedalIcon icon={badge.icon} level={badge.level} size="lg" />
               <span className="achv-badge-title">{badge.title}</span>
               <span className={`achv-badge-level achv-badge-level-${badge.level}`}>
                 {LEVEL_LABELS[badge.level]}
               </span>
+              {badge.achieved_at && <span className="achv-badge-date">{formatDate(badge.achieved_at)}</span>}
             </a>
           ))}
         </div>
@@ -459,6 +508,66 @@ function GoalsSection({
   );
 }
 
+/** Витрина медалей + челленджи + клубы — без личных целей на год (те приватные,
+ * задать можно только себе). Переиспользуется и на своей странице «Достижения»,
+ * и на публичном профиле участника. */
+export function AchievementsShowcase({
+  data,
+  goalsSection,
+}: {
+  data: AchievementsResponse;
+  // «Цели на год» — личный раздел; на публичном профиле не передаётся.
+  goalsSection?: ReactNode;
+}) {
+  const grouped = useMemo(() => {
+    const groups: Record<Challenge["category"], Challenge[]> = {
+      collection: [],
+      coincidence: [],
+      scale: [],
+    };
+    for (const challenge of data.challenges) {
+      groups[challenge.category]?.push(challenge);
+    }
+    return groups;
+  }, [data]);
+
+  return (
+    <>
+      <BadgesShowcase data={data} />
+
+      {goalsSection}
+
+      <section className="achv-section">
+        <div className="achv-section-head">
+          <h2 className="section-title">Челленджи</h2>
+          <span className="muted">
+            {pluralizeRu(data.summary.total, ["челлендж", "челленджа", "челленджей"])} · три уровня: бронза, серебро
+            и золото
+          </span>
+        </div>
+        {(Object.keys(grouped) as Array<Challenge["category"]>).map(
+          (category) =>
+            grouped[category].length > 0 && (
+              <div key={category} className="challenge-group">
+                <h3 className="challenge-group-title">{CATEGORY_TITLES[category]}</h3>
+                <p className="muted challenge-group-hint">{CATEGORY_HINTS[category]}</p>
+                <div className="challenge-grid">
+                  {grouped[category].map((challenge) => (
+                    <div key={challenge.code} id={`challenge-${challenge.code}`}>
+                      <ChallengeCard challenge={challenge} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ),
+        )}
+      </section>
+
+      <ClubsSection clubs={data.clubs} />
+    </>
+  );
+}
+
 function AchievementsContent() {
   const [achievements, setAchievements] = useState<AchievementsResponse | null>(null);
   const [goals, setGoals] = useState<GoalsResponse | null>(null);
@@ -480,18 +589,6 @@ function AchievementsContent() {
     void load();
   }, [load]);
 
-  const grouped = useMemo(() => {
-    const groups: Record<Challenge["category"], Challenge[]> = {
-      collection: [],
-      coincidence: [],
-      scale: [],
-    };
-    for (const challenge of achievements?.challenges ?? []) {
-      groups[challenge.category]?.push(challenge);
-    }
-    return groups;
-  }, [achievements]);
-
   return (
     <AppShell title="Цели и достижения">
       {error && (
@@ -506,37 +603,10 @@ function AchievementsContent() {
 
       {achievements && goals && (
         <>
-          <BadgesShowcase data={achievements} />
-
-          <GoalsSection goals={goals} onEdit={() => setEditOpen(true)} />
-
-          <section className="achv-section">
-            <div className="achv-section-head">
-              <h2 className="section-title">Челленджи</h2>
-              <span className="muted">
-                {pluralizeRu(achievements.summary.total, ["челлендж", "челленджа", "челленджей"])} · три уровня:
-                бронза, серебро и золото
-              </span>
-            </div>
-            {(Object.keys(grouped) as Array<Challenge["category"]>).map(
-              (category) =>
-                grouped[category].length > 0 && (
-                  <div key={category} className="challenge-group">
-                    <h3 className="challenge-group-title">{CATEGORY_TITLES[category]}</h3>
-                    <p className="muted challenge-group-hint">{CATEGORY_HINTS[category]}</p>
-                    <div className="challenge-grid">
-                      {grouped[category].map((challenge) => (
-                        <div key={challenge.code} id={`challenge-${challenge.code}`}>
-                          <ChallengeCard challenge={challenge} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ),
-            )}
-          </section>
-
-          <ClubsSection clubs={achievements.clubs} />
+          <AchievementsShowcase
+            data={achievements}
+            goalsSection={<GoalsSection goals={goals} onEdit={() => setEditOpen(true)} />}
+          />
 
           <GoalsEditModal
             open={editOpen}
