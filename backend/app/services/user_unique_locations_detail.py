@@ -75,7 +75,7 @@ def build_user_unique_location_details(
     include_test_events: bool = False,
 ) -> dict[str, object]:
     runs_query = (
-        db.query(Event.event_date, Location, Platform.code)
+        db.query(RunResult.id, Event.event_date, Location, Platform.code)
         .select_from(RunResult)
         .join(Event, RunResult.event_id == Event.id)
         .join(Location, Event.location_id == Location.id)
@@ -99,7 +99,14 @@ def build_user_unique_location_details(
         runs_query = runs_query.filter(Event.is_test_event.is_(False))
         vol_query = vol_query.filter(Event.is_test_event.is_(False))
 
-    run_rows = runs_query.all()
+    from app.services.personal_record_service import user_secondary_crosslinked_run_ids
+
+    excluded_run_ids = user_secondary_crosslinked_run_ids(db, user_id, include_test_events=include_test_events)
+    run_rows = [
+        (event_date, location, platform_code)
+        for run_id, event_date, location, platform_code in runs_query.all()
+        if run_id not in excluded_run_ids
+    ]
     vol_rows = vol_query.all()
 
     catalog_index = LocationCatalogIndex(db)
