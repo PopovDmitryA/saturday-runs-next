@@ -250,7 +250,7 @@ def _seconds_challenge(rows: list[RunRow]) -> dict[str, object]:
             continue
         first_by_second.setdefault(mmss[1], row)
     cells = [_cell(f":{second:02d}", first_by_second.get(second)) for second in range(60)]
-    levels = {"bronze": 15, "silver": 30, "gold": 60}
+    levels = {"bronze": 40, "silver": 50, "gold": 60}
     sorted_dates = sorted(row.event_date for row in first_by_second.values())
     return _challenge(
         code="seconds",
@@ -294,7 +294,7 @@ def _positions_challenge(rows: list[RunRow]) -> dict[str, object]:
         if row.position is not None and row.position > 0:
             first_by_position.setdefault(row.position % 100, row)
     cells = [_cell(f"{position:02d}", first_by_position.get(position)) for position in range(100)]
-    levels = {"bronze": 25, "silver": 50, "gold": 100}
+    levels = {"bronze": 50, "silver": 75, "gold": 100}
     sorted_dates = sorted(row.event_date for row in first_by_position.values())
     return _challenge(
         code="positions",
@@ -337,8 +337,7 @@ def _alphabet_challenge(db: Session, rows: list[RunRow]) -> dict[str, object]:
                 "locations_more": max(len(names) - 8, 0),
             }
         )
-    total = max(len(available_names), 1)
-    levels = {"bronze": max(total // 4, 1), "silver": max(total // 2, 1), "gold": total}
+    levels = {"bronze": 10, "silver": 17, "gold": 28}
     sorted_dates = sorted(row.event_date for row in first_by_letter.values())
     return _challenge(
         code="alphabet",
@@ -366,7 +365,8 @@ def _calendar_days_challenge(rows: list[RunRow]) -> dict[str, object]:
         }
         for key, row in sorted(first_by_day.items())
     ]
-    levels = {"bronze": 30, "silver": 100, "gold": 366}
+    # gold = 366 (весь календарь, включая 29 февраля) — больше дат физически не бывает.
+    levels = {"bronze": 100, "silver": 200, "gold": 366}
     sorted_dates = sorted(row.event_date for row in first_by_day.values())
     return _challenge(
         code="calendar_days",
@@ -388,10 +388,13 @@ def _upcoming_event_numbers(
     today: date | None = None,
     weeks: int = 3,
     max_number: int = 400,
-) -> dict[int, list[tuple[date, str]]]:
+) -> dict[tuple[str, int], list[tuple[date, str]]]:
     """Прогноз ближайших порядковых номеров стартов: последний известный старт
     каждой активной локации + 1..weeks недель вперёд. Локации, у которых
-    последний старт давно (прогноз в прошлом), отпадают сами."""
+    последний старт давно (прогноз в прошлом), отпадают сами. Номер старта
+    считается ВНУТРИ своей системы (five_verst/s95/parkrun/runpark) — каждая
+    платформа нумерует свои события независимо, поэтому ключ — (платформа, номер).
+    """
     today = today or date.today()
     latest = (
         db.query(
@@ -422,7 +425,7 @@ def _upcoming_event_numbers(
     )
     catalog_index = LocationCatalogIndex(db)
     horizon = today + timedelta(weeks=weeks)
-    upcoming: dict[int, list[tuple[date, str]]] = {}
+    upcoming: dict[tuple[str, int], list[tuple[date, str]]] = {}
     for event_number, event_date, location, platform_code in query.all():
         display_name = catalog_index.display_name(location, platform_code)
         for week in range(1, weeks + 1):
@@ -432,7 +435,7 @@ def _upcoming_event_numbers(
                 continue
             if predicted_number > max_number:
                 break
-            upcoming.setdefault(predicted_number, []).append((predicted_date, display_name))
+            upcoming.setdefault((platform_code, predicted_number), []).append((predicted_date, display_name))
     for entries in upcoming.values():
         entries.sort()
     return upcoming
@@ -449,24 +452,35 @@ def _upcoming_hint(entries: list[tuple[date, str]] | None) -> str | None:
 
 def _start_numbers_range_challenge(
     rows: list[RunRow],
-    upcoming: dict[int, list[tuple[date, str]]],
+    upcoming: dict[tuple[str, int], list[tuple[date, str]]],
     *,
     code: str,
     title: str,
     description: str,
     low: int,
     high: int,
+    levels: dict[str, int],
 ) -> dict[str, object]:
-    first_by_number: dict[int, RunRow] = {}
+    """Номер старта считается ВНУТРИ одной системы (каждая платформа нумерует
+    события независимо — см. _upcoming_event_numbers), поэтому смешивать номера
+    разных систем в одной ячейке было бы бессмысленно: "старт №50" на five_verst
+    и "старт №50" на s95 — два разных, никак не связанных события. Берём
+    систему, где закрыто больше всего номеров (лучший результат в одной
+    системе), и считаем прогресс только по ней."""
+    by_platform: dict[str, dict[int, RunRow]] = {}
     for row in rows:
         if row.event_number is not None and low <= row.event_number <= high:
-            first_by_number.setdefault(row.event_number, row)
+            by_platform.setdefault(row.platform_code, {}).setdefault(row.event_number, row)
+    best_platform = max(by_platform, key=lambda code: len(by_platform[code]), default=None)
+    first_by_number = by_platform.get(best_platform, {}) if best_platform else {}
     cells = [
-        _cell(str(number), first_by_number.get(number), hint=_upcoming_hint(upcoming.get(number)))
+        _cell(
+            str(number),
+            first_by_number.get(number),
+            hint=_upcoming_hint(upcoming.get((best_platform, number))) if best_platform else None,
+        )
         for number in range(low, high + 1)
     ]
-    total = high - low + 1
-    levels = {"bronze": total // 8, "silver": max(total * 3 // 8, 1), "gold": total}
     sorted_dates = sorted(row.event_date for row in first_by_number.values())
     return _challenge(
         code=code,
@@ -477,7 +491,7 @@ def _start_numbers_range_challenge(
         current=len(first_by_number),
         levels=levels,
         unit="номеров",
-        detail={"cells": cells},
+        detail={"cells": cells, "platform_code": best_platform},
         level_dates=_level_dates(sorted_dates, levels),
     )
 
@@ -499,7 +513,7 @@ def _palindrome_challenge(rows: list[RunRow]) -> dict[str, object]:
                     "location": row.location_name,
                 }
             )
-    levels = {"bronze": 1, "silver": 3, "gold": 5}
+    levels = {"bronze": 1, "silver": 10, "gold": 25}
     sorted_dates = sorted(date.fromisoformat(str(item["date"])) for item in items)
     return _challenge(
         code="palindrome",
@@ -532,7 +546,7 @@ def _deja_vu_challenge(rows: list[RunRow]) -> dict[str, object]:
         }
         for time_sec in repeated
     ]
-    levels = {"bronze": 1, "silver": 5, "gold": 10}
+    levels = {"bronze": 3, "silver": 15, "gold": 50}
     # Дежавю "случается" в момент ВТОРОГО финиша с этим временем — эта дата и
     # закрывает соответствующую клетку счётчика совпадений.
     sorted_dates = sorted(rows_by_time[time_sec][1].event_date for time_sec in repeated)
@@ -571,7 +585,7 @@ def _number_match_challenge(rows: list[RunRow]) -> dict[str, object]:
             "location": top_location[0][0] if top_location else "Кузьминки",
             "note": f"так запишется совпадение — твоя {next_index}-я пробежка на старте №{next_index}",
         }
-    levels = {"bronze": 1, "silver": 3, "gold": 5}
+    levels = {"bronze": 1, "silver": 10, "gold": 25}
     sorted_dates = [date.fromisoformat(str(item["date"])) for item in items]
     return _challenge(
         code="number_match",
@@ -598,7 +612,7 @@ def _jubilee_challenge(rows: list[RunRow]) -> dict[str, object]:
                     "location": row.location_name,
                 }
             )
-    levels = {"bronze": 1, "silver": 5, "gold": 15}
+    levels = {"bronze": 1, "silver": 10, "gold": 25}
     sorted_dates = [date.fromisoformat(str(item["date"])) for item in items]
     return _challenge(
         code="jubilee",
@@ -684,11 +698,11 @@ def _pilgrim_challenge(rows: list[RunRow]) -> dict[str, object]:
     for row in rows:
         if row.location_key not in first_visit or row.event_date < first_visit[row.location_key]:
             first_visit[row.location_key] = row.event_date
-    levels = {"bronze": 10, "silver": 25, "gold": 50}
+    levels = {"bronze": 25, "silver": 75, "gold": 125}
     sorted_dates = sorted(first_visit.values())
     return _challenge(
         code="pilgrim",
-        title="Паломник",
+        title="Коллекционер локаций",
         icon="🗺️",
         description="Финишируй в как можно большем числе разных локаций.",
         category="scale",
@@ -707,7 +721,7 @@ def _regions_challenge(rows: list[RunRow]) -> dict[str, object]:
         region = _canonical_region(row.region)
         if region not in first_visit or row.event_date < first_visit[region]:
             first_visit[region] = row.event_date
-    levels = {"bronze": 3, "silver": 5, "gold": 10}
+    levels = {"bronze": 10, "silver": 20, "gold": 30}
     sorted_dates = sorted(first_visit.values())
     return _challenge(
         code="regions",
@@ -756,7 +770,7 @@ def _streak_challenge(rows: list[RunRow], vol_rows: dict[str, list[tuple[date, s
     for platform_code, platform_rows in vol_rows.items():
         activity_dates |= volunteer_occasion_dates(platform_code, platform_rows)
     streak = _max_saturday_streak(activity_dates)
-    levels = {"bronze": 5, "silver": 10, "gold": 25}
+    levels = {"bronze": 10, "silver": 25, "gold": 50}
     return _challenge(
         code="streak",
         title="Серийный бегун",
@@ -915,18 +929,20 @@ def compute_challenges(db: Session, user_id: UUID) -> dict[str, object]:
             upcoming,
             code="start_numbers",
             title="Нумератор",
-            description="Прими участие в стартах с порядковыми номерами от №1 до №200.",
+            description="Прими участие в стартах с порядковыми номерами от №1 до №200 — в рамках одной системы.",
             low=1,
             high=200,
+            levels={"bronze": 50, "silver": 100, "gold": 200},
         ),
         _start_numbers_range_challenge(
             rows,
             upcoming,
             code="start_numbers_pro",
             title="Нумератор ПРО",
-            description="Для тех, кому мало двух сотен: старты с порядковыми номерами от №201 до №400.",
+            description="Для тех, кому мало двух сотен: старты с порядковыми номерами от №201 до №400 — в рамках одной системы.",
             low=201,
             high=400,
+            levels={"bronze": 50, "silver": 100, "gold": 200},
         ),
         _weekdays_challenge(rows),
         _palindrome_challenge(rows),

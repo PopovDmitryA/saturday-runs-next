@@ -303,6 +303,7 @@ function ChallengeCard({ challenge }: { challenge: Challenge }) {
                 {LEVEL_LABELS[challenge.level]}
               </span>
             )}
+            {challenge.detail.platform_code && <PlatformBadge code={challenge.detail.platform_code} />}
           </div>
           <p className="challenge-description">{challenge.description}</p>
         </div>
