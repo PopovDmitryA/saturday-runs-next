@@ -6,11 +6,13 @@ import { AppDataSourceProvider, createPublicProfileDataSource } from "../../lib/
 import { UserMapPanel } from "../maps/UserMapPanel";
 import { RunsContent } from "../runs/RunsPage";
 import { VolunteeringContent } from "../volunteering/VolunteeringPage";
+import { HistoryContent } from "../history/HistoryPage";
 import {
   ApiError,
   getCurrentUser,
   logout,
   getPublicProfileDashboard,
+  getPublicProfileHistory,
   getPublicProfileVisitedMap,
   getPublicProfileCatalogTable,
   getCatalogLocationsMap,
@@ -22,7 +24,7 @@ import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 import { APP_NAV_ITEMS, PUBLIC_NAV_ITEMS } from "../../lib/siteNav";
 import { SITE_HOME_HREF, SITE_PUBLIC_HOME_HREF } from "../../lib/siteBrand";
 
-type ProfileTab = "dashboard" | "runs" | "volunteering" | "map";
+type ProfileTab = "dashboard" | "runs" | "volunteering" | "map" | "history";
 
 function profileDisplayName(user: AdminUserPreviewDashboard["user"]): string {
   if (user.display_name) return user.display_name;
@@ -115,6 +117,7 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
 
   const loadVisitedMap = useCallback(() => getPublicProfileVisitedMap(serialId, false), [serialId]);
   const loadCatalogTable = useCallback(() => getPublicProfileCatalogTable(serialId, false), [serialId]);
+  const loadHistory = useCallback(() => getPublicProfileHistory(serialId, false), [serialId]);
 
   const stats = dashboard?.stats;
   const profileName = dashboard ? profileDisplayName(dashboard.user) : null;
@@ -162,6 +165,9 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
         </button>
         <button type="button" className={tabClass("map")} onClick={() => setTab("map")}>
           Карта
+        </button>
+        <button type="button" className={tabClass("history")} onClick={() => setTab("history")}>
+          История
         </button>
       </div>
 
@@ -213,6 +219,15 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
             visitedTabLabel="Визиты"
           />
         </section>
+      )}
+
+      {tab === "history" && (
+        <HistoryContent
+          load={loadHistory}
+          title="История участника"
+          description="Ключевые вехи беговой истории: первая пробежка, клубы, личные рекорды, новые регионы и волонтёрство."
+          emptyText="У этого участника пока нет вех."
+        />
       )}
     </ProfileShell>
   );

@@ -1385,6 +1385,11 @@ export function getAllPublicProfileVolunteering(serialId: number, includeTest = 
   );
 }
 
+export function getPublicProfileHistory(serialId: number, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<MyHistory>(`/users/${serialId}/profile/history${query}`);
+}
+
 export function getPublicProfileVisitedMap(serialId: number, includeTest = false) {
   const query = includeTest ? "?include_test=true" : "";
   return apiFetch<MapLocationsResponse>(`/users/${serialId}/profile/locations/visited/map${query}`);

@@ -258,8 +258,10 @@ function MilestoneCard({
   siteUrl,
 }: {
   milestone: MyHistoryMilestone;
-  shareBase: string;
-  siteUrl: string;
+  // Отсутствуют на публичном профиле — там нельзя «поделиться» чужим
+  // достижением как своим, кнопки просто не показываем.
+  shareBase?: string;
+  siteUrl?: string;
 }) {
   const visual = milestoneVisual(milestone);
   const hint = milestoneHint(milestone);
@@ -299,8 +301,8 @@ function MilestoneCard({
           <span className="history-date-inline history-date-short">
             {formatDate(milestone.event_date)}
           </span>
-          <MilestoneBragButton milestone={milestone} siteUrl={siteUrl} />
-          <MilestoneShareButton milestone={milestone} shareBase={shareBase} />
+          {siteUrl && <MilestoneBragButton milestone={milestone} siteUrl={siteUrl} />}
+          {shareBase && <MilestoneShareButton milestone={milestone} shareBase={shareBase} />}
         </span>
       </div>
     </li>
@@ -309,11 +311,23 @@ function MilestoneCard({
 
 type HistoryContentProps = {
   load: () => Promise<MyHistory>;
-  shareBase: string;
-  siteUrl: string;
+  // Нет на публичном профиле — там нет своего мастера «Поделиться» для
+  // чужих вех.
+  shareBase?: string;
+  siteUrl?: string;
+  title?: string;
+  description?: string;
+  emptyText?: string;
 };
 
-function HistoryContent({ load, shareBase, siteUrl }: HistoryContentProps) {
+export function HistoryContent({
+  load,
+  shareBase,
+  siteUrl,
+  title = "Моя история",
+  description = "Ключевые вехи вашей беговой истории: первая пробежка, клубы, личные рекорды, новые регионы и волонтёрство. У каждой вехи — кнопка «Поделиться» с картинкой для сториз.",
+  emptyText = "Пока нет вех — привяжите профиль беговой системы на главной, и история соберётся автоматически.",
+}: HistoryContentProps) {
   const [data, setData] = useState<MyHistory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -374,11 +388,8 @@ function HistoryContent({ load, shareBase, siteUrl }: HistoryContentProps) {
   return (
     <>
       <section className="card history-intro">
-        <h2 className="section-title">Моя история</h2>
-        <p className="muted">
-          Ключевые вехи вашей беговой истории: первая пробежка, клубы, личные рекорды, новые
-          регионы и волонтёрство. У каждой вехи — кнопка «Поделиться» с картинкой для сториз.
-        </p>
+        <h2 className="section-title">{title}</h2>
+        <p className="muted">{description}</p>
         {summary && <p className="history-summary">{summary}</p>}
       </section>
 
@@ -392,10 +403,7 @@ function HistoryContent({ load, shareBase, siteUrl }: HistoryContentProps) {
 
       {!loading && !error && byYear.length === 0 && (
         <div className="card">
-          <p className="muted">
-            Пока нет вех — привяжите профиль беговой системы на главной, и история соберётся
-            автоматически.
-          </p>
+          <p className="muted">{emptyText}</p>
         </div>
       )}
 
