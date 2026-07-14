@@ -8060,6 +8060,16 @@ tr.run-crosslinked td {
   min-width: 0;
 }
 
+/* Переключатель «сквозной / по системам» над сеткой челленджей */
+.achv-platform-filters {
+  margin-top: 0.75rem;
+}
+
+.achv-platform-filters.is-switching {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
 .challenge-card-locked {
   background: color-mix(in srgb, var(--surface) 88%, var(--bg-muted));
 }
@@ -8382,7 +8392,8 @@ tr.run-crosslinked td {
   border-color: var(--tint-orange-text);
 }
 
-/* Списки находок (палиндромы, дежавю, юбилеи) */
+/* Списки находок (палиндромы, дежавю, юбилеи) — при большом числе совпадений
+   список скроллится, а не растягивает карточку до бесконечности. */
 .challenge-items {
   list-style: none;
   margin: 0;
@@ -8390,6 +8401,8 @@ tr.run-crosslinked td {
   display: grid;
   gap: 0.3rem;
   min-width: 0;
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 .challenge-item {
