@@ -42,6 +42,10 @@ class _MeetingRow:
     their_time_sec: int | None
     their_position: int | None
     event_date: date
+    platform_code: str
+    # (0, ...) — строка из первоисточника события, (1, ...) — кросслинкнутый
+    # дубль (напр. RunPark); внутри уровня время известное побеждает неизвестное.
+    rank: tuple[int, int]
 
 
 @dataclass
@@ -208,19 +212,29 @@ def list_co_runners(
                 site_serial_id=site.serial_id if site is not None else None,
             )
             stats_by_key[key] = stats
-        if platform_code not in stats.platform_codes:
-            stats.platform_codes.append(platform_code)
         if stats.profile_url != profile_url:
             stats.profile_url = None  # несколько платформ — внешней ссылки нет
 
         canonical = canonical_map.get(event_id, event_id)
+        rank = (0 if event_id == canonical else 1, 0 if their_time is not None else 1)
         existing = stats.meetings_by_event.get(canonical)
-        if existing is None or (existing.their_time_sec is None and their_time is not None):
+        if existing is None or rank < existing.rank:
             stats.meetings_by_event[canonical] = _MeetingRow(
                 their_time_sec=their_time,
                 their_position=their_position,
                 event_date=event_date,
+                platform_code=platform_code,
+                rank=rank,
             )
+
+    # Лейблы систем считаем по фактически засчитанным встречам (по одной на
+    # canonical-событие), а не по каждой сырой строке — иначе кросслинкнутый
+    # дубль (напр. RunPark-копия события с "5 вёрст") добавляет свою систему
+    # в бейджи, хотя отдельной встречи не даёт.
+    for stats in stats_by_key.values():
+        for meeting in stats.meetings_by_event.values():
+            if meeting.platform_code not in stats.platform_codes:
+                stats.platform_codes.append(meeting.platform_code)
 
     known_stats = {
         key: stats

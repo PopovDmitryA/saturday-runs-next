@@ -448,11 +448,15 @@ def _collect_location_geo_milestones(
     """Гео-вехи (новая страна/регион/город) и «новая локация» — по ОБЪЕДИНЁННОЙ
     хронологии пробежек и волонтёрств: если человек сначала волонтёрил в новом
     городе, а потом там же пробежал — город уже не новый ни для той, ни для
-    другой активности (и наоборот). Страна/регион/город пропускают parkrun —
-    его данные о географии не заслуживают доверия (см. _collect_run_milestones);
-    «новая локация» — самый мелкий уровень иерархии страна→регион→город→локация,
-    parkrun не пропускает: конкретная площадка — валидная локация сама по себе,
-    просто без надёжного региона."""
+    другой активности (и наоборот). Страна пропускает parkrun — его country в
+    БД всегда общий стаб независимо от реальной страны (см. is_foreign_location
+    в location_catalog_service.py). Регион и город parkrun не пропускает: эти
+    поля заглушку не получают, только реальное значение из каталога локаций
+    или ручной правки (backend/scripts/set_location_geo.py) либо NULL — им
+    можно доверять так же, как остальным платформам. «Новая локация» — самый
+    мелкий уровень иерархии страна→регион→город→локация, parkrun не
+    пропускает: конкретная площадка — валидная локация сама по себе, просто
+    без надёжной страны."""
     from app.services.personal_record_service import user_secondary_crosslinked_run_ids
 
     catalog_index = LocationCatalogIndex(db)
@@ -563,36 +567,43 @@ def _collect_location_geo_milestones(
         identity = catalog_index.canonical_identity_key(location, platform_code)
         geo_milestone_made = False
 
-        if platform_code != "parkrun":
-            region_raw = _normalize_geo_value(location.region)
-            region = _canonical_region(region_raw) if region_raw else None
-            country = _normalize_geo_value(location.country)
-            city = _city_geo_value(location.city)
-            if country:
-                if country not in seen_countries and seen_countries:
+        # Страна для parkrun не заслуживает доверия: при импорте всем его
+        # локациям проставляется общий стаб "Великобритания" независимо от
+        # реальной страны (см. is_foreign_location в location_catalog_service.py).
+        # Город и регион parkrun, наоборот, заглушку никогда не получают —
+        # остаются NULL, пока не заполнятся из каталога локаций (бывшие
+        # российские точки, backfill_city_from_catalog) или вручную
+        # (backend/scripts/set_location_geo.py) — такому значению можно
+        # доверять наравне с остальными платформами.
+        region_raw = _normalize_geo_value(location.region)
+        region = _canonical_region(region_raw) if region_raw else None
+        city = _city_geo_value(location.city)
+        country = _normalize_geo_value(location.country) if platform_code != "parkrun" else None
+        if country:
+            if country not in seen_countries and seen_countries:
+                milestones.append(
+                    make_entry(visit, kind="new_country", number=len(seen_countries) + 1, country=country)
+                )
+                geo_milestone_made = True
+            seen_countries.add(country)
+        if region:
+            region_number = len(seen_regions) + 1
+            if region not in seen_regions and seen_regions:
+                # Юбилейный номер (3/5/10/…) пробивает подавление — иначе
+                # «10-й регион», совпавший с новой страной, потерялся бы.
+                if not geo_milestone_made or is_geo_milestone_number(region_number):
                     milestones.append(
-                        make_entry(visit, kind="new_country", number=len(seen_countries) + 1, country=country)
+                        make_entry(visit, kind="new_region", number=region_number, region=region)
                     )
                     geo_milestone_made = True
-                seen_countries.add(country)
-            if region:
-                region_number = len(seen_regions) + 1
-                if region not in seen_regions and seen_regions:
-                    # Юбилейный номер (3/5/10/…) пробивает подавление — иначе
-                    # «10-й регион», совпавший с новой страной, потерялся бы.
-                    if not geo_milestone_made or is_geo_milestone_number(region_number):
-                        milestones.append(
-                            make_entry(visit, kind="new_region", number=region_number, region=region)
-                        )
-                        geo_milestone_made = True
-                seen_regions.add(region)
-            if city:
-                city_number = len(seen_cities) + 1
-                if city not in seen_cities and seen_cities:
-                    if not geo_milestone_made or is_geo_milestone_number(city_number):
-                        milestones.append(make_entry(visit, kind="new_city", number=city_number))
-                        geo_milestone_made = True
-                seen_cities.add(city)
+            seen_regions.add(region)
+        if city:
+            city_number = len(seen_cities) + 1
+            if city not in seen_cities and seen_cities:
+                if not geo_milestone_made or is_geo_milestone_number(city_number):
+                    milestones.append(make_entry(visit, kind="new_city", number=city_number))
+                    geo_milestone_made = True
+            seen_cities.add(city)
 
         # Новая локация — самый мелкий уровень: любая физическая площадка,
         # на которой человек ещё не был (пробежка или волонтёрство). Юбилейный
