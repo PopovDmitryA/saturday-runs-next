@@ -272,6 +272,7 @@ def search_admin_users(
                 "telegram_username": user.telegram_username,
                 "display_name": user.display_name,
                 "public_slug": user.public_slug,
+                "profile_private": user.profile_private,
                 "auth_logins": auth_logins,
                 "news_subscribed": user.news_subscribed,
                 "consent_accepted": user.consent_accepted,

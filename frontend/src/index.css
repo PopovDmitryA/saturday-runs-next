@@ -5689,6 +5689,35 @@ tr.run-crosslinked td {
   white-space: nowrap;
 }
 
+.admin-platform-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.btn-icon-sync {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 0.35rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  line-height: 1;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.btn-icon-sync:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+.btn-icon-sync:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .admin-sort-th {
   display: inline-flex;
   align-items: center;

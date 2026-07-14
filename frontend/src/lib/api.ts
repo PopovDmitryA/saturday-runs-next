@@ -1385,6 +1385,7 @@ export type AdminUserListItem = {
   telegram_username: string | null;
   display_name: string | null;
   public_slug: string | null;
+  profile_private: boolean;
   auth_logins: AdminUserAuthBrief[];
   news_subscribed: boolean;
   consent_accepted: boolean;
@@ -1438,26 +1439,10 @@ export function listAdminUsers(
   return apiFetch<AdminUserListResponse>(`/admin/users?${params.toString()}`);
 }
 
-export function getAdminUserPreviewDashboard(userId: string) {
-  return apiFetch<AdminUserPreviewDashboard>(`/admin/users/${userId}/preview/dashboard`);
-}
-
 export function triggerAdminUserSyncPlatform(userId: string, platformCode: string) {
   return apiFetch<SyncRefreshResponse>(`/admin/users/${userId}/sync/${platformCode}`, {
     method: "POST",
   });
-}
-
-export function getAdminUserPreviewRuns(userId: string, limit = 200, offset = 0, includeTest = false) {
-  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-  if (includeTest) params.set("include_test", "true");
-  return apiFetch<RunItem[]>(`/admin/users/${userId}/preview/runs?${params.toString()}`);
-}
-
-export function getAdminUserPreviewVolunteering(userId: string, limit = 200, offset = 0, includeTest = false) {
-  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-  if (includeTest) params.set("include_test", "true");
-  return apiFetch<VolunteeringItem[]>(`/admin/users/${userId}/preview/volunteering?${params.toString()}`);
 }
 
 const ADMIN_PREVIEW_PAGE_SIZE = 200;
@@ -1476,54 +1461,6 @@ async function fetchAllAdminPreviewPages<T>(
     offset += page.length;
   }
   return items;
-}
-
-export function getAllAdminUserPreviewRuns(userId: string, includeTest = false) {
-  return fetchAllAdminPreviewPages((limit, offset) =>
-    getAdminUserPreviewRuns(userId, limit, offset, includeTest),
-  );
-}
-
-export function getAllAdminUserPreviewVolunteering(userId: string, includeTest = false) {
-  return fetchAllAdminPreviewPages((limit, offset) =>
-    getAdminUserPreviewVolunteering(userId, limit, offset, includeTest),
-  );
-}
-
-export function getAdminUserPreviewVisitedMap(userId: string, includeTest = false) {
-  const query = includeTest ? "?include_test=true" : "";
-  return apiFetch<MapLocationsResponse>(`/admin/users/${userId}/preview/locations/visited/map${query}`);
-}
-
-export function getAdminUserPreviewVisitedDetail(userId: string, includeTest = false) {
-  const query = includeTest ? "?include_test=true" : "";
-  return apiFetch<UniqueLocationsDetailResponse>(
-    `/admin/users/${userId}/preview/locations/visited/detail${query}`,
-  );
-}
-
-export function getAdminUserPreviewCatalogTable(userId: string, includeTest = false) {
-  const query = includeTest ? "?include_test=true" : "";
-  return apiFetch<CatalogLocationsTableResponse>(
-    `/admin/users/${userId}/preview/locations/catalog/table${query}`,
-  );
-}
-
-export function getAdminUserPreviewBestResults(userId: string, includeTest = false) {
-  const query = includeTest ? "?include_test=true" : "";
-  return apiFetch<BestResultItem[]>(`/admin/users/${userId}/preview/runs/best-results${query}`);
-}
-
-export function getAdminUserPreviewPersonalRecords(userId: string, includeTest = false) {
-  const query = includeTest ? "?include_test=true" : "";
-  return apiFetch<PersonalRecordItem[]>(`/admin/users/${userId}/preview/runs/personal-records${query}`);
-}
-
-export function getAdminUserPreviewVolunteerRoleStats(userId: string, includeTest = false) {
-  const query = includeTest ? "?include_test=true" : "";
-  return apiFetch<VolunteerRoleStatItem[]>(
-    `/admin/users/${userId}/preview/volunteering/role-stats${query}`,
-  );
 }
 
 // Public profile API (serial_id — числовой ID пользователя)
@@ -1580,6 +1517,16 @@ export function getPublicProfileCatalogTable(serialId: number, includeTest = fal
 export function getPublicProfileAchievements(serialId: number, platform?: string) {
   const query = platform ? `?platform=${encodeURIComponent(platform)}` : "";
   return apiFetch<AchievementsResponse>(`/users/${serialId}/profile/achievements${query}`);
+}
+
+export function getPublicProfileCoRunners(serialId: number, limit = 100) {
+  return apiFetch<CoRunnerItem[]>(`/users/${serialId}/profile/co-runners?limit=${limit}`);
+}
+
+export function getPublicProfileCoRunnerMeetings(serialId: number, participantKey: string) {
+  return apiFetch<CoRunnerMeetingItem[]>(
+    `/users/${serialId}/profile/co-runners/${participantKey}/meetings`,
+  );
 }
 
 export function getPublicProfileBestResults(serialId: number, includeTest = false) {

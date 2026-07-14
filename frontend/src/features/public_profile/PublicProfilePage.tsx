@@ -8,6 +8,7 @@ import { UserMapPanel } from "../maps/UserMapPanel";
 import { RunsContent } from "../runs/RunsPage";
 import { VolunteeringContent } from "../volunteering/VolunteeringPage";
 import { HistoryContent } from "../history/HistoryPage";
+import { CoRunnersContent } from "../co_runners/CoRunnersPage";
 import {
   ApiError,
   getCurrentUser,
@@ -17,6 +18,8 @@ import {
   getPublicProfileVisitedMap,
   getPublicProfileCatalogTable,
   getPublicProfileAchievements,
+  getPublicProfileCoRunners,
+  getPublicProfileCoRunnerMeetings,
   getCatalogLocationsMap,
   resolveProfileHandle,
   type AchievementsResponse,
@@ -27,7 +30,7 @@ import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 import { APP_NAV_ITEMS, PUBLIC_NAV_ITEMS } from "../../lib/siteNav";
 import { SITE_HOME_HREF, SITE_PUBLIC_HOME_HREF } from "../../lib/siteBrand";
 
-type ProfileTab = "dashboard" | "runs" | "volunteering" | "map" | "achievements" | "history";
+type ProfileTab = "dashboard" | "runs" | "volunteering" | "map" | "achievements" | "history" | "meetings";
 
 function profileDisplayName(user: AdminUserPreviewDashboard["user"]): string {
   if (user.display_name) return user.display_name;
@@ -155,6 +158,11 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
   const loadVisitedMap = useCallback(() => getPublicProfileVisitedMap(serialId, false), [serialId]);
   const loadCatalogTable = useCallback(() => getPublicProfileCatalogTable(serialId, false), [serialId]);
   const loadHistory = useCallback(() => getPublicProfileHistory(serialId, false), [serialId]);
+  const loadCoRunners = useCallback(() => getPublicProfileCoRunners(serialId), [serialId]);
+  const loadCoRunnerMeetings = useCallback(
+    (participantKey: string) => getPublicProfileCoRunnerMeetings(serialId, participantKey),
+    [serialId],
+  );
 
   const stats = dashboard?.stats;
   const profileName = dashboard ? profileDisplayName(dashboard.user) : null;
@@ -208,6 +216,9 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
         </button>
         <button type="button" className={tabClass("history")} onClick={() => setTab("history")}>
           История
+        </button>
+        <button type="button" className={tabClass("meetings")} onClick={() => setTab("meetings")}>
+          Встречи
         </button>
       </div>
 
@@ -290,6 +301,10 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
           description="Ключевые вехи беговой истории: первая пробежка, клубы, личные рекорды, новые регионы и волонтёрство."
           emptyText="У этого участника пока нет вех."
         />
+      )}
+
+      {tab === "meetings" && (
+        <CoRunnersContent load={loadCoRunners} loadMeetings={loadCoRunnerMeetings} />
       )}
     </ProfileShell>
   );

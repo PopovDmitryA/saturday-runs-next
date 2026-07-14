@@ -13,7 +13,13 @@ from app.core.admin import is_admin_user
 from app.models import User
 from app.schemas.achievements import AchievementsResponse
 from app.schemas.admin import AdminUserPreviewDashboardResponse
-from app.schemas.dashboard import MyHistoryResponse, RunItemResponse, VolunteeringItemResponse
+from app.schemas.dashboard import (
+    CoRunnerMeetingResponse,
+    CoRunnerResponse,
+    MyHistoryResponse,
+    RunItemResponse,
+    VolunteeringItemResponse,
+)
 from app.schemas.locations import CatalogLocationsTableResponse, MapLocationsResponse, UniqueLocationsDetailResponse
 from app.services.achievements_service import compute_challenges
 from app.services.admin_users_service import (
@@ -22,6 +28,7 @@ from app.services.admin_users_service import (
     get_admin_user_preview_personal_records,
     get_admin_user_preview_volunteer_role_stats,
 )
+from app.services.co_runners_service import list_co_runner_meetings, list_co_runners
 from app.services.dashboard_service import list_user_runs, list_user_volunteering
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_user_visited_map_locations
@@ -203,6 +210,37 @@ def public_profile_catalog_table(
     user_id = _get_user_uuid(serial_id, db, requester, settings)
     payload = build_catalog_locations_table(db, user_id, include_test_events=include_test)
     return CatalogLocationsTableResponse.model_validate(payload)
+
+
+@router.get("/{serial_id}/profile/co-runners", response_model=list[CoRunnerResponse])
+def public_profile_co_runners(
+    serial_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    requester: Annotated[User | None, Depends(get_optional_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    limit: int = 100,
+    include_test: bool = False,
+) -> list[CoRunnerResponse]:
+    user_id = _get_user_uuid(serial_id, db, requester, settings)
+    items = list_co_runners(db, user_id, include_test_events=include_test, limit=limit)
+    return [CoRunnerResponse.model_validate(i) for i in items]
+
+
+@router.get(
+    "/{serial_id}/profile/co-runners/{participant_key}/meetings",
+    response_model=list[CoRunnerMeetingResponse],
+)
+def public_profile_co_runner_meetings(
+    serial_id: int,
+    participant_key: str,
+    db: Annotated[Session, Depends(get_db)],
+    requester: Annotated[User | None, Depends(get_optional_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    include_test: bool = False,
+) -> list[CoRunnerMeetingResponse]:
+    user_id = _get_user_uuid(serial_id, db, requester, settings)
+    items = list_co_runner_meetings(db, user_id, participant_key, include_test_events=include_test)
+    return [CoRunnerMeetingResponse.model_validate(i) for i in items]
 
 
 @router.get("/{serial_id}/profile/achievements", response_model=AchievementsResponse)
