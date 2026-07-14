@@ -10,7 +10,7 @@ from app.api.deps import get_current_admin_user
 from app.config import get_settings
 from app.db.session import get_db
 from app.history_milestone_kinds import MILESTONE_KIND_REGISTRY
-from app.models import User
+from app.models import SyncJobTrigger, User
 from app.schemas.abuse_admin import (
     AbuseBanCreateRequest,
     AbuseBanCreateResponse,
@@ -21,7 +21,6 @@ from app.schemas.abuse_admin import (
 )
 from app.schemas.admin import (
     AdminUserListResponse,
-    AdminUserPreviewDashboardResponse,
     HistoryMilestoneKindSettingResponse,
     HistoryMilestoneKindSettingsResponse,
     HistoryMilestoneKindUpdateRequest,
@@ -32,15 +31,7 @@ from app.schemas.blocked_slug_admin import (
     BlockedSlugItem,
     BlockedSlugListResponse,
 )
-from app.schemas.dashboard import (
-    BestResultResponse,
-    PersonalRecordResponse,
-    RunItemResponse,
-    SyncRefreshResponse,
-    VolunteeringItemResponse,
-    VolunteerRoleStatResponse,
-)
-from app.schemas.locations import CatalogLocationsTableResponse, MapLocationsResponse, UniqueLocationsDetailResponse
+from app.schemas.dashboard import SyncRefreshResponse
 from app.schemas.rating import (
     AdminLocationRatingsResponse,
     AdminRatingsResponse,
@@ -55,16 +46,7 @@ from app.services.abuse_admin_service import (
     list_abuse_blocks,
 )
 from app.services.admin_site_stats_service import get_admin_site_stats
-from app.services.admin_users_service import (
-    get_admin_user,
-    get_admin_user_preview_best_results,
-    get_admin_user_preview_dashboard,
-    get_admin_user_preview_personal_records,
-    get_admin_user_preview_runs,
-    get_admin_user_preview_volunteer_role_stats,
-    get_admin_user_preview_volunteering,
-    search_admin_users,
-)
+from app.services.admin_users_service import get_admin_user, search_admin_users
 from app.services.blocked_slug_admin_service import (
     BlockedSlugError,
     create_blocked_slug,
@@ -77,15 +59,12 @@ from app.services.history_milestone_settings_service import (
     list_milestone_kind_settings,
     set_milestone_kind_enabled,
 )
-from app.services.location_catalog_table_service import build_catalog_locations_table
-from app.services.location_map_service import list_user_visited_map_locations
 from app.services.rating_service import (
     list_all_ratings,
     location_rating_aggregates,
     ratings_stats,
 )
-from app.services.sync_enqueue_service import enqueue_manual_platform_sync
-from app.services.user_unique_locations_detail import build_user_unique_location_details
+from app.services.sync_enqueue_service import enqueue_manual_platform_sync, enqueue_sync_for_all_platforms
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -132,88 +111,22 @@ def list_admin_users(
     )
 
 
-@router.get("/users/{user_id}/preview/dashboard", response_model=AdminUserPreviewDashboardResponse)
-def admin_user_preview_dashboard(
-    user_id: UUID,
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-) -> AdminUserPreviewDashboardResponse:
-    payload = get_admin_user_preview_dashboard(db, user_id)
-    if payload is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return AdminUserPreviewDashboardResponse.model_validate(payload)
-
-
-@router.get("/users/{user_id}/preview/runs", response_model=list[RunItemResponse])
-def admin_user_preview_runs(
-    user_id: UUID,
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    include_test: Annotated[bool, Query()] = False,
-) -> list[RunItemResponse]:
-    items = get_admin_user_preview_runs(db, user_id, limit=limit, offset=offset, include_test=include_test)
-    if items is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return [RunItemResponse.model_validate(item) for item in items]
-
-
-@router.get("/users/{user_id}/preview/volunteering", response_model=list[VolunteeringItemResponse])
-def admin_user_preview_volunteering(
-    user_id: UUID,
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    include_test: Annotated[bool, Query()] = False,
-) -> list[VolunteeringItemResponse]:
-    items = get_admin_user_preview_volunteering(db, user_id, limit=limit, offset=offset, include_test=include_test)
-    if items is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return [VolunteeringItemResponse.model_validate(item) for item in items]
-
-
-@router.get("/users/{user_id}/preview/runs/best-results", response_model=list[BestResultResponse])
-def admin_user_preview_best_results(
-    user_id: UUID,
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-    include_test: Annotated[bool, Query()] = False,
-) -> list[BestResultResponse]:
-    items = get_admin_user_preview_best_results(db, user_id, include_test_events=include_test)
-    if items is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return [BestResultResponse.model_validate(item) for item in items]
-
-
-@router.get("/users/{user_id}/preview/runs/personal-records", response_model=list[PersonalRecordResponse])
-def admin_user_preview_personal_records(
-    user_id: UUID,
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-    include_test: Annotated[bool, Query()] = False,
-) -> list[PersonalRecordResponse]:
-    items = get_admin_user_preview_personal_records(db, user_id, include_test_events=include_test)
-    if items is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return [PersonalRecordResponse.model_validate(item) for item in items]
-
-
-@router.get(
-    "/users/{user_id}/preview/volunteering/role-stats",
-    response_model=list[VolunteerRoleStatResponse],
+@router.post(
+    "/users/{user_id}/sync",
+    response_model=SyncRefreshResponse,
+    status_code=status.HTTP_202_ACCEPTED,
 )
-def admin_user_preview_volunteer_role_stats(
+def admin_user_sync_all(
     user_id: UUID,
     db: Annotated[Session, Depends(get_db)],
     _admin: Annotated[User, Depends(get_current_admin_user)],
-    include_test: Annotated[bool, Query()] = False,
-) -> list[VolunteerRoleStatResponse]:
-    items = get_admin_user_preview_volunteer_role_stats(db, user_id, include_test_events=include_test)
-    if items is None:
+) -> SyncRefreshResponse:
+    user = get_admin_user(db, user_id)
+    if user is None:
         raise HTTPException(status_code=404, detail="User not found")
-    return [VolunteerRoleStatResponse.model_validate(item) for item in items]
+    result = enqueue_sync_for_all_platforms(db, user.id, SyncJobTrigger.manual, mark_syncing=True)
+    db.commit()
+    return _admin_sync_refresh_response(result)
 
 
 @router.post(
@@ -238,45 +151,6 @@ def admin_user_sync_platform(
         raise HTTPException(status_code=404, detail="Platform link not found") from None
     db.commit()
     return _admin_sync_refresh_response(result)
-
-
-@router.get("/users/{user_id}/preview/locations/visited/map", response_model=MapLocationsResponse)
-def admin_user_preview_visited_map(
-    user_id: UUID,
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-    include_test: Annotated[bool, Query()] = False,
-) -> MapLocationsResponse:
-    if get_admin_user(db, user_id) is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    payload = list_user_visited_map_locations(db, user_id, include_test_events=include_test)
-    return MapLocationsResponse.model_validate(payload)
-
-
-@router.get("/users/{user_id}/preview/locations/visited/detail", response_model=UniqueLocationsDetailResponse)
-def admin_user_preview_visited_detail(
-    user_id: UUID,
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-    include_test: Annotated[bool, Query()] = False,
-) -> UniqueLocationsDetailResponse:
-    if get_admin_user(db, user_id) is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    payload = build_user_unique_location_details(db, user_id, include_test_events=include_test)
-    return UniqueLocationsDetailResponse.model_validate(payload)
-
-
-@router.get("/users/{user_id}/preview/locations/catalog/table", response_model=CatalogLocationsTableResponse)
-def admin_user_preview_catalog_table(
-    user_id: UUID,
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-    include_test: Annotated[bool, Query()] = False,
-) -> CatalogLocationsTableResponse:
-    if get_admin_user(db, user_id) is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    payload = build_catalog_locations_table(db, user_id, include_test_events=include_test)
-    return CatalogLocationsTableResponse.model_validate(payload)
 
 
 @router.get("/abuse/blocks", response_model=AbuseBlockListResponse)

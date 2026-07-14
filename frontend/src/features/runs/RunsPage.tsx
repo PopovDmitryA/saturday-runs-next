@@ -61,7 +61,7 @@ function RunsContent() {
     try {
       const data = await listRuns(includeTest);
       setRuns(data);
-      if (isDemo || mode === "public-profile" || mode === "admin-preview") {
+      if (isDemo || mode === "public-profile") {
         setHasProfileLink(false);
       } else {
         const links = await listProfileLinks();
@@ -447,7 +447,7 @@ function RunsContent() {
     return <DemoShell title="Пробежки">{pageBody}</DemoShell>;
   }
 
-  if (mode === "public-profile" || mode === "admin-preview") {
+  if (mode === "public-profile") {
     return <>{pageBody}</>;
   }
 

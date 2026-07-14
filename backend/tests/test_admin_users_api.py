@@ -87,7 +87,7 @@ def test_admin_users_requires_admin(client: TestClient, db_session: Session) -> 
     assert response.status_code == 403
 
 
-def test_admin_users_search_and_preview(client: TestClient, db_session: Session) -> None:
+def test_admin_users_search_and_sync(client: TestClient, db_session: Session) -> None:
     target = User(
         telegram_id=int(uuid4().int % 10_000_000_000),
         telegram_username="runner_target",
@@ -123,28 +123,6 @@ def test_admin_users_search_and_preview(client: TestClient, db_session: Session)
     assert item["platform_links"][0]["platform_code"] == "five_verst"
     assert item["platform_links"][0]["external_user_id"] == external_id
 
-    preview = client.get(f"/api/admin/users/{item['id']}/preview/dashboard")
-    assert preview.status_code == 200
-    preview_payload = preview.json()
-    assert preview_payload["user"]["telegram_username"] == "runner_target"
-    assert "stats" in preview_payload
-
-    runs = client.get(f"/api/admin/users/{item['id']}/preview/runs")
-    assert runs.status_code == 200
-    assert isinstance(runs.json(), list)
-
-    best_results = client.get(f"/api/admin/users/{item['id']}/preview/runs/best-results")
-    assert best_results.status_code == 200
-    assert isinstance(best_results.json(), list)
-
-    personal_records = client.get(f"/api/admin/users/{item['id']}/preview/runs/personal-records")
-    assert personal_records.status_code == 200
-    assert isinstance(personal_records.json(), list)
-
-    role_stats = client.get(f"/api/admin/users/{item['id']}/preview/volunteering/role-stats")
-    assert role_stats.status_code == 200
-    assert isinstance(role_stats.json(), list)
-
     with patch("app.services.sync_enqueue_service.enqueue_user_sync") as enqueue_mock:
         sync_all = client.post(f"/api/admin/users/{item['id']}/sync")
         assert sync_all.status_code == 202
@@ -155,10 +133,6 @@ def test_admin_users_search_and_preview(client: TestClient, db_session: Session)
         sync_platform = client.post(f"/api/admin/users/{item['id']}/sync/five_verst")
         assert sync_platform.status_code == 202
         enqueue_mock.assert_called_once()
-
-    visited_map = client.get(f"/api/admin/users/{item['id']}/preview/locations/visited/map")
-    assert visited_map.status_code == 200
-    assert "points" in visited_map.json()
 
 
 def test_admin_users_pagination(client: TestClient, db_session: Session) -> None:

@@ -88,7 +88,7 @@ function VolunteeringContent() {
     try {
       const data = await listVolunteering(includeTest);
       setItems(data);
-      if (isDemo || mode === "public-profile" || mode === "admin-preview") {
+      if (isDemo || mode === "public-profile") {
         setHasProfileLink(false);
       } else {
         const links = await listProfileLinks();
@@ -439,7 +439,7 @@ function VolunteeringContent() {
     return <DemoShell title="Волонтёрство">{pageBody}</DemoShell>;
   }
 
-  if (mode === "public-profile" || mode === "admin-preview") {
+  if (mode === "public-profile") {
     return <>{pageBody}</>;
   }
 

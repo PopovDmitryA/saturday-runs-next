@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
+import { Snackbar } from "../../components/Snackbar";
 import { AdminSubnav } from "./AdminSubnav";
 import {
   listAdminUsers,
+  triggerAdminUserSyncPlatform,
   type AdminUserListItem,
   type AdminUsersSort,
   type AdminUsersSortDirection,
@@ -11,7 +13,15 @@ import {
 import { formatDateTime, platformCodeLabel } from "../../lib/format";
 import { authLoginUrl, authProviderLabel, userLoginLines } from "./adminUserDisplay";
 
-function platformCell(user: AdminUserListItem, code: string) {
+// Платформы, для которых бэкенд поддерживает ручной запуск синка (см. ADMIN_SUPPORTED_SYNC_PLATFORMS).
+const SYNCABLE_PLATFORMS = new Set(["five_verst", "s95", "parkrun"]);
+
+function platformCell(
+  user: AdminUserListItem,
+  code: string,
+  isSyncing: boolean,
+  onSync: (userId: string, code: string) => void,
+) {
   const link = user.platform_links.find((item) => item.platform_code === code);
   if (!link) {
     return <span className="muted">—</span>;
@@ -23,19 +33,33 @@ function platformCell(user: AdminUserListItem, code: string) {
   const url = code === "runpark"
     ? `https://runpark.ru/Account/Karmas/${link.external_user_id}`
     : link.external_url || null;
-  if (!url) {
-    return (
-      <span className="admin-platform-link">
-        {label ?? <span className="muted">Профиль</span>}
-        {counts}
-      </span>
-    );
-  }
-  return (
+  const content = !url ? (
+    <span className="admin-platform-link">
+      {label ?? <span className="muted">Профиль</span>}
+      {counts}
+    </span>
+  ) : (
     <a href={url} target="_blank" rel="noreferrer" className="admin-platform-link">
       {label ?? <span className="muted">Профиль</span>}
       {counts}
     </a>
+  );
+  if (!SYNCABLE_PLATFORMS.has(code)) {
+    return content;
+  }
+  return (
+    <span className="admin-platform-cell">
+      {content}
+      <button
+        type="button"
+        className="btn-icon-sync"
+        disabled={isSyncing}
+        title={isSyncing ? "Обновление…" : `Обновить ${platformCodeLabel(code)}`}
+        onClick={() => onSync(user.id, code)}
+      >
+        {isSyncing ? "…" : "↻"}
+      </button>
+    </span>
   );
 }
 
@@ -51,6 +75,13 @@ function AdminUsersContent() {
   const [error, setError] = useState<string | null>(null);
   const [sort, setSort] = useState<AdminUsersSort>("created");
   const [direction, setDirection] = useState<AdminUsersSortDirection>("desc");
+  const [syncingKey, setSyncingKey] = useState<string | null>(null);
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    variant: "default" | "error";
+  }>({ open: false, title: "", message: "", variant: "default" });
 
   const offset = (page - 1) * USERS_PAGE_SIZE;
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / USERS_PAGE_SIZE)), [total]);
@@ -98,6 +129,29 @@ function AdminUsersContent() {
   useEffect(() => {
     void load(query, (page - 1) * USERS_PAGE_SIZE, sort, direction);
   }, [load, query, page, sort, direction]);
+
+  const handleSync = useCallback(async (userId: string, platformCode: string) => {
+    const key = `${userId}:${platformCode}`;
+    setSyncingKey(key);
+    try {
+      const response = await triggerAdminUserSyncPlatform(userId, platformCode);
+      setSnackbar({
+        open: true,
+        title: response.status === "already_queued" ? "Уже в очереди" : "Запрос принят",
+        message: response.message,
+        variant: "default",
+      });
+    } catch (err) {
+      setSnackbar({
+        open: true,
+        title: "Не удалось запустить обновление",
+        message: err instanceof Error ? err.message : "Попробуйте позже.",
+        variant: "error",
+      });
+    } finally {
+      setSyncingKey((prev) => (prev === key ? null : prev));
+    }
+  }, []);
 
   return (
     <AppShell title="Пользователи" activePath="/admin">
@@ -198,13 +252,14 @@ function AdminUsersContent() {
                       Ссылка профиля {sort === "profile" ? (direction === "asc" ? "▲" : "▼") : ""}
                     </button>
                   </th>
+                  <th>Приватность</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="muted">
+                    <td colSpan={11} className="muted">
                       Пользователи не найдены
                     </td>
                   </tr>
@@ -238,10 +293,14 @@ function AdminUsersContent() {
                           )}
                         </ul>
                       </td>
-                      <td>{platformCell(user, "five_verst")}</td>
-                      <td>{platformCell(user, "s95")}</td>
-                      <td>{platformCell(user, "parkrun")}</td>
-                      <td>{platformCell(user, "runpark")}</td>
+                      <td>
+                        {platformCell(user, "five_verst", syncingKey === `${user.id}:five_verst`, handleSync)}
+                      </td>
+                      <td>{platformCell(user, "s95", syncingKey === `${user.id}:s95`, handleSync)}</td>
+                      <td>
+                        {platformCell(user, "parkrun", syncingKey === `${user.id}:parkrun`, handleSync)}
+                      </td>
+                      <td>{platformCell(user, "runpark", false, handleSync)}</td>
                       <td>{user.total_runs ?? "—"}</td>
                       <td>{user.total_volunteering ?? "—"}</td>
                       <td title={formatDateTime(user.created_at)}>
@@ -261,11 +320,9 @@ function AdminUsersContent() {
                           <span className="muted">—</span>
                         )}
                       </td>
+                      <td>{user.profile_private ? "true" : "false"}</td>
                       <td>
                         <div className="admin-users-actions">
-                          <a className="btn secondary btn-sm" href={`/admin/users/${user.id}/preview`}>
-                            Просмотр
-                          </a>
                           {user.serial_id != null && (
                             <a className="btn btn-ghost btn-sm" href={`/users/${user.serial_id}`} target="_blank" rel="noreferrer">
                               Профиль
@@ -282,6 +339,14 @@ function AdminUsersContent() {
         )}
       </section>
       </div>
+      <Snackbar
+        open={snackbar.open}
+        title={snackbar.title}
+        variant={snackbar.variant}
+        onDismiss={() => setSnackbar((prev) => ({ ...prev, open: false }))}
+      >
+        {snackbar.message}
+      </Snackbar>
     </AppShell>
   );
 }

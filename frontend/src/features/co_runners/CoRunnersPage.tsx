@@ -166,7 +166,12 @@ function MeetingsDetail({ meetings }: { meetings: CoRunnerMeetingItem[] }) {
   );
 }
 
-function CoRunnersContent({ demo }: { demo: boolean }) {
+type CoRunnersContentProps = {
+  load: () => Promise<CoRunnerItem[]>;
+  loadMeetings: (participantKey: string) => Promise<CoRunnerMeetingItem[]>;
+};
+
+export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) {
   const [items, setItems] = useState<CoRunnerItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -178,7 +183,7 @@ function CoRunnersContent({ demo }: { demo: boolean }) {
 
   useEffect(() => {
     let cancelled = false;
-    (demo ? demoGetCoRunners() : getCoRunners())
+    load()
       .then((data) => {
         if (!cancelled) {
           setItems(data);
@@ -197,7 +202,7 @@ function CoRunnersContent({ demo }: { demo: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [demo]);
+  }, [load]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -216,7 +221,7 @@ function CoRunnersContent({ demo }: { demo: boolean }) {
     setMeetingsError(null);
     if (!meetingsByKey[key]) {
       setMeetingsLoadingKey(key);
-      (demo ? demoGetCoRunnerMeetings(key) : getCoRunnerMeetings(key))
+      loadMeetings(key)
         .then((data) => {
           setMeetingsByKey((prev) => ({ ...prev, [key]: data }));
         })
@@ -337,16 +342,25 @@ function CoRunnersContent({ demo }: { demo: boolean }) {
     </>
   );
 
-  if (demo) {
-    return <DemoShell title="Встречи">{pageBody}</DemoShell>;
-  }
-  return <AppShell title="Встречи">{pageBody}</AppShell>;
+  return pageBody;
 }
 
 export function CoRunnersPage() {
-  return <RequireAuth>{() => <CoRunnersContent demo={false} />}</RequireAuth>;
+  return (
+    <RequireAuth>
+      {() => (
+        <AppShell title="Встречи">
+          <CoRunnersContent load={getCoRunners} loadMeetings={getCoRunnerMeetings} />
+        </AppShell>
+      )}
+    </RequireAuth>
+  );
 }
 
 export function DemoCoRunnersPage() {
-  return <CoRunnersContent demo />;
+  return (
+    <DemoShell title="Встречи">
+      <CoRunnersContent load={demoGetCoRunners} loadMeetings={demoGetCoRunnerMeetings} />
+    </DemoShell>
+  );
 }

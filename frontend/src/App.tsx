@@ -5,7 +5,6 @@ import { AdminBlockedSlugsPage } from "./features/admin/AdminBlockedSlugsPage";
 import { AdminStatsPage } from "./features/admin/AdminStatsPage";
 import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
 import { AdminHistoryMilestonesPage } from "./features/admin/AdminHistoryMilestonesPage";
-import { AdminUserPreviewPage } from "./features/admin/AdminUserPreviewPage";
 import { PublicProfilePage } from "./features/public_profile/PublicProfilePage";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
 import { AchievementsPage } from "./features/achievements/AchievementsPage";
@@ -126,10 +125,6 @@ function renderRoute(path: string): ReactElement {
   }
   if (path.startsWith("/api/")) {
     return <ApiPathRedirect />;
-  }
-  const previewMatch = path.match(/^\/admin\/users\/([0-9a-f-]{36})\/preview$/i);
-  if (previewMatch) {
-    return <AdminUserPreviewPage userId={previewMatch[1]} />;
   }
   const publicProfileMatch = path.match(/^\/users\/([^/]+)$/);
   if (publicProfileMatch) {
