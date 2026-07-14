@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -211,8 +211,9 @@ def public_profile_achievements(
     db: Session = Depends(get_db),
     requester: User | None = Depends(get_optional_user),
     settings: Settings = Depends(get_settings),
+    platform: str | None = Query(default=None, description="Сузить челленджи до одной системы"),
 ) -> AchievementsResponse:
     """Челленджи и клубы участника — без личных целей на год (те остаются
     приватными, задать их можно только себе)."""
     user_id = _get_user_uuid(serial_id, db, requester, settings)
-    return AchievementsResponse.model_validate(compute_challenges(db, user_id))
+    return AchievementsResponse.model_validate(compute_challenges(db, user_id, platform_code=platform))

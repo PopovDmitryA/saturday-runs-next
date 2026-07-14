@@ -22,7 +22,7 @@ from uuid import UUID
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import Event, Location, Platform, PlatformLink, RunResult, UserGoal, VolunteerResult
+from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, UserGoal, VolunteerResult
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.user_location_stats import _canonical_region, _normalize_geo_value
 from app.time_format import normalize_finish_time_display
@@ -118,6 +118,27 @@ def _collect_volunteer_rows(db: Session, user_id: UUID) -> dict[str, list[tuple[
 
 def _count_volunteering(vol_rows: dict[str, list[tuple[date, str]]]) -> int:
     return sum(count_volunteering_for_platform(code, rows) for code, rows in vol_rows.items())
+
+
+def _parkrun_volunteer_total(db: Session, user_id: UUID) -> int:
+    """parkrun не публикует даты волонтёрств — только суммарный счётчик
+    (profile_extra/роли), поэтому он не попадает в _collect_volunteer_rows
+    (там события лежат на epoch-дате и отсекаются _EPOCH_GUARD). Здесь берём
+    готовый общий счётчик, которым уже пользуется дашборд."""
+    from app.parkrun.volunteer_credits import count_parkrun_volunteering
+
+    link = (
+        db.query(PlatformLink)
+        .join(Platform, Platform.id == PlatformLink.platform_id)
+        .filter(PlatformLink.user_id == user_id, Platform.code == "parkrun")
+        .first()
+    )
+    if link is None or link.participant_id is None:
+        return 0
+    participant = db.query(Participant).filter(Participant.id == link.participant_id).one_or_none()
+    if participant is None:
+        return 0
+    return count_parkrun_volunteering(db, participant, link.platform_id)
 
 
 # ---------------------------------------------------------------------------
@@ -539,7 +560,7 @@ def _palindrome_challenge(rows: list[RunRow]) -> dict[str, object]:
         current=len(items),
         levels=levels,
         unit="палиндромов",
-        detail={"items": items[:20]},
+        detail={"items": items},
         level_dates=_level_dates(sorted_dates, levels),
     )
 
@@ -574,7 +595,7 @@ def _deja_vu_challenge(rows: list[RunRow]) -> dict[str, object]:
         current=len(repeated),
         levels=levels,
         unit="совпадений",
-        detail={"items": items[:20]},
+        detail={"items": items},
         level_dates=_level_dates(sorted_dates, levels),
     )
 
@@ -590,7 +611,7 @@ def _number_match_challenge(rows: list[RunRow]) -> dict[str, object]:
                     "location": row.location_name,
                 }
             )
-    detail: dict[str, object] = {"items": items[:20]}
+    detail: dict[str, object] = {"items": items}
     if not items:
         # Пример, чтобы было видно, как записывается совпадение
         next_index = len(rows) + 1
@@ -638,7 +659,7 @@ def _jubilee_challenge(rows: list[RunRow]) -> dict[str, object]:
         current=len(items),
         levels=levels,
         unit="юбилеев",
-        detail={"items": items[:20]},
+        detail={"items": items},
         level_dates=_level_dates(sorted_dates, levels),
     )
 
@@ -869,8 +890,13 @@ def _volunteer_occasion_instances(platform_code: str, rows: list[tuple[date, str
     return instances
 
 
-def _club_entry(code: str, title: str, icon: str, dates: list[date]) -> dict[str, object]:
-    current = len(dates)
+def _club_entry(
+    code: str, title: str, icon: str, dates: list[date], *, extra_count: int = 0
+) -> dict[str, object]:
+    """extra_count — волонтёрства без известной даты (parkrun: только общий
+    счётчик), добавляются к current, но не могут дать level_dates для
+    порогов за пределами len(dates)."""
+    current = len(dates) + extra_count
     sorted_dates = sorted(dates)
     earned = [threshold for threshold in CLUB_THRESHOLDS if current >= threshold]
     next_threshold = next((threshold for threshold in CLUB_THRESHOLDS if current < threshold), None)
@@ -896,33 +922,36 @@ def _club_entry(code: str, title: str, icon: str, dates: list[date]) -> dict[str
 def _compute_clubs(
     rows: list[RunRow],
     vol_rows: dict[str, list[tuple[date, str]]],
+    parkrun_volunteer_total: int = 0,
 ) -> dict[str, object]:
     all_vol_instances: list[date] = []
     for code, platform_rows in vol_rows.items():
         all_vol_instances.extend(_volunteer_occasion_instances(code, platform_rows))
     overall = [
         _club_entry("runs", "Пробежки", "🏃", [row.event_date for row in rows]),
-        _club_entry("volunteering", "Волонтёрства", "💚", all_vol_instances),
+        _club_entry(
+            "volunteering", "Волонтёрства", "💚", all_vol_instances, extra_count=parkrun_volunteer_total
+        ),
     ]
     runs_by_platform: dict[str, list[date]] = {}
     for row in rows:
         runs_by_platform.setdefault(row.platform_code, []).append(row.event_date)
-    platform_codes = sorted(
-        set(runs_by_platform) | set(vol_rows),
-        key=lambda code: -len(runs_by_platform.get(code, [])),
-    )
+    platform_codes = set(runs_by_platform) | set(vol_rows)
+    if parkrun_volunteer_total > 0:
+        platform_codes.add("parkrun")
     platforms = []
-    for code in platform_codes:
+    for code in sorted(platform_codes, key=lambda code: -len(runs_by_platform.get(code, []))):
         run_dates = runs_by_platform.get(code, [])
         vol_dates = _volunteer_occasion_instances(code, vol_rows.get(code, []))
-        if not run_dates and not vol_dates:
+        vol_extra = parkrun_volunteer_total if code == "parkrun" else 0
+        if not run_dates and not vol_dates and not vol_extra:
             continue
         platforms.append(
             {
                 "platform_code": code,
                 "entries": [
                     _club_entry("runs", "Пробежки", "🏃", run_dates),
-                    _club_entry("volunteering", "Волонтёрства", "💚", vol_dates),
+                    _club_entry("volunteering", "Волонтёрства", "💚", vol_dates, extra_count=vol_extra),
                 ],
             }
         )
@@ -982,18 +1011,39 @@ def _rows_before_last_activity(rows: list[RunRow]) -> list[RunRow] | None:
     return [row for row in rows if row.event_date < last_date]
 
 
-def compute_challenges(db: Session, user_id: UUID) -> dict[str, object]:
+def _scope_by_platform(
+    rows: list[RunRow],
+    vol_rows: dict[str, list[tuple[date, str]]],
+    upcoming: dict[tuple[str, int], list[tuple[date, str]]],
+    platform_code: str | None,
+) -> tuple[list[RunRow], dict[str, list[tuple[date, str]]], dict[tuple[str, int], list[tuple[date, str]]]]:
+    """Сужает пробежки/волонтёрства/прогноз номеров до одной системы — для
+    челленджей в разрезе платформы. None — без сужения (сквозной вид)."""
+    if platform_code is None:
+        return rows, vol_rows, upcoming
+    scoped_rows = [row for row in rows if row.platform_code == platform_code]
+    scoped_vol_rows = {code: v for code, v in vol_rows.items() if code == platform_code}
+    scoped_upcoming = {key: v for key, v in upcoming.items() if key[0] == platform_code}
+    return scoped_rows, scoped_vol_rows, scoped_upcoming
+
+
+def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = None) -> dict[str, object]:
+    """platform_code сужает челленджи/бейджи/summary до одной системы —
+    клубы (сквозные по конструкции — overall + по каждой платформе сразу)
+    этим фильтром не затрагиваются и всегда считаются по полным данным."""
     rows = _collect_run_rows(db, user_id)
     vol_rows = _collect_volunteer_rows(db, user_id)
     upcoming = _upcoming_event_numbers(db)
 
-    challenges = _build_challenge_list(db, rows, vol_rows, upcoming)
+    scoped_rows, scoped_vol_rows, scoped_upcoming = _scope_by_platform(rows, vol_rows, upcoming, platform_code)
 
-    rows_before = _rows_before_last_activity(rows)
-    if rows_before is not None and len(rows_before) < len(rows):
+    challenges = _build_challenge_list(db, scoped_rows, scoped_vol_rows, scoped_upcoming)
+
+    rows_before = _rows_before_last_activity(scoped_rows)
+    if rows_before is not None and len(rows_before) < len(scoped_rows):
         previous: dict[str, int] = {
             str(c["code"]): int(c["current"])  # type: ignore[call-overload]
-            for c in _build_challenge_list(db, rows_before, vol_rows, upcoming)
+            for c in _build_challenge_list(db, rows_before, scoped_vol_rows, scoped_upcoming)
         }
         for challenge in challenges:
             code = str(challenge["code"])
@@ -1024,7 +1074,7 @@ def compute_challenges(db: Session, user_id: UUID) -> dict[str, object]:
             "bronze": summary.get("bronze", 0),
             "total": len(challenges),
         },
-        "clubs": _compute_clubs(rows, vol_rows),
+        "clubs": _compute_clubs(rows, vol_rows, _parkrun_volunteer_total(db, user_id)),
     }
 
 

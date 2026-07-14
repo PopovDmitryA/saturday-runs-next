@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -23,8 +23,9 @@ router = APIRouter(prefix="/achievements", tags=["achievements"])
 def get_achievements(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    platform: Annotated[str | None, Query(description="Сузить челленджи до одной системы")] = None,
 ) -> AchievementsResponse:
-    return AchievementsResponse.model_validate(compute_challenges(db, user.id))
+    return AchievementsResponse.model_validate(compute_challenges(db, user.id, platform_code=platform))
 
 
 @router.get("/goals", response_model=GoalsResponse)

@@ -734,8 +734,9 @@ export type AchievementsResponse = {
   clubs: Clubs;
 };
 
-export function getAchievements() {
-  return apiFetch<AchievementsResponse>("/achievements");
+export function getAchievements(platform?: string) {
+  const query = platform ? `?platform=${encodeURIComponent(platform)}` : "";
+  return apiFetch<AchievementsResponse>(`/achievements${query}`);
 }
 
 export type GoalPreset = {
@@ -1575,8 +1576,9 @@ export function getPublicProfileCatalogTable(serialId: number, includeTest = fal
   );
 }
 
-export function getPublicProfileAchievements(serialId: number) {
-  return apiFetch<AchievementsResponse>(`/users/${serialId}/profile/achievements`);
+export function getPublicProfileAchievements(serialId: number, platform?: string) {
+  const query = platform ? `?platform=${encodeURIComponent(platform)}` : "";
+  return apiFetch<AchievementsResponse>(`/users/${serialId}/profile/achievements${query}`);
 }
 
 export function getPublicProfileBestResults(serialId: number, includeTest = false) {

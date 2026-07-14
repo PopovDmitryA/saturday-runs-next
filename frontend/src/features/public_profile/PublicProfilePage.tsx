@@ -120,21 +120,37 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
 
   const [achievements, setAchievements] = useState<AchievementsResponse | null>(null);
   const [achievementsError, setAchievementsError] = useState<string | null>(null);
+  const [achievementsPlatform, setAchievementsPlatform] = useState<string | null>(null);
+  const [achievementsSwitching, setAchievementsSwitching] = useState(false);
 
-  const loadAchievements = useCallback(async () => {
-    setAchievementsError(null);
-    try {
-      setAchievements(await getPublicProfileAchievements(serialId));
-    } catch (err) {
-      setAchievementsError(err instanceof Error ? err.message : "Не удалось загрузить достижения");
-    }
-  }, [serialId]);
+  const loadAchievements = useCallback(
+    async (platform: string | null) => {
+      setAchievementsError(null);
+      setAchievementsSwitching(true);
+      try {
+        setAchievements(await getPublicProfileAchievements(serialId, platform ?? undefined));
+      } catch (err) {
+        setAchievementsError(err instanceof Error ? err.message : "Не удалось загрузить достижения");
+      } finally {
+        setAchievementsSwitching(false);
+      }
+    },
+    [serialId],
+  );
 
   useEffect(() => {
     if (tab === "achievements" && !achievements && !achievementsError) {
-      void loadAchievements();
+      void loadAchievements(achievementsPlatform);
     }
-  }, [tab, achievements, achievementsError, loadAchievements]);
+  }, [tab, achievements, achievementsError, achievementsPlatform, loadAchievements]);
+
+  const handleAchievementsPlatformChange = useCallback(
+    (platform: string | null) => {
+      setAchievementsPlatform(platform);
+      void loadAchievements(platform);
+    },
+    [loadAchievements],
+  );
 
   const loadVisitedMap = useCallback(() => getPublicProfileVisitedMap(serialId, false), [serialId]);
   const loadCatalogTable = useCallback(() => getPublicProfileCatalogTable(serialId, false), [serialId]);
@@ -250,13 +266,20 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
           {achievementsError && (
             <div className="card error">
               <p>{achievementsError}</p>
-              <button type="button" className="btn secondary" onClick={() => void loadAchievements()}>
+              <button type="button" className="btn secondary" onClick={() => void loadAchievements(achievementsPlatform)}>
                 Повторить
               </button>
             </div>
           )}
           {!achievementsError && !achievements && <p className="muted">Загрузка…</p>}
-          {achievements && <AchievementsShowcase data={achievements} />}
+          {achievements && (
+            <AchievementsShowcase
+              data={achievements}
+              platformFilter={achievementsPlatform}
+              onPlatformFilterChange={handleAchievementsPlatformChange}
+              platformSwitching={achievementsSwitching}
+            />
+          )}
         </>
       )}
 

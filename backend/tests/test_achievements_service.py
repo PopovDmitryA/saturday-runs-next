@@ -11,6 +11,7 @@ from app.services.achievements_service import (
     _best_year_level_dates,
     _calendar_days_challenge,
     _club_entry,
+    _compute_clubs,
     _deja_vu_challenge,
     _first_letter,
     _goal_progress,
@@ -26,6 +27,7 @@ from app.services.achievements_service import (
     _runs_needed_for_p,
     _saturdays_left,
     _saturdays_of_year,
+    _scope_by_platform,
     _seconds_challenge,
     _start_numbers_range_challenge,
     _streak_level_dates,
@@ -141,6 +143,41 @@ def test_deja_vu_counts_repeated_times() -> None:
     assert _deja_vu_challenge(rows)["current"] == 2
 
 
+def test_deja_vu_items_not_truncated_past_twenty() -> None:
+    """Раньше detail.items резался на первых 20 — активный участник с 20+
+    совпадениями не видел часть строк вообще (и без скролла на фронте не
+    поместились бы). current должен совпадать с полным числом найденных."""
+    rows = []
+    for sec in range(1000, 1030):
+        rows.append(_row(finish_time_sec=sec))
+        rows.append(_row(finish_time_sec=sec))
+    challenge = _deja_vu_challenge(rows)
+    assert challenge["current"] == 30
+    assert len(challenge["detail"]["items"]) == 30  # type: ignore[arg-type]
+
+
+def test_scope_by_platform_filters_rows_vol_rows_and_upcoming() -> None:
+    rows = [
+        _row(platform_code="five_verst", event_date=date(2026, 1, 3)),
+        _row(platform_code="s95", event_date=date(2026, 1, 10)),
+    ]
+    vol_rows = {
+        "five_verst": [(date(2026, 1, 3), "kuzminki")],
+        "s95": [(date(2026, 1, 10), "sokolniki")],
+    }
+    upcoming = {
+        ("five_verst", 42): [(date(2026, 1, 17), "Кузьминки")],
+        ("s95", 42): [(date(2026, 1, 17), "Сокольники")],
+    }
+
+    scoped_rows, scoped_vol_rows, scoped_upcoming = _scope_by_platform(rows, vol_rows, upcoming, "s95")
+    assert [row.platform_code for row in scoped_rows] == ["s95"]
+    assert set(scoped_vol_rows) == {"s95"}
+    assert set(scoped_upcoming) == {("s95", 42)}
+
+    assert _scope_by_platform(rows, vol_rows, upcoming, None) == (rows, vol_rows, upcoming)
+
+
 def test_number_match_uses_chronological_run_index() -> None:
     rows = [
         _row(event_date=date(2026, 1, 3), event_number=5),
@@ -248,6 +285,46 @@ def test_club_entry_thresholds() -> None:
     assert empty["earned"] == [] and empty["next_threshold"] == 10
     maxed = _club_entry("runs", "Пробежки", "🏃", _dates_seq(1500))
     assert maxed["next_threshold"] is None and maxed["pct_to_next"] == 100.0
+
+
+def test_club_entry_extra_count_adds_undated_credits() -> None:
+    """parkrun отдаёт только общий счётчик волонтёрств без дат — extra_count
+    поднимает current/earned, но не может дать level_dates за пределами
+    того, что реально известно по датам."""
+    entry = _club_entry("volunteering", "Волонтёрства", "💚", _dates_seq(5), extra_count=95)
+    assert entry["current"] == 100
+    assert entry["earned"] == [10, 25, 50, 100]
+    assert entry["level_dates"]["10"] is None
+    assert entry["level_dates"]["100"] is None
+    plain = _club_entry("volunteering", "Волонтёрства", "💚", _dates_seq(5))
+    assert plain["current"] == 5
+
+
+def test_compute_clubs_folds_in_parkrun_volunteer_total() -> None:
+    rows = [_row(platform_code="parkrun", event_date=date(2026, 1, 3))]
+    clubs = _compute_clubs(rows, {}, parkrun_volunteer_total=171)
+
+    overall_vol = next(e for e in clubs["overall"] if e["code"] == "volunteering")
+    assert overall_vol["current"] == 171
+    assert overall_vol["earned"] == [10, 25, 50, 100]
+
+    parkrun_platform = next(p for p in clubs["platforms"] if p["platform_code"] == "parkrun")
+    parkrun_vol = next(e for e in parkrun_platform["entries"] if e["code"] == "volunteering")
+    assert parkrun_vol["current"] == 171
+
+
+def test_compute_clubs_parkrun_platform_appears_without_runs() -> None:
+    """Волонтёр parkrun без единой пробежки всё равно должен попасть в
+    список платформенных клубов."""
+    clubs = _compute_clubs([], {}, parkrun_volunteer_total=15)
+    codes = {platform["platform_code"] for platform in clubs["platforms"]}
+    assert "parkrun" in codes
+
+
+def test_compute_clubs_no_parkrun_total_omits_platform() -> None:
+    clubs = _compute_clubs([], {}, parkrun_volunteer_total=0)
+    codes = {platform["platform_code"] for platform in clubs["platforms"]}
+    assert "parkrun" not in codes
 
 
 def test_year_fraction_elapsed_bounds() -> None:

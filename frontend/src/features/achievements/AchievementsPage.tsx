@@ -543,14 +543,25 @@ function GoalsSection({
 
 /** Витрина медалей + челленджи + клубы — без личных целей на год (те приватные,
  * задать можно только себе). Переиспользуется и на своей странице «Достижения»,
- * и на публичном профиле участника. */
+ * и на публичном профиле участника.
+ *
+ * platformFilter/onPlatformFilterChange — сквозной челлендж-скоуп vs скоуп
+ * одной системы (владелец страницы делает рефетч /achievements?platform=…,
+ * сама витрина фильтр не считает). Клубы ниже фильтром не затрагиваются —
+ * они и так показывают сквозной итог и разбивку по системам одновременно. */
 export function AchievementsShowcase({
   data,
   goalsSection,
+  platformFilter = null,
+  onPlatformFilterChange,
+  platformSwitching = false,
 }: {
   data: AchievementsResponse;
   // «Цели на год» — личный раздел; на публичном профиле не передаётся.
   goalsSection?: ReactNode;
+  platformFilter?: string | null;
+  onPlatformFilterChange?: (platform: string | null) => void;
+  platformSwitching?: boolean;
 }) {
   const grouped = useMemo(() => {
     const groups: Record<Challenge["category"], Challenge[]> = {
@@ -563,6 +574,11 @@ export function AchievementsShowcase({
     }
     return groups;
   }, [data]);
+
+  const platformOptions = useMemo(
+    () => data.clubs.platforms.map((platform) => platform.platform_code),
+    [data.clubs.platforms],
+  );
 
   return (
     <>
@@ -578,6 +594,27 @@ export function AchievementsShowcase({
             и золото
           </span>
         </div>
+        {onPlatformFilterChange && platformOptions.length >= 2 && (
+          <div className={`insights-filters achv-platform-filters${platformSwitching ? " is-switching" : ""}`}>
+            <button
+              type="button"
+              className={`insights-filter-chip${platformFilter === null ? " active" : ""}`}
+              onClick={() => onPlatformFilterChange(null)}
+            >
+              Все системы
+            </button>
+            {platformOptions.map((code) => (
+              <button
+                key={code}
+                type="button"
+                className={`insights-filter-chip${platformFilter === code ? " active" : ""}`}
+                onClick={() => onPlatformFilterChange(code)}
+              >
+                {platformCodeLabel(code)}
+              </button>
+            ))}
+          </div>
+        )}
         {(Object.keys(grouped) as Array<Challenge["category"]>).map(
           (category) =>
             grouped[category].length > 0 && (
@@ -607,28 +644,36 @@ function AchievementsContent() {
   const [goals, setGoals] = useState<GoalsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [platformFilter, setPlatformFilter] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (platform: string | null) => {
     setError(null);
+    setSwitching(true);
     try {
-      const [achievementsResponse, goalsResponse] = await Promise.all([getAchievements(), getGoals()]);
+      const [achievementsResponse, goalsResponse] = await Promise.all([
+        getAchievements(platform ?? undefined),
+        getGoals(),
+      ]);
       setAchievements(achievementsResponse);
       setGoals(goalsResponse);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить данные");
+    } finally {
+      setSwitching(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load(platformFilter);
+  }, [load, platformFilter]);
 
   return (
     <AppShell title="Цели и достижения">
       {error && (
         <div className="card error">
           <p>{error}</p>
-          <button type="button" className="btn secondary" onClick={() => void load()}>
+          <button type="button" className="btn secondary" onClick={() => void load(platformFilter)}>
             Повторить
           </button>
         </div>
@@ -640,6 +685,9 @@ function AchievementsContent() {
           <AchievementsShowcase
             data={achievements}
             goalsSection={<GoalsSection goals={goals} onEdit={() => setEditOpen(true)} />}
+            platformFilter={platformFilter}
+            onPlatformFilterChange={setPlatformFilter}
+            platformSwitching={switching}
           />
 
           <GoalsEditModal
