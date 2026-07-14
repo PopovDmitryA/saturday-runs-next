@@ -17,7 +17,7 @@ from app.models import (
     VolunteerResult,
 )
 from app.services.history_milestone_settings_service import get_disabled_milestone_kinds
-from app.services.location_catalog_service import LocationCatalogIndex
+from app.services.location_catalog_service import LocationCatalogIndex, is_foreign_location
 from app.services.user_location_stats import _canonical_region, _normalize_geo_value
 from app.time_format import normalize_finish_time_display
 from app.volunteering_occasions import volunteer_occasion_dates
@@ -37,14 +37,6 @@ def is_geo_milestone_number(number: int) -> bool:
 
 
 _PLATFORM_ORDER = {"five_verst": 0, "s95": 1, "parkrun": 2, "runpark": 3}
-
-# Русские паркраны, которых нет в каталоге локаций (закрылись без преемника в
-# 5 вёрст/S95 и потому не попали в location_catalog). Дополнять по мере
-# обнаружения: SELECT parkrun-локации без location_catalog_links с русскими
-# названиями. parkrun ушёл из России в 2022 — список конечен.
-_RUSSIAN_PARKRUN_SLUGS_OUTSIDE_CATALOG = frozenset({
-    "park-30-letiya-oktyabrya",  # Омск, парк 30-летия Октября
-})
 
 # Порядок вех внутри одного дня — от «крупной» к «мелкой».
 _KIND_ORDER = {
@@ -280,8 +272,7 @@ def _collect_run_milestones(
         if (
             platform_code == "parkrun"
             and not foreign_parkrun_seen
-            and location.external_key not in _RUSSIAN_PARKRUN_SLUGS_OUTSIDE_CATALOG
-            and catalog_index.get_for_location(location, platform_code) is None
+            and is_foreign_location(location, platform_code, catalog_index)
         ):
             foreign_parkrun_seen = True
             milestones.append(make(kind="first_foreign_parkrun"))

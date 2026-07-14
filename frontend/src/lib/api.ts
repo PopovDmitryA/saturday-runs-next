@@ -1180,6 +1180,7 @@ export type UniqueLocationDetail = {
   has_coordinates: boolean;
   is_paused: boolean;
   is_cancelled?: boolean;
+  is_foreign?: boolean;
   run_count: number;
   volunteer_count: number;
   first_visit_date: string | null;

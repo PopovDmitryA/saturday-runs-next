@@ -212,6 +212,14 @@ export function sortUniqueLocationRows(
 ): UniqueLocationRow[] {
   const sorted = [...rows];
   sorted.sort((left, right) => {
+    const leftForeign = left.location.is_foreign ? 1 : 0;
+    const rightForeign = right.location.is_foreign ? 1 : 0;
+    if (leftForeign !== rightForeign) {
+      // Зарубежные старты — всегда внизу списка, независимо от выбранной
+      // колонки сортировки и направления (asc/desc).
+      return leftForeign - rightForeign;
+    }
+
     let result = 0;
 
     switch (sortKey) {

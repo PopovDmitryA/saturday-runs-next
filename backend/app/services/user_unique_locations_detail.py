@@ -9,7 +9,11 @@ from sqlalchemy.orm import Session
 from app.activity_date import has_real_activity_date
 from app.location_page_url import location_page_url
 from app.models import Event, Location, Platform, PlatformLink, RunResult, VolunteerResult
-from app.services.location_catalog_service import LocationCatalogIndex, should_use_catalog_display
+from app.services.location_catalog_service import (
+    LocationCatalogIndex,
+    is_foreign_location,
+    should_use_catalog_display,
+)
 from app.services.user_location_stats import count_unique_locations_from_rows
 
 PLATFORM_ORDER = ("five_verst", "s95", "parkrun", "runpark")
@@ -129,6 +133,7 @@ def build_user_unique_location_details(
                 "last_visit_date": None,
                 "is_paused": False,
                 "is_cancelled": False,
+                "is_foreign": True,
                 "platforms": {},
             }
             buckets[identity_key] = bucket
@@ -189,6 +194,8 @@ def build_user_unique_location_details(
             bucket["is_paused"] = True
         if getattr(location, "is_cancelled", False):
             bucket["is_cancelled"] = True
+        if not is_foreign_location(location, platform_code, catalog_index):
+            bucket["is_foreign"] = False
 
         platform_bucket = _ensure_platform(bucket, platform_code, location)
         if kind == "run":
@@ -272,6 +279,7 @@ def build_user_unique_location_details(
                 "has_coordinates": bucket["latitude"] is not None and bucket["longitude"] is not None,
                 "is_paused": bool(bucket["is_paused"]),
                 "is_cancelled": bool(bucket.get("is_cancelled")),
+                "is_foreign": bool(bucket["is_foreign"]),
                 "run_count": bucket["run_count"],
                 "volunteer_count": bucket["volunteer_count"],
                 "first_visit_date": first_visit.isoformat() if has_real_activity_date(first_visit) else None,
