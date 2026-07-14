@@ -6884,6 +6884,7 @@ tr.run-crosslinked td {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 0.4rem;
   flex-shrink: 0;
 }
 
@@ -6914,6 +6915,31 @@ tr.run-crosslinked td {
 .recent-ratings-rate-btn svg {
   width: 18px;
   height: 18px;
+}
+
+.recent-ratings-dismiss-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: transform 0.12s, background 0.12s, color 0.12s;
+}
+
+.recent-ratings-dismiss-btn:hover {
+  background: var(--neutral-soft);
+  color: var(--text);
+  transform: scale(1.05);
+}
+
+.recent-ratings-dismiss-btn svg {
+  width: 14px;
+  height: 14px;
 }
 
 .recent-ratings-stars {
