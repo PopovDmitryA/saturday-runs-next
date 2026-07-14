@@ -398,6 +398,8 @@ def test_runpark_crosslink_duplicate_merges_into_primary_rival_bucket(db_session
     assert len(matching) == 1
     item = matching[0]
     assert item["meetings"] == 3
-    assert sorted(item["platform_codes"]) == ["five_verst", "runpark"]
+    # RunPark-запись здесь — дубликат уже засчитанной 5-вёрстной встречи (то же
+    # место и время), поэтому своей системы в бейджах не добавляет.
+    assert item["platform_codes"] == ["five_verst"]
     assert item["my_wins"] == 3
     assert item["their_wins"] == 0
