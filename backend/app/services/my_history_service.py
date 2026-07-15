@@ -312,12 +312,15 @@ def _collect_run_milestones(
             is_global = global_best is not None and finish_time < global_best
             is_platform_pr = platform_best is not None and finish_time < platform_best
             if is_global:
-                # delta — против предыдущего лучшего: своего на платформе, если
-                # на ней уже была пробежка, иначе против глобального рекорда
-                # (дебют в системе, побивший глобал — платформенной базы нет).
-                baseline = platform_best if platform_best is not None else global_best
+                # delta глобального рекорда — против ПРЕДЫДУЩЕГО глобального
+                # рекорда (лучшего всё-время результата до этой пробежки), а не
+                # против лучшего на платформе: иначе рекорд на быстрой трассе
+                # другой системы сравнивался бы с медленным прошлым результатом
+                # этой системы и дельта врала бы (напр. 19:56 С95 → 18:19 С95
+                # вместо реального 18:59 5в → 18:19). global_best здесь всегда
+                # задан — is_global требует global_best is not None.
                 milestones.append(
-                    make(kind="global_pr", delta_sec=baseline - finish_time, is_global_pr=True)
+                    make(kind="global_pr", delta_sec=global_best - finish_time, is_global_pr=True)
                 )
             elif is_platform_pr:
                 milestones.append(

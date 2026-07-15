@@ -248,3 +248,92 @@ def test_global_pr_fires_on_platform_debut_faster_than_global_best(db_session: S
     assert debut["delta_sec"] == (23 * 60 + 30) - (22 * 60 + 8)
     # The debut is not double-counted as a plain platform PR.
     assert all(m["kind"] != "pr" for m in history["milestones"])
+
+
+def test_global_pr_delta_measured_against_previous_global_not_platform(db_session: Session) -> None:
+    """The delta on a "Глобальный рекорд" card is the improvement over the
+    PREVIOUS GLOBAL record, not over the runner's best on that same platform.
+    Reported case (Егор Свиридов): S95 19:56 → 5 верст 18:59 → S95 18:19 must
+    show −40 сек (18:59 − 18:19), not −1:37 (against the older S95 19:56)."""
+    suffix = str(uuid4().int % 1_000_000)
+    five_verst = _get_platform(db_session, "five_verst", "5 верст")
+    s95 = _get_platform(db_session, "s95", "S95")
+
+    user = User()
+    db_session.add(user)
+    db_session.flush()
+
+    fv_participant = Participant(
+        platform_id=five_verst.id,
+        external_user_id=f"gd-fv-{suffix}",
+        display_name="Global Delta Tester",
+        profile_url=f"https://5verst.ru/userstats/gd-fv-{suffix}/",
+    )
+    s95_participant = Participant(
+        platform_id=s95.id,
+        external_user_id=f"gd-s95-{suffix}",
+        display_name="Global Delta Tester",
+        profile_url=f"https://s95.ru/athletes/gd-s95-{suffix}",
+    )
+    db_session.add_all([fv_participant, s95_participant])
+    db_session.flush()
+    db_session.add_all(
+        [
+            PlatformLink(
+                user_id=user.id,
+                platform_id=five_verst.id,
+                participant_id=fv_participant.id,
+                external_user_id=fv_participant.external_user_id,
+                external_url=fv_participant.profile_url,
+            ),
+            PlatformLink(
+                user_id=user.id,
+                platform_id=s95.id,
+                participant_id=s95_participant.id,
+                external_user_id=s95_participant.external_user_id,
+                external_url=s95_participant.profile_url,
+            ),
+        ]
+    )
+
+    fv_location = Location(
+        platform_id=five_verst.id,
+        external_key=f"pobedy-gd-{suffix}",
+        name="Парк Победы",
+        city="Москва",
+        country="Россия",
+    )
+    s95_kuzminki = Location(
+        platform_id=s95.id,
+        external_key=f"kuzminki-gd-{suffix}",
+        name="Кузьминки",
+        city="Москва",
+        country="Россия",
+    )
+    s95_troitsk = Location(
+        platform_id=s95.id,
+        external_key=f"troitsk-gd-{suffix}",
+        name="Троицк",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add_all([fv_location, s95_kuzminki, s95_troitsk])
+    db_session.flush()
+
+    # S95 19:56 (global), then 5 верст 18:59 (global), then S95 18:19 (global).
+    e1 = _make_event(db_session, s95, s95_kuzminki, f"gd1-{suffix}", date(2024, 4, 20), 900_700)
+    e2 = _make_event(db_session, five_verst, fv_location, f"gd2-{suffix}", date(2024, 5, 18), 900_701)
+    e3 = _make_event(db_session, s95, s95_troitsk, f"gd3-{suffix}", date(2024, 5, 25), 900_702)
+    _make_run_result(db_session, e1, s95_participant, f"gd1-{suffix}", finish_time_sec=19 * 60 + 56)
+    _make_run_result(db_session, e2, fv_participant, f"gd2-{suffix}", finish_time_sec=18 * 60 + 59)
+    _make_run_result(db_session, e3, s95_participant, f"gd3-{suffix}", finish_time_sec=18 * 60 + 19)
+    db_session.commit()
+
+    history = get_my_history(db_session, user.id)
+    troitsk = next(
+        m
+        for m in history["milestones"]
+        if m["kind"] == "global_pr" and m["finish_time_sec"] == 18 * 60 + 19
+    )
+    # Previous global was 18:59 (5 верст), NOT the older S95 19:56.
+    assert troitsk["delta_sec"] == (18 * 60 + 59) - (18 * 60 + 19)  # 40 сек
