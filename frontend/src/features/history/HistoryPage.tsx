@@ -60,6 +60,8 @@ export function milestoneVisual(milestone: MyHistoryMilestone): MilestoneVisual 
       return { icon: "🏆", className: "history-kind-pr-global" };
     case "pr":
       return { icon: "⚡", className: "history-kind-pr" };
+    case "location_pr":
+      return { icon: "🥉", className: "history-kind-pr-location" };
     case "new_country":
       return { icon: "🌍", className: "history-kind-geo" };
     case "new_region":
@@ -121,6 +123,8 @@ export function milestoneTitle(milestone: MyHistoryMilestone): string {
       return time ? `Глобальный рекорд — ${time}` : "Глобальный рекорд";
     case "pr":
       return time ? `Личный рекорд — ${time}` : "Личный рекорд";
+    case "location_pr":
+      return time ? `Рекорд локации — ${time}` : "Рекорд локации";
     case "new_country":
       return `Новая страна: ${milestone.country ?? milestone.location_name}`;
     case "new_region":
@@ -159,6 +163,7 @@ function milestoneHint(milestone: MyHistoryMilestone): string | null {
       return `Клуб ${milestone.number}`;
     case "global_pr":
     case "pr":
+    case "location_pr":
       return milestone.delta_sec != null ? deltaLabel(milestone.delta_sec) : null;
     default:
       return null;
@@ -267,8 +272,13 @@ function MilestoneCard({
   const hint = milestoneHint(milestone);
   const time = compactTime(milestone.finish_time_display);
   const detailParts: string[] = [];
-  // Для PR/глобального рекорда время уже в заголовке — в деталях не дублируем.
-  if (time && milestone.kind !== "pr" && milestone.kind !== "global_pr") {
+  // Для PR/глобального/локационного рекорда время уже в заголовке — в деталях не дублируем.
+  if (
+    time &&
+    milestone.kind !== "pr" &&
+    milestone.kind !== "global_pr" &&
+    milestone.kind !== "location_pr"
+  ) {
     detailParts.push(time);
   }
   if (milestone.position != null) {

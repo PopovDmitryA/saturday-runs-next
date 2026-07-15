@@ -55,6 +55,8 @@ export function milestoneAccentLabel(milestone: MyHistoryMilestone): string {
       return "Глобальный рекорд";
     case "pr":
       return "Личный рекорд";
+    case "location_pr":
+      return "Рекорд локации";
     case "new_region": {
       const milestoneNumber = geoMilestoneNumber(milestone.number);
       if (milestoneNumber != null) {
@@ -109,7 +111,7 @@ export function milestoneToRunItem(milestone: MyHistoryMilestone): RunItem {
     age_category: null,
     is_pr: milestone.kind === "pr" || milestone.kind === "global_pr",
     is_global_pr: milestone.is_global_pr,
-    is_location_pr: false,
+    is_location_pr: milestone.kind === "location_pr",
     is_crosslinked: false,
     is_first_run: milestone.kind === "first_run",
     is_first_run_at_location: false,
@@ -213,6 +215,10 @@ export function milestoneBragText(milestone: MyHistoryMilestone, siteUrl: string
     case "pr":
       headline = `⚡ Новый личный рекорд в системе «${platform}»!`;
       details = milestoneDetailsLine(milestone, { time: true, position: true, delta: true, platformInLocation: false });
+      break;
+    case "location_pr":
+      headline = `🥉 Новый рекорд локации «${milestone.location_name}»!`;
+      details = milestoneDetailsLine(milestone, { time: true, position: true, delta: true });
       break;
     case "first_foreign_parkrun":
       headline = "✈️ Первый зарубежный паркран!";

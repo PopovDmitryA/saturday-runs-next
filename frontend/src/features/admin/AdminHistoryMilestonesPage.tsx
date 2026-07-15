@@ -18,6 +18,7 @@ const KIND_ICON: Record<MyHistoryMilestoneKind, string> = {
   volunteer_location_club: "📍",
   global_pr: "🏆",
   pr: "⚡",
+  location_pr: "🥉",
   first_foreign_parkrun: "✈️",
   first_foreign_run: "✈️",
   new_country: "🌍",

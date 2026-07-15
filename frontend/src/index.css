@@ -7317,6 +7317,7 @@ tr.run-crosslinked td {
 .history-kind-anniversary { --history-marker-bg: var(--tint-violet-bg); --history-marker-border: var(--tint-violet-border); }
 .history-kind-pr { --history-marker-bg: var(--tint-orange-bg); --history-marker-border: var(--tint-orange-text); }
 .history-kind-pr-global { --history-marker-bg: var(--tint-amber-bg-strong); --history-marker-border: var(--tint-amber-border-strong); }
+.history-kind-pr-location { --history-marker-bg: var(--tint-rose-bg); --history-marker-border: var(--tint-rose-text); }
 .history-kind-location-club { --history-marker-bg: var(--tint-teal-bg); --history-marker-border: var(--accent-teal-text); }
 .history-kind-geo { --history-marker-bg: var(--tint-blue-bg); --history-marker-border: var(--tint-blue-border-strong); }
 .history-kind-volunteer { --history-marker-bg: var(--tint-blue-bg-strong); --history-marker-border: var(--tint-blue-border-strong); }
@@ -7554,6 +7555,70 @@ tr.run-crosslinked td {
   flex-basis: 100%;
   font-size: 0.85rem;
   color: var(--text-muted);
+}
+
+/* Настройки: персональный вкл/выкл видов вех «Моя история» */
+.history-ms-spoiler > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.history-ms-spoiler > summary::-webkit-details-marker {
+  display: none;
+}
+
+.history-ms-summary-main {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.history-ms-summary-chevron {
+  display: inline-block;
+  font-size: 1.1rem;
+  color: var(--text-faint);
+  transition: transform 0.15s ease;
+}
+
+.history-ms-spoiler[open] .history-ms-summary-chevron {
+  transform: rotate(90deg);
+}
+
+.history-ms-summary-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.history-ms-summary-count {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.history-ms-spoiler[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
+.history-ms-lead {
+  margin-top: 0;
+}
+
+.history-ms-group {
+  margin-top: 1rem;
+}
+
+.history-ms-group-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
 }
 
 .admin-ratings-comment-text {

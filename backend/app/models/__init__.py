@@ -724,6 +724,15 @@ class User(Base):
         nullable=False,
         server_default='{"five_verst": false, "s95": false, "parkrun": false}',
     )
+    # Виды вех «Моя история», которые пользователь скрыл у себя (список kind'ов).
+    # Отсутствие kind в списке = включён (по умолчанию). Персональный аналог
+    # админского history_milestone_settings; канон kind'ов —
+    # app.history_milestone_kinds.MILESTONE_KINDS.
+    history_disabled_kinds: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default="[]",
+    )
 
     platform_links: Mapped[list["PlatformLink"]] = relationship(back_populates="user")
     dashboard_cache: Mapped["DashboardCache | None"] = relationship(back_populates="user", uselist=False)
