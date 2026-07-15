@@ -650,6 +650,8 @@ class RunResult(Base):
     is_pr: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_first_run: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_first_run_at_location: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    is_global_pr: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    is_location_pr: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     club_name: Mapped[str | None] = mapped_column(String(256))
     achievement_labels: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
     source_hash: Mapped[str | None] = mapped_column(String(64))

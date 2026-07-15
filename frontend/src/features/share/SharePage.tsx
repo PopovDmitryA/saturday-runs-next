@@ -102,6 +102,7 @@ function onThisDayRunToRunItem(run: OnThisDayRun): RunItem {
     age_category: null,
     is_pr: run.is_pr,
     is_global_pr: false,
+    is_location_pr: false,
     is_crosslinked: false,
     is_first_run: false,
     is_first_run_at_location: false,

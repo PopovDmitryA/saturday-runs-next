@@ -474,12 +474,14 @@ def upsert_run_results(
     _discover_participants_after_protocol_upsert(db, platform, touched_participant_ids)
     if recalculate_pr and touched_participant_ids:
         from app.services.personal_record_service import (
+            recalculate_participants_cross_platform_personal_records,
             recalculate_participants_first_run_flags,
             recalculate_participants_personal_records,
         )
 
         recalculate_participants_first_run_flags(db, platform.code, touched_participant_ids)
         recalculate_participants_personal_records(db, platform.code, touched_participant_ids)
+        recalculate_participants_cross_platform_personal_records(db, touched_participant_ids)
     db.flush()
     return upserted
 
@@ -1043,12 +1045,14 @@ def import_profile_run_results(
                 dedupe_five_verst_run_results_in_db(db, platform.id, participant.id)
     if touched_participant_ids:
         from app.services.personal_record_service import (
+            recalculate_participants_cross_platform_personal_records,
             recalculate_participants_first_run_flags,
             recalculate_participants_personal_records,
         )
 
         recalculate_participants_first_run_flags(db, platform.code, touched_participant_ids)
         recalculate_participants_personal_records(db, platform.code, touched_participant_ids)
+        recalculate_participants_cross_platform_personal_records(db, touched_participant_ids)
     db.flush()
     return imported
 

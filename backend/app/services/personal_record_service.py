@@ -5,7 +5,8 @@ from uuid import UUID
 from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Event, EventCrosslink, Platform, PlatformLink, RunResult
+from app.models import Event, EventCrosslink, Location, Platform, PlatformLink, RunResult
+from app.services.location_catalog_service import LocationCatalogIndex
 from app.sync import upsert
 
 TIME_BASED_PR_PLATFORMS = frozenset({"parkrun", "s95", "five_verst", "runpark"})
@@ -302,21 +303,49 @@ def user_secondary_crosslinked_run_ids(
     return {row[0] for row in query.distinct().all()}
 
 
-def global_personal_record_run_ids(
+def reset_cross_platform_personal_records(db: Session, user_id: UUID) -> int:
+    run_ids = (
+        db.query(RunResult.id)
+        .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
+        .filter(PlatformLink.user_id == user_id)
+    )
+    return (
+        db.query(RunResult)
+        .filter(RunResult.id.in_(run_ids))
+        .update(
+            {RunResult.is_global_pr: False, RunResult.is_location_pr: False},
+            synchronize_session=False,
+        )
+    )
+
+
+def recalculate_cross_platform_personal_records(
     db: Session,
     user_id: UUID,
     *,
+    catalog_index: LocationCatalogIndex | None = None,
     include_test_events: bool = False,
-) -> set[UUID]:
-    """Run IDs where the athlete set a new all-systems best finish time (chronological).
-    Secondary crosslink duplicates ("не в зачёте") are excluded so a duplicate protocol
-    a second faster cannot steal the global record from the counted run."""
+    reset: bool = True,
+) -> dict[str, int]:
+    """Mark is_global_pr (all-time best finish across every platform) and
+    is_location_pr (best finish at one physical location across platforms,
+    chronologically — a location's first-ever run is never a location PR,
+    only a later run that beats the standing best time is) from run order.
+
+    Both records are athlete-wide (span every platform the user has linked),
+    unlike is_pr which only compares within a single platform — hence this
+    operates on user_id rather than participant_id."""
+    if reset:
+        reset_cross_platform_personal_records(db, user_id)
+        db.flush()
+
     excluded_ids = user_secondary_crosslinked_run_ids(
         db, user_id, include_test_events=include_test_events
     )
     query = (
-        db.query(RunResult.id, RunResult.finish_time_sec)
+        db.query(RunResult, Event, Location, Platform)
         .join(Event, RunResult.event_id == Event.id)
+        .join(Location, Event.location_id == Location.id)
         .join(Platform, Event.platform_id == Platform.id)
         .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
         .filter(
@@ -332,10 +361,62 @@ def global_personal_record_run_ids(
     if excluded_ids:
         query = query.filter(RunResult.id.notin_(excluded_ids))
 
+    index = catalog_index or LocationCatalogIndex(db)
     global_best: int | None = None
-    global_pr_ids: set[UUID] = set()
-    for run_id, finish_time in query.all():
-        if global_best is None or finish_time < global_best:
-            global_pr_ids.add(run_id)
+    best_by_location: dict[str, int] = {}
+    updated = 0
+    global_pr_runs = 0
+    location_pr_runs = 0
+
+    for run, _event, location, platform in query.all():
+        finish_time = run.finish_time_sec
+
+        is_global_pr = global_best is None or finish_time < global_best
+        if is_global_pr:
             global_best = finish_time
-    return global_pr_ids
+
+        key = index.canonical_identity_key(location, platform.code)
+        previous_location_best = best_by_location.get(key)
+        is_location_pr = previous_location_best is not None and finish_time < previous_location_best
+        if previous_location_best is None or finish_time < previous_location_best:
+            best_by_location[key] = finish_time
+
+        if run.is_global_pr != is_global_pr or run.is_location_pr != is_location_pr:
+            run.is_global_pr = is_global_pr
+            run.is_location_pr = is_location_pr
+            updated += 1
+        if is_global_pr:
+            global_pr_runs += 1
+        if is_location_pr:
+            location_pr_runs += 1
+
+    return {
+        "runs_updated": updated,
+        "global_pr_runs": global_pr_runs,
+        "location_pr_runs": location_pr_runs,
+    }
+
+
+def recalculate_participants_cross_platform_personal_records(
+    db: Session,
+    participant_ids: set[UUID] | list[UUID],
+) -> None:
+    """Recalculate is_global_pr/is_location_pr for the users linked to these
+    participants. Safe to call after any single-platform sync: both records are
+    athlete-wide, so a change on one platform can only be reflected correctly by
+    recomputing across all of the affected users' linked platforms."""
+    ids = set(participant_ids)
+    if not ids:
+        return
+    user_ids = {
+        row[0]
+        for row in db.query(PlatformLink.user_id)
+        .filter(PlatformLink.participant_id.in_(ids))
+        .distinct()
+        .all()
+    }
+    if not user_ids:
+        return
+    catalog_index = LocationCatalogIndex(db)
+    for uid in user_ids:
+        recalculate_cross_platform_personal_records(db, uid, catalog_index=catalog_index)

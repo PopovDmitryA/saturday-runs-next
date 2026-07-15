@@ -121,6 +121,7 @@ def _recalculate_event_prs(db: Session, event_row: Event) -> None:
     _upsert_crosslinks_for_event: the PR computation skips secondary-crosslink
     duplicates, so the crosslink has to exist before is_pr is assigned."""
     from app.services.personal_record_service import (
+        recalculate_participants_cross_platform_personal_records,
         recalculate_participants_first_run_flags,
         recalculate_participants_personal_records,
     )
@@ -134,6 +135,7 @@ def _recalculate_event_prs(db: Session, event_row: Event) -> None:
     if participant_ids:
         recalculate_participants_first_run_flags(db, PLATFORM_CODE, participant_ids)
         recalculate_participants_personal_records(db, PLATFORM_CODE, participant_ids)
+        recalculate_participants_cross_platform_personal_records(db, participant_ids)
 
 
 def _ensure_event(db: Session, platform: Platform, location: Location, row: dict) -> Event:

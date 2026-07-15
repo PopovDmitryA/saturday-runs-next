@@ -4,7 +4,10 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.services.personal_record_service import recalculate_personal_records
+from app.services.personal_record_service import (
+    recalculate_participants_cross_platform_personal_records,
+    recalculate_personal_records,
+)
 
 PLATFORM_CODE = "parkrun"
 
@@ -15,6 +18,8 @@ def recalculate_parkrun_personal_records(
     participant_id: UUID | None = None,
 ) -> dict[str, int]:
     result = recalculate_personal_records(db, PLATFORM_CODE, participant_id=participant_id)
+    if participant_id is not None:
+        recalculate_participants_cross_platform_personal_records(db, {participant_id})
     return {
         "participants_touched": result["participants_touched"],
         "runs_updated": result["runs_updated"],

@@ -7,6 +7,7 @@ import { ActivityDateCell } from "../../components/ActivityDateCell";
 import { AppShell } from "../../components/AppShell";
 import { EmptyActivityState } from "../../components/EmptyActivityState";
 import { GlobalPrFinishTime } from "../../components/GlobalPrFinishTime";
+import { LocationPrLocationName } from "../../components/LocationPrLocationName";
 import { RequireAuth } from "../../components/RequireAuth";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RateRunModal } from "../../components/RateRunModal";
@@ -374,7 +375,11 @@ function RunsContent() {
                       <td className="td-platform">
                         <PlatformBadge code={run.platform_code} />
                       </td>
-                      <td className="td-location">{run.location_name}</td>
+                      <td className="td-location">
+                        <LocationPrLocationName isLocationPr={run.is_location_pr}>
+                          {run.location_name}
+                        </LocationPrLocationName>
+                      </td>
                       <td className="td-compact">{run.position ?? "—"}</td>
                       <td className="td-compact">{run.gender_position ?? "—"}</td>
                       <td className="td-time">
