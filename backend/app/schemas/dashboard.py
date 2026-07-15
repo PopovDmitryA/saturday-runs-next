@@ -198,6 +198,7 @@ class RunItemResponse(BaseModel):
     age_category: str | None = None
     is_pr: bool = False
     is_global_pr: bool = False
+    is_location_pr: bool = False
     is_crosslinked: bool = False
     is_first_run: bool = False
     is_first_run_at_location: bool = False

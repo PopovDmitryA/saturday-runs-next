@@ -109,6 +109,7 @@ export function milestoneToRunItem(milestone: MyHistoryMilestone): RunItem {
     age_category: null,
     is_pr: milestone.kind === "pr" || milestone.kind === "global_pr",
     is_global_pr: milestone.is_global_pr,
+    is_location_pr: false,
     is_crosslinked: false,
     is_first_run: milestone.kind === "first_run",
     is_first_run_at_location: false,

@@ -29,6 +29,7 @@ from app.models import (
 )
 from app.platform_adapters.canonical import CanonicalParticipant
 from app.services.dashboard_service import ANALYTICS_VERSION
+from app.services.personal_record_service import recalculate_cross_platform_personal_records
 from app.services.sync_dedup_service import SyncEnqueueResult
 from app.sync.user_sync import run_user_sync
 
@@ -167,6 +168,8 @@ def _seed_user_run(db_session: Session, user: User) -> str:
             is_pr=True,
         )
     )
+    db_session.flush()
+    recalculate_cross_platform_personal_records(db_session, user.id)
     db_session.commit()
     return external_user_id
 
@@ -723,6 +726,8 @@ def test_personal_records_lists_pr_runs_per_platform(
             )
         )
 
+    db_session.flush()
+    recalculate_cross_platform_personal_records(db_session, user.id)
     db_session.commit()
 
     response = authenticated_client.get("/api/runs/personal-records")

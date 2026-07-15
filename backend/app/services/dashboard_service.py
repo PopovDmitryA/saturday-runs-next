@@ -44,7 +44,7 @@ class SyncRefreshRateLimitedError(Exception):
     pass
 
 
-ANALYTICS_VERSION = 23
+ANALYTICS_VERSION = 24
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -449,7 +449,6 @@ def _compute_dashboard_analytics(
     include_test_events: bool = False,
 ) -> dict[str, object]:
     from app.services.personal_record_service import (
-        global_personal_record_run_ids,
         run_is_personal_record_sql_filter,
         user_secondary_crosslinked_run_ids,
     )
@@ -538,14 +537,11 @@ def _compute_dashboard_analytics(
         .scalar()
     )
 
-    global_pr_ids = global_personal_record_run_ids(db, user_id, include_test_events=include_test_events)
-    last_global_pr_date = None
-    if global_pr_ids:
-        last_global_pr_date = (
-            runs_query.filter(RunResult.id.in_(global_pr_ids))
-            .with_entities(func.max(Event.event_date))
-            .scalar()
-        )
+    last_global_pr_date = (
+        runs_query.filter(RunResult.is_global_pr.is_(True))
+        .with_entities(func.max(Event.event_date))
+        .scalar()
+    )
     pr_last_12_months = (
         runs_query.filter(run_is_personal_record_sql_filter(), Event.event_date >= twelve_months_ago)
         .with_entities(func.count(RunResult.id))
@@ -944,12 +940,8 @@ def list_user_runs(
         )
         crosslinked_event_ids = {row[0] for row in cl_rows}
 
-    from app.services.personal_record_service import (
-        global_personal_record_run_ids,
-        run_shows_personal_record,
-    )
+    from app.services.personal_record_service import run_shows_personal_record
 
-    global_pr_ids = global_personal_record_run_ids(db, user_id, include_test_events=include_test_events)
     catalog_index = LocationCatalogIndex(db)
     summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
     return [
@@ -973,7 +965,8 @@ def list_user_runs(
             "pace_sec_per_km": run.pace_sec_per_km,
             "age_category": run.age_category,
             "is_pr": run_shows_personal_record(platform.code, run),
-            "is_global_pr": run.id in global_pr_ids,
+            "is_global_pr": run.is_global_pr,
+            "is_location_pr": run.is_location_pr,
             "is_crosslinked": event.id in crosslinked_event_ids,
             "is_first_run": run.is_first_run,
             "is_first_run_at_location": run.is_first_run_at_location,
@@ -1078,7 +1071,6 @@ def list_user_personal_records(
     include_test_events: bool = False,
 ) -> list[dict[str, object]]:
     from app.services.personal_record_service import (
-        global_personal_record_run_ids,
         run_is_personal_record_sql_filter,
         user_secondary_crosslinked_run_ids,
     )
@@ -1111,7 +1103,6 @@ def list_user_personal_records(
         RunResult.position.asc(),
     ).all()
 
-    global_pr_ids = global_personal_record_run_ids(db, user_id, include_test_events=include_test_events)
     catalog_index = LocationCatalogIndex(db)
     summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
     return [
@@ -1125,7 +1116,7 @@ def list_user_personal_records(
                 run.finish_time_display,
             ),
             "finish_time_sec": run.finish_time_sec,
-            "is_global_pr": run.id in global_pr_ids,
+            "is_global_pr": run.is_global_pr,
             "event_url": _activity_event_url(
                 platform_code=platform.code,
                 event=event,

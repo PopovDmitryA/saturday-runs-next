@@ -4722,6 +4722,16 @@ tr.run-crosslinked td {
   color: #fbbf24;
 }
 
+.location-name-location-pr {
+  font-weight: 700;
+  color: var(--tint-violet-text);
+  cursor: help;
+}
+
+.location-name-location-pr-tooltip {
+  display: inline;
+}
+
 .best-results-table .best-results-city {
   display: block;
   margin-top: 0.15rem;

@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models import Event, Location, Platform, SyncRun, SyncRunStatus
+from app.models import Event, Location, Participant, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalLocation
 from app.s95.api_client import S95ApiActivityRef, S95ApiLocation, fetch_all_locations, fetch_event_activities
 from app.services.sync_watermark_service import (
@@ -388,9 +388,17 @@ def full_backfill(
 
         # Recompute personal records once over the whole platform after the bulk load.
         if not result.errors:
-            from app.services.personal_record_service import recalculate_personal_records
+            from app.services.personal_record_service import (
+                recalculate_participants_cross_platform_personal_records,
+                recalculate_personal_records,
+            )
 
             recalculate_personal_records(db, PLATFORM_CODE)
+            platform_participant_ids = {
+                row[0]
+                for row in db.query(Participant.id).filter(Participant.platform_id == platform.id).all()
+            }
+            recalculate_participants_cross_platform_personal_records(db, platform_participant_ids)
             set_watermark(
                 db,
                 platform,
