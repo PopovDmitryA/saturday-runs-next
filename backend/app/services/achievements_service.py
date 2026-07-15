@@ -255,6 +255,7 @@ def _cell(
     row: RunRow | None,
     *,
     hint: str | None = None,
+    count: int | None = None,
 ) -> dict[str, object]:
     """Клетка коллекции: закрыта первой пробежкой row; hint — подсказка для незакрытых."""
     return {
@@ -264,17 +265,24 @@ def _cell(
         "location": row.location_name if row else None,
         "hint": hint,
         "platform_code": row.platform_code if row else None,
+        "count": count,
     }
 
 
 def _seconds_challenge(rows: list[RunRow]) -> dict[str, object]:
     first_by_second: dict[int, RunRow] = {}
+    count_by_second: dict[int, int] = {}
     for row in rows:
         mmss = _mmss_or_none(row.finish_time_sec)
         if mmss is None:
             continue
-        first_by_second.setdefault(mmss[1], row)
-    cells = [_cell(f":{second:02d}", first_by_second.get(second)) for second in range(60)]
+        second = mmss[1]
+        first_by_second.setdefault(second, row)
+        count_by_second[second] = count_by_second.get(second, 0) + 1
+    cells = [
+        _cell(f":{second:02d}", first_by_second.get(second), count=count_by_second.get(second))
+        for second in range(60)
+    ]
     levels = {"bronze": 40, "silver": 50, "gold": 60}
     sorted_dates = sorted(row.event_date for row in first_by_second.values())
     return _challenge(
@@ -577,7 +585,7 @@ def _deja_vu_challenge(rows: list[RunRow]) -> dict[str, object]:
             "count": len(rows_by_time[time_sec]),
             "occurrences": [
                 {"date": entry.event_date.isoformat(), "location": entry.location_name}
-                for entry in rows_by_time[time_sec][:4]
+                for entry in rows_by_time[time_sec]
             ],
         }
         for time_sec in repeated

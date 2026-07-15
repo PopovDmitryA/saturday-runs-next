@@ -877,7 +877,18 @@ a.on-this-day-location {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 8px;
+  background: var(--chip-bg);
+  color: var(--text-muted);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.on-this-day-list-share:hover {
+  background: var(--tint-indigo-bg-strong);
+  color: var(--accent-indigo-text);
 }
 
 .stat-card {
@@ -1775,18 +1786,18 @@ a.on-this-day-location {
   background: var(--tint-indigo-bg-strong);
 }
 
-.co-runners-profile-icon-external a {
-  color: var(--accent-teal-text);
-}
-
-.co-runners-profile-icon-external a:hover {
-  background: var(--tint-teal-bg);
-}
-
 .co-runners-badges {
   display: inline-flex;
   gap: 0.3rem;
   flex-wrap: wrap;
+}
+
+.co-runners-badge-link a {
+  display: inline-flex;
+}
+
+.co-runners-badge-link a:hover .badge-platform {
+  box-shadow: 0 0 0 1px currentColor;
 }
 
 /* Раскрытые детали — вложенная карточка с акцентной левой полосой,
@@ -5625,7 +5636,16 @@ tr.run-crosslinked td {
 }
 
 .admin-users-page .table-scroll {
+  /* overflow-x:auto по спеке всегда вычисляет overflow-y тоже в auto (нельзя
+     сделать одну ось скроллящейся, а другую visible) — значит этот div и так
+     становится скролл-контейнером для position:sticky у thead th. Раньше он
+     никогда не скроллился САМ (скроллилась вся страница), поэтому шапка не
+     прилипала. Даём ограниченную высоту, чтобы контейнер скроллился по-настоящему
+     и шапка прилипала к его верху, как в таблице-эксель.
+  */
+  max-height: 75vh;
   overflow-x: auto;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -8279,6 +8299,36 @@ tr.run-crosslinked td {
   gap: 0.25rem;
 }
 
+/* Клетки — не bar-chart колонки, тултип-обёртку из ChartColumnTooltip
+   переопределяем под маленький квадратик вместо flex-column на всю высоту. */
+.challenge-cells .analytics-chart-tooltip-wrap {
+  display: inline-flex;
+  width: auto;
+  flex: none;
+}
+
+.challenge-cells .analytics-chart-tooltip-wrap:first-child .analytics-chart-tooltip {
+  left: 0;
+  transform: none;
+}
+
+.challenge-cells .analytics-chart-tooltip-wrap:first-child .analytics-chart-tooltip::after {
+  left: 0.9rem;
+  transform: none;
+}
+
+.challenge-cells .analytics-chart-tooltip-wrap:last-child .analytics-chart-tooltip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.challenge-cells .analytics-chart-tooltip-wrap:last-child .analytics-chart-tooltip::after {
+  left: auto;
+  right: 0.9rem;
+  transform: none;
+}
+
 .challenge-cell {
   min-width: 1.6rem;
   height: 1.6rem;
@@ -8502,8 +8552,43 @@ tr.run-crosslinked td {
 }
 
 .challenge-occurrence-more {
-  color: var(--text-muted);
+  color: var(--link);
   align-self: center;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.challenge-occurrence-more:hover {
+  color: var(--link-strong);
+  text-decoration: underline;
+}
+
+.challenge-occurrences-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.challenge-occurrence-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.challenge-occurrence-list-date {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .challenge-empty {

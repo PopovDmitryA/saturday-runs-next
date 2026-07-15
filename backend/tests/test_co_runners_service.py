@@ -403,3 +403,9 @@ def test_runpark_crosslink_duplicate_merges_into_primary_rival_bucket(db_session
     assert item["platform_codes"] == ["five_verst"]
     assert item["my_wins"] == 3
     assert item["their_wins"] == 0
+    # Регрессия: раньше расхождение profile_url между RunPark-дублем и основной
+    # записью соперника обнуляло ссылку целиком, даже когда бейдж один
+    # (five_verst). Теперь ссылки хранятся по платформам отдельно и ни одна
+    # не теряется — включая ссылку в RunPark, хоть её бейдж и не показан.
+    assert item["profile_urls"]["five_verst"] == rival_fv.profile_url
+    assert item["profile_urls"]["runpark"] == rival_rp.profile_url

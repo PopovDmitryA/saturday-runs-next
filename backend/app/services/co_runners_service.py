@@ -51,7 +51,11 @@ class _MeetingRow:
 @dataclass
 class _CoRunnerStats:
     display_name: str | None
-    profile_url: str | None
+    # platform_code -> ссылка на профиль соперника в этой системе (RunPark
+    # тоже имеет свой профиль). Раньше хранили одну ссылку на всех и обнуляли
+    # её при малейшем расхождении между платформами — теряя ссылку даже для
+    # пересечения ровно на одной системе (см. co_runners_service history).
+    profile_urls: dict[str, str] = field(default_factory=dict)
     platform_codes: list[str] = field(default_factory=list)
     site_serial_id: int | None = None
     # canonical event id -> best known meeting row (для дедупликации кросслинков)
@@ -208,12 +212,11 @@ def list_co_runners(
         if stats is None:
             stats = _CoRunnerStats(
                 display_name=(site.display_name if site is not None and site.display_name else display_name),
-                profile_url=profile_url,
                 site_serial_id=site.serial_id if site is not None else None,
             )
             stats_by_key[key] = stats
-        if stats.profile_url != profile_url:
-            stats.profile_url = None  # несколько платформ — внешней ссылки нет
+        if profile_url:
+            stats.profile_urls[platform_code] = profile_url
 
         canonical = canonical_map.get(event_id, event_id)
         rank = (0 if event_id == canonical else 1, 0 if their_time is not None else 1)
@@ -274,7 +277,7 @@ def list_co_runners(
             {
                 "participant_key": key,
                 "display_name": stats.display_name,
-                "profile_url": stats.profile_url,
+                "profile_urls": stats.profile_urls,
                 "platform_codes": stats.platform_codes,
                 "site_serial_id": stats.site_serial_id,
                 "meetings": len(stats.meetings_by_event),

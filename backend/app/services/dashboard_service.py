@@ -505,8 +505,8 @@ def _compute_dashboard_analytics(
         catalog_index,
         run_location_rows + vol_location_rows,
     )
-    unique_run_regions, unique_run_cities = count_unique_geo_from_rows(run_location_rows)
-    unique_volunteer_regions, unique_volunteer_cities = count_unique_geo_from_rows(vol_location_rows)
+    unique_run_regions, unique_run_cities = count_unique_geo_from_rows(catalog_index, run_location_rows)
+    unique_volunteer_regions, unique_volunteer_cities = count_unique_geo_from_rows(catalog_index, vol_location_rows)
 
     timed_runs = runs_query.filter(RunResult.finish_time_sec.isnot(None))
     paced_runs = runs_query.filter(RunResult.pace_sec_per_km.isnot(None))
