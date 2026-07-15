@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AppShell } from "../../components/AppShell";
 import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
-import { DetailModal } from "../../components/DetailModal";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAuth } from "../../components/RequireAuth";
 import {
@@ -208,7 +207,7 @@ const DEJA_VU_INLINE_LIMIT = 4;
 function ChallengeItems({ challenge }: { challenge: Challenge }) {
   const items = challenge.detail.items ?? [];
   const example = challenge.detail.example;
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const [expandedIndices, setExpandedIndices] = useState<Set<number>>(new Set());
   if (items.length === 0) {
     return (
       <div className="challenge-items-empty">
@@ -224,28 +223,44 @@ function ChallengeItems({ challenge }: { challenge: Challenge }) {
       </div>
     );
   }
-  const openItem = openIndex != null ? items[openIndex] : null;
+  const toggleExpanded = (index: number) => {
+    setExpandedIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
   return (
-    <>
-      <ul className="challenge-items">
-        {items.map((item, index) => (
+    <ul className="challenge-items">
+      {items.map((item, index) => {
+        const expanded = expandedIndices.has(index);
+        const occurrences = item.occurrences;
+        const visibleOccurrences =
+          occurrences && !expanded ? occurrences.slice(0, DEJA_VU_INLINE_LIMIT) : occurrences;
+        return (
           <li key={index} className="challenge-item">
             {item.value && <span className="challenge-item-value">{item.value}</span>}
             {item.count != null && <span className="challenge-item-count">× {item.count}</span>}
-            {item.occurrences ? (
+            {visibleOccurrences ? (
               <span className="challenge-item-occurrences">
-                {item.occurrences.slice(0, DEJA_VU_INLINE_LIMIT).map((occurrence, occurrenceIndex) => (
+                {visibleOccurrences.map((occurrence, occurrenceIndex) => (
                   <span key={occurrenceIndex} className="challenge-occurrence">
                     {occurrence.location} · {formatDate(occurrence.date)}
                   </span>
                 ))}
-                {item.occurrences.length > DEJA_VU_INLINE_LIMIT && (
+                {occurrences!.length > DEJA_VU_INLINE_LIMIT && (
                   <button
                     type="button"
                     className="challenge-occurrence-more"
-                    onClick={() => setOpenIndex(index)}
+                    onClick={() => toggleExpanded(index)}
                   >
-                    и ещё {item.occurrences.length - DEJA_VU_INLINE_LIMIT} — показать все
+                    {expanded
+                      ? "свернуть"
+                      : `и ещё ${occurrences!.length - DEJA_VU_INLINE_LIMIT} — показать все`}
                   </button>
                 )}
               </span>
@@ -254,23 +269,9 @@ function ChallengeItems({ challenge }: { challenge: Challenge }) {
             )}
             {item.date && <span className="challenge-item-date">{formatDate(item.date)}</span>}
           </li>
-        ))}
-      </ul>
-      <DetailModal
-        open={openItem != null}
-        title={openItem?.value ? `Дежавю · ${openItem.value}` : "Дежавю"}
-        onClose={() => setOpenIndex(null)}
-      >
-        <ul className="challenge-occurrences-list">
-          {(openItem?.occurrences ?? []).map((occurrence, occurrenceIndex) => (
-            <li key={occurrenceIndex} className="challenge-occurrence-list-item">
-              <span className="challenge-occurrence-list-location">{occurrence.location}</span>
-              <span className="challenge-occurrence-list-date">{formatDate(occurrence.date)}</span>
-            </li>
-          ))}
-        </ul>
-      </DetailModal>
-    </>
+        );
+      })}
+    </ul>
   );
 }
 
