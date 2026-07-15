@@ -1072,8 +1072,8 @@ export function getCoRunnerMeetings(participantKey: string) {
   return apiFetch<CoRunnerMeetingItem[]>(`/runs/co-runners/${participantKey}/meetings`);
 }
 
-export function listRuns(includeTest = false, limit = 200) {
-  const params = new URLSearchParams({ limit: String(limit) });
+export function listRuns(includeTest = false, limit = 200, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (includeTest) {
     params.set("include_test", "true");
   }
@@ -1098,8 +1098,8 @@ export function getPersonalRecords(includeTest = false) {
   return apiFetch<PersonalRecordItem[]>(`/runs/personal-records${query ? `?${query}` : ""}`);
 }
 
-export function listVolunteering(includeTest = false, limit = 200) {
-  const params = new URLSearchParams({ limit: String(limit) });
+export function listVolunteering(includeTest = false, limit = 200, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (includeTest) {
     params.set("include_test", "true");
   }
@@ -1461,6 +1461,14 @@ async function fetchAllAdminPreviewPages<T>(
     offset += page.length;
   }
   return items;
+}
+
+export function getAllUserRuns(includeTest = false) {
+  return fetchAllAdminPreviewPages((limit, offset) => listRuns(includeTest, limit, offset));
+}
+
+export function getAllUserVolunteering(includeTest = false) {
+  return fetchAllAdminPreviewPages((limit, offset) => listVolunteering(includeTest, limit, offset));
 }
 
 // Public profile API (serial_id — числовой ID пользователя)
