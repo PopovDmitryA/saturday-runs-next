@@ -720,7 +720,7 @@ def _p_index_challenge(rows: list[RunRow]) -> dict[str, object]:
         to_next_label = f"ещё {needed} {_plural_ru(needed, ('пробежка', 'пробежки', 'пробежек'))}"
     top = [
         {"location": names[key], "count": count}
-        for key, count in counts.most_common(10)
+        for key, count in counts.most_common(20)
     ]
     return _challenge(
         code="p_index",
