@@ -56,7 +56,7 @@ export function milestoneAccentLabel(milestone: MyHistoryMilestone): string {
     case "pr":
       return "Личный рекорд";
     case "location_pr":
-      return "Рекорд локации";
+      return "Личный рекорд в локации";
     case "new_region": {
       const milestoneNumber = geoMilestoneNumber(milestone.number);
       if (milestoneNumber != null) {
@@ -217,7 +217,7 @@ export function milestoneBragText(milestone: MyHistoryMilestone, siteUrl: string
       details = milestoneDetailsLine(milestone, { time: true, position: true, delta: true, platformInLocation: false });
       break;
     case "location_pr":
-      headline = `🥉 Новый рекорд локации «${milestone.location_name}»!`;
+      headline = `🥉 Новый личный рекорд в локации «${milestone.location_name}»!`;
       details = milestoneDetailsLine(milestone, { time: true, position: true, delta: true });
       break;
     case "first_foreign_parkrun":

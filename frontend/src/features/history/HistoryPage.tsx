@@ -124,7 +124,7 @@ export function milestoneTitle(milestone: MyHistoryMilestone): string {
     case "pr":
       return time ? `Личный рекорд — ${time}` : "Личный рекорд";
     case "location_pr":
-      return time ? `Рекорд локации — ${time}` : "Рекорд локации";
+      return time ? `Личный рекорд в локации — ${time}` : "Личный рекорд в локации";
     case "new_country":
       return `Новая страна: ${milestone.country ?? milestone.location_name}`;
     case "new_region":
