@@ -292,20 +292,36 @@ def _collect_run_milestones(
                     milestones.append(make(kind="first_foreign_run"))
                     foreign_run_seen = True
 
-        # PR: улучшение своего лучшего времени на этой платформе. Первый
-        # результат на платформе — базовая точка (дебют вехой PR не считаем).
-        # Глобальный рекорд всегда одновременно является и платформенным (min
-        # по всем платформам не может быть меньше min по одной из них) — поэтому
-        # это ВЗАИМОИСКЛЮЧАЮЩИЕ вехи одного события: либо pr, либо global_pr,
-        # никогда обе сразу (одна карточка на пробежку).
+        # PR/глобальный рекорд — ВЗАИМОИСКЛЮЧАЮЩИЕ вехи одного события (одна
+        # карточка на пробежку): либо pr, либо global_pr, никогда обе сразу.
+        #
+        # Личный рекорд (pr) — улучшение своего лучшего времени НА ЭТОЙ
+        # платформе: первый результат на платформе — базовая точка, дебют
+        # вехой pr не считаем (нужна прошлая пробежка в системе для сравнения).
+        #
+        # Глобальный рекорд (global_pr) — улучшение всё-время-лучшего результата
+        # по ВСЕМ платформам, и дебют на платформе тут НЕ помеха: если первая
+        # пробежка в новой системе быстрее прежнего глобального рекорда — это
+        # глобальный рекорд, его надо показать (как в recalculate_cross_platform_
+        # personal_records: is_global_pr = global_best is None or time < best).
+        # Единственное исключение — самая первая пробежка вообще (global_best is
+        # None): она отдельная веха «Первая пробежка», а не global_pr.
         finish_time = run.finish_time_sec
         if finish_time is not None and finish_time > 0:
             platform_best = best_by_platform.get(platform_code)
-            if platform_best is not None and finish_time < platform_best:
-                is_global = global_best is not None and finish_time < global_best
-                kind = "global_pr" if is_global else "pr"
+            is_global = global_best is not None and finish_time < global_best
+            is_platform_pr = platform_best is not None and finish_time < platform_best
+            if is_global:
+                # delta — против предыдущего лучшего: своего на платформе, если
+                # на ней уже была пробежка, иначе против глобального рекорда
+                # (дебют в системе, побивший глобал — платформенной базы нет).
+                baseline = platform_best if platform_best is not None else global_best
                 milestones.append(
-                    make(kind=kind, delta_sec=platform_best - finish_time, is_global_pr=is_global)
+                    make(kind="global_pr", delta_sec=baseline - finish_time, is_global_pr=True)
+                )
+            elif is_platform_pr:
+                milestones.append(
+                    make(kind="pr", delta_sec=platform_best - finish_time, is_global_pr=False)
                 )
             if platform_best is None or finish_time < platform_best:
                 best_by_platform[platform_code] = finish_time
