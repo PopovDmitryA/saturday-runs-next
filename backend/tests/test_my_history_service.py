@@ -39,14 +39,21 @@ def _make_event(
     return event
 
 
-def _make_run_result(db_session: Session, event: Event, participant: Participant, suffix: str) -> RunResult:
+def _make_run_result(
+    db_session: Session,
+    event: Event,
+    participant: Participant,
+    suffix: str,
+    finish_time_sec: int = 20 * 60,
+) -> RunResult:
+    minutes, seconds = divmod(finish_time_sec, 60)
     run = RunResult(
         event_id=event.id,
         participant_id=participant.id,
         external_result_key=f"my-history-result-{suffix}",
         position=1,
-        finish_time_sec=20 * 60,
-        finish_time_display="00:20:00",
+        finish_time_sec=finish_time_sec,
+        finish_time_display=f"00:{minutes:02d}:{seconds:02d}",
         status="finished",
     )
     db_session.add(run)
@@ -152,3 +159,92 @@ def test_new_city_milestone_fires_for_parkrun_location_with_known_city(db_sessio
 
     # The unreliable parkrun country stub must never surface as a milestone.
     assert all(m["kind"] != "new_country" for m in history["milestones"])
+
+
+def test_global_pr_fires_on_platform_debut_faster_than_global_best(db_session: Session) -> None:
+    """A runner's FIRST run in a new system is normally not a personal record
+    (it's the baseline for that platform). But if that debut run is faster than
+    the runner's all-time best across every other platform, it IS a genuine
+    global record and must appear in the timeline — matching the stored
+    is_global_pr flag (recalculate_cross_platform_personal_records). Regression
+    for the reported case: runs 5 верст, then debuts on S95 and beats the global
+    record on the faster course — the milestone used to be silently dropped
+    because the debut had no prior time on S95 to compare against."""
+    suffix = str(uuid4().int % 1_000_000)
+    five_verst = _get_platform(db_session, "five_verst", "5 верст")
+    s95 = _get_platform(db_session, "s95", "S95")
+
+    user = User()
+    db_session.add(user)
+    db_session.flush()
+
+    fv_participant = Participant(
+        platform_id=five_verst.id,
+        external_user_id=f"gpr-fv-{suffix}",
+        display_name="Global PR Tester",
+        profile_url=f"https://5verst.ru/userstats/gpr-fv-{suffix}/",
+    )
+    s95_participant = Participant(
+        platform_id=s95.id,
+        external_user_id=f"gpr-s95-{suffix}",
+        display_name="Global PR Tester",
+        profile_url=f"https://s95.ru/athletes/gpr-s95-{suffix}",
+    )
+    db_session.add_all([fv_participant, s95_participant])
+    db_session.flush()
+    db_session.add_all(
+        [
+            PlatformLink(
+                user_id=user.id,
+                platform_id=five_verst.id,
+                participant_id=fv_participant.id,
+                external_user_id=fv_participant.external_user_id,
+                external_url=fv_participant.profile_url,
+            ),
+            PlatformLink(
+                user_id=user.id,
+                platform_id=s95.id,
+                participant_id=s95_participant.id,
+                external_user_id=s95_participant.external_user_id,
+                external_url=s95_participant.profile_url,
+            ),
+        ]
+    )
+
+    fv_location = Location(
+        platform_id=five_verst.id,
+        external_key=f"druzhba-gpr-{suffix}",
+        name="Дружба",
+        city="Москва",
+        country="Россия",
+    )
+    s95_location = Location(
+        platform_id=s95.id,
+        external_key=f"kuzminki-gpr-{suffix}",
+        name="Кузьминки",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add_all([fv_location, s95_location])
+    db_session.flush()
+
+    # 5 верст first (global baseline 23:30), then debut on S95 at 22:08 — faster
+    # than the global best, so a global record set on the very first S95 run.
+    fv_event = _make_event(db_session, five_verst, fv_location, f"fv-{suffix}", date(2022, 6, 11), 900_600)
+    s95_event = _make_event(db_session, s95, s95_location, f"s95-{suffix}", date(2022, 6, 18), 900_601)
+    _make_run_result(db_session, fv_event, fv_participant, f"fv-{suffix}", finish_time_sec=23 * 60 + 30)
+    _make_run_result(db_session, s95_event, s95_participant, f"s95-{suffix}", finish_time_sec=22 * 60 + 8)
+    db_session.commit()
+
+    history = get_my_history(db_session, user.id)
+    global_prs = [m for m in history["milestones"] if m["kind"] == "global_pr"]
+
+    assert len(global_prs) == 1
+    debut = global_prs[0]
+    assert debut["platform_code"] == "s95"
+    assert debut["finish_time_sec"] == 22 * 60 + 8
+    assert debut["is_global_pr"] is True
+    # No prior S95 time — delta is measured against the previous global best.
+    assert debut["delta_sec"] == (23 * 60 + 30) - (22 * 60 + 8)
+    # The debut is not double-counted as a plain platform PR.
+    assert all(m["kind"] != "pr" for m in history["milestones"])
