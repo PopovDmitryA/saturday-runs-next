@@ -54,7 +54,7 @@ export function milestoneAccentLabel(milestone: MyHistoryMilestone): string {
     case "global_pr":
       return "Глобальный рекорд";
     case "pr":
-      return "Личный рекорд";
+      return "Личный рекорд в системе";
     case "location_pr":
       return "Личный рекорд в локации";
     case "new_region": {

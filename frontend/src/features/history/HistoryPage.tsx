@@ -122,7 +122,7 @@ export function milestoneTitle(milestone: MyHistoryMilestone): string {
     case "global_pr":
       return time ? `Глобальный рекорд — ${time}` : "Глобальный рекорд";
     case "pr":
-      return time ? `Личный рекорд — ${time}` : "Личный рекорд";
+      return time ? `Личный рекорд в системе — ${time}` : "Личный рекорд в системе";
     case "location_pr":
       return time ? `Личный рекорд в локации — ${time}` : "Личный рекорд в локации";
     case "new_country":
