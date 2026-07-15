@@ -18,6 +18,7 @@ from app.models import (
 )
 from app.services.history_milestone_settings_service import get_disabled_milestone_kinds
 from app.services.location_catalog_service import LocationCatalogIndex, is_foreign_location
+from app.services.user_history_milestone_service import get_user_disabled_milestone_kinds_by_id
 from app.services.user_location_stats import _canonical_region, _normalize_geo_value
 from app.time_format import normalize_finish_time_display
 from app.volunteering_occasions import volunteer_occasion_dates
@@ -48,15 +49,16 @@ _KIND_ORDER = {
     "volunteer_location_club": 5,
     "global_pr": 6,
     "pr": 7,
-    "first_foreign_parkrun": 8,
-    "first_foreign_run": 9,
-    "new_country": 10,
-    "new_region": 11,
-    "new_city": 12,
-    "new_location": 13,
-    "first_volunteer": 14,
-    "volunteer_club": 15,
-    "volunteer_club_platform": 16,
+    "location_pr": 8,
+    "first_foreign_parkrun": 9,
+    "first_foreign_run": 10,
+    "new_country": 11,
+    "new_region": 12,
+    "new_city": 13,
+    "new_location": 14,
+    "first_volunteer": 15,
+    "volunteer_club": 16,
+    "volunteer_club_platform": 17,
 }
 
 
@@ -212,10 +214,13 @@ def _collect_run_milestones(
     catalog_index = LocationCatalogIndex(db)
     milestones: list[dict[str, object]] = []
 
-    # Лучшее время по каждой платформе и глобально — для PR-вех считаем
-    # хронологически сами (первый результат платформы — базовая точка, не веха).
+    # Лучшее время по каждой платформе, глобально и по каждой физической
+    # локации — для PR-вех считаем хронологически сами (первый результат
+    # платформы/локации — базовая точка, не веха). best_by_location зеркалит
+    # recalculate_cross_platform_personal_records (is_location_pr).
     best_by_platform: dict[str, int] = {}
     global_best: int | None = None
+    best_by_location: dict[str, int] = {}
     # «Домашняя» страна — страна первой пробежки с заполненной географией;
     # старт в любой другой стране = зарубежный. Новую страну/регион/город
     # (независимо от того, пробежка это или волонтёрство) считает отдельная
@@ -292,8 +297,9 @@ def _collect_run_milestones(
                     milestones.append(make(kind="first_foreign_run"))
                     foreign_run_seen = True
 
-        # PR/глобальный рекорд — ВЗАИМОИСКЛЮЧАЮЩИЕ вехи одного события (одна
-        # карточка на пробежку): либо pr, либо global_pr, никогда обе сразу.
+        # PR/глобальный/локационный рекорд — ВЗАИМОИСКЛЮЧАЮЩИЕ вехи одного
+        # события (одна карточка на пробежку), в порядке приоритета: global_pr,
+        # иначе pr, иначе location_pr — никогда две сразу.
         #
         # Личный рекорд (pr) — улучшение своего лучшего времени НА ЭТОЙ
         # платформе: первый результат на платформе — базовая точка, дебют
@@ -306,11 +312,19 @@ def _collect_run_milestones(
         # personal_records: is_global_pr = global_best is None or time < best).
         # Единственное исключение — самая первая пробежка вообще (global_best is
         # None): она отдельная веха «Первая пробежка», а не global_pr.
+        #
+        # Рекорд локации (location_pr) — улучшение лучшего времени на ОДНОЙ
+        # физической локации сквозь все платформы (identity — та же, что для
+        # location_club выше); первая пробежка на локации рекордом не считается.
+        # Показывается только когда это НЕ глобальный рекорд и НЕ рекорд
+        # платформы — иначе веха уже показана как global_pr/pr.
         finish_time = run.finish_time_sec
         if finish_time is not None and finish_time > 0:
             platform_best = best_by_platform.get(platform_code)
+            location_best = best_by_location.get(identity)
             is_global = global_best is not None and finish_time < global_best
             is_platform_pr = platform_best is not None and finish_time < platform_best
+            is_location_pr = location_best is not None and finish_time < location_best
             if is_global:
                 # delta глобального рекорда — против ПРЕДЫДУЩЕГО глобального
                 # рекорда (лучшего всё-время результата до этой пробежки), а не
@@ -326,10 +340,16 @@ def _collect_run_milestones(
                 milestones.append(
                     make(kind="pr", delta_sec=platform_best - finish_time, is_global_pr=False)
                 )
+            elif is_location_pr:
+                milestones.append(
+                    make(kind="location_pr", delta_sec=location_best - finish_time, is_global_pr=False)
+                )
             if platform_best is None or finish_time < platform_best:
                 best_by_platform[platform_code] = finish_time
             if global_best is None or finish_time < global_best:
                 global_best = finish_time
+            if location_best is None or finish_time < location_best:
+                best_by_location[identity] = finish_time
 
     return milestones
 
@@ -646,9 +666,10 @@ def get_my_history(
 
     Вехи: первая пробежка (сквозная и по каждой системе), клубы пробежек
     (сквозные и по каждой системе, 10/25/50/100/250/500/1000), клубы на
-    локации (пробежки и волонтёрства — сквозь платформы), личный и глобальный
-    рекорды (взаимоисключающие — одна карточка на пробежку), новый регион/
-    страна/город/локация (считаются по ОБЕИМ активностям — пробежка или
+    локации (пробежки и волонтёрства — сквозь платформы), личный, глобальный
+    и локационный рекорды (взаимоисключающие — одна карточка на пробежку, в
+    порядке приоритета global_pr > pr > location_pr), новый регион/страна/
+    город/локация (считаются по ОБЕИМ активностям — пробежка или
     волонтёрство), первый зарубежный старт (и отдельно первый зарубежный
     паркран), первое волонтёрство и клубы волонтёрств (сквозные и по каждой
     системе).
@@ -659,7 +680,12 @@ def get_my_history(
         + _collect_location_geo_milestones(db, user_id, include_test_events=include_test_events)
     )
 
-    disabled_kinds = get_disabled_milestone_kinds(db)
+    # Скрытые виды вех: глобально (админ) + персонально (сам пользователь).
+    # Персональный выбор владельца профиля применяется и к публичной истории —
+    # если человек спрятал вид у себя, гости его тоже не видят.
+    disabled_kinds = get_disabled_milestone_kinds(db) | get_user_disabled_milestone_kinds_by_id(
+        db, user_id
+    )
     if disabled_kinds:
         milestones = [item for item in milestones if str(item["kind"]) not in disabled_kinds]
 

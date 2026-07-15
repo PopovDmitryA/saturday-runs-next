@@ -82,3 +82,23 @@ class ProfileSlugCheckResponse(BaseModel):
 class ProfileSlugUpdateRequest(BaseModel):
     # None или пустая строка — очистить ссылку.
     slug: str | None = None
+
+
+class HistoryMilestoneKindSetting(BaseModel):
+    kind: str
+    label: str
+    description: str
+    enabled: bool
+
+
+class HistoryMilestoneSettingsResponse(BaseModel):
+    description: str = (
+        "Выберите, какие виды вех показывать в вашей «Моей истории». Снятая галочка "
+        "убирает вид из вашего таймлайна (и с публичного профиля, если он открыт). "
+        "На подсчёт остальных вех это не влияет — вернуть можно в любой момент."
+    )
+    kinds: list[HistoryMilestoneKindSetting] = Field(default_factory=list)
+
+
+class HistoryMilestoneKindUpdateRequest(BaseModel):
+    enabled: bool

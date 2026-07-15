@@ -807,6 +807,7 @@ export type MyHistoryMilestoneKind =
   | "volunteer_location_club"
   | "global_pr"
   | "pr"
+  | "location_pr"
   | "first_foreign_parkrun"
   | "first_foreign_run"
   | "new_region"
@@ -871,6 +872,24 @@ export function getAdminHistoryMilestones() {
 
 export function setAdminHistoryMilestoneEnabled(kind: string, enabled: boolean) {
   return apiFetch<HistoryMilestoneKindSetting>(`/admin/history-milestones/${kind}`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+// ── Настройки: персональный вкл/выкл видов вех «Моя история» ─────────────────
+
+export type HistoryMilestoneSettings = {
+  description: string;
+  kinds: HistoryMilestoneKindSetting[];
+};
+
+export function getHistoryMilestoneSettings() {
+  return apiFetch<HistoryMilestoneSettings>("/settings/history-milestones");
+}
+
+export function setHistoryMilestoneEnabled(kind: string, enabled: boolean) {
+  return apiFetch<HistoryMilestoneSettings>(`/settings/history-milestones/${kind}`, {
     method: "PUT",
     body: JSON.stringify({ enabled }),
   });

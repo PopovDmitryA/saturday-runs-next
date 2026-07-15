@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { AppShell } from "../../components/AppShell";
 import { AuthProvidersSection } from "./AuthProvidersSection";
+import { HistoryMilestonesSection } from "./HistoryMilestonesSection";
 import { HomeLocationSection } from "./HomeLocationSection";
 import { PrivacySettingsSection } from "./PrivacySettingsSection";
 import { ProfileLinkSection } from "./ProfileLinkSection";
@@ -17,6 +18,7 @@ function SettingsContent() {
       <PrivacySettingsSection />
       <ProfileLinkSection />
       <HomeLocationSection />
+      <HistoryMilestonesSection />
       <AuthProvidersSection initialMergeToken={mergeToken} />
     </AppShell>
   );
