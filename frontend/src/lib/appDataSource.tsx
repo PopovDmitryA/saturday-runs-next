@@ -24,8 +24,8 @@ import {
   getUniqueLocationsDetail,
   getVisitedLocationsMap,
   getVolunteerRoleStats,
-  listRuns,
-  listVolunteering,
+  getAllUserRuns,
+  getAllUserVolunteering,
   type BestResultItem,
   type CatalogLocationsTableResponse,
   type MapLocationsResponse,
@@ -53,8 +53,8 @@ export type AppDataSource = {
 
 export const authDataSource: AppDataSource = {
   mode: "auth",
-  listRuns,
-  listVolunteering,
+  listRuns: (includeTest) => getAllUserRuns(includeTest),
+  listVolunteering: (includeTest) => getAllUserVolunteering(includeTest),
   getBestResults,
   getPersonalRecords,
   getVolunteerRoleStats,
