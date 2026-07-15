@@ -320,9 +320,14 @@ def upsert_participant(
         .one_or_none()
     )
     now = datetime.now(timezone.utc)
-    default_profile_url = (
-        None if external_user_id.startswith("unknown:") else f"https://5verst.ru/userstats/{external_user_id}/"
-    )
+    if external_user_id.startswith("unknown:"):
+        default_profile_url = None
+    elif platform.code == "runpark":
+        default_profile_url = f"https://runpark.ru/Account/Karmas/{external_user_id}"
+    elif platform.code == "five_verst":
+        default_profile_url = f"https://5verst.ru/userstats/{external_user_id}/"
+    else:
+        default_profile_url = None
     if row is None:
         row = Participant(
             platform_id=platform.id,
