@@ -167,6 +167,7 @@ def list_co_runners(
             Participant.profile_url,
             Platform.code,
             Event.event_date,
+            Participant.external_user_id,
         )
         .join(Event, RunResult.event_id == Event.id)
         .join(Platform, Event.platform_id == Platform.id)
@@ -189,14 +190,14 @@ def list_co_runners(
     # секондари- и основной записью однозначно указывает на одного и того же
     # человека — переносим такую RunPark-строку в бакет основного участника.
     primary_result_owner: dict[tuple[UUID, int, int], UUID] = {}
-    for event_id, their_time, their_position, participant_id, _, _, _, _ in other_rows:
+    for event_id, their_time, their_position, participant_id, _, _, _, _, _ in other_rows:
         if event_id in canonical_map:
             continue  # это сама вторичная (RunPark) запись, не основная
         if their_time is not None and their_position is not None:
             primary_result_owner[(event_id, their_position, their_time)] = participant_id
 
     stats_by_key: dict[str, _CoRunnerStats] = {}
-    for event_id, their_time, their_position, participant_id, display_name, profile_url, platform_code, event_date in other_rows:
+    for event_id, their_time, their_position, participant_id, display_name, profile_url, platform_code, event_date, external_user_id in other_rows:
         primary_event_id = canonical_map.get(event_id)
         if primary_event_id is not None and their_time is not None and their_position is not None:
             duplicate_owner = primary_result_owner.get((primary_event_id, their_position, their_time))
@@ -215,7 +216,9 @@ def list_co_runners(
                 site_serial_id=site.serial_id if site is not None else None,
             )
             stats_by_key[key] = stats
-        if profile_url:
+        if platform_code == "runpark" and external_user_id:
+            stats.profile_urls[platform_code] = f"https://runpark.ru/Account/Karmas/{external_user_id}"
+        elif profile_url:
             stats.profile_urls[platform_code] = profile_url
 
         canonical = canonical_map.get(event_id, event_id)
