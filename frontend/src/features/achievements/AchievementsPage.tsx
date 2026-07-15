@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AppShell } from "../../components/AppShell";
+import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
+import { DetailModal } from "../../components/DetailModal";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAuth } from "../../components/RequireAuth";
 import {
@@ -94,15 +96,19 @@ export function MedalIcon({
   );
 }
 
-function cellTitle(cell: ChallengeCell): string {
+function cellTooltipLines(cell: ChallengeCell): string[] {
   if (cell.done && cell.date) {
     const platform = cell.platform_code ? ` (${platformCodeLabel(cell.platform_code)})` : "";
-    return `${cell.label} — закрыто ${formatDate(cell.date)} · ${cell.location ?? ""}${platform}`.trim();
+    const lines = [`закрыто ${formatDate(cell.date)} · ${cell.location ?? ""}${platform}`.trim()];
+    if (cell.count != null && cell.count > 0) {
+      lines.push(pluralizeRu(cell.count, ["финиш", "финиша", "финишей"]));
+    }
+    return lines;
   }
   if (cell.hint) {
-    return `${cell.label} — не закрыто. ${cell.hint}`;
+    return [`не закрыто. ${cell.hint}`];
   }
-  return `${cell.label} — ещё не закрыто`;
+  return ["ещё не закрыто"];
 }
 
 function ChallengeCells({ cells }: { cells: ChallengeCell[] }) {
@@ -110,15 +116,15 @@ function ChallengeCells({ cells }: { cells: ChallengeCell[] }) {
   return (
     <div className={dense ? "challenge-cells challenge-cells-dense" : "challenge-cells"}>
       {cells.map((cell) => (
-        <span
-          key={cell.label}
-          className={`challenge-cell${cell.done ? ` done ${platformCellClass(cell.platform_code)}` : ""}${
-            !cell.done && cell.hint ? " has-hint" : ""
-          }`}
-          title={cellTitle(cell)}
-        >
-          {cell.label}
-        </span>
+        <ChartColumnTooltip key={cell.label} title={cell.label} lines={cellTooltipLines(cell)}>
+          <span
+            className={`challenge-cell${cell.done ? ` done ${platformCellClass(cell.platform_code)}` : ""}${
+              !cell.done && cell.hint ? " has-hint" : ""
+            }`}
+          >
+            {cell.label}
+          </span>
+        </ChartColumnTooltip>
       ))}
     </div>
   );
@@ -197,9 +203,12 @@ function ChallengeDays({ challenge }: { challenge: Challenge }) {
   );
 }
 
+const DEJA_VU_INLINE_LIMIT = 4;
+
 function ChallengeItems({ challenge }: { challenge: Challenge }) {
   const items = challenge.detail.items ?? [];
   const example = challenge.detail.example;
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
   if (items.length === 0) {
     return (
       <div className="challenge-items-empty">
@@ -215,32 +224,53 @@ function ChallengeItems({ challenge }: { challenge: Challenge }) {
       </div>
     );
   }
+  const openItem = openIndex != null ? items[openIndex] : null;
   return (
-    <ul className="challenge-items">
-      {items.map((item, index) => (
-        <li key={index} className="challenge-item">
-          {item.value && <span className="challenge-item-value">{item.value}</span>}
-          {item.count != null && <span className="challenge-item-count">× {item.count}</span>}
-          {item.occurrences ? (
-            <span className="challenge-item-occurrences">
-              {item.occurrences.map((occurrence, occurrenceIndex) => (
-                <span key={occurrenceIndex} className="challenge-occurrence">
-                  {occurrence.location} · {formatDate(occurrence.date)}
-                </span>
-              ))}
-              {item.count != null && item.count > item.occurrences.length && (
-                <span className="challenge-occurrence-more">
-                  и ещё {item.count - item.occurrences.length}
-                </span>
-              )}
-            </span>
-          ) : (
-            item.location && <span className="challenge-item-location">{item.location}</span>
-          )}
-          {item.date && <span className="challenge-item-date">{formatDate(item.date)}</span>}
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="challenge-items">
+        {items.map((item, index) => (
+          <li key={index} className="challenge-item">
+            {item.value && <span className="challenge-item-value">{item.value}</span>}
+            {item.count != null && <span className="challenge-item-count">× {item.count}</span>}
+            {item.occurrences ? (
+              <span className="challenge-item-occurrences">
+                {item.occurrences.slice(0, DEJA_VU_INLINE_LIMIT).map((occurrence, occurrenceIndex) => (
+                  <span key={occurrenceIndex} className="challenge-occurrence">
+                    {occurrence.location} · {formatDate(occurrence.date)}
+                  </span>
+                ))}
+                {item.occurrences.length > DEJA_VU_INLINE_LIMIT && (
+                  <button
+                    type="button"
+                    className="challenge-occurrence-more"
+                    onClick={() => setOpenIndex(index)}
+                  >
+                    и ещё {item.occurrences.length - DEJA_VU_INLINE_LIMIT} — показать все
+                  </button>
+                )}
+              </span>
+            ) : (
+              item.location && <span className="challenge-item-location">{item.location}</span>
+            )}
+            {item.date && <span className="challenge-item-date">{formatDate(item.date)}</span>}
+          </li>
+        ))}
+      </ul>
+      <DetailModal
+        open={openItem != null}
+        title={openItem?.value ? `Дежавю · ${openItem.value}` : "Дежавю"}
+        onClose={() => setOpenIndex(null)}
+      >
+        <ul className="challenge-occurrences-list">
+          {(openItem?.occurrences ?? []).map((occurrence, occurrenceIndex) => (
+            <li key={occurrenceIndex} className="challenge-occurrence-list-item">
+              <span className="challenge-occurrence-list-location">{occurrence.location}</span>
+              <span className="challenge-occurrence-list-date">{formatDate(occurrence.date)}</span>
+            </li>
+          ))}
+        </ul>
+      </DetailModal>
+    </>
   );
 }
 

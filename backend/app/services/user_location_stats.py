@@ -103,18 +103,27 @@ def _canonical_region(region: str) -> str:
 
 
 def count_unique_geo_from_rows(
+    catalog_index: LocationCatalogIndex,
     rows: list[tuple[Location, str]],
 ) -> tuple[int, int]:
-    cities: set[str] = set()
-    regions: set[str] = set()
-    for location, _platform_code in rows:
+    """Уникальные город/регион по канонической площадке (location_catalog).
+
+    Раньше считали DISTINCT по сырым строкам Location — одна и та же площадка
+    под разными платформами (напр. parkrun/5 вёрст) могла указывать разный
+    city/region и давала лишний "город", хотя расшифровка (build_user_unique_
+    location_details) уже кластеризует так же и берёт одно значение на кластер.
+    """
+    city_by_cluster: dict[str, str] = {}
+    region_by_cluster: dict[str, str] = {}
+    for location, platform_code in rows:
+        key = catalog_index.canonical_identity_key(location, platform_code)
         city = _normalize_geo_value(location.city)
+        if city is not None and key not in city_by_cluster:
+            city_by_cluster[key] = city
         region = _normalize_geo_value(location.region)
-        if city is not None:
-            cities.add(city)
-        if region is not None:
-            regions.add(_canonical_region(region))
-    return len(regions), len(cities)
+        if region is not None and key not in region_by_cluster:
+            region_by_cluster[key] = _canonical_region(region)
+    return len(set(region_by_cluster.values())), len(set(city_by_cluster.values()))
 
 
 def count_unique_locations_from_rows(

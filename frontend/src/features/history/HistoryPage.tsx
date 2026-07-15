@@ -108,9 +108,9 @@ export function milestoneTitle(milestone: MyHistoryMilestone): string {
     case "run_club_platform":
       return `Клуб ${milestone.number} в системе`;
     case "location_club":
-      return `${runNumberLabel(milestone.number ?? 0)} пробежка на локации`;
+      return `${runNumberLabel(milestone.number ?? 0)} пробежка в локации`;
     case "volunteer_location_club":
-      return `${volunteerNumberLabel(milestone.number ?? 0)} волонтёрство на локации`;
+      return `${volunteerNumberLabel(milestone.number ?? 0)} волонтёрство в локации`;
     case "first_foreign_parkrun":
       return "Первый зарубежный паркран";
     case "first_foreign_run":

@@ -44,9 +44,9 @@ export function milestoneAccentLabel(milestone: MyHistoryMilestone): string {
     case "run_club_platform":
       return `Клуб ${milestone.number ?? ""} в системе`.trim();
     case "location_club":
-      return `${runNumberLabel(milestone.number ?? 0)} на локации`;
+      return `${runNumberLabel(milestone.number ?? 0)} в локации`;
     case "volunteer_location_club":
-      return `${volunteerNumberLabel(milestone.number ?? 0)} на локации`;
+      return `${volunteerNumberLabel(milestone.number ?? 0)} в локации`;
     case "first_foreign_parkrun":
       return "Первый зарубежный паркран";
     case "first_foreign_run":
@@ -198,11 +198,11 @@ export function milestoneBragText(milestone: MyHistoryMilestone, siteUrl: string
       details = milestoneDetailsLine(milestone, { time: true, position: true, platformInLocation: false });
       break;
     case "location_club":
-      headline = `🎯 ${runNumberLabel(milestone.number ?? 0)} пробежка на локации «${milestone.location_name}» — свой клуб там!`;
+      headline = `🎯 ${runNumberLabel(milestone.number ?? 0)} пробежка в локации «${milestone.location_name}» — свой клуб там!`;
       details = milestoneDetailsLine(milestone, { time: true, position: true });
       break;
     case "volunteer_location_club":
-      headline = `📍 ${volunteerNumberLabel(milestone.number ?? 0)} волонтёрство на локации «${milestone.location_name}» — свой клуб там!`;
+      headline = `📍 ${volunteerNumberLabel(milestone.number ?? 0)} волонтёрство в локации «${milestone.location_name}» — свой клуб там!`;
       details = milestoneDetailsLine(milestone, { role: true });
       break;
     case "global_pr":

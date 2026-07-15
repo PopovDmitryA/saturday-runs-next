@@ -1,4 +1,7 @@
 from datetime import date
+from uuid import uuid4
+
+from sqlalchemy.orm import Session
 
 from app.models import Location
 from app.services.dashboard_service import (
@@ -14,6 +17,7 @@ from app.services.dashboard_service import (
     _saturday_streak,
     _week_saturday,
 )
+from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.user_location_stats import count_unique_geo_from_rows
 
 
@@ -88,21 +92,28 @@ def test_current_saturday_streak_counts_midweek_start_toward_its_week() -> None:
     assert _current_saturday_streak(activity_dates, today) == 2
 
 
-def test_count_unique_geo_merges_moscow_region_variants() -> None:
+def test_count_unique_geo_merges_moscow_region_variants(db_session: Session) -> None:
+    # Явный id — иначе оба неперсистентных Location получат одинаковый
+    # fallback-ключ кластеризации ("location:None") и ложно схлопнутся в один.
     loc_mo = Location(
-        platform_id=__import__("uuid").uuid4(),
+        id=uuid4(),
+        platform_id=uuid4(),
         external_key="a",
         name="A",
         region="Московская область",
         city="Мытищи",
     )
     loc_m = Location(
-        platform_id=__import__("uuid").uuid4(),
+        id=uuid4(),
+        platform_id=uuid4(),
         external_key="b",
         name="B",
         region="Московская",
         city="Королёв",
     )
-    regions, cities = count_unique_geo_from_rows([(loc_mo, "five_verst"), (loc_m, "five_verst")])
+    catalog_index = LocationCatalogIndex(db_session)
+    regions, cities = count_unique_geo_from_rows(
+        catalog_index, [(loc_mo, "five_verst"), (loc_m, "five_verst")]
+    )
     assert regions == 1
     assert cities == 2

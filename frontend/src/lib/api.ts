@@ -634,6 +634,7 @@ export type ChallengeCell = {
   location: string | null;
   hint: string | null;
   platform_code: string | null;
+  count?: number | null;
 };
 
 export type ChallengeLetter = {
@@ -1042,7 +1043,7 @@ export function deleteRunRating(entryId: string) {
 export type CoRunnerItem = {
   participant_key: string;
   display_name: string | null;
-  profile_url: string | null;
+  profile_urls: Record<string, string>;
   platform_codes: string[];
   site_serial_id: number | null;
   meetings: number;
