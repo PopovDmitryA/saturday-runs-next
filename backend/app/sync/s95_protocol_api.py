@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Event,
+    Location,
     Participant,
     Platform,
     ProtocolSyncState,
@@ -39,6 +40,36 @@ def _content_hash(parsed: ParsedApiProtocol) -> str:
         parts.append(f"{v.external_result_key}|{v.role}")
     blob = "\n".join(parts)
     return hashlib.sha256(blob.encode()).hexdigest()[:32]
+
+
+def _apply_event_number(
+    db: Session,
+    platform: Platform,
+    location: Location,
+    event: Event | None,
+    external_event_key: str,
+    event_number: int | None,
+) -> None:
+    """Номер забега не входит в content-hash протокола, поэтому на fast-path «содержимое
+    не изменилось» его нужно дописать отдельно (например, событие создано user-синком
+    до batch-прохода)."""
+    if event is None or event_number is None or event.event_number == event_number:
+        return
+    from app.models import EventSummary
+
+    event.event_number = event_number
+    if not event.is_test_event:
+        event.title = f"{location.name} #{event_number}"
+    summary_row = (
+        db.query(EventSummary)
+        .filter(
+            EventSummary.platform_id == platform.id,
+            EventSummary.external_event_key == external_event_key,
+        )
+        .one_or_none()
+    )
+    if summary_row is not None:
+        summary_row.event_number = event_number
 
 
 def _get_or_create_state(db: Session, *, event_id, event_summary_id) -> ProtocolSyncState:
@@ -83,6 +114,7 @@ def upsert_activity_protocol_api(
     *,
     activity_json: dict | None = None,
     recalculate_pr: bool = True,
+    event_number: int | None = None,
 ) -> S95ApiProtocolResult:
     """Atomically upsert one protocol from the JSON API.
 
@@ -91,6 +123,10 @@ def upsert_activity_protocol_api(
 
     recalculate_pr keeps personal records current as each protocol is written (ongoing
     syncs); pass False for bulk backfill and recompute once at the end.
+
+    event_number: the JSON API has no run number field — the caller derives it from the
+    activity's chronological rank in the location's /events/{slug}.json list (matches the
+    '#' column on the site's location page).
     """
     activity = activity_json if activity_json is not None else fetch_activity(activity_ref.url)
     parsed = parse_s95_activity(
@@ -120,6 +156,7 @@ def upsert_activity_protocol_api(
             ref_updated_at = activity_ref.updated_at_dt()
             if ref_updated_at is not None:
                 state.source_updated_at = ref_updated_at
+            _apply_event_number(db, platform, location, existing_event, external_event_key, event_number)
             db.flush()
             return S95ApiProtocolResult(
                 external_event_key=external_event_key,
@@ -132,7 +169,7 @@ def upsert_activity_protocol_api(
     summary = CanonicalEventSummary(
         external_event_key=external_event_key,
         event_date=parsed.event_date,
-        event_number=None,
+        event_number=event_number,
         location_external_key=location.external_key,
         location_name=location.name,
         source_url=activity_ref.url,

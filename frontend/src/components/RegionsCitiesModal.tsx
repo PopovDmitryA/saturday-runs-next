@@ -20,12 +20,14 @@ type GeoLocationEntry = {
   name: string;
   hint: string | null;
   visitCount: number;
+  isForeign: boolean;
 };
 
 type GeoGroup = {
   name: string;
   locations: GeoLocationEntry[];
   isUnknown: boolean;
+  isForeign: boolean;
   totalVisits: number;
 };
 
@@ -56,7 +58,12 @@ function buildGroups(
       entries = [];
       map.set(name, entries);
     }
-    entries.push({ name: loc.name, hint, visitCount: locationVisitCount(loc, activityFilter) });
+    entries.push({
+      name: loc.name,
+      hint,
+      visitCount: locationVisitCount(loc, activityFilter),
+      isForeign: Boolean(loc.is_foreign),
+    });
   }
 
   return Array.from(map.entries())
@@ -64,9 +71,13 @@ function buildGroups(
       name,
       locations: locations.sort((a, b) => a.name.localeCompare(b.name, "ru")),
       isUnknown: name === UNKNOWN_GEO,
+      isForeign: locations.every((l) => l.isForeign),
       totalVisits: locations.reduce((sum, l) => sum + l.visitCount, 0),
     }))
     .sort((a, b) => {
+      // Зарубежные регионы/города — всегда в самом низу списка, даже ниже
+      // группы "Не заполнено".
+      if (a.isForeign !== b.isForeign) return a.isForeign ? 1 : -1;
       if (a.isUnknown !== b.isUnknown) return a.isUnknown ? 1 : -1;
       if (b.locations.length !== a.locations.length) {
         return b.locations.length - a.locations.length;

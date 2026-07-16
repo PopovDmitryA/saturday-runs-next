@@ -8,6 +8,7 @@ import { AppShell } from "../../components/AppShell";
 import { EmptyActivityState } from "../../components/EmptyActivityState";
 import { GlobalPrFinishTime } from "../../components/GlobalPrFinishTime";
 import { LocationNameLink } from "../../components/LocationNameLink";
+import { LocationPrLocationName } from "../../components/LocationPrLocationName";
 import { RequireAuth } from "../../components/RequireAuth";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RateRunModal } from "../../components/RateRunModal";
@@ -62,7 +63,7 @@ function RunsContent() {
     try {
       const data = await listRuns(includeTest);
       setRuns(data);
-      if (isDemo || mode === "public-profile" || mode === "admin-preview") {
+      if (isDemo || mode === "public-profile") {
         setHasProfileLink(false);
       } else {
         const links = await listProfileLinks();
@@ -376,7 +377,9 @@ function RunsContent() {
                         <PlatformBadge code={run.platform_code} />
                       </td>
                       <td className="td-location">
-                        <LocationNameLink name={run.location_name} slug={run.location_slug} />
+                        <LocationPrLocationName isLocationPr={run.is_location_pr}>
+                          <LocationNameLink name={run.location_name} slug={run.location_slug} />
+                        </LocationPrLocationName>
                       </td>
                       <td className="td-compact">{run.position ?? "—"}</td>
                       <td className="td-compact">{run.gender_position ?? "—"}</td>
@@ -450,7 +453,7 @@ function RunsContent() {
     return <DemoShell title="Пробежки">{pageBody}</DemoShell>;
   }
 
-  if (mode === "public-profile" || mode === "admin-preview") {
+  if (mode === "public-profile") {
     return <>{pageBody}</>;
   }
 

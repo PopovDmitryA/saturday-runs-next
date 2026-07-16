@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models import Participant, Platform, SyncStatus
+from app.parkrun.age_category import normalize_parkrun_age_group
 from app.parkrun.parsers.athlete import volunteer_summary_to_canonical
 from app.platform_adapters.parkrun import parser as parkrun_parser
 from app.sync import upsert
@@ -41,20 +42,26 @@ def apply_parkrun_participant(
         .one_or_none()
     )
     created = row is None
+    # Пишем только валидную возрастную группу (SM25-29 и т.п.); мусор вроде
+    # age grade («50.59%») отбрасываем, а при пустом значении на странице
+    # не затираем уже сохранённую группу.
+    age_category = normalize_parkrun_age_group(profile_extra.get("age_category"))
     row = upsert.upsert_participant(
         db,
         platform,
         external_user_id=profile.external_user_id,
         display_name=profile.display_name,
         profile_url=profile.profile_url,
-        age_category=profile_extra.get("age_category"),
+        age_category=age_category,
     )
     row.barcode_id = profile.barcode_id
-    row.age_category = profile_extra.get("age_category")
+    if age_category is not None:
+        row.age_category = age_category
     row.profile_extra = profile_extra
     row.source_url = profile.source_url or profile.profile_url
     row.parser_version = upsert.PARSER_VERSION
     row.fetched_at = _utcnow()
+    row.profile_checked_at = _utcnow()
     row.sync_status = SyncStatus.ok
     row.error_message = None
     db.flush()

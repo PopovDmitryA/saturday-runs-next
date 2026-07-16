@@ -611,6 +611,9 @@ class Participant(Base):
     parser_version: Mapped[str | None] = mapped_column(String(32))
     source_hash: Mapped[str | None] = mapped_column(String(64))
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Когда страницу профиля реально открывали и парсили (в отличие от fetched_at,
+    # который обновляется при любом касании строки, в т.ч. из импорта результатов).
+    profile_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sync_status: Mapped[SyncStatus | None] = mapped_column(Enum(SyncStatus, name="sync_status_enum", create_constraint=False))
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -647,6 +650,8 @@ class RunResult(Base):
     is_pr: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_first_run: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_first_run_at_location: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    is_global_pr: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    is_location_pr: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     club_name: Mapped[str | None] = mapped_column(String(256))
     achievement_labels: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
     source_hash: Mapped[str | None] = mapped_column(String(64))
@@ -719,11 +724,38 @@ class User(Base):
         nullable=False,
         server_default='{"five_verst": false, "s95": false, "parkrun": false}',
     )
+    # Виды вех «Моя история», которые пользователь скрыл у себя (список kind'ов).
+    # Отсутствие kind в списке = включён (по умолчанию). Персональный аналог
+    # админского history_milestone_settings; канон kind'ов —
+    # app.history_milestone_kinds.MILESTONE_KINDS.
+    history_disabled_kinds: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default="[]",
+    )
 
     platform_links: Mapped[list["PlatformLink"]] = relationship(back_populates="user")
     dashboard_cache: Mapped["DashboardCache | None"] = relationship(back_populates="user", uselist=False)
     sync_jobs: Mapped[list["SyncJob"]] = relationship(back_populates="user")
     auth_identities: Mapped[list["AuthIdentity"]] = relationship(back_populates="user")
+
+
+class BlockedProfileSlug(Base):
+    """Slug'и публичного профиля, зарезервированные вручную (нельзя занять).
+
+    В отличие от статического RESERVED_SLUGS (служебные пути приложения), это
+    редактируемый через админку список: чей-то ник, который мы держим свободным
+    по просьбе/на будущее. Хранится в нижнем регистре — сравнение с public_slug
+    регистронезависимо.
+    """
+
+    __tablename__ = "blocked_profile_slugs"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    slug: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    comment: Mapped[str | None] = mapped_column(Text)
+    created_by_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class AuthIdentity(Base):
@@ -961,6 +993,49 @@ class LocationRating(Base):
     # Показывать ли автора наружу; в БД оценка всегда не анонимна.
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class UserGoal(Base):
+    """Цель пользователя на календарный год.
+
+    goal_type — код пресета из achievements_service.GOAL_PRESETS (свободного
+    текста нет). target_value — планка в единицах пресета: штуки для объёмных
+    целей, секунды для целей на время. Прогресс считается на лету.
+    """
+
+    __tablename__ = "user_goals"
+    __table_args__ = (
+        UniqueConstraint("user_id", "year", "goal_type", name="uq_user_goals_user_year_type"),
+        Index("ix_user_goals_user_year", "user_id", "year"),
+        CheckConstraint("target_value > 0", name="ck_user_goals_target_positive"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    goal_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_value: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class HistoryMilestoneSetting(Base):
+    """Вкл/выкл конкретного вида вехи «Моя история» (админ-переключатель).
+
+    Строка существует только для вех, которые администратор явно выключил —
+    отсутствие строки для kind означает enabled=true (значение по умолчанию).
+    Канонический список kind'ов — app.history_milestone_kinds.MILESTONE_KINDS.
+    """
+
+    __tablename__ = "history_milestone_settings"
+
+    kind: Mapped[str] = mapped_column(String(64), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

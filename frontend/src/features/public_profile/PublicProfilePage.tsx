@@ -3,18 +3,26 @@ import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
 import { SiteHeader } from "../../components/SiteHeader";
 import { AppDataSourceProvider, createPublicProfileDataSource } from "../../lib/appDataSource";
+import { AchievementsShowcase } from "../achievements/AchievementsPage";
 import { UserMapPanel } from "../maps/UserMapPanel";
 import { RunsContent } from "../runs/RunsPage";
 import { VolunteeringContent } from "../volunteering/VolunteeringPage";
+import { HistoryContent } from "../history/HistoryPage";
+import { CoRunnersContent } from "../co_runners/CoRunnersPage";
 import {
   ApiError,
   getCurrentUser,
   logout,
   getPublicProfileDashboard,
+  getPublicProfileHistory,
   getPublicProfileVisitedMap,
   getPublicProfileCatalogTable,
+  getPublicProfileAchievements,
+  getPublicProfileCoRunners,
+  getPublicProfileCoRunnerMeetings,
   getCatalogLocationsMap,
   resolveProfileHandle,
+  type AchievementsResponse,
   type AdminUserPreviewDashboard,
   type User,
 } from "../../lib/api";
@@ -22,7 +30,7 @@ import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 import { APP_NAV_ITEMS, PUBLIC_NAV_ITEMS } from "../../lib/siteNav";
 import { SITE_HOME_HREF, SITE_PUBLIC_HOME_HREF } from "../../lib/siteBrand";
 
-type ProfileTab = "dashboard" | "runs" | "volunteering" | "map";
+type ProfileTab = "dashboard" | "runs" | "volunteering" | "map" | "achievements" | "history" | "meetings";
 
 function profileDisplayName(user: AdminUserPreviewDashboard["user"]): string {
   if (user.display_name) return user.display_name;
@@ -113,8 +121,48 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
     if (tab === "dashboard") void loadDashboard();
   }, [tab, loadDashboard]);
 
+  const [achievements, setAchievements] = useState<AchievementsResponse | null>(null);
+  const [achievementsError, setAchievementsError] = useState<string | null>(null);
+  const [achievementsPlatform, setAchievementsPlatform] = useState<string | null>(null);
+  const [achievementsSwitching, setAchievementsSwitching] = useState(false);
+
+  const loadAchievements = useCallback(
+    async (platform: string | null) => {
+      setAchievementsError(null);
+      setAchievementsSwitching(true);
+      try {
+        setAchievements(await getPublicProfileAchievements(serialId, platform ?? undefined));
+      } catch (err) {
+        setAchievementsError(err instanceof Error ? err.message : "Не удалось загрузить достижения");
+      } finally {
+        setAchievementsSwitching(false);
+      }
+    },
+    [serialId],
+  );
+
+  useEffect(() => {
+    if (tab === "achievements" && !achievements && !achievementsError) {
+      void loadAchievements(achievementsPlatform);
+    }
+  }, [tab, achievements, achievementsError, achievementsPlatform, loadAchievements]);
+
+  const handleAchievementsPlatformChange = useCallback(
+    (platform: string | null) => {
+      setAchievementsPlatform(platform);
+      void loadAchievements(platform);
+    },
+    [loadAchievements],
+  );
+
   const loadVisitedMap = useCallback(() => getPublicProfileVisitedMap(serialId, false), [serialId]);
   const loadCatalogTable = useCallback(() => getPublicProfileCatalogTable(serialId, false), [serialId]);
+  const loadHistory = useCallback(() => getPublicProfileHistory(serialId, false), [serialId]);
+  const loadCoRunners = useCallback(() => getPublicProfileCoRunners(serialId), [serialId]);
+  const loadCoRunnerMeetings = useCallback(
+    (participantKey: string) => getPublicProfileCoRunnerMeetings(serialId, participantKey),
+    [serialId],
+  );
 
   const stats = dashboard?.stats;
   const profileName = dashboard ? profileDisplayName(dashboard.user) : null;
@@ -162,6 +210,15 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
         </button>
         <button type="button" className={tabClass("map")} onClick={() => setTab("map")}>
           Карта
+        </button>
+        <button type="button" className={tabClass("achievements")} onClick={() => setTab("achievements")}>
+          Достижения
+        </button>
+        <button type="button" className={tabClass("history")} onClick={() => setTab("history")}>
+          История
+        </button>
+        <button type="button" className={tabClass("meetings")} onClick={() => setTab("meetings")}>
+          Встречи
         </button>
       </div>
 
@@ -213,6 +270,41 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
             visitedTabLabel="Визиты"
           />
         </section>
+      )}
+
+      {tab === "achievements" && (
+        <>
+          {achievementsError && (
+            <div className="card error">
+              <p>{achievementsError}</p>
+              <button type="button" className="btn secondary" onClick={() => void loadAchievements(achievementsPlatform)}>
+                Повторить
+              </button>
+            </div>
+          )}
+          {!achievementsError && !achievements && <p className="muted">Загрузка…</p>}
+          {achievements && (
+            <AchievementsShowcase
+              data={achievements}
+              platformFilter={achievementsPlatform}
+              onPlatformFilterChange={handleAchievementsPlatformChange}
+              platformSwitching={achievementsSwitching}
+            />
+          )}
+        </>
+      )}
+
+      {tab === "history" && (
+        <HistoryContent
+          load={loadHistory}
+          title="История участника"
+          description="Ключевые вехи беговой истории: первая пробежка, клубы, личные рекорды, новые регионы и волонтёрство."
+          emptyText="У этого участника пока нет вех."
+        />
+      )}
+
+      {tab === "meetings" && (
+        <CoRunnersContent load={loadCoRunners} loadMeetings={loadCoRunnerMeetings} />
       )}
     </ProfileShell>
   );

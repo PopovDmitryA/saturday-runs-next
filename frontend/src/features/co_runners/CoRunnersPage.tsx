@@ -30,20 +30,8 @@ function SiteProfileIcon() {
   );
 }
 
-function ExternalProfileIcon() {
-  return (
-    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
-      <path
-        d="M8.2 5H5.7A1.7 1.7 0 0 0 4 6.7v7.6A1.7 1.7 0 0 0 5.7 16h7.6a1.7 1.7 0 0 0 1.7-1.7v-2.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <path d="M11 4h5v5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M15.5 4.5 9.3 10.7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
+function stopPropagation(event: MouseEvent) {
+  event.stopPropagation();
 }
 
 function scoreLabel(item: CoRunnerItem): string {
@@ -73,14 +61,16 @@ function meetingOutcome(meeting: CoRunnerMeetingItem): {
   if (meeting.my_time_sec > meeting.their_time_sec) {
     return { label: "Участник быстрее", tone: " co-runners-score-loss" };
   }
+  if (meeting.my_position != null && meeting.their_position != null && meeting.my_position !== meeting.their_position) {
+    return meeting.my_position < meeting.their_position
+      ? { label: "Вы быстрее", tone: " co-runners-score-win" }
+      : { label: "Участник быстрее", tone: " co-runners-score-loss" };
+  }
   return { label: "Вровень", tone: "" };
 }
 
 function ParticipantName({ item }: { item: CoRunnerItem }) {
   const name = item.display_name ?? "Без имени";
-  const stop = (event: MouseEvent) => event.stopPropagation();
-  const externalLabel =
-    item.platform_codes.length === 1 ? platformCodeLabel(item.platform_codes[0]) : "системе";
 
   return (
     <span className="co-runners-name">
@@ -90,18 +80,8 @@ function ParticipantName({ item }: { item: CoRunnerItem }) {
           text="Откроется профиль участника на этом сайте"
           className="co-runners-profile-icon co-runners-profile-icon-site"
         >
-          <a href={`/users/${item.site_serial_id}`} onClick={stop} aria-label="Профиль на сайте">
+          <a href={`/users/${item.site_serial_id}`} onClick={stopPropagation} aria-label="Профиль на сайте">
             <SiteProfileIcon />
-          </a>
-        </StatHintTooltip>
-      )}
-      {item.profile_url != null && (
-        <StatHintTooltip
-          text={`Откроется профиль в ${externalLabel} в новой вкладке`}
-          className="co-runners-profile-icon co-runners-profile-icon-external"
-        >
-          <a href={item.profile_url} target="_blank" rel="noreferrer" onClick={stop} aria-label="Профиль в системе">
-            <ExternalProfileIcon />
           </a>
         </StatHintTooltip>
       )}
@@ -161,7 +141,12 @@ function MeetingsDetail({ meetings }: { meetings: CoRunnerMeetingItem[] }) {
   );
 }
 
-function CoRunnersContent({ demo }: { demo: boolean }) {
+type CoRunnersContentProps = {
+  load: () => Promise<CoRunnerItem[]>;
+  loadMeetings: (participantKey: string) => Promise<CoRunnerMeetingItem[]>;
+};
+
+export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) {
   const [items, setItems] = useState<CoRunnerItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -173,7 +158,7 @@ function CoRunnersContent({ demo }: { demo: boolean }) {
 
   useEffect(() => {
     let cancelled = false;
-    (demo ? demoGetCoRunners() : getCoRunners())
+    load()
       .then((data) => {
         if (!cancelled) {
           setItems(data);
@@ -192,7 +177,7 @@ function CoRunnersContent({ demo }: { demo: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [demo]);
+  }, [load]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -211,7 +196,7 @@ function CoRunnersContent({ demo }: { demo: boolean }) {
     setMeetingsError(null);
     if (!meetingsByKey[key]) {
       setMeetingsLoadingKey(key);
-      (demo ? demoGetCoRunnerMeetings(key) : getCoRunnerMeetings(key))
+      loadMeetings(key)
         .then((data) => {
           setMeetingsByKey((prev) => ({ ...prev, [key]: data }));
         })
@@ -282,9 +267,30 @@ function CoRunnersContent({ demo }: { demo: boolean }) {
                         </td>
                         <td>
                           <span className="co-runners-badges">
-                            {item.platform_codes.map((code) => (
-                              <PlatformBadge key={code} code={code} />
-                            ))}
+                            {item.platform_codes.map((code) => {
+                              const profileUrl = item.profile_urls[code];
+                              const badge = <PlatformBadge code={code} />;
+                              if (!profileUrl) {
+                                return <span key={code}>{badge}</span>;
+                              }
+                              return (
+                                <StatHintTooltip
+                                  key={code}
+                                  text={`Откроется профиль в ${platformCodeLabel(code)} в новой вкладке`}
+                                  className="co-runners-badge-link"
+                                >
+                                  <a
+                                    href={profileUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={stopPropagation}
+                                    aria-label={`Профиль в ${platformCodeLabel(code)}`}
+                                  >
+                                    {badge}
+                                  </a>
+                                </StatHintTooltip>
+                              );
+                            })}
                           </span>
                         </td>
                         <td className="td-num">{item.meetings}</td>
@@ -332,16 +338,25 @@ function CoRunnersContent({ demo }: { demo: boolean }) {
     </>
   );
 
-  if (demo) {
-    return <DemoShell title="Встречи">{pageBody}</DemoShell>;
-  }
-  return <AppShell title="Встречи">{pageBody}</AppShell>;
+  return pageBody;
 }
 
 export function CoRunnersPage() {
-  return <RequireAuth>{() => <CoRunnersContent demo={false} />}</RequireAuth>;
+  return (
+    <RequireAuth>
+      {() => (
+        <AppShell title="Встречи">
+          <CoRunnersContent load={getCoRunners} loadMeetings={getCoRunnerMeetings} />
+        </AppShell>
+      )}
+    </RequireAuth>
+  );
 }
 
 export function DemoCoRunnersPage() {
-  return <CoRunnersContent demo />;
+  return (
+    <DemoShell title="Встречи">
+      <CoRunnersContent load={demoGetCoRunners} loadMeetings={demoGetCoRunnerMeetings} />
+    </DemoShell>
+  );
 }

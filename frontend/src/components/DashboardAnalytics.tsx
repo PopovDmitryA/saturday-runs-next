@@ -53,6 +53,8 @@ type AnalyticsCard = {
   label: ReactNode;
   category?: AnalyticsCardCategory;
   wide?: boolean;
+  /** Пара с другой half-картой делит ряд пополам (не на всю ширину, но и не в общей сетке). */
+  half?: boolean;
   clickable?: boolean;
   modalTarget?: "unique_locations" | "best_results" | "personal_records" | "volunteer_roles" | "unique_regions" | "unique_cities";
   modalActivity?: "all" | "runs" | "volunteering";
@@ -388,7 +390,7 @@ function buildAnalyticsCards(
       value: analytics.top_volunteer_role.role,
       label: `Частая роль · ${analytics.top_volunteer_role.count} ${timesLabel(analytics.top_volunteer_role.count)}`,
       category: "volunteering",
-      wide: true,
+      half: true,
     });
   }
 
@@ -397,20 +399,12 @@ function buildAnalyticsCards(
       key: "top_location",
       value: <TopLocationValue topLocation={analytics.top_location} />,
       label: `Самая частая локация · ${analytics.top_location.count} ${timesLabel(analytics.top_location.count)}`,
-      wide: true,
+      half: true,
     });
   }
 
-  if (analytics.first_activity_date && analytics.last_activity_date) {
-    const from = formatDate(analytics.first_activity_date);
-    const to = formatDate(analytics.last_activity_date);
-    cards.push({
-      key: "activity_period",
-      value: from === to ? from : `${from} — ${to}`,
-      label: "Период активности",
-      wide: true,
-    });
-  }
+  // «Период активности» убран — та же информация (первая и последняя веха)
+  // теперь видна в «Моей истории» целиком, отдельной картой дублировать не нужно.
 
   return cards;
 }
@@ -765,10 +759,17 @@ export function DashboardAnalytics({
 
   const orderedPanels = sortByLayoutOrder(panels, DASHBOARD_ANALYTICS_PANEL_ORDER);
 
+  const gridCards = cards.filter((card) => !card.half);
+  const halfCards = cards.filter((card) => card.half);
+
   return (
     <section className="dashboard-analytics" aria-label="Дополнительная аналитика">
-      {cards.length > 0 && (
-        <div className="stats-grid stats-grid-secondary">{cards.map((card) => renderCard(card))}</div>
+      {gridCards.length > 0 && (
+        <div className="stats-grid stats-grid-secondary">{gridCards.map((card) => renderCard(card))}</div>
+      )}
+
+      {halfCards.length > 0 && (
+        <div className="stats-grid stats-grid-halves">{halfCards.map((card) => renderCard(card))}</div>
       )}
 
       {orderedPanels.map((panel) => (

@@ -8,9 +8,9 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models import Event, Location, Platform, SyncRun, SyncRunStatus
+from app.models import Event, Location, Participant, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalLocation
-from app.s95.api_client import S95ApiLocation, fetch_all_locations, fetch_event_activities
+from app.s95.api_client import S95ApiActivityRef, S95ApiLocation, fetch_all_locations, fetch_event_activities
 from app.services.sync_watermark_service import (
     S95_PROTOCOLS_RECONCILED_THROUGH,
     set_watermark,
@@ -37,6 +37,16 @@ def _pace(delay_min_sec: float, delay_max_sec: float) -> None:
 def most_recent_saturday(today: date) -> date:
     """The Saturday on or before `today` (Saturday == weekday 5)."""
     return today - timedelta(days=(today.weekday() - 5) % 7)
+
+
+def event_numbers_by_date(refs: list[S95ApiActivityRef]) -> dict[str, int]:
+    """date (YYYY-MM-DD) -> порядковый номер забега локации.
+
+    JSON API s95 не отдаёт номер забега; на сайте колонка «#» страницы локации — это
+    хронологический ранг активности. Список /events/{slug}.json содержит все активности
+    локации, так что номер = позиция в отсортированном по дате списке (с 1)."""
+    ordered = sorted(refs, key=lambda r: (r.date, r.url))
+    return {ref.date: index + 1 for index, ref in enumerate(ordered)}
 
 
 @dataclass
@@ -133,10 +143,11 @@ def _apply_protocol(
     result: S95ApiSyncResult,
     *,
     recalculate_pr: bool = True,
+    event_number: int | None = None,
 ) -> None:
     try:
         outcome = upsert_activity_protocol_api(
-            db, platform, location, ref, recalculate_pr=recalculate_pr
+            db, platform, location, ref, recalculate_pr=recalculate_pr, event_number=event_number
         )
         commit_step(db)  # immediate per-protocol commit — progress survives a crash
         if not outcome.changed:
@@ -218,12 +229,13 @@ def sync_updated_protocols(
                 continue
 
             freshness = _protocol_freshness_map(db, platform, location)
+            numbers = event_numbers_by_date(refs)
             for ref in refs:
                 key = f"{api_loc.slug}:{ref.date}"
                 known = freshness.get(key)
                 if known is None:
                     # Not in our DB yet.
-                    _apply_protocol(db, platform, location, ref, result)
+                    _apply_protocol(db, platform, location, ref, result, event_number=numbers.get(ref.date))
                     _pace(delay_min_sec, delay_max_sec)
                     continue
 
@@ -236,7 +248,7 @@ def sync_updated_protocols(
 
                 if source_updated_at is not None:
                     if ref_updated_at > source_updated_at:
-                        _apply_protocol(db, platform, location, ref, result)
+                        _apply_protocol(db, platform, location, ref, result, event_number=numbers.get(ref.date))
                         _pace(delay_min_sec, delay_max_sec)
                     else:
                         result.protocols_unchanged += 1
@@ -247,7 +259,7 @@ def sync_updated_protocols(
                     _seed_source_updated_at(db, platform, key, ref_updated_at)
                     result.protocols_unchanged += 1
                 else:
-                    _apply_protocol(db, platform, location, ref, result)
+                    _apply_protocol(db, platform, location, ref, result, event_number=numbers.get(ref.date))
                     _pace(delay_min_sec, delay_max_sec)
 
         if not result.errors:
@@ -299,10 +311,11 @@ def reconcile_protocols_for_date(
                 result.errors.append(f"{api_loc.slug}: list fetch failed: {exc}")
                 continue
 
+            numbers = event_numbers_by_date(refs)
             for ref in refs:
                 if ref.date != date_str:
                     continue
-                _apply_protocol(db, platform, location, ref, result)
+                _apply_protocol(db, platform, location, ref, result, event_number=numbers.get(ref.date))
                 _pace(delay_min_sec, delay_max_sec)
         _finish_run(db, run, result)
         db.commit()
@@ -358,6 +371,7 @@ def full_backfill(
                 result.errors.append(f"{api_loc.slug}: list fetch failed: {exc}")
                 continue
 
+            numbers = event_numbers_by_date(refs)
             refs = sorted(refs, key=lambda r: r.date)
             if limit_per_location is not None:
                 refs = refs[:limit_per_location]
@@ -365,14 +379,26 @@ def full_backfill(
                 if resume and _already_checked(db, platform, location, ref):
                     result.protocols_unchanged += 1
                     continue
-                _apply_protocol(db, platform, location, ref, result, recalculate_pr=False)
+                _apply_protocol(
+                    db, platform, location, ref, result,
+                    recalculate_pr=False,
+                    event_number=numbers.get(ref.date),
+                )
                 _pace(delay_min_sec, delay_max_sec)
 
         # Recompute personal records once over the whole platform after the bulk load.
         if not result.errors:
-            from app.services.personal_record_service import recalculate_personal_records
+            from app.services.personal_record_service import (
+                recalculate_participants_cross_platform_personal_records,
+                recalculate_personal_records,
+            )
 
             recalculate_personal_records(db, PLATFORM_CODE)
+            platform_participant_ids = {
+                row[0]
+                for row in db.query(Participant.id).filter(Participant.platform_id == platform.id).all()
+            }
+            recalculate_participants_cross_platform_personal_records(db, platform_participant_ids)
             set_watermark(
                 db,
                 platform,

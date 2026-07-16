@@ -1,13 +1,13 @@
 import type { ReactElement } from "react";
 import { useEffect } from "react";
 import { AdminAbusePage } from "./features/admin/AdminAbusePage";
-import { AdminS95ParticipantsPage } from "./features/admin/AdminS95ParticipantsPage";
-import { AdminParkrunPage } from "./features/admin/AdminParkrunPage";
+import { AdminBlockedSlugsPage } from "./features/admin/AdminBlockedSlugsPage";
 import { AdminStatsPage } from "./features/admin/AdminStatsPage";
 import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
-import { AdminUserPreviewPage } from "./features/admin/AdminUserPreviewPage";
+import { AdminHistoryMilestonesPage } from "./features/admin/AdminHistoryMilestonesPage";
 import { PublicProfilePage } from "./features/public_profile/PublicProfilePage";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
+import { AchievementsPage } from "./features/achievements/AchievementsPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { LoginPage } from "./features/auth/LoginPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
@@ -19,13 +19,17 @@ import { LocationPage } from "./features/locations/LocationPage";
 import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
 import { CoRunnersPage, DemoCoRunnersPage } from "./features/co_runners/CoRunnersPage";
 import { DemoRunsPage, RunsPage } from "./features/runs/RunsPage";
+import { DemoHistoryPage, HistoryPage } from "./features/history/HistoryPage";
 import { DemoVolunteeringPage, VolunteeringPage } from "./features/volunteering/VolunteeringPage";
+import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
+import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SharePage } from "./features/share/SharePage";
 import { AboutPage } from "./features/about/AboutPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
+import { RequireAdmin } from "./components/RequireAdmin";
 import { useAppPath } from "./hooks/useAppPath";
 import { getCurrentUser, recordSitePageview } from "./lib/api";
 import { isLegacyGrafanaPath, legacyGrafanaHref } from "./lib/siteBrand";
@@ -70,24 +74,52 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/demo/co-runners": () => <DemoCoRunnersPage />,
   "/demo/volunteering": () => <DemoVolunteeringPage />,
   "/demo/maps": () => <DemoMapsPage />,
+  "/demo/history": () => <DemoHistoryPage />,
   "/dashboard": () => <DashboardPage />,
   "/profiles": () => <DashboardPage />,
   "/runs": () => <RunsPage />,
+  "/achievements": () => <AchievementsPage />,
   "/co-runners": () => <CoRunnersPage />,
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
-  "/locations": () => <LocationsIndexPage />,
+  "/locations": () => (
+    <RequireAdmin>
+      <LocationsIndexPage />
+    </RequireAdmin>
+  ),
+  "/history": () => <HistoryPage />,
+  // ВРЕМЕННО до публичного запуска: рейтинги только для админа (плюс гейт на API).
+  "/ratings": () => (
+    <RequireAdmin>
+      <LeaderboardsHubPage />
+    </RequireAdmin>
+  ),
+  "/ratings/runs": () => (
+    <RequireAdmin>
+      <LeaderboardPage metric="runs" />
+    </RequireAdmin>
+  ),
+  "/ratings/volunteering": () => (
+    <RequireAdmin>
+      <LeaderboardPage metric="volunteering" />
+    </RequireAdmin>
+  ),
+  "/ratings/locations": () => (
+    <RequireAdmin>
+      <LeaderboardPage metric="locations" />
+    </RequireAdmin>
+  ),
   "/share": () => <SharePage />,
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
   "/admin": () => <AdminRedirect />,
   "/admin/queue": () => <QueuePage />,
   "/admin/users": () => <AdminUsersPage />,
-  "/admin/s95-participants": () => <AdminS95ParticipantsPage />,
   "/admin/abuse": () => <AdminAbusePage />,
+  "/admin/profile-slugs": () => <AdminBlockedSlugsPage />,
   "/admin/stats": () => <AdminStatsPage />,
   "/admin/ratings": () => <AdminRatingsPage />,
-  "/admin/parkrun": () => <AdminParkrunPage />,
+  "/admin/history-milestones": () => <AdminHistoryMilestonesPage />,
   "/settings": () => <SettingsPage />,
   "/about": () => <AboutPage />,
 };
@@ -125,10 +157,6 @@ function renderRoute(path: string): ReactElement {
   }
   if (path.startsWith("/api/")) {
     return <ApiPathRedirect />;
-  }
-  const previewMatch = path.match(/^\/admin\/users\/([0-9a-f-]{36})\/preview$/i);
-  if (previewMatch) {
-    return <AdminUserPreviewPage userId={previewMatch[1]} />;
   }
   const publicProfileMatch = path.match(/^\/users\/([^/]+)$/);
   if (publicProfileMatch) {

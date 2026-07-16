@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
+import { MyHistoryTeaser } from "../../components/MyHistoryTeaser";
 import { OnThisDayCard } from "../../components/OnThisDayCard";
 import { AppDataSourceProvider, demoDataSource } from "../../lib/appDataSource";
 import {
+  demoGetMyHistory,
   demoGetOnThisDay,
   getDemoDashboard,
   type AdminUserPreviewDashboard,
@@ -79,6 +81,8 @@ function DemoDashboardContent() {
               variant="volunteering"
             />
           </div>
+
+          <MyHistoryTeaser load={demoGetMyHistory} href="/demo/history" />
 
           <DashboardAnalytics
             analytics={stats?.analytics}

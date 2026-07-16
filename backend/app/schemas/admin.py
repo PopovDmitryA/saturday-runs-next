@@ -28,6 +28,8 @@ class AdminUserListItem(BaseModel):
     telegram_id: int | None = None
     telegram_username: str | None = None
     display_name: str | None = None
+    public_slug: str | None = None
+    profile_private: bool = False
     auth_logins: list[AdminUserAuthBrief] = Field(default_factory=list)
     news_subscribed: bool = False
     consent_accepted: bool = False
@@ -40,28 +42,6 @@ class AdminUserListItem(BaseModel):
 
 class AdminUserListResponse(BaseModel):
     items: list[AdminUserListItem]
-    total: int
-    limit: int
-    offset: int
-    query: str | None = None
-
-
-class AdminS95ParticipantListItem(BaseModel):
-    id: str
-    external_user_id: str
-    display_name: str | None = None
-    profile_url: str | None = None
-    barcode_id: str | None = None
-    club_name: str | None = None
-    planning_location: str | None = None
-    planning_location_seen_at: datetime | None = None
-    fetched_at: datetime | None = None
-    sync_status: str
-    error_message: str | None = None
-
-
-class AdminS95ParticipantListResponse(BaseModel):
-    items: list[AdminS95ParticipantListItem]
     total: int
     limit: int
     offset: int
@@ -82,3 +62,18 @@ class AdminUserPreviewDashboardResponse(BaseModel):
     stats: dict[str, object]
     computed_at: datetime | None = None
     platform_links: list[AdminPlatformLinkBrief] = Field(default_factory=list)
+
+
+class HistoryMilestoneKindSettingResponse(BaseModel):
+    kind: str
+    label: str
+    description: str
+    enabled: bool
+
+
+class HistoryMilestoneKindSettingsResponse(BaseModel):
+    kinds: list[HistoryMilestoneKindSettingResponse] = Field(default_factory=list)
+
+
+class HistoryMilestoneKindUpdateRequest(BaseModel):
+    enabled: bool

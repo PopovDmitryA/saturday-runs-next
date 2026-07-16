@@ -28,6 +28,35 @@ if ! command -v sshpass >/dev/null 2>&1; then
 fi
 
 export SSHPASS="${TEMP_SSH_PASSWORD}"
+
+# --- Deploy lock -------------------------------------------------------------
+# Serialize concurrent deploys (two sessions / worktrees могут стартовать rsync +
+# git-align на проде одновременно и затереть друг друга). Замок — в фиксированном
+# месте вне проекта, чтобы разные worktree-папки контендили за ОДИН замок.
+# macOS без flock, поэтому используем атомарный mkdir. Второй деплой ждёт первого.
+LOCK_DIR="${DEPLOY_LOCK_DIR:-/tmp/saturday-runs-deploy.lock}"
+lock_waited=0
+while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+  holder="$(cat "$LOCK_DIR/pid" 2>/dev/null || echo '?')"
+  # Зависший замок от упавшего деплоя (процесса уже нет) — забираем себе.
+  if [[ "$holder" =~ ^[0-9]+$ ]] && ! kill -0 "$holder" 2>/dev/null; then
+    echo "deploy_prod: stale lock (dead pid $holder) — reclaiming" >&2
+    rm -rf "$LOCK_DIR"
+    continue
+  fi
+  if (( lock_waited == 0 )); then
+    echo "deploy_prod: another deploy in progress (pid $holder) — waiting..." >&2
+  fi
+  sleep 5
+  lock_waited=$(( lock_waited + 5 ))
+  if (( lock_waited >= 1800 )); then
+    echo "deploy_prod: waited 30m for deploy lock, giving up." >&2
+    exit 1
+  fi
+done
+echo "$$" > "$LOCK_DIR/pid"
+trap 'rm -rf "$LOCK_DIR"' EXIT
+# -----------------------------------------------------------------------------
 SSH_OPTS=(-o StrictHostKeyChecking=no)
 
 rsync_to() {
@@ -49,6 +78,9 @@ rsync_to deploy/ "${REMOTE}/deploy/"
 rsync_to docker-compose.yml "${REMOTE}/docker-compose.yml"
 rsync_to docker-compose.prod.yml "${REMOTE}/docker-compose.prod.yml"
 rsync_to frontend/src/ "${REMOTE}/frontend/src/"
+# index.html — шаблон Vite: inline-скрипты/меты попадают в собранный HTML,
+# без rsync сборка на сервере идёт со старым шаблоном.
+rsync_to frontend/index.html "${REMOTE}/frontend/index.html"
 # public/ — рантайм-статики (geojson карт и т.п.): Vite копирует их в dist при
 # сборке, без rsync новые файлы не попадут в бандл (git align идёт ПОСЛЕ сборки).
 rsync_to frontend/public/ "${REMOTE}/frontend/public/"
@@ -70,7 +102,7 @@ GIT_ALIGN=0
 # deployed and must not block alignment — hence --quiet on the exact paths).
 if git branch -r --contains "$LOCAL_SHA" 2>/dev/null | grep -q 'origin/main' \
   && git diff --quiet HEAD -- backend/app backend/vk_bot backend/alembic deploy \
-       frontend/src frontend/public docker-compose.yml docker-compose.prod.yml; then
+       frontend/src frontend/index.html frontend/public docker-compose.yml docker-compose.prod.yml; then
   GIT_ALIGN=1
 else
   echo "WARN: HEAD not on origin/main or deployed paths have tracked changes — prod git left as-is (no align)"

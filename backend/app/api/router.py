@@ -1,12 +1,14 @@
 from fastapi import APIRouter
 
 from app.api.routes import (
+    achievements,
     admin,
     auth,
     dashboard,
     demo,
     internal_bot,
     internal_vk_bot,
+    leaderboards,
     location_ratings,
     locations,
     profiles,
@@ -24,7 +26,9 @@ api_router.include_router(demo.router)
 api_router.include_router(admin.router)
 api_router.include_router(profiles.router)
 api_router.include_router(dashboard.router)
+api_router.include_router(achievements.router)
 api_router.include_router(runs.router)
+api_router.include_router(leaderboards.router)
 api_router.include_router(location_ratings.router)
 api_router.include_router(locations.router)
 api_router.include_router(sync.router)

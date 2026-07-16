@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { SITE_HOME_HREF, SITE_LOGO_SRC, SITE_NAME } from "../lib/siteBrand";
+import { ThemeToggle } from "./ThemeToggle";
 
 export type SiteNavItem = {
   href: string;
@@ -72,7 +73,10 @@ export function SiteHeader({
           </nav>
         )}
 
-        {actions ? <div className="site-topbar-actions">{actions}</div> : null}
+        <div className="site-topbar-actions">
+          <ThemeToggle />
+          {actions}
+        </div>
       </div>
     </header>
   );
