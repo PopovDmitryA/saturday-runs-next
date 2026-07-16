@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
-# Deploy local changes to production (rsync + build + docker + host nginx).
+# Deploy to production: сервер сам подтягивает задеплоенный коммит из origin/main.
+#
+# Почему НЕ rsync (переделано 16.07.2026):
+#   1. Старый скрипт слал ~12 отдельных rsync, каждый — свой SSH-коннект. Прод
+#      начинал отвергать авторизацию со второго коннекта подряд (защита от
+#      перебора пароля), деплой падал на полпути, а ретраи только продлевали
+#      блокировку — вплоть до отказа даже одиночному ssh. См. память
+#      project_deploy_rsync_auth_lockout. Теперь коннект РОВНО ОДИН.
+#   2. rsync писал файлы мимо git, поэтому прод-git молча уползал (старый HEAD +
+#      куча "modified"), и его приходилось «выравнивать» задним числом отдельным
+#      шагом, который к тому же пропускался при грязном дереве. Теперь код
+#      приезжает через git — прод-git правдив by design, выравнивать нечего.
+#   3. На прод уезжало содержимое ДИСКА, включая незакоммиченные правки. Теперь
+#      уезжает ровно то, что запушено в origin/main (правило Дмитрия: сначала
+#      коммит+пуш, потом сервер подтягивает).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,7 +29,6 @@ fi
 SSH_HOST="${TEMP_SSH_HOST:-${PROD_SSH_HOST:-195.58.34.112}}"
 SSH_USER="${TEMP_SSH_USER:-${PROD_SSH_USER:-viewer}}"
 REMOTE="${PROD_REMOTE_DIR:-/opt/saturday-runs-next}"
-COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 
 if [[ -z "${TEMP_SSH_PASSWORD:-}" ]]; then
   echo "deploy_prod: TEMP_SSH_PASSWORD not set in .env" >&2
@@ -30,9 +43,9 @@ fi
 export SSHPASS="${TEMP_SSH_PASSWORD}"
 
 # --- Deploy lock -------------------------------------------------------------
-# Serialize concurrent deploys (two sessions / worktrees могут стартовать rsync +
-# git-align на проде одновременно и затереть друг друга). Замок — в фиксированном
-# месте вне проекта, чтобы разные worktree-папки контендили за ОДИН замок.
+# Serialize concurrent deploys (две сессии / worktree могут стартовать деплой
+# одновременно и затереть друг друга). Замок — в фиксированном месте вне проекта,
+# чтобы разные worktree-папки контендили за ОДИН замок.
 # macOS без flock, поэтому используем атомарный mkdir. Второй деплой ждёт первого.
 LOCK_DIR="${DEPLOY_LOCK_DIR:-/tmp/saturday-runs-deploy.lock}"
 lock_waited=0
@@ -57,84 +70,102 @@ done
 echo "$$" > "$LOCK_DIR/pid"
 trap 'rm -rf "$LOCK_DIR"' EXIT
 # -----------------------------------------------------------------------------
-SSH_OPTS=(-o StrictHostKeyChecking=no)
 
-rsync_to() {
-  rsync -avz \
-    --exclude '__pycache__' \
-    --exclude '*.pyc' \
-    --no-perms --no-owner --no-group \
-    -e "sshpass -e ssh ${SSH_OPTS[*]}" "$1" "${SSH_USER}@${SSH_HOST}:$2"
-}
+# --- Preflight: деплоим только то, что реально лежит в origin/main ------------
+# Сервер тянет код из GitHub, поэтому незапушенный коммит физически невозможно
+# задеплоить — ловим это здесь с внятным сообщением, а не ошибкой git на проде.
+echo "=== preflight ==="
+git fetch origin --quiet
 
-echo "=== rsync to ${SSH_USER}@${SSH_HOST}:${REMOTE} ==="
-rsync_to backend/app/ "${REMOTE}/backend/app/"
-rsync_to backend/vk_bot/ "${REMOTE}/backend/vk_bot/"
-rsync_to backend/alembic/ "${REMOTE}/backend/alembic/"
-rsync_to backend/Dockerfile "${REMOTE}/backend/Dockerfile"
-rsync_to backend/Dockerfile.parkrun "${REMOTE}/backend/Dockerfile.parkrun"
-rsync_to backend/pyproject.toml "${REMOTE}/backend/pyproject.toml"
-rsync_to deploy/ "${REMOTE}/deploy/"
-rsync_to docker-compose.yml "${REMOTE}/docker-compose.yml"
-rsync_to docker-compose.prod.yml "${REMOTE}/docker-compose.prod.yml"
-rsync_to frontend/src/ "${REMOTE}/frontend/src/"
-# index.html — шаблон Vite: inline-скрипты/меты попадают в собранный HTML,
-# без rsync сборка на сервере идёт со старым шаблоном.
-rsync_to frontend/index.html "${REMOTE}/frontend/index.html"
-# public/ — рантайм-статики (geojson карт и т.п.): Vite копирует их в dist при
-# сборке, без rsync новые файлы не попадут в бандл (git align идёт ПОСЛЕ сборки).
-rsync_to frontend/public/ "${REMOTE}/frontend/public/"
-
-REMOTE_QUOTED=$(printf '%q' "$REMOTE")
-COMPOSE_QUOTED=$(printf '%q' "$COMPOSE")
-
-# Keep prod git in sync with what we deploy. rsync only writes files to disk and
-# never advances prod's git HEAD, so prod git silently drifts (stale HEAD + a pile
-# of "modified"/untracked noise). To stop that, after the deploy we reset prod git
-# to the exact commit we shipped — but ONLY when this deploy came from a clean tree
-# that is already on origin/main. Otherwise (dirty/unpushed = hotfix testing) we
-# skip and leave prod git alone, so the reset can never clobber un-pushed changes.
-git fetch origin --quiet 2>/dev/null || true
 LOCAL_SHA="$(git rev-parse HEAD)"
-GIT_ALIGN=0
-# Align only if HEAD is on origin/main AND the rsynced paths have no *tracked*
-# modifications vs HEAD (untracked local files like backend/scripts/* are not
-# deployed and must not block alignment — hence --quiet on the exact paths).
-if git branch -r --contains "$LOCAL_SHA" 2>/dev/null | grep -q 'origin/main' \
-  && git diff --quiet HEAD -- backend/app backend/vk_bot backend/alembic deploy \
-       frontend/src frontend/index.html frontend/public docker-compose.yml docker-compose.prod.yml; then
-  GIT_ALIGN=1
-else
-  echo "WARN: HEAD not on origin/main or deployed paths have tracked changes — prod git left as-is (no align)"
+
+# Единственное жёсткое условие: коммит должен быть в origin/main.
+if ! git branch -r --contains "$LOCAL_SHA" 2>/dev/null | grep -q 'origin/main'; then
+  echo "deploy_prod: коммита ${LOCAL_SHA} нет в origin/main — сначала закоммить и запушь." >&2
+  echo "  (сервер берёт код из GitHub, с диска на прод больше ничего не уезжает)" >&2
+  exit 1
 fi
 
-echo "=== remote build & restart ==="
-sshpass -e ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
-  "REMOTE=${REMOTE_QUOTED} COMPOSE=${COMPOSE_QUOTED} LOCAL_SHA=${LOCAL_SHA} GIT_ALIGN=${GIT_ALIGN} bash -s" <<'REMOTE_SCRIPT'
+# Грязное дерево деплою больше НЕ мешает: уезжает коммит, а не содержимое диска,
+# поэтому чужой/свой WIP просто остаётся дома. Раньше (rsync) он бы уехал на прод —
+# в общем дереве часто лежит WIP параллельных сессий, см. память
+# feedback_parallel_sessions_shared_index. Но предупредить стоит: легко подумать,
+# что правка уехала, хотя она не закоммичена.
+if ! git diff --quiet HEAD; then
+  echo "NOTE: в дереве есть незакоммиченные правки — они НЕ уедут на прод (деплоится коммит):"
+  git status --short --untracked-files=no | sed 's/^/       /'
+fi
+
+# HEAD может быть предком origin/main (например, забыли смержить свежий main) —
+# тогда деплоится СТАРЫЙ код, что почти всегда не то, чего ждёшь.
+ORIGIN_MAIN_SHA="$(git rev-parse origin/main)"
+if [[ "$LOCAL_SHA" != "$ORIGIN_MAIN_SHA" ]]; then
+  echo "WARN: HEAD отстаёт от origin/main — деплоится ${LOCAL_SHA:0:7}, а в main уже ${ORIGIN_MAIN_SHA:0:7}."
+  echo "      Если нужен свежий main: git merge origin/main (или git checkout main && git pull)."
+fi
+
+echo "deploy: ${LOCAL_SHA} ($(git log -1 --pretty=%s))"
+echo "target: ${SSH_USER}@${SSH_HOST}:${REMOTE}"
+
+REMOTE_QUOTED=$(printf '%q' "$REMOTE")
+
+# --- Один SSH-коннект: код + сборка + миграции + рестарт ----------------------
+echo "=== remote deploy (single ssh connection) ==="
+sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 "${SSH_USER}@${SSH_HOST}" \
+  "REMOTE=${REMOTE_QUOTED} LOCAL_SHA=${LOCAL_SHA} bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 cd "$REMOTE"
 
-# NB: `docker compose exec -T` still attaches the container to stdin. This script
-# is fed to `bash -s` over the SSH stdin, so every exec MUST redirect stdin from
-# /dev/null — otherwise it swallows the rest of the script and the deploy stops
-# silently right here.
+# Функция, а не eval: eval ломает кавычки внутри --format / python -c.
+compose() { docker compose -f docker-compose.yml -f docker-compose.prod.yml "$@"; }
+
+# Сервисы, которые пересоздаём. nginx собирать нельзя — он на готовом образе
+# (nginx:1.27-alpine), build-контекст есть только у python-сервисов.
+SERVICES="worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat vk-bot"
+
+# NB: `docker compose exec/run -T` всё равно цепляет контейнер к stdin. Скрипт
+# приезжает в `bash -s` через SSH stdin, поэтому каждый exec/run ОБЯЗАН читать
+# из /dev/null — иначе он сожрёт остаток скрипта и деплой молча оборвётся тут.
 echo "--- queue lengths before ---"
-eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst </dev/null || true
-eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst_user </dev/null || true
-eval "$COMPOSE" exec -T redis redis-cli LLEN s95 </dev/null || true
-eval "$COMPOSE" exec -T redis redis-cli LLEN s95_user </dev/null || true
+compose exec -T redis redis-cli LLEN five_verst </dev/null || true
+compose exec -T redis redis-cli LLEN five_verst_user </dev/null || true
+compose exec -T redis redis-cli LLEN s95 </dev/null || true
+compose exec -T redis redis-cli LLEN s95_user </dev/null || true
+
+echo "--- sync code: git -> ${LOCAL_SHA} ---"
+# В норме здесь пусто. Непусто = кто-то правил файлы на проде руками (или остатки
+# оборвавшегося старого rsync-деплоя) — reset их затрёт, поэтому показываем что.
+dirty="$(git status --porcelain --untracked-files=no)"
+if [ -n "$dirty" ]; then
+  echo "WARN: правки в отслеживаемых файлах на проде будут затёрты git reset:"
+  echo "$dirty"
+fi
+git fetch origin --quiet
+# Untracked-мусор (nginx/*.conf, grafana/, backend/scripts/, логи) reset не трогает.
+git reset --hard "$LOCAL_SHA"
+git log --oneline -1
 
 echo "--- frontend build ---"
 docker run --rm -v "$PWD/frontend:/app" -w /app node:22-alpine sh -c "npm ci && npm run build"
 
-echo "--- docker services ---"
-# --force-recreate guarantees containers restart with the freshly built code
-# (a plain `up -d --build` can leave the old process running if Docker reuses
-# the container), so backend changes always take effect after a deploy.
-eval "$COMPOSE" up -d --build --force-recreate worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat vk-bot
-eval "$COMPOSE" restart nginx
-eval "$COMPOSE" stop worker-s95-user worker-five-verst-user 2>/dev/null || true
-eval "$COMPOSE" rm -f worker-s95-user worker-five-verst-user 2>/dev/null || true
+echo "--- build api image (нужен свежий образ для миграций) ---"
+compose build api
+
+echo "--- migrations (свежим образом, ДО recreate) ---"
+# Порядок важен: миграцию накатываем НОВЫМ образом, но пока крутится СТАРЫЙ код.
+# Если сделать наоборот (recreate раньше upgrade) — будет окно, где новый код
+# бьётся в ещё не созданную таблицу и отдаёт 500. Старый код переживает
+# аддитивную схему спокойно. Упадёт миграция — деплой встанет здесь (set -e),
+# прод останется на старом рабочем коде.
+compose run --rm -T api alembic upgrade head </dev/null
+
+echo "--- recreate services ---"
+# --force-recreate гарантирует, что контейнеры реально перезапустятся на новом
+# коде (обычный up -d может переиспользовать старый контейнер).
+compose up -d --build --force-recreate $SERVICES
+compose restart nginx
+compose stop worker-s95-user worker-five-verst-user 2>/dev/null || true
+compose rm -f worker-s95-user worker-five-verst-user 2>/dev/null || true
 
 echo "--- host nginx (run5k.run Grafana redirects) ---"
 if sudo -n cp deploy/nginx/run5k.run.conf /etc/nginx/sites-available/run5k.run 2>/dev/null; then
@@ -148,23 +179,16 @@ else
 fi
 
 echo "--- queue lengths after ---"
-eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst </dev/null || true
-eval "$COMPOSE" exec -T redis redis-cli LLEN five_verst_user </dev/null || true
-
-echo "--- git align (keep prod git == deployed commit) ---"
-if [ "${GIT_ALIGN:-0}" = "1" ]; then
-  git fetch origin --quiet \
-    && git reset --hard "${LOCAL_SHA}" \
-    && echo "prod git aligned to ${LOCAL_SHA}" \
-    || echo "WARN: git align failed — prod git left as-is"
-else
-  echo "skipped git align (deploy not from a clean origin/main tree); prod git unchanged"
-fi
+compose exec -T redis redis-cli LLEN five_verst </dev/null || true
+compose exec -T redis redis-cli LLEN five_verst_user </dev/null || true
 
 echo "--- smoke ---"
-curl -sf http://127.0.0.1:8080/health | head -c 200 || true
-echo
-curl -sI 'https://run5k.run/d/de1hu8dabny80c/karta-turistov' 2>/dev/null | head -5 || true
+compose ps --format '{{.Service}}: {{.Status}}'
+curl -s -o /dev/null -w "health: %{http_code}\n" http://127.0.0.1:8080/health || true
+curl -sI 'https://run5k.run/d/de1hu8dabny80c/karta-turistov' 2>/dev/null | head -1 || true
+
+echo "--- prod git == deployed commit ---"
+git log --oneline -1
 REMOTE_SCRIPT
 
-echo "=== deploy done ==="
+echo "=== deploy done: ${LOCAL_SHA} ==="
