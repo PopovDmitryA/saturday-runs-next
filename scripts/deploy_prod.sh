@@ -71,22 +71,51 @@ echo "$$" > "$LOCK_DIR/pid"
 trap 'rm -rf "$LOCK_DIR"' EXIT
 # -----------------------------------------------------------------------------
 
-# --- Preflight: деплоим только то, что реально лежит в origin/main ------------
-# Сервер тянет код из GitHub, поэтому незапушенный коммит физически невозможно
-# задеплоить — ловим это здесь с внятным сообщением, а не ошибкой git на проде.
+# --- Preflight: деплоится вершина origin/main, а не HEAD этой папки -----------
+# Деплой git-based: прод делает `git reset --hard <SHA>`, т.е. это не «выкатить мою
+# фичу», а «привести прод к состоянию коммита». Поэтому целевой коммит — ВСЕГДА
+# вершина origin/main, независимо от того, из какой папки/ветки запущен скрипт.
+#
+# Раньше деплоился HEAD текущего worktree, и это откатывало прод: сессия A мержит
+# свою ветку в main, следом мержатся B..E, потом A запускает деплой из своей папки —
+# её HEAD всё ещё фичевый коммит, теперь предок main, проверка «содержится в
+# origin/main» проходит, и reset --hard на этот SHA сносит с прода фичи B..E.
+# Про это был только WARN, который легко проскочить глазами. Теперь так не выйдет.
+#
+# Побочный эффект (нужный): деплой идемпотентен и запускается откуда угодно —
+# из любого worktree, любой сессии. Параллельные сессии могут не согласовывать,
+# «чья очередь»: конкурентные запуски сериализует замок выше, а выкатывают они
+# всё равно один и тот же актуальный main.
 echo "=== preflight ==="
 git fetch origin --quiet
 
-LOCAL_SHA="$(git rev-parse HEAD)"
+ORIGIN_MAIN_SHA="$(git rev-parse origin/main)"
 
-# Единственное жёсткое условие: коммит должен быть в origin/main.
-if ! git branch -r --contains "$LOCAL_SHA" 2>/dev/null | grep -q 'origin/main'; then
-  echo "deploy_prod: коммита ${LOCAL_SHA} нет в origin/main — сначала закоммить и запушь." >&2
+# Откат/хотфикс: DEPLOY_SHA=<sha> bash scripts/deploy_prod.sh — выкатить конкретный
+# коммит. Всё равно обязан быть в origin/main: сервер берёт код из GitHub.
+DEPLOY_SHA="${DEPLOY_SHA:-$ORIGIN_MAIN_SHA}"
+DEPLOY_SHA="$(git rev-parse "$DEPLOY_SHA")"
+
+if ! git branch -r --contains "$DEPLOY_SHA" 2>/dev/null | grep -q 'origin/main'; then
+  echo "deploy_prod: коммита ${DEPLOY_SHA} нет в origin/main — сначала закоммить и запушь." >&2
   echo "  (сервер берёт код из GitHub, с диска на прод больше ничего не уезжает)" >&2
   exit 1
 fi
 
-# Грязное дерево деплою больше НЕ мешает: уезжает коммит, а не содержимое диска,
+if [[ "$DEPLOY_SHA" != "$ORIGIN_MAIN_SHA" ]]; then
+  echo "WARN: DEPLOY_SHA=${DEPLOY_SHA:0:7} — это НЕ вершина origin/main (${ORIGIN_MAIN_SHA:0:7})."
+  echo "      Всё, что смержено в main после этого коммита, уедет с прода."
+fi
+
+# Локальные коммиты, которых нет в origin/main, на прод НЕ уедут. Самая частая
+# причина «задеплоил, а фичи нет» — забытый пуш или незамерженная ветка.
+if ! git merge-base --is-ancestor HEAD "$ORIGIN_MAIN_SHA" 2>/dev/null; then
+  echo "NOTE: HEAD этой папки ($(git rev-parse --abbrev-ref HEAD)) не влит в origin/main —"
+  echo "      его коммиты в этот деплой не попадут:"
+  git log --oneline "${ORIGIN_MAIN_SHA}..HEAD" 2>/dev/null | head -10 | sed 's/^/       /'
+fi
+
+# Грязное дерево деплою не мешает: уезжает коммит из GitHub, а не содержимое диска,
 # поэтому чужой/свой WIP просто остаётся дома. Раньше (rsync) он бы уехал на прод —
 # в общем дереве часто лежит WIP параллельных сессий, см. память
 # feedback_parallel_sessions_shared_index. Но предупредить стоит: легко подумать,
@@ -96,15 +125,8 @@ if ! git diff --quiet HEAD; then
   git status --short --untracked-files=no | sed 's/^/       /'
 fi
 
-# HEAD может быть предком origin/main (например, забыли смержить свежий main) —
-# тогда деплоится СТАРЫЙ код, что почти всегда не то, чего ждёшь.
-ORIGIN_MAIN_SHA="$(git rev-parse origin/main)"
-if [[ "$LOCAL_SHA" != "$ORIGIN_MAIN_SHA" ]]; then
-  echo "WARN: HEAD отстаёт от origin/main — деплоится ${LOCAL_SHA:0:7}, а в main уже ${ORIGIN_MAIN_SHA:0:7}."
-  echo "      Если нужен свежий main: git merge origin/main (или git checkout main && git pull)."
-fi
-
-echo "deploy: ${LOCAL_SHA} ($(git log -1 --pretty=%s))"
+LOCAL_SHA="$DEPLOY_SHA"
+echo "deploy: ${LOCAL_SHA} ($(git log -1 --pretty=%s "$LOCAL_SHA"))"
 echo "target: ${SSH_USER}@${SSH_HOST}:${REMOTE}"
 
 REMOTE_QUOTED=$(printf '%q' "$REMOTE")
