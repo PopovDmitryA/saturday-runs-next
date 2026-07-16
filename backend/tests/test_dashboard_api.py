@@ -1007,6 +1007,184 @@ def test_dashboard_unique_locations_excludes_secondary_crosslink_duplicate(
     assert len(detail_payload["locations"]) == analytics["unique_run_locations"]
 
 
+def test_list_user_runs_is_crosslinked_requires_users_own_primary_result(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """A dual_load RunPark event is crosslinked at the event level (any primary event
+    on the same date/location), but that does not mean every RunPark result in it is a
+    personal duplicate. If this user has no result of their own in the primary event
+    (e.g. they only ran the RunPark side that day), the RunPark run must stay зачётный
+    — matching the narrow, per-user definition already used by the dashboard tile and
+    the locations detail modal (user_secondary_crosslinked_run_ids)."""
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+
+    five_verst = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+    runpark = db_session.query(Platform).filter(Platform.code == "runpark").one_or_none()
+    if runpark is None:
+        runpark = Platform(code="runpark", name="RunPark")
+        db_session.add(runpark)
+        db_session.flush()
+
+    suffix = str(uuid4().int % 1_000_000)
+
+    primary_location = Location(
+        platform_id=five_verst.id,
+        external_key=f"fiveverst-solo-{suffix}",
+        name="Mikhalkovo",
+        city="Москва",
+        country="Россия",
+    )
+    runpark_location = Location(
+        platform_id=runpark.id,
+        external_key=f"runpark-solo-{suffix}",
+        name="Mikhalkovo RunPark",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add_all([primary_location, runpark_location])
+    db_session.flush()
+
+    five_verst_participant = Participant(
+        platform_id=five_verst.id,
+        external_user_id=f"solo-5v-user-{suffix}",
+        display_name="Solo Tester",
+        profile_url=f"https://5verst.ru/userstats/solo-5v-user-{suffix}/",
+    )
+    runpark_participant = Participant(
+        platform_id=runpark.id,
+        external_user_id=f"solo-runpark-user-{suffix}",
+        display_name="Solo Tester",
+        profile_url=f"https://runpark.ru/user/solo-runpark-user-{suffix}/",
+    )
+    other_five_verst_participant = Participant(
+        platform_id=five_verst.id,
+        external_user_id=f"solo-5v-other-{suffix}",
+        display_name="Someone Else",
+        profile_url=f"https://5verst.ru/userstats/solo-5v-other-{suffix}/",
+    )
+    db_session.add_all([five_verst_participant, runpark_participant, other_five_verst_participant])
+    db_session.flush()
+    db_session.add_all(
+        [
+            PlatformLink(
+                user_id=user.id,
+                platform_id=five_verst.id,
+                participant_id=five_verst_participant.id,
+                external_user_id=five_verst_participant.external_user_id,
+                external_url=five_verst_participant.profile_url,
+            ),
+            PlatformLink(
+                user_id=user.id,
+                platform_id=runpark.id,
+                participant_id=runpark_participant.id,
+                external_user_id=runpark_participant.external_user_id,
+                external_url=runpark_participant.profile_url,
+            ),
+        ]
+    )
+
+    # Day A: user ran both systems — genuine duplicate, must stay "не в зачёте".
+    primary_event_a = Event(
+        platform_id=five_verst.id,
+        location_id=primary_location.id,
+        external_event_key=f"solo-primary-a-{suffix}",
+        event_date=date(2024, 6, 29),
+        event_number=900_500,
+        title="Mikhalkovo 5v A",
+        finishers_count=10,
+        runners_count=10,
+    )
+    runpark_event_a = Event(
+        platform_id=runpark.id,
+        location_id=runpark_location.id,
+        external_event_key=f"solo-runpark-a-{suffix}",
+        event_date=date(2024, 6, 29),
+        event_number=900_501,
+        title="Mikhalkovo RunPark A",
+        finishers_count=10,
+        runners_count=10,
+    )
+    # Day B: primary event exists (someone else ran it) but the user only ran RunPark.
+    primary_event_b = Event(
+        platform_id=five_verst.id,
+        location_id=primary_location.id,
+        external_event_key=f"solo-primary-b-{suffix}",
+        event_date=date(2025, 6, 28),
+        event_number=900_502,
+        title="Mikhalkovo 5v B",
+        finishers_count=10,
+        runners_count=10,
+    )
+    runpark_event_b = Event(
+        platform_id=runpark.id,
+        location_id=runpark_location.id,
+        external_event_key=f"solo-runpark-b-{suffix}",
+        event_date=date(2025, 6, 28),
+        event_number=900_503,
+        title="Mikhalkovo RunPark B",
+        finishers_count=10,
+        runners_count=10,
+    )
+    db_session.add_all([primary_event_a, runpark_event_a, primary_event_b, runpark_event_b])
+    db_session.flush()
+    db_session.add_all(
+        [
+            EventCrosslink(primary_event_id=primary_event_a.id, secondary_event_id=runpark_event_a.id),
+            EventCrosslink(primary_event_id=primary_event_b.id, secondary_event_id=runpark_event_b.id),
+        ]
+    )
+    db_session.add_all(
+        [
+            RunResult(
+                event_id=primary_event_a.id,
+                participant_id=five_verst_participant.id,
+                external_result_key=f"solo-primary-a-result-{suffix}",
+                position=13,
+                finish_time_sec=20 * 60,
+                finish_time_display="00:20:00",
+                status="finished",
+            ),
+            RunResult(
+                event_id=runpark_event_a.id,
+                participant_id=runpark_participant.id,
+                external_result_key=f"solo-runpark-a-result-{suffix}",
+                position=13,
+                finish_time_sec=20 * 60,
+                finish_time_display="00:20:00",
+                status="finished",
+            ),
+            # Day B primary result belongs to someone else, not this user.
+            RunResult(
+                event_id=primary_event_b.id,
+                participant_id=other_five_verst_participant.id,
+                external_result_key=f"solo-primary-b-result-{suffix}",
+                position=1,
+                finish_time_sec=19 * 60,
+                finish_time_display="00:19:00",
+                status="finished",
+            ),
+            RunResult(
+                event_id=runpark_event_b.id,
+                participant_id=runpark_participant.id,
+                external_result_key=f"solo-runpark-b-result-{suffix}",
+                position=85,
+                finish_time_sec=25 * 60,
+                finish_time_display="00:25:00",
+                status="finished",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    runs = authenticated_client.get("/api/runs")
+    assert runs.status_code == 200
+    by_date = {row["event_date"]: row for row in runs.json() if row["platform_code"] == "runpark"}
+    assert by_date["2024-06-29"]["is_crosslinked"] is True
+    assert by_date["2025-06-28"]["is_crosslinked"] is False
+
+
 def test_user_sync_updates_cache(authenticated_client: TestClient, db_session: Session) -> None:
     me = authenticated_client.get("/api/auth/me")
     user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
