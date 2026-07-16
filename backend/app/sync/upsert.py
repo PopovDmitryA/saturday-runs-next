@@ -1006,6 +1006,10 @@ def import_profile_run_results(
             from_profile=True,
             recalculate_pr=False,
         )
+        if platform.code == "parkrun":
+            from app.services.gender_position_service import recalculate_event_gender_positions
+
+            recalculate_event_gender_positions(db, event.id, platform.code)
         participant = (
             db.query(Participant)
             .filter(
