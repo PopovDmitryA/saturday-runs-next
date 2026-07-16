@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 from uuid import UUID
 
@@ -25,6 +26,11 @@ from app.schemas.admin import (
     HistoryMilestoneKindSettingsResponse,
     HistoryMilestoneKindUpdateRequest,
 )
+from app.schemas.admin_event_report import (
+    EventReportDatesResponse,
+    EventReportLocationsResponse,
+    EventReportResponse,
+)
 from app.schemas.admin_stats import AdminSiteStatsResponse
 from app.schemas.blocked_slug_admin import (
     BlockedSlugCreateRequest,
@@ -32,10 +38,20 @@ from app.schemas.blocked_slug_admin import (
     BlockedSlugListResponse,
 )
 from app.schemas.dashboard import SyncRefreshResponse
+from app.schemas.location_contacts import (
+    LocationAnnounceSettingsResponse,
+    LocationAnnounceSettingsUpdateRequest,
+    LocationContactItem,
+    LocationContactLink,
+    LocationContactLinkCreateRequest,
+    LocationContactLinkUpdateRequest,
+    LocationContactListResponse,
+)
 from app.schemas.rating import (
     AdminLocationRatingsResponse,
     AdminRatingsResponse,
 )
+from app.schemas.records_digest import DigestDatesResponse, RecordsDigestResponse
 from app.services.abuse_admin_service import (
     AbuseAdminError,
     clear_ip_score,
@@ -44,6 +60,11 @@ from app.services.abuse_admin_service import (
     delete_telegram_ban,
     get_ip_block_details,
     list_abuse_blocks,
+)
+from app.services.admin_event_report_service import (
+    build_event_report,
+    list_report_event_dates,
+    list_report_locations,
 )
 from app.services.admin_site_stats_service import get_admin_site_stats
 from app.services.admin_users_service import get_admin_user, search_admin_users
@@ -59,11 +80,20 @@ from app.services.history_milestone_settings_service import (
     list_milestone_kind_settings,
     set_milestone_kind_enabled,
 )
+from app.services.location_contacts_service import (
+    LocationContactError,
+    create_location_contact_link,
+    delete_location_contact_link,
+    list_location_contacts,
+    update_location_announce_settings,
+    update_location_contact_link,
+)
 from app.services.rating_service import (
     list_all_ratings,
     location_rating_aggregates,
     ratings_stats,
 )
+from app.services.records_digest_service import build_records_digest, list_digest_dates
 from app.services.sync_enqueue_service import enqueue_manual_platform_sync, enqueue_sync_for_all_platforms
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -315,6 +345,141 @@ def admin_ratings_locations(
     return AdminLocationRatingsResponse.model_validate(
         location_rating_aggregates(db, exclude_locals=exclude_locals)
     )
+
+
+@router.get("/event-report/locations", response_model=EventReportLocationsResponse)
+def admin_event_report_locations(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> EventReportLocationsResponse:
+    return EventReportLocationsResponse.model_validate({"items": list_report_locations(db)})
+
+
+@router.get("/event-report/dates", response_model=EventReportDatesResponse)
+def admin_event_report_dates(
+    location_id: Annotated[UUID, Query()],
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> EventReportDatesResponse:
+    return EventReportDatesResponse.model_validate(
+        {"items": list_report_event_dates(db, location_id)}
+    )
+
+
+@router.get("/event-report", response_model=EventReportResponse)
+def admin_event_report(
+    event_id: Annotated[UUID, Query()],
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> EventReportResponse:
+    payload = build_event_report(db, event_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Событие не найдено")
+    return EventReportResponse.model_validate(payload)
+
+
+@router.get("/records-digest/dates", response_model=DigestDatesResponse)
+def admin_records_digest_dates(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    limit: Annotated[int, Query(ge=1, le=60)] = 20,
+) -> DigestDatesResponse:
+    return DigestDatesResponse.model_validate({"items": list_digest_dates(db, limit=limit)})
+
+
+@router.get("/records-digest", response_model=RecordsDigestResponse)
+def admin_records_digest(
+    event_date: Annotated[date, Query()],
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> RecordsDigestResponse:
+    return RecordsDigestResponse.model_validate(build_records_digest(db, event_date))
+
+
+@router.get("/location-contacts", response_model=LocationContactListResponse)
+def admin_location_contacts(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    q: Annotated[str | None, Query(max_length=128)] = None,
+    only_missing: Annotated[bool, Query()] = False,
+    only_do_not_disturb: Annotated[bool, Query()] = False,
+) -> LocationContactListResponse:
+    items = list_location_contacts(
+        db, query=q, only_missing=only_missing, only_do_not_disturb=only_do_not_disturb
+    )
+    return LocationContactListResponse(
+        items=[LocationContactItem.model_validate(item) for item in items],
+        total=len(items),
+        with_telegram=sum(1 for item in items if item["contacts"]),
+        do_not_disturb_total=sum(1 for item in items if item["do_not_disturb"]),
+    )
+
+
+@router.put(
+    "/location-contacts/{location_id}/settings", response_model=LocationAnnounceSettingsResponse
+)
+def admin_update_location_announce_settings(
+    location_id: UUID,
+    body: LocationAnnounceSettingsUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> LocationAnnounceSettingsResponse:
+    try:
+        payload = update_location_announce_settings(
+            db, location_id, do_not_disturb=body.do_not_disturb, comment=body.comment
+        )
+    except LocationContactError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return LocationAnnounceSettingsResponse.model_validate(payload)
+
+
+@router.post(
+    "/location-contacts/{location_id}/links",
+    response_model=LocationContactLink,
+    status_code=status.HTTP_201_CREATED,
+)
+def admin_create_location_contact_link(
+    location_id: UUID,
+    body: LocationContactLinkCreateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> LocationContactLink:
+    try:
+        payload = create_location_contact_link(
+            db, location_id, telegram_url=body.telegram_url, label=body.label
+        )
+    except LocationContactError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return LocationContactLink.model_validate(payload)
+
+
+@router.put("/location-contacts/links/{contact_id}", response_model=LocationContactLink)
+def admin_update_location_contact_link(
+    contact_id: UUID,
+    body: LocationContactLinkUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> LocationContactLink:
+    try:
+        payload = update_location_contact_link(
+            db, contact_id, telegram_url=body.telegram_url, label=body.label
+        )
+    except LocationContactError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return LocationContactLink.model_validate(payload)
+
+
+@router.delete("/location-contacts/links/{contact_id}", response_model=AbuseMessageResponse)
+def admin_delete_location_contact_link(
+    contact_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AbuseMessageResponse:
+    try:
+        delete_location_contact_link(db, contact_id)
+    except LocationContactError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return AbuseMessageResponse(message="contact_link_deleted")
 
 
 @router.get("/history-milestones", response_model=HistoryMilestoneKindSettingsResponse)

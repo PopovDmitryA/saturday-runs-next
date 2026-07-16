@@ -1,0 +1,955 @@
+{
+  "source": "legacy five_verst_stats.contacts_location",
+  "items": [
+    {
+      "name_point": "Академический",
+      "telegram_url": "https://t.me/hochu5verstakadem/1",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Александрино",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Александров Сосенки",
+      "telegram_url": "https://t.me/aleksandrovsosenki",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Алёшкинский лес",
+      "telegram_url": "https://t.me/verst5aleshkinskiyles",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Анапа",
+      "telegram_url": "https://t.me/beganapa/1",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Ангарск",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Ахтубинск",
+      "telegram_url": "https://t.me/ahtubinsk5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Бабушкинский на Яузе",
+      "telegram_url": "https://t.me/verst5_babushkinsky",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Балашиха Заречная",
+      "telegram_url": "https://t.me/parkrunbalashikha",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Барнаул",
+      "telegram_url": "https://t.me/izumrudnyy5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Белгород Парк Победы",
+      "telegram_url": "https://t.me/belgorodparkpobedychat",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Берёзовский",
+      "telegram_url": "https://t.me/parkzdorovia5",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Бийск",
+      "telegram_url": "https://t.me/verst5kvartalabbiysk",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Бирюлёвский дендропарк",
+      "telegram_url": "https://t.me/biryulyovskiydendropark5verst/1",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Битца",
+      "telegram_url": "https://t.me/bitsa_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Боева Дача",
+      "telegram_url": "https://t.me/beg46",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Боровичи",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Бузулук парк Пушкина",
+      "telegram_url": "https://t.me/Buzuluk_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Бутово",
+      "telegram_url": "https://t.me/runeatdance_butovo",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "ВДНХ",
+      "telegram_url": "https://t.me/vdnh_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Вернадского",
+      "telegram_url": "https://t.me/vernadskogo5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Владикавказ Дендрарий",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Владимир Центральный парк",
+      "telegram_url": "https://t.me/verst5vladimir",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Волгоград панорама",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Волжский",
+      "telegram_url": "https://t.me/volzsky_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Вологда",
+      "telegram_url": "https://t.me/vologda5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Воркута Городской парк",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Воронеж Центральный парк",
+      "telegram_url": "https://t.me/+GkuAjAYnin02ZmMy",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Гатчина Приоратский",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Горно-Алтайск",
+      "telegram_url": "https://t.me/verst5gornoaltajsk",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Городской парк Семья",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Горячий Ключ",
+      "telegram_url": "https://t.me/chatgoryachiyklyuch5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Грязи",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Губайловский Экопарк",
+      "telegram_url": "https://t.me/gubrun",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Губаха",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Динская",
+      "telegram_url": "https://t.me/dinsk5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Долгопрудный",
+      "telegram_url": "https://t.me/dolgoprudny5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Домодедово",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Дружба",
+      "telegram_url": "https://t.me/parkrun_Druzhba",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Елагин остров",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Ессентуки Городское озеро",
+      "telegram_url": "https://t.me/essentuki5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Железноводский",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Жуковский",
+      "telegram_url": "https://t.me/zhukovsky_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Затюменский",
+      "telegram_url": "https://t.me/Zatyumensky",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Зеленогорск",
+      "telegram_url": "https://t.me/chat5verstzgr",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Зеленоград",
+      "telegram_url": "https://t.me/Zelenograd_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Зеленодольск",
+      "telegram_url": "https://t.me/zdbeg/295",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Иннополис",
+      "telegram_url": "https://t.me/innopolis_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Интернационалистов",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Иркутск остров Юность",
+      "telegram_url": "https://t.me/+lRLNKg7mGEUxMjcy",
+      "do_not_disturb": true
+    },
+    {
+      "name_point": "Истра",
+      "telegram_url": "https://t.me/chat_5verst_istra",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Йошкар-Ола Аллея Здоровья",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Казань центральный парк",
+      "telegram_url": "https://t.me/parkrunkazan",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Калуга",
+      "telegram_url": "https://t.me/kaluga5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Каменск-Уральский",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Кашкадан",
+      "telegram_url": "https://t.me/ufa_5verst_kashkadan",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Кимры",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Киров Набережная Грина",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Кисловодский парк",
+      "telegram_url": "https://t.me/kislovodsk_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Клин Сестрорецкий парк",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Коломенское",
+      "telegram_url": "https://t.me/c/1640516615/11",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Коломна Парк Мира",
+      "telegram_url": "https://t.me/kolomna5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Колпино",
+      "telegram_url": "https://t.me/+1_kUvm5Nfto4ZjMy",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Кольчугино Городской парк",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Комсомольский",
+      "telegram_url": "https://t.me/verst5_KemerovoKomsomolsky",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Королёв",
+      "telegram_url": "https://t.me/verst5_korolev",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Котельники Кузьминский",
+      "telegram_url": "https://t.me/kuzminsky5verstchat",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Красноармейский",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Красноярск набережная",
+      "telegram_url": "https://t.me/Krasnoyarsknaberezhnaya",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Красный Сулин",
+      "telegram_url": "https://t.me/eMyPJraWZ3gxODFi",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Крылатское",
+      "telegram_url": "https://t.me/krylatskoe5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Кстово",
+      "telegram_url": "https://t.me/verst5kstovoyubileyniy/2",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Курган Центральный парк",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Лебединый Рай",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Липецк Парк Победы",
+      "telegram_url": "https://t.me/lipetsk5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Лихославль",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Лобня Городской парк",
+      "telegram_url": "https://t.me/begLo_bnya/12204",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Люберцы Наташинский",
+      "telegram_url": "https://t.me/natashinskychat",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Люберцы Томилинский",
+      "telegram_url": "https://t.me/+w2bh-h5uIYg2MWQ6",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Магнитогорск Экопарк",
+      "telegram_url": "https://t.me/mgn5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Майкоп Городской парк",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Мариуполь",
+      "telegram_url": "https://t.me/mrpl_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Марьино",
+      "telegram_url": "https://t.me/parkrunmarino",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Мега Парк Кудрово",
+      "telegram_url": "https://t.me/megaparkkydrovo",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Мещерский",
+      "telegram_url": "https://t.me/verst5meshchersky",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Мещерское озеро",
+      "telegram_url": "https://t.me/meshcherskoeozero/1",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Митино",
+      "telegram_url": "https://t.me/mitinofive",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Михайловка",
+      "telegram_url": "https://t.me/parksmekhova5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Михалково",
+      "telegram_url": "https://t.me/runtonda",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Московский парк Победы",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Муромец",
+      "telegram_url": "https://t.me/murom5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Мытищи Центральный парк",
+      "telegram_url": "https://t.me/Mytischi5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Набережная Реки Великой",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Надым",
+      "telegram_url": "https://t.me/verst5nadym/1863",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Нижневартовск",
+      "telegram_url": "https://t.me/komsomolskoe5k",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Нижний пруд",
+      "telegram_url": "https://t.me/nizhnyprud",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Новороссийск",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Новосибирск набережная",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Ногинск Городской парк",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Обнинск",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Оренбург Березка",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Оренбург Набережная",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Орск парк Строителей",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Отрадный",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Павловский Посад",
+      "telegram_url": "https://t.me/PP_5v",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Павшинская Пойма",
+      "telegram_url": "https://t.me/Pavshino_5verst_Chat",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Парк 30-летия Победы",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Парк Бондина",
+      "telegram_url": "https://t.me/ParkBondina5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Парк Городов-Героев",
+      "telegram_url": "https://t.me/BegPulkovskiiPark",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Парк Горького",
+      "telegram_url": "https://t.me/+HAF6pysyaMA4Zjky",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Парк Кирова",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Парк Лесоводов",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Парк Маяковского",
+      "telegram_url": "https://t.me/parkmayakovskogo5verstchat",
+      "do_not_disturb": true
+    },
+    {
+      "name_point": "Парк Победы",
+      "telegram_url": "https://t.me/poklonka5verstTalk",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Парк Прибрежный",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Парк Станкозавода",
+      "telegram_url": "https://t.me/stankozavod_5verst/296",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Парк Южный",
+      "telegram_url": "https://t.me/mgn5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Пенза",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Первоуральск",
+      "telegram_url": "https://t.me/runPervochat",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Пермь Балатово",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Пестовский",
+      "telegram_url": "https://t.me/Pestovsky_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Петергоф",
+      "telegram_url": "https://t.me/parkrunpetergof",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Петровская набережная",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Петрозаводск Ямка",
+      "telegram_url": "https://t.me/ParkYamkaPtz",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Плотинка",
+      "telegram_url": "https://t.me/plotinka5verstchat",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Полюстровский парк",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Притяжение",
+      "telegram_url": "https://t.me/mgn5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Пур-Наволок",
+      "telegram_url": "https://t.me/verst5purnavolok",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Пушкин",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Пушкино Серебрянка",
+      "telegram_url": "https://t.me/pushkinoserebryanka_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Пятигорск Комсомольский парк",
+      "telegram_url": "https://t.me/pyatigorsk_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Раменское Городской парк",
+      "telegram_url": "https://t.me/kls_saturn/70041",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Рассказовка",
+      "telegram_url": "https://t.me/verst5rasskazovka",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Реадовский парк",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Реутов",
+      "telegram_url": "https://t.me/verst5fabrichnyyprud/1",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Ростов-на-Дону",
+      "telegram_url": "https://t.me/verst5rostovondon_chat/55248",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Самара парк Гагарина",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Севастополь",
+      "telegram_url": "https://t.me/verst5sevastopol",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Северное Тушино",
+      "telegram_url": "https://t.me/tushino5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Северодвинск Заводской парк",
+      "telegram_url": "https://t.me/zavodskoypark5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Семёнов",
+      "telegram_url": "https://t.me/verst5semenov",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Серпухов Городской бор",
+      "telegram_url": "https://t.me/serpukhov5verst/1",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Сибай",
+      "telegram_url": "https://t.me/verst5sibay",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Сириус",
+      "telegram_url": "https://t.me/sochi5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Сквер Дзержинского",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Скитские пруды",
+      "telegram_url": "https://t.me/verstSP",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Сокольники",
+      "telegram_url": "https://t.me/sokolniki5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Соликамск Калинников-парк",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Солнечногорск",
+      "telegram_url": "https://t.me/verst5naberezhnayavystrel",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Солнечный остров",
+      "telegram_url": "https://t.me/+itxGv4MABEplMjIy",
+      "do_not_disturb": true
+    },
+    {
+      "name_point": "Сормовский парк",
+      "telegram_url": "https://t.me/sormovskiypark_5verst/2473",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Сосновка",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Ставрополь",
+      "telegram_url": "https://t.me/+iOHELl8ltgxiOWVi",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Старый Оскол",
+      "telegram_url": "https://t.me/verstparkkosmos",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Стрежевой Городской парк",
+      "telegram_url": "https://t.me/+LpgLoT_vkw44NDUy",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Стрелка",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Строгино",
+      "telegram_url": "https://t.me/strogino5verstchat",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Сухой Лог",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Тамбов",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Тёплый Берег",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Тимирязевский",
+      "telegram_url": "https://t.me/+wbpyj6FEF4FjNjk6",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Тобольск",
+      "telegram_url": "https://t.me/tobolsk5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Тольятти Парк Победы",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Томск Сосновый Бор",
+      "telegram_url": "https://t.me/verst5sosnovybor",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Томск Стадион Политехник",
+      "telegram_url": "https://t.me/verst5Tomsk",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Тула Центральный парк",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Тында",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Тюмень Парк Гагарина",
+      "telegram_url": "https://t.me/Zatyumensky",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Улан-Удэ",
+      "telegram_url": "https://t.me/verst5yubileyniychat",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Ульяновск",
+      "telegram_url": "https://t.me/verst5chatulyanovskmolodezhnyy",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Усолье-Сибирское",
+      "telegram_url": "https://t.me/usib5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Филатов Луг",
+      "telegram_url": "https://t.me/filatovlug5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Фили",
+      "telegram_url": "https://t.me/parkrunFili",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Химки",
+      "telegram_url": "https://t.me/parkrunkhimki",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Чебоксары набережная",
+      "telegram_url": "https://t.me/cheb5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Челябинск Лесопарковая",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Челябинск Экопарк",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Черемхово",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Череповец",
+      "telegram_url": "https://t.me/verst5che",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Черкизовский пруд",
+      "telegram_url": "https://t.me/cherkizovskiy5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Чертаново Кировоградские пруды",
+      "telegram_url": "https://t.me/chertanovo_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Чертаново Покровский парк",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Чистяковская роща",
+      "telegram_url": "https://t.me/chat5verstkrdroshcha",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Шадринск",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Швейцария",
+      "telegram_url": "https://t.me/Swiss_5verst",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Электросталь Авангард",
+      "telegram_url": "https://t.me/el_steel_5verst",
+      "do_not_disturb": true
+    },
+    {
+      "name_point": "Элиста Дружба",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Южно-Сахалинск парк Гагарина",
+      "telegram_url": "https://t.me/YSK5verst_chat",
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Южноуральск",
+      "telegram_url": null,
+      "do_not_disturb": false
+    },
+    {
+      "name_point": "Якутск Дохсун",
+      "telegram_url": "https://t.me/verst5ykt",
+      "do_not_disturb": false
+    }
+  ]
+}

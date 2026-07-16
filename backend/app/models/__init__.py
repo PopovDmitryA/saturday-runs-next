@@ -159,6 +159,10 @@ class Location(Base):
     event_summaries: Mapped[list["EventSummary"]] = relationship(back_populates="location")
     coordinate_requests: Mapped[list["LocationCoordinateRequest"]] = relationship(back_populates="location")
     catalog_links: Mapped[list["LocationCatalogLink"]] = relationship(back_populates="location")
+    contacts: Mapped[list["LocationContact"]] = relationship(back_populates="location")
+    announce_settings: Mapped["LocationAnnounceSettings | None"] = relationship(
+        back_populates="location", uselist=False
+    )
     merge_requests_as_match: Mapped[list["LocationMergeRequest"]] = relationship(
         back_populates="matched_location",
         foreign_keys="LocationMergeRequest.matched_location_id",
@@ -202,6 +206,49 @@ class LocationMergeRequest(Base):
         back_populates="merge_requests_as_match",
         foreign_keys=[matched_location_id],
     )
+
+
+class LocationContact(Base):
+    """Ссылка на чат локации (Telegram) — заполняется вручную из админки.
+
+    У одной локации может быть несколько ссылок (основной чат, резервный,
+    чат организаторов и т.п.) — поэтому location_id не уникален, а различать
+    ссылки помогает необязательный label.
+    """
+
+    __tablename__ = "location_contacts"
+    __table_args__ = (Index("ix_location_contacts_location_id", "location_id"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
+    telegram_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    label: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    location: Mapped["Location"] = relationship(back_populates="contacts")
+
+
+class LocationAnnounceSettings(Base):
+    """Правила анонсов локации — одна строка на локацию (в легаси — contacts_location.not_report)."""
+
+    __tablename__ = "location_announce_settings"
+    __table_args__ = (
+        UniqueConstraint("location_id", name="uq_location_announce_settings_location_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
+    do_not_disturb: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    location: Mapped["Location"] = relationship(back_populates="announce_settings")
 
 
 class LocationCatalog(Base):

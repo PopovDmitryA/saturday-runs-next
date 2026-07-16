@@ -8,6 +8,9 @@ const LINKS = [
   { href: "/admin/stats", label: "Статистика" },
   { href: "/admin/ratings", label: "Рейтинг" },
   { href: "/admin/history-milestones", label: "Вехи истории" },
+  { href: "/admin/event-report", label: "Отчёт по событию" },
+  { href: "/admin/records-digest", label: "Рекорды локаций" },
+  { href: "/admin/location-contacts", label: "Контакты локаций" },
   { href: "/admin/abuse", label: "Блокировки" },
   { href: "/admin/profile-slugs", label: "Резерв ссылок" },
 ] as const;

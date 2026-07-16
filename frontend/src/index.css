@@ -8909,3 +8909,190 @@ tr.run-crosslinked td {
   font-size: 0.78rem;
   white-space: nowrap;
 }
+
+/* ===== Админка: отчёт по событию ===== */
+.admin-event-report-post {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  background: var(--surface-muted, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+  margin: 0.75rem 0 0;
+}
+
+.admin-event-report-summary,
+.admin-event-report-stats {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.admin-event-report-stat-label {
+  font-weight: 500;
+}
+
+/* ===== Админка: дайджест рекордов по локациям ===== */
+.digest-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.digest-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.digest-stats {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.digest-card.sent {
+  border-color: color-mix(in srgb, var(--success, #22c55e) 45%, var(--border));
+}
+
+.digest-card.muted {
+  opacity: 0.62;
+}
+
+.digest-card-head {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.digest-card-title {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+}
+
+.digest-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.digest-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.digest-badge.high {
+  border-color: color-mix(in srgb, #f97316 60%, var(--border));
+  color: #f97316;
+}
+
+.digest-badge.medium {
+  border-color: color-mix(in srgb, #eab308 55%, var(--border));
+}
+
+.digest-card-comment {
+  margin: 0.45rem 0 0;
+  font-size: 0.85rem;
+}
+
+.digest-card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+
+.digest-sent-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.digest-card-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 1.4fr);
+  gap: 1rem;
+  margin-top: 0.9rem;
+}
+
+.digest-facts p {
+  margin: 0 0 0.6rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 860px) {
+  .digest-card-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.digest-achievement-filters {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  align-items: center;
+}
+
+.digest-achievement-label {
+  font-size: 0.85rem;
+  margin-right: 0.15rem;
+}
+
+/* ===== Админка: контакты локаций ===== */
+.shell-content:has(.admin-location-contacts-page) {
+  max-width: none;
+  width: 100%;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.admin-location-contacts-page {
+  width: 100%;
+}
+
+.admin-location-contacts-table td,
+.admin-location-contacts-table th {
+  vertical-align: top;
+}
+
+.admin-location-contacts-table td:first-child {
+  min-width: 12rem;
+}
+
+.location-links-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 26rem;
+}
+
+.location-link-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.location-link-row .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.location-link-label {
+  flex: 0 0 9rem !important;
+}

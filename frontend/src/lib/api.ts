@@ -870,6 +870,267 @@ export function getAdminHistoryMilestones() {
   return apiFetch<HistoryMilestoneKindSettings>("/admin/history-milestones");
 }
 
+export type EventReportLocationItem = {
+  location_id: string;
+  location_name: string;
+  city: string | null;
+  platform_code: string;
+  platform_name: string;
+  events_count: number;
+  last_event_date: string;
+};
+
+export type EventReportDateItem = {
+  event_id: string;
+  event_date: string;
+  event_number: number | null;
+  finishers_count: number;
+};
+
+export type EventReportPerson = {
+  participant_id: string | null;
+  name: string | null;
+  profile_url: string | null;
+};
+
+export type EventReportCountedPerson = EventReportPerson & { count: number };
+
+export type EventReportOneStepPerson = EventReportCountedPerson & { next_milestone: number };
+
+export type EventReportTopFinish = EventReportPerson & {
+  position: number | null;
+  finish_time_sec: number | null;
+  finish_time_display: string;
+  age_category: string | null;
+  gender: string | null;
+  gender_rank: number;
+  gender_total: number;
+  age_rank: number;
+  age_total: number;
+  gender_qualified: boolean;
+  age_qualified: boolean;
+};
+
+export type EventReportCourseRecord = EventReportPerson & {
+  gender: string;
+  time_sec: number;
+  previous_sec: number;
+};
+
+export type LocationContactLink = {
+  id: string;
+  telegram_url: string;
+  label: string | null;
+};
+
+export type EventReport = {
+  event: {
+    event_id: string;
+    event_date: string;
+    event_number: number | null;
+    location_id: string;
+    location_name: string;
+    canonical_name: string | null;
+    platform_code: string;
+    platform_name: string;
+    source_url: string | null;
+    events_total_at_location: number;
+    telegram_contacts: LocationContactLink[];
+    do_not_disturb: boolean;
+  };
+  header: {
+    finishers: number;
+    volunteers: number;
+    avg_time_sec: number | null;
+    best_male_sec: number | null;
+    best_female_sec: number | null;
+    previous_event_date: string | null;
+    previous_event_finishers: number | null;
+    attendance_record: boolean;
+    prior_max_finishers: number | null;
+  };
+  course_records: EventReportCourseRecord[];
+  top_finishes: EventReportTopFinish[];
+  stats: {
+    newcomers: EventReportPerson[];
+    guests: EventReportPerson[];
+    personal_bests: EventReportPerson[];
+    location_bests: EventReportPerson[];
+    comebacks: EventReportPerson[];
+    first_volunteers: EventReportPerson[];
+    first_volunteers_at_location: EventReportPerson[];
+    new_role_volunteers: EventReportPerson[];
+  };
+  location_milestones: { runs: EventReportCountedPerson[]; volunteering: EventReportCountedPerson[] };
+  one_step: { runs: EventReportOneStepPerson[]; volunteering: EventReportOneStepPerson[] };
+  clubs: { runs: EventReportCountedPerson[]; volunteering: EventReportCountedPerson[] };
+  global_run_jubilees: EventReportCountedPerson[];
+  post_text: string;
+};
+
+export function getAdminEventReportLocations() {
+  return apiFetch<{ items: EventReportLocationItem[] }>("/admin/event-report/locations");
+}
+
+export function getAdminEventReportDates(locationId: string) {
+  return apiFetch<{ items: EventReportDateItem[] }>(
+    `/admin/event-report/dates?location_id=${encodeURIComponent(locationId)}`,
+  );
+}
+
+export type DigestDateItem = {
+  event_date: string;
+  events_count: number;
+  locations_count: number;
+};
+
+export type DigestCourseRecord = {
+  gender: string;
+  record_sec: number;
+  record_name: string | null;
+  previous_sec: number | null;
+  previous_date: string | null;
+  previous_name: string | null;
+  years_since: number;
+};
+
+export type DigestAgeRecord = {
+  age_group: string | null;
+  record_sec: number;
+  record_name: string | null;
+  previous_sec: number | null;
+  previous_date: string | null;
+  previous_name: string | null;
+  group_total: number | null;
+  years_since: number;
+};
+
+export type DigestCard = {
+  location_id: string;
+  location_name: string;
+  city: string | null;
+  country: string | null;
+  platform_code: string;
+  platform_name: string;
+  telegram_contacts: LocationContactLink[];
+  do_not_disturb: boolean;
+  comment: string | null;
+  score: number;
+  importance: "high" | "medium" | "low";
+  course_records: DigestCourseRecord[];
+  age_records: DigestAgeRecord[];
+  attendance_record: { finishers: number; prior_max: number } | null;
+  milestones: {
+    runs: Array<{ name: string | null; count: number }>;
+    volunteering: Array<{ name: string | null; count: number }>;
+  };
+  post_text: string;
+};
+
+export type RecordsDigest = {
+  event_date: string;
+  generated_locations: number;
+  with_telegram: number;
+  without_telegram: number;
+  do_not_disturb: number;
+  cards: DigestCard[];
+};
+
+export function getAdminDigestDates(limit = 20) {
+  return apiFetch<{ items: DigestDateItem[] }>(`/admin/records-digest/dates?limit=${limit}`);
+}
+
+export function getAdminRecordsDigest(eventDate: string) {
+  return apiFetch<RecordsDigest>(
+    `/admin/records-digest?event_date=${encodeURIComponent(eventDate)}`,
+    undefined,
+    { timeoutMs: 120_000 },
+  );
+}
+
+export type LocationContactItem = {
+  location_id: string;
+  location_name: string;
+  city: string | null;
+  country: string | null;
+  platform_code: string;
+  platform_name: string;
+  is_cancelled: boolean;
+  is_paused: boolean;
+  contacts: LocationContactLink[];
+  do_not_disturb: boolean;
+  comment: string | null;
+  updated_at: string | null;
+};
+
+export type LocationContactList = {
+  items: LocationContactItem[];
+  total: number;
+  with_telegram: number;
+  do_not_disturb_total: number;
+};
+
+export function getAdminLocationContacts(params: {
+  q?: string;
+  onlyMissing?: boolean;
+  onlyDoNotDisturb?: boolean;
+}) {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.onlyMissing) search.set("only_missing", "true");
+  if (params.onlyDoNotDisturb) search.set("only_do_not_disturb", "true");
+  const suffix = search.toString();
+  return apiFetch<LocationContactList>(
+    `/admin/location-contacts${suffix ? `?${suffix}` : ""}`,
+    undefined,
+    { timeoutMs: 60_000 },
+  );
+}
+
+export function updateAdminLocationAnnounceSettings(
+  locationId: string,
+  body: { do_not_disturb: boolean; comment: string | null },
+) {
+  return apiFetch<{ location_id: string; do_not_disturb: boolean; comment: string | null; updated_at: string }>(
+    `/admin/location-contacts/${locationId}/settings`,
+    { method: "PUT", body: JSON.stringify(body) },
+  );
+}
+
+export function createAdminLocationContactLink(
+  locationId: string,
+  body: { telegram_url: string; label: string | null },
+) {
+  return apiFetch<LocationContactLink>(`/admin/location-contacts/${locationId}/links`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateAdminLocationContactLink(
+  contactId: string,
+  body: { telegram_url: string; label: string | null },
+) {
+  return apiFetch<LocationContactLink>(`/admin/location-contacts/links/${contactId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteAdminLocationContactLink(contactId: string) {
+  return apiFetch<{ message: string }>(`/admin/location-contacts/links/${contactId}`, {
+    method: "DELETE",
+  });
+}
+
+export function getAdminEventReport(eventId: string) {
+  return apiFetch<EventReport>(
+    `/admin/event-report?event_id=${encodeURIComponent(eventId)}`,
+    undefined,
+    { timeoutMs: 60_000 },
+  );
+}
+
 export function setAdminHistoryMilestoneEnabled(kind: string, enabled: boolean) {
   return apiFetch<HistoryMilestoneKindSetting>(`/admin/history-milestones/${kind}`, {
     method: "PUT",
