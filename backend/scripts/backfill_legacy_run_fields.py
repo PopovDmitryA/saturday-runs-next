@@ -27,6 +27,7 @@ from app.migration.helpers import (
 from app.migration.legacy_db import legacy_connection, legacy_rows
 from app.migration.lookups import FiveVerstLookups, ParkrunLookups, S95Lookups
 from app.models import Event, Location, Platform, PlatformLink, RunResult, User
+from app.platform_adapters.five_verst.age_category import normalize_five_verst_age_group
 from app.services.dashboard_service import recompute_dashboard_cache
 
 DEFAULT_USER_NAMES = (
@@ -68,6 +69,8 @@ def _age_category_from_row(row: dict, platform_code: str) -> str | None:
         raw = row.get("age_category")
     if raw is None:
         return None
+    if platform_code == "five_verst":
+        return normalize_five_verst_age_group(raw)
     text = str(raw).strip()
     return text or None
 

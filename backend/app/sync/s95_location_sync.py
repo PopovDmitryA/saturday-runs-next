@@ -55,12 +55,11 @@ def sync_s95_event_location(
     db.commit()
 
     try:
-        map_html = fetch_page_html(
-            location_source_url,
-            reason="location_map",
-            extra_wait_ms=8000,
-            click_map_tab=True,
-        )
+        # Координаты в plain-HTML отсутствуют (карта рендерится JS после клика
+        # по вкладке); первоисточник координат — JSON API pages.json (registry).
+        # Здесь parse_location_coordinates почти всегда вернёт None — upsert
+        # существующие координаты не затирает.
+        map_html = fetch_page_html(location_source_url, reason="location_map")
         canonical = parse_event_location_page(
             map_html,
             location_source_url,

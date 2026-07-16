@@ -28,6 +28,7 @@ from app.platform_adapters.canonical import (
     CanonicalVolunteerResult,
 )
 from app.platform_adapters.five_verst import bulk_parser
+from app.platform_adapters.five_verst.age_category import normalize_five_verst_age_group
 from app.sync import upsert
 
 PLATFORM_CODE = "five_verst"
@@ -400,7 +401,7 @@ def migrate_runs(
             position=position,
             finish_time_sec=finish_sec,
             finish_time_display=legacy_time_display(row.get("finish_time"), finish_sec),
-            age_category=(str(row["age_category"]).strip() if row.get("age_category") else None),
+            age_category=normalize_five_verst_age_group(row.get("age_category")),
             status=run_status,
             location_external_key=slug,
             location_name=lookups.name_by_slug.get(slug, name),

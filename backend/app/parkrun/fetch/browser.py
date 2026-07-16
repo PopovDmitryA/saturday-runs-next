@@ -47,13 +47,6 @@ def _ensure_context() -> BrowserContext:
         if _context is not None:
             return _context
 
-        try:
-            from app.s95.fetch.browser import shutdown_browser as shutdown_s95_browser
-
-            shutdown_s95_browser()
-        except Exception:
-            logger.warning("parkrun playwright: could not shutdown S95 browser (ignored)", exc_info=True)
-
         settings = get_settings()
         storage_path = _storage_state_path()
         has_storage = storage_path is not None and storage_path.is_file()

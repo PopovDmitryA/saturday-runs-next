@@ -246,8 +246,7 @@ def test_preview_s95_profile_link_swallows_parkrun_errors(
         "app.services.profile_linking_service.preview_profile_link",
         side_effect=preview_side_effect,
     ):
-        with patch("app.s95.fetch.browser.shutdown_browser"):
-            s95, parkrun = preview_s95_profile_link(db_session, profile_url, user=user)
+        s95, parkrun = preview_s95_profile_link(db_session, profile_url, user=user)
 
     assert s95.display_name == "Test S95"
     assert parkrun is None

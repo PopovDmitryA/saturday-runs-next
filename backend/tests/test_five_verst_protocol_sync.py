@@ -109,7 +109,7 @@ def test_fetch_and_upsert_event_protocol_updates_participant_fields(db_session: 
         position=1,
         finish_time_sec=1200,
         finish_time_display="00:20:00",
-        age_category="М30-34 (1)",
+        age_category="М30-34",
         club_name="Test Club",
         is_pr=True,
         is_first_run=False,
@@ -136,7 +136,7 @@ def test_fetch_and_upsert_event_protocol_updates_participant_fields(db_session: 
         .filter(Participant.platform_id == platform.id, Participant.external_user_id == "790000001")
         .one()
     )
-    assert participant.age_category == "М30-34 (1)"
+    assert participant.age_category == "М30-34"
     assert participant.club_name == "Test Club"
 
     event = db_session.query(Event).filter(Event.external_event_key == summary.external_event_key).one()

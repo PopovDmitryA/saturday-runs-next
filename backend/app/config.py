@@ -76,10 +76,7 @@ class Settings(BaseSettings):
     s95_fetch_max_interval_seconds: float = 30.0
     s95_fetch_lock_timeout_seconds: int = 180
     s95_fetch_lock_blocking_seconds: int = 300
-    s95_playwright_headless: bool = True
-    s95_playwright_page_wait_ms: int = 5000
-    s95_playwright_athlete_wait_ms: int = 12000
-    s95_playwright_navigation_timeout_ms: int = 60000
+    s95_http_timeout_seconds: float = 30.0
     s95_ban_cooldown_seconds: int = 3600
     s95_parkrun_barcode_max_length: int = 8
     parkrun_participant_discovery_enabled: bool = True
@@ -129,7 +126,14 @@ class Settings(BaseSettings):
     parkrun_cdp_url: str = "http://host.docker.internal:9222"
     # Mac dev: fetch via Chrome CDP (127.0.0.1:9222) instead of headless Docker — avoids WAF captcha loop
     parkrun_use_cdp_for_fetch: bool = False
-    parkrun_ban_cooldown_seconds: int = 900
+    # Эскалация охлаждения после капчи/бана parkrun: 1ч → 5ч → 24ч → 72ч → неделя.
+    # После истечения ступени следующий фетч — «проба»: успех сбрасывает лестницу,
+    # новая капча поднимает на ступень выше.
+    parkrun_ban_cooldown_steps_seconds: str = "3600,18000,86400,259200,604800"
+    # Серверная обработка очереди profile_fetch_pending (только строки с user_id),
+    # когда Mac-демон не запущен и охлаждение истекло.
+    parkrun_server_queue_enabled: bool = True
+    parkrun_server_queue_batch_size: int = 5
 
     runpark_mssql_server: str = "runpark.ru"
     runpark_mssql_database: str = "ParkrunLive"

@@ -26,6 +26,7 @@ celery_app.conf.update(
         "app.workers.tasks.runpark_sync",
         "app.workers.tasks.leaderboards_warm",
         "app.workers.tasks.portal_cache",
+        "app.workers.tasks.locations_warm",
     ),
     task_routes={
         "five_verst_sync.*": {"queue": "five_verst"},
@@ -97,6 +98,14 @@ celery_app.conf.update(
             "schedule": crontab(hour=3, minute=0, day_of_week="1,3,5"),
             "options": {"queue": "s95"},
         },
+        # Серверный разбор очереди parkrun (только user-запросы), когда Mac-демон
+        # не запущен и охлаждение после капчи истекло. Смещение от :00, чтобы не
+        # толкаться с другими задачами.
+        "parkrun-pending-queue": {
+            "task": "parkrun_sync.process_pending_queue",
+            "schedule": crontab(minute="7,37"),
+            "options": {"queue": "parkrun"},
+        },
         "runpark-latest": {
             "task": "runpark_sync.sync_latest",
             "schedule": crontab(hour="3,8,13,18,23", minute=0),
@@ -107,6 +116,13 @@ celery_app.conf.update(
         "leaderboards-warm-cache": {
             "task": "leaderboards.warm_cache",
             "schedule": crontab(minute=20, hour="*/2"),
+            "options": {"queue": "runpark"},
+        },
+        # Прогрев кэша локаций (TTL 3ч): каждые 2 часа, со сдвигом от рейтингов
+        # (:20) — чтобы два тяжёлых прогрева не шли одновременно на одном воркере.
+        "locations-warm-cache": {
+            "task": "locations.warm_cache",
+            "schedule": crontab(minute=40, hour="*/2"),
             "options": {"queue": "runpark"},
         },
         # Прогрев Redis-кэша главной портала (TTL 6ч) — раз в 3 часа, чтобы

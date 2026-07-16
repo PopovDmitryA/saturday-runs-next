@@ -188,6 +188,7 @@ export type RunItem = {
   location_name: string;
   location_city: string | null;
   location_country: string | null;
+  location_slug?: string | null;
   location_is_paused?: boolean;
   location_is_cancelled?: boolean;
   position: number | null;
@@ -244,6 +245,7 @@ export type VolunteeringItem = {
   location_name: string;
   location_city: string | null;
   location_country: string | null;
+  location_slug?: string | null;
   location_is_paused?: boolean;
   location_is_cancelled?: boolean;
   role: string | null;
@@ -1165,6 +1167,7 @@ export type MapLocationPlatformVisit = {
 export type MapLocationPoint = {
   id: string;
   catalog_identity_key?: string | null;
+  location_slug?: string | null;
   name: string;
   latitude: number;
   longitude: number;
@@ -1193,6 +1196,7 @@ export type MapLocationsResponse = {
 
 export type UniqueLocationDetail = {
   catalog_identity_key: string;
+  location_slug?: string | null;
   name: string;
   city: string | null;
   region?: string | null;
@@ -1237,6 +1241,7 @@ export type CatalogLocationTableRow = {
   row_key: string;
   catalog_identity_key: string;
   location_id: string;
+  location_slug?: string | null;
   name: string;
   city: string | null;
   region: string | null;
@@ -1258,6 +1263,179 @@ export type CatalogLocationsTableResponse = {
 export function getCatalogLocationsTable(includeTest = false) {
   const query = includeTest ? "?include_test=true" : "";
   return apiFetch<CatalogLocationsTableResponse>(`/locations/catalog/table${query}`);
+}
+
+export type LocationPagePlatform = {
+  platform_code: string;
+  location_name: string;
+  external_key: string;
+  url: string | null;
+  first_event_date: string | null;
+  last_event_date: string | null;
+  events_count: number;
+  is_active: boolean | null;
+};
+
+export type LocationCourseRecord = {
+  finish_time_sec: number;
+  finish_time_display: string;
+  runner_name: string | null;
+  event_date: string | null;
+  platform_code: string | null;
+};
+
+export type LocationAttendanceRecord = {
+  finishers: number;
+  event_date: string | null;
+  event_number: number | null;
+  platform_code: string | null;
+};
+
+export type LocationLastEvent = {
+  event_date: string;
+  platform_code: string;
+  finishers: number | null;
+  volunteers: number | null;
+  avg_time_sec: number | null;
+  avg_time_display: string | null;
+  best_male_time_sec: number | null;
+  best_male_time_display: string | null;
+  best_female_time_sec: number | null;
+  best_female_time_display: string | null;
+};
+
+export type LocationPageStats = {
+  events_count: number;
+  finishers_total: number;
+  unique_participants: number;
+  volunteers_total: number;
+  unique_volunteers: number;
+  avg_finish_time_sec: number | null;
+  avg_finish_time_display: string | null;
+  avg_finishers: number | null;
+  attendance_record: LocationAttendanceRecord | null;
+  course_records: { male: LocationCourseRecord | null; female: LocationCourseRecord | null };
+  first_event_date: string | null;
+  last_event_date: string | null;
+  median_finish_time_sec: number | null;
+  median_finish_time_display: string | null;
+  last_event: LocationLastEvent | null;
+  avg_finish_time_delta_sec: number | null;
+  median_finish_time_delta_sec: number | null;
+};
+
+export type LocationHistogramRow = {
+  start_sec: number;
+  gender: "male" | "female" | null;
+  age_group: string | null;
+  count: number;
+};
+
+export type LocationPage = {
+  slug: string;
+  identity_key: string;
+  name: string;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  is_paused: boolean;
+  is_cancelled: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  map_url: string | null;
+  start_point_url: string | null;
+  platforms: LocationPagePlatform[];
+  stats: LocationPageStats;
+  histogram: { bin_size_sec: number; rows: LocationHistogramRow[] };
+};
+
+export type LocationIndexItem = {
+  slug: string;
+  identity_key: string;
+  name: string;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  platform_codes: string[];
+  is_paused: boolean;
+  is_cancelled: boolean;
+  events_count: number;
+  finishers_total: number;
+  first_event_date: string | null;
+  last_event_date: string | null;
+};
+
+export type LocationsIndexResponse = {
+  items: LocationIndexItem[];
+  total: number;
+};
+
+export type LocationEventRow = {
+  event_date: string;
+  platform_code: string;
+  event_number: number | null;
+  overall_number: number;
+  finishers: number | null;
+  volunteers: number | null;
+  best_male_time_sec: number | null;
+  best_male_time_display: string | null;
+  best_female_time_sec: number | null;
+  best_female_time_display: string | null;
+  avg_time_sec: number | null;
+  avg_time_display: string | null;
+  debutants: number | null;
+  first_at_location: number | null;
+  prs: number | null;
+  has_protocol: boolean;
+  protocol_url: string | null;
+  is_attendance_record: boolean;
+  is_course_record_male: boolean;
+  is_course_record_female: boolean;
+  is_platform_attendance_record: boolean;
+  is_platform_course_record_male: boolean;
+  is_platform_course_record_female: boolean;
+};
+
+export type LocationEvents = {
+  slug: string;
+  name: string;
+  total: number;
+  items: LocationEventRow[];
+};
+
+export function getLocationPage(slug: string) {
+  return apiFetch<LocationPage>(`/locations/page/${encodeURIComponent(slug)}`);
+}
+
+export function getLocationEvents(slug: string) {
+  return apiFetch<LocationEvents>(`/locations/page/${encodeURIComponent(slug)}/events`);
+}
+
+export type LocationLeaderRunner = {
+  name: string | null;
+  runs_count: number;
+  best_time_sec: number | null;
+  best_time_display: string | null;
+};
+
+export type LocationLeaderVolunteer = {
+  name: string | null;
+  count: number;
+};
+
+export type LocationLeaders = {
+  slug: string;
+  name: string;
+  runners: LocationLeaderRunner[];
+  volunteers: LocationLeaderVolunteer[];
+};
+
+export function getLocationLeaders(slug: string) {
+  return apiFetch<LocationLeaders>(`/locations/page/${encodeURIComponent(slug)}/leaders`);
+}
+
+export function getLocationsIndex() {
+  return apiFetch<LocationsIndexResponse>("/locations/index");
 }
 
 export type AutoSyncPlatformPreference = {
