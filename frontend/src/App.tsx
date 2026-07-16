@@ -12,6 +12,11 @@ import { LoginPage } from "./features/auth/LoginPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
 import { DemoDashboardPage } from "./features/demo/DemoDashboardPage";
 import { LandingPage } from "./features/landing/LandingPage";
+import { PortalAboutPage } from "./features/portal/PortalAboutPage";
+import { PortalHomePage } from "./features/portal/PortalHomePage";
+import { PortalLoginPage } from "./features/portal/PortalLoginPage";
+import { PortalMapLab } from "./features/portal/PortalMapLab";
+import { PORTAL_ABOUT_HREF, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "./lib/portalRoutes";
 import { DemoMapsPage, MapsPage } from "./features/maps/MapsPage";
 import { CoRunnersPage, DemoCoRunnersPage } from "./features/co_runners/CoRunnersPage";
 import { DemoRunsPage, RunsPage } from "./features/runs/RunsPage";
@@ -58,6 +63,10 @@ function AdminRedirect() {
 
 const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/": () => <LandingPage />,
+  [PORTAL_HOME_HREF]: () => <PortalHomePage />,
+  [PORTAL_ABOUT_HREF]: () => <PortalAboutPage />,
+  [PORTAL_LOGIN_HREF]: () => <PortalLoginPage />,
+  "/new/map-lab": () => <PortalMapLab />,
   "/login": () => <LoginPage />,
   "/oauth/yandex/callback": () => <OAuthCallbackPage provider="yandex" />,
   "/oauth/vk/callback": () => <OAuthCallbackPage provider="vk" />,
@@ -138,9 +147,11 @@ function renderRoute(path: string): ReactElement {
 export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
+  // На страницах портального редизайна (тёмный запуск) баннер про переезд с Grafana не показываем.
+  const hideLegacyBanner = path === PORTAL_HOME_HREF || path.startsWith(`${PORTAL_HOME_HREF}/`);
   return (
     <>
-      <LegacySiteBanner />
+      {!hideLegacyBanner && <LegacySiteBanner />}
       {renderRoute(path)}
     </>
   );

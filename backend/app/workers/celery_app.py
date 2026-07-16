@@ -24,6 +24,7 @@ celery_app.conf.update(
         "app.workers.tasks.s95_sync",
         "app.workers.tasks.parkrun_sync",
         "app.workers.tasks.runpark_sync",
+        "app.workers.tasks.portal_cache",
     ),
     task_routes={
         "five_verst_sync.*": {"queue": "five_verst"},
@@ -99,6 +100,14 @@ celery_app.conf.update(
             "task": "runpark_sync.sync_latest",
             "schedule": crontab(hour="3,8,13,18,23", minute=0),
             "options": {"queue": "runpark"},
+        },
+        # Прогрев Redis-кэша главной портала (TTL 6ч) — раз в 3 часа, чтобы
+        # ни один запрос не попадал на холодный пересчёт (~2 мин на проде).
+        # Дефолтная очередь "celery" — обслуживает уже существующий сервис
+        # worker (без -Q), новых воркеров/очередей заводить не нужно.
+        "portal-home-cache-warm": {
+            "task": "portal_cache.warm_home",
+            "schedule": crontab(hour="*/3", minute=15),
         },
     },
 )
