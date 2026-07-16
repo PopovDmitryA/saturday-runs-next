@@ -25,6 +25,7 @@ FIVE_VERST_SLUG_RE = re.compile(r"^https://5verst\.ru/([a-z0-9]+)/?$", re.I)
 EVENTS_PAGE_URL = f"{BASE_URL}/events/"
 LATEST_RESULTS_URL = f"{BASE_URL}/results/latest/"
 TIME_RE = re.compile(r"\b(\d{1,2}):(\d{2}):(\d{2})\b")
+# group(1) — чистая категория («М40-44»); хвост «(2)» — место в группе на этом забеге, не часть категории.
 AGE_CATEGORY_RE = re.compile(r"([MVЖМ]\d{1,2}(?:-\d{1,2})?)(?:\s*\(\d+\))?")
 CLUB_HREF_RE = re.compile(r"/clubs/([^/?#]+)")
 YANDEX_PT_RE = re.compile(r"yandex\.ru/maps/\?pt=\s*([0-9.]+),([0-9.]+)", re.I)
@@ -504,7 +505,7 @@ def _parse_age_category_from_row(row: Tag) -> str | None:
     text = stats_cell.get_text(" ", strip=True)
     text = text.split("age grade", 1)[0].strip()
     match = AGE_CATEGORY_RE.search(text)
-    return match.group(0) if match else None
+    return match.group(1) if match else None
 
 
 def _extract_club_from_row(row: Tag) -> str | None:
