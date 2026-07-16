@@ -1,0 +1,480 @@
+/* Раздел «Рейтинги» (лидерборды). Все цвета — через переменные тем. */
+
+.lb-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  /* .lb-page сам лежит в гриде .shell-main — без min-width:0 grid-item
+     не сжимается ниже min-content широкой таблицы */
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* flex-дети по умолчанию не сжимаются ниже min-content — широкая таблица
+   распирала бы страницу на мобильных; скроллится сам .lb-table-wrap */
+.lb-page > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.lb-breadcrumb {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.lb-breadcrumb a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.lb-header h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.45rem;
+}
+
+.lb-description {
+  margin: 0 0 0.3rem;
+  color: var(--text-2);
+  line-height: 1.5;
+  max-width: 46rem;
+}
+
+.lb-meta {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.lb-error {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-2);
+}
+
+/* --- Моя строка --- */
+
+.lb-me {
+  border: 1px solid var(--tint-indigo-bg-strong);
+  background: var(--tint-indigo-bg);
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+}
+
+.lb-me-out {
+  border-style: dashed;
+}
+
+.lb-me-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.lb-me-rank {
+  font-size: 1.25rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+.lb-me-name {
+  font-weight: 600;
+}
+
+.lb-me-values {
+  display: inline-flex;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.lb-me-value {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 3.2rem;
+}
+
+.lb-me-platform {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.lb-me-total .lb-cell {
+  font-weight: 700;
+}
+
+.lb-me-threshold {
+  margin: 0;
+  color: var(--text-2);
+}
+
+
+/* --- Контролы --- */
+
+.lb-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.lb-sort-hint {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.lb-search {
+  margin-left: auto;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  min-width: 14rem;
+}
+
+/* --- Таблица --- */
+
+.lb-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* Составной селектор — специфичность выше, чем у одноклассового .table-wrap,
+   так что порядок правил в общем бандле больше не важен. Переопределяем
+   overflow-x:auto из базового .table-wrap: по спеке CSS overflow-x:auto +
+   overflow-y:visible форсит overflow-y в auto — контейнер станет
+   scroll-контейнером и sticky-шапка перестанет липнуть к окну. Прокрутка
+   тут — страница целиком, отдельного бокса не создаём. */
+.table-wrap.lb-table-wrap {
+  overflow-x: visible;
+}
+
+@media (max-width: 820px) {
+  /* Ниже этой ширины таблица (6 числовых колонок) не помещается без скролла.
+     На узких экранах включаем горизонтальный скролл локально (ценой
+     sticky-шапки только на мобильных/планшетных ширинах). */
+  .table-wrap.lb-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+.lb-table thead th {
+  background: var(--surface);
+  /* Липнет к верху ОКНА (не своего контейнера) — родитель не имеет
+     overflow-y, поэтому ближайший скроллящийся предок — сам документ. */
+  top: 0;
+}
+
+.lb-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.lb-sortable:hover {
+  color: var(--accent-indigo-text);
+}
+
+.lb-sorted {
+  color: var(--accent-indigo-text);
+}
+
+.lb-sort-mark {
+  margin-left: 0.2rem;
+}
+
+.lb-table .lb-col-rank {
+  width: 6.2rem;
+}
+
+.lb-table .lb-col-num {
+  text-align: right;
+  width: 6.4rem;
+  white-space: nowrap;
+}
+
+.lb-table .lb-col-total {
+  font-weight: 600;
+}
+
+.lb-rank {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-rank-delta {
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.lb-rank-up {
+  color: #16a34a;
+}
+
+.lb-rank-down {
+  color: #dc2626;
+}
+
+.lb-cell {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Слот дельты всегда занимает одну и ту же ширину — цифры в колонке не съезжают */
+.lb-delta {
+  display: inline-block;
+  width: 2rem;
+  margin-left: 0.15rem;
+  text-align: left;
+  color: #16a34a;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.lb-zero {
+  color: var(--text-faint);
+}
+
+.lb-name {
+  font-weight: 500;
+}
+
+.lb-name-link {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.lb-name-link:hover {
+  text-decoration: underline;
+}
+
+.lb-row-me td {
+  background: var(--tint-indigo-bg);
+}
+
+.lb-more {
+  display: flex;
+  justify-content: center;
+}
+
+/* --- Хаб --- */
+
+.lb-hub-section {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-muted);
+  padding: 0.9rem 1rem 1.1rem;
+}
+
+.lb-hub-section h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.1rem;
+}
+
+.lb-hub-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 0.7rem;
+}
+
+.lb-hub-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 0.8rem 0.95rem;
+  text-decoration: none;
+  color: var(--text);
+  min-width: 0;
+}
+
+a.lb-hub-card:hover {
+  border-color: var(--accent-indigo);
+}
+
+.lb-hub-card-soon {
+  opacity: 0.65;
+}
+
+.lb-hub-card-title {
+  font-weight: 600;
+}
+
+.lb-hub-card-text {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.lb-soon {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  vertical-align: middle;
+}
+
+/* --- Живая карточка рейтинга (топ-3 + место участника) --- */
+
+.lb-hub-card-live {
+  gap: 0.45rem;
+}
+
+.lb-hub-card-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.lb-hub-top3-label {
+  margin: 0.3rem 0 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.lb-hub-card-meta {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.lb-hub-loading {
+  margin: 0.2rem 0;
+  font-size: 0.83rem;
+}
+
+.lb-hub-top3 {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.2rem;
+}
+
+.lb-hub-rank-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.1rem 0;
+}
+
+.lb-hub-rank-chip {
+  flex: 0 0 auto;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid transparent;
+}
+
+.lb-hub-rank-gold {
+  background: var(--tint-amber-bg);
+  color: var(--accent-amber-text);
+  border-color: var(--tint-amber-border);
+}
+
+.lb-hub-rank-silver {
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  border-color: var(--border-strong);
+}
+
+.lb-hub-rank-bronze {
+  background: var(--tint-orange-bg);
+  color: var(--tint-orange-text);
+  border-color: var(--tint-orange-text);
+}
+
+.lb-hub-rank-me {
+  background: var(--tint-indigo-bg-strong);
+  color: var(--accent-indigo-text);
+  border-color: var(--accent-indigo);
+  width: auto;
+  min-width: 1.4rem;
+  padding: 0 0.3rem;
+}
+
+.lb-hub-rank-name {
+  flex: 1 1 auto;
+  font-size: 0.83rem;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lb-hub-rank-value {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-size: 0.83rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-hub-delta {
+  display: inline-block;
+  min-width: 1.6rem;
+  margin-left: 0.15rem;
+  color: #16a34a;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.lb-hub-me {
+  margin-top: 0.2rem;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--border-strong);
+}
+
+.lb-hub-rank-row-me {
+  padding: 0;
+}
+
+.lb-hub-me-threshold {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.lb-hub-see-all {
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--link);
+}
+
+@media (max-width: 640px) {
+  .lb-search {
+    margin-left: 0;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .lb-me-values {
+    margin-left: 0;
+  }
+}

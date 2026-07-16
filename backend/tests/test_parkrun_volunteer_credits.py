@@ -41,3 +41,30 @@ def test_resolve_parkrun_volunteering_count_falls_back_to_role_labels() -> None:
         )
         == 51
     )
+
+
+def test_volunteer_credits_from_role_labels_prefers_total_credits_row() -> None:
+    # Реальный кейс с прода: одна смена может дать кредит нескольким ролям
+    # сразу — сумма по ролям (556) переучитывает такие дни, "Total Credits"
+    # (184) — правильное число occasions.
+    labels = [
+        "Results Processor (172×)",
+        "Run Director (58×)",
+        "Volunteer Co-ordinator (55×)",
+        "Total Credits (184×)",
+    ]
+    assert volunteer_credits_from_role_labels(labels) == 184
+
+
+def test_volunteer_credits_from_profile_extra_prefers_total_credits_row_in_summary() -> None:
+    assert (
+        volunteer_credits_from_profile_extra(
+            {
+                "volunteer_summary": [
+                    {"role": "Run Director", "occasions": 58},
+                    {"role": "Total Credits", "occasions": 184},
+                ]
+            }
+        )
+        == 184
+    )

@@ -1778,31 +1778,3 @@ export function demoGetCatalogLocationsMap() {
 export function demoGetCatalogLocationsTable() {
   return apiFetch<CatalogLocationsTableResponse>("/demo/locations/catalog/table");
 }
-
-export type RunCountRatingRow = {
-  rank: number;
-  runner_name: string;
-  run_count: number;
-  ran_on_latest_date: boolean;
-  latest_location: string | null;
-  skipped_above_count: number;
-};
-
-export type RunCountRatingResponse = {
-  title: string;
-  description: string;
-  platform_code: string;
-  data_source: string;
-  latest_event_date: string | null;
-  data_updated_at: string | null;
-  cached_at: string | null;
-  rows: RunCountRatingRow[];
-};
-
-export function getFiveVerstRunCountRating(limit = 1000) {
-  return apiFetch<RunCountRatingResponse>(
-    `/public/ratings/five-verst/run-count?limit=${limit}`,
-    undefined,
-    { timeoutMs: 120_000 },
-  );
-}
