@@ -187,6 +187,7 @@ class RunItemResponse(BaseModel):
     location_source_name: str | None = None
     location_city: str | None = None
     location_country: str | None = None
+    location_slug: str | None = None
     location_is_paused: bool = False
     location_is_cancelled: bool = False
     position: int | None = None
@@ -270,6 +271,7 @@ class VolunteeringItemResponse(BaseModel):
     location_source_name: str | None = None
     location_city: str | None = None
     location_country: str | None = None
+    location_slug: str | None = None
     location_is_paused: bool = False
     location_is_cancelled: bool = False
     role: str | None = None

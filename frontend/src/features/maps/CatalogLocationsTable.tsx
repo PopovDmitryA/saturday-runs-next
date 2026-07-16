@@ -22,6 +22,7 @@ import {
   type VisitedFilter,
 } from "./catalogLocationsTableHelpers";
 import type { PlatformFilters } from "./mapFilters";
+import { useCurrentUserIsAdmin } from "../../lib/currentUserAdmin";
 
 type CatalogLocationsTableProps = {
   data: CatalogLocationsTableResponse | null;
@@ -308,14 +309,18 @@ export function CatalogLocationsTable({
 }
 
 function CatalogLocationTableRowView({ row }: { row: CatalogLocationTableRow }) {
-  const name =
-    row.location_url != null && row.location_url !== "" ? (
-      <a href={row.location_url} target="_blank" rel="noreferrer noopener" className="map-popup-link">
-        {row.name}
-      </a>
-    ) : (
-      row.name
-    );
+  const isAdmin = useCurrentUserIsAdmin();
+  const name = row.location_slug && isAdmin ? (
+    <a href={`/locations/${encodeURIComponent(row.location_slug)}`} className="map-popup-link" title="Открыть страницу локации">
+      {row.name}
+    </a>
+  ) : row.location_url != null && row.location_url !== "" ? (
+    <a href={row.location_url} target="_blank" rel="noreferrer noopener" className="map-popup-link">
+      {row.name}
+    </a>
+  ) : (
+    row.name
+  );
 
   const statusNote = row.is_cancelled ? "Отменена" : row.is_paused ? "На паузе" : null;
 

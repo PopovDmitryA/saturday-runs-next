@@ -5,6 +5,7 @@ import type { MapLocationPoint } from "../lib/api";
 import { formatDate, platformCodeLabel } from "../lib/format";
 import type { MapViewportRef } from "../lib/mapViewport";
 import { MapFullscreenButton } from "./MapFullscreenButton";
+import { getCurrentUserIsAdmin } from "../lib/currentUserAdmin";
 
 const visitedIcon = L.divIcon({
   className: "map-marker map-marker-visited",
@@ -181,8 +182,13 @@ function pickLocationUrl(
   return null;
 }
 
-function formatPopupTitle(name: string, url: string | null): string {
+function formatPopupTitle(name: string, url: string | null, pageSlug?: string | null): string {
   const escapedName = escapeHtml(name);
+  // Раздел «Локации» пока admin-only — остальным ведём на внешнюю систему.
+  if (pageSlug && getCurrentUserIsAdmin()) {
+    // Внутренняя страница локации приоритетнее внешней ссылки на систему.
+    return `<strong><a class="map-popup-link" href="/locations/${encodeURIComponent(pageSlug)}">${escapedName}</a></strong>`;
+  }
   if (!url) {
     return `<strong>${escapedName}</strong>`;
   }
@@ -201,8 +207,14 @@ function popupHtml(
       : undefined;
   const stats = visitedInfo ?? point;
   const locationUrl = pickLocationUrl(point, stats);
+  const pageSlug = point.location_slug ?? stats.location_slug ?? null;
 
-  const lines = [formatPopupTitle(point.name, locationUrl)];
+  const lines = [formatPopupTitle(point.name, locationUrl, pageSlug)];
+  if (pageSlug && locationUrl) {
+    lines.push(
+      `<div class="map-popup-line"><a class="map-popup-link" href="${escapeHtml(locationUrl)}" target="_blank" rel="noopener noreferrer">Официальная страница ↗</a></div>`,
+    );
+  }
   if (point.city) {
     lines.push(`<div class="map-popup-line">${escapeHtml(point.city)}</div>`);
   }

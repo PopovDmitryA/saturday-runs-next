@@ -44,6 +44,7 @@ backend/scripts/backups/
 .cursor/
 .claude/
 PROJECT_HANDOFF.local.md
+LOCATION_PAGES_STATUS.local.md
 RATINGS_HANDOFF.local.md
 S95_API.md
 docs/release_posts_style.md

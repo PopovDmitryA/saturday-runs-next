@@ -19,6 +19,9 @@ import { PortalLoginPage } from "./features/portal/PortalLoginPage";
 import { PortalMapLab } from "./features/portal/PortalMapLab";
 import { PORTAL_ABOUT_HREF, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "./lib/portalRoutes";
 import { DemoMapsPage, MapsPage } from "./features/maps/MapsPage";
+import { LocationEventsPage } from "./features/locations/LocationEventsPage";
+import { LocationPage } from "./features/locations/LocationPage";
+import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
 import { CoRunnersPage, DemoCoRunnersPage } from "./features/co_runners/CoRunnersPage";
 import { DemoRunsPage, RunsPage } from "./features/runs/RunsPage";
 import { DemoHistoryPage, HistoryPage } from "./features/history/HistoryPage";
@@ -88,6 +91,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/co-runners": () => <CoRunnersPage />,
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
+  // Гейт админа — внутри самой страницы (RequireAdmin), как и у /locations/{slug}.
+  "/locations": () => <LocationsIndexPage />,
   "/history": () => <HistoryPage />,
   // Раздел для залогиненных: анонима RequireAuth уводит на /login (гейт есть и на API).
   "/ratings": () => <RequireAuth>{() => <LeaderboardsHubPage />}</RequireAuth>,
@@ -148,6 +153,14 @@ function renderRoute(path: string): ReactElement {
   const publicProfileMatch = path.match(/^\/users\/([^/]+)$/);
   if (publicProfileMatch) {
     return <PublicProfilePage handle={decodeURIComponent(publicProfileMatch[1])} />;
+  }
+  const locationEventsMatch = path.match(/^\/locations\/([^/]+)\/events$/);
+  if (locationEventsMatch) {
+    return <LocationEventsPage slug={decodeURIComponent(locationEventsMatch[1])} />;
+  }
+  const locationMatch = path.match(/^\/locations\/([^/]+)$/);
+  if (locationMatch) {
+    return <LocationPage slug={decodeURIComponent(locationMatch[1])} />;
   }
   const render = STATIC_ROUTES[path];
   if (render) {
