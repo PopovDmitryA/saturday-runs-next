@@ -30,6 +30,82 @@ logger = logging.getLogger(__name__)
 
 PLATFORM_CODE = "runpark"
 
+# RunPark проводит на одной локации в один день несколько разных стартов
+# (ночной забег, детский, 3 км, эстафета…). В зачёт нашего сервиса идёт только
+# основной субботний 5-километровый старт. Поле event_type_description добавили
+# в vw_events / vw_run_results / vw_volunteer_results специально для нас; берём
+# СТРОГО "5 км" — соседние значения ("5 км (дополнительный)", "3 км", …) не наши.
+FIVE_KM_TYPE = "5 км"
+
+# Единичный подтверждённый кейс (согласовано с владельцем RunPark): 27.04.2024
+# в Михалково было два ОТДЕЛЬНЫХ старта "5 км" подряд утром — #113 в 08:00
+# (6 финишёров) и #114 в 09:00 (11 финишёров), составы не пересекаются. Это не
+# дубль одного протокола, а два разных забега, которые решено считать одним
+# протоколом задним числом — 17 участников, места пересчитаны по факту финиша.
+# Без этой записи _ensure_event сливал бы их по (location, date) и один старт
+# просто затирал бы другой при каждой перезаливке (см. историю бага). Владелец
+# RunPark сказал, что такое больше не планируется; если появится ещё один
+# подобный день — добавить сюда отдельной записью primary -> [secondary, ...].
+MERGED_EVENT_GROUPS: dict[str, list[str]] = {
+    "847DF6D1-ABE2-4B46-98D6-57804896143D": ["2C207D24-F511-4FA2-9793-78597AE0E471"],
+}
+_SECONDARY_TO_PRIMARY: dict[str, str] = {
+    secondary: primary for primary, secondaries in MERGED_EVENT_GROUPS.items() for secondary in secondaries
+}
+
+
+def _canonical_event_key(external_event_key: str) -> str:
+    """Map a RunPark event_id to its merge-group primary key, if it's a known secondary
+    (see MERGED_EVENT_GROUPS). Otherwise returns the key unchanged."""
+    return _SECONDARY_TO_PRIMARY.get(external_event_key, external_event_key)
+
+
+def _fetch_merged_run_rows(external_event_key: str) -> list[dict]:
+    """Fetch '5 км' run rows for external_event_key. If it's a merge-group primary,
+    also pulls its secondary event(s) and recomputes `position` across the combined
+    field by finish time (see MERGED_EVENT_GROUPS)."""
+    keys = [external_event_key, *MERGED_EVENT_GROUPS.get(external_event_key, [])]
+    rows: list[dict] = []
+    for key in keys:
+        rows.extend(
+            runpark_query(
+                "SELECT * FROM api.vw_run_results WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s "
+                "AND event_type_description = %s",
+                (key, FIVE_KM_TYPE),
+            )
+        )
+    if len(keys) > 1:
+        rows.sort(key=lambda r: (r.get("finish_time_sec") is None, r.get("finish_time_sec") or 0))
+        for position, row in enumerate(rows, start=1):
+            row["position"] = position
+    return rows
+
+
+def _fix_merged_finishers_count(db: Session, event_row: Event, external_event_key: str, run_rows: list[dict]) -> None:
+    """_ensure_event sets finishers_count from the primary's own vw_events row (e.g. 6),
+    which undercounts a merge-group event — fix it to the actual combined total (17)."""
+    if external_event_key not in MERGED_EVENT_GROUPS:
+        return
+    event_row.finishers_count = len(run_rows)
+    event_row.runners_count = len(run_rows)
+    db.flush()
+
+
+def _fetch_merged_vol_rows(external_event_key: str) -> list[dict]:
+    """Fetch '5 км' volunteer rows for external_event_key, merging in secondary
+    event(s) for a merge-group primary (see MERGED_EVENT_GROUPS)."""
+    keys = [external_event_key, *MERGED_EVENT_GROUPS.get(external_event_key, [])]
+    rows: list[dict] = []
+    for key in keys:
+        rows.extend(
+            runpark_query(
+                "SELECT * FROM api.vw_volunteer_results WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s "
+                "AND event_type_description = %s",
+                (key, FIVE_KM_TYPE),
+            )
+        )
+    return rows
+
 
 @dataclass
 class RunparkSyncResult:
@@ -151,7 +227,12 @@ def _ensure_event(db: Session, platform: Platform, location: Location, row: dict
     )
     now = datetime.now(timezone.utc)
     if existing is None:
-        # Check by (platform, location, date) to handle RunPark's duplicate event_ids per day
+        # Fallback по (platform, location, date). Изначально был нужен из-за "дублей
+        # event_id в один день" — на деле это были разные типы стартов (ночной, 3 км…),
+        # которые теперь отсекаются фильтром FIVE_KM_TYPE ещё до сюда. Слияние опасно:
+        # ниже по коду вызывается _delete_event_results, т.е. результаты первого события
+        # затираются вторым. Среди 5км-стартов такой коллизии почти нет (на всю историю
+        # один случай), поэтому fallback оставлен, но при срабатывании он логирует WARNING.
         existing_by_date = (
             db.query(Event)
             .filter(
@@ -257,11 +338,12 @@ def sync_runpark_batch(db: Session, since_date: date) -> RunparkSyncResult:
     try:
         events = runpark_query(
             f"SELECT * FROM api.vw_events "
-            f"WHERE event_date >= %s AND UPPER(CAST(location_id AS nvarchar(64))) IN ({location_ids_sql})",
-            (since_date,),
+            f"WHERE event_date >= %s AND event_type_description = %s "
+            f"AND UPPER(CAST(location_id AS nvarchar(64))) IN ({location_ids_sql})",
+            (since_date, FIVE_KM_TYPE),
         )
         result.events_total = len(events)
-        logger.info("RunPark: %d events since %s", len(events), since_date)
+        logger.info("RunPark: %d 5км events since %s", len(events), since_date)
 
         for ev in events:
             location_id_key = str(ev["location_id"]).upper()
@@ -271,23 +353,21 @@ def sync_runpark_batch(db: Session, since_date: date) -> RunparkSyncResult:
                 continue
 
             external_event_key = str(ev["event_id"]).upper()
+            if external_event_key in _SECONDARY_TO_PRIMARY:
+                # Обрабатывается вместе со своим primary (см. MERGED_EVENT_GROUPS).
+                continue
             try:
                 event_row = _ensure_event(db, platform, location, ev)
                 _delete_event_results(db, event_row)
 
-                run_rows = runpark_query(
-                    "SELECT * FROM api.vw_run_results WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s",
-                    (external_event_key,),
-                )
+                run_rows = _fetch_merged_run_rows(external_event_key)
+                _fix_merged_finishers_count(db, event_row, external_event_key, run_rows)
                 canonical_runs = [_to_canonical_run(r) for r in run_rows]
                 run_count = upsert.upsert_run_results(db, event_row, platform, canonical_runs, recalculate_pr=False)
                 recalculate_event_gender_positions(db, event_row.id, PLATFORM_CODE)
                 result.run_results_upserted += run_count
 
-                vol_rows = runpark_query(
-                    "SELECT * FROM api.vw_volunteer_results WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s",
-                    (external_event_key,),
-                )
+                vol_rows = _fetch_merged_vol_rows(external_event_key)
                 canonical_vols = [
                     v for r in vol_rows
                     if (v := _to_canonical_volunteer(r, external_event_key)) is not None
@@ -332,19 +412,23 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
 
     pid_upper = participant_id.upper()
 
-    # Find all event_ids where this participant has run or volunteered
+    # Find all 5км event_ids where this participant has run or volunteered.
     run_events = runpark_query(
-        "SELECT DISTINCT event_id FROM api.vw_run_results WHERE UPPER(CAST(participant_id AS nvarchar(64))) = %s",
-        (pid_upper,),
+        "SELECT DISTINCT event_id FROM api.vw_run_results "
+        "WHERE UPPER(CAST(participant_id AS nvarchar(64))) = %s AND event_type_description = %s",
+        (pid_upper, FIVE_KM_TYPE),
     )
     vol_events = runpark_query(
-        "SELECT DISTINCT event_id FROM api.vw_volunteer_results WHERE UPPER(CAST(participant_id AS nvarchar(64))) = %s",
-        (pid_upper,),
+        "SELECT DISTINCT event_id FROM api.vw_volunteer_results "
+        "WHERE UPPER(CAST(participant_id AS nvarchar(64))) = %s AND event_type_description = %s",
+        (pid_upper, FIVE_KM_TYPE),
     )
-    event_ids = {str(r["event_id"]).upper() for r in run_events + vol_events}
+    # Канонизируем: если участник найден в secondary-событии из MERGED_EVENT_GROUPS,
+    # обрабатываем его как участника primary-события (см. FIVE_KM_TYPE выше).
+    event_ids = {_canonical_event_key(str(r["event_id"]).upper()) for r in run_events + vol_events}
 
     if not event_ids:
-        logger.info("RunPark: no events found for participant %s", pid_upper)
+        logger.info("RunPark: no 5км events found for participant %s", pid_upper)
         return result
 
     result.events_total = len(event_ids)
@@ -352,8 +436,9 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
 
     for external_event_key in event_ids:
         events = runpark_query(
-            "SELECT * FROM api.vw_events WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s",
-            (external_event_key,),
+            "SELECT * FROM api.vw_events WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s "
+            "AND event_type_description = %s",
+            (external_event_key, FIVE_KM_TYPE),
         )
         if not events:
             continue
@@ -367,10 +452,8 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
             event_row = _ensure_event(db, platform, location, ev)
             _delete_event_results(db, event_row)
 
-            run_rows = runpark_query(
-                "SELECT * FROM api.vw_run_results WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s",
-                (external_event_key,),
-            )
+            run_rows = _fetch_merged_run_rows(external_event_key)
+            _fix_merged_finishers_count(db, event_row, external_event_key, run_rows)
             canonical_runs = [_to_canonical_run(r) for r in run_rows]
             # recalculate_pr=False: PRs are recalculated after crosslinks are upserted
             # (below) so "не в зачёте" duplicates never get the PR marker.
@@ -379,10 +462,7 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
             )
             recalculate_event_gender_positions(db, event_row.id, PLATFORM_CODE)
 
-            vol_rows = runpark_query(
-                "SELECT * FROM api.vw_volunteer_results WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s",
-                (external_event_key,),
-            )
+            vol_rows = _fetch_merged_vol_rows(external_event_key)
             canonical_vols = [
                 v for r in vol_rows
                 if (v := _to_canonical_volunteer(r, external_event_key)) is not None

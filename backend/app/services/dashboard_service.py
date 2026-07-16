@@ -929,19 +929,18 @@ def list_user_runs(
         query = query.filter(Event.is_test_event.is_(False))
     rows = query.order_by(Event.event_date.desc(), RunResult.position.asc()).offset(offset).limit(limit).all()
 
-    # Collect event IDs that are secondary in event_crosslinks
-    event_ids = [event.id for _run, event, _loc, _plat, _link in rows]
-    crosslinked_event_ids: set[UUID] = set()
-    if event_ids:
-        cl_rows = (
-            db.query(EventCrosslink.secondary_event_id)
-            .filter(EventCrosslink.secondary_event_id.in_(event_ids))
-            .all()
-        )
-        crosslinked_event_ids = {row[0] for row in cl_rows}
+    from app.services.personal_record_service import (
+        run_shows_personal_record,
+        user_secondary_crosslinked_run_ids,
+    )
 
-    from app.services.personal_record_service import run_shows_personal_record
-
+    # "Не в зачёте" — только если у самого юзера есть и secondary (этот забег), и
+    # primary результат (см. user_secondary_crosslinked_run_ids). Событие может быть
+    # кросслинкнуто целиком (dual_load локация), но если юзер лично бежал только в
+    # одной из систем в этот день — у него нет дубля, забег зачётный.
+    secondary_crosslinked_ids = user_secondary_crosslinked_run_ids(
+        db, user_id, include_test_events=include_test_events
+    )
     catalog_index = LocationCatalogIndex(db)
     summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
     return [
@@ -967,7 +966,7 @@ def list_user_runs(
             "is_pr": run_shows_personal_record(platform.code, run),
             "is_global_pr": run.is_global_pr,
             "is_location_pr": run.is_location_pr,
-            "is_crosslinked": event.id in crosslinked_event_ids,
+            "is_crosslinked": run.id in secondary_crosslinked_ids,
             "is_first_run": run.is_first_run,
             "is_first_run_at_location": run.is_first_run_at_location,
             "club_name": run.club_name,
