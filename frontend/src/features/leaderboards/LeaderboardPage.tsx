@@ -224,9 +224,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               <h1>{data.title}</h1>
               <p className="lb-description">{data.description}</p>
               <p className="lb-meta muted">
-                Порог входа: {data.threshold} {unitLabel(metric, data.threshold)} · данные на{" "}
-                {formatDate(data.latest_event_date)} · число рядом со значением (например, +1) — изменение
-                за последнюю неделю
+                Данные на {formatDate(data.latest_event_date)} · число рядом со значением (например, +1)
+                — изменение за последнюю неделю
               </p>
             </header>
 

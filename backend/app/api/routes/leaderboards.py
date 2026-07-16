@@ -25,18 +25,20 @@ def _validate_metric(metric: str) -> LeaderboardMetric:
     return metric  # type: ignore[return-value]
 
 
-# Публичный: рейтинг видно и без логина (решение Дмитрия 14.07.2026).
+# Только для залогиненных (решение Дмитрия 16.07.2026): раздел открыт всем
+# пользователям сайта, но не анонимам.
 @router.get("/{metric}", response_model=LeaderboardResponse)
 def leaderboard(
     metric: str,
     db: Annotated[Session, Depends(get_db)],
+    _user: Annotated[User, Depends(get_current_user)],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> LeaderboardResponse:
     payload = get_leaderboard(db, _validate_metric(metric), limit=limit)
     return LeaderboardResponse.model_validate(payload)
 
 
-# Строка «Вы» — только своя, поэтому логин обязателен; на анонимах фронт гасит 401.
+# Строка «Вы» — только своя, поэтому логин обязателен и здесь.
 @router.get("/{metric}/me", response_model=MyLeaderboardRowResponse)
 def my_leaderboard_row(
     metric: str,
