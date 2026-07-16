@@ -97,6 +97,14 @@ celery_app.conf.update(
             "schedule": crontab(hour=3, minute=0, day_of_week="1,3,5"),
             "options": {"queue": "s95"},
         },
+        # Серверный разбор очереди parkrun (только user-запросы), когда Mac-демон
+        # не запущен и охлаждение после капчи истекло. Смещение от :00, чтобы не
+        # толкаться с другими задачами.
+        "parkrun-pending-queue": {
+            "task": "parkrun_sync.process_pending_queue",
+            "schedule": crontab(minute="7,37"),
+            "options": {"queue": "parkrun"},
+        },
         "runpark-latest": {
             "task": "runpark_sync.sync_latest",
             "schedule": crontab(hour="3,8,13,18,23", minute=0),

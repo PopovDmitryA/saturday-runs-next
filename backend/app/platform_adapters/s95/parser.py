@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.config import get_settings
 from app.platform_adapters.canonical import (
     CanonicalParticipant,
     CanonicalRunResult,
@@ -31,12 +30,7 @@ class ProfileParseError(ValueError):
 
 
 def fetch_and_parse_profile(parsed_url: ParsedAthleteUrl) -> CanonicalParticipant:
-    settings = get_settings()
-    html = fetch_page_html(
-        parsed_url.canonical_url,
-        reason="athlete_profile",
-        extra_wait_ms=settings.s95_playwright_athlete_wait_ms,
-    )
+    html = fetch_page_html(parsed_url.canonical_url, reason="athlete_profile")
     try:
         participant = parse_athlete_html(html, parsed_url.canonical_url, parsed_url.external_user_id)
         return enrich_participant_activity_totals(html, participant)
@@ -53,12 +47,7 @@ class S95ProfileActivityFetch:
 
 def fetch_profile_activity(profile_url: str) -> S95ProfileActivityFetch:
     parsed = parse_athlete_url(profile_url)
-    settings = get_settings()
-    html = fetch_page_html(
-        parsed.canonical_url,
-        reason="athlete_profile_preview",
-        extra_wait_ms=settings.s95_playwright_athlete_wait_ms,
-    )
+    html = fetch_page_html(parsed.canonical_url, reason="athlete_profile_preview")
     try:
         participant = enrich_participant_activity_totals(
             html,
@@ -126,12 +115,7 @@ def fetch_athlete_activity(
     from app.platform_adapters.s95.url import athlete_url
 
     profile_url = athlete_url(external_user_id, domain=domain)
-    settings = get_settings()
-    html = fetch_page_html(
-        profile_url,
-        reason="athlete_full",
-        extra_wait_ms=settings.s95_playwright_athlete_wait_ms,
-    )
+    html = fetch_page_html(profile_url, reason="athlete_full")
     try:
         profile = enrich_participant_activity_totals(
             html,

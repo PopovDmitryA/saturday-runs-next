@@ -19,7 +19,7 @@ def test_fetch_serializes_with_lock_and_rate_limit(fake_redis: fakeredis.FakeRed
         patch("app.s95.fetch.coordinator.get_redis_client", return_value=fake_redis),
         patch("app.s95.fetch.rate_limit.get_redis_client", return_value=fake_redis),
         patch("app.s95.fetch.lock.get_redis_client", return_value=fake_redis),
-        patch("app.s95.fetch.coordinator.fetch_html_with_browser", return_value="<html>ok</html>"),
+        patch("app.s95.fetch.coordinator.fetch_html_with_httpx", return_value="<html>ok</html>"),
     ):
         html = fetch_page_html("https://s95.ru/athletes/1/", reason="test")
         assert "ok" in html
@@ -31,7 +31,7 @@ def test_fetch_detects_ban(fake_redis: fakeredis.FakeRedis) -> None:
         patch("app.s95.fetch.rate_limit.get_redis_client", return_value=fake_redis),
         patch("app.s95.fetch.lock.get_redis_client", return_value=fake_redis),
         patch(
-            "app.s95.fetch.coordinator.fetch_html_with_browser",
+            "app.s95.fetch.coordinator.fetch_html_with_httpx",
             return_value="<html>recaptcha challenge</html>",
         ),
     ):
@@ -49,7 +49,7 @@ def test_fetch_detects_forbidden_page(fake_redis: fakeredis.FakeRedis) -> None:
         patch("app.s95.fetch.rate_limit.get_redis_client", return_value=fake_redis),
         patch("app.s95.fetch.lock.get_redis_client", return_value=fake_redis),
         patch(
-            "app.s95.fetch.coordinator.fetch_html_with_browser",
+            "app.s95.fetch.coordinator.fetch_html_with_httpx",
             return_value=forbidden_html,
         ),
     ):

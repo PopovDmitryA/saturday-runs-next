@@ -209,8 +209,6 @@ def preview_s95_profile_link(
     *,
     user: User,
 ) -> tuple[ProfilePreview, ProfilePreview | None]:
-    from app.s95.fetch.browser import shutdown_browser as shutdown_s95_browser
-
     s95_preview = preview_profile_link(db, "s95", profile_url, user=user)
     parkrun_match: ProfilePreview | None = None
     if (
@@ -218,7 +216,6 @@ def preview_s95_profile_link(
         and s95_preview.barcode_id
         and not _user_has_platform_link(db, user, "parkrun")
     ):
-        shutdown_s95_browser()
         try:
             parkrun_match = preview_profile_link(
                 db,
