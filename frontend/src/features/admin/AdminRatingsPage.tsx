@@ -53,7 +53,8 @@ type RawSortKey =
   | "overall"
   | "organization"
   | "route"
-  | "community";
+  | "community"
+  | "comment";
 type SortDir = "asc" | "desc";
 
 // Незаполненный критерий (null) считаем самым низким: при ▼ он внизу, при ▲ — вверху.
@@ -88,6 +89,13 @@ function compareRows(a: AdminRatingRow, b: AdminRatingRow, key: RawSortKey): num
       return cmpNullableScore(a.score_route, b.score_route);
     case "community":
       return cmpNullableScore(a.score_community, b.score_community);
+    case "comment": {
+      // Сначала строки с комментарием (▲), потом без; внутри — по алфавиту.
+      const rank = (r: AdminRatingRow) => (r.comment ? 0 : 1);
+      const byPresence = rank(a) - rank(b);
+      if (byPresence !== 0) return byPresence;
+      return (a.comment ?? "").localeCompare(b.comment ?? "", "ru");
+    }
     default:
       return 0;
   }
@@ -325,7 +333,11 @@ function AdminRatingsContent() {
                   <SortTh label="Сообщ." sortKey="community" />
                   <th>Публично</th>
                   <th>Статус</th>
-                  <th>Комментарий</th>
+                  <SortTh
+                    label="Комментарий"
+                    sortKey="comment"
+                    title="Сортировка: сначала строки с комментарием (▲)"
+                  />
                 </tr>
               </thead>
               <tbody>

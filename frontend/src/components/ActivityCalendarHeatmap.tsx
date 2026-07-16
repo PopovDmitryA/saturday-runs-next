@@ -121,11 +121,18 @@ function cellTooltipLines(aggregate: WeekAggregate | undefined): string[] {
   return lines.length > 0 ? lines : ["Без активности"];
 }
 
+// total/runs/volunteering — три независимо посчитанных серии (любая
+// активность, только пробежки, только волонтёрство), а не части одной общей
+// серии — поэтому runs и volunteering не обязаны суммироваться в total.
 function streakLine(label: string, streak: StreakBreakdown): string {
-  const parts = [`${label} — ${streak.total} ${saturdaysLabel(streak.total)} подряд`];
-  parts.push(`пробежки — ${streak.runs}`);
-  parts.push(`волонтёрства — ${streak.volunteering}`);
-  return parts.join(" · ");
+  return `${label} (пробежки и/или волонтёрство) — ${streak.total} ${saturdaysLabel(streak.total)} подряд`;
+}
+
+function streakBreakdownLine(label: string, streak: StreakBreakdown): string | null {
+  if (streak.runs === 0 && streak.volunteering === 0) {
+    return null;
+  }
+  return `${label} только пробежки — ${streak.runs}, только волонтёрства — ${streak.volunteering}`;
 }
 
 export function ActivityCalendarHeatmap({
@@ -239,7 +246,11 @@ export function ActivityCalendarHeatmap({
       {bestStreak && bestStreak.total > 0 ? (
         <div className="muted analytics-chart-caption activity-cal-streaks">
           <p>{streakLine("Лучшая серия", bestStreak)}</p>
+          {streakBreakdownLine("Лучшая серия", bestStreak) && <p>{streakBreakdownLine("Лучшая серия", bestStreak)}</p>}
           <p>{streakLine("Текущая серия", currentStreak ?? { total: 0, runs: 0, volunteering: 0 })}</p>
+          {currentStreak && streakBreakdownLine("Текущая серия", currentStreak) && (
+            <p>{streakBreakdownLine("Текущая серия", currentStreak)}</p>
+          )}
         </div>
       ) : (
         saturdayStreakMax > 0 && (

@@ -64,6 +64,7 @@ class UniqueLocationDetailResponse(BaseModel):
     has_coordinates: bool = False
     is_paused: bool = False
     is_cancelled: bool = False
+    is_foreign: bool = False
     run_count: int = 0
     volunteer_count: int = 0
     first_visit_date: date | None = None

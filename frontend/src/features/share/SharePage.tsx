@@ -58,6 +58,7 @@ import {
 } from "./shareMetrics";
 import { downloadShareBlob, renderShareCard, shareCardToBlob } from "./shareCardRenderer";
 import { ShareGallery } from "./ShareGallery";
+import { MILESTONE_SHARE_KEY, type MilestoneSharePayload } from "../history/milestoneShare";
 
 type ShareMode = "gallery" | "wizard";
 
@@ -101,6 +102,7 @@ function onThisDayRunToRunItem(run: OnThisDayRun): RunItem {
     age_category: null,
     is_pr: run.is_pr,
     is_global_pr: false,
+    is_location_pr: false,
     is_crosslinked: false,
     is_first_run: false,
     is_first_run_at_location: false,
@@ -132,6 +134,9 @@ function ShareContent() {
   const [targetRun, setTargetRun] = useState<RunItem | null>(null);
   // Сколько лет назад была targetRun — для подписи «В этот день N лет назад».
   const [targetRunYears, setTargetRunYears] = useState<number | null>(null);
+  // Текст акцент-плашки вехи из «Моей истории» (?story=milestone);
+  // если задан — перекрывает плашку годовщины.
+  const [targetAccentLabel, setTargetAccentLabel] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -298,16 +303,42 @@ function ShareContent() {
   // Постер одной пробежки (последняя или годовщина) — настраиваемые run-поля.
   const isRunCard = periodId === "last_run";
 
-  // Deep-link'и из карточки «В этот день»:
+  // Deep-link'и из карточки «В этот день» и «Моей истории»:
   //   ?story=last_run    → мастер с последней пробежкой в главной роли;
   //   ?story=on_this_day → мастер с конкретной исторической пробежкой (её кладёт
-  //                        карточка в sessionStorage перед переходом).
+  //                        карточка в sessionStorage перед переходом);
+  //   ?story=milestone   → мастер с вехой из «Моей истории» (пробежка + текст
+  //                        акцент-плашки в sessionStorage).
   const deepLinkAppliedRef = useRef(false);
   useEffect(() => {
     if (deepLinkAppliedRef.current || loading) {
       return;
     }
     const story = new URLSearchParams(window.location.search).get("story");
+    if (story === "milestone") {
+      let payload: MilestoneSharePayload | null = null;
+      try {
+        const raw = sessionStorage.getItem(MILESTONE_SHARE_KEY);
+        if (raw) {
+          payload = JSON.parse(raw) as MilestoneSharePayload;
+        }
+      } catch {
+        payload = null;
+      }
+      sessionStorage.removeItem(MILESTONE_SHARE_KEY);
+      window.history.replaceState(null, "", "/share");
+      deepLinkAppliedRef.current = true;
+      if (payload?.run && payload.accent_label) {
+        setTargetRun(payload.run);
+        setTargetAccentLabel(payload.accent_label);
+        setMode("wizard");
+        setFormatId("story");
+        setPeriodId("last_run");
+        setPresetId(null);
+        setStep("background");
+      }
+      return;
+    }
     if (story === "on_this_day") {
       let picked: RunItem | null = null;
       let pickedYears: number | null = null;
@@ -412,18 +443,21 @@ function ShareContent() {
       );
     }
 
-    // Для годовщины из «В этот день»: яркая плашка «В ЭТОТ ДЕНЬ · 2 ГОДА НАЗАД»
-    // как акцент, а под именем — дата пробежки; иначе — обычная сводка периода.
+    // Яркая плашка-акцент: для вехи из «Моей истории» — её название («КЛУБ 50»),
+    // для годовщины из «В этот день» — «В ЭТОТ ДЕНЬ · 2 ГОДА НАЗАД»; под именем
+    // в обоих случаях дата пробежки, иначе — обычная сводка периода.
     const anniversaryYears =
       periodId === "last_run" && targetRun ? targetRunYears : null;
+    const milestoneAccent = periodId === "last_run" && targetRun ? targetAccentLabel : null;
     const summaryLine =
-      anniversaryYears != null && singleRun
+      (milestoneAccent != null || anniversaryYears != null) && singleRun
         ? formatDateLong(singleRun.event_date)
         : shareSummaryLine(metricsContext, singleRun);
     const accentLabel =
-      anniversaryYears != null
+      milestoneAccent ??
+      (anniversaryYears != null
         ? `В этот день · ${anniversaryYearsPhrase(anniversaryYears)}`
-        : null;
+        : null);
 
     return {
       format,
@@ -446,6 +480,7 @@ function ShareContent() {
     runFields,
     targetRun,
     targetRunYears,
+    targetAccentLabel,
     textColor,
     user,
   ]);
@@ -463,11 +498,13 @@ function ShareContent() {
     setMode("gallery");
     setTargetRun(null);
     setTargetRunYears(null);
+    setTargetAccentLabel(null);
   };
 
   const startFreshWizard = () => {
     setTargetRun(null);
     setTargetRunYears(null);
+    setTargetAccentLabel(null);
     setRunFields(RUN_DEFAULT_FIELDS);
     setStep("format");
     setMode("wizard");
@@ -1030,7 +1067,11 @@ function ShareContent() {
               <h2 className="section-title">Превью</h2>
               <p className="muted share-section-lead">
                 {format.title} · фон «{background.title}» ·{" "}
-                {isSingleRunShare ? "пробежка из «В этот день»" : periodTitle.toLowerCase()}
+                {isSingleRunShare
+                  ? targetAccentLabel
+                    ? "веха из «Моей истории»"
+                    : "пробежка из «В этот день»"
+                  : periodTitle.toLowerCase()}
                 {!isSingleRunShare && periodId !== "last_run" && presetId && presetId !== "custom"
                   ? ` · пресет «${SHARE_PRESETS.find((p) => p.id === presetId)?.title}»`
                   : !isSingleRunShare && periodId !== "last_run"

@@ -14,6 +14,21 @@ from app.services.location_catalog_service import LocationCatalogIndex
 PARTICIPANT_KEY_PREFIX = "p:"
 SITE_USER_KEY_PREFIX = "u:"
 
+# Плейсхолдеры вместо реального имени участника: платформа не смогла его
+# распознать (пустой протокол, битая строка и т.п.). Это не настоящий человек,
+# такие строки не должны попадать в топ "Встреч на стартах".
+_UNKNOWN_PARTICIPANT_NAMES = {"неизвестный", "nepoznato", "unknown", "runner unknown"}
+_UNKNOWN_PARTICIPANT_PREFIX = "unknown #"
+
+
+def _is_unknown_participant_name(name: str | None) -> bool:
+    normalized = (name or "").strip().casefold()
+    if not normalized:
+        return True
+    if normalized in _UNKNOWN_PARTICIPANT_NAMES:
+        return True
+    return normalized.startswith(_UNKNOWN_PARTICIPANT_PREFIX)
+
 
 @dataclass
 class _SiteIdentity:
@@ -27,12 +42,20 @@ class _MeetingRow:
     their_time_sec: int | None
     their_position: int | None
     event_date: date
+    platform_code: str
+    # (0, ...) — строка из первоисточника события, (1, ...) — кросслинкнутый
+    # дубль (напр. RunPark); внутри уровня время известное побеждает неизвестное.
+    rank: tuple[int, int]
 
 
 @dataclass
 class _CoRunnerStats:
     display_name: str | None
-    profile_url: str | None
+    # platform_code -> ссылка на профиль соперника в этой системе (RunPark
+    # тоже имеет свой профиль). Раньше хранили одну ссылку на всех и обнуляли
+    # её при малейшем расхождении между платформами — теряя ссылку даже для
+    # пересечения ровно на одной системе (см. co_runners_service history).
+    profile_urls: dict[str, str] = field(default_factory=dict)
     platform_codes: list[str] = field(default_factory=list)
     site_serial_id: int | None = None
     # canonical event id -> best known meeting row (для дедупликации кросслинков)
@@ -144,6 +167,7 @@ def list_co_runners(
             Participant.profile_url,
             Platform.code,
             Event.event_date,
+            Participant.external_user_id,
         )
         .join(Event, RunResult.event_id == Event.id)
         .join(Platform, Event.platform_id == Platform.id)
@@ -157,8 +181,28 @@ def list_co_runners(
 
     site_by_participant = _site_identities(db, {row[3] for row in other_rows})
 
+    # RunPark republishes finishers of the primary-platform event as its own
+    # crosslinked (secondary) copy. Если у соперника нет единого сайт-аккаунта,
+    # его RunPark- и основная запись — два разных Participant без явной связи,
+    # и без дедупликации гонка засчиталась бы дважды (в бакете основной
+    # платформы и отдельно в бакете RunPark). Position в рамках одного
+    # события уникален, поэтому совпадение (событие, место, время) между
+    # секондари- и основной записью однозначно указывает на одного и того же
+    # человека — переносим такую RunPark-строку в бакет основного участника.
+    primary_result_owner: dict[tuple[UUID, int, int], UUID] = {}
+    for event_id, their_time, their_position, participant_id, _, _, _, _, _ in other_rows:
+        if event_id in canonical_map:
+            continue  # это сама вторичная (RunPark) запись, не основная
+        if their_time is not None and their_position is not None:
+            primary_result_owner[(event_id, their_position, their_time)] = participant_id
+
     stats_by_key: dict[str, _CoRunnerStats] = {}
-    for event_id, their_time, their_position, participant_id, display_name, profile_url, platform_code, event_date in other_rows:
+    for event_id, their_time, their_position, participant_id, display_name, profile_url, platform_code, event_date, external_user_id in other_rows:
+        primary_event_id = canonical_map.get(event_id)
+        if primary_event_id is not None and their_time is not None and their_position is not None:
+            duplicate_owner = primary_result_owner.get((primary_event_id, their_position, their_time))
+            if duplicate_owner is not None and duplicate_owner != participant_id:
+                participant_id = duplicate_owner
         site = site_by_participant.get(participant_id)
         key = (
             f"{SITE_USER_KEY_PREFIX}{site.user_id}"
@@ -169,26 +213,42 @@ def list_co_runners(
         if stats is None:
             stats = _CoRunnerStats(
                 display_name=(site.display_name if site is not None and site.display_name else display_name),
-                profile_url=profile_url,
                 site_serial_id=site.serial_id if site is not None else None,
             )
             stats_by_key[key] = stats
-        if platform_code not in stats.platform_codes:
-            stats.platform_codes.append(platform_code)
-        if stats.profile_url != profile_url:
-            stats.profile_url = None  # несколько платформ — внешней ссылки нет
+        if platform_code == "runpark" and external_user_id:
+            stats.profile_urls[platform_code] = f"https://runpark.ru/Account/Karmas/{external_user_id}"
+        elif profile_url:
+            stats.profile_urls[platform_code] = profile_url
 
         canonical = canonical_map.get(event_id, event_id)
+        rank = (0 if event_id == canonical else 1, 0 if their_time is not None else 1)
         existing = stats.meetings_by_event.get(canonical)
-        if existing is None or (existing.their_time_sec is None and their_time is not None):
+        if existing is None or rank < existing.rank:
             stats.meetings_by_event[canonical] = _MeetingRow(
                 their_time_sec=their_time,
                 their_position=their_position,
                 event_date=event_date,
+                platform_code=platform_code,
+                rank=rank,
             )
 
+    # Лейблы систем считаем по фактически засчитанным встречам (по одной на
+    # canonical-событие), а не по каждой сырой строке — иначе кросслинкнутый
+    # дубль (напр. RunPark-копия события с "5 вёрст") добавляет свою систему
+    # в бейджи, хотя отдельной встречи не даёт.
+    for stats in stats_by_key.values():
+        for meeting in stats.meetings_by_event.values():
+            if meeting.platform_code not in stats.platform_codes:
+                stats.platform_codes.append(meeting.platform_code)
+
+    known_stats = {
+        key: stats
+        for key, stats in stats_by_key.items()
+        if not _is_unknown_participant_name(stats.display_name)
+    }
     ranked = sorted(
-        stats_by_key.items(),
+        known_stats.items(),
         key=lambda item: (-len(item[1].meetings_by_event), item[1].display_name or ""),
     )[:limit]
 
@@ -200,13 +260,18 @@ def list_co_runners(
         first_meeting: date | None = None
         last_meeting: date | None = None
         for canonical, meeting in stats.meetings_by_event.items():
-            my_time = user_results.get(canonical, (None, None))[0]
+            my_time, my_position = user_results.get(canonical, (None, None))
             if my_time is not None and meeting.their_time_sec is not None:
                 timed += 1
                 if my_time < meeting.their_time_sec:
                     my_wins += 1
                 elif meeting.their_time_sec < my_time:
                     their_wins += 1
+                elif my_position is not None and meeting.their_position is not None:
+                    if my_position < meeting.their_position:
+                        my_wins += 1
+                    elif meeting.their_position < my_position:
+                        their_wins += 1
             if first_meeting is None or meeting.event_date < first_meeting:
                 first_meeting = meeting.event_date
             if last_meeting is None or meeting.event_date > last_meeting:
@@ -215,7 +280,7 @@ def list_co_runners(
             {
                 "participant_key": key,
                 "display_name": stats.display_name,
-                "profile_url": stats.profile_url,
+                "profile_urls": stats.profile_urls,
                 "platform_codes": stats.platform_codes,
                 "site_serial_id": stats.site_serial_id,
                 "meetings": len(stats.meetings_by_event),
@@ -281,11 +346,17 @@ def list_co_runner_meetings(
 
     catalog_index = LocationCatalogIndex(db)
     by_canonical: dict[UUID, dict[str, object]] = {}
+    # Приоритет строк на канонический event: событие-первоисточник (event.id ==
+    # canonical) важнее кросслинкнутого дубля (напр. RunPark), а среди равных по
+    # этому критерию — строка с известным временем финиша.
+    best_rank: dict[UUID, tuple[int, int]] = {}
     for run, event, location, platform_code in their_rows:
         canonical = canonical_map.get(event.id, event.id)
-        existing = by_canonical.get(canonical)
-        if existing is not None and existing["their_time_sec"] is not None:
+        rank = (0 if event.id == canonical else 1, 0 if run.finish_time_sec is not None else 1)
+        current_best = best_rank.get(canonical)
+        if current_best is not None and current_best <= rank:
             continue
+        best_rank[canonical] = rank
         my_time, my_position = user_results.get(canonical, (None, None))
         by_canonical[canonical] = {
             "event_date": event.event_date,

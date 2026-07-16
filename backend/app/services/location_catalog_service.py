@@ -160,6 +160,31 @@ class LocationCatalogIndex:
         return f"location:{location.id}"
 
 
+# Русские паркраны, которых нет в каталоге локаций (закрылись без преемника в
+# 5 вёрст/S95 и потому не попали в location_catalog). Дополнять по мере
+# обнаружения: SELECT parkrun-локации без location_catalog_links с русскими
+# названиями. parkrun ушёл из России в 2022 — список конечен.
+RUSSIAN_PARKRUN_SLUGS_OUTSIDE_CATALOG = frozenset({
+    "park-30-letiya-oktyabrya",  # Омск, парк 30-летия Октября
+})
+
+
+def is_foreign_location(location: Location, platform_code: str, catalog_index: LocationCatalogIndex) -> bool:
+    """Зарубежная ли физическая площадка.
+
+    Для parkrun поле country в БД всегда «United Kingdom» (источник —
+    parkrun.org.uk) и не отражает реальную страну — вместо него смотрим, есть
+    ли связь с каталогом локаций (площадка когда-то была/стала 5 вёрст/S95)
+    либо явное исключение. Для остальных платформ country достоверна (для
+    s95.rs/s95.by это реальная зарубежная страна)."""
+    if platform_code == "parkrun":
+        if location.external_key in RUSSIAN_PARKRUN_SLUGS_OUTSIDE_CATALOG:
+            return False
+        return catalog_index.get_for_location(location, platform_code) is None
+    country = (location.country or "").strip()
+    return bool(country) and country != "Россия"
+
+
 def backfill_city_from_catalog(db: Session, location: Location) -> bool:
     """If location.city is None, look up the catalog for a linked location that has a city.
 
@@ -190,5 +215,38 @@ def backfill_city_from_catalog(db: Session, location: Location) -> bool:
     if city is None:
         return False
     location.city = city
+    return True
+
+
+def backfill_region_from_catalog(db: Session, location: Location) -> bool:
+    """If location.region is None, look up the catalog for a linked location that has a region.
+
+    Useful for parkrun locations whose source pages don't expose a region field.
+    Returns True if the region was updated.
+    """
+    if location.region is not None:
+        return False
+    link = (
+        db.query(LocationCatalogLink)
+        .filter(LocationCatalogLink.location_id == location.id)
+        .one_or_none()
+    )
+    if link is None:
+        return False
+    region: str | None = (
+        db.query(Location.region)
+        .join(LocationCatalogLink, LocationCatalogLink.location_id == Location.id)
+        .filter(
+            LocationCatalogLink.catalog_id == link.catalog_id,
+            LocationCatalogLink.location_id != location.id,
+            Location.region.isnot(None),
+        )
+        .order_by(Location.region)
+        .limit(1)
+        .scalar()
+    )
+    if region is None:
+        return False
+    location.region = region
     db.flush()
     return True

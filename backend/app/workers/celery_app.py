@@ -24,6 +24,7 @@ celery_app.conf.update(
         "app.workers.tasks.s95_sync",
         "app.workers.tasks.parkrun_sync",
         "app.workers.tasks.runpark_sync",
+        "app.workers.tasks.leaderboards_warm",
         "app.workers.tasks.portal_cache",
     ),
     task_routes={
@@ -99,6 +100,13 @@ celery_app.conf.update(
         "runpark-latest": {
             "task": "runpark_sync.sync_latest",
             "schedule": crontab(hour="3,8,13,18,23", minute=0),
+            "options": {"queue": "runpark"},
+        },
+        # Прогрев кэша рейтингов (TTL 6ч): каждые 2 часа, со сдвигом от :00,
+        # чтобы не толкаться с runpark-latest на том же воркере.
+        "leaderboards-warm-cache": {
+            "task": "leaderboards.warm_cache",
+            "schedule": crontab(minute=20, hour="*/2"),
             "options": {"queue": "runpark"},
         },
         # Прогрев Redis-кэша главной портала (TTL 6ч) — раз в 3 часа, чтобы

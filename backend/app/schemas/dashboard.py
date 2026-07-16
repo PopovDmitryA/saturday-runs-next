@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 class TopLocationResponse(BaseModel):
     name: str
-    platform_code: str
+    platform_codes: list[str]
     count: int
     tied_count: int = 1
 
@@ -125,6 +125,35 @@ class OnThisDayResponse(BaseModel):
     today_iso: str
 
 
+class MyHistoryMilestoneResponse(BaseModel):
+    # Вид вехи — см. app.history_milestone_kinds.MILESTONE_KIND_REGISTRY.
+    kind: str
+    # Номер пробежки/клуба/волонтёрства либо порядковый номер региона/города/страны.
+    number: int | None = None
+    event_date: date
+    platform_code: str
+    location_name: str
+    location_city: str | None = None
+    finish_time_display: str | None = None
+    finish_time_sec: int | None = None
+    position: int | None = None
+    gender_position: int | None = None
+    pace_display: str | None = None
+    # На сколько секунд улучшен личный рекорд (для kind=pr).
+    delta_sec: int | None = None
+    is_global_pr: bool = False
+    region: str | None = None
+    country: str | None = None
+    # Волонтёрская роль (для волонтёрских вех).
+    role: str | None = None
+    event_url: str | None = None
+
+
+class MyHistoryResponse(BaseModel):
+    milestones: list[MyHistoryMilestoneResponse] = Field(default_factory=list)
+    total: int = 0
+
+
 class DashboardStatsResponse(BaseModel):
     total_runs: int = 0
     total_volunteering: int = 0
@@ -169,6 +198,7 @@ class RunItemResponse(BaseModel):
     age_category: str | None = None
     is_pr: bool = False
     is_global_pr: bool = False
+    is_location_pr: bool = False
     is_crosslinked: bool = False
     is_first_run: bool = False
     is_first_run_at_location: bool = False
@@ -203,7 +233,8 @@ class PersonalRecordResponse(BaseModel):
 class CoRunnerResponse(BaseModel):
     participant_key: str
     display_name: str | None = None
-    profile_url: str | None = None
+    # platform_code -> ссылка на профиль соперника в этой системе (см. co_runners_service).
+    profile_urls: dict[str, str] = Field(default_factory=dict)
     platform_codes: list[str] = Field(default_factory=list)
     site_serial_id: int | None = None
     meetings: int = 0

@@ -11,6 +11,7 @@ from app.schemas.dashboard import (
     BestResultResponse,
     CoRunnerMeetingResponse,
     CoRunnerResponse,
+    MyHistoryResponse,
     OnThisDayResponse,
     PersonalRecordResponse,
     RunItemResponse,
@@ -35,6 +36,7 @@ from app.services.demo_service import (
 )
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_catalog_map_locations, list_user_visited_map_locations
+from app.services.my_history_service import get_my_history
 from app.services.on_this_day_service import get_on_this_day
 from app.services.user_unique_locations_detail import build_user_unique_location_details
 
@@ -60,6 +62,12 @@ def demo_on_this_day(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="date должен быть в формате YYYY-MM-DD") from exc
     return OnThisDayResponse.model_validate(get_on_this_day(db, user_id, today=today))
+
+
+@router.get("/dashboard/my-history", response_model=MyHistoryResponse)
+def demo_my_history(db: Annotated[Session, Depends(get_db)]) -> MyHistoryResponse:
+    user_id = get_demo_user_id(db)
+    return MyHistoryResponse.model_validate(get_my_history(db, user_id))
 
 
 @router.get("/runs", response_model=list[RunItemResponse])

@@ -4,9 +4,10 @@ import { AdminAbusePage } from "./features/admin/AdminAbusePage";
 import { AdminBlockedSlugsPage } from "./features/admin/AdminBlockedSlugsPage";
 import { AdminStatsPage } from "./features/admin/AdminStatsPage";
 import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
-import { AdminUserPreviewPage } from "./features/admin/AdminUserPreviewPage";
+import { AdminHistoryMilestonesPage } from "./features/admin/AdminHistoryMilestonesPage";
 import { PublicProfilePage } from "./features/public_profile/PublicProfilePage";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
+import { AchievementsPage } from "./features/achievements/AchievementsPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { LoginPage } from "./features/auth/LoginPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
@@ -20,7 +21,10 @@ import { PORTAL_ABOUT_HREF, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "./lib/po
 import { DemoMapsPage, MapsPage } from "./features/maps/MapsPage";
 import { CoRunnersPage, DemoCoRunnersPage } from "./features/co_runners/CoRunnersPage";
 import { DemoRunsPage, RunsPage } from "./features/runs/RunsPage";
+import { DemoHistoryPage, HistoryPage } from "./features/history/HistoryPage";
 import { DemoVolunteeringPage, VolunteeringPage } from "./features/volunteering/VolunteeringPage";
+import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
+import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SharePage } from "./features/share/SharePage";
@@ -75,12 +79,19 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/demo/co-runners": () => <DemoCoRunnersPage />,
   "/demo/volunteering": () => <DemoVolunteeringPage />,
   "/demo/maps": () => <DemoMapsPage />,
+  "/demo/history": () => <DemoHistoryPage />,
   "/dashboard": () => <DashboardPage />,
   "/profiles": () => <DashboardPage />,
   "/runs": () => <RunsPage />,
+  "/achievements": () => <AchievementsPage />,
   "/co-runners": () => <CoRunnersPage />,
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
+  "/history": () => <HistoryPage />,
+  "/ratings": () => <LeaderboardsHubPage />,
+  "/ratings/runs": () => <LeaderboardPage metric="runs" />,
+  "/ratings/volunteering": () => <LeaderboardPage metric="volunteering" />,
+  "/ratings/locations": () => <LeaderboardPage metric="locations" />,
   "/share": () => <SharePage />,
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
@@ -91,6 +102,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/profile-slugs": () => <AdminBlockedSlugsPage />,
   "/admin/stats": () => <AdminStatsPage />,
   "/admin/ratings": () => <AdminRatingsPage />,
+  "/admin/history-milestones": () => <AdminHistoryMilestonesPage />,
   "/settings": () => <SettingsPage />,
   "/about": () => <AboutPage />,
 };
@@ -128,10 +140,6 @@ function renderRoute(path: string): ReactElement {
   }
   if (path.startsWith("/api/")) {
     return <ApiPathRedirect />;
-  }
-  const previewMatch = path.match(/^\/admin\/users\/([0-9a-f-]{36})\/preview$/i);
-  if (previewMatch) {
-    return <AdminUserPreviewPage userId={previewMatch[1]} />;
   }
   const publicProfileMatch = path.match(/^\/users\/([^/]+)$/);
   if (publicProfileMatch) {

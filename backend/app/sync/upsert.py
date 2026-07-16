@@ -28,7 +28,7 @@ from app.platform_adapters.canonical import (
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
-from app.services.location_catalog_service import backfill_city_from_catalog
+from app.services.location_catalog_service import backfill_city_from_catalog, backfill_region_from_catalog
 
 PARSER_VERSION = "0.3.2"
 logger = logging.getLogger(__name__)
@@ -176,7 +176,9 @@ def upsert_event_summary(
 
     row.location_id = location.id
     row.event_date = summary.event_date
-    row.event_number = summary.event_number
+    # None не затирает уже известный номер: часть источников (JSON API s95) его не отдаёт.
+    if summary.event_number is not None:
+        row.event_number = summary.event_number
     row.is_test_event = summary.is_test_event
     row.finishers_count = summary.finishers_count
     row.volunteers_count = summary.volunteers_count
@@ -260,7 +262,11 @@ def upsert_event_for_summary(
     _assign_external_event_key(db, platform, row, summary.external_event_key)
     row.location_id = location.id
     row.event_date = summary.event_date
-    row.event_number = summary.event_number
+    # None не затирает уже известный номер: часть источников (JSON API s95) его не отдаёт.
+    if summary.event_number is not None:
+        row.event_number = summary.event_number
+    if row.event_number is not None and not summary.is_test_event:
+        title = f"{summary.location_name} #{row.event_number}"
     row.is_test_event = summary.is_test_event
     row.title = title
     row.finishers_count = summary.finishers_count
@@ -314,9 +320,14 @@ def upsert_participant(
         .one_or_none()
     )
     now = datetime.now(timezone.utc)
-    default_profile_url = (
-        None if external_user_id.startswith("unknown:") else f"https://5verst.ru/userstats/{external_user_id}/"
-    )
+    if external_user_id.startswith("unknown:"):
+        default_profile_url = None
+    elif platform.code == "runpark":
+        default_profile_url = f"https://runpark.ru/Account/Karmas/{external_user_id}"
+    elif platform.code == "five_verst":
+        default_profile_url = f"https://5verst.ru/userstats/{external_user_id}/"
+    else:
+        default_profile_url = None
     if row is None:
         row = Participant(
             platform_id=platform.id,
@@ -467,9 +478,15 @@ def upsert_run_results(
             upserted += 1
     _discover_participants_after_protocol_upsert(db, platform, touched_participant_ids)
     if recalculate_pr and touched_participant_ids:
-        from app.services.personal_record_service import recalculate_participants_personal_records
+        from app.services.personal_record_service import (
+            recalculate_participants_cross_platform_personal_records,
+            recalculate_participants_first_run_flags,
+            recalculate_participants_personal_records,
+        )
 
+        recalculate_participants_first_run_flags(db, platform.code, touched_participant_ids)
         recalculate_participants_personal_records(db, platform.code, touched_participant_ids)
+        recalculate_participants_cross_platform_personal_records(db, touched_participant_ids)
     db.flush()
     return upserted
 
@@ -968,6 +985,8 @@ def import_profile_run_results(
         )
         if platform.code == "parkrun" and location.city is None:
             backfill_city_from_catalog(db, location)
+        if platform.code == "parkrun" and location.region is None:
+            backfill_region_from_catalog(db, location)
         external_event_key = _profile_external_event_key(item.event_date, slug)
         if platform.code == "s95":
             source_url = (
@@ -1030,9 +1049,15 @@ def import_profile_run_results(
             if participant is not None:
                 dedupe_five_verst_run_results_in_db(db, platform.id, participant.id)
     if touched_participant_ids:
-        from app.services.personal_record_service import recalculate_participants_personal_records
+        from app.services.personal_record_service import (
+            recalculate_participants_cross_platform_personal_records,
+            recalculate_participants_first_run_flags,
+            recalculate_participants_personal_records,
+        )
 
+        recalculate_participants_first_run_flags(db, platform.code, touched_participant_ids)
         recalculate_participants_personal_records(db, platform.code, touched_participant_ids)
+        recalculate_participants_cross_platform_personal_records(db, touched_participant_ids)
     db.flush()
     return imported
 
@@ -1205,6 +1230,8 @@ def import_profile_volunteer_results(
         )
         if platform.code == "parkrun" and location.city is None:
             backfill_city_from_catalog(db, location)
+        if platform.code == "parkrun" and location.region is None:
+            backfill_region_from_catalog(db, location)
         external_event_key = _profile_external_event_key(item.event_date, slug)
         source_url = item.source_url or (
             f"https://5verst.ru/{slug}/results/{item.event_date.strftime('%d.%m.%Y')}/"

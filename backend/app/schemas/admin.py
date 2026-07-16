@@ -29,6 +29,7 @@ class AdminUserListItem(BaseModel):
     telegram_username: str | None = None
     display_name: str | None = None
     public_slug: str | None = None
+    profile_private: bool = False
     auth_logins: list[AdminUserAuthBrief] = Field(default_factory=list)
     news_subscribed: bool = False
     consent_accepted: bool = False
@@ -61,3 +62,18 @@ class AdminUserPreviewDashboardResponse(BaseModel):
     stats: dict[str, object]
     computed_at: datetime | None = None
     platform_links: list[AdminPlatformLinkBrief] = Field(default_factory=list)
+
+
+class HistoryMilestoneKindSettingResponse(BaseModel):
+    kind: str
+    label: str
+    description: str
+    enabled: bool
+
+
+class HistoryMilestoneKindSettingsResponse(BaseModel):
+    kinds: list[HistoryMilestoneKindSettingResponse] = Field(default_factory=list)
+
+
+class HistoryMilestoneKindUpdateRequest(BaseModel):
+    enabled: bool

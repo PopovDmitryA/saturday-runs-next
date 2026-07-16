@@ -877,7 +877,18 @@ a.on-this-day-location {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 8px;
+  background: var(--chip-bg);
+  color: var(--text-muted);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.on-this-day-list-share:hover {
+  background: var(--tint-indigo-bg-strong);
+  color: var(--accent-indigo-text);
 }
 
 .stat-card {
@@ -1076,6 +1087,10 @@ a.on-this-day-location {
 
 .stat-card-wide {
   grid-column: 1 / -1;
+}
+
+.stats-grid-halves {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
 .stat-value-location {
@@ -1771,18 +1786,18 @@ a.on-this-day-location {
   background: var(--tint-indigo-bg-strong);
 }
 
-.co-runners-profile-icon-external a {
-  color: var(--accent-teal-text);
-}
-
-.co-runners-profile-icon-external a:hover {
-  background: var(--tint-teal-bg);
-}
-
 .co-runners-badges {
   display: inline-flex;
   gap: 0.3rem;
   flex-wrap: wrap;
+}
+
+.co-runners-badge-link a {
+  display: inline-flex;
+}
+
+.co-runners-badge-link a:hover .badge-platform {
+  box-shadow: 0 0 0 1px currentColor;
 }
 
 /* Раскрытые детали — вложенная карточка с акцентной левой полосой,
@@ -4718,6 +4733,16 @@ tr.run-crosslinked td {
   color: #fbbf24;
 }
 
+.location-name-location-pr {
+  font-weight: 700;
+  color: var(--tint-violet-text);
+  cursor: help;
+}
+
+.location-name-location-pr-tooltip {
+  display: inline;
+}
+
 .best-results-table .best-results-city {
   display: block;
   margin-top: 0.15rem;
@@ -5611,7 +5636,16 @@ tr.run-crosslinked td {
 }
 
 .admin-users-page .table-scroll {
+  /* overflow-x:auto по спеке всегда вычисляет overflow-y тоже в auto (нельзя
+     сделать одну ось скроллящейся, а другую visible) — значит этот div и так
+     становится скролл-контейнером для position:sticky у thead th. Раньше он
+     никогда не скроллился САМ (скроллилась вся страница), поэтому шапка не
+     прилипала. Даём ограниченную высоту, чтобы контейнер скроллился по-настоящему
+     и шапка прилипала к его верху, как в таблице-эксель.
+  */
+  max-height: 75vh;
   overflow-x: auto;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -5683,6 +5717,35 @@ tr.run-crosslinked td {
 
 .admin-platform-counts {
   white-space: nowrap;
+}
+
+.admin-platform-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.btn-icon-sync {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 0.35rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  line-height: 1;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.btn-icon-sync:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+.btn-icon-sync:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .admin-sort-th {
@@ -6845,11 +6908,10 @@ tr.run-crosslinked td {
 }
 
 .recent-ratings-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-  flex-wrap: wrap;
+  gap: 0.5rem 0.6rem;
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--border-soft);
   border-radius: 10px;
@@ -6858,7 +6920,6 @@ tr.run-crosslinked td {
 
 .recent-ratings-info {
   min-width: 0;
-  flex: 1 1 auto;
 }
 
 .recent-ratings-loc {
@@ -6881,8 +6942,63 @@ tr.run-crosslinked td {
 .recent-ratings-action {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  justify-content: flex-end;
+  gap: 0.4rem;
   flex-shrink: 0;
+}
+
+.recent-ratings-rate-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 999px;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.12s, filter 0.12s;
+}
+
+.recent-ratings-rate-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: scale(1.05);
+}
+
+.recent-ratings-rate-btn:disabled {
+  background: var(--neutral-soft);
+  cursor: not-allowed;
+}
+
+.recent-ratings-rate-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.recent-ratings-dismiss-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: transform 0.12s, background 0.12s, color 0.12s;
+}
+
+.recent-ratings-dismiss-btn:hover {
+  background: var(--neutral-soft);
+  color: var(--text);
+  transform: scale(1.05);
+}
+
+.recent-ratings-dismiss-btn svg {
+  width: 14px;
+  height: 14px;
 }
 
 .recent-ratings-stars {
@@ -7123,6 +7239,388 @@ tr.run-crosslinked td {
   color: var(--text-3);
   font-size: 0.85rem;
 }
+
+/* ── «Моя история» — таймлайн вех ─────────────────────────────────────────── */
+
+.history-intro .section-title {
+  margin-bottom: 0.35rem;
+}
+
+.history-intro p {
+  margin: 0.35rem 0 0;
+}
+
+.history-summary {
+  margin: 0.55rem 0 0;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.history-timeline {
+  margin-top: 1rem;
+}
+
+.history-year {
+  position: relative;
+}
+
+.history-year-label {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 2;
+  display: inline-block;
+  margin: 0 0 0.6rem;
+  padding: 0.2rem 0.75rem;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--surface);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.history-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0 0 0 1.1rem;
+  border-left: 3px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.history-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+
+.history-marker {
+  position: absolute;
+  left: -1.98rem;
+  top: 0.28rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--history-marker-bg, var(--bg-muted));
+  border: 2px solid var(--history-marker-border, var(--border-strong));
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.history-kind-start { --history-marker-bg: var(--tint-green-bg); --history-marker-border: var(--tint-green-border-strong); }
+.history-kind-club { --history-marker-bg: var(--tint-amber-bg); --history-marker-border: var(--tint-amber-border-strong); }
+.history-kind-anniversary { --history-marker-bg: var(--tint-violet-bg); --history-marker-border: var(--tint-violet-border); }
+.history-kind-pr { --history-marker-bg: var(--tint-orange-bg); --history-marker-border: var(--tint-orange-text); }
+.history-kind-pr-global { --history-marker-bg: var(--tint-amber-bg-strong); --history-marker-border: var(--tint-amber-border-strong); }
+.history-kind-pr-location { --history-marker-bg: var(--tint-rose-bg); --history-marker-border: var(--tint-rose-text); }
+.history-kind-location-club { --history-marker-bg: var(--tint-teal-bg); --history-marker-border: var(--accent-teal-text); }
+.history-kind-geo { --history-marker-bg: var(--tint-blue-bg); --history-marker-border: var(--tint-blue-border-strong); }
+.history-kind-volunteer { --history-marker-bg: var(--tint-blue-bg-strong); --history-marker-border: var(--tint-blue-border-strong); }
+
+.history-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 1.4rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.4rem 0.7rem;
+}
+
+.history-kind-pr-global .history-card {
+  border-color: var(--tint-amber-border-strong);
+  background: var(--tint-amber-bg);
+}
+
+.history-line {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-2);
+}
+
+.history-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.history-hint {
+  font-size: 0.82rem;
+  color: var(--tint-amber-text);
+  font-weight: 600;
+}
+
+.history-location {
+  font-weight: 600;
+}
+
+.history-details-line {
+  color: var(--text-3);
+}
+
+/* Правый столбец карточки: дата + «Поделиться», центр по вертикали;
+   левая часть при нехватке ширины переносится, столбец остаётся на месте. */
+.history-line-right {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.history-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 0.15rem 0.45rem;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.history-share:hover {
+  color: var(--link-strong);
+  background: var(--tint-blue-bg);
+}
+
+.history-date-short {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .history-share-label {
+    display: none;
+  }
+  .history-date-full {
+    display: none;
+  }
+  .history-date-short {
+    display: inline;
+  }
+}
+
+.history-date-inline {
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+/* Тизер на дашборде */
+.history-teaser {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+  padding: 0.65rem 0.9rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.history-teaser:hover {
+  border-color: var(--border-heavy);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+}
+
+.history-teaser-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  background: var(--history-marker-bg, var(--bg-muted));
+  border: 2px solid var(--history-marker-border, var(--border-strong));
+  font-size: 1.05rem;
+}
+
+.history-teaser-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.history-teaser-title {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.history-teaser-last {
+  font-size: 0.85rem;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-teaser-more {
+  flex: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--link-strong);
+  white-space: nowrap;
+}
+
+/* ── Админка: виды вех «Моя история» ─────────────────────────────────────── */
+
+.admin-milestones-lead {
+  margin: 0.3rem 0 1rem;
+}
+
+.admin-milestones-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-milestone-row {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  transition: opacity 0.15s ease;
+}
+
+.admin-milestone-row.disabled {
+  opacity: 0.55;
+}
+
+.admin-milestone-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.65rem 0.9rem;
+  cursor: pointer;
+}
+
+.admin-milestone-toggle input[type="checkbox"] {
+  margin-top: 0.2rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+
+.admin-milestone-icon {
+  flex: none;
+  font-size: 1.15rem;
+  line-height: 1.4;
+}
+
+.admin-milestone-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 0.6rem;
+  min-width: 0;
+}
+
+.admin-milestone-label {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.admin-milestone-kind {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+.admin-milestone-description {
+  flex-basis: 100%;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Настройки: персональный вкл/выкл видов вех «Моя история» */
+.history-ms-spoiler > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.history-ms-spoiler > summary::-webkit-details-marker {
+  display: none;
+}
+
+.history-ms-summary-main {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.history-ms-summary-chevron {
+  display: inline-block;
+  font-size: 1.1rem;
+  color: var(--text-faint);
+  transition: transform 0.15s ease;
+}
+
+.history-ms-spoiler[open] .history-ms-summary-chevron {
+  transform: rotate(90deg);
+}
+
+.history-ms-summary-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.history-ms-summary-count {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.history-ms-spoiler[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
+.history-ms-lead {
+  margin-top: 0;
+}
+
+.history-ms-group {
+  margin-top: 1rem;
+}
+
+.history-ms-group-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
 .admin-ratings-comment-text {
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -7372,4 +7870,1042 @@ tr.run-crosslinked td {
     stroke 0.25s ease,
     filter 0.25s ease !important;
   transition-delay: 0s !important;
+}
+
+/* ── Цели и достижения (/achievements) ─────────────────────────────────────── */
+
+/* Медаль-ачивка: металлическое кольцо по уровню, эмодзи-иконка внутри */
+.medal {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  position: relative;
+  background: var(--bg-muted);
+  border: 2px dashed var(--border-strong);
+}
+
+.medal-emoji {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.medal-lg {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
+.medal-lg .medal-emoji {
+  font-size: 1.6rem;
+}
+
+.medal-locked .medal-emoji {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+
+.medal-bronze,
+.medal-silver,
+.medal-gold {
+  border: none;
+  box-shadow: inset 0 1px 2px rgb(255 255 255 / 45%), 0 1px 3px rgb(0 0 0 / 25%);
+}
+
+.medal-bronze {
+  background: radial-gradient(circle at 30% 25%, #e8b28a, #c0784a 55%, #8f5430);
+}
+
+.medal-silver {
+  background: radial-gradient(circle at 30% 25%, #f3f6fa, #b9c4d2 55%, #8494a9);
+}
+
+.medal-gold {
+  background: radial-gradient(circle at 30% 25%, #ffe9a3, #f5b93f 55%, #c47f16);
+}
+
+.medal-bronze::after,
+.medal-silver::after,
+.medal-gold::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  border: 1px solid rgb(255 255 255 / 35%);
+  pointer-events: none;
+}
+
+/* Витрина достижений */
+.achv-showcase-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.achv-summary {
+  display: inline-flex;
+  gap: 0.65rem;
+  align-items: baseline;
+  font-size: 0.9rem;
+}
+
+.achv-summary-item {
+  font-weight: 600;
+}
+
+.achv-badges {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: 0.75rem;
+}
+
+.achv-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.6rem 0.35rem;
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--text);
+  text-align: center;
+  border: 1px solid transparent;
+}
+
+.achv-badge:hover {
+  background: var(--bg-muted);
+  border-color: var(--border);
+}
+
+.achv-badge-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.achv-badge-level {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.achv-badge-level-gold { color: var(--accent-amber-text); }
+.achv-badge-level-silver { color: var(--text-muted); }
+.achv-badge-level-bronze { color: var(--tint-orange-text); }
+
+.achv-badge-date {
+  font-size: 0.66rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.achv-section {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.achv-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.achv-goals-empty p {
+  margin: 0;
+}
+
+.achv-goals-empty .btn {
+  justify-self: start;
+}
+
+/* Карточки целей */
+.goal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.75rem;
+}
+
+.goal-card {
+  gap: 0.55rem;
+}
+
+.goal-card-done {
+  border-color: var(--tint-green-border-strong);
+  background: var(--tint-green-bg);
+}
+
+.goal-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.goal-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.goal-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.goal-pct {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+/* Зелёная стрелка-дельта: сколько прогресса дала последняя пробежка —
+   у целей (GoalCard) и у челленджей (ChallengeCard) */
+.recent-delta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-green-text);
+  background: var(--tint-green-bg-strong);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+  flex: none;
+  animation: recent-delta-pop 0.4s ease-out;
+}
+
+@keyframes recent-delta-pop {
+  from {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.goal-bar {
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.goal-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38bdf8, #2563eb);
+  transition: width 0.4s ease;
+}
+
+.goal-bar-fill.goal-bar-done {
+  background: linear-gradient(90deg, #4ade80, #16a34a);
+}
+
+.goal-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.goal-progress-label {
+  color: var(--text-2);
+}
+
+.goal-chip {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.goal-chip-ok {
+  background: var(--tint-green-bg-strong);
+  color: var(--tint-green-text);
+}
+
+.goal-chip-warn {
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
+}
+
+.goal-chip-done {
+  background: var(--tint-green-bg-strong);
+  color: var(--tint-green-text);
+}
+
+/* Челленджи */
+.challenge-group {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.challenge-group-title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.challenge-group-hint {
+  margin: -0.35rem 0 0;
+  font-size: 0.85rem;
+}
+
+.challenge-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .challenge-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.challenge-card {
+  gap: 0.6rem;
+  scroll-margin-top: 5rem;
+  min-width: 0;
+}
+
+/* Переключатель «сквозной / по системам» над сеткой челленджей */
+.achv-platform-filters {
+  margin-top: 0.75rem;
+}
+
+.achv-platform-filters.is-switching {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.challenge-card-locked {
+  background: color-mix(in srgb, var(--surface) 88%, var(--bg-muted));
+}
+
+.challenge-head {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
+.challenge-head-text {
+  min-width: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.challenge-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.challenge-title {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.challenge-level-chip {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+}
+
+.challenge-level-gold {
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
+}
+
+.challenge-level-silver {
+  background: var(--chip-bg);
+  color: var(--text-3);
+}
+
+.challenge-level-bronze {
+  background: var(--tint-orange-bg);
+  color: var(--tint-orange-text);
+}
+
+.challenge-description {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+/* Мини-таймлайн: дата получения каждого из трёх уровней, всегда видима */
+.challenge-level-timeline {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.challenge-level-timeline-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.74rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.challenge-level-timeline-item.done {
+  color: var(--text-2);
+}
+
+.challenge-level-timeline-icon {
+  font-size: 0.9rem;
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+.challenge-level-timeline-item.done .challenge-level-timeline-icon {
+  filter: none;
+  opacity: 1;
+}
+
+.challenge-bar {
+  position: relative;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--bg-muted);
+}
+
+.challenge-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #94a3b8, #64748b);
+  transition: width 0.4s ease;
+}
+
+.challenge-bar-fill.challenge-bar-bronze {
+  background: linear-gradient(90deg, #e8b28a, #b06a3b);
+}
+
+.challenge-bar-fill.challenge-bar-silver {
+  background: linear-gradient(90deg, #d7dee8, #94a3b8);
+}
+
+.challenge-bar-fill.challenge-bar-gold {
+  background: linear-gradient(90deg, #fcd34d, #d97706);
+}
+
+.challenge-bar-marker {
+  position: absolute;
+  top: -0.15rem;
+  width: 2px;
+  height: 0.8rem;
+  border-radius: 1px;
+  transform: translateX(-1px);
+}
+
+.challenge-bar-marker-bronze { background: #c0784a; }
+.challenge-bar-marker-silver { background: #94a3b8; }
+
+.challenge-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.84rem;
+}
+
+.challenge-progress-label {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.challenge-next {
+  font-size: 0.8rem;
+}
+
+.challenge-toggle {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--link);
+  justify-self: start;
+}
+
+.challenge-toggle:hover {
+  color: var(--link-strong);
+  text-decoration: underline;
+}
+
+/* Сетки коллекций (секунды/позиции/номера/буквы) */
+.challenge-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+/* Клетки — не bar-chart колонки, тултип-обёртку из ChartColumnTooltip
+   переопределяем под маленький квадратик вместо flex-column на всю высоту. */
+.challenge-cells .analytics-chart-tooltip-wrap {
+  display: inline-flex;
+  width: auto;
+  flex: none;
+}
+
+.challenge-cells .analytics-chart-tooltip-wrap:first-child .analytics-chart-tooltip {
+  left: 0;
+  transform: none;
+}
+
+.challenge-cells .analytics-chart-tooltip-wrap:first-child .analytics-chart-tooltip::after {
+  left: 0.9rem;
+  transform: none;
+}
+
+.challenge-cells .analytics-chart-tooltip-wrap:last-child .analytics-chart-tooltip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.challenge-cells .analytics-chart-tooltip-wrap:last-child .analytics-chart-tooltip::after {
+  left: auto;
+  right: 0.9rem;
+  transform: none;
+}
+
+.challenge-cell {
+  min-width: 1.6rem;
+  height: 1.6rem;
+  padding: 0 0.25rem;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-muted);
+  color: var(--text-faint);
+  border: 1px solid var(--border-soft);
+}
+
+.challenge-cells-dense .challenge-cell {
+  min-width: 1.45rem;
+  height: 1.45rem;
+  font-size: 0.66rem;
+}
+
+.challenge-cell.done,
+.challenge-cell.done.cell-plat-five-verst {
+  background: var(--tint-green-bg-strong);
+  border-color: var(--tint-green-border);
+  color: var(--tint-green-text);
+}
+
+.challenge-cell.done.cell-plat-s95 {
+  background: var(--tint-blue-bg-strong);
+  border-color: var(--tint-blue-border);
+  color: var(--link-strong);
+}
+
+.challenge-cell.done.cell-plat-parkrun {
+  background: var(--tint-violet-bg-strong);
+  border-color: var(--tint-violet-border);
+  color: var(--tint-violet-text);
+}
+
+.challenge-cell.done.cell-plat-runpark {
+  background: var(--tint-orange-bg);
+  border-color: var(--tint-orange-text);
+  color: var(--tint-orange-text);
+}
+
+/* Легенда цветов систем над коллекционными челленджами */
+.platform-color-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.35rem 0 0.75rem;
+}
+
+.platform-color-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-3);
+}
+
+.platform-color-legend-dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: var(--tint-green-bg-strong);
+  border: 1px solid var(--tint-green-border);
+}
+
+.platform-color-legend-item.cell-plat-s95 .platform-color-legend-dot {
+  background: var(--tint-blue-bg-strong);
+  border-color: var(--tint-blue-border);
+}
+
+.platform-color-legend-item.cell-plat-parkrun .platform-color-legend-dot {
+  background: var(--tint-violet-bg-strong);
+  border-color: var(--tint-violet-border);
+}
+
+.platform-color-legend-item.cell-plat-runpark .platform-color-legend-dot {
+  background: var(--tint-orange-bg);
+  border-color: var(--tint-orange-text);
+}
+
+/* «Круглый год»: календарная сетка 12 месяцев с горизонтальным скроллом */
+.challenge-year-scroll {
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+}
+
+.challenge-year {
+  display: flex;
+  gap: 0.45rem;
+  min-width: 34rem;
+}
+
+.challenge-year-month {
+  display: grid;
+  gap: 0.2rem;
+  justify-items: center;
+  flex: 1;
+}
+
+.challenge-year-month-label {
+  font-size: 0.66rem;
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.challenge-year-month-count {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.challenge-year-days {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+}
+
+.challenge-year-day {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 2px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-soft);
+}
+
+.challenge-year-day.done,
+.challenge-year-day.done.cell-plat-five-verst {
+  background: var(--accent-green-text);
+  border-color: var(--accent-green-text);
+}
+
+.challenge-year-day.done.cell-plat-s95 {
+  background: var(--link-strong);
+  border-color: var(--link-strong);
+}
+
+.challenge-year-day.done.cell-plat-parkrun {
+  background: var(--tint-violet-text);
+  border-color: var(--tint-violet-text);
+}
+
+.challenge-year-day.done.cell-plat-runpark {
+  background: var(--tint-orange-text);
+  border-color: var(--tint-orange-text);
+}
+
+/* Списки находок (палиндромы, дежавю, юбилеи) — при большом числе совпадений
+   список скроллится, а не растягивает карточку до бесконечности. */
+.challenge-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.challenge-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.6rem;
+  font-size: 0.84rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 8px;
+  background: var(--bg-muted);
+  min-width: 0;
+}
+
+.challenge-item-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.challenge-item-location {
+  color: var(--text-2);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.challenge-item-count {
+  color: var(--text-muted);
+  flex: none;
+}
+
+.challenge-item-date {
+  color: var(--text-muted);
+  flex: none;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Дежавю: несколько мест/дат одного совпадения — переносятся, не растягивают карточку */
+.challenge-item-occurrences {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.5rem;
+  min-width: 0;
+}
+
+.challenge-occurrence {
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 0.1rem 0.4rem;
+  white-space: nowrap;
+}
+
+.challenge-occurrence-more {
+  color: var(--link);
+  align-self: center;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.challenge-occurrence-more:hover {
+  color: var(--link-strong);
+  text-decoration: underline;
+}
+
+.challenge-empty {
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+/* Модалка выбора целей */
+.goal-modal-hint {
+  margin-top: 0;
+}
+
+.goal-preset-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.goal-preset {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.goal-preset-selected {
+  border-color: var(--tint-blue-border-strong);
+  background: var(--tint-blue-bg);
+}
+
+.goal-preset-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.goal-preset input[type="checkbox"] {
+  flex: none;
+}
+
+.goal-preset-icon {
+  font-size: 1.15rem;
+  flex: none;
+}
+
+.goal-preset-text {
+  display: grid;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.goal-preset-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.goal-preset-description {
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.goal-preset-current {
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+/* Грид с фиксированными колонками — иначе позиция инпута "гуляла" по строкам:
+   без unit-подписи (время) или с длинной подписью ("суббот подряд") группа
+   input+unit меняла суммарную ширину и, будучи прижата к правому краю строки
+   через flex:1 у .goal-preset-text, сдвигала левый край инпута. Фиксированные
+   колонки делают левый край инпута одинаковым на каждой строке. */
+.goal-preset-input-wrap {
+  display: grid;
+  grid-template-columns: 5.2rem 5.5rem;
+  column-gap: 0.35rem;
+  align-items: center;
+  width: 11.05rem;
+  flex: none;
+}
+
+.goal-preset-input {
+  width: 100%;
+  text-align: right;
+  padding: 0.35rem 0.5rem;
+}
+
+.goal-preset-unit {
+  font-size: 0.75rem;
+  text-align: left;
+}
+
+.goal-modal-footer {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.goal-modal-error {
+  margin: 0;
+  color: var(--accent-red-text);
+  font-size: 0.85rem;
+}
+
+.goal-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.goal-modal-actions .muted {
+  margin-right: auto;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 560px) {
+  .goal-preset {
+    flex-wrap: wrap;
+  }
+
+  .goal-preset-input-wrap {
+    margin-left: 2.1rem;
+  }
+}
+
+/* Тизер целей на главной */
+.goals-teaser-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.goals-teaser-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.6rem;
+}
+
+.goals-teaser-grid .goal-card {
+  border: 1px solid var(--border-soft);
+  background: var(--bg-muted);
+  padding: 0.7rem 0.8rem;
+  gap: 0.4rem;
+}
+
+.goals-teaser-empty .btn {
+  justify-self: start;
+}
+
+/* Серые клетки с подсказкой (нумератор: скоро такой старт; алфавит: список локаций) */
+.challenge-cell.has-hint {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+  cursor: help;
+}
+
+.challenge-items-empty {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.challenge-item-example {
+  flex-wrap: wrap;
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  opacity: 0.85;
+}
+
+.challenge-item-example-note {
+  flex-basis: 100%;
+  font-size: 0.76rem;
+}
+
+/* Клубы: сквозные и по системам */
+.club-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .club-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.club-card {
+  gap: 0.9rem;
+  align-content: start;
+}
+
+.club-card-platform {
+  display: flex;
+}
+
+.club-row {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.club-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.club-row-icon {
+  font-size: 1rem;
+}
+
+.club-row-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+  flex: 1;
+}
+
+.club-row-current {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
+}
+
+.club-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.club-chip {
+  min-width: 2.2rem;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-muted);
+  color: var(--text-faint);
+  border: 1px solid var(--border-soft);
+}
+
+.club-chip-earned {
+  background: radial-gradient(circle at 30% 25%, #ffe9a3, #f5b93f 70%, #d99a1f);
+  border-color: #c47f16;
+  color: #6b4507;
+}
+
+.club-chip-next {
+  border-style: dashed;
+  border-color: var(--border-heavy);
+  color: var(--text-2);
+}
+
+.club-progress {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.club-bar {
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.club-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #fcd34d, #d97706);
+}
+
+.club-progress-label {
+  font-size: 0.78rem;
+  white-space: nowrap;
 }

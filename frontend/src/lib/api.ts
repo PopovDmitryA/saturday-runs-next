@@ -114,7 +114,7 @@ export type DashboardAnalytics = {
   last_activity_date: string | null;
   first_run_date: string | null;
   days_since_first_run: number | null;
-  top_location: { name: string; platform_code: string; count: number; tied_count: number } | null;
+  top_location: { name: string; platform_codes: string[]; count: number; tied_count: number } | null;
   top_volunteer_role: { role: string; count: number } | null;
   runs_last_12_months: number;
   runs_current_year: number;
@@ -199,6 +199,7 @@ export type RunItem = {
   age_category: string | null;
   is_pr: boolean;
   is_global_pr: boolean;
+  is_location_pr: boolean;
   is_crosslinked: boolean;
   is_first_run: boolean;
   is_first_run_at_location: boolean;
@@ -623,8 +624,275 @@ export function getOnThisDay() {
   return apiFetch<OnThisDay>("/dashboard/on-this-day");
 }
 
+// ── Цели и достижения ────────────────────────────────────────────────────────
+
+export type ChallengeLevel = "bronze" | "silver" | "gold";
+
+export type ChallengeCell = {
+  label: string;
+  done: boolean;
+  date: string | null;
+  location: string | null;
+  hint: string | null;
+  platform_code: string | null;
+  count?: number | null;
+};
+
+export type ChallengeLetter = {
+  letter: string;
+  done: boolean;
+  date: string | null;
+  location: string | null;
+  locations: string[];
+  locations_more: number;
+  platform_code: string | null;
+};
+
+export type ChallengeDay = {
+  key: string;
+  date: string;
+  location: string;
+  platform_code: string | null;
+};
+
+export type ChallengeDetailItem = {
+  date?: string;
+  value?: string;
+  location?: string;
+  count?: number;
+  occurrences?: Array<{ date: string; location: string }>;
+};
+
+export type ChallengeDetail = {
+  cells?: ChallengeCell[];
+  letters?: ChallengeLetter[];
+  days?: ChallengeDay[];
+  items?: ChallengeDetailItem[];
+  example?: { value: string; location: string; note: string };
+};
+
+export type ChallengeLevelDates = {
+  bronze: string | null;
+  silver: string | null;
+  gold: string | null;
+};
+
+export type Challenge = {
+  code: string;
+  title: string;
+  icon: string;
+  description: string;
+  category: "collection" | "coincidence" | "scale";
+  current: number;
+  target: number;
+  levels: { bronze: number; silver: number; gold: number };
+  level: ChallengeLevel | null;
+  next_level: ChallengeLevel | null;
+  to_next_level: number | null;
+  to_next_label: string | null;
+  pct: number;
+  unit: string | null;
+  detail: ChallengeDetail;
+  level_dates: ChallengeLevelDates;
+  // Насколько последняя пробежка продвинула счётчик (0 — не продвинула)
+  recent_delta: number;
+};
+
+export type ClubEntry = {
+  code: "runs" | "volunteering";
+  title: string;
+  icon: string;
+  current: number;
+  thresholds: number[];
+  earned: number[];
+  next_threshold: number | null;
+  to_next: number | null;
+  pct_to_next: number;
+  level_dates: Record<string, string | null>;
+};
+
+export type ClubPlatform = {
+  platform_code: string;
+  entries: ClubEntry[];
+};
+
+export type Clubs = {
+  overall: ClubEntry[];
+  platforms: ClubPlatform[];
+};
+
+export type AchievementBadge = {
+  code: string;
+  title: string;
+  icon: string;
+  level: ChallengeLevel;
+  achieved_at: string | null;
+};
+
+export type AchievementsResponse = {
+  challenges: Challenge[];
+  badges: AchievementBadge[];
+  summary: { gold: number; silver: number; bronze: number; total: number };
+  clubs: Clubs;
+};
+
+export function getAchievements(platform?: string) {
+  const query = platform ? `?platform=${encodeURIComponent(platform)}` : "";
+  return apiFetch<AchievementsResponse>(`/achievements${query}`);
+}
+
+export type GoalPreset = {
+  goal_type: string;
+  title: string;
+  icon: string;
+  unit: string;
+  kind: "count" | "time" | "streak" | "percent";
+  default_target: number;
+  min: number;
+  max: number;
+  description: string;
+  current_value: number;
+  current_display: string | null;
+};
+
+export type GoalProgress = {
+  goal_type: string;
+  year: number;
+  target_value: number;
+  title: string;
+  icon: string;
+  unit: string;
+  kind: "count" | "time" | "streak" | "percent";
+  current_value: number;
+  pct: number;
+  done: boolean;
+  on_track: boolean | null;
+  forecast_value: number | null;
+  current_display: string | null;
+  target_display: string | null;
+  // Насколько последняя пробежка продвинула цель (0 — не продвинула)
+  recent_delta: number;
+};
+
+export type GoalsResponse = {
+  year: number;
+  max_goals: number;
+  goals: GoalProgress[];
+  presets: GoalPreset[];
+};
+
+export function getGoals() {
+  return apiFetch<GoalsResponse>("/achievements/goals");
+}
+
+export function saveGoals(goals: Array<{ goal_type: string; target_value: number }>) {
+  return apiFetch<GoalsResponse>("/achievements/goals", {
+    method: "PUT",
+    body: JSON.stringify({ goals }),
+  });
+}
+
 export function demoGetOnThisDay() {
   return apiFetch<OnThisDay>("/demo/dashboard/on-this-day");
+}
+
+// ── «Моя история» — таймлайн вех ─────────────────────────────────────────────
+
+export type MyHistoryMilestoneKind =
+  | "first_run"
+  | "first_run_platform"
+  | "run_club"
+  | "run_club_platform"
+  | "location_club"
+  | "volunteer_location_club"
+  | "global_pr"
+  | "pr"
+  | "location_pr"
+  | "first_foreign_parkrun"
+  | "first_foreign_run"
+  | "new_region"
+  | "new_city"
+  | "new_country"
+  | "new_location"
+  | "first_volunteer"
+  | "volunteer_club"
+  | "volunteer_club_platform";
+
+export type MyHistoryMilestone = {
+  kind: MyHistoryMilestoneKind;
+  // Номер пробежки/клуба/волонтёрства (для юбилеев и клубов).
+  number: number | null;
+  event_date: string;
+  platform_code: string;
+  location_name: string;
+  location_city: string | null;
+  finish_time_display: string | null;
+  finish_time_sec: number | null;
+  position: number | null;
+  gender_position: number | null;
+  pace_display: string | null;
+  // На сколько секунд улучшен личный рекорд (kind=pr).
+  delta_sec: number | null;
+  is_global_pr: boolean;
+  region: string | null;
+  country: string | null;
+  role: string | null;
+  event_url: string | null;
+};
+
+export type MyHistory = {
+  milestones: MyHistoryMilestone[];
+  total: number;
+};
+
+export function getMyHistory() {
+  return apiFetch<MyHistory>("/dashboard/my-history");
+}
+
+export function demoGetMyHistory() {
+  return apiFetch<MyHistory>("/demo/dashboard/my-history");
+}
+
+// ── Админка: виды вех «Моя история» (вкл/выкл) ──────────────────────────────
+
+export type HistoryMilestoneKindSetting = {
+  kind: MyHistoryMilestoneKind;
+  label: string;
+  description: string;
+  enabled: boolean;
+};
+
+export type HistoryMilestoneKindSettings = {
+  kinds: HistoryMilestoneKindSetting[];
+};
+
+export function getAdminHistoryMilestones() {
+  return apiFetch<HistoryMilestoneKindSettings>("/admin/history-milestones");
+}
+
+export function setAdminHistoryMilestoneEnabled(kind: string, enabled: boolean) {
+  return apiFetch<HistoryMilestoneKindSetting>(`/admin/history-milestones/${kind}`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+// ── Настройки: персональный вкл/выкл видов вех «Моя история» ─────────────────
+
+export type HistoryMilestoneSettings = {
+  description: string;
+  kinds: HistoryMilestoneKindSetting[];
+};
+
+export function getHistoryMilestoneSettings() {
+  return apiFetch<HistoryMilestoneSettings>("/settings/history-milestones");
+}
+
+export function setHistoryMilestoneEnabled(kind: string, enabled: boolean) {
+  return apiFetch<HistoryMilestoneSettings>(`/settings/history-milestones/${kind}`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
 }
 
 // ── Оценки стартов (рейтинг парков) ─────────────────────────────────────────
@@ -795,7 +1063,7 @@ export function deleteRunRating(entryId: string) {
 export type CoRunnerItem = {
   participant_key: string;
   display_name: string | null;
-  profile_url: string | null;
+  profile_urls: Record<string, string>;
   platform_codes: string[];
   site_serial_id: number | null;
   meetings: number;
@@ -825,8 +1093,8 @@ export function getCoRunnerMeetings(participantKey: string) {
   return apiFetch<CoRunnerMeetingItem[]>(`/runs/co-runners/${participantKey}/meetings`);
 }
 
-export function listRuns(includeTest = false, limit = 200) {
-  const params = new URLSearchParams({ limit: String(limit) });
+export function listRuns(includeTest = false, limit = 200, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (includeTest) {
     params.set("include_test", "true");
   }
@@ -851,8 +1119,8 @@ export function getPersonalRecords(includeTest = false) {
   return apiFetch<PersonalRecordItem[]>(`/runs/personal-records${query ? `?${query}` : ""}`);
 }
 
-export function listVolunteering(includeTest = false, limit = 200) {
-  const params = new URLSearchParams({ limit: String(limit) });
+export function listVolunteering(includeTest = false, limit = 200, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (includeTest) {
     params.set("include_test", "true");
   }
@@ -933,6 +1201,7 @@ export type UniqueLocationDetail = {
   has_coordinates: boolean;
   is_paused: boolean;
   is_cancelled?: boolean;
+  is_foreign?: boolean;
   run_count: number;
   volunteer_count: number;
   first_visit_date: string | null;
@@ -1137,6 +1406,7 @@ export type AdminUserListItem = {
   telegram_username: string | null;
   display_name: string | null;
   public_slug: string | null;
+  profile_private: boolean;
   auth_logins: AdminUserAuthBrief[];
   news_subscribed: boolean;
   consent_accepted: boolean;
@@ -1190,26 +1460,10 @@ export function listAdminUsers(
   return apiFetch<AdminUserListResponse>(`/admin/users?${params.toString()}`);
 }
 
-export function getAdminUserPreviewDashboard(userId: string) {
-  return apiFetch<AdminUserPreviewDashboard>(`/admin/users/${userId}/preview/dashboard`);
-}
-
 export function triggerAdminUserSyncPlatform(userId: string, platformCode: string) {
   return apiFetch<SyncRefreshResponse>(`/admin/users/${userId}/sync/${platformCode}`, {
     method: "POST",
   });
-}
-
-export function getAdminUserPreviewRuns(userId: string, limit = 200, offset = 0, includeTest = false) {
-  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-  if (includeTest) params.set("include_test", "true");
-  return apiFetch<RunItem[]>(`/admin/users/${userId}/preview/runs?${params.toString()}`);
-}
-
-export function getAdminUserPreviewVolunteering(userId: string, limit = 200, offset = 0, includeTest = false) {
-  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-  if (includeTest) params.set("include_test", "true");
-  return apiFetch<VolunteeringItem[]>(`/admin/users/${userId}/preview/volunteering?${params.toString()}`);
 }
 
 const ADMIN_PREVIEW_PAGE_SIZE = 200;
@@ -1230,52 +1484,12 @@ async function fetchAllAdminPreviewPages<T>(
   return items;
 }
 
-export function getAllAdminUserPreviewRuns(userId: string, includeTest = false) {
-  return fetchAllAdminPreviewPages((limit, offset) =>
-    getAdminUserPreviewRuns(userId, limit, offset, includeTest),
-  );
+export function getAllUserRuns(includeTest = false) {
+  return fetchAllAdminPreviewPages((limit, offset) => listRuns(includeTest, limit, offset));
 }
 
-export function getAllAdminUserPreviewVolunteering(userId: string, includeTest = false) {
-  return fetchAllAdminPreviewPages((limit, offset) =>
-    getAdminUserPreviewVolunteering(userId, limit, offset, includeTest),
-  );
-}
-
-export function getAdminUserPreviewVisitedMap(userId: string, includeTest = false) {
-  const query = includeTest ? "?include_test=true" : "";
-  return apiFetch<MapLocationsResponse>(`/admin/users/${userId}/preview/locations/visited/map${query}`);
-}
-
-export function getAdminUserPreviewVisitedDetail(userId: string, includeTest = false) {
-  const query = includeTest ? "?include_test=true" : "";
-  return apiFetch<UniqueLocationsDetailResponse>(
-    `/admin/users/${userId}/preview/locations/visited/detail${query}`,
-  );
-}
-
-export function getAdminUserPreviewCatalogTable(userId: string, includeTest = false) {
-  const query = includeTest ? "?include_test=true" : "";
-  return apiFetch<CatalogLocationsTableResponse>(
-    `/admin/users/${userId}/preview/locations/catalog/table${query}`,
-  );
-}
-
-export function getAdminUserPreviewBestResults(userId: string, includeTest = false) {
-  const query = includeTest ? "?include_test=true" : "";
-  return apiFetch<BestResultItem[]>(`/admin/users/${userId}/preview/runs/best-results${query}`);
-}
-
-export function getAdminUserPreviewPersonalRecords(userId: string, includeTest = false) {
-  const query = includeTest ? "?include_test=true" : "";
-  return apiFetch<PersonalRecordItem[]>(`/admin/users/${userId}/preview/runs/personal-records${query}`);
-}
-
-export function getAdminUserPreviewVolunteerRoleStats(userId: string, includeTest = false) {
-  const query = includeTest ? "?include_test=true" : "";
-  return apiFetch<VolunteerRoleStatItem[]>(
-    `/admin/users/${userId}/preview/volunteering/role-stats${query}`,
-  );
+export function getAllUserVolunteering(includeTest = false) {
+  return fetchAllAdminPreviewPages((limit, offset) => listVolunteering(includeTest, limit, offset));
 }
 
 // Public profile API (serial_id — числовой ID пользователя)
@@ -1305,6 +1519,11 @@ export function getAllPublicProfileVolunteering(serialId: number, includeTest = 
   );
 }
 
+export function getPublicProfileHistory(serialId: number, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<MyHistory>(`/users/${serialId}/profile/history${query}`);
+}
+
 export function getPublicProfileVisitedMap(serialId: number, includeTest = false) {
   const query = includeTest ? "?include_test=true" : "";
   return apiFetch<MapLocationsResponse>(`/users/${serialId}/profile/locations/visited/map${query}`);
@@ -1321,6 +1540,21 @@ export function getPublicProfileCatalogTable(serialId: number, includeTest = fal
   const query = includeTest ? "?include_test=true" : "";
   return apiFetch<CatalogLocationsTableResponse>(
     `/users/${serialId}/profile/locations/catalog/table${query}`,
+  );
+}
+
+export function getPublicProfileAchievements(serialId: number, platform?: string) {
+  const query = platform ? `?platform=${encodeURIComponent(platform)}` : "";
+  return apiFetch<AchievementsResponse>(`/users/${serialId}/profile/achievements${query}`);
+}
+
+export function getPublicProfileCoRunners(serialId: number, limit = 100) {
+  return apiFetch<CoRunnerItem[]>(`/users/${serialId}/profile/co-runners?limit=${limit}`);
+}
+
+export function getPublicProfileCoRunnerMeetings(serialId: number, participantKey: string) {
+  return apiFetch<CoRunnerMeetingItem[]>(
+    `/users/${serialId}/profile/co-runners/${participantKey}/meetings`,
   );
 }
 
@@ -1543,32 +1777,4 @@ export function demoGetCatalogLocationsMap() {
 
 export function demoGetCatalogLocationsTable() {
   return apiFetch<CatalogLocationsTableResponse>("/demo/locations/catalog/table");
-}
-
-export type RunCountRatingRow = {
-  rank: number;
-  runner_name: string;
-  run_count: number;
-  ran_on_latest_date: boolean;
-  latest_location: string | null;
-  skipped_above_count: number;
-};
-
-export type RunCountRatingResponse = {
-  title: string;
-  description: string;
-  platform_code: string;
-  data_source: string;
-  latest_event_date: string | null;
-  data_updated_at: string | null;
-  cached_at: string | null;
-  rows: RunCountRatingRow[];
-};
-
-export function getFiveVerstRunCountRating(limit = 1000) {
-  return apiFetch<RunCountRatingResponse>(
-    `/public/ratings/five-verst/run-count?limit=${limit}`,
-    undefined,
-    { timeoutMs: 120_000 },
-  );
 }

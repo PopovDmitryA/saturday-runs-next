@@ -67,9 +67,13 @@ def resolve_activity_url(
     summary = (summary_source_url or "").strip()
 
     if platform_code == "s95":
+        # source_url на s95-событиях после перехода на JSON API хранит
+        # технический .../activities/{id}.json (адрес самого API-запроса) —
+        # человекочитаемая страница той же гонки на сайте отличается только
+        # отсутствием суффикса ".json".
         for candidate in (stored, summary):
             if candidate and _s95_protocol_url(candidate):
-                return candidate
+                return candidate[: -len(".json")] if candidate.endswith(".json") else candidate
         return None
 
     if stored:

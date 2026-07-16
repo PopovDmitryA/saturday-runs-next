@@ -20,7 +20,9 @@ export function TopLocationValue({ topLocation }: TopLocationValueProps) {
           <span aria-hidden="true">★</span>
         </StatHintTooltip>
       )}
-      <PlatformBadge code={topLocation.platform_code} />
+      {topLocation.platform_codes.map((code) => (
+        <PlatformBadge key={code} code={code} />
+      ))}
     </span>
   );
 }

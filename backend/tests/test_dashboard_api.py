@@ -15,6 +15,7 @@ from app.db.session import get_db
 from app.main import app
 from app.models import (
     Event,
+    EventCrosslink,
     EventSummary,
     Location,
     LocationCatalog,
@@ -28,6 +29,7 @@ from app.models import (
 )
 from app.platform_adapters.canonical import CanonicalParticipant
 from app.services.dashboard_service import ANALYTICS_VERSION
+from app.services.personal_record_service import recalculate_cross_platform_personal_records
 from app.services.sync_dedup_service import SyncEnqueueResult
 from app.sync.user_sync import run_user_sync
 
@@ -166,6 +168,8 @@ def _seed_user_run(db_session: Session, user: User) -> str:
             is_pr=True,
         )
     )
+    db_session.flush()
+    recalculate_cross_platform_personal_records(db_session, user.id)
     db_session.commit()
     return external_user_id
 
@@ -208,7 +212,7 @@ def test_dashboard_returns_stats_from_global_core(authenticated_client: TestClie
     assert analytics["pr_last_12_months"] == 1
     assert analytics["avg_vs_field_pct"] == 5.1
     assert analytics["runs_with_field_avg_count"] == 1
-    assert analytics["top_location"]["platform_code"] == "five_verst"
+    assert analytics["top_location"]["platform_codes"] == ["five_verst"]
     assert analytics["top_location"]["tied_count"] == 1
     assert analytics["avg_position"] == 1
 
@@ -722,6 +726,8 @@ def test_personal_records_lists_pr_runs_per_platform(
             )
         )
 
+    db_session.flush()
+    recalculate_cross_platform_personal_records(db_session, user.id)
     db_session.commit()
 
     response = authenticated_client.get("/api/runs/personal-records")
@@ -793,26 +799,44 @@ def test_dashboard_unique_locations_merged_by_catalog(
         ]
     )
 
-    participant = Participant(
+    five_verst_participant = Participant(
         platform_id=five_verst.id,
         external_user_id=f"merge-user-{suffix}",
         display_name="Merge Tester",
         profile_url=f"https://5verst.ru/userstats/merge-user-{suffix}/",
     )
-    db_session.add(participant)
+    parkrun_participant = Participant(
+        platform_id=parkrun.id,
+        external_user_id=f"merge-parkrun-user-{suffix}",
+        display_name="Merge Tester",
+        profile_url=f"https://www.parkrun.ru/parkrunner/merge-parkrun-user-{suffix}/",
+    )
+    db_session.add_all([five_verst_participant, parkrun_participant])
     db_session.flush()
-    db_session.add(
-        PlatformLink(
-            user_id=user.id,
-            platform_id=five_verst.id,
-            participant_id=participant.id,
-            external_user_id=participant.external_user_id,
-            external_url=participant.profile_url,
-        )
+    db_session.add_all(
+        [
+            PlatformLink(
+                user_id=user.id,
+                platform_id=five_verst.id,
+                participant_id=five_verst_participant.id,
+                external_user_id=five_verst_participant.external_user_id,
+                external_url=five_verst_participant.profile_url,
+            ),
+            PlatformLink(
+                user_id=user.id,
+                platform_id=parkrun.id,
+                participant_id=parkrun_participant.id,
+                external_user_id=parkrun_participant.external_user_id,
+                external_url=parkrun_participant.profile_url,
+            ),
+        ]
     )
 
-    for index, (platform, location) in enumerate(
-        [(parkrun, parkrun_location), (five_verst, five_verst_location)],
+    for index, (platform, location, participant) in enumerate(
+        [
+            (parkrun, parkrun_location, parkrun_participant),
+            (five_verst, five_verst_location, five_verst_participant),
+        ],
         start=1,
     ):
         event = Event(
@@ -846,6 +870,9 @@ def test_dashboard_unique_locations_merged_by_catalog(
     analytics = response.json()["stats"]["analytics"]
     assert analytics["unique_locations"] == 1
     assert analytics["unique_run_locations"] == 1
+    assert analytics["top_location"]["name"] == "Merge Test Park"
+    assert analytics["top_location"]["count"] == 2
+    assert sorted(analytics["top_location"]["platform_codes"]) == ["five_verst", "parkrun"]
 
     detail = authenticated_client.get("/api/locations/visited/detail")
     assert detail.status_code == 200
@@ -853,6 +880,314 @@ def test_dashboard_unique_locations_merged_by_catalog(
     assert detail_payload["unique_run_locations"] == analytics["unique_run_locations"]
     assert detail_payload["total_locations"] == analytics["unique_locations"]
     assert len(detail_payload["locations"]) == 1
+
+
+def test_dashboard_unique_locations_excludes_secondary_crosslink_duplicate(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """A RunPark-republished ("не в зачёте") duplicate of the user's own primary
+    result must not inflate the "Локаций/Городов с пробежками" tiles — the
+    detail modal (build_user_unique_location_details) already excludes such
+    duplicates, so the tile must match it exactly."""
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+
+    five_verst = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+    runpark = db_session.query(Platform).filter(Platform.code == "runpark").one_or_none()
+    if runpark is None:
+        runpark = Platform(code="runpark", name="RunPark")
+        db_session.add(runpark)
+        db_session.flush()
+
+    suffix = str(uuid4().int % 1_000_000)
+
+    primary_location = Location(
+        platform_id=five_verst.id,
+        external_key=f"fiveverst-xlink-{suffix}",
+        name="Druzhba",
+        city="Москва",
+        country="Россия",
+    )
+    runpark_only_location = Location(
+        platform_id=runpark.id,
+        external_key=f"runpark-xlink-{suffix}",
+        name="Druzhba RunPark",
+        city="Тверь",
+        country="Россия",
+    )
+    db_session.add_all([primary_location, runpark_only_location])
+    db_session.flush()
+
+    five_verst_participant = Participant(
+        platform_id=five_verst.id,
+        external_user_id=f"xlink-user-{suffix}",
+        display_name="Xlink Tester",
+        profile_url=f"https://5verst.ru/userstats/xlink-user-{suffix}/",
+    )
+    runpark_participant = Participant(
+        platform_id=runpark.id,
+        external_user_id=f"xlink-runpark-user-{suffix}",
+        display_name="Xlink Tester",
+        profile_url=f"https://runpark.ru/user/xlink-runpark-user-{suffix}/",
+    )
+    db_session.add_all([five_verst_participant, runpark_participant])
+    db_session.flush()
+    db_session.add_all(
+        [
+            PlatformLink(
+                user_id=user.id,
+                platform_id=five_verst.id,
+                participant_id=five_verst_participant.id,
+                external_user_id=five_verst_participant.external_user_id,
+                external_url=five_verst_participant.profile_url,
+            ),
+            PlatformLink(
+                user_id=user.id,
+                platform_id=runpark.id,
+                participant_id=runpark_participant.id,
+                external_user_id=runpark_participant.external_user_id,
+                external_url=runpark_participant.profile_url,
+            ),
+        ]
+    )
+
+    primary_event = Event(
+        platform_id=five_verst.id,
+        location_id=primary_location.id,
+        external_event_key=f"xlink-primary-{suffix}",
+        event_date=date(2024, 5, 11),
+        event_number=900_400,
+        title="Xlink Primary Event",
+        finishers_count=10,
+        runners_count=10,
+    )
+    runpark_event = Event(
+        platform_id=runpark.id,
+        location_id=runpark_only_location.id,
+        external_event_key=f"xlink-runpark-{suffix}",
+        event_date=date(2024, 5, 11),
+        event_number=900_401,
+        title="Xlink RunPark Event",
+        finishers_count=10,
+        runners_count=10,
+    )
+    db_session.add_all([primary_event, runpark_event])
+    db_session.flush()
+    db_session.add(EventCrosslink(primary_event_id=primary_event.id, secondary_event_id=runpark_event.id))
+    db_session.add(
+        RunResult(
+            event_id=primary_event.id,
+            participant_id=five_verst_participant.id,
+            external_result_key=f"xlink-primary-result-{suffix}",
+            position=1,
+            finish_time_sec=20 * 60,
+            finish_time_display="00:20:00",
+            status="finished",
+        )
+    )
+    db_session.add(
+        RunResult(
+            event_id=runpark_event.id,
+            participant_id=runpark_participant.id,
+            external_result_key=f"xlink-runpark-result-{suffix}",
+            position=1,
+            finish_time_sec=20 * 60,
+            finish_time_display="00:20:00",
+            status="finished",
+        )
+    )
+    db_session.commit()
+
+    response = authenticated_client.get("/api/dashboard")
+    assert response.status_code == 200
+    analytics = response.json()["stats"]["analytics"]
+    assert analytics["unique_run_locations"] == 1
+    assert analytics["unique_run_cities"] == 1
+
+    detail = authenticated_client.get("/api/locations/visited/detail")
+    assert detail.status_code == 200
+    detail_payload = detail.json()
+    assert detail_payload["unique_run_locations"] == analytics["unique_run_locations"]
+    assert len(detail_payload["locations"]) == analytics["unique_run_locations"]
+
+
+def test_list_user_runs_is_crosslinked_requires_users_own_primary_result(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """A dual_load RunPark event is crosslinked at the event level (any primary event
+    on the same date/location), but that does not mean every RunPark result in it is a
+    personal duplicate. If this user has no result of their own in the primary event
+    (e.g. they only ran the RunPark side that day), the RunPark run must stay зачётный
+    — matching the narrow, per-user definition already used by the dashboard tile and
+    the locations detail modal (user_secondary_crosslinked_run_ids)."""
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+
+    five_verst = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+    runpark = db_session.query(Platform).filter(Platform.code == "runpark").one_or_none()
+    if runpark is None:
+        runpark = Platform(code="runpark", name="RunPark")
+        db_session.add(runpark)
+        db_session.flush()
+
+    suffix = str(uuid4().int % 1_000_000)
+
+    primary_location = Location(
+        platform_id=five_verst.id,
+        external_key=f"fiveverst-solo-{suffix}",
+        name="Mikhalkovo",
+        city="Москва",
+        country="Россия",
+    )
+    runpark_location = Location(
+        platform_id=runpark.id,
+        external_key=f"runpark-solo-{suffix}",
+        name="Mikhalkovo RunPark",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add_all([primary_location, runpark_location])
+    db_session.flush()
+
+    five_verst_participant = Participant(
+        platform_id=five_verst.id,
+        external_user_id=f"solo-5v-user-{suffix}",
+        display_name="Solo Tester",
+        profile_url=f"https://5verst.ru/userstats/solo-5v-user-{suffix}/",
+    )
+    runpark_participant = Participant(
+        platform_id=runpark.id,
+        external_user_id=f"solo-runpark-user-{suffix}",
+        display_name="Solo Tester",
+        profile_url=f"https://runpark.ru/user/solo-runpark-user-{suffix}/",
+    )
+    other_five_verst_participant = Participant(
+        platform_id=five_verst.id,
+        external_user_id=f"solo-5v-other-{suffix}",
+        display_name="Someone Else",
+        profile_url=f"https://5verst.ru/userstats/solo-5v-other-{suffix}/",
+    )
+    db_session.add_all([five_verst_participant, runpark_participant, other_five_verst_participant])
+    db_session.flush()
+    db_session.add_all(
+        [
+            PlatformLink(
+                user_id=user.id,
+                platform_id=five_verst.id,
+                participant_id=five_verst_participant.id,
+                external_user_id=five_verst_participant.external_user_id,
+                external_url=five_verst_participant.profile_url,
+            ),
+            PlatformLink(
+                user_id=user.id,
+                platform_id=runpark.id,
+                participant_id=runpark_participant.id,
+                external_user_id=runpark_participant.external_user_id,
+                external_url=runpark_participant.profile_url,
+            ),
+        ]
+    )
+
+    # Day A: user ran both systems — genuine duplicate, must stay "не в зачёте".
+    primary_event_a = Event(
+        platform_id=five_verst.id,
+        location_id=primary_location.id,
+        external_event_key=f"solo-primary-a-{suffix}",
+        event_date=date(2024, 6, 29),
+        event_number=900_500,
+        title="Mikhalkovo 5v A",
+        finishers_count=10,
+        runners_count=10,
+    )
+    runpark_event_a = Event(
+        platform_id=runpark.id,
+        location_id=runpark_location.id,
+        external_event_key=f"solo-runpark-a-{suffix}",
+        event_date=date(2024, 6, 29),
+        event_number=900_501,
+        title="Mikhalkovo RunPark A",
+        finishers_count=10,
+        runners_count=10,
+    )
+    # Day B: primary event exists (someone else ran it) but the user only ran RunPark.
+    primary_event_b = Event(
+        platform_id=five_verst.id,
+        location_id=primary_location.id,
+        external_event_key=f"solo-primary-b-{suffix}",
+        event_date=date(2025, 6, 28),
+        event_number=900_502,
+        title="Mikhalkovo 5v B",
+        finishers_count=10,
+        runners_count=10,
+    )
+    runpark_event_b = Event(
+        platform_id=runpark.id,
+        location_id=runpark_location.id,
+        external_event_key=f"solo-runpark-b-{suffix}",
+        event_date=date(2025, 6, 28),
+        event_number=900_503,
+        title="Mikhalkovo RunPark B",
+        finishers_count=10,
+        runners_count=10,
+    )
+    db_session.add_all([primary_event_a, runpark_event_a, primary_event_b, runpark_event_b])
+    db_session.flush()
+    db_session.add_all(
+        [
+            EventCrosslink(primary_event_id=primary_event_a.id, secondary_event_id=runpark_event_a.id),
+            EventCrosslink(primary_event_id=primary_event_b.id, secondary_event_id=runpark_event_b.id),
+        ]
+    )
+    db_session.add_all(
+        [
+            RunResult(
+                event_id=primary_event_a.id,
+                participant_id=five_verst_participant.id,
+                external_result_key=f"solo-primary-a-result-{suffix}",
+                position=13,
+                finish_time_sec=20 * 60,
+                finish_time_display="00:20:00",
+                status="finished",
+            ),
+            RunResult(
+                event_id=runpark_event_a.id,
+                participant_id=runpark_participant.id,
+                external_result_key=f"solo-runpark-a-result-{suffix}",
+                position=13,
+                finish_time_sec=20 * 60,
+                finish_time_display="00:20:00",
+                status="finished",
+            ),
+            # Day B primary result belongs to someone else, not this user.
+            RunResult(
+                event_id=primary_event_b.id,
+                participant_id=other_five_verst_participant.id,
+                external_result_key=f"solo-primary-b-result-{suffix}",
+                position=1,
+                finish_time_sec=19 * 60,
+                finish_time_display="00:19:00",
+                status="finished",
+            ),
+            RunResult(
+                event_id=runpark_event_b.id,
+                participant_id=runpark_participant.id,
+                external_result_key=f"solo-runpark-b-result-{suffix}",
+                position=85,
+                finish_time_sec=25 * 60,
+                finish_time_display="00:25:00",
+                status="finished",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    runs = authenticated_client.get("/api/runs")
+    assert runs.status_code == 200
+    by_date = {row["event_date"]: row for row in runs.json() if row["platform_code"] == "runpark"}
+    assert by_date["2024-06-29"]["is_crosslinked"] is True
+    assert by_date["2025-06-28"]["is_crosslinked"] is False
 
 
 def test_user_sync_updates_cache(authenticated_client: TestClient, db_session: Session) -> None:

@@ -5,9 +5,29 @@ import { RateRunModal } from "./RateRunModal";
 import { getEligibleRuns, type EligibleRun, type RatingEligibility, type RunRating } from "../lib/api";
 import { formatDateLong } from "../lib/format";
 
+const DISMISSED_STORAGE_KEY = "recentRatingsDismissed";
+
+function loadDismissed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DISMISSED_STORAGE_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveDismissed(ids: Set<string>) {
+  try {
+    localStorage.setItem(DISMISSED_STORAGE_KEY, JSON.stringify([...ids]));
+  } catch {
+    // localStorage недоступен — просто не сохраняем
+  }
+}
+
 export function RecentRunsRating() {
   const [data, setData] = useState<RatingEligibility | null>(null);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
+  const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed());
 
   useEffect(() => {
     let cancelled = false;
@@ -23,6 +43,15 @@ export function RecentRunsRating() {
     };
   }, []);
 
+  const dismissRun = useCallback((entryId: string) => {
+    setDismissed((prev) => {
+      const next = new Set(prev);
+      next.add(entryId);
+      saveDismissed(next);
+      return next;
+    });
+  }, []);
+
   const applyRating = useCallback((entryId: string, rating: RunRating | null) => {
     setData((prev) =>
       prev
@@ -36,9 +65,13 @@ export function RecentRunsRating() {
     );
   }, []);
 
-  // Показываем только НЕоценённые старты: оценил → ушёл из блока (иначе за
-  // месяц копится 5–6 карточек и блок растягивает экран). Все оценены → блок скрыт.
-  const pending = data ? data.runs.filter((run) => run.my_rating == null) : [];
+  // Показываем только НЕоценённые и НЕзакрытые старты: оценил или закрыл — ушёл
+  // из блока (иначе за месяц копится 5–6 карточек и блок растягивает экран).
+  // Закрытие — только локально (не влияет на возможность оценить старт из
+  // разделов «Пробежки»/«Волонтёрство»).
+  const pending = data
+    ? data.runs.filter((run) => run.my_rating == null && !dismissed.has(run.entry_id))
+    : [];
 
   if (!data || pending.length === 0) {
     return null;
@@ -85,11 +118,38 @@ export function RecentRunsRating() {
               <div className="recent-ratings-action">
                 <button
                   type="button"
-                  className="btn primary"
+                  className="recent-ratings-rate-btn"
                   disabled={!data.can_rate}
                   onClick={() => setActiveRun(run)}
+                  title="Оценить старт"
+                  aria-label="Оценить старт"
                 >
-                  Оценить
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M12 2.5l2.9 6.06 6.6.86-4.85 4.55 1.24 6.53L12 17.9l-5.89 3.06 1.24-6.53L2.5 9.42l6.6-.86L12 2.5z"
+                      fill="currentColor"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="recent-ratings-dismiss-btn"
+                  onClick={() => dismissRun(run.entry_id)}
+                  title="Не оценивать этот старт"
+                  aria-label="Не оценивать этот старт"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M6 6l12 12M18 6L6 18"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
                 </button>
               </div>
             </li>

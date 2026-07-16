@@ -30,6 +30,7 @@ from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.location_map_service import _location_is_cancelled, _location_is_paused
 from app.services.sync_error_format import present_sync_error
 from app.services.user_location_stats import count_unique_geo_from_rows, count_unique_locations_from_rows
+from app.services.user_unique_locations_detail import _platform_sort_key
 from app.time_format import normalize_finish_time_display
 from app.volunteering_occasions import (
     count_volunteering_for_platform,
@@ -43,7 +44,7 @@ class SyncRefreshRateLimitedError(Exception):
     pass
 
 
-ANALYTICS_VERSION = 22
+ANALYTICS_VERSION = 24
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -80,8 +81,20 @@ def _format_volunteering_index(runs: int, volunteering: int) -> str | None:
     return f"{round(ratio * 100)}%"
 
 
+def _week_saturday(value: date) -> date:
+    """Saturday closing the Sunday-Saturday week that contains the given date.
+
+    Календарь суббот считает по неделям, а не по буквальной дате старта: если
+    в одну и ту же неделю пришлось два старта (та же суббота двумя протоколами
+    или, например, суббота + внеплановый будний старт), это одна и та же
+    неделя — засчитываем её один раз. Совпадает с weekSaturday() во
+    фронтенд-виджете (ActivityCalendarHeatmap.tsx).
+    """
+    return value + timedelta(days=(5 - value.weekday()) % 7)
+
+
 def _saturday_streak(activity_dates: set[date]) -> int:
-    saturdays = {value for value in activity_dates if value.weekday() == 5}
+    saturdays = {_week_saturday(value) for value in activity_dates}
     if not saturdays:
         return 0
     streak = 0
@@ -97,7 +110,7 @@ def _current_saturday_streak(activity_dates: set[date], today: date) -> int:
     Unlike _saturday_streak (which counts from the last active Saturday whenever it
     was), a missed last Saturday breaks the streak. The very last Saturday is allowed
     to be missing for one week — protocols are often synced with a delay."""
-    saturdays = {value for value in activity_dates if value.weekday() == 5}
+    saturdays = {_week_saturday(value) for value in activity_dates}
     if not saturdays:
         return 0
     last_saturday = today - timedelta(days=(today.weekday() - 5) % 7)
@@ -112,7 +125,7 @@ def _current_saturday_streak(activity_dates: set[date], today: date) -> int:
 
 
 def _max_saturday_streak(activity_dates: set[date]) -> int:
-    saturdays = sorted(value for value in activity_dates if value.weekday() == 5)
+    saturdays = sorted({_week_saturday(value) for value in activity_dates})
     best = 0
     current = 0
     previous: date | None = None
@@ -138,7 +151,8 @@ def _saturday_consistency(activity_dates: set[date], today: date) -> tuple[float
     saturdays = _saturdays_in_range(window_start, today)
     if not saturdays:
         return None, 0, 0
-    active = sum(1 for value in saturdays if value in activity_dates)
+    active_weeks = {_week_saturday(value) for value in activity_dates}
+    active = sum(1 for value in saturdays if value in active_weeks)
     pct = round(active / len(saturdays) * 100, 1)
     return pct, active, len(saturdays)
 
@@ -435,7 +449,6 @@ def _compute_dashboard_analytics(
     include_test_events: bool = False,
 ) -> dict[str, object]:
     from app.services.personal_record_service import (
-        global_personal_record_run_ids,
         run_is_personal_record_sql_filter,
         user_secondary_crosslinked_run_ids,
     )
@@ -470,6 +483,17 @@ def _compute_dashboard_analytics(
         runs_query = runs_query.filter(Event.is_test_event.is_(False))
         vol_query = vol_query.filter(Event.is_test_event.is_(False))
 
+    # Кросслинк-дубли (RunPark republish "не в зачёте", см. list_co_runners)
+    # исключаем ДО построения run_location_rows — иначе локация/город, где
+    # у юзера есть только такой дубль, попадает в счётчик плитки, но
+    # отсутствует в детализации (build_user_unique_location_details уже
+    # фильтрует их так же), и числа расходятся.
+    secondary_crosslinked_ids = user_secondary_crosslinked_run_ids(
+        db, user_id, include_test_events=include_test_events
+    )
+    if secondary_crosslinked_ids:
+        runs_query = runs_query.filter(RunResult.id.notin_(secondary_crosslinked_ids))
+
     run_location_rows = runs_query.with_entities(Location, Platform.code).distinct().all()
     vol_location_rows = vol_query.with_entities(Location, Platform.code).distinct().all()
 
@@ -481,14 +505,8 @@ def _compute_dashboard_analytics(
         catalog_index,
         run_location_rows + vol_location_rows,
     )
-    unique_run_regions, unique_run_cities = count_unique_geo_from_rows(run_location_rows)
-    unique_volunteer_regions, unique_volunteer_cities = count_unique_geo_from_rows(vol_location_rows)
-
-    secondary_crosslinked_ids = user_secondary_crosslinked_run_ids(
-        db, user_id, include_test_events=include_test_events
-    )
-    if secondary_crosslinked_ids:
-        runs_query = runs_query.filter(RunResult.id.notin_(secondary_crosslinked_ids))
+    unique_run_regions, unique_run_cities = count_unique_geo_from_rows(catalog_index, run_location_rows)
+    unique_volunteer_regions, unique_volunteer_cities = count_unique_geo_from_rows(catalog_index, vol_location_rows)
 
     timed_runs = runs_query.filter(RunResult.finish_time_sec.isnot(None))
     paced_runs = runs_query.filter(RunResult.pace_sec_per_km.isnot(None))
@@ -519,14 +537,11 @@ def _compute_dashboard_analytics(
         .scalar()
     )
 
-    global_pr_ids = global_personal_record_run_ids(db, user_id, include_test_events=include_test_events)
-    last_global_pr_date = None
-    if global_pr_ids:
-        last_global_pr_date = (
-            runs_query.filter(RunResult.id.in_(global_pr_ids))
-            .with_entities(func.max(Event.event_date))
-            .scalar()
-        )
+    last_global_pr_date = (
+        runs_query.filter(RunResult.is_global_pr.is_(True))
+        .with_entities(func.max(Event.event_date))
+        .scalar()
+    )
     pr_last_12_months = (
         runs_query.filter(run_is_personal_record_sql_filter(), Event.event_date >= twelve_months_ago)
         .with_entities(func.count(RunResult.id))
@@ -573,20 +588,36 @@ def _compute_dashboard_analytics(
     )
     unique_volunteer_roles = len({row[0].strip() for row in role_rows if row[0] and row[0].strip()})
 
-    location_count_rows = (
-        runs_query.with_entities(Location, Platform.code, func.count(RunResult.id).label("visit_count"))
-        .group_by(Location.id, Platform.code)
-        .order_by(func.count(RunResult.id).desc(), Location.name.asc())
-        .all()
-    )
+    run_dates_for_top_location = runs_query.with_entities(Event.event_date, Location, Platform.code).all()
+    top_location_dates: dict[str, set[date]] = defaultdict(set)
+    top_location_platform_codes: dict[str, set[str]] = defaultdict(set)
+    top_location_sample: dict[str, tuple[Location, str]] = {}
+    for event_date, location, platform_code in run_dates_for_top_location:
+        identity_key = catalog_index.canonical_identity_key(location, platform_code)
+        top_location_dates[identity_key].add(event_date)
+        top_location_platform_codes[identity_key].add(platform_code)
+        top_location_sample.setdefault(identity_key, (location, platform_code))
+
     top_location = None
-    if location_count_rows:
-        location, platform_code, visit_count = location_count_rows[0]
-        max_count = int(visit_count)
-        tied_count = sum(1 for row in location_count_rows if int(row.visit_count) == max_count)
+    if top_location_dates:
+        top_identity_key = sorted(
+            top_location_dates,
+            key=lambda key: (
+                -len(top_location_dates[key]),
+                catalog_index.display_name(*top_location_sample[key]),
+            ),
+        )[0]
+        max_count = len(top_location_dates[top_identity_key])
+        tied_count = sum(1 for dates in top_location_dates.values() if len(dates) == max_count)
+        catalog = catalog_index.get_for_identity_key(top_identity_key)
+        display_name = (
+            catalog.canonical_name
+            if catalog is not None and catalog.canonical_name
+            else catalog_index.display_name(*top_location_sample[top_identity_key])
+        )
         top_location = {
-            "name": catalog_index.display_name(location, platform_code),
-            "platform_code": platform_code,
+            "name": display_name,
+            "platform_codes": sorted(top_location_platform_codes[top_identity_key], key=_platform_sort_key),
             "count": max_count,
             "tied_count": tied_count,
         }
@@ -898,23 +929,18 @@ def list_user_runs(
         query = query.filter(Event.is_test_event.is_(False))
     rows = query.order_by(Event.event_date.desc(), RunResult.position.asc()).offset(offset).limit(limit).all()
 
-    # Collect event IDs that are secondary in event_crosslinks
-    event_ids = [event.id for _run, event, _loc, _plat, _link in rows]
-    crosslinked_event_ids: set[UUID] = set()
-    if event_ids:
-        cl_rows = (
-            db.query(EventCrosslink.secondary_event_id)
-            .filter(EventCrosslink.secondary_event_id.in_(event_ids))
-            .all()
-        )
-        crosslinked_event_ids = {row[0] for row in cl_rows}
-
     from app.services.personal_record_service import (
-        global_personal_record_run_ids,
         run_shows_personal_record,
+        user_secondary_crosslinked_run_ids,
     )
 
-    global_pr_ids = global_personal_record_run_ids(db, user_id, include_test_events=include_test_events)
+    # "Не в зачёте" — только если у самого юзера есть и secondary (этот забег), и
+    # primary результат (см. user_secondary_crosslinked_run_ids). Событие может быть
+    # кросслинкнуто целиком (dual_load локация), но если юзер лично бежал только в
+    # одной из систем в этот день — у него нет дубля, забег зачётный.
+    secondary_crosslinked_ids = user_secondary_crosslinked_run_ids(
+        db, user_id, include_test_events=include_test_events
+    )
     catalog_index = LocationCatalogIndex(db)
     summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
     return [
@@ -938,8 +964,9 @@ def list_user_runs(
             "pace_sec_per_km": run.pace_sec_per_km,
             "age_category": run.age_category,
             "is_pr": run_shows_personal_record(platform.code, run),
-            "is_global_pr": run.id in global_pr_ids,
-            "is_crosslinked": event.id in crosslinked_event_ids,
+            "is_global_pr": run.is_global_pr,
+            "is_location_pr": run.is_location_pr,
+            "is_crosslinked": run.id in secondary_crosslinked_ids,
             "is_first_run": run.is_first_run,
             "is_first_run_at_location": run.is_first_run_at_location,
             "club_name": run.club_name,
@@ -1043,7 +1070,6 @@ def list_user_personal_records(
     include_test_events: bool = False,
 ) -> list[dict[str, object]]:
     from app.services.personal_record_service import (
-        global_personal_record_run_ids,
         run_is_personal_record_sql_filter,
         user_secondary_crosslinked_run_ids,
     )
@@ -1076,7 +1102,6 @@ def list_user_personal_records(
         RunResult.position.asc(),
     ).all()
 
-    global_pr_ids = global_personal_record_run_ids(db, user_id, include_test_events=include_test_events)
     catalog_index = LocationCatalogIndex(db)
     summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
     return [
@@ -1090,7 +1115,7 @@ def list_user_personal_records(
                 run.finish_time_display,
             ),
             "finish_time_sec": run.finish_time_sec,
-            "is_global_pr": run.id in global_pr_ids,
+            "is_global_pr": run.is_global_pr,
             "event_url": _activity_event_url(
                 platform_code=platform.code,
                 event=event,

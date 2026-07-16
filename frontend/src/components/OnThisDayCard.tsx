@@ -227,12 +227,13 @@ export function OnThisDayCard({ load, shareBase }: OnThisDayCardProps) {
                   </p>
                 </div>
                 <a
-                  className="btn secondary on-this-day-list-share"
+                  className="on-this-day-list-share"
                   href={shareHref}
                   onClick={() => storeShareRun(item)}
+                  aria-label="Поделиться"
+                  title="Поделиться"
                 >
                   <ShareIcon />
-                  Поделиться
                 </a>
               </li>
             );

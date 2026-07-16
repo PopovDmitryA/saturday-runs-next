@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -11,18 +11,28 @@ from app.api.deps import get_db, get_optional_user
 from app.config import Settings, get_settings
 from app.core.admin import is_admin_user
 from app.models import User
+from app.schemas.achievements import AchievementsResponse
 from app.schemas.admin import AdminUserPreviewDashboardResponse
-from app.schemas.dashboard import RunItemResponse, VolunteeringItemResponse
+from app.schemas.dashboard import (
+    CoRunnerMeetingResponse,
+    CoRunnerResponse,
+    MyHistoryResponse,
+    RunItemResponse,
+    VolunteeringItemResponse,
+)
 from app.schemas.locations import CatalogLocationsTableResponse, MapLocationsResponse, UniqueLocationsDetailResponse
+from app.services.achievements_service import compute_challenges
 from app.services.admin_users_service import (
     get_admin_user_preview_best_results,
     get_admin_user_preview_dashboard,
     get_admin_user_preview_personal_records,
     get_admin_user_preview_volunteer_role_stats,
 )
+from app.services.co_runners_service import list_co_runner_meetings, list_co_runners
 from app.services.dashboard_service import list_user_runs, list_user_volunteering
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_user_visited_map_locations
+from app.services.my_history_service import get_my_history
 from app.services.profile_slug_service import resolve_profile_handle
 from app.services.user_unique_locations_detail import build_user_unique_location_details
 
@@ -98,6 +108,18 @@ def public_profile_runs(
     user_id = _get_user_uuid(serial_id, db, requester, settings)
     items = list_user_runs(db, user_id, limit=limit, offset=offset, include_test_events=include_test)
     return [RunItemResponse.model_validate(i) for i in items]
+
+
+@router.get("/{serial_id}/profile/history", response_model=MyHistoryResponse)
+def public_profile_history(
+    serial_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    requester: Annotated[User | None, Depends(get_optional_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    include_test: bool = False,
+) -> MyHistoryResponse:
+    user_id = _get_user_uuid(serial_id, db, requester, settings)
+    return MyHistoryResponse.model_validate(get_my_history(db, user_id, include_test_events=include_test))
 
 
 @router.get("/{serial_id}/profile/volunteering", response_model=list[VolunteeringItemResponse])
@@ -188,3 +210,48 @@ def public_profile_catalog_table(
     user_id = _get_user_uuid(serial_id, db, requester, settings)
     payload = build_catalog_locations_table(db, user_id, include_test_events=include_test)
     return CatalogLocationsTableResponse.model_validate(payload)
+
+
+@router.get("/{serial_id}/profile/co-runners", response_model=list[CoRunnerResponse])
+def public_profile_co_runners(
+    serial_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    requester: Annotated[User | None, Depends(get_optional_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    limit: int = 100,
+    include_test: bool = False,
+) -> list[CoRunnerResponse]:
+    user_id = _get_user_uuid(serial_id, db, requester, settings)
+    items = list_co_runners(db, user_id, include_test_events=include_test, limit=limit)
+    return [CoRunnerResponse.model_validate(i) for i in items]
+
+
+@router.get(
+    "/{serial_id}/profile/co-runners/{participant_key}/meetings",
+    response_model=list[CoRunnerMeetingResponse],
+)
+def public_profile_co_runner_meetings(
+    serial_id: int,
+    participant_key: str,
+    db: Annotated[Session, Depends(get_db)],
+    requester: Annotated[User | None, Depends(get_optional_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    include_test: bool = False,
+) -> list[CoRunnerMeetingResponse]:
+    user_id = _get_user_uuid(serial_id, db, requester, settings)
+    items = list_co_runner_meetings(db, user_id, participant_key, include_test_events=include_test)
+    return [CoRunnerMeetingResponse.model_validate(i) for i in items]
+
+
+@router.get("/{serial_id}/profile/achievements", response_model=AchievementsResponse)
+def public_profile_achievements(
+    serial_id: int,
+    db: Session = Depends(get_db),
+    requester: User | None = Depends(get_optional_user),
+    settings: Settings = Depends(get_settings),
+    platform: str | None = Query(default=None, description="Сузить челленджи до одной системы"),
+) -> AchievementsResponse:
+    """Челленджи и клубы участника — без личных целей на год (те остаются
+    приватными, задать их можно только себе)."""
+    user_id = _get_user_uuid(serial_id, db, requester, settings)
+    return AchievementsResponse.model_validate(compute_challenges(db, user_id, platform_code=platform))
