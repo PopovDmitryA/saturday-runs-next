@@ -18,6 +18,11 @@ htmlcov/
 *.ini
 !backend/alembic.ini
 
+# Локальный оверрайд docker-стека конкретного worktree: у каждого свои порты,
+# своя БД (dev или прод через туннель). Общего значения не имеет, а попав в
+# репозиторий — перетирает настройки соседних worktree.
+docker-compose.worktree-override.yml
+
 # Node
 node_modules/
 frontend/dist/
