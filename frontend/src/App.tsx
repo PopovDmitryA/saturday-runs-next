@@ -26,6 +26,7 @@ import { SharePage } from "./features/share/SharePage";
 import { AboutPage } from "./features/about/AboutPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
+import { RequireAuth } from "./components/RequireAuth";
 import { useAppPath } from "./hooks/useAppPath";
 import { getCurrentUser, recordSitePageview } from "./lib/api";
 import { isLegacyGrafanaPath, legacyGrafanaHref } from "./lib/siteBrand";
@@ -79,10 +80,13 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
   "/history": () => <HistoryPage />,
-  "/ratings": () => <LeaderboardsHubPage />,
-  "/ratings/runs": () => <LeaderboardPage metric="runs" />,
-  "/ratings/volunteering": () => <LeaderboardPage metric="volunteering" />,
-  "/ratings/locations": () => <LeaderboardPage metric="locations" />,
+  // Раздел для залогиненных: анонима RequireAuth уводит на /login (гейт есть и на API).
+  "/ratings": () => <RequireAuth>{() => <LeaderboardsHubPage />}</RequireAuth>,
+  "/ratings/runs": () => <RequireAuth>{() => <LeaderboardPage metric="runs" />}</RequireAuth>,
+  "/ratings/volunteering": () => (
+    <RequireAuth>{() => <LeaderboardPage metric="volunteering" />}</RequireAuth>
+  ),
+  "/ratings/locations": () => <RequireAuth>{() => <LeaderboardPage metric="locations" />}</RequireAuth>,
   "/share": () => <SharePage />,
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
