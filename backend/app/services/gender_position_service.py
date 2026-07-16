@@ -8,7 +8,11 @@
 - runpark: вторая буква age_category («VM35-39» / «SW30-34» → M / W);
   категория есть только у ~41% строк, так что метрика считается с
   погрешностью — только среди финишёров с известным полом;
-- parkrun: данных о поле нет, gender_position всегда NULL.
+- parkrun: в run_results.age_category лежит age-grade % (не категория!),
+  своей категории протокол не даёт — пол берётся из participants.age_category
+  («SM30-34» — вторая буква; см. location_page_service._gender_expression,
+  тот же источник). Появилось после бэкфилла профилей parkrun; до него тут
+  было «данных о поле нет, gender_position всегда NULL».
 
 Бегуны без известного пола не участвуют в ранжировании (место считается
 только среди тех, чей пол известен).
@@ -57,9 +61,26 @@ def _s95_participant_genders(db: Session, participant_ids: list[UUID]) -> dict[U
     return result
 
 
+def _parkrun_participant_genders(db: Session, participant_ids: list[UUID]) -> dict[UUID, str]:
+    """Пол по participants.age_category («SM30-34» → вторая буква M/W)."""
+    if not participant_ids:
+        return {}
+    rows = (
+        db.query(Participant.id, Participant.age_category)
+        .filter(Participant.id.in_(participant_ids))
+        .all()
+    )
+    result: dict[UUID, str] = {}
+    for pid, age_category in rows:
+        gender = gender_from_age_category("runpark", age_category)  # тот же формат: 2-я буква M/W
+        if gender is not None:
+            result[pid] = gender
+    return result
+
+
 def recalculate_event_gender_positions(db: Session, event_id: UUID, platform_code: str) -> None:
     """Пересчитать gender_position для всех результатов одного события."""
-    if platform_code not in ("five_verst", "s95", "runpark"):
+    if platform_code not in ("five_verst", "s95", "runpark", "parkrun"):
         return
     rows = db.query(RunResult).filter(RunResult.event_id == event_id).all()
     if not rows:
@@ -68,6 +89,12 @@ def recalculate_event_gender_positions(db: Session, event_id: UUID, platform_cod
     genders: dict[UUID, str | None] = {}
     if platform_code == "s95":
         participant_genders = _s95_participant_genders(
+            db, [row.participant_id for row in rows if row.participant_id is not None]
+        )
+        for row in rows:
+            genders[row.id] = participant_genders.get(row.participant_id) if row.participant_id else None
+    elif platform_code == "parkrun":
+        participant_genders = _parkrun_participant_genders(
             db, [row.participant_id for row in rows if row.participant_id is not None]
         )
         for row in rows:

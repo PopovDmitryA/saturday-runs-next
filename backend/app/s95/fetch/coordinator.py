@@ -8,7 +8,7 @@ from app.core.redis_client import get_redis_client
 from app.core.request_cancel import check_cancelled
 from app.s95.ban import is_ban_or_protection_html
 from app.s95.errors import S95BanDetected
-from app.s95.fetch.browser import fetch_html_with_browser
+from app.s95.fetch.http import fetch_html_with_httpx
 from app.s95.fetch.lock import s95_fetch_lock
 from app.s95.fetch.priority import check_yield_for_user_sync
 from app.s95.fetch.rate_limit import mark_fetch_completed, wait_for_turn
@@ -40,8 +40,6 @@ def fetch_page_html(
     url: str,
     *,
     reason: str = "fetch",
-    extra_wait_ms: int | None = None,
-    click_map_tab: bool = False,
 ) -> str:
     """
     Single entry point for all S95 page loads.
@@ -79,11 +77,7 @@ def fetch_page_html(
             )
             logger.info("s95 fetch start: %s (%s)", url, reason)
             try:
-                html = fetch_html_with_browser(
-                    url,
-                    extra_wait_ms=extra_wait_ms,
-                    click_map_tab=click_map_tab,
-                )
+                html = fetch_html_with_httpx(url)
             except S95BanDetected:
                 _set_ban_cooldown()
                 raise

@@ -9,8 +9,11 @@ from app.core.request_cancel import check_cancelled
 from app.parkrun.errors import ParkrunBanDetected
 from app.parkrun.fetch.browser import fetch_html_with_browser, save_browser_session
 from app.parkrun.fetch.captcha_state import (
+    BAN_COOLDOWN_KEY,
+    ban_cooldown_level,
     captcha_pending_message,
-    is_captcha_pending,
+    clear_captcha_pending,
+    escalate_ban_cooldown,
     set_captcha_pending,
 )
 from app.parkrun.fetch.diagnostics import inspect_html_response
@@ -19,10 +22,14 @@ from app.parkrun.fetch.rate_limit import mark_fetch_completed, wait_for_turn
 
 logger = logging.getLogger(__name__)
 
-BAN_COOLDOWN_KEY = "parkrun:fetch:ban_cooldown_until"
-
 
 def _check_ban_cooldown() -> None:
+    """Блокирует фетч, пока активно эскалирующее охлаждение.
+
+    После истечения ступени запрос пропускается — это «проба»: успех сбрасывает
+    лестницу (clear_captcha_pending), новая капча поднимает её на ступень выше.
+    Висящий captcha_pending сам по себе фетч не блокирует — только охлаждение.
+    """
     redis = get_redis_client()
     raw = redis.get(BAN_COOLDOWN_KEY)
     if raw is None:
@@ -30,23 +37,20 @@ def _check_ban_cooldown() -> None:
     until = float(raw)
     now = time.time()
     if now < until:
-        raise ParkrunBanDetected(f"parkrun fetch in cooldown until {until:.0f}")
+        detail = captcha_pending_message() or "ban/captcha detected"
+        raise ParkrunBanDetected(
+            f"parkrun fetch in cooldown until {until:.0f} "
+            f"(level {ban_cooldown_level()}: {detail}). "
+            "On Mac run: make parkrun (pass captcha in the Chromium window)."
+        )
 
 
 def _set_ban_cooldown() -> None:
-    settings = get_settings()
-    redis = get_redis_client()
-    until = time.time() + settings.parkrun_ban_cooldown_seconds
-    redis.set(BAN_COOLDOWN_KEY, str(until), ex=settings.parkrun_ban_cooldown_seconds + 60)
-
-
-def _check_captcha_pending() -> None:
-    if not is_captcha_pending():
-        return
-    detail = captcha_pending_message() or "captcha required"
-    raise ParkrunBanDetected(
-        f"parkrun fetch paused until captcha cleared ({detail}). "
-        "On Mac run: make parkrun (pass captcha in the Chromium window)."
+    until = escalate_ban_cooldown()
+    logger.warning(
+        "parkrun ban cooldown escalated to level %d, until %.0f",
+        ban_cooldown_level(),
+        until,
     )
 
 
@@ -73,7 +77,6 @@ def fetch_page_html(url: str, *, reason: str = "fetch", extra_wait_ms: int | Non
             return daemon.fetch_page_html(url, reason=reason, extra_wait_ms=extra_wait_ms)
 
     check_cancelled()
-    _check_captcha_pending()
     _check_ban_cooldown()
     wait_for_turn(reason=reason)
     check_cancelled()
@@ -106,6 +109,7 @@ def fetch_page_html(url: str, *, reason: str = "fetch", extra_wait_ms: int | Non
                 detail = f"{detail}; page too short — browser may not have rendered (check playwright)"
             raise ParkrunBanDetected(f"Ban/protection page detected for {url} ({detail})")
         mark_fetch_completed()
+        clear_captcha_pending()
         if save_browser_session():
             logger.info("parkrun fetch: persisted browser storage state after success")
         logger.info(

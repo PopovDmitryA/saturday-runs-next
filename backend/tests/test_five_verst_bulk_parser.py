@@ -171,7 +171,9 @@ def test_parse_run_protocol_html() -> None:
     assert results[0].event_number == 206
     assert results[0].position == 1
     assert results[0].finish_time_sec == 18 * 60 + 59
-    assert results[0].age_category == "М30-34 (1)"
+    # «(1)» в протоколе — место в возрастной группе, в категорию не попадает.
+    assert results[0].age_category == "М30-34"
+    assert results[1].age_category == "М35-39"
     assert results[0].club_name == "#яuzarun"
     assert results[0].is_pr is True
     assert results[0].is_first_run is False

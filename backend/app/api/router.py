@@ -8,8 +8,10 @@ from app.api.routes import (
     demo,
     internal_bot,
     internal_vk_bot,
+    leaderboards,
     location_ratings,
     locations,
+    portal,
     profiles,
     public_profiles,
     runs,
@@ -27,8 +29,10 @@ api_router.include_router(profiles.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(achievements.router)
 api_router.include_router(runs.router)
+api_router.include_router(leaderboards.router)
 api_router.include_router(location_ratings.router)
 api_router.include_router(locations.router)
+api_router.include_router(portal.router)
 api_router.include_router(sync.router)
 api_router.include_router(settings.router)
 api_router.include_router(public_profiles.router)

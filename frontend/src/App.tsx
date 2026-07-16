@@ -16,17 +16,28 @@ import { LoginPage } from "./features/auth/LoginPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
 import { DemoDashboardPage } from "./features/demo/DemoDashboardPage";
 import { LandingPage } from "./features/landing/LandingPage";
+import { PortalAboutPage } from "./features/portal/PortalAboutPage";
+import { PortalHomePage } from "./features/portal/PortalHomePage";
+import { PortalLoginPage } from "./features/portal/PortalLoginPage";
+import { PortalMapLab } from "./features/portal/PortalMapLab";
+import { PORTAL_ABOUT_HREF, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "./lib/portalRoutes";
 import { DemoMapsPage, MapsPage } from "./features/maps/MapsPage";
+import { LocationEventsPage } from "./features/locations/LocationEventsPage";
+import { LocationPage } from "./features/locations/LocationPage";
+import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
 import { CoRunnersPage, DemoCoRunnersPage } from "./features/co_runners/CoRunnersPage";
 import { DemoRunsPage, RunsPage } from "./features/runs/RunsPage";
 import { DemoHistoryPage, HistoryPage } from "./features/history/HistoryPage";
 import { DemoVolunteeringPage, VolunteeringPage } from "./features/volunteering/VolunteeringPage";
+import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
+import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SharePage } from "./features/share/SharePage";
 import { AboutPage } from "./features/about/AboutPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
+import { RequireAuth } from "./components/RequireAuth";
 import { useAppPath } from "./hooks/useAppPath";
 import { getCurrentUser, recordSitePageview } from "./lib/api";
 import { isLegacyGrafanaPath, legacyGrafanaHref } from "./lib/siteBrand";
@@ -63,6 +74,10 @@ function AdminRedirect() {
 
 const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/": () => <LandingPage />,
+  [PORTAL_HOME_HREF]: () => <PortalHomePage />,
+  [PORTAL_ABOUT_HREF]: () => <PortalAboutPage />,
+  [PORTAL_LOGIN_HREF]: () => <PortalLoginPage />,
+  "/new/map-lab": () => <PortalMapLab />,
   "/login": () => <LoginPage />,
   "/oauth/yandex/callback": () => <OAuthCallbackPage provider="yandex" />,
   "/oauth/vk/callback": () => <OAuthCallbackPage provider="vk" />,
@@ -79,7 +94,16 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/co-runners": () => <CoRunnersPage />,
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
+  // Гейт админа — внутри самой страницы (RequireAdmin), как и у /locations/{slug}.
+  "/locations": () => <LocationsIndexPage />,
   "/history": () => <HistoryPage />,
+  // Раздел для залогиненных: анонима RequireAuth уводит на /login (гейт есть и на API).
+  "/ratings": () => <RequireAuth>{() => <LeaderboardsHubPage />}</RequireAuth>,
+  "/ratings/runs": () => <RequireAuth>{() => <LeaderboardPage metric="runs" />}</RequireAuth>,
+  "/ratings/volunteering": () => (
+    <RequireAuth>{() => <LeaderboardPage metric="volunteering" />}</RequireAuth>
+  ),
+  "/ratings/locations": () => <RequireAuth>{() => <LeaderboardPage metric="locations" />}</RequireAuth>,
   "/share": () => <SharePage />,
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
@@ -136,6 +160,14 @@ function renderRoute(path: string): ReactElement {
   if (publicProfileMatch) {
     return <PublicProfilePage handle={decodeURIComponent(publicProfileMatch[1])} />;
   }
+  const locationEventsMatch = path.match(/^\/locations\/([^/]+)\/events$/);
+  if (locationEventsMatch) {
+    return <LocationEventsPage slug={decodeURIComponent(locationEventsMatch[1])} />;
+  }
+  const locationMatch = path.match(/^\/locations\/([^/]+)$/);
+  if (locationMatch) {
+    return <LocationPage slug={decodeURIComponent(locationMatch[1])} />;
+  }
   const render = STATIC_ROUTES[path];
   if (render) {
     return render();
@@ -146,9 +178,11 @@ function renderRoute(path: string): ReactElement {
 export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
+  // На страницах портального редизайна (тёмный запуск) баннер про переезд с Grafana не показываем.
+  const hideLegacyBanner = path === PORTAL_HOME_HREF || path.startsWith(`${PORTAL_HOME_HREF}/`);
   return (
     <>
-      <LegacySiteBanner />
+      {!hideLegacyBanner && <LegacySiteBanner />}
       {renderRoute(path)}
     </>
   );

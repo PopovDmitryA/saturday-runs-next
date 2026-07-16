@@ -7,6 +7,7 @@ import { ActivityDateCell } from "../../components/ActivityDateCell";
 import { AppShell } from "../../components/AppShell";
 import { EmptyActivityState } from "../../components/EmptyActivityState";
 import { GlobalPrFinishTime } from "../../components/GlobalPrFinishTime";
+import { LocationNameLink } from "../../components/LocationNameLink";
 import { LocationPrLocationName } from "../../components/LocationPrLocationName";
 import { RequireAuth } from "../../components/RequireAuth";
 import { PlatformBadge } from "../../components/PlatformBadge";
@@ -377,7 +378,7 @@ function RunsContent() {
                       </td>
                       <td className="td-location">
                         <LocationPrLocationName isLocationPr={run.is_location_pr}>
-                          {run.location_name}
+                          <LocationNameLink name={run.location_name} slug={run.location_slug} />
                         </LocationPrLocationName>
                       </td>
                       <td className="td-compact">{run.position ?? "—"}</td>

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from app.platform_adapters.canonical import CanonicalRunResult, CanonicalVolunteerResult
+from app.s95.parsers.protocol import UNKNOWN_NAMES
 from app.s95.parsers.volunteer_roles import (
     canonical_s95_api_role,
     s95_volunteer_role_key,
@@ -62,19 +63,31 @@ def parse_s95_activity(
     volunteer_results: list[CanonicalVolunteerResult] = []
     athlete_codes: dict[str, dict] = {}
 
-    for item in activity.get("results", []) or []:
+    for index, item in enumerate(activity.get("results", []) or []):
         athlete = item.get("athlete") or {}
         athlete_id = athlete.get("id")
         name = (athlete.get("name") or "").strip() or None
         if athlete_id is None and name is None:
             continue
-        external_user_id = str(athlete_id) if athlete_id is not None else f"unknown:{name}"
 
         position = item.get("position")
         try:
             position = int(position) if position is not None else None
         except (TypeError, ValueError):
             position = None
+
+        is_unknown_runner = athlete_id is None and name in UNKNOWN_NAMES
+        if athlete_id is not None:
+            external_user_id = str(athlete_id)
+        elif is_unknown_runner:
+            # «НЕИЗВЕСТНЫЙ» — все безымянные делят одно имя; без уникального id они
+            # схлопнутся в одну строку через fallback по (event_id, participant_id).
+            marker = position if position is not None else f"i{index}"
+            external_user_id = (
+                f"unknown:{location_external_key}:{event_date.isoformat()}:{marker}"
+            )
+        else:
+            external_user_id = f"unknown:{name}"
 
         finish_time_sec, finish_time_display = parse_finish_time(item.get("total_time"))
 
@@ -90,6 +103,7 @@ def parse_s95_activity(
                 position=position,
                 finish_time_sec=finish_time_sec,
                 finish_time_display=finish_time_display,
+                status="unknown_runner" if is_unknown_runner else None,
                 club_name=athlete.get("club"),
                 location_external_key=location_external_key,
                 location_name=location_name,

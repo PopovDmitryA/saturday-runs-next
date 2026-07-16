@@ -18,6 +18,11 @@ htmlcov/
 *.ini
 !backend/alembic.ini
 
+# Локальный оверрайд docker-стека конкретного worktree: у каждого свои порты,
+# своя БД (dev или прод через туннель). Общего значения не имеет, а попав в
+# репозиторий — перетирает настройки соседних worktree.
+docker-compose.worktree-override.yml
+
 # Node
 node_modules/
 frontend/dist/
@@ -39,6 +44,8 @@ backend/scripts/backups/
 .cursor/
 .claude/
 PROJECT_HANDOFF.local.md
+LOCATION_PAGES_STATUS.local.md
+RATINGS_HANDOFF.local.md
 S95_API.md
 docs/release_posts_style.md
 data/parkrun_playwright_state.json

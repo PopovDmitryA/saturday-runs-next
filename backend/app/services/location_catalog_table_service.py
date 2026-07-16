@@ -82,6 +82,7 @@ def build_catalog_locations_table(
                 "row_key": f"{location.id}:{platform_code}",
                 "catalog_identity_key": identity_key,
                 "location_id": str(location.id),
+                "location_slug": location.external_key.strip().lower(),
                 "name": catalog_index.display_name(location, platform_code),
                 "city": location.city,
                 "region": location.region,

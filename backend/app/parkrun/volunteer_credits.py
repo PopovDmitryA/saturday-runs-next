@@ -21,6 +21,23 @@ def volunteer_credits_from_profile_extra(profile_extra: dict | None) -> int | No
     summary = profile_extra.get("volunteer_summary")
     if not isinstance(summary, list) or not summary:
         return None
+    # Одна и та же волонтёрская смена может дать кредит сразу нескольким ролям
+    # (напр. Results Processor + Timekeeper в один день) — сумма по ролям
+    # переучитывает такие дни. У parkrun есть отдельная строка "Total Credits",
+    # которая и есть правильное число occasions — её и берём, если она есть;
+    # сумма по ролям — только запасной вариант, когда её нет.
+    total_item = next(
+        (
+            item
+            for item in summary
+            if isinstance(item, dict) and is_total_credits_label(str(item.get("role") or ""))
+        ),
+        None,
+    )
+    if total_item is not None:
+        total_occasions = int(total_item.get("occasions") or 0)
+        if total_occasions > 0:
+            return total_occasions
     occasions_sum = sum(
         int(item.get("occasions") or 0)
         for item in summary
@@ -30,17 +47,27 @@ def volunteer_credits_from_profile_extra(profile_extra: dict | None) -> int | No
 
 
 def volunteer_credits_from_role_labels(roles: Iterable[str]) -> int | None:
-    total = 0
+    # Тот же принцип, что и в volunteer_credits_from_profile_extra: строка role
+    # "Total Credits (N×)" — уже правильный итог (без переучёта смен с
+    # несколькими ролями за раз), берём её вместо суммы отдельных ролей.
+    total_from_summary: int | None = None
+    fallback_sum = 0
     matched = False
     for role in roles:
         label = role.strip()
-        if not label or is_total_credits_label(label):
+        if not label:
             continue
         match = ROLE_OCCASIONS_RE.search(label)
+        if is_total_credits_label(label):
+            if match:
+                total_from_summary = int(match.group(1))
+            continue
         if match:
             matched = True
-            total += int(match.group(1))
-    return total if matched else None
+            fallback_sum += int(match.group(1))
+    if total_from_summary is not None:
+        return total_from_summary
+    return fallback_sum if matched else None
 
 
 def resolve_parkrun_volunteering_count(
