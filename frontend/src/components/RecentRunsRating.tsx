@@ -3,7 +3,7 @@ import { PlatformBadge } from "./PlatformBadge";
 import { ParticipationBadge } from "./ParticipationBadge";
 import { RateRunModal } from "./RateRunModal";
 import { getEligibleRuns, type EligibleRun, type RatingEligibility, type RunRating } from "../lib/api";
-import { formatDateLong } from "../lib/format";
+import { formatDateLong, pluralizeRu } from "../lib/format";
 
 const DISMISSED_STORAGE_KEY = "recentRatingsDismissed";
 
@@ -69,11 +69,19 @@ export function RecentRunsRating() {
   // из блока (иначе за месяц копится 5–6 карточек и блок растягивает экран).
   // Закрытие — только локально (не влияет на возможность оценить старт из
   // разделов «Пробежки»/«Волонтёрство»).
+  // Старты из добора истории (is_legacy) здесь НЕ показываем: их бывает под
+  // сотню, и блок про «недавние» превратился бы в ленту на весь экран. Они
+  // живут под ⭐ в «Пробежках»/«Волонтёрстве» — сюда даём только подсказку.
   const pending = data
-    ? data.runs.filter((run) => run.my_rating == null && !dismissed.has(run.entry_id))
+    ? data.runs.filter(
+        (run) => run.my_rating == null && !run.is_legacy && !dismissed.has(run.entry_id),
+      )
     : [];
+  const legacyCount = data
+    ? data.runs.filter((run) => run.my_rating == null && run.is_legacy).length
+    : 0;
 
-  if (!data || pending.length === 0) {
+  if (!data || (pending.length === 0 && legacyCount === 0)) {
     return null;
   }
 
@@ -81,10 +89,21 @@ export function RecentRunsRating() {
     <section className="recent-ratings" aria-label="Оценка недавних пробежек">
       <div className="recent-ratings-head">
         <h2 className="recent-ratings-title">Оцените недавние старты</h2>
-        <p className="recent-ratings-lead">
-          Старты за последние {data.window_days} дней — оцените, как всё прошло.
-        </p>
+        {pending.length > 0 && (
+          <p className="recent-ratings-lead">
+            Старты за последние {data.window_days} дней — оцените, как всё прошло.
+          </p>
+        )}
       </div>
+
+      {legacyCount > 0 && (
+        <p className="recent-ratings-legacy-hint muted">
+          Из вашей истории можно оценить{" "}
+          {pluralizeRu(legacyCount, ["локацию", "локации", "локаций"])} — по одному старту на
+          каждую, под ⭐ в <a href="/runs">«Пробежках»</a> и{" "}
+          <a href="/volunteering">«Волонтёрстве»</a>.
+        </p>
+      )}
 
       {!data.can_rate && (
         <p className="recent-ratings-gate">

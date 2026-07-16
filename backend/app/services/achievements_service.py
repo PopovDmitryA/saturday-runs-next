@@ -22,7 +22,17 @@ from uuid import UUID
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, UserGoal, VolunteerResult
+from app.models import (
+    Event,
+    Location,
+    LocationRating,
+    Participant,
+    Platform,
+    PlatformLink,
+    RunResult,
+    UserGoal,
+    VolunteerResult,
+)
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.user_location_stats import _canonical_region, _normalize_geo_value
 from app.time_format import normalize_finish_time_display
@@ -35,6 +45,19 @@ LEVEL_ORDER = ("bronze", "silver", "gold")
 _RU_ALPHABET = "АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЩЭЮЯ"
 
 _EPOCH_GUARD = date(1970, 1, 1)
+
+# Рецензия — комментарий не короче стольких символов (звёзд мало, нужен текст).
+REVIEW_MIN_COMMENT_LEN = 50
+
+
+@dataclass(frozen=True)
+class RatingRow:
+    """Оценка старта. rated_on — дата САМОЙ оценки, а не старта: счётчик растёт
+    в момент, когда человек оценил, и уровни датируются по нему."""
+
+    rated_on: date
+    platform_code: str
+    is_review: bool
 
 
 @dataclass(frozen=True)
@@ -91,6 +114,24 @@ def _collect_run_rows(db: Session, user_id: UUID) -> list[RunRow]:
             )
         )
     rows.sort(key=lambda row: (row.event_date, row.location_key))
+    return rows
+
+
+def _collect_rating_rows(db: Session, user_id: UUID) -> list[RatingRow]:
+    """Оценки пользователя: когда оценил, в какой системе, рецензия или звёзды."""
+    query = (
+        db.query(LocationRating.created_at, LocationRating.platform_code, LocationRating.comment)
+        .filter(LocationRating.user_id == user_id)
+    )
+    rows = [
+        RatingRow(
+            rated_on=created_at.date(),
+            platform_code=platform_code,
+            is_review=len((comment or "").strip()) >= REVIEW_MIN_COMMENT_LEN,
+        )
+        for created_at, platform_code, comment in query.all()
+    ]
+    rows.sort(key=lambda row: row.rated_on)
     return rows
 
 
@@ -757,6 +798,41 @@ def _pilgrim_challenge(rows: list[RunRow]) -> dict[str, object]:
     )
 
 
+def _inspector_challenge(rating_rows: list[RatingRow]) -> dict[str, object]:
+    levels = {"bronze": 25, "silver": 50, "gold": 100}
+    sorted_dates = sorted(row.rated_on for row in rating_rows)
+    return _challenge(
+        code="inspector",
+        title="Ревизор",
+        icon="🔍",
+        description="Оценивай старты, где бегал или волонтёрил: звёзды за организацию, трассу и атмосферу помогают другим выбрать, куда ехать.",
+        category="community",
+        current=len(sorted_dates),
+        levels=levels,
+        unit="оценок",
+        level_dates=_level_dates(sorted_dates, levels),
+    )
+
+
+def _reviewer_challenge(rating_rows: list[RatingRow]) -> dict[str, object]:
+    levels = {"bronze": 10, "silver": 25, "gold": 50}
+    sorted_dates = sorted(row.rated_on for row in rating_rows if row.is_review)
+    return _challenge(
+        code="reviewer",
+        title="Рецензент",
+        icon="📝",
+        description=(
+            f"Звёзд мало — расскажи словами. Отзыв от {REVIEW_MIN_COMMENT_LEN} символов: "
+            "как встретили новичков, понятен ли брифинг, легко ли найти старт, что по трассе."
+        ),
+        category="community",
+        current=len(sorted_dates),
+        levels=levels,
+        unit="рецензий",
+        level_dates=_level_dates(sorted_dates, levels),
+    )
+
+
 def _regions_challenge(rows: list[RunRow]) -> dict[str, object]:
     first_visit: dict[str, date] = {}
     for row in rows:
@@ -971,6 +1047,7 @@ def _build_challenge_list(
     rows: list[RunRow],
     vol_rows: dict[str, list[tuple[date, str]]],
     upcoming: dict[tuple[str, int], list[tuple[date, str]]],
+    rating_rows: list[RatingRow],
 ) -> list[dict[str, object]]:
     return [
         _seconds_challenge(rows),
@@ -1007,6 +1084,8 @@ def _build_challenge_list(
         _regions_challenge(rows),
         _streak_challenge(rows, vol_rows),
         _best_year_challenge(rows),
+        _inspector_challenge(rating_rows),
+        _reviewer_challenge(rating_rows),
     ]
 
 
@@ -1023,16 +1102,23 @@ def _scope_by_platform(
     rows: list[RunRow],
     vol_rows: dict[str, list[tuple[date, str]]],
     upcoming: dict[tuple[str, int], list[tuple[date, str]]],
+    rating_rows: list[RatingRow],
     platform_code: str | None,
-) -> tuple[list[RunRow], dict[str, list[tuple[date, str]]], dict[tuple[str, int], list[tuple[date, str]]]]:
-    """Сужает пробежки/волонтёрства/прогноз номеров до одной системы — для
+) -> tuple[
+    list[RunRow],
+    dict[str, list[tuple[date, str]]],
+    dict[tuple[str, int], list[tuple[date, str]]],
+    list[RatingRow],
+]:
+    """Сужает пробежки/волонтёрства/прогноз номеров/оценки до одной системы — для
     челленджей в разрезе платформы. None — без сужения (сквозной вид)."""
     if platform_code is None:
-        return rows, vol_rows, upcoming
+        return rows, vol_rows, upcoming, rating_rows
     scoped_rows = [row for row in rows if row.platform_code == platform_code]
     scoped_vol_rows = {code: v for code, v in vol_rows.items() if code == platform_code}
     scoped_upcoming = {key: v for key, v in upcoming.items() if key[0] == platform_code}
-    return scoped_rows, scoped_vol_rows, scoped_upcoming
+    scoped_rating_rows = [row for row in rating_rows if row.platform_code == platform_code]
+    return scoped_rows, scoped_vol_rows, scoped_upcoming, scoped_rating_rows
 
 
 def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = None) -> dict[str, object]:
@@ -1042,16 +1128,23 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
     rows = _collect_run_rows(db, user_id)
     vol_rows = _collect_volunteer_rows(db, user_id)
     upcoming = _upcoming_event_numbers(db)
+    rating_rows = _collect_rating_rows(db, user_id)
 
-    scoped_rows, scoped_vol_rows, scoped_upcoming = _scope_by_platform(rows, vol_rows, upcoming, platform_code)
+    scoped_rows, scoped_vol_rows, scoped_upcoming, scoped_rating_rows = _scope_by_platform(
+        rows, vol_rows, upcoming, rating_rows, platform_code
+    )
 
-    challenges = _build_challenge_list(db, scoped_rows, scoped_vol_rows, scoped_upcoming)
+    challenges = _build_challenge_list(
+        db, scoped_rows, scoped_vol_rows, scoped_upcoming, scoped_rating_rows
+    )
 
     rows_before = _rows_before_last_activity(scoped_rows)
     if rows_before is not None and len(rows_before) < len(scoped_rows):
         previous: dict[str, int] = {
             str(c["code"]): int(c["current"])  # type: ignore[call-overload]
-            for c in _build_challenge_list(db, rows_before, scoped_vol_rows, scoped_upcoming)
+            for c in _build_challenge_list(
+                db, rows_before, scoped_vol_rows, scoped_upcoming, scoped_rating_rows
+            )
         }
         for challenge in challenges:
             code = str(challenge["code"])

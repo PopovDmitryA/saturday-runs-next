@@ -15,6 +15,7 @@ import { RateRunModal } from "../../components/RateRunModal";
 import { RunRatingStar } from "../../components/RunRatingStar";
 import { useActivityFilters } from "../../hooks/useActivityFilters";
 import {
+  getEligibleRuns,
   getMyRatings,
   listProfileLinks,
   runEntryId,
@@ -40,7 +41,9 @@ function RunsContent() {
   const showRating = mode === "auth";
   const [ratingsMap, setRatingsMap] = useState<Map<string, MyRating>>(new Map());
   const [canRate, setCanRate] = useState(false);
-  const [createWindowDays, setCreateWindowDays] = useState(30);
+  // entry_id стартов, доступных к оценке прямо сейчас. Правило (окно 30 дней +
+  // добор по одному на неоценённую локацию) живёт на бэке — здесь только membership.
+  const [eligibleIds, setEligibleIds] = useState<Set<string>>(new Set());
   const [ratingsVersion, setRatingsVersion] = useState(0);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
 
@@ -85,13 +88,13 @@ function RunsContent() {
       return;
     }
     let cancelled = false;
-    getMyRatings()
-      .then((res) => {
+    Promise.all([getMyRatings(), getEligibleRuns()])
+      .then(([res, eligible]) => {
         if (cancelled) {
           return;
         }
         setCanRate(res.can_rate);
-        setCreateWindowDays(res.create_window_days);
+        setEligibleIds(new Set(eligible.runs.map((item) => item.entry_id)));
         // В таблице пробежек показываем только оценки-пробежки (у волонтёрских
         // run_result_id пуст — они живут в блоке «Оцените недавние старты»).
         setRatingsMap(
@@ -113,13 +116,10 @@ function RunsContent() {
   // После сохранения/удаления перечитываем оценки (проще, чем мержить локально).
   const reloadRatings = useCallback(() => setRatingsVersion((v) => v + 1), []);
 
-  // Свежий старт, который ещё можно оценить (в пределах окна создания).
-  const isWithinCreateWindow = useCallback(
-    (eventDate: string) => {
-      const days = (Date.now() - new Date(`${eventDate}T00:00:00`).getTime()) / 86_400_000;
-      return days <= createWindowDays;
-    },
-    [createWindowDays],
+  // Старт доступен к оценке, если бэк вернул его в списке доступных.
+  const isEligible = useCallback(
+    (runResultId: string) => eligibleIds.has(runEntryId(runResultId)),
+    [eligibleIds],
   );
 
   const buildEligibleRun = useCallback(
@@ -397,10 +397,7 @@ function RunsContent() {
                             ? ratingsMap.get(run.run_result_id)
                             : undefined;
                           const canCreate =
-                            canRate &&
-                            !rating &&
-                            !!run.run_result_id &&
-                            isWithinCreateWindow(run.event_date);
+                            canRate && !rating && !!run.run_result_id && isEligible(run.run_result_id);
                           return (
                             <td className="td-rating">
                               <RunRatingStar

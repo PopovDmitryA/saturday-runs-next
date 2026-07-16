@@ -140,6 +140,9 @@ class EligibleRunResponse(BaseModel):
     is_pr: bool = False
     volunteer_role: str | None = None
     event_url: str | None = None
+    # Старт из добора истории: он вне окна создания и доступен как единственный
+    # шанс оценить эту локацию.
+    is_legacy: bool = False
     my_rating: RatingResponse | None = None
 
 

@@ -684,7 +684,7 @@ export type Challenge = {
   title: string;
   icon: string;
   description: string;
-  category: "collection" | "coincidence" | "scale";
+  category: "collection" | "coincidence" | "scale" | "community";
   current: number;
   target: number;
   levels: { bronze: number; silver: number; gold: number };
@@ -1281,6 +1281,8 @@ export type EligibleRun = {
   is_pr: boolean;
   volunteer_role: string | null;
   event_url: string | null;
+  // Старт из добора истории: вне окна создания, единственный шанс оценить локацию.
+  is_legacy?: boolean;
   my_rating: RunRating | null;
 };
 

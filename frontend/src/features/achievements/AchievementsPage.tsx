@@ -42,12 +42,14 @@ const CATEGORY_TITLES: Record<Challenge["category"], string> = {
   collection: "Коллекции",
   coincidence: "Совпадения",
   scale: "Масштаб",
+  community: "Вклад",
 };
 
 const CATEGORY_HINTS: Record<Challenge["category"], string> = {
   collection: "Закрывай клетки коллекций — секунды, буквы, даты и номера.",
   coincidence: "Редкие совпадения в твоих результатах.",
   scale: "Долгие челленджи на объём: локации, регионы и серии.",
+  community: "Оценки и отзывы: то, что помогает другим выбрать, куда поехать.",
 };
 
 // Клетка коллекции красится в цвет системы, в которой она была закрыта раньше всего.
@@ -349,8 +351,16 @@ function ChallengeLevelTimeline({ challenge }: { challenge: Challenge }) {
   );
 }
 
-function ChallengeCard({ challenge }: { challenge: Challenge }) {
+// Куда вести с карточки, чтобы достижение можно было продвинуть прямо сейчас.
+// Только на своей странице: на чужом профиле звать оценивать нечего.
+const CHALLENGE_CTA: Record<string, { href: string; label: string }> = {
+  inspector: { href: "/runs", label: "Оценить старты →" },
+  reviewer: { href: "/runs", label: "Написать отзыв →" },
+};
+
+function ChallengeCard({ challenge, personal = false }: { challenge: Challenge; personal?: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  const cta = personal ? CHALLENGE_CTA[challenge.code] : undefined;
   const nextHint = challenge.next_level
     ? `До ${LEVEL_LABELS_TO[challenge.next_level]}: ${
         challenge.to_next_label ?? `ещё ${challenge.to_next_level ?? "—"}`
@@ -386,6 +396,11 @@ function ChallengeCard({ challenge }: { challenge: Challenge }) {
         <span className="challenge-next muted">{nextHint}</span>
       </div>
       <ChallengeLevelTimeline challenge={challenge} />
+      {cta && (
+        <a className="btn secondary btn-sm challenge-cta" href={cta.href}>
+          {cta.label}
+        </a>
+      )}
       {hasDetail(challenge) && (
         <>
           {expanded && <ChallengeDetailBlock challenge={challenge} />}
@@ -583,6 +598,7 @@ function GoalsSection({
 export function AchievementsShowcase({
   data,
   goalsSection,
+  personal = false,
   platformFilter = null,
   onPlatformFilterChange,
   platformSwitching = false,
@@ -590,6 +606,8 @@ export function AchievementsShowcase({
   data: AchievementsResponse;
   // «Цели на год» — личный раздел; на публичном профиле не передаётся.
   goalsSection?: ReactNode;
+  // Своя страница достижений: показываем ссылки «оценить» на карточках.
+  personal?: boolean;
   platformFilter?: string | null;
   onPlatformFilterChange?: (platform: string | null) => void;
   platformSwitching?: boolean;
@@ -599,6 +617,7 @@ export function AchievementsShowcase({
       collection: [],
       coincidence: [],
       scale: [],
+      community: [],
     };
     for (const challenge of data.challenges) {
       groups[challenge.category]?.push(challenge);
@@ -656,7 +675,7 @@ export function AchievementsShowcase({
                 <div className="challenge-grid">
                   {grouped[category].map((challenge) => (
                     <div key={challenge.code} id={`challenge-${challenge.code}`}>
-                      <ChallengeCard challenge={challenge} />
+                      <ChallengeCard challenge={challenge} personal={personal} />
                     </div>
                   ))}
                 </div>
@@ -716,6 +735,7 @@ function AchievementsContent() {
           <AchievementsShowcase
             data={achievements}
             goalsSection={<GoalsSection goals={goals} onEdit={() => setEditOpen(true)} />}
+            personal
             platformFilter={platformFilter}
             onPlatformFilterChange={setPlatformFilter}
             platformSwitching={switching}

@@ -25,10 +25,19 @@ from app.time_format import normalize_finish_time_display
 
 # Право оценивать: минимум столько пробежек в истории (по всем системам).
 MIN_RUNS_TO_RATE = 5
-# Поставить НОВУЮ оценку можно старту за последние N дней (скользящее окно).
+# Поставить НОВУЮ оценку можно любому старту за последние N дней (скользящее окно).
 RATING_WINDOW_DAYS = 30
-# Исправить/удалить оценку можно, пока старту не больше N дней; дальше — фиксируем.
+# Исправить/удалить оценку можно, пока старту (или самой оценке) не больше N
+# дней; дальше — фиксируем. Оценка из добора считается от даты оценки: старту
+# может быть и два года, но исправить его владельцу оценки мы даём.
 RATING_EDIT_WINDOW_DAYS = 90
+# Добор истории: за пределами окна создания даём оценить по ОДНОМУ старту на
+# локацию — самый свежий из «старых», и только там, где пользователь ещё ни разу
+# не оценивал. Привязка к локации, а не к дате: иначе слот возрождался бы каждый
+# раз, когда очередная пробежка выпадает из окна, и «один раз» перестало бы быть
+# правдой.
+# parkrun в добор не входит — его историю не оцениваем.
+LEGACY_EXCLUDED_PLATFORMS = frozenset({"parkrun"})
 # Рейтинг локации показываем только с этого числа РАЗНЫХ оценивших (v2).
 LOCATION_RATING_MIN_VOTERS = 10
 
@@ -80,10 +89,22 @@ def count_user_total_runs(db: Session, user_id: UUID, *, include_test_events: bo
     return query.count()
 
 
-def _is_editable(event_date: date, today: date | None = None) -> bool:
-    """Оценку можно менять/удалять, пока старту не больше окна редактирования."""
+def _is_editable(
+    event_date: date,
+    today: date | None = None,
+    created_at: datetime | None = None,
+) -> bool:
+    """Оценку можно менять/удалять, пока старту не больше окна редактирования —
+    либо пока не истекло то же окно с момента самой оценки. Второе — про добор
+    истории: старт двухлетней давности иначе фиксировался бы в ту же секунду,
+    что и поставлен, и опечатку было бы не исправить."""
     today = today or date.today()
-    return event_date >= today - timedelta(days=RATING_EDIT_WINDOW_DAYS)
+    cutoff = today - timedelta(days=RATING_EDIT_WINDOW_DAYS)
+    if event_date >= cutoff:
+        return True
+    if created_at is not None:
+        return created_at.astimezone(timezone.utc).date() >= cutoff
+    return False
 
 
 def _rating_to_dict(rating: LocationRating, *, today: date | None = None) -> dict[str, object]:
@@ -99,14 +120,46 @@ def _rating_to_dict(rating: LocationRating, *, today: date | None = None) -> dic
         "comment": rating.comment,
         "is_public": rating.is_public,
         # можно ли ещё исправить/удалить (в пределах 3 месяцев) или уже зафиксировано
-        "editable": _is_editable(rating.event_date, today),
+        "editable": _is_editable(rating.event_date, today, rating.created_at),
         "created_at": rating.created_at,
         "updated_at": rating.updated_at,
     }
 
 
+def _rated_location_keys(db: Session, user_id: UUID) -> set[str]:
+    """Локации, где пользователь уже хоть раз оценивал (канонические ключи)."""
+    rows = (
+        db.query(LocationRating.location_key)
+        .filter(LocationRating.user_id == user_id)
+        .distinct()
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def _select_legacy_entries(
+    older_entries: list[dict[str, object]],
+    rated_location_keys: set[str],
+) -> list[dict[str, object]]:
+    """Добор истории: по одному старту на локацию — самый свежий из «старых» и
+    только там, где пользователь ещё ни разу не оценивал. parkrun пропускаем."""
+    best: dict[str, dict[str, object]] = {}
+    for entry in older_entries:
+        if cast(str, entry["platform_code"]) in LEGACY_EXCLUDED_PLATFORMS:
+            continue
+        identity = cast(str, entry["_identity"])
+        if identity in rated_location_keys:
+            continue
+        current = best.get(identity)
+        if current is None or cast(date, entry["event_date"]) > cast(date, current["event_date"]):
+            best[identity] = entry
+    return list(best.values())
+
+
 def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
-    """Старты пользователя за окно (пробежки + волонтёрства, дедуп кросслинков)."""
+    """Старты, доступные к оценке: всё за окно создания (30 дней) + добор истории
+    по одному старту на неоценённую локацию (пробежки + волонтёрства, дедуп
+    кросслинков)."""
     today = date.today()
     since = today - timedelta(days=RATING_WINDOW_DAYS)
 
@@ -127,7 +180,6 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
             PlatformLink.user_id == user_id,
             PlatformLink.platform_id == Platform.id,
             Event.is_test_event.is_(False),
-            Event.event_date >= since,
             Event.event_date <= today,
         )
         .all()
@@ -157,6 +209,7 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
                 profile_url=participant.profile_url,
             ),
             "_platform_order": _PLATFORM_ORDER.get(platform_code, 9),
+            "_identity": identity,
         }
         existing = by_key.get(key)
         if existing is None or cast(int, entry["_platform_order"]) < cast(
@@ -175,7 +228,6 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
             PlatformLink.user_id == user_id,
             PlatformLink.platform_id == Platform.id,
             Event.is_test_event.is_(False),
-            Event.event_date >= since,
             Event.event_date <= today,
         )
         .all()
@@ -225,10 +277,21 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
                 profile_url=participant.profile_url,
             ),
             "_platform_order": _PLATFORM_ORDER.get(platform_code, 9),
+            "_identity": key[1],
         }
 
+    # Свежие старты (окно создания) доступны все; из остальных добираем по одному
+    # на локацию, где пользователь ещё не оценивал.
+    recent = [e for e in by_key.values() if cast(date, e["event_date"]) >= since]
+    older = [e for e in by_key.values() if cast(date, e["event_date"]) < since]
+    legacy = _select_legacy_entries(older, _rated_location_keys(db, user_id))
+    for entry in recent:
+        entry["is_legacy"] = False
+    for entry in legacy:
+        entry["is_legacy"] = True
+
     entries = sorted(
-        by_key.values(), key=lambda e: cast(date, e["event_date"]), reverse=True
+        recent + legacy, key=lambda e: cast(date, e["event_date"]), reverse=True
     )
 
     run_ids = [
@@ -255,6 +318,7 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
 
     for entry in entries:
         entry.pop("_platform_order", None)
+        entry.pop("_identity", None)
         existing_rating = ratings_by_entry.get(cast(str, entry["entry_id"]))
         entry["my_rating"] = _rating_to_dict(existing_rating) if existing_rating else None
 
@@ -357,16 +421,26 @@ def upsert_rating(
         )
 
     if rating is None:
-        # Новая оценка — только на свежий старт (окно создания 30 дней).
-        if event.event_date < today - timedelta(days=RATING_WINDOW_DAYS):
+        # Новая оценка — только на старт, который сейчас доступен к оценке.
+        # Спрашиваем ровно тот же список, что видит пользователь, чтобы правило
+        # (окно 30 дней + добор по одному на локацию) жило в одном месте.
+        eligible_ids = {
+            cast(str, entry["entry_id"])
+            for entry in cast(list[dict[str, object]], list_eligible_runs(db, user.id)["runs"])
+        }
+        if entry_id not in eligible_ids:
+            if event.event_date >= today - timedelta(days=RATING_WINDOW_DAYS):
+                raise RatingError("Этот старт нельзя оценить")
             raise RatingError(
-                f"Оценить можно только старты за последние {RATING_WINDOW_DAYS} дней"
+                f"Старты старше {RATING_WINDOW_DAYS} дней можно оценить только по "
+                "одному на локацию — самый свежий там, где вы ещё не оценивали. "
+                "parkrun в добор не входит."
             )
     else:
-        # Правка существующей — пока старту не больше окна редактирования (3 мес).
-        if not _is_editable(event.event_date, today):
+        # Правка существующей — пока старт (или сама оценка) в окне редактирования.
+        if not _is_editable(event.event_date, today, rating.created_at):
             raise RatingError(
-                "Оценка зафиксирована: старту больше 3 месяцев, изменить нельзя"
+                "Оценка зафиксирована: прошло больше 3 месяцев, изменить нельзя"
             )
 
     catalog_index = LocationCatalogIndex(db)
@@ -416,9 +490,9 @@ def delete_rating(db: Session, user_id: UUID, entry_id: str) -> bool:
     )
     if rating is None:
         return False
-    if not _is_editable(rating.event_date):
+    if not _is_editable(rating.event_date, None, rating.created_at):
         raise RatingError(
-            "Оценка зафиксирована: старту больше 3 месяцев, удалить нельзя"
+            "Оценка зафиксирована: прошло больше 3 месяцев, удалить нельзя"
         )
     db.delete(rating)
     db.flush()

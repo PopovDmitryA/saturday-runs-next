@@ -6882,6 +6882,13 @@ tr.run-crosslinked td {
   color: var(--text-muted);
 }
 
+/* Подсказка про добор истории: сами карточки старых стартов живут под ⭐ в
+   «Пробежках»/«Волонтёрстве», здесь только указатель. */
+.recent-ratings-legacy-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+}
+
 .recent-ratings-gate {
   margin: 0 0 0.6rem;
   font-size: 0.85rem;
@@ -8182,6 +8189,12 @@ tr.run-crosslinked td {
   gap: 0.6rem;
   scroll-margin-top: 5rem;
   min-width: 0;
+}
+
+/* Ссылка «оценить старты» на карточках достижений за оценки — только у себя. */
+.challenge-cta {
+  align-self: flex-start;
+  text-decoration: none;
 }
 
 /* Переключатель «сквозной / по системам» над сеткой челленджей */

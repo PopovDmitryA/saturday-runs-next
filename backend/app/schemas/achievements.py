@@ -22,7 +22,7 @@ class ChallengeResponse(BaseModel):
     title: str
     icon: str
     description: str
-    # collection | coincidence | scale
+    # collection | coincidence | scale | community
     category: str
     current: int
     target: int

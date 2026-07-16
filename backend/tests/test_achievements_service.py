@@ -6,6 +6,8 @@ from datetime import date, timedelta
 
 from app.models import UserGoal
 from app.services.achievements_service import (
+    REVIEW_MIN_COMMENT_LEN,
+    RatingRow,
     RunRow,
     _best_year_challenge,
     _best_year_level_dates,
@@ -15,6 +17,7 @@ from app.services.achievements_service import (
     _deja_vu_challenge,
     _first_letter,
     _goal_progress,
+    _inspector_challenge,
     _level_dates,
     _max_saturday_streak,
     _number_match_challenge,
@@ -23,6 +26,7 @@ from app.services.achievements_service import (
     _palindrome_challenge,
     _positions_challenge,
     _resolve_level,
+    _reviewer_challenge,
     _rows_before_last_activity,
     _runs_needed_for_p,
     _saturdays_left,
@@ -61,6 +65,14 @@ def _row(
         platform_code=platform_code,
         is_pr=is_pr,
     )
+
+
+def _rating_row(
+    rated_on: date = date(2026, 1, 4),
+    platform_code: str = "five_verst",
+    is_review: bool = False,
+) -> RatingRow:
+    return RatingRow(rated_on=rated_on, platform_code=platform_code, is_review=is_review)
 
 
 def test_resolve_level_progression() -> None:
@@ -169,13 +181,67 @@ def test_scope_by_platform_filters_rows_vol_rows_and_upcoming() -> None:
         ("five_verst", 42): [(date(2026, 1, 17), "Кузьминки")],
         ("s95", 42): [(date(2026, 1, 17), "Сокольники")],
     }
+    rating_rows = [
+        _rating_row(platform_code="five_verst", rated_on=date(2026, 1, 4)),
+        _rating_row(platform_code="s95", rated_on=date(2026, 1, 11)),
+    ]
 
-    scoped_rows, scoped_vol_rows, scoped_upcoming = _scope_by_platform(rows, vol_rows, upcoming, "s95")
+    scoped_rows, scoped_vol_rows, scoped_upcoming, scoped_rating_rows = _scope_by_platform(
+        rows, vol_rows, upcoming, rating_rows, "s95"
+    )
     assert [row.platform_code for row in scoped_rows] == ["s95"]
     assert set(scoped_vol_rows) == {"s95"}
     assert set(scoped_upcoming) == {("s95", 42)}
+    assert [row.platform_code for row in scoped_rating_rows] == ["s95"]
 
-    assert _scope_by_platform(rows, vol_rows, upcoming, None) == (rows, vol_rows, upcoming)
+    assert _scope_by_platform(rows, vol_rows, upcoming, rating_rows, None) == (
+        rows,
+        vol_rows,
+        upcoming,
+        rating_rows,
+    )
+
+
+def test_inspector_counts_every_rating() -> None:
+    rows = [_rating_row(rated_on=date(2026, 1, 4) + timedelta(days=i)) for i in range(25)]
+    challenge = _inspector_challenge(rows)
+    assert challenge["code"] == "inspector"
+    assert challenge["current"] == 25
+    # Бронза — на 25-й оценке, то есть в день последней из них.
+    assert challenge["level"] == "bronze"
+    assert challenge["level_dates"]["bronze"] == (date(2026, 1, 4) + timedelta(days=24)).isoformat()  # type: ignore[index]
+
+
+def test_inspector_empty_has_no_level() -> None:
+    challenge = _inspector_challenge([])
+    assert challenge["current"] == 0
+    assert challenge["level"] is None
+    assert challenge["level_dates"] == {"bronze": None, "silver": None, "gold": None}
+
+
+def test_reviewer_counts_only_reviews() -> None:
+    rows = [
+        *[_rating_row(rated_on=date(2026, 1, 4), is_review=False) for _ in range(12)],
+        *[_rating_row(rated_on=date(2026, 1, 5), is_review=True) for _ in range(10)],
+    ]
+    challenge = _reviewer_challenge(rows)
+    assert challenge["code"] == "reviewer"
+    # Голые звёзды в рецензии не идут — только 10 развёрнутых.
+    assert challenge["current"] == 10
+    assert challenge["level"] == "bronze"
+
+
+def test_reviewer_and_inspector_count_same_rating_once_each() -> None:
+    # Одна оценка с текстом двигает оба счётчика: Ревизор считает все оценки,
+    # Рецензент — только развёрнутые.
+    rows = [_rating_row(is_review=True)]
+    assert _inspector_challenge(rows)["current"] == 1
+    assert _reviewer_challenge(rows)["current"] == 1
+
+
+def test_review_min_comment_len_matches_product_rule() -> None:
+    # Порог рецензии зафиксирован в посте и в тексте достижения.
+    assert REVIEW_MIN_COMMENT_LEN == 50
 
 
 def test_number_match_uses_chronological_run_index() -> None:

@@ -12,6 +12,7 @@ import { RateRunModal } from "../../components/RateRunModal";
 import { RunRatingStar } from "../../components/RunRatingStar";
 import { useVolunteeringFilters } from "../../hooks/useVolunteeringFilters";
 import {
+  getEligibleRuns,
   getMyRatings,
   listProfileLinks,
   type EligibleRun,
@@ -37,7 +38,8 @@ function VolunteeringContent() {
   const showRating = mode === "auth";
   const [ratingsMap, setRatingsMap] = useState<Map<string, MyRating>>(new Map());
   const [canRate, setCanRate] = useState(false);
-  const [createWindowDays, setCreateWindowDays] = useState(30);
+  // entry_id стартов, доступных к оценке прямо сейчас (правило считает бэк).
+  const [eligibleIds, setEligibleIds] = useState<Set<string>>(new Set());
   const [ratingsVersion, setRatingsVersion] = useState(0);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
 
@@ -111,13 +113,13 @@ function VolunteeringContent() {
       return;
     }
     let cancelled = false;
-    getMyRatings()
-      .then((res) => {
+    Promise.all([getMyRatings(), getEligibleRuns()])
+      .then(([res, eligible]) => {
         if (cancelled) {
           return;
         }
         setCanRate(res.can_rate);
-        setCreateWindowDays(res.create_window_days);
+        setEligibleIds(new Set(eligible.runs.map((entry) => entry.entry_id)));
         // В таблице волонтёрств показываем только волонтёрские оценки
         // (run_result_id пуст), keyed по entry_id.
         setRatingsMap(
@@ -138,13 +140,10 @@ function VolunteeringContent() {
 
   const reloadRatings = useCallback(() => setRatingsVersion((v) => v + 1), []);
 
-  // Свежее волонтёрство, которое ещё можно оценить (в пределах окна создания).
-  const isWithinCreateWindow = useCallback(
-    (eventDate: string) => {
-      const days = (Date.now() - new Date(`${eventDate}T00:00:00`).getTime()) / 86_400_000;
-      return days <= createWindowDays;
-    },
-    [createWindowDays],
+  // Волонтёрство доступно к оценке, если бэк вернул его в списке доступных.
+  const isEligible = useCallback(
+    (ratingEntryId: string) => eligibleIds.has(ratingEntryId),
+    [eligibleIds],
   );
 
   const buildEligibleRun = useCallback(
@@ -389,7 +388,7 @@ function VolunteeringContent() {
                             !rating &&
                             !!item.rating_entry_id &&
                             !item.is_crosslinked &&
-                            isWithinCreateWindow(item.event_date);
+                            isEligible(item.rating_entry_id);
                           return (
                             <td className="td-rating">
                               <RunRatingStar
