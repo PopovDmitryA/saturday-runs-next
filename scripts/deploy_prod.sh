@@ -184,7 +184,24 @@ compose exec -T redis redis-cli LLEN five_verst_user </dev/null || true
 
 echo "--- smoke ---"
 compose ps --format '{{.Service}}: {{.Status}}'
-curl -s -o /dev/null -w "health: %{http_code}\n" http://127.0.0.1:8080/health || true
+
+# API поднимается несколько секунд после recreate. Раньше smoke стрелял сразу и
+# ловил 502/000 на живом проде — ложная тревога, которую легко принять за аварию.
+# Ждём настоящий ответ до 60с. И smoke больше НЕ `|| true`: если прод не встал,
+# деплой обязан упасть с ненулевым кодом, а не отрапортовать «deploy done».
+health=""
+for _ in $(seq 1 30); do
+  health="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health || true)"
+  [ "$health" = "200" ] && break
+  sleep 2
+done
+if [ "$health" != "200" ]; then
+  echo "DEPLOY FAILED: health=${health:-нет ответа} спустя 60с — прод не поднялся." >&2
+  echo "--- api logs (last 30) ---" >&2
+  compose logs api --tail 30 >&2 || true
+  exit 1
+fi
+echo "health: 200 (ok)"
 curl -sI 'https://run5k.run/d/de1hu8dabny80c/karta-turistov' 2>/dev/null | head -1 || true
 
 echo "--- prod git == deployed commit ---"
