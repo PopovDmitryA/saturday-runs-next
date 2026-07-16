@@ -72,6 +72,39 @@ def test_parse_activity_basic():
     assert parsed.athlete_codes["15723"]["parkrun_code"] == 1267623
 
 
+def test_parse_activity_unknown_runners_get_unique_ids():
+    """Безымянные («НЕИЗВЕСТНЫЙ», athlete без id) не должны делить один
+    external_user_id — иначе upsert схлопывает их в одну строку run_results
+    (Троицк 30.05.2026: 791 финишёр на сайте, 530 в БД)."""
+    activity = {
+        "date": "30.05.2026",
+        "event": {"name": "Троицк", "code_name": "troitsk"},
+        "results": [
+            {"total_time": "24:27", "position": 1, "athlete": {"id": 15512, "name": "Наталия МАШТАКОВА"}},
+            {"total_time": None, "position": 2, "athlete": {"name": "НЕИЗВЕСТНЫЙ"}},
+            {"total_time": None, "position": 3, "athlete": {"name": "НЕИЗВЕСТНЫЙ"}},
+            {"total_time": None, "position": 4, "athlete": {"name": "Иван БЕЗКОДА"}},
+        ],
+        "volunteers": [],
+    }
+    parsed = parse_s95_activity(
+        activity,
+        location_external_key="troitsk",
+        location_name="Троицк",
+        source_url="https://s95.ru/activities/4242.json",
+    )
+    assert len(parsed.run_results) == 4
+    ids = [r.external_user_id for r in parsed.run_results]
+    assert len(set(ids)) == 4
+    assert ids[1] == "unknown:troitsk:2026-05-30:2"
+    assert ids[2] == "unknown:troitsk:2026-05-30:3"
+    assert parsed.run_results[1].status == "unknown_runner"
+    assert parsed.run_results[2].status == "unknown_runner"
+    # Именованный участник без id сохраняет прежний формат (стабилен между забегами)
+    assert ids[3] == "unknown:Иван БЕЗКОДА"
+    assert parsed.run_results[3].status is None
+
+
 def test_activity_ref_updated_at_dt_parses_offset_iso():
     ref = S95ApiActivityRef(date="2024-10-26", url="x", updated_at="2026-03-16T16:50:14+03:00")
     dt = ref.updated_at_dt()

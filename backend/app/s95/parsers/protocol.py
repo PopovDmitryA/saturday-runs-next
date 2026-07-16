@@ -126,8 +126,15 @@ def _parse_protocol_row(
         pace_sec_per_km, pace_display = parse_pace_value(_cell_text(cols, pace_idx))
 
     external_user_id = _athlete_id_from_href(athlete_href)
-    if athlete_name in UNKNOWN_NAMES or external_user_id is None:
-        external_user_id = external_user_id or f"unknown:{athlete_name or 'runner'}"
+    if external_user_id is None:
+        if athlete_name in UNKNOWN_NAMES:
+            # «НЕИЗВЕСТНЫЙ» — все безымянные делят одно имя; без уникального id они
+            # схлопнутся в одну строку через fallback по (event_id, participant_id).
+            external_user_id = (
+                f"unknown:{location_external_key}:{event_date.isoformat()}:{position or 0}"
+            )
+        else:
+            external_user_id = f"unknown:{athlete_name or 'runner'}"
 
     if not athlete_name and external_user_id.startswith("unknown:"):
         return None
