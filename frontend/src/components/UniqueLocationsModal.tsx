@@ -9,6 +9,7 @@ import {
   uniqueLocationsLabel,
 } from "../lib/format";
 import { ColumnHeader, PlainColumnHeader } from "./activityTable/ColumnHeader";
+import { LocationNameLink } from "./LocationNameLink";
 import { PlatformBadge } from "./PlatformBadge";
 import { DetailModal } from "./DetailModal";
 import {
@@ -268,7 +269,9 @@ function ModalContent({
                 return (
                   <tr key={row.location.catalog_identity_key}>
                     <td className="col-location">
-                      <span className="unique-locations-name">{row.location.name}</span>
+                      <span className="unique-locations-name">
+                        <LocationNameLink name={row.location.name} slug={row.location.location_slug} />
+                      </span>
                       {activityFilter !== "volunteering" && !row.location.has_coordinates && (
                         <span className="unique-locations-badge-muted">нет на карте</span>
                       )}

@@ -14,6 +14,9 @@ import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
 import { DemoDashboardPage } from "./features/demo/DemoDashboardPage";
 import { LandingPage } from "./features/landing/LandingPage";
 import { DemoMapsPage, MapsPage } from "./features/maps/MapsPage";
+import { LocationEventsPage } from "./features/locations/LocationEventsPage";
+import { LocationPage } from "./features/locations/LocationPage";
+import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
 import { CoRunnersPage, DemoCoRunnersPage } from "./features/co_runners/CoRunnersPage";
 import { DemoRunsPage, RunsPage } from "./features/runs/RunsPage";
 import { DemoVolunteeringPage, VolunteeringPage } from "./features/volunteering/VolunteeringPage";
@@ -73,6 +76,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/co-runners": () => <CoRunnersPage />,
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
+  "/locations": () => <LocationsIndexPage />,
   "/share": () => <SharePage />,
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
@@ -129,6 +133,14 @@ function renderRoute(path: string): ReactElement {
   const publicProfileMatch = path.match(/^\/users\/([^/]+)$/);
   if (publicProfileMatch) {
     return <PublicProfilePage handle={decodeURIComponent(publicProfileMatch[1])} />;
+  }
+  const locationEventsMatch = path.match(/^\/locations\/([^/]+)\/events$/);
+  if (locationEventsMatch) {
+    return <LocationEventsPage slug={decodeURIComponent(locationEventsMatch[1])} />;
+  }
+  const locationMatch = path.match(/^\/locations\/([^/]+)$/);
+  if (locationMatch) {
+    return <LocationPage slug={decodeURIComponent(locationMatch[1])} />;
   }
   const render = STATIC_ROUTES[path];
   if (render) {

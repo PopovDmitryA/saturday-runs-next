@@ -123,6 +123,7 @@ def build_user_unique_location_details(
                 "is_paused": False,
                 "is_cancelled": False,
                 "platforms": {},
+                "slug_by_platform": {},
             }
             buckets[identity_key] = bucket
         return bucket
@@ -182,6 +183,9 @@ def build_user_unique_location_details(
             bucket["is_paused"] = True
         if getattr(location, "is_cancelled", False):
             bucket["is_cancelled"] = True
+
+        slug_by_platform: dict[str, str] = bucket["slug_by_platform"]  # type: ignore[assignment]
+        slug_by_platform.setdefault(platform_code, location.external_key.strip().lower())
 
         platform_bucket = _ensure_platform(bucket, platform_code, location)
         if kind == "run":
@@ -254,9 +258,12 @@ def build_user_unique_location_details(
             )
         first_visit = bucket["first_visit_date"]
         last_visit = bucket["last_visit_date"]
+        slug_by_platform: dict[str, str] = bucket["slug_by_platform"]  # type: ignore[assignment]
+        slug_platforms = sorted(slug_by_platform.keys(), key=_platform_sort_key)
         locations.append(
             {
                 "catalog_identity_key": bucket["catalog_identity_key"],
+                "location_slug": slug_by_platform[slug_platforms[0]] if slug_platforms else None,
                 "name": bucket["name"],
                 "city": bucket["city"],
                 "region": bucket["region"],

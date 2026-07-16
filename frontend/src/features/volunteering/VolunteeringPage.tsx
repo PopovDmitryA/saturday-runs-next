@@ -5,6 +5,7 @@ import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
 import { AppShell } from "../../components/AppShell";
 import { EmptyActivityState } from "../../components/EmptyActivityState";
+import { LocationNameLink } from "../../components/LocationNameLink";
 import { RequireAuth } from "../../components/RequireAuth";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RateRunModal } from "../../components/RateRunModal";
@@ -374,7 +375,9 @@ function VolunteeringContent() {
                       <td className="td-platform">
                         <PlatformBadge code={item.platform_code} />
                       </td>
-                      <td className="td-location">{item.location_name}</td>
+                      <td className="td-location">
+                        <LocationNameLink name={item.location_name} slug={item.location_slug} />
+                      </td>
                       <td className="td-role">{item.role ?? "—"}</td>
                       {showRating &&
                         (() => {

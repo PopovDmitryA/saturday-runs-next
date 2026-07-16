@@ -55,6 +55,7 @@ def list_user_visited_map_locations(
             {
                 "id": str(location["catalog_identity_key"]),
                 "catalog_identity_key": location["catalog_identity_key"],
+                "location_slug": location.get("location_slug"),
                 "name": location["name"],
                 "latitude": location["latitude"],
                 "longitude": location["longitude"],
@@ -116,6 +117,7 @@ def list_catalog_map_locations(db: Session) -> dict[str, object]:
             bucket = {
                 "id": str(location.id),
                 "catalog_identity_key": identity_key,
+                "location_slug": location.external_key.strip().lower(),
                 "name": catalog_index.display_name(location, platform.code),
                 "latitude": location.latitude,
                 "longitude": location.longitude,

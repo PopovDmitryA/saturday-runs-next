@@ -927,6 +927,7 @@ def list_user_runs(
             "location_source_name": location.name,
             "location_city": location.city,
             "location_country": location.country,
+            "location_slug": location.external_key.strip().lower(),
             "position": run.position,
             "gender_position": run.gender_position,
             "finish_time_display": normalize_finish_time_display(
@@ -1171,6 +1172,7 @@ def list_user_volunteering(
                 "location_source_name": location.name,
                 "location_city": location.city,
                 "location_country": location.country,
+                "location_slug": location.external_key.strip().lower(),
                 "role": volunteer.role,
                 "volunteer_result_id": volunteer.id,
                 # Опаковый id для оценки (общий на все роли одного старта).
