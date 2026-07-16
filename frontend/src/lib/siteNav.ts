@@ -6,6 +6,8 @@ export const APP_NAV_ITEMS: SiteNavItem[] = [
   { href: "/volunteering", label: "Волонтёрство" },
   { href: "/achievements", label: "Достижения" },
   { href: "/co-runners", label: "Встречи" },
+  // ВРЕМЕННО до публичного запуска: пункт виден только админу (страницы и API тоже под гейтом).
+  { href: "/ratings", label: "Рейтинги", adminOnly: true },
   { href: "/maps", label: "Карта" },
   { href: "/history", label: "Моя история" },
   { href: "/share", label: "Поделиться" },

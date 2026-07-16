@@ -19,12 +19,15 @@ import { CoRunnersPage, DemoCoRunnersPage } from "./features/co_runners/CoRunner
 import { DemoRunsPage, RunsPage } from "./features/runs/RunsPage";
 import { DemoHistoryPage, HistoryPage } from "./features/history/HistoryPage";
 import { DemoVolunteeringPage, VolunteeringPage } from "./features/volunteering/VolunteeringPage";
+import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
+import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SharePage } from "./features/share/SharePage";
 import { AboutPage } from "./features/about/AboutPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
+import { RequireAdmin } from "./components/RequireAdmin";
 import { useAppPath } from "./hooks/useAppPath";
 import { getCurrentUser, recordSitePageview } from "./lib/api";
 import { isLegacyGrafanaPath, legacyGrafanaHref } from "./lib/siteBrand";
@@ -78,6 +81,27 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
   "/history": () => <HistoryPage />,
+  // ВРЕМЕННО до публичного запуска: рейтинги только для админа (плюс гейт на API).
+  "/ratings": () => (
+    <RequireAdmin>
+      <LeaderboardsHubPage />
+    </RequireAdmin>
+  ),
+  "/ratings/runs": () => (
+    <RequireAdmin>
+      <LeaderboardPage metric="runs" />
+    </RequireAdmin>
+  ),
+  "/ratings/volunteering": () => (
+    <RequireAdmin>
+      <LeaderboardPage metric="volunteering" />
+    </RequireAdmin>
+  ),
+  "/ratings/locations": () => (
+    <RequireAdmin>
+      <LeaderboardPage metric="locations" />
+    </RequireAdmin>
+  ),
   "/share": () => <SharePage />,
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
