@@ -138,8 +138,9 @@ def test_recalculate_parkrun_prs_global_best_across_locations(
     stats = recalculate_personal_records(db_session, "parkrun", participant_id=participant.id)
     db_session.flush()
 
-    assert stats["pr_runs"] == 2
-    assert first.is_pr is True
+    # Дебют — базовая точка, не рекорд; рекорд только у более быстрого забега.
+    assert stats["pr_runs"] == 1
+    assert first.is_pr is False
     assert faster_other_loc.is_pr is True
     assert slower_repeat.is_pr is False
 
@@ -189,8 +190,8 @@ def test_recalculate_parkrun_prs_marks_improvements_only(
     stats = recalculate_personal_records(db_session, "parkrun", participant_id=participant.id)
     db_session.flush()
 
-    assert stats["pr_runs"] == 2
-    assert slow.is_pr is True
+    assert stats["pr_runs"] == 1
+    assert slow.is_pr is False  # дебют — baseline, не рекорд
     assert wrong_pr.is_pr is False
     assert fast.is_pr is True
 
@@ -237,5 +238,6 @@ def test_recalculate_parkrun_prs_single_participant_does_not_reset_others(
     recalculate_personal_records(db_session, "parkrun", participant_id=participant_a.id)
     db_session.flush()
 
-    assert run_a.is_pr is True
+    # У A дебют перестаёт быть рекордом, а B пересчёт не трогает вовсе.
+    assert run_a.is_pr is False
     assert run_b.is_pr is True

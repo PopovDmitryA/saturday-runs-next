@@ -138,11 +138,22 @@ def linking_sync_should_run(
 
 def complete_link_without_sync(db: Session, link) -> None:
     from app.services.dashboard_service import recompute_dashboard_cache
+    from app.services.personal_record_service import (
+        recalculate_participants_cross_platform_personal_records,
+        recalculate_participants_personal_records,
+    )
 
     link.sync_status = PlatformLinkSyncStatus.ok
     link.error_message = None
     link.last_user_sync_at = datetime.now(timezone.utc)
     db.flush()
+    # Celery-синк пропускается, а привязка меняет состав платформ пользователя —
+    # без пересчёта is_pr и кросс-платформенных рекордов флаги останутся от
+    # старого состава (или от batch-истории без привязки).
+    platform = db.get(Platform, link.platform_id)
+    if platform is not None and link.participant_id is not None:
+        recalculate_participants_personal_records(db, platform.code, {link.participant_id})
+        recalculate_participants_cross_platform_personal_records(db, {link.participant_id})
     recompute_dashboard_cache(db, link.user_id)
     db.commit()
 

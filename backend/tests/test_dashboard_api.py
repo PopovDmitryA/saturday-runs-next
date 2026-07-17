@@ -208,7 +208,8 @@ def test_dashboard_returns_stats_from_global_core(authenticated_client: TestClie
     assert analytics["runs_to_next_milestone"] == 9
     assert analytics["new_locations_last_12_months"] == 1
     assert analytics["last_pr_date"] == "2099-06-01"
-    assert analytics["last_global_pr_date"] == "2099-06-01"
+    # Единственная (первая вообще) пробежка — baseline, глобальным рекордом не является.
+    assert analytics["last_global_pr_date"] is None
     assert analytics["pr_last_12_months"] == 1
     assert analytics["avg_vs_field_pct"] == 5.1
     assert analytics["runs_with_field_avg_count"] == 1
@@ -733,11 +734,26 @@ def test_personal_records_lists_pr_runs_per_platform(
     response = authenticated_client.get("/api/runs/personal-records")
     assert response.status_code == 200
     items = response.json()
-    assert len(items) == 3
-    assert [item["event_date"] for item in items] == ["2025-01-04", "2024-05-11", "2023-04-08"]
+    # 2024-08-03 (18:30) попадает в список без is_pr — как глобальный рекорд и
+    # рекорд локации; самая первая пробежка (2023-04-08) — baseline, не
+    # глобальный рекорд, но показана из-за проставленного is_pr.
+    assert len(items) == 4
+    assert [item["event_date"] for item in items] == [
+        "2025-01-04",
+        "2024-08-03",
+        "2024-05-11",
+        "2023-04-08",
+    ]
     global_flags = {item["event_date"]: item["is_global_pr"] for item in items}
-    assert global_flags["2023-04-08"] is True
+    assert global_flags["2023-04-08"] is False
     assert global_flags["2024-05-11"] is True
+    assert global_flags["2024-08-03"] is True
+    assert global_flags["2025-01-04"] is False
+    location_flags = {item["event_date"]: item["is_location_pr"] for item in items}
+    assert location_flags["2023-04-08"] is False  # первая пробежка на локации
+    assert location_flags["2024-05-11"] is True
+    assert location_flags["2024-08-03"] is True
+    assert location_flags["2025-01-04"] is False
     assert global_flags["2025-01-04"] is False
 
 

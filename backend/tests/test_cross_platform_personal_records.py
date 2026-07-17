@@ -198,7 +198,7 @@ def test_same_catalog_location_across_platforms_tracks_one_record(
     recalculate_cross_platform_personal_records(db_session, user.id)
     db_session.flush()
 
-    assert first.is_global_pr is True
+    assert first.is_global_pr is False  # very first run ever is a baseline, not a global PR
     assert first.is_location_pr is False  # first-ever run at the location is never a location PR
 
     assert faster_other_system.is_global_pr is True
@@ -252,7 +252,7 @@ def test_secondary_crosslink_duplicate_excluded_from_cross_platform_records(
 
     assert duplicate.is_global_pr is False
     assert duplicate.is_location_pr is False
-    assert counted.is_global_pr is True
+    assert counted.is_global_pr is False  # only run that counts — a baseline, not a record
     assert counted.is_location_pr is False  # only run that counts, and it's the first one
 
 
@@ -287,7 +287,7 @@ def test_unrelated_locations_tracked_independently(
     recalculate_cross_platform_personal_records(db_session, user.id)
     db_session.flush()
 
-    assert first_a.is_global_pr is True
+    assert first_a.is_global_pr is False  # very first run ever — baseline, not a record
     assert first_a.is_location_pr is False  # first at its own location
 
     assert first_b.is_global_pr is False  # slower than the athlete's all-time best
