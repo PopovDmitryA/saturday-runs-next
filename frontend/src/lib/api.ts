@@ -1637,8 +1637,10 @@ export type LocationEventRow = {
   volunteers: number | null;
   best_male_time_sec: number | null;
   best_male_time_display: string | null;
+  best_male_runner_name: string | null;
   best_female_time_sec: number | null;
   best_female_time_display: string | null;
+  best_female_runner_name: string | null;
   avg_time_sec: number | null;
   avg_time_display: string | null;
   debutants: number | null;

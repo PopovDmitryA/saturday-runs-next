@@ -4709,6 +4709,10 @@ tr.run-crosslinked td {
   color: var(--text);
 }
 
+.best-results-table .col-runner {
+  color: var(--text);
+}
+
 .best-results-table .col-result .finish-time-global-pr {
   font-weight: 700;
   color: var(--tint-amber-text);

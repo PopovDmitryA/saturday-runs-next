@@ -194,8 +194,10 @@ class LocationEventRowResponse(BaseModel):
     volunteers: int | None = None
     best_male_time_sec: int | None = None
     best_male_time_display: str | None = None
+    best_male_runner_name: str | None = None
     best_female_time_sec: int | None = None
     best_female_time_display: str | None = None
+    best_female_runner_name: str | None = None
     avg_time_sec: int | None = None
     avg_time_display: str | None = None
     debutants: int | None = None
