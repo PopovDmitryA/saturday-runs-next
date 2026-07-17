@@ -22,7 +22,6 @@ import {
   type VisitedFilter,
 } from "./catalogLocationsTableHelpers";
 import type { PlatformFilters } from "./mapFilters";
-import { useCurrentUserIsAdmin } from "../../lib/currentUserAdmin";
 
 type CatalogLocationsTableProps = {
   data: CatalogLocationsTableResponse | null;
@@ -309,8 +308,7 @@ export function CatalogLocationsTable({
 }
 
 function CatalogLocationTableRowView({ row }: { row: CatalogLocationTableRow }) {
-  const isAdmin = useCurrentUserIsAdmin();
-  const name = row.location_slug && isAdmin ? (
+  const name = row.location_slug ? (
     <a href={`/locations/${encodeURIComponent(row.location_slug)}`} className="map-popup-link" title="Открыть страницу локации">
       {row.name}
     </a>

@@ -94,8 +94,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/co-runners": () => <CoRunnersPage />,
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
-  // Раздел открыт всем залогиненным (гейт RequireAuth — внутри страницы), но в
-  // шапке его нет: ходят по прямой ссылке.
+  // Гейт RequireAuth — внутри самой страницы, как и у /locations/{slug}.
   "/locations": () => <LocationsIndexPage />,
   "/history": () => <HistoryPage />,
   // Раздел для залогиненных: анонима RequireAuth уводит на /login (гейт есть и на API).

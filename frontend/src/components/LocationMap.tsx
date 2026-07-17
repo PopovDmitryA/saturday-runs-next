@@ -5,7 +5,6 @@ import type { MapLocationPoint } from "../lib/api";
 import { formatDate, platformCodeLabel } from "../lib/format";
 import type { MapViewportRef } from "../lib/mapViewport";
 import { MapFullscreenButton } from "./MapFullscreenButton";
-import { getCurrentUserIsAdmin } from "../lib/currentUserAdmin";
 
 const visitedIcon = L.divIcon({
   className: "map-marker map-marker-visited",
@@ -184,8 +183,7 @@ function pickLocationUrl(
 
 function formatPopupTitle(name: string, url: string | null, pageSlug?: string | null): string {
   const escapedName = escapeHtml(name);
-  // Раздел «Локации» пока не анонсируем — остальным ведём на внешнюю систему.
-  if (pageSlug && getCurrentUserIsAdmin()) {
+  if (pageSlug) {
     // Внутренняя страница локации приоритетнее внешней ссылки на систему.
     return `<strong><a class="map-popup-link" href="/locations/${encodeURIComponent(pageSlug)}">${escapedName}</a></strong>`;
   }
