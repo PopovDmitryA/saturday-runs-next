@@ -241,9 +241,9 @@ def test_invalidate_location_page_cache_clears_all_three(
     build_location_page(None, "izmailovo")  # type: ignore[arg-type]
     build_location_events(None, "izmailovo")  # type: ignore[arg-type]
     build_location_leaders(None, "izmailovo")  # type: ignore[arg-type]
-    assert fake_redis.exists("locations:page:v1:izmailovo")
+    assert fake_redis.exists("locations:page:v2:izmailovo")
 
     invalidate_location_page_cache("izmailovo")
 
-    for key in ("locations:page:v1:izmailovo", "locations:events:v1:izmailovo", "locations:leaders:v1:izmailovo"):
+    for key in ("locations:page:v2:izmailovo", "locations:events:v1:izmailovo", "locations:leaders:v1:izmailovo"):
         assert not fake_redis.exists(key), key

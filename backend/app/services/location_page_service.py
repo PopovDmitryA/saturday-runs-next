@@ -520,7 +520,7 @@ def _last_event_stats(
 
 
 def build_location_page(db: Session, slug: str, *, use_cache: bool = True) -> dict[str, object] | None:
-    cache_key = f"locations:page:v1:{slug.strip().lower()}"
+    cache_key = f"locations:page:v2:{slug.strip().lower()}"
     if use_cache:
         cached = _read_json_cache(cache_key)
         if cached is not None:
@@ -704,8 +704,15 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
             _platform_order_index(item[1]),
         ),
     )
+    # Одна запись на платформу: статистика (platform_stats) агрегируется по
+    # platform_code, поэтому дубли Location одной системы (напр. две parkrun-строки
+    # одной площадки в каталоге) дали бы две одинаковые записи таймлайна.
     platforms_payload: list[dict[str, object]] = []
+    seen_platform_codes: set[str] = set()
     for location, platform_code in ordered_platforms:
+        if platform_code in seen_platform_codes:
+            continue
+        seen_platform_codes.add(platform_code)
         stat = platform_stats.get(platform_code)
         platforms_payload.append(
             {
@@ -1090,7 +1097,7 @@ def invalidate_location_page_cache(slug: str) -> None:
     try:
         client = get_redis_client()
         client.delete(
-            f"locations:page:v1:{normalized}",
+            f"locations:page:v2:{normalized}",
             f"locations:events:v1:{normalized}",
             f"locations:leaders:v1:{normalized}",
         )
