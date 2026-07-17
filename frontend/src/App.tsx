@@ -94,7 +94,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/co-runners": () => <CoRunnersPage />,
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
-  // Гейт админа — внутри самой страницы (RequireAdmin), как и у /locations/{slug}.
+  // Гейт RequireAuth — внутри самой страницы, как и у /locations/{slug}.
   "/locations": () => <LocationsIndexPage />,
   "/history": () => <HistoryPage />,
   // Раздел для залогиненных: анонима RequireAuth уводит на /login (гейт есть и на API).

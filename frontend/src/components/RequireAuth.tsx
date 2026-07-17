@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ApiError, getCurrentUser, type User } from "../lib/api";
-import { setCurrentUserIsAdmin } from "../lib/currentUserAdmin";
 
 type RequireAuthProps = {
   children: (user: User) => ReactNode;
@@ -13,10 +12,7 @@ export function RequireAuth({ children }: RequireAuthProps) {
 
   useEffect(() => {
     getCurrentUser()
-      .then((current) => {
-        setCurrentUserIsAdmin(current.is_admin);
-        setUser(current);
-      })
+      .then(setUser)
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 401) {
           window.location.href = "/login";

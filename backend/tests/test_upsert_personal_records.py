@@ -145,7 +145,8 @@ def test_protocol_upsert_recalculates_s95_pr_from_finish_times(
     )
     db_session.flush()
 
-    assert slow.is_pr is True
+    # Дебют — baseline (стоявший is_pr=True снимается), рекорд — только улучшение.
+    assert slow.is_pr is False
     assert fast.is_pr is True
 
 
@@ -191,7 +192,8 @@ def test_recalculate_s95_single_participant_does_not_reset_others(
     recalculate_personal_records(db_session, "s95", participant_id=participant_a.id)
     db_session.flush()
 
-    assert run_a.is_pr is True
+    # У A дебют перестаёт быть рекордом, а B пересчёт не трогает вовсе.
+    assert run_a.is_pr is False
     assert run_b.is_pr is True
 
 
@@ -316,13 +318,15 @@ def test_recalculate_five_verst_preserves_protocol_personal_record_labels(
     stats = recalculate_personal_records(db_session, "five_verst", participant_id=participant.id)
     db_session.flush()
 
-    assert stats["pr_runs"] == 3
-    assert first.is_pr is True
+    # first — дебют (baseline), faster — рекорд по времени, slower_with_label —
+    # медленнее лучшего, но метка протокола 5 вёрст авторитетна и сохраняется.
+    assert stats["pr_runs"] == 2
+    assert first.is_pr is False
     assert faster.is_pr is True
     assert slower_with_label.is_pr is True
 
 
-def test_recalculate_five_verst_marks_first_finisher_run_as_pr(
+def test_recalculate_five_verst_debut_and_no_time_runs_are_not_pr(
     db_session: Session,
     five_verst_platform: Platform,
     five_verst_location: Location,
@@ -366,13 +370,15 @@ def test_recalculate_five_verst_marks_first_finisher_run_as_pr(
     stats = recalculate_personal_records(db_session, "five_verst", participant_id=participant.id)
     db_session.flush()
 
-    assert stats["pr_runs"] == 2
-    assert earlier_without_time.is_pr is True
-    assert first_finisher.is_pr is True
+    # Забег без времени и первый результат с временем (baseline) — не рекорды;
+    # метка «Первый финиш на 5 вёрст» — дебют, а не «личный рекорд».
+    assert stats["pr_runs"] == 0
+    assert earlier_without_time.is_pr is False
+    assert first_finisher.is_pr is False
     assert slower_repeat.is_pr is False
 
 
-def test_recalculate_parkrun_marks_first_run_without_time_as_pr(
+def test_recalculate_first_runs_with_and_without_time_are_not_pr(
     db_session: Session,
     s95_platform: Platform,
     s95_location: Location,
@@ -410,12 +416,14 @@ def test_recalculate_parkrun_marks_first_run_without_time_as_pr(
     stats = recalculate_personal_records(db_session, "s95", participant_id=participant.id)
     db_session.flush()
 
-    assert stats["pr_runs"] == 2
-    assert first.is_pr is True
-    assert second.is_pr is True
+    # Первый забег без времени — не рекорд; второй — первый результат с временем,
+    # т.е. baseline, тоже не рекорд.
+    assert stats["pr_runs"] == 0
+    assert first.is_pr is False
+    assert second.is_pr is False
 
 
-def test_protocol_upsert_marks_first_run_as_pr_for_new_participant(
+def test_protocol_upsert_does_not_mark_debut_as_pr_for_new_participant(
     db_session: Session,
     five_verst_platform: Platform,
     five_verst_location: Location,
@@ -493,7 +501,8 @@ def test_protocol_upsert_marks_first_run_as_pr_for_new_participant(
         )
         .one()
     )
-    assert run.is_pr is True
+    # Единственный (первый в нашей БД) забег — baseline, не рекорд.
+    assert run.is_pr is False
 
 
 def test_recalculate_skips_secondary_crosslink_duplicate(
@@ -532,6 +541,15 @@ def test_recalculate_skips_secondary_crosslink_duplicate(
         finish_time_sec=1700,  # faster, but it's a "не в зачёте" duplicate
         is_pr=True,
     )
+    improvement = _add_s95_run(
+        db_session,
+        platform=s95_platform,
+        location=s95_location,
+        participant=participant,
+        event_date=date(2022, 3, 1),
+        finish_time_sec=1750,  # faster than counted 1800, slower than the excluded 1700
+        is_pr=False,
+    )
     # Mark the faster run's event as a secondary crosslink duplicate.
     db_session.add(
         EventCrosslink(primary_event_id=counted.event_id, secondary_event_id=duplicate.event_id)
@@ -542,4 +560,7 @@ def test_recalculate_skips_secondary_crosslink_duplicate(
     db_session.flush()
 
     assert duplicate.is_pr is False  # duplicate never a PR, despite the best time
-    assert counted.is_pr is True     # counted run keeps its PR
+    assert counted.is_pr is False    # debut is a baseline, not a PR
+    # 1750 — PR относительно зачётного лучшего (1800): исключённый дубль 1700
+    # не участвует в baseline.
+    assert improvement.is_pr is True

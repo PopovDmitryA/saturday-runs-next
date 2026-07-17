@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.activity_date import has_real_activity_date
@@ -44,7 +44,7 @@ class SyncRefreshRateLimitedError(Exception):
     pass
 
 
-ANALYTICS_VERSION = 24
+ANALYTICS_VERSION = 25
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -1072,9 +1072,14 @@ def list_user_personal_records(
 ) -> list[dict[str, object]]:
     from app.services.personal_record_service import (
         run_is_personal_record_sql_filter,
+        run_shows_personal_record,
         user_secondary_crosslinked_run_ids,
     )
 
+    # Страница показывает обновления рекордов во всех разрезах: рекорд системы
+    # (is_pr / метка 5 вёрст), глобальный рекорд и рекорд локации. Дебют в
+    # системе попадает сюда, только если он оказался глобальным рекордом или
+    # рекордом локации — рекордом системы дебют не считается.
     query = (
         db.query(RunResult, Event, Location, Platform, PlatformLink)
         .join(Event, RunResult.event_id == Event.id)
@@ -1084,7 +1089,11 @@ def list_user_personal_records(
         .filter(
             PlatformLink.user_id == user_id,
             PlatformLink.platform_id == Platform.id,
-            run_is_personal_record_sql_filter(),
+            or_(
+                run_is_personal_record_sql_filter(),
+                RunResult.is_global_pr.is_(True),
+                RunResult.is_location_pr.is_(True),
+            ),
         )
     )
     if not include_test_events:
@@ -1116,7 +1125,9 @@ def list_user_personal_records(
                 run.finish_time_display,
             ),
             "finish_time_sec": run.finish_time_sec,
+            "is_pr": run_shows_personal_record(platform.code, run),
             "is_global_pr": run.is_global_pr,
+            "is_location_pr": run.is_location_pr,
             "event_url": _activity_event_url(
                 platform_code=platform.code,
                 event=event,

@@ -5,6 +5,7 @@ import { formatFinishTimeValue, platformCodeLabel } from "../lib/format";
 import { ActivityDateLink } from "./ActivityDateLink";
 import { ColumnHeader } from "./activityTable/ColumnHeader";
 import { GlobalPrFinishTime } from "./GlobalPrFinishTime";
+import { LocationPrLocationName } from "./LocationPrLocationName";
 import { PlatformBadge } from "./PlatformBadge";
 import { DetailModal } from "./DetailModal";
 
@@ -155,8 +156,10 @@ export function PersonalRecordsModal({ open, onClose, includeTest = false }: Per
       {!loading && !error && items.length > 0 && (
         <>
           <p className="muted personal-records-hint">
-            Личный рекорд в системе — лучший результат среди всех ваших пробежек в этой системе.
-            Оранжевым выделено время — общий рекорд по всем системам на момент той пробежки.
+            Обновления ваших рекордов: бейдж «PR» — личный рекорд в системе (улучшение лучшего
+            времени в этой системе), оранжевое время — глобальный рекорд по всем системам на момент
+            той пробежки, подсвеченная локация — рекорд этой площадки среди всех систем. Первая
+            пробежка задаёт точку отсчёта и рекордом не считается.
           </p>
 
           <div className="unique-locations-filters" role="tablist" aria-label="Фильтр по системам">
@@ -234,9 +237,12 @@ export function PersonalRecordsModal({ open, onClose, includeTest = false }: Per
                     <tr key={`${item.platform_code}-${item.event_date}-${item.location_name}-${index}`}>
                       <td className="col-date">
                         <ActivityDateLink date={item.event_date} url={item.event_url} />
+                        {item.is_pr && <span className="badge badge-pr">PR</span>}
                       </td>
                       <td className="col-location">
-                        <span className="unique-locations-name">{item.location_name}</span>
+                        <LocationPrLocationName isLocationPr={item.is_location_pr ?? false}>
+                          <span className="unique-locations-name">{item.location_name}</span>
+                        </LocationPrLocationName>
                       </td>
                       <td className="col-platform">
                         <PlatformBadge code={item.platform_code} />

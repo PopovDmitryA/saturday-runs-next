@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { LocationStatusLabel } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { RequireAdmin } from "../../components/RequireAdmin";
+import { RequireAuth } from "../../components/RequireAuth";
 import { SiteHeader } from "../../components/SiteHeader";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
@@ -559,7 +559,7 @@ function LocationPageContent({ slug, currentUser }: { slug: string; currentUser:
 }
 
 export function LocationPage({ slug }: { slug: string }) {
-  return <RequireAdmin>{(user) => <LocationPageContent slug={slug} currentUser={user} />}</RequireAdmin>;
+  return <RequireAuth>{(user) => <LocationPageContent slug={slug} currentUser={user} />}</RequireAuth>;
 }
 
 function formatTime(totalSec: number): string {

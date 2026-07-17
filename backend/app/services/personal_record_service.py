@@ -27,7 +27,7 @@ def _five_verst_protocol_personal_record(run: RunResult) -> bool:
 
 
 def run_shows_personal_record(platform_code: str, run: RunResult) -> bool:
-    if run.is_pr or run.is_first_run:
+    if run.is_pr:
         return True
     if platform_code == "five_verst" and _five_verst_protocol_personal_record(run):
         return True
@@ -42,7 +42,6 @@ def run_is_personal_record_sql_filter():
     )
     return or_(
         RunResult.is_pr.is_(True),
-        RunResult.is_first_run.is_(True),
         five_verst_achievement_pr,
     )
 
@@ -69,7 +68,12 @@ def recalculate_personal_records(
     commit_every: int = 200,
     reset: bool = True,
 ) -> dict[str, int]:
-    """Mark is_pr on time improvements, first platform run, and 5verst protocol PR labels."""
+    """Mark is_pr on time improvements and 5verst protocol PR labels.
+
+    Дебют рекордом НЕ является: первый результат участника на платформе (как и
+    первый забег «в нашей БД» у участников с неполной историей) задаёт базовое
+    время, is_pr получает только более быстрый последующий забег. Сама 5 вёрст
+    дебют рекордом не помечает никогда."""
     if reset:
         reset_personal_records(db, platform_code, participant_id=participant_id)
         db.flush()
@@ -132,15 +136,16 @@ def recalculate_personal_records(
             counted_rows.append((run, event))
 
         best_time: int | None = None
-        for run_index, (run, _event) in enumerate(counted_rows):
-            is_first_on_platform = run_index == 0
+        for run, _event in counted_rows:
             time_based_pr = False
             finish_time = run.finish_time_sec
             if finish_time is not None and finish_time > 0:
-                if best_time is None or finish_time < best_time:
+                if best_time is None:
+                    best_time = finish_time  # baseline: первый результат — не рекорд
+                elif finish_time < best_time:
                     time_based_pr = True
                     best_time = finish_time
-            new_is_pr = time_based_pr or is_first_on_platform or run.is_first_run
+            new_is_pr = time_based_pr
             if platform.code == "five_verst" and _five_verst_protocol_personal_record(run):
                 new_is_pr = True
             if run.is_pr != new_is_pr:
@@ -328,9 +333,10 @@ def recalculate_cross_platform_personal_records(
     reset: bool = True,
 ) -> dict[str, int]:
     """Mark is_global_pr (all-time best finish across every platform) and
-    is_location_pr (best finish at one physical location across platforms,
-    chronologically — a location's first-ever run is never a location PR,
-    only a later run that beats the standing best time is) from run order.
+    is_location_pr (best finish at one physical location across platforms) from
+    chronological run order. Both are baseline-style: the very first run (and a
+    location's first-ever run) sets the reference time but is never a record —
+    only a later run that beats the standing best time is.
 
     Both records are athlete-wide (span every platform the user has linked),
     unlike is_pr which only compares within a single platform — hence this
@@ -371,8 +377,8 @@ def recalculate_cross_platform_personal_records(
     for run, _event, location, platform in query.all():
         finish_time = run.finish_time_sec
 
-        is_global_pr = global_best is None or finish_time < global_best
-        if is_global_pr:
+        is_global_pr = global_best is not None and finish_time < global_best
+        if global_best is None or finish_time < global_best:
             global_best = finish_time
 
         key = index.canonical_identity_key(location, platform.code)

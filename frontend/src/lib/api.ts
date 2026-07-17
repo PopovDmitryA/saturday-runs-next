@@ -228,7 +228,9 @@ export type PersonalRecordItem = {
   location_city: string | null;
   finish_time_display: string | null;
   finish_time_sec: number | null;
+  is_pr?: boolean;
   is_global_pr: boolean;
+  is_location_pr?: boolean;
   event_url?: string | null;
 };
 

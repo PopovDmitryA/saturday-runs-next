@@ -227,7 +227,11 @@ class PersonalRecordResponse(BaseModel):
     location_city: str | None = None
     finish_time_display: str | None = None
     finish_time_sec: int | None = None
+    # Разрезы рекорда: система / все системы / физическая локация. Один забег
+    # может быть рекордом в нескольких разрезах сразу.
+    is_pr: bool = False
     is_global_pr: bool = False
+    is_location_pr: bool = False
     event_url: str | None = None
 
 
