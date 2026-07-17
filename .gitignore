@@ -40,7 +40,13 @@ postgres_data/
 backend/celerybeat-schedule
 backend/scripts/backups/
 
-# Local / agent
+# Local / agent (не для публичного репозитория)
+CLAUDE.md
+docs/claude_handoff_answers.json
+docs/mockups/
+frontend/public/favicon-options/
+frontend/public/platform-logos/options/
+archive.local/
 .cursor/
 .claude/
 PROJECT_HANDOFF.local.md

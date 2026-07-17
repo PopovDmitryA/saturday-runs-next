@@ -78,7 +78,6 @@
 | `frontend/src/components/LocationMap.tsx` | CSS-класс `map-marker-runpark` |
 | `frontend/src/index.css` | Стили маркера и легенды |
 | `frontend/src/lib/format.ts` | Label `runpark: "Runpark"` |
-| `frontend/public/platform-logos/options/parkrun/06-runpark.png` | Логотип (в папке parkrun logos) |
 
 ### Связанные сервисы (не только runpark, но используют)
 
