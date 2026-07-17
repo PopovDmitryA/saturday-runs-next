@@ -866,14 +866,6 @@ export type HistoryMilestoneKindSetting = {
   enabled: boolean;
 };
 
-export type HistoryMilestoneKindSettings = {
-  kinds: HistoryMilestoneKindSetting[];
-};
-
-export function getAdminHistoryMilestones() {
-  return apiFetch<HistoryMilestoneKindSettings>("/admin/history-milestones");
-}
-
 export type EventReportLocationItem = {
   location_id: string;
   location_name: string;
@@ -1052,15 +1044,23 @@ export function getAdminRecordsDigest(eventDate: string) {
   );
 }
 
-export type LocationContactItem = {
+export type LocationContactPlatform = {
   location_id: string;
   location_name: string;
-  city: string | null;
-  country: string | null;
   platform_code: string;
   platform_name: string;
   is_cancelled: boolean;
   is_paused: boolean;
+};
+
+export type LocationContactItem = {
+  group_key: string;
+  // Локация, на которую вешаются общие для физической точки чат и настройки анонса.
+  anchor_location_id: string;
+  display_name: string;
+  city: string | null;
+  country: string | null;
+  platforms: LocationContactPlatform[];
   contacts: LocationContactLink[];
   do_not_disturb: boolean;
   comment: string | null;
@@ -1133,13 +1133,6 @@ export function getAdminEventReport(eventId: string) {
     undefined,
     { timeoutMs: 60_000 },
   );
-}
-
-export function setAdminHistoryMilestoneEnabled(kind: string, enabled: boolean) {
-  return apiFetch<HistoryMilestoneKindSetting>(`/admin/history-milestones/${kind}`, {
-    method: "PUT",
-    body: JSON.stringify({ enabled }),
-  });
 }
 
 // ── Настройки: персональный вкл/выкл видов вех «Моя история» ─────────────────

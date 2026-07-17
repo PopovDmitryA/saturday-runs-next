@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { ConfirmModal } from "../../components/ConfirmModal";
+import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import {
   createAdminLocationContactLink,
@@ -77,7 +78,7 @@ function LocationLinksEditor({
   onError,
 }: {
   item: LocationContactItem;
-  onChanged: (locationId: string, contacts: LocationContactLink[]) => void;
+  onChanged: (groupKey: string, contacts: LocationContactLink[]) => void;
   onError: (message: string) => void;
 }) {
   const [drafts, setDrafts] = useState<Record<string, LinkDraft>>(
@@ -101,7 +102,7 @@ function LocationLinksEditor({
         label: draft.label.trim() || null,
       });
       onChanged(
-        item.location_id,
+        item.group_key,
         item.contacts.map((c) => (c.id === updated.id ? updated : c)),
       );
     } catch (err) {
@@ -117,7 +118,7 @@ function LocationLinksEditor({
     try {
       await deleteAdminLocationContactLink(confirmDelete.id);
       onChanged(
-        item.location_id,
+        item.group_key,
         item.contacts.filter((c) => c.id !== confirmDelete.id),
       );
       setConfirmDelete(null);
@@ -133,11 +134,11 @@ function LocationLinksEditor({
     if (!url) return;
     setSavingId("new");
     try {
-      const created = await createAdminLocationContactLink(item.location_id, {
+      const created = await createAdminLocationContactLink(item.anchor_location_id, {
         telegram_url: url,
         label: newDraft.label.trim() || null,
       });
-      onChanged(item.location_id, [...item.contacts, created]);
+      onChanged(item.group_key, [...item.contacts, created]);
       setNewDraft({ telegram_url: "", label: "" });
     } catch (err) {
       onError(err instanceof Error ? err.message : "Не удалось добавить ссылку");
@@ -229,7 +230,7 @@ function LocationLinksEditor({
         onCancel={() => setConfirmDelete(null)}
       >
         {confirmDelete
-          ? `Убрать ссылку ${confirmDelete.telegram_url} у локации «${item.location_name}»?`
+          ? `Убрать ссылку ${confirmDelete.telegram_url} у локации «${item.display_name}»?`
           : ""}
       </ConfirmModal>
     </div>
@@ -264,7 +265,7 @@ function AdminLocationContactsContent() {
   }, [load]);
 
   const startEdit = (item: LocationContactItem) => {
-    setEditingId(item.location_id);
+    setEditingId(item.group_key);
     setSettingsDraft(toSettingsDraft(item));
   };
 
@@ -281,7 +282,7 @@ function AdminLocationContactsContent() {
     setSavingSettings(true);
     setError(null);
     try {
-      const updated = await updateAdminLocationAnnounceSettings(item.location_id, {
+      const updated = await updateAdminLocationAnnounceSettings(item.anchor_location_id, {
         do_not_disturb: settingsDraft.do_not_disturb,
         comment: settingsDraft.comment.trim() || null,
       });
@@ -290,7 +291,7 @@ function AdminLocationContactsContent() {
           ? {
               ...prev,
               items: prev.items.map((row) =>
-                row.location_id === item.location_id
+                row.group_key === item.group_key
                   ? {
                       ...row,
                       do_not_disturb: updated.do_not_disturb,
@@ -310,13 +311,13 @@ function AdminLocationContactsContent() {
     }
   };
 
-  const handleContactsChanged = (locationId: string, contacts: LocationContactLink[]) => {
+  const handleContactsChanged = (groupKey: string, contacts: LocationContactLink[]) => {
     setData((prev) =>
       prev
         ? {
             ...prev,
             items: prev.items.map((row) =>
-              row.location_id === locationId ? { ...row, contacts } : row,
+              row.group_key === groupKey ? { ...row, contacts } : row,
             ),
           }
         : prev,
@@ -330,13 +331,15 @@ function AdminLocationContactsContent() {
       <section className="card">
         <h2 className="section-title">Чаты локаций</h2>
         <p className="muted">
-          Справочник чатов 5 вёрст, S95 и RunPark — по клику ссылка открывает чат, эти же контакты
-          использует рассылка о рекордах. Флаг «не беспокоить» убирает локацию из рассылки,
-          комментарий виден только в админке. Правка — по кнопке ✎ на строке.
+          Справочник чатов 5 вёрст, S95 и RunPark. Локации одной физической площадки в разных
+          системах сведены в одну строку (связь берётся из справочника локаций) — чат у точки общий:
+          по клику ссылка открывает чат, эти же контакты использует рассылка о рекордах на любой из
+          систем площадки. Флаг «не беспокоить» убирает точку из рассылки, комментарий виден только в
+          админке. Правка — по кнопке ✎ на строке.
           {data && (
             <>
               {" "}
-              Всего: {data.total} · со ссылкой: {data.with_telegram} · не беспокоим:{" "}
+              Точек: {data.total} · со ссылкой: {data.with_telegram} · не беспокоим:{" "}
               {data.do_not_disturb_total}.
             </>
           )}
@@ -390,15 +393,24 @@ function AdminLocationContactsContent() {
               </thead>
               <tbody>
                 {data?.items.map((item) => {
-                  const isEditing = editingId === item.location_id;
+                  const isEditing = editingId === item.group_key;
                   return (
-                    <tr key={item.location_id} className={isEditing ? "contact-row-editing" : ""}>
+                    <tr key={item.group_key} className={isEditing ? "contact-row-editing" : ""}>
                       <td>
-                        <div className="contact-location-name">{item.location_name}</div>
-                        <div className="muted contact-location-meta">
-                          {item.city ?? "—"} · {item.platform_name}
-                          {item.is_cancelled ? " · закрыта" : ""}
-                          {item.is_paused ? " · пауза" : ""}
+                        <div className="contact-location-name">{item.display_name}</div>
+                        <div className="muted contact-location-meta">{item.city ?? "—"}</div>
+                        <div className="contact-location-platforms">
+                          {item.platforms.map((platform) => (
+                            <span key={platform.location_id} className="contact-platform-badge">
+                              <PlatformBadge code={platform.platform_code} />
+                              {(platform.is_cancelled || platform.is_paused) && (
+                                <span className="muted contact-platform-flags">
+                                  {platform.is_cancelled ? " закрыта" : ""}
+                                  {platform.is_paused ? " пауза" : ""}
+                                </span>
+                              )}
+                            </span>
+                          ))}
                         </div>
                         {(isEditing ? settingsDraft?.do_not_disturb : item.do_not_disturb) && (
                           <span className="contact-dnd-badge">🔕 Не беспокоить</span>

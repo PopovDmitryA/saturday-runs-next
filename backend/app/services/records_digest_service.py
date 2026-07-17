@@ -276,36 +276,29 @@ def _locations_meta(db: Session, location_ids: list[UUID]) -> dict[UUID, dict[st
         db,
         """
         SELECT l.id AS location_id, l.name AS location_name, l.city, l.country,
-               p.code AS platform_code, p.name AS platform_name,
-               coalesce(s.do_not_disturb, false) AS do_not_disturb, s.comment
+               p.code AS platform_code, p.name AS platform_name
         FROM locations l
         JOIN platforms p ON p.id = l.platform_id
-        LEFT JOIN location_announce_settings s ON s.location_id = l.id
         WHERE l.id IN :location_ids
         """,
         {"location_ids": [str(x) for x in location_ids]},
         expanding=("location_ids",),
     )
-    contact_rows = _query(
-        db,
-        """
-        SELECT location_id, id, telegram_url, label
-        FROM location_contacts
-        WHERE location_id IN :location_ids
-        ORDER BY created_at
-        """,
-        {"location_ids": [str(x) for x in location_ids]},
-        expanding=("location_ids",),
-    )
-    contacts_by_location: dict[UUID, list[dict[str, Any]]] = {}
-    for row in contact_rows:
-        contacts_by_location.setdefault(row["location_id"], []).append(
-            {"id": row["id"], "telegram_url": row["telegram_url"], "label": row["label"]}
-        )
-    return {
-        row["location_id"]: {**row, "telegram_contacts": contacts_by_location.get(row["location_id"], [])}
-        for row in rows
-    }
+    # Чат и «не беспокоить» — на уровне физической точки (общие для всех платформ
+    # площадки), а не отдельной локации-платформы, где случился рекорд.
+    from app.services.location_contacts_service import resolve_group_announce_targets
+
+    group_targets = resolve_group_announce_targets(db, location_ids)
+    meta: dict[UUID, dict[str, Any]] = {}
+    for row in rows:
+        target = group_targets.get(row["location_id"], {})
+        meta[row["location_id"]] = {
+            **row,
+            "telegram_contacts": target.get("telegram_contacts", []),
+            "do_not_disturb": bool(target.get("do_not_disturb")),
+            "comment": target.get("comment"),
+        }
+    return meta
 
 
 def _years_between(previous: date | None, current: date) -> float:

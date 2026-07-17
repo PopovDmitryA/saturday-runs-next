@@ -12,15 +12,23 @@ class LocationContactLink(BaseModel):
     label: str | None = None
 
 
-class LocationContactItem(BaseModel):
+class LocationContactPlatform(BaseModel):
     location_id: UUID
     location_name: str
-    city: str | None = None
-    country: str | None = None
     platform_code: str
     platform_name: str
     is_cancelled: bool
     is_paused: bool
+
+
+class LocationContactItem(BaseModel):
+    group_key: str
+    # Локация, на которую вешаются общие для физической точки чат и настройки анонса.
+    anchor_location_id: UUID
+    display_name: str
+    city: str | None = None
+    country: str | None = None
+    platforms: list[LocationContactPlatform]
     contacts: list[LocationContactLink]
     do_not_disturb: bool
     comment: str | None = None

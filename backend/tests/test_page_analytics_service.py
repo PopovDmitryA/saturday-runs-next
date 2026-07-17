@@ -110,7 +110,6 @@ APP_ROUTES = [
     "/admin/stats",
     "/admin/page-analytics",
     "/admin/ratings",
-    "/admin/history-milestones",
     "/admin/event-report",
     "/admin/records-digest",
     "/admin/location-contacts",

@@ -8,7 +8,6 @@ import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
 import { AdminEventReportPage } from "./features/admin/AdminEventReportPage";
 import { AdminLocationContactsPage } from "./features/admin/AdminLocationContactsPage";
 import { AdminRecordsDigestPage } from "./features/admin/AdminRecordsDigestPage";
-import { AdminHistoryMilestonesPage } from "./features/admin/AdminHistoryMilestonesPage";
 import { PublicProfilePage } from "./features/public_profile/PublicProfilePage";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
 import { AchievementsPage } from "./features/achievements/AchievementsPage";
@@ -128,7 +127,6 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/stats": () => <AdminStatsPage />,
   "/admin/page-analytics": () => <AdminPageAnalyticsPage />,
   "/admin/ratings": () => <AdminRatingsPage />,
-  "/admin/history-milestones": () => <AdminHistoryMilestonesPage />,
   "/admin/event-report": () => <AdminEventReportPage />,
   "/admin/records-digest": () => <AdminRecordsDigestPage />,
   "/admin/location-contacts": () => <AdminLocationContactsPage />,

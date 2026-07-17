@@ -64,16 +64,3 @@ class AdminUserPreviewDashboardResponse(BaseModel):
     platform_links: list[AdminPlatformLinkBrief] = Field(default_factory=list)
 
 
-class HistoryMilestoneKindSettingResponse(BaseModel):
-    kind: str
-    label: str
-    description: str
-    enabled: bool
-
-
-class HistoryMilestoneKindSettingsResponse(BaseModel):
-    kinds: list[HistoryMilestoneKindSettingResponse] = Field(default_factory=list)
-
-
-class HistoryMilestoneKindUpdateRequest(BaseModel):
-    enabled: bool
