@@ -147,6 +147,9 @@ export type PortalHomeResponse = {
   newcomers_by_year: PortalYearPoint[];
   newcomers_by_week: PortalWeekPoint[];
   newcomers_year_projection: PortalYearProjection | null;
+  personal_records_by_year: PortalYearPoint[];
+  personal_records_by_week: PortalWeekPoint[];
+  personal_records_year_projection: PortalYearProjection | null;
   attendance_year: number | null;
   attendance_top_all: PortalAttendanceTopRow[];
   attendance_top_year: PortalAttendanceTopRow[];

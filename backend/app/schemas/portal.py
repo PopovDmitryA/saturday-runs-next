@@ -186,6 +186,9 @@ class PortalHomeResponse(BaseModel):
     newcomers_by_year: list[PortalYearPointResponse]
     newcomers_by_week: list[PortalWeekPointResponse]
     newcomers_year_projection: PortalYearProjectionResponse | None = None
+    personal_records_by_year: list[PortalYearPointResponse]
+    personal_records_by_week: list[PortalWeekPointResponse]
+    personal_records_year_projection: PortalYearProjectionResponse | None = None
     attendance_year: int | None = None
     attendance_top_all: list[PortalAttendanceTopRowResponse]
     attendance_top_year: list[PortalAttendanceTopRowResponse]

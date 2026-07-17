@@ -298,6 +298,33 @@ export function PortalHomePage() {
     }));
   }, [data, period]);
 
+  const personalRecordsProjection = useMemo<TrendPoint | null>(() => {
+    if (!data?.personal_records_year_projection || period !== "all") {
+      return null;
+    }
+    const projection = data.personal_records_year_projection;
+    return {
+      label: `${projection.year} (оценка)`,
+      platforms: projection.platforms,
+    };
+  }, [data, period]);
+
+  const personalRecordsPoints = useMemo<TrendPoint[]>(() => {
+    if (!data) {
+      return [];
+    }
+    if (period === "all") {
+      return data.personal_records_by_year.map((point) => ({
+        label: String(point.year),
+        platforms: point.platforms,
+      }));
+    }
+    return data.personal_records_by_week.map((point) => ({
+      label: weekLabel(point.week_start),
+      platforms: point.platforms,
+    }));
+  }, [data, period]);
+
   const hero = data ? (period === "year" && data.hero_last_year ? data.hero_last_year : data.hero) : null;
 
   return (
@@ -407,6 +434,31 @@ export function PortalHomePage() {
                 totalLabel="Всего"
                 showGrowth={period === "all"}
                 projection={newcomersProjection}
+              />
+            </section>
+
+            <section className="portal-panel">
+              <div className="portal-panel-head">
+                <div>
+                  <h2>Личные рекорды по системам</h2>
+                  <p className="portal-panel-sub">
+                    {period === "all"
+                      ? "Сколько раз участники улучшали свой лучший результат в каждой системе"
+                      : "Обновления личных рекордов по неделям за последние 52 недели"}
+                  </p>
+                  {personalRecordsProjection && (
+                    <p className="portal-panel-sub">
+                      {personalRecordsProjection.label.replace(" (оценка)", "")} год ещё не закончился —
+                      пунктир прогнозирует итог при текущем темпе
+                    </p>
+                  )}
+                </div>
+              </div>
+              <PortalTrendChart
+                points={personalRecordsPoints}
+                totalLabel="Всего"
+                showGrowth={period === "all"}
+                projection={personalRecordsProjection}
               />
             </section>
 

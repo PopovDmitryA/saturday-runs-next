@@ -37,7 +37,7 @@ from app.services.location_catalog_service import LocationCatalogIndex
 
 logger = logging.getLogger(__name__)
 
-PORTAL_HOME_CACHE_KEY = "portal:home:v16"
+PORTAL_HOME_CACHE_KEY = "portal:home:v17"
 PORTAL_HOME_CACHE_TTL_SECONDS = 6 * 60 * 60
 
 DISTANCE_KM = 5
@@ -552,11 +552,58 @@ def _newcomers_by_date(
     return {(event_date, code): int(count) for event_date, code, count in rows}
 
 
-# График «Личные рекорды по системам» удалён с главной (16.07.2026, Дмитрий):
-# is_pr у 5 вёрст подмешивает метку протокола «Личный рекорд!» (рекорд конкретной
-# трассы, не хронологическое улучшение), цифры сильно завышены. Вернуть график
-# можно после того, как трассовый рекорд переедет в отдельный маркер в модели —
-# история реализации в git (v11–v15: варианты с is_pr и с оконной функцией).
+def _personal_records_by_year(
+    db: Session, excluded_location_ids: list[UUID]
+) -> dict[tuple[int, str], int]:
+    """(год, платформа) → число личных рекордов (is_pr) — та же схема, что и
+    _newcomers_by_year. Годами раньше график был снят с главной: is_pr у
+    5 вёрст подмешивал метку протокола «Личный рекорд!» (рекорд конкретной
+    трассы), а дебют на платформе тоже считался рекордом — оба источника
+    инфляции устранены в personal_record_service (17.07.2026), поэтому флаг
+    снова можно агрегировать напрямую, без оконных функций."""
+    year_expr = func.extract("year", Event.event_date)
+    rows = _exclude_locations(
+        _not_crosslink_secondary(
+            db.query(
+                year_expr,
+                Platform.code,
+                func.coalesce(
+                    func.sum(case((RunResult.is_pr.is_(True), 1), else_=0)), 0
+                ),
+            )
+            .select_from(RunResult)
+            .join(Event, Event.id == RunResult.event_id)
+            .join(Platform, Platform.id == Event.platform_id)
+        ).filter(Event.event_date >= MIN_SANE_EVENT_DATE),
+        excluded_location_ids,
+    ).group_by(year_expr, Platform.code).all()
+    return {(int(year), code): int(count) for year, code, count in rows}
+
+
+def _personal_records_by_date(
+    db: Session,
+    excluded_location_ids: list[UUID],
+    start: date,
+    end: date,
+) -> dict[tuple[date, str], int]:
+    """(дата, платформа) → число личных рекордов внутри окна дат — бакетится
+    по неделям в Python той же формулой, что и остальные недельные графики."""
+    rows = _exclude_locations(
+        _not_crosslink_secondary(
+            db.query(
+                Event.event_date,
+                Platform.code,
+                func.coalesce(
+                    func.sum(case((RunResult.is_pr.is_(True), 1), else_=0)), 0
+                ),
+            )
+            .select_from(RunResult)
+            .join(Event, Event.id == RunResult.event_id)
+            .join(Platform, Platform.id == Event.platform_id)
+        ).filter(Event.event_date >= start, Event.event_date <= end),
+        excluded_location_ids,
+    ).group_by(Event.event_date, Platform.code).all()
+    return {(event_date, code): int(count) for event_date, code, count in rows}
 
 
 def _total_time_sec(db: Session, excluded_location_ids: list[UUID]) -> int:
@@ -871,6 +918,9 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
     # --- новички по системам (годы) ---
     newcomers_year_platform = _newcomers_by_year(db, excluded_location_ids)
 
+    # --- личные рекорды по системам (годы) ---
+    personal_records_year_platform = _personal_records_by_year(db, excluded_location_ids)
+
     # --- прогноз на конец текущего (неполного) года по темпу этого года ---
     # (Дмитрий, 13.07.2026: год ещё не закончился — честнее показать пунктиром,
     # сколько будет к концу года при среднем темпе, чем давать заниженную точку.
@@ -891,6 +941,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
 
     chart_year_projection: dict[str, Any] | None = None
     newcomers_year_projection: dict[str, Any] | None = None
+    personal_records_year_projection: dict[str, Any] | None = None
     if sorted_years and pulse_date is not None and sorted_years[-1] == pulse_date.year:
         current_year = sorted_years[-1]
         weeks_elapsed = max(1, pulse_date.isocalendar()[1])
@@ -900,6 +951,9 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
             )
             newcomers_year_projection = _year_projection(
                 newcomers_year_platform, current_year, weeks_elapsed
+            )
+            personal_records_year_projection = _year_projection(
+                personal_records_year_platform, current_year, weeks_elapsed
             )
 
     locations_by_year = [
@@ -923,9 +977,21 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         for year in sorted_years
     ]
 
+    personal_records_by_year = [
+        {
+            "year": year,
+            "total": sum(
+                personal_records_year_platform.get((year, code), 0) for code in PLATFORM_ORDER
+            ),
+            "platforms": _year_platforms(year, personal_records_year_platform),
+        }
+        for year in sorted_years
+    ]
+
     chart_weeks: list[dict[str, Any]] = []
     locations_by_week: list[dict[str, Any]] = []
     newcomers_by_week: list[dict[str, Any]] = []
+    personal_records_by_week: list[dict[str, Any]] = []
     if pulse_date is not None:
         weeks_start = pulse_date - timedelta(days=7 * 52 - 1)
         finishes_by_week: dict[date, int] = defaultdict(int)
@@ -978,6 +1044,29 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
                     code: newcomers_week_platform[(week, code)]
                     for code in PLATFORM_ORDER
                     if newcomers_week_platform.get((week, code))
+                },
+            }
+            for week in sorted(finishes_by_week)
+        ]
+
+        # --- личные рекорды по системам (последние 52 недели) ---
+        personal_records_by_date = _personal_records_by_date(
+            db, excluded_location_ids, weeks_start, pulse_date
+        )
+        personal_records_week_platform: dict[tuple[date, str], int] = defaultdict(int)
+        for (event_date, platform_code), count in personal_records_by_date.items():
+            week_key = event_date - timedelta(days=event_date.weekday())
+            personal_records_week_platform[(week_key, platform_code)] += count
+        personal_records_by_week = [
+            {
+                "week_start": week,
+                "total": sum(
+                    personal_records_week_platform[(week, code)] for code in PLATFORM_ORDER
+                ),
+                "platforms": {
+                    code: personal_records_week_platform[(week, code)]
+                    for code in PLATFORM_ORDER
+                    if personal_records_week_platform.get((week, code))
                 },
             }
             for week in sorted(finishes_by_week)
@@ -1186,6 +1275,9 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         "newcomers_by_year": newcomers_by_year,
         "newcomers_by_week": newcomers_by_week,
         "newcomers_year_projection": newcomers_year_projection,
+        "personal_records_by_year": personal_records_by_year,
+        "personal_records_by_week": personal_records_by_week,
+        "personal_records_year_projection": personal_records_year_projection,
         "attendance_year": attendance_year,
         "attendance_top_all": attendance_top_all,
         "attendance_top_year": attendance_top_year,
