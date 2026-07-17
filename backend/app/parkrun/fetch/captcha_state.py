@@ -68,11 +68,11 @@ def captcha_pending_message() -> str | None:
     return raw if raw else None
 
 
-def platform_cooldown_remaining() -> float | None:
+def platform_cooldown_remaining() -> int | None:
     from app.platform_fetch.cooldown import platform_cooldown_until
 
     until = platform_cooldown_until("parkrun")
     if until is None:
         return None
-    remaining = until - time.time()
+    remaining = round(until - time.time())
     return remaining if remaining > 0 else None
