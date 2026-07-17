@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ApiError, getCurrentUser, type User } from "../lib/api";
-import { setCurrentUserIsAdmin } from "../lib/currentUserAdmin";
 
 type RequireAdminProps = {
   children: ReactNode | ((user: User) => ReactNode);
@@ -13,7 +12,6 @@ export function RequireAdmin({ children }: RequireAdminProps) {
   useEffect(() => {
     getCurrentUser()
       .then((current) => {
-        setCurrentUserIsAdmin(current.is_admin);
         if (!current.is_admin) {
           window.location.href = "/dashboard";
           return;

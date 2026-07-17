@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -31,7 +31,7 @@ from app.schemas.admin_event_report import (
     EventReportLocationsResponse,
     EventReportResponse,
 )
-from app.schemas.admin_stats import AdminSiteStatsResponse
+from app.schemas.admin_stats import AdminSiteStatsResponse, PageAnalyticsResponse
 from app.schemas.blocked_slug_admin import (
     BlockedSlugCreateRequest,
     BlockedSlugItem,
@@ -88,6 +88,7 @@ from app.services.location_contacts_service import (
     update_location_announce_settings,
     update_location_contact_link,
 )
+from app.services.page_analytics_service import build_page_analytics, resolve_period
 from app.services.rating_service import (
     list_all_ratings,
     location_rating_aggregates,
@@ -324,6 +325,24 @@ def admin_site_stats(
 ) -> AdminSiteStatsResponse:
     payload = get_admin_site_stats(db, period_days=period_days)
     return AdminSiteStatsResponse.model_validate(payload)
+
+
+@router.get("/page-analytics", response_model=PageAnalyticsResponse)
+def admin_page_analytics(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    period_days: Annotated[int | None, Query(ge=1, le=1830)] = None,
+    date_from: Annotated[date | None, Query()] = None,
+    date_to: Annotated[date | None, Query()] = None,
+) -> PageAnalyticsResponse:
+    """Популярность разделов: либо последние period_days, либо явный диапазон.
+
+    Явные даты приоритетнее period_days; без параметров — 30 дней.
+    """
+    start, end = resolve_period(period_days=period_days, date_from=date_from, date_to=date_to)
+    payload = build_page_analytics(db, start=start, end=end)
+    payload["generated_at"] = datetime.now(timezone.utc)
+    return PageAnalyticsResponse.model_validate(payload)
 
 
 @router.get("/ratings", response_model=AdminRatingsResponse)

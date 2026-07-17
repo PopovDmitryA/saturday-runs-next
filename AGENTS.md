@@ -264,8 +264,23 @@ Scheduled sync → VK через `run_reported_sync()` + dedup `scheduled_sync_g
 ## 12. Dashboard / API
 
 - Cache: `dashboard_cache`, `ANALYTICS_VERSION` — инкрементировать при смене полей аналитики
-- Admin: `/admin/stats`, `/admin/queue`, `/admin/users`
+- Admin: `/admin/stats`, `/admin/queue`, `/admin/users`, `/admin/page-analytics`
 - Settings: `/api/settings/privacy`
+
+### Аналитика страниц (посещаемость)
+
+`page_view_events` (сырые, 90 дней) → beat `page_stats.rollup` (ежечасно) →
+`page_stats_daily` (вечно) → `/admin/page-analytics`.
+
+**Новая страница на сайте = новая строка в аналитике.** При добавлении роута в
+`STATIC_ROUTES` (`App.tsx`) обязательно дописать:
+
+1. `_STATIC_PAGE_TYPES` — `page_analytics_service.py`
+2. `PAGE_TYPE_LABELS` — `AdminPageAnalyticsPage.tsx`
+3. `APP_ROUTES` — `tests/test_page_analytics_service.py` (тест упадёт, если забыть)
+
+Иначе раздел уедет в «Прочее» и метрик по нему не будет. Подробности и нюансы —
+в CLAUDE.md, раздел «Аналитика страниц».
 
 ---
 
@@ -302,6 +317,7 @@ cd backend && ruff check app tests
 | Очередь admin — длинные ошибки | tooltip в QueuePage; полный текст в `error_message` |
 | Parkrun English names | catalog link + norm slug; import catalog |
 | PR не показывается | `is_pr`, five_verst protocol label, backfill PR |
+| Новая страница на сайте | Роут в `App.tsx` + раздел в аналитике: `_STATIC_PAGE_TYPES`, `PAGE_TYPE_LABELS`, `APP_ROUTES` (см. §12) |
 | Deploy | `deploy_prod.sh`; verify build + health |
 | API 502 | `docker compose logs api` — часто SyntaxError после деплоя |
 | Prod DB query | SSH + `docker compose exec api python -c "…"` |

@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { AdminAbusePage } from "./features/admin/AdminAbusePage";
 import { AdminBlockedSlugsPage } from "./features/admin/AdminBlockedSlugsPage";
 import { AdminStatsPage } from "./features/admin/AdminStatsPage";
+import { AdminPageAnalyticsPage } from "./features/admin/AdminPageAnalyticsPage";
 import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
 import { AdminEventReportPage } from "./features/admin/AdminEventReportPage";
 import { AdminLocationContactsPage } from "./features/admin/AdminLocationContactsPage";
@@ -39,15 +40,27 @@ import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
 import { RequireAuth } from "./components/RequireAuth";
 import { useAppPath } from "./hooks/useAppPath";
-import { getCurrentUser, recordSitePageview } from "./lib/api";
+import { getCurrentUser } from "./lib/api";
+import { startPageView } from "./lib/pageAnalytics";
 import { isLegacyGrafanaPath, legacyGrafanaHref } from "./lib/siteBrand";
 import { buildVisitorKey } from "./lib/siteVisitor";
 
 function useSitePageviewTracking(path: string) {
   useEffect(() => {
+    let cleanup: (() => void) | null = null;
+    let cancelled = false;
+    const begin = (authenticated: boolean, userId: string | undefined) => {
+      if (!cancelled) {
+        cleanup = startPageView(path, authenticated, buildVisitorKey(authenticated, userId));
+      }
+    };
     getCurrentUser()
-      .then((user) => recordSitePageview(path, true, buildVisitorKey(true, user.id)))
-      .catch(() => recordSitePageview(path, false, buildVisitorKey(false, undefined)));
+      .then((user) => begin(true, user.id))
+      .catch(() => begin(false, undefined));
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
   }, [path]);
 }
 
@@ -94,7 +107,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/co-runners": () => <CoRunnersPage />,
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
-  // Гейт админа — внутри самой страницы (RequireAdmin), как и у /locations/{slug}.
+  // Гейт RequireAuth — внутри самой страницы, как и у /locations/{slug}.
   "/locations": () => <LocationsIndexPage />,
   "/history": () => <HistoryPage />,
   // Раздел для залогиненных: анонима RequireAuth уводит на /login (гейт есть и на API).
@@ -113,6 +126,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/abuse": () => <AdminAbusePage />,
   "/admin/profile-slugs": () => <AdminBlockedSlugsPage />,
   "/admin/stats": () => <AdminStatsPage />,
+  "/admin/page-analytics": () => <AdminPageAnalyticsPage />,
   "/admin/ratings": () => <AdminRatingsPage />,
   "/admin/history-milestones": () => <AdminHistoryMilestonesPage />,
   "/admin/event-report": () => <AdminEventReportPage />,

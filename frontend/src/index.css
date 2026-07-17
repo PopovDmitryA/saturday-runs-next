@@ -9644,3 +9644,140 @@ tr.run-crosslinked td {
   color: #64748b;
   font-variant-numeric: tabular-nums;
 }
+
+/* ===== Контакты локаций: режим справочника (чтение по умолчанию, правка по ✎) ===== */
+.admin-location-contacts-table .col-location {
+  width: 16rem;
+}
+
+.admin-location-contacts-table .col-comment {
+  width: 24rem;
+}
+
+.admin-location-contacts-table .col-actions {
+  width: 9rem;
+}
+
+.contact-row-editing {
+  background: color-mix(in srgb, var(--surface) 60%, var(--bg));
+}
+
+.contact-location-name {
+  font-weight: 600;
+}
+
+.contact-location-meta {
+  font-size: 0.82rem;
+  margin-top: 0.1rem;
+}
+
+.contact-dnd-badge {
+  display: inline-block;
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.contact-links-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.contact-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 100%;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.contact-link:hover {
+  border-color: color-mix(in srgb, var(--accent, #4f46e5) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent, #4f46e5) 8%, transparent);
+}
+
+.contact-link-icon {
+  flex: 0 0 auto;
+  font-size: 0.9em;
+}
+
+.contact-link-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-comment {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.contact-settings-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.contact-comment-input {
+  resize: vertical;
+  min-height: 4.2rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.contact-actions {
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.contact-actions-editing {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: stretch;
+}
+
+.location-link-row-new {
+  margin-top: 0.15rem;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--border);
+}
+
+/* --- Админка: популярность разделов ------------------------------------- */
+
+.page-analytics-table .page-analytics-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.page-analytics-table th {
+  white-space: nowrap;
+}
+
+.page-analytics-range {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.page-analytics-range-label {
+  margin-left: auto;
+  align-self: center;
+}

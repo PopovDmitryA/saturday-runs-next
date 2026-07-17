@@ -33,6 +33,44 @@ function isLinkDirty(link: LocationContactLink, draft: LinkDraft): boolean {
   return draft.telegram_url !== link.telegram_url || draft.label !== (link.label ?? "");
 }
 
+function shortTelegramUrl(url: string): string {
+  return url.replace(/^https:\/\//, "");
+}
+
+/** Режим чтения: кликабельные ссылки на чаты, открываются в новой вкладке. */
+function ContactLinksDisplay({ contacts }: { contacts: LocationContactLink[] }) {
+  if (contacts.length === 0) {
+    return <span className="muted">—</span>;
+  }
+  return (
+    <ul className="contact-links-list">
+      {contacts.map((link) => (
+        <li key={link.id}>
+          <a
+            className="contact-link"
+            href={link.telegram_url}
+            target="_blank"
+            rel="noreferrer"
+            title={link.telegram_url}
+          >
+            <span className="contact-link-icon" aria-hidden="true">
+              ✈️
+            </span>
+            {link.label ? (
+              <span className="contact-link-text">
+                <strong>{link.label}</strong>
+                <span className="muted"> · {shortTelegramUrl(link.telegram_url)}</span>
+              </span>
+            ) : (
+              <span className="contact-link-text">{shortTelegramUrl(link.telegram_url)}</span>
+            )}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function LocationLinksEditor({
   item,
   onChanged,
@@ -47,7 +85,6 @@ function LocationLinksEditor({
   );
   const [savingId, setSavingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<LocationContactLink | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
   const [newDraft, setNewDraft] = useState<LinkDraft>({ telegram_url: "", label: "" });
 
   useEffect(() => {
@@ -102,7 +139,6 @@ function LocationLinksEditor({
       });
       onChanged(item.location_id, [...item.contacts, created]);
       setNewDraft({ telegram_url: "", label: "" });
-      setAddOpen(false);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Не удалось добавить ссылку");
     } finally {
@@ -158,47 +194,31 @@ function LocationLinksEditor({
         );
       })}
 
-      {addOpen ? (
-        <div className="location-link-row">
-          <input
-            className="input"
-            type="text"
-            value={newDraft.telegram_url}
-            placeholder="https://t.me/..."
-            autoFocus
-            onChange={(event) => setNewDraft((prev) => ({ ...prev, telegram_url: event.target.value }))}
-          />
-          <input
-            className="input location-link-label"
-            type="text"
-            value={newDraft.label}
-            placeholder="Название (необяз.)"
-            onChange={(event) => setNewDraft((prev) => ({ ...prev, label: event.target.value }))}
-          />
-          <button
-            type="button"
-            className="btn primary btn-sm"
-            disabled={!newDraft.telegram_url.trim() || savingId === "new"}
-            onClick={() => void addLink()}
-          >
-            {savingId === "new" ? "…" : "Добавить"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => {
-              setAddOpen(false);
-              setNewDraft({ telegram_url: "", label: "" });
-            }}
-          >
-            Отмена
-          </button>
-        </div>
-      ) : (
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAddOpen(true)}>
-          + Добавить ссылку
+      {/* Строка добавления всегда открыта: не нужен лишний клик «+ Добавить». */}
+      <div className="location-link-row location-link-row-new">
+        <input
+          className="input"
+          type="text"
+          value={newDraft.telegram_url}
+          placeholder="https://t.me/… — новая ссылка"
+          onChange={(event) => setNewDraft((prev) => ({ ...prev, telegram_url: event.target.value }))}
+        />
+        <input
+          className="input location-link-label"
+          type="text"
+          value={newDraft.label}
+          placeholder="Название (необяз.)"
+          onChange={(event) => setNewDraft((prev) => ({ ...prev, label: event.target.value }))}
+        />
+        <button
+          type="button"
+          className="btn primary btn-sm"
+          disabled={!newDraft.telegram_url.trim() || savingId === "new"}
+          onClick={() => void addLink()}
+        >
+          {savingId === "new" ? "…" : "Добавить"}
         </button>
-      )}
+      </div>
 
       <ConfirmModal
         open={confirmDelete !== null}
@@ -208,7 +228,9 @@ function LocationLinksEditor({
         onConfirm={() => void confirmDeleteLink()}
         onCancel={() => setConfirmDelete(null)}
       >
-        {confirmDelete ? `Убрать ссылку ${confirmDelete.telegram_url} у локации «${item.location_name}»?` : ""}
+        {confirmDelete
+          ? `Убрать ссылку ${confirmDelete.telegram_url} у локации «${item.location_name}»?`
+          : ""}
       </ConfirmModal>
     </div>
   );
@@ -216,22 +238,22 @@ function LocationLinksEditor({
 
 function AdminLocationContactsContent() {
   const [data, setData] = useState<LocationContactList | null>(null);
-  const [settingsDrafts, setSettingsDrafts] = useState<Record<string, SettingsDraft>>({});
   const [query, setQuery] = useState("");
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [onlyDoNotDisturb, setOnlyDoNotDisturb] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [savedId, setSavedId] = useState<string | null>(null);
+  // Правка по требованию: одна строка за раз, остальная таблица — чистый справочник.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [settingsDraft, setSettingsDraft] = useState<SettingsDraft | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   const load = useCallback(() => {
     setError(null);
     getAdminLocationContacts({ q: query, onlyMissing, onlyDoNotDisturb })
       .then((result) => {
         setData(result);
-        setSettingsDrafts(
-          Object.fromEntries(result.items.map((item) => [item.location_id, toSettingsDraft(item)])),
-        );
+        setEditingId(null);
+        setSettingsDraft(null);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Не удалось загрузить контакты"));
   }, [query, onlyMissing, onlyDoNotDisturb]);
@@ -241,15 +263,27 @@ function AdminLocationContactsContent() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const saveSettings = async (item: LocationContactItem) => {
-    const draft = settingsDrafts[item.location_id];
-    if (!draft) return;
-    setSavingId(item.location_id);
+  const startEdit = (item: LocationContactItem) => {
+    setEditingId(item.location_id);
+    setSettingsDraft(toSettingsDraft(item));
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setSettingsDraft(null);
+  };
+
+  const finishEdit = async (item: LocationContactItem) => {
+    if (!settingsDraft || !isSettingsDirty(item, settingsDraft)) {
+      cancelEdit();
+      return;
+    }
+    setSavingSettings(true);
     setError(null);
     try {
       const updated = await updateAdminLocationAnnounceSettings(item.location_id, {
-        do_not_disturb: draft.do_not_disturb,
-        comment: draft.comment.trim() || null,
+        do_not_disturb: settingsDraft.do_not_disturb,
+        comment: settingsDraft.comment.trim() || null,
       });
       setData((prev) =>
         prev
@@ -257,23 +291,23 @@ function AdminLocationContactsContent() {
               ...prev,
               items: prev.items.map((row) =>
                 row.location_id === item.location_id
-                  ? { ...row, do_not_disturb: updated.do_not_disturb, comment: updated.comment, updated_at: updated.updated_at }
+                  ? {
+                      ...row,
+                      do_not_disturb: updated.do_not_disturb,
+                      comment: updated.comment,
+                      updated_at: updated.updated_at,
+                    }
                   : row,
               ),
             }
           : prev,
       );
-      setSavedId(item.location_id);
-      window.setTimeout(() => setSavedId(null), 1500);
+      cancelEdit();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось сохранить");
     } finally {
-      setSavingId(null);
+      setSavingSettings(false);
     }
-  };
-
-  const patchSettingsDraft = (locationId: string, patch: Partial<SettingsDraft>) => {
-    setSettingsDrafts((prev) => ({ ...prev, [locationId]: { ...prev[locationId], ...patch } }));
   };
 
   const handleContactsChanged = (locationId: string, contacts: LocationContactLink[]) => {
@@ -281,7 +315,9 @@ function AdminLocationContactsContent() {
       prev
         ? {
             ...prev,
-            items: prev.items.map((row) => (row.location_id === locationId ? { ...row, contacts } : row)),
+            items: prev.items.map((row) =>
+              row.location_id === locationId ? { ...row, contacts } : row,
+            ),
           }
         : prev,
     );
@@ -294,9 +330,9 @@ function AdminLocationContactsContent() {
       <section className="card">
         <h2 className="section-title">Чаты локаций</h2>
         <p className="muted">
-          Ссылки на чаты 5 вёрст, S95 и RunPark — используются в рассылке о рекордах. У локации
-          может быть несколько ссылок (основной чат, резервный, чат организаторов). Флаг «не
-          беспокоить» убирает локацию из рассылки целиком, комментарий виден только в админке.
+          Справочник чатов 5 вёрст, S95 и RunPark — по клику ссылка открывает чат, эти же контакты
+          использует рассылка о рекордах. Флаг «не беспокоить» убирает локацию из рассылки,
+          комментарий виден только в админке. Правка — по кнопке ✎ на строке.
           {data && (
             <>
               {" "}
@@ -346,76 +382,111 @@ function AdminLocationContactsContent() {
             <table className="data-table admin-location-contacts-table">
               <thead>
                 <tr>
-                  <th>Локация</th>
-                  <th>Ссылки на чаты</th>
-                  <th>Не беспокоить</th>
-                  <th>Комментарий</th>
-                  <th />
+                  <th className="col-location">Локация</th>
+                  <th>Чаты</th>
+                  <th className="col-comment">Комментарий</th>
+                  <th className="col-actions" />
                 </tr>
               </thead>
               <tbody>
                 {data?.items.map((item) => {
-                  const draft = settingsDrafts[item.location_id];
-                  if (!draft) return null;
-                  const dirty = isSettingsDirty(item, draft);
+                  const isEditing = editingId === item.location_id;
                   return (
-                    <tr key={item.location_id}>
+                    <tr key={item.location_id} className={isEditing ? "contact-row-editing" : ""}>
                       <td>
-                        {item.location_name}
-                        <br />
-                        <span className="muted">
+                        <div className="contact-location-name">{item.location_name}</div>
+                        <div className="muted contact-location-meta">
                           {item.city ?? "—"} · {item.platform_name}
                           {item.is_cancelled ? " · закрыта" : ""}
                           {item.is_paused ? " · пауза" : ""}
-                        </span>
+                        </div>
+                        {(isEditing ? settingsDraft?.do_not_disturb : item.do_not_disturb) && (
+                          <span className="contact-dnd-badge">🔕 Не беспокоить</span>
+                        )}
                       </td>
                       <td>
-                        <LocationLinksEditor
-                          item={item}
-                          onChanged={handleContactsChanged}
-                          onError={setError}
-                        />
+                        {isEditing ? (
+                          <LocationLinksEditor
+                            item={item}
+                            onChanged={handleContactsChanged}
+                            onError={setError}
+                          />
+                        ) : (
+                          <ContactLinksDisplay contacts={item.contacts} />
+                        )}
                       </td>
                       <td>
-                        <input
-                          type="checkbox"
-                          checked={draft.do_not_disturb}
-                          onChange={(event) =>
-                            patchSettingsDraft(item.location_id, { do_not_disturb: event.target.checked })
-                          }
-                        />
+                        {isEditing && settingsDraft ? (
+                          <div className="contact-settings-editor">
+                            <textarea
+                              className="input contact-comment-input"
+                              rows={3}
+                              value={settingsDraft.comment}
+                              placeholder="Заметка для себя: с кем говорил, что за чат, нюансы"
+                              onChange={(event) =>
+                                setSettingsDraft((prev) =>
+                                  prev ? { ...prev, comment: event.target.value } : prev,
+                                )
+                              }
+                            />
+                            <label className="login-consent-field">
+                              <input
+                                type="checkbox"
+                                checked={settingsDraft.do_not_disturb}
+                                onChange={(event) =>
+                                  setSettingsDraft((prev) =>
+                                    prev
+                                      ? { ...prev, do_not_disturb: event.target.checked }
+                                      : prev,
+                                  )
+                                }
+                              />
+                              <span>Не беспокоить анонсами</span>
+                            </label>
+                          </div>
+                        ) : item.comment ? (
+                          <div className="contact-comment">{item.comment}</div>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
                       </td>
-                      <td>
-                        <input
-                          className="input"
-                          type="text"
-                          value={draft.comment}
-                          placeholder="Заметка для себя"
-                          onChange={(event) =>
-                            patchSettingsDraft(item.location_id, { comment: event.target.value })
-                          }
-                        />
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn secondary btn-sm"
-                          disabled={!dirty || savingId === item.location_id}
-                          onClick={() => void saveSettings(item)}
-                        >
-                          {savedId === item.location_id
-                            ? "✓"
-                            : savingId === item.location_id
-                              ? "…"
-                              : "Сохранить"}
-                        </button>
+                      <td className="contact-actions">
+                        {isEditing ? (
+                          <div className="contact-actions-editing">
+                            <button
+                              type="button"
+                              className="btn primary btn-sm"
+                              disabled={savingSettings}
+                              onClick={() => void finishEdit(item)}
+                            >
+                              {savingSettings ? "…" : "Готово"}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              disabled={savingSettings}
+                              onClick={cancelEdit}
+                            >
+                              Отмена
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            title="Изменить ссылки, комментарий и флаг «не беспокоить»"
+                            onClick={() => startEdit(item)}
+                          >
+                            ✎ Изменить
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
                 })}
                 {data && data.items.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="muted">
+                    <td colSpan={4} className="muted">
                       Ничего не найдено
                     </td>
                   </tr>

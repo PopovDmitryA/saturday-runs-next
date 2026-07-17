@@ -2165,13 +2165,61 @@ export function getAdminSiteStats(periodDays = 30) {
   return apiFetch<AdminSiteStatsResponse>(`/admin/stats?period_days=${periodDays}`);
 }
 
-export function recordSitePageview(path: string, authenticated: boolean, visitorKey: string) {
+export function recordSitePageview(
+  path: string,
+  authenticated: boolean,
+  visitorKey: string,
+  viewId?: string,
+) {
   return apiFetch<void>("/stats/pageview", {
     method: "POST",
-    body: JSON.stringify({ path, authenticated, visitor_key: visitorKey }),
+    body: JSON.stringify({ path, authenticated, visitor_key: visitorKey, view_id: viewId }),
   }).catch(() => {
     // ignore analytics errors
   });
+}
+
+export type PageAnalyticsRowStats = {
+  views: number;
+  unique_viewers: number;
+  self_views: number;
+  avg_duration_sec: number | null;
+};
+
+export type PageAnalyticsSection = PageAnalyticsRowStats & { page_type: string };
+
+export type PageAnalyticsEntity = PageAnalyticsRowStats & {
+  entity_key: string;
+  label: string;
+  href: string | null;
+};
+
+export type PageAnalyticsResponse = {
+  date_from: string;
+  date_to: string;
+  generated_at: string;
+  sections: PageAnalyticsSection[];
+  top_profiles: PageAnalyticsEntity[];
+  top_locations: PageAnalyticsEntity[];
+};
+
+/** Либо periodDays (последние N дней), либо явный диапазон dateFrom/dateTo. */
+export function getAdminPageAnalytics(params: {
+  periodDays?: number;
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  const query = new URLSearchParams();
+  if (params.periodDays) {
+    query.set("period_days", String(params.periodDays));
+  }
+  if (params.dateFrom) {
+    query.set("date_from", params.dateFrom);
+  }
+  if (params.dateTo) {
+    query.set("date_to", params.dateTo);
+  }
+  return apiFetch<PageAnalyticsResponse>(`/admin/page-analytics?${query.toString()}`);
 }
 
 export function getDemoDashboard() {

@@ -163,6 +163,13 @@ def fetch_live_preview_bundle(
     platform_code: str,
     profile_url: str,
 ) -> tuple[ProfilePreview, list[CanonicalRunResult] | None, list[CanonicalVolunteerResult] | None, dict | None]:
+    from app.db.session import release_db_connection_for_network_io
+
+    # Дальше только сеть (rate-limit ожидание + фетч, до десятков секунд) —
+    # держать слот пула БД всё это время нельзя. К этому моменту в транзакции
+    # только чтения (preview_profile_link) либо всё закоммичено (pending queue).
+    release_db_connection_for_network_io(db)
+
     ensure_adapters_registered()
     if platform_code == "s95":
         from app.platform_adapters.s95.parser import fetch_profile_activity

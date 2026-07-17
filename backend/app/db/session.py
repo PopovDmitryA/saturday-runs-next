@@ -3,7 +3,7 @@ from collections.abc import Generator
 from functools import lru_cache
 
 from sqlalchemy import create_engine
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
@@ -59,3 +59,25 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def release_db_connection_for_network_io(db: Session) -> None:
+    """Вернуть коннект сессии в пул перед долгим сетевым вызовом.
+
+    `Depends(get_db)` выдаёт коннект на весь запрос, и живой фетч parkrun/s95/5v
+    (rate-limit ожидание + сам запрос, до десятков секунд) держал бы слот пула
+    всё это время — несколько параллельных привязок профиля исчерпывают пул
+    целиком (инцидент 16.07.2026). rollback() завершает транзакцию и возвращает
+    коннект в пул, но в отличие от close() сессия и её объекты остаются
+    привязанными — следующее обращение к БД прозрачно возьмёт новый коннект.
+
+    Вызывать ТОЛЬКО когда в транзакции нет незакоммиченных изменений: rollback
+    их молча отбросит.
+    """
+    if isinstance(db.bind, Connection):
+        # Сессия привязана к внешнему Connection (так работает тестовый
+        # SAVEPOINT-паттерн в conftest): коннект принадлежит не сессии,
+        # возвращать в пул нечего, а rollback() откатил бы внешнюю
+        # транзакцию вместе с данными вызывающего.
+        return
+    db.rollback()

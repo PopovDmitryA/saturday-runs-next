@@ -1,18 +1,11 @@
-import { useCurrentUserIsAdmin } from "../lib/currentUserAdmin";
-
 type LocationNameLinkProps = {
   name: string;
   slug?: string | null;
 };
 
-/**
- * Название локации со ссылкой на её страницу /locations/{slug} (если slug
- * известен). Раздел «Локации» пока admin-only, поэтому всем остальным —
- * обычный текст, без битой ссылки.
- */
+/** Название локации со ссылкой на её страницу /locations/{slug} (если slug известен). */
 export function LocationNameLink({ name, slug }: LocationNameLinkProps) {
-  const isAdmin = useCurrentUserIsAdmin();
-  if (!slug || !isAdmin) {
+  if (!slug) {
     return <>{name}</>;
   }
   return (

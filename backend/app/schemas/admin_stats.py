@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -64,3 +65,38 @@ class PageviewRecordRequest(BaseModel):
     path: str = Field(min_length=1, max_length=256)
     authenticated: bool = False
     visitor_key: str | None = Field(default=None, max_length=80)
+    # Клиентский id просмотра — связывает событие с беконом pageleave (длительность).
+    view_id: UUID | None = None
+
+
+class PageleaveRecordRequest(BaseModel):
+    view_id: UUID
+    duration_sec: int = Field(ge=0, le=86400)
+
+
+class PageAnalyticsRowStats(BaseModel):
+    views: int
+    unique_viewers: int
+    self_views: int
+    avg_duration_sec: int | None
+
+
+class PageAnalyticsSection(PageAnalyticsRowStats):
+    page_type: str
+
+
+class PageAnalyticsEntity(PageAnalyticsRowStats):
+    entity_key: str
+    label: str
+    href: str | None
+
+
+class PageAnalyticsResponse(BaseModel):
+    # Границы включительно; сервер отдаёт их разрешёнными (в т.ч. когда клиент
+    # прислал period_days), чтобы UI показывал ровно то, что посчитано.
+    date_from: date
+    date_to: date
+    generated_at: datetime
+    sections: list[PageAnalyticsSection]
+    top_profiles: list[PageAnalyticsEntity]
+    top_locations: list[PageAnalyticsEntity]

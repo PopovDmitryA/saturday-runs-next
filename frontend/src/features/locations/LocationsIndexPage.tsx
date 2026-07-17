@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { RequireAdmin } from "../../components/RequireAdmin";
+import { RequireAuth } from "../../components/RequireAuth";
 import { SiteHeader } from "../../components/SiteHeader";
 import { getLocationsIndex, logout, type LocationIndexItem, type User } from "../../lib/api";
 import { formatDate, pluralizeRu } from "../../lib/format";
@@ -264,5 +264,5 @@ function LocationsIndexContent({ currentUser }: { currentUser: User }) {
 }
 
 export function LocationsIndexPage() {
-  return <RequireAdmin>{(user) => <LocationsIndexContent currentUser={user} />}</RequireAdmin>;
+  return <RequireAuth>{(user) => <LocationsIndexContent currentUser={user} />}</RequireAuth>;
 }

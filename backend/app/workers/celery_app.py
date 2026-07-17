@@ -27,6 +27,7 @@ celery_app.conf.update(
         "app.workers.tasks.leaderboards_warm",
         "app.workers.tasks.portal_cache",
         "app.workers.tasks.locations_warm",
+        "app.workers.tasks.page_stats",
     ),
     task_routes={
         "five_verst_sync.*": {"queue": "five_verst"},
@@ -132,6 +133,13 @@ celery_app.conf.update(
         "portal-home-cache-warm": {
             "task": "portal_cache.warm_home",
             "schedule": crontab(hour="*/3", minute=15),
+        },
+        # Агрегаты популярности страниц (сегодня+вчера, upsert) + чистка сырых
+        # событий старше retention. Дефолтная очередь "celery" — общий worker;
+        # :35 — в стороне от прогревов (:15/:20/:40).
+        "page-stats-rollup": {
+            "task": "page_stats.rollup",
+            "schedule": crontab(minute=35),
         },
     },
 )

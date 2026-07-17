@@ -96,6 +96,9 @@ def preview_profile_link(
             preview = persist_live_profile_preview(db, platform_code, profile_url, user.id)
             store_profile_preview(user.id, platform_code, profile_url, preview)
             return preview
+        from app.db.session import release_db_connection_for_network_io
+
+        release_db_connection_for_network_io(db)
         preview = adapter.fetch_profile_preview(profile_url)
         return preview
     except (InvalidProfileUrlError, ParkrunInvalidProfileUrlError) as exc:

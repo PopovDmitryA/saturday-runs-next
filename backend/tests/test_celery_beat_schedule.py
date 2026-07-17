@@ -75,3 +75,13 @@ def test_s95_playwright_batch_schedules_removed() -> None:
         "s95-athletes-registry",
     ):
         assert removed not in schedule
+
+
+def test_page_stats_rollup_schedule() -> None:
+    """Агрегаты популярности страниц — каждый час на дефолтной очереди."""
+    schedule = celery_app.conf.beat_schedule
+    rollup = schedule["page-stats-rollup"]
+    assert rollup["task"] == "page_stats.rollup"
+    assert rollup["schedule"].minute == {35}
+    # Дефолтная очередь "celery" (без options) — общий worker без -Q.
+    assert "options" not in rollup
