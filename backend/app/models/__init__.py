@@ -1071,6 +1071,63 @@ class UserGoal(Base):
     )
 
 
+class PageViewEvent(Base):
+    """Сырое событие просмотра страницы (собственная аналитика сайта).
+
+    Пишется эндпоинтом POST /stats/pageview на каждую смену роута на фронте;
+    duration_sec дозаполняется беконом POST /stats/pageleave (view_id —
+    сгенерированный клиентом идентификатор просмотра). Строки живут
+    ограниченный срок (settings.page_events_retention_days) — вечная история
+    хранится в агрегатах page_stats_daily.
+    """
+
+    __tablename__ = "page_view_events"
+    __table_args__ = (
+        Index("ix_page_view_events_ts", "ts"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    view_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), unique=True, nullable=False)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    path: Mapped[str] = mapped_column(String(256), nullable=False)
+    page_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Ключ сущности внутри раздела: user_id владельца для профилей, slug для
+    # локаций, metric для рейтингов. Пустая строка — раздел без сущности.
+    entity_key: Mapped[str] = mapped_column(String(128), nullable=False, server_default="")
+    # "u:<user_id>" либо "a:<анонимный id браузера>" — как в Redis-счётчике.
+    visitor_key: Mapped[str | None] = mapped_column(String(80))
+    viewer_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    # Владелец смотрит свой собственный профиль (только для page_type=profile).
+    is_self: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    duration_sec: Mapped[int | None] = mapped_column(Integer)
+
+
+class PageStatsDaily(Base):
+    """Дневной агрегат просмотров по (день МСК, раздел, сущность).
+
+    Пересчитывается celery-задачей page_stats.rollup (upsert последних дней),
+    хранится вечно — источник для страницы «Популярность» и годовых рубрик.
+    avg duration = total_duration_sec / duration_views (события без
+    зафиксированной длительности в среднее не входят).
+    """
+
+    __tablename__ = "page_stats_daily"
+    __table_args__ = (
+        UniqueConstraint("date", "page_type", "entity_key", name="uq_page_stats_daily_date_type_entity"),
+        Index("ix_page_stats_daily_type_entity", "page_type", "entity_key"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    page_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    entity_key: Mapped[str] = mapped_column(String(128), nullable=False, server_default="")
+    views: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    unique_viewers: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    self_views: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    total_duration_sec: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
+    duration_views: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+
 class HistoryMilestoneSetting(Base):
     """Вкл/выкл конкретного вида вехи «Моя история» (админ-переключатель).
 

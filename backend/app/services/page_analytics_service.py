@@ -1,0 +1,391 @@
+"""Собственная событийная аналитика страниц.
+
+Дополняет грубые Redis-счётчики app.core.site_stats: каждое событие просмотра
+пишется в Postgres (page_view_events) с разделом, сущностью (какой профиль,
+какая локация) и длительностью, затем celery-задача page_stats.rollup
+сворачивает события в дневные агрегаты page_stats_daily (день — московский).
+Сырые события живут settings.page_events_retention_days, агрегаты — вечно.
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import date, datetime, time, timedelta
+from typing import Any
+from uuid import UUID
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session
+
+from app.models import Location, PageStatsDaily, PageViewEvent, Platform, User
+from app.services.profile_slug_service import resolve_profile_handle
+
+STATS_TIMEZONE = ZoneInfo("Europe/Moscow")
+
+# Максимум, который принимаем от клиента как время на странице (защита от мусора).
+MAX_DURATION_SEC = 8 * 3600
+
+DEFAULT_PERIOD_DAYS = 30
+# Нижняя граница для открытого «по такое-то число»: раньше аналитики не было.
+EARLIEST_STATS_DATE = date(2026, 7, 1)
+
+_PROFILE_RE = re.compile(r"^/users/([^/]+)$")
+_LOCATION_EVENTS_RE = re.compile(r"^/locations/([^/]+)/events$")
+_LOCATION_RE = re.compile(r"^/locations/([^/]+)$")
+
+# Одна страница приложения = один page_type. Ключ — нормализованный путь;
+# канон — STATIC_ROUTES в frontend/src/App.tsx (добавили роут — добавьте строку
+# сюда и в PAGE_TYPE_LABELS на фронте, иначе страница уедет в "other").
+_STATIC_PAGE_TYPES = {
+    "/": "landing",
+    "/new": "portal_home",
+    "/new/about": "portal_about",
+    "/new/login": "portal_login",
+    "/new/map-lab": "portal_map_lab",
+    "/login": "login",
+    "/dashboard": "dashboard",
+    "/profiles": "dashboard",  # тот же компонент, что и /dashboard
+    "/runs": "runs",
+    "/achievements": "achievements",
+    "/co-runners": "co_runners",
+    "/volunteering": "volunteering",
+    "/maps": "maps",
+    "/locations": "locations_index",
+    "/history": "history",
+    "/ratings": "ratings_hub",
+    "/ratings/runs": "ratings_runs",
+    "/ratings/volunteering": "ratings_volunteering",
+    "/ratings/locations": "ratings_locations",
+    "/share": "share",
+    "/settings": "settings",
+    "/about": "about",
+}
+
+# Страницы-заглушки: сразу редиректят на другой адрес, своего содержимого нет.
+_REDIRECT_PATHS = frozenset({"/sync", "/queue", "/admin"})
+
+
+def _is_legacy_grafana_path(raw_path: str) -> bool:
+    """Зеркало isLegacyGrafanaPath из frontend/src/lib/siteBrand.ts.
+
+    Проверяется до нормализации: "/dashboard/" (со слэшем) — это Grafana,
+    а "/dashboard" — наш личный кабинет.
+    """
+    return raw_path.startswith(("/d/", "/dashboard/", "/public/"))
+
+
+def classify_page(path: str) -> tuple[str, str]:
+    """Раскладывает путь страницы в (page_type, entity_key).
+
+    Порядок проверок повторяет renderRoute в App.tsx — раскладка обязана
+    совпадать с тем, что реально отрисовалось. Неизвестный путь не теряется:
+    уходит в "other" вместе с путём в entity_key, чтобы забытый раздел был
+    виден в админке, а не пропадал молча.
+
+    entity_key — сырой ключ из URL (хэндл профиля, slug локации); для профилей
+    он дорезолвливается до user_id в record_page_view.
+    """
+    raw = (path or "/").split("?", 1)[0].split("#", 1)[0]
+    if _is_legacy_grafana_path(raw):
+        return "legacy_grafana", raw[:128]
+
+    normalized = raw.rstrip("/") or "/"
+
+    static = _STATIC_PAGE_TYPES.get(normalized)
+    if static is not None:
+        return static, ""
+
+    if normalized in _REDIRECT_PATHS:
+        return "redirect", normalized
+
+    profile = _PROFILE_RE.match(normalized)
+    if profile:
+        return "profile", profile.group(1)[:128]
+
+    location_events = _LOCATION_EVENTS_RE.match(normalized)
+    if location_events:
+        return "location_events", location_events.group(1)[:128]
+
+    location = _LOCATION_RE.match(normalized)
+    if location:
+        return "location", location.group(1)[:128]
+
+    if normalized.startswith("/oauth/"):
+        return "oauth_callback", ""
+    # Демо и админка — одной строкой каждая (разбивка по подстраницам не нужна:
+    # демо — витрина целиком, админка внутренняя). Подстраница едет в entity_key,
+    # так что при желании разложить их можно и задним числом, без потери данных.
+    if normalized == "/demo" or normalized.startswith("/demo/"):
+        return "demo", normalized[len("/demo") :].lstrip("/")[:128]
+    if normalized.startswith("/admin/"):
+        return "admin", normalized[len("/admin/") :][:128]
+    return "other", normalized[:128]
+
+
+def record_page_view(
+    db: Session,
+    *,
+    view_id: UUID,
+    path: str,
+    visitor_key: str | None,
+    viewer_user_id: UUID | None,
+) -> None:
+    """Пишет сырое событие просмотра; повторный view_id молча игнорируется."""
+    page_type, entity_key = classify_page(path)
+    is_self = False
+    if page_type == "profile" and entity_key:
+        owner = resolve_profile_handle(db, entity_key)
+        if owner is not None:
+            entity_key = str(owner.id)
+            is_self = viewer_user_id is not None and owner.id == viewer_user_id
+
+    stmt = (
+        pg_insert(PageViewEvent)
+        .values(
+            view_id=view_id,
+            path=(path or "/")[:256],
+            page_type=page_type,
+            entity_key=entity_key,
+            visitor_key=visitor_key,
+            viewer_user_id=viewer_user_id,
+            is_self=is_self,
+        )
+        .on_conflict_do_nothing(index_elements=["view_id"])
+    )
+    db.execute(stmt)
+    db.commit()
+
+
+def record_page_leave(db: Session, *, view_id: UUID, duration_sec: int) -> None:
+    """Дозаполняет длительность просмотра (беконы могут приходить несколько раз)."""
+    clamped = max(0, min(int(duration_sec), MAX_DURATION_SEC))
+    db.query(PageViewEvent).filter(PageViewEvent.view_id == view_id).update(
+        {
+            PageViewEvent.duration_sec: func.greatest(
+                func.coalesce(PageViewEvent.duration_sec, 0), clamped
+            )
+        },
+        synchronize_session=False,
+    )
+    db.commit()
+
+
+def _day_bounds_utc(day: date) -> tuple[datetime, datetime]:
+    start = datetime.combine(day, time.min, tzinfo=STATS_TIMEZONE)
+    return start, start + timedelta(days=1)
+
+
+def local_today() -> date:
+    return datetime.now(STATS_TIMEZONE).date()
+
+
+def rollup_day(db: Session, day: date) -> int:
+    """Пересобирает агрегаты за один день (delete + insert из сырых событий)."""
+    start, end = _day_bounds_utc(day)
+    rows = (
+        db.query(
+            PageViewEvent.page_type,
+            PageViewEvent.entity_key,
+            func.count().label("views"),
+            func.count(func.distinct(PageViewEvent.visitor_key)).label("unique_viewers"),
+            func.count(PageViewEvent.id).filter(PageViewEvent.is_self.is_(True)).label("self_views"),
+            func.coalesce(func.sum(PageViewEvent.duration_sec), 0).label("total_duration_sec"),
+            func.count(PageViewEvent.duration_sec).label("duration_views"),
+        )
+        .filter(PageViewEvent.ts >= start, PageViewEvent.ts < end)
+        .group_by(PageViewEvent.page_type, PageViewEvent.entity_key)
+        .all()
+    )
+    db.query(PageStatsDaily).filter(PageStatsDaily.date == day).delete(synchronize_session=False)
+    for row in rows:
+        db.add(
+            PageStatsDaily(
+                date=day,
+                page_type=row.page_type,
+                entity_key=row.entity_key,
+                views=int(row.views),
+                unique_viewers=int(row.unique_viewers),
+                self_views=int(row.self_views),
+                total_duration_sec=int(row.total_duration_sec),
+                duration_views=int(row.duration_views),
+            )
+        )
+    db.commit()
+    return len(rows)
+
+
+def rollup_recent_days(db: Session, *, days: int = 2) -> int:
+    """Пересобирает последние N дней (сегодня и вчера по МСК) — идемпотентно."""
+    today = local_today()
+    total = 0
+    for offset in range(days):
+        total += rollup_day(db, today - timedelta(days=offset))
+    return total
+
+
+def cleanup_old_events(db: Session, *, retention_days: int) -> int:
+    cutoff = datetime.now(STATS_TIMEZONE) - timedelta(days=retention_days)
+    deleted = (
+        db.query(PageViewEvent)
+        .filter(PageViewEvent.ts < cutoff)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return int(deleted)
+
+
+# --- Чтение для админки -----------------------------------------------------
+
+
+def resolve_period(
+    *,
+    period_days: int | None,
+    date_from: date | None,
+    date_to: date | None,
+) -> tuple[date, date]:
+    """Диапазон отчёта: либо явные даты, либо последние N дней включая сегодня.
+
+    Явные даты приоритетнее. Указана одна граница — вторая берётся открытой
+    (от первого дня данных / по сегодня). Перепутанные местами — меняем.
+    """
+    today = local_today()
+    if date_from is None and date_to is None:
+        days = period_days or DEFAULT_PERIOD_DAYS
+        return today - timedelta(days=days - 1), today
+    start = date_from or EARLIEST_STATS_DATE
+    end = date_to or today
+    if start > end:
+        start, end = end, start
+    return start, end
+
+
+def build_page_analytics(
+    db: Session,
+    *,
+    start: date,
+    end: date,
+    top_limit: int = 20,
+) -> dict[str, object]:
+    """Сводка популярности по агрегатам page_stats_daily за период (включительно).
+
+    unique_viewers — сумма дневных уников (один человек в разные дни
+    учитывается многократно), той же природы, что на /admin/stats.
+    """
+    base = db.query(PageStatsDaily).filter(PageStatsDaily.date >= start, PageStatsDaily.date <= end)
+
+    section_rows = (
+        base.with_entities(
+            PageStatsDaily.page_type,
+            func.sum(PageStatsDaily.views).label("views"),
+            func.sum(PageStatsDaily.unique_viewers).label("unique_viewers"),
+            func.sum(PageStatsDaily.self_views).label("self_views"),
+            func.sum(PageStatsDaily.total_duration_sec).label("total_duration_sec"),
+            func.sum(PageStatsDaily.duration_views).label("duration_views"),
+        )
+        .group_by(PageStatsDaily.page_type)
+        .order_by(func.sum(PageStatsDaily.views).desc())
+        .all()
+    )
+
+    def entity_top(page_types: list[str]) -> list[Any]:
+        return (
+            base.with_entities(
+                PageStatsDaily.entity_key,
+                func.sum(PageStatsDaily.views).label("views"),
+                func.sum(PageStatsDaily.unique_viewers).label("unique_viewers"),
+                func.sum(PageStatsDaily.self_views).label("self_views"),
+                func.sum(PageStatsDaily.total_duration_sec).label("total_duration_sec"),
+                func.sum(PageStatsDaily.duration_views).label("duration_views"),
+            )
+            .filter(PageStatsDaily.page_type.in_(page_types), PageStatsDaily.entity_key != "")
+            .group_by(PageStatsDaily.entity_key)
+            .order_by(func.sum(PageStatsDaily.views).desc())
+            .limit(top_limit)
+            .all()
+        )
+
+    profile_rows = entity_top(["profile"])
+    # Популярность локации — это обе её страницы: карточка и список забегов.
+    location_rows = entity_top(["location", "location_events"])
+
+    profile_labels = _profile_labels(db, [row.entity_key for row in profile_rows])
+    location_labels = _location_labels(db, [row.entity_key for row in location_rows])
+
+    def row_stats(row: Any) -> dict[str, object]:
+        duration_views = int(row.duration_views or 0)
+        total_duration = int(row.total_duration_sec or 0)
+        return {
+            "views": int(row.views or 0),
+            "unique_viewers": int(row.unique_viewers or 0),
+            "self_views": int(row.self_views or 0),
+            "avg_duration_sec": round(total_duration / duration_views) if duration_views else None,
+        }
+
+    return {
+        "date_from": start,
+        "date_to": end,
+        "sections": [{"page_type": row.page_type, **row_stats(row)} for row in section_rows],
+        "top_profiles": [
+            {
+                "entity_key": row.entity_key,
+                **profile_labels.get(row.entity_key, {"label": row.entity_key, "href": None}),
+                **row_stats(row),
+            }
+            for row in profile_rows
+        ],
+        "top_locations": [
+            {
+                "entity_key": row.entity_key,
+                **location_labels.get(row.entity_key, {"label": row.entity_key, "href": f"/locations/{row.entity_key}"}),
+                **row_stats(row),
+            }
+            for row in location_rows
+        ],
+    }
+
+
+def _profile_labels(db: Session, entity_keys: list[str]) -> dict[str, dict[str, object]]:
+    """entity_key профиля — user_id (или нерезолвленный хэндл — оставляем как есть)."""
+    user_ids: list[UUID] = []
+    for key in entity_keys:
+        try:
+            user_ids.append(UUID(key))
+        except ValueError:
+            continue
+    if not user_ids:
+        return {}
+    users = db.query(User).filter(User.id.in_(user_ids)).all()
+    labels: dict[str, dict[str, object]] = {}
+    for user in users:
+        name = user.display_name or user.telegram_first_name or f"#{user.serial_id}"
+        handle = user.public_slug or str(user.serial_id)
+        labels[str(user.id)] = {"label": name, "href": f"/users/{handle}"}
+    return labels
+
+
+def _location_labels(db: Session, entity_keys: list[str]) -> dict[str, dict[str, object]]:
+    """Имя локации по slug страницы: первый матч по external_key среди платформ."""
+    if not entity_keys:
+        return {}
+    lowered = {key.lower(): key for key in entity_keys}
+    rows = (
+        db.query(Location.external_key, Location.name, Platform.code)
+        .join(Platform, Location.platform_id == Platform.id)
+        .filter(func.lower(Location.external_key).in_(list(lowered)))
+        .all()
+    )
+    priority = {"five_verst": 0, "s95": 1, "runpark": 2, "parkrun": 3}
+    best: dict[str, tuple[int, str]] = {}
+    for external_key, name, platform_code in rows:
+        key = lowered.get(external_key.strip().lower())
+        if key is None:
+            continue
+        rank = priority.get(platform_code, 9)
+        if key not in best or rank < best[key][0]:
+            best[key] = (rank, name)
+    return {
+        key: {"label": name, "href": f"/locations/{key}"}
+        for key, (_rank, name) in best.items()
+    }

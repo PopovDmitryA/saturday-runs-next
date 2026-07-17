@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     sync_refresh_rate_limit_per_user: int = 1
     sync_refresh_rate_limit_window_seconds: int = 1800
 
+    # Сырые события page_view_events живут столько дней; вечная история — в page_stats_daily.
+    page_events_retention_days: int = 90
+
     abuse_protection_enabled: bool = True
     abuse_whitelist_ips: str = ""
     abuse_global_limit_per_ip: int = 180

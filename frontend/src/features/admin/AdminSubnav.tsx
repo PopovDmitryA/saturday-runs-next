@@ -6,6 +6,7 @@ const LINKS = [
   { href: "/admin/users", label: "Пользователи" },
   { href: "/admin/queue", label: "Очередь" },
   { href: "/admin/stats", label: "Статистика" },
+  { href: "/admin/page-analytics", label: "Популярность" },
   { href: "/admin/ratings", label: "Рейтинг" },
   { href: "/admin/history-milestones", label: "Вехи истории" },
   { href: "/admin/event-report", label: "Отчёт по событию" },

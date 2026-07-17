@@ -9756,3 +9756,28 @@ tr.run-crosslinked td {
   padding-top: 0.4rem;
   border-top: 1px dashed var(--border);
 }
+
+/* --- Админка: популярность разделов ------------------------------------- */
+
+.page-analytics-table .page-analytics-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.page-analytics-table th {
+  white-space: nowrap;
+}
+
+.page-analytics-range {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.page-analytics-range-label {
+  margin-left: auto;
+  align-self: center;
+}
