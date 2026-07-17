@@ -646,6 +646,33 @@ def _avg_finish_sec_in_range(
     return int(total) // int(count) if count else None
 
 
+def _avg_finish_sec_up_to(
+    db: Session,
+    excluded_location_ids: list[UUID],
+    end: date,
+) -> int | None:
+    """Общее среднее время финиша по всей истории до указанной даты включительно
+    (без нижней границы) — та же формула, что и avg_overall в _avg_finish_by_platform,
+    но на срезе «история до прошлой недели», для дельты историч. среднего."""
+    row = _exclude_locations(
+        _not_crosslink_secondary(
+            db.query(
+                func.count(RunResult.id),
+                func.coalesce(func.sum(RunResult.finish_time_sec), 0),
+            )
+            .select_from(RunResult)
+            .join(Event, Event.id == RunResult.event_id)
+        ).filter(
+            RunResult.finish_time_sec.isnot(None),
+            RunResult.finish_time_sec >= MIN_SANE_FINISH_SEC,
+            Event.event_date <= end,
+        ),
+        excluded_location_ids,
+    ).one()
+    count, total = row
+    return int(total) // int(count) if count else None
+
+
 def _total_time_sec_in_range(
     db: Session,
     excluded_location_ids: list[UUID],
@@ -1235,7 +1262,6 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         fw_end = pulse_date
         fw_start = fw_end - timedelta(days=WEEK_RECORD_WINDOW_DAYS - 1)
         prev_end = fw_start - timedelta(days=1)
-        prev_start = prev_end - timedelta(days=WEEK_RECORD_WINDOW_DAYS - 1)
         finishes_this_week = sum(
             row.finishers for row in events if fw_start <= row.event_date <= fw_end
         )
@@ -1243,12 +1269,13 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         time_delta_sec = _total_time_sec_in_range(
             db, excluded_location_ids, fw_start, fw_end
         )
-        avg_this_week = _avg_finish_sec_in_range(db, excluded_location_ids, fw_start, fw_end)
-        avg_prev_week = _avg_finish_sec_in_range(
-            db, excluded_location_ids, prev_start, prev_end
-        )
-        if avg_this_week is not None and avg_prev_week is not None:
-            avg_delta_sec = avg_this_week - avg_prev_week
+        # avg_delta_sec — насколько за эту неделю сдвинулось ИСТОРИЧЕСКОЕ среднее
+        # (та же величина, что в заголовке карточки avg_finish_display), а не
+        # сравнение недели с неделей: avg_overall уже включает эту неделю,
+        # avg_before_this_week — историческое среднее до неё.
+        avg_before_this_week = _avg_finish_sec_up_to(db, excluded_location_ids, prev_end)
+        if avg_before_this_week is not None and avg_overall is not None:
+            avg_delta_sec = avg_overall - avg_before_this_week
 
     fun_facts = {
         "total_distance_km": finishes_total * DISTANCE_KM,
