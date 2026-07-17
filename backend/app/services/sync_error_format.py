@@ -13,6 +13,38 @@ _TECHNICAL_MARKERS = (
     "IntegrityError",
 )
 
+# Ошибки синка приходят с префиксом платформы («s95: …», «parkrun: …») — его
+# ставит run_*_user_sync. Тексты про бан/403 обязаны называть ту платформу,
+# которая реально упала: слова «cooldown until» и «ban/protection» есть у всех
+# трёх платформ, и раньше бан parkrun подписывался как проблема С95.
+_PLATFORM_NAMES = {
+    "five_verst": "5 вёрст",
+    "s95": "С95",
+    "parkrun": "parkrun",
+    "runpark": "RunPark",
+}
+
+_PLATFORM_PREFIX_RE = re.compile(r"^(five_verst|s95|parkrun|runpark):\s*(.*)$", re.DOTALL)
+
+
+def _platform_site(platform: str | None) -> str:
+    """«Сайт С95» / «Сайт 5 вёрст» / «Сайт платформы» — форма годится для любой."""
+    return f"Сайт {_PLATFORM_NAMES.get(platform or '', 'платформы')}"
+
+
+def _platform_prefixed_chunks(text: str) -> list[str] | None:
+    """Куски «s95: …; parkrun: …» — только если платформ действительно несколько.
+
+    У одиночной ошибки «; » часто встречается внутри самого текста (например, в
+    parkrun-диагностике «markers=captcha; likely captcha/WAF»), и делить её по
+    этому разделителю нельзя.
+    """
+    if "; " not in text:
+        return None
+    chunks = [chunk.strip() for chunk in text.split("; ") if chunk.strip()]
+    prefixed = sum(1 for chunk in chunks if _PLATFORM_PREFIX_RE.match(chunk))
+    return chunks if prefixed >= 2 else None
+
 
 def _is_technical_dump(text: str) -> bool:
     if len(text) > 320:
@@ -21,7 +53,7 @@ def _is_technical_dump(text: str) -> bool:
     return any(marker.lower() in lower for marker in _TECHNICAL_MARKERS)
 
 
-def humanize_sync_error_message(raw: str | None) -> str | None:
+def humanize_sync_error_message(raw: str | None, platform: str | None = None) -> str | None:
     if raw is None:
         return None
     text = raw.strip()
@@ -43,6 +75,24 @@ def humanize_sync_error_message(raw: str | None) -> str | None:
         if friendly in text:
             return text[:500]
 
+    chunks = _platform_prefixed_chunks(text)
+    if chunks is not None:
+        parts: list[str] = []
+        for chunk in chunks:
+            match = _PLATFORM_PREFIX_RE.match(chunk)
+            if match:
+                code, rest = match.group(1), match.group(2)
+                parts.append(f"{code}: {humanize_sync_error_message(rest, code) or rest}")
+            else:
+                parts.append(humanize_sync_error_message(chunk, platform) or chunk)
+        return "; ".join(parts)[:2000]
+
+    # Префикс не срезаем (сырой текст в админке должен остаться узнаваемым) —
+    # берём из него только платформу для сообщений ниже.
+    prefix_match = _PLATFORM_PREFIX_RE.match(text)
+    if prefix_match:
+        platform = prefix_match.group(1)
+
     lower = text.lower()
     if "uniqueviolation" in lower or "duplicate key" in lower:
         event_match = re.search(r"['\"]event_name['\"][^'\"]*['\"]([^'\"]+)['\"]", text)
@@ -55,19 +105,19 @@ def humanize_sync_error_message(raw: str | None) -> str | None:
 
     if "403" in text or "forbidden" in lower:
         return (
-            "С95 заблокировал доступ с нашего сервера (HTTP 403). "
+            f"{_platform_site(platform)} заблокировал доступ с нашего сервера (HTTP 403). "
             "Синхронизация временно приостановлена — попробуйте позже."
         )
 
     if "cooldown until" in lower or "ban/protection" in lower:
         return (
-            "С95 временно недоступен — недавно был отказ в доступе. "
+            f"{_platform_site(platform)} временно недоступен — недавно был отказ в доступе. "
             "Новые запросы приостановлены, затем проверим доступ снова."
         )
 
     if text.strip() == "Не удалось определить имя участника":
         return (
-            "С95 вернул неполную страницу профиля. "
+            f"{_platform_site(platform)} вернул неполную страницу профиля. "
             "Возможно, доступ с сервера ограничен — попробуйте позже."
         )
 
@@ -76,20 +126,6 @@ def humanize_sync_error_message(raw: str | None) -> str | None:
 
     if "connection" in lower and ("refused" in lower or "failed" in lower):
         return "Не удалось подключиться к сайту платформы. Попробуйте позже."
-
-    if "; " in text and re.search(r"\b(five_verst|s95|parkrun):", text):
-        parts: list[str] = []
-        for chunk in text.split("; "):
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-            if re.match(r"^(five_verst|s95|parkrun):", chunk):
-                prefix, _, rest = chunk.partition(":")
-                human_rest = humanize_sync_error_message(rest) or rest
-                parts.append(f"{prefix}: {human_rest}")
-            else:
-                parts.append(humanize_sync_error_message(chunk) or chunk)
-        return "; ".join(parts)[:2000]
 
     if _is_technical_dump(text):
         for line in text.splitlines():
