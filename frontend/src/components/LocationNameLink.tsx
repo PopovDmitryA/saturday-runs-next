@@ -7,8 +7,8 @@ type LocationNameLinkProps = {
 
 /**
  * Название локации со ссылкой на её страницу /locations/{slug} (если slug
- * известен). Раздел «Локации» пока admin-only, поэтому всем остальным —
- * обычный текст, без битой ссылки.
+ * известен). Раздел открыт всем залогиненным, но пока не анонсируется —
+ * ссылку показываем только админу, остальным обычный текст.
  */
 export function LocationNameLink({ name, slug }: LocationNameLinkProps) {
   const isAdmin = useCurrentUserIsAdmin();

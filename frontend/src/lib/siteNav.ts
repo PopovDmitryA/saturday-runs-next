@@ -9,7 +9,8 @@ export const APP_NAV_ITEMS: SiteNavItem[] = [
   { href: "/ratings", label: "Рейтинги" },
   { href: "/maps", label: "Карта" },
   { href: "/history", label: "Моя история" },
-  // Раздел пока не шарим на всех — только админ (решение Дмитрия 13.07.2026).
+  // Раздел открыт всем залогиненным, но в шапке пока показываем только админу:
+  // тестировщики ходят по прямой ссылке (решение Дмитрия 13.07.2026).
   { href: "/locations", label: "Локации", adminOnly: true },
   { href: "/share", label: "Поделиться" },
   { href: "/admin/users", label: "Админка", adminOnly: true, adminStyle: true },

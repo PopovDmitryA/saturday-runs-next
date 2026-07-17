@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { RequireAdmin } from "../../components/RequireAdmin";
+import { RequireAuth } from "../../components/RequireAuth";
 import { SiteHeader } from "../../components/SiteHeader";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
@@ -358,7 +358,7 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
 }
 
 export function LocationEventsPage({ slug }: { slug: string }) {
-  return <RequireAdmin>{(user) => <LocationEventsContent slug={slug} currentUser={user} />}</RequireAdmin>;
+  return <RequireAuth>{(user) => <LocationEventsContent slug={slug} currentUser={user} />}</RequireAuth>;
 }
 
 function RecordIcon({ icon, ariaLabel, tooltip }: { icon: string; ariaLabel: string; tooltip: string }) {

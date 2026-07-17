@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_admin_user, get_current_user
+from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas.locations import (
@@ -33,13 +33,13 @@ router = APIRouter(prefix="/locations", tags=["locations"])
 @router.get("/index", response_model=LocationsIndexResponse)
 def locations_index(
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_admin_user)],
+    user: Annotated[User, Depends(get_current_user)],
 ) -> LocationsIndexResponse:
     """Каталог локаций — входная точка раздела «Локации».
 
-    Раздел пока admin-only: не шарим на всех до отдельного решения
-    (Дмитрий, 13.07.2026). Ниже visited/* и catalog/* — это страница «Карта»,
-    она доступна всем авторизованным, её гейтить нельзя.
+    Доступен всем авторизованным (аноним — 401), но в шапку сайта раздел
+    пока не вынесен: тестировщики ходят по прямой ссылке
+    (решение Дмитрия 13.07.2026).
     """
     _ = user
     payload = build_locations_index(db)
@@ -50,7 +50,7 @@ def locations_index(
 def location_page(
     slug: str,
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_admin_user)],
+    user: Annotated[User, Depends(get_current_user)],
 ) -> LocationPageResponse:
     """Страница локации: сводные цифры, таймлайн систем, гистограмма, инфо-карточка."""
     _ = user
@@ -64,7 +64,7 @@ def location_page(
 def location_leaders(
     slug: str,
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_admin_user)],
+    user: Annotated[User, Depends(get_current_user)],
 ) -> LocationLeadersResponse:
     """Рейтинги внутри локации: топ по пробежкам и волонтёрствам."""
     _ = user
@@ -78,7 +78,7 @@ def location_leaders(
 def location_events(
     slug: str,
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_admin_user)],
+    user: Annotated[User, Depends(get_current_user)],
 ) -> LocationEventsResponse:
     """Журнал протоколов локации сквозь все системы."""
     _ = user

@@ -184,7 +184,7 @@ function pickLocationUrl(
 
 function formatPopupTitle(name: string, url: string | null, pageSlug?: string | null): string {
   const escapedName = escapeHtml(name);
-  // Раздел «Локации» пока admin-only — остальным ведём на внешнюю систему.
+  // Раздел «Локации» пока не анонсируем — остальным ведём на внешнюю систему.
   if (pageSlug && getCurrentUserIsAdmin()) {
     // Внутренняя страница локации приоритетнее внешней ссылки на систему.
     return `<strong><a class="map-popup-link" href="/locations/${encodeURIComponent(pageSlug)}">${escapedName}</a></strong>`;
