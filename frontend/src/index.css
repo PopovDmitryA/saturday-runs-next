@@ -4713,6 +4713,15 @@ tr.run-crosslinked td {
   color: var(--text);
 }
 
+.best-results-table .col-runner-link {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.best-results-table .col-runner-link:hover {
+  text-decoration: underline;
+}
+
 .best-results-table .col-result .finish-time-global-pr {
   font-weight: 700;
   color: var(--tint-amber-text);

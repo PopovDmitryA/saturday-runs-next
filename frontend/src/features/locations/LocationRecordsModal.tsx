@@ -12,6 +12,7 @@ type RecordRow = {
   event_date: string;
   value: string;
   runnerName: string | null;
+  runnerSerialId: number | null;
   platform_code: string;
   protocol_url: string | null;
   isGlobal: boolean;
@@ -80,6 +81,18 @@ function runnerNameFor(item: LocationEventRow, type: RecordType): string | null 
   return null;
 }
 
+/** serial_id есть только у зарегистрированных на сайте с неприватным профилем —
+ *  бэкенд гасит его сам, поэтому здесь достаточно проверки на null. */
+function runnerSerialIdFor(item: LocationEventRow, type: RecordType): number | null {
+  if (type === "male") {
+    return item.best_male_runner_serial_id;
+  }
+  if (type === "female") {
+    return item.best_female_runner_serial_id;
+  }
+  return null;
+}
+
 function buildRows(items: LocationEventRow[], type: RecordType): RecordRow[] {
   const rows: RecordRow[] = [];
   for (const item of items) {
@@ -91,6 +104,7 @@ function buildRows(items: LocationEventRow[], type: RecordType): RecordRow[] {
       event_date: item.event_date,
       value: valueFor(item, type),
       runnerName: runnerNameFor(item, type),
+      runnerSerialId: runnerSerialIdFor(item, type),
       platform_code: item.platform_code,
       protocol_url: item.protocol_url,
       isGlobal: isGlobalRecord(item, type),
@@ -162,7 +176,19 @@ export function LocationRecordsModal({
                     <td className="col-date">
                       <ActivityDateLink date={row.event_date} url={row.protocol_url} />
                     </td>
-                    {showRunnerColumn && <td className="col-runner">{row.runnerName ?? "—"}</td>}
+                    {showRunnerColumn && (
+                      <td className="col-runner">
+                        {row.runnerName == null ? (
+                          "—"
+                        ) : row.runnerSerialId != null ? (
+                          <a className="col-runner-link" href={`/users/${row.runnerSerialId}`}>
+                            {row.runnerName}
+                          </a>
+                        ) : (
+                          row.runnerName
+                        )}
+                      </td>
+                    )}
                     <td className="col-result">
                       {row.isGlobal ? (
                         <StatHintTooltip text={GLOBAL_TOOLTIP[type]} className="finish-time-global-pr-tooltip">

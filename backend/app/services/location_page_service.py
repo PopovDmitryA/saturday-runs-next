@@ -785,7 +785,7 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
 
 
 def build_location_events(db: Session, slug: str, *, use_cache: bool = True) -> dict[str, object] | None:
-    cache_key = f"locations:events:v2:{slug.strip().lower()}"
+    cache_key = f"locations:events:v3:{slug.strip().lower()}"
     if use_cache:
         cached = _read_json_cache(cache_key)
         if cached is not None:
@@ -825,7 +825,7 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
     time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
     protocol_stats: dict[UUID, dict[str, object]] = {}
     volunteer_counts: dict[UUID, int] = {}
-    best_runner_names: dict[UUID, dict[str, str | None]] = {}
+    best_runner_names: dict[UUID, dict[str, dict[str, Any]]] = {}
     if event_ids:
         rows = (
             db.query(
@@ -868,15 +868,24 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
         # минимальным временем в своём поле. DISTINCT ON (event, пол) по
         # возрастанию времени даёт ту же величину, что func.min выше, и её
         # автора одним проходом.
+        #
+        # serial_id — для ссылки на публичный профиль (/users/{serial_id}), но
+        # только если участник связан с юзером сайта И профиль не приватный:
+        # приватный отдаёт 403 всем, кроме владельца, — ссылка вела бы в тупик
+        # (та же логика, что в leaderboard_service._site_links).
+        public_serial = case((User.profile_private.is_(False), User.serial_id), else_=None)
         name_rows = (
             db.query(
                 RunResult.event_id,
                 gender_expr.label("gender"),
                 Participant.display_name,
+                public_serial.label("serial_id"),
             )
             .join(Event, RunResult.event_id == Event.id)
             .join(Platform, Event.platform_id == Platform.id)
             .outerjoin(Participant, RunResult.participant_id == Participant.id)
+            .outerjoin(PlatformLink, _platform_link_join())
+            .outerjoin(User, PlatformLink.user_id == User.id)
             .filter(
                 RunResult.event_id.in_(event_ids),
                 time_ok,
@@ -886,8 +895,11 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
             .order_by(RunResult.event_id, gender_expr, RunResult.finish_time_sec.asc())
             .all()
         )
-        for event_id, gender, display_name in name_rows:
-            best_runner_names.setdefault(event_id, {})[gender] = display_name
+        for event_id, gender, display_name, serial_id in name_rows:
+            best_runner_names.setdefault(event_id, {})[gender] = {
+                "name": display_name,
+                "serial_id": serial_id,
+            }
 
     summaries: dict[UUID, EventSummary] = {}
     if location_ids:
@@ -917,6 +929,8 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
         best_female = stats["best_female"] if stats else (summary.best_female_time_sec if summary else None)
         avg_time = stats["avg_time"] if stats else (summary.avg_time_sec if summary else None)
         runner_names = best_runner_names.get(event.id, {})
+        male_runner = runner_names.get("male") or {}
+        female_runner = runner_names.get("female") or {}
         items.append(
             {
                 "event_date": event.event_date,
@@ -926,10 +940,12 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
                 "volunteers": volunteers,
                 "best_male_time_sec": best_male,
                 "best_male_time_display": fmt(best_male),  # type: ignore[arg-type]
-                "best_male_runner_name": runner_names.get("male"),
+                "best_male_runner_name": male_runner.get("name"),
+                "best_male_runner_serial_id": male_runner.get("serial_id"),
                 "best_female_time_sec": best_female,
                 "best_female_time_display": fmt(best_female),  # type: ignore[arg-type]
-                "best_female_runner_name": runner_names.get("female"),
+                "best_female_runner_name": female_runner.get("name"),
+                "best_female_runner_serial_id": female_runner.get("serial_id"),
                 "avg_time_sec": avg_time,
                 "avg_time_display": fmt(avg_time),  # type: ignore[arg-type]
                 "debutants": stats["debutants"] if stats else None,
@@ -1126,7 +1142,7 @@ def invalidate_location_page_cache(slug: str) -> None:
         client = get_redis_client()
         client.delete(
             f"locations:page:v2:{normalized}",
-            f"locations:events:v2:{normalized}",
+            f"locations:events:v3:{normalized}",
             f"locations:leaders:v1:{normalized}",
         )
     except redis.RedisError:
