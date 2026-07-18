@@ -38,7 +38,11 @@ from app.services.location_catalog_service import LocationCatalogIndex
 logger = logging.getLogger(__name__)
 
 PORTAL_HOME_CACHE_KEY = "portal:home:v17"
-PORTAL_HOME_CACHE_TTL_SECONDS = 6 * 60 * 60
+# TTL сильно больше периода прогрева (раз в час): пересчёт занимает ~2 мин и идёт
+# синхронно в запросе пользователя, поэтому пустой кэш — это минута ожидания на
+# главной. Запас в 24 часа переживает и пропущенные прогревы, и рестарт воркера:
+# в худшем случае посетитель увидит слегка устаревшие цифры вместо белого экрана.
+PORTAL_HOME_CACHE_TTL_SECONDS = 24 * 60 * 60
 
 DISTANCE_KM = 5
 # Мировой рекорд на 5 км — 12:35; всё быстрее 13 минут в протоколах

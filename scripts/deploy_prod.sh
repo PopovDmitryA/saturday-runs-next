@@ -143,7 +143,7 @@ compose() { docker compose -f docker-compose.yml -f docker-compose.prod.yml "$@"
 
 # Сервисы, которые пересоздаём. nginx собирать нельзя — он на готовом образе
 # (nginx:1.27-alpine), build-контекст есть только у python-сервисов.
-SERVICES="worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat vk-bot"
+SERVICES="worker worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat vk-bot"
 
 # NB: `docker compose exec/run -T` всё равно цепляет контейнер к stdin. Скрипт
 # приезжает в `bash -s` через SSH stdin, поэтому каждый exec/run ОБЯЗАН читать

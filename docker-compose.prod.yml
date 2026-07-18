@@ -33,8 +33,23 @@ services:
     volumes:
       - ./.env:/app/.env:ro
 
+  # Дефолтная очередь "celery": прогрев главной портала, агрегаты популярности
+  # страниц, суточная сводка автообновления в ВК. Раньше сервис был выключен
+  # профилем "dev-default-worker" — эти задачи beat исправно ставил в очередь,
+  # но разбирать её на проде было некому: остальные воркеры слушают только свои
+  # -Q. Итог: главная портала считалась холодной (~2 мин) прямо в запросе
+  # пользователя, а «Популярность» в админке стояла пустой. 18.07.2026.
   worker:
-    profiles: ["dev-default-worker"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./.env:/app/.env:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !reset
+      redis:
+        condition: service_healthy
 
   worker-s95:
     environment:
