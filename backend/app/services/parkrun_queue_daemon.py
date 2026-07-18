@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Literal, cast
 from uuid import UUID
@@ -141,6 +141,7 @@ def run_parkrun_queue_daemon(
     db: Session,
     session: ParkrunDaemonSession,
     items: list[ParkrunWorkItem],
+    after_item: Callable[[], str | None] | None = None,
 ) -> dict[str, object]:
     summary: dict[str, int] = {}
     details: list[str] = []
@@ -173,6 +174,14 @@ def run_parkrun_queue_daemon(
             summary["error"] = summary.get("error", 0) + 1
             details.append(f"error: {item.label} — {exc}")
 
+        # Чередование очередей: после каждой задачи сайта — один шаг
+        # parkrun-monitoring (eventhistory-саммари одной локации).
+        if after_item is not None:
+            line = after_item()
+            if line:
+                details.append(line)
+                print("  ", line, flush=True)
+
         if index < total:
             session.human_pause_between_jobs()
 
@@ -202,9 +211,20 @@ def run_daemon(
     include_sync: bool = True,
 ) -> dict[str, object]:
     from app.config import get_settings
+    from app.services.parkrun_monitoring_bridge import (
+        monitoring_history_step,
+        push_monitoring_to_server,
+        refresh_monitoring_stats,
+    )
     from app.services.s95_queue_daemon import run_s95_pending_queue
 
     prepare_parkrun_cdp_fetch()
+
+    # parkrun-monitoring: сперва обновляем каталог + недельную статистику
+    # стран (results-service доступен с Mac, но не с сервера).
+    stats_line = refresh_monitoring_stats()
+    if stats_line:
+        print(stats_line, flush=True)
 
     # s95 uses its own fetch (no parkrun browser needed) — drain it first.
     s95_result = run_s95_pending_queue(db, limit_pending=limit_pending)
@@ -218,24 +238,50 @@ def run_daemon(
         limit_pending=limit_pending,
         include_sync=include_sync,
     )
+
+    # Бюджет parkrun-monitoring на этот прогон: LIMIT шагов-саммари всего,
+    # по одному после каждой задачи сайта, остаток — после очереди.
+    monitoring_steps = 0
+
+    def _monitoring_after_item() -> str | None:
+        nonlocal monitoring_steps
+        if monitoring_steps >= limit_pending:
+            return None
+        monitoring_steps += 1
+        return monitoring_history_step(limit=1)
+
     if not items:
         print("Очередь parkrun пуста (pending и sync).", flush=True)
-        return _merge_results(s95_result, {"summary": {}, "details": [], "total": 0})
+        parkrun_result: dict[str, object] = {"summary": {}, "details": [], "total": 0}
+    else:
+        settings = get_settings()
+        cdp = use_cdp if use_cdp is not None else bool(
+            settings.parkrun_use_cdp_for_fetch and settings.parkrun_cdp_url.strip()
+        )
+        mode = f"Chrome CDP ({cdp_url or settings.parkrun_cdp_url})" if cdp else "Playwright Chromium"
+        print(f"В очереди: {len(items)} задач(и). Браузер: {mode}", flush=True)
+        with ParkrunDaemonSession(
+            use_cdp=use_cdp,
+            cdp_url=cdp_url,
+            launch_chrome=launch_chrome,
+        ) as browser_session:
+            token = activate_daemon_session(browser_session)
+            try:
+                parkrun_result = run_parkrun_queue_daemon(
+                    db, browser_session, items, after_item=_monitoring_after_item
+                )
+            finally:
+                deactivate_daemon_session(token)
 
-    settings = get_settings()
-    cdp = use_cdp if use_cdp is not None else bool(
-        settings.parkrun_use_cdp_for_fetch and settings.parkrun_cdp_url.strip()
-    )
-    mode = f"Chrome CDP ({cdp_url or settings.parkrun_cdp_url})" if cdp else "Playwright Chromium"
-    print(f"В очереди: {len(items)} задач(и). Браузер: {mode}", flush=True)
-    with ParkrunDaemonSession(
-        use_cdp=use_cdp,
-        cdp_url=cdp_url,
-        launch_chrome=launch_chrome,
-    ) as browser_session:
-        token = activate_daemon_session(browser_session)
-        try:
-            parkrun_result = run_parkrun_queue_daemon(db, browser_session, items)
-        finally:
-            deactivate_daemon_session(token)
+    # Очередь сайта кончилась — добираем оставшийся бюджет саммари одним заходом.
+    remaining = limit_pending - monitoring_steps
+    if remaining > 0:
+        drain_line = monitoring_history_step(limit=remaining)
+        if drain_line:
+            print(drain_line, flush=True)
+
+    push_line = push_monitoring_to_server()
+    if push_line:
+        print(push_line, flush=True)
+
     return _merge_results(s95_result, parkrun_result)

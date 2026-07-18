@@ -67,8 +67,10 @@ parkrun-save-browser-state:
 	docker compose exec api python scripts/parkrun_save_browser_state.py
 
 # Mac: one command — DB queue, Chrome, wait for captcha, sync runs (run daily)
+# LIMIT задаёт бюджет прогона (задачи сайта + eventhistory-саммари мониторинга):
+#   make parkrun LIMIT=300   # на ночь
 parkrun:
-	bash scripts/parkrun_mac.sh; true
+	LIMIT="$(LIMIT)" bash scripts/parkrun_mac.sh; true
 
 # Seed 5 parkrun profiles from legacy five_verst_stats into LK queue (needs LEGACY_DATABASE_URL)
 parkrun-seed-queue:

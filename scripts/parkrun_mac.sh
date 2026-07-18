@@ -53,6 +53,9 @@ export REDIS_URL="redis://127.0.0.1:${LOCAL_REDIS_PORT}/0"
 export DB_DISABLE_IDLE_TX_TIMEOUT=1
 export PYTHONPATH="${ROOT}/backend"
 export PARKRUN_PLAYWRIGHT_STORAGE_STATE_PATH="${ROOT}/data/parkrun_playwright_state.json"
+# Соседний проект parkrun-monitoring: демон чередует очередь сайта с его
+# задачами (статистика стран + eventhistory-саммари) и пушит их на сервер.
+export PARKRUN_MONITORING_DIR="${PARKRUN_MONITORING_DIR:-$HOME/Projects/parkrun-monitoring}"
 export PARKRUN_PLAYWRIGHT_HEADLESS=false
 export PARKRUN_USE_CDP_FOR_FETCH="${PARKRUN_USE_CDP_FOR_FETCH:-false}"
 
