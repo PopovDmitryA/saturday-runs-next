@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     report_api_token: str = ""
     report_query_max_rows: int = 5000
     report_query_timeout_seconds: int = 15
+    # Отдельный коннект под read-only ролью. Пусто — используется database_url.
+    report_database_url: str = ""
 
     session_cookie_name: str = "sr_session"
     session_ttl_seconds: int = 72 * 3600

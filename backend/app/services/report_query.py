@@ -65,6 +65,51 @@ _NAMED_REPORTS_LIST: list[NamedReport] = [
             "ORDER BY connections DESC"
         ),
     ),
+    NamedReport(
+        name="schema",
+        description=(
+            "Все колонки таблиц схемы public: тип, nullable, default. "
+            "Даёт полную карту хранения для составления ad-hoc запросов."
+        ),
+        sql=(
+            "SELECT c.table_name, c.ordinal_position, c.column_name, "
+            "c.data_type, c.udt_name, c.character_maximum_length, "
+            "c.is_nullable, c.column_default "
+            "FROM information_schema.columns c "
+            "JOIN information_schema.tables t "
+            "  ON t.table_schema = c.table_schema AND t.table_name = c.table_name "
+            "WHERE c.table_schema = 'public' AND t.table_type = 'BASE TABLE' "
+            "ORDER BY c.table_name, c.ordinal_position"
+        ),
+    ),
+    NamedReport(
+        name="foreign_keys",
+        description="Внешние ключи схемы public: какая колонка ссылается на какую таблицу/колонку.",
+        sql=(
+            "SELECT tc.table_name, kcu.column_name, "
+            "ccu.table_name AS references_table, "
+            "ccu.column_name AS references_column, tc.constraint_name "
+            "FROM information_schema.table_constraints tc "
+            "JOIN information_schema.key_column_usage kcu "
+            "  ON tc.constraint_name = kcu.constraint_name "
+            "  AND tc.table_schema = kcu.table_schema "
+            "JOIN information_schema.constraint_column_usage ccu "
+            "  ON ccu.constraint_name = tc.constraint_name "
+            "  AND ccu.table_schema = tc.table_schema "
+            "WHERE tc.constraint_type = 'FOREIGN KEY' "
+            "  AND tc.table_schema = 'public' "
+            "ORDER BY tc.table_name, kcu.column_name"
+        ),
+    ),
+    NamedReport(
+        name="indexes",
+        description="Индексы схемы public (помогает писать эффективные запросы).",
+        sql=(
+            "SELECT tablename AS table_name, indexname AS index_name, indexdef "
+            "FROM pg_indexes WHERE schemaname = 'public' "
+            "ORDER BY tablename, indexname"
+        ),
+    ),
 ]
 
 NAMED_REPORTS: dict[str, NamedReport] = {r.name: r for r in _NAMED_REPORTS_LIST}

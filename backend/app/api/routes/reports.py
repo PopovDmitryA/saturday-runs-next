@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
-from app.db.session import get_db
+from app.db.session import get_report_db
 from app.services.report_query import (
     NAMED_REPORTS,
     ReportQueryError,
@@ -109,7 +109,7 @@ def list_reports(
 @router.post("/query", response_model=ReportResponse)
 def run_query(
     body: QueryRequest,
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[Session, Depends(get_report_db)],
     settings: Annotated[Settings, Depends(_verify_report_token)],
 ) -> ReportResponse:
     try:
@@ -127,7 +127,7 @@ def run_query(
 @router.get("/named/{name}", response_model=ReportResponse)
 def run_named_report(
     name: str,
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[Session, Depends(get_report_db)],
     settings: Annotated[Settings, Depends(_verify_report_token)],
     limit: Annotated[int | None, Query(ge=1)] = None,
 ) -> ReportResponse:

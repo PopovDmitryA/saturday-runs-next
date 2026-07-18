@@ -171,3 +171,31 @@ def test_named_report_db_size(client: TestClient) -> None:
         pytest.skip("Database not available")
     assert resp.status_code == 200, resp.text
     assert resp.json()["columns"] == ["size"]
+
+
+def test_all_named_reports_pass_validation() -> None:
+    from app.services.report_query import NAMED_REPORTS, validate_sql
+
+    for report in NAMED_REPORTS.values():
+        assert validate_sql(report.sql)  # не должно бросать
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["db_size", "table_sizes", "connections", "schema", "foreign_keys", "indexes"],
+)
+def test_all_named_reports_execute(client: TestClient, name: str) -> None:
+    resp = client.get(f"/api/internal/reports/named/{name}", headers=_auth())
+    if resp.status_code == 400 and "connection" in resp.text.lower():
+        pytest.skip("Database not available")
+    assert resp.status_code == 200, resp.text
+    assert isinstance(resp.json()["columns"], list)
+
+
+def test_schema_report_shape(client: TestClient) -> None:
+    resp = client.get("/api/internal/reports/named/schema", headers=_auth())
+    if resp.status_code == 400 and "connection" in resp.text.lower():
+        pytest.skip("Database not available")
+    assert resp.status_code == 200, resp.text
+    cols = resp.json()["columns"]
+    assert {"table_name", "column_name", "data_type", "is_nullable"} <= set(cols)
