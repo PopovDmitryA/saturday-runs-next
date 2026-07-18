@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from datetime import datetime, timezone
+from uuid import UUID
 
 import fakeredis
 import pytest
@@ -12,6 +13,7 @@ from app.config import Settings, get_settings
 from app.core.site_stats import record_pageview
 from app.db.session import get_db
 from app.main import app
+from app.models import PageViewEvent
 
 
 @pytest.fixture
@@ -151,3 +153,41 @@ def test_pageview_endpoint(client: TestClient, fake_redis: fakeredis.FakeRedis) 
     assert response.status_code == 204
     today = datetime.now(timezone.utc).date().isoformat()
     assert fake_redis.pfcount(f"stats:day:{today}:uv") == 1
+
+
+def test_pageview_endpoint_records_event(client: TestClient, db_session: Session) -> None:
+    view_id = "11111111-1111-4111-8111-111111111111"
+    response = client.post(
+        "/api/stats/pageview",
+        json={
+            "path": "/runs",
+            "authenticated": False,
+            "visitor_key": "a:test-visitor-2",
+            "view_id": view_id,
+        },
+    )
+    assert response.status_code == 204
+    assert db_session.query(PageViewEvent).filter(PageViewEvent.view_id == UUID(view_id)).count() == 1
+
+
+def test_pageview_endpoint_ignores_admin(
+    admin_client: TestClient,
+    db_session: Session,
+    fake_redis: fakeredis.FakeRedis,
+) -> None:
+    """Обходы админа не должны двигать ни «Популярность», ни «Статистику»:
+    он ходит по сайту, чтобы его проверять, а не пользоваться им."""
+    view_id = "22222222-2222-4222-8222-222222222222"
+    response = admin_client.post(
+        "/api/stats/pageview",
+        json={
+            "path": "/runs",
+            "authenticated": True,
+            "visitor_key": "u:admin-visitor",
+            "view_id": view_id,
+        },
+    )
+    assert response.status_code == 204
+    assert db_session.query(PageViewEvent).filter(PageViewEvent.view_id == UUID(view_id)).count() == 0
+    today = datetime.now(timezone.utc).date().isoformat()
+    assert int(fake_redis.get(f"stats:day:{today}:pv:total") or 0) == 0

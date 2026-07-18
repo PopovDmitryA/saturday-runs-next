@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 from typing import Annotated
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_client_ip, get_optional_session_user_id
+from app.api.deps import get_client_ip, get_optional_user
+from app.config import Settings, get_settings
+from app.core.admin import is_admin_user
 from app.core.rate_limit import check_rate_limit
 from app.core.site_stats import record_pageview
 from app.db.session import get_db
+from app.models import User
 from app.schemas.admin_stats import PageleaveRecordRequest, PageviewRecordRequest
 from app.services.page_analytics_service import record_page_leave, record_page_view
 
@@ -28,9 +31,17 @@ def record_page_view_endpoint(
     body: PageviewRecordRequest,
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    viewer_user_id: Annotated[UUID | None, Depends(get_optional_session_user_id)],
+    viewer: Annotated[User | None, Depends(get_optional_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
     if _rate_limited(request, "pageview"):
+        return Response(status_code=204)
+    # Админ ходит по сайту, чтобы его проверять, а не пользоваться им: на фоне
+    # десятков просмотров в сутки его обходы заметно двигают и «Популярность»,
+    # и счётчики «Статистики». Поэтому его просмотры не пишутся вовсе — ни в
+    # Postgres, ни в Redis. Событие pageleave по этому view_id потом обновит
+    # ноль строк, отдельно его фильтровать не нужно.
+    if viewer is not None and is_admin_user(viewer, settings):
         return Response(status_code=204)
     record_pageview(
         body.path,
@@ -42,7 +53,7 @@ def record_page_view_endpoint(
         view_id=body.view_id or uuid4(),
         path=body.path,
         visitor_key=body.visitor_key,
-        viewer_user_id=viewer_user_id,
+        viewer_user_id=viewer.id if viewer is not None else None,
     )
     return Response(status_code=204)
 
