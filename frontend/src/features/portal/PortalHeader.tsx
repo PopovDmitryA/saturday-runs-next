@@ -7,12 +7,36 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
   // Аноним не должен попасть на старый /login через RequireAuth на /dashboard —
   // пока авторизация не подтверждена, ведём через новый /new/login.
   const [authed, setAuthed] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     getCurrentUser()
       .then(() => setAuthed(true))
       .catch(() => setAuthed(false));
   }, []);
+
+  const navLinks = (
+    <>
+      <a href={PORTAL_ABOUT_HREF} className="portal-header-link">
+        О проекте
+      </a>
+      <a href={authed ? "/dashboard" : PORTAL_LOGIN_HREF} className="portal-header-link">
+        Личный кабинет
+      </a>
+      <span
+        className="portal-header-link disabled"
+        aria-disabled="true"
+        title="Скоро — раздел в разработке"
+      >
+        Локации
+      </span>
+      {/* Рейтинги под RequireAuth: анонима увели бы на СТАРЫЙ /login — как и
+          с «Личным кабинетом», ведём его на портальный вход. */}
+      <a href={authed ? "/ratings" : PORTAL_LOGIN_HREF} className="portal-header-link">
+        Рейтинги
+      </a>
+    </>
+  );
 
   return (
     <header className="portal-header">
@@ -42,24 +66,7 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
           </span>
         </a>
         <nav className="portal-header-nav" aria-label="Разделы портала">
-          <a href={PORTAL_ABOUT_HREF} className="portal-header-link">
-            О проекте
-          </a>
-          <a href={authed ? "/dashboard" : PORTAL_LOGIN_HREF} className="portal-header-link">
-            Личный кабинет
-          </a>
-          <span
-            className="portal-header-link disabled"
-            aria-disabled="true"
-            title="Скоро — раздел в разработке"
-          >
-            Локации
-          </span>
-          {/* Рейтинги под RequireAuth: анонима увели бы на СТАРЫЙ /login — как и
-              с «Личным кабинетом», ведём его на портальный вход. */}
-          <a href={authed ? "/ratings" : PORTAL_LOGIN_HREF} className="portal-header-link">
-            Рейтинги
-          </a>
+          {navLinks}
         </nav>
         <div className="portal-header-actions">
           <ThemeToggle />
@@ -80,8 +87,28 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
               Войти
             </a>
           )}
+          <button
+            type="button"
+            className="portal-header-burger"
+            aria-label={menuOpen ? "Закрыть меню" : "Открыть меню"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              {menuOpen ? (
+                <path d="M6 6l12 12M18 6L6 18" strokeWidth="2" strokeLinecap="round" />
+              ) : (
+                <path d="M4 7h16M4 12h16M4 17h16" strokeWidth="2" strokeLinecap="round" />
+              )}
+            </svg>
+          </button>
         </div>
       </div>
+      {menuOpen && (
+        <nav className="portal-header-nav-mobile" aria-label="Разделы портала (мобильное меню)">
+          {navLinks}
+        </nav>
+      )}
     </header>
   );
 }

@@ -106,9 +106,39 @@
   text-decoration: none;
 }
 
+/* бургер-кнопка мобильного меню — на десктопе скрыта */
+.portal-header-burger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  flex: none;
+}
+
+.portal-header-burger svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+}
+
+.portal-header-nav-mobile {
+  display: none;
+}
+
 @media (max-width: 560px) {
   .portal-header-nav {
     display: none;
+  }
+
+  .portal-header-burger {
+    display: inline-flex;
   }
 
   .portal-header-inner {
@@ -126,6 +156,19 @@
   .portal-header-channel svg {
     width: 18px;
     height: 18px;
+  }
+
+  .portal-header-nav-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 20px 14px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .portal-header-nav-mobile .portal-header-link {
+    padding: 10px 8px;
   }
 }
 
