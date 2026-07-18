@@ -14,6 +14,7 @@ from app.api.routes import (
     portal,
     profiles,
     public_profiles,
+    reports,
     runs,
     settings,
     stats,
@@ -38,3 +39,4 @@ api_router.include_router(settings.router)
 api_router.include_router(public_profiles.router)
 api_router.include_router(internal_bot.router)
 api_router.include_router(internal_vk_bot.router)
+api_router.include_router(reports.router)
