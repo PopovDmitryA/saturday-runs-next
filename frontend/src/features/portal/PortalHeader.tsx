@@ -23,13 +23,11 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
       <a href={authed ? "/dashboard" : PORTAL_LOGIN_HREF} className="portal-header-link">
         Личный кабинет
       </a>
-      <span
-        className="portal-header-link disabled"
-        aria-disabled="true"
-        title="Скоро — раздел в разработке"
-      >
+      {/* Локации под RequireAuth: анонима увели бы на СТАРЫЙ /login — как и
+          с «Личным кабинетом», ведём его на портальный вход. */}
+      <a href={authed ? "/locations" : PORTAL_LOGIN_HREF} className="portal-header-link">
         Локации
-      </span>
+      </a>
       {/* Рейтинги под RequireAuth: анонима увели бы на СТАРЫЙ /login — как и
           с «Личным кабинетом», ведём его на портальный вход. */}
       <a href={authed ? "/ratings" : PORTAL_LOGIN_HREF} className="portal-header-link">
