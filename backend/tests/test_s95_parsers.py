@@ -16,8 +16,6 @@ from app.s95.parsers.athlete import (
     parse_athlete_volunteering_html,
     parse_barcode_and_planning,
 )
-from app.s95.parsers.protocol import parse_protocol_html
-from app.s95.parsers.summary import parse_location_summary_html
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -150,47 +148,6 @@ def test_parse_athlete_volunteering_serbian_roles_to_russian() -> None:
     assert roles == {"Проведение разминки", "Фотограф"}
     assert all("zagrevanje" not in (item.external_result_key or "") for item in vols)
     assert all("fotograf" not in (item.external_result_key or "") for item in vols)
-
-
-def test_parse_summary_fixture() -> None:
-    html = (FIXTURES / "s95_summary.html").read_text(encoding="utf-8")
-    summaries = parse_location_summary_html(
-        html,
-        "https://s95.ru/locations/gorky/",
-        location_external_key="gorky",
-        location_name="Парк Горького",
-    )
-    assert len(summaries) == 1
-    assert summaries[0].event_date == date(2025, 4, 12)
-    assert summaries[0].finishers_count == 150
-    assert summaries[0].best_male_time_display == "00:18:59"
-
-
-def test_parse_protocol_fixture() -> None:
-    html = (FIXTURES / "s95_protocol.html").read_text(encoding="utf-8")
-    runs, vols = parse_protocol_html(
-        html,
-        "https://s95.ru/events/100/protocol/",
-        location_external_key="gorky",
-        location_name="Парк Горького",
-        event_date=date(2025, 4, 12),
-        event_number=100,
-    )
-    assert len(runs) == 3
-    assert runs[0].external_user_id == "5207"
-    assert runs[0].finish_time_display == "00:23:42"
-    from app.pace import resolve_run_pace
-
-    pace_sec, pace_display = resolve_run_pace(
-        runs[0].pace_sec_per_km,
-        runs[0].pace_display,
-        runs[0].finish_time_sec,
-    )
-    assert pace_display == "4:44"
-    assert pace_sec == 284
-    assert runs[0].is_pr is True
-    assert len(vols) == 1
-    assert vols[0].external_user_id == "5207"
 
 
 def test_parkrun_barcode_rules() -> None:

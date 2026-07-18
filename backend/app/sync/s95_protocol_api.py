@@ -32,6 +32,12 @@ class S95ApiProtocolResult:
     volunteer_results_count: int
 
 
+@dataclass
+class S95ProtocolFetchResult:
+    run_results_upserted: int
+    volunteer_results_upserted: int
+
+
 def _content_hash(parsed: ParsedApiProtocol) -> str:
     parts: list[str] = []
     for r in sorted(parsed.run_results, key=lambda x: x.external_result_key):
@@ -212,4 +218,33 @@ def upsert_activity_protocol_api(
         changed=True,
         run_results_count=run_count,
         volunteer_results_count=vol_count,
+    )
+
+
+def fetch_and_upsert_activity_protocol_api(
+    db: Session,
+    platform: Platform,
+    location,
+    summary: CanonicalEventSummary,
+    summary_row,
+    *,
+    protocol_url: str | None = None,
+) -> S95ProtocolFetchResult:
+    """Adapter for callers that resolve a single JSON activity URL via location+date
+    lookup (profile-triggered fetches, admin manual resync, mismatch refetch) rather
+    than iterating a location's full /events/{slug}.json listing.
+
+    S95 protocols are JSON-only end to end — there is no HTML protocol scraper; the
+    only legitimate HTML parsing left for S95 is the athlete profile page.
+    """
+    url = protocol_url or summary.source_url
+    if not url:
+        raise ValueError(f"Protocol URL missing for {summary.external_event_key}")
+    activity_ref = S95ApiActivityRef(date=summary.event_date.isoformat(), url=url)
+    result = upsert_activity_protocol_api(
+        db, platform, location, activity_ref, event_number=summary.event_number
+    )
+    return S95ProtocolFetchResult(
+        run_results_upserted=result.run_results_count,
+        volunteer_results_upserted=result.volunteer_results_count,
     )

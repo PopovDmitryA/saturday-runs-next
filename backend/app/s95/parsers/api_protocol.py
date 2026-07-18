@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from app.platform_adapters.canonical import CanonicalRunResult, CanonicalVolunteerResult
-from app.s95.parsers.protocol import UNKNOWN_NAMES
 from app.s95.parsers.volunteer_roles import (
     canonical_s95_api_role,
     s95_volunteer_role_key,
@@ -12,6 +11,7 @@ from app.s95.parsers.volunteer_roles import (
 from app.time_format import parse_finish_time
 
 UNKNOWN_NAME = "Unknown"
+UNKNOWN_NAMES = {"НЕИЗВЕСТНЫЙ", "NEPOZNATO"}
 
 
 @dataclass

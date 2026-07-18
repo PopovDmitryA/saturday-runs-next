@@ -12,7 +12,7 @@ from app.platform_adapters.five_verst import bulk_parser
 from app.platform_adapters.five_verst.http import fetch_html
 from app.sync import upsert
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
-from app.sync.s95_protocol import fetch_and_upsert_activity_protocol
+from app.sync.s95_protocol_api import fetch_and_upsert_activity_protocol_api
 from app.sync.s95_protocol_lookup import ACTIVITY_URL_RE, _summary_to_canonical
 
 FIVE_VERST_PROTOCOL_URL_RE = re.compile(
@@ -153,7 +153,7 @@ def _sync_s95_protocol_url(db: Session, url: str) -> dict[str, object]:
     if summary_row is None:
         raise ValueError(
             f"Активность {activity_id} не найдена в БД. "
-            "Сначала синхронизируйте локацию или latest/reconcile."
+            "Сначала дождитесь s95-registry/api sync-updated или запустите full-backfill."
         )
 
     location = db.query(Location).filter(Location.id == summary_row.location_id).one()
@@ -161,7 +161,7 @@ def _sync_s95_protocol_url(db: Session, url: str) -> dict[str, object]:
     summary = _summary_to_canonical(summary_row, location)
     summary.source_url = protocol_url
 
-    result = fetch_and_upsert_activity_protocol(
+    result = fetch_and_upsert_activity_protocol_api(
         db,
         platform,
         location,
@@ -177,7 +177,6 @@ def _sync_s95_protocol_url(db: Session, url: str) -> dict[str, object]:
         "event_date": summary_row.event_date.isoformat(),
         "run_results_upserted": result.run_results_upserted,
         "volunteer_results_upserted": result.volunteer_results_upserted,
-        "protocol_changed": result.protocol_changed,
     }
 
 

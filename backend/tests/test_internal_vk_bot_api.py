@@ -67,7 +67,7 @@ def test_sync_pipelines_returns_list(client: TestClient) -> None:
     items = response.json()
     keys = {item["key"] for item in items}
     assert "registry" in keys
-    assert "s95-latest" in keys
+    assert "s95-sync-updated" in keys
     assert all(item["label"] for item in items)
 
 

@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, Participant, Platform, RunResult
-from app.platform_adapters.canonical import CanonicalRunResult, CanonicalVolunteerResult
+from app.platform_adapters.canonical import CanonicalRunResult
 from app.sync import upsert
-from app.sync.iteration_commit import commit_step, rollback_step
-from app.sync.s95_protocol import fetch_and_upsert_activity_protocol
-from app.sync.s95_protocol_lookup import resolve_s95_protocol
 
 DEFAULT_MISMATCH_CHECK_RUNS = 10
 
@@ -24,14 +21,6 @@ class ProfileRunMismatch:
     profile_finish_time_sec: int | None
     db_position: int | None
     db_finish_time_sec: int | None
-
-
-@dataclass
-class RefetchMismatchedProtocolsResult:
-    checked: int = 0
-    mismatches: list[ProfileRunMismatch] = field(default_factory=list)
-    protocols_refetched: int = 0
-    errors: list[str] = field(default_factory=list)
 
 
 def _find_db_run_result(
@@ -119,121 +108,3 @@ def detect_profile_run_mismatches(
             )
         )
     return mismatches
-
-
-def refetch_mismatched_protocols(
-    db: Session,
-    platform: Platform,
-    participant: Participant,
-    profile_runs: list[CanonicalRunResult],
-    *,
-    limit: int | None = DEFAULT_MISMATCH_CHECK_RUNS,
-) -> RefetchMismatchedProtocolsResult:
-    result = RefetchMismatchedProtocolsResult()
-    mismatches = detect_profile_run_mismatches(
-        db,
-        platform,
-        participant,
-        profile_runs,
-        limit=limit,
-    )
-    if limit is None:
-        result.checked = len(profile_runs)
-    else:
-        result.checked = min(len(profile_runs), limit)
-    result.mismatches = mismatches
-
-    seen_keys: set[str] = set()
-    for mismatch in mismatches:
-        if mismatch.external_event_key in seen_keys:
-            continue
-        seen_keys.add(mismatch.external_event_key)
-        profile_run = next(
-            (
-                item
-                for item in profile_runs
-                if upsert._normalize_location_slug(item.location_external_key, item.location_name)
-                == mismatch.location_slug
-                and item.event_date == mismatch.event_date
-            ),
-            None,
-        )
-        location_name = profile_run.location_name if profile_run else mismatch.location_slug
-        try:
-            resolved = resolve_s95_protocol(
-                db,
-                platform,
-                location_slug=mismatch.location_slug,
-                location_name=location_name,
-                event_date=mismatch.event_date,
-            )
-            if resolved is None:
-                result.errors.append(f"{mismatch.external_event_key}: protocol not found")
-                continue
-            fetch_and_upsert_activity_protocol(
-                db,
-                platform,
-                resolved.location,
-                resolved.summary,
-                resolved.summary_row,
-                protocol_url=resolved.protocol_url,
-            )
-            result.protocols_refetched += 1
-            commit_step(db)
-        except Exception as exc:
-            rollback_step(db)
-            result.errors.append(f"{mismatch.external_event_key}: {exc}")
-
-    return result
-
-
-def refetch_protocols_for_profile_volunteering(
-    db: Session,
-    platform: Platform,
-    profile_volunteering: list[CanonicalVolunteerResult],
-    *,
-    limit: int | None = 15,
-) -> RefetchMismatchedProtocolsResult:
-    """Load event protocols for recent profile volunteering rows (team list + cross-check)."""
-    result = RefetchMismatchedProtocolsResult()
-    recent = sorted(profile_volunteering, key=lambda item: item.event_date, reverse=True)
-    if limit is not None:
-        recent = recent[:limit]
-    result.checked = len(recent)
-
-    seen_events: set[str] = set()
-    for vol in recent:
-        slug = upsert._normalize_location_slug(vol.location_external_key, vol.location_name)
-        if slug == "unknown":
-            continue
-        event_key = f"{slug}:{vol.event_date.isoformat()}"
-        if event_key in seen_events:
-            continue
-        seen_events.add(event_key)
-        location_name = vol.location_name or slug
-        try:
-            resolved = resolve_s95_protocol(
-                db,
-                platform,
-                location_slug=slug,
-                location_name=location_name,
-                event_date=vol.event_date,
-            )
-            if resolved is None:
-                result.errors.append(f"{event_key}: protocol not found")
-                continue
-            fetch_and_upsert_activity_protocol(
-                db,
-                platform,
-                resolved.location,
-                resolved.summary,
-                resolved.summary_row,
-                protocol_url=resolved.protocol_url,
-            )
-            result.protocols_refetched += 1
-            commit_step(db)
-        except Exception as exc:
-            rollback_step(db)
-            result.errors.append(f"{event_key}: {exc}")
-
-    return result

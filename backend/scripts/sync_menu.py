@@ -395,34 +395,16 @@ def _run_five_verst_reconcile(cfg: SessionConfig) -> None:
         db.close()
 
 
-def _run_s95_latest(cfg: SessionConfig) -> None:
-    from app.config import get_settings
-    from app.sync.s95_latest import S95LatestSyncOptions, fetch_latest_activity_summaries, sync_s95_latest
-    from app.sync.s95_summary_plan import plan_event_summaries_sync
+def _run_s95_sync_updated(cfg: SessionConfig) -> None:
+    """S95 is JSON-API-only — new/changed protocols via /events/{slug}.json updated_at."""
+    from app.sync.s95_global_sync_api import sync_updated_protocols
 
-    protocols = _prompt_int("Протоколов загрузить (0 = по настройке)", default=0)
     db = _get_db()
     try:
         if cfg.dry_run:
-            summaries = fetch_latest_activity_summaries()
-            plan = plan_event_summaries_sync(db, summaries)
-            payload = {
-                "summaries_total": len(summaries),
-                "needs_update": sum(1 for x in plan if x.action.value != "unchanged"),
-            }
-            _print_result(payload)
+            print("(dry-run) s95 sync-updated не поддерживает dry-run — запускает реальный JSON sync.")
             return
-        settings = get_settings()
-        result = sync_s95_latest(
-            db,
-            S95LatestSyncOptions(
-                dry_run=False,
-                update_limit=settings.s95_sync_latest_update_limit or None,
-                protocol_fetch_limit=protocols if protocols > 0 else settings.s95_sync_protocol_limit,
-                ensure_locations=True,
-                fetch_all_protocols_on_change=settings.s95_fetch_all_protocols_on_change,
-            ),
-        )
+        result = sync_updated_protocols(db)
         _print_result(result)
     finally:
         db.close()
@@ -446,26 +428,17 @@ def _run_s95_registry(cfg: SessionConfig) -> None:
         db.close()
 
 
-def _run_s95_reconcile(cfg: SessionConfig) -> None:
-    from app.config import get_settings
-    from app.sync.s95_reconcile import (
-        ReconcileProtocolsOptions,
-        plan_stale_protocol_reconcile,
-        reconcile_stale_protocols,
-    )
+def _run_s95_full_backfill(cfg: SessionConfig) -> None:
+    """S95 is JSON-API-only — one-time pass over every protocol of every location."""
+    from app.sync.s95_global_sync_api import full_backfill
 
-    limit = _prompt_int("Сколько протоколов", default=10)
+    limit = _prompt_int("Протоколов на локацию (0 = без лимита)", default=0)
     db = _get_db()
     try:
         if cfg.dry_run:
-            candidates = plan_stale_protocol_reconcile(db, limit=limit)
-            _print_result({"candidates_total": len(candidates)})
+            print("(dry-run) s95 full-backfill не поддерживает dry-run — запускает реальный JSON sync.")
             return
-        settings = get_settings()
-        result = reconcile_stale_protocols(
-            db,
-            ReconcileProtocolsOptions(limit=limit, min_check_interval_days=settings.s95_reconcile_min_check_interval_days),
-        )
+        result = full_backfill(db, limit_per_location=limit if limit > 0 else None)
         _print_result(result)
     finally:
         db.close()
@@ -479,9 +452,9 @@ def _main_menu(cfg: SessionConfig) -> None:
             "  2 — 5verst: одна или несколько локаций\n"
             "  3 — 5verst: перепроверка старых протоколов (reconcile)\n"
             "  4 — 5verst: реестр локаций (/events/)\n"
-            "  5 — S95: последние активности\n"
+            "  5 — S95: новые/обновлённые протоколы (JSON API)\n"
             "  6 — S95: реестр локаций\n"
-            "  7 — S95: перепроверка протоколов\n"
+            "  7 — S95: полный backfill (JSON API)\n"
             "  0 — Выход\n"
             "Ваш выбор: "
         ).strip()
@@ -497,11 +470,11 @@ def _main_menu(cfg: SessionConfig) -> None:
         elif choice == "4":
             _run_five_verst_registry(cfg)
         elif choice == "5":
-            _run_s95_latest(cfg)
+            _run_s95_sync_updated(cfg)
         elif choice == "6":
             _run_s95_registry(cfg)
         elif choice == "7":
-            _run_s95_reconcile(cfg)
+            _run_s95_full_backfill(cfg)
         else:
             print("Неверный ввод.")
             continue

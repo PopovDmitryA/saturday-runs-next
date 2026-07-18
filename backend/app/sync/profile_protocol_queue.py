@@ -424,7 +424,7 @@ def fetch_s95_protocol_for_profile(
     force: bool = False,
 ) -> None:
     from app.sync.iteration_commit import commit_step
-    from app.sync.s95_protocol import fetch_and_upsert_activity_protocol
+    from app.sync.s95_protocol_api import fetch_and_upsert_activity_protocol_api
     from app.sync.s95_protocol_lookup import resolve_s95_protocol
 
     platform = upsert.get_platform(db, "s95")
@@ -443,7 +443,7 @@ def fetch_s95_protocol_for_profile(
     if resolved is None:
         raise ValueError(f"S95 protocol not found: {location_slug} {event_date}")
 
-    fetch_and_upsert_activity_protocol(
+    fetch_and_upsert_activity_protocol_api(
         db,
         platform,
         resolved.location,

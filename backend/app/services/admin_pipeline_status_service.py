@@ -33,9 +33,10 @@ CELERY_TASK_LABELS: dict[str, str] = {
     "five_verst_sync.sync_location_rotation": "5verst: ротация локаций",
     "five_verst_sync.reconcile_stale_protocols": "5verst: сверка протоколов",
     "s95_sync.sync_locations_registry": "s95: реестр /events",
-    "s95_sync.sync_latest": "s95: свежие /activities",
-    "s95_sync.sync_location_rotation": "s95: ротация локаций",
-    "s95_sync.reconcile_stale_protocols": "s95: сверка протоколов",
+    "s95_sync.api_new_protocols": "s95: новые протоколы (API)",
+    "s95_sync.api_sync_updated": "s95: обновлённые протоколы (API)",
+    "s95_sync.api_reconcile_date": "s95: сверка протоколов (API)",
+    "s95_sync.api_full_backfill": "s95: полный backfill (API)",
     "five_verst_sync.sync_location": "5verst: локация",
     "five_verst_sync.sync_location_summaries": "5verst: своды локации",
     "user_sync.run_user_sync": "синхронизация профиля (5verst)",
@@ -126,10 +127,6 @@ def _inspect_active_celery_tasks() -> list[dict[str, Any]]:
                 label = f"5verst: локация {kwargs['location_slug']}"
             elif task_name == "five_verst_sync.sync_location_summaries" and kwargs.get("location_slug"):
                 label = f"5verst: своды {kwargs['location_slug']}"
-            elif task_name == "s95_sync.sync_location" and kwargs.get("location_external_key"):
-                label = f"s95: локация {kwargs['location_external_key']}"
-            elif task_name == "s95_sync.sync_location_rotation" and kwargs.get("location_external_key"):
-                label = f"s95: локация {kwargs['location_external_key']}"
             items.append(
                 {
                     "source": "celery",
