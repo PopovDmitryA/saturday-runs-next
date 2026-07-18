@@ -4,13 +4,6 @@ import logging
 from typing import Any
 
 from app.config import get_settings
-from app.services.sync_report_labels import (
-    DETAIL_LIST_KEYS,
-    field_label,
-    format_detail_sections,
-    format_field_value,
-    pipeline_label,
-)
 from app.services.vk_client import VK_MESSAGE_LIMIT, send_vk_message
 
 logger = logging.getLogger(__name__)
@@ -52,34 +45,73 @@ def _fmt_errors(errors: list[str] | None, *, limit: int = 5) -> str:
     return lines
 
 
-def format_sync_started(pipeline: str, *, details: str | None = None) -> str:
-    text = f"▶️ Запуск: {pipeline_label(pipeline)}"
-    if details:
-        text += f"\n{details}"
-    return text
+def _plural(count: int, one: str, few: str, many: str) -> str:
+    tail_100 = count % 100
+    if 11 <= tail_100 <= 14:
+        return many
+    tail = count % 10
+    if tail == 1:
+        return one
+    if 2 <= tail <= 4:
+        return few
+    return many
 
 
-def format_sync_finished(pipeline: str, payload: dict[str, Any]) -> str:
-    errors = payload.get("errors")
-    error_count = len(errors) if isinstance(errors, list) else 0
-    status = "✅" if error_count == 0 else "⚠️"
-    lines = [f"{status} Завершено: {pipeline_label(pipeline)}"]
+def _fmt_number(value: float) -> str:
+    if isinstance(value, float) and not value.is_integer():
+        return f"{value:.1f}"
+    return f"{int(value):,}".replace(",", " ")
 
-    skip = {"errors", *DETAIL_LIST_KEYS}
-    for key, value in payload.items():
-        if key in skip or value is None:
-            continue
-        if isinstance(value, list) and not value:
-            continue
-        if isinstance(value, (int, float)) and value == 0 and key not in {"rotation_index"}:
-            continue
-        lines.append(f"{field_label(key)}: {format_field_value(key, value)}")
 
-    lines.extend(format_detail_sections(payload))
+# Сколько счётчиков показывать на платформу — в сводке нужны крупные итоги,
+# полный разбор есть в админке.
+SUMMARY_METRIC_LIMIT = 5
 
-    if error_count:
-        lines.append(f"ошибок: {error_count}")
-        lines.append(_fmt_errors(errors if isinstance(errors, list) else None))
+
+def format_daily_summary(
+    day_label: str,
+    platforms: list[dict[str, Any]],
+    *,
+    problems: list[dict[str, Any]] | None = None,
+    admin_url: str | None = None,
+) -> str:
+    """Одна сводка в сутки: сколько раз запускали и что обновилось.
+
+    Детали по локациям сознательно не выводим — за ними админка «Автообновление».
+    """
+    lines = [f"📊 Автообновление за {day_label}"]
+
+    if not platforms:
+        lines.append("")
+        lines.append("Запусков не было.")
+    for platform in platforms:
+        runs = platform["runs"]
+        problem_runs = platform["problems"]
+        skipped = platform["skipped"]
+        mark = "⚠️" if problem_runs else "✅"
+        head = (
+            f"{mark} {platform['platform_label']}: "
+            f"{runs} {_plural(runs, 'запуск', 'запуска', 'запусков')}"
+        )
+        if problem_runs:
+            head += f", {problem_runs} с ошибками"
+        if skipped:
+            head += f", пропущено {skipped}"
+        lines.append("")
+        lines.append(head)
+        for metric in platform["metrics"][:SUMMARY_METRIC_LIMIT]:
+            lines.append(f"• {metric['label']}: {_fmt_number(metric['value'])}")
+
+    if problems:
+        lines.append("")
+        lines.append("Что болит:")
+        for run in problems:
+            first_error = run["errors"][0] if run.get("errors") else "без текста ошибки"
+            lines.append(f"• {run['pipeline_label']}: {first_error}")
+
+    if admin_url:
+        lines.append("")
+        lines.append(f"Подробности: {admin_url}")
 
     text = "\n".join(lines)
     if len(text) > VK_MESSAGE_LIMIT:
@@ -87,9 +119,13 @@ def format_sync_finished(pipeline: str, payload: dict[str, Any]) -> str:
     return text
 
 
-def notify_sync_started(pipeline: str, *, details: str | None = None) -> None:
-    send_vk_admin_message(format_sync_started(pipeline, details=details))
-
-
-def notify_sync_finished(pipeline: str, payload: dict[str, Any]) -> None:
-    send_vk_admin_message(format_sync_finished(pipeline, payload))
+def notify_daily_summary(
+    day_label: str,
+    platforms: list[dict[str, Any]],
+    *,
+    problems: list[dict[str, Any]] | None = None,
+    admin_url: str | None = None,
+) -> None:
+    send_vk_admin_message(
+        format_daily_summary(day_label, platforms, problems=problems, admin_url=admin_url)
+    )

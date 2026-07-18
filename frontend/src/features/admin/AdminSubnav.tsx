@@ -5,6 +5,7 @@ type AdminSubnavProps = {
 const LINKS = [
   { href: "/admin/users", label: "Пользователи" },
   { href: "/admin/queue", label: "Очередь" },
+  { href: "/admin/sync-runs", label: "Автообновление" },
   { href: "/admin/stats", label: "Статистика" },
   { href: "/admin/page-analytics", label: "Популярность" },
   { href: "/admin/ratings", label: "Рейтинг" },

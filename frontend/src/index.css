@@ -5957,6 +5957,28 @@ tr.run-crosslinked td {
   font-size: 0.88rem;
 }
 
+/* Раздел «Автообновление»: итоги запусков задач расписания. */
+.sync-runs-metrics {
+  margin: 0.35rem 0 0.75rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.sync-runs-errors {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+  color: var(--tint-red-text);
+  word-break: break-word;
+}
+
+.sync-runs-badge.error {
+  color: var(--tint-red-text);
+  font-weight: 600;
+}
+
 .public-profile-locked {
   text-align: center;
   padding: 3rem 1.5rem;

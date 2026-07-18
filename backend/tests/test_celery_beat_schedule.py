@@ -85,3 +85,14 @@ def test_page_stats_rollup_schedule() -> None:
     assert rollup["schedule"].minute == {35}
     # Дефолтная очередь "celery" (без options) — общий worker без -Q.
     assert "options" not in rollup
+
+
+def test_daily_sync_summary_schedule() -> None:
+    """Итоги автообновления — одно сообщение в ВК в сутки, 21:50 МСК."""
+    schedule = celery_app.conf.beat_schedule
+    digest = schedule["admin-sync-daily-summary"]
+    assert digest["task"] == "admin_digest.daily_sync_summary"
+    assert digest["schedule"].hour == {21}
+    assert digest["schedule"].minute == {50}
+    # После вечерних реестров 5 вёрст (20:00) и s95 (20:30) — попадают в сводку дня.
+    assert schedule["five-verst-registry-daily"]["schedule"].hour == {20}

@@ -28,6 +28,7 @@ celery_app.conf.update(
         "app.workers.tasks.portal_cache",
         "app.workers.tasks.locations_warm",
         "app.workers.tasks.page_stats",
+        "app.workers.tasks.admin_digest",
     ),
     task_routes={
         "five_verst_sync.*": {"queue": "five_verst"},
@@ -140,6 +141,14 @@ celery_app.conf.update(
         "page-stats-rollup": {
             "task": "page_stats.rollup",
             "schedule": crontab(minute=35),
+        },
+        # Единственное регулярное сообщение админу в ВК: итоги автообновления за
+        # сутки (раньше на каждый запуск уходило по два сообщения). 21:50 МСК —
+        # после вечернего реестра 5 вёрст (20:00) и реестра s95 (20:30), чтобы
+        # они попали в сводку того же дня. Заодно чистит старую историю запусков.
+        "admin-sync-daily-summary": {
+            "task": "admin_digest.daily_sync_summary",
+            "schedule": crontab(hour=21, minute=50),
         },
     },
 )

@@ -974,6 +974,37 @@ class SyncLogEntry(Base):
     sync_job: Mapped["SyncJob | None"] = relationship(back_populates="log_entries")
 
 
+class ScheduledRunLog(Base):
+    """История запусков задач автообновления (celery beat).
+
+    Раньше каждый запуск уходил админу в ВК двумя сообщениями («запуск» /
+    «завершено»). Теперь запуск пишется сюда, админка «Автообновление» листает
+    историю, а в ВК уходит одна сводка в сутки (admin_digest.daily_sync_summary).
+    Детализация по локациям (DETAIL_LIST_KEYS) в payload не сохраняется — в
+    истории нужны итоги, а не перечисление площадок.
+    """
+
+    __tablename__ = "scheduled_run_logs"
+    __table_args__ = (
+        Index("ix_scheduled_run_logs_started_at", "started_at"),
+        Index("ix_scheduled_run_logs_platform_started_at", "platform", "started_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    pipeline: Mapped[str] = mapped_column(String(128), nullable=False)
+    platform: Mapped[str] = mapped_column(String(32), nullable=False, server_default="other")
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    records_updated: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    error_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    skip_reason: Mapped[str | None] = mapped_column(String(64))
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    errors: Mapped[list[str] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class LocationRating(Base):
     __tablename__ = "location_ratings"
     __table_args__ = (

@@ -26,6 +26,7 @@ from app.schemas.admin_event_report import (
     EventReportResponse,
 )
 from app.schemas.admin_stats import AdminSiteStatsResponse, PageAnalyticsResponse
+from app.schemas.admin_sync_runs import AdminSyncRunsResponse
 from app.schemas.blocked_slug_admin import (
     BlockedSlugCreateRequest,
     BlockedSlugItem,
@@ -84,6 +85,9 @@ from app.services.rating_service import (
     ratings_stats,
 )
 from app.services.records_digest_service import build_records_digest, list_digest_dates
+from app.services.scheduled_run_log_service import list_runs as list_scheduled_runs
+from app.services.scheduled_run_log_service import resolve_period as resolve_runs_period
+from app.services.scheduled_run_log_service import summarize as summarize_scheduled_runs
 from app.services.sync_enqueue_service import enqueue_manual_platform_sync, enqueue_sync_for_all_platforms
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -332,6 +336,44 @@ def admin_page_analytics(
     payload = build_page_analytics(db, start=start, end=end)
     payload["generated_at"] = datetime.now(timezone.utc)
     return PageAnalyticsResponse.model_validate(payload)
+
+
+@router.get("/sync-runs", response_model=AdminSyncRunsResponse)
+def admin_sync_runs(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    period_days: Annotated[int | None, Query(ge=1, le=120)] = None,
+    date_from: Annotated[date | None, Query()] = None,
+    date_to: Annotated[date | None, Query()] = None,
+    platform: Annotated[str | None, Query(pattern="^(five_verst|s95|parkrun|runpark|other)$")] = None,
+    run_status: Annotated[str | None, Query(pattern="^(ok|error|failed|skipped|problems)$")] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> AdminSyncRunsResponse:
+    """История запусков автообновления: итоги по платформам + лента запусков.
+
+    Итоги считаются по всему периоду, лента — с учётом фильтров и пагинации.
+    """
+    start, end = resolve_runs_period(period_days=period_days, date_from=date_from, date_to=date_to)
+    runs, total = list_scheduled_runs(
+        db,
+        start=start,
+        end=end,
+        platform=platform,
+        status=run_status,
+        limit=limit,
+        offset=offset,
+    )
+    return AdminSyncRunsResponse.model_validate(
+        {
+            "generated_at": datetime.now(timezone.utc),
+            "date_from": start,
+            "date_to": end,
+            "platforms": summarize_scheduled_runs(db, start=start, end=end),
+            "runs": runs,
+            "total": total,
+        }
+    )
 
 
 @router.get("/ratings", response_model=AdminRatingsResponse)

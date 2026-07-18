@@ -2217,6 +2217,98 @@ export function getAdminPageAnalytics(params: {
   return apiFetch<PageAnalyticsResponse>(`/admin/page-analytics?${query.toString()}`);
 }
 
+export type SyncRunMetric = {
+  key: string;
+  label: string;
+  value: number | string | boolean;
+};
+
+export type SyncRunItem = {
+  id: number;
+  pipeline: string;
+  pipeline_label: string;
+  platform: string;
+  platform_label: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  records_updated: number;
+  error_count: number;
+  skip_reason: string | null;
+  metrics: SyncRunMetric[];
+  errors: string[];
+};
+
+export type SyncPipelineSummary = {
+  pipeline: string;
+  pipeline_label: string;
+  runs: number;
+  ok: number;
+  problems: number;
+  skipped: number;
+  errors_total: number;
+  metrics: SyncRunMetric[];
+  last_run_at: string | null;
+  last_status: string | null;
+};
+
+export type SyncPlatformSummary = {
+  platform: string;
+  platform_label: string;
+  runs: number;
+  ok: number;
+  problems: number;
+  skipped: number;
+  errors_total: number;
+  metrics: SyncRunMetric[];
+  pipelines: SyncPipelineSummary[];
+};
+
+export type AdminSyncRunsResponse = {
+  generated_at: string;
+  date_from: string;
+  date_to: string;
+  platforms: SyncPlatformSummary[];
+  runs: SyncRunItem[];
+  total: number;
+};
+
+/** История автообновления: итоги по платформам + лента запусков. */
+export function getAdminSyncRuns(params: {
+  periodDays?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  platform?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const query = new URLSearchParams();
+  if (params.periodDays) {
+    query.set("period_days", String(params.periodDays));
+  }
+  if (params.dateFrom) {
+    query.set("date_from", params.dateFrom);
+  }
+  if (params.dateTo) {
+    query.set("date_to", params.dateTo);
+  }
+  if (params.platform) {
+    query.set("platform", params.platform);
+  }
+  if (params.status) {
+    query.set("run_status", params.status);
+  }
+  if (params.limit) {
+    query.set("limit", String(params.limit));
+  }
+  if (params.offset) {
+    query.set("offset", String(params.offset));
+  }
+  return apiFetch<AdminSyncRunsResponse>(`/admin/sync-runs?${query.toString()}`);
+}
+
 export function getDemoDashboard() {
   return apiFetch<AdminUserPreviewDashboard>("/demo/dashboard");
 }

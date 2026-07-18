@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { AdminAbusePage } from "./features/admin/AdminAbusePage";
 import { AdminBlockedSlugsPage } from "./features/admin/AdminBlockedSlugsPage";
 import { AdminStatsPage } from "./features/admin/AdminStatsPage";
+import { AdminSyncRunsPage } from "./features/admin/AdminSyncRunsPage";
 import { AdminPageAnalyticsPage } from "./features/admin/AdminPageAnalyticsPage";
 import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
 import { AdminEventReportPage } from "./features/admin/AdminEventReportPage";
@@ -121,6 +122,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/queue": () => <QueueRedirect />,
   "/admin": () => <AdminRedirect />,
   "/admin/queue": () => <QueuePage />,
+  "/admin/sync-runs": () => <AdminSyncRunsPage />,
   "/admin/users": () => <AdminUsersPage />,
   "/admin/abuse": () => <AdminAbusePage />,
   "/admin/profile-slugs": () => <AdminBlockedSlugsPage />,
