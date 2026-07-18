@@ -55,8 +55,16 @@ def refresh_monitoring_stats() -> str | None:
 
 
 def monitoring_history_step(limit: int = 1) -> str | None:
-    """Стянуть eventhistory-саммари следующих `limit` локаций (самых несвежих)."""
-    return _run(["fetch-history", "--limit", str(limit)], timeout=120 * limit + 120)
+    """Стянуть eventhistory-саммари следующих `limit` локаций (самых несвежих).
+
+    `--push-each` пишет каждую локацию на сервер сразу после выкачки: если
+    прогон прервётся (Ctrl+C, капча, закрытый ноутбук), собранное уже в
+    канонической БД. Коннекты мультиплексируются, см. push_to_server.
+    """
+    return _run(
+        ["fetch-history", "--limit", str(limit), "--push-each"],
+        timeout=180 * limit + 120,
+    )
 
 
 def push_monitoring_to_server() -> str | None:
