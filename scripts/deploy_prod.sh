@@ -132,27 +132,16 @@ echo "target: ${SSH_USER}@${SSH_HOST}:${REMOTE}"
 REMOTE_QUOTED=$(printf '%q' "$REMOTE")
 
 # --- Один SSH-коннект: код + сборка + миграции + рестарт ----------------------
+# Этот heredoc — ТОЛЬКО загрузчик: он приезжает с диска текущей папки, поэтому в
+# нём не должно быть ничего, что меняется от релиза к релизу. Сам сценарий деплоя
+# лежит в scripts/remote_deploy.sh и запускается уже ИЗ ЗАДЕПЛОЕННОГО КОММИТА —
+# так сценарий всегда соответствует коду, даже если папка, откуда запущен деплой,
+# отстала от origin/main (18.07.2026 из-за этого не поднялся новый сервис worker).
 echo "=== remote deploy (single ssh connection) ==="
 sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 "${SSH_USER}@${SSH_HOST}" \
   "REMOTE=${REMOTE_QUOTED} LOCAL_SHA=${LOCAL_SHA} bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 cd "$REMOTE"
-
-# Функция, а не eval: eval ломает кавычки внутри --format / python -c.
-compose() { docker compose -f docker-compose.yml -f docker-compose.prod.yml "$@"; }
-
-# Сервисы, которые пересоздаём. nginx собирать нельзя — он на готовом образе
-# (nginx:1.27-alpine), build-контекст есть только у python-сервисов.
-SERVICES="worker worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat vk-bot"
-
-# NB: `docker compose exec/run -T` всё равно цепляет контейнер к stdin. Скрипт
-# приезжает в `bash -s` через SSH stdin, поэтому каждый exec/run ОБЯЗАН читать
-# из /dev/null — иначе он сожрёт остаток скрипта и деплой молча оборвётся тут.
-echo "--- queue lengths before ---"
-compose exec -T redis redis-cli LLEN five_verst </dev/null || true
-compose exec -T redis redis-cli LLEN five_verst_user </dev/null || true
-compose exec -T redis redis-cli LLEN s95 </dev/null || true
-compose exec -T redis redis-cli LLEN s95_user </dev/null || true
 
 echo "--- sync code: git -> ${LOCAL_SHA} ---"
 # В норме здесь пусто. Непусто = кто-то правил файлы на проде руками (или остатки
@@ -167,67 +156,17 @@ git fetch origin --quiet
 git reset --hard "$LOCAL_SHA"
 git log --oneline -1
 
-echo "--- frontend build ---"
-docker run --rm -v "$PWD/frontend:/app" -w /app node:22-alpine sh -c "npm ci && npm run build"
-
-echo "--- build api image (нужен свежий образ для миграций) ---"
-compose build api
-
-echo "--- migrations (свежим образом, ДО recreate) ---"
-# Порядок важен: миграцию накатываем НОВЫМ образом, но пока крутится СТАРЫЙ код.
-# Если сделать наоборот (recreate раньше upgrade) — будет окно, где новый код
-# бьётся в ещё не созданную таблицу и отдаёт 500. Старый код переживает
-# аддитивную схему спокойно. Упадёт миграция — деплой встанет здесь (set -e),
-# прод останется на старом рабочем коде.
-compose run --rm -T api alembic upgrade head </dev/null
-
-echo "--- recreate services ---"
-# --force-recreate гарантирует, что контейнеры реально перезапустятся на новом
-# коде (обычный up -d может переиспользовать старый контейнер).
-compose up -d --build --force-recreate $SERVICES
-compose restart nginx
-compose stop worker-s95-user worker-five-verst-user 2>/dev/null || true
-compose rm -f worker-s95-user worker-five-verst-user 2>/dev/null || true
-
-echo "--- host nginx (run5k.run Grafana redirects) ---"
-if sudo -n cp deploy/nginx/run5k.run.conf /etc/nginx/sites-available/run5k.run 2>/dev/null; then
-  sudo -n nginx -t
-  sudo -n systemctl reload nginx
-  echo "host nginx reloaded"
-else
-  echo "WARN: passwordless sudo unavailable — run on server:"
-  echo "  sudo cp deploy/nginx/run5k.run.conf /etc/nginx/sites-available/run5k.run"
-  echo "  sudo nginx -t && sudo systemctl reload nginx"
-fi
-
-echo "--- queue lengths after ---"
-compose exec -T redis redis-cli LLEN five_verst </dev/null || true
-compose exec -T redis redis-cli LLEN five_verst_user </dev/null || true
-
-echo "--- smoke ---"
-compose ps --format '{{.Service}}: {{.Status}}'
-
-# API поднимается несколько секунд после recreate. Раньше smoke стрелял сразу и
-# ловил 502/000 на живом проде — ложная тревога, которую легко принять за аварию.
-# Ждём настоящий ответ до 60с. И smoke больше НЕ `|| true`: если прод не встал,
-# деплой обязан упасть с ненулевым кодом, а не отрапортовать «deploy done».
-health=""
-for _ in $(seq 1 30); do
-  health="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health || true)"
-  [ "$health" = "200" ] && break
-  sleep 2
-done
-if [ "$health" != "200" ]; then
-  echo "DEPLOY FAILED: health=${health:-нет ответа} спустя 60с — прод не поднялся." >&2
-  echo "--- api logs (last 30) ---" >&2
-  compose logs api --tail 30 >&2 || true
+# Дальше — сценарий из ЗАДЕПЛОЕННОГО коммита, а не с диска запускающей папки.
+if [ ! -f scripts/remote_deploy.sh ]; then
+  echo "DEPLOY FAILED: в коммите ${LOCAL_SHA} нет scripts/remote_deploy.sh." >&2
+  echo "  Такое бывает при откате на коммит старше 18.07.2026 (тогда сценарий" >&2
+  echo "  деплоя ещё жил внутри deploy_prod.sh). Откатывай на коммит новее." >&2
   exit 1
 fi
-echo "health: 200 (ok)"
-curl -sI 'https://run5k.run/d/de1hu8dabny80c/karta-turistov' 2>/dev/null | head -1 || true
+# </dev/null: остаток этого heredoc'а приезжает через SSH stdin — дочерний скрипт
+# не должен его вычитать.
+bash scripts/remote_deploy.sh </dev/null
 
-echo "--- prod git == deployed commit ---"
-git log --oneline -1
 REMOTE_SCRIPT
 
 echo "=== deploy done: ${LOCAL_SHA} ==="
