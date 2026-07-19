@@ -328,6 +328,23 @@ body {
   color: #fff;
 }
 
+/* пункт-иконка (домик «На главную портала») — квадратная пилюля под пиктограмму */
+.site-nav-link-icon {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.55rem;
+}
+
+.site-nav-link-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .site-nav-link-muted {
   background: transparent;
   color: var(--text-muted);

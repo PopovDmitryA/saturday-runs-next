@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getCurrentUser, logout, updateDisplayName, type User } from "../lib/api";
 import { SITE_HOME_HREF } from "../lib/siteBrand";
 import { APP_NAV_ITEMS } from "../lib/siteNav";
+import { userLabel } from "../lib/userLabel";
 import { SiteHeader } from "./SiteHeader";
 
 type AppShellProps = {
@@ -10,21 +11,6 @@ type AppShellProps = {
   children: ReactNode;
   activePath?: string;
 };
-
-function userLabel(user: User): string {
-  const customName = user.display_name?.trim();
-  if (user.display_name_customized === true && customName) {
-    return customName;
-  }
-  if (user.telegram_username) {
-    const login = user.telegram_username.replace(/^@/, "");
-    return `@${login}`;
-  }
-  if (customName) {
-    return customName;
-  }
-  return `Участник ${user.telegram_id ?? user.id.slice(0, 8)}`;
-}
 
 export function AppShell({ title, children, activePath }: AppShellProps) {
   const path = activePath ?? (window.location.pathname.replace(/\/$/, "") || "/");
@@ -69,7 +55,8 @@ export function AppShell({ title, children, activePath }: AppShellProps) {
     }
   };
 
-  const showPageHeading = title !== "Главная";
+  // Дашборд — «домашняя» страница кабинета, отдельный скрытый заголовок ей не нужен.
+  const showPageHeading = title !== "Личный кабинет";
 
   return (
     <div className="shell">

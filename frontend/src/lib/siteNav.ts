@@ -1,7 +1,9 @@
 import type { SiteNavItem } from "../components/SiteHeader";
 
 export const APP_NAV_ITEMS: SiteNavItem[] = [
-  { href: "/dashboard", label: "Главная" },
+  // Домик — обратная навигация из кабинета на публичную главную портала.
+  { href: "/", label: "На главную портала", icon: "home" },
+  { href: "/dashboard", label: "Личный кабинет" },
   { href: "/runs", label: "Пробежки" },
   { href: "/volunteering", label: "Волонтёрство" },
   { href: "/achievements", label: "Достижения" },
