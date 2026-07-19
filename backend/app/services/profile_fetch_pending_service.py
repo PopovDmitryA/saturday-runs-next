@@ -34,6 +34,13 @@ _BAN_ERROR_TYPES = (ParkrunBanDetected, S95BanDetected, FiveVerstBanDetected)
 # там гарантированно есть история, а не просто гипотеза о существовании профиля.
 RUNPARK_SEED_NOTE_PREFIX = "seed from RunPark Pakrun archive"
 
+# Маркирует last_error строки, упавшей с ПОСТОЯННОЙ ошибкой (профиль реально
+# не существует — 404). reset_failed_parkrun_pending пропускает такие строки:
+# без метки любой permanent-404 воскресал бы в pending на каждом старте
+# демона (жалоба про 790115304 повторяющуюся из раза в раз), хотя ретраить
+# несуществующий профиль бессмысленно — parkrun ID не появляются задним числом.
+PERMANENT_ERROR_PREFIX = "[permanent] "
+
 
 def is_fetch_cooldown_error(exc: BaseException) -> bool:
     current: BaseException | None = exc
@@ -323,9 +330,11 @@ def process_pending_row(db: Session, row: ProfileFetchPending) -> str:
         if _is_permanent_profile_error(exc):
             # Профиль не существует (404) — ретраи бессмысленны, сразу failed,
             # иначе строка 5 раз крутится в pending (жалоба про 790115304).
+            # PERMANENT_ERROR_PREFIX защищает и от воскрешения на следующем
+            # старте демона — см. reset_failed_parkrun_pending.
             row.status = ProfileFetchPendingStatus.failed
             row.reason = ProfileFetchPendingReason.error
-            row.last_error = str(exc)
+            row.last_error = PERMANENT_ERROR_PREFIX + str(exc)
             row.attempts += 1
             row.updated_at = datetime.now(timezone.utc)
             db.commit()
@@ -480,6 +489,10 @@ def reset_failed_parkrun_pending(db: Session) -> int:
         .filter(
             ProfileFetchPending.platform_code == "parkrun",
             ProfileFetchPending.status == ProfileFetchPendingStatus.failed,
+            # Постоянные 404 не воскрешаем — их последний прогон уже дал
+            # окончательный ответ, повторный фетч ничего не изменит.
+            (ProfileFetchPending.last_error.is_(None))
+            | (~ProfileFetchPending.last_error.like(f"{PERMANENT_ERROR_PREFIX}%")),
         )
         .all()
     )

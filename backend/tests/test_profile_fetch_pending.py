@@ -12,13 +12,16 @@ from app.models import (
     ProfileFetchPendingStatus,
     User,
 )
-from app.parkrun.errors import ParkrunBanDetected
+from app.parkrun.errors import ParkrunBanDetected, ParkrunProfileNotFound
 from app.services.profile_fetch_pending_service import (
+    PERMANENT_ERROR_PREFIX,
     RUNPARK_SEED_NOTE_PREFIX,
     enqueue_profile_fetch_pending,
     is_fetch_cooldown_error,
     list_pending_rows,
+    process_pending_row,
     requeue_stuck_done_parkrun_pending,
+    reset_failed_parkrun_pending,
 )
 from app.services.profile_linking_service import ProfileLinkingError, preview_profile_link
 
@@ -173,3 +176,61 @@ def test_list_pending_rows_prioritizes_runpark_seed_over_discovery_backlog(
 
     pending = list_pending_rows(db_session, platform_code=platform_code, limit=10)
     assert [row.profile_input for row in pending] == ["runpark-row", "discovery-row"]
+
+
+def test_permanent_not_found_is_marked_and_not_resurrected(
+    db_session: Session, monkeypatch
+) -> None:
+    """Профиль, которого реально нет на parkrun (404), не должен пытаться
+    загрузиться на КАЖДОМ старте демона — reset_failed_parkrun_pending
+    раньше воскрешал такие строки безусловно (жалоба про 790115304)."""
+    import app.services.profile_fetch_pending_service as svc
+
+    row = ProfileFetchPending(
+        platform_code="parkrun",
+        profile_input="99999999",
+        external_user_id="99999999",
+        operation=ProfileFetchPendingOperation.activity_import,
+        reason=ProfileFetchPendingReason.error,
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    def _raise_not_found(*_args, **_kwargs):
+        raise ParkrunProfileNotFound("Профиль parkrun не найден или недоступен")
+
+    monkeypatch.setattr(svc, "_import_parkrun_activity", _raise_not_found)
+
+    outcome = process_pending_row(db_session, row)
+    assert outcome == "not_found"
+    assert row.status == ProfileFetchPendingStatus.failed
+    assert row.last_error.startswith(PERMANENT_ERROR_PREFIX)
+
+    # Демон вызывает это на КАЖДОМ старте — не должно воскрешать permanent-404.
+    reset_count = reset_failed_parkrun_pending(db_session)
+    assert reset_count == 0
+    assert row.status == ProfileFetchPendingStatus.failed
+
+
+def test_reset_failed_parkrun_pending_still_retries_transient_failures(
+    db_session: Session,
+) -> None:
+    """Обычная (не permanent) ошибка должна по-прежнему ретраиться при
+    следующем старте демона — защита касается только permanent-404."""
+    row = ProfileFetchPending(
+        platform_code="parkrun",
+        profile_input="1111111",
+        external_user_id="1111111",
+        operation=ProfileFetchPendingOperation.activity_import,
+        status=ProfileFetchPendingStatus.failed,
+        reason=ProfileFetchPendingReason.error,
+        last_error="parkrun fetch in cooldown until 1780445000",
+        attempts=5,
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    reset_count = reset_failed_parkrun_pending(db_session)
+    assert reset_count == 1
+    assert row.status == ProfileFetchPendingStatus.pending
+    assert row.attempts == 0
