@@ -193,6 +193,58 @@
   margin-top: 2px;
 }
 
+/* ---------- сворачивание сайдбара (узкий рельс-иконки) ---------- */
+
+.portal-cab-collapse {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  margin-top: 2px;
+  padding-top: 12px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-faint);
+  cursor: pointer;
+  text-align: left;
+}
+
+.portal-cab-collapse:hover {
+  color: var(--text);
+}
+
+.portal-cab-sidebar.collapsed {
+  flex-basis: 64px;
+  width: 64px;
+}
+
+.portal-cab-sidebar.collapsed .portal-cab-nav-label {
+  display: none;
+}
+
+.portal-cab-sidebar.collapsed .portal-cab-nav-item,
+.portal-cab-sidebar.collapsed .portal-cab-collapse {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Служебные пункты без иконок в свёрнутом виде прячем целиком —
+   они доступны после разворота (и в мобильной шторке «Ещё»). */
+.portal-cab-sidebar.collapsed .portal-cab-nav-secondary {
+  display: none;
+}
+
+.portal-cab-user-collapsed {
+  justify-content: center;
+  padding: 8px;
+}
+
 .portal-cab-nav-item-secondary {
   padding: 6px 12px;
   font-size: 13px;
@@ -438,6 +490,113 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   border-left-color: var(--accent-teal-text);
 }
 
+/* Вариант B: тёмная hero-панель (в обеих темах — как hero главной портала) */
+
+.portal-cab-hero-dark {
+  background:
+    radial-gradient(120% 160% at 100% 0%, rgba(79, 70, 229, 0.28), transparent 55%),
+    linear-gradient(135deg, #171d2b, #222a3d);
+  border-color: #2b3750;
+  color: #f3f5fa;
+}
+
+.portal-cab-hero-dark-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.portal-cab-hero-dark-avatar {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+}
+
+.portal-cab-hero-dark .portal-cab-hero-sub {
+  color: #9aa3b0;
+}
+
+.portal-cab-hero-dark .portal-cab-hero-stat {
+  border-left-color: rgba(243, 245, 250, 0.22);
+}
+
+.portal-cab-hero-dark .portal-cab-hero-stat-runs {
+  border-left-color: #4ade80;
+}
+
+.portal-cab-hero-dark .portal-cab-hero-stat-vol {
+  border-left-color: #818cf8;
+}
+
+.portal-cab-hero-dark .portal-cab-hero-stat-pr {
+  border-left-color: #fbbf24;
+}
+
+.portal-cab-hero-dark .portal-cab-hero-stat-geo {
+  border-left-color: #2dd4bf;
+}
+
+.portal-cab-hero-dark .portal-cab-hero-stat-label {
+  color: #9aa3b0;
+}
+
+.portal-cab-hero-dark a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
+  color: #a3aefc;
+}
+
+/* Вариант C: компактная строка */
+
+.portal-cab-hero-compact {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+}
+
+.portal-cab-hero-compact-name {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-cab-hero-compact-stats {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.portal-cab-hero-compact .portal-cab-hero-stat {
+  padding-left: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.portal-cab-hero-compact .portal-cab-hero-stat-value {
+  font-size: 18px;
+}
+
+.portal-cab-hero-compact .portal-cab-hero-stat-label {
+  margin-top: 0;
+  font-size: 11px;
+}
+
 @media (max-width: 640px) {
   .portal-cab-hero {
     padding: 16px;
@@ -446,6 +605,15 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   .portal-cab-hero-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px 10px;
+  }
+
+  .portal-cab-hero-compact {
+    padding: 12px 16px;
+  }
+
+  .portal-cab-hero-compact-stats {
+    margin-left: 0;
+    gap: 14px;
   }
 }
 

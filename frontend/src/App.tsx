@@ -107,11 +107,9 @@ function AdminRedirect() {
 }
 
 const STATIC_ROUTES: Record<string, () => ReactElement> = {
-  // DEV-ONLY превью портального ЛК на демо-данных: в прод-сборке роут не
-  // регистрируется (условие вычисляется на этапе сборки, Vite вырежет ветку).
-  ...(import.meta.env.DEV
-    ? { "/new/cabinet-preview": () => <PortalCabinetPreviewPage /> }
-    : {}),
+  // Превью портального ЛК на демо-данных (без логина) — для выбора вариантов
+  // дизайна. Живёт только на тёмном запуске: удалить вместе с /new/* при релизе.
+  "/new/cabinet-preview": () => <PortalCabinetPreviewPage />,
   "/": () => <LandingPage />,
   [PORTAL_HOME_HREF]: () => <PortalHomePage />,
   [PORTAL_ABOUT_HREF]: () => <PortalAboutPage />,

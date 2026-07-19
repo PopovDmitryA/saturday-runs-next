@@ -115,7 +115,8 @@ const SECONDARY_NAV: SecondaryNavItem[] = [
   { href: PORTAL_ABOUT_HREF, label: "О проекте" },
 ];
 
-function userLabel(user: User): string {
+// Экспорт: имя пользователя нужно и герою дашборда.
+export function userLabel(user: User): string {
   const customName = user.display_name?.trim();
   if (user.display_name_customized === true && customName) {
     return customName;
@@ -139,7 +140,7 @@ function userInitials(label: string): string {
   return clean.slice(0, 2).toUpperCase();
 }
 
-function CabinetUserCard({ initialUser }: { initialUser: User }) {
+function CabinetUserCard({ initialUser, collapsed = false }: { initialUser: User; collapsed?: boolean }) {
   const [user, setUser] = useState(initialUser);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -147,6 +148,16 @@ function CabinetUserCard({ initialUser }: { initialUser: User }) {
   const [error, setError] = useState<string | null>(null);
 
   const label = userLabel(user);
+
+  if (collapsed) {
+    return (
+      <div className="portal-cab-user portal-cab-user-collapsed" title={label}>
+        <span className="portal-cab-user-avatar" aria-hidden="true">
+          {userInitials(label)}
+        </span>
+      </div>
+    );
+  }
 
   const handleSave = async (event: FormEvent) => {
     event.preventDefault();
@@ -235,8 +246,30 @@ type PortalCabinetShellProps = {
   children: ReactNode;
 };
 
+const SIDEBAR_COLLAPSED_KEY = "portalCabSidebarCollapsed";
+
 export function PortalCabinetShell({ active, user, title, sub, children }: PortalCabinetShellProps) {
   const [moreOpen, setMoreOpen] = useState(false);
+  // Свёрнутый сайдбар (узкий рельс-иконки) — выбор запоминается на устройстве.
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleCollapsed = () => {
+    setCollapsed((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        // localStorage недоступен — просто не запоминаем
+      }
+      return next;
+    });
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -280,8 +313,8 @@ export function PortalCabinetShell({ active, user, title, sub, children }: Porta
       </header>
 
       <div className="portal-cab-layout">
-        <aside className="portal-cab-sidebar">
-          <CabinetUserCard initialUser={user} />
+        <aside className={`portal-cab-sidebar${collapsed ? " collapsed" : ""}`}>
+          <CabinetUserCard initialUser={user} collapsed={collapsed} />
 
           <nav className="portal-cab-nav" aria-label="Разделы личного кабинета">
             {CABINET_NAV.map((item) => (
@@ -290,9 +323,10 @@ export function PortalCabinetShell({ active, user, title, sub, children }: Porta
                 href={item.href}
                 className={`portal-cab-nav-item${item.key === active ? " active" : ""}`}
                 aria-current={item.key === active ? "page" : undefined}
+                title={collapsed ? item.label : undefined}
               >
                 <span className="portal-cab-nav-icon">{item.icon}</span>
-                {item.label}
+                <span className="portal-cab-nav-label">{item.label}</span>
               </a>
             ))}
           </nav>
@@ -300,7 +334,7 @@ export function PortalCabinetShell({ active, user, title, sub, children }: Porta
           <nav className="portal-cab-nav portal-cab-nav-secondary" aria-label="Служебные разделы">
             {SECONDARY_NAV.filter((item) => !item.adminOnly || user.is_admin).map((item) => (
               <a key={item.href} href={item.href} className="portal-cab-nav-item portal-cab-nav-item-secondary">
-                {item.label}
+                <span className="portal-cab-nav-label">{item.label}</span>
               </a>
             ))}
             <button
@@ -308,9 +342,28 @@ export function PortalCabinetShell({ active, user, title, sub, children }: Porta
               className="portal-cab-nav-item portal-cab-nav-item-secondary portal-cab-logout"
               onClick={() => void handleLogout()}
             >
-              Выйти
+              <span className="portal-cab-nav-label">Выйти</span>
             </button>
           </nav>
+
+          <button
+            type="button"
+            className="portal-cab-collapse"
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? "Развернуть меню" : "Свернуть меню"}
+            title={collapsed ? "Развернуть меню" : "Свернуть меню"}
+          >
+            <span className="portal-cab-nav-icon">
+              {icon(
+                collapsed ? (
+                  <path d="M9 6l6 6-6 6" />
+                ) : (
+                  <path d="M15 6l-6 6 6 6" />
+                ),
+              )}
+            </span>
+            <span className="portal-cab-nav-label">Свернуть</span>
+          </button>
         </aside>
 
         <main className="portal-cab-main">

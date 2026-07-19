@@ -22,7 +22,7 @@ import {
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_LOGIN_HREF,
 } from "../../../lib/portalRoutes";
-import { PortalCabinetShell } from "./PortalCabinetShell";
+import { PortalCabinetShell, userLabel } from "./PortalCabinetShell";
 
 // «00:23:12» → «23:12»: в герое часы почти всегда нулевые, укорачиваем.
 export function formatHeroFinishTime(totalSec: number): string {
@@ -45,50 +45,149 @@ function heroGreeting(): string {
   return "Добрый вечер";
 }
 
-function DashboardHero({ data }: { data: DashboardResponse }) {
+function heroInitials(name: string): string {
+  const clean = name.replace(/^@/, "").trim();
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return clean.slice(0, 2).toUpperCase();
+}
+
+// Варианты героя дашборда (выбирает Дмитрий): panel — светлая панель с
+// приветствием, dark — тёмная hero-панель с аватаром (как на главной портала),
+// compact — одна строка почти без высоты.
+export type HeroVariant = "panel" | "dark" | "compact";
+
+type HeroStat = {
+  key: string;
+  className: string;
+  href?: string;
+  value: string | number;
+  label: string;
+};
+
+function buildHeroStats(data: Pick<DashboardResponse, "stats">): HeroStat[] {
   const stats = data.stats;
   const analytics = stats.analytics;
+  return [
+    {
+      key: "runs",
+      className: "portal-cab-hero-stat-runs",
+      href: PORTAL_CABINET_RUNS_HREF,
+      value: stats.total_runs,
+      label: pluralFormRu(stats.total_runs, RUN_FORMS),
+    },
+    {
+      key: "vol",
+      className: "portal-cab-hero-stat-vol",
+      href: PORTAL_CABINET_VOLUNTEERING_HREF,
+      value: stats.total_volunteering,
+      label: pluralFormRu(stats.total_volunteering, VOL_FORMS),
+    },
+    {
+      key: "pr",
+      className: "portal-cab-hero-stat-pr",
+      value:
+        analytics.best_finish_time_sec != null
+          ? formatHeroFinishTime(analytics.best_finish_time_sec)
+          : "—",
+      label: "лучшее время на 5 км",
+    },
+    {
+      key: "geo",
+      className: "portal-cab-hero-stat-geo",
+      href: PORTAL_CABINET_MAP_HREF,
+      value: analytics.unique_locations,
+      label: pluralFormRu(analytics.unique_locations, LOCATION_FORMS),
+    },
+  ];
+}
+
+function HeroStatsGrid({ items }: { items: HeroStat[] }) {
+  return (
+    <div className="portal-cab-hero-stats">
+      {items.map((item) =>
+        item.href ? (
+          <a key={item.key} className={`portal-cab-hero-stat ${item.className}`} href={item.href}>
+            <div className="portal-cab-hero-stat-value">{item.value}</div>
+            <div className="portal-cab-hero-stat-label">{item.label}</div>
+          </a>
+        ) : (
+          <div key={item.key} className={`portal-cab-hero-stat ${item.className}`}>
+            <div className="portal-cab-hero-stat-value">{item.value}</div>
+            <div className="portal-cab-hero-stat-label">{item.label}</div>
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
+export function DashboardHero({
+  data,
+  userName,
+  variant = "panel",
+}: {
+  data: Pick<DashboardResponse, "stats">;
+  userName: string;
+  variant?: HeroVariant;
+}) {
+  const analytics = data.stats.analytics;
   const streak = analytics.saturday_streak_current ?? analytics.saturday_streak;
+  const streakLine =
+    streak > 0
+      ? `Текущая серия — ${streak} ${pluralFormRu(streak, SATURDAY_FORMS)} подряд. Так держать!`
+      : "Ваша сводная статистика по всем беговым системам.";
+  const items = buildHeroStats(data);
+
+  if (variant === "dark") {
+    return (
+      <section className="portal-cab-hero portal-cab-hero-dark">
+        <div className="portal-cab-hero-dark-head">
+          <span className="portal-cab-hero-dark-avatar" aria-hidden="true">
+            {heroInitials(userName)}
+          </span>
+          <div>
+            <h1 className="portal-cab-hero-title">{userName}</h1>
+            <p className="portal-cab-hero-sub">
+              {heroGreeting()}! {streakLine}
+            </p>
+          </div>
+        </div>
+        <HeroStatsGrid items={items} />
+      </section>
+    );
+  }
+
+  if (variant === "compact") {
+    return (
+      <section className="portal-cab-hero portal-cab-hero-compact">
+        <h1 className="portal-cab-hero-compact-name">{userName}</h1>
+        <div className="portal-cab-hero-compact-stats">
+          {items.map((item) =>
+            item.href ? (
+              <a key={item.key} className={`portal-cab-hero-stat ${item.className}`} href={item.href}>
+                <span className="portal-cab-hero-stat-value">{item.value}</span>
+                <span className="portal-cab-hero-stat-label">{item.label}</span>
+              </a>
+            ) : (
+              <div key={item.key} className={`portal-cab-hero-stat ${item.className}`}>
+                <span className="portal-cab-hero-stat-value">{item.value}</span>
+                <span className="portal-cab-hero-stat-label">{item.label}</span>
+              </div>
+            ),
+          )}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="portal-cab-hero">
       <h1 className="portal-cab-hero-title">{heroGreeting()}!</h1>
-      <p className="portal-cab-hero-sub">
-        {streak > 0
-          ? `Текущая серия — ${streak} ${pluralFormRu(streak, SATURDAY_FORMS)} подряд. Так держать!`
-          : "Ваша сводная статистика по всем беговым системам."}
-      </p>
-      <div className="portal-cab-hero-stats">
-        <a className="portal-cab-hero-stat portal-cab-hero-stat-runs" href={PORTAL_CABINET_RUNS_HREF}>
-          <div className="portal-cab-hero-stat-value">{stats.total_runs}</div>
-          <div className="portal-cab-hero-stat-label">
-            {pluralFormRu(stats.total_runs, RUN_FORMS)}
-          </div>
-        </a>
-        <a
-          className="portal-cab-hero-stat portal-cab-hero-stat-vol"
-          href={PORTAL_CABINET_VOLUNTEERING_HREF}
-        >
-          <div className="portal-cab-hero-stat-value">{stats.total_volunteering}</div>
-          <div className="portal-cab-hero-stat-label">
-            {pluralFormRu(stats.total_volunteering, VOL_FORMS)}
-          </div>
-        </a>
-        <div className="portal-cab-hero-stat portal-cab-hero-stat-pr">
-          <div className="portal-cab-hero-stat-value">
-            {analytics.best_finish_time_sec != null
-              ? formatHeroFinishTime(analytics.best_finish_time_sec)
-              : "—"}
-          </div>
-          <div className="portal-cab-hero-stat-label">лучшее время на 5 км</div>
-        </div>
-        <a className="portal-cab-hero-stat portal-cab-hero-stat-geo" href={PORTAL_CABINET_MAP_HREF}>
-          <div className="portal-cab-hero-stat-value">{analytics.unique_locations}</div>
-          <div className="portal-cab-hero-stat-label">
-            {pluralFormRu(analytics.unique_locations, LOCATION_FORMS)}
-          </div>
-        </a>
-      </div>
+      <p className="portal-cab-hero-sub">{streakLine}</p>
+      <HeroStatsGrid items={items} />
     </section>
   );
 }
@@ -138,7 +237,7 @@ function PortalDashboardContent({ user }: { user: User }) {
 
       {data && !error && (
         <>
-          <DashboardHero data={data} />
+          <DashboardHero data={data} userName={userLabel(user)} />
 
           <OnThisDayCard load={getOnThisDay} shareBase="/share" />
 

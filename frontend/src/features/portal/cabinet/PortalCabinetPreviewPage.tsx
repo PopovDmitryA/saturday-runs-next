@@ -26,8 +26,7 @@ import {
   type AdminUserPreviewDashboard,
   type User,
 } from "../../../lib/api";
-import { pluralFormRu } from "../../../lib/format";
-import { formatHeroFinishTime } from "./PortalCabinetDashboardPage";
+import { DashboardHero, type HeroVariant } from "./PortalCabinetDashboardPage";
 import { PortalCabinetShell, type CabinetTabKey } from "./PortalCabinetShell";
 
 const PREVIEW_USER: User = {
@@ -43,13 +42,16 @@ const PREVIEW_USER: User = {
   auth_identities: [],
 };
 
-const RUN_FORMS = ["пробежка", "пробежки", "пробежек"] as const;
-const VOL_FORMS = ["волонтёрство", "волонтёрства", "волонтёрств"] as const;
-const LOCATION_FORMS = ["локация", "локации", "локаций"] as const;
+const HERO_VARIANTS: Array<{ key: HeroVariant; label: string }> = [
+  { key: "panel", label: "A · Светлая панель" },
+  { key: "dark", label: "B · Тёмная hero" },
+  { key: "compact", label: "C · Компакт-строка" },
+];
 
 function PreviewDashboard() {
   const [data, setData] = useState<AdminUserPreviewDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [heroVariant, setHeroVariant] = useState<HeroVariant>("panel");
 
   const load = useCallback(async () => {
     setError(null);
@@ -76,49 +78,32 @@ function PreviewDashboard() {
   }
 
   const stats = data.stats;
-  const analytics = stats.analytics;
 
   return (
     <>
-      <section className="portal-cab-hero">
-        <h1 className="portal-cab-hero-title">Добрый день!</h1>
-        <p className="portal-cab-hero-sub">Ваша сводная статистика по всем беговым системам.</p>
-        <div className="portal-cab-hero-stats">
-          <div className="portal-cab-hero-stat portal-cab-hero-stat-runs">
-            <div className="portal-cab-hero-stat-value">{stats.total_runs}</div>
-            <div className="portal-cab-hero-stat-label">
-              {pluralFormRu(stats.total_runs, RUN_FORMS)}
-            </div>
-          </div>
-          <div className="portal-cab-hero-stat portal-cab-hero-stat-vol">
-            <div className="portal-cab-hero-stat-value">{stats.total_volunteering}</div>
-            <div className="portal-cab-hero-stat-label">
-              {pluralFormRu(stats.total_volunteering, VOL_FORMS)}
-            </div>
-          </div>
-          <div className="portal-cab-hero-stat portal-cab-hero-stat-pr">
-            <div className="portal-cab-hero-stat-value">
-              {analytics.best_finish_time_sec != null
-                ? formatHeroFinishTime(analytics.best_finish_time_sec)
-                : "—"}
-            </div>
-            <div className="portal-cab-hero-stat-label">лучшее время на 5 км</div>
-          </div>
-          <div className="portal-cab-hero-stat portal-cab-hero-stat-geo">
-            <div className="portal-cab-hero-stat-value">{analytics.unique_locations}</div>
-            <div className="portal-cab-hero-stat-label">
-              {pluralFormRu(analytics.unique_locations, LOCATION_FORMS)}
-            </div>
-          </div>
-        </div>
-      </section>
+      <div className="map-mode-tabs" role="tablist" aria-label="Вариант героя (только превью)">
+        {HERO_VARIANTS.map((variant) => (
+          <button
+            key={variant.key}
+            type="button"
+            role="tab"
+            aria-selected={heroVariant === variant.key}
+            className={heroVariant === variant.key ? "map-mode-tab active" : "map-mode-tab"}
+            onClick={() => setHeroVariant(variant.key)}
+          >
+            {variant.label}
+          </button>
+        ))}
+      </div>
+
+      <DashboardHero data={data} userName="Демо-участник" variant={heroVariant} />
 
       <OnThisDayCard load={demoGetOnThisDay} shareBase="/share" />
 
       <MyHistoryTeaser load={demoGetMyHistory} href="#" />
 
       <DashboardAnalytics
-        analytics={analytics}
+        analytics={stats.analytics}
         totalRuns={stats.total_runs}
         totalVolunteering={stats.total_volunteering}
       />
