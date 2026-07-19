@@ -46,6 +46,21 @@ def run_is_personal_record_sql_filter():
     )
 
 
+def run_displayed_personal_record_sql_filter():
+    """SQL filter for the personal-records page / dashboard tile (requires Platform join).
+
+    Единый критерий «строка попадает в список PR-пробежек»: рекорд системы
+    (is_pr / метка 5 вёрст), глобальный рекорд, рекорд локации или дебют в
+    системе. Счётчик на плитке главной обязан использовать этот же фильтр,
+    иначе цифра расходится с числом строк в списке."""
+    return or_(
+        run_is_personal_record_sql_filter(),
+        RunResult.is_global_pr.is_(True),
+        RunResult.is_location_pr.is_(True),
+        RunResult.is_first_run.is_(True),
+    )
+
+
 def reset_personal_records(
     db: Session,
     platform_code: str,
