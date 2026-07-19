@@ -2761,12 +2761,15 @@ tr.run-crosslinked td {
   align-items: center;
   justify-content: center;
   padding: 1.25rem;
-  /* Личный кабинет (сайдбар) пишет сюда левый край своей контентной колонки
-     (см. PortalCabinetShell.tsx) — модалка центрируется относительно неё,
-     а не всего окна, иначе при сворачивании/разворачивании сайдбара она
-     визуально «прыгает». Везде, где переменная не выставлена, — 0px, старое
-     поведение (центр по всему viewport). */
-  padding-left: calc(1.25rem + var(--modal-center-offset, 0px));
+  /* Личный кабинет (сайдбар) пишет сюда левый/правый края своей контентной
+     колонки (см. PortalCabinetShell.tsx) — модалка центрируется строго
+     между ними, а не по всему окну: иначе при сворачивании/разворачивании
+     сайдбара она «прыгает», а на широких мониторах (страница сама
+     центрируется с полями до max-width) вылезает за правый край карточки.
+     Везде, где переменные не выставлены, — 0px, старое поведение (центр по
+     всему viewport). */
+  padding-left: calc(1.25rem + var(--modal-center-offset-left, 0px));
+  padding-right: calc(1.25rem + var(--modal-center-offset-right, 0px));
   background: rgba(15, 23, 42, 0.4);
   backdrop-filter: blur(3px);
   animation: modal-fade-in 0.18s ease-out;

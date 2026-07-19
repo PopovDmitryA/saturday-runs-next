@@ -260,13 +260,16 @@ const SIDEBAR_COLLAPSED_KEY = "portalCabSidebarCollapsed";
 // Модалки (DetailModal и т.п.) центрируются на весь viewport и не знают про
 // сайдбар кабинета — из-за этого при сворачивании/разворачивании сайдбара
 // модалка визуально "гуляла" относительно видимого контента. Кабинет пишет
-// сюда фактический левый край .portal-cab-main (учитывает и ширину сайдбара,
-// и центрирующие поля страницы, и мобильный режим, где сайдбара нет вовсе) —
-// .modal-overlay в index.css добавляет это значение к своему левому паддингу,
-// так что центрирование считается от начала контентной колонки, а не всего
-// окна. На остальных страницах сайта переменная не выставляется — там
-// модалки ведут себя как раньше.
-const MODAL_CENTER_OFFSET_VAR = "--modal-center-offset";
+// сюда фактические левый и правый края .portal-cab-main — ОБА, не только
+// левый: на широких мониторах .portal-cab-layout сам центрируется с полями
+// (max-width 1440), так что правый край контента тоже не совпадает с краем
+// окна, и модалка вылезала за карточку с другой стороны, если считать одну
+// только левую поправку. .modal-overlay в index.css добавляет оба значения
+// к своим паддингам, так что центрирование считается строго между краями
+// контентной колонки. На остальных страницах сайта переменные не
+// выставляются — там модалки ведут себя как раньше.
+const MODAL_CENTER_OFFSET_LEFT_VAR = "--modal-center-offset-left";
+const MODAL_CENTER_OFFSET_RIGHT_VAR = "--modal-center-offset-right";
 
 export function PortalCabinetShell({
   active,
@@ -293,10 +296,10 @@ export function PortalCabinetShell({
 
   const measureModalOffset = () => {
     if (mainRef.current) {
-      document.documentElement.style.setProperty(
-        MODAL_CENTER_OFFSET_VAR,
-        `${mainRef.current.getBoundingClientRect().left}px`,
-      );
+      const rect = mainRef.current.getBoundingClientRect();
+      const root = document.documentElement;
+      root.style.setProperty(MODAL_CENTER_OFFSET_LEFT_VAR, `${rect.left}px`);
+      root.style.setProperty(MODAL_CENTER_OFFSET_RIGHT_VAR, `${window.innerWidth - rect.right}px`);
     }
   };
 
@@ -316,7 +319,9 @@ export function PortalCabinetShell({
     window.addEventListener("resize", measureModalOffset);
     return () => {
       window.removeEventListener("resize", measureModalOffset);
-      document.documentElement.style.removeProperty(MODAL_CENTER_OFFSET_VAR);
+      const root = document.documentElement;
+      root.style.removeProperty(MODAL_CENTER_OFFSET_LEFT_VAR);
+      root.style.removeProperty(MODAL_CENTER_OFFSET_RIGHT_VAR);
     };
   }, []);
 
