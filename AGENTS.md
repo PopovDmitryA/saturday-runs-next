@@ -115,6 +115,40 @@ make frontend-build   # или docker run node:22-alpine …
 docker compose restart nginx
 ```
 
+### Запросы к prod-БД (read-only reporting API)
+
+Для агента без прямого доступа к prod (например, cloud-сессия без SSH/туннеля):
+внутренний HTTPS-эндпоинт `/api/internal/reports/*` выполняет **только read-only**
+`SELECT`/`WITH` запросы. Код: `backend/app/api/routes/reports.py`,
+`backend/app/services/report_query.py`.
+
+- **Токен** — в переменной окружения `REPORT_API_TOKEN` (bearer). В код/репозиторий
+  **не коммитить**. Если переменной нет в окружении — попросить её у пользователя.
+- **Доступ на чтение** — эндпоинт ходит под ролью `report_ro` (`GRANT SELECT`,
+  `REPORT_DATABASE_URL`); плюс транзакция `READ ONLY` + `statement_timeout` + лимит
+  строк. Запись/DDL невозможны. Скрипт роли: `scripts/create_report_ro_role.sql`.
+- **Из cloud-сессии** нужен egress на `run5k.run` (Custom network access → Allowed
+  domains).
+
+```bash
+# Схема БД (таблицы/колонки/типы) — прочитать перед составлением ad-hoc запроса:
+curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
+     https://run5k.run/api/internal/reports/named/schema
+
+# Ad-hoc SELECT:
+curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" -H "Content-Type: application/json" \
+     -d '{"sql":"SELECT count(*) FROM users","limit":100}' \
+     https://run5k.run/api/internal/reports/query
+
+# Список именованных отчётов:
+#   schema | foreign_keys | indexes | db_size | table_sizes | connections
+curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
+     https://run5k.run/api/internal/reports/
+```
+
+Ответ: `{columns, rows, row_count, truncated, elapsed_ms}`. `truncated=true` — упёрлись
+в лимит строк, повторить с бóльшим `limit` или сузить запрос.
+
 ---
 
 ## 4. Celery: очереди и beat
