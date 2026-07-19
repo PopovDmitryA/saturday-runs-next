@@ -745,7 +745,9 @@ def test_personal_records_lists_pr_runs_per_platform(
         "2023-04-08",
     ]
     global_flags = {item["event_date"]: item["is_global_pr"] for item in items}
-    assert global_flags["2023-04-08"] is False
+    # Самая первая пробежка — глобальный лучший результат на тот момент,
+    # на витрине подсвечивается как глобальный рекорд (в БД остаётся False).
+    assert global_flags["2023-04-08"] is True
     assert global_flags["2024-05-11"] is True
     assert global_flags["2024-08-03"] is True
     assert global_flags["2025-01-04"] is False
@@ -849,8 +851,10 @@ def test_personal_records_shows_undefeated_debut(
     debut = items[0]
     assert debut["event_date"] == "2022-04-02"
     assert debut["is_debut"] is True
-    # На витрине дебют помечен PR, хотя в БД is_pr остаётся False.
+    # На витрине дебют помечен PR и глобальным рекордом (лучший результат на
+    # момент той пробежки), хотя в БД is_pr/is_global_pr остаются False.
     assert debut["is_pr"] is True
+    assert debut["is_global_pr"] is True
 
     run_row = (
         db_session.query(RunResult)
@@ -858,6 +862,7 @@ def test_personal_records_shows_undefeated_debut(
         .one()
     )
     assert run_row.is_pr is False
+    assert run_row.is_global_pr is False
 
     dashboard = authenticated_client.get("/api/dashboard")
     assert dashboard.status_code == 200

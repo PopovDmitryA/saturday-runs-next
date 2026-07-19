@@ -1118,6 +1118,35 @@ def list_user_personal_records(
         RunResult.position.asc(),
     ).all()
 
+    # Самая первая зачтённая пробежка с временем — глобальный лучший результат
+    # «на момент той пробежки», поэтому на витрине подсвечивается как глобальный
+    # рекорд (решение Дмитрия 19.07.2026). В БД is_global_pr у baseline-забега
+    # остаётся False. Порядок сортировки — тот же, что в
+    # recalculate_cross_platform_personal_records.
+    first_timed_run_query = (
+        db.query(RunResult.id)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
+        .filter(
+            PlatformLink.user_id == user_id,
+            PlatformLink.platform_id == Platform.id,
+            RunResult.finish_time_sec.isnot(None),
+            RunResult.finish_time_sec > 0,
+        )
+    )
+    if not include_test_events:
+        first_timed_run_query = first_timed_run_query.filter(Event.is_test_event.is_(False))
+    if excluded_ids:
+        first_timed_run_query = first_timed_run_query.filter(RunResult.id.notin_(excluded_ids))
+    first_timed_run_id = (
+        first_timed_run_query.order_by(
+            Event.event_date, Event.event_number, Event.location_id, RunResult.id
+        )
+        .limit(1)
+        .scalar()
+    )
+
     catalog_index = LocationCatalogIndex(db)
     summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
     return [
@@ -1133,7 +1162,7 @@ def list_user_personal_records(
             "finish_time_sec": run.finish_time_sec,
             # Дебют помечаем PR только на витрине — run.is_pr в БД не меняется.
             "is_pr": run_shows_personal_record(platform.code, run) or bool(run.is_first_run),
-            "is_global_pr": run.is_global_pr,
+            "is_global_pr": bool(run.is_global_pr) or run.id == first_timed_run_id,
             "is_location_pr": run.is_location_pr,
             "is_debut": bool(run.is_first_run),
             "event_url": _activity_event_url(
