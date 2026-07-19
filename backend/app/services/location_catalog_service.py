@@ -163,13 +163,9 @@ class LocationCatalogIndex:
 # Русские паркраны, которых нет в каталоге локаций (закрылись без преемника в
 # 5 вёрст/S95 и потому не попали в location_catalog). Дополнять по мере
 # обнаружения: SELECT parkrun-локации без location_catalog_links с русскими
-# названиями. parkrun ушёл из России в 2022 — список конечен.
-RUSSIAN_PARKRUN_SLUGS_OUTSIDE_CATALOG = frozenset({
-    # Боровичи, парк 30-летия Октября: преемник — 5 вёрст park30letiyaoktyabrya
-    # (первый забег 28.05.2022 сразу после ухода parkrun), но в каталоге они
-    # не связаны, поэтому без исключения этот parkrun считался бы зарубежным.
-    "park-30-letiya-oktyabrya",
-})
+# названиями. parkrun ушёл из России в 2022 — список конечен. Сейчас пуст:
+# park-30-letiya-oktyabrya (Боровичи) заведён в каталог связкой с 5 вёрст.
+RUSSIAN_PARKRUN_SLUGS_OUTSIDE_CATALOG: frozenset[str] = frozenset()
 
 
 def is_foreign_location(location: Location, platform_code: str, catalog_index: LocationCatalogIndex) -> bool:

@@ -811,14 +811,18 @@
   },
   {
     "parkrun_location": "Memorialny Park",
-    "canonical_name": "Memorialny Park",
+    "canonical_name": "Мемориальный парк",
     "active_platform": null,
     "legacy_parkrun_slug": "memorialnypark",
     "is_closed": true,
-    "notes": "Автосопоставление не найдено (parkrun slug: memorialnypark). Заполните вручную.; более не существуют",
+    "notes": "Орёл, Мемориальный парк; более не существует. Связана five_verst-страница memorialnypark (0 событий).",
     "links": [
       {
         "platform": "parkrun",
+        "external_key": "memorialnypark"
+      },
+      {
+        "platform": "five_verst",
         "external_key": "memorialnypark"
       }
     ]
@@ -1076,6 +1080,24 @@
       {
         "platform": "five_verst",
         "external_key": "orskparkstroiteley"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "park 30-letiya Oktyabrya",
+    "canonical_name": "Боровичи",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "park-30-letiya-oktyabrya",
+    "is_closed": false,
+    "notes": "Боровичи, парк 30-летия Октября: parkrun 28.08.2021–12.02.2022, с 28.05.2022 продолжается как 5 вёрст «Боровичи». Сопоставлено вручную.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "park-30-letiya-oktyabrya"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "park30letiyaoktyabrya"
       }
     ]
   },
@@ -1461,14 +1483,18 @@
   },
   {
     "parkrun_location": "Shuvalovsky Park",
-    "canonical_name": "Shuvalovsky Park",
+    "canonical_name": "Шуваловский парк",
     "active_platform": null,
     "legacy_parkrun_slug": "shuvalovskypark",
     "is_closed": true,
-    "notes": "Автосопоставление не найдено (parkrun slug: shuvalovskypark). Заполните вручную.; более не существуют",
+    "notes": "Санкт-Петербург, Шуваловский парк; более не существует. Связана five_verst-страница shuvalovskypark (0 событий).",
     "links": [
       {
         "platform": "parkrun",
+        "external_key": "shuvalovskypark"
+      },
+      {
+        "platform": "five_verst",
         "external_key": "shuvalovskypark"
       }
     ]
