@@ -564,3 +564,62 @@ def test_recalculate_skips_secondary_crosslink_duplicate(
     # 1750 — PR относительно зачётного лучшего (1800): исключённый дубль 1700
     # не участвует в baseline.
     assert improvement.is_pr is True
+
+
+def test_recalculate_skips_test_events(
+    db_session: Session,
+    s95_platform: Platform,
+    s95_location: Location,
+) -> None:
+    """Кейс Егора Свиридова (19.07.2026): тестовый забег не задаёт базовое время —
+    официальный дебют, пробежанный быстрее тест-забега, не рекорд. Сам тестовый
+    забег is_pr тоже никогда не получает."""
+    from app.models import Event
+
+    participant = Participant(
+        id=uuid4(),
+        platform_id=s95_platform.id,
+        external_user_id=f"s95-test-ev-{uuid4().hex[:8]}",
+        display_name="Test Event Runner",
+    )
+    db_session.add(participant)
+    db_session.flush()
+
+    test_run = _add_s95_run(
+        db_session,
+        platform=s95_platform,
+        location=s95_location,
+        participant=participant,
+        event_date=date(2022, 6, 4),
+        finish_time_sec=26 * 60 + 12,
+        is_pr=True,  # мусорное значение — должно сброситься
+    )
+    debut = _add_s95_run(
+        db_session,
+        platform=s95_platform,
+        location=s95_location,
+        participant=participant,
+        event_date=date(2022, 6, 25),
+        finish_time_sec=22 * 60 + 37,  # быстрее тест-забега, но это дебют
+        is_pr=True,
+    )
+    improvement = _add_s95_run(
+        db_session,
+        platform=s95_platform,
+        location=s95_location,
+        participant=participant,
+        event_date=date(2022, 7, 30),
+        finish_time_sec=22 * 60 + 18,  # улучшение официального дебюта
+        is_pr=False,
+    )
+    db_session.query(Event).filter(Event.id == test_run.event_id).update(
+        {Event.is_test_event: True}
+    )
+    db_session.flush()
+
+    recalculate_personal_records(db_session, "s95", participant_id=participant.id)
+    db_session.flush()
+
+    assert test_run.is_pr is False  # тестовый забег — никогда не PR
+    assert debut.is_pr is False     # дебют — базовое время, тест-забег не в счёт
+    assert improvement.is_pr is True

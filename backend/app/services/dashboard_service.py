@@ -47,7 +47,9 @@ class SyncRefreshRateLimitedError(Exception):
 # 26: pr_count считает по run_displayed_personal_record_sql_filter (вкл. дебюты
 # и глобальные рекорды) — без бампа старый кэш отдаёт счётчик, расходящийся со
 # списком PR-пробежек.
-ANALYTICS_VERSION = 26
+# 27: тестовые события исключены из пересчёта is_pr/дебютов + бэкфилл на проде —
+# кэш должен пересчитать pr_count по обновлённым флагам.
+ANALYTICS_VERSION = 27
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
