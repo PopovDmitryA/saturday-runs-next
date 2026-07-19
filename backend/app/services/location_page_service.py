@@ -39,6 +39,7 @@ from app.models import (
 )
 from app.services.location_catalog_service import (
     LocationCatalogIndex,
+    is_foreign_location,
     normalize_location_slug,
     normalize_platform_code,
     resolve_location_display_name,
@@ -51,7 +52,7 @@ HISTOGRAM_BIN_SEC = 10
 # TTL, а не точечная инвалидация: синк идёт множеством независимых batch-джоб
 # по трём платформам — вешать инвалидацию на каждую было бы куда инвазивнее,
 # чем оправдывает выигрыш (эти цифры не обязаны быть live).
-LOCATIONS_INDEX_CACHE_KEY = "locations:index:v1"
+LOCATIONS_INDEX_CACHE_KEY = "locations:index:v2"
 LOCATIONS_INDEX_CACHE_TTL_SECONDS = 3 * 60 * 60
 # Страница/журнал/рейтинги одной локации — тоже тяжёлые (resolve_location_identity
 # перечитывает ВСЕ локации + весь каталог на каждый вызов, плюс десяток
@@ -132,6 +133,32 @@ def _sort_identity_locations(
     return sorted(locations, key=sort_key)
 
 
+def _identity_status(
+    catalog_index: LocationCatalogIndex,
+    locations: list[tuple[Location, str]],
+) -> tuple[bool, bool]:
+    """(is_paused, is_cancelled) идентичности.
+
+    Идентичность из одних parkrun-локаций — всегда «на паузе»: parkrun ушёл из
+    России в 2022, но флагов паузы/закрытия у таких строк в данных нет (у
+    локаций вне каталога — вообще никаких, у «Улица Голубая» каталог ошибочно
+    активен), поэтому статус выводим из самого факта отсутствия преемника.
+    """
+    parkrun_only = all(code == "parkrun" for _location, code in locations)
+    is_paused = parkrun_only or any(catalog_index.is_paused(location, code) for location, code in locations)
+    is_cancelled = not parkrun_only and all(location.is_cancelled for location, _code in locations)
+    return is_paused, is_cancelled
+
+
+def _identity_country(locations: list[tuple[Location, str]]) -> str | None:
+    """Страна идентичности. У parkrun-строк в БД country — всегда стаб
+    «United Kingdom» (источник parkrun.org.uk); parkrun-only идентичности в
+    выдаче по построению русские (см. is_foreign_location)."""
+    if all(code == "parkrun" for _location, code in locations):
+        return "Россия"
+    return cast(str | None, _first_by_platform_order(locations, lambda loc: loc.country))
+
+
 def resolve_location_identity(db: Session, slug: str) -> LocationIdentity | None:
     requested = (slug or "").strip().lower()
     if not requested:
@@ -155,12 +182,29 @@ def resolve_location_identity(db: Session, slug: str) -> LocationIdentity | None
     if not matched_keys:
         return None
 
-    # Один slug теоретически может встретиться в двух несвязанных локациях —
-    # берём идентичность, чья лучшая платформа раньше в PLATFORM_ORDER.
+    # Один slug может встретиться в двух несвязанных идентичностях — берём ту,
+    # у которой есть события, дальше по PLATFORM_ORDER лучшей платформы.
+    # Фильтр по событиям решает коллизию вида «Шуваловский парк»: анонсированная,
+    # но не запущенная 5 вёрст точка (0 событий) и закрытый parkrun с историей
+    # делят один слаг, а связки в каталоге нет — без фильтра страница показывала
+    # бы пустую идентичность вместо parkrun-истории.
     def identity_rank(key: str) -> int:
         return min(_platform_order_index(code) for _loc, code in identity_locations[key])
 
-    identity_key = sorted(set(matched_keys), key=identity_rank)[0]
+    matched = sorted(set(matched_keys), key=identity_rank)
+    if len(matched) > 1:
+        member_ids = [location.id for key in matched for location, _code in identity_locations[key]]
+        locations_with_events = {
+            row[0]
+            for row in db.query(Event.location_id).filter(Event.location_id.in_(member_ids)).distinct()
+        }
+
+        def identity_has_events(key: str) -> bool:
+            return any(location.id in locations_with_events for location, _code in identity_locations[key])
+
+        matched.sort(key=lambda key: (not identity_has_events(key), identity_rank(key)))
+
+    identity_key = matched[0]
     catalog = catalog_index.get_for_identity_key(identity_key)
     locations = _sort_identity_locations(catalog, identity_locations[identity_key])
     return LocationIdentity(
@@ -520,7 +564,7 @@ def _last_event_stats(
 
 
 def build_location_page(db: Session, slug: str, *, use_cache: bool = True) -> dict[str, object] | None:
-    cache_key = f"locations:page:v2:{slug.strip().lower()}"
+    cache_key = f"locations:page:v3:{slug.strip().lower()}"
     if use_cache:
         cached = _read_json_cache(cache_key)
         if cached is not None:
@@ -734,8 +778,7 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
         latitude = _first_by_platform_order(identity.locations, lambda loc: loc.latitude)  # type: ignore[assignment]
         longitude = _first_by_platform_order(identity.locations, lambda loc: loc.longitude)  # type: ignore[assignment]
 
-    is_paused = any(catalog_index.is_paused(location, code) for location, code in identity.locations)
-    is_cancelled = all(location.is_cancelled for location, _code in identity.locations)
+    is_paused, is_cancelled = _identity_status(catalog_index, identity.locations)
 
     first_event_date = min((row[1] for row in events), default=None)
     last_event_date = max((row[1] for row in events), default=None)
@@ -746,7 +789,7 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
         "name": identity.name,
         "city": _first_by_platform_order(identity.locations, lambda loc: loc.city),
         "region": _first_by_platform_order(identity.locations, lambda loc: loc.region),
-        "country": _first_by_platform_order(identity.locations, lambda loc: loc.country),
+        "country": _identity_country(identity.locations),
         "is_paused": is_paused,
         "is_cancelled": is_cancelled,
         "latitude": latitude,
@@ -1141,7 +1184,7 @@ def invalidate_location_page_cache(slug: str) -> None:
     try:
         client = get_redis_client()
         client.delete(
-            f"locations:page:v2:{normalized}",
+            f"locations:page:v3:{normalized}",
             f"locations:events:v3:{normalized}",
             f"locations:leaders:v1:{normalized}",
         )
@@ -1184,6 +1227,31 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
         identity_key = catalog_index.canonical_identity_key(location, platform_code)
         identity_locations.setdefault(identity_key, []).append((location, platform_code))
 
+    # …плюс русские parkrun-локации без преемника в действующих системах:
+    # закрылись с уходом parkrun из России и иначе в список не попали бы вовсе
+    # (показываются как неактивные). Зарубежный parkrun-туризм и псевдолокацию
+    # «parkrun (сводка ролей)» отсекает is_foreign_location. Совпадение слага с
+    # уже показанной локацией (Боровичи ≡ park-30-letiya-oktyabrya) значит, что
+    # преемник есть, просто не связан в каталоге — отдельной строки не даём.
+    display_normalized_slugs = {
+        normalize_location_slug(location.external_key) for location, _code in display_rows
+    } - {""}
+    parkrun_rows = (
+        db.query(Location, Platform.code)
+        .join(Platform, Location.platform_id == Platform.id)
+        .filter(Platform.code == "parkrun")
+        .all()
+    )
+    for location, platform_code in parkrun_rows:
+        if is_foreign_location(location, platform_code, catalog_index):
+            continue
+        if normalize_location_slug(location.external_key) in display_normalized_slugs:
+            continue
+        identity_key = catalog_index.canonical_identity_key(location, platform_code)
+        if identity_key in identity_locations:
+            continue
+        identity_locations.setdefault(identity_key, []).append((location, platform_code))
+
     # Цифры (стартов, финишей, первого старта) — СКВОЗНЫЕ по всей истории
     # идентичности, включая parkrun-эпоху: иначе «Первый старт» теряет годы
     # до перехода на текущую систему, а «Стартов»/«Финишей» занижены.
@@ -1202,6 +1270,7 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
         ordered = _sort_identity_locations(catalog, members)
         primary_location, primary_code = ordered[0]
         stat = identity_stats.get(identity_key)
+        is_paused, is_cancelled = _identity_status(catalog_index, ordered)
         items.append(
             {
                 "slug": primary_location.external_key.strip().lower(),
@@ -1209,10 +1278,10 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
                 "name": _identity_display_name(catalog, ordered),
                 "city": _first_by_platform_order(ordered, lambda loc: loc.city),
                 "region": _first_by_platform_order(ordered, lambda loc: loc.region),
-                "country": _first_by_platform_order(ordered, lambda loc: loc.country),
+                "country": _identity_country(ordered),
                 "platform_codes": sorted({code for _loc, code in ordered}, key=_platform_order_index),
-                "is_paused": any(catalog_index.is_paused(location, code) for location, code in ordered),
-                "is_cancelled": all(location.is_cancelled for location, _code in ordered),
+                "is_paused": is_paused,
+                "is_cancelled": is_cancelled,
                 "events_count": stat.events_count if stat else 0,
                 "finishers_total": stat.finishers_total if stat else 0,
                 "first_event_date": stat.first_event_date if stat else None,
