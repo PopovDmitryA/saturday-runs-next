@@ -852,6 +852,86 @@ def test_personal_records_shows_undefeated_debut(
     assert debut["is_pr"] is False
 
 
+def test_dashboard_pr_count_includes_location_pr(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """dashboard.analytics.pr_count открывает список PR-пробежек — должен
+    считать те же строки, включая рекорды локации, а не только is_pr
+    (Дмитрий, 20.07.2026)."""
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+    suffix = str(uuid4().int % 1_000_000)
+
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+    location = Location(
+        platform_id=platform.id,
+        external_key=f"loc-pr-{suffix}",
+        name="Loc PR Park",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=f"loc-pr-user-{suffix}",
+        display_name="Loc PR Tester",
+        profile_url=f"https://5verst.ru/userstats/loc-pr-{suffix}/",
+    )
+    db_session.add(participant)
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=platform.id,
+            participant_id=participant.id,
+            external_user_id=participant.external_user_id,
+            external_url=participant.profile_url,
+        )
+    )
+
+    event = Event(
+        platform_id=platform.id,
+        location_id=location.id,
+        external_event_key=f"loc-pr-event-{suffix}",
+        event_date=date(2026, 5, 2),
+        event_number=940_001,
+        title="Loc PR Event",
+        finishers_count=10,
+        runners_count=10,
+    )
+    db_session.add(event)
+    db_session.flush()
+    db_session.add(
+        RunResult(
+            event_id=event.id,
+            participant_id=participant.id,
+            external_result_key=f"loc-pr-result-{suffix}",
+            position=1,
+            finish_time_sec=20 * 60,
+            finish_time_display="00:20:00",
+            status="finished",
+            is_pr=False,  # не рекорд системы
+            is_location_pr=True,  # но рекорд локации
+        )
+    )
+    db_session.flush()
+    db_session.commit()
+
+    response = authenticated_client.get("/api/dashboard")
+    assert response.status_code == 200
+    analytics = response.json()["stats"]["analytics"]
+    assert analytics["pr_count"] == 1
+
+    prs = authenticated_client.get("/api/runs/personal-records")
+    assert prs.status_code == 200
+    assert len(prs.json()) == 1
+    assert prs.json()[0]["is_location_pr"] is True
+    assert prs.json()[0]["is_pr"] is False
+
+
 def test_dashboard_unique_locations_merged_by_catalog(
     authenticated_client: TestClient,
     db_session: Session,

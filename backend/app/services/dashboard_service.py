@@ -525,14 +525,21 @@ def _compute_dashboard_analytics(
         .with_entities(func.avg(RunResult.gender_position))
         .scalar()
     )
+    # Плашка «N личных рекордов» на главной открывает список PR-пробежек, а
+    # тот считает и рекорды системы, и рекорды локации — счётчик должен
+    # совпадать с числом строк в списке, иначе цифры расходятся (Дмитрий,
+    # 20.07.2026).
+    pr_or_location_pr = or_(
+        run_is_personal_record_sql_filter(), RunResult.is_location_pr.is_(True)
+    )
     pr_count = (
-        runs_query.filter(run_is_personal_record_sql_filter())
+        runs_query.filter(pr_or_location_pr)
         .with_entities(func.count(RunResult.id))
         .scalar()
         or 0
     )
     last_pr_date = (
-        runs_query.filter(run_is_personal_record_sql_filter())
+        runs_query.filter(pr_or_location_pr)
         .with_entities(func.max(Event.event_date))
         .scalar()
     )
@@ -543,7 +550,7 @@ def _compute_dashboard_analytics(
         .scalar()
     )
     pr_last_12_months = (
-        runs_query.filter(run_is_personal_record_sql_filter(), Event.event_date >= twelve_months_ago)
+        runs_query.filter(pr_or_location_pr, Event.event_date >= twelve_months_ago)
         .with_entities(func.count(RunResult.id))
         .scalar()
         or 0

@@ -4758,6 +4758,12 @@ tr.run-crosslinked td {
   cursor: help;
 }
 
+/* .unique-locations-name задаёт свой color — без этого перебивает
+   унаследованный фиолетовый рекорда локации (см. PersonalRecordsModal). */
+.location-name-location-pr .unique-locations-name {
+  color: inherit;
+}
+
 .location-name-location-pr-tooltip {
   display: inline;
 }
