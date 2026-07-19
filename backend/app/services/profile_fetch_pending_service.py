@@ -542,4 +542,14 @@ def list_pending_rows(
     )
     if platform_code:
         query = query.filter(ProfileFetchPending.platform_code == platform_code)
-    return query.order_by(ProfileFetchPending.created_at.asc()).limit(limit).all()
+    # Пользовательские строки (user_id заполнен — кто-то ждёт ответа) идут
+    # впереди безымянного системного backlog (discovery/seed-импорт), иначе
+    # реальный запрос стоит в очереди за тысячами фоновых строк.
+    return (
+        query.order_by(
+            ProfileFetchPending.user_id.is_(None),
+            ProfileFetchPending.created_at.asc(),
+        )
+        .limit(limit)
+        .all()
+    )

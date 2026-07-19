@@ -13,6 +13,8 @@ from app.models import (
     PlatformLink,
     PlatformLinkSyncStatus,
     ProfileFetchPending,
+    SyncJob,
+    SyncJobTrigger,
 )
 from app.parkrun.fetch.daemon_session import (
     ParkrunDaemonSession,
@@ -108,22 +110,50 @@ def build_parkrun_work_queue(
         .filter(PlatformLink.platform_id == parkrun.id)
         .all()
     )
-    for link in links:
-        if link.user_id in seen_sync_users:
-            continue
-        needs_sync = link.sync_status == PlatformLinkSyncStatus.error
-        if not needs_sync:
-            continue
-        items.append(
-            ParkrunWorkItem(
-                kind="sync",
-                label=link.external_user_id,
-                user_id=link.user_id,
-            )
-        )
+    error_links = [
+        link
+        for link in links
+        if link.user_id not in seen_sync_users
+        and link.sync_status == PlatformLinkSyncStatus.error
+    ]
+    manual_link_ids = _manual_sync_link_ids(db, [link.id for link in error_links])
+
+    manual_items: list[ParkrunWorkItem] = []
+    other_items: list[ParkrunWorkItem] = []
+    for link in error_links:
+        item = ParkrunWorkItem(kind="sync", label=link.external_user_id, user_id=link.user_id)
+        (manual_items if link.id in manual_link_ids else other_items).append(item)
         seen_sync_users.add(link.user_id)
 
-    return items
+    # Ручной клик "Обновить" на сайте — это несколько штук, а не backlog;
+    # такие запросы идут первыми, впереди даже "pending", а не в хвосте
+    # общей очереди вместе с фоновыми/логин-триггерными ошибками синка.
+    return manual_items + items + other_items
+
+
+def _manual_sync_link_ids(db: Session, link_ids: list[UUID]) -> set[UUID]:
+    """PlatformLink id → True, если ПОСЛЕДНИЙ SyncJob по нему — ручной клик.
+
+    "Последний" определяется как первая по (link_id, created_at DESC) строка
+    на link_id — обычный трюк "greatest-n-per-group" без window-функций.
+    """
+    if not link_ids:
+        return set()
+    rows = (
+        db.query(SyncJob.platform_link_id, SyncJob.trigger)
+        .filter(SyncJob.platform_link_id.in_(link_ids))
+        .order_by(SyncJob.platform_link_id, SyncJob.created_at.desc())
+        .all()
+    )
+    manual_ids: set[UUID] = set()
+    seen: set[UUID] = set()
+    for link_id, trigger in rows:
+        if link_id in seen:
+            continue
+        seen.add(link_id)
+        if trigger == SyncJobTrigger.manual:
+            manual_ids.add(link_id)
+    return manual_ids
 
 
 def _process_pending_item(db: Session, item: ParkrunWorkItem) -> tuple[str, UUID | None]:

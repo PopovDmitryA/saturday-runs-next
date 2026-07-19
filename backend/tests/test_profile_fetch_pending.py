@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.models import (
     Platform,
     ProfileFetchPending,
+    ProfileFetchPendingOperation,
+    ProfileFetchPendingReason,
     ProfileFetchPendingStatus,
     User,
 )
@@ -105,3 +107,36 @@ def test_requeue_stuck_done_parkrun_without_platform_link(db_session: Session) -
     db_session.refresh(row)
     assert row.status == ProfileFetchPendingStatus.pending
     assert row.attempts == 0
+
+
+def test_list_pending_rows_prioritizes_user_requests_over_system_backlog(
+    db_session: Session,
+) -> None:
+    """Строка без user_id (системный discovery/seed-backlog) не должна вставать
+    впереди реального пользовательского запроса, даже если она старше.
+
+    platform_code — приватный для теста, чтобы не смешиваться с реальным
+    parkrun-backlog'ом, который уже лежит в БД."""
+    platform_code = "test-priority-check"
+    user = _sample_user(db_session)
+    system_row = ProfileFetchPending(
+        platform_code=platform_code,
+        profile_input="old-system-row",
+        operation=ProfileFetchPendingOperation.activity_import,
+        reason=ProfileFetchPendingReason.cooldown,
+        user_id=None,
+    )
+    db_session.add(system_row)
+    db_session.flush()
+    user_row = ProfileFetchPending(
+        platform_code=platform_code,
+        profile_input="new-user-row",
+        operation=ProfileFetchPendingOperation.profile_preview,
+        reason=ProfileFetchPendingReason.cooldown,
+        user_id=user.id,
+    )
+    db_session.add(user_row)
+    db_session.commit()
+
+    pending = list_pending_rows(db_session, platform_code=platform_code, limit=10)
+    assert [row.profile_input for row in pending] == ["new-user-row", "old-system-row"]
