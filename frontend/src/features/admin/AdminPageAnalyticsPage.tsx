@@ -44,7 +44,7 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   portal_login: "Вход",
   portal_map_lab: "Портал: карта (лаб)",
   admin: "Админка",
-  redirect: "Редиректы (/sync, /queue, /new)",
+  redirect: "Редиректы (/sync, /queue)",
   legacy_grafana: "Старые адреса Grafana",
   other: "Прочее (неизвестные адреса)",
 };

@@ -63,8 +63,7 @@ _STATIC_PAGE_TYPES = {
 }
 
 # Страницы-заглушки: сразу редиректят на другой адрес, своего содержимого нет.
-# /new* — старые адреса тёмного запуска портала, теперь редиректят на канонические.
-_REDIRECT_PATHS = frozenset({"/sync", "/queue", "/admin", "/new", "/new/about", "/new/login"})
+_REDIRECT_PATHS = frozenset({"/sync", "/queue", "/admin"})
 
 
 def _is_legacy_grafana_path(raw_path: str) -> bool:

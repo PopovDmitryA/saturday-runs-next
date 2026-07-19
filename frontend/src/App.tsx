@@ -82,22 +82,10 @@ function AdminRedirect() {
   return null;
 }
 
-// Старые адреса тёмного запуска портала: сохранённые ссылки на /new/* ведём
-// на канонические пути, не теряя query и hash (например, ?oauth_error, #privacy).
-function PortalLegacyRedirect({ to }: { to: string }) {
-  useEffect(() => {
-    window.location.replace(`${to}${window.location.search}${window.location.hash}`);
-  }, [to]);
-  return null;
-}
-
 const STATIC_ROUTES: Record<string, () => ReactElement> = {
   [PORTAL_HOME_HREF]: () => <PortalHomePage />,
   [PORTAL_ABOUT_HREF]: () => <PortalAboutPage />,
   [PORTAL_LOGIN_HREF]: () => <PortalLoginPage />,
-  "/new": () => <PortalLegacyRedirect to={PORTAL_HOME_HREF} />,
-  "/new/about": () => <PortalLegacyRedirect to={PORTAL_ABOUT_HREF} />,
-  "/new/login": () => <PortalLegacyRedirect to={PORTAL_LOGIN_HREF} />,
   "/new/map-lab": () => <PortalMapLab />,
   "/oauth/yandex/callback": () => <OAuthCallbackPage provider="yandex" />,
   "/oauth/vk/callback": () => <OAuthCallbackPage provider="vk" />,
@@ -201,7 +189,7 @@ const PORTAL_PATHS = new Set([PORTAL_HOME_HREF, PORTAL_ABOUT_HREF, PORTAL_LOGIN_
 export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
-  const hideLegacyBanner = PORTAL_PATHS.has(path) || path === "/new" || path.startsWith("/new/");
+  const hideLegacyBanner = PORTAL_PATHS.has(path) || path.startsWith("/new/");
   return (
     <>
       {!hideLegacyBanner && <LegacySiteBanner />}

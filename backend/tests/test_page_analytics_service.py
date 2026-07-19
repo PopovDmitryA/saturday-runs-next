@@ -38,8 +38,9 @@ from app.services.page_analytics_service import (
         ("/locations/kuzminki/events", ("location_events", "kuzminki")),
         ("/ratings", ("ratings_hub", "")),
         ("/ratings/runs", ("ratings_runs", "")),
-        ("/new", ("redirect", "/new")),
-        ("/new/about", ("redirect", "/new/about")),
+        # Адреса тёмного запуска портала удалены — теперь это "other".
+        ("/new", ("other", "/new")),
+        ("/new/about", ("other", "/new/about")),
         ("/new/map-lab", ("portal_map_lab", "")),
         # Демо — одной строкой; подстраница сохраняется в entity_key на будущее.
         ("/demo", ("demo", "")),
@@ -76,9 +77,6 @@ def test_classify_legacy_grafana_paths(path: str) -> None:
 # новый роут без записи в _STATIC_PAGE_TYPES свалится в "other" и уронит тест.
 APP_ROUTES = [
     "/",
-    "/new",
-    "/new/about",
-    "/new/login",
     "/new/map-lab",
     "/login",
     "/oauth/yandex/callback",
@@ -136,20 +134,10 @@ def test_user_facing_pages_have_distinct_page_types() -> None:
     Исключения — маршруты, которым отдельная строка не нужна: /admin/* и
     /demo/* сведены в одну строку каждый (внутренняя админка и витрина целиком —
     решение Дмитрия 17.07.2026); /profiles рисует тот же компонент, что
-    /dashboard; /sync, /queue, /admin и /new* (старые адреса тёмного запуска
-    портала) — заглушки-редиректы; оба /oauth/*/callback — одна страница
-    OAuthCallbackPage с разным провайдером.
+    /dashboard; /sync, /queue, /admin — заглушки-редиректы; оба
+    /oauth/*/callback — одна страница OAuthCallbackPage с разным провайдером.
     """
-    not_own_page = {
-        "/profiles",
-        "/sync",
-        "/queue",
-        "/admin",
-        "/new",
-        "/new/about",
-        "/new/login",
-        "/oauth/yandex/callback",
-    }
+    not_own_page = {"/profiles", "/sync", "/queue", "/admin", "/oauth/yandex/callback"}
     user_facing = [
         p
         for p in APP_ROUTES
