@@ -243,12 +243,28 @@ type PortalCabinetShellProps = {
   // Заголовок страницы; на дашборде шапку рисует сам контент (герой).
   title?: string;
   sub?: string;
+  // Подменить адреса разделов. Нужно превью на демо-данных: там навигация
+  // ведёт на ?tab=…, иначе клик уходит на страницу под RequireAuth и без
+  // сессии выбрасывает на вход.
+  hrefForTab?: (key: CabinetTabKey, defaultHref: string) => string;
+  // Превью: служебные пункты и «Выйти» скрыты — они уводят из демо-режима.
+  hideSecondaryNav?: boolean;
   children: ReactNode;
 };
 
 const SIDEBAR_COLLAPSED_KEY = "portalCabSidebarCollapsed";
 
-export function PortalCabinetShell({ active, user, title, sub, children }: PortalCabinetShellProps) {
+export function PortalCabinetShell({
+  active,
+  user,
+  title,
+  sub,
+  hrefForTab,
+  hideSecondaryNav = false,
+  children,
+}: PortalCabinetShellProps) {
+  const tabHref = (item: CabinetNavItem) =>
+    hrefForTab ? hrefForTab(item.key, item.href) : item.href;
   const [moreOpen, setMoreOpen] = useState(false);
   // Свёрнутый сайдбар (узкий рельс-иконки) — выбор запоминается на устройстве.
   const [collapsed, setCollapsed] = useState(() => {
@@ -320,7 +336,7 @@ export function PortalCabinetShell({ active, user, title, sub, children }: Porta
             {CABINET_NAV.map((item) => (
               <a
                 key={item.key}
-                href={item.href}
+                href={tabHref(item)}
                 className={`portal-cab-nav-item${item.key === active ? " active" : ""}`}
                 aria-current={item.key === active ? "page" : undefined}
                 title={collapsed ? item.label : undefined}
@@ -331,20 +347,22 @@ export function PortalCabinetShell({ active, user, title, sub, children }: Porta
             ))}
           </nav>
 
-          <nav className="portal-cab-nav portal-cab-nav-secondary" aria-label="Служебные разделы">
-            {SECONDARY_NAV.filter((item) => !item.adminOnly || user.is_admin).map((item) => (
-              <a key={item.href} href={item.href} className="portal-cab-nav-item portal-cab-nav-item-secondary">
-                <span className="portal-cab-nav-label">{item.label}</span>
-              </a>
-            ))}
-            <button
-              type="button"
-              className="portal-cab-nav-item portal-cab-nav-item-secondary portal-cab-logout"
-              onClick={() => void handleLogout()}
-            >
-              <span className="portal-cab-nav-label">Выйти</span>
-            </button>
-          </nav>
+          {!hideSecondaryNav && (
+            <nav className="portal-cab-nav portal-cab-nav-secondary" aria-label="Служебные разделы">
+              {SECONDARY_NAV.filter((item) => !item.adminOnly || user.is_admin).map((item) => (
+                <a key={item.href} href={item.href} className="portal-cab-nav-item portal-cab-nav-item-secondary">
+                  <span className="portal-cab-nav-label">{item.label}</span>
+                </a>
+              ))}
+              <button
+                type="button"
+                className="portal-cab-nav-item portal-cab-nav-item-secondary portal-cab-logout"
+                onClick={() => void handleLogout()}
+              >
+                <span className="portal-cab-nav-label">Выйти</span>
+              </button>
+            </nav>
+          )}
 
           <button
             type="button"
@@ -393,26 +411,30 @@ export function PortalCabinetShell({ active, user, title, sub, children }: Porta
             {moreItems.map((item) => (
               <a
                 key={item.key}
-                href={item.href}
+                href={tabHref(item)}
                 className={`portal-cab-more-item${item.key === active ? " active" : ""}`}
               >
                 <span className="portal-cab-nav-icon">{item.icon}</span>
                 {item.label}
               </a>
             ))}
-            <div className="portal-cab-more-sep" />
-            {SECONDARY_NAV.filter((item) => !item.adminOnly || user.is_admin).map((item) => (
-              <a key={item.href} href={item.href} className="portal-cab-more-item portal-cab-more-item-secondary">
-                {item.label}
-              </a>
-            ))}
-            <button
-              type="button"
-              className="portal-cab-more-item portal-cab-more-item-secondary portal-cab-logout"
-              onClick={() => void handleLogout()}
-            >
-              Выйти
-            </button>
+            {!hideSecondaryNav && (
+              <>
+                <div className="portal-cab-more-sep" />
+                {SECONDARY_NAV.filter((item) => !item.adminOnly || user.is_admin).map((item) => (
+                  <a key={item.href} href={item.href} className="portal-cab-more-item portal-cab-more-item-secondary">
+                    {item.label}
+                  </a>
+                ))}
+                <button
+                  type="button"
+                  className="portal-cab-more-item portal-cab-more-item-secondary portal-cab-logout"
+                  onClick={() => void handleLogout()}
+                >
+                  Выйти
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -421,7 +443,7 @@ export function PortalCabinetShell({ active, user, title, sub, children }: Porta
         {bottomItems.map((item) => (
           <a
             key={item.key}
-            href={item.href}
+            href={tabHref(item)}
             className={`portal-cab-bottomnav-item${item.key === active ? " active" : ""}`}
             aria-current={item.key === active ? "page" : undefined}
           >

@@ -1,40 +1,34 @@
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../../components/ThemeToggle";
-import { getCurrentUser } from "../../lib/api";
-import {
-  PORTAL_ABOUT_HREF,
-  PORTAL_CABINET_HREF,
-  PORTAL_HOME_HREF,
-  PORTAL_LOGIN_HREF,
-} from "../../lib/portalRoutes";
+import { getCurrentUser, type User } from "../../lib/api";
+import { PORTAL_ABOUT_HREF, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import { userLabel } from "../../lib/userLabel";
 
 export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
-  // Аноним не должен попасть на старый /login через RequireAuth на /dashboard —
-  // пока авторизация не подтверждена, ведём через новый /new/login.
-  const [authed, setAuthed] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  // Пока авторизация не подтверждена, правый блок не рисуем вовсе: иначе
+  // залогиненный на долю секунды видит «Войти», которое сменяется ником.
+  const [authResolved, setAuthResolved] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     getCurrentUser()
-      .then(() => setAuthed(true))
-      .catch(() => setAuthed(false));
+      .then((current) => setUser(current))
+      .catch(() => setUser(null))
+      .finally(() => setAuthResolved(true));
   }, []);
 
+  const authed = user !== null;
   const navLinks = (
     <>
       <a href={PORTAL_ABOUT_HREF} className="portal-header-link">
         О проекте
       </a>
-      <a href={authed ? PORTAL_CABINET_HREF : PORTAL_LOGIN_HREF} className="portal-header-link">
-        Личный кабинет
-      </a>
-      {/* Локации под RequireAuth: анонима увели бы на СТАРЫЙ /login — как и
-          с «Личным кабинетом», ведём его на портальный вход. */}
+      {/* Локации и Рейтинги под RequireAuth — анонима сразу ведём на вход,
+          чтобы он не упирался в гейт внутри раздела. */}
       <a href={authed ? "/locations" : PORTAL_LOGIN_HREF} className="portal-header-link">
         Локации
       </a>
-      {/* Рейтинги под RequireAuth: анонима увели бы на СТАРЫЙ /login — как и
-          с «Личным кабинетом», ведём его на портальный вход. */}
       <a href={authed ? "/ratings" : PORTAL_LOGIN_HREF} className="portal-header-link">
         Рейтинги
       </a>
@@ -85,11 +79,17 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
             </svg>
             Канал
           </a>
-          {!hideLogin && (
-            <a className="btn primary btn-sm" href={PORTAL_LOGIN_HREF}>
-              Войти
-            </a>
-          )}
+          {!hideLogin &&
+            authResolved &&
+            (user ? (
+              <a className="portal-header-user" href="/dashboard" title="Личный кабинет">
+                {userLabel(user)}
+              </a>
+            ) : (
+              <a className="btn primary btn-sm" href={PORTAL_LOGIN_HREF}>
+                Войти
+              </a>
+            ))}
           <button
             type="button"
             className="portal-header-burger"

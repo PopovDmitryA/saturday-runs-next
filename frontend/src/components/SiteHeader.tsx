@@ -5,6 +5,8 @@ import { ThemeToggle } from "./ThemeToggle";
 export type SiteNavItem = {
   href: string;
   label: string;
+  /* Пункт-иконка: вместо текста рисуется пиктограмма, label уходит в aria/title. */
+  icon?: "home";
   adminOnly?: boolean;
   adminStyle?: boolean;
   muted?: boolean;
@@ -31,7 +33,19 @@ function navClassName(item: SiteNavItem, isActive: boolean): string {
   if (item.muted) {
     return "site-nav-link site-nav-link-muted";
   }
+  if (item.icon) {
+    return "site-nav-link site-nav-link-icon";
+  }
   return "site-nav-link";
+}
+
+function HomeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 11.2 12 4.4l8 6.8" />
+      <path d="M6.3 10.4V19.2h11.4V10.4" />
+    </svg>
+  );
 }
 
 function isNavActive(path: string, href: string): boolean {
@@ -66,8 +80,10 @@ export function SiteHeader({
                 key={item.href}
                 href={item.href}
                 className={navClassName(item, isNavActive(path, item.href))}
+                aria-label={item.icon ? item.label : undefined}
+                title={item.icon ? item.label : undefined}
               >
-                {item.label}
+                {item.icon === "home" ? <HomeIcon /> : item.label}
               </a>
             ))}
           </nav>

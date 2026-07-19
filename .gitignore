@@ -60,3 +60,6 @@ data/grafana/dashboards/
 # Local club-stats outputs (not for repo)
 .club_members.json
 psb_sport_club_stats.csv
+
+# Временный файл заглушки деплоя (кладёт/убирает remote_deploy.sh на проде)
+deploy/nginx/maintenance_current.html

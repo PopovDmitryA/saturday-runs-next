@@ -81,7 +81,7 @@ function DashboardContent({ isAdmin }: { isAdmin: boolean }) {
   const byPlatform = stats?.by_platform ?? {};
 
   return (
-    <AppShell title="Главная">
+    <AppShell title="Личный кабинет">
       {loading && !data && <p className="muted">Загрузка…</p>}
 
       {error && (

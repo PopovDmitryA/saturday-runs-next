@@ -27,9 +27,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.db.session import get_session_factory
-from app.models import Event, Location, Participant, ProfileFetchPendingOperation, Platform, RunResult
+from app.models import Event, Location, Participant, Platform, ProfileFetchPendingOperation, RunResult
 from app.runpark.mssql_client import fix_varchar_encoding, runpark_query
-from app.services.profile_fetch_pending_service import ensure_parkrun_pending_queue_row
+from app.services.profile_fetch_pending_service import (
+    RUNPARK_SEED_NOTE_PREFIX,
+    ensure_parkrun_pending_queue_row,
+)
 
 PLATFORM_CODE = "parkrun"
 
@@ -150,7 +153,7 @@ def main() -> int:
                 db,
                 athlete_id,
                 operation=operation,
-                note="seed from RunPark Pakrun archive",
+                note=RUNPARK_SEED_NOTE_PREFIX,
             )
             queued += 1
             if queued % 100 == 0:

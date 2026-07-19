@@ -34,8 +34,8 @@ export function NotFoundPage() {
                 Адрес <code>{path}</code> не зарегистрирован в приложении.
               </p>
               <p>
-                <a href="/admin" className="btn secondary">
-                  В админку
+                <a href={SITE_PUBLIC_HOME_HREF} className="btn secondary">
+                  На главную
                 </a>{" "}
                 <a href="/dashboard" className="btn primary">
                   В личный кабинет

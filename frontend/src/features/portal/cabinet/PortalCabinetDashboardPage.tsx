@@ -54,10 +54,10 @@ function heroInitials(name: string): string {
   return clean.slice(0, 2).toUpperCase();
 }
 
-// Варианты героя дашборда (выбирает Дмитрий): panel — светлая панель с
-// приветствием, dark — тёмная hero-панель с аватаром (как на главной портала),
-// compact — одна строка почти без высоты.
-export type HeroVariant = "panel" | "dark" | "compact";
+// Варианты героя дашборда: card — карточка с аватаром и именем (выбор Дмитрия,
+// по умолчанию), panel — та же панель без аватара, compact — одна строка почти
+// без высоты. Тёмный вариант отклонён — кабинет остаётся в тонах портала.
+export type HeroVariant = "card" | "panel" | "compact";
 
 type HeroStat = {
   key: string;
@@ -127,11 +127,15 @@ function HeroStatsGrid({ items }: { items: HeroStat[] }) {
 export function DashboardHero({
   data,
   userName,
-  variant = "panel",
+  variant = "card",
+  hrefForStat,
 }: {
   data: Pick<DashboardResponse, "stats">;
   userName: string;
   variant?: HeroVariant;
+  // Превью на демо-данных подменяет адреса: разделы под RequireAuth без
+  // сессии выбросили бы на вход.
+  hrefForStat?: (key: string, defaultHref: string) => string;
 }) {
   const analytics = data.stats.analytics;
   const streak = analytics.saturday_streak_current ?? analytics.saturday_streak;
@@ -139,16 +143,18 @@ export function DashboardHero({
     streak > 0
       ? `Текущая серия — ${streak} ${pluralFormRu(streak, SATURDAY_FORMS)} подряд. Так держать!`
       : "Ваша сводная статистика по всем беговым системам.";
-  const items = buildHeroStats(data);
+  const items = buildHeroStats(data).map((item) =>
+    item.href && hrefForStat ? { ...item, href: hrefForStat(item.key, item.href) } : item,
+  );
 
-  if (variant === "dark") {
+  if (variant === "card") {
     return (
-      <section className="portal-cab-hero portal-cab-hero-dark">
-        <div className="portal-cab-hero-dark-head">
-          <span className="portal-cab-hero-dark-avatar" aria-hidden="true">
+      <section className="portal-cab-hero portal-cab-hero-card">
+        <div className="portal-cab-hero-card-head">
+          <span className="portal-cab-hero-card-avatar" aria-hidden="true">
             {heroInitials(userName)}
           </span>
-          <div>
+          <div className="portal-cab-hero-card-id">
             <h1 className="portal-cab-hero-title">{userName}</h1>
             <p className="portal-cab-hero-sub">
               {heroGreeting()}! {streakLine}

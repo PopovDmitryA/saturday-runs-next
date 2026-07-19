@@ -490,23 +490,33 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   border-left-color: var(--accent-teal-text);
 }
 
-/* Вариант B: тёмная hero-панель (в обеих темах — как hero главной портала) */
+/* Карточка участника (вариант по умолчанию): аватар + имя на обычной
+   поверхности — в тонах портала, без тёмной панели. Лёгкий индиговый отсвет
+   в углу отделяет её от остальных панелей, не уводя в другую тему. */
 
-.portal-cab-hero-dark {
+.portal-cab-hero-card {
   background:
-    radial-gradient(120% 160% at 100% 0%, rgba(79, 70, 229, 0.28), transparent 55%),
-    linear-gradient(135deg, #171d2b, #222a3d);
-  border-color: #2b3750;
-  color: #f3f5fa;
+    radial-gradient(120% 150% at 100% 0%, var(--tint-indigo-bg), transparent 60%),
+    var(--surface);
 }
 
-.portal-cab-hero-dark-head {
+.portal-cab-hero-card-head {
   display: flex;
   align-items: center;
   gap: 14px;
 }
 
-.portal-cab-hero-dark-avatar {
+.portal-cab-hero-card-id {
+  min-width: 0;
+}
+
+.portal-cab-hero-card .portal-cab-hero-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-cab-hero-card-avatar {
   flex: none;
   width: 46px;
   height: 46px;
@@ -518,39 +528,7 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   font-weight: 800;
   letter-spacing: 0.02em;
   color: #fff;
-  background: linear-gradient(135deg, #4f46e5, #7c3aed);
-}
-
-.portal-cab-hero-dark .portal-cab-hero-sub {
-  color: #9aa3b0;
-}
-
-.portal-cab-hero-dark .portal-cab-hero-stat {
-  border-left-color: rgba(243, 245, 250, 0.22);
-}
-
-.portal-cab-hero-dark .portal-cab-hero-stat-runs {
-  border-left-color: #4ade80;
-}
-
-.portal-cab-hero-dark .portal-cab-hero-stat-vol {
-  border-left-color: #818cf8;
-}
-
-.portal-cab-hero-dark .portal-cab-hero-stat-pr {
-  border-left-color: #fbbf24;
-}
-
-.portal-cab-hero-dark .portal-cab-hero-stat-geo {
-  border-left-color: #2dd4bf;
-}
-
-.portal-cab-hero-dark .portal-cab-hero-stat-label {
-  color: #9aa3b0;
-}
-
-.portal-cab-hero-dark a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
-  color: #a3aefc;
+  background: linear-gradient(135deg, var(--accent-indigo), #7c3aed);
 }
 
 /* Вариант C: компактная строка */

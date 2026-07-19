@@ -17,6 +17,14 @@ cd "$ROOT"
 # Функция, а не eval: eval ломает кавычки внутри --format / python -c.
 compose() { docker compose -f docker-compose.yml -f docker-compose.prod.yml "$@"; }
 
+# Заглушка 502 у host nginx: на время деплоя показываем «Обновляемся» вместо
+# дежурной «Что-то сломалось» (см. deploy/nginx/run5k.run.conf, try_files).
+# Файл гарантированно убирается по завершении — и при успехе, и при падении,
+# и при обрыве SSH (HUP/INT/TERM), иначе авария маскировалась бы под деплой.
+MAINT_CURRENT="$ROOT/deploy/nginx/maintenance_current.html"
+cp "$ROOT/deploy/nginx/maintenance_deploy.html" "$MAINT_CURRENT"
+trap 'rm -f "$MAINT_CURRENT"' EXIT HUP INT TERM
+
 # Сервисы, которые пересоздаём. nginx собирать нельзя — он на готовом образе
 # (nginx:1.27-alpine), build-контекст есть только у python-сервисов.
 SERVICES="worker worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat vk-bot"

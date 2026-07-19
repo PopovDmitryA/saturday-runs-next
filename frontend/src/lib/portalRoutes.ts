@@ -1,21 +1,19 @@
 /**
- * Адреса портального редизайна. Пока живут под префиксом /new (тёмный запуск —
- * старые страницы на "/", "/about", "/login" не тронуты и не знают об этом коде).
- *
- * При релизе редизайна — единственный файл, который нужно поправить: замените
- * значения на канонические пути ("/", "/about", "/login") и уберите /new/*
- * записи из STATIC_ROUTES в App.tsx. Все ссылки в features/portal/* уже берут
- * адреса отсюда, повторно искать по коду не нужно.
+ * Канонические адреса портального редизайна. С релиза (июль 2026) портал живёт
+ * на основных путях сайта: "/", "/about", "/login"; адреса тёмного запуска
+ * (/new/*) удалены — наружу они не публиковались. Все ссылки в
+ * features/portal/* берут адреса отсюда.
  */
-export const PORTAL_HOME_HREF = "/new";
-export const PORTAL_ABOUT_HREF = "/new/about";
+export const PORTAL_HOME_HREF = "/";
+export const PORTAL_ABOUT_HREF = "/about";
 export const PORTAL_ABOUT_PRIVACY_HREF = `${PORTAL_ABOUT_HREF}#privacy`;
-export const PORTAL_LOGIN_HREF = "/new/login";
+export const PORTAL_LOGIN_HREF = "/login";
 
 /**
- * Личный кабинет в портальном дизайне (тёмный запуск). При релизе значения
- * меняются на канонические ("/dashboard", "/runs", …) — старые страницы
- * уходят вместе с /new-записями из STATIC_ROUTES.
+ * Личный кабинет в портальном дизайне — пока тёмный запуск под /new/*, рядом
+ * со старым кабинетом на канонических адресах ("/dashboard", "/runs", …).
+ * При релизе значения меняются на канонические, а старые страницы уходят
+ * вместе с /new-записями из STATIC_ROUTES в App.tsx.
  */
 export const PORTAL_CABINET_HREF = "/new/dashboard";
 export const PORTAL_CABINET_RUNS_HREF = "/new/runs";

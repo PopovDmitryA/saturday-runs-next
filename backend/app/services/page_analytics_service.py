@@ -39,12 +39,12 @@ _LOCATION_RE = re.compile(r"^/locations/([^/]+)$")
 # канон — STATIC_ROUTES в frontend/src/App.tsx (добавили роут — добавьте строку
 # сюда и в PAGE_TYPE_LABELS на фронте, иначе страница уедет в "other").
 _STATIC_PAGE_TYPES = {
-    "/": "landing",
-    "/new": "portal_home",
-    "/new/about": "portal_about",
-    "/new/login": "portal_login",
+    # С релиза портала (июль 2026) канонические пути отдают портальные страницы.
+    # Типы "landing"/"login"/"about" остались только в исторических данных.
+    "/": "portal_home",
+    "/about": "portal_about",
+    "/login": "portal_login",
     "/new/map-lab": "portal_map_lab",
-    "/login": "login",
     "/dashboard": "dashboard",
     "/profiles": "dashboard",  # тот же компонент, что и /dashboard
     "/runs": "runs",
@@ -60,7 +60,6 @@ _STATIC_PAGE_TYPES = {
     "/ratings/locations": "ratings_locations",
     "/share": "share",
     "/settings": "settings",
-    "/about": "about",
 }
 
 # Страницы-заглушки: сразу редиректят на другой адрес, своего содержимого нет.

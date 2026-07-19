@@ -24,7 +24,9 @@ from app.services.page_analytics_service import (
 @pytest.mark.parametrize(
     ("path", "expected"),
     [
-        ("/", ("landing", "")),
+        ("/", ("portal_home", "")),
+        ("/about", ("portal_about", "")),
+        ("/login", ("portal_login", "")),
         ("/dashboard", ("dashboard", "")),
         ("/profiles", ("dashboard", "")),
         ("/runs?page=2", ("runs", "")),
@@ -36,8 +38,10 @@ from app.services.page_analytics_service import (
         ("/locations/kuzminki/events", ("location_events", "kuzminki")),
         ("/ratings", ("ratings_hub", "")),
         ("/ratings/runs", ("ratings_runs", "")),
-        ("/new", ("portal_home", "")),
-        ("/new/about", ("portal_about", "")),
+        # Адреса тёмного запуска портала удалены — теперь это "other".
+        ("/new", ("other", "/new")),
+        ("/new/about", ("other", "/new/about")),
+        ("/new/map-lab", ("portal_map_lab", "")),
         # Демо — одной строкой; подстраница сохраняется в entity_key на будущее.
         ("/demo", ("demo", "")),
         ("/demo/runs", ("demo", "runs")),
@@ -73,9 +77,6 @@ def test_classify_legacy_grafana_paths(path: str) -> None:
 # новый роут без записи в _STATIC_PAGE_TYPES свалится в "other" и уронит тест.
 APP_ROUTES = [
     "/",
-    "/new",
-    "/new/about",
-    "/new/login",
     "/new/map-lab",
     "/login",
     "/oauth/yandex/callback",

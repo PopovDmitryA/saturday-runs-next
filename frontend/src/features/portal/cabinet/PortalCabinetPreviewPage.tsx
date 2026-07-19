@@ -26,6 +26,7 @@ import {
   type AdminUserPreviewDashboard,
   type User,
 } from "../../../lib/api";
+import { PORTAL_CABINET_ACHIEVEMENTS_HREF } from "../../../lib/portalRoutes";
 import { DashboardHero, type HeroVariant } from "./PortalCabinetDashboardPage";
 import { PortalCabinetShell, type CabinetTabKey } from "./PortalCabinetShell";
 
@@ -43,15 +44,15 @@ const PREVIEW_USER: User = {
 };
 
 const HERO_VARIANTS: Array<{ key: HeroVariant; label: string }> = [
-  { key: "panel", label: "A · Светлая панель" },
-  { key: "dark", label: "B · Тёмная hero" },
-  { key: "compact", label: "C · Компакт-строка" },
+  { key: "card", label: "Карточка участника" },
+  { key: "panel", label: "Панель без аватара" },
+  { key: "compact", label: "Компакт-строка" },
 ];
 
 function PreviewDashboard() {
   const [data, setData] = useState<AdminUserPreviewDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [heroVariant, setHeroVariant] = useState<HeroVariant>("panel");
+  const [heroVariant, setHeroVariant] = useState<HeroVariant>("card");
 
   const load = useCallback(async () => {
     setError(null);
@@ -96,7 +97,12 @@ function PreviewDashboard() {
         ))}
       </div>
 
-      <DashboardHero data={data} userName="Демо-участник" variant={heroVariant} />
+      <DashboardHero
+        data={data}
+        userName="Демо-участник"
+        variant={heroVariant}
+        hrefForStat={(key) => `${PREVIEW_PATH}?tab=${key === "vol" ? "volunteering" : key === "geo" ? "map" : key}`}
+      />
 
       <OnThisDayCard load={demoGetOnThisDay} shareBase="/share" />
 
@@ -111,9 +117,18 @@ function PreviewDashboard() {
   );
 }
 
+const PREVIEW_PATH = "/new/cabinet-preview";
+
 function previewTab(): CabinetTabKey {
   const tab = new URLSearchParams(window.location.search).get("tab");
-  const known: CabinetTabKey[] = ["runs", "volunteering", "meetings", "history", "map"];
+  const known: CabinetTabKey[] = [
+    "runs",
+    "volunteering",
+    "achievements",
+    "meetings",
+    "history",
+    "map",
+  ];
   return known.includes(tab as CabinetTabKey) ? (tab as CabinetTabKey) : "dashboard";
 }
 
@@ -133,6 +148,17 @@ export function PortalCabinetPreviewPage() {
       title = "Волонтёрство";
       sub = "Все волонтёрские позиции по всем привязанным системам.";
       content = <VolunteeringContent bare />;
+      break;
+    case "achievements":
+      title = "Цели и достижения";
+      content = (
+        <div className="card">
+          <p className="muted">
+            У раздела нет демо-данных — вёрстку видно только под своей учётной записью, по
+            адресу {PORTAL_CABINET_ACHIEVEMENTS_HREF}.
+          </p>
+        </div>
+      );
       break;
     case "meetings":
       content = <CoRunnersContent load={demoGetCoRunners} loadMeetings={demoGetCoRunnerMeetings} />;
@@ -157,7 +183,16 @@ export function PortalCabinetPreviewPage() {
 
   return (
     <AppDataSourceProvider source={demoDataSource}>
-      <PortalCabinetShell active={tab} user={PREVIEW_USER} title={title} sub={sub}>
+      <PortalCabinetShell
+        active={tab}
+        user={PREVIEW_USER}
+        title={title}
+        sub={sub}
+        // Внутри превью навигация остаётся в превью: реальные разделы под
+        // RequireAuth, без сессии клик выбрасывал бы на страницу входа.
+        hrefForTab={(key) => (key === "dashboard" ? PREVIEW_PATH : `${PREVIEW_PATH}?tab=${key}`)}
+        hideSecondaryNav
+      >
         {content}
       </PortalCabinetShell>
     </AppDataSourceProvider>
