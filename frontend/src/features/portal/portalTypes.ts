@@ -161,10 +161,21 @@ export type PortalHomeResponse = {
   gender_split: PortalGenderSplit | null;
 };
 
+/** Ошибка загрузки с HTTP-статусом: по нему страница отличает «стек
+ * перезапускается» (502/503/504, стоит повторить) от настоящей ошибки. */
+export class PortalHomeError extends Error {
+  status: number;
+
+  constructor(status: number) {
+    super(`Не удалось загрузить статистику (HTTP ${status})`);
+    this.status = status;
+  }
+}
+
 export async function fetchPortalHome(): Promise<PortalHomeResponse> {
   const response = await fetch("/api/portal/home", { credentials: "same-origin" });
   if (!response.ok) {
-    throw new Error(`Не удалось загрузить статистику (HTTP ${response.status})`);
+    throw new PortalHomeError(response.status);
   }
   return (await response.json()) as PortalHomeResponse;
 }
