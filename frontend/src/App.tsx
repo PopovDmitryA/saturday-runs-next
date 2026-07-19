@@ -16,10 +16,17 @@ import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
 import { DemoDashboardPage } from "./features/demo/DemoDashboardPage";
 import { PortalAboutPage } from "./features/portal/PortalAboutPage";
+import { PortalBlogPage } from "./features/portal/PortalBlogPage";
 import { PortalHomePage } from "./features/portal/PortalHomePage";
 import { PortalLoginPage } from "./features/portal/PortalLoginPage";
 import { PortalMapLab } from "./features/portal/PortalMapLab";
-import { PORTAL_ABOUT_HREF, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "./lib/portalRoutes";
+import { AdminBlogPage } from "./features/admin/AdminBlogPage";
+import {
+  PORTAL_ABOUT_HREF,
+  PORTAL_BLOG_HREF,
+  PORTAL_HOME_HREF,
+  PORTAL_LOGIN_HREF,
+} from "./lib/portalRoutes";
 import { DemoMapsPage, MapsPage } from "./features/maps/MapsPage";
 import { LocationEventsPage } from "./features/locations/LocationEventsPage";
 import { LocationPage } from "./features/locations/LocationPage";
@@ -86,6 +93,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   [PORTAL_HOME_HREF]: () => <PortalHomePage />,
   [PORTAL_ABOUT_HREF]: () => <PortalAboutPage />,
   [PORTAL_LOGIN_HREF]: () => <PortalLoginPage />,
+  [PORTAL_BLOG_HREF]: () => <PortalBlogPage />,
   "/new/map-lab": () => <PortalMapLab />,
   "/oauth/yandex/callback": () => <OAuthCallbackPage provider="yandex" />,
   "/oauth/vk/callback": () => <OAuthCallbackPage provider="vk" />,
@@ -127,6 +135,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/event-report": () => <AdminEventReportPage />,
   "/admin/records-digest": () => <AdminRecordsDigestPage />,
   "/admin/location-contacts": () => <AdminLocationContactsPage />,
+  "/admin/blog": () => <AdminBlogPage />,
   "/settings": () => <SettingsPage />,
 };
 
@@ -184,7 +193,12 @@ function renderRoute(path: string): ReactElement {
 }
 
 // Страницы портального редизайна — на них баннер про переезд с Grafana не показываем.
-const PORTAL_PATHS = new Set([PORTAL_HOME_HREF, PORTAL_ABOUT_HREF, PORTAL_LOGIN_HREF]);
+const PORTAL_PATHS = new Set([
+  PORTAL_HOME_HREF,
+  PORTAL_ABOUT_HREF,
+  PORTAL_LOGIN_HREF,
+  PORTAL_BLOG_HREF,
+]);
 
 export function App() {
   const path = useAppPath();

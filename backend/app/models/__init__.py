@@ -1159,6 +1159,31 @@ class PageStatsDaily(Base):
     duration_views: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
 
+class BlogPost(Base):
+    """Пост блога — затравка публикации из Telegram-канала @popov_way.
+
+    Полный текст живёт в канале: сайт хранит заголовок, затравку и ссылку
+    t.me, карточка маршрутизирует читателя в Telegram (пост + комментарии).
+    clicks_count — счётчик переходов с сайта, основа сортировки «популярные».
+    """
+
+    __tablename__ = "blog_posts"
+    __table_args__ = (Index("ix_blog_posts_published_at", "published_at"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    teaser: Mapped[str] = mapped_column(Text, nullable=False)
+    telegram_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    topic: Mapped[str | None] = mapped_column(String(64))
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    clicks_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class HistoryMilestoneSetting(Base):
     """Вкл/выкл конкретного вида вехи «Моя история» (админ-переключатель).
 

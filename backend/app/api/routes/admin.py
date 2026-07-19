@@ -32,6 +32,12 @@ from app.schemas.blocked_slug_admin import (
     BlockedSlugItem,
     BlockedSlugListResponse,
 )
+from app.schemas.blog import (
+    BlogPostAdminListResponse,
+    BlogPostAdminResponse,
+    BlogPostCreateRequest,
+    BlogPostUpdateRequest,
+)
 from app.schemas.dashboard import SyncRefreshResponse
 from app.schemas.location_contacts import (
     LocationAnnounceSettingsResponse,
@@ -69,6 +75,13 @@ from app.services.blocked_slug_admin_service import (
     delete_blocked_slug,
     list_blocked_slugs,
     list_reserved_slugs,
+)
+from app.services.blog_service import (
+    BlogPostError,
+    create_post,
+    delete_post,
+    list_all_posts,
+    update_post,
 )
 from app.services.location_contacts_service import (
     LocationContactError,
@@ -532,3 +545,72 @@ def admin_delete_location_contact_link(
     return AbuseMessageResponse(message="contact_link_deleted")
 
 
+
+
+@router.get("/blog/posts", response_model=BlogPostAdminListResponse)
+def admin_list_blog_posts(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> BlogPostAdminListResponse:
+    posts = list_all_posts(db)
+    return BlogPostAdminListResponse(
+        items=[BlogPostAdminResponse.model_validate(post) for post in posts],
+        total=len(posts),
+    )
+
+
+@router.post("/blog/posts", response_model=BlogPostAdminResponse, status_code=status.HTTP_201_CREATED)
+def admin_create_blog_post(
+    body: BlogPostCreateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> BlogPostAdminResponse:
+    try:
+        post = create_post(
+            db,
+            title=body.title,
+            teaser=body.teaser,
+            telegram_url=body.telegram_url,
+            topic=body.topic,
+            published_at=body.published_at,
+            is_published=body.is_published,
+        )
+    except BlogPostError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return BlogPostAdminResponse.model_validate(post)
+
+
+@router.put("/blog/posts/{post_id}", response_model=BlogPostAdminResponse)
+def admin_update_blog_post(
+    post_id: UUID,
+    body: BlogPostUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> BlogPostAdminResponse:
+    try:
+        post = update_post(
+            db,
+            post_id,
+            title=body.title,
+            teaser=body.teaser,
+            telegram_url=body.telegram_url,
+            topic=body.topic,
+            published_at=body.published_at,
+            is_published=body.is_published,
+        )
+    except BlogPostError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return BlogPostAdminResponse.model_validate(post)
+
+
+@router.delete("/blog/posts/{post_id}", response_model=AbuseMessageResponse)
+def admin_delete_blog_post(
+    post_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AbuseMessageResponse:
+    try:
+        delete_post(db, post_id)
+    except BlogPostError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return AbuseMessageResponse(message="blog_post_deleted")
