@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -36,9 +36,8 @@ def blog_home(db: Annotated[Session, Depends(get_db)]) -> BlogHomeResponse:
 def blog_posts(
     db: Annotated[Session, Depends(get_db)],
     topic: Annotated[str | None, Query(max_length=64)] = None,
-    sort: Annotated[Literal["recent", "popular"], Query()] = "recent",
 ) -> BlogPostListResponse:
-    posts = list_published_posts(db, topic=topic, sort=sort)
+    posts = list_published_posts(db, topic=topic)
     return BlogPostListResponse(
         items=[BlogPostResponse.model_validate(post) for post in posts],
         total=len(posts),
