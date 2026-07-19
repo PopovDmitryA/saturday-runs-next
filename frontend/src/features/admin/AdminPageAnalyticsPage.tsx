@@ -17,8 +17,8 @@ const PERIODS = [
 // Канон page_type — _STATIC_PAGE_TYPES в backend/app/services/page_analytics_service.py.
 // Добавили роут — добавьте строку и там, и здесь.
 const PAGE_TYPE_LABELS: Record<string, string> = {
-  landing: "Главная (лендинг)",
-  login: "Вход",
+  landing: "Главная (старый лендинг, до портала)",
+  login: "Вход (старый, до портала)",
   oauth_callback: "Возврат из OAuth",
   dashboard: "Дашборд",
   runs: "Пробежки",
@@ -37,14 +37,14 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   ratings_locations: "Рейтинг: локации",
   share: "Поделиться",
   settings: "Настройки",
-  about: "О проекте",
+  about: "О проекте (старый, до портала)",
   demo: "Демо (все страницы)",
-  portal_home: "Портал: главная (/new)",
-  portal_about: "Портал: о проекте",
-  portal_login: "Портал: вход",
+  portal_home: "Главная",
+  portal_about: "О проекте",
+  portal_login: "Вход",
   portal_map_lab: "Портал: карта (лаб)",
   admin: "Админка",
-  redirect: "Редиректы (/sync, /queue)",
+  redirect: "Редиректы (/sync, /queue, /new)",
   legacy_grafana: "Старые адреса Grafana",
   other: "Прочее (неизвестные адреса)",
 };

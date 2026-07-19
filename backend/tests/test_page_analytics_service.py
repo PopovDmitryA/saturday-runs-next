@@ -24,7 +24,9 @@ from app.services.page_analytics_service import (
 @pytest.mark.parametrize(
     ("path", "expected"),
     [
-        ("/", ("landing", "")),
+        ("/", ("portal_home", "")),
+        ("/about", ("portal_about", "")),
+        ("/login", ("portal_login", "")),
         ("/dashboard", ("dashboard", "")),
         ("/profiles", ("dashboard", "")),
         ("/runs?page=2", ("runs", "")),
@@ -36,8 +38,9 @@ from app.services.page_analytics_service import (
         ("/locations/kuzminki/events", ("location_events", "kuzminki")),
         ("/ratings", ("ratings_hub", "")),
         ("/ratings/runs", ("ratings_runs", "")),
-        ("/new", ("portal_home", "")),
-        ("/new/about", ("portal_about", "")),
+        ("/new", ("redirect", "/new")),
+        ("/new/about", ("redirect", "/new/about")),
+        ("/new/map-lab", ("portal_map_lab", "")),
         # Демо — одной строкой; подстраница сохраняется в entity_key на будущее.
         ("/demo", ("demo", "")),
         ("/demo/runs", ("demo", "runs")),
@@ -133,10 +136,20 @@ def test_user_facing_pages_have_distinct_page_types() -> None:
     Исключения — маршруты, которым отдельная строка не нужна: /admin/* и
     /demo/* сведены в одну строку каждый (внутренняя админка и витрина целиком —
     решение Дмитрия 17.07.2026); /profiles рисует тот же компонент, что
-    /dashboard; /sync, /queue, /admin — заглушки-редиректы; оба
-    /oauth/*/callback — одна страница OAuthCallbackPage с разным провайдером.
+    /dashboard; /sync, /queue, /admin и /new* (старые адреса тёмного запуска
+    портала) — заглушки-редиректы; оба /oauth/*/callback — одна страница
+    OAuthCallbackPage с разным провайдером.
     """
-    not_own_page = {"/profiles", "/sync", "/queue", "/admin", "/oauth/yandex/callback"}
+    not_own_page = {
+        "/profiles",
+        "/sync",
+        "/queue",
+        "/admin",
+        "/new",
+        "/new/about",
+        "/new/login",
+        "/oauth/yandex/callback",
+    }
     user_facing = [
         p
         for p in APP_ROUTES

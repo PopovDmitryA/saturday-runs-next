@@ -13,10 +13,8 @@ import { PublicProfilePage } from "./features/public_profile/PublicProfilePage";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
 import { AchievementsPage } from "./features/achievements/AchievementsPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
-import { LoginPage } from "./features/auth/LoginPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
 import { DemoDashboardPage } from "./features/demo/DemoDashboardPage";
-import { LandingPage } from "./features/landing/LandingPage";
 import { PortalAboutPage } from "./features/portal/PortalAboutPage";
 import { PortalHomePage } from "./features/portal/PortalHomePage";
 import { PortalLoginPage } from "./features/portal/PortalLoginPage";
@@ -35,7 +33,6 @@ import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage
 import { QueuePage } from "./features/queue/QueuePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SharePage } from "./features/share/SharePage";
-import { AboutPage } from "./features/about/AboutPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
 import { RequireAuth } from "./components/RequireAuth";
@@ -85,13 +82,23 @@ function AdminRedirect() {
   return null;
 }
 
+// Старые адреса тёмного запуска портала: сохранённые ссылки на /new/* ведём
+// на канонические пути, не теряя query и hash (например, ?oauth_error, #privacy).
+function PortalLegacyRedirect({ to }: { to: string }) {
+  useEffect(() => {
+    window.location.replace(`${to}${window.location.search}${window.location.hash}`);
+  }, [to]);
+  return null;
+}
+
 const STATIC_ROUTES: Record<string, () => ReactElement> = {
-  "/": () => <LandingPage />,
   [PORTAL_HOME_HREF]: () => <PortalHomePage />,
   [PORTAL_ABOUT_HREF]: () => <PortalAboutPage />,
   [PORTAL_LOGIN_HREF]: () => <PortalLoginPage />,
+  "/new": () => <PortalLegacyRedirect to={PORTAL_HOME_HREF} />,
+  "/new/about": () => <PortalLegacyRedirect to={PORTAL_ABOUT_HREF} />,
+  "/new/login": () => <PortalLegacyRedirect to={PORTAL_LOGIN_HREF} />,
   "/new/map-lab": () => <PortalMapLab />,
-  "/login": () => <LoginPage />,
   "/oauth/yandex/callback": () => <OAuthCallbackPage provider="yandex" />,
   "/oauth/vk/callback": () => <OAuthCallbackPage provider="vk" />,
   "/demo": () => <DemoDashboardPage />,
@@ -133,7 +140,6 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/records-digest": () => <AdminRecordsDigestPage />,
   "/admin/location-contacts": () => <AdminLocationContactsPage />,
   "/settings": () => <SettingsPage />,
-  "/about": () => <AboutPage />,
 };
 
 function LegacyGrafanaRedirect() {
@@ -189,11 +195,13 @@ function renderRoute(path: string): ReactElement {
   return <NotFoundPage />;
 }
 
+// Страницы портального редизайна — на них баннер про переезд с Grafana не показываем.
+const PORTAL_PATHS = new Set([PORTAL_HOME_HREF, PORTAL_ABOUT_HREF, PORTAL_LOGIN_HREF]);
+
 export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
-  // На страницах портального редизайна (тёмный запуск) баннер про переезд с Grafana не показываем.
-  const hideLegacyBanner = path === PORTAL_HOME_HREF || path.startsWith(`${PORTAL_HOME_HREF}/`);
+  const hideLegacyBanner = PORTAL_PATHS.has(path) || path === "/new" || path.startsWith("/new/");
   return (
     <>
       {!hideLegacyBanner && <LegacySiteBanner />}
