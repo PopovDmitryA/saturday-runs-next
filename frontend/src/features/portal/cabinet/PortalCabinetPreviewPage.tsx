@@ -27,7 +27,7 @@ import {
   type User,
 } from "../../../lib/api";
 import { PORTAL_CABINET_ACHIEVEMENTS_HREF } from "../../../lib/portalRoutes";
-import { DashboardHero, type HeroVariant } from "./PortalCabinetDashboardPage";
+import { DashboardHero } from "./PortalCabinetDashboardPage";
 import { PortalCabinetShell, type CabinetTabKey } from "./PortalCabinetShell";
 
 const PREVIEW_USER: User = {
@@ -43,16 +43,9 @@ const PREVIEW_USER: User = {
   auth_identities: [],
 };
 
-const HERO_VARIANTS: Array<{ key: HeroVariant; label: string }> = [
-  { key: "card", label: "Карточка участника" },
-  { key: "panel", label: "Панель без аватара" },
-  { key: "compact", label: "Компакт-строка" },
-];
-
 function PreviewDashboard() {
   const [data, setData] = useState<AdminUserPreviewDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [heroVariant, setHeroVariant] = useState<HeroVariant>("card");
 
   const load = useCallback(async () => {
     setError(null);
@@ -82,25 +75,9 @@ function PreviewDashboard() {
 
   return (
     <>
-      <div className="map-mode-tabs" role="tablist" aria-label="Вариант героя (только превью)">
-        {HERO_VARIANTS.map((variant) => (
-          <button
-            key={variant.key}
-            type="button"
-            role="tab"
-            aria-selected={heroVariant === variant.key}
-            className={heroVariant === variant.key ? "map-mode-tab active" : "map-mode-tab"}
-            onClick={() => setHeroVariant(variant.key)}
-          >
-            {variant.label}
-          </button>
-        ))}
-      </div>
-
       <DashboardHero
         data={data}
         userName="Демо-участник"
-        variant={heroVariant}
         hrefForStat={(key) => `${PREVIEW_PATH}?tab=${key === "vol" ? "volunteering" : key === "geo" ? "map" : key}`}
       />
 

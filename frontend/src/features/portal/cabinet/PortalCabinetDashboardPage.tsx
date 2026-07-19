@@ -54,9 +54,11 @@ function heroInitials(name: string): string {
   return clean.slice(0, 2).toUpperCase();
 }
 
-// Варианты героя дашборда: card — карточка с аватаром и именем (выбор Дмитрия,
-// по умолчанию), panel — та же панель без аватара, compact — одна строка почти
-// без высоты. Тёмный вариант отклонён — кабинет остаётся в тонах портала.
+// Варианты героя дашборда: panel — панель без аватара (окончательный выбор
+// Дмитрия, 19.07.2026, по умолчанию), card — та же панель с аватаром и именем,
+// compact — одна строка почти без высоты. card/compact оставлены в коде на
+// случай пересмотра, но нигде не выбираются активно. Тёмный вариант отклонён —
+// кабинет остаётся в тонах портала.
 export type HeroVariant = "card" | "panel" | "compact";
 
 type HeroStat = {
@@ -127,7 +129,8 @@ function HeroStatsGrid({ items }: { items: HeroStat[] }) {
 export function DashboardHero({
   data,
   userName,
-  variant = "card",
+  // Решение Дмитрия 19.07.2026: панель без аватара — окончательный выбор.
+  variant = "panel",
   hrefForStat,
 }: {
   data: Pick<DashboardResponse, "stats">;

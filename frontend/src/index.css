@@ -4045,7 +4045,10 @@ tr.run-crosslinked td {
 }
 
 .modal-panel-wide {
-  width: min(100%, 52rem);
+  /* 68rem (1088px) — было 52rem: на выросшей до 1440px ширине сайта
+     прежние модалки-таблицы (списки локаций/рекордов/ролей) выглядели
+     игрушечно узкими на их фоне. */
+  width: min(100%, 68rem);
   max-height: min(88vh, 760px);
   display: flex;
   flex-direction: column;

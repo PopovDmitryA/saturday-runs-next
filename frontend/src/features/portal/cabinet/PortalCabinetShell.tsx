@@ -108,7 +108,11 @@ const BOTTOM_NAV_KEYS: CabinetTabKey[] = ["dashboard", "runs", "volunteering", "
 type SecondaryNavItem = { href: string; label: string; adminOnly?: boolean };
 
 // Служебные разделы пока живут на старых адресах — до их собственной перевёрстки.
+// Локации/Рейтинги сюда же: полноценные разделы сайта, но их портальный
+// редизайн — отдельный этап (см. главную портала), здесь просто ссылки.
 const SECONDARY_NAV: SecondaryNavItem[] = [
+  { href: "/locations", label: "Локации" },
+  { href: "/ratings", label: "Рейтинги" },
   { href: "/share", label: "Поделиться" },
   { href: "/settings", label: "Настройки" },
   { href: "/admin/users", label: "Админка", adminOnly: true },
