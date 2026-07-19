@@ -1132,6 +1132,50 @@ export function deleteAdminLocationContactLink(contactId: string) {
   });
 }
 
+export type BlogPostAdmin = {
+  id: string;
+  title: string;
+  teaser: string;
+  telegram_url: string;
+  topic: string | null;
+  published_at: string;
+  clicks_count: number;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BlogPostAdminPayload = {
+  title: string;
+  teaser: string;
+  telegram_url: string;
+  topic: string | null;
+  published_at: string | null;
+  is_published: boolean;
+};
+
+export function listAdminBlogPosts() {
+  return apiFetch<{ items: BlogPostAdmin[]; total: number }>("/admin/blog/posts");
+}
+
+export function createAdminBlogPost(body: BlogPostAdminPayload) {
+  return apiFetch<BlogPostAdmin>("/admin/blog/posts", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateAdminBlogPost(postId: string, body: BlogPostAdminPayload) {
+  return apiFetch<BlogPostAdmin>(`/admin/blog/posts/${postId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteAdminBlogPost(postId: string) {
+  return apiFetch<{ message: string }>(`/admin/blog/posts/${postId}`, { method: "DELETE" });
+}
+
 export function getAdminEventReport(eventId: string) {
   return apiFetch<EventReport>(
     `/admin/event-report?event_id=${encodeURIComponent(eventId)}`,

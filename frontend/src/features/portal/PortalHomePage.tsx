@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import { PortalBlogSection } from "./PortalBlogSection";
 import { PortalGeoMap } from "./PortalGeoMap";
 import { PortalHeader } from "./PortalHeader";
 import { PLATFORM_CHART_META, PortalTrendChart, type TrendPoint } from "./PortalTrendChart";
@@ -669,6 +670,8 @@ export function PortalHomePage() {
                 </div>
               </div>
             </section>
+
+            <PortalBlogSection />
 
             <section id="systems" className="portal-systems" aria-label="Беговые системы">
               {data.systems.map((system) => (

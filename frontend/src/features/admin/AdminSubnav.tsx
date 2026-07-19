@@ -12,6 +12,7 @@ const LINKS = [
   { href: "/admin/event-report", label: "Отчёт по событию" },
   { href: "/admin/records-digest", label: "Рекорды локаций" },
   { href: "/admin/location-contacts", label: "Контакты локаций" },
+  { href: "/admin/blog", label: "Блог" },
   { href: "/admin/abuse", label: "Блокировки" },
   { href: "/admin/profile-slugs", label: "Резерв ссылок" },
 ] as const;

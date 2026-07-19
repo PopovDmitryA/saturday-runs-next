@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { getCurrentUser, type User } from "../../lib/api";
-import { PORTAL_ABOUT_HREF, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import {
+  PORTAL_ABOUT_HREF,
+  PORTAL_BLOG_HREF,
+  PORTAL_HOME_HREF,
+  PORTAL_LOGIN_HREF,
+} from "../../lib/portalRoutes";
 import { userLabel } from "../../lib/userLabel";
 
 export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
@@ -23,6 +28,9 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
     <>
       <a href={PORTAL_ABOUT_HREF} className="portal-header-link">
         О проекте
+      </a>
+      <a href={PORTAL_BLOG_HREF} className="portal-header-link">
+        Блог
       </a>
       {/* Локации и Рейтинги под RequireAuth — анонима сразу ведём на вход,
           чтобы он не упирался в гейт внутри раздела. */}
