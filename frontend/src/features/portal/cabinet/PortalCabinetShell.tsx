@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { logout, updateDisplayName, type User } from "../../../lib/api";
 import {
   PORTAL_ABOUT_HREF,
@@ -257,6 +257,17 @@ type PortalCabinetShellProps = {
 
 const SIDEBAR_COLLAPSED_KEY = "portalCabSidebarCollapsed";
 
+// Модалки (DetailModal и т.п.) центрируются на весь viewport и не знают про
+// сайдбар кабинета — из-за этого при сворачивании/разворачивании сайдбара
+// модалка визуально "гуляла" относительно видимого контента. Кабинет пишет
+// сюда фактический левый край .portal-cab-main (учитывает и ширину сайдбара,
+// и центрирующие поля страницы, и мобильный режим, где сайдбара нет вовсе) —
+// .modal-overlay в index.css добавляет это значение к своему левому паддингу,
+// так что центрирование считается от начала контентной колонки, а не всего
+// окна. На остальных страницах сайта переменная не выставляется — там
+// модалки ведут себя как раньше.
+const MODAL_CENTER_OFFSET_VAR = "--modal-center-offset";
+
 export function PortalCabinetShell({
   active,
   user,
@@ -277,6 +288,37 @@ export function PortalCabinetShell({
       return false;
     }
   });
+
+  const mainRef = useRef<HTMLElement>(null);
+
+  const measureModalOffset = () => {
+    if (mainRef.current) {
+      document.documentElement.style.setProperty(
+        MODAL_CENTER_OFFSET_VAR,
+        `${mainRef.current.getBoundingClientRect().left}px`,
+      );
+    }
+  };
+
+  // Пересчитывать сразу при сворачивании/разворачивании сайдбара — React
+  // перерисовывает DOM синхронно с этим состоянием, поэтому это надёжнее,
+  // чем ResizeObserver на .portal-cab-main: он должен был бы отреагировать
+  // на изменение ширины соседним flex-элементом (сайдбаром), но на практике
+  // не срабатывал (проверено вручную — офсет застревал на старом значении).
+  useEffect(() => {
+    measureModalOffset();
+  }, [collapsed]);
+
+  // Плюс пересчёт при ресайзе окна (адаптивный брейкпоинт сайдбара на
+  // 900px, смена центрирующих полей страницы) и уборка переменной при
+  // размонтировании кабинета — чтобы не протекала на остальные страницы.
+  useEffect(() => {
+    window.addEventListener("resize", measureModalOffset);
+    return () => {
+      window.removeEventListener("resize", measureModalOffset);
+      document.documentElement.style.removeProperty(MODAL_CENTER_OFFSET_VAR);
+    };
+  }, []);
 
   const toggleCollapsed = () => {
     setCollapsed((current) => {
@@ -362,7 +404,7 @@ export function PortalCabinetShell({
           </button>
         </aside>
 
-        <main className="portal-cab-main">
+        <main className="portal-cab-main" ref={mainRef}>
           {title && (
             <div className="portal-cab-pagehead">
               <h1>{title}</h1>
