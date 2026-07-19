@@ -165,7 +165,10 @@ class LocationCatalogIndex:
 # обнаружения: SELECT parkrun-локации без location_catalog_links с русскими
 # названиями. parkrun ушёл из России в 2022 — список конечен.
 RUSSIAN_PARKRUN_SLUGS_OUTSIDE_CATALOG = frozenset({
-    "park-30-letiya-oktyabrya",  # Омск, парк 30-летия Октября
+    # Боровичи, парк 30-летия Октября: преемник — 5 вёрст park30letiyaoktyabrya
+    # (первый забег 28.05.2022 сразу после ухода parkrun), но в каталоге они
+    # не связаны, поэтому без исключения этот parkrun считался бы зарубежным.
+    "park-30-letiya-oktyabrya",
 })
 
 
