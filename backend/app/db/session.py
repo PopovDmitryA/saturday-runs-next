@@ -61,6 +61,40 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+@lru_cache
+def get_report_engine() -> Engine:
+    """Engine для read-only reporting API.
+
+    Использует ``report_database_url`` (отдельная роль с GRANT SELECT), если он
+    задан, иначе — обычный ``database_url``. Пул маленький: отчёты редкие, но не
+    должны отъедать слоты у основного приложения.
+    """
+    settings = get_settings()
+    url = settings.report_database_url or settings.database_url
+    kwargs: dict[str, object] = {
+        "pool_pre_ping": True,
+        "pool_size": 2,
+        "max_overflow": 3,
+        "pool_recycle": 300,
+        "pool_timeout": 10,
+        "connect_args": _engine_connect_args(),
+    }
+    return create_engine(url, **kwargs)
+
+
+@lru_cache
+def get_report_session_factory() -> sessionmaker[Session]:
+    return sessionmaker(bind=get_report_engine(), autocommit=False, autoflush=False)
+
+
+def get_report_db() -> Generator[Session, None, None]:
+    db = get_report_session_factory()()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 def release_db_connection_for_network_io(db: Session) -> None:
     """Вернуть коннект сессии в пул перед долгим сетевым вызовом.
 

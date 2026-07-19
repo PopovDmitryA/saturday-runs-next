@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     demo_telegram_id: int = 0
     demo_user_id: str = ""
 
+    # Internal read-only reporting API (/api/internal/reports/*).
+    # Пусто — эндпоинт выключен (503). Bearer-токен передаётся в заголовке.
+    report_api_token: str = ""
+    report_query_max_rows: int = 5000
+    report_query_timeout_seconds: int = 15
+    # Отдельный коннект под read-only ролью. Пусто — используется database_url.
+    report_database_url: str = ""
+
     session_cookie_name: str = "sr_session"
     session_ttl_seconds: int = 72 * 3600
     magic_link_ttl_seconds: int = 300
