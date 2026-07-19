@@ -14,6 +14,7 @@ import { DemoShell } from "../demo/DemoShell";
 import {
   milestoneBragText,
   runNumberLabel,
+  saturdayStreakLabel,
   storeMilestoneShare,
   volunteerNumberLabel,
 } from "./milestoneShare";
@@ -75,6 +76,12 @@ export function milestoneVisual(milestone: MyHistoryMilestone): MilestoneVisual 
       return { icon: "🤝", className: "history-kind-volunteer" };
     case "volunteer_club_platform":
       return { icon: "🙌", className: "history-kind-volunteer" };
+    case "saturday_streak":
+      return { icon: "🔥", className: "history-kind-streak" };
+    case "saturday_run_streak":
+      return { icon: "🏃", className: "history-kind-streak" };
+    case "saturday_volunteer_streak":
+      return { icon: "🙋", className: "history-kind-streak" };
     default:
       return { icon: "⭐", className: "history-kind-anniversary" };
   }
@@ -147,6 +154,12 @@ export function milestoneTitle(milestone: MyHistoryMilestone): string {
       return `${volunteerNumberLabel(milestone.number ?? 0)} волонтёрство`;
     case "volunteer_club_platform":
       return `${volunteerNumberLabel(milestone.number ?? 0)} волонтёрство в системе`;
+    case "saturday_streak":
+      return `Рекорд серии — ${saturdayStreakLabel(milestone.number)}`;
+    case "saturday_run_streak":
+      return `Рекорд серии пробежек — ${saturdayStreakLabel(milestone.number)}`;
+    case "saturday_volunteer_streak":
+      return `Рекорд серии волонтёрств — ${saturdayStreakLabel(milestone.number)}`;
     default:
       return "Веха";
   }
@@ -271,17 +284,22 @@ function MilestoneCard({
   const visual = milestoneVisual(milestone);
   const hint = milestoneHint(milestone);
   const time = compactTime(milestone.finish_time_display);
+  // Веха рекордной серии — про недели подряд, а не про отдельный старт: время и
+  // место той пробежки, что попала на дату рекорда, к достижению отношения не
+  // имеют и только сбивают с толку.
+  const isStreak = milestone.kind.startsWith("saturday_");
   const detailParts: string[] = [];
   // Для PR/глобального/локационного рекорда время уже в заголовке — в деталях не дублируем.
   if (
     time &&
+    !isStreak &&
     milestone.kind !== "pr" &&
     milestone.kind !== "global_pr" &&
     milestone.kind !== "location_pr"
   ) {
     detailParts.push(time);
   }
-  if (milestone.position != null) {
+  if (milestone.position != null && !isStreak) {
     detailParts.push(`${milestone.position} место`);
   }
   if (milestone.role) {
@@ -335,7 +353,7 @@ export function HistoryContent({
   shareBase,
   siteUrl,
   title = "Моя история",
-  description = "Ключевые вехи вашей беговой истории: первая пробежка, клубы, личные рекорды, новые регионы и волонтёрство. У каждой вехи — кнопка «Поделиться» с картинкой для сториз.",
+  description = "Ключевые вехи вашей беговой истории: первая пробежка, клубы, личные рекорды, рекорды серий суббот, новые регионы и волонтёрство. У каждой вехи — кнопка «Поделиться» с картинкой для сториз.",
   emptyText = "Пока нет вех — привяжите профиль беговой системы на главной, и история соберётся автоматически.",
 }: HistoryContentProps) {
   const [data, setData] = useState<MyHistory | null>(null);

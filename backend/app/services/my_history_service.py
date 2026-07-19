@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from functools import partial
 from uuid import UUID
 
@@ -16,6 +16,7 @@ from app.models import (
     RunResult,
     VolunteerResult,
 )
+from app.services.dashboard_service import _week_saturday
 from app.services.history_milestone_settings_service import get_disabled_milestone_kinds
 from app.services.location_catalog_service import LocationCatalogIndex, is_foreign_location
 from app.services.user_history_milestone_service import get_user_disabled_milestone_kinds_by_id
@@ -30,6 +31,10 @@ RUN_CLUB_NUMBERS = (10, 25, 50, 100, 250, 500, 1000)
 LOCATION_CLUBS = (10, 25, 50, 100, 250, 500)
 # Клубы волонтёрств — сквозные и по каждой отдельной системе.
 VOLUNTEER_CLUB_NUMBERS = (10, 25, 50, 100, 250)
+# Минимальная длина серии суббот, которую стоит показывать вехой. Волонтёрская
+# серия редка (волонтёрить много суббот подряд сложнее, чем бегать) — порог ниже.
+MIN_SATURDAY_STREAK = 5
+MIN_SATURDAY_VOLUNTEER_STREAK = 3
 
 
 def is_geo_milestone_number(number: int) -> bool:
@@ -47,18 +52,21 @@ _KIND_ORDER = {
     "run_club_platform": 3,
     "location_club": 4,
     "volunteer_location_club": 5,
-    "global_pr": 6,
-    "pr": 7,
-    "location_pr": 8,
-    "first_foreign_parkrun": 9,
-    "first_foreign_run": 10,
-    "new_country": 11,
-    "new_region": 12,
-    "new_city": 13,
-    "new_location": 14,
-    "first_volunteer": 15,
-    "volunteer_club": 16,
-    "volunteer_club_platform": 17,
+    "saturday_streak": 6,
+    "saturday_run_streak": 7,
+    "saturday_volunteer_streak": 8,
+    "global_pr": 9,
+    "pr": 10,
+    "location_pr": 11,
+    "first_foreign_parkrun": 12,
+    "first_foreign_run": 13,
+    "new_country": 14,
+    "new_region": 15,
+    "new_city": 16,
+    "new_location": 17,
+    "first_volunteer": 18,
+    "volunteer_club": 19,
+    "volunteer_club_platform": 20,
 }
 
 
@@ -477,27 +485,25 @@ def _collect_volunteer_milestones(
     return milestones
 
 
-def _collect_location_geo_milestones(
+# Единая хронология визитов: (дата, платформа, локация, участник, событие,
+# пробежка|None, роль волонтёра|None). run=None означает волонтёрство.
+Visit = tuple[date, str, Location, Participant, Event, RunResult | None, str | None]
+
+
+def _collect_visits(
     db: Session,
     user_id: UUID,
     *,
     include_test_events: bool,
-) -> list[dict[str, object]]:
-    """Гео-вехи (новая страна/регион/город) и «новая локация» — по ОБЪЕДИНЁННОЙ
-    хронологии пробежек и волонтёрств: если человек сначала волонтёрил в новом
-    городе, а потом там же пробежал — город уже не новый ни для той, ни для
-    другой активности (и наоборот). Страна пропускает parkrun — его country в
-    БД всегда общий стаб независимо от реальной страны (см. is_foreign_location
-    в location_catalog_service.py). Регион и город parkrun не пропускает: эти
-    поля заглушку не получают, только реальное значение из каталога локаций
-    или ручной правки (backend/scripts/set_location_geo.py) либо NULL — им
-    можно доверять так же, как остальным платформам. «Новая локация» — самый
-    мелкий уровень иерархии страна→регион→город→локация, parkrun не
-    пропускает: конкретная площадка — валидная локация сама по себе, просто
-    без надёжной страны."""
-    from app.services.personal_record_service import user_secondary_crosslinked_run_ids
+) -> list[Visit]:
+    """Пробежки и волонтёрства пользователя одной отсортированной хронологией.
 
-    catalog_index = LocationCatalogIndex(db)
+    Общая основа для вех, которым важны ОБЕ активности сразу: география
+    (новая страна/регион/город/локация) и серии суббот. При совпадении даты
+    пробежки идут раньше волонтёрств (условность, но стабильная и
+    предсказуемая) — сортировка последним ключом на run/None.
+    """
+    from app.services.personal_record_service import user_secondary_crosslinked_run_ids
 
     run_query = (
         db.query(RunResult, Event, Location, Platform.code, Participant)
@@ -534,9 +540,6 @@ def _collect_location_geo_milestones(
     if not include_test_events:
         vol_query = vol_query.filter(Event.is_test_event.is_(False))
 
-    # Единая хронология визитов: (дата, платформа, локация, участник, событие,
-    # пробежка|None, роль волонтёра|None). run=None означает волонтёрство.
-    Visit = tuple[date, str, Location, Participant, Event, RunResult | None, str | None]
     visits: list[Visit] = []
     for run, event, location, platform_code, participant in run_query.all():
         if run.id in excluded_ids:
@@ -546,53 +549,181 @@ def _collect_location_geo_milestones(
         role = (volunteer.role or "").strip() or None
         visits.append((event.event_date, platform_code, location, participant, event, None, role))
 
-    # При совпадении даты пробежки идут раньше волонтёрств (условность, но
-    # стабильная и предсказуемая) — сортировка последним ключом на run/None.
     visits.sort(key=lambda v: (v[0], _PLATFORM_ORDER.get(v[1], 9), v[5] is None))
+    return visits
 
-    def make_entry(
-        visit: Visit,
-        *,
-        kind: str,
-        number: int | None = None,
-        region: str | None = None,
-        country: str | None = None,
-    ) -> dict[str, object]:
-        event_date, platform_code, location, participant, event, run, role = visit
-        if run is not None:
-            finish_time_display = normalize_finish_time_display(run.finish_time_sec, run.finish_time_display)
-            finish_time_sec = run.finish_time_sec
-            position = run.position
-            gender_position = run.gender_position
-            pace_display = run.pace_display
-        else:
-            finish_time_display = None
-            finish_time_sec = None
-            position = None
-            gender_position = None
-            pace_display = None
-        return _base_entry(
-            kind=kind,
-            number=number,
-            event_date=event_date,
+
+def _visit_entry(
+    visit: Visit,
+    catalog_index: LocationCatalogIndex,
+    *,
+    kind: str,
+    number: int | None = None,
+    region: str | None = None,
+    country: str | None = None,
+) -> dict[str, object]:
+    """Визит (пробежка или волонтёрство) → запись вехи."""
+    event_date, platform_code, location, participant, event, run, role = visit
+    if run is not None:
+        finish_time_display = normalize_finish_time_display(run.finish_time_sec, run.finish_time_display)
+        finish_time_sec = run.finish_time_sec
+        position = run.position
+        gender_position = run.gender_position
+        pace_display = run.pace_display
+    else:
+        finish_time_display = None
+        finish_time_sec = None
+        position = None
+        gender_position = None
+        pace_display = None
+    return _base_entry(
+        kind=kind,
+        number=number,
+        event_date=event_date,
+        platform_code=platform_code,
+        location_name=catalog_index.display_name(location, platform_code),
+        location_city=_city_geo_value(location.city),
+        finish_time_display=finish_time_display,
+        finish_time_sec=finish_time_sec,
+        position=position,
+        gender_position=gender_position,
+        pace_display=pace_display,
+        region=region,
+        country=country,
+        role=role,
+        event_url=_milestone_event_url(
             platform_code=platform_code,
-            location_name=catalog_index.display_name(location, platform_code),
-            location_city=_city_geo_value(location.city),
-            finish_time_display=finish_time_display,
-            finish_time_sec=finish_time_sec,
-            position=position,
-            gender_position=gender_position,
-            pace_display=pace_display,
-            region=region,
-            country=country,
-            role=role,
-            event_url=_milestone_event_url(
-                platform_code=platform_code,
-                event=event,
-                location=location,
-                profile_url=participant.profile_url,
-            ),
-        )
+            event=event,
+            location=location,
+            profile_url=participant.profile_url,
+        ),
+    )
+
+
+def _record_streak_runs(week_saturdays: list[date]) -> list[tuple[date, int]]:
+    """Серии подряд идущих суббот, которые побили личный рекорд длины.
+
+    На вход — отсортированные субботы недель с активностью. На выход — по одной
+    записи на каждую серию, которая оказалась длиннее всех предыдущих:
+    (суббота, в которую старый рекорд был превзойдён; итоговая длина серии).
+
+    Это и есть «схлопывание»: пока серия идёт, она остаётся ОДНОЙ вехой и лишь
+    растёт в значении — отдельной записи на каждую неделю не появляется. Дата
+    берётся моментом превышения старого рекорда, а не последней субботой серии:
+    так запись стоит на таймлайне неподвижно, пока серия продолжается.
+    """
+    records: list[tuple[date, int]] = []
+    best = 0
+    index = 0
+    while index < len(week_saturdays):
+        start = index
+        while (
+            index + 1 < len(week_saturdays)
+            and week_saturdays[index + 1] - week_saturdays[index] == timedelta(days=7)
+        ):
+            index += 1
+        length = index - start + 1
+        if length > best:
+            # Старый рекорд превзойдён на (best + 1)-й субботе серии; для самой
+            # первой серии (best == 0) это её первая суббота.
+            records.append((week_saturdays[start + best], length))
+            best = length
+        index += 1
+    return records
+
+
+def _collect_saturday_streak_milestones(
+    db: Session,
+    user_id: UUID,
+    *,
+    include_test_events: bool,
+) -> list[dict[str, object]]:
+    """Вехи рекордных серий суббот — общая, только пробежки, только волонтёрства.
+
+    Неделя считается активной по субботе, закрывающей её (_week_saturday из
+    dashboard_service) — тот же принцип, что у стриков дашборда и у календаря
+    активности: два старта в одну неделю не удлиняют серию.
+
+    Три трека независимы, но у обычного бегуна общая серия совпадает с беговой
+    один в один — показывать обе бессмысленно. Поэтому совпадающие по дате и
+    длине общие вехи подавляются в пользу специализированных: общая остаётся
+    только там, где она реально длиннее, то есть человек вытянул серию
+    чередованием пробежек и волонтёрств. Именно ради этого случая общий трек и
+    нужен.
+    """
+    visits = _collect_visits(db, user_id, include_test_events=include_test_events)
+    if not visits:
+        return []
+
+    catalog_index = LocationCatalogIndex(db)
+
+    # Представитель недели — первый визит по общей сортировке (пробежка раньше
+    # волонтёрства): от него у вехи локация, платформа и ссылка на источник.
+    def track(only: str | None) -> dict[date, Visit]:
+        by_saturday: dict[date, Visit] = {}
+        for visit in visits:
+            is_run = visit[5] is not None
+            if only == "run" and not is_run:
+                continue
+            if only == "volunteer" and is_run:
+                continue
+            by_saturday.setdefault(_week_saturday(visit[0]), visit)
+        return by_saturday
+
+    tracks = (
+        ("saturday_streak", track(None), MIN_SATURDAY_STREAK),
+        ("saturday_run_streak", track("run"), MIN_SATURDAY_STREAK),
+        ("saturday_volunteer_streak", track("volunteer"), MIN_SATURDAY_VOLUNTEER_STREAK),
+    )
+
+    by_kind: dict[str, list[tuple[date, int, Visit]]] = {}
+    for kind, by_saturday, minimum in tracks:
+        found: list[tuple[date, int, Visit]] = []
+        for saturday, length in _record_streak_runs(sorted(by_saturday)):
+            # Рекорды короче минимума не показываем — иначе первые же две-три
+            # субботы подряд дали бы «рекорд серии» на пустом месте. Порог
+            # отсекает только показ: сам рекорд учтён, следующая веха появится
+            # лишь когда серия его перебьёт.
+            if length >= minimum:
+                found.append((saturday, length, by_saturday[saturday]))
+        by_kind[kind] = found
+
+    specialized = {
+        (saturday, length)
+        for kind in ("saturday_run_streak", "saturday_volunteer_streak")
+        for saturday, length, _visit in by_kind[kind]
+    }
+
+    milestones: list[dict[str, object]] = []
+    for kind, found in by_kind.items():
+        for saturday, length, visit in found:
+            if kind == "saturday_streak" and (saturday, length) in specialized:
+                continue
+            milestones.append(_visit_entry(visit, catalog_index, kind=kind, number=length))
+    return milestones
+
+
+def _collect_location_geo_milestones(
+    db: Session,
+    user_id: UUID,
+    *,
+    include_test_events: bool,
+) -> list[dict[str, object]]:
+    """Гео-вехи (новая страна/регион/город) и «новая локация» — по ОБЪЕДИНЁННОЙ
+    хронологии пробежек и волонтёрств: если человек сначала волонтёрил в новом
+    городе, а потом там же пробежал — город уже не новый ни для той, ни для
+    другой активности (и наоборот). Страна пропускает parkrun — его country в
+    БД всегда общий стаб независимо от реальной страны (см. is_foreign_location
+    в location_catalog_service.py). Регион и город parkrun не пропускает: эти
+    поля заглушку не получают, только реальное значение из каталога локаций
+    или ручной правки (backend/scripts/set_location_geo.py) либо NULL — им
+    можно доверять так же, как остальным платформам. «Новая локация» — самый
+    мелкий уровень иерархии страна→регион→город→локация, parkrun не
+    пропускает: конкретная площадка — валидная локация сама по себе, просто
+    без надёжной страны."""
+    catalog_index = LocationCatalogIndex(db)
+    visits = _collect_visits(db, user_id, include_test_events=include_test_events)
+    make_entry = partial(_visit_entry, catalog_index=catalog_index)
 
     milestones: list[dict[str, object]] = []
     seen_regions: set[str] = set()
@@ -671,12 +802,14 @@ def get_my_history(
     город/локация (считаются по ОБЕИМ активностям — пробежка или
     волонтёрство), первый зарубежный старт (и отдельно первый зарубежный
     паркран), первое волонтёрство и клубы волонтёрств (сквозные и по каждой
-    системе).
+    системе), рекорды серий суббот подряд (общая серия, только пробежки,
+    только волонтёрства).
     """
     milestones = (
         _collect_run_milestones(db, user_id, include_test_events=include_test_events)
         + _collect_volunteer_milestones(db, user_id, include_test_events=include_test_events)
         + _collect_location_geo_milestones(db, user_id, include_test_events=include_test_events)
+        + _collect_saturday_streak_milestones(db, user_id, include_test_events=include_test_events)
     )
 
     # Скрытые виды вех: глобально (админ) + персонально (сам пользователь).

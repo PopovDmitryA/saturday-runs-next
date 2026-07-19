@@ -93,6 +93,22 @@ MILESTONE_KIND_REGISTRY: tuple[MilestoneKindInfo, ...] = (
         "Клуб волонтёрств в системе",
         "10/25/50/100/250-е волонтёрство на одной конкретной платформе.",
     ),
+    MilestoneKindInfo(
+        "saturday_streak",
+        "Рекорд серии суббот",
+        "Новый личный рекорд по числу суббот подряд с любой активностью — пробежкой или волонтёрством. "
+        "Пока серия идёт, веха одна и её значение растёт; когда серия прерывается — застывает на финальном числе.",
+    ),
+    MilestoneKindInfo(
+        "saturday_run_streak",
+        "Рекорд серии пробежек",
+        "То же, но подряд идущие субботы именно с пробежкой.",
+    ),
+    MilestoneKindInfo(
+        "saturday_volunteer_streak",
+        "Рекорд серии волонтёрств",
+        "То же, но подряд идущие субботы именно с волонтёрством.",
+    ),
 )
 
 MILESTONE_KINDS: frozenset[str] = frozenset(info.kind for info in MILESTONE_KIND_REGISTRY)

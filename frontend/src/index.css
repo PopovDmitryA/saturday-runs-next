@@ -7375,6 +7375,7 @@ tr.run-crosslinked td {
 .history-kind-location-club { --history-marker-bg: var(--tint-teal-bg); --history-marker-border: var(--accent-teal-text); }
 .history-kind-geo { --history-marker-bg: var(--tint-blue-bg); --history-marker-border: var(--tint-blue-border-strong); }
 .history-kind-volunteer { --history-marker-bg: var(--tint-blue-bg-strong); --history-marker-border: var(--tint-blue-border-strong); }
+.history-kind-streak { --history-marker-bg: var(--tint-violet-bg-strong); --history-marker-border: var(--tint-violet-border); }
 
 .history-card {
   flex: 1;

@@ -1,9 +1,18 @@
-from datetime import date
+from datetime import date, timedelta
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User
+from app.models import (
+    Event,
+    Location,
+    Participant,
+    Platform,
+    PlatformLink,
+    RunResult,
+    User,
+    VolunteerResult,
+)
 from app.services.my_history_service import get_my_history
 
 
@@ -337,3 +346,136 @@ def test_global_pr_delta_measured_against_previous_global_not_platform(db_sessio
     )
     # Previous global was 18:59 (5 верст), NOT the older S95 19:56.
     assert troitsk["delta_sec"] == (18 * 60 + 59) - (18 * 60 + 19)  # 40 сек
+
+
+# ── Вехи рекордных серий суббот ─────────────────────────────────────────────
+
+
+def _streak_fixture(db_session: Session) -> tuple[User, Participant, Location, Platform, str]:
+    """Пользователь с одной локацией 5 вёрст — общая заготовка для тестов серий."""
+    suffix = str(uuid4().int % 1_000_000)
+    five_verst = _get_platform(db_session, "five_verst", "5 верст")
+
+    user = User()
+    db_session.add(user)
+    db_session.flush()
+
+    participant = Participant(
+        platform_id=five_verst.id,
+        external_user_id=f"streak-user-{suffix}",
+        display_name="Streak Tester",
+        profile_url=f"https://5verst.ru/userstats/streak-user-{suffix}/",
+    )
+    db_session.add(participant)
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=five_verst.id,
+            participant_id=participant.id,
+            external_user_id=participant.external_user_id,
+            external_url=participant.profile_url,
+        )
+    )
+    location = Location(
+        platform_id=five_verst.id,
+        external_key=f"streak-park-{suffix}",
+        name="Streak Park",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add(location)
+    db_session.flush()
+    return user, participant, location, five_verst, suffix
+
+
+def _saturday(index: int) -> date:
+    """index-я суббота начиная с 04.01.2025 (суббота)."""
+    return date(2025, 1, 4) + timedelta(days=7 * index)
+
+
+def _add_run(db_session, platform, location, participant, suffix, index, counter) -> None:
+    event = _make_event(
+        db_session, platform, location, f"{suffix}-r{index}", _saturday(index), 700_000 + counter
+    )
+    _make_run_result(db_session, event, participant, f"{suffix}-r{index}")
+
+
+def _add_volunteering(db_session, platform, location, participant, suffix, index, counter) -> None:
+    event = _make_event(
+        db_session, platform, location, f"{suffix}-v{index}", _saturday(index), 800_000 + counter
+    )
+    db_session.add(
+        VolunteerResult(
+            event_id=event.id,
+            participant_id=participant.id,
+            external_result_key=f"streak-vol-{suffix}-{index}",
+            role="Маршал",
+        )
+    )
+    db_session.flush()
+
+
+def test_run_streak_record_collapses_to_one_milestone_per_record(db_session: Session) -> None:
+    """Пока серия идёт, веха остаётся ОДНОЙ и растёт в значении — отдельной
+    записи на каждую субботу не появляется. Дата — суббота, в которую был
+    превзойдён прошлый рекорд, значение — итоговая длина серии."""
+    user, participant, location, platform, suffix = _streak_fixture(db_session)
+
+    # Серия 1: субботы 0..5 (6 подряд) — первый рекорд.
+    # Пропуск на субботе 6.
+    # Серия 2: субботы 7..14 (8 подряд) — рекорд побит на 7-й её субботе.
+    counter = 0
+    for index in list(range(0, 6)) + list(range(7, 15)):
+        _add_run(db_session, platform, location, participant, suffix, index, counter)
+        counter += 1
+    db_session.commit()
+
+    history = get_my_history(db_session, user.id)
+    streaks = [m for m in history["milestones"] if m["kind"] == "saturday_run_streak"]
+    streaks.sort(key=lambda m: m["event_date"])
+
+    assert [m["number"] for m in streaks] == [6, 8]
+    # Первый рекорд: старого рекорда не было — дата первой субботы серии.
+    assert streaks[0]["event_date"] == _saturday(0)
+    # Второй: серия началась на 7, прошлый рекорд 6 побит на её 7-й субботе.
+    assert streaks[1]["event_date"] == _saturday(13)
+
+    # Общая серия совпадает с беговой один в один — дублирующую веху подавляем.
+    assert [m for m in history["milestones"] if m["kind"] == "saturday_streak"] == []
+
+
+def test_combined_streak_survives_only_when_longer_than_specialized(db_session: Session) -> None:
+    """Общий трек нужен ради случая, когда серия вытянута ЧЕРЕДОВАНИЕМ пробежек
+    и волонтёрств: по отдельности ни один из треков рекорда не даёт."""
+    user, participant, location, platform, suffix = _streak_fixture(db_session)
+
+    # Субботы 0..5: бег, волонтёрство, бег, волонтёрство, бег, волонтёрство.
+    for index in range(6):
+        if index % 2 == 0:
+            _add_run(db_session, platform, location, participant, suffix, index, index)
+        else:
+            _add_volunteering(db_session, platform, location, participant, suffix, index, index)
+    db_session.commit()
+
+    history = get_my_history(db_session, user.id)
+    combined = [m for m in history["milestones"] if m["kind"] == "saturday_streak"]
+
+    assert [m["number"] for m in combined] == [6]
+    assert combined[0]["event_date"] == _saturday(0)
+    # Ни беговой, ни волонтёрской серии тут нет — подряд ни разу не набралось.
+    assert [m for m in history["milestones"] if m["kind"] == "saturday_run_streak"] == []
+    assert [m for m in history["milestones"] if m["kind"] == "saturday_volunteer_streak"] == []
+
+
+def test_short_streak_below_minimum_is_not_a_milestone(db_session: Session) -> None:
+    """Порог отсекает шум: четыре субботы подряд — ещё не «рекорд серии»."""
+    user, participant, location, platform, suffix = _streak_fixture(db_session)
+
+    for index in range(4):
+        _add_run(db_session, platform, location, participant, suffix, index, index)
+    db_session.commit()
+
+    history = get_my_history(db_session, user.id)
+    streak_kinds = {"saturday_streak", "saturday_run_streak", "saturday_volunteer_streak"}
+    assert [m for m in history["milestones"] if m["kind"] in streak_kinds] == []

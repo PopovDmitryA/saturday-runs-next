@@ -25,9 +25,12 @@ const KIND_ICON: Record<MyHistoryMilestoneKind, string> = {
   first_volunteer: "🤝",
   volunteer_club: "🤝",
   volunteer_club_platform: "🙌",
+  saturday_streak: "🔥",
+  saturday_run_streak: "🏃",
+  saturday_volunteer_streak: "🙋",
 };
 
-// Группы для раскладки списка — плоские 17 видов читаются тяжело.
+// Группы для раскладки списка — плоский список из двух десятков видов читается тяжело.
 const GROUPS: { title: string; kinds: MyHistoryMilestoneKind[] }[] = [
   {
     title: "Пробежки",
@@ -48,6 +51,10 @@ const GROUPS: { title: string; kinds: MyHistoryMilestoneKind[] }[] = [
   {
     title: "Волонтёрство",
     kinds: ["first_volunteer", "volunteer_club", "volunteer_club_platform", "volunteer_location_club"],
+  },
+  {
+    title: "Серия суббот",
+    kinds: ["saturday_streak", "saturday_run_streak", "saturday_volunteer_streak"],
   },
 ];
 

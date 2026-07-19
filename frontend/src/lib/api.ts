@@ -821,11 +821,15 @@ export type MyHistoryMilestoneKind =
   | "new_location"
   | "first_volunteer"
   | "volunteer_club"
-  | "volunteer_club_platform";
+  | "volunteer_club_platform"
+  | "saturday_streak"
+  | "saturday_run_streak"
+  | "saturday_volunteer_streak";
 
 export type MyHistoryMilestone = {
   kind: MyHistoryMilestoneKind;
-  // Номер пробежки/клуба/волонтёрства (для юбилеев и клубов).
+  // Номер пробежки/клуба/волонтёрства (для юбилеев и клубов); для вех рекордных
+  // серий — длина серии в субботах.
   number: number | null;
   event_date: string;
   platform_code: string;

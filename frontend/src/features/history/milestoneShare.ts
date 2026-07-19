@@ -84,9 +84,23 @@ export function milestoneAccentLabel(milestone: MyHistoryMilestone): string {
       return `${volunteerNumberLabel(milestone.number ?? 0)} волонтёрство`;
     case "volunteer_club_platform":
       return `${volunteerNumberLabel(milestone.number ?? 0)} волонтёрство в системе`;
+    case "saturday_streak":
+      return `Рекорд серии · ${saturdayStreakLabel(milestone.number)}`;
+    case "saturday_run_streak":
+      return `Рекорд серии пробежек · ${saturdayStreakLabel(milestone.number)}`;
+    case "saturday_volunteer_streak":
+      return `Рекорд серии волонтёрств · ${saturdayStreakLabel(milestone.number)}`;
     default:
       return "Веха";
   }
+}
+
+const SATURDAY_FORMS = ["суббота", "субботы", "суббот"] as const;
+
+// «12 суббот подряд» — длина серии для вех рекордных серий суббот.
+export function saturdayStreakLabel(number: number | null): string {
+  const count = number ?? 0;
+  return `${count} ${pluralFormRu(count, SATURDAY_FORMS)} подряд`;
 }
 
 export function volunteeringCountPhrase(count: number): string {
@@ -261,6 +275,20 @@ export function milestoneBragText(milestone: MyHistoryMilestone, siteUrl: string
     case "volunteer_club_platform":
       headline = `🙌 ${milestone.number}-е волонтёрство в системе «${platform}»!`;
       details = milestoneDetailsLine(milestone, { role: true, platformInLocation: false });
+      break;
+    // Время и место конкретного старта к рекорду серии отношения не имеют —
+    // в деталях только дата и локация (как и на карточке в таймлайне).
+    case "saturday_streak":
+      headline = `🔥 Рекорд: ${saturdayStreakLabel(milestone.number)} — без единого пропуска!`;
+      details = milestoneDetailsLine(milestone);
+      break;
+    case "saturday_run_streak":
+      headline = `🏃 Рекорд серии пробежек: ${saturdayStreakLabel(milestone.number)}!`;
+      details = milestoneDetailsLine(milestone);
+      break;
+    case "saturday_volunteer_streak":
+      headline = `🙋 Рекорд серии волонтёрств: ${saturdayStreakLabel(milestone.number)}!`;
+      details = milestoneDetailsLine(milestone, { role: true });
       break;
     default:
       headline = "⭐ Новая веха в моей беговой истории!";
