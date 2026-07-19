@@ -757,6 +757,101 @@ def test_personal_records_lists_pr_runs_per_platform(
     assert global_flags["2025-01-04"] is False
 
 
+def test_personal_records_shows_undefeated_debut(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """Регрессия для кейса Егора Свиридова (20.07.2026): дебютный старт в
+    системе, который позже никогда не был побит, должен всё равно попасть в
+    список — с is_debut=True, is_pr=False — иначе система выглядит так,
+    будто у участника вообще нет результатов в ней."""
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+    suffix = str(uuid4().int % 1_000_000)
+
+    runpark = db_session.query(Platform).filter(Platform.code == "runpark").one_or_none()
+    if runpark is None:
+        runpark = Platform(code="runpark", name="RunPark")
+        db_session.add(runpark)
+        db_session.flush()
+
+    location = Location(
+        platform_id=runpark.id,
+        external_key=f"debut-{suffix}",
+        name="Дружба",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    participant = Participant(
+        platform_id=runpark.id,
+        external_user_id=f"debut-user-{suffix}",
+        display_name="Debut Tester",
+        profile_url=f"https://runpark.example/profile/debut-{suffix}/",
+    )
+    db_session.add(participant)
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=runpark.id,
+            participant_id=participant.id,
+            external_user_id=participant.external_user_id,
+            external_url=participant.profile_url,
+        )
+    )
+
+    # Дебют (24:30, самый быстрый) и три более медленных забега позже —
+    # ни один is_pr не проставлен нигде, ровно как в реальных данных Егора.
+    runs_seed = [
+        (date(2022, 4, 2), 24 * 60 + 30, "00:24:30", True),
+        (date(2022, 4, 9), 24 * 60 + 52, "00:24:52", False),
+        (date(2022, 4, 16), 27 * 60 + 14, "00:27:14", False),
+        (date(2022, 4, 23), 25 * 60 + 10, "00:25:10", False),
+    ]
+    for index, (event_date, finish_sec, finish_display, is_first_run) in enumerate(runs_seed, start=1):
+        event = Event(
+            platform_id=runpark.id,
+            location_id=location.id,
+            external_event_key=f"debut-event-{suffix}-{index}",
+            event_date=event_date,
+            event_number=930_000 + index,
+            title=f"Debut Event {index}",
+            finishers_count=10,
+            runners_count=10,
+        )
+        db_session.add(event)
+        db_session.flush()
+        db_session.add(
+            RunResult(
+                event_id=event.id,
+                participant_id=participant.id,
+                external_result_key=f"debut-result-{suffix}-{index}",
+                position=index,
+                finish_time_sec=finish_sec,
+                finish_time_display=finish_display,
+                status="finished",
+                is_pr=False,
+                is_first_run=is_first_run,
+            )
+        )
+
+    db_session.flush()
+    recalculate_cross_platform_personal_records(db_session, user.id)
+    db_session.commit()
+
+    response = authenticated_client.get("/api/runs/personal-records")
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) == 1
+    debut = items[0]
+    assert debut["event_date"] == "2022-04-02"
+    assert debut["is_debut"] is True
+    assert debut["is_pr"] is False
+
+
 def test_dashboard_unique_locations_merged_by_catalog(
     authenticated_client: TestClient,
     db_session: Session,

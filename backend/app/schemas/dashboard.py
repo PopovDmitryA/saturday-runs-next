@@ -232,6 +232,11 @@ class PersonalRecordResponse(BaseModel):
     is_pr: bool = False
     is_global_pr: bool = False
     is_location_pr: bool = False
+    # Дебют (первый зачтённый старт в системе) — не рекорд сам по себе, но
+    # попадает в список, если это единственный кандидат на «лучший результат
+    # в системе» (никогда не побит позже). Может сочетаться с is_global_pr/
+    # is_location_pr (дебют на платформе способен быть глобальным рекордом).
+    is_debut: bool = False
     event_url: str | None = None
 
 

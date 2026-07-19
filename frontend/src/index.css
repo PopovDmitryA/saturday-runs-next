@@ -2244,6 +2244,12 @@ a.on-this-day-location {
   color: var(--tint-amber-text);
 }
 
+.badge-debut {
+  background: var(--chip-bg);
+  color: var(--text-muted);
+  cursor: default;
+}
+
 .badge-crosslinked {
   background: var(--bg-muted);
   color: var(--text-muted);

@@ -1077,9 +1077,12 @@ def list_user_personal_records(
     )
 
     # Страница показывает обновления рекордов во всех разрезах: рекорд системы
-    # (is_pr / метка 5 вёрст), глобальный рекорд и рекорд локации. Дебют в
-    # системе попадает сюда, только если он оказался глобальным рекордом или
-    # рекордом локации — рекордом системы дебют не считается.
+    # (is_pr / метка 5 вёрст), глобальный рекорд и рекорд локации. Дебют сам по
+    # себе рекордом системы не считается (первый забег — база отсчёта, сравнивать
+    # не с чем), но его данные всё равно подтягиваются в список отдельной строкой
+    # (is_debut) — иначе у участников, чей лучший результат в системе так и остался
+    # непобитым дебютом, вкладка этой системы выглядела бы пустой, хотя на деле
+    # это и есть их текущий лучший результат (решение Дмитрия 20.07.2026).
     query = (
         db.query(RunResult, Event, Location, Platform, PlatformLink)
         .join(Event, RunResult.event_id == Event.id)
@@ -1093,6 +1096,7 @@ def list_user_personal_records(
                 run_is_personal_record_sql_filter(),
                 RunResult.is_global_pr.is_(True),
                 RunResult.is_location_pr.is_(True),
+                RunResult.is_first_run.is_(True),
             ),
         )
     )
@@ -1128,6 +1132,7 @@ def list_user_personal_records(
             "is_pr": run_shows_personal_record(platform.code, run),
             "is_global_pr": run.is_global_pr,
             "is_location_pr": run.is_location_pr,
+            "is_debut": bool(run.is_first_run),
             "event_url": _activity_event_url(
                 platform_code=platform.code,
                 event=event,

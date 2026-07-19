@@ -231,6 +231,7 @@ export type PersonalRecordItem = {
   is_pr?: boolean;
   is_global_pr: boolean;
   is_location_pr?: boolean;
+  is_debut?: boolean;
   event_url?: string | null;
 };
 
