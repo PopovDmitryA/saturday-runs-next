@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { getCurrentUser, type User } from "../../lib/api";
-import { PORTAL_ABOUT_HREF, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import {
+  PORTAL_ABOUT_HREF,
+  PORTAL_CABINET_HREF,
+  PORTAL_HOME_HREF,
+  PORTAL_LOGIN_HREF,
+} from "../../lib/portalRoutes";
 import { userLabel } from "../../lib/userLabel";
 
 export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
@@ -82,7 +87,7 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
           {!hideLogin &&
             authResolved &&
             (user ? (
-              <a className="portal-header-user" href="/dashboard" title="Личный кабинет">
+              <a className="portal-header-user" href={PORTAL_CABINET_HREF} title="Личный кабинет">
                 {userLabel(user)}
               </a>
             ) : (

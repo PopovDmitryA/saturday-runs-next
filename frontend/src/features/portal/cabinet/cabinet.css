@@ -11,18 +11,9 @@
   background: var(--bg);
 }
 
-/* ---------- верхняя панель ---------- */
-
-/* 1440px — общая ширина сайта, синхронизирована с .portal-home /
-   .portal-header-inner в portal.css. Меняете одну — меняйте и другую,
-   иначе при переходе портал↔кабинет контент визуально «прыгает». */
-.portal-cab-topbar-inner {
-  max-width: 1440px;
-}
-
-.portal-cab-topbar-portal {
-  white-space: nowrap;
-}
+/* Шапка теперь — переиспользованный <PortalHeader/> (portal.css),
+   собственной вёрстки топбара у кабинета больше нет: ширина синхронизирована
+   автоматически через тот же класс .portal-header-inner. */
 
 /* ---------- раскладка: сайдбар + контент ---------- */
 
@@ -293,10 +284,6 @@
   }
 
   .portal-cab-sidebar {
-    display: none;
-  }
-
-  .portal-cab-topbar-portal {
     display: none;
   }
 

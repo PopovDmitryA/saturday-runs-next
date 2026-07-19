@@ -1,5 +1,4 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { ThemeToggle } from "../../../components/ThemeToggle";
 import { logout, updateDisplayName, type User } from "../../../lib/api";
 import {
   PORTAL_ABOUT_HREF,
@@ -10,9 +9,9 @@ import {
   PORTAL_CABINET_MEETINGS_HREF,
   PORTAL_CABINET_RUNS_HREF,
   PORTAL_CABINET_VOLUNTEERING_HREF,
-  PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
 } from "../../../lib/portalRoutes";
+import { PortalHeader } from "../PortalHeader";
 import "../portal.css";
 import "./cabinet.css";
 
@@ -302,35 +301,10 @@ export function PortalCabinetShell({
 
   return (
     <div className="portal-cab">
-      <header className="portal-header portal-cab-topbar">
-        <div className="portal-header-inner portal-cab-topbar-inner">
-          <a href={PORTAL_HOME_HREF} className="portal-brand" aria-label="run5k.run — на главную портала">
-            <span className="portal-brand-stack">
-              <span className="portal-brand-row">
-                <span className="portal-brand-name">
-                  run5k<span className="portal-brand-tld">.run</span>
-                </span>
-                <svg className="portal-brand-pulse" viewBox="0 0 34 14" fill="none" aria-hidden="true">
-                  <polyline
-                    points="1,12 8,10 14,11 20,6 26,7 32,2"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <circle cx="32" cy="2" r="2.4" />
-                </svg>
-              </span>
-              <span className="portal-brand-tagline">Личный кабинет</span>
-            </span>
-          </a>
-          <div className="portal-header-actions">
-            <a href={PORTAL_HOME_HREF} className="portal-header-link portal-cab-topbar-portal">
-              ← На портал
-            </a>
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
+      {/* Та же шапка, что и на главной портала — с этого экрана вы уже
+          авторизованы, так что навигация (Локации/Рейтинги/О проекте) и
+          переход в кабинет по клику на ник работают идентично. */}
+      <PortalHeader />
 
       <div className="portal-cab-layout">
         <aside className={`portal-cab-sidebar${collapsed ? " collapsed" : ""}`}>
