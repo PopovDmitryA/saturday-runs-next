@@ -323,10 +323,24 @@ def _to_canonical_volunteer(row: dict, event_id_str: str) -> CanonicalVolunteerR
     )
 
 
-def sync_runpark_batch(db: Session, since_date: date) -> RunparkSyncResult:
+def sync_runpark_batch(
+    db: Session,
+    since_date: date,
+    *,
+    only_location_ids: set[str] | None = None,
+) -> RunparkSyncResult:
+    """Sync 5км events since `since_date`.
+
+    `only_location_ids` narrows the run to specific RunPark location_ids — used to
+    backfill a freshly enabled location without re-syncing (and delete+reinsert-ing)
+    every tracked location's whole history.
+    """
     result = RunparkSyncResult()
     platform = upsert.get_platform(db, PLATFORM_CODE)
     location_map = _get_location_mapping(db)
+    if only_location_ids is not None:
+        wanted = {lid.upper() for lid in only_location_ids}
+        location_map = {key: loc for key, loc in location_map.items() if key in wanted}
 
     if not location_map:
         logger.warning("No RunPark locations with show_on_map=true found")
