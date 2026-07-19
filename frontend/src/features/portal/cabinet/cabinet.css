@@ -13,8 +13,11 @@
 
 /* ---------- верхняя панель ---------- */
 
+/* 1440px — общая ширина сайта, синхронизирована с .portal-home /
+   .portal-header-inner в portal.css. Меняете одну — меняйте и другую,
+   иначе при переходе портал↔кабинет контент визуально «прыгает». */
 .portal-cab-topbar-inner {
-  max-width: 1240px;
+  max-width: 1440px;
 }
 
 .portal-cab-topbar-portal {
@@ -24,7 +27,7 @@
 /* ---------- раскладка: сайдбар + контент ---------- */
 
 .portal-cab-layout {
-  max-width: 1240px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 0 20px 72px;
   display: flex;

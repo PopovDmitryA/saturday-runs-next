@@ -1,8 +1,11 @@
 /* Публичная главная портала (тёмный запуск: /new).
    Все цвета — через переменные темы из index.css, обе темы бесплатно. */
 
+/* 1440px — общая ширина сайта, синхронизирована с .portal-cab-layout /
+   .portal-cab-topbar-inner в cabinet.css. Меняете одну — меняйте и другую,
+   иначе при переходе портал↔кабинет контент визуально «прыгает». */
 .portal-home {
-  max-width: 1064px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 0 20px 72px;
 }
@@ -18,7 +21,7 @@
 }
 
 .portal-header-inner {
-  max-width: 1064px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 0 20px;
   height: 60px;
