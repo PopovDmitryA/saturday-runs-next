@@ -916,6 +916,42 @@ def _location_status_fields(
     }
 
 
+def _user_first_timed_run_id(
+    db: Session,
+    user_id: UUID,
+    *,
+    include_test_events: bool,
+    excluded_ids: set[UUID],
+) -> UUID | None:
+    """Id самой первой зачтённой пробежки пользователя с временем.
+
+    На витринах она подсвечивается как глобальный рекорд — лучший результат
+    «на момент той пробежки» (решение Дмитрия 19.07.2026). В БД is_global_pr у
+    baseline-забега остаётся False. Порядок сортировки — тот же, что в
+    recalculate_cross_platform_personal_records."""
+    query = (
+        db.query(RunResult.id)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
+        .filter(
+            PlatformLink.user_id == user_id,
+            PlatformLink.platform_id == Platform.id,
+            RunResult.finish_time_sec.isnot(None),
+            RunResult.finish_time_sec > 0,
+        )
+    )
+    if not include_test_events:
+        query = query.filter(Event.is_test_event.is_(False))
+    if excluded_ids:
+        query = query.filter(RunResult.id.notin_(excluded_ids))
+    return (
+        query.order_by(Event.event_date, Event.event_number, Event.location_id, RunResult.id)
+        .limit(1)
+        .scalar()
+    )
+
+
 def list_user_runs(
     db: Session,
     user_id: UUID,
@@ -951,6 +987,12 @@ def list_user_runs(
     secondary_crosslinked_ids = user_secondary_crosslinked_run_ids(
         db, user_id, include_test_events=include_test_events
     )
+    first_timed_run_id = _user_first_timed_run_id(
+        db,
+        user_id,
+        include_test_events=include_test_events,
+        excluded_ids=secondary_crosslinked_ids,
+    )
     catalog_index = LocationCatalogIndex(db)
     summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
     return [
@@ -974,8 +1016,10 @@ def list_user_runs(
             "pace_display": run.pace_display,
             "pace_sec_per_km": run.pace_sec_per_km,
             "age_category": run.age_category,
-            "is_pr": run_shows_personal_record(platform.code, run),
-            "is_global_pr": run.is_global_pr,
+            # Дебют в системе и самая первая пробежка вообще помечаются PR /
+            # глобальным рекордом только на витрине — флаги в БД не меняются.
+            "is_pr": run_shows_personal_record(platform.code, run) or bool(run.is_first_run),
+            "is_global_pr": bool(run.is_global_pr) or run.id == first_timed_run_id,
             "is_location_pr": run.is_location_pr,
             "is_crosslinked": run.id in secondary_crosslinked_ids,
             "is_first_run": run.is_first_run,
@@ -1120,33 +1164,11 @@ def list_user_personal_records(
         RunResult.position.asc(),
     ).all()
 
-    # Самая первая зачтённая пробежка с временем — глобальный лучший результат
-    # «на момент той пробежки», поэтому на витрине подсвечивается как глобальный
-    # рекорд (решение Дмитрия 19.07.2026). В БД is_global_pr у baseline-забега
-    # остаётся False. Порядок сортировки — тот же, что в
-    # recalculate_cross_platform_personal_records.
-    first_timed_run_query = (
-        db.query(RunResult.id)
-        .join(Event, RunResult.event_id == Event.id)
-        .join(Platform, Event.platform_id == Platform.id)
-        .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
-        .filter(
-            PlatformLink.user_id == user_id,
-            PlatformLink.platform_id == Platform.id,
-            RunResult.finish_time_sec.isnot(None),
-            RunResult.finish_time_sec > 0,
-        )
-    )
-    if not include_test_events:
-        first_timed_run_query = first_timed_run_query.filter(Event.is_test_event.is_(False))
-    if excluded_ids:
-        first_timed_run_query = first_timed_run_query.filter(RunResult.id.notin_(excluded_ids))
-    first_timed_run_id = (
-        first_timed_run_query.order_by(
-            Event.event_date, Event.event_number, Event.location_id, RunResult.id
-        )
-        .limit(1)
-        .scalar()
+    first_timed_run_id = _user_first_timed_run_id(
+        db,
+        user_id,
+        include_test_events=include_test_events,
+        excluded_ids=excluded_ids,
     )
 
     catalog_index = LocationCatalogIndex(db)

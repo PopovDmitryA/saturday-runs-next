@@ -868,6 +868,16 @@ def test_personal_records_shows_undefeated_debut(
     assert dashboard.status_code == 200
     assert dashboard.json()["stats"]["analytics"]["pr_count"] == len(items)
 
+    # Вкладка «Пробежки»: дебют в системе тоже с маркером PR, а самая первая
+    # пробежка вообще — с подсветкой глобального рекорда (витрина, не БД).
+    runs = authenticated_client.get("/api/runs")
+    assert runs.status_code == 200
+    runs_by_date = {item["event_date"]: item for item in runs.json()}
+    assert runs_by_date["2022-04-02"]["is_pr"] is True
+    assert runs_by_date["2022-04-02"]["is_global_pr"] is True
+    assert runs_by_date["2022-04-09"]["is_pr"] is False
+    assert runs_by_date["2022-04-09"]["is_global_pr"] is False
+
 
 def test_dashboard_pr_count_includes_location_pr(
     authenticated_client: TestClient,
