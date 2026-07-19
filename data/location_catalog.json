@@ -2034,5 +2034,49 @@
         "external_key": "runpark-shveytsariya"
       }
     ]
+  },
+  {
+    "parkrun_location": "Muromets",
+    "canonical_name": "Муромец",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "muromets",
+    "is_closed": false,
+    "notes": "Муром, Владимирская область: parkrun 11.12.2021–26.02.2022, мост RunPark 19.03–28.05.2022, с 21.05.2022 продолжается как 5 вёрст «Муромец». Сопоставлено вручную (найдено при аудите дублей five_verst/runpark 20.07.2026).",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "muromets"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-muromets"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "muromets"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Vorkuta Gorodskoy Park",
+    "canonical_name": "Воркута Городской парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "vorkuta-gorodskoy-park",
+    "is_closed": false,
+    "notes": "Воркута, Республика Коми: parkrun 04.12.2021–26.02.2022, мост RunPark 19.03–21.05.2022, с 21.05.2022 продолжается как 5 вёрст «Воркута Городской парк». Сопоставлено вручную (найдено при аудите дублей five_verst/runpark 20.07.2026).",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "vorkuta-gorodskoy-park"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-vorkutagorodskoypark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "vorkutagorodskoypark"
+      }
+    ]
   }
 ]
