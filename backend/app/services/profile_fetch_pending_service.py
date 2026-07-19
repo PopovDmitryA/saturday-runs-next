@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from app.five_verst.errors import FiveVerstBanDetected
@@ -25,6 +26,13 @@ from app.services.participant_profile_service import resolve_profile_identity
 logger = logging.getLogger(__name__)
 
 _BAN_ERROR_TYPES = (ParkrunBanDetected, S95BanDetected, FiveVerstBanDetected)
+
+# Метка, которой scripts/seed_parkrun_queue_from_runpark.py помечает `last_error`
+# при сидировании очереди из архива RunPark — единственный сигнал происхождения
+# строки, который у нас сейчас есть (без миграции схемы). list_pending_rows
+# использует её, чтобы дать этим строкам приоритет над остальным backlog'ом:
+# там гарантированно есть история, а не просто гипотеза о существовании профиля.
+RUNPARK_SEED_NOTE_PREFIX = "seed from RunPark Pakrun archive"
 
 
 def is_fetch_cooldown_error(exc: BaseException) -> bool:
@@ -542,12 +550,20 @@ def list_pending_rows(
     )
     if platform_code:
         query = query.filter(ProfileFetchPending.platform_code == platform_code)
-    # Пользовательские строки (user_id заполнен — кто-то ждёт ответа) идут
-    # впереди безымянного системного backlog (discovery/seed-импорт), иначе
-    # реальный запрос стоит в очереди за тысячами фоновых строк.
+    # Три уровня приоритета:
+    # 1. пользовательские строки (user_id заполнен — кто-то ждёт ответа);
+    # 2. сид из архива RunPark — там гарантированно ЕСТЬ история (архив уже
+    #    отсортирован по объёму при сидировании), в отличие от:
+    # 3. discovery-backlog (например, s95-декаплинг) — это лишь гипотеза,
+    #    что у атлета вообще есть профиль parkrun.
+    # RUNPARK_SEED_NOTE_PREFIX завязан на текстовую метку из
+    # seed_parkrun_queue_from_runpark.py — единственный маркер источника,
+    # который у нас сейчас есть, без миграции схемы.
+    is_runpark_seed = ProfileFetchPending.last_error.like(f"{RUNPARK_SEED_NOTE_PREFIX}%")
     return (
         query.order_by(
             ProfileFetchPending.user_id.is_(None),
+            case((is_runpark_seed, 0), else_=1),
             ProfileFetchPending.created_at.asc(),
         )
         .limit(limit)

@@ -14,6 +14,7 @@ from app.models import (
 )
 from app.parkrun.errors import ParkrunBanDetected
 from app.services.profile_fetch_pending_service import (
+    RUNPARK_SEED_NOTE_PREFIX,
     enqueue_profile_fetch_pending,
     is_fetch_cooldown_error,
     list_pending_rows,
@@ -140,3 +141,35 @@ def test_list_pending_rows_prioritizes_user_requests_over_system_backlog(
 
     pending = list_pending_rows(db_session, platform_code=platform_code, limit=10)
     assert [row.profile_input for row in pending] == ["new-user-row", "old-system-row"]
+
+
+def test_list_pending_rows_prioritizes_runpark_seed_over_discovery_backlog(
+    db_session: Session,
+) -> None:
+    """RunPark-архив гарантирует историю у атлета; discovery (s95-декаплинг
+    и т.п.) — лишь гипотеза, что профиль вообще существует. Первое должно
+    сортироваться раньше второго внутри безымянного системного backlog'а."""
+    platform_code = "test-priority-check-runpark"
+    discovery_row = ProfileFetchPending(
+        platform_code=platform_code,
+        profile_input="discovery-row",
+        operation=ProfileFetchPendingOperation.activity_import,
+        reason=ProfileFetchPendingReason.error,
+        last_error="queued by s95 sync (parkrun decoupled from s95)",
+        user_id=None,
+    )
+    db_session.add(discovery_row)
+    db_session.flush()
+    runpark_row = ProfileFetchPending(
+        platform_code=platform_code,
+        profile_input="runpark-row",
+        operation=ProfileFetchPendingOperation.activity_import,
+        reason=ProfileFetchPendingReason.error,
+        last_error=RUNPARK_SEED_NOTE_PREFIX,
+        user_id=None,
+    )
+    db_session.add(runpark_row)
+    db_session.commit()
+
+    pending = list_pending_rows(db_session, platform_code=platform_code, limit=10)
+    assert [row.profile_input for row in pending] == ["runpark-row", "discovery-row"]
