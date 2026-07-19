@@ -11,7 +11,8 @@ import { getDashboard, getMyHistory, getOnThisDay, type DashboardResponse } from
 import { GoalsTeaser } from "./GoalsTeaser";
 import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 
-function PublicProfileShareBlock({ handle }: { handle: string | number }) {
+// Экспорт: блок переиспользуется в портальном ЛК (/new/dashboard).
+export function PublicProfileShareBlock({ handle }: { handle: string | number }) {
   const [copied, setCopied] = useState(false);
   // Если задан уникальный slug — ссылка на него, иначе на числовой serial_id.
   const url = `${window.location.origin}/users/${handle}`;

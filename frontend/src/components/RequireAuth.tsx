@@ -3,9 +3,12 @@ import { ApiError, getCurrentUser, type User } from "../lib/api";
 
 type RequireAuthProps = {
   children: (user: User) => ReactNode;
+  // Куда уводить анонима. Страницы портального редизайна передают
+  // PORTAL_LOGIN_HREF, чтобы не «протекать» в старый /login.
+  loginHref?: string;
 };
 
-export function RequireAuth({ children }: RequireAuthProps) {
+export function RequireAuth({ children, loginHref = "/login" }: RequireAuthProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -15,13 +18,13 @@ export function RequireAuth({ children }: RequireAuthProps) {
       .then(setUser)
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 401) {
-          window.location.href = "/login";
+          window.location.href = loginHref;
           return;
         }
         setError(err instanceof Error ? err.message : "Не удалось проверить сессию");
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [loginHref]);
 
   if (loading) {
     return (
@@ -37,7 +40,7 @@ export function RequireAuth({ children }: RequireAuthProps) {
         <div className="card error">
           <p>{error}</p>
           <p>
-            <a className="btn secondary" href="/login">
+            <a className="btn secondary" href={loginHref}>
               Перейти ко входу
             </a>
           </p>

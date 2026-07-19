@@ -689,7 +689,9 @@ export function AchievementsShowcase({
   );
 }
 
-function AchievementsContent() {
+// bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
+// оборачивает контент в собственный каркас с сайдбаром.
+function AchievementsContent({ bare = false }: { bare?: boolean } = {}) {
   const [achievements, setAchievements] = useState<AchievementsResponse | null>(null);
   const [goals, setGoals] = useState<GoalsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -718,8 +720,8 @@ function AchievementsContent() {
     void load(platformFilter);
   }, [load, platformFilter]);
 
-  return (
-    <AppShell title="Цели и достижения">
+  const pageBody = (
+    <>
       {error && (
         <div className="card error">
           <p>{error}</p>
@@ -752,9 +754,17 @@ function AchievementsContent() {
           />
         </>
       )}
-    </AppShell>
+    </>
   );
+
+  if (bare) {
+    return pageBody;
+  }
+
+  return <AppShell title="Цели и достижения">{pageBody}</AppShell>;
 }
+
+export { AchievementsContent };
 
 export function AchievementsPage() {
   return <RequireAuth>{() => <AchievementsContent />}</RequireAuth>;

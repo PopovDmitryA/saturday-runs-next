@@ -84,7 +84,9 @@ function RegionsPanel({
   );
 }
 
-function MapsContent() {
+// bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
+// оборачивает контент в собственный каркас с сайдбаром.
+function MapsContent({ bare = false }: { bare?: boolean } = {}) {
   const { getVisitedLocationsMap, getCatalogLocationsMap, getCatalogLocationsTable, mode } =
     useAppDataSource();
   const isDemo = mode === "demo";
@@ -165,12 +167,18 @@ function MapsContent() {
     </div>
   );
 
+  if (bare) {
+    return body;
+  }
+
   if (isDemo) {
     return <DemoShell title="Карта">{body}</DemoShell>;
   }
 
   return <AppShell title="Карта">{body}</AppShell>;
 }
+
+export { MapsContent };
 
 export function MapsPage() {
   return <RequireAuth>{() => <MapsContent />}</RequireAuth>;

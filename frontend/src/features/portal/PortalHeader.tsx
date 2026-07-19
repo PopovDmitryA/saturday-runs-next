@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { getCurrentUser } from "../../lib/api";
-import { PORTAL_ABOUT_HREF, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import {
+  PORTAL_ABOUT_HREF,
+  PORTAL_CABINET_HREF,
+  PORTAL_HOME_HREF,
+  PORTAL_LOGIN_HREF,
+} from "../../lib/portalRoutes";
 
 export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
   // Аноним не должен попасть на старый /login через RequireAuth на /dashboard —
@@ -20,7 +25,7 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
       <a href={PORTAL_ABOUT_HREF} className="portal-header-link">
         О проекте
       </a>
-      <a href={authed ? "/dashboard" : PORTAL_LOGIN_HREF} className="portal-header-link">
+      <a href={authed ? PORTAL_CABINET_HREF : PORTAL_LOGIN_HREF} className="portal-header-link">
         Личный кабинет
       </a>
       {/* Локации под RequireAuth: анонима увели бы на СТАРЫЙ /login — как и

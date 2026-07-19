@@ -458,9 +458,10 @@ export function HistoryContent({
   );
 }
 
-function HistoryPageContent() {
-  // Ссылка на сайт для текста-хвастовства: публичный профиль, если он есть и
-  // открыт; пока не загрузился (или профиля нет) — просто корень сайта.
+// Ссылка на сайт для текста-хвастовства: публичный профиль, если он есть и
+// открыт; пока не загрузился (или профиля нет) — просто корень сайта.
+// Экспорт: хук переиспользуется в портальном ЛК (/new/history).
+export function useOwnSiteUrl(): string {
   const [siteUrl, setSiteUrl] = useState(() => window.location.origin);
 
   useEffect(() => {
@@ -482,6 +483,12 @@ function HistoryPageContent() {
       cancelled = true;
     };
   }, []);
+
+  return siteUrl;
+}
+
+function HistoryPageContent() {
+  const siteUrl = useOwnSiteUrl();
 
   return (
     <AppShell title="Моя история" activePath="/history">

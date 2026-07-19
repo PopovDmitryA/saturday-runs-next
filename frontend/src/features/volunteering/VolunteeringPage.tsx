@@ -24,7 +24,9 @@ import { createFullSelection, sortVolunteering, toggleDateSort, uniquePlatforms 
 import { platformCodeLabel } from "../../lib/format";
 import { DemoShell } from "../demo/DemoShell";
 
-function VolunteeringContent() {
+// bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
+// оборачивает контент в собственный каркас с сайдбаром.
+function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
   const { listVolunteering, mode } = useAppDataSource();
   const isDemo = mode === "demo";
   const [items, setItems] = useState<VolunteeringItem[]>([]);
@@ -437,12 +439,12 @@ function VolunteeringContent() {
     </>
   );
 
-  if (isDemo) {
-    return <DemoShell title="Волонтёрство">{pageBody}</DemoShell>;
+  if (bare || mode === "public-profile") {
+    return <>{pageBody}</>;
   }
 
-  if (mode === "public-profile") {
-    return <>{pageBody}</>;
+  if (isDemo) {
+    return <DemoShell title="Волонтёрство">{pageBody}</DemoShell>;
   }
 
   return <AppShell title="Волонтёрство">{pageBody}</AppShell>;

@@ -1,0 +1,86 @@
+/**
+ * Страницы личного кабинета в портальном дизайне (тёмный запуск: /new/*).
+ * Контент вкладок переиспользуется из существующих страниц в bare-режиме,
+ * каркас с сайдбаром и портальный рескин даёт PortalCabinetShell + cabinet.css.
+ */
+import { RequireAuth } from "../../../components/RequireAuth";
+import { AchievementsContent } from "../../achievements/AchievementsPage";
+import { CoRunnersContent } from "../../co_runners/CoRunnersPage";
+import { HistoryContent, useOwnSiteUrl } from "../../history/HistoryPage";
+import { MapsContent } from "../../maps/MapsPage";
+import { RunsContent } from "../../runs/RunsPage";
+import { VolunteeringContent } from "../../volunteering/VolunteeringPage";
+import { getCoRunnerMeetings, getCoRunners, getMyHistory, type User } from "../../../lib/api";
+import { PORTAL_LOGIN_HREF } from "../../../lib/portalRoutes";
+import { PortalCabinetShell, type CabinetTabKey } from "./PortalCabinetShell";
+
+function cabinetPage(
+  active: CabinetTabKey,
+  // Заголовок каркаса; undefined — когда контент вкладки рисует свой (интро-карточка).
+  title: string | undefined,
+  sub: string | undefined,
+  renderContent: (user: User) => React.ReactNode,
+) {
+  return (
+    <RequireAuth loginHref={PORTAL_LOGIN_HREF}>
+      {(user) => (
+        <PortalCabinetShell active={active} user={user} title={title} sub={sub}>
+          {renderContent(user)}
+        </PortalCabinetShell>
+      )}
+    </RequireAuth>
+  );
+}
+
+export function PortalCabinetRunsPage() {
+  return cabinetPage(
+    "runs",
+    "Пробежки",
+    "Все финиши по всем привязанным системам — с фильтрами, сортировкой и оценками стартов.",
+    () => <RunsContent bare />,
+  );
+}
+
+export function PortalCabinetVolunteeringPage() {
+  return cabinetPage(
+    "volunteering",
+    "Волонтёрство",
+    "Все волонтёрские позиции по всем привязанным системам.",
+    () => <VolunteeringContent bare />,
+  );
+}
+
+export function PortalCabinetAchievementsPage() {
+  return cabinetPage(
+    "achievements",
+    "Цели и достижения",
+    "Медали, челленджи, клубы и личные цели на год.",
+    () => <AchievementsContent bare />,
+  );
+}
+
+export function PortalCabinetMeetingsPage() {
+  // Заголовок рисует сам CoRunnersContent (интро-карточка «Встречи на стартах»).
+  return cabinetPage("meetings", undefined, undefined, () => (
+    <CoRunnersContent load={getCoRunners} loadMeetings={getCoRunnerMeetings} />
+  ));
+}
+
+export function PortalCabinetMapPage() {
+  return cabinetPage(
+    "map",
+    "Карта",
+    "Посещённые локации и регионы — по пробежкам и волонтёрствам.",
+    () => <MapsContent bare />,
+  );
+}
+
+function PortalHistoryBody() {
+  const siteUrl = useOwnSiteUrl();
+  return <HistoryContent load={getMyHistory} shareBase="/share" siteUrl={siteUrl} />;
+}
+
+export function PortalCabinetHistoryPage() {
+  // Заголовок рисует сам HistoryContent (интро-карточка со сводкой).
+  return cabinetPage("history", undefined, undefined, () => <PortalHistoryBody />);
+}

@@ -28,7 +28,9 @@ import { createFullSelection, sortRuns, toggleDateSort, toggleFinishSort, toggle
 import { formatFinishTimeValue, platformCodeLabel } from "../../lib/format";
 import { DemoShell } from "../demo/DemoShell";
 
-function RunsContent() {
+// bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
+// оборачивает контент в собственный каркас с сайдбаром.
+function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const { listRuns, mode } = useAppDataSource();
   const isDemo = mode === "demo";
   const [runs, setRuns] = useState<RunItem[]>([]);
@@ -446,12 +448,12 @@ function RunsContent() {
     </>
   );
 
-  if (isDemo) {
-    return <DemoShell title="Пробежки">{pageBody}</DemoShell>;
+  if (bare || mode === "public-profile") {
+    return <>{pageBody}</>;
   }
 
-  if (mode === "public-profile") {
-    return <>{pageBody}</>;
+  if (isDemo) {
+    return <DemoShell title="Пробежки">{pageBody}</DemoShell>;
   }
 
   return <AppShell title="Пробежки">{pageBody}</AppShell>;

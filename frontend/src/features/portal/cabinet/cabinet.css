@@ -1,0 +1,495 @@
+/* Личный кабинет в портальном дизайне (тёмный запуск: /new/dashboard и др.).
+   Каркас: сайдбар на десктопе, нижняя навигация на телефоне.
+   Все цвета — через переменные темы из index.css, обе темы бесплатно.
+
+   Внутри .portal-cab-main живёт контент существующих вкладок со старыми
+   классами (.card, .data-table, .map-mode-tabs…) — здесь же их портальный
+   рескин, чтобы не трогать сами страницы до полной замены дизайна. */
+
+.portal-cab {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+/* ---------- верхняя панель ---------- */
+
+.portal-cab-topbar-inner {
+  max-width: 1240px;
+}
+
+.portal-cab-topbar-portal {
+  white-space: nowrap;
+}
+
+/* ---------- раскладка: сайдбар + контент ---------- */
+
+.portal-cab-layout {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 20px 72px;
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
+}
+
+.portal-cab-sidebar {
+  position: sticky;
+  top: 76px;
+  flex: 0 0 236px;
+  width: 236px;
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Сайдбар со своим скроллом, если пунктов больше, чем высоты экрана. */
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+}
+
+.portal-cab-main {
+  flex: 1;
+  min-width: 0;
+  margin-top: 20px;
+}
+
+/* ---------- карточка пользователя ---------- */
+
+.portal-cab-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.portal-cab-user-avatar {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent-indigo), #7c3aed);
+}
+
+.portal-cab-user-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.portal-cab-user-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-cab-user-edit {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.portal-cab-user-edit:hover {
+  color: var(--text);
+  background: var(--bg-muted);
+}
+
+.portal-cab-user-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.portal-cab-user-input {
+  width: 100%;
+  font-size: 13.5px;
+}
+
+.portal-cab-user-form-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.portal-cab-user-error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+  color: var(--accent-red-text);
+}
+
+/* ---------- навигация сайдбара ---------- */
+
+.portal-cab-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.portal-cab-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-decoration: none;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.portal-cab-nav-item:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.portal-cab-nav-item.active {
+  background: var(--tint-indigo-bg);
+  color: var(--accent-indigo-text);
+}
+
+.portal-cab-nav-icon {
+  flex: none;
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+}
+
+.portal-cab-nav-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.portal-cab-nav-secondary {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+.portal-cab-nav-item-secondary {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* ---------- заголовок страницы ---------- */
+
+.portal-cab-pagehead {
+  margin: 6px 0 18px;
+}
+
+.portal-cab-pagehead h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.portal-cab-pagehead-sub {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  max-width: 640px;
+}
+
+/* ---------- нижняя навигация (телефон) ---------- */
+
+.portal-cab-bottomnav {
+  display: none;
+}
+
+.portal-cab-more-backdrop {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .portal-cab-layout {
+    display: block;
+    padding-bottom: 92px;
+  }
+
+  .portal-cab-sidebar {
+    display: none;
+  }
+
+  .portal-cab-topbar-portal {
+    display: none;
+  }
+
+  .portal-cab-bottomnav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    display: flex;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .portal-cab-bottomnav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 5px 2px;
+    border: 0;
+    background: transparent;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-decoration: none;
+    cursor: pointer;
+    min-width: 0;
+  }
+
+  .portal-cab-bottomnav-item:hover {
+    text-decoration: none;
+  }
+
+  .portal-cab-bottomnav-item.active {
+    color: var(--accent-indigo-text);
+  }
+
+  .portal-cab-bottomnav-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* шторка «Ещё» */
+  .portal-cab-more-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    background: rgba(15, 23, 42, 0.45);
+  }
+
+  .portal-cab-more-sheet {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--surface);
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    padding: 8px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    box-shadow: 0 -12px 40px rgba(15, 23, 42, 0.25);
+  }
+
+  .portal-cab-more-grabber {
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--chip-bg-strong);
+    margin: 4px auto 10px;
+  }
+
+  .portal-cab-more-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 10px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-2);
+    text-decoration: none;
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .portal-cab-more-item:hover {
+    background: var(--bg-muted);
+    text-decoration: none;
+  }
+
+  .portal-cab-more-item.active {
+    color: var(--accent-indigo-text);
+  }
+
+  .portal-cab-more-item-secondary {
+    font-size: 14px;
+    color: var(--text-muted);
+    padding: 8px 10px;
+  }
+
+  .portal-cab-more-sep {
+    border-top: 1px solid var(--border);
+    margin: 6px 0;
+  }
+}
+
+/* ---------- герой дашборда ---------- */
+
+.portal-cab-hero {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px 22px;
+  margin-bottom: 16px;
+}
+
+.portal-cab-hero-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.portal-cab-hero-sub {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.portal-cab-hero-stats {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.portal-cab-hero-stat {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 12px;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  min-width: 0;
+}
+
+a.portal-cab-hero-stat:hover {
+  text-decoration: none;
+}
+
+a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
+  color: var(--accent-indigo-text);
+}
+
+.portal-cab-hero-stat-value {
+  font-size: clamp(20px, 2.6vw, 28px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.portal-cab-hero-stat-label {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.portal-cab-hero-stat-runs {
+  border-left-color: var(--accent-green-text);
+}
+
+.portal-cab-hero-stat-vol {
+  border-left-color: var(--accent-indigo);
+}
+
+.portal-cab-hero-stat-pr {
+  border-left-color: var(--accent-amber-text);
+}
+
+.portal-cab-hero-stat-geo {
+  border-left-color: var(--accent-teal-text);
+}
+
+@media (max-width: 640px) {
+  .portal-cab-hero {
+    padding: 16px;
+  }
+
+  .portal-cab-hero-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 10px;
+  }
+}
+
+/* ======================================================================
+   Портальный рескин легаси-контента вкладок внутри .portal-cab-main
+   ====================================================================== */
+
+/* Карточки → портальные панели */
+.portal-cab-main .card {
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+
+.portal-cab-main .section-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Чипы-фильтры систем — как переключатели на портальной главной */
+.portal-cab-main .map-mode-tab {
+  border-radius: 9px;
+  border-color: var(--border);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  color: var(--text-muted);
+}
+
+.portal-cab-main .map-mode-tab.active {
+  background: var(--tint-indigo-bg);
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+}
+
+/* Таблицы: шапка в портальной типографике */
+.portal-cab-main .table-wrap {
+  border-radius: 14px;
+}
+
+.portal-cab-main .data-table thead th {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
