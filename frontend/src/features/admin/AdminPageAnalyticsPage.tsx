@@ -41,6 +41,8 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   demo: "Демо (все страницы)",
   portal_home: "Главная",
   portal_about: "О проекте",
+  portal_blog: "Блог",
+  blog_post_click: "Блог: переходы на посты",
   portal_login: "Вход",
   portal_map_lab: "Портал: карта (лаб)",
   admin: "Админка",

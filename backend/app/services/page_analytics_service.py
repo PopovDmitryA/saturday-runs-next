@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime, time, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
@@ -43,6 +43,7 @@ _STATIC_PAGE_TYPES = {
     # Типы "landing"/"login"/"about" остались только в исторических данных.
     "/": "portal_home",
     "/about": "portal_about",
+    "/blog": "portal_blog",
     "/login": "portal_login",
     "/new/map-lab": "portal_map_lab",
     "/dashboard": "dashboard",
@@ -152,6 +153,42 @@ def record_page_view(
             is_self=is_self,
         )
         .on_conflict_do_nothing(index_elements=["view_id"])
+    )
+    db.execute(stmt)
+    db.commit()
+
+
+def record_blog_post_click(
+    db: Session,
+    *,
+    path: str | None,
+    visitor_key: str | None,
+    viewer_user_id: UUID | None,
+) -> None:
+    """Клик по карточке блога (переход в Telegram) как событие аналитики.
+
+    Это не просмотр страницы, а исходящий переход, поэтому пишется мимо
+    classify_page: page_type фиксированный. По каким именно постам кликают,
+    «Популярность» не различает — по-постовые клики уже есть в админке блога
+    (clicks_count); здесь только сам факт перехода. В entity_key — страница,
+    с которой кликнули ("/" или "/blog"): раскладка «с главной / из блога»
+    сохраняется и в дневных агрегатах. Длительности у события нет и не будет.
+
+    visitor_key от клиента всегда анонимный ("a:..."), т.к. карточки блога не
+    знают состояния авторизации; для залогиненных приводим его к "u:<user_id>",
+    как это делает buildVisitorKey на фронте для просмотров страниц.
+    """
+    if viewer_user_id is not None:
+        visitor_key = f"u:{viewer_user_id}"
+    source = ((path or "/blog").split("?", 1)[0] or "/blog")[:128]
+    stmt = pg_insert(PageViewEvent).values(
+        view_id=uuid4(),
+        path=source[:256],
+        page_type="blog_post_click",
+        entity_key=source,
+        visitor_key=visitor_key,
+        viewer_user_id=viewer_user_id,
+        is_self=False,
     )
     db.execute(stmt)
     db.commit()

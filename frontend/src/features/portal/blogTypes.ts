@@ -1,5 +1,7 @@
 /** Публичный блог: типы и запросы (без авторизации, как fetchPortalHome). */
 
+import { getOrCreateVisitorId } from "../../lib/siteVisitor";
+
 export type BlogPost = {
   id: string;
   title: string;
@@ -43,13 +45,28 @@ export async function fetchBlogPosts(params: { topic?: string | null }): Promise
 /**
  * Счётчик перехода в Telegram. sendBeacon переживает уход со страницы —
  * обычный fetch браузер может оборвать при навигации по ссылке карточки.
+ *
+ * В body — контекст для админской «Популярности»: анонимный ключ посетителя
+ * (для залогиненных сервер заменит его на u:<user_id> по сессионной куке) и
+ * страница, с которой кликнули. Body опционален для сервера.
  */
 export function registerBlogClick(postId: string): void {
   const url = `/api/blog/posts/${postId}/click`;
-  if (navigator.sendBeacon?.(url)) {
+  const body = JSON.stringify({
+    visitor_key: `a:${getOrCreateVisitorId()}`,
+    path: window.location.pathname,
+  });
+  const blob = new Blob([body], { type: "application/json" });
+  if (navigator.sendBeacon?.(url, blob)) {
     return;
   }
-  void fetch(url, { method: "POST", keepalive: true, credentials: "same-origin" }).catch(() => {
+  void fetch(url, {
+    method: "POST",
+    keepalive: true,
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body,
+  }).catch(() => {
     /* потеря одного клика не критична */
   });
 }
