@@ -11,6 +11,8 @@ from app.runpark.mappings import (
     parse_duplicate_match,
     parse_runpark_slug,
     parse_xlsx_row,
+    runpark_protocol_base,
+    runpark_protocol_url,
 )
 
 
@@ -22,6 +24,29 @@ def test_parse_bool_flag() -> None:
 
 def test_parse_runpark_slug() -> None:
     assert parse_runpark_slug("https://runpark.ru/Places/beguglich") == "beguglich"
+
+
+def test_runpark_protocol_base_prefers_public_url() -> None:
+    # public_url is authoritative — the slug there can diverge from the location key.
+    assert (
+        runpark_protocol_base("https://runpark.ru/Places/magnitprityagenie/", None)
+        == "https://runpark.ru/Places/magnitprityagenie"
+    )
+
+
+def test_runpark_protocol_base_falls_back_to_slug() -> None:
+    assert runpark_protocol_base(None, "buenosaires") == "https://runpark.ru/Places/buenosaires"
+    assert runpark_protocol_base("", "") is None
+    assert runpark_protocol_base(None, None) is None
+
+
+def test_runpark_protocol_url() -> None:
+    assert (
+        runpark_protocol_url("https://runpark.ru/Places/buenosaires", None, 52)
+        == "https://runpark.ru/Places/buenosaires/event/52"
+    )
+    assert runpark_protocol_url("https://runpark.ru/Places/buenosaires", None, None) is None
+    assert runpark_protocol_url(None, None, 52) is None
 
 
 def test_parse_duplicate_match_five_verst() -> None:

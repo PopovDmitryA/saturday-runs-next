@@ -10,6 +10,7 @@ DUP_MATCH_RE = re.compile(
     re.IGNORECASE,
 )
 RUNPARK_SLUG_RE = re.compile(r"/Places/([^/?#]+)", re.IGNORECASE)
+RUNPARK_PLACES_BASE = "https://runpark.ru/Places"
 KEEP_NAME_RE = re.compile(r'Оставляем\s+с\s+названием\s*["«](.+?)["»]?\s*$', re.IGNORECASE)
 MATCH_PARKRUN_NAME_RE = re.compile(r'фиксируем\s*["«](.+?)["»]', re.IGNORECASE)
 
@@ -77,6 +78,35 @@ def parse_runpark_slug(public_url: str | None) -> str | None:
         return None
     match = RUNPARK_SLUG_RE.search(str(public_url))
     return match.group(1) if match else None
+
+
+def runpark_protocol_base(public_url: str | None, runpark_slug: str | None) -> str | None:
+    """Base runpark.ru URL of a location's protocols, i.e. ``.../Places/{slug}``.
+
+    Prefers the mapping's stored ``public_url`` — the location's own ``external_key``
+    is NOT a safe slug source: it may carry a ``runpark-`` prefix or diverge entirely
+    (``runpark-prityazhenie`` → real slug ``magnitprityagenie``). Falls back to the
+    parsed ``runpark_slug`` when ``public_url`` is missing.
+    """
+    base = (public_url or "").strip().rstrip("/")
+    if base:
+        return base
+    slug = (runpark_slug or "").strip().strip("/")
+    if slug:
+        return f"{RUNPARK_PLACES_BASE}/{slug}"
+    return None
+
+
+def runpark_protocol_url(
+    public_url: str | None,
+    runpark_slug: str | None,
+    event_number: int | None,
+) -> str | None:
+    """URL of a RunPark event protocol page: ``.../Places/{slug}/event/{n}``."""
+    if not event_number:
+        return None
+    base = runpark_protocol_base(public_url, runpark_slug)
+    return f"{base}/event/{event_number}" if base else None
 
 
 def parse_duplicate_match(text: str | None) -> tuple[str | None, str | None]:
