@@ -203,6 +203,44 @@
   font-weight: 600;
 }
 
+/* Переключатель зачёта по полу (Абсолют / Мужчины / Женщины) */
+.lb-gender {
+  margin: 0.6rem 0 1rem;
+}
+
+.lb-gender-tabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+}
+
+.lb-gender-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, inherit);
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lb-gender-tab-active {
+  background: var(--surface, #fff);
+  color: var(--text, inherit);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.lb-gender-note {
+  margin: 0.55rem 0 0;
+  max-width: 60ch;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 /* «Домашняя трибуна» (только рейтинг побед): имя локации + счёт побед там */
 .lb-table .lb-col-home {
   white-space: nowrap;

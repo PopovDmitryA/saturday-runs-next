@@ -46,8 +46,18 @@ LEADERBOARD_METRICS: tuple[LeaderboardMetric, ...] = (
     "win_locations",
 )
 
+LeaderboardGender = Literal["all", "male", "female"]
+
+LEADERBOARD_GENDERS: tuple[LeaderboardGender, ...] = ("all", "male", "female")
+
+# Метрики, у которых есть разрез М/Ж (победы). parkrun в гендерный зачёт не идёт:
+# его пол известен только по неполным профилям и ненадёжен (см. _GENDER_LABEL_SQL).
+GENDERED_METRICS: tuple[LeaderboardMetric, ...] = ("wins", "win_locations")
+
 # Порядок колонок-систем (как на портале: активные, затем архив parkrun).
 PLATFORM_COLUMNS: tuple[str, ...] = ("five_verst", "s95", "runpark", "parkrun")
+# В гендерном зачёте parkrun исключён — и из подсчёта, и из колонок таблицы.
+GENDERED_PLATFORM_COLUMNS: tuple[str, ...] = ("five_verst", "s95", "runpark")
 
 TOP_LIMIT = 1000
 CACHE_TTL_SECONDS = 6 * 3600
@@ -266,6 +276,49 @@ WHERE e.is_test_event = false
 GROUP BY rr.participant_id, p.code, e.location_id
 """
 )
+
+# Пол результата по системам — для гендерного зачёта побед (parkrun исключён):
+# 5в — первая буква age_category (М/Ж); runpark — вторая буква категории (M/W);
+# s95 — из profile_extra (в протоколе категории нет). parkrun сюда не попадает:
+# в run_results.age_category у него лежит age-grade %, а пол профиля собран по
+# неполным данным — гендерные запросы жёстко фильтруют p.code <> 'parkrun'.
+_GENDER_LABEL_SQL = """
+CASE p.code
+    WHEN 'five_verst' THEN CASE LEFT(rr.age_category, 1)
+        WHEN 'М' THEN 'male' WHEN 'Ж' THEN 'female' END
+    WHEN 'runpark' THEN CASE SUBSTRING(rr.age_category FROM 2 FOR 1)
+        WHEN 'M' THEN 'male' WHEN 'W' THEN 'female' END
+    WHEN 's95' THEN pt.profile_extra -> 'platform_codes' ->> 'gender'
+END
+"""
+
+# Победы среди своего пола (gender_position = 1), без parkrun. Одной выборкой
+# обслуживает оба гендерных рейтинга: COUNT — «Количество побед», набор
+# локаций + first_date — «Локации с победами». gender_label может быть NULL
+# на части строк (напр. runpark без категории) — пол участника определяется
+# в Python по большинству ненулевых меток его строк.
+_GENDERED_WIN_ROWS_SQL = f"""
+SELECT
+    rr.participant_id AS participant_id,
+    p.code AS platform_code,
+    e.location_id AS location_id,
+    {_GENDER_LABEL_SQL} AS gender_label,
+    COUNT(*) AS wins,
+    COUNT(*) FILTER (WHERE e.event_date >= :week_start) AS week_wins,
+    MIN(e.event_date) AS first_date
+FROM run_results rr
+JOIN events e ON e.id = rr.event_id
+JOIN platforms p ON p.id = e.platform_id
+LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
+LEFT JOIN participants pt ON pt.id = rr.participant_id
+WHERE e.is_test_event = false
+  AND rr.participant_id IS NOT NULL
+  AND rr.gender_position = 1
+  AND p.code <> 'parkrun'
+  AND ec.secondary_event_id IS NULL
+  /*PIDS_FILTER*/
+GROUP BY rr.participant_id, p.code, e.location_id, gender_label
+"""
 
 _LATEST_EVENT_DATE_SQL = """
 SELECT MAX(e.event_date)
@@ -540,6 +593,109 @@ def _collect_win_entities(db: Session, week_start: date) -> dict[str, _Entity]:
     return entities
 
 
+def _dominant_gender(votes: dict[str, int]) -> str | None:
+    """Пол участника — по большинству ненулевых меток его строк (при равенстве
+    выбор детерминирован по алфавиту метки)."""
+    if not votes:
+        return None
+    return min(votes.items(), key=lambda item: (-item[1], item[0]))[0]
+
+
+def _gendered_win_rows(
+    db: Session, week_start: date, *, pids: list[UUID] | None = None
+) -> list[tuple[UUID, str, UUID, str | None, int, int, date]]:
+    sql = _GENDERED_WIN_ROWS_SQL
+    params: dict[str, object] = {"week_start": week_start}
+    if pids is not None:
+        sql = sql.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
+        params["pids"] = pids
+    else:
+        sql = sql.replace("/*PIDS_FILTER*/", "")
+    return [
+        (row[0], row[1], row[2], row[3], int(row[4]), int(row[5]), row[6])
+        for row in db.execute(text(sql), params).all()
+    ]
+
+
+def _collect_gendered_win_entities(
+    db: Session, week_start: date, gender: str, *, as_locations: bool
+) -> dict[str, _Entity]:
+    """Гендерный зачёт побед (gender_position=1, без parkrun) — только участники
+    запрошенного пола. as_locations=True → «локации с победами» (уникальные
+    площадки), иначе «количество побед» (счёт + домашняя трибуна)."""
+    links = _site_links(db)
+    identity_by_location, identity_names = _location_identity_maps(db)
+    rows = _gendered_win_rows(db, week_start)
+
+    # entity -> накопители; пол определяем после полного прохода по строкам.
+    gender_votes: dict[str, dict[str, int]] = {}
+    win_by_platform: dict[str, dict[str, list[int]]] = {}
+    home_counts: dict[str, dict[str, int]] = {}
+    # entity -> identity -> (min first_date, {platform codes})
+    loc_by_entity: dict[str, dict[str, tuple[date, set[str]]]] = {}
+    meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
+    participant_ids = {row[0] for row in rows}
+
+    for pid, code, location_id, gender_label, wins, week_wins, first_date in rows:
+        link = links.get(pid)
+        key = _entity_key(pid, link)
+        meta.setdefault(key, (pid, link))
+        if gender_label in ("male", "female"):
+            votes = gender_votes.setdefault(key, {})
+            votes[gender_label] = votes.get(gender_label, 0) + int(wins)
+        platform_bucket = win_by_platform.setdefault(key, {})
+        cell = platform_bucket.setdefault(code, [0, 0])
+        cell[0] += int(wins)
+        cell[1] += int(week_wins)
+        identity = identity_by_location.get(location_id, str(location_id))
+        home_counts.setdefault(key, {})[identity] = (
+            home_counts.setdefault(key, {}).get(identity, 0) + int(wins)
+        )
+        identities = loc_by_entity.setdefault(key, {})
+        existing = identities.get(identity)
+        if existing is None:
+            identities[identity] = (first_date, {code})
+        else:
+            existing[1].add(code)
+            identities[identity] = (min(existing[0], first_date), existing[1])
+
+    names = _participant_names(db, participant_ids)
+    entities: dict[str, _Entity] = {}
+    for key, (pid, link) in meta.items():
+        if _dominant_gender(gender_votes.get(key, {})) != gender:
+            continue
+        entity = _Entity(key=key)
+        if link is not None and not link.private:
+            entity.site_serial_id = link.serial_id
+            entity.display_name = link.display_name or names.get(pid)
+        else:
+            entity.display_name = names.get(pid)
+
+        if as_locations:
+            for _identity, (first_date, codes) in loc_by_entity.get(key, {}).items():
+                is_new = first_date >= week_start
+                entity.total += 1
+                if is_new:
+                    entity.week += 1
+                for code in codes:
+                    bucket = entity.values.setdefault(code, [0, 0])
+                    bucket[0] += 1
+                    if is_new:
+                        bucket[1] += 1
+        else:
+            for code, cell in win_by_platform.get(key, {}).items():
+                entity.values[code] = [cell[0], cell[1]]
+                entity.total += cell[0]
+                entity.week += cell[1]
+            home = _pick_home(home_counts.get(key, {}))
+            if home is not None:
+                identity, wins = home
+                entity.home_location = identity_names.get(identity, identity)
+                entity.home_location_wins = wins
+        entities[key] = entity
+    return entities
+
+
 def _collect_location_entities(
     db: Session, week_start: date, *, sql: str = _LOCATION_VISITS_SQL
 ) -> dict[str, _Entity]:
@@ -615,11 +771,21 @@ def _percentile(values_desc: list[int], p: float) -> int:
     return values_desc[idx_from_end]
 
 
-def _build_snapshot(db: Session, metric: LeaderboardMetric) -> dict[str, object]:
+def _normalize_gender(metric: LeaderboardMetric, gender: str) -> LeaderboardGender:
+    """Гендерный разрез есть только у победных метрик; для остальных — всегда all."""
+    if metric in GENDERED_METRICS and gender in ("male", "female"):
+        return gender  # type: ignore[return-value]
+    return "all"
+
+
+def _build_snapshot(
+    db: Session, metric: LeaderboardMetric, gender: LeaderboardGender = "all"
+) -> dict[str, object]:
     latest = latest_event_date(db)
     if latest is None:
         return {
             "metric": metric,
+            "gender": gender,
             "rows": [],
             "totals_desc": [],
             "prev_totals_desc": [],
@@ -635,9 +801,15 @@ def _build_snapshot(db: Session, metric: LeaderboardMetric) -> dict[str, object]
     if metric == "locations":
         entities = _collect_location_entities(db, week_start)
     elif metric == "win_locations":
-        entities = _collect_location_entities(db, week_start, sql=_WIN_LOCATION_VISITS_SQL)
+        if gender == "all":
+            entities = _collect_location_entities(db, week_start, sql=_WIN_LOCATION_VISITS_SQL)
+        else:
+            entities = _collect_gendered_win_entities(db, week_start, gender, as_locations=True)
     elif metric == "wins":
-        entities = _collect_win_entities(db, week_start)
+        if gender == "all":
+            entities = _collect_win_entities(db, week_start)
+        else:
+            entities = _collect_gendered_win_entities(db, week_start, gender, as_locations=False)
     else:
         entities = _collect_numeric_entities(db, metric, week_start)
 
@@ -679,6 +851,7 @@ def _build_snapshot(db: Session, metric: LeaderboardMetric) -> dict[str, object]
 
     return {
         "metric": metric,
+        "gender": gender,
         "rows": rows,
         "totals_desc": totals_desc,
         "prev_totals_desc": prev_totals_desc,
@@ -691,13 +864,17 @@ def _build_snapshot(db: Session, metric: LeaderboardMetric) -> dict[str, object]
     }
 
 
-def _cache_key(metric: str) -> str:
-    return f"{CACHE_KEY_PREFIX}:{metric}"
+def _cache_key(metric: str, gender: str = "all") -> str:
+    # Гендерные варианты — отдельным суффиксом; all оставляет прежний ключ, чтобы
+    # не плодить лишние ключи у метрик без разреза по полу.
+    if gender == "all":
+        return f"{CACHE_KEY_PREFIX}:{metric}"
+    return f"{CACHE_KEY_PREFIX}:{metric}:{gender}"
 
 
-def _read_cache(metric: str) -> dict[str, object] | None:
+def _read_cache(metric: str, gender: str = "all") -> dict[str, object] | None:
     try:
-        raw = get_redis_client().get(_cache_key(metric))
+        raw = get_redis_client().get(_cache_key(metric, gender))
     except Exception:
         return None
     if not raw or not isinstance(raw, (str, bytes, bytearray)):
@@ -709,52 +886,64 @@ def _read_cache(metric: str) -> dict[str, object] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _write_cache(metric: str, payload: dict[str, object]) -> None:
+def _write_cache(metric: str, payload: dict[str, object], gender: str = "all") -> None:
     try:
         get_redis_client().setex(
-            _cache_key(metric), CACHE_TTL_SECONDS, json.dumps(payload, ensure_ascii=False)
+            _cache_key(metric, gender), CACHE_TTL_SECONDS, json.dumps(payload, ensure_ascii=False)
         )
     except Exception:
         return
 
 
 def get_leaderboard_snapshot(
-    db: Session, metric: LeaderboardMetric, *, use_cache: bool = True
+    db: Session, metric: LeaderboardMetric, gender: str = "all", *, use_cache: bool = True
 ) -> dict[str, object]:
+    resolved = _normalize_gender(metric, gender)
     if use_cache:
-        cached = _read_cache(metric)
+        cached = _read_cache(metric, resolved)
         if cached is not None:
             return cached
-    payload = _build_snapshot(db, metric)
+    payload = _build_snapshot(db, metric, resolved)
     if use_cache:
-        _write_cache(metric, payload)
+        _write_cache(metric, payload, resolved)
     return payload
 
 
-def refresh_leaderboard_cache(db: Session, metric: LeaderboardMetric) -> dict[str, object]:
+def refresh_leaderboard_cache(
+    db: Session, metric: LeaderboardMetric, gender: str = "all"
+) -> dict[str, object]:
     """Пересчитать снапшот и перезаписать кэш, даже если тот ещё не протух.
 
     Для beat-задачи прогрева: обычный get_leaderboard при живом кэше ничего не
     пересчитывает, и кэш умирал бы по TTL между запусками.
     """
-    payload = _build_snapshot(db, metric)
-    _write_cache(metric, payload)
+    resolved = _normalize_gender(metric, gender)
+    payload = _build_snapshot(db, metric, resolved)
+    _write_cache(metric, payload, resolved)
     return payload
 
 
 def get_leaderboard(
-    db: Session, metric: LeaderboardMetric, *, limit: int = 100, use_cache: bool = True
+    db: Session,
+    metric: LeaderboardMetric,
+    gender: str = "all",
+    *,
+    limit: int = 100,
+    use_cache: bool = True,
 ) -> dict[str, object]:
     """Публичная часть снапшота (без служебных массивов рангов)."""
-    snapshot = get_leaderboard_snapshot(db, metric, use_cache=use_cache)
+    resolved = _normalize_gender(metric, gender)
+    snapshot = get_leaderboard_snapshot(db, metric, resolved, use_cache=use_cache)
     meta = METRIC_META[metric]
     rows = cast("list[dict[str, object]]", snapshot.get("rows") or [])
+    columns = GENDERED_PLATFORM_COLUMNS if resolved != "all" else PLATFORM_COLUMNS
     return {
         "metric": metric,
+        "gender": resolved,
         "title": meta["title"],
         "description": meta["description"],
         "unit": meta["unit"],
-        "platform_columns": list(PLATFORM_COLUMNS),
+        "platform_columns": list(columns),
         "rows": rows[: max(1, min(limit, TOP_LIMIT))],
         "threshold": snapshot.get("threshold", 0),
         "median": snapshot.get("median", 0),
@@ -864,6 +1053,62 @@ def _my_win_values(
     return values, None
 
 
+def _my_gendered_win_values(
+    db: Session, participant_ids: list[UUID], week_start: date, gender: str, *, as_locations: bool
+) -> tuple[dict[str, list[int]], int, int, tuple[str, int] | None]:
+    """«Моя» строка в гендерном зачёте. Если пол участника не совпадает с
+    запрошенным — он в этот рейтинг не входит (нули, not included)."""
+    if not participant_ids:
+        return {}, 0, 0, None
+    rows = _gendered_win_rows(db, week_start, pids=participant_ids)
+    if not rows:
+        return {}, 0, 0, None
+    identity_by_location, identity_names = _location_identity_maps(db)
+    votes: dict[str, int] = {}
+    values: dict[str, list[int]] = {}
+    win_counts_by_identity: dict[str, int] = {}
+    loc_identities: dict[str, tuple[date, set[str]]] = {}
+    for _pid, code, location_id, gender_label, wins, week_wins, first_date in rows:
+        if gender_label in ("male", "female"):
+            votes[gender_label] = votes.get(gender_label, 0) + int(wins)
+        bucket = values.setdefault(code, [0, 0])
+        bucket[0] += int(wins)
+        bucket[1] += int(week_wins)
+        identity = identity_by_location.get(location_id, str(location_id))
+        win_counts_by_identity[identity] = win_counts_by_identity.get(identity, 0) + int(wins)
+        existing = loc_identities.get(identity)
+        if existing is None:
+            loc_identities[identity] = (first_date, {code})
+        else:
+            existing[1].add(code)
+            loc_identities[identity] = (min(existing[0], first_date), existing[1])
+
+    if _dominant_gender(votes) != gender:
+        return {}, 0, 0, None
+
+    if as_locations:
+        loc_values: dict[str, list[int]] = {}
+        total = 0
+        week = 0
+        for _identity, (first_date, codes) in loc_identities.items():
+            is_new = first_date >= week_start
+            total += 1
+            if is_new:
+                week += 1
+            for code in codes:
+                cell = loc_values.setdefault(code, [0, 0])
+                cell[0] += 1
+                if is_new:
+                    cell[1] += 1
+        return loc_values, total, week, None
+
+    total = sum(v[0] for v in values.values())
+    week = sum(v[1] for v in values.values())
+    home = _pick_home(win_counts_by_identity)
+    home_out = (identity_names.get(home[0], home[0]), home[1]) if home is not None else None
+    return values, total, week, home_out
+
+
 def _my_location_values(
     db: Session,
     participant_ids: list[UUID],
@@ -902,10 +1147,11 @@ def _my_location_values(
 
 
 def get_my_leaderboard_row(
-    db: Session, metric: LeaderboardMetric, user: User
+    db: Session, metric: LeaderboardMetric, user: User, gender: str = "all"
 ) -> dict[str, object]:
     """Строка залогиненного участника: значения, место, дельта места, порог."""
-    snapshot = get_leaderboard_snapshot(db, metric)
+    resolved = _normalize_gender(metric, gender)
+    snapshot = get_leaderboard_snapshot(db, metric, resolved)
     week_start_raw = snapshot.get("week_start")
     latest = latest_event_date(db)
     week_start = (
@@ -925,13 +1171,23 @@ def get_my_leaderboard_row(
     if metric == "locations":
         values, total, week = _my_location_values(db, participant_ids, week_start)
     elif metric == "win_locations":
-        values, total, week = _my_location_values(
-            db, participant_ids, week_start, sql_template=_WIN_LOCATION_VISITS_SQL
-        )
+        if resolved == "all":
+            values, total, week = _my_location_values(
+                db, participant_ids, week_start, sql_template=_WIN_LOCATION_VISITS_SQL
+            )
+        else:
+            values, total, week, my_home = _my_gendered_win_values(
+                db, participant_ids, week_start, resolved, as_locations=True
+            )
     elif metric == "wins":
-        values, my_home = _my_win_values(db, participant_ids, week_start)
-        total = sum(v[0] for v in values.values())
-        week = sum(v[1] for v in values.values())
+        if resolved == "all":
+            values, my_home = _my_win_values(db, participant_ids, week_start)
+            total = sum(v[0] for v in values.values())
+            week = sum(v[1] for v in values.values())
+        else:
+            values, total, week, my_home = _my_gendered_win_values(
+                db, participant_ids, week_start, resolved, as_locations=False
+            )
     else:
         values = _my_numeric_values(db, metric, participant_ids, week_start)
         total = sum(v[0] for v in values.values())

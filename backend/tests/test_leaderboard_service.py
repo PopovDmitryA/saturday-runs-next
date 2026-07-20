@@ -1,10 +1,13 @@
 from datetime import date
 
 from app.services.leaderboard_service import (
+    GENDERED_METRICS,
     LEADERBOARD_METRICS,
     METRIC_META,
     METRIC_THRESHOLD_PERCENTILE,
     PLATFORM_COLUMNS,
+    _dominant_gender,
+    _normalize_gender,
     _percentile,
     _pick_home,
     _ranked,
@@ -81,3 +84,18 @@ def test_pick_home_tie_is_deterministic() -> None:
 
 def test_pick_home_empty() -> None:
     assert _pick_home({}) is None
+
+
+def test_dominant_gender_by_majority() -> None:
+    assert _dominant_gender({"male": 30, "female": 2}) == "male"
+    assert _dominant_gender({"female": 5}) == "female"
+    assert _dominant_gender({}) is None
+
+
+def test_normalize_gender_only_for_win_metrics() -> None:
+    # Пол применяется только к победным метрикам; у остальных всегда «all».
+    assert set(GENDERED_METRICS) == {"wins", "win_locations"}
+    assert _normalize_gender("wins", "male") == "male"
+    assert _normalize_gender("win_locations", "female") == "female"
+    assert _normalize_gender("runs", "male") == "all"
+    assert _normalize_gender("wins", "нечто") == "all"

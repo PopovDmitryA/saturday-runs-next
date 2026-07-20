@@ -23,6 +23,7 @@ class LeaderboardRowResponse(BaseModel):
 
 class LeaderboardResponse(BaseModel):
     metric: str
+    gender: str = "all"
     title: str
     description: str
     unit: str

@@ -8,6 +8,11 @@ export type LeaderboardMetric =
   | "wins"
   | "win_locations";
 
+export type LeaderboardGender = "all" | "male" | "female";
+
+// Разрез М/Ж есть только у победных рейтингов (parkrun в него не идёт).
+export const GENDERED_METRICS: LeaderboardMetric[] = ["wins", "win_locations"];
+
 export type LeaderboardCell = {
   value: number;
   delta: number;
@@ -28,6 +33,7 @@ export type LeaderboardRow = {
 
 export type LeaderboardResponse = {
   metric: string;
+  gender?: LeaderboardGender;
   title: string;
   description: string;
   unit: string;
@@ -70,12 +76,23 @@ async function leaderboardsFetch<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function getLeaderboard(metric: LeaderboardMetric, limit = 1000) {
-  return leaderboardsFetch<LeaderboardResponse>(`/leaderboards/${metric}?limit=${limit}`);
+export function getLeaderboard(
+  metric: LeaderboardMetric,
+  limit = 1000,
+  gender: LeaderboardGender = "all",
+) {
+  const genderParam = gender === "all" ? "" : `&gender=${gender}`;
+  return leaderboardsFetch<LeaderboardResponse>(
+    `/leaderboards/${metric}?limit=${limit}${genderParam}`,
+  );
 }
 
-export function getMyLeaderboardRow(metric: LeaderboardMetric) {
-  return leaderboardsFetch<MyLeaderboardRow>(`/leaderboards/${metric}/me`);
+export function getMyLeaderboardRow(
+  metric: LeaderboardMetric,
+  gender: LeaderboardGender = "all",
+) {
+  const genderParam = gender === "all" ? "" : `?gender=${gender}`;
+  return leaderboardsFetch<MyLeaderboardRow>(`/leaderboards/${metric}/me${genderParam}`);
 }
 
 export const PLATFORM_LABELS: Record<string, string> = {

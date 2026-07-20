@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models import User
 from app.schemas.leaderboards import LeaderboardResponse, MyLeaderboardRowResponse
 from app.services.leaderboard_service import (
+    LEADERBOARD_GENDERS,
     LEADERBOARD_METRICS,
     LeaderboardMetric,
     get_leaderboard,
@@ -25,6 +26,12 @@ def _validate_metric(metric: str) -> LeaderboardMetric:
     return metric  # type: ignore[return-value]
 
 
+def _validate_gender(gender: str) -> str:
+    # Незнакомый пол молча трактуем как «all» — сервис сам игнорирует разрез у
+    # метрик без М/Ж (см. _normalize_gender), так что 400 тут был бы избыточен.
+    return gender if gender in LEADERBOARD_GENDERS else "all"
+
+
 # Только для залогиненных (решение Дмитрия 16.07.2026): раздел открыт всем
 # пользователям сайта, но не анонимам.
 @router.get("/{metric}", response_model=LeaderboardResponse)
@@ -33,8 +40,9 @@ def leaderboard(
     db: Annotated[Session, Depends(get_db)],
     _user: Annotated[User, Depends(get_current_user)],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    gender: str = "all",
 ) -> LeaderboardResponse:
-    payload = get_leaderboard(db, _validate_metric(metric), limit=limit)
+    payload = get_leaderboard(db, _validate_metric(metric), _validate_gender(gender), limit=limit)
     return LeaderboardResponse.model_validate(payload)
 
 
@@ -44,6 +52,7 @@ def my_leaderboard_row(
     metric: str,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    gender: str = "all",
 ) -> MyLeaderboardRowResponse:
-    payload = get_my_leaderboard_row(db, _validate_metric(metric), user)
+    payload = get_my_leaderboard_row(db, _validate_metric(metric), user, _validate_gender(gender))
     return MyLeaderboardRowResponse.model_validate(payload)

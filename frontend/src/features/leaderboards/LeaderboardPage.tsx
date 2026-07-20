@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InsightsShell } from "../insights/InsightsShell";
 import {
+  GENDERED_METRICS,
   getLeaderboard,
   getMyLeaderboardRow,
   PLATFORM_LABELS,
+  type LeaderboardGender,
   type LeaderboardMetric,
   type LeaderboardResponse,
   type LeaderboardRow,
@@ -13,6 +15,12 @@ import { unitLabel } from "./pluralize";
 import "./leaderboards.css";
 
 const PAGE_STEP = 100;
+
+const GENDER_TABS: { value: LeaderboardGender; label: string }[] = [
+  { value: "all", label: "Абсолют" },
+  { value: "male", label: "Мужчины" },
+  { value: "female", label: "Женщины" },
+];
 
 type LeaderboardPageProps = {
   metric: LeaderboardMetric;
@@ -114,16 +122,20 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("rank");
+  const [gender, setGender] = useState<LeaderboardGender>("all");
   const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  const hasGenderSplit = GENDERED_METRICS.includes(metric);
+  const effectiveGender = hasGenderSplit ? gender : "all";
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [board, myRow] = await Promise.all([
-        getLeaderboard(metric),
-        getMyLeaderboardRow(metric).catch(() => null),
+        getLeaderboard(metric, 1000, effectiveGender),
+        getMyLeaderboardRow(metric, effectiveGender).catch(() => null),
       ]);
       setData(board);
       setMe(myRow);
@@ -132,15 +144,20 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [metric]);
+  }, [metric, effectiveGender]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  // Метрика сменилась (напр. переход между рейтингами) — сбрасываем пол в «Абсолют».
+  useEffect(() => {
+    setGender("all");
+  }, [metric]);
+
   useEffect(() => {
     setVisibleCount(PAGE_STEP);
-  }, [query, sortKey]);
+  }, [query, sortKey, effectiveGender]);
 
   const columns = data?.platform_columns ?? [];
 
@@ -246,6 +263,32 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 — изменение за последнюю неделю
               </p>
             </header>
+
+            {hasGenderSplit && (
+              <div className="lb-gender">
+                <div className="lb-gender-tabs" role="tablist" aria-label="Зачёт по полу">
+                  {GENDER_TABS.map((tab) => (
+                    <button
+                      key={tab.value}
+                      type="button"
+                      role="tab"
+                      aria-selected={gender === tab.value}
+                      className={`lb-gender-tab${gender === tab.value ? " lb-gender-tab-active" : ""}`}
+                      onClick={() => setGender(tab.value)}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+                {effectiveGender !== "all" && (
+                  <p className="lb-gender-note muted">
+                    Победа среди своего пола — первое место в мужском или женском зачёте забега.
+                    parkrun в разбивку по полу не входит: у наших parkrun-данных пол известен
+                    только по неполным профилям и ненадёжен. Абсолютный зачёт учитывает все системы.
+                  </p>
+                )}
+              </div>
+            )}
 
             {me && (
               <section
