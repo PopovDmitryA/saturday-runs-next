@@ -19,7 +19,7 @@ from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from app.models import BlogPost, Location, PageStatsDaily, PageViewEvent, Platform, User
+from app.models import Location, PageStatsDaily, PageViewEvent, Platform, User
 from app.services.profile_slug_service import resolve_profile_handle
 
 STATS_TIMEZONE = ZoneInfo("Europe/Moscow")
@@ -161,7 +161,6 @@ def record_page_view(
 def record_blog_post_click(
     db: Session,
     *,
-    post_id: UUID,
     path: str | None,
     visitor_key: str | None,
     viewer_user_id: UUID | None,
@@ -169,9 +168,11 @@ def record_blog_post_click(
     """Клик по карточке блога (переход в Telegram) как событие аналитики.
 
     Это не просмотр страницы, а исходящий переход, поэтому пишется мимо
-    classify_page: page_type фиксированный, entity_key — id поста (заголовок
-    резолвится при чтении в build_page_analytics). path — страница, с которой
-    кликнули ("/" или "/blog"). Длительности у события нет и не будет.
+    classify_page: page_type фиксированный. По каким именно постам кликают,
+    «Популярность» не различает — по-постовые клики уже есть в админке блога
+    (clicks_count); здесь только сам факт перехода. В entity_key — страница,
+    с которой кликнули ("/" или "/blog"): раскладка «с главной / из блога»
+    сохраняется и в дневных агрегатах. Длительности у события нет и не будет.
 
     visitor_key от клиента всегда анонимный ("a:..."), т.к. карточки блога не
     знают состояния авторизации; для залогиненных приводим его к "u:<user_id>",
@@ -179,11 +180,12 @@ def record_blog_post_click(
     """
     if viewer_user_id is not None:
         visitor_key = f"u:{viewer_user_id}"
+    source = ((path or "/blog").split("?", 1)[0] or "/blog")[:128]
     stmt = pg_insert(PageViewEvent).values(
         view_id=uuid4(),
-        path=((path or "/blog").split("?", 1)[0] or "/blog")[:256],
+        path=source[:256],
         page_type="blog_post_click",
-        entity_key=str(post_id),
+        entity_key=source,
         visitor_key=visitor_key,
         viewer_user_id=viewer_user_id,
         is_self=False,
@@ -343,11 +345,9 @@ def build_page_analytics(
     profile_rows = entity_top(["profile"])
     # Популярность локации — это обе её страницы: карточка и список забегов.
     location_rows = entity_top(["location", "location_events"])
-    blog_post_rows = entity_top(["blog_post_click"])
 
     profile_labels = _profile_labels(db, [row.entity_key for row in profile_rows])
     location_labels = _location_labels(db, [row.entity_key for row in location_rows])
-    blog_post_labels = _blog_post_labels(db, [row.entity_key for row in blog_post_rows])
 
     def row_stats(row: Any) -> dict[str, object]:
         duration_views = int(row.duration_views or 0)
@@ -379,14 +379,6 @@ def build_page_analytics(
             }
             for row in location_rows
         ],
-        "top_blog_posts": [
-            {
-                "entity_key": row.entity_key,
-                **blog_post_labels.get(row.entity_key, {"label": row.entity_key, "href": None}),
-                **row_stats(row),
-            }
-            for row in blog_post_rows
-        ],
     }
 
 
@@ -407,23 +399,6 @@ def _profile_labels(db: Session, entity_keys: list[str]) -> dict[str, dict[str, 
         handle = user.public_slug or str(user.serial_id)
         labels[str(user.id)] = {"label": name, "href": f"/users/{handle}"}
     return labels
-
-
-def _blog_post_labels(db: Session, entity_keys: list[str]) -> dict[str, dict[str, object]]:
-    """entity_key клика — id поста блога; заголовок берём даже у скрытых/удалённых из витрины."""
-    post_ids: list[UUID] = []
-    for key in entity_keys:
-        try:
-            post_ids.append(UUID(key))
-        except ValueError:
-            continue
-    if not post_ids:
-        return {}
-    posts = db.query(BlogPost).filter(BlogPost.id.in_(post_ids)).all()
-    return {
-        str(post.id): {"label": post.title, "href": post.telegram_url}
-        for post in posts
-    }
 
 
 def _location_labels(db: Session, entity_keys: list[str]) -> dict[str, dict[str, object]]:

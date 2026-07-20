@@ -215,61 +215,45 @@ def test_build_page_analytics_respects_explicit_range(db_session: Session) -> No
     assert mine[0]["views"] == 3  # день 20.07 за границей диапазона
 
 
-def test_blog_post_click_recorded_and_reported(db_session: Session) -> None:
-    """Клик по посту блога: событие с id поста, u:-ключ для залогиненного,
-    в отчёте — заголовок поста и ссылка на Telegram."""
-    from app.services.blog_service import create_post
+def test_blog_post_click_recorded(db_session: Session) -> None:
+    """Клик по посту блога: одно событие на клик, источник ("/" или "/blog")
+    в entity_key, u:-ключ для залогиненного. Какой именно пост — «Популярность»
+    не различает: по-постовые клики уже считает clicks_count в админке блога."""
     from app.services.page_analytics_service import record_blog_post_click
 
-    post = create_post(
-        db_session,
-        title=f"Тестовый пост {uuid4()}",
-        teaser="Затравка",
-        telegram_url="https://t.me/popov_way/1",
-        topic=None,
-        published_at=datetime.now(STATS_TIMEZONE),
-        is_published=True,
-    )
     user = _make_user(db_session)
+    before = db_session.query(PageViewEvent).filter(
+        PageViewEvent.page_type == "blog_post_click"
+    ).count()
 
     record_blog_post_click(
         db_session,
-        post_id=post.id,
         path="/",
         visitor_key="a:anon-key-1",
         viewer_user_id=None,
     )
     record_blog_post_click(
         db_session,
-        post_id=post.id,
-        path="/blog",
+        path="/blog?topic=Цифры",
         visitor_key="a:anon-key-2",
         viewer_user_id=user.id,
     )
 
     events = (
         db_session.query(PageViewEvent)
-        .filter(
-            PageViewEvent.page_type == "blog_post_click",
-            PageViewEvent.entity_key == str(post.id),
-        )
-        .order_by(PageViewEvent.path)
+        .filter(PageViewEvent.page_type == "blog_post_click")
+        .order_by(PageViewEvent.ts)
         .all()
     )
-    assert [event.path for event in events] == ["/", "/blog"]
-    assert events[0].visitor_key == "a:anon-key-1"
+    assert len(events) == before + 2
+    anon, logged = events[-2], events[-1]
+    assert (anon.path, anon.entity_key) == ("/", "/")
+    assert anon.visitor_key == "a:anon-key-1"
+    # Источник нормализуется (query-string отрезается) и хранится в entity_key,
+    # чтобы раскладка «с главной / из блога» переживала rollup.
+    assert (logged.path, logged.entity_key) == ("/blog", "/blog")
     # Для залогиненного анонимный ключ заменён на u:<user_id>, как в pageview.
-    assert events[1].visitor_key == f"u:{user.id}"
-
-    today = local_today()
-    rollup_day(db_session, today)
-    payload = build_page_analytics(db_session, start=today, end=today)
-    mine = [row for row in payload["top_blog_posts"] if row["entity_key"] == str(post.id)]  # type: ignore[index,union-attr]
-    assert len(mine) == 1
-    assert mine[0]["views"] == 2
-    assert mine[0]["unique_viewers"] == 2
-    assert mine[0]["label"] == post.title
-    assert mine[0]["href"] == "https://t.me/popov_way/1"
+    assert logged.visitor_key == f"u:{user.id}"
 
 
 def _make_user(db_session: Session, *, slug: str | None = None) -> User:

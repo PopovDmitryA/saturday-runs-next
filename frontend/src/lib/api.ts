@@ -2247,7 +2247,6 @@ export type PageAnalyticsResponse = {
   sections: PageAnalyticsSection[];
   top_profiles: PageAnalyticsEntity[];
   top_locations: PageAnalyticsEntity[];
-  top_blog_posts: PageAnalyticsEntity[];
 };
 
 /** Либо periodDays (последние N дней), либо явный диапазон dateFrom/dateTo. */

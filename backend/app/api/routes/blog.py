@@ -69,7 +69,6 @@ def blog_post_click(
     if viewer is None or not is_admin_user(viewer, settings):
         record_blog_post_click(
             db,
-            post_id=post_id,
             path=body.path if body else None,
             visitor_key=body.visitor_key if body else None,
             viewer_user_id=viewer.id if viewer is not None else None,

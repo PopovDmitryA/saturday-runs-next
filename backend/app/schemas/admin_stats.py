@@ -100,4 +100,3 @@ class PageAnalyticsResponse(BaseModel):
     sections: list[PageAnalyticsSection]
     top_profiles: list[PageAnalyticsEntity]
     top_locations: list[PageAnalyticsEntity]
-    top_blog_posts: list[PageAnalyticsEntity]

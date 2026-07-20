@@ -298,12 +298,6 @@ function AdminPageAnalyticsContent() {
             entityHeader="Локация"
             emptyText="Просмотров страниц локаций за период не было."
           />
-          <EntityTable
-            title="Блог: переходы на посты"
-            rows={data.top_blog_posts}
-            entityHeader="Пост"
-            emptyText="Переходов на посты блога за период не было."
-          />
 
           <p className="muted admin-stats-footnote">
             Уникальные — сумма дневных уникальных посетителей (один человек в разные дни учитывается
