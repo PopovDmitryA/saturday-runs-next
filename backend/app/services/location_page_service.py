@@ -1252,6 +1252,38 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
             continue
         identity_locations.setdefault(identity_key, []).append((location, platform_code))
 
+    # …плюс не-official локации действующих систем, у которых реально были
+    # старты (is_official_map=False обычно значит «показывается только через
+    # каталожную склейку с official-парой», как у моста RunPark → 5 вёрст —
+    # но «С95 и друзья»/«S95 & Friends» без города и без official-пары —
+    # разъездная серия, а не площадка, и без этой ветки выпадала бы из
+    # каталога целиком, хотя финиши по ней есть и считаются на главной).
+    locations_with_events = {
+        row[0]
+        for row in db.query(Event.location_id)
+        .join(Location, Location.id == Event.location_id)
+        .join(Platform, Platform.id == Location.platform_id)
+        .filter(Platform.code.in_(("five_verst", "s95", "runpark")), Location.is_official_map.is_(False))
+        .distinct()
+    }
+    unofficial_rows = (
+        db.query(Location, Platform.code)
+        .join(Platform, Location.platform_id == Platform.id)
+        .filter(
+            Platform.code.in_(("five_verst", "s95", "runpark")),
+            Location.is_official_map.is_(False),
+            Location.id.in_(locations_with_events),
+        )
+        .all()
+    )
+    for location, platform_code in unofficial_rows:
+        identity_key = catalog_index.canonical_identity_key(location, platform_code)
+        if identity_key in identity_locations:
+            continue
+        if normalize_location_slug(location.external_key) in display_normalized_slugs:
+            continue
+        identity_locations.setdefault(identity_key, []).append((location, platform_code))
+
     # Цифры (стартов, финишей, первого старта) — СКВОЗНЫЕ по всей истории
     # идентичности, включая parkrun-эпоху: иначе «Первый старт» теряет годы
     # до перехода на текущую систему, а «Стартов»/«Финишей» занижены.
