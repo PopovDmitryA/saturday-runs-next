@@ -24,7 +24,23 @@ const METRIC_CRUMBS: Record<LeaderboardMetric, { section: string; label: string 
   runs: { section: "Бегуны", label: "Количество пробежек" },
   volunteering: { section: "Волонтёры", label: "Количество волонтёрств" },
   locations: { section: "Паркран-туристы", label: "Уникальные локации" },
+  wins: { section: "Бегуны", label: "Количество побед" },
+  win_locations: { section: "Паркран-туристы", label: "Локации с победами" },
 };
+
+function HomeTurf({ row }: { row: { home_location?: string | null; home_location_wins?: number | null } }) {
+  if (!row.home_location) {
+    return <span className="lb-zero">—</span>;
+  }
+  return (
+    <span className="lb-home">
+      {row.home_location}
+      {row.home_location_wins != null && row.home_location_wins > 1 && (
+        <span className="lb-home-count"> ×{row.home_location_wins}</span>
+      )}
+    </span>
+  );
+}
 
 function formatDate(value: string | null): string {
   if (!value) {
@@ -149,6 +165,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       platforms: me.platforms,
       total: me.total,
       total_delta: me.total_delta,
+      home_location: me.home_location,
+      home_location_wins: me.home_location_wins,
     };
     return [...data.rows, myRow];
   }, [data, me]);
@@ -255,6 +273,12 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           <DeltaSlot delta={me.total_delta} />
                         </span>
                       </span>
+                      {metric === "wins" && me.home_location && (
+                        <span className="lb-me-value">
+                          <span className="lb-me-platform">Домашняя трибуна</span>
+                          <HomeTurf row={me} />
+                        </span>
+                      )}
                     </span>
                     {myIndex >= 0 && (
                       <button type="button" className="btn btn-ghost btn-sm" onClick={showMyRow}>
@@ -291,6 +315,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                       headerCell(code, PLATFORM_LABELS[code] ?? code, "lb-col-num"),
                     )}
                     {headerCell("total", "Всего", "lb-col-num lb-col-total")}
+                    {metric === "wins" && <th className="lb-col-home">Домашняя трибуна</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -322,12 +347,17 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             <DeltaSlot delta={row.total_delta} />
                           </span>
                         </td>
+                        {metric === "wins" && (
+                          <td className="lb-col-home">
+                            <HomeTurf row={row} />
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
                   {visibleRows.length === 0 && (
                     <tr>
-                      <td colSpan={columns.length + 3} className="muted">
+                      <td colSpan={columns.length + (metric === "wins" ? 4 : 3)} className="muted">
                         Ничего не найдено
                       </td>
                     </tr>

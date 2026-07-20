@@ -6,6 +6,7 @@ from app.services.leaderboard_service import (
     METRIC_THRESHOLD_PERCENTILE,
     PLATFORM_COLUMNS,
     _percentile,
+    _pick_home,
     _ranked,
     _week_start,
 )
@@ -59,3 +60,24 @@ def test_percentile_matches_prod_investigation_shape() -> None:
 
 def test_percentile_empty() -> None:
     assert _percentile([], 75) == 0
+
+
+def test_win_metrics_threshold_is_minimum() -> None:
+    # У победных метрик перцентиль 0 → порог = минимальное значение (1 победа):
+    # сама победа уже редкое событие, дополнительного порога входа нет.
+    values_desc = sorted([1] * 90 + [2] * 7 + [15] * 3, reverse=True)
+    assert _percentile(values_desc, METRIC_THRESHOLD_PERCENTILE["wins"]) == 1
+    assert _percentile(values_desc, METRIC_THRESHOLD_PERCENTILE["win_locations"]) == 1
+
+
+def test_pick_home_max_wins() -> None:
+    assert _pick_home({"a": 3, "b": 50, "c": 7}) == ("b", 50)
+
+
+def test_pick_home_tie_is_deterministic() -> None:
+    # При равенстве побед выбирается меньший ключ — снапшоты не «мигают».
+    assert _pick_home({"z": 5, "a": 5, "m": 5}) == ("a", 5)
+
+
+def test_pick_home_empty() -> None:
+    assert _pick_home({}) is None

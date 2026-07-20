@@ -16,6 +16,9 @@ class LeaderboardRowResponse(BaseModel):
     platforms: dict[str, LeaderboardCellResponse]
     total: int
     total_delta: int
+    # Только у метрики wins: «домашняя трибуна» — локация с максимумом побед.
+    home_location: str | None = None
+    home_location_wins: int | None = None
 
 
 class LeaderboardResponse(BaseModel):
@@ -44,3 +47,5 @@ class MyLeaderboardRowResponse(BaseModel):
     rank_delta: int | None
     included: bool
     threshold: int
+    home_location: str | None = None
+    home_location_wins: int | None = None

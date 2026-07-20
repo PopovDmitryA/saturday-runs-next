@@ -1,7 +1,12 @@
 // API раздела «Рейтинги» (сквозные лидерборды). Отдельный модуль, чтобы не
 // трогать горячий lib/api.ts (его правят параллельные worktree-фичи).
 
-export type LeaderboardMetric = "runs" | "volunteering" | "locations";
+export type LeaderboardMetric =
+  | "runs"
+  | "volunteering"
+  | "locations"
+  | "wins"
+  | "win_locations";
 
 export type LeaderboardCell = {
   value: number;
@@ -16,6 +21,9 @@ export type LeaderboardRow = {
   platforms: Record<string, LeaderboardCell>;
   total: number;
   total_delta: number;
+  // Только у метрики wins: «домашняя трибуна» — локация с максимумом побед.
+  home_location?: string | null;
+  home_location_wins?: number | null;
 };
 
 export type LeaderboardResponse = {
@@ -44,6 +52,8 @@ export type MyLeaderboardRow = {
   rank_delta: number | null;
   included: boolean;
   threshold: number;
+  home_location?: string | null;
+  home_location_wins?: number | null;
 };
 
 async function leaderboardsFetch<T>(path: string): Promise<T> {

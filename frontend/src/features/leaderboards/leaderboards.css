@@ -203,6 +203,17 @@
   font-weight: 600;
 }
 
+/* «Домашняя трибуна» (только рейтинг побед): имя локации + счёт побед там */
+.lb-table .lb-col-home {
+  white-space: nowrap;
+}
+
+.lb-home-count {
+  color: var(--text-faint);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
 .lb-rank {
   display: inline-flex;
   align-items: baseline;
