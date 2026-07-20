@@ -41,6 +41,8 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   demo: "Демо (все страницы)",
   portal_home: "Главная",
   portal_about: "О проекте",
+  portal_blog: "Блог",
+  blog_post_click: "Блог: переходы на посты",
   portal_login: "Вход",
   portal_map_lab: "Портал: карта (лаб)",
   admin: "Админка",
@@ -295,6 +297,12 @@ function AdminPageAnalyticsContent() {
             rows={data.top_locations}
             entityHeader="Локация"
             emptyText="Просмотров страниц локаций за период не было."
+          />
+          <EntityTable
+            title="Блог: переходы на посты"
+            rows={data.top_blog_posts}
+            entityHeader="Пост"
+            emptyText="Переходов на посты блога за период не было."
           />
 
           <p className="muted admin-stats-footnote">

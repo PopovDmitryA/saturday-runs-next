@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BlogPostResponse(BaseModel):
@@ -31,6 +31,14 @@ class BlogPostListResponse(BaseModel):
 
 class BlogHomeResponse(BaseModel):
     items: list[BlogPostResponse]
+
+
+class BlogClickRequest(BaseModel):
+    """Контекст клика для аналитики «Популярности»; body опционален —
+    старые клиенты шлют пустой sendBeacon, и это остаётся валидным."""
+
+    visitor_key: str | None = Field(default=None, max_length=80)
+    path: str | None = Field(default=None, max_length=256)
 
 
 class BlogClickResponse(BaseModel):

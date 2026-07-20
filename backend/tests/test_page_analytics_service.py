@@ -26,6 +26,7 @@ from app.services.page_analytics_service import (
     [
         ("/", ("portal_home", "")),
         ("/about", ("portal_about", "")),
+        ("/blog", ("portal_blog", "")),
         ("/login", ("portal_login", "")),
         ("/dashboard", ("dashboard", "")),
         ("/profiles", ("dashboard", "")),
@@ -77,6 +78,7 @@ def test_classify_legacy_grafana_paths(path: str) -> None:
 # новый роут без записи в _STATIC_PAGE_TYPES свалится в "other" и уронит тест.
 APP_ROUTES = [
     "/",
+    "/blog",
     "/new/map-lab",
     "/login",
     "/oauth/yandex/callback",
@@ -114,6 +116,7 @@ APP_ROUTES = [
     "/admin/event-report",
     "/admin/records-digest",
     "/admin/location-contacts",
+    "/admin/blog",
     "/settings",
     "/about",
     "/users/ivan",
@@ -210,6 +213,63 @@ def test_build_page_analytics_respects_explicit_range(db_session: Session) -> No
     mine = [row for row in payload["top_locations"] if row["entity_key"] == entity_key]  # type: ignore[index,union-attr]
     assert len(mine) == 1
     assert mine[0]["views"] == 3  # день 20.07 за границей диапазона
+
+
+def test_blog_post_click_recorded_and_reported(db_session: Session) -> None:
+    """Клик по посту блога: событие с id поста, u:-ключ для залогиненного,
+    в отчёте — заголовок поста и ссылка на Telegram."""
+    from app.services.blog_service import create_post
+    from app.services.page_analytics_service import record_blog_post_click
+
+    post = create_post(
+        db_session,
+        title=f"Тестовый пост {uuid4()}",
+        teaser="Затравка",
+        telegram_url="https://t.me/popov_way/1",
+        topic=None,
+        published_at=datetime.now(STATS_TIMEZONE),
+        is_published=True,
+    )
+    user = _make_user(db_session)
+
+    record_blog_post_click(
+        db_session,
+        post_id=post.id,
+        path="/",
+        visitor_key="a:anon-key-1",
+        viewer_user_id=None,
+    )
+    record_blog_post_click(
+        db_session,
+        post_id=post.id,
+        path="/blog",
+        visitor_key="a:anon-key-2",
+        viewer_user_id=user.id,
+    )
+
+    events = (
+        db_session.query(PageViewEvent)
+        .filter(
+            PageViewEvent.page_type == "blog_post_click",
+            PageViewEvent.entity_key == str(post.id),
+        )
+        .order_by(PageViewEvent.path)
+        .all()
+    )
+    assert [event.path for event in events] == ["/", "/blog"]
+    assert events[0].visitor_key == "a:anon-key-1"
+    # Для залогиненного анонимный ключ заменён на u:<user_id>, как в pageview.
+    assert events[1].visitor_key == f"u:{user.id}"
+
+    today = local_today()
+    rollup_day(db_session, today)
+    payload = build_page_analytics(db_session, start=today, end=today)
+    mine = [row for row in payload["top_blog_posts"] if row["entity_key"] == str(post.id)]  # type: ignore[index,union-attr]
+    assert len(mine) == 1
+    assert mine[0]["views"] == 2
+    assert mine[0]["unique_viewers"] == 2
+    assert mine[0]["label"] == post.title
+    assert mine[0]["href"] == "https://t.me/popov_way/1"
 
 
 def _make_user(db_session: Session, *, slug: str | None = None) -> User:
