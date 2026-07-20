@@ -15,7 +15,8 @@ export function RequireAuth({ children }: RequireAuthProps) {
       .then(setUser)
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 401) {
-          window.location.href = "/login";
+          const next = `${window.location.pathname}${window.location.search}`;
+          window.location.href = `/login?next=${encodeURIComponent(next)}`;
           return;
         }
         setError(err instanceof Error ? err.message : "Не удалось проверить сессию");

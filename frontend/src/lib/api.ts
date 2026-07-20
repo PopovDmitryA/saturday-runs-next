@@ -461,8 +461,11 @@ export function createLoginRequest(link = false) {
   return apiFetch<LoginRequestResponse>(`/auth/login-request${query}`, { method: "POST" });
 }
 
-export function oauthStartUrl(provider: "vk" | "yandex", mode: "login" | "link", consent = false) {
+export function oauthStartUrl(provider: "vk" | "yandex", mode: "login" | "link", consent = false, next?: string | null) {
   const params = new URLSearchParams({ mode, consent: consent ? "true" : "false" });
+  if (next) {
+    params.set("next", next);
+  }
   return `${API_BASE}/auth/oauth/${provider}/start?${params.toString()}`;
 }
 

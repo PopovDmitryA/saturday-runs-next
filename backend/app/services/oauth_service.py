@@ -49,6 +49,17 @@ def _provider_from_name(name: str) -> AuthProvider:
         raise AuthError("Unsupported OAuth provider.", 400) from exc
 
 
+def _sanitize_next_path(next_path: str | None) -> str | None:
+    """Only allow same-origin relative paths, to avoid open-redirect via the `next` param."""
+    if not next_path:
+        return None
+    if not next_path.startswith("/") or next_path.startswith("//"):
+        return None
+    if "://" in next_path:
+        return None
+    return next_path.lstrip("/")
+
+
 def start_oauth_flow(
     provider_name: str,
     settings: Settings,
@@ -56,6 +67,7 @@ def start_oauth_flow(
     mode: str,
     link_user_id: UUID | None,
     consent: bool,
+    next_path: str | None = None,
 ) -> str:
     provider = _provider_from_name(provider_name)
     if mode == "login" and not consent:
@@ -74,6 +86,7 @@ def start_oauth_flow(
         "mode": mode,
         "link_user_id": str(link_user_id) if link_user_id else None,
         "consent": consent,
+        "next": _sanitize_next_path(next_path) if mode == "login" else None,
     }
     if provider == AuthProvider.vk:
         payload["code_verifier"] = vk_provider.generate_code_verifier()
@@ -184,7 +197,8 @@ def handle_oauth_callback(
         user = create_oauth_user(db, profile, provider, consent=consent)
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
-    return user.id, None, "dashboard"
+    next_target = state_payload.get("next")
+    return user.id, None, str(next_target) if next_target else "dashboard"
 
 
 def _store_merge_token(db: Session, survivor: User, merged: User) -> str:

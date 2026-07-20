@@ -235,6 +235,7 @@ def oauth_start(
     request: Request,
     mode: Annotated[str, Query()] = "login",
     consent: Annotated[bool, Query()] = False,
+    next: Annotated[str | None, Query()] = None,
     user_id: Annotated[UUID | None, Depends(get_optional_session_user_id)] = None,
 ) -> RedirectResponse:
     try:
@@ -246,6 +247,7 @@ def oauth_start(
             mode=mode,
             link_user_id=user_id if mode == "link" else None,
             consent=consent,
+            next_path=next,
         )
     except AuthError as exc:
         raise _handle_auth_error(exc) from exc

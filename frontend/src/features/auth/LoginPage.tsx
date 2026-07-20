@@ -8,6 +8,14 @@ function readOAuthError(): string | null {
   return new URLSearchParams(window.location.search).get("oauth_error");
 }
 
+function readNextPath(): string | null {
+  const next = new URLSearchParams(window.location.search).get("next");
+  if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("://")) {
+    return null;
+  }
+  return next;
+}
+
 export function LoginPage() {
   const consentRef = useRef<HTMLInputElement>(null);
   const [consentChecked, setConsentChecked] = useState(false);
@@ -15,12 +23,13 @@ export function LoginPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [oauthError, setOauthError] = useState<string | null>(() => readOAuthError());
   const [redirectingProvider, setRedirectingProvider] = useState<"vk" | "yandex" | null>(null);
+  const nextPath = readNextPath();
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setCheckingAuth(false), 8_000);
     getCurrentUser()
       .then(() => {
-        window.location.href = "/dashboard";
+        window.location.href = nextPath || "/dashboard";
       })
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 401) {
@@ -115,7 +124,7 @@ export function LoginPage() {
 
         <div className="login-provider-buttons">
           <a
-            href={oauthStartUrl("vk", "login", true)}
+            href={oauthStartUrl("vk", "login", true, nextPath)}
             className="btn primary login-provider-btn login-provider-btn-vk"
             data-full-nav
             onClick={(event) => handleProviderClick(event, "vk")}
@@ -123,7 +132,7 @@ export function LoginPage() {
             {redirectingProvider === "vk" ? "Переход…" : "Войти через VK"}
           </a>
           <a
-            href={oauthStartUrl("yandex", "login", true)}
+            href={oauthStartUrl("yandex", "login", true, nextPath)}
             className="btn secondary login-provider-btn login-provider-btn-yandex"
             data-full-nav
             onClick={(event) => handleProviderClick(event, "yandex")}
