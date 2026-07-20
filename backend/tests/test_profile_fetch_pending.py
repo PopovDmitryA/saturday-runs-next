@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -13,7 +14,9 @@ from app.models import (
     User,
 )
 from app.parkrun.errors import ParkrunBanDetected, ParkrunProfileNotFound
+from app.s95.errors import S95BanDetected
 from app.services.profile_fetch_pending_service import (
+    MAX_RETRY_ATTEMPTS,
     PERMANENT_ERROR_PREFIX,
     RUNPARK_SEED_NOTE_PREFIX,
     enqueue_profile_fetch_pending,
@@ -22,6 +25,7 @@ from app.services.profile_fetch_pending_service import (
     process_pending_row,
     requeue_stuck_done_parkrun_pending,
     reset_failed_parkrun_pending,
+    reset_failed_pending,
 )
 from app.services.profile_linking_service import ProfileLinkingError, preview_profile_link
 
@@ -234,3 +238,108 @@ def test_reset_failed_parkrun_pending_still_retries_transient_failures(
     assert reset_count == 1
     assert row.status == ProfileFetchPendingStatus.pending
     assert row.attempts == 0
+
+
+def test_enqueue_reopens_done_row_instead_of_duplicating(db_session: Session) -> None:
+    """Дедуп раньше искал только среди 'pending'-строк — 'done'/'failed' не
+    находились, и для одного атлета копилось несколько независимых строк
+    (нашли на живых данных: s95-атлет 790269774 заведён дважды)."""
+    row = ProfileFetchPending(
+        platform_code="s95",
+        profile_input="790269774",
+        external_user_id="790269774",
+        operation=ProfileFetchPendingOperation.activity_import,
+        status=ProfileFetchPendingStatus.done,
+        attempts=2,
+        processed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    result = enqueue_profile_fetch_pending(
+        db_session,
+        platform_code="s95",
+        profile_input="790269774",
+        user_id=None,
+        operation=ProfileFetchPendingOperation.activity_import,
+        exc=S95BanDetected("HTTP 403 from S95 for https://s95.ru/athletes/790269774/"),
+    )
+
+    total = (
+        db_session.query(ProfileFetchPending)
+        .filter(
+            ProfileFetchPending.platform_code == "s95",
+            ProfileFetchPending.external_user_id == "790269774",
+        )
+        .count()
+    )
+    assert total == 1
+    assert result.id == row.id
+    assert result.status == ProfileFetchPendingStatus.pending
+    assert result.attempts == 0
+    assert result.processed_at is None
+
+
+def test_enqueue_does_not_reset_status_of_row_being_processed(db_session: Session) -> None:
+    row = ProfileFetchPending(
+        platform_code="s95",
+        profile_input="790269774",
+        external_user_id="790269774",
+        operation=ProfileFetchPendingOperation.activity_import,
+        status=ProfileFetchPendingStatus.processing,
+        attempts=1,
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    result = enqueue_profile_fetch_pending(
+        db_session,
+        platform_code="s95",
+        profile_input="790269774",
+        user_id=None,
+        exc=S95BanDetected("HTTP 403 from S95 for https://s95.ru/athletes/790269774/"),
+    )
+
+    assert result.id == row.id
+    assert result.status == ProfileFetchPendingStatus.processing
+    assert result.attempts == 1  # не сброшен — демон прямо сейчас держит строку
+
+
+def test_cooldown_exhausted_after_max_attempts_gives_up_permanently(
+    db_session: Session, monkeypatch
+) -> None:
+    """403 от S95 месяцами подряд не должен крутиться в pending вечно —
+    после MAX_RETRY_ATTEMPTS строка сдаётся, и reset_failed_pending её
+    больше не воскрешает (нашли на живых данных: s95-атлет 790269774)."""
+    import app.services.profile_fetch_pending_service as svc
+
+    row = ProfileFetchPending(
+        platform_code="s95",
+        profile_input="790269774",
+        external_user_id="790269774",
+        operation=ProfileFetchPendingOperation.activity_import,
+        reason=ProfileFetchPendingReason.error,
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    def _raise_ban(*_args, **_kwargs):
+        raise S95BanDetected("HTTP 403 from S95 for https://s95.ru/athletes/790269774/")
+
+    monkeypatch.setattr(svc, "_import_s95_activity", _raise_ban)
+
+    for attempt in range(1, MAX_RETRY_ATTEMPTS):
+        row.status = ProfileFetchPendingStatus.pending
+        outcome = process_pending_row(db_session, row)
+        assert outcome == "cooldown", f"attempt {attempt}"
+        assert row.status == ProfileFetchPendingStatus.pending
+
+    row.status = ProfileFetchPendingStatus.pending
+    outcome = process_pending_row(db_session, row)
+    assert outcome == "cooldown_exhausted"
+    assert row.status == ProfileFetchPendingStatus.failed
+    assert row.last_error.startswith(PERMANENT_ERROR_PREFIX)
+
+    reset_count = reset_failed_pending(db_session, "s95")
+    assert reset_count == 0
+    assert row.status == ProfileFetchPendingStatus.failed
