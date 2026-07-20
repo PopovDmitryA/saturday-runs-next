@@ -43,16 +43,11 @@ def _validate_payload(
     return title, teaser, url, clean_topic
 
 
-def list_published_posts(
-    db: Session, *, topic: str | None = None, sort: str = "recent"
-) -> list[BlogPost]:
+def list_published_posts(db: Session, *, topic: str | None = None) -> list[BlogPost]:
     query = select(BlogPost).where(BlogPost.is_published.is_(True))
     if topic:
         query = query.where(BlogPost.topic == topic)
-    if sort == "popular":
-        query = query.order_by(BlogPost.clicks_count.desc(), BlogPost.published_at.desc())
-    else:
-        query = query.order_by(BlogPost.published_at.desc())
+    query = query.order_by(BlogPost.published_at.desc())
     return list(db.execute(query).scalars().all())
 
 

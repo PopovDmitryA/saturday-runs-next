@@ -18,8 +18,6 @@ export type BlogPostList = {
   topics: BlogTopic[];
 };
 
-export type BlogSort = "recent" | "popular";
-
 export async function fetchBlogHome(): Promise<BlogPost[]> {
   const response = await fetch("/api/blog/home", { credentials: "same-origin" });
   if (!response.ok) {
@@ -29,13 +27,9 @@ export async function fetchBlogHome(): Promise<BlogPost[]> {
   return payload.items;
 }
 
-export async function fetchBlogPosts(params: {
-  topic?: string | null;
-  sort?: BlogSort;
-}): Promise<BlogPostList> {
+export async function fetchBlogPosts(params: { topic?: string | null }): Promise<BlogPostList> {
   const search = new URLSearchParams();
   if (params.topic) search.set("topic", params.topic);
-  if (params.sort) search.set("sort", params.sort);
   const suffix = search.toString();
   const response = await fetch(`/api/blog/posts${suffix ? `?${suffix}` : ""}`, {
     credentials: "same-origin",

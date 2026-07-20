@@ -47,16 +47,10 @@ def test_recent_sort_and_unpublished_hidden(db_session: Session) -> None:
     assert "скрытый" in [post.title for post in list_all_posts(db_session)]
 
 
-def test_popular_sort_by_clicks(db_session: Session) -> None:
-    quiet = _make_post(db_session, title="тихий", days_ago=1)
-    hit = _make_post(db_session, title="хит", days_ago=5)
-    for _ in range(3):
-        register_click(db_session, hit.id)
-
-    posts = list_published_posts(db_session, sort="popular")
-    titles = [post.title for post in posts]
-    assert titles.index("хит") < titles.index("тихий")
-    assert register_click(db_session, quiet.id) == 1
+def test_register_click_increments_counter(db_session: Session) -> None:
+    post = _make_post(db_session, title="пост", days_ago=0)
+    assert register_click(db_session, post.id) == 1
+    assert register_click(db_session, post.id) == 2
 
 
 def test_click_on_unpublished_or_missing_is_404(db_session: Session) -> None:

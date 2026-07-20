@@ -1,19 +1,19 @@
 import { useEffect, useState } from "react";
 import { PortalBlogCard } from "./PortalBlogCard";
 import { PortalHeader } from "./PortalHeader";
-import { fetchBlogPosts, type BlogPostList, type BlogSort } from "./blogTypes";
+import { fetchBlogPosts, type BlogPostList } from "./blogTypes";
+import { PORTAL_HOME_HREF } from "../../lib/portalRoutes";
 import "./portal.css";
 
-/** Публичная страница блога: все посты, фильтр по темам, сортировки. */
+/** Публичная страница блога: все посты, фильтр по темам. */
 export function PortalBlogPage() {
   const [data, setData] = useState<BlogPostList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [topic, setTopic] = useState<string | null>(null);
-  const [sort, setSort] = useState<BlogSort>("recent");
 
   useEffect(() => {
     let cancelled = false;
-    fetchBlogPosts({ topic, sort })
+    fetchBlogPosts({ topic })
       .then((payload) => {
         if (!cancelled) {
           setData(payload);
@@ -28,12 +28,16 @@ export function PortalBlogPage() {
     return () => {
       cancelled = true;
     };
-  }, [topic, sort]);
+  }, [topic]);
 
   return (
     <>
       <PortalHeader />
       <main className="portal-home portal-blog-page">
+        <a href={PORTAL_HOME_HREF} className="portal-blog-back">
+          ← На главную
+        </a>
+
         <section className="portal-hero">
           <p className="portal-eyebrow">Люди · цифры · истории</p>
           <h1>Блог</h1>
@@ -47,45 +51,31 @@ export function PortalBlogPage() {
 
         {data && (
           <>
-            <div className="portal-blog-controls">
-              {data.topics.length > 0 && (
-                <div className="portal-period portal-blog-topics" role="tablist" aria-label="Темы">
+            {data.topics.length > 0 && (
+              <div
+                className="portal-period portal-blog-topics portal-blog-controls"
+                role="tablist"
+                aria-label="Темы"
+              >
+                <button
+                  type="button"
+                  className={topic === null ? "active" : ""}
+                  onClick={() => setTopic(null)}
+                >
+                  Все ({data.topics.reduce((sum, row) => sum + row.posts, 0)})
+                </button>
+                {data.topics.map((row) => (
                   <button
+                    key={row.topic}
                     type="button"
-                    className={topic === null ? "active" : ""}
-                    onClick={() => setTopic(null)}
+                    className={topic === row.topic ? "active" : ""}
+                    onClick={() => setTopic(row.topic)}
                   >
-                    Все ({data.topics.reduce((sum, row) => sum + row.posts, 0)})
+                    {row.topic} ({row.posts})
                   </button>
-                  {data.topics.map((row) => (
-                    <button
-                      key={row.topic}
-                      type="button"
-                      className={topic === row.topic ? "active" : ""}
-                      onClick={() => setTopic(row.topic)}
-                    >
-                      {row.topic} ({row.posts})
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="portal-period" role="tablist" aria-label="Сортировка">
-                <button
-                  type="button"
-                  className={sort === "recent" ? "active" : ""}
-                  onClick={() => setSort("recent")}
-                >
-                  Свежие
-                </button>
-                <button
-                  type="button"
-                  className={sort === "popular" ? "active" : ""}
-                  onClick={() => setSort("popular")}
-                >
-                  Популярные
-                </button>
+                ))}
               </div>
-            </div>
+            )}
 
             {data.items.length === 0 ? (
               <p className="portal-empty-note">Постов пока нет — скоро появятся.</p>
