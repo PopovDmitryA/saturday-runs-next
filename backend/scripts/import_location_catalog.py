@@ -219,7 +219,13 @@ def load_json(path: Path) -> list[CatalogEntry]:
     return [CatalogEntry(**item) for item in raw]
 
 
-def import_to_db(entries: list[CatalogEntry], *, replace: bool = True) -> dict[str, int]:
+class StaleImportError(RuntimeError):
+    """Raised when replace=True would shrink the catalog — likely a stale JSON."""
+
+
+def import_to_db(
+    entries: list[CatalogEntry], *, replace: bool = True, force: bool = False
+) -> dict[str, int]:
     backend_path = str(BACKEND_ROOT)
     if backend_path not in sys.path and (BACKEND_ROOT / "app").is_dir():
         sys.path.insert(0, backend_path)
@@ -233,6 +239,22 @@ def import_to_db(entries: list[CatalogEntry], *, replace: bool = True) -> dict[s
     try:
         platforms = {p.code: p for p in db.query(Platform).all()}
         if replace:
+            # replace=True DELETEs the whole catalog before rebuilding from `entries` —
+            # if `entries` came from a stale data/location_catalog.json (an old
+            # worktree that never pulled later catalog-linking commits), this would
+            # silently wipe manually-curated links with no trace in git history.
+            # 20.07.2026: found 16/20 local worktrees sitting on a stale copy after a
+            # 21-link batch landed in main. Refuse the shrink unless --force.
+            current_links = db.query(LocationCatalogLink).count()
+            incoming_links = sum(len(e.links) for e in entries)
+            if not force and incoming_links < current_links:
+                raise StaleImportError(
+                    f"Refusing to import: incoming JSON has {incoming_links} links, "
+                    f"DB currently has {current_links}. This --import-db would DELETE "
+                    "and shrink the catalog — almost always a stale data/location_catalog.json "
+                    "(git pull origin main first). If this reduction is intentional "
+                    "(e.g. removing a bad link), pass --force."
+                )
             db.query(LocationCatalogLink).delete()
             db.query(LocationCatalog).delete()
             db.flush()
@@ -305,6 +327,11 @@ def main() -> int:
     parser.add_argument("--json", type=Path, default=DEFAULT_JSON)
     parser.add_argument("--import-db", action="store_true", help="Load into PostgreSQL")
     parser.add_argument("--from-json", action="store_true", help="Import from JSON instead of XLSX")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Allow --import-db to shrink the catalog (bypasses the stale-JSON guard)",
+    )
     args = parser.parse_args()
 
     if args.from_json:
@@ -321,7 +348,11 @@ def main() -> int:
     print(f"JSON: {args.json}")
 
     if args.import_db:
-        stats = import_to_db(entries)
+        try:
+            stats = import_to_db(entries, force=args.force)
+        except StaleImportError as exc:
+            print(f"DB import ABORTED: {exc}", file=sys.stderr)
+            return 1
         print(f"DB import: {stats}")
 
     return 0
