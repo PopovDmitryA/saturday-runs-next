@@ -285,7 +285,7 @@
     "active_platform": null,
     "legacy_parkrun_slug": "ekaterinburgzelenayaroscha",
     "is_closed": true,
-    "notes": "Автосопоставление не найдено (parkrun slug: ekaterinburgzelenayaroscha). Заполните вручную.; не существуюет в других системах",
+    "notes": "Только parkrun (2018–2019). Преемника в 5 вёрст/S95/RunPark нет — проверено вручную.",
     "links": [
       {
         "platform": "parkrun",
@@ -979,7 +979,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "nizhnynovgorodmeshchersky",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: nizhnynovgorodmeshchersky). Заполните вручную.; Это вот эта локация https://5verst.ru/meshcherskoeozero/ в нашей базе по 5 верст она есть",
+    "notes": "Нижний Новгород: связана 5 вёрст-локация meshcherskoeozero (https://5verst.ru/meshcherskoeozero/).",
     "links": [
       {
         "platform": "parkrun",
@@ -1153,7 +1153,7 @@
     "active_platform": null,
     "legacy_parkrun_slug": "parkguskova",
     "is_closed": true,
-    "notes": "Автосопоставление не найдено (parkrun slug: parkguskova). Заполните вручную.; более не существуют",
+    "notes": "Только parkrun, площадка закрыта. Преемника в других системах нет.",
     "links": [
       {
         "platform": "parkrun",
@@ -1185,7 +1185,7 @@
     "active_platform": "s95",
     "legacy_parkrun_slug": "parktalalikhina",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: parktalalikhina). Заполните вручную.; Вот эта локация в с95 https://s95.ru/events/podolsk",
+    "notes": "Подольск: связана S95-локация podolsk (https://s95.ru/events/podolsk).",
     "links": [
       {
         "platform": "parkrun",
@@ -1431,7 +1431,7 @@
     "active_platform": "runpark",
     "legacy_parkrun_slug": "ryazancentral",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: ryazancentral). Заполните вручную.; Эта локация есть в четвертой системе runpark, но я о ней тебе еще ничего не рассказывал, поэтому пока оставляем только в паркране",
+    "notes": "Только parkrun (2014–2020). ЕСТЬ ТАКЖЕ В RUNPARK, но эта площадка ещё не засинкана в нашей БД (нет Location-строки) — связку заводить не из чего, ждём синка RunPark по Рязани.",
     "links": [
       {
         "platform": "parkrun",
@@ -1445,7 +1445,7 @@
     "active_platform": "runpark",
     "legacy_parkrun_slug": "ryazanoreshek",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: ryazanoreshek). Заполните вручную.; Эта локация есть в четвертой системе runpark, но я о ней тебе еще ничего не рассказывал, поэтому пока оставляем только в паркране",
+    "notes": "Только parkrun (2018–2020). ЕСТЬ ТАКЖЕ В RUNPARK, но эта площадка ещё не засинкана в нашей БД (нет Location-строки) — связку заводить не из чего, ждём синка RunPark по Рязани.",
     "links": [
       {
         "platform": "parkrun",
@@ -1517,7 +1517,7 @@
     "active_platform": null,
     "legacy_parkrun_slug": "severnyrechnoyvokzal",
     "is_closed": true,
-    "notes": "Автосопоставление не найдено (parkrun slug: severnyrechnoyvokzal). Заполните вручную.; более не существуют",
+    "notes": "Только parkrun, площадка закрыта. Преемника в других системах нет.",
     "links": [
       {
         "platform": "parkrun",
@@ -1625,7 +1625,7 @@
     "active_platform": null,
     "legacy_parkrun_slug": "staryesady",
     "is_closed": true,
-    "notes": "Автосопоставление не найдено (parkrun slug: staryesady). Заполните вручную.; более не существуют",
+    "notes": "Только parkrun, площадка закрыта. Преемника в других системах нет.",
     "links": [
       {
         "platform": "parkrun",
@@ -1809,7 +1809,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "ufabotanicheskysad",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: ufabotanicheskysad). Заполните вручную.; Это 5 верст такая локация https://5verst.ru/parklesovodov/. Добавлена связка RunPark (runpark-parklesovodov) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
+    "notes": "Уфа: 5 вёрст parklesovodov (https://5verst.ru/parklesovodov/) + RunPark runpark-parklesovodov (тот же slug). RunPark-связка добавлена 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -1859,7 +1859,7 @@
     "active_platform": "s95",
     "legacy_parkrun_slug": "velikiynovgorodkremlevsky",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: velikiynovgorodkremlevsky). Заполните вручную.; это с95 великий новгород https://s95.ru/events/novgorod в базе должен быть. Добавлена связка RunPark (runpark-novgorod) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
+    "notes": "Великий Новгород: S95 novgorod (https://s95.ru/events/novgorod) + RunPark runpark-novgorod (тот же slug). RunPark-связка добавлена 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -1953,7 +1953,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "yarmarochnayaploshchad",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: yarmarochnayaploshchad). Заполните вручную.; Это 5 верст такая локация https://5verst.ru/innopolis/ Иннополис",
+    "notes": "Иннополис: связана 5 вёрст-локация innopolis (https://5verst.ru/innopolis/).",
     "links": [
       {
         "platform": "parkrun",
