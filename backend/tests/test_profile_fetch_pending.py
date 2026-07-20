@@ -69,23 +69,27 @@ def test_enqueue_dedupes_by_external_id(db_session: Session) -> None:
 
 
 def test_preview_enqueues_on_cooldown(db_session: Session, monkeypatch) -> None:
-    from app.platform_adapters.registry import get_adapter
-
     platform = db_session.query(Platform).filter(Platform.code == "parkrun").one()
     platform.is_active = True
     user = _sample_user(db_session)
 
-    def _raise_cooldown(_profile_url: str):
+    def _raise_cooldown(_parsed):
         raise ParkrunBanDetected("parkrun fetch in cooldown until 1780445000")
 
-    monkeypatch.setattr(get_adapter("parkrun"), "fetch_profile_preview", _raise_cooldown)
+    # preview_profile_link(user=...) for parkrun goes through
+    # persist_live_profile_preview -> fetch_profile_preview_activity, not
+    # adapter.fetch_profile_preview — mocking the adapter method here leaves
+    # this call hitting a real (browserless) Playwright launch instead.
+    monkeypatch.setattr(
+        "app.parkrun.parsers.athlete.fetch_profile_preview_activity", _raise_cooldown
+    )
 
     try:
         preview_profile_link(db_session, "parkrun", "3197430", user=user)
         raise AssertionError("expected ProfileLinkingError")
     except ProfileLinkingError as exc:
         assert exc.status_code == 503
-        assert "очередь ожидания" in exc.message
+        assert "добавлена в очередь" in exc.message
 
     pending = list_pending_rows(db_session, platform_code="parkrun")
     assert len(pending) == 1

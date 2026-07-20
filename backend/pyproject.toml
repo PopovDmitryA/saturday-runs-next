@@ -24,6 +24,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0",
+    "pytest-timeout>=2.3.0",
     "httpx>=0.28.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
@@ -66,3 +67,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# Backstop against silent deadlocks (e.g. a re-entrant lock bug) hanging CI
+# for hours instead of failing with a stack trace within a minute.
+timeout = 60
+timeout_method = "thread"

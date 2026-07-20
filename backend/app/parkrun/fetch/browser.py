@@ -17,7 +17,10 @@ PARKRUN_USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
-_browser_lock = threading.Lock()
+# RLock: _ensure_context()'s except-branch calls shutdown_browser() while still
+# holding the lock — a plain Lock would deadlock the thread forever on any
+# Playwright launch failure (missing browser binary, crash, OOM).
+_browser_lock = threading.RLock()
 _playwright: Playwright | None = None
 _browser: Browser | None = None
 _context: BrowserContext | None = None
