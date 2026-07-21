@@ -1011,6 +1011,7 @@ export type DigestCard = {
   location_name: string;
   city: string | null;
   country: string | null;
+  location_url: string | null;
   platform_code: string;
   platform_name: string;
   telegram_contacts: LocationContactLink[];
