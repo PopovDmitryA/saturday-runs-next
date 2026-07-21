@@ -9524,11 +9524,22 @@ tr.run-crosslinked td {
   width: 6.25rem;
 }
 
+/* «В среднем» и «Рекорд явки» — заголовки длиннее, чем влезает в col-metric. */
+.loc-index-table .col-metric-wide {
+  width: 8rem;
+}
+
 /* Колонок с фиксированной шириной много (метрики + рекорды + даты): без
    min-width колонка «Локация» схлопывается в ноль, вместо этого скроллим
    обёртку по горизонтали. */
 .loc-index-table {
-  min-width: 66rem;
+  min-width: 78rem;
+}
+
+/* Каталог локаций шире остальных страниц (--layout-max-width: 864px):
+   таблица на 10 колонок в общую ширину не помещается. */
+.shell-content:has(.loc-index-page) {
+  max-width: 1440px;
 }
 
 .loc-index-table td.td-location {

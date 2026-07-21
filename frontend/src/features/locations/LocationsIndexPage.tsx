@@ -16,6 +16,8 @@ type SortKey =
   | "city"
   | "events_count"
   | "finishers_total"
+  | "avg_finishers"
+  | "attendance_record"
   | "best_male"
   | "best_female"
   | "first_event_date";
@@ -24,6 +26,24 @@ type SortKey =
 // (у времени «лучше» = меньше).
 const ASC_FIRST_KEYS: SortKey[] = ["name", "city", "best_male", "best_female"];
 type SortState = { key: SortKey; asc: boolean };
+
+/** Средняя явка — сколько человек финиширует на этой площадке в обычную субботу. */
+function avgFinishers(item: LocationIndexItem): number | null {
+  if (!item.events_count || !item.finishers_total) {
+    return null;
+  }
+  return item.finishers_total / item.events_count;
+}
+
+function formatAvgFinishers(item: LocationIndexItem): string {
+  const value = avgFinishers(item);
+  if (value === null) {
+    return "—";
+  }
+  // Меньше десяти человек — один знак после запятой: разница 4,2 и 4,8
+  // для маленькой площадки существенна, для сотенной — шум.
+  return value < 10 ? value.toFixed(1).replace(".", ",") : String(Math.round(value));
+}
 
 function matchesQuery(item: LocationIndexItem, query: string): boolean {
   const haystack = [item.name, item.city, item.region, item.country]
@@ -43,6 +63,10 @@ function sortValue(item: LocationIndexItem, key: SortKey): number | string | nul
       return item.events_count;
     case "finishers_total":
       return item.finishers_total;
+    case "avg_finishers":
+      return avgFinishers(item);
+    case "attendance_record":
+      return item.attendance_record_finishers;
     case "best_male":
       return item.best_male_time_sec;
     case "best_female":
@@ -128,6 +152,8 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
           <col className="col-platform" />
           <col className="col-metric" />
           <col className="col-metric" />
+          <col className="col-metric-wide" />
+          <col className="col-metric-wide" />
           <col className="col-metric" />
           <col className="col-metric" />
           <col className="col-date" />
@@ -148,6 +174,16 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
               {...sortProps("finishers_total")}
             />
             <ColumnHeader
+              label="В среднем"
+              headerTitle="Средняя явка: финишей за всё время ÷ число стартов"
+              {...sortProps("avg_finishers")}
+            />
+            <ColumnHeader
+              label="Рекорд явки"
+              headerTitle="Максимум финишей за один старт (в подсказке — дата)"
+              {...sortProps("attendance_record")}
+            />
+            <ColumnHeader
               label="LR М"
               headerTitle="Location record — лучшее время мужчины на этой локации за всю историю"
               {...sortProps("best_male")}
@@ -166,7 +202,7 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
         <tbody>
           {sorted.length === 0 ? (
             <tr>
-              <td colSpan={8} className="table-empty-cell">
+              <td colSpan={10} className="table-empty-cell">
                 <span className="muted">Нет локаций по фильтрам</span>
               </td>
             </tr>
@@ -190,6 +226,17 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                 </td>
                 <td className="td-compact">{item.events_count || "—"}</td>
                 <td className="td-compact">{item.finishers_total || "—"}</td>
+                <td className="td-compact">{formatAvgFinishers(item)}</td>
+                <td
+                  className="td-compact"
+                  title={
+                    item.attendance_record_date
+                      ? `Рекорд явки: ${formatDate(item.attendance_record_date)}`
+                      : undefined
+                  }
+                >
+                  {item.attendance_record_finishers ?? "—"}
+                </td>
                 <td className="td-compact">
                   {formatFinishTimeValue(item.best_male_time_display, item.best_male_time_sec)}
                 </td>
@@ -249,7 +296,7 @@ function LocationsIndexContent({ currentUser }: { currentUser: User }) {
         </p>
       </header>
 
-      <section className="card loc-section">
+      <section className="card loc-section loc-index-page">
         <div className="loc-index-toolbar">
           <input
             className="input loc-index-search"

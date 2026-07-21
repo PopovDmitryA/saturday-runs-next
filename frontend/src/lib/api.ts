@@ -1675,6 +1675,8 @@ export type LocationIndexItem = {
   best_male_time_display: string | null;
   best_female_time_sec: number | null;
   best_female_time_display: string | null;
+  attendance_record_finishers: number | null;
+  attendance_record_date: string | null;
 };
 
 export type LocationsIndexResponse = {

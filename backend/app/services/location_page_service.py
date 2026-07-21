@@ -52,7 +52,7 @@ HISTOGRAM_BIN_SEC = 10
 # TTL, а не точечная инвалидация: синк идёт множеством независимых batch-джоб
 # по трём платформам — вешать инвалидацию на каждую было бы куда инвазивнее,
 # чем оправдывает выигрыш (эти цифры не обязаны быть live).
-LOCATIONS_INDEX_CACHE_KEY = "locations:index:v3"
+LOCATIONS_INDEX_CACHE_KEY = "locations:index:v4"
 LOCATIONS_INDEX_CACHE_TTL_SECONDS = 3 * 60 * 60
 # Страница/журнал/рейтинги одной локации — тоже тяжёлые (resolve_location_identity
 # перечитывает ВСЕ локации + весь каталог на каждый вызов, плюс десяток
@@ -1082,6 +1082,8 @@ class _IndexIdentityStat:
     last_event_date: date | None = None
     best_male_time_sec: int | None = None
     best_female_time_sec: int | None = None
+    attendance_record_finishers: int | None = None
+    attendance_record_date: date | None = None
 
 
 def _bulk_identity_stats(
@@ -1137,6 +1139,9 @@ def _bulk_identity_stats(
         finishers = protocol_counts.get(event_id) or finishers_count
         if finishers:
             stat.finishers_total += finishers
+            if stat.attendance_record_finishers is None or finishers > stat.attendance_record_finishers:
+                stat.attendance_record_finishers = finishers
+                stat.attendance_record_date = event_date
         if stat.first_event_date is None or event_date < stat.first_event_date:
             stat.first_event_date = event_date
         if stat.last_event_date is None or event_date > stat.last_event_date:
@@ -1361,6 +1366,8 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
                     if stat and stat.best_male_time_sec is not None
                     else None
                 ),
+                "attendance_record_finishers": stat.attendance_record_finishers if stat else None,
+                "attendance_record_date": stat.attendance_record_date if stat else None,
                 "best_female_time_sec": stat.best_female_time_sec if stat else None,
                 "best_female_time_display": (
                     format_finish_time_display(stat.best_female_time_sec)

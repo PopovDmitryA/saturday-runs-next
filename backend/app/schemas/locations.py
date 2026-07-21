@@ -259,6 +259,8 @@ class LocationIndexItemResponse(BaseModel):
     best_male_time_display: str | None = None
     best_female_time_sec: int | None = None
     best_female_time_display: str | None = None
+    attendance_record_finishers: int | None = None
+    attendance_record_date: date | None = None
 
 
 class LocationsIndexResponse(BaseModel):
