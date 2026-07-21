@@ -3,6 +3,7 @@ import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAuth } from "../../components/RequireAuth";
+import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { SiteHeader } from "../../components/SiteHeader";
 import { getLocationsIndex, logout, type LocationIndexItem, type User } from "../../lib/api";
 import { formatDate, formatFinishTimeValue, pluralizeRu } from "../../lib/format";
@@ -345,6 +346,7 @@ function LocationsIndexContent({ currentUser }: { currentUser: User }) {
           </>
         )}
       </section>
+      <ScrollToTopButton />
     </IndexShell>
   );
 }

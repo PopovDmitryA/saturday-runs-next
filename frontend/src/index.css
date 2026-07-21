@@ -367,6 +367,41 @@ body {
   max-width: var(--layout-max-width);
   margin: 0 auto;
   padding: 0.5rem 1rem 2rem;
+  /* Ширина колонки контента — от неё пляшет кнопка «наверх»; страницы с другой
+     шириной (раздел локаций) переопределяют переменную у себя. */
+  --page-content-width: var(--layout-max-width);
+}
+
+/* Кнопка «наверх» — длинные таблицы (журнал протоколов, каталог локаций)
+   листаются далеко вниз. Привязана к правому краю КОНТЕНТА, а не экрана: на
+   широком мониторе контент центрирован, и кнопка у края окна была бы далеко
+   от таблицы. calc() даёт то же положение, что дал бы getBoundingClientRect
+   у .shell-content, но без JS и без риска разъехаться при ресайзе; «+1rem» —
+   паддинг контейнера, «-2.75rem-0.75rem» (ширина кнопки + зазор) отодвигает
+   её ЗА край, чтобы не перекрывала последнюю колонку. На узких экранах
+   формула уходит в минус — max() возвращает обычный отступ от края экрана. */
+.scroll-top-btn {
+  position: fixed;
+  right: max(1.25rem, calc((100vw - var(--page-content-width)) / 2 + 1rem - 2.75rem - 0.75rem));
+  bottom: 1.25rem;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong, var(--border));
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.22);
+}
+
+.scroll-top-btn:hover {
+  color: var(--accent-indigo-text);
 }
 
 .visually-hidden {
@@ -9602,6 +9637,8 @@ tr.run-crosslinked td {
    не помещаются. */
 .shell-content:has(.loc-wide-page) {
   max-width: 1440px;
+  /* Кнопка «наверх» позиционируется от края контента — здесь он шире общего. */
+  --page-content-width: 1440px;
   /* На широком макете подсказка последнего столбца гистограммы вылезает за
      правый край и даёт странице горизонтальный скролл. Именно clip (а не
      hidden): по вертикали переполнение остаётся видимым, подсказки над
@@ -9717,6 +9754,31 @@ tr.run-crosslinked td {
 .loc-events-table td.td-time,
 .loc-events-table td.td-compact {
   white-space: nowrap;
+}
+
+/* Шапка журнала должна липнуть к верху ОКНА. Базовый .table-wrap задаёт
+   overflow-x: auto, а по спеке overflow-x: auto + overflow-y: visible
+   форсит overflow-y в auto — обёртка становится скролл-контейнером, и
+   sticky-шапка липнет к её верхнему краю, то есть уезжает вместе с ней.
+   Составной селектор (специфичность выше одноклассового .table-wrap)
+   возвращает overflow-x: visible: прокручивается страница целиком. */
+.table-wrap.loc-events-wrap {
+  overflow-x: visible;
+}
+
+@media (max-width: 1200px) {
+  /* Уже этой ширины 10 колонок журнала без горизонтального скролла не
+     помещаются — включаем его обратно (ценой sticky-шапки на узких экранах). */
+  .table-wrap.loc-events-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Своя подложка вместо прозрачной: под шапкой при прокрутке проезжают строки. */
+.loc-events-table thead th {
+  background: var(--surface);
+  top: 0;
 }
 
 .loc-events-table .col-date {
