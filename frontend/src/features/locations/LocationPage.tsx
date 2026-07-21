@@ -423,7 +423,7 @@ function LocationPageContent({ slug, currentUser }: { slug: string; currentUser:
 
   return (
     <LocationShell currentUser={currentUser}>
-      <header className="loc-header">
+      <header className="loc-header loc-wide-page">
         <p className="muted loc-header-breadcrumb">
           <a href="/locations">← Все локации</a> / {page.name}
         </p>

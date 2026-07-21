@@ -296,7 +296,7 @@ function LocationsIndexContent({ currentUser }: { currentUser: User }) {
         </p>
       </header>
 
-      <section className="card loc-section loc-index-page">
+      <section className="card loc-section loc-wide-page">
         <div className="loc-index-toolbar">
           <input
             className="input loc-index-search"
