@@ -415,7 +415,14 @@ def auth_me(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     settings: Annotated[Settings, Depends(get_settings)],
+    request: Request,
+    response: Response,
 ) -> UserResponse:
+    # Скользящая сессия: фронт зовёт /me при каждом открытии сайта — заодно
+    # продлеваем max_age куки (TTL в Redis продлён при валидации сессии).
+    signed_session = request.cookies.get(settings.session_cookie_name)
+    if signed_session:
+        _set_session_cookie(response, settings, signed_session)
     return _user_payload(db, user, settings)
 
 

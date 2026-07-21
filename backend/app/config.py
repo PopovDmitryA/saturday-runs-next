@@ -36,7 +36,9 @@ class Settings(BaseSettings):
     report_database_url: str = ""
 
     session_cookie_name: str = "sr_session"
-    session_ttl_seconds: int = 72 * 3600
+    # Скользящая сессия: TTL отсчитывается заново при каждом визите (см. core/session.py),
+    # поэтому вылет только после месяца полного отсутствия.
+    session_ttl_seconds: int = 30 * 24 * 3600
     magic_link_ttl_seconds: int = 300
     login_request_ttl_seconds: int = 600
 
