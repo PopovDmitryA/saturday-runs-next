@@ -6,6 +6,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.models import (
+    Participant,
     Platform,
     ProfileFetchPending,
     ProfileFetchPendingOperation,
@@ -19,6 +20,7 @@ from app.services.profile_fetch_pending_service import (
     MAX_RETRY_ATTEMPTS,
     PERMANENT_ERROR_PREFIX,
     RUNPARK_SEED_NOTE_PREFIX,
+    describe_processed_profile,
     enqueue_profile_fetch_pending,
     is_fetch_cooldown_error,
     list_pending_rows,
@@ -343,3 +345,26 @@ def test_cooldown_exhausted_after_max_attempts_gives_up_permanently(
     reset_count = reset_failed_pending(db_session, "s95")
     assert reset_count == 0
     assert row.status == ProfileFetchPendingStatus.failed
+
+
+def test_describe_processed_profile_returns_url_and_name(db_session: Session) -> None:
+    platform = db_session.query(Platform).filter(Platform.code == "parkrun").one()
+    db_session.add(
+        Participant(
+            platform_id=platform.id,
+            external_user_id="5003845",
+            display_name="Иван ИВАНОВ",
+            profile_url="https://www.parkrun.org.uk/parkrunner/5003845/",
+        )
+    )
+    db_session.commit()
+
+    description = describe_processed_profile(db_session, "parkrun", "5003845")
+    assert description == "→ https://www.parkrun.org.uk/parkrunner/5003845/  Иван ИВАНОВ"
+
+
+def test_describe_processed_profile_none_for_unknown_or_missing_id(
+    db_session: Session,
+) -> None:
+    assert describe_processed_profile(db_session, "parkrun", None) is None
+    assert describe_processed_profile(db_session, "parkrun", "no-such-id") is None

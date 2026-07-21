@@ -23,6 +23,7 @@ from app.parkrun.fetch.daemon_session import (
 )
 from app.services.parkrun_local_worker import prepare_parkrun_cdp_fetch, sync_parkrun_runs_for_user
 from app.services.profile_fetch_pending_service import (
+    describe_processed_profile,
     list_pending_rows,
     process_pending_row,
     requeue_stuck_done_parkrun_pending,
@@ -156,15 +157,16 @@ def _manual_sync_link_ids(db: Session, link_ids: list[UUID]) -> set[UUID]:
     return manual_ids
 
 
-def _process_pending_item(db: Session, item: ParkrunWorkItem) -> tuple[str, UUID | None]:
+def _process_pending_item(db: Session, item: ParkrunWorkItem) -> tuple[str, UUID | None, str | None]:
     if item.pending_id is None:
-        return "error", None
+        return "error", None, None
     row = db.get(ProfileFetchPending, item.pending_id)
     if row is None:
-        return "error", None
+        return "error", None, None
     outcome = process_pending_row(db, row)
     user_id = row.user_id if outcome == "done" else None
-    return outcome, user_id
+    external_user_id = row.external_user_id if outcome == "done" else None
+    return outcome, user_id, external_user_id
 
 
 def run_parkrun_queue_daemon(
@@ -181,9 +183,13 @@ def run_parkrun_queue_daemon(
         session.show_status(f"{index}/{total}: {item.kind} {item.label}")
         try:
             if item.kind == "pending":
-                outcome, user_id = _process_pending_item(db, item)
+                outcome, user_id, external_user_id = _process_pending_item(db, item)
                 summary[outcome] = summary.get(outcome, 0) + 1
                 details.append(f"{outcome}: {item.label}")
+                if outcome == "done":
+                    description = describe_processed_profile(db, "parkrun", external_user_id)
+                    if description:
+                        session.show_status(description)
                 if outcome == "done" and user_id is not None:
                     # Импорт только что стянул страницы атлета — user-sync
                     # переиспользует их (в пределах окна) вместо второго фетча.
@@ -194,6 +200,9 @@ def run_parkrun_queue_daemon(
                     key = "sync_ok" if sync_line.startswith("sync_ok") else "sync_error"
                     summary[key] = summary.get(key, 0) + 1
             elif item.kind == "sync" and item.user_id is not None:
+                description = describe_processed_profile(db, "parkrun", item.label)
+                if description:
+                    session.show_status(description)
                 sync_line = sync_parkrun_runs_for_user(db, item.user_id, label=item.label)
                 details.append(sync_line)
                 key = "sync_ok" if sync_line.startswith("sync_ok") else "sync_error"

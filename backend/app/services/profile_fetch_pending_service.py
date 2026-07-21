@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.five_verst.errors import FiveVerstBanDetected
 from app.models import (
+    Participant,
     Platform,
     PlatformLink,
     ProfileFetchPending,
@@ -189,6 +190,28 @@ def _get_platform(db: Session, platform_code: str) -> Platform:
     if platform is None:
         raise ValueError(f"Platform not found: {platform_code}")
     return platform
+
+
+def describe_processed_profile(
+    db: Session, platform_code: str, external_user_id: str | None
+) -> str | None:
+    """Ссылка + ФИО только что обработанного бегуна — для краткого статуса
+    демона (--quiet), а не для полного лога. None, если участник ещё не
+    успел появиться в БД (сбой до создания Participant)."""
+    if not external_user_id:
+        return None
+    participant = (
+        db.query(Participant)
+        .join(Platform, Platform.id == Participant.platform_id)
+        .filter(
+            Platform.code == platform_code,
+            Participant.external_user_id == external_user_id,
+        )
+        .one_or_none()
+    )
+    if participant is None:
+        return None
+    return f"→ {participant.profile_url or '?'}  {participant.display_name or '?'}"
 
 
 def _complete_pending_profile_link(
