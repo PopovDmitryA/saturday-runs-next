@@ -35,6 +35,14 @@ function avgFinishers(item: LocationIndexItem): number | null {
   return item.finishers_total / item.events_count;
 }
 
+/** Рекорд локации — как в журнале протоколов: без ведущих «00:» часов. */
+function formatRecord(display: string | null, sec: number | null): string {
+  if (sec === null && !display) {
+    return "—";
+  }
+  return formatFinishTimeValue(display, sec).replace(/^00:/, "");
+}
+
 function formatAvgFinishers(item: LocationIndexItem): string {
   const value = avgFinishers(item);
   if (value === null) {
@@ -184,13 +192,13 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
               {...sortProps("attendance_record")}
             />
             <ColumnHeader
-              label="LR М"
-              headerTitle="Location record — лучшее время мужчины на этой локации за всю историю"
+              label="Луч. М"
+              headerTitle="Рекорд локации (LR): лучшее время мужчины здесь за всю историю"
               {...sortProps("best_male")}
             />
             <ColumnHeader
-              label="LR Ж"
-              headerTitle="Location record — лучшее время женщины на этой локации за всю историю"
+              label="Луч. Ж"
+              headerTitle="Рекорд локации (LR): лучшее время женщины здесь за всю историю"
               {...sortProps("best_female")}
             />
             <ColumnHeader
@@ -237,11 +245,9 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                 >
                   {item.attendance_record_finishers ?? "—"}
                 </td>
+                <td className="td-compact">{formatRecord(item.best_male_time_display, item.best_male_time_sec)}</td>
                 <td className="td-compact">
-                  {formatFinishTimeValue(item.best_male_time_display, item.best_male_time_sec)}
-                </td>
-                <td className="td-compact">
-                  {formatFinishTimeValue(item.best_female_time_display, item.best_female_time_sec)}
+                  {formatRecord(item.best_female_time_display, item.best_female_time_sec)}
                 </td>
                 <td>{item.first_event_date ? formatDate(item.first_event_date) : "—"}</td>
               </tr>
