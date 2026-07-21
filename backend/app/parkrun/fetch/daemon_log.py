@@ -23,12 +23,25 @@ from pathlib import Path
 # Логгер справочных строк «в моменте». Свой stdout-хендлер (терминал) +
 # propagate в root (файл). Библиотечные логгеры stdout-хендлера не имеют,
 # поэтому их трейсбэки в терминал не попадают.
-console = logging.getLogger("parkrun.daemon.console")
+CONSOLE_LOGGER_NAME = "parkrun.daemon.console"
+console = logging.getLogger(CONSOLE_LOGGER_NAME)
 
 
 def cline(message: str) -> None:
     """Справочная строка в терминал (и в файл-лог) с таймстампом."""
     console.info(message)
+
+
+class _DropLibraryInfo(logging.Filter):
+    """Режет из файла только БИБЛИОТЕЧНЫЙ INFO (httpx, DB flush, page-load),
+    но оставляет справочные строки демона и всё WARNING+ (включая трейсбэки).
+    Без этого QUIET выпиливал из файла прогресс-контекст, и трейсбэки
+    оставались без «кто/что обрабатывался» — файл становился бесполезным."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.WARNING:
+            return True
+        return record.name.startswith(CONSOLE_LOGGER_NAME)
 
 
 def setup_daemon_logging(log_file: Path, *, quiet: bool = False) -> Path:
@@ -41,13 +54,16 @@ def setup_daemon_logging(log_file: Path, *, quiet: bool = False) -> Path:
     for handler in list(root.handlers):
         root.removeHandler(handler)
 
-    # Файл — всё: библиотечные логи + трейсбэки + справочные строки.
-    # quiet срезает библиотечный INFO из файла (остаются WARNING+ и трейсбэки).
+    # Файл — всё: справочные строки демона + библиотечные логи + трейсбэки.
+    # quiet НЕ трогает справочные строки и WARNING+ (иначе трейсбэки без
+    # контекста), а лишь режет библиотечный INFO-шум.
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setLevel(logging.WARNING if quiet else logging.INFO)
+    file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(
         logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     )
+    if quiet:
+        file_handler.addFilter(_DropLibraryInfo())
     root.addHandler(file_handler)
 
     # Терминал — только строки из cline(), коротким форматом с таймстампом.
