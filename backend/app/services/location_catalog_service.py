@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.models import Location, LocationCatalog, LocationCatalogLink, Platform
+from app.models import EventSummary, Location, LocationCatalog, LocationCatalogLink, Platform
 
 DISPLAY_OVERRIDE_PLATFORMS = frozenset({"five_verst", "s95"})
 
@@ -58,7 +58,10 @@ class LocationCatalogIndex:
         self._by_platform_slug: dict[tuple[str, str], LocationCatalog] = {}
         self._catalogs: dict[UUID, LocationCatalog] = {}
         self._catalog_coords: dict[UUID, tuple[float, float]] = {}
-        self._catalog_paused: dict[UUID, bool] = {}
+        # Голоса «на паузе» по каталожному узлу: отдельно от платформ с забегами
+        # и от платформ без единого события (у них флаг паузы ничего не значит).
+        self._catalog_pause_votes: dict[UUID, tuple[int, int]] = {}
+        self._catalog_pause_fallback: dict[UUID, tuple[int, int]] = {}
         self._load(db)
 
     def _index_platform_slug(self, platform_code: str, slug: str, catalog: LocationCatalog) -> None:
@@ -69,7 +72,17 @@ class LocationCatalogIndex:
         if normalized:
             self._by_platform_slug[(platform_code, normalized)] = catalog
 
+    def _add_pause_vote(self, catalog_id: UUID, *, has_events: bool, is_paused: bool) -> None:
+        target = self._catalog_pause_votes if has_events else self._catalog_pause_fallback
+        paused, total = target.get(catalog_id, (0, 0))
+        target[catalog_id] = (paused + int(is_paused), total + 1)
+
     def _load(self, db: Session) -> None:
+        locations_with_events = {
+            location_id
+            for (location_id,) in db.query(EventSummary.location_id).distinct().all()
+            if location_id is not None
+        }
         rows = (
             db.query(LocationCatalogLink, LocationCatalog, Platform, Location)
             .join(LocationCatalog, LocationCatalogLink.catalog_id == LocationCatalog.id)
@@ -88,8 +101,12 @@ class LocationCatalogIndex:
                 self._index_platform_slug(platform.code, location.external_key, catalog)
             if location is not None and location.latitude is not None and location.longitude is not None:
                 self._catalog_coords.setdefault(catalog.id, (location.latitude, location.longitude))
-            if location is not None and getattr(location, "is_paused", False):
-                self._catalog_paused[catalog.id] = True
+            if location is not None and not getattr(location, "is_cancelled", False):
+                self._add_pause_vote(
+                    catalog.id,
+                    has_events=location.id in locations_with_events,
+                    is_paused=bool(getattr(location, "is_paused", False)),
+                )
 
     def get_for_location(self, location: Location, platform_code: str) -> LocationCatalog | None:
         if location.id in self._by_location_id:
@@ -127,22 +144,34 @@ class LocationCatalogIndex:
             return None, None
         return coords
 
+    def _catalog_is_paused(self, catalog: LocationCatalog) -> bool:
+        """Узел на паузе, только если на паузе все платформы, где вообще есть забеги.
+
+        Иначе одна остановленная связка (напр. историческая runpark-строка без
+        событий) гасила бы локацию, где по другой платформе забеги идут еженедельно.
+        """
+        if catalog.is_closed:
+            return True
+        paused, total = self._catalog_pause_votes.get(catalog.id, (0, 0))
+        if total == 0:
+            # Ни одной платформы с событиями — считаем по всем связкам разом.
+            paused, total = self._catalog_pause_fallback.get(catalog.id, (0, 0))
+            return total > 0 and paused > 0
+        return paused == total
+
     def is_paused(self, location: Location, platform_code: str) -> bool:
         if getattr(location, "is_cancelled", False):
             return False
         catalog = self.get_for_location(location, platform_code)
         if catalog is not None:
-            if catalog.is_closed or self._catalog_paused.get(catalog.id, False):
-                return True
+            return self._catalog_is_paused(catalog)
         return bool(getattr(location, "is_paused", False))
 
     def is_paused_identity_key(self, identity_key: str) -> bool:
         catalog = self.get_for_identity_key(identity_key)
         if catalog is None:
             return False
-        if catalog.is_closed:
-            return True
-        return self._catalog_paused.get(catalog.id, False)
+        return self._catalog_is_paused(catalog)
 
     def display_name(self, location: Location, platform_code: str) -> str:
         catalog = self.get_for_location(location, platform_code)

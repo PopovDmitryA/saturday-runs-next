@@ -19,12 +19,9 @@ def _collect_dates(platforms: list[dict[str, object]], field: str) -> list[str]:
 
 
 def _location_is_paused(location: Location, catalog_index: LocationCatalogIndex, platform_code: str) -> bool:
-    if location.is_cancelled:
-        return False
-    if location.is_paused:
-        return True
-    catalog = catalog_index.get_for_location(location, platform_code)
-    return catalog.is_closed if catalog is not None else False
+    # Для каталожных узлов пауза считается по всем платформам сразу
+    # (см. LocationCatalogIndex._catalog_is_paused), а не по одной строке.
+    return catalog_index.is_paused(location, platform_code)
 
 
 def _location_is_cancelled(location: Location) -> bool:
