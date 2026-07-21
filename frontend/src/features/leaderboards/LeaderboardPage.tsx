@@ -292,27 +292,40 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               </p>
             </header>
 
-            {hasGenderSplit && (
-              <div className="lb-gender">
-                <div className="lb-gender-tabs" role="tablist" aria-label="Зачёт по полу">
-                  {GENDER_TABS.map((tab) => (
-                    <button
-                      key={tab.value}
-                      type="button"
-                      role="tab"
-                      aria-selected={gender === tab.value}
-                      className={`lb-gender-tab${gender === tab.value ? " lb-gender-tab-active" : ""}`}
-                      onClick={() => setGender(tab.value)}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-                {effectiveGender !== "all" && (
-                  <p className="lb-gender-note muted">parkrun в разбивку по полу не входит.</p>
+            <div className="lb-controls-row">
+              <div className="lb-controls-left">
+                {hasGenderSplit && (
+                  <div className="lb-gender">
+                    <div className="lb-gender-tabs" role="tablist" aria-label="Зачёт по полу">
+                      {GENDER_TABS.map((tab) => (
+                        <button
+                          key={tab.value}
+                          type="button"
+                          role="tab"
+                          aria-selected={gender === tab.value}
+                          className={`lb-gender-tab${gender === tab.value ? " lb-gender-tab-active" : ""}`}
+                          onClick={() => setGender(tab.value)}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                    {effectiveGender !== "all" && (
+                      <p className="lb-gender-note muted">parkrun в разбивку по полу не входит.</p>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
+              <div className="lb-controls-right">
+                <input
+                  className="lb-search"
+                  type="search"
+                  placeholder="Поиск по имени…"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </div>
+            </div>
 
             {me && !(!me.included && me.gender_mismatch) && (
               <section
@@ -363,16 +376,6 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 )}
               </section>
             )}
-
-            <div className="lb-controls">
-              <input
-                className="lb-search"
-                type="search"
-                placeholder="Поиск по имени…"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </div>
 
             <div className="table-wrap lb-table-wrap">
               <table className={`data-table lb-table${metric === "wins" ? " lb-table-wins" : ""}`}>

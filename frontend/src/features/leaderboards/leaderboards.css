@@ -114,11 +114,30 @@
 
 /* --- Контролы --- */
 
-.lb-controls {
+/* Две колонки в одном ряду: слева зачёт по полу (если есть) + заметка про
+   parkrun, справа поиск — раньше это были два отдельных вертикальных блока
+   с поиском far below note, теперь на одном уровне. У метрик без разреза по
+   полу левая колонка пустая (просто отступ), поиск всё так же справа. */
+.lb-controls-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 0.75rem 1.5rem;
+}
+
+.lb-controls-left {
+  min-width: 0;
+}
+
+.lb-controls-right {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .lb-controls-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .lb-sort-hint {
@@ -127,7 +146,6 @@
 }
 
 .lb-search {
-  margin-left: auto;
   padding: 0.4rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -194,23 +212,26 @@
 }
 
 .lb-table .lb-col-num {
-  text-align: right;
+  text-align: center;
   width: 6.4rem;
   white-space: nowrap;
+}
+
+/* Значение+дельта центрируются как единый блок (не текстом, флексом внутри
+   .lb-cell — text-align на td тут ни при чём). Только в теле таблицы: у
+   карточки «я» (.lb-me-value) свой контекст, его не трогаем — там значения
+   выровнены по правому краю подписи платформы. */
+.lb-table .lb-col-num .lb-cell {
+  justify-content: center;
 }
 
 .lb-table .lb-col-total {
   font-weight: 600;
 }
 
-/* Переключатель зачёта по полу (Абсолют / Мужчины / Женщины). Без нижнего
-   отступа: .lb-page — флекс-колонка с gap:1rem, свой margin-bottom складывался
-   бы с этим gap и удваивал разрыв до следующего блока (особенно заметно,
-   когда карточки «я» нет — женский/мужской зачёт не тот пол участника). */
-.lb-gender {
-  margin-top: 0.6rem;
-}
-
+/* Переключатель зачёта по полу (Абсолют / Мужчины / Женщины) — живёт в левой
+   колонке .lb-controls-row, своего отступа не нужно: расстояние до заголовка
+   сверху даёт gap:1rem родительской .lb-page. */
 .lb-gender-tabs {
   display: inline-flex;
   gap: 0.25rem;
@@ -579,17 +600,20 @@ a.lb-hub-card:hover {
   }
 }
 
-/* Кнопка «наверх» — топ-1000 в рейтингах листается далеко вниз */
-/* Привязана к правому краю таблицы (.shell-content: max-width
-   --layout-max-width, margin:0 auto, padding: 0 1rem), а не к краю экрана —
-   на широких мониторах контент центрирован и правый край таблицы далеко от
-   правого края окна. calc() даёт то же положение, что дал бы getBoundingClientRect
-   у .shell-content, без JS и без риска разъехаться при ресайзе. На узких
-   экранах (контент = 100vw - паддинги) формула уходит в минус — max()
+/* Кнопка «наверх» — топ-1000 в рейтингах листается далеко вниз. Привязана к
+   правому краю таблицы (.shell-content: max-width --layout-max-width,
+   margin:0 auto, padding: 0 1rem), а не к краю экрана — на широких мониторах
+   контент центрирован и правый край таблицы далеко от правого края окна.
+   calc() даёт то же положение, что дал бы getBoundingClientRect у
+   .shell-content, без JS и без риска разъехаться при ресайзе; «+1rem»
+   (падding контейнера) доводит до самого края таблицы, а «-2.75rem-0.75rem»
+   (ширина кнопки + зазор) отодвигает её ЗА этот край — иначе кнопка садится
+   вплотную к правому краю и визуально перекрывает последнюю колонку. На
+   узких экранах (контент = 100vw - паддинги) формула уходит в минус — max()
    откатывает к обычному отступу от края экрана. */
 .lb-scroll-top {
   position: fixed;
-  right: max(1.25rem, calc((100vw - var(--layout-max-width)) / 2 + 1rem));
+  right: max(1.25rem, calc((100vw - var(--layout-max-width)) / 2 + 1rem - 2.75rem - 0.75rem));
   bottom: 1.25rem;
   z-index: 400;
   display: flex;
