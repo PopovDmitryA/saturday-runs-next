@@ -59,6 +59,22 @@ def main() -> int:
             "the final summary"
         ),
     )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help=(
+            "EXPERIMENTAL: fetch via plain httpx instead of Playwright — no "
+            "browser, no captcha-solving window. Aborts the whole remaining "
+            "batch on the first sign of WAF protection. Use with a small "
+            "--limit and --fast-delay; carries a real ban risk"
+        ),
+    )
+    parser.add_argument(
+        "--fast-delay",
+        type=float,
+        default=3.0,
+        help="With --no-browser: seconds between requests (jittered ±30%%)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -75,6 +91,8 @@ def main() -> int:
             launch_chrome=not args.no_launch_chrome,
             limit_pending=args.limit,
             include_sync=not args.pending_only,
+            use_httpx=args.no_browser,
+            fast_delay_seconds=args.fast_delay if args.no_browser else None,
         )
 
     print("\n=== Итог ===", flush=True)

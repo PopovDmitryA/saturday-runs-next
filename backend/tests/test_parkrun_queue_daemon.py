@@ -15,7 +15,7 @@ from app.models import (
     SyncJobTrigger,
     User,
 )
-from app.services.parkrun_queue_daemon import build_parkrun_work_queue
+from app.services.parkrun_queue_daemon import ParkrunWorkItem, build_parkrun_work_queue, run_parkrun_queue_daemon
 
 
 def _user(db_session: Session) -> User:
@@ -107,3 +107,44 @@ def test_only_the_latest_sync_job_decides_priority(db_session: Session) -> None:
 
     items = build_parkrun_work_queue(db_session, limit_pending=50)
     assert items[0].user_id == user.id
+
+
+class _FakeSession:
+    """Двойник ParkrunDaemonSession для теста без реального фетча/браузера."""
+
+    def __init__(self) -> None:
+        self.httpx_aborted = False
+        self.status_calls: list[str] = []
+
+    def show_status(self, message: str) -> None:
+        self.status_calls.append(message)
+
+    def human_pause_between_jobs(self) -> None:
+        pass
+
+
+def test_httpx_abort_stops_remaining_batch(db_session: Session, monkeypatch) -> None:
+    """--no-browser: первый же признак защиты WAF должен остановить всю
+    оставшуюся пачку, а не долбить её следующими элементами."""
+    import app.services.parkrun_queue_daemon as daemon_module
+
+    calls: list[str] = []
+    session = _FakeSession()
+
+    def _fake_sync(db, user_id, *, label, **kwargs):  # noqa: ARG001
+        calls.append(label)
+        if label == "first":
+            session.httpx_aborted = True
+        return "sync_ok: stub"
+
+    monkeypatch.setattr(daemon_module, "sync_parkrun_runs_for_user", _fake_sync)
+
+    items = [
+        ParkrunWorkItem(kind="sync", label="first", user_id=uuid4()),
+        ParkrunWorkItem(kind="sync", label="second", user_id=uuid4()),
+        ParkrunWorkItem(kind="sync", label="third", user_id=uuid4()),
+    ]
+
+    run_parkrun_queue_daemon(db_session, session, items)
+
+    assert calls == ["first"]

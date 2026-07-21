@@ -7,6 +7,10 @@
 #   PENDING_ONLY=1 make parkrun   (skip scheduled parkrun syncs)
 #   QUIET=1 make parkrun          (hide DB/HTTP/page-load noise, keep only
 #                                   the N/total progress line and summary)
+#   NO_BROWSER=1 LIMIT=40 make parkrun   (EXPERIMENTAL: plain httpx, no
+#                                          Chromium, no captcha window — real
+#                                          ban risk, keep --limit small;
+#                                          FAST_DELAY=N to tune the pace)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -98,6 +102,12 @@ if [[ "${PENDING_ONLY:-}" == "1" ]]; then
 fi
 if [[ "${QUIET:-}" == "1" ]]; then
   ARGS+=(--quiet)
+fi
+if [[ "${NO_BROWSER:-}" == "1" ]]; then
+  ARGS+=(--no-browser)
+fi
+if [[ -n "${FAST_DELAY:-}" ]]; then
+  ARGS+=(--fast-delay "$FAST_DELAY")
 fi
 
 exec "${CONDA_ENV}/bin/python" "${ROOT}/backend/scripts/parkrun_queue_daemon.py" ${ARGS[@]+"${ARGS[@]}"}

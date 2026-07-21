@@ -214,6 +214,16 @@ def run_parkrun_queue_daemon(
             summary["error"] = summary.get("error", 0) + 1
             details.append(f"error: {item.label} — {exc}")
 
+        if getattr(session, "httpx_aborted", False):
+            # --no-browser словил защиту WAF — дальше пачку не гоняем, нет
+            # смысла добивать оставшиеся N строк той же блокировкой.
+            print(
+                f"[parkrun queue] --no-browser: обнаружена защита, "
+                f"эксперимент остановлен на {index}/{total}.",
+                flush=True,
+            )
+            break
+
         # Чередование очередей: после каждой задачи сайта — один шаг
         # parkrun-monitoring (eventhistory-саммари одной локации).
         if after_item is not None:
@@ -249,6 +259,8 @@ def run_daemon(
     launch_chrome: bool = True,
     limit_pending: int = 50,
     include_sync: bool = True,
+    use_httpx: bool = False,
+    fast_delay_seconds: float | None = None,
 ) -> dict[str, object]:
     from app.config import get_settings
     from app.services.parkrun_monitoring_bridge import (
@@ -302,7 +314,12 @@ def run_daemon(
         cdp = use_cdp if use_cdp is not None else bool(
             settings.parkrun_use_cdp_for_fetch and settings.parkrun_cdp_url.strip()
         )
-        mode = f"Chrome CDP ({cdp_url or settings.parkrun_cdp_url})" if cdp else "Playwright Chromium"
+        if use_httpx:
+            mode = "httpx БЕЗ БРАУЗЕРА (--no-browser, эксперимент)"
+        elif cdp:
+            mode = f"Chrome CDP ({cdp_url or settings.parkrun_cdp_url})"
+        else:
+            mode = "Playwright Chromium"
         # "sync" в items уже без ограничения limit_pending (см. build_parkrun_work_queue),
         # так что len(items)-pending_taken — это и есть точный размер той части
         # backlog'а. "pending" же обрезан лимитом — сравниваем с истинным total.
@@ -320,6 +337,8 @@ def run_daemon(
             use_cdp=use_cdp,
             cdp_url=cdp_url,
             launch_chrome=launch_chrome,
+            use_httpx=use_httpx,
+            fast_delay_seconds=fast_delay_seconds,
         ) as browser_session:
             token = activate_daemon_session(browser_session)
             try:
