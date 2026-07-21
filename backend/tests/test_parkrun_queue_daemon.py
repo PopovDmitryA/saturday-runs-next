@@ -112,15 +112,17 @@ def test_only_the_latest_sync_job_decides_priority(db_session: Session) -> None:
 class _FakeSession:
     """Двойник ParkrunDaemonSession для теста без реального фетча/браузера."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, log: list[str] | None = None) -> None:
         self.httpx_aborted = False
         self.status_calls: list[str] = []
+        self._log = log
 
     def show_status(self, message: str) -> None:
         self.status_calls.append(message)
 
     def human_pause_between_jobs(self) -> None:
-        pass
+        if self._log is not None:
+            self._log.append("pause")
 
 
 def test_httpx_abort_stops_remaining_batch(db_session: Session, monkeypatch) -> None:
@@ -148,3 +150,35 @@ def test_httpx_abort_stops_remaining_batch(db_session: Session, monkeypatch) -> 
     run_parkrun_queue_daemon(db_session, session, items)
 
     assert calls == ["first"]
+
+
+def test_pause_brackets_the_location_step_on_both_sides(db_session: Session, monkeypatch) -> None:
+    """Раньше пауза стояла только ПОСЛЕ локации (перед следующим человеком) —
+    между человеком и локацией её не было вовсе. Теперь human_pause_between_jobs
+    должен вызываться и до, и после after_item()."""
+    import app.services.parkrun_queue_daemon as daemon_module
+
+    log: list[str] = []
+    session = _FakeSession(log=log)
+
+    monkeypatch.setattr(
+        daemon_module,
+        "sync_parkrun_runs_for_user",
+        lambda db, user_id, *, label, **kw: log.append(f"person:{label}") or "sync_ok: stub",
+    )
+
+    def _after_item() -> str | None:
+        log.append("location")
+        return None
+
+    items = [
+        ParkrunWorkItem(kind="sync", label="a", user_id=uuid4()),
+        ParkrunWorkItem(kind="sync", label="b", user_id=uuid4()),
+    ]
+
+    run_parkrun_queue_daemon(db_session, session, items, after_item=_after_item)
+
+    assert log == [
+        "person:a", "pause", "location", "pause",
+        "person:b", "pause", "location",
+    ]

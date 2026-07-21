@@ -10,7 +10,9 @@
 #   NO_BROWSER=1 LIMIT=40 make parkrun   (EXPERIMENTAL: plain httpx, no
 #                                          Chromium, no captcha window — real
 #                                          ban risk, keep --limit small;
-#                                          FAST_DELAY=N to tune the pace)
+#                                          FAST_DELAY_MIN/MAX=N tune the pace,
+#                                          applies both profile<->profile and
+#                                          profile<->location gaps, default 3-5s)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -106,8 +108,11 @@ fi
 if [[ "${NO_BROWSER:-}" == "1" ]]; then
   ARGS+=(--no-browser)
 fi
-if [[ -n "${FAST_DELAY:-}" ]]; then
-  ARGS+=(--fast-delay "$FAST_DELAY")
+if [[ -n "${FAST_DELAY_MIN:-}" ]]; then
+  ARGS+=(--fast-delay-min "$FAST_DELAY_MIN")
+fi
+if [[ -n "${FAST_DELAY_MAX:-}" ]]; then
+  ARGS+=(--fast-delay-max "$FAST_DELAY_MAX")
 fi
 
 exec "${CONDA_ENV}/bin/python" "${ROOT}/backend/scripts/parkrun_queue_daemon.py" ${ARGS[@]+"${ARGS[@]}"}

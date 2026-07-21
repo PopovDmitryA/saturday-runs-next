@@ -225,8 +225,12 @@ def run_parkrun_queue_daemon(
             break
 
         # Чередование очередей: после каждой задачи сайта — один шаг
-        # parkrun-monitoring (eventhistory-саммари одной локации).
+        # parkrun-monitoring (eventhistory-саммари одной локации). Пауза
+        # ставится ДО локации и ПОСЛЕ — иначе получалось "человек → сразу
+        # локация → пауза → следующий человек", без паузы между человеком
+        # и локацией вообще (нашли по факту наблюдения за логами).
         if after_item is not None:
+            session.human_pause_between_jobs()
             line = after_item()
             if line:
                 details.append(line)
@@ -260,7 +264,8 @@ def run_daemon(
     limit_pending: int = 50,
     include_sync: bool = True,
     use_httpx: bool = False,
-    fast_delay_seconds: float | None = None,
+    fast_delay_min_seconds: float | None = None,
+    fast_delay_max_seconds: float | None = None,
 ) -> dict[str, object]:
     from app.config import get_settings
     from app.services.parkrun_monitoring_bridge import (
@@ -338,7 +343,8 @@ def run_daemon(
             cdp_url=cdp_url,
             launch_chrome=launch_chrome,
             use_httpx=use_httpx,
-            fast_delay_seconds=fast_delay_seconds,
+            fast_delay_min_seconds=fast_delay_min_seconds,
+            fast_delay_max_seconds=fast_delay_max_seconds,
         ) as browser_session:
             token = activate_daemon_session(browser_session)
             try:

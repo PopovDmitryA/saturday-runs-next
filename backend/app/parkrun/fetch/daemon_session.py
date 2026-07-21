@@ -64,7 +64,8 @@ class ParkrunDaemonSession:
         launch_chrome: bool = True,
         captcha_poll_seconds: float = 5.0,
         use_httpx: bool = False,
-        fast_delay_seconds: float | None = None,
+        fast_delay_min_seconds: float | None = None,
+        fast_delay_max_seconds: float | None = None,
     ) -> None:
         settings = get_settings()
         self._use_cdp = (
@@ -84,7 +85,8 @@ class ParkrunDaemonSession:
         # Явно opt-in (--no-browser), безопасность — на совести вызывающего:
         # ниже риск бана WAF, чем у Playwright-сессии с прогретым IP/токеном.
         self.use_httpx = use_httpx
-        self.fast_delay_seconds = fast_delay_seconds
+        self.fast_delay_min_seconds = fast_delay_min_seconds
+        self.fast_delay_max_seconds = fast_delay_max_seconds
         self.httpx_aborted = False
         self._httpx_client: httpx_module.Client | None = None
 
@@ -366,8 +368,12 @@ class ParkrunDaemonSession:
         return html
 
     def human_pause_between_jobs(self) -> None:
-        if self.use_httpx and self.fast_delay_seconds is not None:
-            delay = random.uniform(self.fast_delay_seconds * 0.7, self.fast_delay_seconds * 1.3)
+        if (
+            self.use_httpx
+            and self.fast_delay_min_seconds is not None
+            and self.fast_delay_max_seconds is not None
+        ):
+            delay = random.uniform(self.fast_delay_min_seconds, self.fast_delay_max_seconds)
             self.show_status(f"Пауза {delay:.1f} с (--no-browser, ускоренный темп эксперимента)…")
             time.sleep(delay)
             return
