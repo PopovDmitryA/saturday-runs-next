@@ -367,7 +367,7 @@ class ParkrunDaemonSession:
     def human_pause_between_jobs(self) -> None:
         if self.use_httpx and self.fast_delay_seconds is not None:
             delay = random.uniform(self.fast_delay_seconds * 0.7, self.fast_delay_seconds * 1.3)
-            self.show_status(f"Пауза {delay:.1f} с (--no-browser, ускоренный темп эксперимента)…")
+            self.show_status(f"Пауза {delay:.1f} с (--no-browser)…")
             time.sleep(delay)
             return
         settings = get_settings()

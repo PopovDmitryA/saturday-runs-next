@@ -65,17 +65,18 @@ def refresh_monitoring_stats() -> str | None:
     return _run(["sync", "--no-notify"], timeout=900)
 
 
-def monitoring_history_step(limit: int = 1) -> str | None:
-    """Стянуть eventhistory-саммари следующих `limit` локаций (самых несвежих).
+def monitoring_work(limit: int = 50) -> str | None:
+    """Разобрать очередь локаций как воркер `mac` — только при свободной
+    очереди сайта.
 
-    `--push-each` пишет каждую локацию на сервер сразу после выкачки: если
-    прогон прервётся (Ctrl+C, капча, закрытый ноутбук), собранное уже в
-    канонической БД. Коннекты мультиплексируются, см. push_to_server.
+    `work` координируется с серверными воркерами через claim'ы канонической
+    БД (PM_CLAIM_COMMAND в .env репозитория мониторинга), так что Mac и
+    сервер никогда не берут одну локацию. `--push-each` пишет каждую локацию
+    на сервер сразу после выкачки: прерванный прогон ничего не теряет.
     """
     return _run(
-        ["fetch-history", "--limit", str(limit), "--push-each"],
+        ["work", "--worker", "mac", "--limit", str(limit), "--push-each"],
         timeout=180 * limit + 120,
-        marker="history ok:",
     )
 
 

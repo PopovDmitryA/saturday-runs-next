@@ -211,7 +211,7 @@ def describe_processed_profile(
     )
     if participant is None:
         return None
-    return f"→ {participant.profile_url or '?'}  {participant.display_name or '?'}"
+    return f"успех: {participant.display_name or '?'} → {participant.profile_url or '?'}"
 
 
 def _complete_pending_profile_link(

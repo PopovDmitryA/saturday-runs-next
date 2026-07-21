@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, cast
 from uuid import UUID
@@ -198,7 +198,6 @@ def run_parkrun_queue_daemon(
     db: Session,
     session: ParkrunDaemonSession,
     items: list[ParkrunWorkItem],
-    after_item: Callable[[], str | None] | None = None,
 ) -> dict[str, object]:
     summary: dict[str, int] = {}
     details: list[str] = []
@@ -266,18 +265,6 @@ def run_parkrun_queue_daemon(
             )
             break
 
-        # Чередование очередей: после каждой задачи сайта — один шаг
-        # parkrun-monitoring (eventhistory-саммари одной локации). Пауза
-        # ставится ДО локации и ПОСЛЕ — иначе получалось "человек → сразу
-        # локация → пауза → следующий человек", без паузы между человеком
-        # и локацией вообще (нашли по факту наблюдения за логами).
-        if after_item is not None:
-            session.human_pause_between_jobs()
-            line = after_item()
-            if line:
-                details.append(line)
-                cline(f"  {line}")
-
         if index < total:
             session.human_pause_between_jobs()
 
@@ -310,7 +297,7 @@ def run_daemon(
 ) -> dict[str, object]:
     from app.config import get_settings
     from app.services.parkrun_monitoring_bridge import (
-        monitoring_history_step,
+        monitoring_work,
         push_monitoring_to_server,
         refresh_monitoring_stats,
     )
@@ -340,16 +327,7 @@ def run_daemon(
         include_sync=include_sync,
     )
 
-    # Бюджет parkrun-monitoring на этот прогон: LIMIT шагов-саммари всего,
-    # по одному после каждой задачи сайта, остаток — после очереди.
-    monitoring_steps = 0
-
-    def _monitoring_after_item() -> str | None:
-        nonlocal monitoring_steps
-        if monitoring_steps >= limit_pending:
-            return None
-        monitoring_steps += 1
-        return monitoring_history_step(limit=1)
+    queue_was_empty = not items
 
     if not items:
         cline("Очередь parkrun пуста (pending и sync).")
@@ -386,25 +364,19 @@ def run_daemon(
         ) as browser_session:
             token = activate_daemon_session(browser_session)
             try:
-                parkrun_result = run_parkrun_queue_daemon(
-                    db, browser_session, items, after_item=_monitoring_after_item
-                )
+                parkrun_result = run_parkrun_queue_daemon(db, browser_session, items)
             finally:
                 deactivate_daemon_session(token)
 
-    # Обрыв туннеля к прод-БД — не добираем остаток локаций (прогон прерван),
-    # но push уже собранного делаем: он идёт по своему SSH-коннекту к серверу,
-    # прод-туннель ему не нужен.
-    db_lost = bool(cast("dict[str, int]", parkrun_result.get("summary") or {}).get(
-        "db_connection_lost"
-    ))
-    if not db_lost:
-        # Очередь сайта кончилась — добираем оставшийся бюджет саммари одним заходом.
-        remaining = limit_pending - monitoring_steps
-        if remaining > 0:
-            drain_line = monitoring_history_step(limit=remaining)
-            if drain_line:
-                cline(drain_line)
+    # Сбор локаций (parkrun-monitoring) — только при свободной очереди сайта:
+    # очередь профилей приоритетна, карусель «профиль↔локация» убрана
+    # (21.07.2026). Основной сборщик локаций теперь на сервере; Mac помогает
+    # на сдачу, координируясь с ним через claim'ы канонической БД
+    # (PM_CLAIM_COMMAND в .env parkrun-monitoring).
+    if queue_was_empty:
+        work_line = monitoring_work(limit=limit_pending)
+        if work_line:
+            cline(work_line)
 
     push_line = push_monitoring_to_server()
     if push_line:

@@ -152,10 +152,9 @@ def test_httpx_abort_stops_remaining_batch(db_session: Session, monkeypatch) -> 
     assert calls == ["first"]
 
 
-def test_pause_brackets_the_location_step_on_both_sides(db_session: Session, monkeypatch) -> None:
-    """Раньше пауза стояла только ПОСЛЕ локации (перед следующим человеком) —
-    между человеком и локацией её не было вовсе. Теперь human_pause_between_jobs
-    должен вызываться и до, и после after_item()."""
+def test_pause_between_profiles_no_carousel(db_session: Session, monkeypatch) -> None:
+    """Карусель «профиль↔локация» убрана (21.07.2026): очередь профилей идёт
+    подряд с паузами между людьми, локации в цикле не появляются вовсе."""
     import app.services.parkrun_queue_daemon as daemon_module
 
     log: list[str] = []
@@ -167,21 +166,14 @@ def test_pause_brackets_the_location_step_on_both_sides(db_session: Session, mon
         lambda db, user_id, *, label, **kw: log.append(f"person:{label}") or "sync_ok: stub",
     )
 
-    def _after_item() -> str | None:
-        log.append("location")
-        return None
-
     items = [
         ParkrunWorkItem(kind="sync", label="a", user_id=uuid4()),
         ParkrunWorkItem(kind="sync", label="b", user_id=uuid4()),
     ]
 
-    run_parkrun_queue_daemon(db_session, session, items, after_item=_after_item)
+    run_parkrun_queue_daemon(db_session, session, items)
 
-    assert log == [
-        "person:a", "pause", "location", "pause",
-        "person:b", "pause", "location",
-    ]
+    assert log == ["person:a", "pause", "person:b"]
 
 
 def _db_error() -> Exception:
