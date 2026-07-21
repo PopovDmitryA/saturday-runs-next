@@ -70,12 +70,10 @@ parkrun-save-browser-state:
 # LIMIT задаёт бюджет прогона (задачи сайта + eventhistory-саммари мониторинга):
 #   make parkrun LIMIT=300   # на ночь
 #   make parkrun QUIET=1     # без DB/HTTP/page-load шума, только N/total и итог
-#   NO_BROWSER=1 LIMIT=40 make parkrun   # ЭКСПЕРИМЕНТ: httpx вместо Chromium,
-#                                         # реальный риск бана — маленький LIMIT;
-#                                         # FAST_DELAY_MIN/MAX=N задают паузу
-#                                         # (человек<->человек И человек<->локация),
-#                                         # по умолчанию 3-5с
-#   NO_BROWSER=1 LIMIT=40 FAST_DELAY_MIN=7 FAST_DELAY_MAX=10 make parkrun
+#   NO_BROWSER=1 LIMIT=40 FAST_DELAY=8 make parkrun   # ЭКСПЕРИМЕНТ: httpx
+#     вместо Chromium, реальный риск бана — маленький LIMIT; FAST_DELAY —
+#     пауза (человек<->человек и человек<->локация), джиттер ±30%, по
+#     умолчанию 3с
 parkrun:
 	LIMIT="$(LIMIT)" bash scripts/parkrun_mac.sh; true
 

@@ -66,25 +66,14 @@ def main() -> int:
             "EXPERIMENTAL: fetch via plain httpx instead of Playwright — no "
             "browser, no captcha-solving window. Aborts the whole remaining "
             "batch on the first sign of WAF protection. Use with a small "
-            "--limit and --fast-delay-min/--fast-delay-max; carries a real "
-            "ban risk"
+            "--limit and --fast-delay; carries a real ban risk"
         ),
     )
     parser.add_argument(
-        "--fast-delay-min",
+        "--fast-delay",
         type=float,
         default=3.0,
-        help=(
-            "With --no-browser: minimum seconds between requests — applies "
-            "both between two profiles and between a profile and a location "
-            "(random.uniform with --fast-delay-max each time)"
-        ),
-    )
-    parser.add_argument(
-        "--fast-delay-max",
-        type=float,
-        default=5.0,
-        help="With --no-browser: maximum seconds between requests",
+        help="With --no-browser: seconds between requests (jittered ±30%%)",
     )
     args = parser.parse_args()
 
@@ -103,8 +92,7 @@ def main() -> int:
             limit_pending=args.limit,
             include_sync=not args.pending_only,
             use_httpx=args.no_browser,
-            fast_delay_min_seconds=args.fast_delay_min if args.no_browser else None,
-            fast_delay_max_seconds=args.fast_delay_max if args.no_browser else None,
+            fast_delay_seconds=args.fast_delay if args.no_browser else None,
         )
 
     print("\n=== Итог ===", flush=True)
