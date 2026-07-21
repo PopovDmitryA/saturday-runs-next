@@ -241,7 +241,7 @@
   line-height: 1.45;
 }
 
-/* «Домашняя трибуна» (только рейтинг побед): имя локации + счёт побед там.
+/* «Топ-локация побед» (только рейтинг побед): имя локации + счёт побед там.
    Названия переносятся по словам: с nowrap колонка распирала таблицу шире
    контейнера, а .lb-table-wrap намеренно не скроллится по горизонтали
    (overflow-x: visible — иначе ломается липкая шапка), и таблица вылезала. */
@@ -254,6 +254,23 @@
    6.4rem были запасом под 6-колоночные рейтинги и здесь не помещались. */
 .lb-table.lb-table-wins .lb-col-num {
   width: 5.4rem;
+}
+
+/* Значок «i»: число рядом с топ-локацией — это победы там, не все пробежки. */
+.lb-info-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--surface-2, rgba(127, 127, 127, 0.18));
+  color: var(--text-muted, inherit);
+  font-size: 0.65rem;
+  font-style: italic;
+  font-weight: 700;
+  cursor: help;
+  vertical-align: middle;
 }
 
 

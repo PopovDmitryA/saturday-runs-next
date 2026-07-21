@@ -36,7 +36,23 @@ const METRIC_CRUMBS: Record<LeaderboardMetric, { section: string; label: string 
   win_locations: { section: "Паркран-туристы", label: "Локации с победами" },
 };
 
-function HomeTurf({ row }: { row: { home_location?: string | null; home_location_wins?: number | null } }) {
+const TOP_WIN_LOCATION_HINT =
+  "Число рядом — сколько раз участник побеждал именно на этой локации, " +
+  "а не сколько раз там бегал.";
+
+function InfoHint({ text }: { text: string }) {
+  return (
+    <span className="lb-info-hint" title={text} aria-label={text}>
+      i
+    </span>
+  );
+}
+
+function TopWinLocation({
+  row,
+}: {
+  row: { home_location?: string | null; home_location_wins?: number | null };
+}) {
   if (!row.home_location) {
     return <span className="lb-zero">—</span>;
   }
@@ -317,8 +333,10 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                       </span>
                       {metric === "wins" && me.home_location && (
                         <span className="lb-me-value">
-                          <span className="lb-me-platform">Домашняя трибуна</span>
-                          <HomeTurf row={me} />
+                          <span className="lb-me-platform">
+                            Топ-локация побед <InfoHint text={TOP_WIN_LOCATION_HINT} />
+                          </span>
+                          <TopWinLocation row={me} />
                         </span>
                       )}
                     </span>
@@ -357,7 +375,11 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                       headerCell(code, PLATFORM_LABELS[code] ?? code, "lb-col-num"),
                     )}
                     {headerCell("total", "Всего", "lb-col-num lb-col-total")}
-                    {metric === "wins" && <th className="lb-col-home">Домашняя трибуна</th>}
+                    {metric === "wins" && (
+                      <th className="lb-col-home">
+                        Топ-локация побед <InfoHint text={TOP_WIN_LOCATION_HINT} />
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -391,7 +413,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         </td>
                         {metric === "wins" && (
                           <td className="lb-col-home">
-                            <HomeTurf row={row} />
+                            <TopWinLocation row={row} />
                           </td>
                         )}
                       </tr>

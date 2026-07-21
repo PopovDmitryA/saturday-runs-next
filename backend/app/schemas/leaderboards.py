@@ -16,7 +16,7 @@ class LeaderboardRowResponse(BaseModel):
     platforms: dict[str, LeaderboardCellResponse]
     total: int
     total_delta: int
-    # Только у метрики wins: «домашняя трибуна» — локация с максимумом побед.
+    # Только у метрики wins: «топ-локация побед» — локация с максимумом побед.
     home_location: str | None = None
     home_location_wins: int | None = None
 

@@ -26,7 +26,7 @@ export type LeaderboardRow = {
   platforms: Record<string, LeaderboardCell>;
   total: number;
   total_delta: number;
-  // Только у метрики wins: «домашняя трибуна» — локация с максимумом побед.
+  // Только у метрики wins: «топ-локация побед» — локация с максимумом побед.
   home_location?: string | null;
   home_location_wins?: number | null;
 };
