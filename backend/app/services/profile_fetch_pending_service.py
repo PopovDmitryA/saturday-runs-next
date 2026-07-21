@@ -599,6 +599,16 @@ def reset_failed_pending(db: Session, platform_code: str) -> int:
     return len(rows)
 
 
+def count_pending_rows(db: Session, platform_code: str | None = None) -> int:
+    """Истинный размер backlog'а — без LIMIT, в отличие от list_pending_rows."""
+    query = db.query(ProfileFetchPending).filter(
+        ProfileFetchPending.status == ProfileFetchPendingStatus.pending
+    )
+    if platform_code:
+        query = query.filter(ProfileFetchPending.platform_code == platform_code)
+    return query.count()
+
+
 def list_pending_rows(
     db: Session,
     *,

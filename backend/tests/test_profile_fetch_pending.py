@@ -20,6 +20,7 @@ from app.services.profile_fetch_pending_service import (
     MAX_RETRY_ATTEMPTS,
     PERMANENT_ERROR_PREFIX,
     RUNPARK_SEED_NOTE_PREFIX,
+    count_pending_rows,
     describe_processed_profile,
     enqueue_profile_fetch_pending,
     is_fetch_cooldown_error,
@@ -368,3 +369,25 @@ def test_describe_processed_profile_none_for_unknown_or_missing_id(
 ) -> None:
     assert describe_processed_profile(db_session, "parkrun", None) is None
     assert describe_processed_profile(db_session, "parkrun", "no-such-id") is None
+
+
+def test_count_pending_rows_ignores_limit_of_list_pending_rows(
+    db_session: Session,
+) -> None:
+    """count_pending_rows должен видеть ВЕСЬ backlog, а list_pending_rows —
+    только limit строк из него (иначе демон печатает 'в очереди 300', хотя
+    реально ждёт несколько тысяч)."""
+    platform_code = "test-count-pending"
+    for i in range(7):
+        db_session.add(
+            ProfileFetchPending(
+                platform_code=platform_code,
+                profile_input=f"row-{i}",
+                operation=ProfileFetchPendingOperation.activity_import,
+                reason=ProfileFetchPendingReason.error,
+            )
+        )
+    db_session.commit()
+
+    assert count_pending_rows(db_session, platform_code) == 7
+    assert len(list_pending_rows(db_session, platform_code=platform_code, limit=3)) == 3

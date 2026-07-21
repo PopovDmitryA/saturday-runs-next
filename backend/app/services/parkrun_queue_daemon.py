@@ -23,6 +23,7 @@ from app.parkrun.fetch.daemon_session import (
 )
 from app.services.parkrun_local_worker import prepare_parkrun_cdp_fetch, sync_parkrun_runs_for_user
 from app.services.profile_fetch_pending_service import (
+    count_pending_rows,
     describe_processed_profile,
     list_pending_rows,
     process_pending_row,
@@ -268,7 +269,11 @@ def run_daemon(
     # s95 uses its own fetch (no parkrun browser needed) — drain it first.
     s95_result = run_s95_pending_queue(db, limit_pending=limit_pending)
     if s95_result["total"]:
-        print(f"s95 очередь: {s95_result['total']} задач(и), {s95_result['summary']}", flush=True)
+        print(
+            f"s95 очередь: {s95_result['backlog_total']} задач(и) всего — "
+            f"берём в этот прогон {s95_result['total']}, {s95_result['summary']}",
+            flush=True,
+        )
         for line in cast("list[str]", s95_result["details"]):
             print("  ", line, flush=True)
 
@@ -298,7 +303,19 @@ def run_daemon(
             settings.parkrun_use_cdp_for_fetch and settings.parkrun_cdp_url.strip()
         )
         mode = f"Chrome CDP ({cdp_url or settings.parkrun_cdp_url})" if cdp else "Playwright Chromium"
-        print(f"В очереди: {len(items)} задач(и). Браузер: {mode}", flush=True)
+        # "sync" в items уже без ограничения limit_pending (см. build_parkrun_work_queue),
+        # так что len(items)-pending_taken — это и есть точный размер той части
+        # backlog'а. "pending" же обрезан лимитом — сравниваем с истинным total.
+        pending_taken = sum(1 for i in items if i.kind == "pending")
+        sync_taken = len(items) - pending_taken
+        pending_total = count_pending_rows(db, "parkrun")
+        backlog_total = pending_total + sync_taken
+        print(
+            f"В очереди: {backlog_total} задач(и) всего "
+            f"(pending {pending_total}, sync {sync_taken}) — "
+            f"берём в этот прогон {len(items)}. Браузер: {mode}",
+            flush=True,
+        )
         with ParkrunDaemonSession(
             use_cdp=use_cdp,
             cdp_url=cdp_url,
