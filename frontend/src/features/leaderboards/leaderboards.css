@@ -93,7 +93,7 @@
 .lb-me-value {
   display: inline-flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   min-width: 3.2rem;
 }
 
@@ -215,14 +215,6 @@
   text-align: center;
   width: 6.4rem;
   white-space: nowrap;
-}
-
-/* Значение+дельта центрируются как единый блок (не текстом, флексом внутри
-   .lb-cell — text-align на td тут ни при чём). Только в теле таблицы: у
-   карточки «я» (.lb-me-value) свой контекст, его не трогаем — там значения
-   выровнены по правому краю подписи платформы. */
-.lb-table .lb-col-num .lb-cell {
-  justify-content: center;
 }
 
 .lb-table .lb-col-total {
@@ -347,7 +339,7 @@
 .lb-cell {
   display: inline-flex;
   align-items: baseline;
-  justify-content: flex-end;
+  justify-content: center;
   font-variant-numeric: tabular-nums;
 }
 
