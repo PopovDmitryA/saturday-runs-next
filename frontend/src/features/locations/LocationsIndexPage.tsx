@@ -5,13 +5,24 @@ import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAuth } from "../../components/RequireAuth";
 import { SiteHeader } from "../../components/SiteHeader";
 import { getLocationsIndex, logout, type LocationIndexItem, type User } from "../../lib/api";
-import { formatDate, pluralizeRu } from "../../lib/format";
+import { formatDate, formatFinishTimeValue, pluralizeRu } from "../../lib/format";
 import { SITE_HOME_HREF } from "../../lib/siteBrand";
 import { APP_NAV_ITEMS } from "../../lib/siteNav";
 
 const PLATFORM_FILTERS = ["five_verst", "s95", "runpark"] as const;
 
-type SortKey = "name" | "city" | "events_count" | "finishers_total" | "first_event_date";
+type SortKey =
+  | "name"
+  | "city"
+  | "events_count"
+  | "finishers_total"
+  | "best_male"
+  | "best_female"
+  | "first_event_date";
+
+// Колонки, которые логичнее открывать по возрастанию: алфавит и рекорды
+// (у времени «лучше» = меньше).
+const ASC_FIRST_KEYS: SortKey[] = ["name", "city", "best_male", "best_female"];
 type SortState = { key: SortKey; asc: boolean };
 
 function matchesQuery(item: LocationIndexItem, query: string): boolean {
@@ -32,6 +43,10 @@ function sortValue(item: LocationIndexItem, key: SortKey): number | string | nul
       return item.events_count;
     case "finishers_total":
       return item.finishers_total;
+    case "best_male":
+      return item.best_male_time_sec;
+    case "best_female":
+      return item.best_female_time_sec;
     case "first_event_date":
       return item.first_event_date;
   }
@@ -93,7 +108,7 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
 
   const toggleSort = (key: SortKey) => {
     setSort((current) =>
-      current.key === key ? { key, asc: !current.asc } : { key, asc: key === "name" || key === "city" },
+      current.key === key ? { key, asc: !current.asc } : { key, asc: ASC_FIRST_KEYS.includes(key) },
     );
   };
 
@@ -111,6 +126,8 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
           <col />
           <col className="col-city" />
           <col className="col-platform" />
+          <col className="col-metric" />
+          <col className="col-metric" />
           <col className="col-metric" />
           <col className="col-metric" />
           <col className="col-date" />
@@ -131,6 +148,16 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
               {...sortProps("finishers_total")}
             />
             <ColumnHeader
+              label="LR М"
+              headerTitle="Location record — лучшее время мужчины на этой локации за всю историю"
+              {...sortProps("best_male")}
+            />
+            <ColumnHeader
+              label="LR Ж"
+              headerTitle="Location record — лучшее время женщины на этой локации за всю историю"
+              {...sortProps("best_female")}
+            />
+            <ColumnHeader
               label="Первый старт"
               {...sortProps("first_event_date")}
             />
@@ -139,7 +166,7 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
         <tbody>
           {sorted.length === 0 ? (
             <tr>
-              <td colSpan={6} className="table-empty-cell">
+              <td colSpan={8} className="table-empty-cell">
                 <span className="muted">Нет локаций по фильтрам</span>
               </td>
             </tr>
@@ -163,6 +190,12 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                 </td>
                 <td className="td-compact">{item.events_count || "—"}</td>
                 <td className="td-compact">{item.finishers_total || "—"}</td>
+                <td className="td-compact">
+                  {formatFinishTimeValue(item.best_male_time_display, item.best_male_time_sec)}
+                </td>
+                <td className="td-compact">
+                  {formatFinishTimeValue(item.best_female_time_display, item.best_female_time_sec)}
+                </td>
                 <td>{item.first_event_date ? formatDate(item.first_event_date) : "—"}</td>
               </tr>
             ))

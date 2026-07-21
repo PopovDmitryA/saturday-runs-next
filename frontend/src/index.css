@@ -9524,6 +9524,13 @@ tr.run-crosslinked td {
   width: 6.25rem;
 }
 
+/* Колонок с фиксированной шириной много (метрики + рекорды + даты): без
+   min-width колонка «Локация» схлопывается в ноль, вместо этого скроллим
+   обёртку по горизонтали. */
+.loc-index-table {
+  min-width: 66rem;
+}
+
 .loc-index-table td.td-location {
   font-weight: 600;
   overflow-wrap: break-word;

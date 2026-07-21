@@ -1671,6 +1671,10 @@ export type LocationIndexItem = {
   finishers_total: number;
   first_event_date: string | null;
   last_event_date: string | null;
+  best_male_time_sec: number | null;
+  best_male_time_display: string | null;
+  best_female_time_sec: number | null;
+  best_female_time_display: string | null;
 };
 
 export type LocationsIndexResponse = {

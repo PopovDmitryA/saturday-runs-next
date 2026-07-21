@@ -52,7 +52,7 @@ HISTOGRAM_BIN_SEC = 10
 # TTL, а не точечная инвалидация: синк идёт множеством независимых batch-джоб
 # по трём платформам — вешать инвалидацию на каждую было бы куда инвазивнее,
 # чем оправдывает выигрыш (эти цифры не обязаны быть live).
-LOCATIONS_INDEX_CACHE_KEY = "locations:index:v2"
+LOCATIONS_INDEX_CACHE_KEY = "locations:index:v3"
 LOCATIONS_INDEX_CACHE_TTL_SECONDS = 3 * 60 * 60
 # Страница/журнал/рейтинги одной локации — тоже тяжёлые (resolve_location_identity
 # перечитывает ВСЕ локации + весь каталог на каждый вызов, плюс десяток
@@ -1080,6 +1080,8 @@ class _IndexIdentityStat:
     finishers_total: int = 0
     first_event_date: date | None = None
     last_event_date: date | None = None
+    best_male_time_sec: int | None = None
+    best_female_time_sec: int | None = None
 
 
 def _bulk_identity_stats(
@@ -1139,6 +1141,41 @@ def _bulk_identity_stats(
             stat.first_event_date = event_date
         if stat.last_event_date is None or event_date > stat.last_event_date:
             stat.last_event_date = event_date
+
+    # Рекорды локации (LR) — минимальное время по полу за всю историю
+    # идентичности. Кросслинки тут не мешают: вторичное событие — тот же
+    # физический старт с теми же временами, на минимум оно не влияет.
+    gender_expr = _gender_expression(
+        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+    )
+    record_rows = (
+        db.query(
+            Event.location_id,
+            gender_expr.label("gender"),
+            func.min(RunResult.finish_time_sec).label("best"),
+        )
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .outerjoin(Participant, RunResult.participant_id == Participant.id)
+        .filter(
+            Event.location_id.in_(location_ids),
+            Event.is_test_event.is_(False),
+            RunResult.finish_time_sec.isnot(None),
+            RunResult.finish_time_sec > 0,
+        )
+        .group_by(Event.location_id, gender_expr)
+        .all()
+    )
+    for location_id, gender, best in record_rows:
+        if gender not in ("male", "female") or best is None:
+            continue
+        identity_key = location_id_to_identity[location_id]
+        stat = stats.setdefault(identity_key, _IndexIdentityStat())
+        if gender == "male":
+            if stat.best_male_time_sec is None or int(best) < stat.best_male_time_sec:
+                stat.best_male_time_sec = int(best)
+        elif stat.best_female_time_sec is None or int(best) < stat.best_female_time_sec:
+            stat.best_female_time_sec = int(best)
 
     return stats
 
@@ -1318,6 +1355,18 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
                 "finishers_total": stat.finishers_total if stat else 0,
                 "first_event_date": stat.first_event_date if stat else None,
                 "last_event_date": stat.last_event_date if stat else None,
+                "best_male_time_sec": stat.best_male_time_sec if stat else None,
+                "best_male_time_display": (
+                    format_finish_time_display(stat.best_male_time_sec)
+                    if stat and stat.best_male_time_sec is not None
+                    else None
+                ),
+                "best_female_time_sec": stat.best_female_time_sec if stat else None,
+                "best_female_time_display": (
+                    format_finish_time_display(stat.best_female_time_sec)
+                    if stat and stat.best_female_time_sec is not None
+                    else None
+                ),
             }
         )
 

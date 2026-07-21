@@ -255,6 +255,10 @@ class LocationIndexItemResponse(BaseModel):
     finishers_total: int = 0
     first_event_date: date | None = None
     last_event_date: date | None = None
+    best_male_time_sec: int | None = None
+    best_male_time_display: str | None = None
+    best_female_time_sec: int | None = None
+    best_female_time_display: str | None = None
 
 
 class LocationsIndexResponse(BaseModel):
