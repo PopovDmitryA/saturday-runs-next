@@ -282,7 +282,6 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 </div>
                 {effectiveGender !== "all" && (
                   <p className="lb-gender-note muted">
-                    Победа среди своего пола — первое место в мужском или женском зачёте забега.
                     parkrun в разбивку по полу не входит: у наших parkrun-данных пол известен
                     только по неполным профилям и ненадёжен. Абсолютный зачёт учитывает все системы.
                   </p>

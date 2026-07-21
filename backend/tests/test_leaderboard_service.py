@@ -12,6 +12,7 @@ from app.services.leaderboard_service import (
     _pick_home,
     _ranked,
     _week_start,
+    metric_description,
 )
 
 
@@ -90,6 +91,16 @@ def test_dominant_gender_by_majority() -> None:
     assert _dominant_gender({"male": 30, "female": 2}) == "male"
     assert _dominant_gender({"female": 5}) == "female"
     assert _dominant_gender({}) is None
+
+
+def test_metric_description_follows_gender() -> None:
+    # В гендерных зачётах описание говорит про мужской/женский зачёт, не про абсолют.
+    assert "абсолютном зачёте" in metric_description("wins", "all")
+    assert "мужском зачёте" in metric_description("wins", "male")
+    assert "женском зачёте" in metric_description("wins", "female")
+    assert "мужском зачёте" in metric_description("win_locations", "male")
+    # У метрик без разреза по полу описание всегда базовое.
+    assert metric_description("runs", "male") == METRIC_META["runs"]["description"]
 
 
 def test_normalize_gender_only_for_win_metrics() -> None:
