@@ -69,6 +69,7 @@ parkrun-save-browser-state:
 # Mac: one command — DB queue, Chrome, wait for captcha, sync runs (run daily)
 # LIMIT задаёт бюджет прогона (задачи сайта + eventhistory-саммари мониторинга):
 #   make parkrun LIMIT=300   # на ночь
+#   make parkrun QUIET=1     # без DB/HTTP/page-load шума, только N/total и итог
 parkrun:
 	LIMIT="$(LIMIT)" bash scripts/parkrun_mac.sh; true
 

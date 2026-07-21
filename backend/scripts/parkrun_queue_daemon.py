@@ -27,10 +27,6 @@ from app.services.parkrun_queue_daemon import run_daemon
 
 
 def main() -> int:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
     settings = get_settings()
     parser = argparse.ArgumentParser(description="Parkrun queue daemon (Mac + Playwright)")
     parser.add_argument(
@@ -54,7 +50,21 @@ def main() -> int:
         action="store_true",
         help="Skip sync for linked profiles with missing runs",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help=(
+            "Suppress library/debug logs (DB flush, HTTP requests, page loads) — "
+            "keep only the [parkrun queue] N/total progress line, warnings, and "
+            "the final summary"
+        ),
+    )
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.WARNING if args.quiet else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
     Session = get_session_factory()
     with Session() as db:

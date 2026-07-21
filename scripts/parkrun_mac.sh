@@ -5,6 +5,8 @@
 # Usage:
 #   make parkrun         (calls this script)
 #   PENDING_ONLY=1 make parkrun   (skip scheduled parkrun syncs)
+#   QUIET=1 make parkrun          (hide DB/HTTP/page-load noise, keep only
+#                                   the N/total progress line and summary)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -93,6 +95,9 @@ if [[ -n "${LIMIT:-}" ]]; then
 fi
 if [[ "${PENDING_ONLY:-}" == "1" ]]; then
   ARGS+=(--pending-only)
+fi
+if [[ "${QUIET:-}" == "1" ]]; then
+  ARGS+=(--quiet)
 fi
 
 exec "${CONDA_ENV}/bin/python" "${ROOT}/backend/scripts/parkrun_queue_daemon.py" ${ARGS[@]+"${ARGS[@]}"}
