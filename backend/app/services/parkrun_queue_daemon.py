@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Literal, cast
 from uuid import UUID
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -158,6 +159,28 @@ def _manual_sync_link_ids(db: Session, link_ids: list[UUID]) -> set[UUID]:
     return manual_ids
 
 
+# Сколько подряд обрывов коннекта к прод-БД терпим, прежде чем остановить
+# прогон. Туннель к прод-Postgres (SSH, порт 5434) иногда рвётся посреди
+# длинного прогона — дальше каждый профиль падает на первом же db.get, и нет
+# смысла молотить остаток очереди гигантскими трейсбэками.
+MAX_DB_CONNECTION_FAILURES = 3
+
+
+def _is_db_connection_lost(exc: BaseException) -> bool:
+    """True, если ошибка — потеря соединения с БД (оборванный SSH-туннель),
+    а не обычный сбой фетча parkrun. Проверяем всю цепочку __cause__:
+    sqlalchemy заворачивает psycopg.OperationalError (connection refused,
+    SSL EOF, server closed connection) именно в OperationalError."""
+    cursor: BaseException | None = exc
+    for _ in range(10):
+        if cursor is None:
+            break
+        if isinstance(cursor, OperationalError):
+            return True
+        cursor = cursor.__cause__
+    return False
+
+
 def _process_pending_item(db: Session, item: ParkrunWorkItem) -> tuple[str, UUID | None, str | None]:
     if item.pending_id is None:
         return "error", None, None
@@ -179,6 +202,7 @@ def run_parkrun_queue_daemon(
     summary: dict[str, int] = {}
     details: list[str] = []
     total = len(items)
+    db_connection_failures = 0
 
     for index, item in enumerate(items, start=1):
         session.show_status(f"{index}/{total}: {item.kind} {item.label}")
@@ -208,11 +232,30 @@ def run_parkrun_queue_daemon(
                 details.append(sync_line)
                 key = "sync_ok" if sync_line.startswith("sync_ok") else "sync_error"
                 summary[key] = summary.get(key, 0) + 1
+            db_connection_failures = 0  # успех — сбрасываем счётчик обрывов
         except Exception as exc:
-            db.rollback()
+            try:
+                db.rollback()
+            except Exception:
+                pass  # rollback на мёртвом коннекте сам падает — не мешаем
             logger.exception("parkrun queue item failed: %s", item.label)
             summary["error"] = summary.get("error", 0) + 1
             details.append(f"error: {item.label} — {exc}")
+
+            if _is_db_connection_lost(exc):
+                db_connection_failures += 1
+                if db_connection_failures >= MAX_DB_CONNECTION_FAILURES:
+                    summary["db_connection_lost"] = 1
+                    print(
+                        f"[parkrun queue] ОСТАНОВКА: {MAX_DB_CONNECTION_FAILURES} "
+                        f"обрыва коннекта к прод-БД подряд (SSH-туннель, порт "
+                        f"5434). Прогон прерван на {index}/{total}. Перезапусти "
+                        f"make parkrun — туннель поднимется заново.",
+                        flush=True,
+                    )
+                    break
+            else:
+                db_connection_failures = 0  # обычная ошибка фетча — не в счёт
 
         if getattr(session, "httpx_aborted", False):
             # --no-browser словил защиту WAF — дальше пачку не гоняем, нет
@@ -352,12 +395,19 @@ def run_daemon(
             finally:
                 deactivate_daemon_session(token)
 
-    # Очередь сайта кончилась — добираем оставшийся бюджет саммари одним заходом.
-    remaining = limit_pending - monitoring_steps
-    if remaining > 0:
-        drain_line = monitoring_history_step(limit=remaining)
-        if drain_line:
-            print(drain_line, flush=True)
+    # Обрыв туннеля к прод-БД — не добираем остаток локаций (прогон прерван),
+    # но push уже собранного делаем: он идёт по своему SSH-коннекту к серверу,
+    # прод-туннель ему не нужен.
+    db_lost = bool(cast("dict[str, int]", parkrun_result.get("summary") or {}).get(
+        "db_connection_lost"
+    ))
+    if not db_lost:
+        # Очередь сайта кончилась — добираем оставшийся бюджет саммари одним заходом.
+        remaining = limit_pending - monitoring_steps
+        if remaining > 0:
+            drain_line = monitoring_history_step(limit=remaining)
+            if drain_line:
+                print(drain_line, flush=True)
 
     push_line = push_monitoring_to_server()
     if push_line:

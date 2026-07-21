@@ -182,3 +182,53 @@ def test_pause_brackets_the_location_step_on_both_sides(db_session: Session, mon
         "person:a", "pause", "location", "pause",
         "person:b", "pause", "location",
     ]
+
+
+def _db_error() -> Exception:
+    from sqlalchemy.exc import OperationalError
+
+    return OperationalError("stmt", {}, Exception("connection refused on port 5434"))
+
+
+def test_stops_after_three_consecutive_db_connection_losses(db_session, monkeypatch) -> None:
+    """Оборванный SSH-туннель к прод-БД: после 3 обрывов подряд прогон
+    прерывается, а не молотит остаток очереди трейсбэками."""
+    import app.services.parkrun_queue_daemon as daemon_module
+
+    calls: list[str] = []
+
+    def _boom(db, user_id, *, label, **kw):  # noqa: ARG001
+        calls.append(label)
+        raise _db_error()
+
+    monkeypatch.setattr(daemon_module, "sync_parkrun_runs_for_user", _boom)
+
+    session = _FakeSession()
+    items = [ParkrunWorkItem(kind="sync", label=f"r{i}", user_id=uuid4()) for i in range(6)]
+
+    result = run_parkrun_queue_daemon(db_session, session, items)
+
+    assert calls == ["r0", "r1", "r2"]  # остановились на третьем, не дошли до r3..r5
+    assert result["summary"].get("db_connection_lost") == 1
+
+
+def test_normal_fetch_error_does_not_count_toward_db_stop(db_session, monkeypatch) -> None:
+    """Обычная ошибка фетча parkrun (не обрыв БД) счётчик обрывов не
+    накапливает — прогон идёт до конца."""
+    import app.services.parkrun_queue_daemon as daemon_module
+
+    calls: list[str] = []
+
+    def _boom(db, user_id, *, label, **kw):  # noqa: ARG001
+        calls.append(label)
+        raise ValueError("parkrun parse failed")
+
+    monkeypatch.setattr(daemon_module, "sync_parkrun_runs_for_user", _boom)
+
+    session = _FakeSession()
+    items = [ParkrunWorkItem(kind="sync", label=f"r{i}", user_id=uuid4()) for i in range(5)]
+
+    result = run_parkrun_queue_daemon(db_session, session, items)
+
+    assert len(calls) == 5  # ни разу не остановились
+    assert "db_connection_lost" not in result["summary"]
