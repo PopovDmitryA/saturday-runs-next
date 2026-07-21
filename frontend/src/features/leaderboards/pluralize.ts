@@ -5,8 +5,12 @@ const UNIT_FORMS: Record<LeaderboardMetric, [string, string, string]> = {
   runs: ["пробежка", "пробежки", "пробежек"],
   volunteering: ["волонтёрство", "волонтёрства", "волонтёрств"],
   locations: ["локация", "локации", "локаций"],
-  wins: ["победа", "победы", "побед"],
-  win_locations: ["локация с победой", "локации с победами", "локаций с победами"],
+  wins: ["первое место", "первых места", "первых мест"],
+  win_locations: [
+    "локация с первым местом",
+    "локации с первым местом",
+    "локаций с первым местом",
+  ],
 };
 
 function pluralForm(count: number, forms: [string, string, string]): string {

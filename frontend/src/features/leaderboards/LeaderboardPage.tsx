@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { InsightsShell } from "../insights/InsightsShell";
 import {
   GENDERED_METRICS,
@@ -32,19 +33,19 @@ const METRIC_CRUMBS: Record<LeaderboardMetric, { section: string; label: string 
   runs: { section: "Бегуны", label: "Количество пробежек" },
   volunteering: { section: "Волонтёры", label: "Количество волонтёрств" },
   locations: { section: "Паркран-туристы", label: "Уникальные локации" },
-  wins: { section: "Бегуны", label: "Количество побед" },
-  win_locations: { section: "Паркран-туристы", label: "Локации с победами" },
+  wins: { section: "Бегуны", label: "Количество первых мест" },
+  win_locations: { section: "Паркран-туристы", label: "Локации с первым местом" },
 };
 
-const TOP_WIN_LOCATION_HINT =
-  "Число рядом — сколько раз участник побеждал именно на этой локации, " +
+const TOP_LOCATION_HINT =
+  "Число рядом — сколько раз участник был первым именно на этой локации, " +
   "а не сколько раз там бегал.";
 
 function InfoHint({ text }: { text: string }) {
   return (
-    <span className="lb-info-hint" title={text} aria-label={text}>
-      i
-    </span>
+    <StatHintTooltip text={text} className="lb-info-hint">
+      <span aria-hidden="true">i</span>
+    </StatHintTooltip>
   );
 }
 
@@ -334,7 +335,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                       {metric === "wins" && me.home_location && (
                         <span className="lb-me-value">
                           <span className="lb-me-platform">
-                            Топ-локация побед <InfoHint text={TOP_WIN_LOCATION_HINT} />
+                            Топ-локация <InfoHint text={TOP_LOCATION_HINT} />
                           </span>
                           <TopWinLocation row={me} />
                         </span>
@@ -377,7 +378,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                     {headerCell("total", "Всего", "lb-col-num lb-col-total")}
                     {metric === "wins" && (
                       <th className="lb-col-home">
-                        Топ-локация побед <InfoHint text={TOP_WIN_LOCATION_HINT} />
+                        Топ-локация <InfoHint text={TOP_LOCATION_HINT} />
                       </th>
                     )}
                   </tr>

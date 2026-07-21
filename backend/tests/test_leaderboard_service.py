@@ -94,11 +94,11 @@ def test_dominant_gender_by_majority() -> None:
 
 
 def test_metric_description_follows_gender() -> None:
-    # В гендерных зачётах описание говорит про мужской/женский зачёт, не про абсолют.
+    # В гендерных зачётах описание говорит про мужчин/женщин, не про абсолют.
     assert "абсолютном зачёте" in metric_description("wins", "all")
-    assert "мужском зачёте" in metric_description("wins", "male")
-    assert "женском зачёте" in metric_description("wins", "female")
-    assert "мужском зачёте" in metric_description("win_locations", "male")
+    assert "среди мужчин" in metric_description("wins", "male")
+    assert "среди женщин" in metric_description("wins", "female")
+    assert "среди мужчин" in metric_description("win_locations", "male")
     # У метрик без разреза по полу описание всегда базовое.
     assert metric_description("runs", "male") == METRIC_META["runs"]["description"]
 

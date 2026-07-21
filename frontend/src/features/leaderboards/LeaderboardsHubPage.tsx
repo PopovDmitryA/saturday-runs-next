@@ -36,7 +36,7 @@ const SECTIONS: HubSection[] = [
     title: "Бегуны",
     live: [
       { metric: "runs", href: "/ratings/runs", title: "Количество пробежек" },
-      { metric: "wins", href: "/ratings/wins", title: "Количество побед" },
+      { metric: "wins", href: "/ratings/wins", title: "Количество первых мест" },
     ],
     soon: [
       { title: "Самые быстрые", description: "Лучшие результаты и бегуны М/Ж за всю историю." },
@@ -54,7 +54,7 @@ const SECTIONS: HubSection[] = [
     title: "Паркран-туристы",
     live: [
       { metric: "locations", href: "/ratings/locations", title: "Уникальные локации" },
-      { metric: "win_locations", href: "/ratings/win-locations", title: "Локации с победами" },
+      { metric: "win_locations", href: "/ratings/win-locations", title: "Локации с первым местом" },
     ],
     soon: [
       { title: "Дальность от дома", description: "Кто уезжает бегать дальше всех от домашней локации." },
