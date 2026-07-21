@@ -61,6 +61,15 @@ export REDIS_URL="redis://127.0.0.1:${LOCAL_REDIS_PORT}/0"
 export DB_DISABLE_IDLE_TX_TIMEOUT=1
 export PYTHONPATH="${ROOT}/backend"
 export PARKRUN_PLAYWRIGHT_STORAGE_STATE_PATH="${ROOT}/data/parkrun_playwright_state.json"
+# Полный лог прогона (трейсбэки, библиотечный шум) — рядом со скриптом в data/.
+# В терминал идут только справочные строки; сюда — всё.
+export PARKRUN_DAEMON_LOG="${ROOT}/data/parkrun_daemon.log"
+# В режиме --no-browser задержку между ДВУМЯ страницами профиля (summary и /all)
+# тоже тянем к FAST_DELAY — иначе она осталась бы дефолтными 10с и обнуляла смысл
+# ускорения. В браузерном режиме между-страничная пауза остаётся штатной.
+if [[ "${NO_BROWSER:-}" == "1" ]]; then
+  export PARKRUN_FETCH_BETWEEN_PAGES_DELAY_SECONDS="${FAST_DELAY:-3}"
+fi
 # Соседний проект parkrun-monitoring: демон чередует очередь сайта с его
 # задачами (статистика стран + eventhistory-саммари) и пушит их на сервер.
 export PARKRUN_MONITORING_DIR="${PARKRUN_MONITORING_DIR:-$HOME/Projects/parkrun-monitoring}"

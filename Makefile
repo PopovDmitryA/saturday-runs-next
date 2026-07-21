@@ -67,13 +67,15 @@ parkrun-save-browser-state:
 	docker compose exec api python scripts/parkrun_save_browser_state.py
 
 # Mac: one command — DB queue, Chrome, wait for captcha, sync runs (run daily)
+# Терминал показывает только справочные строки с таймстампом; полный лог с
+# трейсбэками — в data/parkrun_daemon.log.
 # LIMIT задаёт бюджет прогона (задачи сайта + eventhistory-саммари мониторинга):
 #   make parkrun LIMIT=300   # на ночь
-#   make parkrun QUIET=1     # без DB/HTTP/page-load шума, только N/total и итог
+#   make parkrun QUIET=1     # срезать библиотечный INFO из файла-лога
 #   NO_BROWSER=1 LIMIT=40 FAST_DELAY=8 make parkrun   # ЭКСПЕРИМЕНТ: httpx
 #     вместо Chromium, реальный риск бана — маленький LIMIT; FAST_DELAY —
-#     пауза (человек<->человек и человек<->локация), джиттер ±30%, по
-#     умолчанию 3с
+#     пауза человек<->человек, человек<->локация И между двумя страницами
+#     профиля (иначе там дефолтные 10с), джиттер ±30%, по умолчанию 3с
 parkrun:
 	LIMIT="$(LIMIT)" bash scripts/parkrun_mac.sh; true
 

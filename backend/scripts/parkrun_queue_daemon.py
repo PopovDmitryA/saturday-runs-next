@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -23,7 +24,10 @@ if str(ROOT) not in sys.path:
 
 from app.config import get_settings
 from app.db.session import get_session_factory
+from app.parkrun.fetch.daemon_log import cline, setup_daemon_logging
 from app.services.parkrun_queue_daemon import run_daemon
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> int:
@@ -54,9 +58,9 @@ def main() -> int:
         "--quiet",
         action="store_true",
         help=(
-            "Suppress library/debug logs (DB flush, HTTP requests, page loads) — "
-            "keep only the [parkrun queue] N/total progress line, warnings, and "
-            "the final summary"
+            "Trim the LOG FILE: skip library INFO (DB flush, HTTP, page loads), "
+            "keep warnings and full tracebacks. The terminal stays clean either "
+            "way — it only ever shows the in-the-moment status lines"
         ),
     )
     parser.add_argument(
@@ -77,28 +81,34 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.WARNING if args.quiet else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    default_log = Path(os.environ.get("PARKRUN_DAEMON_LOG") or (Path.cwd() / "data" / "parkrun_daemon.log"))
+    log_file = setup_daemon_logging(default_log, quiet=args.quiet)
+    cline(f"Лог этого прогона (полный, с трейсбэками): {log_file}")
 
     Session = get_session_factory()
-    with Session() as db:
-        result = run_daemon(
-            db,
-            use_cdp=args.use_cdp,
-            cdp_url=args.cdp_url.strip() if args.use_cdp else None,
-            launch_chrome=not args.no_launch_chrome,
-            limit_pending=args.limit,
-            include_sync=not args.pending_only,
-            use_httpx=args.no_browser,
-            fast_delay_seconds=args.fast_delay if args.no_browser else None,
-        )
+    try:
+        with Session() as db:
+            result = run_daemon(
+                db,
+                use_cdp=args.use_cdp,
+                cdp_url=args.cdp_url.strip() if args.use_cdp else None,
+                launch_chrome=not args.no_launch_chrome,
+                limit_pending=args.limit,
+                include_sync=not args.pending_only,
+                use_httpx=args.no_browser,
+                fast_delay_seconds=args.fast_delay if args.no_browser else None,
+            )
+    except Exception:
+        # Полное падение скрипта (не отдельная строка очереди) — единственный
+        # случай, когда трейсбэк уместен и в терминале. Полный текст — в файле.
+        logger.exception("parkrun daemon crashed")
+        cline(f"СКРИПТ УПАЛ — подробности в {log_file}")
+        return 1
 
-    print("\n=== Итог ===", flush=True)
-    print("summary:", result.get("summary"), flush=True)
+    cline("=== Итог ===")
+    cline(f"summary: {result.get('summary')}")
     for line in result.get("details", []):
-        print(" ", line, flush=True)
+        cline(f"  {line}")
     summary = result.get("summary") or {}
     if summary.get("error") or summary.get("sync_error") or summary.get("cooldown"):
         return 1

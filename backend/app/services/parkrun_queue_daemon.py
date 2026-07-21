@@ -17,6 +17,7 @@ from app.models import (
     SyncJob,
     SyncJobTrigger,
 )
+from app.parkrun.fetch.daemon_log import cline
 from app.parkrun.fetch.daemon_session import (
     ParkrunDaemonSession,
     activate_daemon_session,
@@ -246,12 +247,11 @@ def run_parkrun_queue_daemon(
                 db_connection_failures += 1
                 if db_connection_failures >= MAX_DB_CONNECTION_FAILURES:
                     summary["db_connection_lost"] = 1
-                    print(
+                    cline(
                         f"[parkrun queue] ОСТАНОВКА: {MAX_DB_CONNECTION_FAILURES} "
                         f"обрыва коннекта к прод-БД подряд (SSH-туннель, порт "
                         f"5434). Прогон прерван на {index}/{total}. Перезапусти "
-                        f"make parkrun — туннель поднимется заново.",
-                        flush=True,
+                        f"make parkrun — туннель поднимется заново."
                     )
                     break
             else:
@@ -260,10 +260,9 @@ def run_parkrun_queue_daemon(
         if getattr(session, "httpx_aborted", False):
             # --no-browser словил защиту WAF — дальше пачку не гоняем, нет
             # смысла добивать оставшиеся N строк той же блокировкой.
-            print(
+            cline(
                 f"[parkrun queue] --no-browser: обнаружена защита, "
-                f"эксперимент остановлен на {index}/{total}.",
-                flush=True,
+                f"эксперимент остановлен на {index}/{total}."
             )
             break
 
@@ -277,7 +276,7 @@ def run_parkrun_queue_daemon(
             line = after_item()
             if line:
                 details.append(line)
-                print("  ", line, flush=True)
+                cline(f"  {line}")
 
         if index < total:
             session.human_pause_between_jobs()
@@ -323,18 +322,17 @@ def run_daemon(
     # стран (results-service доступен с Mac, но не с сервера).
     stats_line = refresh_monitoring_stats()
     if stats_line:
-        print(stats_line, flush=True)
+        cline(stats_line)
 
     # s95 uses its own fetch (no parkrun browser needed) — drain it first.
     s95_result = run_s95_pending_queue(db, limit_pending=limit_pending)
     if s95_result["total"]:
-        print(
+        cline(
             f"s95 очередь: {s95_result['backlog_total']} задач(и) всего — "
-            f"берём в этот прогон {s95_result['total']}, {s95_result['summary']}",
-            flush=True,
+            f"берём в этот прогон {s95_result['total']}, {s95_result['summary']}"
         )
         for line in cast("list[str]", s95_result["details"]):
-            print("  ", line, flush=True)
+            cline(f"  {line}")
 
     items = build_parkrun_work_queue(
         db,
@@ -354,7 +352,7 @@ def run_daemon(
         return monitoring_history_step(limit=1)
 
     if not items:
-        print("Очередь parkrun пуста (pending и sync).", flush=True)
+        cline("Очередь parkrun пуста (pending и sync).")
         parkrun_result: dict[str, object] = {"summary": {}, "details": [], "total": 0}
     else:
         settings = get_settings()
@@ -374,11 +372,10 @@ def run_daemon(
         sync_taken = len(items) - pending_taken
         pending_total = count_pending_rows(db, "parkrun")
         backlog_total = pending_total + sync_taken
-        print(
+        cline(
             f"В очереди: {backlog_total} задач(и) всего "
             f"(pending {pending_total}, sync {sync_taken}) — "
-            f"берём в этот прогон {len(items)}. Браузер: {mode}",
-            flush=True,
+            f"берём в этот прогон {len(items)}. Браузер: {mode}"
         )
         with ParkrunDaemonSession(
             use_cdp=use_cdp,
@@ -407,10 +404,10 @@ def run_daemon(
         if remaining > 0:
             drain_line = monitoring_history_step(limit=remaining)
             if drain_line:
-                print(drain_line, flush=True)
+                cline(drain_line)
 
     push_line = push_monitoring_to_server()
     if push_line:
-        print(push_line, flush=True)
+        cline(push_line)
 
     return _merge_results(s95_result, parkrun_result)

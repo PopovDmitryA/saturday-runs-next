@@ -15,6 +15,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.models import SyncJobStatus, SyncJobTrigger
+from app.parkrun.fetch.daemon_log import cline
 from app.services.profile_fetch_pending_service import (
     count_pending_rows,
     describe_processed_profile,
@@ -58,7 +59,7 @@ def run_s95_pending_queue(
                 if outcome == "done":
                     description = describe_processed_profile(db, "s95", row.external_user_id)
                     if description:
-                        print(description, flush=True)
+                        cline(description)
                 # activity_import rows already fetched and imported all data inside
                 # process_pending_row — no additional sync needed. Only run the
                 # full user sync for profile_preview rows (where process_pending_row

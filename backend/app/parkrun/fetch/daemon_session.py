@@ -25,6 +25,7 @@ from app.parkrun.fetch.cdp_session import (
     _is_captcha_title,
     _parkrun_host,
 )
+from app.parkrun.fetch.daemon_log import cline
 from app.parkrun.fetch.diagnostics import inspect_html_response
 from app.parkrun.fetch.rate_limit import mark_fetch_completed, wait_for_turn
 from app.platform_fetch.cooldown import clear_platform_cooldown
@@ -100,11 +101,10 @@ class ParkrunDaemonSession:
 
         from app.parkrun.fetch.browser import PARKRUN_USER_AGENT
 
-        print(
+        cline(
             "Режим --no-browser: обычный httpx вместо Chromium, без прогрева "
             "сессии/капчи. Первый же признак защиты WAF останавливает всю "
-            "оставшуюся пачку — это эксперимент, не постоянный режим.",
-            flush=True,
+            "оставшуюся пачку — это эксперимент, не постоянный режим."
         )
         self._httpx_client = httpx.Client(
             headers={"User-Agent": PARKRUN_USER_AGENT},
@@ -117,10 +117,9 @@ class ParkrunDaemonSession:
         from app.parkrun.fetch.browser import _ensure_context
 
         self._playwright_mode = True
-        print(
+        cline(
             "Запуск Chromium (Playwright) — как в legacy-скрипте. "
-            "При капче пройдите её в открывшемся окне.",
-            flush=True,
+            "При капче пройдите её в открывшемся окне."
         )
         self._context = _ensure_context()
         self._ensure_parkrun_home_tab_playwright()
@@ -175,7 +174,7 @@ class ParkrunDaemonSession:
 
     def show_status(self, message: str) -> None:
         line = f"[parkrun queue] {message}"
-        print(line, flush=True)
+        cline(line)
         page = self._work_page
         if page is None:
             return
@@ -463,12 +462,11 @@ def launch_debug_chrome(cdp_port: int = 9222) -> None:
         "--no-default-browser-check",
     ]
     if _chrome_profile_in_use(profile):
-        print(
+        cline(
             f"Профиль {profile} уже занят другим Chrome. "
-            "Закройте то окно или запустите команду ниже вручную в отдельном терминале:",
-            flush=True,
+            "Закройте то окно или запустите команду ниже вручную в отдельном терминале:"
         )
-        print(manual_chrome_debug_command(cdp_port), flush=True)
+        cline(manual_chrome_debug_command(cdp_port))
     if platform.system() == "Darwin":
         subprocess.Popen(
             ["open", "-na", "Google Chrome", "--args", *chrome_args],
@@ -483,12 +481,12 @@ def launch_debug_chrome(cdp_port: int = 9222) -> None:
             stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
-    print(f"Запускаем Chrome (профиль {profile}, порт {cdp_port})…", flush=True)
+    cline(f"Запускаем Chrome (профиль {profile}, порт {cdp_port})…")
 
 
 def ensure_chrome_cdp(cdp_url: str, *, launch: bool, wait_seconds: float = 90.0) -> None:
     if cdp_is_reachable(cdp_url):
-        print("Chrome CDP уже доступен.", flush=True)
+        cline("Chrome CDP уже доступен.")
         return
     if not launch:
         raise ParkrunCdpSessionError(
@@ -504,12 +502,12 @@ def ensure_chrome_cdp(cdp_url: str, *, launch: bool, wait_seconds: float = 90.0)
     last_progress = 0.0
     while time.time() < deadline:
         if cdp_is_reachable(cdp_url):
-            print("Chrome CDP готов.", flush=True)
+            cline("Chrome CDP готов.")
             return
         now = time.time()
         if now - last_progress >= 5.0:
             remaining = int(deadline - now)
-            print(f"Ожидание Chrome CDP на {cdp_url} (~{remaining} с)…", flush=True)
+            cline(f"Ожидание Chrome CDP на {cdp_url} (~{remaining} с)…")
             last_progress = now
         time.sleep(0.5)
     raise ParkrunCdpSessionError(

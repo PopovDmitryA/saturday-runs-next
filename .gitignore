@@ -56,6 +56,7 @@ S95_API.md
 docs/release_posts_style.md
 data/parkrun_playwright_state.json
 data/grafana/dashboards/
+data/*.log
 
 # Local club-stats outputs (not for repo)
 .club_members.json
