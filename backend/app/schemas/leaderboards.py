@@ -48,5 +48,8 @@ class MyLeaderboardRowResponse(BaseModel):
     rank_delta: int | None
     included: bool
     threshold: int
+    # True только в гендерном зачёте, когда пол участника (по истории финишей)
+    # определённо не совпадает с выбранным — «появитесь после N» не показываем.
+    gender_mismatch: bool = False
     home_location: str | None = None
     home_location_wins: int | None = None

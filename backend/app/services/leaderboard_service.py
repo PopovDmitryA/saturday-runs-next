@@ -359,6 +359,26 @@ WHERE e.is_test_event = false
 GROUP BY rr.participant_id, p.code, e.location_id, gender_label
 """
 
+# Пол участника по ВСЕЙ его истории финишей (любая позиция, не только 1-е
+# место) — нужен, чтобы понять «этот зачёт вообще про него», когда первых
+# мест в выбранном поле у него ноль (см. _account_gender): участник мужского
+# пола без единой победы среди мужчин не должен видеть в женском зачёте
+# «вы появитесь после 1 первого места» — это не про него в принципе.
+_PARTICIPANT_GENDER_VOTES_SQL = f"""
+SELECT
+    rr.participant_id AS participant_id,
+    {_GENDER_LABEL_SQL} AS gender_label,
+    COUNT(*) AS cnt
+FROM run_results rr
+JOIN events e ON e.id = rr.event_id
+JOIN platforms p ON p.id = e.platform_id
+LEFT JOIN participants pt ON pt.id = rr.participant_id
+WHERE e.is_test_event = false
+  AND rr.participant_id = ANY(:pids)
+  AND p.code <> 'parkrun'
+GROUP BY rr.participant_id, gender_label
+"""
+
 _LATEST_EVENT_DATE_SQL = """
 SELECT MAX(e.event_date)
 FROM events e
@@ -638,6 +658,23 @@ def _dominant_gender(votes: dict[str, int]) -> str | None:
     if not votes:
         return None
     return min(votes.items(), key=lambda item: (-item[1], item[0]))[0]
+
+
+def _account_gender(db: Session, participant_ids: list[UUID]) -> str | None:
+    """Пол аккаунта по всей истории финишей его участников (см. комментарий у
+    _PARTICIPANT_GENDER_VOTES_SQL) — независимо от того, есть ли у него первые
+    места. None, если ни одного результата с определяемым полом нет (например,
+    только parkrun-профиль)."""
+    if not participant_ids:
+        return None
+    rows = db.execute(
+        text(_PARTICIPANT_GENDER_VOTES_SQL), {"pids": participant_ids}
+    ).all()
+    votes: dict[str, int] = {}
+    for _pid, gender_label, cnt in rows:
+        if gender_label in ("male", "female"):
+            votes[gender_label] = votes.get(gender_label, 0) + int(cnt)
+    return _dominant_gender(votes)
 
 
 def _gendered_win_rows(
@@ -1242,6 +1279,16 @@ def get_my_leaderboard_row(
     prev_rank = _ranked(prev_totals_desc, total - week) if total > 0 else None
     included = total >= threshold and total > 0
 
+    # Зачёт «не про него»: в мужском/женском зачёте у участника ноль первых
+    # мест — прежде чем звать «появитесь после 1», проверяем, его ли это пол
+    # вообще (по всей истории финишей, не только по победам). Если пол
+    # определился и не совпадает с выбранным — это не «ещё не достиг», а
+    # структурно другой зачёт, порог показывать незачем.
+    gender_mismatch = False
+    if not included and resolved != "all" and metric in GENDERED_METRICS:
+        account_gender = _account_gender(db, participant_ids)
+        gender_mismatch = account_gender is not None and account_gender != resolved
+
     return {
         "metric": metric,
         "display_name": user.display_name,
@@ -1253,6 +1300,7 @@ def get_my_leaderboard_row(
         "rank_delta": (prev_rank - rank) if included and rank is not None and prev_rank is not None else None,
         "included": included,
         "threshold": threshold,
+        "gender_mismatch": gender_mismatch,
         "home_location": my_home[0] if my_home else None,
         "home_location_wins": my_home[1] if my_home else None,
     }

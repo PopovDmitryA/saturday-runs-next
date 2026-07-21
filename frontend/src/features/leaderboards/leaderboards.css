@@ -241,19 +241,37 @@
   line-height: 1.45;
 }
 
-/* «Топ-локация побед» (только рейтинг побед): имя локации + счёт побед там.
-   Названия переносятся по словам: с nowrap колонка распирала таблицу шире
-   контейнера, а .lb-table-wrap намеренно не скроллится по горизонтали
-   (overflow-x: visible — иначе ломается липкая шапка), и таблица вылезала. */
+/* «Топ-локация» (только рейтинг побед): имя локации + счёт побед там.
+   Названия переносятся по словам; overflow-wrap — на случай одного длинного
+   неразрывного слова без пробелов («Интернационалистов» и т.п.), которое
+   иначе не помещается в фиксированную ширину колонки ни при каком переносе
+   по словам. */
 .lb-table .lb-col-home {
   white-space: normal;
-  max-width: 13rem;
+  overflow-wrap: break-word;
 }
 
-/* С 8 колонками (рейтинг побед) числовые ужимаются до содержимого — прежние
-   6.4rem были запасом под 6-колоночные рейтинги и здесь не помещались. */
+/* table-layout:fixed для 8-колоночного рейтинга побед — иначе браузер
+   игнорирует заданные width и раздувает таблицу вширь под длинные
+   неразрывные названия локаций («Стрежевой Городской парк», «Магнитогорск
+   Экопарк» и т.п.): в table-layout:auto колонка не может стать уже своего
+   самого длинного «слова», сколько бы width ей ни задали. Fixed жёстко
+   фиксирует ширины столбцов и переносит длинный текст внутри колонки —
+   участник (единственная колонка без явной ширины) получает весь остаток. */
+.lb-table.lb-table-wins {
+  table-layout: fixed;
+}
+
+.lb-table.lb-table-wins .lb-col-rank {
+  width: 5rem;
+}
+
 .lb-table.lb-table-wins .lb-col-num {
-  width: 5.4rem;
+  width: 5rem;
+}
+
+.lb-table.lb-table-wins .lb-col-home {
+  width: 11rem;
 }
 
 /* Значок «i»: число рядом с топ-локацией — это победы там, не все пробежки. */
@@ -556,4 +574,29 @@ a.lb-hub-card:hover {
   .lb-me-values {
     margin-left: 0;
   }
+}
+
+/* Кнопка «наверх» — топ-1000 в рейтингах листается далеко вниз */
+.lb-scroll-top {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong, var(--border));
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.22);
+}
+
+.lb-scroll-top:hover {
+  color: var(--accent-indigo-text);
 }

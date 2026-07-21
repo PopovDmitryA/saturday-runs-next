@@ -58,6 +58,9 @@ export type MyLeaderboardRow = {
   rank_delta: number | null;
   included: boolean;
   threshold: number;
+  // true только в гендерном зачёте, когда пол участника (по истории финишей)
+  // определённо не совпадает с выбранным — порог показывать не нужно.
+  gender_mismatch?: boolean;
   home_location?: string | null;
   home_location_wins?: number | null;
 };

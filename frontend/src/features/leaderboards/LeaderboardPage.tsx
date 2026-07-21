@@ -16,6 +16,7 @@ import { unitLabel } from "./pluralize";
 import "./leaderboards.css";
 
 const PAGE_STEP = 100;
+const SCROLL_TOP_THRESHOLD = 480;
 
 const GENDER_TABS: { value: LeaderboardGender; label: string }[] = [
   { value: "all", label: "Абсолют" },
@@ -141,7 +142,17 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [sortKey, setSortKey] = useState<SortKey>("rank");
   const [gender, setGender] = useState<LeaderboardGender>("all");
   const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > SCROLL_TOP_THRESHOLD);
+    };
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const hasGenderSplit = GENDERED_METRICS.includes(metric);
   const effectiveGender = hasGenderSplit ? gender : "all";
@@ -298,15 +309,12 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                   ))}
                 </div>
                 {effectiveGender !== "all" && (
-                  <p className="lb-gender-note muted">
-                    parkrun в разбивку по полу не входит: у наших parkrun-данных пол известен
-                    только по неполным профилям и ненадёжен. Абсолютный зачёт учитывает все системы.
-                  </p>
+                  <p className="lb-gender-note muted">parkrun в разбивку по полу не входит.</p>
                 )}
               </div>
             )}
 
-            {me && (
+            {me && !(!me.included && me.gender_mismatch) && (
               <section
                 className={me.included ? "lb-me" : "lb-me lb-me-out"}
                 aria-label="Ваша строка в рейтинге"
@@ -442,6 +450,17 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               </div>
             )}
           </>
+        )}
+        {showScrollTop && (
+          <button
+            type="button"
+            className="lb-scroll-top"
+            aria-label="Наверх страницы"
+            title="Наверх страницы"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          >
+            ↑
+          </button>
         )}
       </div>
     </InsightsShell>
