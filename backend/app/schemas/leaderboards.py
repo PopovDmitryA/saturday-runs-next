@@ -16,10 +16,14 @@ class LeaderboardRowResponse(BaseModel):
     platforms: dict[str, LeaderboardCellResponse]
     total: int
     total_delta: int
+    # Только у метрики wins: «топ-локация побед» — локация с максимумом побед.
+    home_location: str | None = None
+    home_location_wins: int | None = None
 
 
 class LeaderboardResponse(BaseModel):
     metric: str
+    gender: str = "all"
     title: str
     description: str
     unit: str
@@ -44,3 +48,8 @@ class MyLeaderboardRowResponse(BaseModel):
     rank_delta: int | None
     included: bool
     threshold: int
+    # True только в гендерном зачёте, когда пол участника (по истории финишей)
+    # определённо не совпадает с выбранным — «появитесь после N» не показываем.
+    gender_mismatch: bool = False
+    home_location: str | None = None
+    home_location_wins: int | None = None

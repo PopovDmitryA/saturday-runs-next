@@ -120,6 +120,10 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
     <RequireAuth>{() => <LeaderboardPage metric="volunteering" />}</RequireAuth>
   ),
   "/ratings/locations": () => <RequireAuth>{() => <LeaderboardPage metric="locations" />}</RequireAuth>,
+  "/ratings/wins": () => <RequireAuth>{() => <LeaderboardPage metric="wins" />}</RequireAuth>,
+  "/ratings/win-locations": () => (
+    <RequireAuth>{() => <LeaderboardPage metric="win_locations" />}</RequireAuth>
+  ),
   "/share": () => <SharePage />,
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
