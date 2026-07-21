@@ -4,30 +4,12 @@ import { ParticipationBadge } from "./ParticipationBadge";
 import { RateRunModal } from "./RateRunModal";
 import { getEligibleRuns, type EligibleRun, type RatingEligibility, type RunRating } from "../lib/api";
 import { formatDateLong, pluralizeRu } from "../lib/format";
-
-const DISMISSED_STORAGE_KEY = "recentRatingsDismissed";
-
-function loadDismissed(): Set<string> {
-  try {
-    const raw = localStorage.getItem(DISMISSED_STORAGE_KEY);
-    return raw ? new Set(JSON.parse(raw)) : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-function saveDismissed(ids: Set<string>) {
-  try {
-    localStorage.setItem(DISMISSED_STORAGE_KEY, JSON.stringify([...ids]));
-  } catch {
-    // localStorage недоступен — просто не сохраняем
-  }
-}
+import { loadDismissedRatings, saveDismissedRatings } from "../lib/ratingDismissals";
 
 export function RecentRunsRating() {
   const [data, setData] = useState<RatingEligibility | null>(null);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
-  const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed());
+  const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissedRatings());
 
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +29,7 @@ export function RecentRunsRating() {
     setDismissed((prev) => {
       const next = new Set(prev);
       next.add(entryId);
-      saveDismissed(next);
+      saveDismissedRatings(next);
       return next;
     });
   }, []);

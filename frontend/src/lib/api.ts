@@ -1321,6 +1321,10 @@ export type EligibleRun = {
   platform_code: string;
   location_name: string;
   location_city: string | null;
+  // Канонический ключ площадки — совпадает с identity_key страницы локации.
+  // Опционально: страницы «Пробежки»/«Волонтёрство» собирают EligibleRun из
+  // своих строк, где ключа нет, — он нужен только карточке на странице локации.
+  location_identity_key?: string | null;
   finish_time_display: string | null;
   position: number | null;
   is_pr: boolean;

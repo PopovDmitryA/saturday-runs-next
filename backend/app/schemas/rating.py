@@ -135,6 +135,9 @@ class EligibleRunResponse(BaseModel):
     platform_code: str
     location_name: str
     location_city: str | None = None
+    # Канонический ключ площадки (catalog:<uuid> / location:<uuid>) — тот же,
+    # что identity_key страницы локации: slug у разных платформ свой, а ключ один.
+    location_identity_key: str | None = None
     finish_time_display: str | None = None
     position: int | None = None
     is_pr: bool = False

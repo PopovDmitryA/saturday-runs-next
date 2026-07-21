@@ -20,6 +20,7 @@ import { SITE_HOME_HREF } from "../../lib/siteBrand";
 import { APP_NAV_ITEMS } from "../../lib/siteNav";
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { LocationMiniMap } from "./LocationMiniMap";
+import { LocationRatingPrompt } from "./LocationRatingPrompt";
 import { LocationRecordsModal, type RecordType } from "./LocationRecordsModal";
 
 function LocationShell({ children, currentUser }: { children: ReactNode; currentUser: User }) {
@@ -442,6 +443,8 @@ function LocationPageContent({ slug, currentUser }: { slug: string; currentUser:
           ))}
         </div>
       </header>
+
+      <LocationRatingPrompt identityKey={page.identity_key} />
 
       <section className="card loc-section">
         <div className="loc-section-head">

@@ -9210,6 +9210,67 @@ tr.run-crosslinked td {
   min-width: 0;
 }
 
+/* Карточка-рекомендация «оцените свой старт здесь» над цифрами локации. */
+.loc-rate-prompt {
+  position: relative;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  /* место под крестик в правом верхнем углу */
+  padding-right: 2.6rem;
+  border-color: var(--tint-amber-border);
+  background: var(--tint-amber-bg);
+}
+
+.loc-rate-prompt-body {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.loc-rate-prompt-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.loc-rate-prompt-meta {
+  margin: 0.35rem 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.loc-rate-prompt-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.loc-rate-prompt-close:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.loc-rate-prompt-close svg {
+  width: 1rem;
+  height: 1rem;
+}
+
 .loc-stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));

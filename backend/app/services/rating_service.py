@@ -318,7 +318,9 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
 
     for entry in entries:
         entry.pop("_platform_order", None)
-        entry.pop("_identity", None)
+        # Канонический ключ площадки отдаём наружу: по нему страница локации
+        # понимает, что этот старт — про неё (slug у разных платформ свой).
+        entry["location_identity_key"] = entry.pop("_identity", None)
         existing_rating = ratings_by_entry.get(cast(str, entry["entry_id"]))
         entry["my_rating"] = _rating_to_dict(existing_rating) if existing_rating else None
 
