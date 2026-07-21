@@ -348,7 +348,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
             </div>
 
             <div className="table-wrap lb-table-wrap">
-              <table className="data-table lb-table">
+              <table className={`data-table lb-table${metric === "wins" ? " lb-table-wins" : ""}`}>
                 <thead>
                   <tr>
                     {headerCell("rank", "Место", "lb-col-rank")}
