@@ -23,6 +23,7 @@ HELP_TEXT = (
     "Команды:\n"
     "/stats [дней] — статистика ЛК\n"
     "/status — запущенные пайплайны и время старта\n"
+    "/обход — статус мирового обхода атлетов parkrun (по VPN-выходам)\n"
     "/sync — список пайплайнов 5 вёрст и s95\n"
     "/sync registry — реестр /events/\n"
     "/sync latest — /results/latest/\n"
@@ -87,6 +88,21 @@ def _fetch_pipeline_status(settings: VkBotSettings) -> str:
         detail = response.json().get("detail", response.text)
         raise RuntimeError(f"sync-status API {response.status_code}: {detail}")
     return format_pipeline_status(response.json())
+
+
+def _fetch_sweep_status(settings: VkBotSettings) -> str:
+    headers = vk_bot_headers(settings)
+    url = f"{settings.api_base_url.rstrip('/')}/api/internal/vk-bot/sweep-status"
+    response = httpx.get(
+        url,
+        params={"vk_user_id": settings.vk_admin_user_id},
+        headers=headers,
+        timeout=30.0,
+    )
+    if response.status_code != 200:
+        detail = response.json().get("detail", response.text)
+        raise RuntimeError(f"sweep-status API {response.status_code}: {detail}")
+    return response.json()["text"]
 
 
 def _sync_protocol_url(settings: VkBotSettings, url: str) -> str:
@@ -188,6 +204,13 @@ def _handle_message(peer_id: int, from_id: int, text: str, message: dict) -> Non
             send_message(peer_id, _fetch_pipeline_status(settings))
         except Exception as exc:
             send_message(peer_id, f"Не удалось получить статус: {exc}")
+        return
+
+    if cmd in {"обход", "sweep"}:
+        try:
+            send_message(peer_id, _fetch_sweep_status(settings))
+        except Exception as exc:
+            send_message(peer_id, f"Не удалось получить статус обхода: {exc}")
         return
 
     if cmd == "sync":
