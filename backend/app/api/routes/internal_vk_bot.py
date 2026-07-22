@@ -130,10 +130,12 @@ def _sweep_report_text() -> str:
         return f"Обход: БД недоступна ({exc!r})"[:160]
     total = sum(by.values())
     pending = by.get("pending", 0)
+    done = total - pending
+    pct = (done / total * 100) if total else 0
     working = sum(1 for *_, cd in exits if cd <= 0)
     lines = [
         "🌍 Обход атлетов parkrun",
-        f"📊 пройдено {total - pending:,}/{total:,}, собрано {crawled:,}, забегов {runs:,}",
+        f"📊 пройдено {done:,}/{total:,} ({pct:.1f}%), собрано {crawled:,}, забегов {runs:,}",
         f"🔌 рабочих {working}/{len(exits)}",
         "",
     ]
