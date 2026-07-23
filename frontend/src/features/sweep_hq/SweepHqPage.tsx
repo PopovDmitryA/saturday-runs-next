@@ -182,6 +182,124 @@ function BotTable({
   );
 }
 
+type Athlete = {
+  athlete_id: number;
+  name: string | null;
+  total_runs: number;
+  status: string;
+  parsed_at: string;
+  volunteer: number;
+  location: string | null;
+  country_name: string | null;
+  iso2: string | null;
+};
+
+function flagFromIso2(iso2: string | null): string {
+  if (!iso2 || iso2.length !== 2) return "";
+  const A = 0x1f1e6;
+  const c = iso2.toLowerCase();
+  return String.fromCodePoint(A + c.charCodeAt(0) - 97, A + c.charCodeAt(1) - 97);
+}
+
+const ATHLETE_STATUS: Record<string, { label: string; cls: string }> = {
+  ok: { label: "✓ валидна", cls: "ok" },
+  registered_empty: { label: "пусто", cls: "empty" },
+  not_found: { label: "нет", cls: "empty" },
+  unclassified: { label: "ревью", cls: "review" },
+};
+
+function AthletesTab({ token }: { token: string }) {
+  const [rows, setRows] = useState<Athlete[] | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/sweep-hq/athletes?token=${encodeURIComponent(token)}`, {
+          credentials: "same-origin",
+        });
+        if (!alive) return;
+        if (!res.ok) {
+          setError(true);
+          return;
+        }
+        setError(false);
+        setRows(((await res.json()) as { athletes: Athlete[] }).athletes);
+      } catch {
+        if (alive) setError(true);
+      }
+    };
+    load();
+    const id = window.setInterval(load, REFRESH_MS);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [token]);
+
+  if (error) return <p className="hq-muted hq-pad">Не удалось загрузить.</p>;
+  if (!rows) return <p className="hq-muted hq-pad">Загрузка…</p>;
+
+  return (
+    <section className="hq-card">
+      <header className="hq-card__head">
+        <h2>🏃 Последние 100 обработанных</h2>
+        <span className="hq-card__sub">свежие сверху · обновление раз в 3 мин</span>
+      </header>
+      <div className="hq-tablewrap">
+        <table className="hq-table hq-table--ath">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Результат</th>
+              <th>ФИО</th>
+              <th className="hq-num">Пробежек</th>
+              <th className="hq-num">Волонтёрств</th>
+              <th>Частая локация</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((a) => {
+              const st = ATHLETE_STATUS[a.status] ?? { label: a.status, cls: "empty" };
+              return (
+                <tr key={a.athlete_id}>
+                  <td className="hq-mono">
+                    <a
+                      href={`https://www.parkrun.org.uk/parkrunner/${a.athlete_id}/`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="hq-idlink"
+                    >
+                      {a.athlete_id}
+                    </a>
+                  </td>
+                  <td>
+                    <span className={`hq-astatus hq-astatus--${st.cls}`}>{st.label}</span>
+                  </td>
+                  <td>{a.name ?? "—"}</td>
+                  <td className="hq-num">{a.total_runs || "—"}</td>
+                  <td className="hq-num">{a.volunteer || "—"}</td>
+                  <td>
+                    {a.location ? (
+                      <span className="hq-loc">
+                        {a.iso2 && <span className="hq-loc__flag">{flagFromIso2(a.iso2)}</span>}
+                        <span>{a.location}</span>
+                        {a.country_name && <span className="hq-loc__cn">{a.country_name}</span>}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function Calculator({ remaining }: { remaining: number }) {
   const [perDay, setPerDay] = useState<string>("10000");
   const result = useMemo(() => {
@@ -222,6 +340,7 @@ export function SweepHqPage({ token }: { token: string }) {
   const [prev, setPrev] = useState<SweepData | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [error, setError] = useState<number | null>(null);
+  const [tab, setTab] = useState<"fleet" | "athletes">("fleet");
   const curRef = useRef<SweepData | null>(null);
 
   useEffect(() => {
@@ -334,9 +453,27 @@ export function SweepHqPage({ token }: { token: string }) {
           <Calculator remaining={p.remaining} />
         </header>
 
-        <div className="hq-fleet">
-          <BotTable
-            title="🛡️ Приватные VPN"
+        <nav className="hq-tabs">
+          <button
+            className={tab === "fleet" ? "hq-tab hq-tab--on" : "hq-tab"}
+            onClick={() => setTab("fleet")}
+          >
+            🤖 Флот ботов
+          </button>
+          <button
+            className={tab === "athletes" ? "hq-tab hq-tab--on" : "hq-tab"}
+            onClick={() => setTab("athletes")}
+          >
+            🏃 Атлеты
+          </button>
+        </nav>
+
+        {tab === "athletes" ? (
+          <AthletesTab token={token} />
+        ) : (
+          <div className="hq-fleet">
+            <BotTable
+              title="🛡️ Приватные VPN"
             subtitle={`${vpnWorking} в работе · ${data.vpn.length} всего`}
             bots={data.vpn}
             showUptime
@@ -352,8 +489,9 @@ export function SweepHqPage({ token }: { token: string }) {
             showUptime={false}
             showFlag={false}
             prevMap={prevFreeMap}
-          />
-        </div>
+            />
+          </div>
+        )}
 
         <footer className="hq-foot hq-muted">
           {updatedAt ? `обновлено ${fmtMoscow(updatedAt)}` : "…"} · раз в 3 минуты

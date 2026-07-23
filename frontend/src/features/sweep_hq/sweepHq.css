@@ -154,6 +154,79 @@
   color: #67e8f9;
 }
 
+/* ---------- tabs ---------- */
+.hq-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 22px 0 4px;
+}
+.hq-tab {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(94, 128, 190, 0.22);
+  color: #b9c6dd;
+  border-radius: 12px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.hq-tab:hover {
+  border-color: rgba(94, 128, 190, 0.5);
+}
+.hq-tab--on {
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.22), rgba(129, 140, 248, 0.18));
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #e6edf7;
+}
+.hq-pad {
+  padding: 24px;
+}
+
+/* ---------- athletes table ---------- */
+.hq-mono {
+  font-variant-numeric: tabular-nums;
+}
+.hq-idlink {
+  color: #7dd3fc;
+  text-decoration: none;
+}
+.hq-idlink:hover {
+  text-decoration: underline;
+}
+.hq-astatus {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.hq-astatus--ok {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.14);
+}
+.hq-astatus--empty {
+  color: #8091ad;
+  background: rgba(128, 145, 173, 0.12);
+}
+.hq-astatus--review {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.14);
+}
+.hq-loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.hq-loc__flag {
+  font-size: 15px;
+}
+.hq-loc__cn {
+  font-size: 11px;
+  color: #8091ad;
+}
+
 /* ---------- fleet tables ---------- */
 .hq-fleet {
   display: grid;

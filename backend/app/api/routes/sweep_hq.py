@@ -26,18 +26,65 @@ def _rows(conn, sql: str) -> list[dict]:
     return [dict(zip(cols, r, strict=False)) for r in cur.fetchall()]
 
 
+def _guard(token: str, settings: Settings) -> str:
+    secret = settings.sweep_hq_token
+    if not secret or not hmac.compare_digest(token, secret):
+        raise HTTPException(status_code=404, detail="Not found")
+    dsn = os.getenv("PM_WORLD_DSN")
+    if not dsn:
+        raise HTTPException(status_code=503, detail="sweep DB not configured")
+    return dsn
+
+
+@router.get("/athletes")
+def sweep_hq_athletes(
+    token: Annotated[str, Query()] = "",
+    settings: Annotated[Settings, Depends(get_settings)] = None,  # type: ignore[assignment]
+) -> dict:
+    """Последние 100 обработанных атлетов: id, статус, ФИО, пробежки/волонтёрство,
+    самая частая локация + страна (флаг по iso2 на фронте)."""
+    dsn = _guard(token, settings)
+    import psycopg
+
+    with psycopg.connect(dsn, connect_timeout=5) as conn:
+        rows = _rows(conn, """
+            WITH recent AS (
+                SELECT athlete_id, name, total_runs, status, parsed_at
+                FROM athletes WHERE source='crawl'
+                ORDER BY parsed_at DESC LIMIT 100
+            ),
+            loc AS (
+                SELECT DISTINCT ON (athlete_id) athlete_id, event_slug, event_name
+                FROM (
+                    SELECT athlete_id, event_slug, event_name, count(*) AS cnt
+                    FROM runs WHERE athlete_id IN (SELECT athlete_id FROM recent)
+                    GROUP BY athlete_id, event_slug, event_name
+                ) g
+                ORDER BY athlete_id, cnt DESC
+            )
+            SELECT r.athlete_id, r.name, r.total_runs, r.status,
+                   to_char(r.parsed_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS parsed_at,
+                   COALESCE(vs.total_credits, 0) AS volunteer,
+                   loc.event_name AS location, ec.country_name, ec.iso2
+            FROM recent r
+            LEFT JOIN loc ON loc.athlete_id = r.athlete_id
+            LEFT JOIN volunteer_summary vs ON vs.athlete_id = r.athlete_id
+            LEFT JOIN event_country ec
+                   ON ec.slug = regexp_replace(loc.event_slug, '[^a-z0-9]', '', 'g')
+            ORDER BY r.parsed_at DESC""")
+    for r in rows:
+        r["athlete_id"] = int(r["athlete_id"])
+        r["total_runs"] = int(r["total_runs"] or 0)
+        r["volunteer"] = int(r["volunteer"] or 0)
+    return {"athletes": rows}
+
+
 @router.get("")
 def sweep_hq(
     token: Annotated[str, Query()] = "",
     settings: Annotated[Settings, Depends(get_settings)] = None,  # type: ignore[assignment]
 ) -> dict:
-    secret = settings.sweep_hq_token
-    if not secret or not hmac.compare_digest(token, secret):
-        raise HTTPException(status_code=404, detail="Not found")
-
-    dsn = os.getenv("PM_WORLD_DSN")
-    if not dsn:
-        raise HTTPException(status_code=503, detail="sweep DB not configured")
+    dsn = _guard(token, settings)
 
     import psycopg
 
@@ -59,8 +106,12 @@ def sweep_hq(
                    to_char(last_ok_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_ok_at,
                    ban_level
             FROM sweep_exits WHERE account <> 'free'
-            ORDER BY (CASE WHEN enabled AND (cooldown_until IS NULL OR cooldown_until<=now()) THEN 0 ELSE 1 END),
-                     collected_total DESC, name""")
+            ORDER BY
+                CASE WHEN NOT enabled THEN 2
+                     WHEN cooldown_until > now() THEN 1
+                     ELSE 0 END,                       -- онлайн(0) → отлёжка(1) → выключен(2)
+                cooldown_until ASC NULLS FIRST,         -- среди отлёжки: кто скорее вернётся — выше
+                collected_total DESC, name""")
         free_sum = _rows(conn, """
             SELECT count(*) AS total,
                    count(*) FILTER (WHERE last_ok_at IS NOT NULL
