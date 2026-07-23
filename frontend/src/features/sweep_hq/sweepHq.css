@@ -466,6 +466,9 @@
 .hq-status--working {
   color: #34d399;
 }
+.hq-status--queued {
+  color: #7dd3fc;
+}
 .hq-status__cd {
   color: #fbbf24;
   font-variant-numeric: tabular-nums;

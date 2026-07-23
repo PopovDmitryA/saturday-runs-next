@@ -101,15 +101,17 @@ def sweep_hq(
             SELECT name, account, collected_total, active_seconds, delay_sec,
                    CASE WHEN NOT enabled THEN 'off'
                         WHEN cooldown_until > now() THEN 'cooldown'
-                        ELSE 'working' END AS status,
+                        WHEN worker_heartbeat_at > now() - interval '90 seconds' THEN 'working'
+                        ELSE 'queued' END AS status,
                    GREATEST(0, EXTRACT(EPOCH FROM (cooldown_until - now())) / 3600) AS cooldown_hours,
                    to_char(last_ok_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_ok_at,
                    ban_level
             FROM sweep_exits WHERE account <> 'free'
             ORDER BY
-                CASE WHEN NOT enabled THEN 2
-                     WHEN cooldown_until > now() THEN 1
-                     ELSE 0 END,                       -- онлайн(0) → отлёжка(1) → выключен(2)
+                CASE WHEN NOT enabled THEN 3
+                     WHEN cooldown_until > now() THEN 2
+                     WHEN worker_heartbeat_at > now() - interval '90 seconds' THEN 0
+                     ELSE 1 END,                        -- работает(0)→очередь(1)→отлёжка(2)→выкл(3)
                 cooldown_until ASC NULLS FIRST,         -- среди отлёжки: кто скорее вернётся — выше
                 collected_total DESC, name""")
         free_sum = _rows(conn, """

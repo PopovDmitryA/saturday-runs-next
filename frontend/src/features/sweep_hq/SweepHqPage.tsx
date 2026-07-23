@@ -12,7 +12,7 @@ type Bot = {
   name?: string;
   proxy?: string;
   account?: string;
-  status: "working" | "cooldown" | "off";
+  status: "working" | "queued" | "cooldown" | "off";
   cooldown_hours: number;
   collected_total: number;
   active_seconds?: number;
@@ -75,6 +75,7 @@ function flagFor(name: string): string {
 
 const STATUS_META: Record<Bot["status"], { dot: string; label: string }> = {
   working: { dot: "🟢", label: "работает" },
+  queued: { dot: "🔵", label: "в очереди" },
   cooldown: { dot: "🟡", label: "отлёжка" },
   off: { dot: "🔴", label: "выключен" },
 };
