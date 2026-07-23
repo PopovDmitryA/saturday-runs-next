@@ -129,7 +129,7 @@ def sweep_hq(
                    GREATEST(0, EXTRACT(EPOCH FROM (cooldown_until - now())) / 3600) AS cooldown_hours,
                    to_char(last_ok_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_ok_at
             FROM free_proxies
-            ORDER BY collected_total DESC, last_ok_at DESC NULLS LAST LIMIT 50""")
+            ORDER BY collected_total DESC, last_ok_at DESC NULLS LAST LIMIT 300""")
 
     done = int(prog["done"] or 0)
     total = int(prog["total"] or 0) or QUEUE_TOTAL_FALLBACK
