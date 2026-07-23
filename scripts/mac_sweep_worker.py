@@ -106,35 +106,51 @@ def fetch(client: httpx.Client, url: str) -> tuple[str, str]:
     return "ok", body
 
 
-def solve_captcha_get_token() -> str | None:
-    """Поднять видимый браузер поверх окон, дать пройти капчу, снять aws-waf-token."""
+def solve_captcha(aid: int) -> tuple[str | None, str | None]:
+    """Открыть браузер поверх окон СРАЗУ на нужном атлете. Ты проходишь капчу —
+    возвращаем (aws-waf-token, HTML его summary-страницы), чтобы тут же его
+    распарсить, не гоняя лишний запрос."""
     from playwright.sync_api import sync_playwright
 
-    print(f"\n{_now()} ⚠️  КАПЧА — открываю браузер, пройди «Human Verification»…", flush=True)
+    print(f"\n{_now()} ⚠️  КАПЧА на атлете {aid} — открываю его в браузере, пройди «Human Verification»…",
+          flush=True)
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False, args=["--start-maximized"])
         ctx = browser.new_context(no_viewport=True)
         page = ctx.new_page()
         page.bring_to_front()
         try:
-            page.goto("https://www.parkrun.org.uk/parkrunner/620/", timeout=180000,
+            page.goto(f"https://www.parkrun.org.uk/parkrunner/{aid}/", timeout=180000,
                       wait_until="domcontentloaded")
         except Exception:
             pass
-        input(">>> Пройди капчу, дождись страницы атлета, нажми Enter здесь… ")
+        input(f">>> Пройди капчу, дождись страницы атлета {aid}, нажми Enter здесь… ")
         token = next((c for c in ctx.cookies() if c["name"] == "aws-waf-token"), None)
+        try:
+            html = page.content()
+        except Exception:
+            html = None
         browser.close()
-    if token:
-        print(f"{_now()} токен снят, продолжаю без браузера.", flush=True)
-        return token["value"]
-    print(f"{_now()} токен не найден — попробую продолжить как есть.", flush=True)
-    return None
+    tok = token["value"] if token else None
+    print(f"{_now()} токен {'снят' if tok else 'НЕ найден'}, продолжаю.", flush=True)
+    return tok, html
 
 
 def make_client(token: str | None) -> httpx.Client:
     cookies = {"aws-waf-token": token} if token else {}
     return httpx.Client(headers={"User-Agent": UA, "Accept-Language": "en-GB,en;q=0.9"},
                         cookies=cookies, timeout=30.0, follow_redirects=True)
+
+
+def finish(conn, aid: int, data, raw: str | None, delay: float) -> None:
+    """Записать атлета + пометить очередь + прибавить статистику macbook."""
+    store(conn, aid, data, raw)
+    conn.execute("UPDATE crawl_queue SET status=%s, claimed_by=NULL, fetched_at=now() "
+                 "WHERE athlete_id=%s", (data.status, aid))
+    conn.execute("UPDATE sweep_exits SET collected_total=collected_total+1, "
+                 "active_seconds=active_seconds+%s, last_ok_at=now(), "
+                 "worker_heartbeat_at=now() WHERE name=%s", (int(delay), WORKER))
+    conn.commit()
 
 
 def main() -> None:
@@ -177,26 +193,37 @@ def main() -> None:
                         raise _Protected()
                     data.runs = parse_all_runs(html2, str(aid))
                 raw = html if data.status == "unclassified" else None
-                store(conn, aid, data, raw)
-                conn.execute("UPDATE crawl_queue SET status=%s, claimed_by=NULL, fetched_at=now() "
-                             "WHERE athlete_id=%s", (data.status, aid))
-                conn.execute("UPDATE sweep_exits SET collected_total=collected_total+1, "
-                             "active_seconds=active_seconds+%s, last_ok_at=now(), "
-                             "worker_heartbeat_at=now() WHERE name=%s", (int(args.delay), WORKER))
-                conn.commit()
+                finish(conn, aid, data, raw, args.delay)
                 consec_waf = 0
                 done += 1
                 nm = (data.name or data.status)
                 print(f"{_now()} #{done} атлет {aid}: {nm} ({data.status}, {data.total_runs or 0} заб.) "
                       f"[обработка {time.time()-t0:.1f}с · пауза {pause:.1f}с]", flush=True)
             except _Protected:
-                conn.execute("UPDATE crawl_queue SET status='pending', claimed_by=NULL WHERE athlete_id=%s", (aid,))
-                conn.commit()
                 consec_waf += 1
-                if consec_waf >= 3:
-                    token = solve_captcha_get_token()
-                    client.close(); client = make_client(token)
-                    consec_waf = 0
+                if consec_waf < 3:
+                    conn.execute("UPDATE crawl_queue SET status='pending', claimed_by=NULL WHERE athlete_id=%s", (aid,))
+                    conn.commit()
+                    continue
+                # 3 капчи подряд → браузер СРАЗУ на этом атлете, парсим его же
+                token, chtml = solve_captcha(aid)
+                client.close(); client = make_client(token)
+                consec_waf = 0
+                try:
+                    data = parse_summary(chtml, str(aid)) if chtml else AthleteData(status="unclassified")
+                    if data.status == "ok":
+                        time.sleep(1.0)
+                        kind2, html2 = fetch(client, base + "all/")
+                        if kind2 != "protected":
+                            data.runs = parse_all_runs(html2, str(aid))
+                    finish(conn, aid, data, chtml if data.status == "unclassified" else None, args.delay)
+                    done += 1
+                    print(f"{_now()} #{done} атлет {aid}: {data.name or data.status} "
+                          f"({data.status}, {data.total_runs or 0} заб.) [после капчи]", flush=True)
+                except Exception as exc:
+                    conn.execute("UPDATE crawl_queue SET status='pending', claimed_by=NULL WHERE athlete_id=%s", (aid,))
+                    conn.commit()
+                    print(f"{_now()} атлет {aid} после капчи не разобрал: {exc!r}", flush=True)
                 continue
             except Exception as exc:
                 conn.execute("UPDATE crawl_queue SET status='pending', claimed_by=NULL, "
