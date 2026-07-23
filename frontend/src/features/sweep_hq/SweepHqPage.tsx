@@ -65,6 +65,7 @@ const PREFIX_FLAG: Record<string, string> = {
   pl: "🇵🇱", nl: "🇳🇱", fi: "🇫🇮", ee: "🇪🇪", se: "🇸🇪", gf: "🌐",
 };
 function flagFor(name: string): string {
+  if (name.toLowerCase().startsWith("mac")) return "💻";
   const m = name.match(/^([a-z]{2})/i);
   if (!m) return "🏳️";
   const code = m[1].toLowerCase();

@@ -77,6 +77,10 @@ parkrun-save-browser-state:
 #     пауза человек<->человек, человек<->локация И между двумя страницами
 #     профиля (иначе там дефолтные 10с), джиттер ±30%, по умолчанию 3с
 parkrun:
+	python3 scripts/parkrun_launcher.py
+
+# Прямой запуск демона сайта без меню (старое поведение): make parkrun-site
+parkrun-site:
 	LIMIT="$(LIMIT)" bash scripts/parkrun_mac.sh; true
 
 # Seed 5 parkrun profiles from legacy five_verst_stats into LK queue (needs LEGACY_DATABASE_URL)
