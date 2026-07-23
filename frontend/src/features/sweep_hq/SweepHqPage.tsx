@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./sweepHq.css";
+
+const REFRESH_MS = 180_000; // раз в 3 минуты
 
 type Bot = {
   name?: string;
@@ -84,6 +86,28 @@ function StatusCell({ bot }: { bot: Bot }) {
   );
 }
 
+function fmtMoscow(d: Date): string {
+  return (
+    d.toLocaleTimeString("ru-RU", {
+      timeZone: "Europe/Moscow",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }) + " МСК"
+  );
+}
+
+function Delta({ value }: { value: number }) {
+  if (!value || value <= 0) return null;
+  return <span className="hq-delta">↑{fmt(value)}</span>;
+}
+
+function collectedMap(bots?: Bot[]): Map<string, number> {
+  const m = new Map<string, number>();
+  bots?.forEach((b, i) => m.set(b.name ?? b.proxy ?? String(i), b.collected_total));
+  return m;
+}
+
 const MEDALS = ["🥇", "🥈", "🥉"];
 
 function BotTable({
@@ -92,12 +116,14 @@ function BotTable({
   bots,
   showUptime,
   showFlag,
+  prevMap,
 }: {
   title: string;
   subtitle: string;
   bots: Bot[];
   showUptime: boolean;
   showFlag: boolean;
+  prevMap: Map<string, number>;
 }) {
   return (
     <section className="hq-card">
@@ -135,7 +161,10 @@ function BotTable({
                     <StatusCell bot={bot} />
                   </td>
                   {showUptime && <td className="hq-num">{fmtDuration(bot.active_seconds ?? 0)}</td>}
-                  <td className="hq-num hq-collected">{fmt(bot.collected_total)}</td>
+                  <td className="hq-num hq-collected">
+                    {fmt(bot.collected_total)}
+                    <Delta value={bot.collected_total - (prevMap.get(id) ?? bot.collected_total)} />
+                  </td>
                 </tr>
               );
             })}
@@ -190,7 +219,10 @@ function Calculator({ remaining }: { remaining: number }) {
 
 export function SweepHqPage({ token }: { token: string }) {
   const [data, setData] = useState<SweepData | null>(null);
+  const [prev, setPrev] = useState<SweepData | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [error, setError] = useState<number | null>(null);
+  const curRef = useRef<SweepData | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -204,14 +236,18 @@ export function SweepHqPage({ token }: { token: string }) {
           setError(res.status);
           return;
         }
+        const next = (await res.json()) as SweepData;
         setError(null);
-        setData((await res.json()) as SweepData);
+        setPrev(curRef.current);
+        curRef.current = next;
+        setData(next);
+        setUpdatedAt(new Date());
       } catch {
         if (alive) setError(0);
       }
     };
     load();
-    const id = window.setInterval(load, 30_000);
+    const id = window.setInterval(load, REFRESH_MS);
     return () => {
       alive = false;
       window.clearInterval(id);
@@ -236,6 +272,9 @@ export function SweepHqPage({ token }: { token: string }) {
   const p = data.progress;
   const freeSum = data.free.summary;
   const vpnWorking = data.vpn.filter((b) => b.status === "working").length;
+  const prevVpnMap = collectedMap(prev?.vpn);
+  const prevFreeMap = collectedMap(prev?.free.top);
+  const collectedDelta = prev ? p.collected - prev.progress.collected : 0;
 
   return (
     <div className="hq-root">
@@ -256,6 +295,9 @@ export function SweepHqPage({ token }: { token: string }) {
                 {fmt(p.done)} / {fmt(p.total)} · {p.pct.toFixed(2)}%
               </span>
             </div>
+            {collectedDelta > 0 && (
+              <div className="hq-progress__delta">↑ {fmt(collectedDelta)} за 3 мин</div>
+            )}
           </div>
 
           <div className="hq-stats">
@@ -299,6 +341,7 @@ export function SweepHqPage({ token }: { token: string }) {
             bots={data.vpn}
             showUptime
             showFlag
+            prevMap={prevVpnMap}
           />
           <BotTable
             title="🌐 Бесплатные прокси"
@@ -308,10 +351,13 @@ export function SweepHqPage({ token }: { token: string }) {
             bots={data.free.top}
             showUptime={false}
             showFlag={false}
+            prevMap={prevFreeMap}
           />
         </div>
 
-        <footer className="hq-foot hq-muted">обновляется каждые 30 секунд</footer>
+        <footer className="hq-foot hq-muted">
+          {updatedAt ? `обновлено ${fmtMoscow(updatedAt)}` : "…"} · раз в 3 минуты
+        </footer>
       </div>
     </div>
   );
