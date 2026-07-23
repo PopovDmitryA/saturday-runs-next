@@ -504,10 +504,10 @@ export function SweepHqPage({ token }: { token: string }) {
   const rate1hDelta = prev ? data.rate_1h - prev.rate_1h : 0;
   const rate24hDelta = prev ? data.rate_24h - prev.rate_24h : 0;
   const runsDelta = prev ? p.runs - prev.progress.runs : 0;
-  const imminent = secondsLeft > 0 && secondsLeft <= 10;
   // Отсчёт до следующей 3-минутной границы стенных часов — не зависит от момента
   // загрузки страницы, поэтому перезагрузка его не сбрасывает.
   const secondsLeft = Math.ceil((REFRESH_MS - (now % REFRESH_MS)) / 1000);
+  const imminent = secondsLeft > 0 && secondsLeft <= 10;
   const daysDelta =
     prev && prev.forecast.days != null && data.forecast.days != null
       ? data.forecast.days - prev.forecast.days
