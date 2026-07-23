@@ -160,6 +160,28 @@
   font-size: 14px;
   color: #b9c6dd;
 }
+.hq-calc__unit {
+  display: inline-flex;
+  gap: 4px;
+  background: rgba(9, 14, 26, 0.7);
+  border: 1px solid rgba(94, 128, 190, 0.3);
+  border-radius: 10px;
+  padding: 3px;
+}
+.hq-ubtn {
+  background: transparent;
+  border: none;
+  color: #8091ad;
+  border-radius: 7px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hq-ubtn--on {
+  background: rgba(56, 189, 248, 0.22);
+  color: #e6edf7;
+}
 .hq-calc__input {
   display: inline-flex;
   align-items: center;

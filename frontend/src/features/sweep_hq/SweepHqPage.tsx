@@ -376,26 +376,43 @@ function AthletesTab({ token }: { token: string }) {
 }
 
 function Calculator({ remaining }: { remaining: number }) {
-  const [perDay, setPerDay] = useState<string>("10000");
+  const [rate, setRate] = useState<string>("10000");
+  const [unit, setUnit] = useState<"hour" | "day">("day");
   const result = useMemo(() => {
-    const r = Number(perDay.replace(/\s/g, ""));
+    const r = Number(rate.replace(/\s/g, ""));
     if (!r || r <= 0) return null;
-    const days = remaining / r;
+    // прогноз всегда в днях+дате; при «в час» темп домножаем на 24
+    const perDay = unit === "hour" ? r * 24 : r;
+    const days = remaining / perDay;
     const date = new Date(Date.now() + days * 86400_000);
     return { days, date };
-  }, [perDay, remaining]);
+  }, [rate, unit, remaining]);
   return (
     <div className="hq-calc">
       <div className="hq-calc__row">
         <label htmlFor="hq-rate">Калькулятор темпа:</label>
+        <div className="hq-calc__unit">
+          <button
+            className={unit === "hour" ? "hq-ubtn hq-ubtn--on" : "hq-ubtn"}
+            onClick={() => setUnit("hour")}
+          >
+            в час
+          </button>
+          <button
+            className={unit === "day" ? "hq-ubtn hq-ubtn--on" : "hq-ubtn"}
+            onClick={() => setUnit("day")}
+          >
+            в день
+          </button>
+        </div>
         <div className="hq-calc__input">
           <input
             id="hq-rate"
             inputMode="numeric"
-            value={perDay}
-            onChange={(e) => setPerDay(e.target.value)}
+            value={rate}
+            onChange={(e) => setRate(e.target.value)}
           />
-          <span>атлетов / день</span>
+          <span>атлетов / {unit === "hour" ? "час" : "день"}</span>
         </div>
       </div>
       {result ? (
