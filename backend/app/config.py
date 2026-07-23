@@ -124,6 +124,9 @@ class Settings(BaseSettings):
     vk_admin_user_id: int = 0
     vk_bot_internal_secret: str = ""
 
+    # Секретный токен для скрытой страницы-табло обхода атлетов (/hq/<token>).
+    sweep_hq_token: str = ""
+
     parkrun_base_url: str = "https://www.parkrun.org.uk"
     parkrun_fetch_min_interval_seconds: float = 25.0
     parkrun_fetch_max_interval_seconds: float = 55.0

@@ -40,6 +40,7 @@ import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage
 import { QueuePage } from "./features/queue/QueuePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SharePage } from "./features/share/SharePage";
+import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
 import { RequireAuth } from "./components/RequireAuth";
@@ -177,6 +178,10 @@ function renderRoute(path: string): ReactElement {
   if (path.startsWith("/api/")) {
     return <ApiPathRedirect />;
   }
+  const sweepHqMatch = path.match(/^\/hq\/(.+)$/);
+  if (sweepHqMatch) {
+    return <SweepHqPage token={decodeURIComponent(sweepHqMatch[1])} />;
+  }
   const publicProfileMatch = path.match(/^\/users\/([^/]+)$/);
   if (publicProfileMatch) {
     return <PublicProfilePage handle={decodeURIComponent(publicProfileMatch[1])} />;
@@ -207,7 +212,7 @@ const PORTAL_PATHS = new Set([
 export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
-  const hideLegacyBanner = PORTAL_PATHS.has(path) || path.startsWith("/new/");
+  const hideLegacyBanner = PORTAL_PATHS.has(path) || path.startsWith("/new/") || path.startsWith("/hq/");
   return (
     <>
       {!hideLegacyBanner && <LegacySiteBanner />}
