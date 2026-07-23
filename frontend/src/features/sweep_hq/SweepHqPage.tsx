@@ -438,46 +438,63 @@ export function SweepHqPage({ token }: { token: string }) {
   const curRef = useRef<SweepData | null>(loadSnap(token));
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  useEffect(() => {
     let alive = true;
-    const load = async () => {
+    const doFetch = async (): Promise<SweepData | null> => {
       try {
         const res = await fetch(`/api/sweep-hq?token=${encodeURIComponent(token)}`, {
           credentials: "same-origin",
         });
-        if (!alive) return;
+        if (!alive) return null;
         if (!res.ok) {
           setError(res.status);
-          return;
+          return null;
         }
-        const next = (await res.json()) as SweepData;
         setError(null);
-        setPrev(curRef.current);
-        curRef.current = next;
-        setData(next);
-        setUpdatedAt(new Date());
-        saveSnap(token, next);
+        return (await res.json()) as SweepData;
       } catch {
         if (alive) setError(0);
+        return null;
       }
     };
-    load();
-    // Опрос выравниваем по стенным часам (границы кратны 3 мин), чтобы отсчёт
-    // не сбрасывался при перезагрузке страницы — данные на сервере живые.
-    let interval: number | undefined;
-    const msToBoundary = REFRESH_MS - (Date.now() % REFRESH_MS);
-    const timer = window.setTimeout(() => {
-      load();
-      interval = window.setInterval(load, REFRESH_MS);
-    }, msToBoundary);
+    const apply = (next: SweepData) => {
+      setPrev(curRef.current);
+      curRef.current = next;
+      setData(next);
+      setUpdatedAt(new Date());
+      saveSnap(token, next);
+    };
+    // немедленная загрузка при входе
+    doFetch().then((d) => {
+      if (d) apply(d);
+    });
+
+    // Тикер раз в секунду: обновляет часы (для анимаций/отсчёта), ПРЕФЕТЧит данные
+    // за ~5с до 3-мин границы и ПОКАЗЫВАЕТ их ровно на границе (в 0:00), а не через
+    // пару секунд после. Раньше времени показанные данные не раскрываем.
+    let prefetchedFor = -1;
+    let pending: { at: number; data: SweepData } | null = null;
+    let applied = Math.floor(Date.now() / REFRESH_MS);
+    const tick = window.setInterval(() => {
+      if (!alive) return;
+      const nowMs = Date.now();
+      setNow(nowMs);
+      const bIndex = Math.floor(nowMs / REFRESH_MS);
+      const nextIndex = bIndex + 1;
+      if (nextIndex * REFRESH_MS - nowMs <= 5000 && prefetchedFor !== nextIndex) {
+        prefetchedFor = nextIndex;
+        doFetch().then((d) => {
+          if (d) pending = { at: nextIndex, data: d };
+        });
+      }
+      if (bIndex > applied && pending && pending.at <= bIndex) {
+        apply(pending.data);
+        pending = null;
+        applied = bIndex;
+      }
+    }, 1000);
     return () => {
       alive = false;
-      window.clearTimeout(timer);
-      if (interval) window.clearInterval(interval);
+      window.clearInterval(tick);
     };
   }, [token]);
 
