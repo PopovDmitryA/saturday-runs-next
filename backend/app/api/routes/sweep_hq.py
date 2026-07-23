@@ -108,12 +108,12 @@ def sweep_hq(
                    ban_level
             FROM sweep_exits WHERE account <> 'free'
             ORDER BY
+                collected_total DESC,                   -- РЕЙТИНГ: сколько спарсил (главное)
                 CASE WHEN NOT enabled THEN 3
                      WHEN cooldown_until > now() THEN 2
                      WHEN worker_heartbeat_at > now() - interval '90 seconds' THEN 0
-                     ELSE 1 END,                        -- работает(0)→очередь(1)→отлёжка(2)→выкл(3)
-                cooldown_until ASC NULLS FIRST,         -- среди отлёжки: кто скорее вернётся — выше
-                collected_total DESC, name""")
+                     ELSE 1 END,                        -- вторым: работает→очередь→отлёжка→выкл
+                cooldown_until ASC NULLS FIRST, name""")
         free_sum = _rows(conn, """
             SELECT count(*) AS total,
                    count(*) FILTER (WHERE last_ok_at IS NOT NULL
