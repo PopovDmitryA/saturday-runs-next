@@ -23,6 +23,7 @@ type SweepData = {
     runs: number;
   };
   rate_24h: number;
+  rate_1h: number;
   forecast: { days: number | null; date: string | null };
   vpn: Bot[];
   free: {
@@ -48,6 +49,20 @@ function fmtDate(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
   return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+// Имя VPN-выхода начинается с 2-буквенного кода страны (de, at, fi, pl2, deh2…).
+const PREFIX_FLAG: Record<string, string> = {
+  de: "🇩🇪", at: "🇦🇹", it: "🇮🇹", lt: "🇱🇹", tr: "🇹🇷", us: "🇺🇸",
+  pl: "🇵🇱", nl: "🇳🇱", fi: "🇫🇮", ee: "🇪🇪", se: "🇸🇪", gf: "🌐",
+};
+function flagFor(name: string): string {
+  const m = name.match(/^([a-z]{2})/i);
+  if (!m) return "🏳️";
+  const code = m[1].toLowerCase();
+  if (PREFIX_FLAG[code]) return PREFIX_FLAG[code];
+  const A = 0x1f1e6;
+  return String.fromCodePoint(A + code.charCodeAt(0) - 97, A + code.charCodeAt(1) - 97);
 }
 
 const STATUS_META: Record<Bot["status"], { dot: string; label: string }> = {
@@ -76,11 +91,13 @@ function BotTable({
   subtitle,
   bots,
   showUptime,
+  showFlag,
 }: {
   title: string;
   subtitle: string;
   bots: Bot[];
   showUptime: boolean;
+  showFlag: boolean;
 }) {
   return (
     <section className="hq-card">
@@ -108,6 +125,7 @@ function BotTable({
                     {bot.collected_total > 0 && i < 3 ? MEDALS[i] : i + 1}
                   </td>
                   <td className="hq-bot">
+                    {showFlag && <span className="hq-bot__flag">{flagFor(id)}</span>}
                     <span className="hq-bot__name">{id}</span>
                     {bot.account && bot.account !== "free" && (
                       <span className="hq-bot__acc">{bot.account}</span>
@@ -250,8 +268,12 @@ export function SweepHqPage({ token }: { token: string }) {
               <span className="hq-stat__cap">забегов</span>
             </div>
             <div className="hq-stat hq-stat--accent">
+              <span className="hq-stat__num">{fmt(data.rate_1h)}</span>
+              <span className="hq-stat__cap">за час</span>
+            </div>
+            <div className="hq-stat hq-stat--accent">
               <span className="hq-stat__num">{fmt(data.rate_24h)}</span>
-              <span className="hq-stat__cap">за 24 часа</span>
+              <span className="hq-stat__cap">за сутки</span>
             </div>
             <div className="hq-stat">
               <span className="hq-stat__num">
@@ -276,6 +298,7 @@ export function SweepHqPage({ token }: { token: string }) {
             subtitle={`${vpnWorking} в работе · ${data.vpn.length} всего`}
             bots={data.vpn}
             showUptime
+            showFlag
           />
           <BotTable
             title="🌐 Бесплатные прокси"
@@ -284,6 +307,7 @@ export function SweepHqPage({ token }: { token: string }) {
             )}`}
             bots={data.free.top}
             showUptime={false}
+            showFlag={false}
           />
         </div>
 

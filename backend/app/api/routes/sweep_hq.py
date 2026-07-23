@@ -46,6 +46,7 @@ def sweep_hq(
             SELECT count(*) FILTER (WHERE status<>'pending') AS done,
                    count(*) AS total,
                    count(*) FILTER (WHERE fetched_at > now() - interval '24 hours') AS rate_24h,
+                   count(*) FILTER (WHERE fetched_at > now() - interval '1 hour') AS rate_1h,
                    (SELECT count(*) FROM athletes WHERE source='crawl') AS collected,
                    (SELECT count(*) FROM runs) AS runs
             FROM crawl_queue""")[0]
@@ -108,6 +109,7 @@ def sweep_hq(
             "collected": int(prog["collected"] or 0), "runs": int(prog["runs"] or 0),
         },
         "rate_24h": rate_24h,
+        "rate_1h": int(prog["rate_1h"] or 0),
         "forecast": forecast,
         "vpn": vpn,
         "free": {

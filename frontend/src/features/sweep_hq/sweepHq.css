@@ -75,7 +75,7 @@
 
 .hq-stats {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 12px;
   margin-top: 20px;
 }
@@ -216,6 +216,10 @@
 .hq-row--top .hq-collected {
   color: #67e8f9;
   font-weight: 700;
+}
+.hq-bot__flag {
+  margin-right: 6px;
+  font-size: 15px;
 }
 .hq-bot__name {
   font-weight: 600;
