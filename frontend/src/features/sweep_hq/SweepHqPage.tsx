@@ -239,10 +239,18 @@ function AthletesTab({ token }: { token: string }) {
       }
     };
     load();
-    const id = window.setInterval(load, REFRESH_MS);
+    // Опрос выравниваем по стенным часам (границы кратны 3 мин), чтобы отсчёт
+    // не сбрасывался при перезагрузке страницы — данные на сервере живые.
+    let interval: number | undefined;
+    const msToBoundary = REFRESH_MS - (Date.now() % REFRESH_MS);
+    const timer = window.setTimeout(() => {
+      load();
+      interval = window.setInterval(load, REFRESH_MS);
+    }, msToBoundary);
     return () => {
       alive = false;
-      window.clearInterval(id);
+      window.clearTimeout(timer);
+      if (interval) window.clearInterval(interval);
     };
   }, [token]);
 
@@ -381,10 +389,18 @@ export function SweepHqPage({ token }: { token: string }) {
       }
     };
     load();
-    const id = window.setInterval(load, REFRESH_MS);
+    // Опрос выравниваем по стенным часам (границы кратны 3 мин), чтобы отсчёт
+    // не сбрасывался при перезагрузке страницы — данные на сервере живые.
+    let interval: number | undefined;
+    const msToBoundary = REFRESH_MS - (Date.now() % REFRESH_MS);
+    const timer = window.setTimeout(() => {
+      load();
+      interval = window.setInterval(load, REFRESH_MS);
+    }, msToBoundary);
     return () => {
       alive = false;
-      window.clearInterval(id);
+      window.clearTimeout(timer);
+      if (interval) window.clearInterval(interval);
     };
   }, [token]);
 
@@ -409,9 +425,9 @@ export function SweepHqPage({ token }: { token: string }) {
   const prevVpnMap = collectedMap(prev?.vpn);
   const prevFreeMap = collectedMap(prev?.free.top);
   const collectedDelta = prev ? p.collected - prev.progress.collected : 0;
-  const secondsLeft = updatedAt
-    ? Math.max(0, Math.ceil((updatedAt.getTime() + REFRESH_MS - now) / 1000))
-    : 0;
+  // Отсчёт до следующей 3-минутной границы стенных часов — не зависит от момента
+  // загрузки страницы, поэтому перезагрузка его не сбрасывает.
+  const secondsLeft = Math.ceil((REFRESH_MS - (now % REFRESH_MS)) / 1000);
   const daysDelta =
     prev && prev.forecast.days != null && data.forecast.days != null
       ? data.forecast.days - prev.forecast.days
