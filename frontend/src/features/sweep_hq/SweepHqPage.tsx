@@ -2,6 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import "./sweepHq.css";
 
 const REFRESH_MS = 180_000; // раз в 3 минуты
+// Прошлый снимок держим в localStorage, чтобы дельты (стрелки прироста, динамика
+// скорости) не обнулялись при перезагрузке страницы. Берём его как «прошлый»
+// только если он свежий (~в пределах одного цикла), иначе дельта была бы враньём.
+const SNAP_FRESH_MS = 240_000;
+const snapKey = (token: string) => `sweep-hq-snap:${token}`;
 
 type Bot = {
   name?: string;
@@ -98,6 +103,18 @@ function fmtMoscow(d: Date): string {
   );
 }
 
+function fmtMoscowDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("ru-RU", {
+    timeZone: "Europe/Moscow",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 function fmtCountdown(s: number): string {
   const m = Math.floor(s / 60);
   const sec = s % 60;
@@ -109,10 +126,41 @@ function Delta({ value }: { value: number }) {
   return <span className="hq-delta">↑{fmt(value)}</span>;
 }
 
+// Знаковая дельта темпа: ускорились — зелёная ↑, замедлились — жёлтая ↓.
+function RateDelta({ value }: { value: number }) {
+  if (!value) return null;
+  const up = value > 0;
+  return (
+    <span className={up ? "hq-fdelta hq-fdelta--good" : "hq-fdelta hq-fdelta--bad"}>
+      {up ? "↑" : "↓"} {fmt(Math.abs(value))}
+    </span>
+  );
+}
+
 function collectedMap(bots?: Bot[]): Map<string, number> {
   const m = new Map<string, number>();
   bots?.forEach((b, i) => m.set(b.name ?? b.proxy ?? String(i), b.collected_total));
   return m;
+}
+
+function loadSnap(token: string): SweepData | null {
+  try {
+    const raw = localStorage.getItem(snapKey(token));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { at: number; data: SweepData };
+    if (Date.now() - parsed.at > SNAP_FRESH_MS) return null;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function saveSnap(token: string, data: SweepData): void {
+  try {
+    localStorage.setItem(snapKey(token), JSON.stringify({ at: Date.now(), data }));
+  } catch {
+    /* приватный режим / переполнение — не критично */
+  }
 }
 
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -132,6 +180,8 @@ function BotTable({
   showFlag: boolean;
   prevMap: Map<string, number>;
 }) {
+  const [workingOnly, setWorkingOnly] = useState(false);
+  const shown = workingOnly ? bots.filter((b) => b.status === "working") : bots;
   return (
     <section className="hq-card">
       <header className="hq-card__head">
@@ -144,14 +194,20 @@ function BotTable({
             <tr>
               <th className="hq-th-rank">#</th>
               <th>Бот</th>
-              <th>Статус</th>
+              <th
+                className="hq-th-sort"
+                onClick={() => setWorkingOnly((v) => !v)}
+                title="Показать только работающих"
+              >
+                Статус {workingOnly ? "🟢✓" : "▾"}
+              </th>
               <th className="hq-num">Задержка</th>
               {showUptime && <th className="hq-num">В работе</th>}
               <th className="hq-num">Атлетов</th>
             </tr>
           </thead>
           <tbody>
-            {bots.map((bot, i) => {
+            {shown.map((bot, i) => {
               const id = bot.name ?? bot.proxy ?? String(i);
               return (
                 <tr key={id} className={i < 3 && bot.collected_total > 0 ? "hq-row--top" : ""}>
@@ -177,10 +233,10 @@ function BotTable({
                 </tr>
               );
             })}
-            {bots.length === 0 && (
+            {shown.length === 0 && (
               <tr>
                 <td colSpan={showUptime ? 6 : 5} className="hq-empty">
-                  пока пусто — прогрев
+                  {workingOnly ? "сейчас никто не работает" : "пока пусто — прогрев"}
                 </td>
               </tr>
             )}
@@ -273,6 +329,7 @@ function AthletesTab({ token }: { token: string }) {
               <th className="hq-num">Пробежек</th>
               <th className="hq-num">Волонтёрств</th>
               <th>Частая локация</th>
+              <th className="hq-num">Обработан (МСК)</th>
             </tr>
           </thead>
           <tbody>
@@ -307,6 +364,7 @@ function AthletesTab({ token }: { token: string }) {
                       "—"
                     )}
                   </td>
+                  <td className="hq-num hq-mono hq-muted">{fmtMoscowDateTime(a.parsed_at)}</td>
                 </tr>
               );
             })}
@@ -354,12 +412,12 @@ function Calculator({ remaining }: { remaining: number }) {
 
 export function SweepHqPage({ token }: { token: string }) {
   const [data, setData] = useState<SweepData | null>(null);
-  const [prev, setPrev] = useState<SweepData | null>(null);
+  const [prev, setPrev] = useState<SweepData | null>(() => loadSnap(token));
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [error, setError] = useState<number | null>(null);
   const [tab, setTab] = useState<"fleet" | "athletes">("fleet");
   const [now, setNow] = useState<number>(() => Date.now());
-  const curRef = useRef<SweepData | null>(null);
+  const curRef = useRef<SweepData | null>(loadSnap(token));
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
@@ -384,6 +442,7 @@ export function SweepHqPage({ token }: { token: string }) {
         curRef.current = next;
         setData(next);
         setUpdatedAt(new Date());
+        saveSnap(token, next);
       } catch {
         if (alive) setError(0);
       }
@@ -425,6 +484,8 @@ export function SweepHqPage({ token }: { token: string }) {
   const prevVpnMap = collectedMap(prev?.vpn);
   const prevFreeMap = collectedMap(prev?.free.top);
   const collectedDelta = prev ? p.collected - prev.progress.collected : 0;
+  const rate1hDelta = prev ? data.rate_1h - prev.rate_1h : 0;
+  const rate24hDelta = prev ? data.rate_24h - prev.rate_24h : 0;
   // Отсчёт до следующей 3-минутной границы стенных часов — не зависит от момента
   // загрузки страницы, поэтому перезагрузка его не сбрасывает.
   const secondsLeft = Math.ceil((REFRESH_MS - (now % REFRESH_MS)) / 1000);
@@ -478,10 +539,12 @@ export function SweepHqPage({ token }: { token: string }) {
             <div className="hq-stat hq-stat--accent">
               <span className="hq-stat__num">{fmt(data.rate_1h)}</span>
               <span className="hq-stat__cap">за час</span>
+              <RateDelta value={rate1hDelta} />
             </div>
             <div className="hq-stat hq-stat--accent">
               <span className="hq-stat__num">{fmt(data.rate_24h)}</span>
               <span className="hq-stat__cap">за сутки</span>
+              <RateDelta value={rate24hDelta} />
             </div>
             <div className="hq-stat">
               <span className="hq-stat__num">

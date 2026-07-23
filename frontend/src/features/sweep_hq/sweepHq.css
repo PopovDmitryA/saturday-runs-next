@@ -323,6 +323,14 @@
   text-align: center;
   color: #8091ad;
 }
+.hq-th-sort {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.hq-th-sort:hover {
+  color: #e6edf7;
+}
 .hq-row--top .hq-collected {
   color: #67e8f9;
   font-weight: 700;
