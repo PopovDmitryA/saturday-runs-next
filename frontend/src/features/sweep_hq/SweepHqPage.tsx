@@ -97,6 +97,12 @@ function fmtMoscow(d: Date): string {
   );
 }
 
+function fmtCountdown(s: number): string {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
 function Delta({ value }: { value: number }) {
   if (!value || value <= 0) return null;
   return <span className="hq-delta">↑{fmt(value)}</span>;
@@ -341,7 +347,13 @@ export function SweepHqPage({ token }: { token: string }) {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [error, setError] = useState<number | null>(null);
   const [tab, setTab] = useState<"fleet" | "athletes">("fleet");
+  const [now, setNow] = useState<number>(() => Date.now());
   const curRef = useRef<SweepData | null>(null);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -394,10 +406,22 @@ export function SweepHqPage({ token }: { token: string }) {
   const prevVpnMap = collectedMap(prev?.vpn);
   const prevFreeMap = collectedMap(prev?.free.top);
   const collectedDelta = prev ? p.collected - prev.progress.collected : 0;
+  const secondsLeft = updatedAt
+    ? Math.max(0, Math.ceil((updatedAt.getTime() + REFRESH_MS - now) / 1000))
+    : 0;
 
   return (
     <div className="hq-root">
       <div className="hq-inner">
+        <div className="hq-topbar">
+          <span className="hq-topbar__upd">
+            🕐 обновлено {updatedAt ? fmtMoscow(updatedAt) : "…"}
+          </span>
+          <span className="hq-topbar__next">
+            следующее через <b className="hq-topbar__timer">{fmtCountdown(secondsLeft)}</b>
+          </span>
+        </div>
+
         <header className="hq-hero">
           <div className="hq-hero__title">
             <span className="hq-hero__emoji">🌍</span>
@@ -493,9 +517,7 @@ export function SweepHqPage({ token }: { token: string }) {
           </div>
         )}
 
-        <footer className="hq-foot hq-muted">
-          {updatedAt ? `обновлено ${fmtMoscow(updatedAt)}` : "…"} · раз в 3 минуты
-        </footer>
+        <footer className="hq-foot hq-muted">данные обновляются раз в 3 минуты</footer>
       </div>
     </div>
   );
