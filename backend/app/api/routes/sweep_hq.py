@@ -98,7 +98,7 @@ def sweep_hq(
                    (SELECT count(*) FROM runs) AS runs
             FROM crawl_queue""")[0]
         vpn = _rows(conn, """
-            SELECT name, account, collected_total, active_seconds,
+            SELECT name, account, collected_total, active_seconds, delay_sec,
                    CASE WHEN NOT enabled THEN 'off'
                         WHEN cooldown_until > now() THEN 'cooldown'
                         ELSE 'working' END AS status,
@@ -120,7 +120,7 @@ def sweep_hq(
                    COALESCE(sum(collected_total), 0) AS collected
             FROM free_proxies""")[0]
         free_top = _rows(conn, """
-            SELECT proxy, collected_total, ban_level,
+            SELECT proxy, collected_total, ban_level, delay_sec, active_seconds,
                    CASE WHEN cooldown_until > now() THEN 'cooldown'
                         WHEN last_ok_at IS NOT NULL THEN 'working'
                         ELSE 'off' END AS status,
@@ -147,10 +147,13 @@ def sweep_hq(
     for r in vpn:
         r["collected_total"] = int(r["collected_total"] or 0)
         r["active_seconds"] = int(r["active_seconds"] or 0)
+        r["delay_sec"] = round(num(r["delay_sec"]), 1)
         r["cooldown_hours"] = round(num(r["cooldown_hours"]), 1)
         r["ban_level"] = int(r["ban_level"] or 0)
     for r in free_top:
         r["collected_total"] = int(r["collected_total"] or 0)
+        r["active_seconds"] = int(r["active_seconds"] or 0)
+        r["delay_sec"] = round(num(r["delay_sec"]), 1)
         r["cooldown_hours"] = round(num(r["cooldown_hours"]), 1)
         r["ban_level"] = int(r["ban_level"] or 0)
 

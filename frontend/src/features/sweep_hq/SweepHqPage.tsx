@@ -11,6 +11,7 @@ type Bot = {
   cooldown_hours: number;
   collected_total: number;
   active_seconds?: number;
+  delay_sec: number;
   ban_level: number;
   last_ok_at: string | null;
 };
@@ -144,6 +145,7 @@ function BotTable({
               <th className="hq-th-rank">#</th>
               <th>Бот</th>
               <th>Статус</th>
+              <th className="hq-num">Задержка</th>
               {showUptime && <th className="hq-num">В работе</th>}
               <th className="hq-num">Атлетов</th>
             </tr>
@@ -166,6 +168,7 @@ function BotTable({
                   <td>
                     <StatusCell bot={bot} />
                   </td>
+                  <td className="hq-num hq-muted">{bot.delay_sec}с</td>
                   {showUptime && <td className="hq-num">{fmtDuration(bot.active_seconds ?? 0)}</td>}
                   <td className="hq-num hq-collected">
                     {fmt(bot.collected_total)}
@@ -176,7 +179,7 @@ function BotTable({
             })}
             {bots.length === 0 && (
               <tr>
-                <td colSpan={showUptime ? 5 : 4} className="hq-empty">
+                <td colSpan={showUptime ? 6 : 5} className="hq-empty">
                   пока пусто — прогрев
                 </td>
               </tr>
@@ -409,6 +412,10 @@ export function SweepHqPage({ token }: { token: string }) {
   const secondsLeft = updatedAt
     ? Math.max(0, Math.ceil((updatedAt.getTime() + REFRESH_MS - now) / 1000))
     : 0;
+  const daysDelta =
+    prev && prev.forecast.days != null && data.forecast.days != null
+      ? data.forecast.days - prev.forecast.days
+      : null;
 
   return (
     <div className="hq-root">
@@ -467,6 +474,15 @@ export function SweepHqPage({ token }: { token: string }) {
                   : "—"}
               </span>
               <span className="hq-stat__cap">до финиша</span>
+              {daysDelta != null && Math.abs(daysDelta) >= 0.5 && (
+                <span
+                  className={
+                    daysDelta < 0 ? "hq-fdelta hq-fdelta--good" : "hq-fdelta hq-fdelta--bad"
+                  }
+                >
+                  {daysDelta < 0 ? "↓" : "↑"} {fmt(Math.abs(Math.round(daysDelta)))} дн
+                </span>
+              )}
             </div>
             <div className="hq-stat hq-stat--date">
               <span className="hq-stat__num">{fmtDate(data.forecast.date)}</span>
@@ -510,7 +526,7 @@ export function SweepHqPage({ token }: { token: string }) {
               freeSum.collected,
             )}`}
             bots={data.free.top}
-            showUptime={false}
+            showUptime
             showFlag={false}
             prevMap={prevFreeMap}
             />
