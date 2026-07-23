@@ -503,6 +503,8 @@ export function SweepHqPage({ token }: { token: string }) {
   const collectedDelta = prev ? p.collected - prev.progress.collected : 0;
   const rate1hDelta = prev ? data.rate_1h - prev.rate_1h : 0;
   const rate24hDelta = prev ? data.rate_24h - prev.rate_24h : 0;
+  const runsDelta = prev ? p.runs - prev.progress.runs : 0;
+  const imminent = secondsLeft > 0 && secondsLeft <= 10;
   // Отсчёт до следующей 3-минутной границы стенных часов — не зависит от момента
   // загрузки страницы, поэтому перезагрузка его не сбрасывает.
   const secondsLeft = Math.ceil((REFRESH_MS - (now % REFRESH_MS)) / 1000);
@@ -512,14 +514,17 @@ export function SweepHqPage({ token }: { token: string }) {
       : null;
 
   return (
-    <div className="hq-root">
+    <div className={imminent ? "hq-root hq-hot" : "hq-root"}>
       <div className="hq-inner">
-        <div className="hq-topbar">
+        <div className={imminent ? "hq-topbar hq-topbar--hot" : "hq-topbar"}>
           <span className="hq-topbar__upd">
             🕐 обновлено {updatedAt ? fmtMoscow(updatedAt) : "…"}
           </span>
           <span className="hq-topbar__next">
-            следующее через <b className="hq-topbar__timer">{fmtCountdown(secondsLeft)}</b>
+            {imminent ? "⚡ обновление через " : "следующее через "}
+            <b className={imminent ? "hq-topbar__timer hq-topbar__timer--hot" : "hq-topbar__timer"}>
+              {fmtCountdown(secondsLeft)}
+            </b>
           </span>
         </div>
 
@@ -552,6 +557,7 @@ export function SweepHqPage({ token }: { token: string }) {
             <div className="hq-stat">
               <span className="hq-stat__num">{fmt(p.runs)}</span>
               <span className="hq-stat__cap">забегов</span>
+              <RateDelta value={runsDelta} />
             </div>
             <div className="hq-stat hq-stat--accent">
               <span className="hq-stat__num">{fmt(data.rate_1h)}</span>

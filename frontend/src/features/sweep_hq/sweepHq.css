@@ -43,6 +43,62 @@
   font-weight: 700;
 }
 
+/* ---------- «нагнетание»: последние 10 секунд ---------- */
+.hq-topbar--hot {
+  border-color: rgba(248, 113, 113, 0.7);
+  box-shadow: 0 0 24px rgba(248, 113, 113, 0.35);
+}
+.hq-topbar__timer--hot {
+  display: inline-block;
+  color: #fca5a5;
+  font-size: 30px;
+  letter-spacing: 0.02em;
+  animation: hq-timerpulse 1s ease-in-out infinite;
+}
+@keyframes hq-timerpulse {
+  0%,
+  100% {
+    transform: scale(1);
+    text-shadow: 0 0 8px rgba(248, 113, 113, 0.5);
+  }
+  50% {
+    transform: scale(1.45);
+    color: #fee2e2;
+    text-shadow: 0 0 22px rgba(248, 113, 113, 0.95);
+  }
+}
+.hq-hot::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  box-shadow: inset 0 0 140px rgba(248, 113, 113, 0.4);
+  animation: hq-vignette 1s ease-in-out infinite;
+}
+@keyframes hq-vignette {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+/* прогресс-бар в этот момент тоже «дышит» */
+.hq-hot .hq-progress__fill {
+  animation: hq-barglow 1s ease-in-out infinite;
+}
+@keyframes hq-barglow {
+  0%,
+  100% {
+    box-shadow: 0 0 24px rgba(56, 189, 248, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(248, 113, 113, 0.9);
+  }
+}
+
 /* ---------- hero ---------- */
 .hq-hero {
   background: linear-gradient(180deg, rgba(30, 44, 74, 0.6), rgba(17, 26, 46, 0.6));
