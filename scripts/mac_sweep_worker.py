@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import os
+import random
 import socket
 import subprocess
 import sys
@@ -162,6 +163,7 @@ def main() -> None:
                 print(f"{_now()} очередь пуста, жду 60с…", flush=True); time.sleep(60); continue
             base = f"https://www.parkrun.org.uk/parkrunner/{aid}/"
             t0 = time.time()
+            pause = args.delay * random.uniform(0.85, 1.15)  # ±15% джиттер
             try:
                 kind, html = fetch(client, base)
                 if kind == "protected":
@@ -186,7 +188,7 @@ def main() -> None:
                 done += 1
                 nm = (data.name or data.status)
                 print(f"{_now()} #{done} атлет {aid}: {nm} ({data.status}, {data.total_runs or 0} заб.) "
-                      f"[{time.time()-t0:.1f}с]", flush=True)
+                      f"[обработка {time.time()-t0:.1f}с · пауза {pause:.1f}с]", flush=True)
             except _Protected:
                 conn.execute("UPDATE crawl_queue SET status='pending', claimed_by=NULL WHERE athlete_id=%s", (aid,))
                 conn.commit()
@@ -201,7 +203,7 @@ def main() -> None:
                              "attempts=attempts+1, error=%s WHERE athlete_id=%s", (repr(exc)[:200], aid))
                 conn.commit()
                 print(f"{_now()} атлет {aid} сбой: {exc!r}", flush=True)
-            time.sleep(args.delay)
+            time.sleep(pause)
     except KeyboardInterrupt:
         print(f"\n{_now()} остановлено. Собрано за сессию: {done}.", flush=True)
     finally:
