@@ -510,8 +510,24 @@ export function getLoginRequestStatus(requestToken: string) {
   return apiFetch<LoginRequestStatus>(`/auth/login-request/${requestToken}/status`);
 }
 
+// На каждой странице /auth/me независимо запрашивают сразу несколько
+// компонентов (App, PortalHeader, RequireAuth, сама страница) — получалось по
+// 2-3 одинаковых запроса на переход, каждый по 150-700 мс. Склеиваем только
+// одновременные вызовы: как только запрос завершился, кэш сбрасывается, поэтому
+// после логина/логаута следующий вызов снова идёт на сервер.
+let currentUserInFlight: Promise<User> | null = null;
+
 export function getCurrentUser() {
-  return apiFetch<User>("/auth/me");
+  if (currentUserInFlight) {
+    return currentUserInFlight;
+  }
+  const request = apiFetch<User>("/auth/me").finally(() => {
+    if (currentUserInFlight === request) {
+      currentUserInFlight = null;
+    }
+  });
+  currentUserInFlight = request;
+  return request;
 }
 
 export function updateDisplayName(displayName: string) {
