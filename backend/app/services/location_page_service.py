@@ -339,7 +339,11 @@ def _histogram_rows(db: Session, event_ids: list[UUID]) -> list[dict[str, object
             RunResult.finish_time_sec.isnot(None),
             RunResult.finish_time_sec > 0,
         )
-        .group_by("start_sec", "gender", RunResult.age_category)
+        # Группируем по САМИМ выражениям, а не по строковым алиасам
+        # "start_sec"/"gender": PostgreSQL при group-by по алиасу требует, чтобы
+        # все колонки внутри выражения (platforms.code в CASE для gender) тоже
+        # были в GROUP BY, и падал с GroupingError. Семантика та же.
+        .group_by(bin_expr, gender_expr, RunResult.age_category)
         .all()
     )
     aggregated: dict[tuple[int, str | None, str | None], int] = {}
