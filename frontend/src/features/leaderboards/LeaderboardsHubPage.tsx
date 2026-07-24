@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { InsightsShell } from "../insights/InsightsShell";
+import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
   getLeaderboard,
   getMyLeaderboardRow,
@@ -177,7 +177,7 @@ function SoonRatingCard({ card }: { card: SoonCard }) {
 
 export function LeaderboardsHubPage() {
   return (
-    <InsightsShell title="Рейтинги" activePath="/ratings">
+    <PortalSectionShell>
       <div className="lb-page lb-hub">
         <header className="lb-header">
           <h1>Рейтинги</h1>
@@ -199,6 +199,6 @@ export function LeaderboardsHubPage() {
           </section>
         ))}
       </div>
-    </InsightsShell>
+    </PortalSectionShell>
   );
 }

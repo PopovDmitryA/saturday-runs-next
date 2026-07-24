@@ -1,22 +1,18 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAuth } from "../../components/RequireAuth";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
-import { SiteHeader } from "../../components/SiteHeader";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
   ApiError,
   getLocationEvents,
-  logout,
   type LocationEventRow,
   type LocationEvents,
-  type User,
 } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
-import { SITE_HOME_HREF } from "../../lib/siteBrand";
-import { APP_NAV_ITEMS } from "../../lib/siteNav";
+import { PortalSectionShell } from "../portal/PortalSectionShell";
 
 type SortKey = "date" | "finishers" | "volunteers" | "best_male" | "best_female" | "avg" | "newcomers" | "prs";
 
@@ -50,33 +46,7 @@ function sortValue(row: LocationEventRow, key: SortKey): number | string | null 
   }
 }
 
-function EventsShell({ children, currentUser }: { children: ReactNode; currentUser: User }) {
-  const handleLogout = async () => {
-    await logout();
-    window.location.href = "/";
-  };
-
-  return (
-    <div className="shell">
-      <SiteHeader
-        homeHref={SITE_HOME_HREF}
-        navItems={APP_NAV_ITEMS}
-        activePath="/locations"
-        showAdminNav={currentUser.is_admin}
-        actions={
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void handleLogout()}>
-            Выйти
-          </button>
-        }
-      />
-      <div className="shell-content">
-        <main className="shell-main">{children}</main>
-      </div>
-    </div>
-  );
-}
-
-function LocationEventsContent({ slug, currentUser }: { slug: string; currentUser: User }) {
+function LocationEventsContent({ slug }: { slug: string }) {
   const [data, setData] = useState<LocationEvents | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,37 +125,37 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
 
   if (notFound) {
     return (
-      <EventsShell currentUser={currentUser}>
+      <PortalSectionShell>
         <div className="card">
           <p className="muted">Локация не найдена.</p>
           <p>
             <a href="/locations">Все локации</a>
           </p>
         </div>
-      </EventsShell>
+      </PortalSectionShell>
     );
   }
 
   if (error) {
     return (
-      <EventsShell currentUser={currentUser}>
+      <PortalSectionShell>
         <div className="card error">
           <p>{error}</p>
         </div>
-      </EventsShell>
+      </PortalSectionShell>
     );
   }
 
   if (!data) {
     return (
-      <EventsShell currentUser={currentUser}>
+      <PortalSectionShell>
         <p className="muted">Загрузка…</p>
-      </EventsShell>
+      </PortalSectionShell>
     );
   }
 
   return (
-    <EventsShell currentUser={currentUser}>
+    <PortalSectionShell>
       <header className="loc-header loc-wide-page">
         <p className="muted loc-header-breadcrumb">
           <a href="/locations">← Все локации</a> /{" "}
@@ -355,12 +325,12 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
         )}
       </section>
       <ScrollToTopButton />
-    </EventsShell>
+    </PortalSectionShell>
   );
 }
 
 export function LocationEventsPage({ slug }: { slug: string }) {
-  return <RequireAuth>{(user) => <LocationEventsContent slug={slug} currentUser={user} />}</RequireAuth>;
+  return <RequireAuth>{() => <LocationEventsContent slug={slug} />}</RequireAuth>;
 }
 
 function RecordIcon({ icon, ariaLabel, tooltip }: { icon: string; ariaLabel: string; tooltip: string }) {

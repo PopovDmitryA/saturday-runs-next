@@ -1,14 +1,12 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAuth } from "../../components/RequireAuth";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
-import { SiteHeader } from "../../components/SiteHeader";
-import { getLocationsIndex, logout, type LocationIndexItem, type User } from "../../lib/api";
+import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { getLocationsIndex, type LocationIndexItem } from "../../lib/api";
 import { formatDate, formatFinishTimeValue, pluralizeRu } from "../../lib/format";
-import { SITE_HOME_HREF } from "../../lib/siteBrand";
-import { APP_NAV_ITEMS } from "../../lib/siteNav";
 
 const PLATFORM_FILTERS = ["five_verst", "s95", "runpark"] as const;
 
@@ -83,32 +81,6 @@ function sortValue(item: LocationIndexItem, key: SortKey): number | string | nul
     case "first_event_date":
       return item.first_event_date;
   }
-}
-
-function IndexShell({ children, currentUser }: { children: ReactNode; currentUser: User }) {
-  const handleLogout = async () => {
-    await logout();
-    window.location.href = "/";
-  };
-
-  return (
-    <div className="shell">
-      <SiteHeader
-        homeHref={SITE_HOME_HREF}
-        navItems={APP_NAV_ITEMS}
-        activePath="/locations"
-        showAdminNav={currentUser.is_admin}
-        actions={
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void handleLogout()}>
-            Выйти
-          </button>
-        }
-      />
-      <div className="shell-content">
-        <main className="shell-main">{children}</main>
-      </div>
-    </div>
-  );
 }
 
 function LocationsTable({ items }: { items: LocationIndexItem[] }) {
@@ -260,7 +232,7 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
   );
 }
 
-function LocationsIndexContent({ currentUser }: { currentUser: User }) {
+function LocationsIndexContent() {
   const [items, setItems] = useState<LocationIndexItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -293,7 +265,7 @@ function LocationsIndexContent({ currentUser }: { currentUser: User }) {
   }, [items, query, platformFilter, showPaused]);
 
   return (
-    <IndexShell currentUser={currentUser}>
+    <PortalSectionShell>
       <header className="loc-header">
         <div className="loc-header-title">
           <h1>Локации</h1>
@@ -347,10 +319,10 @@ function LocationsIndexContent({ currentUser }: { currentUser: User }) {
         )}
       </section>
       <ScrollToTopButton />
-    </IndexShell>
+    </PortalSectionShell>
   );
 }
 
 export function LocationsIndexPage() {
-  return <RequireAuth>{(user) => <LocationsIndexContent currentUser={user} />}</RequireAuth>;
+  return <RequireAuth>{() => <LocationsIndexContent />}</RequireAuth>;
 }

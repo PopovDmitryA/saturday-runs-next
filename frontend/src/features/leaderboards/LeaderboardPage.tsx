@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
-import { InsightsShell } from "../insights/InsightsShell";
+import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
   GENDERED_METRICS,
   getLeaderboard,
@@ -261,7 +261,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   );
 
   return (
-    <InsightsShell title={data?.title ?? "Рейтинг"} activePath="/ratings">
+    <PortalSectionShell>
       <div className="lb-page">
         <nav className="lb-breadcrumb">
           <a href="/ratings">← Все рейтинги</a>
@@ -466,6 +466,6 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
           </button>
         )}
       </div>
-    </InsightsShell>
+    </PortalSectionShell>
   );
 }

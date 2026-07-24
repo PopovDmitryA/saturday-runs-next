@@ -601,6 +601,13 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   letter-spacing: -0.01em;
 }
 
+/* Отступ между блоком чекбоксов («тестовые»/«незачётные») и полосой
+   чипов-фильтров: у .map-mode-tabs есть только margin-bottom, поэтому без
+   этого фильтры прижимались к чекбоксам вплотную. */
+.portal-cab-main .checkbox-row-group + .map-mode-tabs {
+  margin-top: 18px;
+}
+
 /* Чипы-фильтры систем — как переключатели на портальной главной */
 .portal-cab-main .map-mode-tab {
   border-radius: 9px;

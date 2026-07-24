@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { logout, updateDisplayName, type User } from "../../../lib/api";
 import {
-  PORTAL_ABOUT_HREF,
   PORTAL_CABINET_ACHIEVEMENTS_HREF,
   PORTAL_CABINET_HISTORY_HREF,
   PORTAL_CABINET_HREF,
@@ -107,15 +106,12 @@ const BOTTOM_NAV_KEYS: CabinetTabKey[] = ["dashboard", "runs", "volunteering", "
 type SecondaryNavItem = { href: string; label: string; adminOnly?: boolean };
 
 // Служебные разделы пока живут на старых адресах — до их собственной перевёрстки.
-// Локации/Рейтинги сюда же: полноценные разделы сайта, но их портальный
-// редизайн — отдельный этап (см. главную портала), здесь просто ссылки.
+// Локации/Рейтинги/О проекте сюда НЕ дублируем — они уже есть в шапке портала
+// (общий <PortalHeader/>), которая рендерится над кабинетом.
 const SECONDARY_NAV: SecondaryNavItem[] = [
-  { href: "/locations", label: "Локации" },
-  { href: "/ratings", label: "Рейтинги" },
   { href: "/share", label: "Поделиться" },
   { href: "/settings", label: "Настройки" },
   { href: "/admin/users", label: "Админка", adminOnly: true },
-  { href: PORTAL_ABOUT_HREF, label: "О проекте" },
 ];
 
 // Экспорт: имя пользователя нужно и герою дашборда.

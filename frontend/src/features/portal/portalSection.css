@@ -1,0 +1,72 @@
+/* Разделы портала верхнего уровня (Локации, Рейтинги) — каркас PortalSectionShell.
+   Легаси-контент страниц рескинится здесь scoped-правилами, сами страницы не
+   трогаем (только меняем их старый SiteHeader-шелл на PortalSectionShell). */
+
+.portal-section-page {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+/* 1440px — общая ширина сайта, синхронизирована с .portal-home (portal.css)
+   и .portal-cab-layout (cabinet.css). Меняете одну — меняйте все, иначе при
+   переходе между разделами контент визуально «прыгает». */
+.portal-section {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 24px 20px 72px;
+}
+
+/* ---------- заголовок раздела ---------- */
+
+.portal-section .lb-header h1,
+.portal-section .loc-index-head h1 {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+/* ---------- карточки → портальные панели ---------- */
+
+.portal-section .card {
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+
+.portal-section .section-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- таблицы ---------- */
+
+.portal-section .table-wrap {
+  border-radius: 14px;
+}
+
+.portal-section .data-table thead th {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+/* ---------- чипы-фильтры (как на главной портала) ---------- */
+
+.portal-section .map-mode-tab,
+.portal-section .insights-filter-chip {
+  border-radius: 9px;
+  border-color: var(--border);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.portal-section .map-mode-tab.active,
+.portal-section .insights-filter-chip.active {
+  background: var(--tint-indigo-bg);
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+}

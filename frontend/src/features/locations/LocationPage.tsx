@@ -2,52 +2,22 @@ import { useEffect, useState, type ReactNode } from "react";
 import { LocationStatusLabel } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAuth } from "../../components/RequireAuth";
-import { SiteHeader } from "../../components/SiteHeader";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
   ApiError,
   getLocationLeaders,
   getLocationPage,
-  logout,
   type LocationCourseRecord,
   type LocationLastEvent,
   type LocationLeaders,
   type LocationPage as LocationPageData,
-  type User,
 } from "../../lib/api";
 import { formatDate, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
-import { SITE_HOME_HREF } from "../../lib/siteBrand";
-import { APP_NAV_ITEMS } from "../../lib/siteNav";
+import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { LocationMiniMap } from "./LocationMiniMap";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
 import { LocationRecordsModal, type RecordType } from "./LocationRecordsModal";
-
-function LocationShell({ children, currentUser }: { children: ReactNode; currentUser: User }) {
-  const handleLogout = async () => {
-    await logout();
-    window.location.href = "/";
-  };
-
-  return (
-    <div className="shell">
-      <SiteHeader
-        homeHref={SITE_HOME_HREF}
-        navItems={APP_NAV_ITEMS}
-        activePath="/locations"
-        showAdminNav={currentUser.is_admin}
-        actions={
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void handleLogout()}>
-            Выйти
-          </button>
-        }
-      />
-      <div className="shell-content">
-        <main className="shell-main">{children}</main>
-      </div>
-    </div>
-  );
-}
 
 function StatTile({
   value,
@@ -351,7 +321,7 @@ function LocationInfoCard({ page }: { page: LocationPageData }) {
   );
 }
 
-function LocationPageContent({ slug, currentUser }: { slug: string; currentUser: User }) {
+function LocationPageContent({ slug }: { slug: string }) {
   const [page, setPage] = useState<LocationPageData | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -390,32 +360,32 @@ function LocationPageContent({ slug, currentUser }: { slug: string; currentUser:
 
   if (notFound) {
     return (
-      <LocationShell currentUser={currentUser}>
+      <PortalSectionShell>
         <div className="card">
           <p className="muted">Локация не найдена.</p>
           <p>
             <a href="/locations">Все локации</a>
           </p>
         </div>
-      </LocationShell>
+      </PortalSectionShell>
     );
   }
 
   if (error) {
     return (
-      <LocationShell currentUser={currentUser}>
+      <PortalSectionShell>
         <div className="card error">
           <p>{error}</p>
         </div>
-      </LocationShell>
+      </PortalSectionShell>
     );
   }
 
   if (!page) {
     return (
-      <LocationShell currentUser={currentUser}>
+      <PortalSectionShell>
         <p className="muted">Загрузка…</p>
-      </LocationShell>
+      </PortalSectionShell>
     );
   }
 
@@ -423,7 +393,7 @@ function LocationPageContent({ slug, currentUser }: { slug: string; currentUser:
   const records = stats.course_records;
 
   return (
-    <LocationShell currentUser={currentUser}>
+    <PortalSectionShell>
       <header className="loc-header loc-wide-page">
         <p className="muted loc-header-breadcrumb">
           <a href="/locations">← Все локации</a> / {page.name}
@@ -557,12 +527,12 @@ function LocationPageContent({ slug, currentUser }: { slug: string; currentUser:
         open={recordsModalType === "female"}
         onClose={() => setRecordsModalType(null)}
       />
-    </LocationShell>
+    </PortalSectionShell>
   );
 }
 
 export function LocationPage({ slug }: { slug: string }) {
-  return <RequireAuth>{(user) => <LocationPageContent slug={slug} currentUser={user} />}</RequireAuth>;
+  return <RequireAuth>{() => <LocationPageContent slug={slug} />}</RequireAuth>;
 }
 
 function formatTime(totalSec: number): string {
