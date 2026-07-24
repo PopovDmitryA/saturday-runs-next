@@ -52,12 +52,17 @@ def task_sweep() -> None:
     print("\n— Мировой обход parkrun (macbook) —")
     delay = ask("Задержка между атлетами, сек", "12")
     limit = ask("Сколько атлетов за сессию (0 = без предела)", "0")
+    browser = ask_yn("Ночной режим — сразу через браузер (капча почти не выпадает)?",
+                     default=False)
     py = os.path.join(ROOT, ".conda-parkrun", "bin", "python")
     if not os.path.exists(py):
         py = sys.executable
+    argv = [py, os.path.join(ROOT, "scripts", "mac_sweep_worker.py"),
+            "--delay", delay, "--limit", limit]
+    if browser:
+        argv.append("--browser")
     print("\nЗапускаю macbook-воркер обхода…\n")
-    os.execvp(py, [py, os.path.join(ROOT, "scripts", "mac_sweep_worker.py"),
-                   "--delay", delay, "--limit", limit])
+    os.execvp(py, argv)
 
 
 def task_parse() -> None:
