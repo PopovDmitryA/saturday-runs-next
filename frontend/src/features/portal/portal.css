@@ -71,6 +71,12 @@
   text-decoration: none;
 }
 
+/* текущий раздел (на главной — «Главная») */
+.portal-header-link-current {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
 .portal-header-actions {
   margin-left: auto;
   display: flex;
@@ -378,6 +384,64 @@
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+/* вкладки показателей внутри единой панели графика */
+.portal-chart-panel-head {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.portal-chart-tabs {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 3px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.portal-chart-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.portal-chart-tabs button {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 13px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.portal-chart-tabs button:hover {
+  color: var(--text);
+}
+
+.portal-chart-tabs button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+@media (max-width: 560px) {
+  .portal-chart-tabs {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .portal-chart-tabs button {
+    flex: 1 0 auto;
+    padding: 5px 10px;
+  }
 }
 
 .portal-chart-svg {
@@ -1109,22 +1173,36 @@
   pointer-events: none;
 }
 
-/* группировочный бокс «последняя неделя» */
+/* группировочный бокс «последняя неделя»: синяя заливка вместо нейтральной —
+   чтобы сразу читалось, что это ДРУГОЙ срез (одна неделя), а не общий период */
 .portal-week-scope {
-  margin-top: 24px;
-  border: 1px solid var(--border);
+  margin-top: 28px;
+  border: 1px solid var(--tint-blue-border);
   border-radius: 18px;
-  background: var(--bg-muted);
-  padding: 4px 14px 14px;
+  background: var(--tint-blue-bg);
+  padding: 4px 14px 16px;
 }
 
 .portal-week-heading {
-  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15.5px;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  padding: 12px 4px 0;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--tint-blue-text);
+  padding: 16px 4px 2px;
+}
+
+.portal-week-heading::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--link);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--link) 22%, transparent);
 }
 
 .portal-week-scope .portal-panel,
@@ -1142,11 +1220,14 @@
   z-index: 25;
   padding: 14px 0 0;
   margin: 0 -14px;
-  background: linear-gradient(var(--bg-muted) 82%, transparent);
+  background: linear-gradient(var(--tint-blue-bg) 82%, transparent);
 }
 
 .portal-week-sticky .portal-pulse {
   margin: 0 14px;
+  /* внутри синего бокса индиговая плашка сливалась бы с фоном — делаем её белой */
+  background: var(--surface);
+  border-color: var(--tint-blue-border-strong);
 }
 
 /* шапка панели с плашкой справа */

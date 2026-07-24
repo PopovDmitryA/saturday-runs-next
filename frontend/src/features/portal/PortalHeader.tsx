@@ -24,8 +24,19 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
   }, []);
 
   const authed = user !== null;
+  // На главной ссылка ведёт «сама на себя» — оставляем её видимой и помечаем
+  // как текущий раздел: так в шапке всегда есть явная кнопка возврата домой.
+  const onHome =
+    typeof window !== "undefined" && window.location.pathname === PORTAL_HOME_HREF;
   const navLinks = (
     <>
+      <a
+        href={PORTAL_HOME_HREF}
+        className={`portal-header-link${onHome ? " portal-header-link-current" : ""}`}
+        aria-current={onHome ? "page" : undefined}
+      >
+        Главная
+      </a>
       <a href={PORTAL_ABOUT_HREF} className="portal-header-link">
         О проекте
       </a>
