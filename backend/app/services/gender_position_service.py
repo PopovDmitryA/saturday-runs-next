@@ -45,6 +45,27 @@ def gender_from_age_category(platform_code: str, age_category: str | None) -> st
     return None
 
 
+def resolve_participant_gender(
+    platform_code: str,
+    age_category: str | None,
+    profile_extra: dict | None = None,
+) -> str | None:
+    """Пол участника из тех же источников, что и выше, но по данным одной строки.
+
+    Нужна на записи: с 24.07.2026 пол хранится в participants.gender, чтобы не
+    вычислять его из строки категории на каждом чтении (агрегаты главной гоняли
+    substr по 2.2 млн строк — выражение неиндексируемое, отсюда полный перебор
+    и спилл сортировок на диск).
+    """
+    if platform_code == "s95":
+        gender = ((profile_extra or {}).get("platform_codes") or {}).get("gender")
+        return gender if gender in (GENDER_MALE, GENDER_FEMALE) else None
+    if platform_code in ("runpark", "parkrun"):
+        # У обеих платформ формат один: «SM30-34» / «VW35-39» — пол во второй букве.
+        return gender_from_age_category("runpark", age_category)
+    return gender_from_age_category(platform_code, age_category)
+
+
 def _s95_participant_genders(db: Session, participant_ids: list[UUID]) -> dict[UUID, str]:
     if not participant_ids:
         return {}

@@ -661,6 +661,10 @@ class Participant(Base):
     display_name: Mapped[str | None] = mapped_column(String(256))
     profile_url: Mapped[str | None] = mapped_column(String(1024))
     age_category: Mapped[str | None] = mapped_column(String(64))
+    # «male» / «female» / NULL. Материализация того, что раньше считалось из
+    # age_category (или profile_extra у s95) при каждом чтении — см.
+    # gender_position_service.resolve_participant_gender.
+    gender: Mapped[str | None] = mapped_column(String(8))
     club_name: Mapped[str | None] = mapped_column(String(256))
     barcode_id: Mapped[str | None] = mapped_column(String(16))
     planning_location: Mapped[str | None] = mapped_column(String(256))
