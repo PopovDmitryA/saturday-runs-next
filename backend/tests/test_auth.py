@@ -197,6 +197,24 @@ def _login_session(client: TestClient, telegram_id: int, *, username: str | None
     return callback_response.cookies["sr_session"]
 
 
+def test_session_slides_on_me(
+    client: TestClient, fake_redis: fakeredis.FakeRedis, auth_settings: Settings
+) -> None:
+    session_cookie = _login_session(client, 777000111)
+
+    session_key = next(k for k in fake_redis.keys("session:*"))
+    fake_redis.expire(session_key, 60)
+    assert fake_redis.ttl(session_key) <= 60
+
+    me_response = client.get("/api/auth/me", cookies={"sr_session": session_cookie})
+    assert me_response.status_code == 200
+
+    assert fake_redis.ttl(session_key) > auth_settings.session_ttl_seconds - 60
+    set_cookie = me_response.headers.get("set-cookie", "")
+    assert "sr_session=" in set_cookie
+    assert f"Max-Age={auth_settings.session_ttl_seconds}" in set_cookie
+
+
 def test_display_name_can_be_customized_and_reset(client: TestClient) -> None:
     session_cookie = _login_session(client, 424242424, username="runner_login")
 

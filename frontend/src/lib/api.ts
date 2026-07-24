@@ -1011,6 +1011,7 @@ export type DigestCard = {
   location_name: string;
   city: string | null;
   country: string | null;
+  location_url: string | null;
   platform_code: string;
   platform_name: string;
   telegram_contacts: LocationContactLink[];
@@ -1130,6 +1131,50 @@ export function deleteAdminLocationContactLink(contactId: string) {
   return apiFetch<{ message: string }>(`/admin/location-contacts/links/${contactId}`, {
     method: "DELETE",
   });
+}
+
+export type BlogPostAdmin = {
+  id: string;
+  title: string;
+  teaser: string;
+  telegram_url: string;
+  topic: string | null;
+  published_at: string;
+  clicks_count: number;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BlogPostAdminPayload = {
+  title: string;
+  teaser: string;
+  telegram_url: string;
+  topic: string | null;
+  published_at: string | null;
+  is_published: boolean;
+};
+
+export function listAdminBlogPosts() {
+  return apiFetch<{ items: BlogPostAdmin[]; total: number }>("/admin/blog/posts");
+}
+
+export function createAdminBlogPost(body: BlogPostAdminPayload) {
+  return apiFetch<BlogPostAdmin>("/admin/blog/posts", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateAdminBlogPost(postId: string, body: BlogPostAdminPayload) {
+  return apiFetch<BlogPostAdmin>(`/admin/blog/posts/${postId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteAdminBlogPost(postId: string) {
+  return apiFetch<{ message: string }>(`/admin/blog/posts/${postId}`, { method: "DELETE" });
 }
 
 export function getAdminEventReport(eventId: string) {
@@ -1276,6 +1321,10 @@ export type EligibleRun = {
   platform_code: string;
   location_name: string;
   location_city: string | null;
+  // Канонический ключ площадки — совпадает с identity_key страницы локации.
+  // Опционально: страницы «Пробежки»/«Волонтёрство» собирают EligibleRun из
+  // своих строк, где ключа нет, — он нужен только карточке на странице локации.
+  location_identity_key?: string | null;
   finish_time_display: string | null;
   position: number | null;
   is_pr: boolean;
@@ -1626,6 +1675,12 @@ export type LocationIndexItem = {
   finishers_total: number;
   first_event_date: string | null;
   last_event_date: string | null;
+  best_male_time_sec: number | null;
+  best_male_time_display: string | null;
+  best_female_time_sec: number | null;
+  best_female_time_display: string | null;
+  attendance_record_finishers: number | null;
+  attendance_record_date: string | null;
 };
 
 export type LocationsIndexResponse = {

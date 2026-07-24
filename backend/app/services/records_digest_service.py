@@ -17,6 +17,7 @@ from uuid import UUID
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
+from app.location_page_url import location_page_url
 from app.services.admin_event_report_service import (
     NOT_SECONDARY_SQL,
     POST_SIGNATURE,
@@ -276,6 +277,7 @@ def _locations_meta(db: Session, location_ids: list[UUID]) -> dict[UUID, dict[st
         db,
         """
         SELECT l.id AS location_id, l.name AS location_name, l.city, l.country,
+               l.external_key, l.source_url,
                p.code AS platform_code, p.name AS platform_name
         FROM locations l
         JOIN platforms p ON p.id = l.platform_id
@@ -294,6 +296,9 @@ def _locations_meta(db: Session, location_ids: list[UUID]) -> dict[UUID, dict[st
         target = group_targets.get(row["location_id"], {})
         meta[row["location_id"]] = {
             **row,
+            "location_url": location_page_url(
+                row["platform_code"], row["external_key"], row["source_url"]
+            ),
             "telegram_contacts": target.get("telegram_contacts", []),
             "do_not_disturb": bool(target.get("do_not_disturb")),
             "comment": target.get("comment"),

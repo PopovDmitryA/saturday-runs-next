@@ -3,16 +3,56 @@ import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAuth } from "../../components/RequireAuth";
+import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { SiteHeader } from "../../components/SiteHeader";
 import { getLocationsIndex, logout, type LocationIndexItem, type User } from "../../lib/api";
-import { formatDate, pluralizeRu } from "../../lib/format";
+import { formatDate, formatFinishTimeValue, pluralizeRu } from "../../lib/format";
 import { SITE_HOME_HREF } from "../../lib/siteBrand";
 import { APP_NAV_ITEMS } from "../../lib/siteNav";
 
 const PLATFORM_FILTERS = ["five_verst", "s95", "runpark"] as const;
 
-type SortKey = "name" | "city" | "events_count" | "finishers_total" | "first_event_date";
+type SortKey =
+  | "name"
+  | "city"
+  | "events_count"
+  | "finishers_total"
+  | "avg_finishers"
+  | "attendance_record"
+  | "best_male"
+  | "best_female"
+  | "first_event_date";
+
+// Колонки, которые логичнее открывать по возрастанию: алфавит и рекорды
+// (у времени «лучше» = меньше).
+const ASC_FIRST_KEYS: SortKey[] = ["name", "city", "best_male", "best_female"];
 type SortState = { key: SortKey; asc: boolean };
+
+/** Средняя явка — сколько человек финиширует на этой площадке в обычную субботу. */
+function avgFinishers(item: LocationIndexItem): number | null {
+  if (!item.events_count || !item.finishers_total) {
+    return null;
+  }
+  return item.finishers_total / item.events_count;
+}
+
+/** Рекорд локации — как в журнале протоколов: без ведущих «00:» часов. */
+function formatRecord(display: string | null, sec: number | null): string {
+  if (sec === null && !display) {
+    return "—";
+  }
+  return formatFinishTimeValue(display, sec).replace(/^00:/, "");
+}
+
+function formatAvgFinishers(item: LocationIndexItem): string {
+  const value = avgFinishers(item);
+  if (value === null) {
+    return "—";
+  }
+  // Меньше десяти человек — один знак после запятой: разница 4,2 и 4,8
+  // для маленькой площадки существенна, для сотенной — шум.
+  return value < 10 ? value.toFixed(1).replace(".", ",") : String(Math.round(value));
+}
 
 function matchesQuery(item: LocationIndexItem, query: string): boolean {
   const haystack = [item.name, item.city, item.region, item.country]
@@ -32,6 +72,14 @@ function sortValue(item: LocationIndexItem, key: SortKey): number | string | nul
       return item.events_count;
     case "finishers_total":
       return item.finishers_total;
+    case "avg_finishers":
+      return avgFinishers(item);
+    case "attendance_record":
+      return item.attendance_record_finishers;
+    case "best_male":
+      return item.best_male_time_sec;
+    case "best_female":
+      return item.best_female_time_sec;
     case "first_event_date":
       return item.first_event_date;
   }
@@ -93,7 +141,7 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
 
   const toggleSort = (key: SortKey) => {
     setSort((current) =>
-      current.key === key ? { key, asc: !current.asc } : { key, asc: key === "name" || key === "city" },
+      current.key === key ? { key, asc: !current.asc } : { key, asc: ASC_FIRST_KEYS.includes(key) },
     );
   };
 
@@ -111,6 +159,10 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
           <col />
           <col className="col-city" />
           <col className="col-platform" />
+          <col className="col-metric" />
+          <col className="col-metric" />
+          <col className="col-metric-wide" />
+          <col className="col-metric-wide" />
           <col className="col-metric" />
           <col className="col-metric" />
           <col className="col-date" />
@@ -131,6 +183,26 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
               {...sortProps("finishers_total")}
             />
             <ColumnHeader
+              label="В среднем"
+              headerTitle="Средняя явка: финишей за всё время ÷ число стартов"
+              {...sortProps("avg_finishers")}
+            />
+            <ColumnHeader
+              label="Рекорд явки"
+              headerTitle="Максимум финишей за один старт (в подсказке — дата)"
+              {...sortProps("attendance_record")}
+            />
+            <ColumnHeader
+              label="Луч. М"
+              headerTitle="Рекорд локации (LR): лучшее время мужчины здесь за всю историю"
+              {...sortProps("best_male")}
+            />
+            <ColumnHeader
+              label="Луч. Ж"
+              headerTitle="Рекорд локации (LR): лучшее время женщины здесь за всю историю"
+              {...sortProps("best_female")}
+            />
+            <ColumnHeader
               label="Первый старт"
               {...sortProps("first_event_date")}
             />
@@ -139,7 +211,7 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
         <tbody>
           {sorted.length === 0 ? (
             <tr>
-              <td colSpan={6} className="table-empty-cell">
+              <td colSpan={10} className="table-empty-cell">
                 <span className="muted">Нет локаций по фильтрам</span>
               </td>
             </tr>
@@ -163,6 +235,21 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                 </td>
                 <td className="td-compact">{item.events_count || "—"}</td>
                 <td className="td-compact">{item.finishers_total || "—"}</td>
+                <td className="td-compact">{formatAvgFinishers(item)}</td>
+                <td
+                  className="td-compact"
+                  title={
+                    item.attendance_record_date
+                      ? `Рекорд явки: ${formatDate(item.attendance_record_date)}`
+                      : undefined
+                  }
+                >
+                  {item.attendance_record_finishers ?? "—"}
+                </td>
+                <td className="td-compact">{formatRecord(item.best_male_time_display, item.best_male_time_sec)}</td>
+                <td className="td-compact">
+                  {formatRecord(item.best_female_time_display, item.best_female_time_sec)}
+                </td>
                 <td>{item.first_event_date ? formatDate(item.first_event_date) : "—"}</td>
               </tr>
             ))
@@ -216,7 +303,7 @@ function LocationsIndexContent({ currentUser }: { currentUser: User }) {
         </p>
       </header>
 
-      <section className="card loc-section">
+      <section className="card loc-section loc-wide-page">
         <div className="loc-index-toolbar">
           <input
             className="input loc-index-search"
@@ -259,6 +346,7 @@ function LocationsIndexContent({ currentUser }: { currentUser: User }) {
           </>
         )}
       </section>
+      <ScrollToTopButton />
     </IndexShell>
   );
 }

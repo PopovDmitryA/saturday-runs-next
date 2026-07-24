@@ -3,7 +3,11 @@ from __future__ import annotations
 import logging
 
 from app.db.session import get_session_factory
-from app.services.leaderboard_service import LEADERBOARD_METRICS, refresh_leaderboard_cache
+from app.services.leaderboard_service import (
+    GENDERED_METRICS,
+    LEADERBOARD_METRICS,
+    refresh_leaderboard_cache,
+)
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -20,15 +24,19 @@ def warm_leaderboards_cache() -> dict[str, object]:
     """
     db = get_session_factory()()
     results: dict[str, object] = {}
+    # Абсолют у всех метрик + разрез М/Ж у победных (wins/win_locations).
+    variants = [(metric, "all") for metric in LEADERBOARD_METRICS]
+    variants += [(metric, gender) for metric in GENDERED_METRICS for gender in ("male", "female")]
     try:
-        for metric in LEADERBOARD_METRICS:
+        for metric, gender in variants:
+            key = metric if gender == "all" else f"{metric}:{gender}"
             try:
-                snapshot = refresh_leaderboard_cache(db, metric)
-                results[metric] = snapshot.get("entrants", 0)
+                snapshot = refresh_leaderboard_cache(db, metric, gender)
+                results[key] = snapshot.get("entrants", 0)
             except Exception:
-                logger.exception("leaderboards warm failed for metric %s", metric)
+                logger.exception("leaderboards warm failed for %s", key)
                 db.rollback()
-                results[metric] = "error"
+                results[key] = "error"
     finally:
         db.close()
     logger.info("leaderboards cache warmed: %s", results)

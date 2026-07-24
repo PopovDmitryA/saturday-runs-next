@@ -4,6 +4,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
+from uuid import UUID
 
 _BARCODE_RE = re.compile(r"^A?\d{4,}$", re.IGNORECASE)
 
@@ -21,6 +22,7 @@ from app.models import (
     VolunteerResult,
 )
 from app.platform_adapters.canonical import CanonicalRunResult, CanonicalVolunteerResult
+from app.runpark.mappings import runpark_protocol_base
 from app.runpark.mssql_client import fix_varchar_encoding, runpark_query
 from app.services.gender_position_service import recalculate_event_gender_positions
 from app.sync import upsert
@@ -136,8 +138,13 @@ def _finish_sync_run(db: Session, run: SyncRun, *, success: bool, error: str | N
     db.flush()
 
 
-def _get_location_mapping(db: Session) -> dict[str, Location]:
-    """Returns {runpark_location_id (upper) -> Location} for show_on_map, dual_load and transitioned_to_primary locations."""
+def _get_location_mapping(db: Session) -> tuple[dict[str, Location], dict[UUID, str]]:
+    """For show_on_map, dual_load and transitioned_to_primary locations, returns
+    ({runpark_location_id (upper) -> Location}, {location.id -> protocol base url}).
+
+    The protocol base (``.../Places/{slug}``) is stamped onto events.source_url so a
+    "протокол на runpark.ru" link surfaces everywhere event source_url is shown.
+    """
     rows = (
         db.query(RunparkLocationMapping)
         .filter(
@@ -148,10 +155,14 @@ def _get_location_mapping(db: Session) -> dict[str, Location]:
         .all()
     )
     result: dict[str, Location] = {}
+    protocol_bases: dict[UUID, str] = {}
     for m in rows:
         if m.runpark_location_row is not None:
             result[m.runpark_location_id.upper()] = m.runpark_location_row
-    return result
+            base = runpark_protocol_base(m.public_url, m.runpark_slug)
+            if base is not None:
+                protocol_bases[m.runpark_location_row.id] = base
+    return result, protocol_bases
 
 
 def _upsert_crosslinks_for_event(db: Session, runpark_event: Event) -> None:
@@ -214,11 +225,18 @@ def _recalculate_event_prs(db: Session, event_row: Event) -> None:
         recalculate_participants_cross_platform_personal_records(db, participant_ids)
 
 
-def _ensure_event(db: Session, platform: Platform, location: Location, row: dict) -> Event:
+def _ensure_event(
+    db: Session,
+    platform: Platform,
+    location: Location,
+    row: dict,
+    protocol_base: str | None = None,
+) -> Event:
     external_event_key = str(row["event_id"]).upper()
     event_date = row["event_date"].date() if hasattr(row["event_date"], "date") else row["event_date"]
     event_number = row.get("event_number") or None
     title = f"{location.name} #{event_number}" if event_number else location.name
+    source_url = f"{protocol_base}/event/{event_number}" if protocol_base and event_number else None
 
     existing = (
         db.query(Event)
@@ -259,6 +277,7 @@ def _ensure_event(db: Session, platform: Platform, location: Location, row: dict
             title=title,
             finishers_count=row.get("finishers_count"),
             runners_count=row.get("finishers_count"),
+            source_url=source_url,
             fetched_at=now,
         )
         db.add(existing)
@@ -267,6 +286,8 @@ def _ensure_event(db: Session, platform: Platform, location: Location, row: dict
         existing.event_number = event_number
         existing.finishers_count = row.get("finishers_count")
         existing.runners_count = row.get("finishers_count")
+        if source_url:
+            existing.source_url = source_url
         existing.fetched_at = now
         db.flush()
     return existing
@@ -337,7 +358,7 @@ def sync_runpark_batch(
     """
     result = RunparkSyncResult()
     platform = upsert.get_platform(db, PLATFORM_CODE)
-    location_map = _get_location_mapping(db)
+    location_map, protocol_bases = _get_location_mapping(db)
     if only_location_ids is not None:
         wanted = {lid.upper() for lid in only_location_ids}
         location_map = {key: loc for key, loc in location_map.items() if key in wanted}
@@ -371,7 +392,7 @@ def sync_runpark_batch(
                 # Обрабатывается вместе со своим primary (см. MERGED_EVENT_GROUPS).
                 continue
             try:
-                event_row = _ensure_event(db, platform, location, ev)
+                event_row = _ensure_event(db, platform, location, ev, protocol_bases.get(location.id))
                 _delete_event_results(db, event_row)
 
                 run_rows = _fetch_merged_run_rows(external_event_key)
@@ -418,7 +439,7 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
     """Sync all events for a specific participant (by RunPark participant_id UUID)."""
     result = RunparkSyncResult()
     platform = upsert.get_platform(db, PLATFORM_CODE)
-    location_map = _get_location_mapping(db)
+    location_map, protocol_bases = _get_location_mapping(db)
 
     if not location_map:
         logger.warning("No RunPark locations with show_on_map=true found")
@@ -463,7 +484,7 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
             continue  # not a tracked location
 
         try:
-            event_row = _ensure_event(db, platform, location, ev)
+            event_row = _ensure_event(db, platform, location, ev, protocol_bases.get(location.id))
             _delete_event_results(db, event_row)
 
             run_rows = _fetch_merged_run_rows(external_event_key)

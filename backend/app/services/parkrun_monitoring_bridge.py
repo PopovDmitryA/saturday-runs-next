@@ -26,7 +26,14 @@ def _monitoring_binary() -> Path | None:
     return binary if binary.exists() else None
 
 
-def _run(args: list[str], timeout: int) -> str | None:
+def _run(args: list[str], timeout: int, *, marker: str | None = None) -> str | None:
+    """Run the monitoring CLI и вернуть одну строку для консоли демона.
+
+    По умолчанию — последняя строка вывода (итоговая сводка команды). Если
+    задан `marker`, ищем среди строк вывода первую, начинающуюся с него
+    (например "history ok:" — конкретная локация, а не сводка "N events
+    synced"), и возвращаем её вместо сводки.
+    """
     binary = _monitoring_binary()
     if binary is None:
         return None
@@ -46,6 +53,10 @@ def _run(args: list[str], timeout: int) -> str | None:
     if result.returncode != 0:
         logger.warning("parkrun-monitoring %s failed: %s", args, tail)
         return f"monitoring {' '.join(args)}: exit {result.returncode} — {tail}"
+    if marker:
+        for line in output:
+            if line.startswith(marker):
+                return f"monitoring: {line}"
     return f"monitoring: {tail}"
 
 
@@ -54,15 +65,17 @@ def refresh_monitoring_stats() -> str | None:
     return _run(["sync", "--no-notify"], timeout=900)
 
 
-def monitoring_history_step(limit: int = 1) -> str | None:
-    """Стянуть eventhistory-саммари следующих `limit` локаций (самых несвежих).
+def monitoring_work(limit: int = 50) -> str | None:
+    """Разобрать очередь локаций как воркер `mac` — только при свободной
+    очереди сайта.
 
-    `--push-each` пишет каждую локацию на сервер сразу после выкачки: если
-    прогон прервётся (Ctrl+C, капча, закрытый ноутбук), собранное уже в
-    канонической БД. Коннекты мультиплексируются, см. push_to_server.
+    `work` координируется с серверными воркерами через claim'ы канонической
+    БД (PM_CLAIM_COMMAND в .env репозитория мониторинга), так что Mac и
+    сервер никогда не берут одну локацию. `--push-each` пишет каждую локацию
+    на сервер сразу после выкачки: прерванный прогон ничего не теряет.
     """
     return _run(
-        ["fetch-history", "--limit", str(limit), "--push-each"],
+        ["work", "--worker", "mac", "--limit", str(limit), "--push-each"],
         timeout=180 * limit + 120,
     )
 

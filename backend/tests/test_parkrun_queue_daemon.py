@@ -15,7 +15,7 @@ from app.models import (
     SyncJobTrigger,
     User,
 )
-from app.services.parkrun_queue_daemon import build_parkrun_work_queue
+from app.services.parkrun_queue_daemon import ParkrunWorkItem, build_parkrun_work_queue, run_parkrun_queue_daemon
 
 
 def _user(db_session: Session) -> User:
@@ -107,3 +107,120 @@ def test_only_the_latest_sync_job_decides_priority(db_session: Session) -> None:
 
     items = build_parkrun_work_queue(db_session, limit_pending=50)
     assert items[0].user_id == user.id
+
+
+class _FakeSession:
+    """Двойник ParkrunDaemonSession для теста без реального фетча/браузера."""
+
+    def __init__(self, *, log: list[str] | None = None) -> None:
+        self.httpx_aborted = False
+        self.status_calls: list[str] = []
+        self._log = log
+
+    def show_status(self, message: str) -> None:
+        self.status_calls.append(message)
+
+    def human_pause_between_jobs(self) -> None:
+        if self._log is not None:
+            self._log.append("pause")
+
+
+def test_httpx_abort_stops_remaining_batch(db_session: Session, monkeypatch) -> None:
+    """--no-browser: первый же признак защиты WAF должен остановить всю
+    оставшуюся пачку, а не долбить её следующими элементами."""
+    import app.services.parkrun_queue_daemon as daemon_module
+
+    calls: list[str] = []
+    session = _FakeSession()
+
+    def _fake_sync(db, user_id, *, label, **kwargs):  # noqa: ARG001
+        calls.append(label)
+        if label == "first":
+            session.httpx_aborted = True
+        return "sync_ok: stub"
+
+    monkeypatch.setattr(daemon_module, "sync_parkrun_runs_for_user", _fake_sync)
+
+    items = [
+        ParkrunWorkItem(kind="sync", label="first", user_id=uuid4()),
+        ParkrunWorkItem(kind="sync", label="second", user_id=uuid4()),
+        ParkrunWorkItem(kind="sync", label="third", user_id=uuid4()),
+    ]
+
+    run_parkrun_queue_daemon(db_session, session, items)
+
+    assert calls == ["first"]
+
+
+def test_pause_between_profiles_no_carousel(db_session: Session, monkeypatch) -> None:
+    """Карусель «профиль↔локация» убрана (21.07.2026): очередь профилей идёт
+    подряд с паузами между людьми, локации в цикле не появляются вовсе."""
+    import app.services.parkrun_queue_daemon as daemon_module
+
+    log: list[str] = []
+    session = _FakeSession(log=log)
+
+    monkeypatch.setattr(
+        daemon_module,
+        "sync_parkrun_runs_for_user",
+        lambda db, user_id, *, label, **kw: log.append(f"person:{label}") or "sync_ok: stub",
+    )
+
+    items = [
+        ParkrunWorkItem(kind="sync", label="a", user_id=uuid4()),
+        ParkrunWorkItem(kind="sync", label="b", user_id=uuid4()),
+    ]
+
+    run_parkrun_queue_daemon(db_session, session, items)
+
+    assert log == ["person:a", "pause", "person:b"]
+
+
+def _db_error() -> Exception:
+    from sqlalchemy.exc import OperationalError
+
+    return OperationalError("stmt", {}, Exception("connection refused on port 5434"))
+
+
+def test_stops_after_three_consecutive_db_connection_losses(db_session, monkeypatch) -> None:
+    """Оборванный SSH-туннель к прод-БД: после 3 обрывов подряд прогон
+    прерывается, а не молотит остаток очереди трейсбэками."""
+    import app.services.parkrun_queue_daemon as daemon_module
+
+    calls: list[str] = []
+
+    def _boom(db, user_id, *, label, **kw):  # noqa: ARG001
+        calls.append(label)
+        raise _db_error()
+
+    monkeypatch.setattr(daemon_module, "sync_parkrun_runs_for_user", _boom)
+
+    session = _FakeSession()
+    items = [ParkrunWorkItem(kind="sync", label=f"r{i}", user_id=uuid4()) for i in range(6)]
+
+    result = run_parkrun_queue_daemon(db_session, session, items)
+
+    assert calls == ["r0", "r1", "r2"]  # остановились на третьем, не дошли до r3..r5
+    assert result["summary"].get("db_connection_lost") == 1
+
+
+def test_normal_fetch_error_does_not_count_toward_db_stop(db_session, monkeypatch) -> None:
+    """Обычная ошибка фетча parkrun (не обрыв БД) счётчик обрывов не
+    накапливает — прогон идёт до конца."""
+    import app.services.parkrun_queue_daemon as daemon_module
+
+    calls: list[str] = []
+
+    def _boom(db, user_id, *, label, **kw):  # noqa: ARG001
+        calls.append(label)
+        raise ValueError("parkrun parse failed")
+
+    monkeypatch.setattr(daemon_module, "sync_parkrun_runs_for_user", _boom)
+
+    session = _FakeSession()
+    items = [ParkrunWorkItem(kind="sync", label=f"r{i}", user_id=uuid4()) for i in range(5)]
+
+    result = run_parkrun_queue_daemon(db_session, session, items)
+
+    assert len(calls) == 5  # ни разу не остановились
+    assert "db_connection_lost" not in result["summary"]

@@ -28,7 +28,13 @@ def get_session_user_id(settings: Settings, signed_cookie: str) -> str | None:
         return None
 
     client = get_redis_client()
-    raw = client.get(_session_key(session_id))
+    key = _session_key(session_id)
+    # Скользящее продление: пока пользователь заходит, сессия не истекает.
+    # Кука переустанавливается на фронтовой стороне в /auth/me.
+    pipe = client.pipeline()
+    pipe.get(key)
+    pipe.expire(key, settings.session_ttl_seconds)
+    raw, _ = pipe.execute()
     if raw is None:
         return None
 

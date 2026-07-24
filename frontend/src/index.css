@@ -367,6 +367,41 @@ body {
   max-width: var(--layout-max-width);
   margin: 0 auto;
   padding: 0.5rem 1rem 2rem;
+  /* Ширина колонки контента — от неё пляшет кнопка «наверх»; страницы с другой
+     шириной (раздел локаций) переопределяют переменную у себя. */
+  --page-content-width: var(--layout-max-width);
+}
+
+/* Кнопка «наверх» — длинные таблицы (журнал протоколов, каталог локаций)
+   листаются далеко вниз. Привязана к правому краю КОНТЕНТА, а не экрана: на
+   широком мониторе контент центрирован, и кнопка у края окна была бы далеко
+   от таблицы. calc() даёт то же положение, что дал бы getBoundingClientRect
+   у .shell-content, но без JS и без риска разъехаться при ресайзе; «+1rem» —
+   паддинг контейнера, «-2.75rem-0.75rem» (ширина кнопки + зазор) отодвигает
+   её ЗА край, чтобы не перекрывала последнюю колонку. На узких экранах
+   формула уходит в минус — max() возвращает обычный отступ от края экрана. */
+.scroll-top-btn {
+  position: fixed;
+  right: max(1.25rem, calc((100vw - var(--page-content-width)) / 2 + 1rem - 2.75rem - 0.75rem));
+  bottom: 1.25rem;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong, var(--border));
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.22);
+}
+
+.scroll-top-btn:hover {
+  color: var(--accent-indigo-text);
 }
 
 .visually-hidden {
@@ -2259,12 +2294,6 @@ a.on-this-day-location {
 .badge-pr {
   background: var(--tint-amber-bg-strong);
   color: var(--tint-amber-text);
-}
-
-.badge-debut {
-  background: var(--chip-bg);
-  color: var(--text-muted);
-  cursor: default;
 }
 
 .badge-crosslinked {
@@ -9228,6 +9257,67 @@ tr.run-crosslinked td {
   min-width: 0;
 }
 
+/* Карточка-рекомендация «оцените свой старт здесь» над цифрами локации. */
+.loc-rate-prompt {
+  position: relative;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  /* место под крестик в правом верхнем углу */
+  padding-right: 2.6rem;
+  border-color: var(--tint-amber-border);
+  background: var(--tint-amber-bg);
+}
+
+.loc-rate-prompt-body {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.loc-rate-prompt-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.loc-rate-prompt-meta {
+  margin: 0.35rem 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.loc-rate-prompt-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.loc-rate-prompt-close:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.loc-rate-prompt-close svg {
+  width: 1rem;
+  height: 1rem;
+}
+
 .loc-stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -9542,6 +9632,32 @@ tr.run-crosslinked td {
   width: 6.25rem;
 }
 
+/* «В среднем» и «Рекорд явки» — заголовки длиннее, чем влезает в col-metric. */
+.loc-index-table .col-metric-wide {
+  width: 8rem;
+}
+
+/* Колонок с фиксированной шириной много (метрики + рекорды + даты): без
+   min-width колонка «Локация» схлопывается в ноль, вместо этого скроллим
+   обёртку по горизонтали. */
+.loc-index-table {
+  min-width: 78rem;
+}
+
+/* Раздел локаций шире остальных страниц (--layout-max-width: 864px):
+   таблица каталога на 10 колонок и блоки страницы локации в общую ширину
+   не помещаются. */
+.shell-content:has(.loc-wide-page) {
+  max-width: 1440px;
+  /* Кнопка «наверх» позиционируется от края контента — здесь он шире общего. */
+  --page-content-width: 1440px;
+  /* На широком макете подсказка последнего столбца гистограммы вылезает за
+     правый край и даёт странице горизонтальный скролл. Именно clip (а не
+     hidden): по вертикали переполнение остаётся видимым, подсказки над
+     столбцами не режутся. */
+  overflow-x: clip;
+}
+
 .loc-index-table td.td-location {
   font-weight: 600;
   overflow-wrap: break-word;
@@ -9650,6 +9766,31 @@ tr.run-crosslinked td {
 .loc-events-table td.td-time,
 .loc-events-table td.td-compact {
   white-space: nowrap;
+}
+
+/* Шапка журнала должна липнуть к верху ОКНА. Базовый .table-wrap задаёт
+   overflow-x: auto, а по спеке overflow-x: auto + overflow-y: visible
+   форсит overflow-y в auto — обёртка становится скролл-контейнером, и
+   sticky-шапка липнет к её верхнему краю, то есть уезжает вместе с ней.
+   Составной селектор (специфичность выше одноклассового .table-wrap)
+   возвращает overflow-x: visible: прокручивается страница целиком. */
+.table-wrap.loc-events-wrap {
+  overflow-x: visible;
+}
+
+@media (max-width: 1200px) {
+  /* Уже этой ширины 10 колонок журнала без горизонтального скролла не
+     помещаются — включаем его обратно (ценой sticky-шапки на узких экранах). */
+  .table-wrap.loc-events-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Своя подложка вместо прозрачной: под шапкой при прокрутке проезжают строки. */
+.loc-events-table thead th {
+  background: var(--surface);
+  top: 0;
 }
 
 .loc-events-table .col-date {

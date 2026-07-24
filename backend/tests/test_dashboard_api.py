@@ -745,7 +745,9 @@ def test_personal_records_lists_pr_runs_per_platform(
         "2023-04-08",
     ]
     global_flags = {item["event_date"]: item["is_global_pr"] for item in items}
-    assert global_flags["2023-04-08"] is False
+    # Самая первая пробежка — глобальный лучший результат на тот момент,
+    # на витрине подсвечивается как глобальный рекорд (в БД остаётся False).
+    assert global_flags["2023-04-08"] is True
     assert global_flags["2024-05-11"] is True
     assert global_flags["2024-08-03"] is True
     assert global_flags["2025-01-04"] is False
@@ -762,9 +764,9 @@ def test_personal_records_shows_undefeated_debut(
     db_session: Session,
 ) -> None:
     """Регрессия для кейса Егора Свиридова (20.07.2026): дебютный старт в
-    системе, который позже никогда не был побит, должен всё равно попасть в
-    список — с is_debut=True, is_pr=False — иначе система выглядит так,
-    будто у участника вообще нет результатов в ней."""
+    системе должен попасть в список с is_debut=True и — на витрине — с
+    маркером is_pr=True (в БД run.is_pr остаётся False), а счётчик плитки
+    на главной обязан считать ту же строку."""
     me = authenticated_client.get("/api/auth/me")
     user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
     suffix = str(uuid4().int % 1_000_000)
@@ -849,7 +851,32 @@ def test_personal_records_shows_undefeated_debut(
     debut = items[0]
     assert debut["event_date"] == "2022-04-02"
     assert debut["is_debut"] is True
-    assert debut["is_pr"] is False
+    # На витрине дебют помечен PR и глобальным рекордом (лучший результат на
+    # момент той пробежки), хотя в БД is_pr/is_global_pr остаются False.
+    assert debut["is_pr"] is True
+    assert debut["is_global_pr"] is True
+
+    run_row = (
+        db_session.query(RunResult)
+        .filter(RunResult.external_result_key == f"debut-result-{suffix}-1")
+        .one()
+    )
+    assert run_row.is_pr is False
+    assert run_row.is_global_pr is False
+
+    dashboard = authenticated_client.get("/api/dashboard")
+    assert dashboard.status_code == 200
+    assert dashboard.json()["stats"]["analytics"]["pr_count"] == len(items)
+
+    # Вкладка «Пробежки»: дебют в системе тоже с маркером PR, а самая первая
+    # пробежка вообще — с подсветкой глобального рекорда (витрина, не БД).
+    runs = authenticated_client.get("/api/runs")
+    assert runs.status_code == 200
+    runs_by_date = {item["event_date"]: item for item in runs.json()}
+    assert runs_by_date["2022-04-02"]["is_pr"] is True
+    assert runs_by_date["2022-04-02"]["is_global_pr"] is True
+    assert runs_by_date["2022-04-09"]["is_pr"] is False
+    assert runs_by_date["2022-04-09"]["is_global_pr"] is False
 
 
 def test_dashboard_pr_count_includes_location_pr(

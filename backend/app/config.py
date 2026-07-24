@@ -36,7 +36,9 @@ class Settings(BaseSettings):
     report_database_url: str = ""
 
     session_cookie_name: str = "sr_session"
-    session_ttl_seconds: int = 72 * 3600
+    # Скользящая сессия: TTL отсчитывается заново при каждом визите (см. core/session.py),
+    # поэтому вылет только после месяца полного отсутствия.
+    session_ttl_seconds: int = 30 * 24 * 3600
     magic_link_ttl_seconds: int = 300
     login_request_ttl_seconds: int = 600
 
@@ -121,6 +123,9 @@ class Settings(BaseSettings):
     vk_bot_group_id: int = 0
     vk_admin_user_id: int = 0
     vk_bot_internal_secret: str = ""
+
+    # Секретный токен для скрытой страницы-табло обхода атлетов (/hq/<token>).
+    sweep_hq_token: str = ""
 
     parkrun_base_url: str = "https://www.parkrun.org.uk"
     parkrun_fetch_min_interval_seconds: float = 25.0

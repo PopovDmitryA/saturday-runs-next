@@ -26,6 +26,7 @@ from app.services.page_analytics_service import (
     [
         ("/", ("portal_home", "")),
         ("/about", ("portal_about", "")),
+        ("/blog", ("portal_blog", "")),
         ("/login", ("portal_login", "")),
         ("/dashboard", ("dashboard", "")),
         ("/profiles", ("dashboard", "")),
@@ -77,6 +78,7 @@ def test_classify_legacy_grafana_paths(path: str) -> None:
 # новый роут без записи в _STATIC_PAGE_TYPES свалится в "other" и уронит тест.
 APP_ROUTES = [
     "/",
+    "/blog",
     "/new/map-lab",
     "/login",
     "/oauth/yandex/callback",
@@ -114,6 +116,7 @@ APP_ROUTES = [
     "/admin/event-report",
     "/admin/records-digest",
     "/admin/location-contacts",
+    "/admin/blog",
     "/settings",
     "/about",
     "/users/ivan",
@@ -210,6 +213,47 @@ def test_build_page_analytics_respects_explicit_range(db_session: Session) -> No
     mine = [row for row in payload["top_locations"] if row["entity_key"] == entity_key]  # type: ignore[index,union-attr]
     assert len(mine) == 1
     assert mine[0]["views"] == 3  # день 20.07 за границей диапазона
+
+
+def test_blog_post_click_recorded(db_session: Session) -> None:
+    """Клик по посту блога: одно событие на клик, источник ("/" или "/blog")
+    в entity_key, u:-ключ для залогиненного. Какой именно пост — «Популярность»
+    не различает: по-постовые клики уже считает clicks_count в админке блога."""
+    from app.services.page_analytics_service import record_blog_post_click
+
+    user = _make_user(db_session)
+    before = db_session.query(PageViewEvent).filter(
+        PageViewEvent.page_type == "blog_post_click"
+    ).count()
+
+    record_blog_post_click(
+        db_session,
+        path="/",
+        visitor_key="a:anon-key-1",
+        viewer_user_id=None,
+    )
+    record_blog_post_click(
+        db_session,
+        path="/blog?topic=Цифры",
+        visitor_key="a:anon-key-2",
+        viewer_user_id=user.id,
+    )
+
+    events = (
+        db_session.query(PageViewEvent)
+        .filter(PageViewEvent.page_type == "blog_post_click")
+        .order_by(PageViewEvent.ts)
+        .all()
+    )
+    assert len(events) == before + 2
+    anon, logged = events[-2], events[-1]
+    assert (anon.path, anon.entity_key) == ("/", "/")
+    assert anon.visitor_key == "a:anon-key-1"
+    # Источник нормализуется (query-string отрезается) и хранится в entity_key,
+    # чтобы раскладка «с главной / из блога» переживала rollup.
+    assert (logged.path, logged.entity_key) == ("/blog", "/blog")
+    # Для залогиненного анонимный ключ заменён на u:<user_id>, как в pageview.
+    assert logged.visitor_key == f"u:{user.id}"
 
 
 def _make_user(db_session: Session, *, slug: str | None = None) -> User:

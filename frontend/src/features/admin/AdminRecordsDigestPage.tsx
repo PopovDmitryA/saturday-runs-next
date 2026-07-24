@@ -123,7 +123,18 @@ function DigestCardView({
       <header className="digest-card-head">
         <div>
           <h3 className="digest-card-title">
-            {card.location_name}
+            {card.location_url ? (
+              <a
+                href={card.location_url}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="map-popup-link"
+              >
+                {card.location_name}
+              </a>
+            ) : (
+              card.location_name
+            )}
             {card.city ? <span className="muted"> · {card.city}</span> : null}
             <span className="muted"> · {card.platform_name}</span>
           </h3>

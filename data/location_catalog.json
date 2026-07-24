@@ -107,7 +107,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "boevadacha",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (boevadacha → boevadacha). Источник: run5k general_link.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (boevadacha → boevadacha). Источник: run5k general_link. Добавлена связка RunPark (runpark-boevadacha) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -116,6 +116,10 @@
       {
         "platform": "five_verst",
         "external_key": "boevadacha"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-boevadacha"
       }
     ]
   },
@@ -281,7 +285,7 @@
     "active_platform": null,
     "legacy_parkrun_slug": "ekaterinburgzelenayaroscha",
     "is_closed": true,
-    "notes": "Автосопоставление не найдено (parkrun slug: ekaterinburgzelenayaroscha). Заполните вручную.; не существуюет в других системах",
+    "notes": "Только parkrun (2018–2019). Преемника в 5 вёрст/S95/RunPark нет — проверено вручную.",
     "links": [
       {
         "platform": "parkrun",
@@ -483,7 +487,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "kazancentral",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (kazancentral → kazancentral). Источник: run5k general_link.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (kazancentral → kazancentral). Источник: run5k general_link. Добавлена связка RunPark (runpark-kazancentral) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -492,6 +496,10 @@
       {
         "platform": "five_verst",
         "external_key": "kazancentral"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-kazancentral"
       }
     ]
   },
@@ -671,7 +679,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "kurgancentralpark",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (kurgancentralpark → kurgancentralpark). Источник: run5k general_link.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (kurgancentralpark → kurgancentralpark). Источник: run5k general_link. Добавлена связка RunPark (runpark-kurgancentralpark) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -680,6 +688,10 @@
       {
         "platform": "five_verst",
         "external_key": "kurgancentralpark"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-kurgancentralpark"
       }
     ]
   },
@@ -811,14 +823,18 @@
   },
   {
     "parkrun_location": "Memorialny Park",
-    "canonical_name": "Memorialny Park",
+    "canonical_name": "Мемориальный парк",
     "active_platform": null,
     "legacy_parkrun_slug": "memorialnypark",
     "is_closed": true,
-    "notes": "Автосопоставление не найдено (parkrun slug: memorialnypark). Заполните вручную.; более не существуют",
+    "notes": "Орёл, Мемориальный парк; более не существует. Связана five_verst-страница memorialnypark (0 событий).",
     "links": [
       {
         "platform": "parkrun",
+        "external_key": "memorialnypark"
+      },
+      {
+        "platform": "five_verst",
         "external_key": "memorialnypark"
       }
     ]
@@ -905,7 +921,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "mytishchicentralpark",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (mytishchicentralpark → mytishchicentralpark). Источник: run5k general_link.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (mytishchicentralpark → mytishchicentralpark). Источник: run5k general_link. Добавлена связка RunPark (runpark-mytishchicentralpark) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -914,6 +930,10 @@
       {
         "platform": "five_verst",
         "external_key": "mytishchicentralpark"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-mytishchicentralpark"
       }
     ]
   },
@@ -959,7 +979,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "nizhnynovgorodmeshchersky",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: nizhnynovgorodmeshchersky). Заполните вручную.; Это вот эта локация https://5verst.ru/meshcherskoeozero/ в нашей базе по 5 верст она есть",
+    "notes": "Нижний Новгород: связана 5 вёрст-локация meshcherskoeozero (https://5verst.ru/meshcherskoeozero/).",
     "links": [
       {
         "platform": "parkrun",
@@ -995,7 +1015,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "noginskgorodskoypark",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (noginskgorodskoypark → noginskgorodskoypark). Источник: run5k general_link.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (noginskgorodskoypark → noginskgorodskoypark). Источник: run5k general_link. Добавлена связка RunPark (runpark-noginskgorodskoypark) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -1004,6 +1024,10 @@
       {
         "platform": "five_verst",
         "external_key": "noginskgorodskoypark"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-noginskgorodskoypark"
       }
     ]
   },
@@ -1067,7 +1091,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "orskparkstroiteley",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (orskparkstroiteley → orskparkstroiteley). Источник: run5k general_link.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (orskparkstroiteley → orskparkstroiteley). Источник: run5k general_link. Добавлена связка RunPark (runpark-orskparkstroiteley) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -1076,6 +1100,28 @@
       {
         "platform": "five_verst",
         "external_key": "orskparkstroiteley"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-orskparkstroiteley"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "park 30-letiya Oktyabrya",
+    "canonical_name": "Боровичи",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "park-30-letiya-oktyabrya",
+    "is_closed": false,
+    "notes": "Боровичи, парк 30-летия Октября: parkrun 28.08.2021–12.02.2022, с 28.05.2022 продолжается как 5 вёрст «Боровичи». Сопоставлено вручную.",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "park-30-letiya-oktyabrya"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "park30letiyaoktyabrya"
       }
     ]
   },
@@ -1085,7 +1131,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "park-850-letiya-moskvy",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (park-850-letiya-moskvy → park850letiyamoskvy). Источник: run5k general_link.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (park-850-letiya-moskvy → park850letiyamoskvy). Источник: run5k general_link. Добавлена связка RunPark (runpark-park850letiyamoskvy) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -1094,6 +1140,10 @@
       {
         "platform": "five_verst",
         "external_key": "park850letiyamoskvy"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-park850letiyamoskvy"
       }
     ]
   },
@@ -1103,7 +1153,7 @@
     "active_platform": null,
     "legacy_parkrun_slug": "parkguskova",
     "is_closed": true,
-    "notes": "Автосопоставление не найдено (parkrun slug: parkguskova). Заполните вручную.; более не существуют",
+    "notes": "Только parkrun, площадка закрыта. Преемника в других системах нет.",
     "links": [
       {
         "platform": "parkrun",
@@ -1135,7 +1185,7 @@
     "active_platform": "s95",
     "legacy_parkrun_slug": "parktalalikhina",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: parktalalikhina). Заполните вручную.; Вот эта локация в с95 https://s95.ru/events/podolsk",
+    "notes": "Подольск: связана S95-локация podolsk (https://s95.ru/events/podolsk).",
     "links": [
       {
         "platform": "parkrun",
@@ -1279,7 +1329,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "pushkin",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (pushkin → pushkin). Источник: run5k general_link.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (pushkin → pushkin). Источник: run5k general_link. Добавлена связка RunPark (runpark-pushkin) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -1288,6 +1338,10 @@
       {
         "platform": "five_verst",
         "external_key": "pushkin"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-pushkin"
       }
     ]
   },
@@ -1297,7 +1351,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "ramenskoegorodskoypark",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (ramenskoegorodskoypark → ramenskoegorodskoypark). Источник: run5k general_link.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (ramenskoegorodskoypark → ramenskoegorodskoypark). Источник: run5k general_link. Добавлена связка RunPark (runpark-ramenskoegorodskoypark) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -1306,6 +1360,10 @@
       {
         "platform": "five_verst",
         "external_key": "ramenskoegorodskoypark"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-ramenskoegorodskoypark"
       }
     ]
   },
@@ -1333,7 +1391,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "readovskypark",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (readovskypark → readovskypark). Источник: run5k general_link.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (readovskypark → readovskypark). Источник: run5k general_link. Добавлена связка RunPark (runpark-readovskypark) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -1342,6 +1400,10 @@
       {
         "platform": "five_verst",
         "external_key": "readovskypark"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-readovskypark"
       }
     ]
   },
@@ -1369,7 +1431,7 @@
     "active_platform": "runpark",
     "legacy_parkrun_slug": "ryazancentral",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: ryazancentral). Заполните вручную.; Эта локация есть в четвертой системе runpark, но я о ней тебе еще ничего не рассказывал, поэтому пока оставляем только в паркране",
+    "notes": "Только parkrun (2014–2020). ЕСТЬ ТАКЖЕ В RUNPARK, но эта площадка ещё не засинкана в нашей БД (нет Location-строки) — связку заводить не из чего, ждём синка RunPark по Рязани.",
     "links": [
       {
         "platform": "parkrun",
@@ -1383,7 +1445,7 @@
     "active_platform": "runpark",
     "legacy_parkrun_slug": "ryazanoreshek",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: ryazanoreshek). Заполните вручную.; Эта локация есть в четвертой системе runpark, но я о ней тебе еще ничего не рассказывал, поэтому пока оставляем только в паркране",
+    "notes": "Только parkrun (2018–2020). ЕСТЬ ТАКЖЕ В RUNPARK, но эта площадка ещё не засинкана в нашей БД (нет Location-строки) — связку заводить не из чего, ждём синка RunPark по Рязани.",
     "links": [
       {
         "platform": "parkrun",
@@ -1415,7 +1477,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "serpukhov-gorodskoy-bor",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (serpukhov-gorodskoy-bor → serpukhovgorodskoybor). Источник: run5k general_link.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (serpukhov-gorodskoy-bor → serpukhovgorodskoybor). Источник: run5k general_link. Добавлена связка RunPark (runpark-serpukhovgorodskoybor) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -1424,6 +1486,10 @@
       {
         "platform": "five_verst",
         "external_key": "serpukhovgorodskoybor"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-serpukhovgorodskoybor"
       }
     ]
   },
@@ -1451,7 +1517,7 @@
     "active_platform": null,
     "legacy_parkrun_slug": "severnyrechnoyvokzal",
     "is_closed": true,
-    "notes": "Автосопоставление не найдено (parkrun slug: severnyrechnoyvokzal). Заполните вручную.; более не существуют",
+    "notes": "Только parkrun, площадка закрыта. Преемника в других системах нет.",
     "links": [
       {
         "platform": "parkrun",
@@ -1461,14 +1527,18 @@
   },
   {
     "parkrun_location": "Shuvalovsky Park",
-    "canonical_name": "Shuvalovsky Park",
+    "canonical_name": "Шуваловский парк",
     "active_platform": null,
     "legacy_parkrun_slug": "shuvalovskypark",
     "is_closed": true,
-    "notes": "Автосопоставление не найдено (parkrun slug: shuvalovskypark). Заполните вручную.; более не существуют",
+    "notes": "Санкт-Петербург, Шуваловский парк; более не существует. Связана five_verst-страница shuvalovskypark (0 событий).",
     "links": [
       {
         "platform": "parkrun",
+        "external_key": "shuvalovskypark"
+      },
+      {
+        "platform": "five_verst",
         "external_key": "shuvalovskypark"
       }
     ]
@@ -1555,7 +1625,7 @@
     "active_platform": null,
     "legacy_parkrun_slug": "staryesady",
     "is_closed": true,
-    "notes": "Автосопоставление не найдено (parkrun slug: staryesady). Заполните вручную.; более не существуют",
+    "notes": "Только parkrun, площадка закрыта. Преемника в других системах нет.",
     "links": [
       {
         "platform": "parkrun",
@@ -1569,7 +1639,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "stavropol",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (stavropol → stavropol). Источник: run5k general_link.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (stavropol → stavropol). Источник: run5k general_link. Добавлена связка RunPark (runpark-stavropol) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -1578,6 +1648,10 @@
       {
         "platform": "five_verst",
         "external_key": "stavropol"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-stavropol"
       }
     ]
   },
@@ -1735,7 +1809,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "ufabotanicheskysad",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: ufabotanicheskysad). Заполните вручную.; Это 5 верст такая локация https://5verst.ru/parklesovodov/",
+    "notes": "Уфа: 5 вёрст parklesovodov (https://5verst.ru/parklesovodov/) + RunPark runpark-parklesovodov (тот же slug). RunPark-связка добавлена 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -1744,6 +1818,10 @@
       {
         "platform": "five_verst",
         "external_key": "parklesovodov"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-parklesovodov"
       }
     ]
   },
@@ -1781,7 +1859,7 @@
     "active_platform": "s95",
     "legacy_parkrun_slug": "velikiynovgorodkremlevsky",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: velikiynovgorodkremlevsky). Заполните вручную.; это с95 великий новгород https://s95.ru/events/novgorod в базе должен быть",
+    "notes": "Великий Новгород: S95 novgorod (https://s95.ru/events/novgorod) + RunPark runpark-novgorod (тот же slug). RunPark-связка добавлена 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -1790,6 +1868,10 @@
       {
         "platform": "s95",
         "external_key": "novgorod"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-novgorod"
       }
     ]
   },
@@ -1871,7 +1953,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "yarmarochnayaploshchad",
     "is_closed": false,
-    "notes": "Автосопоставление не найдено (parkrun slug: yarmarochnayaploshchad). Заполните вручную.; Это 5 верст такая локация https://5verst.ru/innopolis/ Иннополис",
+    "notes": "Иннополис: связана 5 вёрст-локация innopolis (https://5verst.ru/innopolis/).",
     "links": [
       {
         "platform": "parkrun",
@@ -1943,7 +2025,7 @@
     "active_platform": "five_verst",
     "legacy_parkrun_slug": "zhukovsky",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (zhukovsky → zhukovsky). Источник: run5k general_link.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (zhukovsky → zhukovsky). Источник: run5k general_link. Добавлена связка RunPark (runpark-zhukovsky) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
@@ -1952,6 +2034,10 @@
       {
         "platform": "five_verst",
         "external_key": "zhukovsky"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-zhukovsky"
       }
     ]
   },
@@ -2006,6 +2092,158 @@
       {
         "platform": "runpark",
         "external_key": "runpark-shveytsariya"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Muromets",
+    "canonical_name": "Муромец",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "muromets",
+    "is_closed": false,
+    "notes": "Муром, Владимирская область: parkrun 11.12.2021–26.02.2022, мост RunPark 19.03–28.05.2022, с 21.05.2022 продолжается как 5 вёрст «Муромец». Сопоставлено вручную (найдено при аудите дублей five_verst/runpark 20.07.2026).",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "muromets"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-muromets"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "muromets"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "Vorkuta Gorodskoy Park",
+    "canonical_name": "Воркута Городской парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "vorkuta-gorodskoy-park",
+    "is_closed": false,
+    "notes": "Воркута, Республика Коми: parkrun 04.12.2021–26.02.2022, мост RunPark 19.03–21.05.2022, с 21.05.2022 продолжается как 5 вёрст «Воркута Городской парк». Сопоставлено вручную (найдено при аудите дублей five_verst/runpark 20.07.2026).",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "vorkuta-gorodskoy-park"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-vorkutagorodskoypark"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "vorkutagorodskoypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "",
+    "canonical_name": "Притяжение",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "",
+    "is_closed": false,
+    "notes": "Магнитогорск: RunPark «5кмПритяжения» 13.04.2024–03.11.2024, с 13.04.2024 параллельно и далее продолжается как 5 вёрст «Притяжение». Найдено при аудите дублей five_verst/runpark 20.07.2026.",
+    "links": [
+      {
+        "platform": "five_verst",
+        "external_key": "prityazhenie"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-prityazhenie"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "",
+    "canonical_name": "Кстово",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "",
+    "is_closed": false,
+    "notes": "Кстово, Нижегородская область: RunPark «Kstovo5RUN» 27.04.2025–10.01.2026, с 28.06.2025 продолжается как 5 вёрст «Кстово». Найдено при аудите дублей five_verst/runpark 20.07.2026.",
+    "links": [
+      {
+        "platform": "five_verst",
+        "external_key": "kstovoyubileyniy"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-kstovoyubileyniy"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "",
+    "canonical_name": "Старый Оскол",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "",
+    "is_closed": false,
+    "notes": "Старый Оскол, Белгородская область: RunPark «Лесопарк Ублинские горы» и 5 вёрст «Старый Оскол» стартовали в один день 11.10.2025, один и тот же slug ublinskiegory. Найдено при аудите дублей five_verst/runpark 20.07.2026.",
+    "links": [
+      {
+        "platform": "five_verst",
+        "external_key": "ublinskiegory"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-ublinskiegory"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "",
+    "canonical_name": "Пестовский",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "",
+    "is_closed": false,
+    "notes": "Балашиха, Пестовский парк: RunPark «Забег Приятелей Жуковский» 26.03.2022–11.06.2022, с 18.06.2022 (через неделю после конца RunPark) продолжается как 5 вёрст «Пестовский». Название RunPark не совпадает с городом — судя по всему, имя беговой группы, не локации. Найдено при аудите дублей five_verst/runpark 20.07.2026.",
+    "links": [
+      {
+        "platform": "five_verst",
+        "external_key": "pestovsky"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-pestovsky"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "",
+    "canonical_name": "Сормовский парк",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "",
+    "is_closed": false,
+    "notes": "Нижний Новгород: RunPark «СормовоРан» 07.09.2024–03.05.2025, с 10.05.2025 (через неделю) продолжается как 5 вёрст «Сормовский парк». Найдено при аудите дублей five_verst/runpark 20.07.2026.",
+    "links": [
+      {
+        "platform": "five_verst",
+        "external_key": "sormovskiypark"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-sormovskiypark"
+      }
+    ]
+  },
+  {
+    "parkrun_location": "",
+    "canonical_name": "Парк Южный",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "",
+    "is_closed": false,
+    "notes": "Магнитогорск: разовый старт RunPark «Южный парк» 26.10.2024, с 10.05.2025 продолжается как 5 вёрст «Парк Южный», тот же slug yuzhniy. Найдено при аудите дублей five_verst/runpark 20.07.2026.",
+    "links": [
+      {
+        "platform": "five_verst",
+        "external_key": "yuzhniy"
+      },
+      {
+        "platform": "runpark",
+        "external_key": "runpark-yuzhniy"
       }
     ]
   }

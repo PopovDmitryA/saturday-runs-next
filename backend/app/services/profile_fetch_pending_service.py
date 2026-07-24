@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.five_verst.errors import FiveVerstBanDetected
 from app.models import (
+    Participant,
     Platform,
     PlatformLink,
     ProfileFetchPending,
@@ -33,6 +34,19 @@ _BAN_ERROR_TYPES = (ParkrunBanDetected, S95BanDetected, FiveVerstBanDetected)
 # использует её, чтобы дать этим строкам приоритет над остальным backlog'ом:
 # там гарантированно есть история, а не просто гипотеза о существовании профиля.
 RUNPARK_SEED_NOTE_PREFIX = "seed from RunPark Pakrun archive"
+
+# Маркирует last_error строки, по которой демон сдался НАВСЕГДА: либо профиль
+# реально не существует (404), либо платформа стабильно банит/блокирует его
+# MAX_RETRY_ATTEMPTS раз подряд. reset_failed_pending пропускает такие строки —
+# без метки они воскресали бы в pending на каждом старте демона и повторяли
+# один и тот же обречённый запрос бесконечно (жалобы про 790115304 у parkrun
+# и у s95 — разные платформы, один и тот же паттерн).
+PERMANENT_ERROR_PREFIX = "[permanent] "
+
+# Общий порог для двух независимых веток process_pending_row: обычная ошибка
+# (см. "error" ниже) и cooldown/бан (см. "cooldown_exhausted") — обе после
+# этого числа попыток сдаются и ставят PERMANENT_ERROR_PREFIX.
+MAX_RETRY_ATTEMPTS = 5
 
 
 def is_fetch_cooldown_error(exc: BaseException) -> bool:
@@ -79,6 +93,11 @@ def enqueue_profile_fetch_pending(
     except Exception:
         pass
 
+    # Ищем БЕЗ фильтра по статусу — иначе гонка с демоном (строка на секунду
+    # оказалась 'processing' ровно когда пользователь снова упал на бане) или
+    # уже закрытая 'done'/'failed' строка не находится дедупом, и для одного
+    # и того же атлета копится несколько независимых pending-строк (нашли на
+    # живых данных: 790269774 у s95 заведён дважды, за 21.06 и 06.07).
     existing: ProfileFetchPending | None = None
     if external_user_id:
         existing = (
@@ -86,7 +105,6 @@ def enqueue_profile_fetch_pending(
             .filter(
                 ProfileFetchPending.platform_code == platform_code,
                 ProfileFetchPending.external_user_id == external_user_id,
-                ProfileFetchPending.status == ProfileFetchPendingStatus.pending,
             )
             .order_by(ProfileFetchPending.created_at.desc())
             .first()
@@ -97,7 +115,6 @@ def enqueue_profile_fetch_pending(
             .filter(
                 ProfileFetchPending.platform_code == platform_code,
                 ProfileFetchPending.profile_input == profile_input,
-                ProfileFetchPending.status == ProfileFetchPendingStatus.pending,
             )
             .order_by(ProfileFetchPending.created_at.desc())
             .first()
@@ -111,6 +128,14 @@ def enqueue_profile_fetch_pending(
         existing.cooldown_until = cooldown_until
         if user_id is not None:
             existing.user_id = user_id
+        # 'processing' — демон работает над строкой прямо сейчас, статус не
+        # трогаем (обновили только метаданные выше). Иначе (done/failed/уже
+        # pending) — переоткрываем: новая ошибка отменяет прежний терминальный
+        # исход, ретраить нужно с чистого счётчика попыток.
+        if existing.status != ProfileFetchPendingStatus.processing:
+            existing.status = ProfileFetchPendingStatus.pending
+            existing.attempts = 0
+            existing.processed_at = None
         db.flush()
         return existing
 
@@ -165,6 +190,28 @@ def _get_platform(db: Session, platform_code: str) -> Platform:
     if platform is None:
         raise ValueError(f"Platform not found: {platform_code}")
     return platform
+
+
+def describe_processed_profile(
+    db: Session, platform_code: str, external_user_id: str | None
+) -> str | None:
+    """Ссылка + ФИО только что обработанного бегуна — для краткого статуса
+    демона (--quiet), а не для полного лога. None, если участник ещё не
+    успел появиться в БД (сбой до создания Participant)."""
+    if not external_user_id:
+        return None
+    participant = (
+        db.query(Participant)
+        .join(Platform, Platform.id == Participant.platform_id)
+        .filter(
+            Platform.code == platform_code,
+            Participant.external_user_id == external_user_id,
+        )
+        .one_or_none()
+    )
+    if participant is None:
+        return None
+    return f"успех: {participant.display_name or '?'} → {participant.profile_url or '?'}"
 
 
 def _complete_pending_profile_link(
@@ -307,12 +354,29 @@ def process_pending_row(db: Session, row: ProfileFetchPending) -> str:
         return "done"
     except Exception as exc:
         if is_fetch_cooldown_error(exc):
+            row.attempts += 1
+            row.updated_at = datetime.now(timezone.utc)
+            if row.attempts >= MAX_RETRY_ATTEMPTS:
+                # Платформа стабильно банит/блокирует именно эту строку
+                # (не общий кулдаун — тот ловится раньше, is_platform_in_cooldown),
+                # ретраить без реального бэкоффа бессмысленно: строка иначе висит
+                # в pending вечно, попытки растут, а reset_* её каждый раз
+                # воскрешает (нашли на 790269774 у s95 — 403 месяцами подряд).
+                row.status = ProfileFetchPendingStatus.failed
+                row.reason = _reason_from_error(exc)
+                row.last_error = PERMANENT_ERROR_PREFIX + str(exc)
+                db.commit()
+                logger.info(
+                    "pending profile fetch: %s попыток кулдауна подряд, сдаюсь: %s %s",
+                    MAX_RETRY_ATTEMPTS,
+                    row.platform_code,
+                    row.external_user_id or row.profile_input,
+                )
+                return "cooldown_exhausted"
             row.status = ProfileFetchPendingStatus.pending
             row.reason = _reason_from_error(exc)
             row.last_error = str(exc)
             row.cooldown_until = parse_cooldown_until_from_message(str(exc))
-            row.attempts += 1
-            row.updated_at = datetime.now(timezone.utc)
             db.commit()
             logger.warning(
                 "pending profile fetch paused (platform protection): %s %s",
@@ -323,9 +387,11 @@ def process_pending_row(db: Session, row: ProfileFetchPending) -> str:
         if _is_permanent_profile_error(exc):
             # Профиль не существует (404) — ретраи бессмысленны, сразу failed,
             # иначе строка 5 раз крутится в pending (жалоба про 790115304).
+            # PERMANENT_ERROR_PREFIX защищает и от воскрешения на следующем
+            # старте демона — см. reset_failed_pending.
             row.status = ProfileFetchPendingStatus.failed
             row.reason = ProfileFetchPendingReason.error
-            row.last_error = str(exc)
+            row.last_error = PERMANENT_ERROR_PREFIX + str(exc)
             row.attempts += 1
             row.updated_at = datetime.now(timezone.utc)
             db.commit()
@@ -339,7 +405,7 @@ def process_pending_row(db: Session, row: ProfileFetchPending) -> str:
         row.reason = ProfileFetchPendingReason.error
         row.last_error = str(exc)
         row.attempts += 1
-        if row.attempts >= 5:
+        if row.attempts >= MAX_RETRY_ATTEMPTS:
             row.status = ProfileFetchPendingStatus.failed
         row.updated_at = datetime.now(timezone.utc)
         db.commit()
@@ -475,21 +541,7 @@ def ensure_parkrun_pending_queue_row(
 
 
 def reset_failed_parkrun_pending(db: Session) -> int:
-    rows = (
-        db.query(ProfileFetchPending)
-        .filter(
-            ProfileFetchPending.platform_code == "parkrun",
-            ProfileFetchPending.status == ProfileFetchPendingStatus.failed,
-        )
-        .all()
-    )
-    for row in rows:
-        row.status = ProfileFetchPendingStatus.pending
-        row.attempts = 0
-        row.last_error = None
-    if rows:
-        db.commit()
-    return len(rows)
+    return reset_failed_pending(db, "parkrun")
 
 
 # Строка помечается 'processing' и коммитится до фетча (process_pending_row).
@@ -521,12 +573,20 @@ def requeue_stuck_processing_parkrun_pending(db: Session) -> int:
 
 
 def reset_failed_pending(db: Session, platform_code: str) -> int:
-    """Re-open failed rows for a platform so the daemon retries them."""
+    """Re-open failed rows for a platform so the daemon retries them.
+
+    Rows given up permanently (see PERMANENT_ERROR_PREFIX — a genuine 404, or
+    a resource that kept failing/banning past MAX_RETRY_ATTEMPTS) are skipped:
+    their last run already gave a final answer, resurrecting them on every
+    daemon start just repeats the same failed request forever.
+    """
     rows = (
         db.query(ProfileFetchPending)
         .filter(
             ProfileFetchPending.platform_code == platform_code,
             ProfileFetchPending.status == ProfileFetchPendingStatus.failed,
+            (ProfileFetchPending.last_error.is_(None))
+            | (~ProfileFetchPending.last_error.like(f"{PERMANENT_ERROR_PREFIX}%")),
         )
         .all()
     )
@@ -537,6 +597,16 @@ def reset_failed_pending(db: Session, platform_code: str) -> int:
     if rows:
         db.commit()
     return len(rows)
+
+
+def count_pending_rows(db: Session, platform_code: str | None = None) -> int:
+    """Истинный размер backlog'а — без LIMIT, в отличие от list_pending_rows."""
+    query = db.query(ProfileFetchPending).filter(
+        ProfileFetchPending.status == ProfileFetchPendingStatus.pending
+    )
+    if platform_code:
+        query = query.filter(ProfileFetchPending.platform_code == platform_code)
+    return query.count()
 
 
 def list_pending_rows(

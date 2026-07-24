@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.activity_date import has_real_activity_date
@@ -44,7 +44,12 @@ class SyncRefreshRateLimitedError(Exception):
     pass
 
 
-ANALYTICS_VERSION = 25
+# 26: pr_count считает по run_displayed_personal_record_sql_filter (вкл. дебюты
+# и глобальные рекорды) — без бампа старый кэш отдаёт счётчик, расходящийся со
+# списком PR-пробежек.
+# 27: тестовые события исключены из пересчёта is_pr/дебютов + бэкфилл на проде —
+# кэш должен пересчитать pr_count по обновлённым флагам.
+ANALYTICS_VERSION = 27
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -449,7 +454,7 @@ def _compute_dashboard_analytics(
     include_test_events: bool = False,
 ) -> dict[str, object]:
     from app.services.personal_record_service import (
-        run_is_personal_record_sql_filter,
+        run_displayed_personal_record_sql_filter,
         user_secondary_crosslinked_run_ids,
     )
 
@@ -525,21 +530,19 @@ def _compute_dashboard_analytics(
         .with_entities(func.avg(RunResult.gender_position))
         .scalar()
     )
-    # Плашка «N личных рекордов» на главной открывает список PR-пробежек, а
-    # тот считает и рекорды системы, и рекорды локации — счётчик должен
-    # совпадать с числом строк в списке, иначе цифры расходятся (Дмитрий,
+    # Плашка «N личных рекордов» на главной открывает список PR-пробежек —
+    # счётчик обязан совпадать с числом строк в этом списке (рекорды системы,
+    # глобальные, рекорды локации и дебюты), иначе цифры расходятся (Дмитрий,
     # 20.07.2026).
-    pr_or_location_pr = or_(
-        run_is_personal_record_sql_filter(), RunResult.is_location_pr.is_(True)
-    )
+    displayed_pr = run_displayed_personal_record_sql_filter()
     pr_count = (
-        runs_query.filter(pr_or_location_pr)
+        runs_query.filter(displayed_pr)
         .with_entities(func.count(RunResult.id))
         .scalar()
         or 0
     )
     last_pr_date = (
-        runs_query.filter(pr_or_location_pr)
+        runs_query.filter(displayed_pr)
         .with_entities(func.max(Event.event_date))
         .scalar()
     )
@@ -550,7 +553,7 @@ def _compute_dashboard_analytics(
         .scalar()
     )
     pr_last_12_months = (
-        runs_query.filter(pr_or_location_pr, Event.event_date >= twelve_months_ago)
+        runs_query.filter(displayed_pr, Event.event_date >= twelve_months_ago)
         .with_entities(func.count(RunResult.id))
         .scalar()
         or 0
@@ -913,6 +916,42 @@ def _location_status_fields(
     }
 
 
+def _user_first_timed_run_id(
+    db: Session,
+    user_id: UUID,
+    *,
+    include_test_events: bool,
+    excluded_ids: set[UUID],
+) -> UUID | None:
+    """Id самой первой зачтённой пробежки пользователя с временем.
+
+    На витринах она подсвечивается как глобальный рекорд — лучший результат
+    «на момент той пробежки» (решение Дмитрия 19.07.2026). В БД is_global_pr у
+    baseline-забега остаётся False. Порядок сортировки — тот же, что в
+    recalculate_cross_platform_personal_records."""
+    query = (
+        db.query(RunResult.id)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
+        .filter(
+            PlatformLink.user_id == user_id,
+            PlatformLink.platform_id == Platform.id,
+            RunResult.finish_time_sec.isnot(None),
+            RunResult.finish_time_sec > 0,
+        )
+    )
+    if not include_test_events:
+        query = query.filter(Event.is_test_event.is_(False))
+    if excluded_ids:
+        query = query.filter(RunResult.id.notin_(excluded_ids))
+    return (
+        query.order_by(Event.event_date, Event.event_number, Event.location_id, RunResult.id)
+        .limit(1)
+        .scalar()
+    )
+
+
 def list_user_runs(
     db: Session,
     user_id: UUID,
@@ -948,6 +987,12 @@ def list_user_runs(
     secondary_crosslinked_ids = user_secondary_crosslinked_run_ids(
         db, user_id, include_test_events=include_test_events
     )
+    first_timed_run_id = _user_first_timed_run_id(
+        db,
+        user_id,
+        include_test_events=include_test_events,
+        excluded_ids=secondary_crosslinked_ids,
+    )
     catalog_index = LocationCatalogIndex(db)
     summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
     return [
@@ -971,8 +1016,10 @@ def list_user_runs(
             "pace_display": run.pace_display,
             "pace_sec_per_km": run.pace_sec_per_km,
             "age_category": run.age_category,
-            "is_pr": run_shows_personal_record(platform.code, run),
-            "is_global_pr": run.is_global_pr,
+            # Дебют в системе и самая первая пробежка вообще помечаются PR /
+            # глобальным рекордом только на витрине — флаги в БД не меняются.
+            "is_pr": run_shows_personal_record(platform.code, run) or bool(run.is_first_run),
+            "is_global_pr": bool(run.is_global_pr) or run.id == first_timed_run_id,
             "is_location_pr": run.is_location_pr,
             "is_crosslinked": run.id in secondary_crosslinked_ids,
             "is_first_run": run.is_first_run,
@@ -1078,18 +1125,17 @@ def list_user_personal_records(
     include_test_events: bool = False,
 ) -> list[dict[str, object]]:
     from app.services.personal_record_service import (
-        run_is_personal_record_sql_filter,
+        run_displayed_personal_record_sql_filter,
         run_shows_personal_record,
         user_secondary_crosslinked_run_ids,
     )
 
     # Страница показывает обновления рекордов во всех разрезах: рекорд системы
-    # (is_pr / метка 5 вёрст), глобальный рекорд и рекорд локации. Дебют сам по
-    # себе рекордом системы не считается (первый забег — база отсчёта, сравнивать
-    # не с чем), но его данные всё равно подтягиваются в список отдельной строкой
-    # (is_debut) — иначе у участников, чей лучший результат в системе так и остался
-    # непобитым дебютом, вкладка этой системы выглядела бы пустой, хотя на деле
-    # это и есть их текущий лучший результат (решение Дмитрия 20.07.2026).
+    # (is_pr / метка 5 вёрст), глобальный рекорд и рекорд локации. Дебют в БД
+    # рекордом системы не считается (первый забег — база отсчёта), но в ответе
+    # помечается is_pr — на витрине дебют показывается с обычным маркером PR,
+    # без отдельного бейджа (решение Дмитрия 19.07.2026); флаг is_debut в ответе
+    # остаётся как признак для клиентов.
     query = (
         db.query(RunResult, Event, Location, Platform, PlatformLink)
         .join(Event, RunResult.event_id == Event.id)
@@ -1099,12 +1145,7 @@ def list_user_personal_records(
         .filter(
             PlatformLink.user_id == user_id,
             PlatformLink.platform_id == Platform.id,
-            or_(
-                run_is_personal_record_sql_filter(),
-                RunResult.is_global_pr.is_(True),
-                RunResult.is_location_pr.is_(True),
-                RunResult.is_first_run.is_(True),
-            ),
+            run_displayed_personal_record_sql_filter(),
         )
     )
     if not include_test_events:
@@ -1123,6 +1164,13 @@ def list_user_personal_records(
         RunResult.position.asc(),
     ).all()
 
+    first_timed_run_id = _user_first_timed_run_id(
+        db,
+        user_id,
+        include_test_events=include_test_events,
+        excluded_ids=excluded_ids,
+    )
+
     catalog_index = LocationCatalogIndex(db)
     summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
     return [
@@ -1136,8 +1184,9 @@ def list_user_personal_records(
                 run.finish_time_display,
             ),
             "finish_time_sec": run.finish_time_sec,
-            "is_pr": run_shows_personal_record(platform.code, run),
-            "is_global_pr": run.is_global_pr,
+            # Дебют помечаем PR только на витрине — run.is_pr в БД не меняется.
+            "is_pr": run_shows_personal_record(platform.code, run) or bool(run.is_first_run),
+            "is_global_pr": bool(run.is_global_pr) or run.id == first_timed_run_id,
             "is_location_pr": run.is_location_pr,
             "is_debut": bool(run.is_first_run),
             "event_url": _activity_event_url(

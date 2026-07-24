@@ -3,6 +3,7 @@ import { ActivityDateLink } from "../../components/ActivityDateLink";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAuth } from "../../components/RequireAuth";
+import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { SiteHeader } from "../../components/SiteHeader";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
@@ -185,7 +186,7 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
 
   return (
     <EventsShell currentUser={currentUser}>
-      <header className="loc-header">
+      <header className="loc-header loc-wide-page">
         <p className="muted loc-header-breadcrumb">
           <a href="/locations">← Все локации</a> /{" "}
           <a href={`/locations/${data.slug}`}>{data.name}</a> / Журнал
@@ -220,7 +221,7 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
       </div>
 
       <section className="loc-section">
-        <div className="table-wrap">
+        <div className="table-wrap loc-events-wrap">
           <table className="data-table data-table-layout-fixed loc-events-table">
             <colgroup>
               <col className="col-number" />
@@ -353,6 +354,7 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
           </p>
         )}
       </section>
+      <ScrollToTopButton />
     </EventsShell>
   );
 }

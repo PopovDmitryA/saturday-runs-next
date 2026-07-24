@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import { PortalBlogSection } from "./PortalBlogSection";
 import { PortalGeoMap } from "./PortalGeoMap";
 import { PortalHeader } from "./PortalHeader";
 import { PLATFORM_CHART_META, PortalTrendChart, type TrendPoint } from "./PortalTrendChart";
 import {
   fetchPortalHome,
+  PortalHomeError,
   type PortalAttendanceTopRow,
   type PortalFastestRow,
   type PortalHomeResponse,
@@ -220,9 +222,39 @@ export function PortalHomePage() {
   const [period, setPeriod] = useState<"all" | "year">("all");
 
   useEffect(() => {
-    fetchPortalHome()
-      .then(setData)
-      .catch((err) => setError(err instanceof Error ? err.message : "Не удалось загрузить данные"));
+    let cancelled = false;
+    let timer: number | undefined;
+    const load = () => {
+      fetchPortalHome()
+        .then((response) => {
+          if (!cancelled) {
+            setData(response);
+            setError(null);
+          }
+        })
+        .catch((err) => {
+          if (cancelled) {
+            return;
+          }
+          // 502/503/504 или сетевой сбой — стек перезапускается (обычно деплой):
+          // говорим об этом по-человечески и пробуем снова сами.
+          const status = err instanceof PortalHomeError ? err.status : null;
+          const transient = status === null || status === 502 || status === 503 || status === 504;
+          if (transient) {
+            setError("Сайт как раз обновляется — статистика появится через минуту. Страница попробует ещё раз сама.");
+            timer = window.setTimeout(load, 10_000);
+          } else {
+            setError(err instanceof Error ? err.message : "Не удалось загрузить данные");
+          }
+        });
+    };
+    load();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+      }
+    };
   }, []);
 
   const weekLabel = (iso: string) =>
@@ -669,6 +701,8 @@ export function PortalHomePage() {
                 </div>
               </div>
             </section>
+
+            <PortalBlogSection />
 
             <section id="systems" className="portal-systems" aria-label="Беговые системы">
               {data.systems.map((system) => (

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, cast
 from uuid import UUID
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -16,6 +17,7 @@ from app.models import (
     SyncJob,
     SyncJobTrigger,
 )
+from app.parkrun.fetch.daemon_log import cline
 from app.parkrun.fetch.daemon_session import (
     ParkrunDaemonSession,
     activate_daemon_session,
@@ -23,6 +25,8 @@ from app.parkrun.fetch.daemon_session import (
 )
 from app.services.parkrun_local_worker import prepare_parkrun_cdp_fetch, sync_parkrun_runs_for_user
 from app.services.profile_fetch_pending_service import (
+    count_pending_rows,
+    describe_processed_profile,
     list_pending_rows,
     process_pending_row,
     requeue_stuck_done_parkrun_pending,
@@ -156,34 +160,61 @@ def _manual_sync_link_ids(db: Session, link_ids: list[UUID]) -> set[UUID]:
     return manual_ids
 
 
-def _process_pending_item(db: Session, item: ParkrunWorkItem) -> tuple[str, UUID | None]:
+# Сколько подряд обрывов коннекта к прод-БД терпим, прежде чем остановить
+# прогон. Туннель к прод-Postgres (SSH, порт 5434) иногда рвётся посреди
+# длинного прогона — дальше каждый профиль падает на первом же db.get, и нет
+# смысла молотить остаток очереди гигантскими трейсбэками.
+MAX_DB_CONNECTION_FAILURES = 3
+
+
+def _is_db_connection_lost(exc: BaseException) -> bool:
+    """True, если ошибка — потеря соединения с БД (оборванный SSH-туннель),
+    а не обычный сбой фетча parkrun. Проверяем всю цепочку __cause__:
+    sqlalchemy заворачивает psycopg.OperationalError (connection refused,
+    SSL EOF, server closed connection) именно в OperationalError."""
+    cursor: BaseException | None = exc
+    for _ in range(10):
+        if cursor is None:
+            break
+        if isinstance(cursor, OperationalError):
+            return True
+        cursor = cursor.__cause__
+    return False
+
+
+def _process_pending_item(db: Session, item: ParkrunWorkItem) -> tuple[str, UUID | None, str | None]:
     if item.pending_id is None:
-        return "error", None
+        return "error", None, None
     row = db.get(ProfileFetchPending, item.pending_id)
     if row is None:
-        return "error", None
+        return "error", None, None
     outcome = process_pending_row(db, row)
     user_id = row.user_id if outcome == "done" else None
-    return outcome, user_id
+    external_user_id = row.external_user_id if outcome == "done" else None
+    return outcome, user_id, external_user_id
 
 
 def run_parkrun_queue_daemon(
     db: Session,
     session: ParkrunDaemonSession,
     items: list[ParkrunWorkItem],
-    after_item: Callable[[], str | None] | None = None,
 ) -> dict[str, object]:
     summary: dict[str, int] = {}
     details: list[str] = []
     total = len(items)
+    db_connection_failures = 0
 
     for index, item in enumerate(items, start=1):
         session.show_status(f"{index}/{total}: {item.kind} {item.label}")
         try:
             if item.kind == "pending":
-                outcome, user_id = _process_pending_item(db, item)
+                outcome, user_id, external_user_id = _process_pending_item(db, item)
                 summary[outcome] = summary.get(outcome, 0) + 1
                 details.append(f"{outcome}: {item.label}")
+                if outcome == "done":
+                    description = describe_processed_profile(db, "parkrun", external_user_id)
+                    if description:
+                        session.show_status(description)
                 if outcome == "done" and user_id is not None:
                     # Импорт только что стянул страницы атлета — user-sync
                     # переиспользует их (в пределах окна) вместо второго фетча.
@@ -194,23 +225,45 @@ def run_parkrun_queue_daemon(
                     key = "sync_ok" if sync_line.startswith("sync_ok") else "sync_error"
                     summary[key] = summary.get(key, 0) + 1
             elif item.kind == "sync" and item.user_id is not None:
+                description = describe_processed_profile(db, "parkrun", item.label)
+                if description:
+                    session.show_status(description)
                 sync_line = sync_parkrun_runs_for_user(db, item.user_id, label=item.label)
                 details.append(sync_line)
                 key = "sync_ok" if sync_line.startswith("sync_ok") else "sync_error"
                 summary[key] = summary.get(key, 0) + 1
+            db_connection_failures = 0  # успех — сбрасываем счётчик обрывов
         except Exception as exc:
-            db.rollback()
+            try:
+                db.rollback()
+            except Exception:
+                pass  # rollback на мёртвом коннекте сам падает — не мешаем
             logger.exception("parkrun queue item failed: %s", item.label)
             summary["error"] = summary.get("error", 0) + 1
             details.append(f"error: {item.label} — {exc}")
 
-        # Чередование очередей: после каждой задачи сайта — один шаг
-        # parkrun-monitoring (eventhistory-саммари одной локации).
-        if after_item is not None:
-            line = after_item()
-            if line:
-                details.append(line)
-                print("  ", line, flush=True)
+            if _is_db_connection_lost(exc):
+                db_connection_failures += 1
+                if db_connection_failures >= MAX_DB_CONNECTION_FAILURES:
+                    summary["db_connection_lost"] = 1
+                    cline(
+                        f"[parkrun queue] ОСТАНОВКА: {MAX_DB_CONNECTION_FAILURES} "
+                        f"обрыва коннекта к прод-БД подряд (SSH-туннель, порт "
+                        f"5434). Прогон прерван на {index}/{total}. Перезапусти "
+                        f"make parkrun — туннель поднимется заново."
+                    )
+                    break
+            else:
+                db_connection_failures = 0  # обычная ошибка фетча — не в счёт
+
+        if getattr(session, "httpx_aborted", False):
+            # --no-browser словил защиту WAF — дальше пачку не гоняем, нет
+            # смысла добивать оставшиеся N строк той же блокировкой.
+            cline(
+                f"[parkrun queue] --no-browser: обнаружена защита, "
+                f"эксперимент остановлен на {index}/{total}."
+            )
+            break
 
         if index < total:
             session.human_pause_between_jobs()
@@ -239,10 +292,12 @@ def run_daemon(
     launch_chrome: bool = True,
     limit_pending: int = 50,
     include_sync: bool = True,
+    use_httpx: bool = False,
+    fast_delay_seconds: float | None = None,
 ) -> dict[str, object]:
     from app.config import get_settings
     from app.services.parkrun_monitoring_bridge import (
-        monitoring_history_step,
+        monitoring_work,
         push_monitoring_to_server,
         refresh_monitoring_stats,
     )
@@ -254,14 +309,17 @@ def run_daemon(
     # стран (results-service доступен с Mac, но не с сервера).
     stats_line = refresh_monitoring_stats()
     if stats_line:
-        print(stats_line, flush=True)
+        cline(stats_line)
 
     # s95 uses its own fetch (no parkrun browser needed) — drain it first.
     s95_result = run_s95_pending_queue(db, limit_pending=limit_pending)
     if s95_result["total"]:
-        print(f"s95 очередь: {s95_result['total']} задач(и), {s95_result['summary']}", flush=True)
+        cline(
+            f"s95 очередь: {s95_result['backlog_total']} задач(и) всего — "
+            f"берём в этот прогон {s95_result['total']}, {s95_result['summary']}"
+        )
         for line in cast("list[str]", s95_result["details"]):
-            print("  ", line, flush=True)
+            cline(f"  {line}")
 
     items = build_parkrun_work_queue(
         db,
@@ -269,49 +327,59 @@ def run_daemon(
         include_sync=include_sync,
     )
 
-    # Бюджет parkrun-monitoring на этот прогон: LIMIT шагов-саммари всего,
-    # по одному после каждой задачи сайта, остаток — после очереди.
-    monitoring_steps = 0
-
-    def _monitoring_after_item() -> str | None:
-        nonlocal monitoring_steps
-        if monitoring_steps >= limit_pending:
-            return None
-        monitoring_steps += 1
-        return monitoring_history_step(limit=1)
+    queue_was_empty = not items
 
     if not items:
-        print("Очередь parkrun пуста (pending и sync).", flush=True)
+        cline("Очередь parkrun пуста (pending и sync).")
         parkrun_result: dict[str, object] = {"summary": {}, "details": [], "total": 0}
     else:
         settings = get_settings()
         cdp = use_cdp if use_cdp is not None else bool(
             settings.parkrun_use_cdp_for_fetch and settings.parkrun_cdp_url.strip()
         )
-        mode = f"Chrome CDP ({cdp_url or settings.parkrun_cdp_url})" if cdp else "Playwright Chromium"
-        print(f"В очереди: {len(items)} задач(и). Браузер: {mode}", flush=True)
+        if use_httpx:
+            mode = "httpx БЕЗ БРАУЗЕРА (--no-browser, эксперимент)"
+        elif cdp:
+            mode = f"Chrome CDP ({cdp_url or settings.parkrun_cdp_url})"
+        else:
+            mode = "Playwright Chromium"
+        # "sync" в items уже без ограничения limit_pending (см. build_parkrun_work_queue),
+        # так что len(items)-pending_taken — это и есть точный размер той части
+        # backlog'а. "pending" же обрезан лимитом — сравниваем с истинным total.
+        pending_taken = sum(1 for i in items if i.kind == "pending")
+        sync_taken = len(items) - pending_taken
+        pending_total = count_pending_rows(db, "parkrun")
+        backlog_total = pending_total + sync_taken
+        cline(
+            f"В очереди: {backlog_total} задач(и) всего "
+            f"(pending {pending_total}, sync {sync_taken}) — "
+            f"берём в этот прогон {len(items)}. Браузер: {mode}"
+        )
         with ParkrunDaemonSession(
             use_cdp=use_cdp,
             cdp_url=cdp_url,
             launch_chrome=launch_chrome,
+            use_httpx=use_httpx,
+            fast_delay_seconds=fast_delay_seconds,
         ) as browser_session:
             token = activate_daemon_session(browser_session)
             try:
-                parkrun_result = run_parkrun_queue_daemon(
-                    db, browser_session, items, after_item=_monitoring_after_item
-                )
+                parkrun_result = run_parkrun_queue_daemon(db, browser_session, items)
             finally:
                 deactivate_daemon_session(token)
 
-    # Очередь сайта кончилась — добираем оставшийся бюджет саммари одним заходом.
-    remaining = limit_pending - monitoring_steps
-    if remaining > 0:
-        drain_line = monitoring_history_step(limit=remaining)
-        if drain_line:
-            print(drain_line, flush=True)
+    # Сбор локаций (parkrun-monitoring) — только при свободной очереди сайта:
+    # очередь профилей приоритетна, карусель «профиль↔локация» убрана
+    # (21.07.2026). Основной сборщик локаций теперь на сервере; Mac помогает
+    # на сдачу, координируясь с ним через claim'ы канонической БД
+    # (PM_CLAIM_COMMAND в .env parkrun-monitoring).
+    if queue_was_empty:
+        work_line = monitoring_work(limit=limit_pending)
+        if work_line:
+            cline(work_line)
 
     push_line = push_monitoring_to_server()
     if push_line:
-        print(push_line, flush=True)
+        cline(push_line)
 
     return _merge_results(s95_result, parkrun_result)

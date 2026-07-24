@@ -46,6 +46,21 @@ def run_is_personal_record_sql_filter():
     )
 
 
+def run_displayed_personal_record_sql_filter():
+    """SQL filter for the personal-records page / dashboard tile (requires Platform join).
+
+    Единый критерий «строка попадает в список PR-пробежек»: рекорд системы
+    (is_pr / метка 5 вёрст), глобальный рекорд, рекорд локации или дебют в
+    системе. Счётчик на плитке главной обязан использовать этот же фильтр,
+    иначе цифра расходится с числом строк в списке."""
+    return or_(
+        run_is_personal_record_sql_filter(),
+        RunResult.is_global_pr.is_(True),
+        RunResult.is_location_pr.is_(True),
+        RunResult.is_first_run.is_(True),
+    )
+
+
 def reset_personal_records(
     db: Session,
     platform_code: str,
@@ -73,7 +88,11 @@ def recalculate_personal_records(
     Дебют рекордом НЕ является: первый результат участника на платформе (как и
     первый забег «в нашей БД» у участников с неполной историей) задаёт базовое
     время, is_pr получает только более быстрый последующий забег. Сама 5 вёрст
-    дебют рекордом не помечает никогда."""
+    дебют рекордом не помечает никогда.
+
+    Тестовые события (is_test_event) не участвуют вовсе: сами is_pr не получают
+    и базовое время не задают — иначе официальный дебют, пробежанный быстрее
+    тест-забега, ложно помечался рекордом (кейс Егора Свиридова, 19.07.2026)."""
     if reset:
         reset_personal_records(db, platform_code, participant_id=participant_id)
         db.flush()
@@ -128,7 +147,7 @@ def recalculate_personal_records(
 
         counted_rows = []
         for run, event in rows:
-            if event.id in secondary_event_ids:
+            if event.id in secondary_event_ids or event.is_test_event:
                 if run.is_pr:
                     run.is_pr = False
                     updated += 1
@@ -189,7 +208,8 @@ def recalculate_first_run_flags(
     For each participant on the platform, orders their (non "не в зачёте") runs by
     event_date/event_number/location_id: the first one is is_first_run=True, and the
     first run at each distinct location is is_first_run_at_location=True. Secondary
-    crosslink duplicates never carry either flag.
+    crosslink duplicates and test events (is_test_event) never carry either flag and
+    do not consume the "first" slot — дебютом считается первый официальный старт.
     """
     platform = upsert.get_platform(db, platform_code)
     participant_query = (
@@ -234,7 +254,11 @@ def recalculate_first_run_flags(
                 .all()
             }
 
-        counted_rows = [(run, event) for run, event in rows if event.id not in secondary_event_ids]
+        counted_rows = [
+            (run, event)
+            for run, event in rows
+            if event.id not in secondary_event_ids and not event.is_test_event
+        ]
 
         seen_locations: set[UUID] = set()
         for run_index, (run, event) in enumerate(counted_rows):
@@ -249,7 +273,9 @@ def recalculate_first_run_flags(
                 updated += 1
 
         for run, event in rows:
-            if event.id in secondary_event_ids and (run.is_first_run or run.is_first_run_at_location):
+            if (event.id in secondary_event_ids or event.is_test_event) and (
+                run.is_first_run or run.is_first_run_at_location
+            ):
                 run.is_first_run = False
                 run.is_first_run_at_location = False
                 updated += 1

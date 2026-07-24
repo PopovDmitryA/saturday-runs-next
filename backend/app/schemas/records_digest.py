@@ -59,6 +59,7 @@ class DigestCard(BaseModel):
     location_name: str
     city: str | None = None
     country: str | None = None
+    location_url: str | None = None
     platform_code: str
     platform_name: str
     telegram_contacts: list[LocationContactLink]

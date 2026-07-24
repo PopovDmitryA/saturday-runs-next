@@ -16,11 +16,14 @@ import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
 import { DemoDashboardPage } from "./features/demo/DemoDashboardPage";
 import { PortalAboutPage } from "./features/portal/PortalAboutPage";
+import { PortalBlogPage } from "./features/portal/PortalBlogPage";
 import { PortalHomePage } from "./features/portal/PortalHomePage";
 import { PortalLoginPage } from "./features/portal/PortalLoginPage";
 import { PortalMapLab } from "./features/portal/PortalMapLab";
+import { AdminBlogPage } from "./features/admin/AdminBlogPage";
 import {
   PORTAL_ABOUT_HREF,
+  PORTAL_BLOG_HREF,
   PORTAL_CABINET_ACHIEVEMENTS_HREF,
   PORTAL_CABINET_HISTORY_HREF,
   PORTAL_CABINET_HREF,
@@ -54,6 +57,7 @@ import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage
 import { QueuePage } from "./features/queue/QueuePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SharePage } from "./features/share/SharePage";
+import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
 import { RequireAuth } from "./components/RequireAuth";
@@ -107,6 +111,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   [PORTAL_HOME_HREF]: () => <PortalHomePage />,
   [PORTAL_ABOUT_HREF]: () => <PortalAboutPage />,
   [PORTAL_LOGIN_HREF]: () => <PortalLoginPage />,
+  [PORTAL_BLOG_HREF]: () => <PortalBlogPage />,
   "/new/map-lab": () => <PortalMapLab />,
   // Личный кабинет в портальном дизайне — тёмный запуск под /new/*, рядом со
   // старым кабинетом на канонических адресах. Превью на демо-данных (без
@@ -144,6 +149,10 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
     <RequireAuth>{() => <LeaderboardPage metric="volunteering" />}</RequireAuth>
   ),
   "/ratings/locations": () => <RequireAuth>{() => <LeaderboardPage metric="locations" />}</RequireAuth>,
+  "/ratings/wins": () => <RequireAuth>{() => <LeaderboardPage metric="wins" />}</RequireAuth>,
+  "/ratings/win-locations": () => (
+    <RequireAuth>{() => <LeaderboardPage metric="win_locations" />}</RequireAuth>
+  ),
   "/share": () => <SharePage />,
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
@@ -159,6 +168,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/event-report": () => <AdminEventReportPage />,
   "/admin/records-digest": () => <AdminRecordsDigestPage />,
   "/admin/location-contacts": () => <AdminLocationContactsPage />,
+  "/admin/blog": () => <AdminBlogPage />,
   "/settings": () => <SettingsPage />,
 };
 
@@ -196,6 +206,10 @@ function renderRoute(path: string): ReactElement {
   if (path.startsWith("/api/")) {
     return <ApiPathRedirect />;
   }
+  const sweepHqMatch = path.match(/^\/hq\/(.+)$/);
+  if (sweepHqMatch) {
+    return <SweepHqPage token={decodeURIComponent(sweepHqMatch[1])} />;
+  }
   const publicProfileMatch = path.match(/^\/users\/([^/]+)$/);
   if (publicProfileMatch) {
     return <PublicProfilePage handle={decodeURIComponent(publicProfileMatch[1])} />;
@@ -216,12 +230,17 @@ function renderRoute(path: string): ReactElement {
 }
 
 // Страницы портального редизайна — на них баннер про переезд с Grafana не показываем.
-const PORTAL_PATHS = new Set([PORTAL_HOME_HREF, PORTAL_ABOUT_HREF, PORTAL_LOGIN_HREF]);
+const PORTAL_PATHS = new Set([
+  PORTAL_HOME_HREF,
+  PORTAL_ABOUT_HREF,
+  PORTAL_LOGIN_HREF,
+  PORTAL_BLOG_HREF,
+]);
 
 export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
-  const hideLegacyBanner = PORTAL_PATHS.has(path) || path.startsWith("/new/");
+  const hideLegacyBanner = PORTAL_PATHS.has(path) || path.startsWith("/new/") || path.startsWith("/hq/");
   return (
     <>
       {!hideLegacyBanner && <LegacySiteBanner />}

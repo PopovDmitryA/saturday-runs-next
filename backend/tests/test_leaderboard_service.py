@@ -1,13 +1,18 @@
 from datetime import date
 
 from app.services.leaderboard_service import (
+    GENDERED_METRICS,
     LEADERBOARD_METRICS,
     METRIC_META,
     METRIC_THRESHOLD_PERCENTILE,
     PLATFORM_COLUMNS,
+    _dominant_gender,
+    _normalize_gender,
     _percentile,
+    _pick_home,
     _ranked,
     _week_start,
+    metric_description,
 )
 
 
@@ -59,3 +64,49 @@ def test_percentile_matches_prod_investigation_shape() -> None:
 
 def test_percentile_empty() -> None:
     assert _percentile([], 75) == 0
+
+
+def test_win_metrics_threshold_is_minimum() -> None:
+    # У победных метрик перцентиль 0 → порог = минимальное значение (1 победа):
+    # сама победа уже редкое событие, дополнительного порога входа нет.
+    values_desc = sorted([1] * 90 + [2] * 7 + [15] * 3, reverse=True)
+    assert _percentile(values_desc, METRIC_THRESHOLD_PERCENTILE["wins"]) == 1
+    assert _percentile(values_desc, METRIC_THRESHOLD_PERCENTILE["win_locations"]) == 1
+
+
+def test_pick_home_max_wins() -> None:
+    assert _pick_home({"a": 3, "b": 50, "c": 7}) == ("b", 50)
+
+
+def test_pick_home_tie_is_deterministic() -> None:
+    # При равенстве побед выбирается меньший ключ — снапшоты не «мигают».
+    assert _pick_home({"z": 5, "a": 5, "m": 5}) == ("a", 5)
+
+
+def test_pick_home_empty() -> None:
+    assert _pick_home({}) is None
+
+
+def test_dominant_gender_by_majority() -> None:
+    assert _dominant_gender({"male": 30, "female": 2}) == "male"
+    assert _dominant_gender({"female": 5}) == "female"
+    assert _dominant_gender({}) is None
+
+
+def test_metric_description_follows_gender() -> None:
+    # В гендерных зачётах описание говорит про мужчин/женщин, не про абсолют.
+    assert "абсолютном зачёте" in metric_description("wins", "all")
+    assert "среди мужчин" in metric_description("wins", "male")
+    assert "среди женщин" in metric_description("wins", "female")
+    assert "среди мужчин" in metric_description("win_locations", "male")
+    # У метрик без разреза по полу описание всегда базовое.
+    assert metric_description("runs", "male") == METRIC_META["runs"]["description"]
+
+
+def test_normalize_gender_only_for_win_metrics() -> None:
+    # Пол применяется только к победным метрикам; у остальных всегда «all».
+    assert set(GENDERED_METRICS) == {"wins", "win_locations"}
+    assert _normalize_gender("wins", "male") == "male"
+    assert _normalize_gender("win_locations", "female") == "female"
+    assert _normalize_gender("runs", "male") == "all"
+    assert _normalize_gender("wins", "нечто") == "all"

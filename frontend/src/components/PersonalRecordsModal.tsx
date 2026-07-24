@@ -157,10 +157,9 @@ export function PersonalRecordsModal({ open, onClose, includeTest = false }: Per
         <>
           <p className="muted personal-records-hint">
             Обновления ваших рекордов: бейдж «PR» — личный рекорд в системе (улучшение лучшего
-            времени в этой системе), оранжевое время — глобальный рекорд по всем системам на момент
-            той пробежки, подсвеченная локация — рекорд этой площадки среди всех систем. Бейдж
-            «Дебют» — первый зачтённый старт в системе: сам по себе не рекорд, но показан здесь,
-            если остаётся вашим лучшим результатом в этой системе до сих пор.
+            времени в этой системе; дебютный старт — точка отсчёта — тоже считается), оранжевое
+            время — глобальный рекорд по всем системам на момент той пробежки, подсвеченная
+            локация — рекорд этой площадки среди всех систем.
           </p>
 
           <div className="unique-locations-filters" role="tablist" aria-label="Фильтр по системам">
@@ -239,14 +238,6 @@ export function PersonalRecordsModal({ open, onClose, includeTest = false }: Per
                       <td className="col-date">
                         <ActivityDateLink date={item.event_date} url={item.event_url} />
                         {item.is_pr && <span className="badge badge-pr">PR</span>}
-                        {!item.is_pr && item.is_debut && (
-                          <span
-                            className="badge badge-debut"
-                            title="Первый зачтённый старт в этой системе — точка отсчёта, а не рекорд, но пока остаётся вашим лучшим результатом здесь"
-                          >
-                            Дебют
-                          </span>
-                        )}
                       </td>
                       <td className="col-location">
                         <LocationPrLocationName isLocationPr={item.is_location_pr ?? false}>

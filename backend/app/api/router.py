@@ -4,6 +4,7 @@ from app.api.routes import (
     achievements,
     admin,
     auth,
+    blog,
     dashboard,
     demo,
     internal_bot,
@@ -18,6 +19,7 @@ from app.api.routes import (
     runs,
     settings,
     stats,
+    sweep_hq,
     sync,
 )
 
@@ -34,9 +36,11 @@ api_router.include_router(leaderboards.router)
 api_router.include_router(location_ratings.router)
 api_router.include_router(locations.router)
 api_router.include_router(portal.router)
+api_router.include_router(blog.router)
 api_router.include_router(sync.router)
 api_router.include_router(settings.router)
 api_router.include_router(public_profiles.router)
 api_router.include_router(internal_bot.router)
 api_router.include_router(internal_vk_bot.router)
 api_router.include_router(reports.router)
+api_router.include_router(sweep_hq.router)

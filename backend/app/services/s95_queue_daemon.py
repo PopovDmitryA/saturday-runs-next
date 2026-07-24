@@ -15,7 +15,10 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.models import SyncJobStatus, SyncJobTrigger
+from app.parkrun.fetch.daemon_log import cline
 from app.services.profile_fetch_pending_service import (
+    count_pending_rows,
+    describe_processed_profile,
     list_pending_rows,
     process_pending_row,
     reset_failed_pending,
@@ -41,6 +44,7 @@ def run_s95_pending_queue(
 
     rows = list_pending_rows(db, platform_code="s95", limit=limit_pending)
     total = len(rows)
+    backlog_total = count_pending_rows(db, "s95")
 
     for row in rows:
         label = row.external_user_id or row.profile_input[:40]
@@ -52,6 +56,10 @@ def run_s95_pending_queue(
                 outcome = process_pending_row(db, row)
                 summary[outcome] = summary.get(outcome, 0) + 1
                 details.append(f"{outcome}: s95 {label}")
+                if outcome == "done":
+                    description = describe_processed_profile(db, "s95", row.external_user_id)
+                    if description:
+                        cline(description)
                 # activity_import rows already fetched and imported all data inside
                 # process_pending_row — no additional sync needed. Only run the
                 # full user sync for profile_preview rows (where process_pending_row
@@ -77,4 +85,9 @@ def run_s95_pending_queue(
             summary["error"] = summary.get("error", 0) + 1
             details.append(f"error: s95 {label} — {exc}")
 
-    return {"summary": summary, "details": details, "total": total}
+    return {
+        "summary": summary,
+        "details": details,
+        "total": total,
+        "backlog_total": backlog_total,
+    }

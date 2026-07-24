@@ -281,3 +281,112 @@ def test_backfill_region_from_catalog_fills_gap_from_sibling_platform(db_session
 
     # No-op when region already set.
     assert backfill_region_from_catalog(db_session, five_verst_location) is False
+
+
+def _catalog_with_links(db_session, entries: list[tuple[str, str, bool, bool]]):
+    """entries: (platform_code, name, is_paused, has_events) → каталожный узел со связками."""
+    from datetime import date
+    from uuid import uuid4
+
+    from app.models import EventSummary, Location, LocationCatalog, LocationCatalogLink, Platform
+
+    catalog = LocationCatalog(
+        canonical_name=f"Pause Test {uuid4().hex[:6]}",
+        active_platform="five_verst",
+        is_closed=False,
+    )
+    db_session.add(catalog)
+    db_session.flush()
+
+    created: dict[str, object] = {}
+    for platform_code, name, is_paused, has_events in entries:
+        platform = db_session.query(Platform).filter(Platform.code == platform_code).one_or_none()
+        if platform is None:
+            platform = Platform(code=platform_code, name=platform_code)
+            db_session.add(platform)
+            db_session.flush()
+        slug = f"pause-{platform_code}-{uuid4().hex[:8]}"
+        location = Location(
+            platform_id=platform.id,
+            external_key=slug,
+            name=name,
+            is_paused=is_paused,
+        )
+        db_session.add(location)
+        db_session.flush()
+        if has_events:
+            db_session.add(
+                EventSummary(
+                    platform_id=platform.id,
+                    location_id=location.id,
+                    external_event_key=f"{slug}:1",
+                    event_date=date.today(),
+                    event_number=1,
+                    summary_hash=uuid4().hex,
+                )
+            )
+        db_session.add(
+            LocationCatalogLink(
+                catalog_id=catalog.id,
+                platform_id=platform.id,
+                external_key=slug,
+                location_id=location.id,
+            )
+        )
+        created[platform_code] = location
+    db_session.commit()
+    return catalog, created
+
+
+def test_paused_runpark_link_does_not_pause_active_five_verst(db_session) -> None:
+    """Мытищи: runpark-связка на паузе не гасит локацию, где 5 вёрст бегают еженедельно."""
+    try:
+        _catalog, locations = _catalog_with_links(
+            db_session,
+            [
+                ("five_verst", "Мытищи Центральный парк", False, True),
+                ("runpark", "Лавочки у зелёного моста", True, False),
+            ],
+        )
+    except Exception:
+        pytest.skip("Database not available")
+
+    index = LocationCatalogIndex(db_session)
+    assert index.is_paused(locations["five_verst"], "five_verst") is False
+    assert index.is_paused(locations["runpark"], "runpark") is False
+
+
+def test_paused_active_platform_pauses_whole_catalog(db_session) -> None:
+    """Если бегающая платформа встала на паузу, узел на паузе целиком."""
+    try:
+        _catalog, locations = _catalog_with_links(
+            db_session,
+            [
+                ("five_verst", "Шуваловский парк", True, True),
+                ("parkrun", "Shuvalovsky Park", False, False),
+            ],
+        )
+    except Exception:
+        pytest.skip("Database not available")
+
+    index = LocationCatalogIndex(db_session)
+    assert index.is_paused(locations["five_verst"], "five_verst") is True
+    assert index.is_paused(locations["parkrun"], "parkrun") is True
+
+
+def test_pause_falls_back_to_any_link_without_events(db_session) -> None:
+    """Событий нет ни на одной платформе — считаем по флагам всех связок."""
+    try:
+        _catalog, locations = _catalog_with_links(
+            db_session,
+            [
+                ("five_verst", "Мемориальный парк", True, False),
+                ("parkrun", "Memorialny Park", False, False),
+            ],
+        )
+    except Exception:
+        pytest.skip("Database not available")
+
+    index = LocationCatalogIndex(db_session)
+    assert index.is_paused(locations["five_verst"], "five_verst") is True
+    assert index.is_paused(locations["parkrun"], "parkrun") is True

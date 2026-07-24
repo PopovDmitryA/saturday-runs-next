@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { InsightsShell } from "../insights/InsightsShell";
 import {
+  GENDERED_METRICS,
   getLeaderboard,
   getMyLeaderboardRow,
   PLATFORM_LABELS,
+  type LeaderboardGender,
   type LeaderboardMetric,
   type LeaderboardResponse,
   type LeaderboardRow,
@@ -13,6 +16,13 @@ import { unitLabel } from "./pluralize";
 import "./leaderboards.css";
 
 const PAGE_STEP = 100;
+const SCROLL_TOP_THRESHOLD = 480;
+
+const GENDER_TABS: { value: LeaderboardGender; label: string }[] = [
+  { value: "all", label: "Абсолют" },
+  { value: "male", label: "Мужчины" },
+  { value: "female", label: "Женщины" },
+];
 
 type LeaderboardPageProps = {
   metric: LeaderboardMetric;
@@ -24,7 +34,39 @@ const METRIC_CRUMBS: Record<LeaderboardMetric, { section: string; label: string 
   runs: { section: "Бегуны", label: "Количество пробежек" },
   volunteering: { section: "Волонтёры", label: "Количество волонтёрств" },
   locations: { section: "Паркран-туристы", label: "Уникальные локации" },
+  wins: { section: "Бегуны", label: "Количество первых мест" },
+  win_locations: { section: "Паркран-туристы", label: "Локации с первым местом" },
 };
+
+const TOP_LOCATION_HINT =
+  "Число рядом — сколько раз участник был первым именно на этой локации, " +
+  "а не сколько раз там бегал.";
+
+function InfoHint({ text }: { text: string }) {
+  return (
+    <StatHintTooltip text={text} className="lb-info-hint">
+      <span aria-hidden="true">i</span>
+    </StatHintTooltip>
+  );
+}
+
+function TopWinLocation({
+  row,
+}: {
+  row: { home_location?: string | null; home_location_wins?: number | null };
+}) {
+  if (!row.home_location) {
+    return <span className="lb-zero">—</span>;
+  }
+  return (
+    <span className="lb-home">
+      {row.home_location}
+      {row.home_location_wins != null && row.home_location_wins > 1 && (
+        <span className="lb-home-count"> ×{row.home_location_wins}</span>
+      )}
+    </span>
+  );
+}
 
 function formatDate(value: string | null): string {
   if (!value) {
@@ -98,16 +140,30 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("rank");
+  const [gender, setGender] = useState<LeaderboardGender>("all");
   const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > SCROLL_TOP_THRESHOLD);
+    };
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const hasGenderSplit = GENDERED_METRICS.includes(metric);
+  const effectiveGender = hasGenderSplit ? gender : "all";
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [board, myRow] = await Promise.all([
-        getLeaderboard(metric),
-        getMyLeaderboardRow(metric).catch(() => null),
+        getLeaderboard(metric, 1000, effectiveGender),
+        getMyLeaderboardRow(metric, effectiveGender).catch(() => null),
       ]);
       setData(board);
       setMe(myRow);
@@ -116,15 +172,20 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [metric]);
+  }, [metric, effectiveGender]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  // Метрика сменилась (напр. переход между рейтингами) — сбрасываем пол в «Абсолют».
+  useEffect(() => {
+    setGender("all");
+  }, [metric]);
+
   useEffect(() => {
     setVisibleCount(PAGE_STEP);
-  }, [query, sortKey]);
+  }, [query, sortKey, effectiveGender]);
 
   const columns = data?.platform_columns ?? [];
 
@@ -149,6 +210,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       platforms: me.platforms,
       total: me.total,
       total_delta: me.total_delta,
+      home_location: me.home_location,
+      home_location_wins: me.home_location_wins,
     };
     return [...data.rows, myRow];
   }, [data, me]);
@@ -229,7 +292,42 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               </p>
             </header>
 
-            {me && (
+            <div className="lb-controls-row">
+              <div className="lb-controls-left">
+                {hasGenderSplit && (
+                  <div className="lb-gender">
+                    <div className="lb-gender-tabs" role="tablist" aria-label="Зачёт по полу">
+                      {GENDER_TABS.map((tab) => (
+                        <button
+                          key={tab.value}
+                          type="button"
+                          role="tab"
+                          aria-selected={gender === tab.value}
+                          className={`lb-gender-tab${gender === tab.value ? " lb-gender-tab-active" : ""}`}
+                          onClick={() => setGender(tab.value)}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                    {effectiveGender !== "all" && (
+                      <p className="lb-gender-note muted">parkrun в разбивку по полу не входит.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="lb-controls-right">
+                <input
+                  className="lb-search"
+                  type="search"
+                  placeholder="Поиск по имени…"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </div>
+            </div>
+
+            {me && !(!me.included && me.gender_mismatch) && (
               <section
                 className={me.included ? "lb-me" : "lb-me lb-me-out"}
                 aria-label="Ваша строка в рейтинге"
@@ -255,6 +353,14 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           <DeltaSlot delta={me.total_delta} />
                         </span>
                       </span>
+                      {metric === "wins" && me.home_location && (
+                        <span className="lb-me-value">
+                          <span className="lb-me-platform">
+                            Топ-локация <InfoHint text={TOP_LOCATION_HINT} />
+                          </span>
+                          <TopWinLocation row={me} />
+                        </span>
+                      )}
                     </span>
                     {myIndex >= 0 && (
                       <button type="button" className="btn btn-ghost btn-sm" onClick={showMyRow}>
@@ -271,18 +377,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               </section>
             )}
 
-            <div className="lb-controls">
-              <input
-                className="lb-search"
-                type="search"
-                placeholder="Поиск по имени…"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </div>
-
             <div className="table-wrap lb-table-wrap">
-              <table className="data-table lb-table">
+              <table className={`data-table lb-table${metric === "wins" ? " lb-table-wins" : ""}`}>
                 <thead>
                   <tr>
                     {headerCell("rank", "Место", "lb-col-rank")}
@@ -291,6 +387,11 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                       headerCell(code, PLATFORM_LABELS[code] ?? code, "lb-col-num"),
                     )}
                     {headerCell("total", "Всего", "lb-col-num lb-col-total")}
+                    {metric === "wins" && (
+                      <th className="lb-col-home">
+                        Топ-локация <InfoHint text={TOP_LOCATION_HINT} />
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -322,12 +423,17 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             <DeltaSlot delta={row.total_delta} />
                           </span>
                         </td>
+                        {metric === "wins" && (
+                          <td className="lb-col-home">
+                            <TopWinLocation row={row} />
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
                   {visibleRows.length === 0 && (
                     <tr>
-                      <td colSpan={columns.length + 3} className="muted">
+                      <td colSpan={columns.length + (metric === "wins" ? 4 : 3)} className="muted">
                         Ничего не найдено
                       </td>
                     </tr>
@@ -347,6 +453,17 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               </div>
             )}
           </>
+        )}
+        {showScrollTop && (
+          <button
+            type="button"
+            className="lb-scroll-top"
+            aria-label="Наверх страницы"
+            title="Наверх страницы"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          >
+            ↑
+          </button>
         )}
       </div>
     </InsightsShell>
