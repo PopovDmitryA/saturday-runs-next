@@ -433,14 +433,18 @@
 }
 
 @media (max-width: 560px) {
+  /* четыре вкладки в строку на телефоне не помещаются и обрезались —
+     раскладываем 2×2, чтобы все ярлыки были видны целиком */
   .portal-chart-tabs {
     margin-left: 0;
     width: 100%;
+    flex-wrap: wrap;
+    overflow: visible;
   }
 
   .portal-chart-tabs button {
-    flex: 1 0 auto;
-    padding: 5px 10px;
+    flex: 1 1 calc(50% - 2px);
+    padding: 6px 10px;
   }
 }
 
@@ -1177,9 +1181,9 @@
    чтобы сразу читалось, что это ДРУГОЙ срез (одна неделя), а не общий период */
 .portal-week-scope {
   margin-top: 28px;
-  border: 1px solid var(--tint-blue-border);
+  border: 1px solid var(--tint-blue-border-strong);
   border-radius: 18px;
-  background: var(--tint-blue-bg);
+  background: var(--tint-blue-bg-strong);
   padding: 4px 14px 16px;
 }
 
@@ -1220,7 +1224,7 @@
   z-index: 25;
   padding: 14px 0 0;
   margin: 0 -14px;
-  background: linear-gradient(var(--tint-blue-bg) 82%, transparent);
+  background: linear-gradient(var(--tint-blue-bg-strong) 82%, transparent);
 }
 
 .portal-week-sticky .portal-pulse {
