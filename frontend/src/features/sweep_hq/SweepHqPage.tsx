@@ -28,10 +28,13 @@ type SweepData = {
     remaining: number;
     pct: number;
     collected: number;
+    in_processing: number;
     runs: number;
   };
   rate_24h: number;
   rate_1h: number;
+  parse_rate_24h: number;
+  parse_rate_1h: number;
   forecast: { days: number | null; date: string | null };
   vpn: Bot[];
   free: {
@@ -571,7 +574,12 @@ export function SweepHqPage({ token }: { token: string }) {
           <div className="hq-stats">
             <div className="hq-stat">
               <span className="hq-stat__num">{fmt(p.collected)}</span>
-              <span className="hq-stat__cap">атлетов собрано</span>
+              <span className="hq-stat__cap">
+                атлетов собрано
+                {p.in_processing > 0 && (
+                  <span className="hq-inproc"> ({fmt(p.in_processing)} в обработке)</span>
+                )}
+              </span>
             </div>
             <div className="hq-stat">
               <span className="hq-stat__num">{fmt(p.runs)}</span>
@@ -585,8 +593,12 @@ export function SweepHqPage({ token }: { token: string }) {
             </div>
             <div className="hq-stat hq-stat--accent">
               <span className="hq-stat__num">{fmt(data.rate_24h)}</span>
-              <span className="hq-stat__cap">за сутки</span>
+              <span className="hq-stat__cap">за сутки (сбор)</span>
               <RateDelta value={rate24hDelta} />
+            </div>
+            <div className="hq-stat">
+              <span className="hq-stat__num">{fmt(data.parse_rate_1h)}</span>
+              <span className="hq-stat__cap">обработка / час</span>
             </div>
             <div className="hq-stat">
               <span className="hq-stat__num">

@@ -177,9 +177,13 @@
 
 .hq-stats {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
   margin-top: 20px;
+}
+.hq-inproc {
+  color: #fbbf24;
+  font-weight: 600;
 }
 .hq-stat {
   background: rgba(11, 18, 34, 0.7);
