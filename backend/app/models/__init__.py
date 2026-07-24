@@ -98,6 +98,18 @@ class ProfileFetchPendingStatus(str, enum.Enum):
     failed = "failed"
 
 
+class BacklogCardType(str, enum.Enum):
+    bug = "bug"
+    feature = "feature"
+
+
+class BacklogCardStatus(str, enum.Enum):
+    pending = "pending"
+    in_progress = "in_progress"
+    rejected = "rejected"
+    done = "done"
+
+
 class ProfileFetchPendingReason(str, enum.Enum):
     cooldown = "cooldown"
     ban = "ban"
@@ -649,6 +661,10 @@ class Participant(Base):
     display_name: Mapped[str | None] = mapped_column(String(256))
     profile_url: Mapped[str | None] = mapped_column(String(1024))
     age_category: Mapped[str | None] = mapped_column(String(64))
+    # «male» / «female» / NULL. Материализация того, что раньше считалось из
+    # age_category (или profile_extra у s95) при каждом чтении — см.
+    # gender_position_service.resolve_participant_gender.
+    gender: Mapped[str | None] = mapped_column(String(8))
     club_name: Mapped[str | None] = mapped_column(String(256))
     barcode_id: Mapped[str | None] = mapped_column(String(16))
     planning_location: Mapped[str | None] = mapped_column(String(256))
@@ -1199,3 +1215,61 @@ class HistoryMilestoneSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class BacklogCard(Base):
+    """Карточка бэклога — идея/баг, предложенные пользователем сайта.
+
+    score = upvotes - downvotes, денормализован для сортировки ленты по
+    голосам без пересчёта join'ом на каждый запрос. category — свободная
+    строка, валидируется по app.backlog_categories.CATEGORIES (без DB-enum,
+    чтобы список можно было расширять без миграции).
+    """
+
+    __tablename__ = "backlog_cards"
+    __table_args__ = (Index("ix_backlog_cards_status_score", "status", "score"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    type: Mapped[BacklogCardType] = mapped_column(Enum(BacklogCardType, name="backlog_card_type_enum"), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False, server_default="other")
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[BacklogCardStatus] = mapped_column(
+        Enum(BacklogCardStatus, name="backlog_card_status_enum"), nullable=False, server_default="pending"
+    )
+    is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    author_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    upvotes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    downvotes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    score: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    author: Mapped["User"] = relationship()
+
+
+class BacklogVote(Base):
+    __tablename__ = "backlog_votes"
+
+    card_id: Mapped[UUID] = mapped_column(ForeignKey("backlog_cards.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    value: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user: Mapped["User"] = relationship()
+
+
+class BacklogComment(Base):
+    __tablename__ = "backlog_comments"
+    __table_args__ = (Index("ix_backlog_comments_card_created_at", "card_id", "created_at"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    card_id: Mapped[UUID] = mapped_column(ForeignKey("backlog_cards.id", ondelete="CASCADE"), nullable=False)
+    author_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    author: Mapped["User"] = relationship()

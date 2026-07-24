@@ -74,6 +74,12 @@
   text-decoration: none;
 }
 
+/* текущий раздел (на главной — «Главная») */
+.portal-header-link-current {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
 .portal-header-actions {
   margin-left: auto;
   display: flex;
@@ -381,6 +387,68 @@
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+/* вкладки показателей внутри единой панели графика */
+.portal-chart-panel-head {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.portal-chart-tabs {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 3px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.portal-chart-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.portal-chart-tabs button {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 13px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.portal-chart-tabs button:hover {
+  color: var(--text);
+}
+
+.portal-chart-tabs button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+@media (max-width: 560px) {
+  /* четыре вкладки в строку на телефоне не помещаются и обрезались —
+     раскладываем 2×2, чтобы все ярлыки были видны целиком */
+  .portal-chart-tabs {
+    margin-left: 0;
+    width: 100%;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .portal-chart-tabs button {
+    flex: 1 1 calc(50% - 2px);
+    padding: 6px 10px;
+  }
 }
 
 .portal-chart-svg {
@@ -1112,22 +1180,36 @@
   pointer-events: none;
 }
 
-/* группировочный бокс «последняя неделя» */
+/* группировочный бокс «последняя неделя»: синяя заливка вместо нейтральной —
+   чтобы сразу читалось, что это ДРУГОЙ срез (одна неделя), а не общий период */
 .portal-week-scope {
-  margin-top: 24px;
-  border: 1px solid var(--border);
+  margin-top: 28px;
+  border: 1px solid var(--tint-blue-border-strong);
   border-radius: 18px;
-  background: var(--bg-muted);
-  padding: 4px 14px 14px;
+  background: var(--tint-blue-bg-strong);
+  padding: 4px 14px 16px;
 }
 
 .portal-week-heading {
-  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15.5px;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  padding: 12px 4px 0;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--tint-blue-text);
+  padding: 16px 4px 2px;
+}
+
+.portal-week-heading::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--link);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--link) 22%, transparent);
 }
 
 .portal-week-scope .portal-panel,
@@ -1145,11 +1227,14 @@
   z-index: 25;
   padding: 14px 0 0;
   margin: 0 -14px;
-  background: linear-gradient(var(--bg-muted) 82%, transparent);
+  background: linear-gradient(var(--tint-blue-bg-strong) 82%, transparent);
 }
 
 .portal-week-sticky .portal-pulse {
   margin: 0 14px;
+  /* внутри синего бокса индиговая плашка сливалась бы с фоном — делаем её белой */
+  background: var(--surface);
+  border-color: var(--tint-blue-border-strong);
 }
 
 /* шапка панели с плашкой справа */
@@ -1988,176 +2073,8 @@
   color: var(--text-faint);
 }
 
-/* поддержать проект — тёплый акцент, чтобы блок выделялся среди остальных */
-.portal-panel-donate {
-  background: linear-gradient(135deg, var(--tint-amber-bg), var(--surface) 65%);
-  border-color: var(--tint-amber-border);
-}
-
-.portal-about-donate-icon {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--tint-amber-bg-strong);
-}
-
-.portal-about-donate-icon svg {
-  width: 17px;
-  height: 17px;
-  fill: var(--accent-amber-text);
-}
-
-.portal-about-donate {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 390px;
-  gap: 24px;
-  align-items: stretch;
-}
-
-.portal-about-donate-copy .portal-panel-head {
-  margin-bottom: 12px;
-}
-
-.portal-about-donate-copy p {
-  margin: 0 0 10px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--text-2);
-}
-
-.portal-about-donate-copy p:last-child {
-  margin-bottom: 0;
-}
-
-.portal-about-donate-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 18px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-muted);
-}
-
-.portal-about-donate-qr-block {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-.portal-about-donate-qr,
-.portal-about-donate-qr-empty {
-  width: 104px;
-  height: 104px;
-  border-radius: 8px;
-  flex: none;
-}
-
-.portal-about-donate-qr {
-  background: #fff;
-  padding: 4px;
-}
-
-.portal-about-donate-qr-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--border-heavy);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--text-faint);
-}
-
-.portal-about-donate-qr-caption {
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--text-faint);
-  text-align: center;
-  white-space: nowrap;
-}
-
-.portal-about-donate-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-}
-
-.portal-about-donate-card-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.portal-about-donate-mark {
-  flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.portal-about-donate-mark.sber {
-  background: #21a038;
-  color: #fff;
-}
-
-.portal-about-donate-mark.tbank {
-  background: #ffdd2d;
-  color: #101010;
-}
-
-.portal-about-donate-card-info {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.portal-about-donate-card-bank {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.2;
-}
-
-.portal-about-donate-card-number {
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  color: var(--text);
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-@media (max-width: 720px) {
-  .portal-about-donate {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 420px) {
-  .portal-about-donate-card {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .portal-about-donate-qr-block {
-    align-self: center;
-  }
-}
+/* Донат-блок вынесен в components/DonateBlock.tsx + DonateBlock.css —
+   .donate-block-panel даёт тёплый акцентный фон обёртке-секции. */
 
 .portal-about .portal-cta {
   display: block;

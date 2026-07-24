@@ -28,10 +28,13 @@ type SweepData = {
     remaining: number;
     pct: number;
     collected: number;
+    in_processing: number;
     runs: number;
   };
   rate_24h: number;
   rate_1h: number;
+  parse_rate_24h: number;
+  parse_rate_1h: number;
   forecast: { days: number | null; date: string | null };
   vpn: Bot[];
   free: {
@@ -556,7 +559,10 @@ export function SweepHqPage({ token }: { token: string }) {
             </div>
           </div>
 
-          <div className="hq-progress">
+          <div
+            className="hq-progress hq-hint"
+            data-hint="Обработано + собрано ÷ всего ID в очереди (диапазон 751355…7 500 000). «Обработано» = страница уже прошла через любой из статусов результата, «собрано» входит сюда же."
+          >
             <div className="hq-progress__bar">
               <div className="hq-progress__fill" style={{ width: `${Math.max(0.4, p.pct)}%` }} />
               <span className="hq-progress__label">
@@ -569,26 +575,53 @@ export function SweepHqPage({ token }: { token: string }) {
           </div>
 
           <div className="hq-stats">
-            <div className="hq-stat">
+            <div
+              className="hq-stat hq-hint"
+              data-hint="Страницы, которые мы уже скачали: распарсенные в БД плюс лежащие в папке файлы, ждущие обработки. «N в обработке» — скачаны в папку (статус collected), но ещё не распарсены."
+            >
               <span className="hq-stat__num">{fmt(p.collected)}</span>
-              <span className="hq-stat__cap">атлетов собрано</span>
+              <span className="hq-stat__cap">
+                атлетов собрано
+                {p.in_processing > 0 && (
+                  <span className="hq-inproc"> ({fmt(p.in_processing)} в обработке)</span>
+                )}
+              </span>
             </div>
-            <div className="hq-stat">
+            <div
+              className="hq-stat hq-hint"
+              data-hint="Сумма всех строк в таблице runs — только из уже распарсенных атлетов. Файлы, ждущие обработки, сюда пока не входят: появятся после парсинга."
+            >
               <span className="hq-stat__num">{fmt(p.runs)}</span>
               <span className="hq-stat__cap">забегов</span>
               <RateDelta value={runsDelta} />
             </div>
-            <div className="hq-stat hq-stat--accent">
+            <div
+              className="hq-stat hq-stat--accent hq-hint"
+              data-hint="Сколько страниц скачано за последний час (по времени фетча, fetched_at). Считает оба движка — бесплатные прокси (только качают в папку) и приватные VPN (качают и парсят на лету)."
+            >
               <span className="hq-stat__num">{fmt(data.rate_1h)}</span>
-              <span className="hq-stat__cap">за час</span>
+              <span className="hq-stat__cap">сбор / час</span>
               <RateDelta value={rate1hDelta} />
             </div>
-            <div className="hq-stat hq-stat--accent">
+            <div
+              className="hq-stat hq-stat--accent hq-hint"
+              data-hint="То же самое, что «сбор / час», но за последние 24 часа. Именно этот темп используется для прогноза срока до финиша."
+            >
               <span className="hq-stat__num">{fmt(data.rate_24h)}</span>
-              <span className="hq-stat__cap">за сутки</span>
+              <span className="hq-stat__cap">сбор / сутки</span>
               <RateDelta value={rate24hDelta} />
             </div>
-            <div className="hq-stat">
+            <div
+              className="hq-stat hq-hint"
+              data-hint="Сколько атлетов распарсено в БД за последний час (по parsed_at). Её кормит VPN-движок (парсит на лету) и офлайн-парсер, когда он запущен. Растёт, пока идёт парсинг, — а не падает."
+            >
+              <span className="hq-stat__num">{fmt(data.parse_rate_1h)}</span>
+              <span className="hq-stat__cap">обработка / час</span>
+            </div>
+            <div
+              className="hq-stat hq-hint"
+              data-hint="Осталось в очереди ÷ темп сбора за сутки. Грубая оценка при текущей скорости; растёт число VPN/прокси — срок падает."
+            >
               <span className="hq-stat__num">
                 {data.forecast.days != null
                   ? `${Math.ceil(data.forecast.days).toLocaleString("ru-RU")} дн`
@@ -605,7 +638,10 @@ export function SweepHqPage({ token }: { token: string }) {
                 </span>
               )}
             </div>
-            <div className="hq-stat hq-stat--date">
+            <div
+              className="hq-stat hq-stat--date hq-hint"
+              data-hint="Сегодняшняя дата + число дней «до финиша». Календарная проекция того же прогноза."
+            >
               <span className="hq-stat__num">{fmtDate(data.forecast.date)}</span>
               <span className="hq-stat__cap">прогноз финиша</span>
             </div>

@@ -90,12 +90,17 @@ def sweep_hq(
 
     with psycopg.connect(dsn, connect_timeout=5) as conn:
         prog = _rows(conn, """
-            SELECT count(*) FILTER (WHERE status<>'pending') AS done,
-                   count(*) AS total,
+            SELECT count(*) AS total,
+                   count(*) FILTER (WHERE status IN
+                       ('collected','ok','not_found','registered_empty','unclassified')) AS done,
+                   count(*) FILTER (WHERE status='collected') AS in_processing,
                    count(*) FILTER (WHERE fetched_at > now() - interval '24 hours') AS rate_24h,
                    count(*) FILTER (WHERE fetched_at > now() - interval '1 hour') AS rate_1h,
-                   (SELECT count(*) FROM athletes WHERE source='crawl') AS collected,
-                   (SELECT count(*) FROM runs) AS runs
+                   (SELECT count(*) FROM runs) AS runs,
+                   (SELECT count(*) FROM athletes WHERE source='crawl'
+                       AND parsed_at > now() - interval '24 hours') AS parse_rate_24h,
+                   (SELECT count(*) FROM athletes WHERE source='crawl'
+                       AND parsed_at > now() - interval '1 hour') AS parse_rate_1h
             FROM crawl_queue""")[0]
         vpn = _rows(conn, """
             SELECT name, account, collected_total, active_seconds, delay_sec,
@@ -162,10 +167,14 @@ def sweep_hq(
     return {
         "progress": {
             "done": done, "total": total, "remaining": remaining, "pct": pct,
-            "collected": int(prog["collected"] or 0), "runs": int(prog["runs"] or 0),
+            "collected": done,  # собрано = в папке (не распарсено) + распарсено
+            "in_processing": int(prog["in_processing"] or 0),
+            "runs": int(prog["runs"] or 0),
         },
         "rate_24h": rate_24h,
         "rate_1h": int(prog["rate_1h"] or 0),
+        "parse_rate_24h": int(prog["parse_rate_24h"] or 0),
+        "parse_rate_1h": int(prog["parse_rate_1h"] or 0),
         "forecast": forecast,
         "vpn": vpn,
         "free": {

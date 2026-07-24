@@ -177,9 +177,13 @@
 
 .hq-stats {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
   margin-top: 20px;
+}
+.hq-inproc {
+  color: #fbbf24;
+  font-weight: 600;
 }
 .hq-stat {
   background: rgba(11, 18, 34, 0.7);
@@ -207,6 +211,63 @@
   margin-top: 4px;
   font-size: 12px;
   color: #8091ad;
+}
+
+/* Тултипы-подсказки на кирпичиках (как считается) — CSS-only, по наведению. */
+.hq-hint {
+  position: relative;
+  cursor: help;
+}
+.hq-stat.hq-hint::before {
+  content: "?";
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #5e80be;
+  border: 1px solid rgba(94, 128, 190, 0.35);
+  border-radius: 50%;
+  opacity: 0.45;
+  transition: opacity 0.15s;
+}
+.hq-stat.hq-hint:hover::before {
+  opacity: 1;
+}
+.hq-hint::after {
+  content: attr(data-hint);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  width: max-content;
+  max-width: 260px;
+  white-space: normal;
+  text-align: left;
+  background: #0b1222;
+  color: #cdd8ec;
+  border: 1px solid rgba(94, 128, 190, 0.4);
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: normal;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.15s,
+    transform 0.15s;
+  z-index: 30;
+}
+.hq-hint:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 .hq-fdelta {
   display: block;

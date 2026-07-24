@@ -77,27 +77,15 @@ def _not_crosslink_secondary(query: Any) -> Any:
 
 
 def _gender_expr() -> Any:
-    """Пол бегуна: 5 вёрст/RunPark из age_category, S95 из profile_extra."""
-    return case(
-        (
-            Platform.code == "five_verst",
-            case(
-                (func.substr(Participant.age_category, 1, 1) == "М", "male"),
-                (func.substr(Participant.age_category, 1, 1) == "Ж", "female"),
-            ),
-        ),
-        (
-            Platform.code.in_(["runpark", "parkrun"]),
-            case(
-                (func.substr(Participant.age_category, 2, 1) == "M", "male"),
-                (func.substr(Participant.age_category, 2, 1) == "W", "female"),
-            ),
-        ),
-        (
-            Platform.code == "s95",
-            Participant.profile_extra["platform_codes"]["gender"].astext,
-        ),
-    )
+    """Пол бегуна — готовое поле participants.gender (миграция 052).
+
+    Раньше считалось здесь же через substr(age_category) / JSONB-путь у s95.
+    Выражение неиндексируемое, а вызывается оно в пяти агрегатах главной, так
+    что каждый прогрев кэша разбирал строку категории по всем 2.2 млн строк
+    джойна и ронял сортировки на диск. Пол теперь пишется при апсерте
+    участника — см. gender_position_service.resolve_participant_gender.
+    """
+    return Participant.gender
 
 
 def clean_time_display(display: str | None, seconds: int | None) -> str:

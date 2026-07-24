@@ -3,7 +3,6 @@ import { ThemeToggle } from "../../components/ThemeToggle";
 import { getCurrentUser, type User } from "../../lib/api";
 import {
   PORTAL_ABOUT_HREF,
-  PORTAL_BLOG_HREF,
   PORTAL_CABINET_HREF,
   PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
@@ -25,22 +24,38 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
   }, []);
 
   const authed = user !== null;
+  // Текущий раздел подсвечивается по адресу страницы: главная — точное
+  // совпадение "/", остальные — по префиксу (напр. /about#privacy тоже
+  // считается разделом «О проекте»). section — реальный раздел ссылки,
+  // даже если аноним уходит на /login.
+  const pathname = typeof window !== "undefined" ? window.location.pathname : "";
+  const isCurrent = (section: string) =>
+    section === PORTAL_HOME_HREF ? pathname === "/" : pathname.startsWith(section);
+  const navLink = (section: string, href: string, label: string) => {
+    const current = isCurrent(section);
+    return (
+      <a
+        href={href}
+        className={`portal-header-link${current ? " portal-header-link-current" : ""}`}
+        aria-current={current ? "page" : undefined}
+      >
+        {label}
+      </a>
+    );
+  };
   const navLinks = (
     <>
-      <a href={PORTAL_ABOUT_HREF} className="portal-header-link">
-        О проекте
-      </a>
-      <a href={PORTAL_BLOG_HREF} className="portal-header-link">
-        Блог
-      </a>
+      {navLink(PORTAL_HOME_HREF, PORTAL_HOME_HREF, "Главная")}
       {/* Локации и Рейтинги под RequireAuth — анонима сразу ведём на вход,
           чтобы он не упирался в гейт внутри раздела. */}
-      <a href={authed ? "/locations" : PORTAL_LOGIN_HREF} className="portal-header-link">
-        Локации
-      </a>
-      <a href={authed ? "/ratings" : PORTAL_LOGIN_HREF} className="portal-header-link">
-        Рейтинги
-      </a>
+      {navLink("/locations", authed ? "/locations" : PORTAL_LOGIN_HREF, "Локации")}
+      {navLink("/ratings", authed ? "/ratings" : PORTAL_LOGIN_HREF, "Рейтинги")}
+      {/* Явный пункт кабинета: аноним уходит на вход, залогиненный — в новый
+          кабинет (тёмный запуск /new/dashboard). Синяя кнопка «Войти»
+          остаётся как основной call-to-action. */}
+      {navLink("/dashboard", authed ? PORTAL_CABINET_HREF : PORTAL_LOGIN_HREF, "Личный кабинет")}
+      {/* «О проекте» — последним пунктом; «Блог» из шапки убран по просьбе. */}
+      {navLink(PORTAL_ABOUT_HREF, PORTAL_ABOUT_HREF, "О проекте")}
     </>
   );
 

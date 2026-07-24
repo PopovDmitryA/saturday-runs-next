@@ -9,6 +9,7 @@ export const APP_NAV_ITEMS: SiteNavItem[] = [
   { href: "/achievements", label: "Достижения" },
   { href: "/co-runners", label: "Встречи" },
   { href: "/ratings", label: "Рейтинги" },
+  { href: "/backlog", label: "Бэклог" },
   { href: "/maps", label: "Карта" },
   { href: "/history", label: "Моя история" },
   { href: "/locations", label: "Локации" },

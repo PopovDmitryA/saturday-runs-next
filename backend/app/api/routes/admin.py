@@ -20,6 +20,12 @@ from app.schemas.abuse_admin import (
     AbuseTelegramBanItem,
 )
 from app.schemas.admin import AdminUserListResponse
+from app.schemas.backlog import (
+    BacklogCardAdminListResponse,
+    BacklogCardAdminResponse,
+    BacklogCardStatusUpdateRequest,
+    BacklogVoteAdminListResponse,
+)
 from app.schemas.admin_event_report import (
     EventReportDatesResponse,
     EventReportLocationsResponse,
@@ -69,6 +75,14 @@ from app.services.admin_event_report_service import (
 )
 from app.services.admin_site_stats_service import get_admin_site_stats
 from app.services.admin_users_service import get_admin_user, search_admin_users
+from app.services.backlog_service import (
+    BacklogError,
+    delete_card as delete_backlog_card,
+    delete_comment as delete_backlog_comment,
+    list_card_votes_admin,
+    list_cards_admin,
+    update_card_status,
+)
 from app.services.blocked_slug_admin_service import (
     BlockedSlugError,
     create_blocked_slug,
@@ -614,3 +628,63 @@ def admin_delete_blog_post(
     except BlogPostError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return AbuseMessageResponse(message="blog_post_deleted")
+
+
+@router.get("/backlog/cards", response_model=BacklogCardAdminListResponse)
+def admin_list_backlog_cards(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> BacklogCardAdminListResponse:
+    items = list_cards_admin(db)
+    return BacklogCardAdminListResponse(items=items, total=len(items))
+
+
+@router.get("/backlog/cards/{card_id}/votes", response_model=BacklogVoteAdminListResponse)
+def admin_list_backlog_votes(
+    card_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> BacklogVoteAdminListResponse:
+    try:
+        return list_card_votes_admin(db, card_id)
+    except BacklogError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.patch("/backlog/cards/{card_id}", response_model=BacklogCardAdminResponse)
+def admin_update_backlog_card_status(
+    card_id: UUID,
+    body: BacklogCardStatusUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> BacklogCardAdminResponse:
+    try:
+        return update_card_status(db, card_id, status=body.status)
+    except BacklogError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.delete("/backlog/cards/{card_id}", response_model=AbuseMessageResponse)
+def admin_delete_backlog_card(
+    card_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AbuseMessageResponse:
+    try:
+        delete_backlog_card(db, card_id)
+    except BacklogError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return AbuseMessageResponse(message="backlog_card_deleted")
+
+
+@router.delete("/backlog/comments/{comment_id}", response_model=AbuseMessageResponse)
+def admin_delete_backlog_comment(
+    comment_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AbuseMessageResponse:
+    try:
+        delete_backlog_comment(db, comment_id)
+    except BacklogError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return AbuseMessageResponse(message="backlog_comment_deleted")

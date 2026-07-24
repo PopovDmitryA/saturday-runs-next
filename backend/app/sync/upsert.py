@@ -28,6 +28,7 @@ from app.platform_adapters.canonical import (
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
+from app.services.gender_position_service import resolve_participant_gender
 from app.services.location_catalog_service import backfill_city_from_catalog, backfill_region_from_catalog
 
 PARSER_VERSION = "0.3.2"
@@ -336,6 +337,7 @@ def upsert_participant(
             profile_url=profile_url or default_profile_url,
             club_name=club_name,
             age_category=age_category,
+            gender=resolve_participant_gender(platform.code, age_category),
             barcode_id=barcode_id,
             source_url=profile_url,
             parser_version=PARSER_VERSION,
@@ -355,6 +357,12 @@ def upsert_participant(
             row.barcode_id = barcode_id
         row.fetched_at = now
         row.sync_status = SyncStatus.ok
+    # Пол пересчитываем всегда: у s95 он приезжает в profile_extra отдельным
+    # апсертом профиля, у остальных — вместе с обновлённой категорией.
+    # Известный пол не затираем на None (протокол без категории — не повод).
+    gender = resolve_participant_gender(platform.code, row.age_category, row.profile_extra)
+    if gender is not None and row.gender != gender:
+        row.gender = gender
     db.flush()
     return row
 

@@ -216,10 +216,13 @@ function GenderSplitPanel({ data }: { data: import("./portalTypes").PortalGender
   );
 }
 
+type ChartTabKey = "finishes" | "newcomers" | "records" | "locations";
+
 export function PortalHomePage() {
   const [data, setData] = useState<PortalHomeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<"all" | "year">("all");
+  const [chartTab, setChartTab] = useState<ChartTabKey>("finishes");
 
   useEffect(() => {
     let cancelled = false;
@@ -357,6 +360,69 @@ export function PortalHomePage() {
     }));
   }, [data, period]);
 
+  // Четыре показателя живут в ОДНОЙ панели с вкладками: раньше это были четыре
+  // одинаковых графика подряд, которые занимали почти весь экран главной.
+  const chartTabs = useMemo(() => {
+    const weekly = period === "year";
+    return [
+      {
+        key: "finishes" as ChartTabKey,
+        label: "Финиши",
+        title: "Финиши по системам",
+        sub: weekly
+          ? "Последние 52 недели — наведите на график, чтобы увидеть детали"
+          : "Сколько финишей набрала каждая система в каждом году",
+        points: chartPoints,
+        projection: chartProjection,
+        totalLabel: "Всего" as string | undefined,
+      },
+      {
+        key: "newcomers" as ChartTabKey,
+        label: "Новички",
+        title: "Новички по системам",
+        sub: weekly
+          ? "Первые старты по неделям за последние 52 недели"
+          : "Сколько людей пробежали свой первый старт в каждом году",
+        points: newcomersPoints,
+        projection: newcomersProjection,
+        totalLabel: "Всего" as string | undefined,
+      },
+      {
+        key: "records" as ChartTabKey,
+        label: "Рекорды",
+        title: "Личные рекорды по системам",
+        sub: weekly
+          ? "Обновления личных рекордов по неделям за последние 52 недели"
+          : "Сколько раз участники улучшали свой лучший результат в каждой системе",
+        points: personalRecordsPoints,
+        projection: personalRecordsProjection,
+        totalLabel: "Всего" as string | undefined,
+      },
+      {
+        key: "locations" as ChartTabKey,
+        label: "Локации",
+        title: "Локации по системам",
+        sub: weekly
+          ? "Сколько локаций стартовали в каждую из 52 недель"
+          : "Сколько локаций проводили старты в каждом году",
+        points: locationsPoints,
+        projection: null,
+        totalLabel: undefined as string | undefined,
+      },
+    ];
+  }, [
+    period,
+    chartPoints,
+    chartProjection,
+    newcomersPoints,
+    newcomersProjection,
+    personalRecordsPoints,
+    personalRecordsProjection,
+    locationsPoints,
+  ]);
+
+  const activeChart = chartTabs.find((tab) => tab.key === chartTab) ?? chartTabs[0];
+
   const hero = data ? (period === "year" && data.hero_last_year ? data.hero_last_year : data.hero) : null;
 
   return (
@@ -418,94 +484,40 @@ export function PortalHomePage() {
               </section>
             )}
 
-            <section className="portal-panel">
-              <div className="portal-panel-head">
+            <section className="portal-panel portal-chart-panel">
+              <div className="portal-panel-head portal-chart-panel-head">
                 <div>
-                  <h2>Финиши по системам</h2>
-                  {period === "year" ? (
+                  <h2>{activeChart.title}</h2>
+                  <p className="portal-panel-sub">{activeChart.sub}</p>
+                  {activeChart.projection && (
                     <p className="portal-panel-sub">
-                      Последние 52 недели — наведите на график, чтобы увидеть детали
-                    </p>
-                  ) : (
-                    chartProjection && (
-                      <p className="portal-panel-sub">
-                        {chartProjection.label.replace(" (оценка)", "")} год ещё не закончился —
-                        пунктир прогнозирует итог при текущем темпе
-                      </p>
-                    )
-                  )}
-                </div>
-              </div>
-              <PortalTrendChart
-                points={chartPoints}
-                totalLabel="Всего"
-                showGrowth={period === "all"}
-                projection={chartProjection}
-              />
-            </section>
-
-            <section className="portal-panel">
-              <div className="portal-panel-head">
-                <div>
-                  <h2>Новички по системам</h2>
-                  <p className="portal-panel-sub">
-                    {period === "all"
-                      ? "Сколько людей пробежали свой первый старт в каждом году"
-                      : "Первые старты по неделям за последние 52 недели"}
-                  </p>
-                  {newcomersProjection && (
-                    <p className="portal-panel-sub">
-                      {newcomersProjection.label.replace(" (оценка)", "")} год ещё не закончился —
+                      {activeChart.projection.label.replace(" (оценка)", "")} год ещё не закончился —
                       пунктир прогнозирует итог при текущем темпе
                     </p>
                   )}
                 </div>
-              </div>
-              <PortalTrendChart
-                points={newcomersPoints}
-                totalLabel="Всего"
-                showGrowth={period === "all"}
-                projection={newcomersProjection}
-              />
-            </section>
-
-            <section className="portal-panel">
-              <div className="portal-panel-head">
-                <div>
-                  <h2>Личные рекорды по системам</h2>
-                  <p className="portal-panel-sub">
-                    {period === "all"
-                      ? "Сколько раз участники улучшали свой лучший результат в каждой системе"
-                      : "Обновления личных рекордов по неделям за последние 52 недели"}
-                  </p>
-                  {personalRecordsProjection && (
-                    <p className="portal-panel-sub">
-                      {personalRecordsProjection.label.replace(" (оценка)", "")} год ещё не закончился —
-                      пунктир прогнозирует итог при текущем темпе
-                    </p>
-                  )}
+                <div className="portal-chart-tabs" role="tablist" aria-label="Показатель на графике">
+                  {chartTabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={tab.key === activeChart.key}
+                      className={tab.key === activeChart.key ? "active" : ""}
+                      onClick={() => setChartTab(tab.key)}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
               </div>
               <PortalTrendChart
-                points={personalRecordsPoints}
-                totalLabel="Всего"
+                key={activeChart.key}
+                points={activeChart.points}
+                totalLabel={activeChart.totalLabel}
                 showGrowth={period === "all"}
-                projection={personalRecordsProjection}
+                projection={activeChart.projection}
               />
-            </section>
-
-            <section className="portal-panel">
-              <div className="portal-panel-head">
-                <div>
-                  <h2>Локации по системам</h2>
-                  <p className="portal-panel-sub">
-                    {period === "all"
-                      ? "Сколько локаций проводили старты в каждом году"
-                      : "Сколько локаций стартовали в каждую из 52 недель"}
-                  </p>
-                </div>
-              </div>
-              <PortalTrendChart points={locationsPoints} showGrowth={period === "all"} />
             </section>
             </section>
 

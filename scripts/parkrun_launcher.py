@@ -5,6 +5,7 @@
 Задачи:
   1) Обработать очередь сайта run5k.run  (стандартный демон, parkrun_mac.sh)
   2) Парсинг parkrun-профилей в диапазоне (мировой обход, macbook-воркер)
+  3) Обработать собранное сырьё в БД     (офлайн-парсер, parkrun-monitoring)
 """
 from __future__ import annotations
 
@@ -59,15 +60,38 @@ def task_sweep() -> None:
                    "--delay", delay, "--limit", limit])
 
 
+def task_parse() -> None:
+    print("\n— Офлайн-парсер собранного сырья (в БД) —")
+    print("  Читает файлы, которые free-сборщик сложил на сервере (data/raw),")
+    print("  парсит и пишет в pm-postgres. Можно запускать параллельно с виндой.")
+    pm = os.path.join(os.path.expanduser("~"), "Projects", "parkrun-monitoring")
+    script = os.path.join(pm, "athlete_sweep", "file_parser.py")
+    if not os.path.exists(script):
+        sys.exit(f"не нашёл парсер: {script}\nклонируй parkrun-monitoring в ~/Projects/")
+    limit = ask("Сколько атлетов за сессию (0 = без предела)", "0")
+    delete = ask_yn("Удалять файлы сырья после записи в БД?", default=False)
+    py = os.path.join(ROOT, ".conda-parkrun", "bin", "python")
+    if not os.path.exists(py):
+        py = sys.executable
+    argv = [py, script, "--limit", limit]
+    if delete:
+        argv.append("--delete")
+    print("\nЗапускаю офлайн-парсер…\n")
+    os.execvp(py, argv)
+
+
 def main() -> None:
     print("═" * 56)
     print(" parkrun — что запускаем?")
     print("═" * 56)
     print("  1) Обработать очередь сайта run5k.run  (демон, браузер)")
     print("  2) Парсинг parkrun-профилей в диапазоне (обход, macbook)")
+    print("  3) Обработать собранное сырьё в БД      (офлайн-парсер)")
     choice = ask("Выбор", "1")
     if choice == "2":
         task_sweep()
+    elif choice == "3":
+        task_parse()
     else:
         task_site()
 

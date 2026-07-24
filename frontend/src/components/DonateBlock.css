@@ -1,0 +1,186 @@
+/* Блок доната — переиспользуется на /about и /backlog. Тёплый акцентный фон
+   вешается через .donate-block-panel на внешнюю секцию/карточку страницы,
+   сам компонент даёт только внутреннюю вёрстку.
+   Селекторы парные (.card./.portal-panel.), потому что у обеих обёрток свой
+   background с той же специфичностью, а их CSS грузится позже. */
+.donate-block-panel,
+.card.donate-block-panel,
+.portal-panel.donate-block-panel {
+  background: linear-gradient(135deg, var(--tint-amber-bg), var(--surface) 65%);
+  border-color: var(--tint-amber-border);
+}
+
+.donate-block {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  gap: 24px;
+  align-items: stretch;
+}
+
+.donate-block-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.donate-block-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.donate-block-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--tint-amber-bg-strong);
+}
+
+.donate-block-icon svg {
+  width: 17px;
+  height: 17px;
+  fill: var(--accent-amber-text);
+}
+
+.donate-block-copy p {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.donate-block-copy p:last-child {
+  margin-bottom: 0;
+}
+
+.donate-block-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-muted);
+}
+
+.donate-block-qr-block {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.donate-block-qr,
+.donate-block-qr-empty {
+  width: 104px;
+  height: 104px;
+  border-radius: 8px;
+  flex: none;
+}
+
+.donate-block-qr {
+  background: #fff;
+  padding: 4px;
+}
+
+.donate-block-qr-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border-heavy);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.donate-block-qr-caption {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.donate-block-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.donate-block-card-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.donate-block-mark {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.donate-block-mark.sber {
+  background: #21a038;
+  color: #fff;
+}
+
+.donate-block-mark.tbank {
+  background: #ffdd2d;
+  color: #101010;
+}
+
+.donate-block-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.donate-block-card-bank {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+.donate-block-card-number {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .donate-block {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 420px) {
+  .donate-block-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .donate-block-qr-block {
+    align-self: center;
+  }
+}
