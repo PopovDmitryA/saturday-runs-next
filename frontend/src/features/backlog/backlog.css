@@ -1,0 +1,491 @@
+/* Все блоки-обёртки ниже — это .card из index.css, поэтому селекторы парные
+   (.card.backlog-*): у одиночного класса та же специфичность, а index.css
+   грузится позже и перебивает display/padding/border. */
+
+/* Hero: слева промо с кнопкой, справа донат — по половине ширины. */
+.backlog-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  margin-top: 16px;
+}
+
+.card.backlog-hero-promo,
+.card.backlog-hero-donate {
+  margin-top: 0;
+}
+
+/* Парный селектор — иначе .card из index.css (display:grid) перебивает flex. */
+.card.backlog-hero-promo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.backlog-hero-promo p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.backlog-hero-promo .btn {
+  margin-top: auto;
+  /* Кнопка по центру ширины, но прижата к низу блока (margin-top:auto). */
+  align-self: center;
+}
+
+/* В половинной колонке донат не влезает в два столбца — ставим в один. */
+.backlog-hero-donate .donate-block {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+@media (max-width: 860px) {
+  .backlog-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.backlog-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.backlog-segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.backlog-segmented-btn {
+  border: none;
+  background: var(--surface);
+  color: var(--text-3);
+  padding: 0.5rem 0.9rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.backlog-segmented-btn + .backlog-segmented-btn {
+  border-left: 1px solid var(--border);
+}
+
+.backlog-segmented-btn.active {
+  background: var(--accent-indigo);
+  color: #fff;
+}
+
+.card.backlog-filters {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.backlog-filters select {
+  width: auto;
+}
+
+/* ── Теги ───────────────────────────────────────────────────────────────
+   Три уровня заметности, чтобы ряд бейджей не сливался в кашу:
+   статус — плотная заливка, тип — контур, категория — приглушённый фон. */
+.backlog-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.backlog-tag-category {
+  background: var(--chip-bg);
+  color: var(--text-3);
+}
+
+.backlog-tag-type-bug,
+.backlog-tag-type-feature {
+  background: transparent;
+  font-weight: 600;
+  border: 1px solid currentColor;
+}
+
+.backlog-tag-type-bug {
+  color: var(--tint-rose-text);
+}
+
+.backlog-tag-type-feature {
+  color: var(--tint-violet-text);
+}
+
+.backlog-tag-status-pending,
+.backlog-tag-status-in_progress,
+.backlog-tag-status-rejected,
+.backlog-tag-status-done {
+  font-weight: 700;
+}
+
+.backlog-tag-status-pending {
+  background: var(--chip-bg-strong);
+  color: var(--text-3);
+}
+
+.backlog-tag-status-in_progress {
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
+}
+
+.backlog-tag-status-rejected {
+  background: var(--tint-red-bg-strong);
+  color: var(--tint-red-text);
+}
+
+.backlog-tag-status-done {
+  background: var(--tint-green-bg-strong);
+  color: var(--tint-green-text);
+}
+
+.backlog-tag-admin {
+  background: var(--accent-indigo);
+  color: #fff;
+  font-weight: 700;
+}
+
+/* Видна только админу: карточка/комментарий скрыты от остальных под
+   «Аноним», но модератор должен видеть, что имя нельзя упоминать публично. */
+.backlog-badge-anon-warn {
+  margin-left: 6px;
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
+  font-weight: 700;
+}
+
+/* Бейдж «Админ» в таблице админки (там верстка на .badge). */
+.backlog-badge-admin {
+  margin-left: 6px;
+  background: var(--accent-indigo);
+  color: #fff;
+  font-weight: 700;
+}
+
+/* Таблица модерации не влезает в ширину контента — обёртка .table-scroll
+   прокручивает её по горизонтали, а select статуса не сжимаем до нечитаемого. */
+.backlog-admin-table {
+  min-width: 880px;
+}
+
+.backlog-admin-table select {
+  min-width: 11rem;
+}
+
+/* Реализованные уходят в подвал (бэкенд-сортировка) и приглушены — не мешают. */
+.backlog-admin-row-done td {
+  opacity: 0.6;
+}
+
+/* Раскрытый список «кто голосовал» под строкой карточки. */
+.backlog-admin-votes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  padding: 4px 0;
+}
+
+.backlog-admin-votes ul {
+  margin: 4px 0 0;
+}
+
+.backlog-admin-votes a {
+  color: var(--accent-indigo-text);
+}
+
+.backlog-admin-votes-up {
+  color: var(--tint-green-text);
+}
+
+.backlog-admin-votes-down {
+  color: var(--tint-red-text);
+}
+
+/* ── Секции по статусу ──────────────────────────────────────────────── */
+.backlog-group {
+  margin-top: 20px;
+}
+
+.backlog-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.backlog-group-count {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* ── Сетка карточек ─────────────────────────────────────────────────── */
+.backlog-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.card.backlog-card {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  /* Цветная кромка слева дублирует статус — в сетке он читается мгновенно,
+     ещё до чтения текста тега. */
+  border-left: 3px solid var(--border-strong);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.card.backlog-card:hover {
+  box-shadow: 0 4px 14px -6px rgba(15, 23, 42, 0.25);
+}
+
+.card.backlog-card-status-pending {
+  border-left-color: var(--border-heavy);
+}
+
+.card.backlog-card-status-accepted {
+  border-left-color: var(--tint-blue-border-strong);
+}
+
+.card.backlog-card-status-in_progress {
+  border-left-color: var(--tint-amber-border-strong);
+}
+
+.card.backlog-card-status-rejected {
+  border-left-color: var(--tint-red-border-strong);
+}
+
+.card.backlog-card-status-done {
+  border-left-color: var(--tint-green-border-strong);
+}
+
+.backlog-card-votes {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  cursor: default;
+}
+
+.backlog-vote-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 7px;
+  width: 28px;
+  height: 24px;
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.backlog-vote-btn.up.active {
+  background: var(--tint-green-bg-strong);
+  border-color: var(--tint-green-border-strong);
+  color: var(--tint-green-text);
+}
+
+.backlog-vote-btn.down.active {
+  background: var(--tint-red-bg-strong);
+  border-color: var(--tint-red-border-strong);
+  color: var(--tint-red-text);
+}
+
+.backlog-vote-score {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+/* Реализованная карточка: кнопок нет, остаётся итоговый счёт с галочкой. */
+.backlog-card-votes-locked {
+  gap: 2px;
+  color: var(--tint-green-text);
+}
+
+.backlog-vote-locked-mark {
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.backlog-card-body {
+  min-width: 0;
+}
+
+.backlog-card-head {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.backlog-card-title {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.backlog-card-meta {
+  font-size: 0.78rem;
+}
+
+.backlog-card-meta a {
+  color: var(--accent-indigo-text);
+}
+
+/* ── Модалка карточки ───────────────────────────────────────────────── */
+.backlog-modal {
+  text-align: left;
+}
+
+.backlog-modal-meta {
+  font-size: 0.82rem;
+  margin: 8px 0 12px;
+}
+
+.backlog-modal-meta a {
+  color: var(--accent-indigo-text);
+}
+
+.backlog-card-description {
+  white-space: pre-wrap;
+  color: var(--text-2);
+  font-size: 0.92rem;
+  margin: 0;
+}
+
+.backlog-comments {
+  margin-top: 18px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 12px;
+}
+
+.backlog-comments h4 {
+  margin: 0 0 10px;
+  font-size: 0.88rem;
+  color: var(--text-3);
+}
+
+/* ── Чат обсуждения ─────────────────────────────────────────────────── */
+.backlog-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.backlog-chat-row {
+  display: flex;
+}
+
+.backlog-chat-row.mine {
+  justify-content: flex-end;
+}
+
+.backlog-chat-row.theirs {
+  justify-content: flex-start;
+}
+
+.backlog-bubble {
+  max-width: min(78%, 30rem);
+  padding: 7px 11px 5px;
+  border-radius: 14px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-soft);
+}
+
+.backlog-bubble.mine {
+  background: var(--tint-indigo-bg-strong);
+  border-color: var(--tint-violet-border);
+  border-bottom-right-radius: 4px;
+}
+
+.backlog-bubble.theirs {
+  border-bottom-left-radius: 4px;
+}
+
+/* Реплика администратора — отдельный акцент, чтобы официальный ответ
+   не терялся среди пользовательских. */
+.backlog-bubble.admin {
+  background: var(--surface);
+  border-color: var(--accent-indigo);
+  box-shadow: inset 2px 0 0 var(--accent-indigo);
+}
+
+.backlog-bubble-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.backlog-bubble-author {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-3);
+}
+
+.backlog-bubble-body {
+  margin: 0;
+  font-size: 0.89rem;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.backlog-bubble-time {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  text-align: right;
+}
+
+.backlog-comment-form {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.backlog-comment-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.backlog-comment-login-hint {
+  margin-top: 12px;
+}
+
+@media (max-width: 860px) {
+  .backlog-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .backlog-form-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .backlog-bubble {
+    max-width: 88%;
+  }
+}

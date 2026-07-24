@@ -21,6 +21,8 @@ import { PortalHomePage } from "./features/portal/PortalHomePage";
 import { PortalLoginPage } from "./features/portal/PortalLoginPage";
 import { PortalMapLab } from "./features/portal/PortalMapLab";
 import { AdminBlogPage } from "./features/admin/AdminBlogPage";
+import { AdminBacklogPage } from "./features/admin/AdminBacklogPage";
+import { BacklogPage } from "./features/backlog/BacklogPage";
 import {
   PORTAL_ABOUT_HREF,
   PORTAL_BLOG_HREF,
@@ -125,6 +127,9 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/win-locations": () => (
     <RequireAuth>{() => <LeaderboardPage metric="win_locations" />}</RequireAuth>
   ),
+  // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
+  // залогиненный — гейт внутри самой страницы, как у /locations.
+  "/backlog": () => <BacklogPage />,
   "/share": () => <SharePage />,
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
@@ -141,6 +146,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/records-digest": () => <AdminRecordsDigestPage />,
   "/admin/location-contacts": () => <AdminLocationContactsPage />,
   "/admin/blog": () => <AdminBlogPage />,
+  "/admin/backlog": () => <AdminBacklogPage />,
   "/settings": () => <SettingsPage />,
 };
 
