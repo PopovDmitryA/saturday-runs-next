@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import Integer, func, select
@@ -134,6 +135,7 @@ def _card_to_response(
         score=card.score,
         my_vote=my_vote,
         comment_count=comment_count,
+        done_at=card.done_at,
         is_mine=viewer_id is not None and card.author_user_id == viewer_id,
         created_at=card.created_at,
         updated_at=card.updated_at,
@@ -483,6 +485,13 @@ def list_cards_admin(db: Session) -> list[BacklogCardAdminResponse]:
 
 def update_card_status(db: Session, card_id: UUID, *, status: BacklogCardStatus) -> BacklogCardAdminResponse:
     card = _get_card(db, card_id, for_update_author=True)
+    # Момент перевода в «реализовано» фиксируем отдельно: лента показывает
+    # возраст карточки, а у сделанного полезнее «реализовано N назад».
+    # Повторный перевод в done обновляет отметку, уход из done — снимает.
+    if status == BacklogCardStatus.done:
+        card.done_at = datetime.now(UTC)
+    elif card.status == BacklogCardStatus.done:
+        card.done_at = None
     card.status = status
     db.commit()
     db.refresh(card)

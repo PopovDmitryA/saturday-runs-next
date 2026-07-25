@@ -382,3 +382,36 @@ export function syncStatusLabel(status: string): string {
   };
   return labels[status] ?? status;
 }
+
+/**
+ * «3 дня назад», «1 час назад» — возраст события для лент, где точная дата
+ * второстепенна (бэклог). Точную дату показываем в подсказке рядом.
+ */
+export function formatRelativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) {
+    return "";
+  }
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (seconds < 60) {
+    return "только что";
+  }
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} ${pluralFormRu(minutes, ["минуту", "минуты", "минут"])} назад`;
+  }
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) {
+    return `${hours} ${pluralFormRu(hours, ["час", "часа", "часов"])} назад`;
+  }
+  const days = Math.round(hours / 24);
+  if (days < 31) {
+    return `${days} ${pluralFormRu(days, ["день", "дня", "дней"])} назад`;
+  }
+  const months = Math.round(days / 30.44);
+  if (months < 12) {
+    return `${months} ${pluralFormRu(months, ["месяц", "месяца", "месяцев"])} назад`;
+  }
+  const years = Math.round(months / 12);
+  return `${years} ${pluralFormRu(years, ["год", "года", "лет"])} назад`;
+}

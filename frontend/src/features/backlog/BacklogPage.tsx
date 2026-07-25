@@ -3,6 +3,7 @@ import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { DetailModal } from "../../components/DetailModal";
 import { DonateBlock } from "../../components/DonateBlock";
 import { getCurrentUser, type User } from "../../lib/api";
+import { formatRelativeTime } from "../../lib/format";
 import {
   BACKLOG_CATEGORIES,
   BACKLOG_STATUS_LABELS,
@@ -334,9 +335,32 @@ function BacklogContent() {
         <div className="backlog-card-meta muted">
           {card.is_anonymous || !card.author_display_name ? "Аноним" : card.author_display_name}
           {" · "}
-          {formatDate(card.created_at)}
+          {/* Возраст карточки, а не дата: в ленте важнее «давно ли». Точная
+              дата — в подсказке; в самой карточке (модалке) остаётся дата. */}
+          <span
+            title={
+              card.done_at
+                ? `Заведена ${formatDate(card.created_at)}, реализована ${formatDate(card.done_at)}`
+                : `Карточка заведена ${formatDate(card.created_at)}`
+            }
+          >
+            {card.done_at
+              ? `реализовано ${formatRelativeTime(card.done_at)}`
+              : `${formatRelativeTime(card.created_at)} — заведена карточка`}
+          </span>
           {" · "}
-          {card.comment_count} {pluralComments(card.comment_count)}
+          <span className="backlog-card-comments" title={`${card.comment_count} ${pluralComments(card.comment_count)}`}>
+            {card.comment_count}
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M21 12a8 8 0 0 1-8 8H7l-4 3v-5.4A8 8 0 0 1 11 4h2a8 8 0 0 1 8 8Z"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
         </div>
       </div>
     </div>

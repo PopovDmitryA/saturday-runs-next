@@ -496,3 +496,16 @@
     max-width: 88%;
   }
 }
+
+/* Счётчик комментариев: число + иконка облачка вместо слова «комментариев». */
+.backlog-card-comments {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.backlog-card-comments svg {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+}

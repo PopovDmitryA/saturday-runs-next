@@ -20,6 +20,7 @@ export type BacklogCard = {
   score: number;
   my_vote: number;
   comment_count: number;
+  done_at: string | null;
   // Своя ли карточка для текущего зрителя — по нему рисуем «Редактировать».
   is_mine: boolean;
   created_at: string;

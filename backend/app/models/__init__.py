@@ -1253,6 +1253,8 @@ class BacklogCard(Base):
     upvotes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     downvotes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     score: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # Когда карточку перевели в «реализовано» (последний перевод). NULL — ещё нет.
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
