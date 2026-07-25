@@ -152,13 +152,6 @@ function ShareContent() {
   const format = useMemo(() => getShareFormat(formatId), [formatId]);
   const thumbAspectRatio = `${format.width} / ${format.height}`;
   const background = useMemo(() => getShareBackground(backgroundId), [backgroundId]);
-  const availableTextColors = useMemo(() => {
-    const allowed = background.allowedTextColors;
-    if (!allowed || allowed.length === 0) {
-      return SHARE_TEXT_COLORS;
-    }
-    return SHARE_TEXT_COLORS.filter((item) => allowed.includes(item.id));
-  }, [background]);
   const isCustomBackground = isCustomBackgroundId(backgroundId);
   const backgroundImage = isCustomBackground ? customBackgroundImage : stockBackgroundImage;
 
@@ -285,13 +278,6 @@ function ShareContent() {
       cancelled = true;
     };
   }, [customBackgroundImage, customSourceImage, format.height, format.width, isCustomBackground]);
-
-  useEffect(() => {
-    if (availableTextColors.some((item) => item.id === textColor)) {
-      return;
-    }
-    setTextColor(availableTextColors[0]?.id ?? "white");
-  }, [availableTextColors, backgroundId, textColor]);
 
   const lastRun = useMemo(() => getLastRun(runs), [runs]);
   // Пробежка для однопробежечного режима (last_run): историческая из «В этот
@@ -1081,7 +1067,7 @@ function ShareContent() {
               <div className="share-text-color" role="group" aria-label="Цвет текста на фото">
                 <span className="share-text-color-label">Цвет текста</span>
                 <div className="share-text-color-options">
-                  {availableTextColors.map((option) => (
+                  {SHARE_TEXT_COLORS.map((option) => (
                     <button
                       key={option.id}
                       type="button"

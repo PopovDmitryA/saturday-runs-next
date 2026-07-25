@@ -1,5 +1,3 @@
-import type { ShareTextColor } from "./shareConfig";
-
 export type ShareBackgroundId =
   | "custom"
   | "park_alley"
@@ -26,7 +24,6 @@ export type ShareBackground = {
   title: string;
   url: string | null;
   isCustom?: boolean;
-  allowedTextColors?: ShareTextColor[];
 };
 
 export const SHARE_CUSTOM_BACKGROUND: ShareBackground = {
@@ -42,109 +39,91 @@ export const SHARE_STOCK_BACKGROUNDS: ShareBackground[] = [
     id: "park_alley",
     title: "Парк",
     url: "/share-backgrounds/bg-park-alley.jpg",
-    allowedTextColors: ["cream", "gold", "mint", "sky", "coral", "white"],
   },
   {
     id: "park_lane",
     title: "Аллея",
     url: "/share-backgrounds/bg-park-lane.jpg",
-    allowedTextColors: ["white", "cream"],
   },
   {
     id: "park_path",
     title: "Дорожка",
     url: "/share-backgrounds/bg-park-path.jpg",
-    allowedTextColors: ["white", "cream", "gold", "mint", "sky", "coral"],
   },
   {
     id: "park_walkway",
     title: "Прогулочная",
     url: "/share-backgrounds/bg-park-walkway.jpg",
-    allowedTextColors: ["white", "cream", "gold"],
   },
   {
     id: "park_bench",
     title: "Скамейка",
     url: "/share-backgrounds/bg-park-bench.jpg",
-    allowedTextColors: ["white", "gold", "mint", "coral"],
   },
   {
     id: "park_trees",
     title: "Деревья",
     url: "/share-backgrounds/bg-park-trees-2.jpg",
-    allowedTextColors: ["white", "cream", "gold", "mint", "sky", "coral"],
   },
   {
     id: "park_morning",
     title: "Утро",
     url: "/share-backgrounds/bg-park-morning.jpg",
-    allowedTextColors: ["white", "cream", "gold", "mint", "sky", "coral"],
   },
   {
     id: "park_autumn",
     title: "Осень",
     url: "/share-backgrounds/bg-park-autumn.jpg",
-    allowedTextColors: ["white", "cream", "gold", "mint", "sky"],
   },
   {
     id: "park_trail",
     title: "Тропинка",
     url: "/share-backgrounds/bg-park-trail.jpg",
-    allowedTextColors: ["white", "cream", "gold", "mint"],
   },
   {
     id: "park_meadow",
     title: "Луг",
     url: "/share-backgrounds/bg-park-meadow.jpg",
-    allowedTextColors: ["white", "black", "cream", "gold", "mint", "sky", "coral"],
   },
   {
     id: "park_lake",
     title: "У воды",
     url: "/share-backgrounds/bg-park-lake.jpg",
-    allowedTextColors: ["white", "cream", "gold", "mint"],
   },
   {
     id: "park_sunset",
     title: "Закат",
     url: "/share-backgrounds/bg-park-sunset.jpg",
-    allowedTextColors: ["white", "cream", "gold", "mint"],
   },
   {
     id: "park_green",
     title: "Зелень",
     url: "/share-backgrounds/bg-park-green.jpg",
-    allowedTextColors: ["white", "cream", "gold", "mint", "sky", "coral", "black"],
   },
   {
     id: "park_boardwalk",
     title: "Настил",
     url: "/share-backgrounds/bg-park-boardwalk.jpg",
-    allowedTextColors: ["white", "black", "cream", "gold", "mint", "sky", "coral"],
   },
   {
     id: "park_foliage",
     title: "Листва",
     url: "/share-backgrounds/bg-park-foliage.jpg",
-    allowedTextColors: ["white", "black", "cream", "gold", "mint", "sky", "coral"],
   },
   {
     id: "park_stream",
     title: "Ручей",
     url: "/share-backgrounds/bg-park-stream.jpg",
-    allowedTextColors: ["white", "black", "cream", "gold", "mint", "sky", "coral"],
   },
   {
     id: "park_hill",
     title: "Холм",
     url: "/share-backgrounds/bg-park-hill.jpg",
-    allowedTextColors: ["white", "black", "cream", "gold", "mint", "sky", "coral"],
   },
   {
     id: "park_dawn",
     title: "Рассвет",
     url: "/share-backgrounds/bg-park-dawn.jpg",
-    allowedTextColors: ["white", "black", "cream", "gold", "mint", "sky", "coral"],
   },
 ];
 
