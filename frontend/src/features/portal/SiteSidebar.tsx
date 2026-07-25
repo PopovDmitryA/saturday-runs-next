@@ -299,6 +299,10 @@ function CabinetUserCard({ initialUser, collapsed = false }: { initialUser: User
 }
 
 const SIDEBAR_COLLAPSED_KEY = "portalCabSidebarCollapsed";
+// Раскрыта ли группа «Личный кабинет». По умолчанию раскрыта; выбор помнится
+// между страницами (сайт — MPA, без этого свёрнутая группа раскрывалась
+// заново на каждом переходе).
+const CABINET_GROUP_OPEN_KEY = "portalCabGroupOpen";
 
 const CABINET_TAB_KEYS: readonly SiteSidebarActive[] = [
   "dashboard",
@@ -363,9 +367,15 @@ export function SiteSidebar({
       return false;
     }
   });
-  // Группа ЛК по умолчанию РАЗВЁРНУТА везде (решение Дмитрия 25.07.2026);
-  // шеврон сворачивает по желанию, состояние живёт в рамках страницы.
-  const [cabinetOpen, setCabinetOpen] = useState(true);
+  // Группа ЛК по умолчанию РАЗВЁРНУТА (решение Дмитрия 25.07.2026), но выбор
+  // запоминается: свернул — остаётся свёрнутой и на других страницах.
+  const [cabinetOpen, setCabinetOpen] = useState(() => {
+    try {
+      return localStorage.getItem(CABINET_GROUP_OPEN_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  });
 
   useEffect(() => {
     onCollapsedChange?.(collapsed);
@@ -376,6 +386,18 @@ export function SiteSidebar({
       const next = !current;
       try {
         localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        // localStorage недоступен — просто не запоминаем
+      }
+      return next;
+    });
+  };
+
+  const toggleCabinetOpen = () => {
+    setCabinetOpen((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(CABINET_GROUP_OPEN_KEY, next ? "1" : "0");
       } catch {
         // localStorage недоступен — просто не запоминаем
       }
@@ -435,7 +457,7 @@ export function SiteSidebar({
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                setCabinetOpen((open) => !open);
+                toggleCabinetOpen();
               }}
             >
               {icon(<path d="M9 6l6 6-6 6" />)}
