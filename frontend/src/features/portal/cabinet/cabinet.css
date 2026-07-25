@@ -874,3 +874,37 @@ a.portal-cab-user-name:hover {
   color: var(--accent-indigo-text);
   text-decoration: none;
 }
+
+/* ---------- уровни сайдбара ----------
+   Верхний уровень (Личный кабинет, Локации, Рейтинги) — один размер и одна
+   левая граница; всё, что внутри них, — на ступень правее и мельче. */
+.portal-cab-nav-item {
+  font-size: 14px;
+}
+
+.portal-cab-nav-subitem,
+.portal-cab-nav-textitem {
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+.portal-cab-nav-subitem:hover,
+.portal-cab-nav-textitem:hover {
+  color: var(--text);
+}
+
+/* Подпункты с иконкой (разделы кабинета) и без неё (локация, журнал)
+   начинаются с одной вертикали: 12px базового паддинга + 18px ступень. */
+.portal-cab-nav-subitem {
+  padding-left: 30px;
+}
+
+.portal-cab-nav-textitem {
+  padding-left: 30px;
+}
+
+/* Иконки подпунктов чуть меньше — вложенность видна и по ним. */
+.portal-cab-nav-subitem .portal-cab-nav-icon {
+  width: 17px;
+  height: 17px;
+}

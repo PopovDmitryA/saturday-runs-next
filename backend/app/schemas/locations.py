@@ -104,6 +104,7 @@ class LocationCourseRecordResponse(BaseModel):
     finish_time_sec: int
     finish_time_display: str
     runner_name: str | None = None
+    runner_handle: str | None = None
     event_date: date | None = None
     platform_code: str | None = None
 
@@ -172,6 +173,7 @@ class LocationHistogramResponse(BaseModel):
 
 
 class LocationAgeGroupRecordResponse(BaseModel):
+    # Хендл профиля на сайте (slug или номер) — если участник привязал систему.
     """Рекорд локации в возрастной группе (parkrun исключён — другие категории)."""
 
     gender: str
@@ -241,6 +243,7 @@ class LocationEventsResponse(BaseModel):
 
 class LocationLeaderRunnerResponse(BaseModel):
     name: str | None = None
+    handle: str | None = None
     runs_count: int
     best_time_sec: int | None = None
     best_time_display: str | None = None
@@ -248,6 +251,7 @@ class LocationLeaderRunnerResponse(BaseModel):
 
 class LocationLeaderVolunteerResponse(BaseModel):
     name: str | None = None
+    handle: str | None = None
     count: int
 
 

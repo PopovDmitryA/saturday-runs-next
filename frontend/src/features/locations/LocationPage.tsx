@@ -16,6 +16,7 @@ import {
 } from "../../lib/api";
 import { formatDate, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
+import { cabinetTabHref } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
@@ -64,6 +65,28 @@ function StatTile({
         </a>
       )}
     </div>
+  );
+}
+
+/**
+ * Адрес вкладки «Пробежки» кабинета с предзаполненным фильтром по локации:
+ * бегун попадает сразу к своим стартам на этой площадке.
+ */
+function runsAtLocationHref(user: { serial_id?: number | null; public_slug?: string | null } | null, locationName: string): string {
+  const base = cabinetTabHref(user, "runs");
+  return `${base}?location=${encodeURIComponent(locationName)}`;
+}
+
+/** Имя участника: ссылкой на профиль сайта, если участник привязал систему. */
+function RunnerName({ name, handle }: { name: string | null; handle?: string | null }) {
+  const label = name?.trim() || "—";
+  if (!handle || label === "—") {
+    return <>{label}</>;
+  }
+  return (
+    <a className="loc-runner-link" href={`/users/${encodeURIComponent(handle)}`}>
+      {label}
+    </a>
   );
 }
 
@@ -202,7 +225,9 @@ function AgeGroupRecordsTable({ records }: { records: LocationAgeGroupRecord[] }
             <td className="loc-age-records-time">
               {stripLeadingHours(record.finish_time_display)}
             </td>
-            <td>{record.runner_name ?? "—"}</td>
+            <td>
+              <RunnerName name={record.runner_name} handle={record.runner_handle} />
+            </td>
             <td>{record.event_date ? formatDate(record.event_date) : "—"}</td>
           </tr>
         ))}
@@ -221,7 +246,7 @@ function AgeGroupRecordsSection({ records }: { records: LocationAgeGroupRecord[]
     <section className="card loc-section">
       <h2 className="section-title">
         Рекорды по возрастным группам
-        <StatHintTooltip text="Лучшее время в каждой возрастной группе за всю историю локации. parkrun не учитывается: их возрастные категории считаются по другим правилам.">
+        <StatHintTooltip text="Лучшее время в каждой возрастной группе за всю историю локации. Считается по данным 5 вёрст — только эта система публикует возрастной диапазон. S95 возраст не передаёт вовсе, parkrun вместо группы отдаёт процент от возрастного рекорда, а RunPark — буквенные категории без диапазона.">
           <span className="loc-section-title-info" aria-label="Как считается">
             ⓘ
           </span>
@@ -313,7 +338,9 @@ function LocationLeadersSection({ slug }: { slug: string }) {
               {leaders.runners.map((runner, index) => (
                 <tr key={`${runner.name}-${index}`}>
                   <td className="loc-leaders-rank">{index + 1}</td>
-                  <td>{runner.name ?? "—"}</td>
+                  <td>
+                    <RunnerName name={runner.name} handle={runner.handle} />
+                  </td>
                   <td>{runner.runs_count}</td>
                   <td>{stripLeadingHours(runner.best_time_display)}</td>
                 </tr>
@@ -349,7 +376,9 @@ function LocationLeadersSection({ slug }: { slug: string }) {
               {leaders.volunteers.map((volunteer, index) => (
                 <tr key={`${volunteer.name}-${index}`}>
                   <td className="loc-leaders-rank">{index + 1}</td>
-                  <td>{volunteer.name ?? "—"}</td>
+                  <td>
+                    <RunnerName name={volunteer.name} handle={volunteer.handle} />
+                  </td>
                   <td>{volunteer.count}</td>
                 </tr>
               ))}
@@ -539,6 +568,14 @@ function LocationPersonalSection({ slug }: { slug: string }) {
           />
         )}
       </div>
+      {stats.runs_count > 0 && (
+        <div className="loc-personal-actions">
+          {/* Открывает «Пробежки» кабинета сразу с фильтром по этой локации. */}
+          <a className="btn secondary btn-sm" href={runsAtLocationHref(user, stats.name)}>
+            Мои пробежки здесь →
+          </a>
+        </div>
+      )}
     </section>
   );
 }

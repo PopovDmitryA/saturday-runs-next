@@ -10524,3 +10524,21 @@ tr.run-crosslinked td {
   opacity: 0.4;
   cursor: default;
 }
+
+/* Кнопка «Мои пробежки здесь» под личной статистикой локации. */
+.loc-personal-actions {
+  margin-top: 12px;
+}
+
+/* Имя участника-ссылка в таблицах рекордов и топов локации. */
+.loc-runner-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--text-faint);
+}
+
+.loc-runner-link:hover {
+  color: var(--accent-indigo-text);
+  border-bottom-color: currentColor;
+  text-decoration: none;
+}

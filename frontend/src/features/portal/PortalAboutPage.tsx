@@ -1,7 +1,8 @@
 import { DonateBlock } from "../../components/DonateBlock";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { PROJECT_MISSION } from "../../lib/projectMission";
-import { PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import { cabinetTabHref, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import { LEGACY_SITE_HREF, LEGACY_SITE_LABEL } from "../../lib/siteBrand";
 import { PortalHeader } from "./PortalHeader";
 import "./portal.css";
@@ -146,6 +147,9 @@ const AUTHOR_PROFILES = [
 ] as const;
 
 export function PortalAboutPage() {
+  // Залогиненному не предлагаем «создать кабинет» — он у него уже есть.
+  const user = useOptionalUser();
+  const authed = user != null;
   return (
     <>
       <PortalHeader />
@@ -271,8 +275,9 @@ export function PortalAboutPage() {
         <section className="portal-panel" aria-label="Бэклог идей">
           <h2>Бэклог идей</h2>
           <p>
-            Сайт развивается по подсказкам сообщества: в открытом бэклоге собраны идеи новых
-            фич и статистик — можно голосовать за понравившиеся и предлагать свои.
+            Вы можете напрямую влиять на то, каким станет сайт: предлагайте новые разделы и
+            статистики, сообщайте о том, что работает не так, голосуйте за чужие идеи. Чем
+            больше голосов у карточки, тем раньше она попадёт в работу.
           </p>
           <p>
             <a className="btn secondary" href="/backlog">
@@ -355,15 +360,19 @@ export function PortalAboutPage() {
           <div className="portal-cta-copy">
             <h2>Посмотрите сами</h2>
             <p>
-              Общая статистика движения открыта без регистрации, а личный кабинет ждёт, когда вы
-              привяжете свои профили.
+              {authed
+                ? "Общая статистика движения — на главной, а ваша личная — в кабинете."
+                : "Общая статистика движения открыта без регистрации, а личный кабинет ждёт, когда вы привяжете свои профили."}
             </p>
             <div className="portal-cta-actions">
               <a className="btn primary" href={PORTAL_HOME_HREF}>
                 Статистика систем
               </a>
-              <a className="btn secondary" href={PORTAL_LOGIN_HREF}>
-                Создать кабинет
+              <a
+                className="btn secondary"
+                href={authed ? cabinetTabHref(user, "dashboard") : PORTAL_LOGIN_HREF}
+              >
+                {authed ? "Мой кабинет" : "Создать кабинет"}
               </a>
             </div>
           </div>

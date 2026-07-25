@@ -1726,6 +1726,7 @@ export type LocationHistogramRow = {
 };
 
 export type LocationAgeGroupRecord = {
+  runner_handle?: string | null;
   gender: "male" | "female";
   age_group: string;
   finish_time_sec: number;
@@ -1828,6 +1829,7 @@ export function getLocationEvents(slug: string) {
 
 export type LocationLeaderRunner = {
   name: string | null;
+  handle?: string | null;
   runs_count: number;
   best_time_sec: number | null;
   best_time_display: string | null;
@@ -1835,6 +1837,7 @@ export type LocationLeaderRunner = {
 
 export type LocationLeaderVolunteer = {
   name: string | null;
+  handle?: string | null;
   count: number;
 };
 

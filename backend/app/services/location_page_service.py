@@ -369,7 +369,7 @@ def _location_event_ids(db: Session, location_ids: list[UUID]) -> list[UUID]:
 def build_location_leaders(
     db: Session, slug: str, *, limit: int = 20, use_cache: bool = True
 ) -> dict[str, object] | None:
-    cache_key = f"locations:leaders:v1:{slug.strip().lower()}"
+    cache_key = f"locations:leaders:v2:{slug.strip().lower()}"
     if use_cache:
         cached = _read_json_cache(cache_key)
         if cached is not None:
@@ -419,6 +419,8 @@ def _compute_location_leaders(db: Session, slug: str, *, limit: int = 20) -> dic
                 display_name.label("name"),
                 func.count(func.distinct(RunResult.event_id)).label("runs"),
                 func.min(case((time_ok, RunResult.finish_time_sec))).label("best"),
+                func.max(User.public_slug).label("slug"),
+                func.max(User.serial_id).label("serial_id"),
             )
             .join(Participant, RunResult.participant_id == Participant.id)
             .outerjoin(PlatformLink, _platform_link_join())
@@ -435,14 +437,17 @@ def _compute_location_leaders(db: Session, slug: str, *, limit: int = 20) -> dic
                 "runs_count": int(runs),
                 "best_time_sec": int(best) if best is not None else None,
                 "best_time_display": format_finish_time_display(int(best)) if best is not None else None,
+                "handle": slug or (str(serial_id) if serial_id else None),
             }
-            for name, runs, best in runner_rows
+            for name, runs, best, slug, serial_id in runner_rows
         ]
         volunteer_group_key = func.coalesce(PlatformLink.user_id, VolunteerResult.participant_id)
         volunteer_rows = (
             db.query(
                 display_name.label("name"),
                 func.count(func.distinct(VolunteerResult.event_id)).label("events"),
+                func.max(User.public_slug).label("slug"),
+                func.max(User.serial_id).label("serial_id"),
             )
             .join(Participant, VolunteerResult.participant_id == Participant.id)
             .outerjoin(PlatformLink, _platform_link_join())
@@ -453,7 +458,14 @@ def _compute_location_leaders(db: Session, slug: str, *, limit: int = 20) -> dic
             .limit(limit)
             .all()
         )
-        volunteers = [{"name": name, "count": int(events)} for name, events in volunteer_rows]
+        volunteers = [
+            {
+                "name": name,
+                "count": int(events),
+                "handle": slug or (str(serial_id) if serial_id else None),
+            }
+            for name, events, slug, serial_id in volunteer_rows
+        ]
 
     return {
         "slug": identity.slug,
@@ -589,11 +601,14 @@ def _age_group_sort_key(age_group: str) -> int:
 def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, object]]:
     """Рекорды локации по возрастным группам: лучшее время в каждой группе М/Ж.
 
-    parkrun исключён сознательно: их age-grade категории (SM/VM/JW…) считаются
-    по другим правилам и смешивать их с 5в/S95/RunPark в одном рейтинге нельзя.
-    Категорию нормализуем в Python (normalize_age_group), поэтому из БД берём
-    лучшую строку на каждую СЫРУЮ категорию (DISTINCT ON), а затем среди них
-    выбираем минимум на нормализованную группу.
+    Фактически строится по данным 5 вёрст — единственной системы, которая
+    публикует возрастной диапазон («М35-39»). Остальные отсеиваются сами:
+    S95 возраст не отдаёт вовсе (0 строк с age_category), parkrun вместо
+    группы хранит процент от возрастного рекорда («20.70%») и вдобавок
+    исключён явно, а RunPark пишет буквенные категории («JM10»), из которых
+    диапазон не вытащить. Нормализация в Python (normalize_age_group) и
+    отбрасывает всё, что не приводится к диапазону; из БД берём лучшую строку
+    на каждую СЫРУЮ категорию (DISTINCT ON), затем минимум на группу.
     """
     if not event_ids:
         return []
@@ -606,13 +621,19 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
             gender_expr.label("gender"),
             RunResult.age_category,
             RunResult.finish_time_sec,
-            Participant.display_name,
+            func.coalesce(User.display_name, Participant.display_name).label("display_name"),
             Event.event_date,
             Platform.code.label("platform_code"),
+            # Профиль на нашем сайте, если участник привязал систему: рекордсмен
+            # становится кликабельным (просьба Дмитрия 26.07.2026).
+            User.serial_id.label("runner_serial_id"),
+            User.public_slug.label("runner_slug"),
         )
         .join(Event, RunResult.event_id == Event.id)
         .join(Platform, Event.platform_id == Platform.id)
         .outerjoin(Participant, RunResult.participant_id == Participant.id)
+        .outerjoin(PlatformLink, _platform_link_join())
+        .outerjoin(User, PlatformLink.user_id == User.id)
         .filter(
             RunResult.event_id.in_(event_ids),
             time_ok,
@@ -631,7 +652,16 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
     )
 
     best: dict[tuple[str, str], dict[str, object]] = {}
-    for gender, age_category, finish_time_sec, runner_name, event_date, platform_code in rows:
+    for (
+        gender,
+        age_category,
+        finish_time_sec,
+        runner_name,
+        event_date,
+        platform_code,
+        runner_serial_id,
+        runner_slug,
+    ) in rows:
         if gender not in ("male", "female"):
             continue
         age_group = normalize_age_group(age_category)
@@ -648,6 +678,7 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
                 "runner_name": runner_name,
                 "event_date": event_date,
                 "platform_code": platform_code,
+                "runner_handle": runner_slug or (str(runner_serial_id) if runner_serial_id else None),
             }
 
     return sorted(
@@ -660,7 +691,7 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
 
 
 def build_location_page(db: Session, slug: str, *, use_cache: bool = True) -> dict[str, object] | None:
-    cache_key = f"locations:page:v4:{slug.strip().lower()}"
+    cache_key = f"locations:page:v5:{slug.strip().lower()}"
     if use_cache:
         cached = _read_json_cache(cache_key)
         if cached is not None:

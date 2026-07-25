@@ -410,17 +410,16 @@ export function SiteSidebar({
     });
   };
 
-  const toggleCabinetOpen = () => {
-    setCabinetOpen((current) => {
-      const next = !current;
-      try {
-        localStorage.setItem(CABINET_GROUP_OPEN_KEY, next ? "1" : "0");
-      } catch {
-        // localStorage недоступен — просто не запоминаем
-      }
-      return next;
-    });
+  const setCabinetOpenPersisted = (next: boolean) => {
+    setCabinetOpen(next);
+    try {
+      localStorage.setItem(CABINET_GROUP_OPEN_KEY, next ? "1" : "0");
+    } catch {
+      // localStorage недоступен — просто не запоминаем
+    }
   };
+
+  const toggleCabinetOpen = () => setCabinetOpenPersisted(!cabinetOpen);
 
   const handleLogout = async () => {
     await logout();
@@ -468,6 +467,13 @@ export function SiteSidebar({
             isCabinetTab(active) ? " portal-cab-group-head-current" : ""
           }${anon ? " portal-cab-nav-item-disabled" : ""}`}
           aria-disabled={anon || undefined}
+          onClick={() => {
+            // Клик по названию ведёт в обзор и заодно раскрывает группу —
+            // чтобы после перехода разделы кабинета были видны сразу.
+            if (authed && !cabinetOpen) {
+              setCabinetOpenPersisted(true);
+            }
+          }}
           title={
             anon
               ? "Войдите на сайт, чтобы открыть личный кабинет: ваши пробежки, волонтёрства, достижения и карта локаций"
