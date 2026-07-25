@@ -20,6 +20,8 @@ from app.services.backlog_service import (
     list_cards,
     list_cards_admin,
     list_comments,
+    update_card,
+    update_card_admin,
     update_card_status,
     vote_card,
 )
@@ -272,3 +274,81 @@ def test_delete_card_and_comment(db_session: Session) -> None:
 
     with pytest.raises(BacklogError):
         delete_comment(db_session, uuid4())
+
+
+def test_is_mine_flag(db_session: Session) -> None:
+    author = _make_user(db_session)
+    other = _make_user(db_session, name="Другой")
+    card = _make_card(db_session, author.id)
+
+    assert get_card(db_session, card.id, viewer_id=author.id).is_mine is True
+    assert get_card(db_session, card.id, viewer_id=other.id).is_mine is False
+    assert get_card(db_session, card.id, viewer_id=None).is_mine is False
+
+
+def test_author_can_edit_own_card(db_session: Session) -> None:
+    author = _make_user(db_session)
+    card = _make_card(db_session, author.id)
+
+    updated = update_card(
+        db_session,
+        card.id,
+        editor=author,
+        title="Новый заголовок",
+        description="Новое описание",
+        category="runs",
+        type_=BacklogCardType.bug,
+    )
+    assert updated.title == "Новый заголовок"
+    assert updated.description == "Новое описание"
+    assert updated.category == "runs"
+    assert updated.type == BacklogCardType.bug
+
+
+def test_non_author_cannot_edit(db_session: Session) -> None:
+    author = _make_user(db_session)
+    stranger = _make_user(db_session, name="Чужой")
+    card = _make_card(db_session, author.id)
+
+    with pytest.raises(BacklogError) as exc:
+        update_card(db_session, card.id, editor=stranger, title="Взлом")
+    assert exc.value.status_code == 403
+
+
+def test_author_cannot_change_status(db_session: Session) -> None:
+    author = _make_user(db_session)
+    card = _make_card(db_session, author.id)
+
+    with pytest.raises(BacklogError) as exc:
+        update_card(db_session, card.id, editor=author, status=BacklogCardStatus.done)
+    assert exc.value.status_code == 403
+
+
+def test_edit_validates_category_and_empty_fields(db_session: Session) -> None:
+    author = _make_user(db_session)
+    card = _make_card(db_session, author.id)
+
+    with pytest.raises(BacklogError):
+        update_card(db_session, card.id, editor=author, category="not-a-real-category")
+    with pytest.raises(BacklogError):
+        update_card(db_session, card.id, editor=author, title="   ")
+    with pytest.raises(BacklogError):
+        update_card(db_session, card.id, editor=author, description="   ")
+
+
+def test_admin_can_edit_any_card_including_status(db_session: Session, admin_settings: Settings) -> None:
+    author = _make_user(db_session)
+    admin = _make_user(db_session, name="Дмитрий Попов")
+    admin.telegram_id = ADMIN_TELEGRAM_ID
+    db_session.commit()
+    card = _make_card(db_session, author.id)
+
+    updated = update_card_admin(
+        db_session,
+        card.id,
+        editor=admin,
+        title="Правка администратора",
+        status=BacklogCardStatus.in_progress,
+    )
+    assert updated.title == "Правка администратора"
+    assert updated.status == BacklogCardStatus.in_progress

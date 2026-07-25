@@ -104,7 +104,10 @@ def sweep_hq(
             FROM crawl_queue""")[0]
         vpn = _rows(conn, """
             SELECT name, account, collected_total, active_seconds, delay_sec,
-                   CASE WHEN NOT enabled THEN 'off'
+                   CASE WHEN account='mac' AND (worker_heartbeat_at IS NULL
+                             OR worker_heartbeat_at <= now() - interval '90 seconds')
+                             THEN 'off'   -- локальный скрипт: нет heartbeat = не запущен
+                        WHEN NOT enabled THEN 'off'
                         WHEN cooldown_until > now() THEN 'cooldown'
                         WHEN worker_heartbeat_at > now() - interval '90 seconds' THEN 'working'
                         ELSE 'queued' END AS status,
@@ -114,7 +117,9 @@ def sweep_hq(
             FROM sweep_exits WHERE account <> 'free'
             ORDER BY
                 collected_total DESC,                   -- РЕЙТИНГ: сколько спарсил (главное)
-                CASE WHEN NOT enabled THEN 3
+                CASE WHEN account='mac' AND (worker_heartbeat_at IS NULL
+                          OR worker_heartbeat_at <= now() - interval '90 seconds') THEN 3
+                     WHEN NOT enabled THEN 3
                      WHEN cooldown_until > now() THEN 2
                      WHEN worker_heartbeat_at > now() - interval '90 seconds' THEN 0
                      ELSE 1 END,                        -- вторым: работает→очередь→отлёжка→выкл

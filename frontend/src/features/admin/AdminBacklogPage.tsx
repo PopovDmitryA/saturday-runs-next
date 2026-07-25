@@ -1,22 +1,34 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { AdminShell } from "./AdminShell";
 import { ConfirmModal } from "../../components/ConfirmModal";
+import { DetailModal } from "../../components/DetailModal";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import {
+  BACKLOG_CATEGORIES,
   BACKLOG_STATUS_LABELS,
   BACKLOG_TYPE_LABELS,
   deleteAdminBacklogCard,
   listAdminBacklogCards,
   listAdminBacklogVotes,
+  updateAdminBacklogCard,
   updateAdminBacklogCardStatus,
   type BacklogCardAdmin,
   type BacklogCardStatus,
+  type BacklogCardType,
   type BacklogVoteAdminList,
 } from "../backlog/backlogApi";
 import "../backlog/backlog.css";
 import { AdminSubnav } from "./AdminSubnav";
 
 const STATUS_OPTIONS: BacklogCardStatus[] = ["pending", "in_progress", "rejected", "done"];
+
+type AdminEditDraft = {
+  type: BacklogCardType;
+  category: string;
+  title: string;
+  description: string;
+  status: BacklogCardStatus;
+};
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -33,6 +45,12 @@ function AdminBacklogContent() {
   const [expandedVotes, setExpandedVotes] = useState<string | null>(null);
   const [votes, setVotes] = useState<Record<string, BacklogVoteAdminList>>({});
   const [votesLoading, setVotesLoading] = useState(false);
+
+  // Модалка полного редактирования карточки (все параметры + статус).
+  const [editCard, setEditCard] = useState<BacklogCardAdmin | null>(null);
+  const [editDraft, setEditDraft] = useState<AdminEditDraft | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,6 +81,47 @@ function AdminBacklogContent() {
       setError(err instanceof Error ? err.message : "Не удалось сохранить статус");
     } finally {
       setSaving(null);
+    }
+  };
+
+  const startEdit = (card: BacklogCardAdmin) => {
+    setEditError(null);
+    setEditCard(card);
+    setEditDraft({
+      type: card.type,
+      category: card.category,
+      title: card.title,
+      description: card.description,
+      status: card.status,
+    });
+  };
+
+  const handleEditSave = async () => {
+    if (!editCard || !editDraft) return;
+    const title = editDraft.title.trim();
+    const description = editDraft.description.trim();
+    if (!title || !description) {
+      setEditError("Заголовок и описание не могут быть пустыми");
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await updateAdminBacklogCard(editCard.id, {
+        type: editDraft.type,
+        category: editDraft.category,
+        title,
+        description,
+        status: editDraft.status,
+      });
+      setEditCard(null);
+      setEditDraft(null);
+      // Статус влияет на сортировку (done уходит в подвал) — перезагружаем.
+      await load();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Не удалось сохранить изменения");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -188,6 +247,14 @@ function AdminBacklogContent() {
                             type="button"
                             className="btn btn-ghost"
                             disabled={saving === card.id}
+                            onClick={() => startEdit(card)}
+                          >
+                            Редактировать
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            disabled={saving === card.id}
                             onClick={() => setConfirmDelete(card)}
                           >
                             Удалить
@@ -260,6 +327,110 @@ function AdminBacklogContent() {
       >
         {confirmDelete ? `Удалить «${confirmDelete.title}» из бэклога вместе с голосами и комментариями?` : ""}
       </ConfirmModal>
+
+      <DetailModal
+        open={editCard !== null && editDraft !== null}
+        title="Редактирование карточки"
+        onClose={() => {
+          setEditCard(null);
+          setEditDraft(null);
+          setEditError(null);
+        }}
+      >
+        {editDraft && (
+          <div className="backlog-form backlog-edit-form">
+            <div className="backlog-form-row">
+              <label className="field">
+                <span className="field-label">Тип</span>
+                <div className="backlog-segmented">
+                  <button
+                    type="button"
+                    className={editDraft.type === "feature" ? "backlog-segmented-btn active" : "backlog-segmented-btn"}
+                    onClick={() => setEditDraft({ ...editDraft, type: "feature" })}
+                  >
+                    Фича
+                  </button>
+                  <button
+                    type="button"
+                    className={editDraft.type === "bug" ? "backlog-segmented-btn active" : "backlog-segmented-btn"}
+                    onClick={() => setEditDraft({ ...editDraft, type: "bug" })}
+                  >
+                    Баг
+                  </button>
+                </div>
+              </label>
+              <label className="field">
+                <span className="field-label">Категория</span>
+                <select
+                  className="input"
+                  value={editDraft.category}
+                  onChange={(event) => setEditDraft({ ...editDraft, category: event.target.value })}
+                >
+                  {BACKLOG_CATEGORIES.map((item) => (
+                    <option key={item.key} value={item.key}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label className="field">
+              <span className="field-label">Статус</span>
+              <select
+                className="input"
+                value={editDraft.status}
+                onChange={(event) => setEditDraft({ ...editDraft, status: event.target.value as BacklogCardStatus })}
+              >
+                {STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {BACKLOG_STATUS_LABELS[status]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Заголовок</span>
+              <input
+                className="input"
+                value={editDraft.title}
+                maxLength={200}
+                onChange={(event) => setEditDraft({ ...editDraft, title: event.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Описание</span>
+              <textarea
+                className="input"
+                rows={5}
+                value={editDraft.description}
+                onChange={(event) => setEditDraft({ ...editDraft, description: event.target.value })}
+              />
+            </label>
+            {editError && (
+              <div className="profile-form-error" role="alert">
+                <p>{editError}</p>
+              </div>
+            )}
+            <div className="actions-row">
+              <button type="button" className="btn primary btn-sm" disabled={editSaving} onClick={() => void handleEditSave()}>
+                {editSaving ? "Сохранение…" : "Сохранить"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={editSaving}
+                onClick={() => {
+                  setEditCard(null);
+                  setEditDraft(null);
+                  setEditError(null);
+                }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        )}
+      </DetailModal>
     </AdminShell>
   );
 }

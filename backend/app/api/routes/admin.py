@@ -20,12 +20,6 @@ from app.schemas.abuse_admin import (
     AbuseTelegramBanItem,
 )
 from app.schemas.admin import AdminUserListResponse
-from app.schemas.backlog import (
-    BacklogCardAdminListResponse,
-    BacklogCardAdminResponse,
-    BacklogCardStatusUpdateRequest,
-    BacklogVoteAdminListResponse,
-)
 from app.schemas.admin_event_report import (
     EventReportDatesResponse,
     EventReportLocationsResponse,
@@ -33,6 +27,12 @@ from app.schemas.admin_event_report import (
 )
 from app.schemas.admin_stats import AdminSiteStatsResponse, PageAnalyticsResponse
 from app.schemas.admin_sync_runs import AdminSyncRunsResponse
+from app.schemas.backlog import (
+    BacklogCardAdminListResponse,
+    BacklogCardAdminResponse,
+    BacklogCardUpdateRequest,
+    BacklogVoteAdminListResponse,
+)
 from app.schemas.blocked_slug_admin import (
     BlockedSlugCreateRequest,
     BlockedSlugItem,
@@ -77,11 +77,15 @@ from app.services.admin_site_stats_service import get_admin_site_stats
 from app.services.admin_users_service import get_admin_user, search_admin_users
 from app.services.backlog_service import (
     BacklogError,
-    delete_card as delete_backlog_card,
-    delete_comment as delete_backlog_comment,
     list_card_votes_admin,
     list_cards_admin,
-    update_card_status,
+    update_card_admin,
+)
+from app.services.backlog_service import (
+    delete_card as delete_backlog_card,
+)
+from app.services.backlog_service import (
+    delete_comment as delete_backlog_comment,
 )
 from app.services.blocked_slug_admin_service import (
     BlockedSlugError,
@@ -652,14 +656,25 @@ def admin_list_backlog_votes(
 
 
 @router.patch("/backlog/cards/{card_id}", response_model=BacklogCardAdminResponse)
-def admin_update_backlog_card_status(
+def admin_update_backlog_card(
     card_id: UUID,
-    body: BacklogCardStatusUpdateRequest,
+    body: BacklogCardUpdateRequest,
     db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
+    admin_user: Annotated[User, Depends(get_current_admin_user)],
 ) -> BacklogCardAdminResponse:
+    # Админ правит любое поле карточки, включая статус (модерация).
     try:
-        return update_card_status(db, card_id, status=body.status)
+        return update_card_admin(
+            db,
+            card_id,
+            editor=admin_user,
+            type_=body.type,
+            category=body.category,
+            title=body.title,
+            description=body.description,
+            is_anonymous=body.is_anonymous,
+            status=body.status,
+        )
     except BacklogError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 

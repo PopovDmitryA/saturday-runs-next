@@ -57,6 +57,37 @@ const VALUE_POINTS = [
   },
 ] as const;
 
+// Фирменные марки провайдеров: VK ID — белые буквы на #0077FF, Яндекс ID — белая «Я» на #FC3F1D.
+function VkMark() {
+  return (
+    <svg className="portal-login-scope-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <rect width="24" height="24" rx="7" fill="#0077ff" />
+      <text
+        x="12"
+        y="16.2"
+        textAnchor="middle"
+        fontSize="10"
+        fontWeight="800"
+        letterSpacing="0.3"
+        fill="#ffffff"
+      >
+        VK
+      </text>
+    </svg>
+  );
+}
+
+function YandexMark() {
+  return (
+    <svg className="portal-login-scope-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="12" fill="#fc3f1d" />
+      <text x="12" y="17" textAnchor="middle" fontSize="14" fontWeight="700" fill="#ffffff">
+        Я
+      </text>
+    </svg>
+  );
+}
+
 export function PortalLoginPage() {
   const consentRef = useRef<HTMLInputElement>(null);
   const [consentChecked, setConsentChecked] = useState(false);
@@ -214,6 +245,25 @@ export function PortalLoginPage() {
               </a>
             </div>
 
+            <div className="portal-login-scopes">
+              <p className="portal-login-scopes-title">Что мы получаем при входе</p>
+              <ul>
+                <li>
+                  <VkMark />
+                  VK — идентификатор, имя и фамилию
+                </li>
+                <li>
+                  <YandexMark />
+                  Яндекс — адрес почты и имя
+                </li>
+              </ul>
+              <p className="portal-login-scopes-note">
+                Телефон, дату рождения, друзей и ленту сайт не запрашивает и не хранит.{" "}
+                <a href={PORTAL_ABOUT_PRIVACY_HREF} target="_blank" rel="noreferrer">
+                  Подробнее
+                </a>
+              </p>
+            </div>
           </section>
         </div>
       </main>

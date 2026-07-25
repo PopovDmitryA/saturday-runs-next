@@ -20,6 +20,8 @@ export type BacklogCard = {
   score: number;
   my_vote: number;
   comment_count: number;
+  // Своя ли карточка для текущего зрителя — по нему рисуем «Редактировать».
+  is_mine: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -156,6 +158,23 @@ export function createBacklogCard(body: {
   });
 }
 
+// Поля, которые может править автор карточки. status в этот набор не входит —
+// он меняется только админом (см. updateAdminBacklogCard).
+export type BacklogCardEditableFields = {
+  type?: BacklogCardType;
+  category?: string;
+  title?: string;
+  description?: string;
+  is_anonymous?: boolean;
+};
+
+export function updateBacklogCard(cardId: string, body: BacklogCardEditableFields) {
+  return backlogFetch<BacklogCard>(`/backlog/cards/${cardId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
 export function voteBacklogCard(cardId: string, value: -1 | 0 | 1) {
   return backlogFetch<BacklogCard>(`/backlog/cards/${cardId}/vote`, {
     method: "POST",
@@ -179,6 +198,17 @@ export function listAdminBacklogCards() {
 }
 
 export function updateAdminBacklogCardStatus(cardId: string, body: { status: BacklogCardStatus }) {
+  return backlogFetch<BacklogCardAdmin>(`/admin/backlog/cards/${cardId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+// Админ правит любое поле карточки, включая статус.
+export function updateAdminBacklogCard(
+  cardId: string,
+  body: BacklogCardEditableFields & { status?: BacklogCardStatus },
+) {
   return backlogFetch<BacklogCardAdmin>(`/admin/backlog/cards/${cardId}`, {
     method: "PATCH",
     body: JSON.stringify(body),

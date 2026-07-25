@@ -1761,17 +1761,14 @@
 /* ---------- страница «О проекте» ---------- */
 
 .portal-about .portal-hero {
-  text-align: left;
   padding: 40px 4px 4px;
 }
 
 .portal-about .portal-hero h1 {
-  margin-left: 0;
   max-width: 26ch;
 }
 
 .portal-about .portal-hero-lead {
-  margin-left: 0;
   max-width: 68ch;
 }
 
@@ -2241,6 +2238,51 @@
   margin-top: 12px;
 }
 
+.portal-login-scopes {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.portal-login-scopes-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3, var(--text-2));
+}
+
+.portal-login-scopes ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.portal-login-scopes li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.portal-login-scope-mark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.portal-login-scopes-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .portal-login-provider {
   display: flex;
   align-items: center;
@@ -2306,8 +2348,12 @@
 @media (max-width: 860px) {
   .portal-login-split {
     grid-template-columns: 1fr;
-    gap: 28px;
+    gap: 24px;
     min-height: 0;
+    /* на планшете одна колонка — держим её узкой и по центру, иначе карточка
+       и кнопки растягиваются на всю ширину и оставляют пустоту справа */
+    max-width: 480px;
+    margin: 0 auto;
   }
 
   .portal-login-welcome {
@@ -2316,6 +2362,46 @@
 
   .portal-login-single {
     padding-top: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  /* на телефоне ужимаем блок «что даёт кабинет», чтобы кнопки входа были
+     видны на первом экране без скролла */
+  .portal-login-split {
+    gap: 16px;
+  }
+
+  .portal-login-welcome h1 {
+    font-size: 23px;
+    margin-bottom: 6px;
+  }
+
+  .portal-login-welcome .portal-hero-lead {
+    font-size: 13.5px;
+    margin-bottom: 14px;
+  }
+
+  .portal-eyebrow {
+    margin-bottom: 8px;
+  }
+
+  .portal-login-points {
+    gap: 10px;
+  }
+
+  /* описания под пунктами прячем — заголовков со значками достаточно,
+     а высоту это экономит заметно */
+  .portal-login-point p {
+    display: none;
+  }
+
+  .portal-login-card {
+    padding: 20px;
+  }
+
+  .portal-login-card-sub {
+    margin-bottom: 14px;
   }
 }
 

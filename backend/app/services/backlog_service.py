@@ -115,7 +115,9 @@ def _my_votes(db: Session, card_ids: list[UUID], viewer_id: UUID | None) -> dict
     return dict(rows)
 
 
-def _card_to_response(card: BacklogCard, *, my_vote: int, comment_count: int) -> BacklogCardResponse:
+def _card_to_response(
+    card: BacklogCard, *, my_vote: int, comment_count: int, viewer_id: UUID | None
+) -> BacklogCardResponse:
     author_name, author_handle = (None, None) if card.is_anonymous else _author_display(card.author)
     return BacklogCardResponse(
         id=card.id,
@@ -132,6 +134,7 @@ def _card_to_response(card: BacklogCard, *, my_vote: int, comment_count: int) ->
         score=card.score,
         my_vote=my_vote,
         comment_count=comment_count,
+        is_mine=viewer_id is not None and card.author_user_id == viewer_id,
         created_at=card.created_at,
         updated_at=card.updated_at,
     )
@@ -144,7 +147,12 @@ def _cards_to_responses(
     comment_counts = _comment_counts(db, card_ids)
     my_votes = _my_votes(db, card_ids, viewer_id)
     return [
-        _card_to_response(card, my_vote=my_votes.get(card.id, 0), comment_count=comment_counts.get(card.id, 0))
+        _card_to_response(
+            card,
+            my_vote=my_votes.get(card.id, 0),
+            comment_count=comment_counts.get(card.id, 0),
+            viewer_id=viewer_id,
+        )
         for card in cards
     ]
 
@@ -207,6 +215,112 @@ def create_card(
     card = _get_card(db, card.id, for_update_author=True)
     _notify_new_card(card)
     return _cards_to_responses(db, [card], author_id)[0]
+
+
+def _apply_card_update(
+    db: Session,
+    card_id: UUID,
+    *,
+    editor: User,
+    type_: BacklogCardType | None,
+    category: str | None,
+    title: str | None,
+    description: str | None,
+    is_anonymous: bool | None,
+    status: BacklogCardStatus | None,
+) -> BacklogCard:
+    """Редактирование карточки автором или админом. Возвращает свежую карточку.
+
+    Права: админ правит любую, обычный пользователь — только свою. status
+    (модерация) доступен только админу — у автора попытка его сменить даёт 403,
+    а не тихо игнорируется, чтобы клиент не думал, что смена прошла.
+    """
+    admin = is_admin_user(editor, get_settings())
+    card = _get_card(db, card_id, for_update_author=True)
+    if not admin and card.author_user_id != editor.id:
+        raise BacklogError("Редактировать можно только свою карточку", status_code=403)
+
+    if type_ is not None:
+        card.type = type_
+    if category is not None:
+        if category not in BACKLOG_CATEGORY_KEYS:
+            raise BacklogError("Неизвестная категория")
+        card.category = category
+    if title is not None:
+        title = title.strip()
+        if not title:
+            raise BacklogError("Заголовок не может быть пустым")
+        card.title = title
+    if description is not None:
+        description = description.strip()
+        if not description:
+            raise BacklogError("Описание не может быть пустым")
+        card.description = description
+    if is_anonymous is not None:
+        # _resolve_anonymous снимет анонимность, если карточку ведёт админ.
+        card.is_anonymous = _resolve_anonymous(db, card.author_user_id, is_anonymous)
+    if status is not None:
+        if not admin:
+            raise BacklogError("Статус карточки меняет только администратор", status_code=403)
+        card.status = status
+
+    db.commit()
+    return _get_card(db, card_id, for_update_author=True)
+
+
+def update_card(
+    db: Session,
+    card_id: UUID,
+    *,
+    editor: User,
+    type_: BacklogCardType | None = None,
+    category: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    is_anonymous: bool | None = None,
+    status: BacklogCardStatus | None = None,
+) -> BacklogCardResponse:
+    """Публичное редактирование (автор своей карточки). Отдаёт витринную форму."""
+    card = _apply_card_update(
+        db,
+        card_id,
+        editor=editor,
+        type_=type_,
+        category=category,
+        title=title,
+        description=description,
+        is_anonymous=is_anonymous,
+        status=status,
+    )
+    return _cards_to_responses(db, [card], editor.id)[0]
+
+
+def update_card_admin(
+    db: Session,
+    card_id: UUID,
+    *,
+    editor: User,
+    type_: BacklogCardType | None = None,
+    category: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    is_anonymous: bool | None = None,
+    status: BacklogCardStatus | None = None,
+) -> BacklogCardAdminResponse:
+    """Админское редактирование (любая карточка). Отдаёт админскую форму."""
+    card = _apply_card_update(
+        db,
+        card_id,
+        editor=editor,
+        type_=type_,
+        category=category,
+        title=title,
+        description=description,
+        is_anonymous=is_anonymous,
+        status=status,
+    )
+    comment_count = _comment_counts(db, [card.id]).get(card.id, 0)
+    return _card_to_admin_response(card, comment_count=comment_count)
 
 
 def _recompute_vote_counts(db: Session, card: BacklogCard) -> None:

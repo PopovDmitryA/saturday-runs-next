@@ -13,6 +13,7 @@ from app.schemas.backlog import (
     BacklogCardCreateRequest,
     BacklogCardListResponse,
     BacklogCardResponse,
+    BacklogCardUpdateRequest,
     BacklogCommentCreateRequest,
     BacklogCommentListResponse,
     BacklogCommentResponse,
@@ -25,6 +26,7 @@ from app.services.backlog_service import (
     get_card,
     list_cards,
     list_comments,
+    update_card,
     vote_card,
 )
 
@@ -74,6 +76,30 @@ def backlog_create_card(
             title=body.title,
             description=body.description,
             is_anonymous=body.is_anonymous,
+        )
+    except BacklogError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.patch("/cards/{card_id}", response_model=BacklogCardResponse)
+def backlog_update_card(
+    card_id: UUID,
+    body: BacklogCardUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> BacklogCardResponse:
+    # Права проверяет сервис: автор правит свою карточку, админ — любую.
+    try:
+        return update_card(
+            db,
+            card_id,
+            editor=user,
+            type_=body.type,
+            category=body.category,
+            title=body.title,
+            description=body.description,
+            is_anonymous=body.is_anonymous,
+            status=body.status,
         )
     except BacklogError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

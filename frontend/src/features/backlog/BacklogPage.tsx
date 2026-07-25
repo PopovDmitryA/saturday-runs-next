@@ -11,6 +11,7 @@ import {
   createBacklogComment,
   listBacklogCards,
   listBacklogComments,
+  updateBacklogCard,
   voteBacklogCard,
   type BacklogCard,
   type BacklogCardStatus,
@@ -117,6 +118,12 @@ function BacklogContent() {
   const [commentAnon, setCommentAnon] = useState(false);
   const [commentSaving, setCommentSaving] = useState(false);
 
+  // Редактирование карточки в модалке. editDraft !== null → форма вместо текста.
+  // Доступно автору своей карточки (card.is_mine) и админу по любой.
+  const [editDraft, setEditDraft] = useState<Draft | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -165,12 +172,54 @@ function BacklogContent() {
     setOpenCardId(cardId);
     setCommentDraft("");
     setCommentAnon(false);
+    setEditDraft(null);
+    setEditError(null);
   };
 
   const closeCard = () => {
     setOpenCardId(null);
     setCommentDraft("");
     setCommentAnon(false);
+    setEditDraft(null);
+    setEditError(null);
+  };
+
+  const startEdit = (card: BacklogCard) => {
+    setEditError(null);
+    setEditDraft({
+      type: card.type,
+      category: card.category,
+      title: card.title,
+      description: card.description,
+      is_anonymous: card.is_anonymous,
+    });
+  };
+
+  const handleEditSave = async (cardId: string) => {
+    if (!editDraft) return;
+    const title = editDraft.title.trim();
+    const description = editDraft.description.trim();
+    if (!title || !description) {
+      setEditError("Заголовок и описание не могут быть пустыми");
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const updated = await updateBacklogCard(cardId, {
+        type: editDraft.type,
+        category: editDraft.category,
+        title,
+        description,
+        is_anonymous: editDraft.is_anonymous,
+      });
+      setCards((prev) => sortCards(prev.map((item) => (item.id === cardId ? updated : item))));
+      setEditDraft(null);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Не удалось сохранить изменения");
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const handleVote = async (card: BacklogCard, value: 1 | -1) => {
@@ -496,7 +545,110 @@ function BacklogContent() {
               {openedCard.status === "done" && " · голосование закрыто"}
             </div>
 
-            <p className="backlog-card-description">{openedCard.description}</p>
+            {editDraft ? (
+              <div className="backlog-form backlog-edit-form">
+                <div className="backlog-form-row">
+                  <label className="field">
+                    <span className="field-label">Тип</span>
+                    <div className="backlog-segmented">
+                      <button
+                        type="button"
+                        className={editDraft.type === "feature" ? "backlog-segmented-btn active" : "backlog-segmented-btn"}
+                        onClick={() => setEditDraft({ ...editDraft, type: "feature" })}
+                      >
+                        Фича
+                      </button>
+                      <button
+                        type="button"
+                        className={editDraft.type === "bug" ? "backlog-segmented-btn active" : "backlog-segmented-btn"}
+                        onClick={() => setEditDraft({ ...editDraft, type: "bug" })}
+                      >
+                        Баг
+                      </button>
+                    </div>
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Категория</span>
+                    <select
+                      className="input"
+                      value={editDraft.category}
+                      onChange={(event) => setEditDraft({ ...editDraft, category: event.target.value })}
+                    >
+                      {BACKLOG_CATEGORIES.map((item) => (
+                        <option key={item.key} value={item.key}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label className="field">
+                  <span className="field-label">Заголовок</span>
+                  <input
+                    className="input"
+                    value={editDraft.title}
+                    maxLength={200}
+                    onChange={(event) => setEditDraft({ ...editDraft, title: event.target.value })}
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Описание</span>
+                  <textarea
+                    className="input"
+                    rows={4}
+                    value={editDraft.description}
+                    onChange={(event) => setEditDraft({ ...editDraft, description: event.target.value })}
+                  />
+                </label>
+                {!isAdmin && (
+                  <label className="login-consent-field">
+                    <input
+                      type="checkbox"
+                      checked={editDraft.is_anonymous}
+                      onChange={(event) => setEditDraft({ ...editDraft, is_anonymous: event.target.checked })}
+                    />
+                    <span>Отправить анонимно (имя не будет показано другим пользователям)</span>
+                  </label>
+                )}
+                {editError && (
+                  <div className="profile-form-error" role="alert">
+                    <p>{editError}</p>
+                  </div>
+                )}
+                <div className="actions-row">
+                  <button
+                    type="button"
+                    className="btn primary btn-sm"
+                    disabled={editSaving}
+                    onClick={() => void handleEditSave(openedCard.id)}
+                  >
+                    {editSaving ? "Сохранение…" : "Сохранить"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={editSaving}
+                    onClick={() => {
+                      setEditDraft(null);
+                      setEditError(null);
+                    }}
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="backlog-card-description">{openedCard.description}</p>
+                {(openedCard.is_mine || isAdmin) && (
+                  <div className="actions-row backlog-edit-actions">
+                    <button type="button" className="btn btn-sm" onClick={() => startEdit(openedCard)}>
+                      Редактировать
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
 
             <div className="backlog-comments">
               <h4>Обсуждение</h4>
