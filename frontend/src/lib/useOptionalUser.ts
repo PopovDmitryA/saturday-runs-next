@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCurrentUser, type User } from "./api";
+import { ApiError, getCurrentUser, type User } from "./api";
 
 /**
  * Текущий пользователь БЕЗ гейта — для публичных страниц (локации, рейтинги),
@@ -56,9 +56,21 @@ export function useOptionalUser(): User | null | undefined {
         writeCachedUser(current);
         if (!cancelled) setUser(current);
       })
-      .catch(() => {
-        writeCachedUser(null);
-        if (!cancelled) setUser(null);
+      .catch((err: unknown) => {
+        // «Аноним» кэшируем ТОЛЬКО на настоящий 401. Обрывы сети и абортнутые
+        // запросы (клик по ссылке, пока /auth/me ещё летит — обычное дело в
+        // MPA) НЕ должны затирать кэш: именно это заставляло следующую
+        // страницу мигать кнопкой «Войти» перед залогиненным.
+        const isRealAnon = err instanceof ApiError && err.status === 401;
+        if (isRealAnon) {
+          writeCachedUser(null);
+          if (!cancelled) setUser(null);
+        } else if (!cancelled) {
+          // Ошибка сети: остаёмся на кэшированном состоянии; если кэша не
+          // было — считаем анонимом (но кэш не пишем, следующая страница
+          // попробует снова).
+          setUser((current) => (current === undefined ? null : current));
+        }
       });
     return () => {
       cancelled = true;

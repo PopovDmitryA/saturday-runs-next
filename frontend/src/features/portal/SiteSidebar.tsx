@@ -363,8 +363,9 @@ export function SiteSidebar({
       return false;
     }
   });
-  // Группа ЛК раскрыта, когда мы в его разделе; в остальных — по клику.
-  const [cabinetOpen, setCabinetOpen] = useState(() => isCabinetTab(active));
+  // Группа ЛК по умолчанию РАЗВЁРНУТА везде (решение Дмитрия 25.07.2026);
+  // шеврон сворачивает по желанию, состояние живёт в рамках страницы.
+  const [cabinetOpen, setCabinetOpen] = useState(true);
 
   useEffect(() => {
     onCollapsedChange?.(collapsed);
