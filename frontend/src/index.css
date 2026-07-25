@@ -5765,6 +5765,26 @@ tr.run-crosslinked td {
   font-weight: 600;
 }
 
+.admin-login-journal-row > td {
+  background: var(--surface-muted, rgba(127, 127, 127, 0.08));
+}
+
+.admin-login-journal-summary {
+  margin: 0 0 0.5rem;
+}
+
+.admin-login-journal-alert {
+  color: var(--danger, #c0392b);
+  font-weight: 600;
+}
+
+/* Журнал может быть длинным — прокручиваем его, а не страницу. */
+.admin-login-journal-table {
+  display: block;
+  max-height: 20rem;
+  overflow: auto;
+}
+
 .admin-users-login-list {
   list-style: none;
   margin: 0;

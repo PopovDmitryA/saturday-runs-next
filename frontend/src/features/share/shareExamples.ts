@@ -48,12 +48,8 @@ function shufflePick<T>(items: T[], count: number): T[] {
   return copy.slice(0, Math.min(count, copy.length));
 }
 
-function pickTextColor(background: ShareBackground): ShareTextColor {
-  const allowed = background.allowedTextColors;
-  if (!allowed || allowed.length === 0) {
-    return pickRandom(["white", "cream", "gold", "mint", "sky", "coral"]);
-  }
-  return pickRandom(allowed);
+function pickTextColor(): ShareTextColor {
+  return pickRandom(["white", "black", "cream", "gold", "mint", "sky", "coral"]);
 }
 
 function availablePeriods(lastRun: RunItem | null): SharePeriodId[] {
@@ -93,7 +89,7 @@ function buildSingleExample(
     id: `${preset.id}-${background.id}-${period}-${Math.random().toString(36).slice(2, 8)}`,
     preset,
     background,
-    textColor: pickTextColor(background),
+    textColor: pickTextColor(),
     period,
     displayName,
     summaryLine: shareSummaryLine(context, lastRun),

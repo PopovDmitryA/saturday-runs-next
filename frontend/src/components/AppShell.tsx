@@ -1,6 +1,6 @@
 import type { FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { getCurrentUser, logout, updateDisplayName, type User } from "../lib/api";
+import { logout, probeCurrentUser, updateDisplayName, type User } from "../lib/api";
 import { SITE_HOME_HREF } from "../lib/siteBrand";
 import { APP_NAV_ITEMS } from "../lib/siteNav";
 import { userLabel } from "../lib/userLabel";
@@ -21,13 +21,17 @@ export function AppShell({ title, children, activePath }: AppShellProps) {
   const [nameError, setNameError] = useState<string | null>(null);
 
   const loadUser = useCallback(async () => {
-    try {
-      const current = await getCurrentUser();
-      setUser(current);
-      setNameDraft(current.display_name ?? "");
-    } catch {
+    const probe = await probeCurrentUser();
+    if (probe.state === "authenticated") {
+      setUser(probe.user);
+      setNameDraft(probe.user.display_name ?? "");
+      return;
+    }
+    if (probe.state === "guest") {
       setUser(null);
     }
+    // state === "unknown": проверить сессию не удалось (429/5xx/таймаут).
+    // Прежнее состояние не трогаем — иначе живая сессия выглядит разлогиненной.
   }, []);
 
   useEffect(() => {

@@ -27,7 +27,7 @@ trap 'rm -f "$MAINT_CURRENT"' EXIT HUP INT TERM
 
 # Сервисы, которые пересоздаём. nginx собирать нельзя — он на готовом образе
 # (nginx:1.27-alpine), build-контекст есть только у python-сервисов.
-SERVICES="worker worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat vk-bot"
+SERVICES="worker worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat bot"
 
 # NB: `docker compose exec/run -T` всё равно цепляет контейнер к stdin, поэтому
 # каждый exec/run обязан читать из /dev/null — иначе он сожрёт остаток скрипта.
@@ -108,3 +108,16 @@ curl -sI 'https://run5k.run/d/de1hu8dabny80c/karta-turistov' 2>/dev/null | head 
 
 echo "--- prod git == deployed commit ---"
 git log --oneline -1
+
+# Уборка docker-мусора. СТРОГО после успешного health — пока прод не подтверждён
+# живым, ничего не удаляем (может понадобиться откат). Любая ошибка уборки не
+# должна ронять уже успешный деплой, отсюда `|| true`.
+#
+# Осознанно НЕ используем:
+#   -a (все неиспользуемые)  — снесёт node:22-alpine, которым собирается фронт,
+#                              и его пришлось бы качать заново каждый деплой;
+#   --volumes                — там живут данные (pm_pgdata с parkrun_world, redis).
+# Кэш сборки чистим только старше недели: свежий кратно ускоряет пересборку.
+echo "--- cleanup docker ---"
+docker image prune -f 2>/dev/null | tail -1 || true
+docker builder prune -f --filter "until=168h" 2>/dev/null | tail -1 || true

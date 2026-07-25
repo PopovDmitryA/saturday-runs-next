@@ -17,6 +17,9 @@ const FONT = "system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
 const FOOTER_RATIO = 0.15;
 const HEADER_RATIO = 0.2;
 const MAX_METRICS = 3;
+// Подобрано визуально: делает текст любого цвета из SHARE_TEXT_COLORS читаемым
+// на любом фоновом фото (стоковом или загруженном пользователем).
+const BACKGROUND_OVERLAY_OPACITY = 0.5;
 
 type TextPalette = {
   primary: string;
@@ -133,6 +136,19 @@ function drawPhotoBackground(
     ctx.fillStyle = "#334155";
     ctx.fillRect(0, 0, w, h);
   }
+}
+
+function drawBackgroundOverlay(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  treatment: ShareTextTreatment,
+) {
+  ctx.fillStyle =
+    treatment === "light"
+      ? `rgba(0, 0, 0, ${BACKGROUND_OVERLAY_OPACITY})`
+      : `rgba(255, 255, 255, ${BACKGROUND_OVERLAY_OPACITY})`;
+  ctx.fillRect(0, 0, w, h);
 }
 
 function drawEdgeGradients(
@@ -490,6 +506,7 @@ export function renderShareCard(
   const horizontal = format.id === "wide";
 
   drawPhotoBackground(ctx, w, h, backgroundImage);
+  drawBackgroundOverlay(ctx, w, h, palette.treatment);
   drawEdgeGradients(ctx, w, h, headerH, palette.treatment);
   drawHeader(ctx, w, 0, headerH, pad, displayName, palette, summaryLine, accentLabel);
   drawMetricZones(ctx, w, middleTop, middleH, metrics, horizontal, palette);

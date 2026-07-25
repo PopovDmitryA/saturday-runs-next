@@ -48,6 +48,30 @@ class AdminUserListResponse(BaseModel):
     query: str | None = None
 
 
+class AdminLoginEventItem(BaseModel):
+    ts: datetime
+    event_type: str
+    provider: str = ""
+    ip: str = ""
+    user_agent: str = ""
+    device_ref: str = ""
+    session_ref: str = ""
+
+
+class AdminLoginEventsResponse(BaseModel):
+    """Журнал входов одного пользователя + сводка «рвутся ли сессии сами».
+
+    unexpected_relogins — входы с устройства, с которого не выходили:
+    признак того, что авторизация слетела без участия пользователя.
+    """
+
+    items: list[AdminLoginEventItem]
+    logins: int
+    logouts: int
+    devices: int
+    unexpected_relogins: int
+
+
 class AdminUserPreviewUser(BaseModel):
     id: str
     telegram_id: int | None = None

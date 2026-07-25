@@ -1160,6 +1160,37 @@ class PageViewEvent(Base):
     duration_sec: Mapped[int | None] = mapped_column(Integer)
 
 
+class LoginEvent(Base):
+    """Журнал входов и выходов: по строке на каждый логин и на каждый разлогин.
+
+    Нужен, чтобы отличать «сессия слетела сама» от «зашёл с другого устройства»
+    и «вышел сам». Диагностика читается так: логин без предшествующего logout
+    с тем же device_ref — сессия оборвалась не по воле пользователя.
+
+    session_ref — префикс sha256 от session_id (сам id не храним, он равносилен
+    паролю); связывает login и logout одной сессии. device_ref — хэш от
+    user_agent + ip, грубый отпечаток устройства.
+    """
+
+    __tablename__ = "login_events"
+    __table_args__ = (
+        Index("ix_login_events_user_ts", "user_id", "ts"),
+        Index("ix_login_events_ts", "ts"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # login | logout
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    # yandex | vk | telegram | magic_link | merge | "" (для logout)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False, server_default="")
+    session_ref: Mapped[str] = mapped_column(String(32), nullable=False, server_default="")
+    ip: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
+    user_agent: Mapped[str] = mapped_column(String(256), nullable=False, server_default="")
+    device_ref: Mapped[str] = mapped_column(String(32), nullable=False, server_default="")
+
+
 class PageStatsDaily(Base):
     """Дневной агрегат просмотров по (день МСК, раздел, сущность).
 

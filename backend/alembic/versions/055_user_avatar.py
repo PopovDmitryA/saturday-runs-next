@@ -4,8 +4,8 @@
 вида "{user_id}-{token}.jpg". Токен случайный: при замене аватарки имя меняется,
 что ломает браузерный кэш старой картинки, а прежний файл удаляется с диска.
 
-Revision ID: 054_user_avatar
-Revises: 053_participant_gender
+Revision ID: 055_user_avatar
+Revises: 054_login_events
 Create Date: 2026-07-25
 """
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "054_user_avatar"
-down_revision = "053_participant_gender"
+revision = "055_user_avatar"
+down_revision = "054_login_events"
 branch_labels = None
 depends_on = None
 

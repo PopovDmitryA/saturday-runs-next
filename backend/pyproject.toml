@@ -13,7 +13,7 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "redis>=5.2.0",
     "aiogram>=3.15.0",
-    "httpx>=0.28.0",
+    "httpx[socks]>=0.28.0",
     "beautifulsoup4>=4.12.0",
     "cloudscraper>=1.2.71",
     "celery[redis]>=5.4.0",
@@ -34,7 +34,6 @@ dev = [
 
 [project.scripts]
 saturday-runs-bot = "bot_app.main:run"
-saturday-runs-vk-bot = "vk_bot.main:run"
 
 [build-system]
 requires = ["setuptools>=61"]
@@ -42,7 +41,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*", "bot_app*", "vk_bot*"]
+include = ["app*", "bot_app*"]
 
 [tool.ruff]
 target-version = "py312"

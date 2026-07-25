@@ -5,8 +5,8 @@
 колонка вместо анализа истории статусов: истории у нас нет, а знать нужно
 только последний перевод в done.
 
-Revision ID: 055_backlog_done_at
-Revises: 054_user_avatar
+Revision ID: 056_backlog_done_at
+Revises: 055_user_avatar
 Create Date: 2026-07-26
 """
 
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "055_backlog_done_at"
-down_revision = "054_user_avatar"
+revision = "056_backlog_done_at"
+down_revision = "055_user_avatar"
 branch_labels = None
 depends_on = None
 

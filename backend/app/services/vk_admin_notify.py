@@ -117,15 +117,3 @@ def format_daily_summary(
     if len(text) > VK_MESSAGE_LIMIT:
         text = text[: VK_MESSAGE_LIMIT - 20].rstrip() + "\n… (сообщение обрезано)"
     return text
-
-
-def notify_daily_summary(
-    day_label: str,
-    platforms: list[dict[str, Any]],
-    *,
-    problems: list[dict[str, Any]] | None = None,
-    admin_url: str | None = None,
-) -> None:
-    send_vk_admin_message(
-        format_daily_summary(day_label, platforms, problems=problems, admin_url=admin_url)
-    )

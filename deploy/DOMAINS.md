@@ -51,7 +51,7 @@ sudo systemctl daemon-reload && sudo systemctl restart grafana-server
 
 # .env (если ещё app.run5k.run)
 sed -i 's|https://app.run5k.run|https://run5k.run|g' .env
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate api vk-bot
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate api bot
 ```
 
 ## 3. OAuth (ручная настройка в кабинетах)

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { DetailModal } from "../../components/DetailModal";
 import { DonateBlock } from "../../components/DonateBlock";
-import { getCurrentUser, type User } from "../../lib/api";
+import { probeCurrentUser, type User } from "../../lib/api";
 import { formatRelativeTime } from "../../lib/format";
 import {
   BACKLOG_CATEGORIES,
@@ -146,9 +146,15 @@ function BacklogContent() {
   }, [load]);
 
   useEffect(() => {
-    getCurrentUser()
-      .then(setViewer)
-      .catch(() => setViewer(null));
+    // Только явный 401 означает гостя: иначе транзиентная ошибка отняла бы
+    // у залогиненного голосование и комментарии.
+    void probeCurrentUser().then((probe) => {
+      if (probe.state === "authenticated") {
+        setViewer(probe.user);
+      } else if (probe.state === "guest") {
+        setViewer(null);
+      }
+    });
   }, []);
 
   const loadComments = useCallback(async (cardId: string) => {

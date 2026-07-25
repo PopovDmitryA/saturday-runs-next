@@ -1,8 +1,7 @@
 """Низкоуровневый клиент VK API.
 
-Общий для процесса бота (`vk_bot/`) и серверных нотификаций
-(`app/services/vk_admin_notify.py`), чтобы не дублировать вызов
-`messages.send`, версию API и логику обрезки сообщений.
+Fallback-канал для admin-уведомлений (`app/services/admin_telegram_notify.py` →
+`vk_admin_notify.py`) — используется только если Telegram-прокси недоступна.
 """
 
 from __future__ import annotations

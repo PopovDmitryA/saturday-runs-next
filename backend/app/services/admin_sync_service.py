@@ -2,7 +2,7 @@
 
 Живёт на стороне backend (а не в процессе бота), чтобы бот не тянул граф
 Celery-задач. Бот обращается сюда через internal API
-(`/api/internal/vk-bot/sync-pipelines`, `/sync-enqueue`).
+(`/api/internal/bot/admin/sync-pipelines`, `/sync-enqueue`).
 """
 
 from __future__ import annotations

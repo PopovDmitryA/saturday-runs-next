@@ -540,6 +540,43 @@ export function getCurrentUser() {
   return request;
 }
 
+/** Результат проверки сессии: «гость» и «не смогли проверить» — разные вещи. */
+export type SessionProbe =
+  | { state: "authenticated"; user: User }
+  | { state: "guest" }
+  | { state: "unknown" };
+
+/** Сервер прямо сказал, что сессии нет. Всё остальное — не приговор. */
+export function isSessionMissingError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
+const SESSION_RETRY_DELAY_MS = 1500;
+
+/**
+ * Проверить сессию, не путая «пользователь не залогинен» с «сервер не ответил».
+ *
+ * Раньше любая ошибка /auth/me трактовалась как разлогин, и живая сессия
+ * выглядела разлогиненной при 429 (общий лимит на IP — а мобильные операторы
+ * NAT-ят много людей за один адрес), 5xx или таймауте. Транзиентную ошибку
+ * пробуем повторить один раз, и только явный 401 считаем гостем.
+ */
+export async function probeCurrentUser(): Promise<SessionProbe> {
+  try {
+    return { state: "authenticated", user: await getCurrentUser() };
+  } catch (error) {
+    if (isSessionMissingError(error)) {
+      return { state: "guest" };
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, SESSION_RETRY_DELAY_MS));
+    try {
+      return { state: "authenticated", user: await getCurrentUser() };
+    } catch (retryError) {
+      return isSessionMissingError(retryError) ? { state: "guest" } : { state: "unknown" };
+    }
+  }
+}
+
 export function updateDisplayName(displayName: string) {
   return apiFetch<User>("/auth/me", {
     method: "PATCH",
@@ -2016,6 +2053,30 @@ export type AdminUserPreviewDashboard = {
   computed_at: string | null;
   platform_links: AdminPlatformLinkBrief[];
 };
+
+export type AdminLoginEventItem = {
+  ts: string;
+  event_type: string;
+  provider: string;
+  ip: string;
+  user_agent: string;
+  device_ref: string;
+  session_ref: string;
+};
+
+export type AdminLoginEventsResponse = {
+  items: AdminLoginEventItem[];
+  logins: number;
+  logouts: number;
+  devices: number;
+  unexpected_relogins: number;
+};
+
+export function getAdminUserLoginEvents(userId: string, limit = 100) {
+  return apiFetch<AdminLoginEventsResponse>(
+    `/admin/users/${userId}/login-events?limit=${limit}`,
+  );
+}
 
 export type AdminUsersSort = "created" | "runs" | "volunteering" | "profile";
 export type AdminUsersSortDirection = "asc" | "desc";

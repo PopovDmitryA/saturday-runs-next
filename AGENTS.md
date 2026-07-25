@@ -44,8 +44,7 @@ backend/
   app/workers/tasks/      # five_verst_sync, s95_sync, parkrun_sync, sync_task_reporting
   app/s95/fetch/          # Playwright + Redis lock + priority yield
   app/services/           # dashboard, location_catalog, sync_job, personal_record
-  vk_bot/                 # VK admin bot (/stats, /sync)
-  bot_app/                # Telegram auth bot
+  bot_app/                # Telegram: вход + admin-бот (/stats, /status, /sweep, /sync)
   scripts/                # CLI, backfill, check_failed_sync_jobs.py
   tests/
   alembic/versions/       # миграции (027 — profile_private)
@@ -93,8 +92,8 @@ GitHub: `PopovDmitryA/saturday-runs-next`, branch `main`.
 | `worker-five-verst` | `-Q five_verst_user,five_verst --concurrency=1` |
 | `worker-s95` | `-Q s95_user,s95 --concurrency=1` |
 | `worker-parkrun` | `-Q parkrun` |
-| `vk-bot` | VK long poll |
-| ~~`worker`~~ | **Отключён на prod** |
+| `bot` | Telegram long poll (вход + admin: /stats /status /sweep /sync) |
+| `worker` | default очередь: прогрев главной, агрегаты популярности, admin-дайджест |
 
 ### Деплой
 
@@ -103,8 +102,8 @@ GitHub: `PopovDmitryA/saturday-runs-next`, branch `main`.
 bash scripts/deploy_prod.sh
 ```
 
-Rsync: `backend/app/`, `backend/vk_bot/`, `deploy/`, compose files, `frontend/src/`.  
-На сервере: `npm ci && npm run build` в Docker node, rebuild workers + api + nginx.
+Git-based (не rsync, см. scripts/remote_deploy.sh): прод переводится на вершину `origin/main` одним SSH,
+затем `npm ci && npm run build` в Docker node, alembic upgrade, rebuild workers + api + bot + nginx.
 
 **Если фронт не обновился** — remote build мог не выполниться; см. PROJECT_HANDOFF.local.md §1.
 
@@ -275,13 +274,20 @@ Import: `make location-catalog-import-docker`.
 
 ---
 
-## 10. VK admin
+## 10. Admin-бот (Telegram, fallback ВК)
 
-Env: `VK_BOT_GROUP_TOKEN`, `VK_BOT_GROUP_ID`, `VK_ADMIN_USER_ID`, `VK_BOT_INTERNAL_SECRET`.
+Env: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_CHAT_ID`, `ADMIN_TELEGRAM_ID`,
+`ADMIN_TELEGRAM_PROXY_URL` (сервер РФ, прямые запросы к Telegram не всегда долетают —
+см. `deploy/tg-proxy/`, `app/services/admin_telegram_notify.py`).
+Fallback на ВК (`VK_BOT_GROUP_TOKEN`, `VK_ADMIN_USER_ID`) — только когда прокси легла;
+пока всё работает, в ВК ничего не приходит.
 
-Scheduled sync → VK через `run_reported_sync()` + dedup `scheduled_sync_guard.py`.
+Scheduled sync → лог в `scheduled_run_logs` через `run_reported_sync()` + dedup
+`scheduled_sync_guard.py`; суточная сводка (`admin_digest.daily_sync_summary`) уходит
+в Telegram.
 
-Команды: `/stats`, `/status`, `/sync registry|latest|…`, `/sync s95-latest|…`.
+Команды (bot_app, admin-only): `/stats`, `/status`, `/sweep`, `/sync registry|latest|…`,
+`/sync s95-latest|…`.
 
 ---
 

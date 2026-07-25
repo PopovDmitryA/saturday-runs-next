@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ApiError, getCurrentUser, type User } from "./api";
+import { probeCurrentUser, type User } from "./api";
 
 /**
  * Текущий пользователь БЕЗ гейта — для публичных страниц (локации, рейтинги),
@@ -55,27 +55,26 @@ export function useOptionalUser(options?: { skipCache?: boolean }): User | null 
 
   useEffect(() => {
     let cancelled = false;
-    getCurrentUser()
-      .then((current) => {
-        writeCachedUser(current);
-        if (!cancelled) setUser(current);
-      })
-      .catch((err: unknown) => {
-        // «Аноним» кэшируем ТОЛЬКО на настоящий 401. Обрывы сети и абортнутые
-        // запросы (клик по ссылке, пока /auth/me ещё летит — обычное дело в
-        // MPA) НЕ должны затирать кэш: именно это заставляло следующую
-        // страницу мигать кнопкой «Войти» перед залогиненным.
-        const isRealAnon = err instanceof ApiError && err.status === 401;
-        if (isRealAnon) {
-          writeCachedUser(null);
-          if (!cancelled) setUser(null);
-        } else if (!cancelled) {
-          // Ошибка сети: остаёмся на кэшированном состоянии; если кэша не
-          // было — считаем анонимом (но кэш не пишем, следующая страница
-          // попробует снова).
-          setUser((current) => (current === undefined ? null : current));
-        }
-      });
+    // probeCurrentUser (из main) уже умеет отличать «точно гость» от «спросить
+    // не удалось»: 429/5xx/таймаут он повторяет и в крайнем случае отдаёт
+    // unknown. Гостя кэшируем только при явном ответе сервера — иначе
+    // следующая страница мигала бы кнопкой «Войти» перед залогиненным.
+    void probeCurrentUser().then((probe) => {
+      if (probe.state === "authenticated") {
+        writeCachedUser(probe.user);
+        if (!cancelled) setUser(probe.user);
+        return;
+      }
+      if (probe.state === "guest") {
+        writeCachedUser(null);
+        if (!cancelled) setUser(null);
+        return;
+      }
+      // unknown — остаёмся на кэше; без кэша считаем гостем, но не запоминаем.
+      if (!cancelled) {
+        setUser((current) => (current === undefined ? null : current));
+      }
+    });
     return () => {
       cancelled = true;
     };
