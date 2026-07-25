@@ -21,6 +21,9 @@ export type User = {
   consent_accepted: boolean;
   is_admin: boolean;
   avatar_url: string | null;
+  // Публичный адрес участника: /users/{public_slug ?? serial_id}.
+  serial_id: number | null;
+  public_slug: string | null;
   auth_identities: AuthIdentity[];
 };
 

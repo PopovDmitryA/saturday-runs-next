@@ -748,8 +748,11 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   pointer-events: auto;
 }
 
+/* pointer-events НЕ отключаем: иначе браузер не покажет подсказку (title),
+   объясняющую, почему пункт недоступен. Переход не случится сам — у таких
+   пунктов не задан href. */
 a.portal-cab-nav-item-disabled {
-  pointer-events: none;
+  cursor: not-allowed;
 }
 
 /* Карточка-CTA анонима на месте карточки пользователя. */

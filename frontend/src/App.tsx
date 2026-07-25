@@ -9,7 +9,7 @@ import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
 import { AdminEventReportPage } from "./features/admin/AdminEventReportPage";
 import { AdminLocationContactsPage } from "./features/admin/AdminLocationContactsPage";
 import { AdminRecordsDigestPage } from "./features/admin/AdminRecordsDigestPage";
-import { PublicProfilePage } from "./features/public_profile/PublicProfilePage";
+import { ProfileRoute } from "./features/profile/ProfileRoute";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
 import { AchievementsPage } from "./features/achievements/AchievementsPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
@@ -24,6 +24,9 @@ import { AdminBlogPage } from "./features/admin/AdminBlogPage";
 import { AdminBacklogPage } from "./features/admin/AdminBacklogPage";
 import { BacklogPage } from "./features/backlog/BacklogPage";
 import {
+  cabinetTabHref,
+  profileBaseHref,
+  type CabinetTabSegmentKey,
   PORTAL_ABOUT_HREF,
   PORTAL_BLOG_HREF,
   PORTAL_CABINET_ACHIEVEMENTS_HREF,
@@ -38,17 +41,10 @@ import {
   PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
 } from "./lib/portalRoutes";
-import { PortalCabinetDashboardPage } from "./features/portal/cabinet/PortalCabinetDashboardPage";
 import { PortalCabinetPreviewPage } from "./features/portal/cabinet/PortalCabinetPreviewPage";
 import {
-  PortalCabinetAchievementsPage,
-  PortalCabinetHistoryPage,
-  PortalCabinetMapPage,
-  PortalCabinetMeetingsPage,
-  PortalCabinetRunsPage,
   PortalCabinetSettingsPage,
   PortalCabinetSharePage,
-  PortalCabinetVolunteeringPage,
 } from "./features/portal/cabinet/PortalCabinetPages";
 import { DemoMapsPage, MapsPage } from "./features/maps/MapsPage";
 import { LocationEventsPage } from "./features/locations/LocationEventsPage";
@@ -68,6 +64,7 @@ import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
 import { useAppPath } from "./hooks/useAppPath";
 import { getCurrentUser } from "./lib/api";
+import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
 import { isLegacyGrafanaPath, legacyGrafanaHref } from "./lib/siteBrand";
 import { buildVisitorKey } from "./lib/siteVisitor";
@@ -105,6 +102,33 @@ function QueueRedirect() {
   return null;
 }
 
+/**
+ * Старые служебные адреса кабинета (/new/dashboard и др.) переводят на
+ * публичный адрес участника — /users/{хендл}[/вкладка]. Аноним уходит на вход.
+ */
+function CabinetLegacyRedirect({ tab }: { tab: CabinetTabSegmentKey }) {
+  const user = useOptionalUser();
+  useEffect(() => {
+    if (user === undefined) {
+      return;
+    }
+    if (user === null) {
+      window.location.replace(PORTAL_LOGIN_HREF);
+      return;
+    }
+    const target = profileBaseHref(user) ? cabinetTabHref(user, tab) : null;
+    // Без хендла (профиль ещё не получил номер) оставляем старый экран.
+    if (target) {
+      window.location.replace(target);
+    }
+  }, [user, tab]);
+  return (
+    <main className="app">
+      <p className="muted">Открываем кабинет…</p>
+    </main>
+  );
+}
+
 function AdminRedirect() {
   useEffect(() => {
     window.location.replace("/admin/users");
@@ -122,13 +146,13 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   // старым кабинетом на канонических адресах. Превью на демо-данных (без
   // логина) — для выбора вариантов дизайна; удалить вместе с /new/* при релизе.
   "/new/cabinet-preview": () => <PortalCabinetPreviewPage />,
-  [PORTAL_CABINET_HREF]: () => <PortalCabinetDashboardPage />,
-  [PORTAL_CABINET_RUNS_HREF]: () => <PortalCabinetRunsPage />,
-  [PORTAL_CABINET_VOLUNTEERING_HREF]: () => <PortalCabinetVolunteeringPage />,
-  [PORTAL_CABINET_ACHIEVEMENTS_HREF]: () => <PortalCabinetAchievementsPage />,
-  [PORTAL_CABINET_MEETINGS_HREF]: () => <PortalCabinetMeetingsPage />,
-  [PORTAL_CABINET_MAP_HREF]: () => <PortalCabinetMapPage />,
-  [PORTAL_CABINET_HISTORY_HREF]: () => <PortalCabinetHistoryPage />,
+  [PORTAL_CABINET_HREF]: () => <CabinetLegacyRedirect tab="dashboard" />,
+  [PORTAL_CABINET_RUNS_HREF]: () => <CabinetLegacyRedirect tab="runs" />,
+  [PORTAL_CABINET_VOLUNTEERING_HREF]: () => <CabinetLegacyRedirect tab="volunteering" />,
+  [PORTAL_CABINET_ACHIEVEMENTS_HREF]: () => <CabinetLegacyRedirect tab="achievements" />,
+  [PORTAL_CABINET_MEETINGS_HREF]: () => <CabinetLegacyRedirect tab="meetings" />,
+  [PORTAL_CABINET_MAP_HREF]: () => <CabinetLegacyRedirect tab="map" />,
+  [PORTAL_CABINET_HISTORY_HREF]: () => <CabinetLegacyRedirect tab="history" />,
   [PORTAL_CABINET_SHARE_HREF]: () => <PortalCabinetSharePage />,
   [PORTAL_CABINET_SETTINGS_HREF]: () => <PortalCabinetSettingsPage />,
   "/oauth/yandex/callback": () => <OAuthCallbackPage provider="yandex" />,
@@ -218,9 +242,16 @@ function renderRoute(path: string): ReactElement {
   if (sweepHqMatch) {
     return <SweepHqPage token={decodeURIComponent(sweepHqMatch[1])} />;
   }
-  const publicProfileMatch = path.match(/^\/users\/([^/]+)$/);
-  if (publicProfileMatch) {
-    return <PublicProfilePage handle={decodeURIComponent(publicProfileMatch[1])} />;
+  // Публичный адрес участника = адрес его кабинета: свой хендл открывает
+  // кабинет, чужой — гостевой профиль (см. ProfileRoute).
+  const profileMatch = path.match(/^\/users\/([^/]+)(?:\/([^/]+))?$/);
+  if (profileMatch) {
+    return (
+      <ProfileRoute
+        handle={decodeURIComponent(profileMatch[1])}
+        segment={profileMatch[2] ? decodeURIComponent(profileMatch[2]) : undefined}
+      />
+    );
   }
   const locationEventsMatch = path.match(/^\/locations\/([^/]+)\/events$/);
   if (locationEventsMatch) {

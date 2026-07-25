@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import {
+  cabinetTabHref,
   PORTAL_ABOUT_HREF,
-  PORTAL_CABINET_HREF,
   PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
 } from "../../lib/portalRoutes";
@@ -43,7 +43,11 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
       {/* «Личный кабинет» — всегда второй пункт, сразу после «Главной».
           Аноним уходит на вход, залогиненный — в новый кабинет (тёмный запуск
           /new/dashboard). Синяя кнопка «Войти» остаётся основным CTA. */}
-      {navLink("/dashboard", authed ? PORTAL_CABINET_HREF : PORTAL_LOGIN_HREF, "Личный кабинет")}
+      {navLink(
+        "/dashboard",
+        authed ? cabinetTabHref(user, "dashboard") : PORTAL_LOGIN_HREF,
+        "Личный кабинет",
+      )}
       {/* Локации и Рейтинги открыты без логина (25.07.2026) — аноним идёт
           прямо в разделы, личные блоки внутри зовут его войти сами. */}
       {navLink("/locations", "/locations", "Локации")}
@@ -100,7 +104,11 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
           {!hideLogin &&
             authResolved &&
             (user ? (
-              <a className="portal-header-user" href={PORTAL_CABINET_HREF} title="Личный кабинет">
+              <a
+                className="portal-header-user"
+                href={cabinetTabHref(user, "dashboard")}
+                title="Личный кабинет"
+              >
                 {user.avatar_url && (
                   <img className="portal-header-user-avatar" src={user.avatar_url} alt="" />
                 )}

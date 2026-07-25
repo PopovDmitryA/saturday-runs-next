@@ -14,6 +14,8 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { logout, updateDisplayName, type User } from "../../lib/api";
 import {
+  cabinetTabHref,
+  type CabinetTabSegmentKey,
   PORTAL_ABOUT_HREF,
   PORTAL_CABINET_ACHIEVEMENTS_HREF,
   PORTAL_CABINET_HISTORY_HREF,
@@ -47,10 +49,23 @@ export type SiteSidebarActive = CabinetTabKey | "locations" | "ratings" | "backl
 
 type CabinetNavItem = {
   key: CabinetTabKey;
+  /** Служебный адрес (fallback, пока хендл участника неизвестен). */
   href: string;
   label: string;
   icon: ReactNode;
 };
+
+/**
+ * Адрес вкладки для конкретного пользователя: разделы кабинета живут на его
+ * публичном адресе /users/{хендл}/…, а служебные (Поделиться, Настройки)
+ * остаются на собственных путях — публиковать их незачем.
+ */
+function navHref(user: User | null | undefined, item: CabinetNavItem): string {
+  if (item.key === "share" || item.key === "settings") {
+    return item.href;
+  }
+  return cabinetTabHref(user ?? null, item.key as CabinetTabSegmentKey);
+}
 
 // Иконки — инлайн-SVG в stroke-стиле (как в шапке портала), 20×20.
 export function icon(paths: ReactNode) {
@@ -244,7 +259,7 @@ function CabinetUserCard({ initialUser, collapsed = false }: { initialUser: User
         <div className="portal-cab-user-info">
           {/* Имя — ссылка в обзор кабинета (просьба Дмитрия 26.07.2026):
               раньше по нему кликали и ничего не происходило. */}
-          <a className="portal-cab-user-name" href={PORTAL_CABINET_HREF} title={label}>
+          <a className="portal-cab-user-name" href={cabinetTabHref(user, "dashboard")} title={label}>
             {label}
           </a>
           <button
@@ -413,7 +428,8 @@ export function SiteSidebar({
     window.location.href = PORTAL_LOGIN_HREF;
   };
 
-  const tabHref = (item: CabinetNavItem) => (hrefForTab ? hrefForTab(item.key, item.href) : item.href);
+  const tabHref = (item: CabinetNavItem) =>
+    hrefForTab ? hrefForTab(item.key, item.href) : navHref(user, item);
   const pathname = typeof window !== "undefined" ? window.location.pathname : "";
 
   return (
@@ -441,12 +457,24 @@ export function SiteSidebar({
             раскроется сама на странице ЛК), клик по стрелке — только
             раскрыть/скрыть. Анониму видна, но задизейблена. */}
         <a
-          href={authed ? (hrefForTab ? hrefForTab("dashboard", PORTAL_CABINET_HREF) : PORTAL_CABINET_HREF) : undefined}
+          href={
+            authed
+              ? hrefForTab
+                ? hrefForTab("dashboard", PORTAL_CABINET_HREF)
+                : cabinetTabHref(user, "dashboard")
+              : undefined
+          }
           className={`portal-cab-nav-item portal-cab-group-head${
             isCabinetTab(active) ? " portal-cab-group-head-current" : ""
           }${anon ? " portal-cab-nav-item-disabled" : ""}`}
           aria-disabled={anon || undefined}
-          title={collapsed ? "Личный кабинет" : anon ? "Доступно после входа" : undefined}
+          title={
+            anon
+              ? "Войдите на сайт, чтобы открыть личный кабинет: ваши пробежки, волонтёрства, достижения и карта локаций"
+              : collapsed
+                ? "Личный кабинет"
+                : undefined
+          }
         >
           <span className="portal-cab-nav-icon">{CABINET_ICON}</span>
           <span className="portal-cab-nav-label">Личный кабинет</span>
@@ -569,7 +597,7 @@ export function SiteSidebar({
                   item.adminOnly ? " portal-cab-nav-item-admin" : ""
                 }${disabled ? " portal-cab-nav-item-disabled" : ""}${current ? " active" : ""}`}
                 aria-disabled={disabled || undefined}
-                title={disabled ? "Доступно после входа" : undefined}
+                title={disabled ? "Доступно после входа на сайт" : undefined}
               >
                 <span className="portal-cab-nav-label">{item.label}</span>
               </a>

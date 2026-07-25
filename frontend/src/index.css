@@ -10440,11 +10440,19 @@ tr.run-crosslinked td {
    колонки рвалась в узкой карточке платформы. */
 .profile-preview-event {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  /* max-content у точки и даты: колонки не растягиваются, дата стоит вплотную
+     к маркеру, а всё свободное место достаётся названию локации. */
+  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
   align-items: baseline;
-  gap: 8px;
+  column-gap: 8px;
+  row-gap: 0;
   padding: 6px 0;
   font-size: 12.5px;
+}
+
+/* Между точкой и датой — минимальный зазор, дальше обычный. */
+.profile-preview-event-dot {
+  margin-right: -3px;
 }
 
 .profile-preview-event + .profile-preview-event {
