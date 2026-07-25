@@ -4,6 +4,7 @@ from app.api.routes import (
     achievements,
     admin,
     auth,
+    avatars,
     backlog,
     blog,
     dashboard,
@@ -26,6 +27,7 @@ from app.api.routes import (
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
+api_router.include_router(avatars.router)
 api_router.include_router(stats.router)
 api_router.include_router(demo.router)
 api_router.include_router(admin.router)

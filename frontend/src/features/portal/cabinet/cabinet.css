@@ -246,6 +246,29 @@
   color: var(--text-muted);
 }
 
+/* «Админка» — янтарный ТЕКСТ с точкой-маркером, без заливки: заливка выглядела
+   как «активная вкладка» (замечание Дмитрия 25.07.2026). Выделяется цветом
+   среди серых пунктов, но не спорит с подсветкой текущего раздела. */
+.portal-cab-nav-item-admin {
+  color: var(--tint-amber-text);
+}
+
+.portal-cab-nav-item-admin::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-amber-text, var(--tint-amber-text));
+  margin-right: 7px;
+  vertical-align: 2px;
+}
+
+.portal-cab-nav-item-admin:hover {
+  color: var(--tint-amber-text);
+  background: var(--tint-amber-bg);
+}
+
 /* ---------- заголовок страницы ---------- */
 
 .portal-cab-pagehead {
@@ -608,6 +631,21 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   margin-top: 18px;
 }
 
+/* Вертикальный ритм дашборда: в старом дизайне .shell-main был grid со
+   сквозным gap, из-за его отсутствия блоки без своего margin-bottom
+   (например «Цели на год») слипались с соседями. Собственные отступы детей
+   гасим, чтобы ритм был равномерным, а не gap+margin вразнобой. */
+.portal-cab-stack {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.portal-cab-stack > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
 /* Чипы-фильтры систем — как переключатели на портальной главной */
 .portal-cab-main .map-mode-tab {
   border-radius: 9px;
@@ -635,4 +673,11 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
+}
+
+/* Аватарка-картинка вместо инициалов (когда пользователь её загрузил). */
+.portal-cab-user-avatar-img {
+  object-fit: cover;
+  background: none;
+  padding: 0;
 }

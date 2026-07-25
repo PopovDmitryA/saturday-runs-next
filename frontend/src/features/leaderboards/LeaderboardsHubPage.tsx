@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { PortalSectionShell, SectionSidebarNav } from "../portal/PortalSectionShell";
+import { RATINGS_NAV } from "./ratingsNav";
 import {
   getLeaderboard,
   getMyLeaderboardRow,
@@ -8,6 +9,7 @@ import {
   type MyLeaderboardRow,
 } from "./leaderboardsApi";
 import { unitLabel } from "./pluralize";
+import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import "./leaderboards.css";
 
 const HUB_TOP_N = 3;
@@ -177,11 +179,19 @@ function SoonRatingCard({ card }: { card: SoonCard }) {
 
 export function LeaderboardsHubPage() {
   return (
-    <PortalSectionShell>
+    <PortalSectionShell sidebar={<SectionSidebarNav title="Рейтинги" items={RATINGS_NAV} />}>
       <div className="lb-page lb-hub">
         <header className="lb-header">
           <h1>Рейтинги</h1>
+          <p className="lb-description">
+            Сквозные лидерборды по всем беговым системам сразу. Здесь каждый найдёт рейтинг по
+            душе: кто-то берёт числом стартов, кто-то скоростью, кто-то волонтёрит каждую
+            субботу, а кто-то коллекционирует новые парки. Найдите себя — и посмотрите, кто
+            впереди.
+          </p>
         </header>
+
+        <RatingsLoginBanner />
 
         {SECTIONS.map((section) => (
           <section key={section.title} className="lb-hub-section">

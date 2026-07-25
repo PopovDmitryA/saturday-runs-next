@@ -40,6 +40,7 @@ const PREVIEW_USER: User = {
   display_name_customized: true,
   consent_accepted: true,
   is_admin: false,
+  avatar_url: null,
   auth_identities: [],
 };
 
@@ -74,7 +75,7 @@ function PreviewDashboard() {
   const stats = data.stats;
 
   return (
-    <>
+    <div className="portal-cab-stack">
       <DashboardHero
         data={data}
         userName="Демо-участник"
@@ -90,7 +91,7 @@ function PreviewDashboard() {
         totalRuns={stats.total_runs}
         totalVolunteering={stats.total_volunteering}
       />
-    </>
+    </div>
   );
 }
 
@@ -105,6 +106,7 @@ function previewTab(): CabinetTabKey {
     "meetings",
     "history",
     "map",
+    "share",
   ];
   return known.includes(tab as CabinetTabKey) ? (tab as CabinetTabKey) : "dashboard";
 }
@@ -139,6 +141,17 @@ export function PortalCabinetPreviewPage() {
       break;
     case "meetings":
       content = <CoRunnersContent load={demoGetCoRunners} loadMeetings={demoGetCoRunnerMeetings} />;
+      break;
+    case "share":
+      title = "Поделиться";
+      content = (
+        <div className="card">
+          <p className="muted">
+            У раздела нет демо-данных — карточки собираются из вашей личной статистики, вёрстку
+            видно только под своей учётной записью.
+          </p>
+        </div>
+      );
       break;
     case "history":
       content = (

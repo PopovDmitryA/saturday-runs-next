@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "../admin/AdminShell";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { RequireAdmin } from "../../components/RequireAdmin";
@@ -243,7 +243,7 @@ function QueueContent() {
   }, [data, load]);
 
   return (
-    <AppShell title="Очередь задач" activePath="/admin">
+    <AdminShell title="Очередь задач">
       <AdminSubnav activePath="/admin/queue" />
 
       <p className="muted queue-intro">
@@ -443,7 +443,7 @@ function QueueContent() {
           )}
         </>
       )}
-    </AppShell>
+    </AdminShell>
   );
 }
 

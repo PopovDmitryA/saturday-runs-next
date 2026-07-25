@@ -46,14 +46,14 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
   const navLinks = (
     <>
       {navLink(PORTAL_HOME_HREF, PORTAL_HOME_HREF, "Главная")}
-      {/* Локации и Рейтинги под RequireAuth — анонима сразу ведём на вход,
-          чтобы он не упирался в гейт внутри раздела. */}
-      {navLink("/locations", authed ? "/locations" : PORTAL_LOGIN_HREF, "Локации")}
-      {navLink("/ratings", authed ? "/ratings" : PORTAL_LOGIN_HREF, "Рейтинги")}
-      {/* Явный пункт кабинета: аноним уходит на вход, залогиненный — в новый
-          кабинет (тёмный запуск /new/dashboard). Синяя кнопка «Войти»
-          остаётся как основной call-to-action. */}
+      {/* «Личный кабинет» — всегда второй пункт, сразу после «Главной».
+          Аноним уходит на вход, залогиненный — в новый кабинет (тёмный запуск
+          /new/dashboard). Синяя кнопка «Войти» остаётся основным CTA. */}
       {navLink("/dashboard", authed ? PORTAL_CABINET_HREF : PORTAL_LOGIN_HREF, "Личный кабинет")}
+      {/* Локации и Рейтинги открыты без логина (25.07.2026) — аноним идёт
+          прямо в разделы, личные блоки внутри зовут его войти сами. */}
+      {navLink("/locations", "/locations", "Локации")}
+      {navLink("/ratings", "/ratings", "Рейтинги")}
       {/* «О проекте» — последним пунктом; «Блог» из шапки убран по просьбе. */}
       {navLink(PORTAL_ABOUT_HREF, PORTAL_ABOUT_HREF, "О проекте")}
     </>
@@ -107,6 +107,9 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
             authResolved &&
             (user ? (
               <a className="portal-header-user" href={PORTAL_CABINET_HREF} title="Личный кабинет">
+                {user.avatar_url && (
+                  <img className="portal-header-user-avatar" src={user.avatar_url} alt="" />
+                )}
                 {userLabel(user)}
               </a>
             ) : (

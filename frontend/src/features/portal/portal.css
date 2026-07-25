@@ -2561,3 +2561,18 @@
     display: none;
   }
 }
+
+/* Мини-аватарка в чипе пользователя в шапке. */
+.portal-header-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.portal-header-user-avatar {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  object-fit: cover;
+}

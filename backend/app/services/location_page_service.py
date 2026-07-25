@@ -511,6 +511,11 @@ def _last_event_stats(
             func.avg(case((time_ok, RunResult.finish_time_sec))).label("avg_time"),
             func.min(case((time_ok & (gender_expr == "male"), RunResult.finish_time_sec))).label("best_male"),
             func.min(case((time_ok & (gender_expr == "female"), RunResult.finish_time_sec))).label("best_female"),
+            # Те же метрики, что в журнале протоколов: дебютанты платформы,
+            # первые визиты на эту локацию, личные рекорды.
+            func.sum(case((RunResult.is_first_run.is_(True), 1), else_=0)).label("debutants"),
+            func.sum(case((RunResult.is_first_run_at_location.is_(True), 1), else_=0)).label("first_here"),
+            func.sum(case((RunResult.is_pr.is_(True), 1), else_=0)).label("prs"),
         )
         .select_from(RunResult)
         .join(Event, RunResult.event_id == Event.id)
@@ -522,6 +527,9 @@ def _last_event_stats(
     last_avg_time = int(row.avg_time) if row is not None and row.avg_time is not None else None
     last_best_male = int(row.best_male) if row is not None and row.best_male is not None else None
     last_best_female = int(row.best_female) if row is not None and row.best_female is not None else None
+    last_debutants = int(row.debutants or 0) if row is not None else None
+    last_first_here = int(row.first_here or 0) if row is not None else None
+    last_prs = int(row.prs or 0) if row is not None else None
 
     last_volunteers = (
         db.query(func.count(func.distinct(VolunteerResult.participant_id)))
@@ -542,6 +550,9 @@ def _last_event_stats(
         "best_female_time_display": (
             format_finish_time_display(last_best_female) if last_best_female is not None else None
         ),
+        "debutants": last_debutants,
+        "first_at_location": last_first_here,
+        "prs": last_prs,
     }
 
     before_event_ids = [event_id for event_id in event_ids if event_id != last_event_id]
@@ -567,8 +578,89 @@ def _last_event_stats(
     return last_event_payload, avg_delta, median_delta
 
 
+_AGE_GROUP_SORT_RE = re.compile(r"^(\d+)")
+
+
+def _age_group_sort_key(age_group: str) -> int:
+    match = _AGE_GROUP_SORT_RE.match(age_group)
+    return int(match.group(1)) if match else 999
+
+
+def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, object]]:
+    """Рекорды локации по возрастным группам: лучшее время в каждой группе М/Ж.
+
+    parkrun исключён сознательно: их age-grade категории (SM/VM/JW…) считаются
+    по другим правилам и смешивать их с 5в/S95/RunPark в одном рейтинге нельзя.
+    Категорию нормализуем в Python (normalize_age_group), поэтому из БД берём
+    лучшую строку на каждую СЫРУЮ категорию (DISTINCT ON), а затем среди них
+    выбираем минимум на нормализованную группу.
+    """
+    if not event_ids:
+        return []
+    gender_expr = _gender_expression(
+        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+    )
+    time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
+    rows = (
+        db.query(
+            gender_expr.label("gender"),
+            RunResult.age_category,
+            RunResult.finish_time_sec,
+            Participant.display_name,
+            Event.event_date,
+            Platform.code.label("platform_code"),
+        )
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .outerjoin(Participant, RunResult.participant_id == Participant.id)
+        .filter(
+            RunResult.event_id.in_(event_ids),
+            time_ok,
+            Platform.code != "parkrun",
+            RunResult.age_category.isnot(None),
+            RunResult.age_category != "",
+        )
+        .distinct(gender_expr, RunResult.age_category)
+        .order_by(
+            gender_expr,
+            RunResult.age_category,
+            RunResult.finish_time_sec.asc(),
+            Event.event_date.asc(),
+        )
+        .all()
+    )
+
+    best: dict[tuple[str, str], dict[str, object]] = {}
+    for gender, age_category, finish_time_sec, runner_name, event_date, platform_code in rows:
+        if gender not in ("male", "female"):
+            continue
+        age_group = normalize_age_group(age_category)
+        if age_group is None:
+            continue
+        key = (gender, age_group)
+        current = best.get(key)
+        if current is None or int(finish_time_sec) < int(current["finish_time_sec"]):  # type: ignore[arg-type]
+            best[key] = {
+                "gender": gender,
+                "age_group": age_group,
+                "finish_time_sec": int(finish_time_sec),
+                "finish_time_display": format_finish_time_display(int(finish_time_sec)),
+                "runner_name": runner_name,
+                "event_date": event_date,
+                "platform_code": platform_code,
+            }
+
+    return sorted(
+        best.values(),
+        key=lambda item: (
+            0 if item["gender"] == "male" else 1,
+            _age_group_sort_key(str(item["age_group"])),
+        ),
+    )
+
+
 def build_location_page(db: Session, slug: str, *, use_cache: bool = True) -> dict[str, object] | None:
-    cache_key = f"locations:page:v3:{slug.strip().lower()}"
+    cache_key = f"locations:page:v4:{slug.strip().lower()}"
     if use_cache:
         cached = _read_json_cache(cache_key)
         if cached is not None:
@@ -828,6 +920,7 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
             "bin_size_sec": HISTOGRAM_BIN_SEC,
             "rows": histogram_rows,
         },
+        "age_group_records": _age_group_records(db, event_ids),
     }
 
 
@@ -1383,3 +1476,108 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
 
     items.sort(key=lambda item: str(item["name"]).lower())
     return {"items": items, "total": len(items)}
+
+
+def build_location_personal_stats(db: Session, user_id: UUID, slug: str) -> dict[str, object] | None:
+    """Личная статистика пользователя на локации (блок «Вы на этой локации»).
+
+    Без кэша: выборка per-user дешёвая (фильтр по platform_links.user_id),
+    а общий Redis-кэш страницы её содержать не может.
+    """
+    identity = resolve_location_identity(db, slug)
+    if identity is None:
+        return None
+    event_ids = _location_event_ids(db, [location.id for location, _code in identity.locations])
+
+    payload: dict[str, object] = {
+        "slug": identity.slug,
+        "name": identity.name,
+        "runs_count": 0,
+        "total_runs": 0,
+        "best_time_sec": None,
+        "best_time_display": None,
+        "best_time_date": None,
+        "avg_time_sec": None,
+        "avg_time_display": None,
+        "first_run_date": None,
+        "last_run_date": None,
+        "volunteering_count": 0,
+        "rank_by_runs": None,
+        "runners_total": None,
+    }
+
+    # Все пробежки пользователя (по всем локациям) — для строки «это N% ваших стартов».
+    total_runs = (
+        db.query(func.count(RunResult.id))
+        .join(Participant, RunResult.participant_id == Participant.id)
+        .join(PlatformLink, _platform_link_join())
+        .filter(PlatformLink.user_id == user_id)
+        .scalar()
+    )
+    payload["total_runs"] = int(total_runs or 0)
+
+    if not event_ids:
+        return payload
+
+    rows = (
+        db.query(RunResult.event_id, RunResult.finish_time_sec, Event.event_date)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Participant, RunResult.participant_id == Participant.id)
+        .join(PlatformLink, _platform_link_join())
+        .filter(PlatformLink.user_id == user_id, RunResult.event_id.in_(event_ids))
+        .all()
+    )
+
+    volunteering_count = (
+        db.query(func.count(func.distinct(VolunteerResult.event_id)))
+        .join(Participant, VolunteerResult.participant_id == Participant.id)
+        .join(PlatformLink, _platform_link_join())
+        .filter(PlatformLink.user_id == user_id, VolunteerResult.event_id.in_(event_ids))
+        .scalar()
+    )
+    payload["volunteering_count"] = int(volunteering_count or 0)
+
+    if not rows:
+        return payload
+
+    runs_count = len({event_id for event_id, _time, _date in rows})
+    payload["runs_count"] = runs_count
+
+    timed = [(int(time_sec), event_date) for _eid, time_sec, event_date in rows if time_sec and time_sec > 0]
+    if timed:
+        best_sec, best_date = min(timed, key=lambda item: (item[0], item[1] or date.max))
+        payload["best_time_sec"] = best_sec
+        payload["best_time_display"] = format_finish_time_display(best_sec)
+        payload["best_time_date"] = best_date
+        avg_sec = round(sum(sec for sec, _d in timed) / len(timed))
+        payload["avg_time_sec"] = avg_sec
+        payload["avg_time_display"] = format_finish_time_display(avg_sec)
+
+    # У parkrun-эпохи бывают события-заглушки с датой 1970 — в первое/последнее не берём.
+    real_dates = [event_date for _eid, _t, event_date in rows if event_date and event_date > date(1970, 1, 1)]
+    if real_dates:
+        payload["first_run_date"] = min(real_dates)
+        payload["last_run_date"] = max(real_dates)
+
+    # Место в топе локации по числу пробежек — та же группировка, что в
+    # build_location_leaders: привязанные аккаунты сливаются по user_id.
+    runs_per_group = (
+        db.query(func.count(func.distinct(RunResult.event_id)).label("runs"))
+        .join(Participant, RunResult.participant_id == Participant.id)
+        .outerjoin(PlatformLink, _platform_link_join())
+        .filter(RunResult.event_id.in_(event_ids))
+        .group_by(func.coalesce(PlatformLink.user_id, RunResult.participant_id))
+        .subquery()
+    )
+    ahead, runners_total = (
+        db.query(
+            func.count(case((runs_per_group.c.runs > runs_count, 1))),
+            func.count(),
+        )
+        .select_from(runs_per_group)
+        .one()
+    )
+    payload["rank_by_runs"] = int(ahead) + 1
+    payload["runners_total"] = int(runners_total)
+
+    return payload

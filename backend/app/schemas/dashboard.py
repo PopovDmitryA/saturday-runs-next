@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 
 class TopLocationResponse(BaseModel):
     name: str
+    # Слаг страницы локации (/locations/{slug}) — для ссылки из плитки дашборда.
+    slug: str | None = None
     platform_codes: list[str]
     count: int
     tied_count: int = 1

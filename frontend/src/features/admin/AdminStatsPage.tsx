@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "./AdminShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
@@ -249,7 +249,7 @@ function AdminStatsContent() {
   const chartKey = `${periodDays}-${data?.generated_at ?? "pending"}`;
 
   return (
-    <AppShell title="Статистика сайта" activePath="/admin">
+    <AdminShell title="Статистика сайта">
       <AdminSubnav activePath="/admin/stats" />
 
       <div className="admin-stats-toolbar">
@@ -374,7 +374,7 @@ function AdminStatsContent() {
           </p>
         </>
       )}
-    </AppShell>
+    </AdminShell>
   );
 }
 

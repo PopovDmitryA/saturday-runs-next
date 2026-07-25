@@ -18,6 +18,7 @@ import { formatDuration, pluralFormRu } from "../../../lib/format";
 import {
   PORTAL_CABINET_HISTORY_HREF,
   PORTAL_CABINET_MAP_HREF,
+  PORTAL_CABINET_SHARE_HREF,
   PORTAL_CABINET_RUNS_HREF,
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_LOGIN_HREF,
@@ -233,6 +234,7 @@ function PortalDashboardContent({ user }: { user: User }) {
 
   return (
     <PortalCabinetShell active="dashboard" user={user}>
+      <div className="portal-cab-stack">
       {loading && !data && <p className="muted">Загрузка…</p>}
 
       {error && (
@@ -248,7 +250,7 @@ function PortalDashboardContent({ user }: { user: User }) {
         <>
           <DashboardHero data={data} userName={userLabel(user)} />
 
-          <OnThisDayCard load={getOnThisDay} shareBase="/share" />
+          <OnThisDayCard load={getOnThisDay} shareBase={PORTAL_CABINET_SHARE_HREF} />
 
           <GoalsTeaser />
 
@@ -285,6 +287,7 @@ function PortalDashboardContent({ user }: { user: User }) {
         byPlatform={byPlatform}
         onLinksChange={() => void load({ background: true })}
       />
+      </div>
     </PortalCabinetShell>
   );
 }

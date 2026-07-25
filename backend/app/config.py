@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
+    # Хранилище аватарок пользователей (том ./data:/data в docker-compose).
+    # В БД лежит только имя файла (users.avatar_path), файлы — здесь.
+    avatars_dir: str = "/data/avatars"
+
     telegram_bot_token: str = ""
     telegram_bot_username: str = ""
     telegram_bot_internal_secret: str = ""

@@ -32,13 +32,13 @@ def _validate_gender(gender: str) -> str:
     return gender if gender in LEADERBOARD_GENDERS else "all"
 
 
-# Только для залогиненных (решение Дмитрия 16.07.2026): раздел открыт всем
-# пользователям сайта, но не анонимам.
+# Таблицы рейтингов открыты БЕЗ логина (решение Дмитрия 25.07.2026:
+# локации и рейтинги — публичная витрина сайта; до этого с 16.07.2026
+# раздел был только для залогиненных).
 @router.get("/{metric}", response_model=LeaderboardResponse)
 def leaderboard(
     metric: str,
     db: Annotated[Session, Depends(get_db)],
-    _user: Annotated[User, Depends(get_current_user)],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     gender: str = "all",
 ) -> LeaderboardResponse:

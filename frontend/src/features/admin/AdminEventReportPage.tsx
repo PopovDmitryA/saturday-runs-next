@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "./AdminShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { copyToClipboard } from "../../lib/clipboard";
 import {
@@ -143,7 +143,7 @@ function AdminEventReportContent() {
   };
 
   return (
-    <AppShell title="Отчёт по событию" activePath="/admin">
+    <AdminShell title="Отчёт по событию">
       <AdminSubnav activePath="/admin/event-report" />
 
       <section className="card">
@@ -414,7 +414,7 @@ function AdminEventReportContent() {
           </section>
         </>
       )}
-    </AppShell>
+    </AdminShell>
   );
 }
 

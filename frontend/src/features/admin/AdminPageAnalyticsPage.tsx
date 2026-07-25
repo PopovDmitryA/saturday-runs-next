@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "./AdminShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { getAdminPageAnalytics, type PageAnalyticsEntity, type PageAnalyticsResponse } from "../../lib/api";
 import { formatDate, formatDateTime } from "../../lib/format";
@@ -180,7 +180,7 @@ function AdminPageAnalyticsContent() {
   const totalViews = data?.sections.reduce((sum, section) => sum + section.views, 0) ?? 0;
 
   return (
-    <AppShell title="Популярность разделов" activePath="/admin">
+    <AdminShell title="Популярность разделов">
       <AdminSubnav activePath="/admin/page-analytics" />
 
       <div className="admin-stats-toolbar">
@@ -307,7 +307,7 @@ function AdminPageAnalyticsContent() {
           </p>
         </>
       )}
-    </AppShell>
+    </AdminShell>
   );
 }
 

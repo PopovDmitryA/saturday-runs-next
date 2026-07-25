@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "./AdminShell";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import {
@@ -100,7 +100,7 @@ function AdminBacklogContent() {
   };
 
   return (
-    <AppShell title="Бэклог" activePath="/admin">
+    <AdminShell title="Бэклог">
       <AdminSubnav activePath="/admin/backlog" />
 
       {loading && <p className="muted">Загрузка…</p>}
@@ -260,7 +260,7 @@ function AdminBacklogContent() {
       >
         {confirmDelete ? `Удалить «${confirmDelete.title}» из бэклога вместе с голосами и комментариями?` : ""}
       </ConfirmModal>
-    </AppShell>
+    </AdminShell>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "./AdminShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import {
   getAdminSyncRuns,
@@ -250,7 +250,7 @@ function AdminSyncRunsContent() {
   const totalProblems = data?.platforms.reduce((sum, item) => sum + item.problems, 0) ?? 0;
 
   return (
-    <AppShell title="Автообновление" activePath="/admin">
+    <AdminShell title="Автообновление">
       <AdminSubnav activePath="/admin/sync-runs" />
 
       <div className="admin-stats-toolbar">
@@ -391,7 +391,7 @@ function AdminSyncRunsContent() {
           </p>
         </>
       )}
-    </AppShell>
+    </AdminShell>
   );
 }
 

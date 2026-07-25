@@ -1153,6 +1153,18 @@ a.on-this-day-location {
   gap: 0.4rem;
 }
 
+/* Название самой частой локации — ссылка на её страницу; наследует цвет
+   значения плитки, подчёркивание появляется на ховере. */
+.stat-value-location-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.stat-value-location-link:hover {
+  border-bottom-color: currentColor;
+}
+
 .top-location-tie-star {
   display: inline-flex;
   align-items: center;
@@ -9460,6 +9472,31 @@ tr.run-crosslinked td {
   }
 }
 
+/* Рекорды локации по возрастным группам: две колонки-таблицы (М/Ж). */
+.loc-age-records-subtitle {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-3);
+}
+
+.loc-age-records-table .loc-age-records-col-group {
+  width: 5.5rem;
+}
+
+.loc-age-records-table .loc-age-records-col-time {
+  width: 5.25rem;
+}
+
+.loc-age-records-table .loc-age-records-col-date {
+  width: 7rem;
+}
+
+.loc-age-records-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 .loc-mini-map {
   height: 220px;
   border-radius: 10px;
@@ -10015,4 +10052,264 @@ tr.run-crosslinked td {
 .page-analytics-range-label {
   margin-left: auto;
   align-self: center;
+}
+
+/* Блок «Вы на этой локации»: CTA-вариант (аноним / без привязки / ещё не бегал). */
+.card.loc-personal-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.loc-personal-cta-text {
+  flex: 1 1 320px;
+}
+
+.loc-personal-cta-text p {
+  margin: 6px 0 0;
+}
+
+.loc-personal-cta .btn {
+  flex-shrink: 0;
+}
+
+/* Настройки → «Аватар» */
+.avatar-settings-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.avatar-settings-preview {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  object-fit: cover;
+}
+
+.avatar-settings-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent-indigo, #4f46e5), #7c3aed);
+}
+
+.avatar-settings-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.avatar-settings-controls p {
+  margin: 0;
+}
+
+.avatar-settings-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Продающая карточка «войдите» (PromoLoginCard) — главный CTA анонима на
+   публичных страницах: градиент, крупная иконка, водяной знак справа. */
+.promo-login-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 22px 26px;
+  border-radius: 18px;
+  border: none;
+  background: linear-gradient(120deg, #4f46e5 0%, #6d28d9 55%, #9333ea 100%);
+  color: #fff;
+  box-shadow: 0 12px 32px rgba(79, 70, 229, 0.35);
+}
+
+.promo-login-card-glow {
+  position: absolute;
+  top: -60%;
+  left: -10%;
+  width: 55%;
+  height: 220%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.18), transparent);
+  pointer-events: none;
+}
+
+.promo-login-card-icon {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+.promo-login-card-text {
+  flex: 1 1 280px;
+  position: relative;
+}
+
+.promo-login-card-title {
+  display: block;
+  font-size: 16.5px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin-bottom: 4px;
+}
+
+.promo-login-card-text p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.promo-login-card-btn {
+  flex: none;
+  position: relative;
+  padding: 10px 22px;
+  border-radius: 11px;
+  background: #fff;
+  color: #4f46e5;
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.promo-login-card-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.24);
+  text-decoration: none;
+  color: #4338ca;
+}
+
+.promo-login-card-watermark {
+  position: absolute;
+  right: -6px;
+  bottom: -22px;
+  font-size: 92px;
+  opacity: 0.14;
+  transform: rotate(-12deg);
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (max-width: 640px) {
+  .promo-login-card {
+    flex-wrap: wrap;
+    padding: 18px 20px;
+  }
+  .promo-login-card-btn {
+    width: 100%;
+    text-align: center;
+  }
+  .promo-login-card-watermark {
+    display: none;
+  }
+}
+
+/* Модалка кадрирования аватара */
+.avatar-crop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 18, 32, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.avatar-crop-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+  max-width: 92vw;
+}
+
+.avatar-crop-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.avatar-crop-viewport {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #000;
+  cursor: grab;
+  touch-action: none;
+  max-width: 100%;
+}
+
+.avatar-crop-viewport:active {
+  cursor: grabbing;
+}
+
+.avatar-crop-viewport img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  will-change: transform;
+  user-select: none;
+}
+
+/* Рамка-подсказка границ кадра. */
+.avatar-crop-frame {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+
+.avatar-crop-zoom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.avatar-crop-zoom input[type="range"] {
+  flex: 1;
+}
+
+.avatar-crop-hint {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.avatar-crop-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+/* Имя участника на публичном профиле (портальный каркас). */
+.public-profile-name {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }

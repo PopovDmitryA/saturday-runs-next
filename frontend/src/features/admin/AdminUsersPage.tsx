@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "./AdminShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { Snackbar } from "../../components/Snackbar";
 import { AdminSubnav } from "./AdminSubnav";
@@ -154,7 +154,7 @@ function AdminUsersContent() {
   }, []);
 
   return (
-    <AppShell title="Пользователи" activePath="/admin">
+    <AdminShell title="Пользователи">
       <div className="admin-users-page">
       <AdminSubnav activePath="/admin/users" />
 
@@ -347,7 +347,7 @@ function AdminUsersContent() {
       >
         {snackbar.message}
       </Snackbar>
-    </AppShell>
+    </AdminShell>
   );
 }
 

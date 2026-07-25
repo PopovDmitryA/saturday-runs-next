@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "./AdminShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import {
@@ -198,7 +198,7 @@ function AdminRatingsContent() {
   );
 
   return (
-    <AppShell title="Рейтинг" activePath="/admin">
+    <AdminShell title="Рейтинг">
       <div className="admin-ratings-page">
         <AdminSubnav activePath="/admin/ratings" />
 
@@ -394,7 +394,7 @@ function AdminRatingsContent() {
           </div>
         </section>
       </div>
-    </AppShell>
+    </AdminShell>
   );
 }
 

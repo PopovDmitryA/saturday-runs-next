@@ -114,7 +114,9 @@ function onThisDayRunToRunItem(run: OnThisDayRun): RunItem {
   };
 }
 
-function ShareContent() {
+// bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
+// оборачивает контент в собственный каркас с сайдбаром.
+export function ShareContent({ bare = false }: { bare?: boolean } = {}) {
   const [mode, setMode] = useState<ShareMode>("gallery");
   const [user, setUser] = useState<User | null>(null);
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
@@ -621,8 +623,8 @@ function ShareContent() {
     }
   };
 
-  return (
-    <AppShell title="Поделиться" activePath="/share">
+  const pageBody = (
+    <>
       {loading && <p className="muted">Загрузка…</p>}
 
       {error && (
@@ -1142,6 +1144,16 @@ function ShareContent() {
           )}
         </>
       )}
+    </>
+  );
+
+  if (bare) {
+    return <div className="portal-cab-stack">{pageBody}</div>;
+  }
+
+  return (
+    <AppShell title="Поделиться" activePath="/share">
+      {pageBody}
     </AppShell>
   );
 }

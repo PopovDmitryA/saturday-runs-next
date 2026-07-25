@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "./AdminShell";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import {
@@ -82,7 +82,7 @@ function AdminBlockedSlugsContent() {
   };
 
   return (
-    <AppShell title="Резерв ссылок" activePath="/admin">
+    <AdminShell title="Резерв ссылок">
       <AdminSubnav activePath="/admin/profile-slugs" />
 
       <section className="card admin-abuse-form">
@@ -207,7 +207,7 @@ function AdminBlockedSlugsContent() {
           ? `Убрать резерв ссылки /${confirmDelete.slug}? После этого её снова можно будет занять.`
           : ""}
       </ConfirmModal>
-    </AppShell>
+    </AdminShell>
   );
 }
 

@@ -1,19 +1,24 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { LocationStatusLabel } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { RequireAuth } from "../../components/RequireAuth";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
   ApiError,
   getLocationLeaders,
   getLocationPage,
+  getLocationPersonalStats,
+  type LocationAgeGroupRecord,
   type LocationCourseRecord,
   type LocationLastEvent,
   type LocationLeaders,
   type LocationPage as LocationPageData,
+  type LocationPersonalStats,
 } from "../../lib/api";
 import { formatDate, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
+import { PromoLoginCard } from "../../components/PromoLoginCard";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { LocationsSidebar } from "./LocationsSidebar";
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { LocationMiniMap } from "./LocationMiniMap";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
@@ -25,12 +30,15 @@ function StatTile({
   sub,
   badge,
   onDetails,
+  link,
 }: {
   value: ReactNode;
   label: string;
   sub?: ReactNode;
   badge?: { text: string; title: string };
   onDetails?: () => void;
+  // Ссылка-действие внизу плитки (например «журнал протоколов →» у стартов).
+  link?: { href: string; label: string };
 }) {
   return (
     <div className="stat-card loc-stat-card">
@@ -50,6 +58,11 @@ function StatTile({
         <button type="button" className="loc-stat-details-link" onClick={onDetails}>
           подробнее
         </button>
+      )}
+      {link && (
+        <a className="loc-stat-details-link" href={link.href}>
+          {link.label}
+        </a>
       )}
     </div>
   );
@@ -83,6 +96,10 @@ function DeltaHint({ deltaSec }: { deltaSec: number | null }): ReactNode {
 }
 
 function LastEventSection({ lastEvent }: { lastEvent: LocationLastEvent }) {
+  const newcomers =
+    lastEvent.debutants !== null || lastEvent.first_at_location !== null
+      ? (lastEvent.debutants ?? 0) + (lastEvent.first_at_location ?? 0)
+      : null;
   return (
     <section className="card loc-section">
       <h2 className="section-title">Последний старт</h2>
@@ -90,6 +107,25 @@ function LastEventSection({ lastEvent }: { lastEvent: LocationLastEvent }) {
         <StatTile value={formatDate(lastEvent.event_date)} label={platformCodeLabel(lastEvent.platform_code)} />
         {lastEvent.finishers !== null && <StatTile value={lastEvent.finishers} label="финишей" />}
         {lastEvent.volunteers !== null && <StatTile value={lastEvent.volunteers} label="волонтёров" />}
+        {newcomers !== null && (
+          <StatTile
+            value={newcomers}
+            label="новичков"
+            sub={
+              lastEvent.debutants || lastEvent.first_at_location
+                ? [
+                    lastEvent.debutants ? `${lastEvent.debutants} дебют в системе` : null,
+                    lastEvent.first_at_location
+                      ? `${lastEvent.first_at_location} впервые здесь`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : undefined
+            }
+          />
+        )}
+        {lastEvent.prs !== null && <StatTile value={lastEvent.prs} label="личных рекордов" />}
         {lastEvent.avg_time_sec !== null && (
           <StatTile value={stripLeadingHours(lastEvent.avg_time_display)} label="среднее время" />
         )}
@@ -140,6 +176,73 @@ function PlatformTimeline({ page }: { page: LocationPageData }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+function AgeGroupRecordsTable({ records }: { records: LocationAgeGroupRecord[] }) {
+  return (
+    <table className="data-table loc-age-records-table">
+      <colgroup>
+        <col className="loc-age-records-col-group" />
+        <col className="loc-age-records-col-time" />
+        <col />
+        <col className="loc-age-records-col-date" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Группа</th>
+          <th>Время</th>
+          <th>Рекордсмен</th>
+          <th>Дата</th>
+        </tr>
+      </thead>
+      <tbody>
+        {records.map((record) => (
+          <tr key={`${record.gender}-${record.age_group}`}>
+            <td>{record.age_group}</td>
+            <td className="loc-age-records-time">
+              {stripLeadingHours(record.finish_time_display)}
+            </td>
+            <td>{record.runner_name ?? "—"}</td>
+            <td>{record.event_date ? formatDate(record.event_date) : "—"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function AgeGroupRecordsSection({ records }: { records: LocationAgeGroupRecord[] }) {
+  if (records.length === 0) {
+    return null;
+  }
+  const male = records.filter((record) => record.gender === "male");
+  const female = records.filter((record) => record.gender === "female");
+  return (
+    <section className="card loc-section">
+      <h2 className="section-title">
+        Рекорды по возрастным группам
+        <StatHintTooltip text="Лучшее время в каждой возрастной группе за всю историю локации. parkrun не учитывается: их возрастные категории считаются по другим правилам.">
+          <span className="loc-section-title-info" aria-label="Как считается">
+            ⓘ
+          </span>
+        </StatHintTooltip>
+      </h2>
+      <div className="loc-columns">
+        {male.length > 0 && (
+          <div>
+            <h3 className="loc-age-records-subtitle">Мужчины</h3>
+            <AgeGroupRecordsTable records={male} />
+          </div>
+        )}
+        {female.length > 0 && (
+          <div>
+            <h3 className="loc-age-records-subtitle">Женщины</h3>
+            <AgeGroupRecordsTable records={female} />
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -321,6 +424,126 @@ function LocationInfoCard({ page }: { page: LocationPageData }) {
   );
 }
 
+/**
+ * Блок «Вы на этой локации»: залогиненному с привязанным профилем — личные
+ * цифры площадки, анониму — продающая карточка «войдите и увидите свою
+ * статистику». Пользователю без привязки — подсказка привязать профиль.
+ */
+function LocationPersonalSection({ slug }: { slug: string }) {
+  const user = useOptionalUser();
+  const [stats, setStats] = useState<LocationPersonalStats | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    let cancelled = false;
+    setStats(null);
+    getLocationPersonalStats(slug)
+      .then((result) => {
+        if (!cancelled) setStats(result);
+      })
+      .catch(() => {
+        // тихо: блок просто не покажется
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, slug]);
+
+  // Сессия ещё проверяется — не мигаем карточкой-призывом перед залогиненным.
+  if (user === undefined) {
+    return null;
+  }
+
+  if (user === null) {
+    return (
+      <PromoLoginCard
+        icon="🏃"
+        title="Бегали здесь?"
+        text="Войдите и привяжите профиль своей беговой системы — покажем вашу личную статистику на этой локации: пробежки, лучшее и среднее время, место в топе площадки."
+      />
+    );
+  }
+
+  if (!stats) {
+    return null;
+  }
+
+  if (stats.runs_count === 0 && stats.volunteering_count === 0) {
+    return (
+      <section className="card loc-section loc-personal-cta">
+        <div className="loc-personal-cta-text">
+          <h2 className="section-title">Вы на этой локации</h2>
+          <p className="muted">
+            {stats.total_runs === 0
+              ? "Привяжите профиль своей беговой системы в настройках — и здесь появится ваша личная статистика площадки."
+              : "Вы здесь ещё не бегали — самое время открыть новую точку на своей карте."}
+          </p>
+        </div>
+        {stats.total_runs === 0 && (
+          <a className="btn secondary" href="/settings">
+            К настройкам
+          </a>
+        )}
+      </section>
+    );
+  }
+
+  const sharePct =
+    stats.total_runs > 0 ? Math.round((stats.runs_count / stats.total_runs) * 100) : null;
+
+  return (
+    <section className="card loc-section">
+      <h2 className="section-title">Вы на этой локации</h2>
+      <div className="loc-stats-grid">
+        <StatTile
+          value={stats.runs_count}
+          label={pluralFormRu(stats.runs_count, ["пробежка", "пробежки", "пробежек"])}
+          sub={sharePct != null && sharePct > 0 ? `${sharePct}% всех ваших стартов` : undefined}
+        />
+        {stats.best_time_display && (
+          <StatTile
+            value={stripLeadingHours(stats.best_time_display)}
+            label="лучшее время здесь"
+            sub={stats.best_time_date ? formatDate(stats.best_time_date) : undefined}
+          />
+        )}
+        {stats.avg_time_display && (
+          <StatTile value={stripLeadingHours(stats.avg_time_display)} label="среднее время здесь" />
+        )}
+        {stats.rank_by_runs != null && stats.runs_count > 0 && (
+          <StatTile
+            value={`#${stats.rank_by_runs}`}
+            label="в топе по пробежкам"
+            sub={
+              stats.runners_total != null
+                ? `из ${stats.runners_total} ${pluralFormRu(stats.runners_total, ["бегуна", "бегунов", "бегунов"])}`
+                : undefined
+            }
+          />
+        )}
+        {stats.first_run_date && (
+          <StatTile value={formatDate(stats.first_run_date)} label="первый старт здесь" />
+        )}
+        {stats.last_run_date && stats.last_run_date !== stats.first_run_date && (
+          <StatTile value={formatDate(stats.last_run_date)} label="последний старт" />
+        )}
+        {stats.volunteering_count > 0 && (
+          <StatTile
+            value={stats.volunteering_count}
+            label={pluralFormRu(stats.volunteering_count, [
+              "волонтёрство",
+              "волонтёрства",
+              "волонтёрств",
+            ])}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
 function LocationPageContent({ slug }: { slug: string }) {
   const [page, setPage] = useState<LocationPageData | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -360,7 +583,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   if (notFound) {
     return (
-      <PortalSectionShell>
+      <PortalSectionShell sidebar={<LocationsSidebar />}>
         <div className="card">
           <p className="muted">Локация не найдена.</p>
           <p>
@@ -373,7 +596,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   if (error) {
     return (
-      <PortalSectionShell>
+      <PortalSectionShell sidebar={<LocationsSidebar />}>
         <div className="card error">
           <p>{error}</p>
         </div>
@@ -383,7 +606,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   if (!page) {
     return (
-      <PortalSectionShell>
+      <PortalSectionShell sidebar={<LocationsSidebar />}>
         <p className="muted">Загрузка…</p>
       </PortalSectionShell>
     );
@@ -393,7 +616,7 @@ function LocationPageContent({ slug }: { slug: string }) {
   const records = stats.course_records;
 
   return (
-    <PortalSectionShell>
+    <PortalSectionShell sidebar={<LocationsSidebar location={{ slug: page.slug, name: page.name }} />}>
       <header className="loc-header loc-wide-page">
         <p className="muted loc-header-breadcrumb">
           <a href="/locations">← Все локации</a> / {page.name}
@@ -416,6 +639,8 @@ function LocationPageContent({ slug }: { slug: string }) {
 
       <LocationRatingPrompt identityKey={page.identity_key} />
 
+      <LocationPersonalSection slug={page.slug} />
+
       <section className="card loc-section">
         <div className="loc-section-head">
           <h2 className="section-title">Локация в цифрах</h2>
@@ -432,6 +657,7 @@ function LocationPageContent({ slug }: { slug: string }) {
                 ? `с ${formatDate(stats.first_event_date)}`
                 : undefined
             }
+            link={{ href: `/locations/${page.slug}/events`, label: "журнал протоколов →" }}
           />
           <StatTile
             value={stats.finishers_total}
@@ -495,6 +721,8 @@ function LocationPageContent({ slug }: { slug: string }) {
         <LocationFinishHistogram rows={page.histogram.rows} binSizeSec={page.histogram.bin_size_sec} />
       </section>
 
+      <AgeGroupRecordsSection records={page.age_group_records ?? []} />
+
       <LocationLeadersSection slug={page.slug} />
 
       <div className="loc-columns">
@@ -531,8 +759,10 @@ function LocationPageContent({ slug }: { slug: string }) {
   );
 }
 
+// Страница открыта без логина (публичная витрина); личные блоки внутри
+// сами решают, что показать анониму.
 export function LocationPage({ slug }: { slug: string }) {
-  return <RequireAuth>{() => <LocationPageContent slug={slug} />}</RequireAuth>;
+  return <LocationPageContent slug={slug} />;
 }
 
 function formatTime(totalSec: number): string {

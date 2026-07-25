@@ -268,6 +268,19 @@ export function PortalAboutPage() {
           </details>
         </section>
 
+        <section className="portal-panel" aria-label="Бэклог идей">
+          <h2>Бэклог идей</h2>
+          <p>
+            Сайт развивается по подсказкам сообщества: в открытом бэклоге собраны идеи новых
+            фич и статистик — можно голосовать за понравившиеся и предлагать свои.
+          </p>
+          <p>
+            <a className="btn secondary" href="/backlog">
+              Открыть бэклог →
+            </a>
+          </p>
+        </section>
+
         <section className="portal-panel" aria-label="Автор и контакты">
           <div className="portal-panel-head">
             <div>

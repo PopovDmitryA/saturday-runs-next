@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_optional_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas.locations import (
@@ -13,6 +13,7 @@ from app.schemas.locations import (
     LocationEventsResponse,
     LocationLeadersResponse,
     LocationPageResponse,
+    LocationPersonalStatsResponse,
     LocationsIndexResponse,
     MapLocationsResponse,
     UniqueLocationsDetailResponse,
@@ -23,25 +24,23 @@ from app.services.location_page_service import (
     build_location_events,
     build_location_leaders,
     build_location_page,
+    build_location_personal_stats,
     build_locations_index,
 )
 from app.services.user_unique_locations_detail import build_user_unique_location_details
 
 router = APIRouter(prefix="/locations", tags=["locations"])
 
+# Каталог, страницы локаций и журнал протоколов открыты БЕЗ логина
+# (решение Дмитрия 25.07.2026: локации и рейтинги — публичная витрина сайта).
+# Логин нужен только личным данным: /visited/* и /page/{slug}/me.
+
 
 @router.get("/index", response_model=LocationsIndexResponse)
 def locations_index(
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
 ) -> LocationsIndexResponse:
-    """Каталог локаций — входная точка раздела «Локации».
-
-    Доступен всем авторизованным (аноним — 401), но в шапку сайта раздел
-    пока не вынесен: тестировщики ходят по прямой ссылке
-    (решение Дмитрия 13.07.2026).
-    """
-    _ = user
+    """Каталог локаций — входная точка раздела «Локации»."""
     payload = build_locations_index(db)
     return LocationsIndexResponse.model_validate(payload)
 
@@ -50,10 +49,8 @@ def locations_index(
 def location_page(
     slug: str,
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
 ) -> LocationPageResponse:
     """Страница локации: сводные цифры, таймлайн систем, гистограмма, инфо-карточка."""
-    _ = user
     payload = build_location_page(db, slug)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
@@ -64,10 +61,8 @@ def location_page(
 def location_leaders(
     slug: str,
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
 ) -> LocationLeadersResponse:
     """Рейтинги внутри локации: топ по пробежкам и волонтёрствам."""
-    _ = user
     payload = build_location_leaders(db, slug)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
@@ -78,14 +73,25 @@ def location_leaders(
 def location_events(
     slug: str,
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
 ) -> LocationEventsResponse:
     """Журнал протоколов локации сквозь все системы."""
-    _ = user
     payload = build_location_events(db, slug)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
     return LocationEventsResponse.model_validate(payload)
+
+
+@router.get("/page/{slug}/me", response_model=LocationPersonalStatsResponse)
+def location_personal_stats(
+    slug: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> LocationPersonalStatsResponse:
+    """Личная статистика на локации — блок «Вы на этой локации» (только свои данные)."""
+    payload = build_location_personal_stats(db, user.id, slug)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
+    return LocationPersonalStatsResponse.model_validate(payload)
 
 
 @router.get("/visited/map", response_model=MapLocationsResponse)
@@ -111,9 +117,7 @@ def visited_locations_detail(
 @router.get("/catalog/map", response_model=MapLocationsResponse)
 def catalog_locations_map(
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
 ) -> MapLocationsResponse:
-    _ = user
     payload = list_catalog_map_locations(db)
     return MapLocationsResponse.model_validate(payload)
 
@@ -121,8 +125,11 @@ def catalog_locations_map(
 @router.get("/catalog/table", response_model=CatalogLocationsTableResponse)
 def catalog_locations_table(
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User | None, Depends(get_optional_user)],
     include_test: Annotated[bool, Query()] = False,
 ) -> CatalogLocationsTableResponse:
-    payload = build_catalog_locations_table(db, user.id, include_test_events=include_test)
+    """Таблица каталога. Аноним видит её без отметок «посещено» (нет user_id)."""
+    payload = build_catalog_locations_table(
+        db, user.id if user is not None else None, include_test_events=include_test
+    )
     return CatalogLocationsTableResponse.model_validate(payload)

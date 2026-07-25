@@ -49,7 +49,7 @@ class SyncRefreshRateLimitedError(Exception):
 # списком PR-пробежек.
 # 27: тестовые события исключены из пересчёта is_pr/дебютов + бэкфилл на проде —
 # кэш должен пересчитать pr_count по обновлённым флагам.
-ANALYTICS_VERSION = 27
+ANALYTICS_VERSION = 28
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -625,8 +625,12 @@ def _compute_dashboard_analytics(
             if catalog is not None and catalog.canonical_name
             else catalog_index.display_name(*top_location_sample[top_identity_key])
         )
+        sample_location, _sample_platform = top_location_sample[top_identity_key]
         top_location = {
             "name": display_name,
+            # Слаг для ссылки на страницу локации (/locations/{slug}); страница
+            # резолвит external_key любой из платформ через normalize.
+            "slug": sample_location.external_key.strip().lower(),
             "platform_codes": sorted(top_location_platform_codes[top_identity_key], key=_platform_sort_key),
             "count": max_count,
             "tied_count": tied_count,

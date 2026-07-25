@@ -1,0 +1,49 @@
+/* Админка в портальном дизайне: янтарная плашка под шапкой — маркер
+   служебной зоны, чтобы админ-страницы не путались с пользовательскими. */
+
+.admin-shell-banner {
+  background: var(--tint-amber-bg);
+  border-bottom: 1px solid var(--tint-amber-border);
+}
+
+.admin-shell-banner-inner {
+  /* Админка шире обычных страниц: таблицы важнее пропорций (просьба Дмитрия
+     25.07.2026 — тянуть до 90% ширины экрана). Синхронно с .admin-shell-main. */
+  max-width: none;
+  width: 90%;
+  margin: 0 auto;
+  padding: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-shell-badge {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--accent-amber-text);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.admin-shell-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--tint-amber-text);
+}
+
+/* Вертикальный ритм контента страниц: раньше его давал .shell-main (grid
+   gap 1rem) старого AppShell. Ширина — 90% экрана, перебивает 1440px
+   от .portal-section (широкие админ-таблицы важнее пропорций). */
+.portal-section.admin-shell-main {
+  max-width: none;
+  width: 90%;
+  padding-left: 0;
+  padding-right: 0;
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}

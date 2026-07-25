@@ -653,3 +653,27 @@ a.lb-hub-card:hover {
 .lb-scroll-top:hover {
   color: var(--accent-indigo-text);
 }
+
+/* Продающий баннер для анонима: раздел открыт без логина, своя строка — после входа. */
+/* .card даёт display:grid — перебиваем двумя классами независимо от порядка бандла. */
+.card.lb-login-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.lb-login-banner-text {
+  flex: 1 1 320px;
+  display: grid;
+  gap: 4px;
+}
+
+.lb-login-banner-text p {
+  margin: 0;
+}
+
+.lb-login-banner .btn {
+  flex-shrink: 0;
+}

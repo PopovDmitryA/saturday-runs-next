@@ -770,6 +770,9 @@ class User(Base):
     # Уникальная НЕцифровая ссылка на публичный профиль (/users/{public_slug});
     # хранится в нижнем регистре, уникальность регистронезависима. NULL — не задана.
     public_slug: Mapped[str | None] = mapped_column(String(64), unique=True)
+    # Имя файла аватарки в settings.avatars_dir ("{user_id}-{token}.jpg").
+    # NULL — аватарки нет. Сам файл живёт на диске, при замене старый удаляется.
+    avatar_path: Mapped[str | None] = mapped_column(String(128))
     serial_id: Mapped[int] = mapped_column(
         BigInteger,
         nullable=False,
@@ -801,6 +804,14 @@ class User(Base):
     dashboard_cache: Mapped["DashboardCache | None"] = relationship(back_populates="user", uselist=False)
     sync_jobs: Mapped[list["SyncJob"]] = relationship(back_populates="user")
     auth_identities: Mapped[list["AuthIdentity"]] = relationship(back_populates="user")
+
+    @property
+    def avatar_url(self) -> str | None:
+        """Публичный адрес аватарки; UserResponse (from_attributes) подхватывает
+        это свойство, поэтому avatar_url есть везде, где отдаётся пользователь."""
+        if not self.avatar_path:
+            return None
+        return f"/api/avatars/{self.avatar_path}"
 
 
 class BlockedProfileSlug(Base):

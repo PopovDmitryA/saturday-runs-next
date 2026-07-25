@@ -32,6 +32,8 @@ import {
   PORTAL_CABINET_MAP_HREF,
   PORTAL_CABINET_MEETINGS_HREF,
   PORTAL_CABINET_RUNS_HREF,
+  PORTAL_CABINET_SETTINGS_HREF,
+  PORTAL_CABINET_SHARE_HREF,
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
@@ -44,6 +46,8 @@ import {
   PortalCabinetMapPage,
   PortalCabinetMeetingsPage,
   PortalCabinetRunsPage,
+  PortalCabinetSettingsPage,
+  PortalCabinetSharePage,
   PortalCabinetVolunteeringPage,
 } from "./features/portal/cabinet/PortalCabinetPages";
 import { DemoMapsPage, MapsPage } from "./features/maps/MapsPage";
@@ -62,7 +66,6 @@ import { SharePage } from "./features/share/SharePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
-import { RequireAuth } from "./components/RequireAuth";
 import { useAppPath } from "./hooks/useAppPath";
 import { getCurrentUser } from "./lib/api";
 import { startPageView } from "./lib/pageAnalytics";
@@ -126,6 +129,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   [PORTAL_CABINET_MEETINGS_HREF]: () => <PortalCabinetMeetingsPage />,
   [PORTAL_CABINET_MAP_HREF]: () => <PortalCabinetMapPage />,
   [PORTAL_CABINET_HISTORY_HREF]: () => <PortalCabinetHistoryPage />,
+  [PORTAL_CABINET_SHARE_HREF]: () => <PortalCabinetSharePage />,
+  [PORTAL_CABINET_SETTINGS_HREF]: () => <PortalCabinetSettingsPage />,
   "/oauth/yandex/callback": () => <OAuthCallbackPage provider="yandex" />,
   "/oauth/vk/callback": () => <OAuthCallbackPage provider="vk" />,
   "/demo": () => <DemoDashboardPage />,
@@ -141,20 +146,17 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/co-runners": () => <CoRunnersPage />,
   "/volunteering": () => <VolunteeringPage />,
   "/maps": () => <MapsPage />,
-  // Гейт RequireAuth — внутри самой страницы, как и у /locations/{slug}.
+  // Локации открыты без логина (25.07.2026) — публичная витрина.
   "/locations": () => <LocationsIndexPage />,
   "/history": () => <HistoryPage />,
-  // Раздел для залогиненных: анонима RequireAuth уводит на /login (гейт есть и на API).
-  "/ratings": () => <RequireAuth>{() => <LeaderboardsHubPage />}</RequireAuth>,
-  "/ratings/runs": () => <RequireAuth>{() => <LeaderboardPage metric="runs" />}</RequireAuth>,
-  "/ratings/volunteering": () => (
-    <RequireAuth>{() => <LeaderboardPage metric="volunteering" />}</RequireAuth>
-  ),
-  "/ratings/locations": () => <RequireAuth>{() => <LeaderboardPage metric="locations" />}</RequireAuth>,
-  "/ratings/wins": () => <RequireAuth>{() => <LeaderboardPage metric="wins" />}</RequireAuth>,
-  "/ratings/win-locations": () => (
-    <RequireAuth>{() => <LeaderboardPage metric="win_locations" />}</RequireAuth>
-  ),
+  // Рейтинги открыты без логина (решение 25.07.2026): аноним видит таблицы,
+  // а свою строку и позицию — только залогиненный (баннер-призыв на страницах).
+  "/ratings": () => <LeaderboardsHubPage />,
+  "/ratings/runs": () => <LeaderboardPage metric="runs" />,
+  "/ratings/volunteering": () => <LeaderboardPage metric="volunteering" />,
+  "/ratings/locations": () => <LeaderboardPage metric="locations" />,
+  "/ratings/wins": () => <LeaderboardPage metric="wins" />,
+  "/ratings/win-locations": () => <LeaderboardPage metric="win_locations" />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,

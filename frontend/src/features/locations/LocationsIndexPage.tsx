@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { RequireAuth } from "../../components/RequireAuth";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { LocationsSidebar } from "./LocationsSidebar";
 import { getLocationsIndex, type LocationIndexItem } from "../../lib/api";
 import { formatDate, formatFinishTimeValue, pluralizeRu } from "../../lib/format";
 
@@ -265,7 +265,7 @@ function LocationsIndexContent() {
   }, [items, query, platformFilter, showPaused]);
 
   return (
-    <PortalSectionShell>
+    <PortalSectionShell sidebar={<LocationsSidebar />}>
       <header className="loc-header">
         <div className="loc-header-title">
           <h1>Локации</h1>
@@ -323,6 +323,7 @@ function LocationsIndexContent() {
   );
 }
 
+// Каталог открыт без логина: локации — публичная витрина сайта.
 export function LocationsIndexPage() {
-  return <RequireAuth>{() => <LocationsIndexContent />}</RequireAuth>;
+  return <LocationsIndexContent />;
 }

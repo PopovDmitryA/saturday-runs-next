@@ -9,9 +9,11 @@ import { CoRunnersContent } from "../../co_runners/CoRunnersPage";
 import { HistoryContent, useOwnSiteUrl } from "../../history/HistoryPage";
 import { MapsContent } from "../../maps/MapsPage";
 import { RunsContent } from "../../runs/RunsPage";
+import { SettingsContent } from "../../settings/SettingsPage";
+import { ShareContent } from "../../share/SharePage";
 import { VolunteeringContent } from "../../volunteering/VolunteeringPage";
 import { getCoRunnerMeetings, getCoRunners, getMyHistory, type User } from "../../../lib/api";
-import { PORTAL_LOGIN_HREF } from "../../../lib/portalRoutes";
+import { PORTAL_CABINET_SHARE_HREF, PORTAL_LOGIN_HREF } from "../../../lib/portalRoutes";
 import { PortalCabinetShell, type CabinetTabKey } from "./PortalCabinetShell";
 
 function cabinetPage(
@@ -77,10 +79,28 @@ export function PortalCabinetMapPage() {
 
 function PortalHistoryBody() {
   const siteUrl = useOwnSiteUrl();
-  return <HistoryContent load={getMyHistory} shareBase="/share" siteUrl={siteUrl} />;
+  return <HistoryContent load={getMyHistory} shareBase={PORTAL_CABINET_SHARE_HREF} siteUrl={siteUrl} />;
 }
 
 export function PortalCabinetHistoryPage() {
   // Заголовок рисует сам HistoryContent (интро-карточка со сводкой).
   return cabinetPage("history", undefined, undefined, () => <PortalHistoryBody />);
+}
+
+export function PortalCabinetSharePage() {
+  return cabinetPage(
+    "share",
+    "Поделиться",
+    "Карточки со статистикой для сториз и мессенджеров — по итогам недели, месяца или всей истории.",
+    () => <ShareContent bare />,
+  );
+}
+
+export function PortalCabinetSettingsPage() {
+  return cabinetPage(
+    "settings",
+    "Настройки",
+    "Приватность, привязка профилей, домашняя локация и способы входа.",
+    () => <SettingsContent bare />,
+  );
 }

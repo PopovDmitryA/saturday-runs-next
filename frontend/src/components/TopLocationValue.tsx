@@ -14,7 +14,13 @@ export function TopLocationValue({ topLocation }: TopLocationValueProps) {
 
   return (
     <span className="stat-value-location">
-      <span>{topLocation.name}</span>
+      {topLocation.slug ? (
+        <a className="stat-value-location-link" href={`/locations/${topLocation.slug}`}>
+          {topLocation.name}
+        </a>
+      ) : (
+        <span>{topLocation.name}</span>
+      )}
       {hasTiedLocations && (
         <StatHintTooltip text={TOP_LOCATION_TIE_HINT} className="top-location-tie-star">
           <span aria-hidden="true">★</span>

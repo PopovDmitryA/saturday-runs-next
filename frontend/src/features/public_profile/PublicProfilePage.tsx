@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
-import { SiteHeader } from "../../components/SiteHeader";
+import { PromoLoginCard } from "../../components/PromoLoginCard";
+import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { AppDataSourceProvider, createPublicProfileDataSource } from "../../lib/appDataSource";
 import { AchievementsShowcase } from "../achievements/AchievementsPage";
 import { UserMapPanel } from "../maps/UserMapPanel";
@@ -12,7 +13,6 @@ import { CoRunnersContent } from "../co_runners/CoRunnersPage";
 import {
   ApiError,
   getCurrentUser,
-  logout,
   getPublicProfileDashboard,
   getPublicProfileHistory,
   getPublicProfileVisitedMap,
@@ -27,8 +27,6 @@ import {
   type User,
 } from "../../lib/api";
 import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
-import { APP_NAV_ITEMS, PUBLIC_NAV_ITEMS } from "../../lib/siteNav";
-import { SITE_HOME_HREF, SITE_PUBLIC_HOME_HREF } from "../../lib/siteBrand";
 
 type ProfileTab = "dashboard" | "runs" | "volunteering" | "map" | "achievements" | "history" | "meetings";
 
@@ -39,49 +37,20 @@ function profileDisplayName(user: AdminUserPreviewDashboard["user"]): string {
 
 function ProfileShell({
   children,
-  currentUser,
   profileName,
 }: {
   children: React.ReactNode;
   currentUser: User | null;
   profileName: string | null;
 }) {
-  const handleLogout = async () => {
-    await logout();
-    window.location.href = "/";
-  };
-
+  // Публичный профиль в портальном каркасе: общая шапка сайта, контейнер 1440px.
   return (
-    <div className="shell">
-      <SiteHeader
-        homeHref={currentUser ? SITE_HOME_HREF : SITE_PUBLIC_HOME_HREF}
-        navItems={currentUser ? APP_NAV_ITEMS : PUBLIC_NAV_ITEMS}
-        activePath=""
-        showAdminNav={currentUser?.is_admin ?? false}
-        actions={
-          currentUser ? (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void handleLogout()}>
-              Выйти
-            </button>
-          ) : (
-            <div className="demo-shell-actions">
-              <a className="btn btn-ghost btn-sm" href={SITE_PUBLIC_HOME_HREF}>На главную</a>
-              <a className="btn primary btn-sm" href="/login">Войти</a>
-            </div>
-          )
-        }
-      />
-      <div className="shell-content">
-        {profileName && (
-          <div className="shell-user">
-            <div className="shell-user-row">
-              <h1 className="shell-user-name">{profileName}</h1>
-            </div>
-          </div>
-        )}
+    <PortalSectionShell>
+      <div className="portal-cab-stack">
+        {profileName && <h1 className="public-profile-name">{profileName}</h1>}
         {children}
       </div>
-    </div>
+    </PortalSectionShell>
   );
 }
 
@@ -221,6 +190,15 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
           Встречи
         </button>
       </div>
+
+      {currentUser === null && (
+        <PromoLoginCard
+          icon="⚡"
+          title="Хотите такую же статистику?"
+          text="Зарегистрируйтесь и привяжите профили своих беговых систем — вся история пробежек, рекорды, достижения и карта локаций соберутся в вашем личном кабинете."
+          cta="Создать свой профиль"
+        />
+      )}
 
       {loading && tab === "dashboard" && <p className="muted">Загрузка…</p>}
       {error && tab === "dashboard" && <div className="card error"><p>{error}</p></div>}

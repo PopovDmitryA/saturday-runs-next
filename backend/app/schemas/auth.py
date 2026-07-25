@@ -56,6 +56,7 @@ class UserResponse(BaseModel):
     display_name_customized: bool = False
     consent_accepted: bool = False
     is_admin: bool = False
+    avatar_url: str | None = None
     auth_identities: list[AuthIdentityResponse] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
-import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { PortalSectionShell, SectionSidebarNav } from "../portal/PortalSectionShell";
+import { RATINGS_NAV } from "./ratingsNav";
 import {
   GENDERED_METRICS,
   getLeaderboard,
@@ -13,6 +14,7 @@ import {
   type MyLeaderboardRow,
 } from "./leaderboardsApi";
 import { unitLabel } from "./pluralize";
+import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import "./leaderboards.css";
 
 const PAGE_STEP = 100;
@@ -261,7 +263,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   );
 
   return (
-    <PortalSectionShell>
+    <PortalSectionShell sidebar={<SectionSidebarNav title="Рейтинги" items={RATINGS_NAV} />}>
       <div className="lb-page">
         <nav className="lb-breadcrumb">
           <a href="/ratings">← Все рейтинги</a>
@@ -291,6 +293,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 — изменение за последнюю неделю
               </p>
             </header>
+
+            <RatingsLoginBanner />
 
             <div className="lb-controls-row">
               <div className="lb-controls-left">

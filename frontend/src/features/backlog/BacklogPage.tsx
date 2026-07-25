@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { AppShell } from "../../components/AppShell";
+import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { DetailModal } from "../../components/DetailModal";
 import { DonateBlock } from "../../components/DonateBlock";
 import { getCurrentUser, type User } from "../../lib/api";
@@ -574,8 +574,8 @@ function BacklogContent() {
 
 export function BacklogPage() {
   return (
-    <AppShell title="Бэклог" activePath="/backlog">
+    <PortalSectionShell>
       <BacklogContent />
-    </AppShell>
+    </PortalSectionShell>
   );
 }

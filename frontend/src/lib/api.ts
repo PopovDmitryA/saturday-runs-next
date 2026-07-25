@@ -20,6 +20,7 @@ export type User = {
   display_name_customized: boolean;
   consent_accepted: boolean;
   is_admin: boolean;
+  avatar_url: string | null;
   auth_identities: AuthIdentity[];
 };
 
@@ -114,7 +115,13 @@ export type DashboardAnalytics = {
   last_activity_date: string | null;
   first_run_date: string | null;
   days_since_first_run: number | null;
-  top_location: { name: string; platform_codes: string[]; count: number; tied_count: number } | null;
+  top_location: {
+    name: string;
+    slug?: string | null;
+    platform_codes: string[];
+    count: number;
+    tied_count: number;
+  } | null;
   top_volunteer_role: { role: string; count: number } | null;
   runs_last_12_months: number;
   runs_current_year: number;
@@ -535,6 +542,22 @@ export function updateDisplayName(displayName: string) {
     method: "PATCH",
     body: JSON.stringify({ display_name: displayName.trim() }),
   });
+}
+
+export function uploadAvatar(file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  // headers: {} затирает дефолтный Content-Type: application/json — браузер
+  // сам проставит multipart/form-data с boundary.
+  return apiFetch<User>(
+    "/users/me/avatar",
+    { method: "POST", body: form, headers: {} },
+    { timeoutMs: 60_000 },
+  );
+}
+
+export function deleteAvatar() {
+  return apiFetch<User>("/users/me/avatar", { method: "DELETE" });
 }
 
 export function logout() {
@@ -1630,6 +1653,9 @@ export type LocationLastEvent = {
   best_male_time_display: string | null;
   best_female_time_sec: number | null;
   best_female_time_display: string | null;
+  debutants: number | null;
+  first_at_location: number | null;
+  prs: number | null;
 };
 
 export type LocationPageStats = {
@@ -1659,6 +1685,16 @@ export type LocationHistogramRow = {
   count: number;
 };
 
+export type LocationAgeGroupRecord = {
+  gender: "male" | "female";
+  age_group: string;
+  finish_time_sec: number;
+  finish_time_display: string | null;
+  runner_name: string | null;
+  event_date: string | null;
+  platform_code: string | null;
+};
+
 export type LocationPage = {
   slug: string;
   identity_key: string;
@@ -1675,6 +1711,7 @@ export type LocationPage = {
   platforms: LocationPagePlatform[];
   stats: LocationPageStats;
   histogram: { bin_size_sec: number; rows: LocationHistogramRow[] };
+  age_group_records: LocationAgeGroupRecord[];
 };
 
 export type LocationIndexItem = {
@@ -1770,6 +1807,27 @@ export type LocationLeaders = {
 
 export function getLocationLeaders(slug: string) {
   return apiFetch<LocationLeaders>(`/locations/page/${encodeURIComponent(slug)}/leaders`);
+}
+
+export type LocationPersonalStats = {
+  slug: string;
+  name: string;
+  runs_count: number;
+  total_runs: number;
+  best_time_sec: number | null;
+  best_time_display: string | null;
+  best_time_date: string | null;
+  avg_time_sec: number | null;
+  avg_time_display: string | null;
+  first_run_date: string | null;
+  last_run_date: string | null;
+  volunteering_count: number;
+  rank_by_runs: number | null;
+  runners_total: number | null;
+};
+
+export function getLocationPersonalStats(slug: string) {
+  return apiFetch<LocationPersonalStats>(`/locations/page/${encodeURIComponent(slug)}/me`);
 }
 
 export function getLocationsIndex() {

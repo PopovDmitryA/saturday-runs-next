@@ -47,16 +47,20 @@ def _build_platform_visit_index(
 
 def build_catalog_locations_table(
     db: Session,
-    user_id: UUID,
+    user_id: UUID | None,
     *,
     include_test_events: bool = False,
 ) -> dict[str, object]:
-    visit_details = build_user_unique_location_details(
-        db,
-        user_id,
-        include_test_events=include_test_events,
-    )
-    visit_index = _build_platform_visit_index(visit_details)
+    # Аноним (user_id=None) видит каталог без отметок «посещено».
+    if user_id is not None:
+        visit_details = build_user_unique_location_details(
+            db,
+            user_id,
+            include_test_events=include_test_events,
+        )
+        visit_index = _build_platform_visit_index(visit_details)
+    else:
+        visit_index = {}
 
     rows_query = (
         db.query(Location, Platform)

@@ -7,6 +7,8 @@ import {
   PORTAL_CABINET_MAP_HREF,
   PORTAL_CABINET_MEETINGS_HREF,
   PORTAL_CABINET_RUNS_HREF,
+  PORTAL_CABINET_SETTINGS_HREF,
+  PORTAL_CABINET_SHARE_HREF,
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_LOGIN_HREF,
 } from "../../../lib/portalRoutes";
@@ -14,6 +16,8 @@ import { PortalHeader } from "../PortalHeader";
 import "../portal.css";
 import "./cabinet.css";
 
+// "settings" — служебная страница без пункта в основной навигации (живёт под
+// разделительной линией), поэтому её ключ не участвует в NAV_ICONS/CABINET_NAV.
 export type CabinetTabKey =
   | "dashboard"
   | "runs"
@@ -21,7 +25,9 @@ export type CabinetTabKey =
   | "meetings"
   | "achievements"
   | "history"
-  | "map";
+  | "map"
+  | "share"
+  | "settings";
 
 type CabinetNavItem = {
   key: CabinetTabKey;
@@ -39,7 +45,7 @@ function icon(paths: ReactNode) {
   );
 }
 
-const NAV_ICONS: Record<CabinetTabKey, ReactNode> = {
+const NAV_ICONS: Record<Exclude<CabinetTabKey, "settings">, ReactNode> = {
   dashboard: icon(
     <>
       <rect x="3" y="3" width="7.5" height="9" rx="1.6" />
@@ -78,6 +84,14 @@ const NAV_ICONS: Record<CabinetTabKey, ReactNode> = {
       <path d="M9 4v14M15 6v14" />
     </>,
   ),
+  share: icon(
+    <>
+      <circle cx="6" cy="12" r="2.6" />
+      <circle cx="17.5" cy="5.5" r="2.6" />
+      <circle cx="17.5" cy="18.5" r="2.6" />
+      <path d="M8.4 10.7 15.1 6.8M8.4 13.3l6.7 3.9" />
+    </>,
+  ),
 };
 
 const CABINET_NAV: CabinetNavItem[] = [
@@ -98,6 +112,7 @@ const CABINET_NAV: CabinetNavItem[] = [
   { key: "meetings", href: PORTAL_CABINET_MEETINGS_HREF, label: "Встречи", icon: NAV_ICONS.meetings },
   { key: "history", href: PORTAL_CABINET_HISTORY_HREF, label: "Моя история", icon: NAV_ICONS.history },
   { key: "map", href: PORTAL_CABINET_MAP_HREF, label: "Карта", icon: NAV_ICONS.map },
+  { key: "share", href: PORTAL_CABINET_SHARE_HREF, label: "Поделиться", icon: NAV_ICONS.share },
 ];
 
 // Нижняя навигация телефона: 4 главных раздела + «Ещё» (остальное в шторке).
@@ -105,12 +120,12 @@ const BOTTOM_NAV_KEYS: CabinetTabKey[] = ["dashboard", "runs", "volunteering", "
 
 type SecondaryNavItem = { href: string; label: string; adminOnly?: boolean };
 
-// Служебные разделы пока живут на старых адресах — до их собственной перевёрстки.
-// Локации/Рейтинги/О проекте сюда НЕ дублируем — они уже есть в шапке портала
-// (общий <PortalHeader/>), которая рендерится над кабинетом.
+// Служебные разделы. Локации/Рейтинги/О проекте сюда НЕ дублируем — они уже
+// есть в шапке портала (общий <PortalHeader/>), которая рендерится над
+// кабинетом. «Админка» подсвечена янтарным (см. .portal-cab-nav-item-admin).
 const SECONDARY_NAV: SecondaryNavItem[] = [
-  { href: "/share", label: "Поделиться" },
-  { href: "/settings", label: "Настройки" },
+  { href: PORTAL_CABINET_SETTINGS_HREF, label: "Настройки" },
+  { href: "/backlog", label: "Бэклог идей" },
   { href: "/admin/users", label: "Админка", adminOnly: true },
 ];
 
@@ -148,12 +163,18 @@ function CabinetUserCard({ initialUser, collapsed = false }: { initialUser: User
 
   const label = userLabel(user);
 
+  const avatar = user.avatar_url ? (
+    <img className="portal-cab-user-avatar portal-cab-user-avatar-img" src={user.avatar_url} alt="" />
+  ) : (
+    <span className="portal-cab-user-avatar" aria-hidden="true">
+      {userInitials(label)}
+    </span>
+  );
+
   if (collapsed) {
     return (
       <div className="portal-cab-user portal-cab-user-collapsed" title={label}>
-        <span className="portal-cab-user-avatar" aria-hidden="true">
-          {userInitials(label)}
-        </span>
+        {avatar}
       </div>
     );
   }
@@ -175,9 +196,7 @@ function CabinetUserCard({ initialUser, collapsed = false }: { initialUser: User
 
   return (
     <div className="portal-cab-user">
-      <span className="portal-cab-user-avatar" aria-hidden="true">
-        {userInitials(label)}
-      </span>
+      {avatar}
       {!editing ? (
         <div className="portal-cab-user-info">
           <span className="portal-cab-user-name" title={label}>
@@ -371,7 +390,11 @@ export function PortalCabinetShell({
           {!hideSecondaryNav && (
             <nav className="portal-cab-nav portal-cab-nav-secondary" aria-label="Служебные разделы">
               {SECONDARY_NAV.filter((item) => !item.adminOnly || user.is_admin).map((item) => (
-                <a key={item.href} href={item.href} className="portal-cab-nav-item portal-cab-nav-item-secondary">
+                <a
+                  key={item.href}
+                  href={item.href}
+                  className={`portal-cab-nav-item portal-cab-nav-item-secondary${item.adminOnly ? " portal-cab-nav-item-admin" : ""}`}
+                >
                   <span className="portal-cab-nav-label">{item.label}</span>
                 </a>
               ))}
@@ -443,7 +466,11 @@ export function PortalCabinetShell({
               <>
                 <div className="portal-cab-more-sep" />
                 {SECONDARY_NAV.filter((item) => !item.adminOnly || user.is_admin).map((item) => (
-                  <a key={item.href} href={item.href} className="portal-cab-more-item portal-cab-more-item-secondary">
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    className={`portal-cab-more-item portal-cab-more-item-secondary${item.adminOnly ? " portal-cab-nav-item-admin" : ""}`}
+                  >
                     {item.label}
                   </a>
                 ))}

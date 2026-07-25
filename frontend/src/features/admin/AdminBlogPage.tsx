@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "./AdminShell";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import {
@@ -166,7 +166,7 @@ function AdminBlogContent() {
   };
 
   return (
-    <AppShell title="Блог" activePath="/admin">
+    <AdminShell title="Блог">
       <AdminSubnav activePath="/admin/blog" />
 
       <section className="card admin-abuse-form">
@@ -352,7 +352,7 @@ function AdminBlogContent() {
           ? `Удалить «${confirmDelete.title}» из блога? Пост в Telegram-канале не пострадает.`
           : ""}
       </ConfirmModal>
-    </AppShell>
+    </AdminShell>
   );
 }
 

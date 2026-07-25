@@ -23,3 +23,5 @@ export const PORTAL_CABINET_ACHIEVEMENTS_HREF = "/new/achievements";
 export const PORTAL_CABINET_MEETINGS_HREF = "/new/co-runners";
 export const PORTAL_CABINET_MAP_HREF = "/new/maps";
 export const PORTAL_CABINET_HISTORY_HREF = "/new/history";
+export const PORTAL_CABINET_SHARE_HREF = "/new/share";
+export const PORTAL_CABINET_SETTINGS_HREF = "/new/settings";

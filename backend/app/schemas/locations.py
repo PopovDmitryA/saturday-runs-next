@@ -131,6 +131,10 @@ class LocationLastEventResponse(BaseModel):
     best_male_time_display: str | None = None
     best_female_time_sec: int | None = None
     best_female_time_display: str | None = None
+    # Те же метрики, что в журнале протоколов.
+    debutants: int | None = None
+    first_at_location: int | None = None
+    prs: int | None = None
 
 
 class LocationPageStatsResponse(BaseModel):
@@ -167,6 +171,18 @@ class LocationHistogramResponse(BaseModel):
     rows: list[LocationHistogramRowResponse] = Field(default_factory=list)
 
 
+class LocationAgeGroupRecordResponse(BaseModel):
+    """Рекорд локации в возрастной группе (parkrun исключён — другие категории)."""
+
+    gender: str
+    age_group: str
+    finish_time_sec: int
+    finish_time_display: str | None = None
+    runner_name: str | None = None
+    event_date: date | None = None
+    platform_code: str | None = None
+
+
 class LocationPageResponse(BaseModel):
     slug: str
     identity_key: str
@@ -183,6 +199,7 @@ class LocationPageResponse(BaseModel):
     platforms: list[LocationPagePlatformResponse] = Field(default_factory=list)
     stats: LocationPageStatsResponse = Field(default_factory=LocationPageStatsResponse)
     histogram: LocationHistogramResponse = Field(default_factory=lambda: LocationHistogramResponse(bin_size_sec=10))
+    age_group_records: list[LocationAgeGroupRecordResponse] = Field(default_factory=list)
 
 
 class LocationEventRowResponse(BaseModel):
@@ -289,3 +306,24 @@ class CatalogLocationTableRowResponse(BaseModel):
 class CatalogLocationsTableResponse(BaseModel):
     rows: list[CatalogLocationTableRowResponse] = Field(default_factory=list)
     total_rows: int = 0
+
+
+class LocationPersonalStatsResponse(BaseModel):
+    """Личная статистика пользователя на локации (блок «Вы на этой локации»)."""
+
+    slug: str
+    name: str
+    runs_count: int = 0
+    # Все пробежки пользователя по всем локациям — для строки «N% ваших стартов».
+    total_runs: int = 0
+    best_time_sec: int | None = None
+    best_time_display: str | None = None
+    best_time_date: date | None = None
+    avg_time_sec: int | None = None
+    avg_time_display: str | None = None
+    first_run_date: date | None = None
+    last_run_date: date | None = None
+    volunteering_count: int = 0
+    # Место в топе локации по числу пробежек (та же группировка, что у лидеров).
+    rank_by_runs: int | None = None
+    runners_total: int | None = None
