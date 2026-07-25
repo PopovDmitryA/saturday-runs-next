@@ -315,6 +315,7 @@ def get_admin_user_preview_dashboard(db: Session, user_id: UUID) -> dict[str, ob
             "telegram_username": user.telegram_username,
             "display_name": user.display_name,
             "news_subscribed": user.news_subscribed,
+            "avatar_url": user.avatar_url,
             "auth_logins": auth_logins,
         },
         "stats": payload["stats"],

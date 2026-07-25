@@ -41,6 +41,26 @@ const EMPTY_DRAFT: Draft = {
 // по статусу нет — разбиение на секции само разводит карточки по состояниям.
 const STATUS_ORDER: BacklogCardStatus[] = ["pending", "in_progress", "rejected", "done"];
 
+/** Аватар автора: картинка, если загружена, иначе инициалы. Аноним — без имени. */
+function AuthorAvatar({ name, avatarUrl }: { name: string | null; avatarUrl?: string | null }) {
+  if (avatarUrl) {
+    return <img className="backlog-avatar" src={avatarUrl} alt="" />;
+  }
+  const initials = (name ?? "?")
+    .replace(/^@/, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+  return (
+    <span className="backlog-avatar backlog-avatar-initials" aria-hidden="true">
+      {initials || "?"}
+    </span>
+  );
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
@@ -176,6 +196,9 @@ function BacklogContent() {
   }, [openCardId, comments, commentsLoading, loadComments]);
 
   const openCard = (cardId: string) => {
+    // Карточка получает собственный адрес: ссылку можно скопировать из строки
+    // браузера и отправить коллегам, чтобы позвать голосовать.
+    window.history.replaceState(null, "", `${window.location.pathname}?card=${cardId}`);
     setOpenCardId(cardId);
     setCommentDraft("");
     setCommentAnon(false);
@@ -184,6 +207,7 @@ function BacklogContent() {
   };
 
   const closeCard = () => {
+    window.history.replaceState(null, "", window.location.pathname);
     setOpenCardId(null);
     setCommentDraft("");
     setCommentAnon(false);
@@ -339,6 +363,10 @@ function BacklogContent() {
         <CardBadges card={card} />
         <h3 className="backlog-card-title">{card.title}</h3>
         <div className="backlog-card-meta muted">
+          <AuthorAvatar
+            name={card.is_anonymous ? null : card.author_display_name}
+            avatarUrl={card.is_anonymous ? null : card.author_avatar_url}
+          />
           {card.is_anonymous || !card.author_display_name ? "Аноним" : card.author_display_name}
           {" · "}
           {/* Возраст карточки, а не дата: в ленте важнее «давно ли». Точная
@@ -561,6 +589,10 @@ function BacklogContent() {
           <div className="backlog-modal">
             <CardBadges card={openedCard} />
             <div className="backlog-modal-meta muted">
+              <AuthorAvatar
+                name={openedCard.is_anonymous ? null : openedCard.author_display_name}
+                avatarUrl={openedCard.is_anonymous ? null : openedCard.author_avatar_url}
+              />
               {openedCard.is_anonymous || !openedCard.author_display_name ? (
                 "Аноним"
               ) : (
@@ -696,6 +728,10 @@ function BacklogContent() {
                       }`}
                     >
                       <div className="backlog-bubble-head">
+                        <AuthorAvatar
+                          name={comment.is_anonymous ? null : comment.author_display_name}
+                          avatarUrl={comment.is_anonymous ? null : comment.author_avatar_url}
+                        />
                         <span className="backlog-bubble-author">{commentAuthorLabel(comment)}</span>
                         {comment.is_admin_author && <span className="backlog-tag backlog-tag-admin">Админ</span>}
                       </div>

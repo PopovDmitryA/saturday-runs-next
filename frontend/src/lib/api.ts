@@ -2050,6 +2050,7 @@ export type AdminUserPreviewDashboard = {
     telegram_username: string | null;
     display_name: string | null;
     news_subscribed: boolean;
+    avatar_url: string | null;
     auth_logins: AdminUserAuthBrief[];
   };
   stats: DashboardStats;

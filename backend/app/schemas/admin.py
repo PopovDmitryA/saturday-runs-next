@@ -79,6 +79,8 @@ class AdminUserPreviewUser(BaseModel):
     auth_logins: list[AdminUserAuthBrief] = Field(default_factory=list)
     display_name: str | None = None
     news_subscribed: bool = False
+    # Аватар участника — виден и гостю на публичном профиле (26.07.2026).
+    avatar_url: str | None = None
 
 
 class AdminUserPreviewDashboardResponse(BaseModel):

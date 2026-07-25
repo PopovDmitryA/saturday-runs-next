@@ -509,3 +509,33 @@
   height: 14px;
   vertical-align: -2px;
 }
+
+/* Аватар автора в ленте, модалке и комментариях бэклога. */
+.backlog-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+  vertical-align: -5px;
+  margin-right: 6px;
+}
+
+.backlog-avatar-initials {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent-indigo), #7c3aed);
+}
+
+.backlog-card-meta,
+.backlog-modal-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+}

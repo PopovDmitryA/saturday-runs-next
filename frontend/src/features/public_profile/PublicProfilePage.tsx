@@ -41,11 +41,13 @@ function profileDisplayName(user: AdminUserPreviewDashboard["user"]): string {
 function ProfileShell({
   children,
   profileName,
+  profileAvatarUrl,
   tabsGroup,
 }: {
   children: React.ReactNode;
   currentUser: User | null;
   profileName: string | null;
+  profileAvatarUrl?: string | null;
   /** Вкладки профиля для единого сайдбара (группа с именем участника). */
   tabsGroup?: SidebarExtraGroup;
 }) {
@@ -58,7 +60,14 @@ function ProfileShell({
         <SiteSidebar active={null} extraGroup={tabsGroup} />
         <main className="portal-cab-main portal-section">
           <div className="portal-cab-stack">
-            {profileName && <h1 className="public-profile-name">{profileName}</h1>}
+            {profileName && (
+              <div className="public-profile-head">
+                {profileAvatarUrl && (
+                  <img className="public-profile-avatar" src={profileAvatarUrl} alt="" />
+                )}
+                <h1 className="public-profile-name">{profileName}</h1>
+              </div>
+            )}
             {children}
           </div>
         </main>
@@ -199,7 +208,12 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
   }
 
   return (
-    <ProfileShell currentUser={currentUser} profileName={profileName} tabsGroup={tabsGroup}>
+    <ProfileShell
+      currentUser={currentUser}
+      profileName={profileName}
+      profileAvatarUrl={dashboard?.user.avatar_url}
+      tabsGroup={tabsGroup}
+    >
 
       {/* Мобильные чипы-вкладки: на десктопе навигация в сайдбаре. */}
       <div className="admin-preview-tabs public-profile-tabs" role="tablist" aria-label="Разделы профиля">

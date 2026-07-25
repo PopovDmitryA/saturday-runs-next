@@ -50,6 +50,8 @@ class BacklogCardResponse(BaseModel):
     is_anonymous: bool
     author_display_name: str | None = None
     author_handle: str | None = None
+    # Аватар автора, если загружен и карточка не анонимная.
+    author_avatar_url: str | None = None
     upvotes: int
     downvotes: int
     score: int
@@ -77,6 +79,7 @@ class BacklogCommentResponse(BaseModel):
     is_anonymous: bool
     author_display_name: str | None = None
     author_handle: str | None = None
+    author_avatar_url: str | None = None
     # Ответ администратора/разработчика сайта — помечается на фронте бейджем
     # (админу анонимность недоступна, см. _resolve_anonymous в backlog_service).
     is_admin_author: bool = False
@@ -109,6 +112,8 @@ class BacklogCardAdminResponse(BaseModel):
     is_anonymous: bool
     author_display_name: str | None = None
     author_handle: str | None = None
+    # Аватар автора, если загружен и карточка не анонимная.
+    author_avatar_url: str | None = None
     upvotes: int
     downvotes: int
     score: int

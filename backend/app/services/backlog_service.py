@@ -130,6 +130,7 @@ def _card_to_response(
         is_anonymous=card.is_anonymous,
         author_display_name=author_name,
         author_handle=author_handle,
+        author_avatar_url=None if card.is_anonymous else card.author.avatar_url,
         upvotes=card.upvotes,
         downvotes=card.downvotes,
         score=card.score,
@@ -407,6 +408,7 @@ def _resolve_anonymous(db: Session, author_id: UUID, requested: bool) -> bool:
 
 def _comment_to_response(comment: BacklogComment, *, viewer_id: UUID | None = None) -> BacklogCommentResponse:
     author_name, author_handle = (None, None) if comment.is_anonymous else _author_display(comment.author)
+    author_avatar = None if comment.is_anonymous else comment.author.avatar_url
     return BacklogCommentResponse(
         id=comment.id,
         card_id=comment.card_id,
@@ -414,6 +416,7 @@ def _comment_to_response(comment: BacklogComment, *, viewer_id: UUID | None = No
         is_anonymous=comment.is_anonymous,
         author_display_name=author_name,
         author_handle=author_handle,
+        author_avatar_url=author_avatar,
         is_admin_author=_is_admin_author(comment),
         is_mine=viewer_id is not None and comment.author_user_id == viewer_id,
         created_at=comment.created_at,
@@ -456,6 +459,7 @@ def _card_to_admin_response(card: BacklogCard, *, comment_count: int) -> Backlog
         is_anonymous=card.is_anonymous,
         author_display_name=author_name,
         author_handle=author_handle,
+        author_avatar_url=None if card.is_anonymous else card.author.avatar_url,
         upvotes=card.upvotes,
         downvotes=card.downvotes,
         score=card.score,
