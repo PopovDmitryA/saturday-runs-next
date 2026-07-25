@@ -622,6 +622,36 @@ def _personal_records_by_date(
     return {(event_date, code): int(count) for event_date, code, count in rows}
 
 
+def _registered_parks(db: Session) -> int:
+    """Число разных «домашних» парков зарегистрированных пользователей (Т9).
+
+    Домашний парк пользователя — локация, где у его привязанных участников
+    больше всего финишей (при равенстве — стабильный детерминированный выбор).
+    Соц-доказательство «участники из N парков уже нашли свою статистику»:
+    парков заметно больше, чем самих пользователей на старте проекта.
+    """
+    per_loc = (
+        db.query(
+            PlatformLink.user_id.label("user_id"),
+            Event.location_id.label("location_id"),
+            func.row_number()
+            .over(
+                partition_by=PlatformLink.user_id,
+                order_by=(func.count().desc(), Event.location_id),
+            )
+            .label("rn"),
+        )
+        .join(RunResult, RunResult.participant_id == PlatformLink.participant_id)
+        .join(Event, Event.id == RunResult.event_id)
+        .filter(PlatformLink.participant_id.isnot(None))
+        .group_by(PlatformLink.user_id, Event.location_id)
+        .subquery()
+    )
+    return int(
+        db.query(func.count(func.distinct(per_loc.c.location_id))).filter(per_loc.c.rn == 1).scalar() or 0
+    )
+
+
 def _total_time_sec(db: Session, excluded_location_ids: list[UUID]) -> int:
     return int(
         _exclude_locations(
@@ -1329,6 +1359,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         "systems": systems,
         "geo": geo,
         "fun_facts": fun_facts,
+        "registered_parks": _registered_parks(db),
         "gender_split": {
             "total": gender_total,
             "by_platform": [

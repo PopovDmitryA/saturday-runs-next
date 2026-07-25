@@ -38,6 +38,7 @@ def test_record_ab_event_persists_fields(db_session: Session) -> None:
 
 
 def test_record_ab_event_rejects_unknown_experiment_and_type(db_session: Session) -> None:
+    before = db_session.query(AbEvent).count()
     assert (
         record_ab_event(
             db_session,
@@ -58,7 +59,7 @@ def test_record_ab_event_rejects_unknown_experiment_and_type(db_session: Session
         )
         is None
     )
-    assert db_session.query(AbEvent).count() == 0
+    assert db_session.query(AbEvent).count() == before
 
 
 def test_login_complete_requires_viewer(db_session: Session) -> None:

@@ -197,4 +197,19 @@ class PortalHomeResponse(BaseModel):
     systems: list[PortalSystemCardResponse]
     geo: PortalGeoResponse
     fun_facts: PortalFunFactsResponse
+    # Т9: соц-доказательство у CTA варианта B. Дефолт 0 — старый кэш без ключа
+    # валиден, фронт при нуле строку просто не показывает.
+    registered_parks: int = 0
     gender_split: PortalGenderSplitResponse | None = None
+
+
+class PortalTeaserResponse(BaseModel):
+    """Предпросмотр карточки участника для тизера на главной (Т10)."""
+
+    platform_code: str
+    display_name: str | None = None
+    finishes: int
+    best_time_display: str | None = None
+    locations: int
+    first_event_date: date | None = None
+    last_event_date: date | None = None

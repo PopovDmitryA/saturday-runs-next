@@ -7,6 +7,7 @@ import { PortalBlogSection } from "./PortalBlogSection";
 import { PortalGeoMap } from "./PortalGeoMap";
 import { PortalHeader } from "./PortalHeader";
 import { PLATFORM_CHART_META, PortalTrendChart, type TrendPoint } from "./PortalTrendChart";
+import { PortalTeaserCard } from "./PortalTeaser";
 import {
   fetchPortalHome,
   PortalHomeError,
@@ -221,18 +222,22 @@ function GenderSplitPanel({ data }: { data: import("./portalTypes").PortalGender
 type ChartTabKey = "finishes" | "newcomers" | "records" | "locations";
 
 export function PortalHomePage() {
+  // Вариант АБ-эксперимента home_v1: B — новая главная (Т1–Т10), A — как было.
+  const isB = getHomeVariant() === "B";
+
   const [data, setData] = useState<PortalHomeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [period, setPeriod] = useState<"all" | "year">("all");
+  // Т2 (вариант B): по умолчанию «Последний год» — его цифры можно примерить
+  // на себя, вечные итоги — абстракция.
+  const [period, setPeriod] = useState<"all" | "year">(isB ? "year" : "all");
   const [chartTab, setChartTab] = useState<ChartTabKey>("finishes");
 
-  // Т3 (вариант B): большие числа «докручиваются» при появлении на экране.
-  const countUp = getHomeVariant() === "B";
-
-  // АБ-аналитика главной: глубина скролла и видимость нижней CTA.
+  // АБ-аналитика главной: глубина скролла и видимость CTA (нижней и hero).
   const ctaRef = useRef<HTMLElement | null>(null);
+  const heroCtaRef = useRef<HTMLDivElement | null>(null);
   useAbScrollDepth(data !== null);
   useAbCtaView(ctaRef, "bottom", data !== null);
+  useAbCtaView(heroCtaRef, "hero", isB && data !== null);
 
   const selectPeriod = (next: "all" | "year") => {
     if (next !== period) {
@@ -449,24 +454,10 @@ export function PortalHomePage() {
 
   const hero = data ? (period === "year" && data.hero_last_year ? data.hero_last_year : data.hero) : null;
 
-  return (
+  // Т1 (вариант B): блок последней недели поднимается выше вечной статистики,
+  // поэтому обе крупные секции собраны в константы и рендерятся в нужном порядке.
+  const scopeSection = data ? (
     <>
-      <PortalHeader />
-      <main className="portal-home">
-        {!data && !error && <p className="portal-loading">Загрузка статистики…</p>}
-        {error && <p className="portal-error">{error}</p>}
-
-        {data && (
-          <>
-            <section className="portal-hero">
-              <p className="portal-eyebrow">Суббота · утро · парк · 5 км</p>
-              <h1>Все парковые беговые системы — в цифрах</h1>
-              <p className="portal-hero-lead">
-                5 вёрст, S95, parkrun и RunPark: вся история — от первого старта до прошлой
-                субботы, в одном месте.
-              </p>
-            </section>
-
             <section className="portal-scope" aria-label="Статистика за период">
             <div className="portal-period-sticky">
             <div className="portal-period" role="tablist" aria-label="Период статистики">
@@ -491,25 +482,25 @@ export function PortalHomePage() {
               <section className="portal-counts" aria-label="Итоги периода">
                 <div className="portal-count">
                   <b className="num">
-                    <CountUpNumber value={hero.finishes_total} format={formatInt} enabled={countUp} />
+                    <CountUpNumber value={hero.finishes_total} format={formatInt} enabled={isB} />
                   </b>
                   <span>финишей</span>
                 </div>
                 <div className="portal-count">
                   <b className="num">
-                    <CountUpNumber value={hero.participants_total} format={formatInt} enabled={countUp} />
+                    <CountUpNumber value={hero.participants_total} format={formatInt} enabled={isB} />
                   </b>
                   <span>участников</span>
                 </div>
                 <div className="portal-count">
                   <b className="num">
-                    <CountUpNumber value={hero.locations_total} format={formatInt} enabled={countUp} />
+                    <CountUpNumber value={hero.locations_total} format={formatInt} enabled={isB} />
                   </b>
                   <span>локаций</span>
                 </div>
                 <div className="portal-count">
                   <b className="num">
-                    <CountUpNumber value={hero.starts_total} format={formatInt} enabled={countUp} />
+                    <CountUpNumber value={hero.starts_total} format={formatInt} enabled={isB} />
                   </b>
                   <span>стартов</span>
                 </div>
@@ -552,7 +543,11 @@ export function PortalHomePage() {
               />
             </section>
             </section>
+    </>
+  ) : null;
 
+  const weekSection = data ? (
+    <>
             <section className="portal-week-scope" aria-label="Итоги последней недели">
             <div className="portal-week-heading">Последняя беговая неделя</div>
 
@@ -565,31 +560,31 @@ export function PortalHomePage() {
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
-                      <CountUpNumber value={data.pulse.starts} format={formatInt} enabled={countUp} />
+                      <CountUpNumber value={data.pulse.starts} format={formatInt} enabled={isB} />
                     </b>{" "}
                     стартов
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
-                      <CountUpNumber value={data.pulse.finishes} format={formatInt} enabled={countUp} />
+                      <CountUpNumber value={data.pulse.finishes} format={formatInt} enabled={isB} />
                     </b>{" "}
                     финишей
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
-                      <CountUpNumber value={data.pulse.newcomers} format={formatInt} enabled={countUp} />
+                      <CountUpNumber value={data.pulse.newcomers} format={formatInt} enabled={isB} />
                     </b>{" "}
                     новичков
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
-                      <CountUpNumber value={data.pulse.volunteers} format={formatInt} enabled={countUp} />
+                      <CountUpNumber value={data.pulse.volunteers} format={formatInt} enabled={isB} />
                     </b>{" "}
                     волонтёров
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
-                      <CountUpNumber value={data.pulse.personal_records} format={formatInt} enabled={countUp} />
+                      <CountUpNumber value={data.pulse.personal_records} format={formatInt} enabled={isB} />
                     </b>{" "}
                     личных рекордов
                   </span>
@@ -737,6 +732,60 @@ export function PortalHomePage() {
               </section>
             )}
             </section>
+    </>
+  ) : null;
+
+
+  return (
+    <>
+      <PortalHeader />
+      <main className="portal-home">
+        {!data && !error && <p className="portal-loading">Загрузка статистики…</p>}
+        {error && <p className="portal-error">{error}</p>}
+
+        {data && (
+          <>
+            <section className="portal-hero">
+              <p className="portal-eyebrow">Суббота · утро · парк · 5 км</p>
+              {isB ? (
+                <>
+                  {/* Т8: заголовок про посетителя, а не про сайт. */}
+                  <h1>Вся ваша беговая история — от первого старта до прошлой субботы</h1>
+                  <p className="portal-hero-lead">
+                    5 вёрст, S95, parkrun и RunPark: рекорды, серии суббот, карта визитов и
+                    встречи — уже посчитаны и ждут вас.
+                  </p>
+                  {/* Т6+Т7: CTA в верхней трети, текст про ценность; Т9: соц-доказательство. */}
+                  <div className="portal-hero-cta" ref={heroCtaRef}>
+                    <a
+                      className="btn primary"
+                      href={PORTAL_LOGIN_HREF}
+                      onClick={() => trackAbEvent("cta_click", "hero")}
+                    >
+                      Найти себя в статистике
+                    </a>
+                    {data.registered_parks > 0 && (
+                      <span className="portal-hero-proof">
+                        Участники из {formatInt(data.registered_parks)}{" "}
+                        {plural(data.registered_parks, "парка", "парков", "парков")} уже нашли здесь
+                        свою статистику
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h1>Все парковые беговые системы — в цифрах</h1>
+                  <p className="portal-hero-lead">
+                    5 вёрст, S95, parkrun и RunPark: вся история — от первого старта до прошлой
+                    субботы, в одном месте.
+                  </p>
+                </>
+              )}
+            </section>
+
+            {isB ? weekSection : scopeSection}
+            {isB ? scopeSection : weekSection}
 
             <section className="portal-panel" aria-label="Рекорды посещаемости">
               <div className="portal-panel-head">
@@ -917,22 +966,34 @@ export function PortalHomePage() {
             <section className="portal-cta portal-cta-split" ref={ctaRef}>
               <div className="portal-cta-copy">
                 <h2>А теперь найдите здесь себя</h2>
-                <p>
-                  Привяжите профили беговых систем — и получите личную статистику по всем
-                  платформам: рекорды, серии суббот, карту визитов, встречи и вехи вашей беговой
-                  истории.
-                </p>
+                {isB ? (
+                  <p>
+                    Выберите свою систему и введите ID — покажем предпросмотр вашей карточки
+                    прямо сейчас, без регистрации. Полная версия — рекорды, серии суббот, карта
+                    визитов и встречи — откроется после входа.
+                  </p>
+                ) : (
+                  <p>
+                    Привяжите профили беговых систем — и получите личную статистику по всем
+                    платформам: рекорды, серии суббот, карту визитов, встречи и вехи вашей беговой
+                    истории.
+                  </p>
+                )}
                 <div className="portal-cta-actions">
                   <a
                     className="btn primary"
                     href={PORTAL_LOGIN_HREF}
                     onClick={() => trackAbEvent("cta_click", "bottom")}
                   >
-                    Создать кабинет
+                    {isB ? "Найти себя в статистике" : "Создать кабинет"}
                   </a>
                 </div>
               </div>
 
+              {/* Т10 (вариант B): вместо примера карточки — живой предпросмотр по ID. */}
+              {isB ? (
+                <PortalTeaserCard />
+              ) : (
               <div className="portal-poster" aria-hidden="true">
                 <div className="portal-poster-badge">пример вашей карточки</div>
                 <div className="portal-poster-head">
@@ -1065,6 +1126,7 @@ export function PortalHomePage() {
                   <span className="portal-poster-chip">⚡ 8 PR</span>
                 </div>
               </div>
+              )}
             </section>
           </>
         )}

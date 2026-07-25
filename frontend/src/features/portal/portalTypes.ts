@@ -159,6 +159,18 @@ export type PortalHomeResponse = {
   geo: PortalGeo;
   fun_facts: PortalFunFacts;
   gender_split: PortalGenderSplit | null;
+  // Т9: сколько разных «домашних» парков у зарегистрированных пользователей.
+  registered_parks: number;
+};
+
+export type PortalTeaser = {
+  platform_code: string;
+  display_name: string | null;
+  finishes: number;
+  best_time_display: string | null;
+  locations: number;
+  first_event_date: string | null;
+  last_event_date: string | null;
 };
 
 /** Ошибка загрузки с HTTP-статусом: по нему страница отличает «стек
@@ -178,4 +190,14 @@ export async function fetchPortalHome(): Promise<PortalHomeResponse> {
     throw new PortalHomeError(response.status);
   }
   return (await response.json()) as PortalHomeResponse;
+}
+
+/** Тизер Т10: предпросмотр карточки по ID системы. 404 — не нашли. */
+export async function fetchPortalTeaser(platform: string, athleteId: string): Promise<PortalTeaser> {
+  const params = new URLSearchParams({ platform, athlete_id: athleteId });
+  const response = await fetch(`/api/portal/teaser?${params}`, { credentials: "same-origin" });
+  if (!response.ok) {
+    throw new PortalHomeError(response.status);
+  }
+  return (await response.json()) as PortalTeaser;
 }
