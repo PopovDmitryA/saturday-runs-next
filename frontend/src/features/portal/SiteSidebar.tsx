@@ -14,6 +14,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { logout, updateDisplayName, type User } from "../../lib/api";
 import {
+  PORTAL_ABOUT_HREF,
   PORTAL_CABINET_ACHIEVEMENTS_HREF,
   PORTAL_CABINET_HISTORY_HREF,
   PORTAL_CABINET_HREF,
@@ -25,7 +26,7 @@ import {
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_LOGIN_HREF,
 } from "../../lib/portalRoutes";
-import { useOptionalUser } from "../../lib/useOptionalUser";
+import { clearCachedUser, useOptionalUser } from "../../lib/useOptionalUser";
 import "./cabinet/cabinet.css";
 
 // "settings" — служебная страница без пункта в основной навигации (живёт под
@@ -123,6 +124,14 @@ const LOCATIONS_ICON = icon(
   </>,
 );
 
+const PROFILE_ICON = icon(
+  <>
+    <circle cx="12" cy="8" r="3.4" />
+    <path d="M5.5 20a6.8 6.8 0 0 1 13 0" />
+    <path d="M17.5 3.5 19 5l2.5-2.5" />
+  </>,
+);
+
 const RATINGS_ICON = icon(
   <>
     <path d="M7.5 4h9v4.5a4.5 4.5 0 0 1-9 0V4Z" />
@@ -158,6 +167,7 @@ export type SecondaryNavItem = { href: string; label: string; adminOnly?: boolea
 // «Админка» подсвечена янтарным (см. .portal-cab-nav-item-admin).
 export const SECONDARY_NAV: SecondaryNavItem[] = [
   { href: PORTAL_CABINET_SETTINGS_HREF, label: "Настройки", authOnly: true },
+  { href: PORTAL_ABOUT_HREF, label: "О проекте" },
   { href: "/backlog", label: "Бэклог" },
   { href: "/admin/users", label: "Админка", adminOnly: true },
 ];
@@ -306,6 +316,12 @@ export function isCabinetTab(active: SiteSidebarActive): active is CabinetTabKey
   return active !== null && CABINET_TAB_KEYS.includes(active);
 }
 
+export type SidebarExtraGroup = {
+  /** Заголовок группы (например, имя участника на публичном профиле). */
+  title: string;
+  items: { key: string; label: string; active: boolean; onClick: () => void }[];
+};
+
 export type SiteSidebarProps = {
   active: SiteSidebarActive;
   /** User — залогинен, null — аноним, undefined — определить самостоятельно
@@ -319,6 +335,8 @@ export type SiteSidebarProps = {
   hideSecondaryNav?: boolean;
   /** Сообщить контейнеру о сворачивании (пересчёт офсета модалок в ЛК). */
   onCollapsedChange?: (collapsed: boolean) => void;
+  /** Доп. группа вкладок текущей страницы (публичный профиль участника). */
+  extraGroup?: SidebarExtraGroup;
 };
 
 export function SiteSidebar({
@@ -328,11 +346,15 @@ export function SiteSidebar({
   hrefForTab,
   hideSecondaryNav = false,
   onCollapsedChange,
+  extraGroup,
 }: SiteSidebarProps) {
   // Хук вызывается всегда (правила хуков); если user передан пропом — он главнее.
   const detectedUser = useOptionalUser();
-  const user = userProp !== undefined ? userProp : (detectedUser ?? null);
-  const authed = user !== null;
+  // undefined — сессия ещё проверяется (первый заход без кэша): рисуем
+  // нейтральное состояние, чтобы залогиненному не мигало «Войти» и дизейблы.
+  const user = userProp !== undefined ? userProp : detectedUser;
+  const authed = user != null;
+  const anon = user === null;
 
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -362,6 +384,7 @@ export function SiteSidebar({
 
   const handleLogout = async () => {
     await logout();
+    clearCachedUser();
     window.location.href = PORTAL_LOGIN_HREF;
   };
 
@@ -370,9 +393,8 @@ export function SiteSidebar({
 
   return (
     <aside className={`portal-cab-sidebar${collapsed ? " collapsed" : ""}`}>
-      {authed ? (
-        <CabinetUserCard initialUser={user} collapsed={collapsed} />
-      ) : (
+      {authed && <CabinetUserCard initialUser={user} collapsed={collapsed} />}
+      {anon && (
         <div className={`portal-cab-user portal-cab-login-card${collapsed ? " portal-cab-user-collapsed" : ""}`}>
           {collapsed ? (
             <a className="portal-cab-user-avatar portal-cab-login-avatar" href={PORTAL_LOGIN_HREF} title="Войти">
@@ -385,27 +407,40 @@ export function SiteSidebar({
           )}
         </div>
       )}
+      {user === undefined && (
+        <div className="portal-cab-user portal-cab-user-pending" aria-hidden="true" />
+      )}
 
       <nav className="portal-cab-nav" aria-label="Разделы сайта">
-        {/* Группа «Личный кабинет»: анониму видна, но задизейблена. */}
-        <button
-          type="button"
+        {/* Группа «Личный кабинет»: клик по тексту — переход в обзор (группа
+            раскроется сама на странице ЛК), клик по стрелке — только
+            раскрыть/скрыть. Анониму видна, но задизейблена. */}
+        <a
+          href={authed ? (hrefForTab ? hrefForTab("dashboard", PORTAL_CABINET_HREF) : PORTAL_CABINET_HREF) : undefined}
           className={`portal-cab-nav-item portal-cab-group-head${
             isCabinetTab(active) ? " portal-cab-group-head-current" : ""
-          }${!authed ? " portal-cab-nav-item-disabled" : ""}`}
-          onClick={() => authed && setCabinetOpen((open) => !open)}
-          disabled={!authed}
-          aria-expanded={authed ? cabinetOpen : undefined}
-          title={collapsed ? "Личный кабинет" : !authed ? "Доступно после входа" : undefined}
+          }${anon ? " portal-cab-nav-item-disabled" : ""}`}
+          aria-disabled={anon || undefined}
+          title={collapsed ? "Личный кабинет" : anon ? "Доступно после входа" : undefined}
         >
           <span className="portal-cab-nav-icon">{CABINET_ICON}</span>
           <span className="portal-cab-nav-label">Личный кабинет</span>
           {authed && (
-            <span className={`portal-cab-group-chevron${cabinetOpen ? " open" : ""}`} aria-hidden="true">
+            <button
+              type="button"
+              className={`portal-cab-group-chevron${cabinetOpen ? " open" : ""}`}
+              aria-label={cabinetOpen ? "Скрыть разделы кабинета" : "Показать разделы кабинета"}
+              aria-expanded={cabinetOpen}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setCabinetOpen((open) => !open);
+              }}
+            >
               {icon(<path d="M9 6l6 6-6 6" />)}
-            </span>
+            </button>
           )}
-        </button>
+        </a>
         {authed &&
           cabinetOpen &&
           CABINET_NAV.map((item) => (
@@ -462,12 +497,39 @@ export function SiteSidebar({
           <span className="portal-cab-nav-icon">{RATINGS_ICON}</span>
           <span className="portal-cab-nav-label">Рейтинги</span>
         </a>
+
+        {/* Группа текущей страницы (публичный профиль участника): заголовок —
+            имя, подпункты — вкладки профиля, переключаются без перезагрузки. */}
+        {extraGroup && (
+          <>
+            <div
+              className="portal-cab-nav-item portal-cab-group-head portal-cab-group-head-static"
+              title={collapsed ? extraGroup.title : undefined}
+            >
+              <span className="portal-cab-nav-icon">{PROFILE_ICON}</span>
+              <span className="portal-cab-nav-label">{extraGroup.title}</span>
+            </div>
+            {extraGroup.items.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={item.onClick}
+                className={`portal-cab-nav-item portal-cab-nav-subitem portal-cab-nav-textitem${
+                  item.active ? " active" : ""
+                }`}
+                aria-current={item.active ? "page" : undefined}
+              >
+                <span className="portal-cab-nav-label">{item.label}</span>
+              </button>
+            ))}
+          </>
+        )}
       </nav>
 
       {!hideSecondaryNav && (
         <nav className="portal-cab-nav portal-cab-nav-secondary" aria-label="Служебные разделы">
-          {SECONDARY_NAV.filter((item) => !item.adminOnly || (authed && user.is_admin)).map((item) => {
-            const disabled = Boolean(item.authOnly) && !authed;
+          {SECONDARY_NAV.filter((item) => !item.adminOnly || (user != null && user.is_admin)).map((item) => {
+            const disabled = Boolean(item.authOnly) && anon;
             const current =
               (item.href === PORTAL_CABINET_SETTINGS_HREF && active === "settings") ||
               (item.href === "/backlog" && active === "backlog");

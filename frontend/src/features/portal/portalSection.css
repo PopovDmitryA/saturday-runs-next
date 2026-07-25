@@ -87,3 +87,35 @@
   margin-top: 20px;
   padding: 0;
 }
+
+/* ---------- публичный профиль ---------- */
+
+/* Статичный заголовок группы (имя участника) — не кнопка. */
+.portal-cab-group-head-static {
+  cursor: default;
+}
+
+.portal-cab-group-head-static:hover {
+  background: transparent;
+  color: var(--text-3);
+}
+
+/* Вкладки-чипы профиля: на десктопе их заменяет сайдбар. */
+@media (min-width: 901px) {
+  /* Двойной класс — перебиваем display:flex базовых .admin-preview-tabs
+     независимо от порядка в бандле. */
+  .admin-preview-tabs.public-profile-tabs {
+    display: none;
+  }
+}
+
+.portal-section .admin-preview-tab {
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.portal-section .admin-preview-tab.active {
+  background: var(--tint-indigo-bg);
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+}

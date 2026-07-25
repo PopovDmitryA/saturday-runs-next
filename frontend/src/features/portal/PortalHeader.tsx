@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ThemeToggle } from "../../components/ThemeToggle";
-import { getCurrentUser, type User } from "../../lib/api";
 import {
   PORTAL_ABOUT_HREF,
   PORTAL_CABINET_HREF,
@@ -8,20 +7,15 @@ import {
   PORTAL_LOGIN_HREF,
 } from "../../lib/portalRoutes";
 import { userLabel } from "../../lib/userLabel";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 
 export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
-  const [user, setUser] = useState<User | null>(null);
-  // Пока авторизация не подтверждена, правый блок не рисуем вовсе: иначе
-  // залогиненный на долю секунды видит «Войти», которое сменяется ником.
-  const [authResolved, setAuthResolved] = useState(false);
+  // Кэшированная сессия (sessionStorage): между переходами по MPA-страницам
+  // ник не мигает кнопкой «Войти» — стартуем с последнего известного статуса.
+  const optionalUser = useOptionalUser();
+  const user = optionalUser ?? null;
+  const authResolved = optionalUser !== undefined;
   const [menuOpen, setMenuOpen] = useState(false);
-
-  useEffect(() => {
-    getCurrentUser()
-      .then((current) => setUser(current))
-      .catch(() => setUser(null))
-      .finally(() => setAuthResolved(true));
-  }, []);
 
   const authed = user !== null;
   // Текущий раздел подсвечивается по адресу страницы: главная — точное

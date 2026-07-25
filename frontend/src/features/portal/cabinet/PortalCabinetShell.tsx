@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { logout, type User } from "../../../lib/api";
 import { PORTAL_LOGIN_HREF } from "../../../lib/portalRoutes";
 import { PortalHeader } from "../PortalHeader";
+import { clearCachedUser } from "../../../lib/useOptionalUser";
 import {
   CABINET_NAV,
   SECONDARY_NAV,
@@ -94,6 +95,7 @@ export function PortalCabinetShell({
 
   const handleLogout = async () => {
     await logout();
+    clearCachedUser();
     window.location.href = PORTAL_LOGIN_HREF;
   };
 

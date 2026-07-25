@@ -698,13 +698,28 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   font-weight: 700;
 }
 
+/* Шеврон — отдельная кнопка внутри пункта: клик по тексту ведёт в обзор,
+   клик по стрелке только раскрывает/скрывает группу. Хит-зона больше иконки. */
 .portal-cab-group-chevron {
   margin-left: auto;
-  width: 14px;
-  height: 14px;
+  width: 26px;
+  height: 26px;
+  margin-top: -4px;
+  margin-bottom: -4px;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
   transition: transform 0.15s ease;
+}
+
+.portal-cab-group-chevron:hover {
+  background: var(--tint-indigo-bg);
+  color: var(--text);
 }
 
 .portal-cab-group-chevron svg {
@@ -763,4 +778,10 @@ a.portal-cab-nav-item-disabled {
 
 .portal-cab-sidebar.collapsed .portal-cab-nav-subitem {
   padding-left: 0;
+}
+
+/* Плейсхолдер юзер-зоны, пока сессия проверяется (первый заход без кэша) —
+   чтобы не мигать кнопкой «Войти» перед залогиненным. */
+.portal-cab-user-pending {
+  min-height: 62px;
 }

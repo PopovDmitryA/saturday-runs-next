@@ -130,9 +130,18 @@ type LocationMapProps = {
   viewportRef?: MapViewportRef;
 };
 
-function fitMapToPoints(map: L.Map, points: MapLocationPoint[]) {
+// Стартовая область каталога: Европа + вся Россия до Японии (просьба Дмитрия
+// 25.07.2026) — фиксированная, а не fit по всем маркерам: одиночные далёкие
+// точки (закрытые зарубежные parkrun) раздували вьюпорт на весь мир.
+const CATALOG_DEFAULT_BOUNDS = L.latLngBounds([34, -11], [72, 150]);
+
+function fitMapToPoints(map: L.Map, points: MapLocationPoint[], variant: "visited" | "catalog") {
   // Без анимации: moveend срабатывает синхронно, и общий вьюпорт записывается
   // сразу (анимированный fit мог не завершиться в фоновой вкладке).
+  if (variant === "catalog") {
+    map.fitBounds(CATALOG_DEFAULT_BOUNDS, { animate: false });
+    return;
+  }
   if (points.length === 1) {
     map.setView([points[0].latitude, points[0].longitude], 12, { animate: false });
     return;
@@ -402,7 +411,7 @@ export function LocationMap({
       if (shared) {
         map.setView([shared.lat, shared.lng], shared.zoom, { animate: false });
       } else {
-        fitMapToPoints(map, points);
+        fitMapToPoints(map, points, variant);
       }
       hasFittedInitialViewRef.current = true;
     }

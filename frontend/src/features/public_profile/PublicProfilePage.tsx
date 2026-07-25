@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
-import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { PortalHeader } from "../portal/PortalHeader";
+import { SiteSidebar, type SidebarExtraGroup } from "../portal/SiteSidebar";
+import "../portal/portal.css";
+import "../portal/portalSection.css";
 import { AppDataSourceProvider, createPublicProfileDataSource } from "../../lib/appDataSource";
 import { AchievementsShowcase } from "../achievements/AchievementsPage";
 import { UserMapPanel } from "../maps/UserMapPanel";
@@ -38,19 +41,29 @@ function profileDisplayName(user: AdminUserPreviewDashboard["user"]): string {
 function ProfileShell({
   children,
   profileName,
+  tabsGroup,
 }: {
   children: React.ReactNode;
   currentUser: User | null;
   profileName: string | null;
+  /** Вкладки профиля для единого сайдбара (группа с именем участника). */
+  tabsGroup?: SidebarExtraGroup;
 }) {
-  // Публичный профиль в портальном каркасе: общая шапка сайта, контейнер 1440px.
+  // Публичный профиль в едином каркасе с сайдбаром: вкладки профиля живут в
+  // сайдбаре (на мобиле — чипы над контентом, сайдбар там скрыт).
   return (
-    <PortalSectionShell>
-      <div className="portal-cab-stack">
-        {profileName && <h1 className="public-profile-name">{profileName}</h1>}
-        {children}
+    <div className="portal-section-page">
+      <PortalHeader />
+      <div className="portal-cab-layout">
+        <SiteSidebar active={null} extraGroup={tabsGroup} />
+        <main className="portal-cab-main portal-section">
+          <div className="portal-cab-stack">
+            {profileName && <h1 className="public-profile-name">{profileName}</h1>}
+            {children}
+          </div>
+        </main>
       </div>
-    </PortalSectionShell>
+    </div>
   );
 }
 
@@ -138,6 +151,27 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
   const tabClass = (value: ProfileTab) =>
     tab === value ? "admin-preview-tab active" : "admin-preview-tab";
 
+  const TAB_LABELS: { key: ProfileTab; label: string }[] = [
+    { key: "dashboard", label: "Главная" },
+    { key: "runs", label: "Пробежки" },
+    { key: "volunteering", label: "Волонтёрство" },
+    { key: "map", label: "Карта" },
+    { key: "achievements", label: "Достижения" },
+    { key: "history", label: "История" },
+    { key: "meetings", label: "Встречи" },
+  ];
+  const tabsGroup: SidebarExtraGroup | undefined = profileName
+    ? {
+        title: profileName,
+        items: TAB_LABELS.map((item) => ({
+          key: item.key,
+          label: item.label,
+          active: tab === item.key,
+          onClick: () => setTab(item.key),
+        })),
+      }
+    : undefined;
+
   if (currentUser === undefined) {
     return <main className="app"><p className="muted">Загрузка…</p></main>;
   }
@@ -165,9 +199,10 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
   }
 
   return (
-    <ProfileShell currentUser={currentUser} profileName={profileName}>
+    <ProfileShell currentUser={currentUser} profileName={profileName} tabsGroup={tabsGroup}>
 
-      <div className="admin-preview-tabs" role="tablist" aria-label="Разделы профиля">
+      {/* Мобильные чипы-вкладки: на десктопе навигация в сайдбаре. */}
+      <div className="admin-preview-tabs public-profile-tabs" role="tablist" aria-label="Разделы профиля">
         <button type="button" className={tabClass("dashboard")} onClick={() => setTab("dashboard")}>
           Главная
         </button>
