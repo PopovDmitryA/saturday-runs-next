@@ -10118,6 +10118,7 @@ tr.run-crosslinked td {
 /* Продающая карточка «войдите» (PromoLoginCard) — главный CTA анонима на
    публичных страницах: градиент, крупная иконка, водяной знак справа. */
 .promo-login-card {
+  margin-bottom: 1rem;
   position: relative;
   overflow: hidden;
   display: flex;
@@ -10353,15 +10354,9 @@ tr.run-crosslinked td {
   overflow-wrap: anywhere;
 }
 
-.profile-platform-card .profile-preview-recent-list li {
-  grid-template-columns: 1fr auto;
-  gap: 0.15rem 0.75rem;
-}
-
-.profile-platform-card .profile-preview-recent-list li span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
+/* Раскладку строки события задаёт .profile-preview-event (одна строка:
+   точка · дата · локация · результат). Отдельное правило на li здесь больше
+   не нужно — оно перебивало новую сетку по специфичности. */
 
 .profile-platform-card {
   display: flex;
@@ -10489,4 +10484,33 @@ tr.run-crosslinked td {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   text-align: right;
+}
+
+/* Кнопки масштаба в кадрировании: раньше это был просто текст «−»/«+»,
+   по которому хотелось кликнуть (замечание Дмитрия 26.07.2026). */
+.avatar-crop-zoom-btn {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-2);
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.avatar-crop-zoom-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent-indigo);
+}
+
+.avatar-crop-zoom-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }

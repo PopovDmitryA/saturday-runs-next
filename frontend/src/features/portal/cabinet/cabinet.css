@@ -853,3 +853,21 @@ a.portal-cab-nav-item-disabled {
   border-color: var(--accent-indigo);
   transform: none;
 }
+
+/* Разделитель перед временной группой (профиль другого участника). */
+.portal-cab-nav-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 8px 4px;
+}
+
+/* Имя пользователя — кликабельная ссылка в обзор кабинета. */
+a.portal-cab-user-name {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.portal-cab-user-name:hover {
+  color: var(--accent-indigo-text);
+  text-decoration: none;
+}

@@ -242,9 +242,11 @@ function CabinetUserCard({ initialUser, collapsed = false }: { initialUser: User
       {avatar}
       {!editing ? (
         <div className="portal-cab-user-info">
-          <span className="portal-cab-user-name" title={label}>
+          {/* Имя — ссылка в обзор кабинета (просьба Дмитрия 26.07.2026):
+              раньше по нему кликали и ничего не происходило. */}
+          <a className="portal-cab-user-name" href={PORTAL_CABINET_HREF} title={label}>
             {label}
-          </span>
+          </a>
           <button
             type="button"
             className="portal-cab-user-edit"
@@ -525,6 +527,9 @@ export function SiteSidebar({
             имя, подпункты — вкладки профиля, переключаются без перезагрузки. */}
         {extraGroup && (
           <>
+            {/* Линия-разделитель: пункты чужого профиля временные, их надо
+                визуально отделить от постоянной навигации сайта. */}
+            <div className="portal-cab-nav-sep" aria-hidden="true" />
             <div
               className="portal-cab-nav-item portal-cab-group-head portal-cab-group-head-static"
               title={collapsed ? extraGroup.title : undefined}

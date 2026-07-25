@@ -178,7 +178,15 @@ export function AvatarCropModal({
           <span className="avatar-crop-frame" aria-hidden="true" />
         </div>
         <div className="avatar-crop-zoom">
-          <span aria-hidden="true">−</span>
+          <button
+            type="button"
+            className="avatar-crop-zoom-btn"
+            aria-label="Уменьшить"
+            onClick={() => applyZoom(zoom - 0.25)}
+            disabled={zoom <= 1}
+          >
+            −
+          </button>
           <input
             type="range"
             min={1}
@@ -188,7 +196,15 @@ export function AvatarCropModal({
             aria-label="Масштаб"
             onChange={(event) => applyZoom(Number(event.target.value))}
           />
-          <span aria-hidden="true">+</span>
+          <button
+            type="button"
+            className="avatar-crop-zoom-btn"
+            aria-label="Увеличить"
+            onClick={() => applyZoom(zoom + 0.25)}
+            disabled={zoom >= MAX_ZOOM}
+          >
+            +
+          </button>
         </div>
         <p className="muted avatar-crop-hint">Перетащите фото и подберите масштаб.</p>
         {error && <p className="error-text">Не удалось обработать изображение — попробуйте другой файл.</p>}
