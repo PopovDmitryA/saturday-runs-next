@@ -16,6 +16,20 @@ class BacklogCardCreateRequest(BaseModel):
     is_anonymous: bool = False
 
 
+class BacklogCardUpdateRequest(BaseModel):
+    """Частичное редактирование карточки. Все поля опциональны — приходят только
+    изменённые. Правит автор (свою) или администратор (любую). Поле status
+    применяет только администратор; у автора оно молча недоступно (см.
+    backlog_service.update_card)."""
+
+    type: BacklogCardType | None = None
+    category: str | None = Field(default=None, max_length=64)
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = None
+    is_anonymous: bool | None = None
+    status: BacklogCardStatus | None = None
+
+
 class BacklogVoteRequest(BaseModel):
     # 0 снимает голос (повторный клик по уже выбранной кнопке).
     value: int = Field(ge=-1, le=1)
@@ -41,6 +55,10 @@ class BacklogCardResponse(BaseModel):
     score: int
     my_vote: int
     comment_count: int
+    # Своя ли карточка для текущего зрителя. Считается на бэкенде (фронт не знает
+    # author_user_id) — по нему рисуется кнопка «Редактировать». Работает и для
+    # своих анонимных карточек, где автор скрыт от остальных.
+    is_mine: bool = False
     created_at: datetime
     updated_at: datetime
 

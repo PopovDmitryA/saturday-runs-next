@@ -1758,17 +1758,14 @@
 /* ---------- страница «О проекте» ---------- */
 
 .portal-about .portal-hero {
-  text-align: left;
   padding: 40px 4px 4px;
 }
 
 .portal-about .portal-hero h1 {
-  margin-left: 0;
   max-width: 26ch;
 }
 
 .portal-about .portal-hero-lead {
-  margin-left: 0;
   max-width: 68ch;
 }
 

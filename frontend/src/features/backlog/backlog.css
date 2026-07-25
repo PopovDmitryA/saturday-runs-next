@@ -49,6 +49,13 @@
   }
 }
 
+/* Вертикальный ритм формы: без него кнопка «Отправить» прилипала к textarea. */
+.backlog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 .backlog-form-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
