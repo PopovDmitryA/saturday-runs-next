@@ -147,6 +147,14 @@ function ProfileDataFreshness({
   );
 }
 
+/** «00:29:07» → «29:07»: часы у пятикилометровых финишей всегда нулевые. */
+function shortFinishTime(display: string | null | undefined): string {
+  if (!display) {
+    return "—";
+  }
+  return display.replace(/^00:/, "");
+}
+
 const emptyFormState = (): PlatformFormState => ({
   profileUrl: "",
   preview: null,
@@ -371,17 +379,28 @@ function PlatformCard({
                   <p className="profile-preview-recent-title">Последние события</p>
                   <ul className="profile-preview-recent-list">
                     {form.preview.recent_activities.map((activity, index) => (
-                      <li key={`${activity.kind}-${activity.event_date}-${index}`}>
-                        <span className="profile-preview-recent-kind">
+                      <li
+                        key={`${activity.kind}-${activity.event_date}-${index}`}
+                        className="profile-preview-event"
+                      >
+                        <span
+                          className={`profile-preview-event-dot profile-preview-event-dot-${activity.kind}`}
+                          aria-hidden="true"
+                        />
+                        <span className="visually-hidden">
                           {activity.kind === "run" ? "Пробежка" : "Волонтёрство"}
                         </span>
-                        <span>{formatDate(activity.event_date)}</span>
-                        <span>{activity.location_name}</span>
-                        {activity.kind === "run" ? (
-                          <span>{activity.finish_time_display ?? "—"}</span>
-                        ) : (
-                          <span>{activity.role ?? "—"}</span>
-                        )}
+                        <span className="profile-preview-event-date">
+                          {formatDate(activity.event_date)}
+                        </span>
+                        <span className="profile-preview-event-place" title={activity.location_name}>
+                          {activity.location_name}
+                        </span>
+                        <span className="profile-preview-event-value">
+                          {activity.kind === "run"
+                            ? shortFinishTime(activity.finish_time_display)
+                            : (activity.role ?? "—")}
+                        </span>
                       </li>
                     ))}
                   </ul>

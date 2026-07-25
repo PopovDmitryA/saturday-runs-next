@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.config import Settings, get_settings
+from app.core.admin import user_response
 from app.db.session import get_db
 from app.models import User
 from app.schemas.auth import UserResponse
@@ -108,7 +109,9 @@ async def upload_avatar(
     # Старый файл стираем ПОСЛЕ коммита: если коммит упал, аватарка не потеряна.
     if old_filename and old_filename != filename:
         _delete_avatar_file(settings, old_filename)
-    return UserResponse.model_validate(user)
+    # Ответ собираем канонически (как /auth/me): model_validate на ORM-модели
+    # падает на вложенных auth_identities и не проставляет is_admin.
+    return user_response(user, settings)
 
 
 @router.delete("/users/me/avatar", response_model=UserResponse)
@@ -121,7 +124,7 @@ def delete_avatar(
     user.avatar_path = None
     db.commit()
     _delete_avatar_file(settings, old_filename)
-    return UserResponse.model_validate(user)
+    return user_response(user, settings)
 
 
 @router.get("/avatars/{filename}")
