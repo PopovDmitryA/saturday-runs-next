@@ -273,7 +273,8 @@ export function PortalAboutPage() {
         </section>
 
         <section className="portal-panel" aria-label="Бэклог идей">
-          <div className="portal-panel-head">
+          {/* Два столбца: слева заголовок с описанием, справа действие. */}
+          <div className="portal-panel-head portal-panel-head-split portal-about-backlog-head">
             <div>
               <h2>Бэклог идей</h2>
               <p className="portal-panel-sub">
@@ -282,10 +283,10 @@ export function PortalAboutPage() {
                 больше голосов у карточки, тем раньше она попадёт в работу.
               </p>
             </div>
+            <a className="btn secondary portal-about-backlog-cta" href="/backlog">
+              Открыть бэклог →
+            </a>
           </div>
-          <a className="btn secondary" href="/backlog">
-            Открыть бэклог →
-          </a>
         </section>
 
         <section className="portal-panel" aria-label="Автор и контакты">

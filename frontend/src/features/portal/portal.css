@@ -2668,3 +2668,16 @@
   color: var(--accent-red-text);
   font-weight: 700;
 }
+
+/* Кнопка бэклога в правом столбце панели: не растягивается и не переносится. */
+.portal-about-backlog-cta {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Два столбца блока «Бэклог идей»: текст слева сжимается, кнопка справа.
+   Без ограничения левая колонка занимала всю ширину и кнопка уезжала вниз. */
+.portal-about-backlog-head > :first-child {
+  flex: 1 1 320px;
+  min-width: 0;
+}
