@@ -27,7 +27,7 @@ trap 'rm -f "$MAINT_CURRENT"' EXIT HUP INT TERM
 
 # Сервисы, которые пересоздаём. nginx собирать нельзя — он на готовом образе
 # (nginx:1.27-alpine), build-контекст есть только у python-сервисов.
-SERVICES="worker worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat vk-bot"
+SERVICES="worker worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat bot"
 
 # NB: `docker compose exec/run -T` всё равно цепляет контейнер к stdin, поэтому
 # каждый exec/run обязан читать из /dev/null — иначе он сожрёт остаток скрипта.

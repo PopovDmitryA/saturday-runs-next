@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from app.services.admin_pipeline_status_service import format_started_at, sync_run_type_label
-from vk_bot.status_format import format_pipeline_status
+from app.services.admin_report_format import format_pipeline_status
 
 
 def test_sync_run_type_label() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -9,6 +10,12 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.core.admin import is_admin_telegram_id
 from app.db.session import get_db
+from app.schemas.admin_stats import AdminSiteStatsResponse
+from app.services.admin_pipeline_status_service import get_admin_pipeline_status
+from app.services.admin_protocol_sync_service import sync_protocol_from_url
+from app.services.admin_site_stats_service import get_admin_site_stats
+from app.services.admin_sweep_status_service import sweep_report_text
+from app.services.admin_sync_service import enqueue_pipeline, list_pipelines
 from app.services.broadcast_compose_state import (
     clear_broadcast_state,
     get_broadcast_draft,
@@ -212,3 +219,96 @@ def broadcast_send(
             for item in result.failures
         ],
     )
+
+
+class AdminSyncProtocolRequest(BaseModel):
+    url: str
+
+
+class AdminSyncEnqueueRequest(BaseModel):
+    pipeline: str
+    location_slug: str | None = None
+
+
+@router.get("/admin/stats", response_model=AdminSiteStatsResponse)
+def admin_stats(
+    telegram_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(_verify_bot_secret)],
+    period_days: int = 30,
+) -> AdminSiteStatsResponse:
+    _require_admin_telegram_id(telegram_id, settings)
+    payload = get_admin_site_stats(db, period_days=period_days)
+    return AdminSiteStatsResponse.model_validate(payload)
+
+
+@router.get("/admin/sync-status")
+def admin_sync_status(
+    telegram_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(_verify_bot_secret)],
+) -> dict[str, object]:
+    _require_admin_telegram_id(telegram_id, settings)
+    payload = get_admin_pipeline_status(db)
+    running = []
+    for item in payload["running"]:
+        started_at = item.get("started_at")
+        running.append(
+            {
+                **item,
+                "started_at": started_at.isoformat() if started_at is not None else None,
+            }
+        )
+    checked_at = payload["checked_at"]
+    return {
+        "checked_at": checked_at.isoformat() if isinstance(checked_at, datetime) else checked_at,
+        "running": running,
+        "queue_depths": payload["queue_depths"],
+        "parkrun_local_worker": payload["parkrun_local_worker"],
+    }
+
+
+@router.get("/admin/sweep-status")
+def admin_sweep_status(
+    telegram_id: int,
+    settings: Annotated[Settings, Depends(_verify_bot_secret)],
+) -> dict[str, str]:
+    _require_admin_telegram_id(telegram_id, settings)
+    return {"text": sweep_report_text()}
+
+
+@router.get("/admin/sync-pipelines")
+def admin_sync_pipelines(
+    telegram_id: int,
+    settings: Annotated[Settings, Depends(_verify_bot_secret)],
+) -> list[dict[str, str]]:
+    _require_admin_telegram_id(telegram_id, settings)
+    return list_pipelines()
+
+
+@router.post("/admin/sync-enqueue")
+def admin_sync_enqueue(
+    body: AdminSyncEnqueueRequest,
+    telegram_id: int,
+    settings: Annotated[Settings, Depends(_verify_bot_secret)],
+) -> dict[str, str]:
+    _require_admin_telegram_id(telegram_id, settings)
+    try:
+        message = enqueue_pipeline(body.pipeline, location_slug=body.location_slug)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"message": message}
+
+
+@router.post("/admin/sync-protocol")
+def admin_sync_protocol(
+    body: AdminSyncProtocolRequest,
+    telegram_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(_verify_bot_secret)],
+) -> dict[str, object]:
+    _require_admin_telegram_id(telegram_id, settings)
+    try:
+        return sync_protocol_from_url(db, body.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

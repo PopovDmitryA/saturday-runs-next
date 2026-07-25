@@ -6,13 +6,14 @@ from zoneinfo import ZoneInfo
 
 from app.config import get_settings
 from app.db.session import get_session_factory
+from app.services.admin_telegram_notify import send_admin_report
 from app.services.scheduled_run_log_service import (
     DEFAULT_RETENTION_DAYS,
     cleanup_old_runs,
     recent_problem_runs,
     summarize,
 )
-from app.services.vk_admin_notify import notify_daily_summary
+from app.services.vk_admin_notify import format_daily_summary
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def daily_sync_summary_task() -> dict[str, object]:
         db.close()
 
     admin_url = f"{settings.app_base_url.rstrip('/')}/admin/sync-runs"
-    notify_daily_summary(day_label, platforms, problems=problems, admin_url=admin_url)
+    send_admin_report(format_daily_summary(day_label, platforms, problems=problems, admin_url=admin_url))
 
     if deleted:
         logger.info("Автообновление: удалено %s записей истории старше %s дней", deleted, DEFAULT_RETENTION_DAYS)

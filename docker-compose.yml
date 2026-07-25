@@ -76,26 +76,13 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  vk-bot:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    environment:
-      API_BASE_URL: http://api:8000
-      VK_BOT_GROUP_TOKEN: ${VK_BOT_GROUP_TOKEN:-}
-      VK_BOT_GROUP_ID: ${VK_BOT_GROUP_ID:-}
-      VK_ADMIN_USER_ID: ${VK_ADMIN_USER_ID:-}
-      VK_BOT_INTERNAL_SECRET: ${VK_BOT_INTERNAL_SECRET:-}
-      REDIS_URL: redis://redis:6379/0
+  tg-proxy:
+    profiles: ["telegram"]
+    image: ghcr.io/xtls/xray-core:latest
     volumes:
-      - ./backend:/app
-      - ./.env:/app/.env:ro
-    command: python -m vk_bot.main
-    depends_on:
-      api:
-        condition: service_started
-      redis:
-        condition: service_healthy
+      - ./deploy/tg-proxy/config.json:/etc/xray/config.json:ro
+    entrypoint: ["xray"]
+    command: ["run", "-c", "/etc/xray/config.json"]
     restart: unless-stopped
 
   worker:

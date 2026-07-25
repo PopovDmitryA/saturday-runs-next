@@ -9,7 +9,6 @@ from app.api.routes import (
     dashboard,
     demo,
     internal_bot,
-    internal_vk_bot,
     leaderboards,
     location_ratings,
     locations,
@@ -43,6 +42,5 @@ api_router.include_router(sync.router)
 api_router.include_router(settings.router)
 api_router.include_router(public_profiles.router)
 api_router.include_router(internal_bot.router)
-api_router.include_router(internal_vk_bot.router)
 api_router.include_router(reports.router)
 api_router.include_router(sweep_hq.router)

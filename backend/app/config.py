@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     telegram_bot_internal_secret: str = ""
     telegram_admin_chat_id: int = 0
     admin_telegram_id: int = 0
+    # Прокси (http:// или socks5://user:pass@host:port) для отправки admin-уведомлений
+    # в Telegram — сервер РФ, прямые запросы к api.telegram.org могут не долетать.
+    # Пусто — отправка идёт напрямую.
+    admin_telegram_proxy_url: str = ""
     # Comma-separated emails (OAuth). Grants admin if any linked auth_identity matches (case-insensitive).
     admin_emails: str = ""
     demo_telegram_id: int = 0
@@ -122,10 +126,10 @@ class Settings(BaseSettings):
     five_verst_reconcile_min_check_interval_days: int = 0
     five_verst_clubs_batch_limit: int = 20
 
+    # Fallback-канал для admin-уведомлений (см. app/services/admin_telegram_notify.py) —
+    # используется только когда Telegram-прокси недоступна.
     vk_bot_group_token: str = ""
-    vk_bot_group_id: int = 0
     vk_admin_user_id: int = 0
-    vk_bot_internal_secret: str = ""
 
     # Секретный токен для скрытой страницы-табло обхода атлетов (/hq/<token>).
     sweep_hq_token: str = ""
