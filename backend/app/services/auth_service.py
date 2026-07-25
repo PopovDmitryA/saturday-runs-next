@@ -12,7 +12,7 @@ from app.core.rate_limit import check_rate_limit
 from app.core.redis_client import get_redis_client
 from app.core.security import generate_token, hash_token
 from app.core.session import create_session
-from app.core.site_stats import record_login, record_login_request
+from app.core.site_stats import record_login_request
 from app.models import (
     AuthLoginRequest,
     AuthLoginRequestStatus,
@@ -323,7 +323,6 @@ def consume_magic_link(db: Session, settings: Settings, raw_token: str) -> UUID:
     user = db.query(User).filter(User.id == magic_record.user_id).one()
     user.last_login_at = now
     db.commit()
-    record_login()
 
     return user.id
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Annotated
 from urllib.parse import quote
 from uuid import UUID
@@ -14,6 +15,7 @@ from app.auth.providers import vk as vk_provider
 from app.config import Settings, get_settings
 from app.core.admin import user_response
 from app.core.session import delete_session
+from app.core.site_stats import record_login
 from app.db.session import get_db
 from app.models import AuthProvider, User
 from app.schemas.auth import (
@@ -47,12 +49,20 @@ from app.services.auth_service import (
     get_login_request_status,
     update_user_display_name,
 )
+from app.services.login_journal_service import (
+    EVENT_LOGIN,
+    EVENT_LOGOUT,
+    record_login_event,
+    session_ref_from_signed,
+)
 from app.services.oauth_service import (
     confirm_merge,
     get_merge_preview_by_token,
     handle_oauth_callback,
     start_oauth_flow,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -81,6 +91,43 @@ def _set_session_cookie(response: Response, settings: Settings, signed_session: 
 
 def _handle_auth_error(exc: AuthError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.message)
+
+
+def _log_login(
+    db: Session,
+    settings: Settings,
+    *,
+    user_id: UUID,
+    provider: str,
+    signed_session: str,
+    request: Request | None,
+) -> None:
+    """Записать вход в журнал. Диагностика не должна ронять сам логин.
+
+    Здесь же считаем вход в дневную метрику: точка общая для всех способов
+    входа. Раньше record_login() стоял только на magic link, и входы через
+    OAuth (то есть большинство) в статистику не попадали вовсе.
+    """
+    try:
+        record_login_event(
+            db,
+            user_id=user_id,
+            event_type=EVENT_LOGIN,
+            provider=provider,
+            session_ref=session_ref_from_signed(signed_session, settings.app_secret_key),
+            request=request,
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001 — журнал не критичен для входа
+        logger.exception("login journal: failed to record login for user %s", user_id)
+        db.rollback()
+
+    # Отдельным try: метрика живёт в Redis, и её падение не должно стоить нам
+    # записи в журнале (она важнее — по ней разбираем потерю сессий).
+    try:
+        record_login()
+    except Exception:  # noqa: BLE001 — счётчик не критичен для входа
+        logger.exception("login stats: failed to count login for user %s", user_id)
 
 
 def _user_payload(db: Session, user: User, settings: Settings) -> UserResponse:
@@ -146,6 +193,7 @@ def _complete_oauth_login(
     state: str,
     device_id: str | None = None,
     payload: str | None = None,
+    request: Request | None = None,
 ) -> tuple[str, str | None, str]:
     if provider == "vk":
         code_value, state_value, device_id_value = _parse_vk_callback_params(
@@ -166,6 +214,14 @@ def _complete_oauth_login(
         device_id=device_id_value,
     )
     signed_session = create_user_session(settings, user_id)
+    _log_login(
+        db,
+        settings,
+        user_id=user_id,
+        provider=provider,
+        signed_session=signed_session,
+        request=request,
+    )
     redirect_url = _oauth_redirect_url(settings, redirect_target=redirect_target, merge_token=merge_token)
     return signed_session, merge_token, redirect_url
 
@@ -272,6 +328,7 @@ def oauth_finish(
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
     response: Response,
+    request: Request,
 ) -> OAuthFinishResponse:
     try:
         signed_session, merge_token, redirect_url = _complete_oauth_login(
@@ -282,6 +339,7 @@ def oauth_finish(
             state=body.state,
             device_id=body.device_id,
             payload=body.payload,
+            request=request,
         )
     except (AuthError, json.JSONDecodeError) as exc:
         if isinstance(exc, json.JSONDecodeError):
@@ -298,6 +356,7 @@ def oauth_callback(
     provider: str,
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
+    request: Request,
     code: Annotated[str | None, Query()] = None,
     state: Annotated[str | None, Query()] = None,
     device_id: Annotated[str | None, Query()] = None,
@@ -329,6 +388,7 @@ def oauth_callback(
             code=code_value,
             state=state_value,
             device_id=device_id_value,
+            request=request,
         )
     except (AuthError, json.JSONDecodeError) as exc:
         if isinstance(exc, json.JSONDecodeError):
@@ -381,6 +441,7 @@ def merge_confirm(
     settings: Annotated[Settings, Depends(get_settings)],
     user: Annotated[User, Depends(get_current_user)],
     response: Response,
+    request: Request,
 ) -> MessageResponse:
     try:
         survivor_id = confirm_merge(db, body.merge_token, survivor_user_id=user.id)
@@ -388,6 +449,14 @@ def merge_confirm(
         raise _handle_auth_error(exc) from exc
     if survivor_id != user.id:
         signed_session = create_user_session(settings, survivor_id)
+        _log_login(
+            db,
+            settings,
+            user_id=survivor_id,
+            provider="merge",
+            signed_session=signed_session,
+            request=request,
+        )
         _set_session_cookie(response, settings, signed_session)
     return MessageResponse(message="merged")
 
@@ -396,6 +465,7 @@ def merge_confirm(
 def auth_callback(
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
+    request: Request,
     token: Annotated[str, Query(min_length=10)],
 ) -> RedirectResponse:
     try:
@@ -403,6 +473,15 @@ def auth_callback(
         signed_session = create_user_session(settings, user_id)
     except AuthError as exc:
         raise _handle_auth_error(exc) from exc
+
+    _log_login(
+        db,
+        settings,
+        user_id=user_id,
+        provider="magic_link",
+        signed_session=signed_session,
+        request=request,
+    )
 
     redirect_url = f"{settings.app_base_url.rstrip('/')}/dashboard"
     response = RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
@@ -445,8 +524,25 @@ def logout(
     request: Request,
     response: Response,
     settings: Annotated[Settings, Depends(get_settings)],
+    db: Annotated[Session, Depends(get_db)],
+    user_id: Annotated[UUID | None, Depends(get_optional_session_user_id)] = None,
 ) -> MessageResponse:
     session_value = request.cookies.get(settings.session_cookie_name)
+    # Журнал пишем до удаления сессии: умышленный выход — единственное
+    # законное основание потерять авторизацию, по нему и отличаем баг.
+    if user_id is not None:
+        try:
+            record_login_event(
+                db,
+                user_id=user_id,
+                event_type=EVENT_LOGOUT,
+                session_ref=session_ref_from_signed(session_value, settings.app_secret_key),
+                request=request,
+            )
+            db.commit()
+        except Exception:  # noqa: BLE001 — журнал не критичен для выхода
+            logger.exception("login journal: failed to record logout for user %s", user_id)
+            db.rollback()
     if session_value:
         delete_session(settings, session_value)
     response.delete_cookie(key=settings.session_cookie_name, path="/")

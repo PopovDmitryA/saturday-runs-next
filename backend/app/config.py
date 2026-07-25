@@ -63,6 +63,9 @@ class Settings(BaseSettings):
 
     # Сырые события page_view_events живут столько дней; вечная история — в page_stats_daily.
     page_events_retention_days: int = 90
+    # Журнал входов держим дольше сырых просмотров: его ценность как раз в
+    # длинной истории — потеря сессии случается редко и ловится ретроспективно.
+    login_events_retention_days: int = 365
 
     abuse_protection_enabled: bool = True
     abuse_whitelist_ips: str = ""

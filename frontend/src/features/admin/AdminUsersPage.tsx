@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { Snackbar } from "../../components/Snackbar";
 import { AdminSubnav } from "./AdminSubnav";
 import {
+  getAdminUserLoginEvents,
   listAdminUsers,
   triggerAdminUserSyncPlatform,
+  type AdminLoginEventsResponse,
   type AdminUserListItem,
   type AdminUsersSort,
   type AdminUsersSortDirection,
@@ -15,6 +17,70 @@ import { authLoginUrl, authProviderLabel, userLoginLines } from "./adminUserDisp
 
 // Платформы, для которых бэкенд поддерживает ручной запуск синка (см. ADMIN_SUPPORTED_SYNC_PLATFORMS).
 const SYNCABLE_PLATFORMS = new Set(["five_verst", "s95", "parkrun"]);
+
+const LOGIN_PROVIDER_LABELS: Record<string, string> = {
+  magic_link: "ссылка",
+  merge: "объединение",
+};
+
+function loginProviderLabel(provider: string) {
+  if (!provider) {
+    return "";
+  }
+  return LOGIN_PROVIDER_LABELS[provider] ?? authProviderLabel(provider);
+}
+
+// Короткая подпись устройства: из UA достаточно понять «тот же браузер или нет».
+function shortUserAgent(userAgent: string) {
+  if (!userAgent) {
+    return "—";
+  }
+  return userAgent.length > 48 ? `${userAgent.slice(0, 48)}…` : userAgent;
+}
+
+function LoginJournal({ data }: { data: AdminLoginEventsResponse }) {
+  if (data.items.length === 0) {
+    return <p className="muted">Журнал пуст — с момента включения журнала пользователь не входил.</p>;
+  }
+  return (
+    <div className="admin-login-journal">
+      <p className="admin-login-journal-summary">
+        Входов: <strong>{data.logins}</strong> · выходов: <strong>{data.logouts}</strong> · устройств:{" "}
+        <strong>{data.devices}</strong> ·{" "}
+        <span className={data.unexpected_relogins > 0 ? "admin-login-journal-alert" : undefined}>
+          входов без разлогина: <strong>{data.unexpected_relogins}</strong>
+        </span>
+      </p>
+      {data.unexpected_relogins > 0 && (
+        <p className="admin-login-journal-alert">
+          Пользователь заходил заново с устройства, с которого не выходил — сессия слетала сама.
+        </p>
+      )}
+      <table className="admin-table admin-login-journal-table">
+        <thead>
+          <tr>
+            <th>Когда</th>
+            <th>Событие</th>
+            <th>Способ</th>
+            <th>IP</th>
+            <th>Устройство</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.items.map((event, index) => (
+            <tr key={`${event.ts}-${index}`}>
+              <td>{formatDateTime(event.ts)}</td>
+              <td>{event.event_type === "logout" ? "выход" : "вход"}</td>
+              <td>{loginProviderLabel(event.provider) || "—"}</td>
+              <td>{event.ip || "—"}</td>
+              <td title={event.user_agent}>{shortUserAgent(event.user_agent)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function platformCell(
   user: AdminUserListItem,
@@ -76,6 +142,10 @@ function AdminUsersContent() {
   const [sort, setSort] = useState<AdminUsersSort>("created");
   const [direction, setDirection] = useState<AdminUsersSortDirection>("desc");
   const [syncingKey, setSyncingKey] = useState<string | null>(null);
+  const [journalUserId, setJournalUserId] = useState<string | null>(null);
+  const [journal, setJournal] = useState<AdminLoginEventsResponse | null>(null);
+  const [journalLoading, setJournalLoading] = useState(false);
+  const [journalError, setJournalError] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     title: string;
@@ -101,6 +171,27 @@ function AdminUsersContent() {
       }
     },
     [],
+  );
+
+  const handleToggleJournal = useCallback(
+    async (userId: string) => {
+      if (journalUserId === userId) {
+        setJournalUserId(null);
+        return;
+      }
+      setJournalUserId(userId);
+      setJournal(null);
+      setJournalError(null);
+      setJournalLoading(true);
+      try {
+        setJournal(await getAdminUserLoginEvents(userId));
+      } catch (err) {
+        setJournalError(err instanceof Error ? err.message : "Не удалось загрузить журнал входов");
+      } finally {
+        setJournalLoading(false);
+      }
+    },
+    [journalUserId],
   );
 
   const handleSort = (key: AdminUsersSort) => {
@@ -267,7 +358,8 @@ function AdminUsersContent() {
                 {items.map((user) => {
                   const logins = userLoginLines(user);
                   return (
-                    <tr key={user.id}>
+                    <Fragment key={user.id}>
+                    <tr>
                       <td className="admin-users-telegram">
                         <ul className="admin-users-login-list">
                           {logins.length === 0 ? (
@@ -328,9 +420,26 @@ function AdminUsersContent() {
                               Профиль
                             </a>
                           )}
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => void handleToggleJournal(user.id)}
+                          >
+                            {journalUserId === user.id ? "Скрыть входы" : "Входы"}
+                          </button>
                         </div>
                       </td>
                     </tr>
+                    {journalUserId === user.id && (
+                      <tr className="admin-login-journal-row">
+                        <td colSpan={11}>
+                          {journalLoading && <p className="muted">Загружаем журнал входов…</p>}
+                          {journalError && <p className="form-error">{journalError}</p>}
+                          {!journalLoading && !journalError && journal && <LoginJournal data={journal} />}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>

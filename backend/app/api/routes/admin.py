@@ -19,7 +19,7 @@ from app.schemas.abuse_admin import (
     AbuseMessageResponse,
     AbuseTelegramBanItem,
 )
-from app.schemas.admin import AdminUserListResponse
+from app.schemas.admin import AdminLoginEventItem, AdminLoginEventsResponse, AdminUserListResponse
 from app.schemas.admin_event_report import (
     EventReportDatesResponse,
     EventReportLocationsResponse,
@@ -109,6 +109,7 @@ from app.services.location_contacts_service import (
     update_location_announce_settings,
     update_location_contact_link,
 )
+from app.services.login_journal_service import list_login_events, summarize_login_events
 from app.services.page_analytics_service import build_page_analytics, resolve_period
 from app.services.rating_service import (
     list_all_ratings,
@@ -163,6 +164,27 @@ def list_admin_users(
         limit=limit,
         offset=offset,
         query=q,
+    )
+
+
+@router.get("/users/{user_id}/login-events", response_model=AdminLoginEventsResponse)
+def admin_user_login_events(
+    user_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> AdminLoginEventsResponse:
+    if get_admin_user(db, user_id) is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    events = list_login_events(db, user_id, limit=limit)
+    summary = summarize_login_events(events)
+    return AdminLoginEventsResponse(
+        items=[AdminLoginEventItem.model_validate(event, from_attributes=True) for event in events],
+        logins=int(summary["logins"]),  # type: ignore[arg-type]
+        logouts=int(summary["logouts"]),  # type: ignore[arg-type]
+        devices=int(summary["devices"]),  # type: ignore[arg-type]
+        unexpected_relogins=int(summary["unexpected_relogins"]),  # type: ignore[arg-type]
     )
 
 

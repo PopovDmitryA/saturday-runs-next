@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../../components/ThemeToggle";
-import { getCurrentUser, type User } from "../../lib/api";
+import { probeCurrentUser, type User } from "../../lib/api";
 import {
   PORTAL_ABOUT_HREF,
   PORTAL_HOME_HREF,
@@ -16,10 +16,25 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    getCurrentUser()
-      .then((current) => setUser(current))
-      .catch(() => setUser(null))
-      .finally(() => setAuthResolved(true));
+    let cancelled = false;
+    void probeCurrentUser().then((probe) => {
+      if (cancelled) {
+        return;
+      }
+      if (probe.state === "authenticated") {
+        setUser(probe.user);
+      } else if (probe.state === "guest") {
+        setUser(null);
+      }
+      // "unknown" — сессию проверить не удалось. Правый блок оставляем
+      // нерешённым, чтобы залогиненному не показать «Войти».
+      if (probe.state !== "unknown") {
+        setAuthResolved(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const authed = user !== null;

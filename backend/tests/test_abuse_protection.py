@@ -100,3 +100,74 @@ def test_middleware_returns_429(
     response = client.get("/api/demo/dashboard")
     assert response.status_code == 429
     assert response.headers.get("Retry-After")
+
+
+def _signed_session(secret: str, session_id: str) -> str:
+    from app.core.security import sign_session_id
+
+    return sign_session_id(session_id, secret)
+
+
+def test_sessions_behind_one_ip_do_not_share_a_bucket(
+    fake_redis: fakeredis.FakeRedis,
+    abuse_settings: Settings,
+) -> None:
+    """NAT оператора: один IP, разные сессии — лимит у каждого свой.
+
+    Раньше ведро было общим на IP, и абоненты мобильного оператора выбивали
+    друг другу 429 (сайт при этом выглядел разлогиненным).
+    """
+    first = _signed_session(abuse_settings.app_secret_key, "session-one")
+    second = _signed_session(abuse_settings.app_secret_key, "session-two")
+
+    for _ in range(5):
+        decision = check_abuse_request(
+            "10.0.0.1", "/api/dashboard", "GET", abuse_settings, session_cookie=first
+        )
+        assert decision.allowed is True
+
+    # Первая сессия исчерпала своё ведро...
+    exhausted = check_abuse_request(
+        "10.0.0.1", "/api/dashboard", "GET", abuse_settings, session_cookie=first
+    )
+    assert exhausted.allowed is False
+
+    # ...а сосед по тому же IP не пострадал.
+    neighbour = check_abuse_request(
+        "10.0.0.1", "/api/dashboard", "GET", abuse_settings, session_cookie=second
+    )
+    assert neighbour.allowed is True
+
+
+def test_forged_session_cookie_falls_back_to_ip_limit(
+    fake_redis: fakeredis.FakeRedis,
+    abuse_settings: Settings,
+) -> None:
+    """Подделанную куку не принимаем: иначе лимит обходился бы мусором в Cookie."""
+    for _ in range(5):
+        assert (
+            check_abuse_request(
+                "10.0.0.2", "/api/dashboard", "GET", abuse_settings, session_cookie="not-a-real-signature"
+            ).allowed
+            is True
+        )
+
+    decision = check_abuse_request(
+        "10.0.0.2", "/api/dashboard", "GET", abuse_settings, session_cookie="another-forgery"
+    )
+    assert decision.allowed is False
+    assert decision.reason == "global_rate_limit"
+
+
+def test_session_violations_do_not_ban_the_shared_ip(
+    fake_redis: fakeredis.FakeRedis,
+    abuse_settings: Settings,
+) -> None:
+    """Один шумный залогиненный не должен утащить в бан весь NAT-адрес."""
+    cookie = _signed_session(abuse_settings.app_secret_key, "noisy-session")
+
+    for _ in range(30):
+        check_abuse_request("10.0.0.3", "/api/dashboard", "GET", abuse_settings, session_cookie=cookie)
+
+    blocked, _retry_after = is_client_blocked("10.0.0.3")
+    assert blocked is False
