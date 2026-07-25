@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { trackAbEvent, useAbCtaView, useAbScrollDepth } from "../../lib/abTest";
+import { getHomeVariant, trackAbEvent, useAbCtaView, useAbScrollDepth } from "../../lib/abTest";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import { CountUpNumber } from "./CountUpNumber";
 import { PortalBlogSection } from "./PortalBlogSection";
 import { PortalGeoMap } from "./PortalGeoMap";
 import { PortalHeader } from "./PortalHeader";
@@ -224,6 +225,9 @@ export function PortalHomePage() {
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<"all" | "year">("all");
   const [chartTab, setChartTab] = useState<ChartTabKey>("finishes");
+
+  // Т3 (вариант B): большие числа «докручиваются» при появлении на экране.
+  const countUp = getHomeVariant() === "B";
 
   // АБ-аналитика главной: глубина скролла и видимость нижней CTA.
   const ctaRef = useRef<HTMLElement | null>(null);
@@ -486,19 +490,27 @@ export function PortalHomePage() {
             {hero && (
               <section className="portal-counts" aria-label="Итоги периода">
                 <div className="portal-count">
-                  <b className="num">{formatInt(hero.finishes_total)}</b>
+                  <b className="num">
+                    <CountUpNumber value={hero.finishes_total} format={formatInt} enabled={countUp} />
+                  </b>
                   <span>финишей</span>
                 </div>
                 <div className="portal-count">
-                  <b className="num">{formatInt(hero.participants_total)}</b>
+                  <b className="num">
+                    <CountUpNumber value={hero.participants_total} format={formatInt} enabled={countUp} />
+                  </b>
                   <span>участников</span>
                 </div>
                 <div className="portal-count">
-                  <b className="num">{formatInt(hero.locations_total)}</b>
+                  <b className="num">
+                    <CountUpNumber value={hero.locations_total} format={formatInt} enabled={countUp} />
+                  </b>
                   <span>локаций</span>
                 </div>
                 <div className="portal-count">
-                  <b className="num">{formatInt(hero.starts_total)}</b>
+                  <b className="num">
+                    <CountUpNumber value={hero.starts_total} format={formatInt} enabled={countUp} />
+                  </b>
                   <span>стартов</span>
                 </div>
               </section>
@@ -552,19 +564,34 @@ export function PortalHomePage() {
                     {formatDateLong(data.pulse.event_date)}
                   </span>
                   <span className="portal-pulse-metric">
-                    <b className="num">{formatInt(data.pulse.starts)}</b> стартов
+                    <b className="num">
+                      <CountUpNumber value={data.pulse.starts} format={formatInt} enabled={countUp} />
+                    </b>{" "}
+                    стартов
                   </span>
                   <span className="portal-pulse-metric">
-                    <b className="num">{formatInt(data.pulse.finishes)}</b> финишей
+                    <b className="num">
+                      <CountUpNumber value={data.pulse.finishes} format={formatInt} enabled={countUp} />
+                    </b>{" "}
+                    финишей
                   </span>
                   <span className="portal-pulse-metric">
-                    <b className="num">{formatInt(data.pulse.newcomers)}</b> новичков
+                    <b className="num">
+                      <CountUpNumber value={data.pulse.newcomers} format={formatInt} enabled={countUp} />
+                    </b>{" "}
+                    новичков
                   </span>
                   <span className="portal-pulse-metric">
-                    <b className="num">{formatInt(data.pulse.volunteers)}</b> волонтёров
+                    <b className="num">
+                      <CountUpNumber value={data.pulse.volunteers} format={formatInt} enabled={countUp} />
+                    </b>{" "}
+                    волонтёров
                   </span>
                   <span className="portal-pulse-metric">
-                    <b className="num">{formatInt(data.pulse.personal_records)}</b> личных рекордов
+                    <b className="num">
+                      <CountUpNumber value={data.pulse.personal_records} format={formatInt} enabled={countUp} />
+                    </b>{" "}
+                    личных рекордов
                   </span>
                 </section>
               </div>

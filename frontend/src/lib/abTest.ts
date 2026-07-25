@@ -27,7 +27,28 @@ function bucketOf(id: string): AbVariant {
   return (hash >>> 0) % 2 === 0 ? "A" : "B";
 }
 
+/**
+ * Принудительный вариант для просмотра глазами: ?ab=B (или ?ab=A) в адресе.
+ * Нужен, чтобы посмотреть вариант B до запуска эксперимента; такие просмотры
+ * не пишутся в ab_events — QA не должен загрязнять данные.
+ */
+function forcedVariant(): AbVariant | null {
+  try {
+    const param = new URLSearchParams(window.location.search).get("ab");
+    if (param === "A" || param === "B") {
+      return param;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 export function getHomeVariant(): AbVariant {
+  const forced = forcedVariant();
+  if (forced !== null) {
+    return forced;
+  }
   if (!HOME_EXPERIMENT_ACTIVE) {
     return "A";
   }
@@ -45,6 +66,9 @@ export function abVisitorKey(): string {
 }
 
 export function trackAbEvent(eventType: string, value = ""): void {
+  if (forcedVariant() !== null) {
+    return;
+  }
   const body = JSON.stringify({
     experiment: HOME_EXPERIMENT,
     variant: getHomeVariant(),
