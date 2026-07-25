@@ -53,6 +53,7 @@ import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
 import { useAppPath } from "./hooks/useAppPath";
+import { reportAbLoginOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
 import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
@@ -69,7 +70,12 @@ function useSitePageviewTracking(path: string) {
       }
     };
     getCurrentUser()
-      .then((user) => begin(true, user.id))
+      .then((user) => {
+        begin(true, user.id);
+        // АБ-воронка: первый авторизованный визит в этом браузере — событие
+        // login_complete (когорту new/returning определяет сервер).
+        reportAbLoginOnce(user.id);
+      })
       .catch(() => begin(false, undefined));
     return () => {
       cancelled = true;

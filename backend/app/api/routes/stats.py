@@ -13,7 +13,8 @@ from app.core.rate_limit import check_rate_limit
 from app.core.site_stats import record_pageview
 from app.db.session import get_db
 from app.models import User
-from app.schemas.admin_stats import PageleaveRecordRequest, PageviewRecordRequest
+from app.schemas.admin_stats import AbEventRecordRequest, PageleaveRecordRequest, PageviewRecordRequest
+from app.services.ab_service import record_ab_event
 from app.services.page_analytics_service import record_page_leave, record_page_view
 
 router = APIRouter(prefix="/stats", tags=["stats"])
@@ -54,6 +55,32 @@ def record_page_view_endpoint(
         path=body.path,
         visitor_key=body.visitor_key,
         viewer_user_id=viewer.id if viewer is not None else None,
+    )
+    return Response(status_code=204)
+
+
+@router.post("/event", status_code=204)
+def record_ab_event_endpoint(
+    body: AbEventRecordRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    viewer: Annotated[User | None, Depends(get_optional_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    if _rate_limited(request, "abevent"):
+        return Response(status_code=204)
+    # Обходы админа не должны двигать метрики эксперимента — как в pageview.
+    if viewer is not None and is_admin_user(viewer, settings):
+        return Response(status_code=204)
+    record_ab_event(
+        db,
+        experiment=body.experiment,
+        variant=body.variant,
+        visitor_key=body.visitor_key,
+        event_type=body.event_type,
+        value=body.value,
+        path=body.path,
+        viewer=viewer,
     )
     return Response(status_code=204)
 

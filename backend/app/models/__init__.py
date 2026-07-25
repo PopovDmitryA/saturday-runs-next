@@ -1191,6 +1191,37 @@ class LoginEvent(Base):
     device_ref: Mapped[str] = mapped_column(String(32), nullable=False, server_default="")
 
 
+class AbEvent(Base):
+    """Сырое событие АБ-эксперимента (скролл, клики, конверсия) с вариантом.
+
+    Пишется эндпоинтом POST /stats/event. visitor_key здесь ВСЕГДА анонимный
+    ("a:<id браузера>") — в отличие от page_view_events, где после логина ключ
+    меняется на "u:<user_id>". Так события до и после VK-редиректа сшиваются
+    в одну воронку; пользователь при этом виден в viewer_user_id.
+
+    cohort заполняется только для event_type=login_complete: "new" — логин
+    создал аккаунт (регистрация), "returning" — вошёл ранее зарегистрированный
+    (разлогиненный) участник; в конверсию эксперимента идут только "new".
+    """
+
+    __tablename__ = "ab_events"
+    __table_args__ = (
+        Index("ix_ab_events_experiment_ts", "experiment", "ts"),
+        Index("ix_ab_events_visitor", "visitor_key"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    experiment: Mapped[str] = mapped_column(String(32), nullable=False)
+    variant: Mapped[str] = mapped_column(String(8), nullable=False)
+    visitor_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    value: Mapped[str] = mapped_column(String(128), nullable=False, server_default="")
+    path: Mapped[str] = mapped_column(String(256), nullable=False, server_default="")
+    cohort: Mapped[str] = mapped_column(String(16), nullable=False, server_default="")
+    viewer_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
 class PageStatsDaily(Base):
     """Дневной агрегат просмотров по (день МСК, раздел, сущность).
 

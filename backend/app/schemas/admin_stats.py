@@ -74,6 +74,15 @@ class PageleaveRecordRequest(BaseModel):
     duration_sec: int = Field(ge=0, le=86400)
 
 
+class AbEventRecordRequest(BaseModel):
+    experiment: str = Field(min_length=1, max_length=32)
+    variant: str = Field(min_length=1, max_length=8)
+    visitor_key: str = Field(min_length=1, max_length=80)
+    event_type: str = Field(min_length=1, max_length=32)
+    value: str = Field(default="", max_length=128)
+    path: str = Field(default="", max_length=256)
+
+
 class PageAnalyticsRowStats(BaseModel):
     views: int
     unique_viewers: int

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PlatformBadge } from "../../components/PlatformBadge";
+import { trackAbEvent, useAbCtaView, useAbScrollDepth } from "../../lib/abTest";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { PortalBlogSection } from "./PortalBlogSection";
 import { PortalGeoMap } from "./PortalGeoMap";
@@ -223,6 +224,25 @@ export function PortalHomePage() {
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<"all" | "year">("all");
   const [chartTab, setChartTab] = useState<ChartTabKey>("finishes");
+
+  // АБ-аналитика главной: глубина скролла и видимость нижней CTA.
+  const ctaRef = useRef<HTMLElement | null>(null);
+  useAbScrollDepth(data !== null);
+  useAbCtaView(ctaRef, "bottom", data !== null);
+
+  const selectPeriod = (next: "all" | "year") => {
+    if (next !== period) {
+      trackAbEvent("period", next);
+    }
+    setPeriod(next);
+  };
+
+  const selectChartTab = (next: ChartTabKey) => {
+    if (next !== chartTab) {
+      trackAbEvent("chart_tab", next);
+    }
+    setChartTab(next);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -449,14 +469,14 @@ export function PortalHomePage() {
               <button
                 type="button"
                 className={period === "all" ? "active" : ""}
-                onClick={() => setPeriod("all")}
+                onClick={() => selectPeriod("all")}
               >
                 За всё время
               </button>
               <button
                 type="button"
                 className={period === "year" ? "active" : ""}
-                onClick={() => setPeriod("year")}
+                onClick={() => selectPeriod("year")}
               >
                 Последний год
               </button>
@@ -504,7 +524,7 @@ export function PortalHomePage() {
                       role="tab"
                       aria-selected={tab.key === activeChart.key}
                       className={tab.key === activeChart.key ? "active" : ""}
-                      onClick={() => setChartTab(tab.key)}
+                      onClick={() => selectChartTab(tab.key)}
                     >
                       {tab.label}
                     </button>
@@ -867,7 +887,7 @@ export function PortalHomePage() {
               )}
             </section>
 
-            <section className="portal-cta portal-cta-split">
+            <section className="portal-cta portal-cta-split" ref={ctaRef}>
               <div className="portal-cta-copy">
                 <h2>А теперь найдите здесь себя</h2>
                 <p>
@@ -876,7 +896,11 @@ export function PortalHomePage() {
                   истории.
                 </p>
                 <div className="portal-cta-actions">
-                  <a className="btn primary" href={PORTAL_LOGIN_HREF}>
+                  <a
+                    className="btn primary"
+                    href={PORTAL_LOGIN_HREF}
+                    onClick={() => trackAbEvent("cta_click", "bottom")}
+                  >
                     Создать кабинет
                   </a>
                 </div>
