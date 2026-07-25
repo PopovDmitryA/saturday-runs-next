@@ -785,3 +785,71 @@ a.portal-cab-nav-item-disabled {
 .portal-cab-user-pending {
   min-height: 62px;
 }
+
+/* ---------- аналитические плитки в портальном стиле ----------
+   Легаси .stat-card-runs/.stat-card-volunteering заливали карточку светло-
+   зелёным/светло-синим захардкоженным hex — в тёмной теме это выглядело
+   чужеродными пятнами, да и в светлой спорило с портальными панелями.
+   Здесь: нейтральная панель как везде, категория — тонкая цветная полоска
+   слева; цвета через переменные темы, поэтому обе темы бесплатно. */
+
+.portal-cab-main .stat-card,
+.portal-section .stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  text-align: left;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.portal-cab-main .stat-card.stat-card-runs,
+.portal-section .stat-card.stat-card-runs {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: inset 3px 0 0 var(--accent-green-text);
+}
+
+.portal-cab-main .stat-card.stat-card-volunteering,
+.portal-section .stat-card.stat-card-volunteering {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: inset 3px 0 0 var(--accent-indigo);
+}
+
+/* Значение — обычный цвет текста: цветными остаются только полоски,
+   иначе сетка из 15 плиток снова превращается в пестроту. */
+.portal-cab-main .stat-card.stat-card-runs .stat-value,
+.portal-cab-main .stat-card.stat-card-volunteering .stat-value,
+.portal-section .stat-card.stat-card-runs .stat-value,
+.portal-section .stat-card.stat-card-volunteering .stat-value {
+  color: var(--text);
+}
+
+.portal-cab-main .stat-card.stat-card-runs .stat-label,
+.portal-cab-main .stat-card.stat-card-volunteering .stat-label,
+.portal-section .stat-card.stat-card-runs .stat-label,
+.portal-section .stat-card.stat-card-volunteering .stat-label {
+  color: var(--text-muted);
+}
+
+.portal-cab-main .stat-value,
+.portal-section .stat-value {
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.portal-cab-main .stat-label,
+.portal-section .stat-label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* Кликабельные плитки: подсветка рамкой вместо смены заливки. */
+.portal-cab-main .stat-card-nav:hover,
+.portal-section .stat-card-nav:hover {
+  border-color: var(--accent-indigo);
+  transform: none;
+}
