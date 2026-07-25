@@ -525,6 +525,7 @@ export function SweepHqPage({ token }: { token: string }) {
   const collectedDelta = prev ? p.collected - prev.progress.collected : 0;
   const rate1hDelta = prev ? data.rate_1h - prev.rate_1h : 0;
   const rate24hDelta = prev ? data.rate_24h - prev.rate_24h : 0;
+  const parseRate1hDelta = prev ? data.parse_rate_1h - prev.parse_rate_1h : 0;
   const runsDelta = prev ? p.runs - prev.progress.runs : 0;
   // Отсчёт до следующей 3-минутной границы стенных часов — не зависит от момента
   // загрузки страницы, поэтому перезагрузка его не сбрасывает.
@@ -617,6 +618,7 @@ export function SweepHqPage({ token }: { token: string }) {
             >
               <span className="hq-stat__num">{fmt(data.parse_rate_1h)}</span>
               <span className="hq-stat__cap">обработка / час</span>
+              <RateDelta value={parseRate1hDelta} />
             </div>
             <div
               className="hq-stat hq-hint"
