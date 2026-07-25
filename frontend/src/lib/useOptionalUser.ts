@@ -46,8 +46,12 @@ export function clearCachedUser(): void {
   }
 }
 
-export function useOptionalUser(): User | null | undefined {
-  const [user, setUser] = useState<User | null | undefined>(readCachedUser);
+export function useOptionalUser(options?: { skipCache?: boolean }): User | null | undefined {
+  // skipCache — не доверять кэшу на старте. Нужно там, где по ответу
+  // принимается решение о редиректе: сразу после входа кэш ещё помнит
+  // «аноним», и страница успела бы отправить залогиненного обратно на /login.
+  const skipCache = options?.skipCache ?? false;
+  const [user, setUser] = useState<User | null | undefined>(skipCache ? undefined : readCachedUser);
 
   useEffect(() => {
     let cancelled = false;

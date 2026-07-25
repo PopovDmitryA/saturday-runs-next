@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { finishOAuthLogin } from "../../lib/api";
+import { clearCachedUser } from "../../lib/useOptionalUser";
 
 type OAuthCallbackPageProps = {
   provider: "vk" | "yandex";
@@ -30,6 +31,9 @@ export function OAuthCallbackPage({ provider }: OAuthCallbackPageProps) {
       payload: params.get("payload"),
     })
       .then((result) => {
+        // Кэш сессии помнит «аноним» с прошлой страницы — если его не сбросить,
+        // следующая страница отправит только что вошедшего обратно на вход.
+        clearCachedUser();
         const target = result.redirect.startsWith("/") ? result.redirect : `/${result.redirect}`;
         window.location.replace(target);
       })

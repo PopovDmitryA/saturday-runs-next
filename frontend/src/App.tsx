@@ -107,7 +107,7 @@ function QueueRedirect() {
  * публичный адрес участника — /users/{хендл}[/вкладка]. Аноним уходит на вход.
  */
 function CabinetLegacyRedirect({ tab }: { tab: CabinetTabSegmentKey }) {
-  const user = useOptionalUser();
+  const user = useOptionalUser({ skipCache: true });
   useEffect(() => {
     if (user === undefined) {
       return;
