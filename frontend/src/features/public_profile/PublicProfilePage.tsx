@@ -333,12 +333,26 @@ export function PublicProfilePage({ handle }: { handle: string }) {
   );
 
   useEffect(() => {
+    let cancelled = false;
     if (isNumeric) {
       setSerialId(Number(handle));
       setState("ready");
-      return;
+      // Пришли по номеру (например, из таблицы рейтинга) — если у участника
+      // есть ник, показываем в адресной строке его: ссылкой удобнее делиться.
+      resolveProfileHandle(handle)
+        .then((res) => {
+          const slug = res.public_slug?.trim();
+          if (!cancelled && slug) {
+            window.history.replaceState(null, "", `/users/${encodeURIComponent(slug)}`);
+          }
+        })
+        .catch(() => {
+          // адрес остаётся числовым — не критично
+        });
+      return () => {
+        cancelled = true;
+      };
     }
-    let cancelled = false;
     setState("resolving");
     resolveProfileHandle(handle)
       .then((res) => {

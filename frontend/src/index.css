@@ -3526,18 +3526,7 @@ tr.run-crosslinked td {
   gap: 0.5rem;
 }
 
-.profile-preview-recent-list li {
-  display: grid;
-  grid-template-columns: 6.5rem 5.5rem 1fr auto;
-  gap: 0.5rem 0.75rem;
-  align-items: baseline;
-  font-size: 0.9rem;
-}
 
-.profile-preview-recent-kind {
-  font-weight: 600;
-  color: var(--text-3);
-}
 
 .snackbar {
   position: fixed;
@@ -3635,14 +3624,7 @@ tr.run-crosslinked td {
 }
 
 @media (max-width: 520px) {
-  .profile-preview-recent-list li {
-    grid-template-columns: 1fr 1fr;
-    gap: 0.25rem 0.5rem;
-  }
 
-  .profile-preview-recent-kind {
-    grid-column: 1 / -1;
-  }
 
   .location-map-canvas {
     height: 24rem;

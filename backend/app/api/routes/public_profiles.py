@@ -42,6 +42,9 @@ router = APIRouter(prefix="/users", tags=["public-profiles"])
 class ProfileHandleResolveResponse(BaseModel):
     serial_id: int
     display_name: str | None = None
+    # Ник участника, если он его завёл: фронт заменяет числовой адрес на
+    # /users/{slug}, чтобы делиться красивой ссылкой (26.07.2026).
+    public_slug: str | None = None
 
 
 @router.get("/resolve/{handle}", response_model=ProfileHandleResolveResponse)
@@ -58,7 +61,11 @@ def resolve_public_profile_handle(
     target = resolve_profile_handle(db, handle)
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
-    return ProfileHandleResolveResponse(serial_id=target.serial_id, display_name=target.display_name)
+    return ProfileHandleResolveResponse(
+        serial_id=target.serial_id,
+        display_name=target.display_name,
+        public_slug=target.public_slug,
+    )
 
 
 def _resolve_user(serial_id: int, db: Session) -> User:

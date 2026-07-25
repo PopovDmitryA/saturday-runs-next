@@ -346,7 +346,7 @@ function BacklogContent() {
           >
             {card.done_at
               ? `реализовано ${formatRelativeTime(card.done_at)}`
-              : `${formatRelativeTime(card.created_at)} — заведена карточка`}
+              : formatRelativeTime(card.created_at)}
           </span>
           {" · "}
           <span className="backlog-card-comments" title={`${card.comment_count} ${pluralComments(card.comment_count)}`}>

@@ -7,6 +7,7 @@
  * адресной строке ссылку, которой можно поделиться, вместо служебного адреса
  * кабинета, а публичные страницы сайта имели «человеческие» адреса.
  */
+import { useEffect } from "react";
 import { PublicProfilePage } from "../public_profile/PublicProfilePage";
 import { PortalCabinetDashboardPage } from "../portal/cabinet/PortalCabinetDashboardPage";
 import {
@@ -38,6 +39,19 @@ const CABINET_PAGES: Record<CabinetTabSegmentKey, () => React.ReactElement> = {
 
 export function ProfileRoute({ handle, segment }: { handle: string; segment?: string }) {
   const user = useOptionalUser();
+
+  // Канонизация адреса: если у участника есть ник, показываем в строке
+  // браузера /users/{ник}, даже когда пришли по числовому адресу (например,
+  // из таблицы рейтинга, где ссылки строятся по номеру). replaceState —
+  // без перезагрузки и без лишней записи в истории.
+  useEffect(() => {
+    const slug = user?.public_slug?.trim();
+    if (!slug || !isOwnHandle(user, handle) || handle === slug) {
+      return;
+    }
+    const suffix = segment ? `/${encodeURIComponent(segment)}` : "";
+    window.history.replaceState(null, "", `/users/${encodeURIComponent(slug)}${suffix}`);
+  }, [user, handle, segment]);
 
   // Пока сессия не подтверждена — ничего не рендерим: иначе свой же профиль
   // на мгновение показался бы гостевым (и наоборот).

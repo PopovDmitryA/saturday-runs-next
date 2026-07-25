@@ -1946,6 +1946,7 @@ export function updateProfileSlug(slug: string | null) {
 export type ProfileHandleResolve = {
   serial_id: number;
   display_name: string | null;
+  public_slug: string | null;
 };
 
 export function resolveProfileHandle(handle: string) {
