@@ -130,12 +130,12 @@ def list_report_event_dates(db: Session, location_id: UUID) -> list[dict[str, An
             SELECT e.id AS event_id,
                    e.event_date,
                    e.event_number,
-                   -- Только записи со временем финиша: у 5 вёрст в протокол
-                   -- попадают строки без времени (status='unknown'), финишем
-                   -- они не считаются — так же, как в шапке отчёта.
+                   -- Все строки протокола, включая «неизвестных» (status='unknown') —
+                   -- они физически финишировали, просто без распознанного времени.
+                   -- Так же, как в шапке отчёта.
                    coalesce(
                        (SELECT count(*) FROM run_results rr
-                        WHERE rr.event_id = e.id AND rr.finish_time_sec IS NOT NULL),
+                        WHERE rr.event_id = e.id),
                        0
                    ) AS finishers_count
             FROM events e
@@ -213,8 +213,10 @@ def build_event_report(db: Session, event_id: UUID) -> dict[str, Any] | None:
     header_row = _query(
         db,
         f"""
-        SELECT count(*) FILTER (WHERE rr.finish_time_sec IS NOT NULL) AS finishers,
-               count(*) AS results,
+        -- Финишёры = все строки протокола, включая «неизвестных» (status='unknown'/
+        -- 'unknown_runner') — они физически финишировали, просто без распознанного
+        -- времени. Среднее/лучшее время по-прежнему считаются только по известному времени.
+        SELECT count(*) AS finishers,
                round(avg(rr.finish_time_sec) FILTER (WHERE rr.finish_time_sec IS NOT NULL))::int AS avg_sec,
                min(rr.finish_time_sec) FILTER (WHERE {gender_expr} = 'M') AS best_male_sec,
                min(rr.finish_time_sec) FILTER (WHERE {gender_expr} = 'F') AS best_female_sec
@@ -581,7 +583,7 @@ def build_event_report(db: Session, event_id: UUID) -> dict[str, Any] | None:
         db,
         f"""
         SELECT e.id AS event_id, e.event_date,
-               count(rr.id) FILTER (WHERE rr.finish_time_sec IS NOT NULL) AS finishers
+               count(rr.id) AS finishers
         FROM events e
         LEFT JOIN run_results rr ON rr.event_id = e.id
         WHERE e.location_id IN :all_loc_ids
