@@ -726,7 +726,7 @@ function BacklogContent() {
 
 export function BacklogPage() {
   return (
-    <PortalSectionShell>
+    <PortalSectionShell sidebar={{ active: "backlog" }}>
       <BacklogContent />
     </PortalSectionShell>
   );

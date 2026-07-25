@@ -4,7 +4,6 @@ import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
-import { LocationsSidebar } from "./LocationsSidebar";
 import { getLocationsIndex, type LocationIndexItem } from "../../lib/api";
 import { formatDate, formatFinishTimeValue, pluralizeRu } from "../../lib/format";
 
@@ -265,7 +264,7 @@ function LocationsIndexContent() {
   }, [items, query, platformFilter, showPaused]);
 
   return (
-    <PortalSectionShell sidebar={<LocationsSidebar />}>
+    <PortalSectionShell sidebar={{ active: "locations" }}>
       <header className="loc-header">
         <div className="loc-header-title">
           <h1>Локации</h1>

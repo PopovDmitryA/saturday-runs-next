@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { PortalSectionShell, SectionSidebarNav } from "../portal/PortalSectionShell";
-import { RATINGS_NAV } from "./ratingsNav";
+import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
   getLeaderboard,
   getMyLeaderboardRow,
@@ -179,7 +178,7 @@ function SoonRatingCard({ card }: { card: SoonCard }) {
 
 export function LeaderboardsHubPage() {
   return (
-    <PortalSectionShell sidebar={<SectionSidebarNav title="Рейтинги" items={RATINGS_NAV} />}>
+    <PortalSectionShell sidebar={{ active: "ratings" }}>
       <div className="lb-page lb-hub">
         <header className="lb-header">
           <h1>Рейтинги</h1>

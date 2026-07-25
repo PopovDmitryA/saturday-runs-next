@@ -18,7 +18,6 @@ import { formatDate, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
-import { LocationsSidebar } from "./LocationsSidebar";
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { LocationMiniMap } from "./LocationMiniMap";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
@@ -583,7 +582,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   if (notFound) {
     return (
-      <PortalSectionShell sidebar={<LocationsSidebar />}>
+      <PortalSectionShell sidebar={{ active: "locations" }}>
         <div className="card">
           <p className="muted">Локация не найдена.</p>
           <p>
@@ -596,7 +595,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   if (error) {
     return (
-      <PortalSectionShell sidebar={<LocationsSidebar />}>
+      <PortalSectionShell sidebar={{ active: "locations" }}>
         <div className="card error">
           <p>{error}</p>
         </div>
@@ -606,7 +605,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   if (!page) {
     return (
-      <PortalSectionShell sidebar={<LocationsSidebar />}>
+      <PortalSectionShell sidebar={{ active: "locations" }}>
         <p className="muted">Загрузка…</p>
       </PortalSectionShell>
     );
@@ -616,7 +615,7 @@ function LocationPageContent({ slug }: { slug: string }) {
   const records = stats.course_records;
 
   return (
-    <PortalSectionShell sidebar={<LocationsSidebar location={{ slug: page.slug, name: page.name }} />}>
+    <PortalSectionShell sidebar={{ active: "locations", location: { slug: page.slug, name: page.name } }}>
       <header className="loc-header loc-wide-page">
         <p className="muted loc-header-breadcrumb">
           <a href="/locations">← Все локации</a> / {page.name}
@@ -644,9 +643,6 @@ function LocationPageContent({ slug }: { slug: string }) {
       <section className="card loc-section">
         <div className="loc-section-head">
           <h2 className="section-title">Локация в цифрах</h2>
-          <a className="loc-events-link" href={`/locations/${page.slug}/events`}>
-            Журнал протоколов →
-          </a>
         </div>
         <div className="loc-stats-grid">
           <StatTile

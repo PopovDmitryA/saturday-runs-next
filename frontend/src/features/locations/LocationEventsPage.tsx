@@ -12,7 +12,6 @@ import {
 } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
-import { LocationsSidebar } from "./LocationsSidebar";
 
 type SortKey = "date" | "finishers" | "volunteers" | "best_male" | "best_female" | "avg" | "newcomers" | "prs";
 
@@ -125,7 +124,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
 
   if (notFound) {
     return (
-      <PortalSectionShell sidebar={<LocationsSidebar />}>
+      <PortalSectionShell sidebar={{ active: "locations" }}>
         <div className="card">
           <p className="muted">Локация не найдена.</p>
           <p>
@@ -138,7 +137,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
 
   if (error) {
     return (
-      <PortalSectionShell sidebar={<LocationsSidebar />}>
+      <PortalSectionShell sidebar={{ active: "locations" }}>
         <div className="card error">
           <p>{error}</p>
         </div>
@@ -148,14 +147,14 @@ function LocationEventsContent({ slug }: { slug: string }) {
 
   if (!data) {
     return (
-      <PortalSectionShell sidebar={<LocationsSidebar />}>
+      <PortalSectionShell sidebar={{ active: "locations" }}>
         <p className="muted">Загрузка…</p>
       </PortalSectionShell>
     );
   }
 
   return (
-    <PortalSectionShell sidebar={<LocationsSidebar location={{ slug: data.slug, name: data.name }} />}>
+    <PortalSectionShell sidebar={{ active: "locations", location: { slug: data.slug, name: data.name } }}>
       <header className="loc-header loc-wide-page">
         <p className="muted loc-header-breadcrumb">
           <a href="/locations">← Все локации</a> /{" "}

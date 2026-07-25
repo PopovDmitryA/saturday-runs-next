@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
-import { PortalSectionShell, SectionSidebarNav } from "../portal/PortalSectionShell";
-import { RATINGS_NAV } from "./ratingsNav";
+import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
   GENDERED_METRICS,
   getLeaderboard,
@@ -263,7 +262,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   );
 
   return (
-    <PortalSectionShell sidebar={<SectionSidebarNav title="Рейтинги" items={RATINGS_NAV} />}>
+    <PortalSectionShell sidebar={{ active: "ratings" }}>
       <div className="lb-page">
         <nav className="lb-breadcrumb">
           <a href="/ratings">← Все рейтинги</a>

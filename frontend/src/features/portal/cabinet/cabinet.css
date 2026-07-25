@@ -681,3 +681,86 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   background: none;
   padding: 0;
 }
+
+/* ---------- единый сайдбар сайта (SiteSidebar) ---------- */
+
+/* Заголовок-кнопка группы «Личный кабинет» с шевроном. */
+.portal-cab-group-head {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.portal-cab-group-head-current {
+  font-weight: 700;
+}
+
+.portal-cab-group-chevron {
+  margin-left: auto;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.portal-cab-group-chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.portal-cab-group-chevron.open {
+  transform: rotate(90deg);
+}
+
+/* Подпункты (вкладки ЛК под группой, подразделы локации) — со сдвигом. */
+.portal-cab-nav-subitem {
+  padding-left: 22px;
+}
+
+/* Текстовые подпункты без иконки (локация, журнал) — ровняем по тексту. */
+.portal-cab-nav-textitem {
+  padding-left: 50px;
+}
+
+/* Недоступное анониму: видно, но не кликается. */
+.portal-cab-nav-item-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+
+a.portal-cab-nav-item-disabled {
+  pointer-events: none;
+}
+
+/* Карточка-CTA анонима на месте карточки пользователя. */
+.portal-cab-login-card {
+  justify-content: center;
+}
+
+.portal-cab-login-btn {
+  width: 100%;
+  text-align: center;
+}
+
+.portal-cab-login-avatar {
+  text-decoration: none;
+  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* В свёрнутом рельсе текстовые подпункты (без иконок) прячем, шеврон тоже. */
+.portal-cab-sidebar.collapsed .portal-cab-nav-textitem,
+.portal-cab-sidebar.collapsed .portal-cab-group-chevron {
+  display: none;
+}
+
+.portal-cab-sidebar.collapsed .portal-cab-nav-subitem {
+  padding-left: 0;
+}
