@@ -41,6 +41,48 @@ const EMPTY_DRAFT: Draft = {
 // по статусу нет — разбиение на секции само разводит карточки по состояниям.
 const STATUS_ORDER: BacklogCardStatus[] = ["pending", "in_progress", "rejected", "done"];
 
+const TRANSLIT: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i",
+  й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t",
+  у: "u", ф: "f", х: "h", ц: "c", ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "",
+  э: "e", ю: "yu", я: "ya",
+};
+
+/**
+ * Адрес открытой карточки: /backlog?card=nazvanie-karto4ki-a3a84326.
+ * Читаемый слаг из названия плюс восемь символов id — по ним карточка и
+ * находится, так что переименование ссылку не ломает.
+ */
+function cardSlug(card: BacklogCard): string {
+  const words = card.title
+    .toLowerCase()
+    .split("")
+    .map((ch) => TRANSLIT[ch] ?? ch)
+    .join("")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .split("-")
+    .filter(Boolean)
+    .slice(0, 6)
+    .join("-");
+  const short = card.id.replace(/-/g, "").slice(0, 8);
+  return words ? `${words}-${short}` : short;
+}
+
+/** Из слага обратно в карточку: сравниваем по хвосту-идентификатору. */
+function findCardBySlug(cards: BacklogCard[], slug: string): BacklogCard | null {
+  const value = slug.trim().toLowerCase();
+  if (!value) {
+    return null;
+  }
+  const tail = value.split("-").pop() ?? value;
+  return (
+    cards.find((card) => card.id === value) ??
+    cards.find((card) => card.id.replace(/-/g, "").startsWith(tail)) ??
+    null
+  );
+}
+
 /** Аватар автора: картинка, если загружена, иначе инициалы. Аноним — без имени. */
 function AuthorAvatar({ name, avatarUrl }: { name: string | null; avatarUrl?: string | null }) {
   if (avatarUrl) {
@@ -130,9 +172,12 @@ function BacklogContent() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const [openCardId, setOpenCardId] = useState<string | null>(
+  // Из адреса приходит слаг (или старый id) — разрешаем его в id, когда лента
+  // загрузилась: по слагу карточка ищется среди уже полученных.
+  const [pendingCardSlug, setPendingCardSlug] = useState<string | null>(
     () => new URLSearchParams(window.location.search).get("card"),
   );
+  const [openCardId, setOpenCardId] = useState<string | null>(null);
   const [comments, setComments] = useState<Record<string, BacklogComment[]>>({});
   const [commentsLoading, setCommentsLoading] = useState<Record<string, boolean>>({});
   const [commentDraft, setCommentDraft] = useState("");
@@ -195,10 +240,23 @@ function BacklogContent() {
     }
   }, [openCardId, comments, commentsLoading, loadComments]);
 
+  useEffect(() => {
+    if (!pendingCardSlug || cards.length === 0) {
+      return;
+    }
+    const card = findCardBySlug(cards, pendingCardSlug);
+    setPendingCardSlug(null);
+    if (card) {
+      setOpenCardId(card.id);
+    }
+  }, [pendingCardSlug, cards]);
+
   const openCard = (cardId: string) => {
-    // Карточка получает собственный адрес: ссылку можно скопировать из строки
-    // браузера и отправить коллегам, чтобы позвать голосовать.
-    window.history.replaceState(null, "", `${window.location.pathname}?card=${cardId}`);
+    // Карточка получает собственный читаемый адрес: ссылку можно скопировать
+    // из строки браузера и отправить коллегам, чтобы позвать голосовать.
+    const card = cards.find((item) => item.id === cardId);
+    const slug = card ? cardSlug(card) : cardId;
+    window.history.replaceState(null, "", `${window.location.pathname}?card=${slug}`);
     setOpenCardId(cardId);
     setCommentDraft("");
     setCommentAnon(false);

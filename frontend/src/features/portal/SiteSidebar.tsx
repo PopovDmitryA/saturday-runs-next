@@ -147,6 +147,22 @@ const PROFILE_ICON = icon(
   </>,
 );
 
+// Подпункты открытой локации: сама площадка и её журнал протоколов.
+const LOCATION_PIN_ICON = icon(
+  <>
+    <circle cx="12" cy="12" r="3.2" />
+    <path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21" />
+  </>,
+);
+
+const PROTOCOL_ICON = icon(
+  <>
+    <path d="M6 3.5h9L19 7.5V20a.5.5 0 0 1-.5.5h-12A.5.5 0 0 1 6 20V4a.5.5 0 0 1 .5-.5Z" />
+    <path d="M14.5 3.5V8H19" />
+    <path d="M9 12.5h6M9 16h4" />
+  </>,
+);
+
 const RATINGS_ICON = icon(
   <>
     <path d="M7.5 4h9v4.5a4.5 4.5 0 0 1-9 0V4Z" />
@@ -528,20 +544,22 @@ export function SiteSidebar({
           <>
             <a
               href={`/locations/${location.slug}`}
-              className={`portal-cab-nav-item portal-cab-nav-subitem portal-cab-nav-textitem${
+              className={`portal-cab-nav-item portal-cab-nav-subitem${
                 pathname === `/locations/${location.slug}` ? " active" : ""
               }`}
               title={collapsed ? location.name : undefined}
             >
+              <span className="portal-cab-nav-icon">{LOCATION_PIN_ICON}</span>
               <span className="portal-cab-nav-label">{location.name}</span>
             </a>
             <a
               href={`/locations/${location.slug}/events`}
-              className={`portal-cab-nav-item portal-cab-nav-subitem portal-cab-nav-textitem${
+              className={`portal-cab-nav-item portal-cab-nav-subitem${
                 pathname.endsWith("/events") ? " active" : ""
               }`}
               title={collapsed ? "Журнал протоколов" : undefined}
             >
+              <span className="portal-cab-nav-icon">{PROTOCOL_ICON}</span>
               <span className="portal-cab-nav-label">Журнал протоколов</span>
             </a>
           </>

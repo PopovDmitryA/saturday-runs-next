@@ -258,7 +258,8 @@ export function PortalLoginPage() {
                 </li>
               </ul>
               <p className="portal-login-scopes-note">
-                Телефон, дату рождения, друзей и ленту сайт не запрашивает и не хранит.{" "}
+                Телефон, дату рождения, друзей и ленту сайт{" "}
+                <b className="portal-login-scopes-never">не запрашивает и не хранит</b>.{" "}
                 <a href={PORTAL_ABOUT_PRIVACY_HREF} target="_blank" rel="noreferrer">
                   Подробнее
                 </a>

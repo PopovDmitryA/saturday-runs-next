@@ -2662,3 +2662,9 @@
   border-radius: 7px;
   object-fit: cover;
 }
+
+/* Что сайт НЕ берёт у пользователя — выделяем, это главное обещание страницы. */
+.portal-login-scopes-never {
+  color: var(--accent-red-text);
+  font-weight: 700;
+}

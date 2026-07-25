@@ -246,7 +246,7 @@ function AgeGroupRecordsSection({ records }: { records: LocationAgeGroupRecord[]
     <section className="card loc-section">
       <h2 className="section-title">
         Рекорды по возрастным группам
-        <StatHintTooltip text="Лучшее время в каждой возрастной группе за всю историю локации. Считается по данным 5 вёрст — только эта система публикует возрастной диапазон. S95 возраст не передаёт вовсе, parkrun вместо группы отдаёт процент от возрастного рекорда, а RunPark — буквенные категории без диапазона.">
+        <StatHintTooltip text="Считается только по 5 вёрст">
           <span className="loc-section-title-info" aria-label="Как считается">
             ⓘ
           </span>

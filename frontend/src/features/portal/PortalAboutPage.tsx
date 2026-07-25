@@ -273,17 +273,19 @@ export function PortalAboutPage() {
         </section>
 
         <section className="portal-panel" aria-label="Бэклог идей">
-          <h2>Бэклог идей</h2>
-          <p>
-            Вы можете напрямую влиять на то, каким станет сайт: предлагайте новые разделы и
-            статистики, сообщайте о том, что работает не так, голосуйте за чужие идеи. Чем
-            больше голосов у карточки, тем раньше она попадёт в работу.
-          </p>
-          <p>
-            <a className="btn secondary" href="/backlog">
-              Открыть бэклог →
-            </a>
-          </p>
+          <div className="portal-panel-head">
+            <div>
+              <h2>Бэклог идей</h2>
+              <p className="portal-panel-sub">
+                Вы можете напрямую влиять на то, каким станет сайт: предлагайте новые разделы и
+                статистики, сообщайте о том, что работает не так, голосуйте за чужие идеи. Чем
+                больше голосов у карточки, тем раньше она попадёт в работу.
+              </p>
+            </div>
+          </div>
+          <a className="btn secondary" href="/backlog">
+            Открыть бэклог →
+          </a>
         </section>
 
         <section className="portal-panel" aria-label="Автор и контакты">

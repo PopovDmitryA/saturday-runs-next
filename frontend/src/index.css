@@ -10530,18 +10530,6 @@ tr.run-crosslinked td {
   margin-top: 12px;
 }
 
-/* Имя участника-ссылка в таблицах рекордов и топов локации. */
-.loc-runner-link {
-  color: inherit;
-  text-decoration: none;
-  border-bottom: 1px dotted var(--text-faint);
-}
-
-.loc-runner-link:hover {
-  color: var(--accent-indigo-text);
-  border-bottom-color: currentColor;
-  text-decoration: none;
-}
 
 /* Шапка публичного профиля: аватар рядом с именем участника. */
 .public-profile-head {
@@ -10556,4 +10544,15 @@ tr.run-crosslinked td {
   border-radius: 16px;
   object-fit: cover;
   flex: none;
+}
+
+/* Имя участника-ссылка в рекордах и топах локации. Вид тот же, что у ссылок
+   в таблицах рейтингов (.lb-name-link): цветом видно, у кого есть кабинет. */
+.loc-runner-link {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.loc-runner-link:hover {
+  text-decoration: underline;
 }
