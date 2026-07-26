@@ -27,10 +27,19 @@ def _first_platform_visit_date(platform_payload: dict[str, object]) -> date | No
     return min(dates)
 
 
-def _build_platform_visit_index(
+def _build_visit_index(
     details: dict[str, object],
-) -> dict[tuple[str, str], date]:
-    index: dict[tuple[str, str], date] = {}
+) -> dict[str, tuple[date, str]]:
+    """Первое посещение физической локации: identity → (дата, система).
+
+    Ключ — только локация, без платформы. Раньше ключ был (локация, система), и
+    посещение терялось, если система визита не совпадала с системой строки
+    каталога: строки заводятся лишь для MAP_PLATFORMS, поэтому пробежка в
+    parkrun-эпоху на пятивёрстовской строке давала «Не посещал». Система
+    первого визита остаётся в значении — её показываем рядом с датой, чтобы
+    «Посещал» на строке 5 вёрст не выглядел ошибкой, когда бегали в parkrun.
+    """
+    index: dict[str, tuple[date, str]] = {}
     for location in details.get("locations", []):
         identity_key = str(location["catalog_identity_key"])
         for platform in location.get("platforms", []):
@@ -38,10 +47,9 @@ def _build_platform_visit_index(
             first_visit = _first_platform_visit_date(platform)
             if first_visit is None:
                 continue
-            key = (identity_key, platform_code)
-            existing = index.get(key)
-            if existing is None or first_visit < existing:
-                index[key] = first_visit
+            existing = index.get(identity_key)
+            if existing is None or first_visit < existing[0]:
+                index[identity_key] = (first_visit, platform_code)
     return index
 
 
@@ -58,7 +66,7 @@ def build_catalog_locations_table(
             user_id,
             include_test_events=include_test_events,
         )
-        visit_index = _build_platform_visit_index(visit_details)
+        visit_index = _build_visit_index(visit_details)
     else:
         visit_index = {}
 
@@ -79,8 +87,9 @@ def build_catalog_locations_table(
     for location, platform in rows_query:
         platform_code = platform.code
         identity_key = catalog_index.canonical_identity_key(location, platform_code)
-        visit_key = (identity_key, platform_code)
-        first_visit = visit_index.get(visit_key)
+        visit = visit_index.get(identity_key)
+        first_visit = visit[0] if visit is not None else None
+        first_visit_platform = visit[1] if visit is not None else None
         rows.append(
             {
                 "row_key": f"{location.id}:{platform_code}",
@@ -98,6 +107,9 @@ def build_catalog_locations_table(
                 "location_url": location_page_url(platform_code, location.external_key, location.source_url),
                 "visited": first_visit is not None,
                 "first_visit_date": first_visit.isoformat() if first_visit is not None else None,
+                # В какой системе был самый ранний визит: у строки 5 вёрст это
+                # может быть parkrun — тогда показываем это рядом с датой.
+                "first_visit_platform": first_visit_platform,
             }
         )
 

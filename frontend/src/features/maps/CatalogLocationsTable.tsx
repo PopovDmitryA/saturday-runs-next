@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { CatalogLocationTableRow, CatalogLocationsTableResponse } from "../../lib/api";
-import { formatDate } from "../../lib/format";
+import { formatDate, platformCodeLabel } from "../../lib/format";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { CheckboxListFilter } from "../../components/activityTable/CheckboxListFilter";
 import { PlatformBadge } from "../../components/PlatformBadge";
@@ -355,7 +355,15 @@ function CatalogLocationTableRowView({ row }: { row: CatalogLocationTableRow }) 
           {row.visited ? "Посещал" : "Не посещал"}
         </span>
       </td>
-      <td className="td-date">{row.first_visit_date ? formatDate(row.first_visit_date) : "—"}</td>
+      <td className="td-date">
+        {row.first_visit_date ? formatDate(row.first_visit_date) : "—"}
+        {/* Отметка «Посещал» ставится по локации, а не по системе. Если первый
+            визит был в другой системе (обычно parkrun-эпоха), называем её —
+            иначе дата 2020 года на строке 5 вёрст выглядит ошибкой. */}
+        {row.first_visit_date && row.first_visit_platform && row.first_visit_platform !== row.platform_code && (
+          <span className="td-date-source">в {platformCodeLabel(row.first_visit_platform)}</span>
+        )}
+      </td>
     </tr>
   );
 }

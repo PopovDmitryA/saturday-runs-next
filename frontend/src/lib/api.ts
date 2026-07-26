@@ -1672,6 +1672,8 @@ export type CatalogLocationTableRow = {
   location_url: string | null;
   visited: boolean;
   first_visit_date: string | null;
+  // Система самого раннего визита — может отличаться от platform_code строки
+  first_visit_platform: string | null;
 };
 
 export type CatalogLocationsTableResponse = {

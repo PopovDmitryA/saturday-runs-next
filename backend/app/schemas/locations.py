@@ -305,6 +305,9 @@ class CatalogLocationTableRowResponse(BaseModel):
     location_url: str | None = None
     visited: bool = False
     first_visit_date: date | None = None
+    # Система самого раннего визита — может отличаться от platform_code строки
+    # (бегал в parkrun-эпоху, сейчас локация живёт в 5 вёрстах)
+    first_visit_platform: str | None = None
 
 
 class CatalogLocationsTableResponse(BaseModel):

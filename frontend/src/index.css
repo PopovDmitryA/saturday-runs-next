@@ -4699,6 +4699,14 @@ tr.run-crosslinked td {
   white-space: nowrap;
 }
 
+/* «в parkrun» под датой первого визита, когда он был не в системе строки */
+.td-date-source {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .visit-status-yes {
   background: var(--tint-green-bg-strong);
   color: var(--tint-green-text);
