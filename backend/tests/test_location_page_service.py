@@ -55,32 +55,28 @@ def test_normalize_age_group_under_ten() -> None:
     assert normalize_age_group("М10-14") == "10–14"
 
 
-def test_normalize_age_group_ignores_stray_exact_ages() -> None:
-    """«М11»/«М12» — обрезки старого парсера, такой категории не бывает."""
-    assert normalize_age_group("М11") is None
-    assert normalize_age_group("М12") is None
-    assert normalize_age_group("Ж11") is None
-    assert normalize_age_group("М13") is None
+def test_normalize_age_group_keeps_absurd_bands() -> None:
+    """«М110-114» показываем как есть — это то, что стоит в протоколе.
 
-
-def test_normalize_age_group_ignores_absurd_bands() -> None:
-    """«М110-114» — группа участника без даты рождения, в рекорды не идёт.
-
-    Проверяем именно эту форму: поиск подстрокой вытаскивал из неё «10–11»
-    и заводил в таблице несуществующую группу.
+    Такую группу 5 вёрст печатает участникам без даты рождения. Прятать её
+    не надо (решение Дмитрия 27.07.2026), но и вытаскивать из неё «10–11»
+    поиском подстроки нельзя — отсюда якорь по всей строке.
     """
-    assert normalize_age_group("М110-114") is None
-    assert normalize_age_group("Ж110-114") is None
-    assert normalize_age_group("М120-124") is None
+    assert normalize_age_group("М110-114") == "110–114"
+    assert normalize_age_group("Ж110-114") == "110–114"
+    assert normalize_age_group("М120-124") == "120–124"
+    # Тот же сорт данных одним числом.
+    assert normalize_age_group("М120") == "<120"
 
 
 def test_age_group_sort_key_puts_under_before_range() -> None:
     """«<10» и «10–14» дают одно число — порядок между ними фиксирован."""
-    assert sorted(["35–39", "10–14", "<10", "75+"], key=_age_group_sort_key) == [
+    assert sorted(["35–39", "10–14", "<10", "75+", "110–114"], key=_age_group_sort_key) == [
         "<10",
         "10–14",
         "35–39",
         "75+",
+        "110–114",
     ]
 
 
@@ -93,9 +89,11 @@ def test_normalize_age_group_unknown() -> None:
 
 
 def test_age_group_key_is_anchor_safe() -> None:
-    """Ключ группы уходит в id строки таблицы — типографских тире там быть не должно."""
+    """Ключ группы уходит в id строки таблицы — спецсимволов там быть не должно."""
     assert age_group_key("male", "30–34") == "male-30-34"
     assert age_group_key("female", "75+") == "female-75plus"
+    assert age_group_key("male", "<10") == "male-under10"
+    assert age_group_key("male", "110–114") == "male-110-114"
 
 
 def test_build_location_age_group_standings_without_events() -> None:
