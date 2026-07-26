@@ -22,6 +22,14 @@ def bot_main(monkeypatch: pytest.MonkeyPatch) -> Generator[object, None, None]:
     yield module
 
 
+def test_aiohttp_session_accepts_configured_proxy() -> None:
+    """aiogram строит прокси-коннектор только через aiohttp-socks — без этого пакета
+    бот падает на старте с RuntimeError и уходит в крэш-луп (прод, 26.07.2026)."""
+    from aiogram.client.session.aiohttp import AiohttpSession
+
+    assert AiohttpSession(proxy="http://tg-proxy:8118") is not None
+
+
 def test_is_admin_matches_configured_id(bot_main: object) -> None:
     assert bot_main._is_admin(ADMIN_ID) is True
     assert bot_main._is_admin(1) is False

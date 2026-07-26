@@ -13,6 +13,9 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "redis>=5.2.0",
     "aiogram>=3.15.0",
+    # aiogram строит прокси-коннектор только через aiohttp-socks — нужен даже для
+    # http-прокси, иначе AiohttpSession(proxy=...) падает с RuntimeError.
+    "aiohttp-socks>=0.9.0",
     "httpx[socks]>=0.28.0",
     "beautifulsoup4>=4.12.0",
     "cloudscraper>=1.2.71",
