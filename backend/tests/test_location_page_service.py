@@ -11,6 +11,7 @@ from app.services import location_page_service
 from app.services.location_page_service import (
     LOCATIONS_INDEX_CACHE_KEY,
     LOCATIONS_INDEX_CACHE_TTL_SECONDS,
+    _age_group_sort_key,
     _read_locations_index_cache,
     _sort_identity_locations,
     _start_point_url,
@@ -46,10 +47,34 @@ def test_normalize_age_group_parkrun_and_runpark() -> None:
     assert normalize_age_group("VM35-39") == "35–39"
 
 
+def test_normalize_age_group_under_ten() -> None:
+    """«М10» у 5 вёрст — «10 и младше», отдельная ступень рядом с «10–14».
+
+    Обе категории встречаются в одном протоколе, и все, кто побывал в обеих,
+    сначала бежали в «М10», — поэтому «≤10», а не «10».
+    """
+    assert normalize_age_group("М10") == "≤10"
+    assert normalize_age_group("Ж10") == "≤10"
+    assert normalize_age_group("JM10") == "≤10"
+    assert normalize_age_group("М10-14") == "10–14"
+
+
+def test_age_group_sort_key_puts_under_before_range() -> None:
+    """«≤10» и «10–14» дают одно число — порядок между ними фиксирован."""
+    assert sorted(["35–39", "10–14", "≤10", "75+"], key=_age_group_sort_key) == [
+        "≤10",
+        "10–14",
+        "35–39",
+        "75+",
+    ]
+
+
 def test_normalize_age_group_unknown() -> None:
     assert normalize_age_group(None) is None
     assert normalize_age_group("") is None
     assert normalize_age_group("хостел") is None
+    # Age grade parkrun — не возрастная группа, под правило «≤N» попасть не должен.
+    assert normalize_age_group("54.38%") is None
 
 
 def test_age_group_key_is_anchor_safe() -> None:

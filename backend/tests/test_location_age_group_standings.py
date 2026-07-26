@@ -184,8 +184,13 @@ def test_tile_place_matches_the_top_it_links_to(db_session: Session) -> None:
     assert record["top"] == top
 
 
-def test_runpark_and_five_verst_land_in_one_group(db_session: Session) -> None:
-    """«М30-34» 5 вёрст и «SM30-34» RunPark — одна группа «30–34», один топ."""
+def test_runpark_results_are_not_counted(db_session: Session) -> None:
+    """Возрастные группы — только 5 вёрст, RunPark в топ площадки не подмешиваем.
+
+    Формально «SM30-34» разбирается в ту же группу «30–34», что и «М30-34», —
+    поэтому проверяем явно: рунпарковец не влияет ни на место, ни на топ-5.
+    Раньше фильтр был «всё, кроме parkrun», и RunPark сюда протекал.
+    """
     suffix = uuid4().hex[:8]
     five_verst = _platform(db_session, "five_verst", "5 вёрст")
     runpark = _platform(db_session, "runpark", "RunPark")
@@ -199,16 +204,19 @@ def test_runpark_and_five_verst_land_in_one_group(db_session: Session) -> None:
     rp_runner = _make_participant(db_session, runpark, f"mix-rp-runner-{suffix}", "Бегун РанПарка")
 
     _add_result(db_session, fv_event, me, finish_time_sec=1500, age_category="М30-34")
+    # Быстрее меня и в той же возрастной полосе — но в другой системе.
     _add_result(db_session, rp_event, rp_runner, finish_time_sec=1300, age_category="SM30-34")
     db_session.commit()
 
     event_ids = [fv_event.id, rp_event.id]
     standings = build_location_age_group_standings(db_session, user.id, event_ids)
     assert len(standings) == 1
-    assert (standings[0]["age_group"], standings[0]["place"], standings[0]["total"]) == ("30–34", 2, 2)
+    assert (standings[0]["age_group"], standings[0]["place"], standings[0]["total"]) == ("30–34", 1, 1)
 
     top = _age_group_tops(db_session, event_ids)[("male", "30–34")]
-    assert [row["name"] for row in top] == ["Бегун РанПарка", "Я Бегун"]
+    assert [row["name"] for row in top] == ["Я Бегун"]
+    records = _age_group_records(db_session, event_ids)
+    assert [r["runner_name"] for r in records] == ["Я Бегун"]
 
 
 def test_parkrun_age_grade_is_not_an_age_group(db_session: Session) -> None:
@@ -244,6 +252,40 @@ def test_results_without_time_or_category_are_skipped(db_session: Session) -> No
     _add_result(db_session, other, me, finish_time_sec=None, age_category="М30-34")
     db_session.commit()
     assert build_location_age_group_standings(db_session, user.id, [event.id, other.id]) == []
+
+
+def test_under_ten_is_its_own_group(db_session: Session) -> None:
+    """«М10» («10 и младше») не сваливается в «10–14» — это разные ступени."""
+    suffix = uuid4().hex[:8]
+    five_verst = _platform(db_session, "five_verst", "5 вёрст")
+    location = _make_location(db_session, five_verst, f"kid-{suffix}", "Парк детский")
+    early = _make_event(db_session, five_verst, location, f"kid1-{suffix}", date(2023, 6, 3))
+    later = _make_event(db_session, five_verst, location, f"kid2-{suffix}", date(2025, 6, 7))
+
+    me = _make_participant(db_session, five_verst, f"kid-me-{suffix}", "Юный Бегун")
+    user = _link_user(db_session, five_verst, me)
+    peer = _make_participant(db_session, five_verst, f"kid-peer-{suffix}", "Сосед по группе")
+
+    _add_result(db_session, early, me, finish_time_sec=1900, age_category="М10")
+    _add_result(db_session, early, peer, finish_time_sec=1800, age_category="М10")
+    # Подрос: в следующей ступени соперников нет, значит первый.
+    _add_result(db_session, later, me, finish_time_sec=1700, age_category="М10-14")
+    db_session.commit()
+
+    event_ids = [early.id, later.id]
+    standings = build_location_age_group_standings(db_session, user.id, event_ids)
+    assert [(s["age_group"], s["place"], s["total"]) for s in standings] == [
+        ("10–14", 1, 1),
+        ("≤10", 2, 2),
+    ]
+    assert [s["label"] for s in standings] == ["М10–14", "М≤10"]
+    # Ключ-якорь уходит в id строки таблицы — без «≤».
+    assert {s["key"] for s in standings} == {"male-10-14", "male-under10"}
+
+    tops = _age_group_tops(db_session, event_ids)
+    assert [row["name"] for row in tops[("male", "≤10")]] == ["Сосед по группе", "Юный Бегун"]
+    # «10 и младше» идёт в таблице раньше «10–14».
+    assert [r["age_group"] for r in _age_group_records(db_session, event_ids)] == ["≤10", "10–14"]
 
 
 def test_equal_best_times_share_one_place(db_session: Session) -> None:

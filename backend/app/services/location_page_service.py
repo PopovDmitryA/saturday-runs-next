@@ -80,6 +80,14 @@ def location_leaders_cache_key(slug: str) -> str:
 # только по строкам с известным временем.
 _AGE_RANGE_RE = re.compile(r"(\d{1,2})\s*[-–—]\s*(\d{1,2})")
 _AGE_PLUS_RE = re.compile(r"(\d{2,3})\s*\+")
+# Детская категория без верхней границы: «М10»/«Ж10» у 5 вёрст, «JM10» у
+# parkrun-систем — это «10 лет и младше», а не «ровно 10». В данных она идёт
+# параллельно с «М10-14» (7 тыс. протоколов содержат обе), и все 718 участников,
+# побывавших в обеих, сначала бежали в «М10» — то есть это ступень ниже.
+# Поэтому «≤10», а не «10»: рядом со строкой «10–14» голое «10» читалось бы как
+# пересекающийся диапазон. Буквы впереди обязательны — иначе под правило попал
+# бы age grade parkrun («54.38%» отсекается ещё и якорем на конце).
+_AGE_UNDER_RE = re.compile(r"^[A-Za-zА-Яа-я]{1,3}(\d{1,2})$")
 
 
 def _platform_order_index(code: str) -> int:
@@ -90,15 +98,19 @@ def _platform_order_index(code: str) -> int:
 
 
 def normalize_age_group(age_category: str | None) -> str | None:
-    """«М18-24», «SM25-29», «VM35-39» → «18–24»; «М75+» → «75+»."""
+    """«М18-24», «SM25-29», «VM35-39» → «18–24»; «М75+» → «75+»; «М10» → «≤10»."""
     if not age_category:
         return None
-    match = _AGE_RANGE_RE.search(age_category)
+    cleaned = age_category.strip()
+    match = _AGE_RANGE_RE.search(cleaned)
     if match:
         return f"{int(match.group(1))}–{int(match.group(2))}"
-    match = _AGE_PLUS_RE.search(age_category)
+    match = _AGE_PLUS_RE.search(cleaned)
     if match:
         return f"{int(match.group(1))}+"
+    match = _AGE_UNDER_RE.match(cleaned)
+    if match:
+        return f"≤{int(match.group(1))}"
     return None
 
 
@@ -607,19 +619,40 @@ def _last_event_stats(
     return last_event_payload, avg_delta, median_delta
 
 
-_AGE_GROUP_SORT_RE = re.compile(r"^(\d+)")
+# Не якорим на начало: у «≤10» впереди знак, и с якорем группа улетала бы
+# в конец таблицы вместо первой строки.
+_AGE_GROUP_SORT_RE = re.compile(r"\d+")
 
 
-def _age_group_sort_key(age_group: str) -> int:
-    match = _AGE_GROUP_SORT_RE.match(age_group)
-    return int(match.group(1)) if match else 999
+def _age_group_sort_key(age_group: str) -> tuple[int, int]:
+    """Порядок групп в таблице: по возрасту, а при равном — «≤N» перед «N–…».
+
+    «≤10» и «10–14» дают одно и то же число, но это разные ступени и в
+    протоколе они идут параллельно, так что порядок между ними фиксируем.
+    """
+    match = _AGE_GROUP_SORT_RE.search(age_group)
+    age = int(match.group(0)) if match else 999
+    if age_group.startswith("≤"):
+        return (age, 0)
+    if age_group.endswith("+"):
+        return (age, 2)
+    return (age, 1)
 
 
+# Возрастные группы считаем только по 5 вёрст — единственной системе, которая
+# публикует возрастной диапазон в протоколе («М35-39»). У parkrun в
+# run_results.age_category лежит age grade («54.38%»), s95 категорию не отдаёт
+# вовсе, а RunPark пишет parkrun-коды («VM40-44»): формально они разбираются,
+# но подмешивать вторую систему в топ площадки мы не хотим (решение Дмитрия
+# 26.07.2026). Раньше фильтр был «всё, кроме parkrun», и RunPark тихо попадал
+# в «Рекорды по возрастным группам» вопреки подсказке «только по 5 вёрст» —
+# 29.7 тыс. строк на 49 локациях.
+FIVE_VERST_PLATFORM_CODE = "five_verst"
 AGE_GROUP_TOP_LIMIT = 5
-# Топ группы собираем по СЫРЫМ категориям протоколов («М30-34» у 5 вёрст,
-# «SM30-34» у RunPark), а потом сливаем в одну нормализованную группу. Берём с
-# запасом: у сырых категорий одной группы пятёрки свои, и после слияния часть
-# строк уходит вниз — иначе итоговая пятёрка могла бы недосчитаться.
+# Топ группы собираем по СЫРЫМ категориям протоколов, а потом сливаем в
+# нормализованную группу: в «10–14» попадают и «М10-14», и «М11-14». Берём с
+# запасом — у каждой сырой категории пятёрка своя, и после слияния часть строк
+# уходит вниз, иначе итоговая пятёрка могла бы недосчитаться.
 _AGE_GROUP_TOP_FETCH = AGE_GROUP_TOP_LIMIT * 2
 
 
@@ -630,25 +663,21 @@ def age_group_key(gender: str, age_group: str) -> str:
     локации» ссылается по нему на нужную строку в «Рекордах по возрастным
     группам», где под спойлером лежит топ-5 этой группы.
     """
-    return f"{gender}-{age_group.replace('–', '-').replace('+', 'plus')}"
+    return f"{gender}-{age_group.replace('–', '-').replace('+', 'plus').replace('≤', 'under')}"
 
 
 def _protocol_age_category_gender() -> Any:
-    """Пол по возрастной категории самой протокольной строки.
+    """Пол по возрастной категории протокола 5 вёрст: «М35-39» → male.
 
-    Урезанная версия _gender_expression под выборки возрастных групп: её ветки
-    parkrun и s95 читают participants, а здесь они недостижимы — parkrun из
-    этих выборок исключён (в его age_category лежит age grade, а не категория),
-    s95 категорию не публикует вовсе. Зато без join к participants выборка по
-    крупной площадке укладывается в 0.3с вместо 2.4с: 66 тыс. случайных
-    обращений в таблицу на 1.2 млн строк были самой дорогой её частью.
-    «М35-39»/«Ж45-49» — 5 вёрст, «SM25-29»/«VW40-44» — RunPark.
+    Ровно ветка five_verst из _gender_expression. Остальные там читают
+    participants, а здесь недостижимы: выборки возрастных групп ограничены
+    5 вёрст. Зато без join к participants выборка по крупной площадке
+    укладывается в 0.3с вместо 2.4с — 66 тыс. случайных обращений в таблицу
+    на 1.2 млн строк были самой дорогой её частью.
     """
     return case(
         (func.substr(RunResult.age_category, 1, 1) == "М", "male"),
         (func.substr(RunResult.age_category, 1, 1) == "Ж", "female"),
-        (func.substr(RunResult.age_category, 2, 1) == "M", "male"),
-        (func.substr(RunResult.age_category, 2, 1) == "W", "female"),
         else_=None,
     )
 
@@ -657,8 +686,8 @@ def _age_group_match_clauses(age_groups: Iterable[str]) -> list[Any]:
     """SQL-условия «сырая категория протокола попадает в эту группу».
 
     Зеркалят normalize_age_group в обратную сторону: в «30–34» ложится всё, где
-    есть подстрока «30-34» с любым из трёх тире, — и «М30-34» 5 вёрст, и
-    «SM30-34»/«VM30-34» RunPark. Нужны, чтобы посчитать место участника одним
+    есть подстрока «30-34» с любым из трёх тире («М30-34», «Ж30-34»). Нужны,
+    чтобы посчитать место участника одним
     запросом, не вычитывая перед этим все категории локации (такой скан по
     Затюменскому стоит четверть секунды сам по себе).
     """
@@ -666,6 +695,11 @@ def _age_group_match_clauses(age_groups: Iterable[str]) -> list[Any]:
     for age_group in age_groups:
         if age_group.endswith("+"):
             clauses.append(RunResult.age_category.like(f"%{age_group}%"))
+            continue
+        if age_group.startswith("≤"):
+            # «≤10» — это категория, которая числом и заканчивается («М10»);
+            # «М10-14» под шаблон не подойдёт, она кончается на «14».
+            clauses.append(RunResult.age_category.like(f"%{age_group[1:]}"))
             continue
         low, _, high = age_group.partition("–")
         clauses.extend(RunResult.age_category.like(f"%{low}{dash}{high}%") for dash in ("-", "–", "—"))
@@ -681,11 +715,10 @@ def _age_group_runner_bests(
     """CTE «лучшее время каждого участника в каждой сырой категории».
 
     Уникальность — по participants.id, без слияния привязанных аккаунтов по
-    platform_links.user_id, как в общих рейтингах локации: join к participants
-    и platform_links на все протокольные строки крупной площадки стоит секунды,
-    а сливать было бы что в 57 случаях на всю базу (человек бегал здесь и в
-    5 вёрст, и в RunPark, да ещё в одной возрастной полосе). Имена
-    подтягиваются потом и только к строкам, которые реально показываем.
+    platform_links.user_id, как в общих рейтингах локации: выборка и так
+    ограничена одной системой, а join к participants и platform_links на все
+    протокольные строки крупной площадки стоит секунды. Имена подтягиваются
+    потом и только к строкам, которые реально показываем.
     """
     time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
     gender_expr = _protocol_age_category_gender()
@@ -693,7 +726,7 @@ def _age_group_runner_bests(
         RunResult.event_id.in_(event_ids),
         RunResult.participant_id.isnot(None),
         time_ok,
-        Platform.code != "parkrun",
+        Platform.code == FIVE_VERST_PLATFORM_CODE,
         RunResult.age_category.isnot(None),
         RunResult.age_category != "",
     ]
@@ -816,14 +849,11 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
     раскрывается спойлером прямо в этой таблице, и на него же ссылаются
     личные плитки «место в группе» из блока «Вы на этой локации».
 
-    Фактически строится по данным 5 вёрст — единственной системы, которая
-    публикует возрастной диапазон («М35-39»). Остальные отсеиваются сами:
-    S95 возраст не отдаёт вовсе (0 строк с age_category), parkrun вместо
-    группы хранит процент от возрастного рекорда («20.70%») и вдобавок
-    исключён явно, а RunPark пишет буквенные категории («JM10»), из которых
-    диапазон не вытащить. Нормализация в Python (normalize_age_group) и
-    отбрасывает всё, что не приводится к диапазону; из БД берём лучшую строку
-    на каждую СЫРУЮ категорию (DISTINCT ON), затем минимум на группу.
+    Считается только по 5 вёрст (FIVE_VERST_PLATFORM_CODE) — см. комментарий
+    у константы. Нормализация в Python (normalize_age_group) дополнительно
+    отбрасывает всё, что не приводится к диапазону (детские «М10» без верхней
+    границы); из БД берём лучшую строку на каждую СЫРУЮ категорию
+    (DISTINCT ON), затем минимум на группу.
     """
     if not event_ids:
         return []
@@ -852,7 +882,7 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
         .filter(
             RunResult.event_id.in_(event_ids),
             time_ok,
-            Platform.code != "parkrun",
+            Platform.code == FIVE_VERST_PLATFORM_CODE,
             RunResult.age_category.isnot(None),
             RunResult.age_category != "",
         )
@@ -1742,6 +1772,7 @@ def build_location_age_group_standings(
 
     Группировка та же, что у рекордов по возрастным группам (_age_group_tops),
     чтобы «#16» на плитке и топ-5, на который она ссылается, сходились.
+    Только 5 вёрст — как и вся возрастная машинерия страницы.
     """
     if not event_ids:
         return []
@@ -1767,7 +1798,7 @@ def build_location_age_group_standings(
             PlatformLink.user_id == user_id,
             RunResult.event_id.in_(event_ids),
             time_ok,
-            Platform.code != "parkrun",
+            Platform.code == FIVE_VERST_PLATFORM_CODE,
             RunResult.age_category.isnot(None),
         )
         .all()
