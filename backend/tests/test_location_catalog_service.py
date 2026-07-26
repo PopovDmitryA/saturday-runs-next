@@ -27,6 +27,38 @@ def test_display_parkrun_via_five_verst_catalog() -> None:
     )
 
 
+def test_active_platform_name_wins_over_legacy_canonical() -> None:
+    # У части узлов canonical_name — транслитерация времён parkrun; актуальное
+    # название площадки живёт в локации действующей системы, его и показываем.
+    catalog = _catalog(
+        canonical_name="Ufa Botanichesky Sad", active_platform="five_verst", is_closed=False
+    )
+    assert (
+        resolve_location_display_name(
+            catalog,
+            platform_code="parkrun",
+            source_name="Ufa Botanichesky Sad",
+            active_platform_name="Парк Лесоводов",
+        )
+        == "Парк Лесоводов"
+    )
+
+
+def test_canonical_name_is_fallback_without_active_location() -> None:
+    # Действующей локации у узла нет (осталась одна parkrun-история) —
+    # тогда каталожное имя всё ещё лучше сырого латинского.
+    catalog = _catalog(canonical_name="Тимирязевский", active_platform="five_verst", is_closed=False)
+    assert (
+        resolve_location_display_name(
+            catalog,
+            platform_code="parkrun",
+            source_name="Timiryazevsky",
+            active_platform_name=None,
+        )
+        == "Тимирязевский"
+    )
+
+
 def test_closed_keeps_source_name() -> None:
     catalog = _catalog(canonical_name="Memorial", active_platform="five_verst", is_closed=True)
     assert should_use_catalog_display(catalog, "parkrun") is False

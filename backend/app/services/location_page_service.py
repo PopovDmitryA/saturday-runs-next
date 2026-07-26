@@ -125,12 +125,14 @@ class LocationIdentity:
 def _identity_display_name(
     catalog: LocationCatalog | None,
     locations: list[tuple[Location, str]],
+    catalog_index: LocationCatalogIndex,
 ) -> str:
     primary_location, primary_code = locations[0]
     return resolve_location_display_name(
         catalog,
         platform_code=primary_code,
         source_name=primary_location.name,
+        active_platform_name=catalog_index.active_platform_name(catalog),
     )
 
 
@@ -227,7 +229,7 @@ def resolve_location_identity(db: Session, slug: str) -> LocationIdentity | None
         catalog=catalog,
         locations=locations,
         slug=locations[0][0].external_key.strip().lower(),
-        name=_identity_display_name(catalog, locations),
+        name=_identity_display_name(catalog, locations, catalog_index),
         catalog_index=catalog_index,
     )
 
@@ -1492,7 +1494,7 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
             {
                 "slug": primary_location.external_key.strip().lower(),
                 "identity_key": identity_key,
-                "name": _identity_display_name(catalog, ordered),
+                "name": _identity_display_name(catalog, ordered, catalog_index),
                 "city": _first_by_platform_order(ordered, lambda loc: loc.city),
                 "region": _first_by_platform_order(ordered, lambda loc: loc.region),
                 "country": _identity_country(ordered),

@@ -47,10 +47,22 @@ def resolve_location_display_name(
     *,
     platform_code: str,
     source_name: str,
+    active_platform_name: str | None = None,
 ) -> str:
+    """Как площадка называется сегодня — одинаково во всех системах.
+
+    Смысл переопределения через каталог: результат parkrun-времён не должен
+    показываться латиницей, если площадка жива и в 5 вёрст/S95 называется
+    по-русски. Поэтому имя берём У ЛОКАЦИИ ДЕЙСТВУЮЩЕЙ СИСТЕМЫ
+    (active_platform_name) — это её актуальное название. canonical_name из
+    каталога остаётся запасным вариантом: у части узлов там лежит легаси —
+    транслитерация времён parkrun («Ufa Botanichesky Sad» у площадки, которая
+    в 5 вёрст давно «Парк Лесоводов»), и как основной источник имени оно
+    подставляло бы ровно то старое название, от которого мы уходим.
+    """
     if catalog is None or not should_use_catalog_display(catalog, platform_code):
         return source_name
-    return catalog.canonical_name or source_name
+    return active_platform_name or catalog.canonical_name or source_name
 
 
 class LocationCatalogIndex:
@@ -66,6 +78,12 @@ class LocationCatalogIndex:
         # и от платформ без единого события (у них флаг паузы ничего не значит).
         self._catalog_pause_votes: dict[UUID, tuple[int, int]] = {}
         self._catalog_pause_fallback: dict[UUID, tuple[int, int]] = {}
+        # Имя локации действующей системы узла — актуальное название площадки
+        # (см. resolve_location_display_name). Рядом храним ранг источника,
+        # чтобы при нескольких локациях активной системы победа была за той,
+        # где реально бегают, а не за случайной.
+        self._catalog_active_names: dict[UUID, str] = {}
+        self._catalog_active_name_rank: dict[UUID, tuple[int, str]] = {}
         self._load(db)
 
     def _index_platform_slug(self, platform_code: str, slug: str, catalog: LocationCatalog) -> None:
@@ -106,6 +124,29 @@ class LocationCatalogIndex:
         # platform_code в хвосте — детерминированный тай-брейк для платформ вне списка.
         return (0 if platform_code == active else 1, order, platform_code)
 
+    def _set_active_name(
+        self,
+        catalog: LocationCatalog,
+        platform_code: str,
+        location: Location,
+        *,
+        has_events: bool,
+    ) -> None:
+        """Запомнить название площадки по локации её действующей системы."""
+        if normalize_platform_code(catalog.active_platform) != normalize_platform_code(platform_code):
+            return
+        name = (location.name or "").strip()
+        if not name:
+            return
+        # external_key в хвосте — детерминированный тай-брейк: порядок строк из
+        # БД произвольный, а имя узла между пересборками индекса меняться не должно.
+        rank = (0 if has_events else 1, location.external_key or "")
+        current = self._catalog_active_name_rank.get(catalog.id)
+        if current is not None and current <= rank:
+            return
+        self._catalog_active_names[catalog.id] = name
+        self._catalog_active_name_rank[catalog.id] = rank
+
     def _add_pause_vote(self, catalog_id: UUID, *, has_events: bool, is_paused: bool) -> None:
         target = self._catalog_pause_votes if has_events else self._catalog_pause_fallback
         paused, total = target.get(catalog_id, (0, 0))
@@ -140,6 +181,12 @@ class LocationCatalogIndex:
                     catalog.id,
                     has_events=location.id in locations_with_events,
                     is_paused=bool(getattr(location, "is_paused", False)),
+                )
+                self._set_active_name(
+                    catalog,
+                    platform.code,
+                    location,
+                    has_events=location.id in locations_with_events,
                 )
 
     def get_for_location(self, location: Location, platform_code: str) -> LocationCatalog | None:
@@ -213,7 +260,15 @@ class LocationCatalogIndex:
             catalog,
             platform_code=platform_code,
             source_name=location.name,
+            active_platform_name=self.active_platform_name(catalog),
         )
+
+    def active_platform_name(self, catalog: LocationCatalog | None) -> str | None:
+        """Название площадки по локации её действующей системы (None, если такой
+        локации у узла нет — например, у него осталась одна parkrun-история)."""
+        if catalog is None:
+            return None
+        return self._catalog_active_names.get(catalog.id)
 
     def canonical_identity_key(self, location: Location, platform_code: str) -> str:
         """Stable key for counting one physical location across platform migrations."""

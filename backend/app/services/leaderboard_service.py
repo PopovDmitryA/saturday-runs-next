@@ -593,13 +593,13 @@ def _location_identity_maps(
         priority = platform_priority.get(platform_code, len(PLATFORM_COLUMNS))
         current = name_candidates.get(identity)
         if current is None or priority < current[0]:
-            # Имя берём у самой «старшей» системы как есть, а не через каталог:
-            # у трёх площадок canonical_name в каталоге — легаси-транслитерация
-            # времён parkrun («Ufa Botanichesky Sad» вместо «Парк Лесоводов»),
-            # и в рейтинге нужно живое русское название. Из-за этого у них
-            # подпись ссылки расходится с заголовком страницы локации —
-            # чинится правкой canonical_name в каталоге, не здесь.
-            name_candidates[identity] = (priority, location.name)
+            # Имя — тем же резолвером, что и у страницы локации: у площадок в
+            # каталоге он отдаёт название действующей системы, и подпись ссылки
+            # совпадает с заголовком страницы, куда она ведёт.
+            name_candidates[identity] = (
+                priority,
+                catalog_index.display_name(location, platform_code),
+            )
         slug = (location.external_key or "").strip().lower()
         if slug and slug != "unknown":
             current_slug = slug_candidates.get(identity)
