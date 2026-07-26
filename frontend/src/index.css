@@ -8587,11 +8587,8 @@ tr.run-crosslinked td {
   white-space: nowrap;
 }
 
-.plan-week-dates {
-  display: block;
-  font-weight: 400;
-  font-size: 0.75rem;
-  color: var(--text-muted);
+.plan-number-note {
+  display: none;
 }
 
 .plan-number {
@@ -8627,23 +8624,120 @@ tr.run-crosslinked td {
   color: #16a34a;
 }
 
+/* Одна локация — одна строка: название и «дата · система» в подбор. Раньше
+   мета уходила на вторую строку, и десяток локаций растягивал таблицу на
+   несколько экранов. */
 .plan-entries {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.15rem;
+}
+
+.plan-entries li {
+  line-height: 1.35;
 }
 
 .plan-entry-meta {
-  display: block;
+  margin-left: 0.35rem;
   font-size: 0.75rem;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .plan-empty {
   color: var(--text-muted);
+}
+
+/* --- Планирование на телефоне ------------------------------------------
+   Четыре колонки в 375px не живут: разворачиваем каждую строку в карточку,
+   шапку прячем (её роль играют подписи из data-label), пустые ячейки убираем
+   совсем — у большинства номеров занята одна колонка из трёх. */
+@media (max-width: 640px) {
+  .plan-table-wrap {
+    overflow-x: hidden;
+    max-height: none;
+  }
+
+  .plan-table,
+  .plan-table tbody,
+  .plan-table tr,
+  .plan-table td,
+  .plan-table th {
+    display: block;
+  }
+
+  .plan-table thead {
+    display: none;
+  }
+
+  .plan-table tr {
+    margin-bottom: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .plan-table td,
+  .plan-table th {
+    border-bottom: none;
+    padding: 0.1rem 0;
+  }
+
+  .plan-row-open > * {
+    background: none;
+  }
+
+  .plan-row-open {
+    background: var(--tint-blue-bg);
+    border-color: var(--tint-blue-border-strong);
+  }
+
+  .plan-row-open .plan-number,
+  .plan-row-done .plan-number {
+    border-left: none;
+    padding-left: 0;
+  }
+
+  /* Пустые колонки на телефоне не показываем — вместо них у номера подпись
+     «нет стартов», иначе карточка состоит из трёх прочерков. Селектор с тегом:
+     иначе `.plan-table td { display: block }` выше перебивает по специфичности. */
+  .plan-table td.plan-cell-empty {
+    display: none;
+  }
+
+  .plan-number {
+    margin-bottom: 0.2rem;
+    font-size: 0.95rem;
+  }
+
+  .plan-number-note {
+    display: inline;
+    margin-left: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+
+  /* Подпись колонки перед списком локаций: «E», «E+1», «E+2». */
+  .plan-table td::before {
+    content: attr(data-label);
+    display: inline-block;
+    min-width: 2.4rem;
+    margin-right: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    vertical-align: top;
+  }
+
+  .plan-entries {
+    display: inline-block;
+    width: calc(100% - 3rem);
+    vertical-align: top;
+  }
 }
 
 /* Сетки коллекций (секунды/позиции/номера/буквы) */

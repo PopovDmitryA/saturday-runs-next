@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { DetailModal } from "../../components/DetailModal";
 import { platformCodeLabel } from "../../lib/format";
-import { getStartNumbersPlan, type StartNumberPlan, type StartNumberPlanWeek } from "../../lib/api";
+import { getStartNumbersPlan, type StartNumberPlan } from "../../lib/api";
 
 /** «01.08» — в таблице год не нужен, все три окна внутри трёх недель. */
 function shortDate(iso: string): string {
@@ -9,11 +9,16 @@ function shortDate(iso: string): string {
   return day && month ? `${day}.${month}` : iso;
 }
 
-function weekTitle(week: StartNumberPlanWeek): string {
-  if (week.index === 0) {
-    return "Ближайшая неделя";
-  }
-  return `W+${week.index}`;
+// Колонки считаем в забегах локации, а не в календарных неделях: E — ближайший
+// старт локации, E+1 — следующий за ним. Даты у каждой записи свои, поэтому
+// границы окна в шапке не пишем — они только сбивали.
+function columnTitle(index: number): string {
+  return index === 0 ? "Ближайший забег (E)" : `E+${index}`;
+}
+
+/** Короткая подпись для мобильной раскладки, где шапки таблицы нет. */
+function columnShortTitle(index: number): string {
+  return index === 0 ? "E" : `E+${index}`;
 }
 
 export function StartNumbersPlanModal({
@@ -127,46 +132,55 @@ export function StartNumbersPlanModal({
                 <th scope="col">№</th>
                 {plan.weeks.map((week) => (
                   <th key={week.index} scope="col">
-                    {weekTitle(week)}
-                    <span className="plan-week-dates">
-                      {shortDate(week.date_from)}–{shortDate(week.date_to)}
-                    </span>
+                    {columnTitle(week.index)}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.number} className={row.done ? "plan-row-done" : "plan-row-open"}>
-                  <th scope="row" className="plan-number">
-                    <span className="plan-number-value">№{row.number}</span>
-                    <span className="plan-number-state" aria-hidden="true">
-                      {row.done ? "✓" : ""}
-                    </span>
-                    <span className="visually-hidden">
-                      {row.done ? "закрыт" : "не закрыт"}
-                    </span>
-                  </th>
-                  {row.weeks.map((entries, index) => (
-                    <td key={plan.weeks[index]?.index ?? index}>
-                      {entries.length === 0 ? (
-                        <span className="plan-empty">—</span>
-                      ) : (
-                        <ul className="plan-entries">
-                          {entries.map((entry) => (
-                            <li key={`${entry.location_slug}-${entry.platform_code}-${entry.date}`}>
-                              <a href={`/locations/${entry.location_slug}`}>{entry.location}</a>
-                              <span className="plan-entry-meta">
-                                {shortDate(entry.date)} · {platformCodeLabel(entry.platform_code)}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {rows.map((row) => {
+                const empty = row.weeks.every((entries) => entries.length === 0);
+                return (
+                  <tr
+                    key={row.number}
+                    className={`${row.done ? "plan-row-done" : "plan-row-open"}${
+                      empty ? " plan-row-empty" : ""
+                    }`}
+                  >
+                    <th scope="row" className="plan-number">
+                      <span className="plan-number-value">№{row.number}</span>
+                      <span className="plan-number-state" aria-hidden="true">
+                        {row.done ? "✓" : ""}
+                      </span>
+                      <span className="visually-hidden">{row.done ? "закрыт" : "не закрыт"}</span>
+                      {/* Виден только в мобильной раскладке, где ячейки без стартов скрыты. */}
+                      {empty && <span className="plan-number-note">нет стартов</span>}
+                    </th>
+                    {row.weeks.map((entries, index) => (
+                      <td
+                        key={plan.weeks[index]?.index ?? index}
+                        data-label={columnShortTitle(index)}
+                        className={entries.length === 0 ? "plan-cell-empty" : undefined}
+                      >
+                        {entries.length === 0 ? (
+                          <span className="plan-empty">—</span>
+                        ) : (
+                          <ul className="plan-entries">
+                            {entries.map((entry) => (
+                              <li key={`${entry.location_slug}-${entry.platform_code}-${entry.date}`}>
+                                <a href={`/locations/${entry.location_slug}`}>{entry.location}</a>
+                                <span className="plan-entry-meta">
+                                  {shortDate(entry.date)} · {platformCodeLabel(entry.platform_code)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {rows.length === 0 && <p className="muted">Под выбранные фильтры ничего не попало.</p>}
