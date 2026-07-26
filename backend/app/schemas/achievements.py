@@ -156,17 +156,11 @@ class StartNumberPlanEntryResponse(BaseModel):
     date: str
 
 
-class StartNumberPlanWeekResponse(BaseModel):
-    index: int
-    date_from: str
-    date_to: str
-
-
 class StartNumberPlanRowResponse(BaseModel):
     number: int
     # Закрыт ли номер участником (в любой системе)
     done: bool
-    # По одному списку на недельное окно, в порядке weeks
+    # По одному списку на колонку, длиной week_count: [E, E+1, E+2]
     weeks: list[list[StartNumberPlanEntryResponse]]
 
 
@@ -175,5 +169,6 @@ class StartNumberPlanResponse(BaseModel):
     low: int
     high: int
     generated_for: str
-    weeks: list[StartNumberPlanWeekResponse]
+    # Сколько колонок в строке; подписи строит фронт
+    week_count: int
     rows: list[StartNumberPlanRowResponse]

@@ -160,10 +160,8 @@ def test_plan_covers_full_challenge_range_and_three_weeks(db_session) -> None:
     numbers = [row["number"] for row in plan["rows"]]
 
     assert numbers == list(range(1, 201))
-    assert len(plan["weeks"]) == START_NUMBER_PLAN_WEEKS
+    assert plan["week_count"] == START_NUMBER_PLAN_WEEKS
     assert all(len(row["weeks"]) == START_NUMBER_PLAN_WEEKS for row in plan["rows"])
-    # Окна идут подряд по 7 дней от сегодня.
-    assert [week["date_from"] for week in plan["weeks"]] == ["2026-07-26", "2026-08-02", "2026-08-09"]
 
     pro = build_start_numbers_plan(db_session, user.id, code="start_numbers_pro", today=TODAY)
     assert [row["number"] for row in pro["rows"]] == list(range(201, 401))

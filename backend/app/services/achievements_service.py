@@ -1232,20 +1232,14 @@ def build_start_numbers_plan(
         }
         for number in range(low, high + 1)
     ]
-    weeks = [
-        {
-            "index": index,
-            "date_from": (today + timedelta(weeks=index)).isoformat(),
-            "date_to": (today + timedelta(weeks=index, days=6)).isoformat(),
-        }
-        for index in range(START_NUMBER_PLAN_WEEKS)
-    ]
     return {
         "code": code,
         "low": low,
         "high": high,
         "generated_for": today.isoformat(),
-        "weeks": weeks,
+        # Только количество колонок: подписи «E / E+1 / E+2» строит фронт, а
+        # границы окна в интерфейсе не нужны — дата стоит у каждой записи.
+        "week_count": START_NUMBER_PLAN_WEEKS,
         "rows": rows,
     }
 

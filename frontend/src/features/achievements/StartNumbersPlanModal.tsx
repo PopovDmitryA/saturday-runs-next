@@ -130,9 +130,9 @@ export function StartNumbersPlanModal({
             <thead>
               <tr>
                 <th scope="col">№</th>
-                {plan.weeks.map((week) => (
-                  <th key={week.index} scope="col">
-                    {columnTitle(week.index)}
+                {Array.from({ length: plan.week_count }, (_, index) => (
+                  <th key={index} scope="col">
+                    {columnTitle(index)}
                   </th>
                 ))}
               </tr>
@@ -158,7 +158,7 @@ export function StartNumbersPlanModal({
                     </th>
                     {row.weeks.map((entries, index) => (
                       <td
-                        key={plan.weeks[index]?.index ?? index}
+                        key={index}
                         data-label={columnShortTitle(index)}
                         className={entries.length === 0 ? "plan-cell-empty" : undefined}
                       >

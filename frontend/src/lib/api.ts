@@ -832,16 +832,10 @@ export type StartNumberPlanEntry = {
   date: string;
 };
 
-export type StartNumberPlanWeek = {
-  index: number;
-  date_from: string;
-  date_to: string;
-};
-
 export type StartNumberPlanRow = {
   number: number;
   done: boolean;
-  // По одному списку на недельное окно, в порядке weeks
+  // По одному списку на колонку, длиной week_count: [E, E+1, E+2]
   weeks: StartNumberPlanEntry[][];
 };
 
@@ -850,7 +844,8 @@ export type StartNumberPlan = {
   low: number;
   high: number;
   generated_for: string;
-  weeks: StartNumberPlanWeek[];
+  // Сколько колонок в строке; подписи строит фронт
+  week_count: number;
   rows: StartNumberPlanRow[];
 };
 
