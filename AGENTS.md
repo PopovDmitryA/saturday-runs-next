@@ -276,9 +276,16 @@ Import: `make location-catalog-import-docker`.
 
 ## 10. Admin-бот (Telegram, fallback ВК)
 
-Env: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_CHAT_ID`, `ADMIN_TELEGRAM_ID`,
-`ADMIN_TELEGRAM_PROXY_URL` (сервер РФ, прямые запросы к Telegram не всегда долетают —
-см. `deploy/tg-proxy/`, `app/services/admin_telegram_notify.py`).
+Env: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_CHAT_ID`, `ADMIN_TELEGRAM_ID`, `TELEGRAM_PROXY_URL`.
+
+**Прокси обязательна на проде.** С сервера в РФ `api.telegram.org` недоступен напрямую
+совсем: без прокси aiogram падает на `get_me()` и контейнер `bot` уходит в крэш-луп
+(так и было 26.07.2026 — 545 рестартов). Через прокси идёт ВЕСЬ трафик: long-poll бота
+(`AiohttpSession(proxy=...)`) и admin-уведомления (httpx). Схема именно `http://` —
+её понимают нативно и httpx, и aiohttp; для `socks5://` aiohttp требует `aiohttp_socks`.
+Прокси даёт сервис `tg-proxy` (xray-core, VLESS+Reality, два профиля под балансировщиком),
+см. `deploy/tg-proxy/`. Реальный `config.json` gitignored, в репо — `config.example.json`.
+
 Fallback на ВК (`VK_BOT_GROUP_TOKEN`, `VK_ADMIN_USER_ID`) — только когда прокси легла;
 пока всё работает, в ВК ничего не приходит.
 

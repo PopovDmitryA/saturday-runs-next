@@ -74,6 +74,8 @@ services:
     depends_on:
       api:
         condition: service_started
+      tg-proxy:
+        condition: service_started
     restart: unless-stopped
 
   tg-proxy:

@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 import httpx
 from aiogram import Bot, Dispatcher, F
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
@@ -205,10 +206,11 @@ async def _admin_only(message: Message) -> bool:
 
 
 async def _send_admin_reply(chat_id: int, text: str) -> None:
-    """Ответы admin-команд идут через отдельную прокси (settings.admin_telegram_proxy_url),
-    в отличие от обычных ответов бота (`message.answer`) — сервер РФ, прямые запросы
-    к Telegram не всегда долетают. Пусто — отправка идёт напрямую."""
-    proxy = settings.admin_telegram_proxy_url or None
+    """Отправка ответа admin-команды напрямую в Bot API (через ту же прокси, что и сам бот).
+
+    Не `message.answer`, чтобы длинный отчёт уходил одним понятным вызовом
+    с disable_web_page_preview и без разметки."""
+    proxy = settings.telegram_proxy_url or None
     try:
         async with httpx.AsyncClient(proxy=proxy, timeout=30.0) as client:
             await client.post(
@@ -385,7 +387,12 @@ async def main() -> None:
     if not settings.telegram_bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
 
-    bot = Bot(token=settings.telegram_bot_token)
+    # Весь трафик бота (long-poll в том числе) идёт через прокси: с прод-сервера
+    # api.telegram.org недоступен напрямую, без прокси polling падает на get_me().
+    session = AiohttpSession(proxy=settings.telegram_proxy_url) if settings.telegram_proxy_url else None
+    if session is not None:
+        logger.info("Telegram bot uses proxy %s", settings.telegram_proxy_url)
+    bot = Bot(token=settings.telegram_bot_token, session=session) if session else Bot(token=settings.telegram_bot_token)
     dispatcher = Dispatcher()
     dispatcher.message.register(on_start, CommandStart())
     dispatcher.message.register(on_cmd_broadcast, Command("broadcast"))

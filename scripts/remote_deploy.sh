@@ -15,7 +15,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # Функция, а не eval: eval ломает кавычки внутри --format / python -c.
-compose() { docker compose -f docker-compose.yml -f docker-compose.prod.yml "$@"; }
+# --profile telegram: сервисы bot и tg-proxy сидят под профилем, чтобы НЕ подниматься
+# на Маке (второй long-poll на том же токене воровал бы апдейты у прод-бота). На проде
+# они обязательны, поэтому профиль включён для всех compose-команд — иначе up их не
+# создаст, а smoke ниже не заметит, что бота нет.
+compose() { docker compose --profile telegram -f docker-compose.yml -f docker-compose.prod.yml "$@"; }
 
 # Заглушка 502 у host nginx: на время деплоя показываем «Обновляемся» вместо
 # дежурной «Что-то сломалось» (см. deploy/nginx/run5k.run.conf, try_files).
@@ -27,7 +31,9 @@ trap 'rm -f "$MAINT_CURRENT"' EXIT HUP INT TERM
 
 # Сервисы, которые пересоздаём. nginx собирать нельзя — он на готовом образе
 # (nginx:1.27-alpine), build-контекст есть только у python-сервисов.
-SERVICES="worker worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat bot"
+# tg-proxy (xray) — тоже готовый образ; без него бот не видит Telegram и ляжет,
+# поэтому он в списке и попадает в проверку «все ли running» ниже.
+SERVICES="worker worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat tg-proxy bot"
 
 # NB: `docker compose exec/run -T` всё равно цепляет контейнер к stdin, поэтому
 # каждый exec/run обязан читать из /dev/null — иначе он сожрёт остаток скрипта.

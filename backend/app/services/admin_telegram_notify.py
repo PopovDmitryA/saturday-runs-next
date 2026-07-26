@@ -24,14 +24,14 @@ DEGRADED_FLAG_KEY = "admin:telegram_proxy_degraded"
 
 
 def send_admin_telegram_message(text: str) -> bool:
-    """POST в Telegram Bot API через admin_telegram_proxy_url (если задан)."""
+    """POST в Telegram Bot API через telegram_proxy_url (если задан)."""
     settings = get_settings()
     if not settings.telegram_bot_token or not settings.telegram_admin_chat_id:
         logger.info("Admin Telegram notify skipped: token or chat id not configured")
         return False
 
     url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
-    proxy = settings.admin_telegram_proxy_url or None
+    proxy = settings.telegram_proxy_url or None
     try:
         response = httpx.post(
             url,

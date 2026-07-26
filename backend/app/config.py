@@ -26,10 +26,12 @@ class Settings(BaseSettings):
     telegram_bot_internal_secret: str = ""
     telegram_admin_chat_id: int = 0
     admin_telegram_id: int = 0
-    # Прокси (http:// или socks5://user:pass@host:port) для отправки admin-уведомлений
-    # в Telegram — сервер РФ, прямые запросы к api.telegram.org могут не долетать.
-    # Пусто — отправка идёт напрямую.
-    admin_telegram_proxy_url: str = ""
+    # Прокси для ВСЕГО трафика к api.telegram.org (long-poll бота + уведомления):
+    # с прод-сервера в РФ прямые запросы не проходят вообще, бот без прокси
+    # уходит в крэш-луп на get_me(). Держим http://, а не socks5://: его понимают
+    # нативно и httpx, и aiohttp (aiogram) — socks5 у aiohttp требует aiohttp_socks.
+    # Поднимается сервисом tg-proxy, см. deploy/tg-proxy/. Пусто — напрямую.
+    telegram_proxy_url: str = ""
     # Comma-separated emails (OAuth). Grants admin if any linked auth_identity matches (case-insensitive).
     admin_emails: str = ""
     demo_telegram_id: int = 0

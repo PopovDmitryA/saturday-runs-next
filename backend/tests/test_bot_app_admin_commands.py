@@ -14,7 +14,7 @@ def bot_main(monkeypatch: pytest.MonkeyPatch) -> Generator[object, None, None]:
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
     monkeypatch.setenv("TELEGRAM_BOT_INTERNAL_SECRET", "bot-secret")
     monkeypatch.setenv("ADMIN_TELEGRAM_ID", str(ADMIN_ID))
-    monkeypatch.delenv("ADMIN_TELEGRAM_PROXY_URL", raising=False)
+    monkeypatch.delenv("TELEGRAM_PROXY_URL", raising=False)
 
     import bot_app.main as module
 
@@ -36,7 +36,7 @@ def test_is_admin_false_when_unconfigured(monkeypatch: pytest.MonkeyPatch, bot_m
 def test_send_admin_reply_uses_configured_proxy(
     monkeypatch: pytest.MonkeyPatch, bot_main: object
 ) -> None:
-    bot_main.settings.admin_telegram_proxy_url = "socks5://tg-proxy:1080"
+    bot_main.settings.telegram_proxy_url = "http://tg-proxy:8118"
     captured: dict[str, object] = {}
 
     class FakeResponse:
@@ -60,6 +60,6 @@ def test_send_admin_reply_uses_configured_proxy(
     monkeypatch.setattr(bot_main.httpx, "AsyncClient", FakeAsyncClient)
     asyncio.run(bot_main._send_admin_reply(12345, "тест"))
 
-    assert captured["proxy"] == "socks5://tg-proxy:1080"
+    assert captured["proxy"] == "http://tg-proxy:8118"
     assert captured["url"] == "https://api.telegram.org/bottest-token/sendMessage"
     assert captured["json"] == {"chat_id": 12345, "text": "тест", "disable_web_page_preview": True}
