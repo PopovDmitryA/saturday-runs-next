@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.services.location_catalog_table_service import _build_visit_index
+from app.services.location_catalog_table_service import _build_visit_index, _earliest_visit
 
 
 def test_visit_index_uses_earliest_date() -> None:
@@ -20,7 +20,7 @@ def test_visit_index_uses_earliest_date() -> None:
             }
         ]
     }
-    assert _build_visit_index(details)["park-a"] == (date(2026, 5, 9), "five_verst")
+    assert _build_visit_index(details)["park-a"] == {"five_verst": date(2026, 5, 9)}
 
 
 def test_visit_index_keeps_earliest_across_systems() -> None:
@@ -38,8 +38,14 @@ def test_visit_index_keeps_earliest_across_systems() -> None:
             }
         ]
     }
-    # Ключ — только локация, без платформы; система раннего визита едет в значении.
-    assert _build_visit_index(details)["sokolniki"] == (date(2021, 5, 15), "parkrun")
+    # Ключ — только локация; разбивка по системам сохраняется, чтобы фронт мог
+    # пересчитать отметку под фильтр систем.
+    index = _build_visit_index(details)
+    assert index["sokolniki"] == {
+        "five_verst": date(2025, 4, 5),
+        "parkrun": date(2021, 5, 15),
+    }
+    assert _earliest_visit(index["sokolniki"]) == (date(2021, 5, 15), "parkrun")
 
 
 def test_visit_index_covers_parkrun_only_location() -> None:
@@ -53,7 +59,8 @@ def test_visit_index_covers_parkrun_only_location() -> None:
             }
         ]
     }
-    assert _build_visit_index(details)["petergof"] == (date(2022, 1, 29), "parkrun")
+    assert _build_visit_index(details)["petergof"] == {"parkrun": date(2022, 1, 29)}
+    assert _earliest_visit({}) is None
 
 
 def test_visit_index_ignores_placeholder_dates() -> None:

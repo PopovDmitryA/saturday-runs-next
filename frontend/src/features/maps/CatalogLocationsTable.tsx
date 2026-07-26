@@ -21,7 +21,7 @@ import {
   type CatalogTableSortKey,
   type VisitedFilter,
 } from "./catalogLocationsTableHelpers";
-import type { PlatformFilters } from "./mapFilters";
+import { resolveVisit, type PlatformFilters } from "./mapFilters";
 
 type CatalogLocationsTableProps = {
   data: CatalogLocationsTableResponse | null;
@@ -294,7 +294,11 @@ export function CatalogLocationsTable({
                     </tr>
                   ) : (
                     filteredRows.map((row) => (
-                      <CatalogLocationTableRowView key={row.row_key} row={row} />
+                      <CatalogLocationTableRowView
+                        key={row.row_key}
+                        row={row}
+                        platformFilters={platformFilters}
+                      />
                     ))
                   )}
                 </tbody>
@@ -307,7 +311,16 @@ export function CatalogLocationsTable({
   );
 }
 
-function CatalogLocationTableRowView({ row }: { row: CatalogLocationTableRow }) {
+function CatalogLocationTableRowView({
+  row,
+  platformFilters,
+}: {
+  row: CatalogLocationTableRow;
+  platformFilters: PlatformFilters;
+}) {
+  // Отметка и дата — по системам, включённым в фильтре: при сужении до
+  // 5 вёрст визит parkrun-эпохи не должен светиться посещением.
+  const visit = resolveVisit(row.visits_by_platform, platformFilters);
   const name = row.location_slug ? (
     <a href={`/locations/${encodeURIComponent(row.location_slug)}`} className="map-popup-link" title="Открыть страницу локации">
       {row.name}
@@ -349,19 +362,19 @@ function CatalogLocationTableRowView({ row }: { row: CatalogLocationTableRow }) 
       <td className="td-visited">
         <span
           className={
-            row.visited ? "visit-status-badge visit-status-yes" : "visit-status-badge visit-status-no"
+            visit ? "visit-status-badge visit-status-yes" : "visit-status-badge visit-status-no"
           }
         >
-          {row.visited ? "Посещал" : "Не посещал"}
+          {visit ? "Посещал" : "Не посещал"}
         </span>
       </td>
       <td className="td-date">
-        {row.first_visit_date ? formatDate(row.first_visit_date) : "—"}
-        {/* Отметка «Посещал» ставится по локации, а не по системе. Если первый
-            визит был в другой системе (обычно parkrun-эпоха), называем её —
-            иначе дата 2020 года на строке 5 вёрст выглядит ошибкой. */}
-        {row.first_visit_date && row.first_visit_platform && row.first_visit_platform !== row.platform_code && (
-          <span className="td-date-source">в {platformCodeLabel(row.first_visit_platform)}</span>
+        {visit ? formatDate(visit.date) : "—"}
+        {/* Отметка «Посещал» ставится по локации, а не по системе. Если визит
+            был в другой системе (обычно parkrun-эпоха), называем её — иначе
+            дата 2020 года на строке 5 вёрст выглядит ошибкой. */}
+        {visit && visit.platform !== row.platform_code && (
+          <span className="td-date-source">в {platformCodeLabel(visit.platform)}</span>
         )}
       </td>
     </tr>

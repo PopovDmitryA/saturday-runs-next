@@ -308,6 +308,8 @@ class CatalogLocationTableRowResponse(BaseModel):
     # Система самого раннего визита — может отличаться от platform_code строки
     # (бегал в parkrun-эпоху, сейчас локация живёт в 5 вёрстах)
     first_visit_platform: str | None = None
+    # {система: дата первого визита} — фронт пересчитывает отметку под фильтр систем
+    visits_by_platform: dict[str, date] = Field(default_factory=dict)
 
 
 class CatalogLocationsTableResponse(BaseModel):

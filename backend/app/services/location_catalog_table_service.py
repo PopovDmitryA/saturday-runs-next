@@ -29,17 +29,20 @@ def _first_platform_visit_date(platform_payload: dict[str, object]) -> date | No
 
 def _build_visit_index(
     details: dict[str, object],
-) -> dict[str, tuple[date, str]]:
-    """Первое посещение физической локации: identity → (дата, система).
+) -> dict[str, dict[str, date]]:
+    """Первые посещения физической локации: identity → {система: дата}.
 
     Ключ — только локация, без платформы. Раньше ключ был (локация, система), и
     посещение терялось, если система визита не совпадала с системой строки
     каталога: строки заводятся лишь для MAP_PLATFORMS, поэтому пробежка в
-    parkrun-эпоху на пятивёрстовской строке давала «Не посещал». Система
-    первого визита остаётся в значении — её показываем рядом с датой, чтобы
-    «Посещал» на строке 5 вёрст не выглядел ошибкой, когда бегали в parkrun.
+    parkrun-эпоху на пятивёрстовской строке давала «Не посещал».
+
+    Разбивку по системам не схлопываем: фильтр систем на карте живёт на фронте,
+    и при сужении до 5 вёрст локация, где бегали только в parkrun, обязана снова
+    стать непосещённой. Свести к одной дате здесь — значит потерять эту
+    возможность.
     """
-    index: dict[str, tuple[date, str]] = {}
+    index: dict[str, dict[str, date]] = {}
     for location in details.get("locations", []):
         identity_key = str(location["catalog_identity_key"])
         for platform in location.get("platforms", []):
@@ -47,10 +50,18 @@ def _build_visit_index(
             first_visit = _first_platform_visit_date(platform)
             if first_visit is None:
                 continue
-            existing = index.get(identity_key)
-            if existing is None or first_visit < existing[0]:
-                index[identity_key] = (first_visit, platform_code)
+            by_platform = index.setdefault(identity_key, {})
+            existing = by_platform.get(platform_code)
+            if existing is None or first_visit < existing:
+                by_platform[platform_code] = first_visit
     return index
+
+
+def _earliest_visit(by_platform: dict[str, date] | None) -> tuple[date, str] | None:
+    if not by_platform:
+        return None
+    platform_code, visit_date = min(by_platform.items(), key=lambda item: (item[1], item[0]))
+    return visit_date, platform_code
 
 
 def build_catalog_locations_table(
@@ -87,7 +98,8 @@ def build_catalog_locations_table(
     for location, platform in rows_query:
         platform_code = platform.code
         identity_key = catalog_index.canonical_identity_key(location, platform_code)
-        visit = visit_index.get(identity_key)
+        visits_by_platform = visit_index.get(identity_key) or {}
+        visit = _earliest_visit(visits_by_platform)
         first_visit = visit[0] if visit is not None else None
         first_visit_platform = visit[1] if visit is not None else None
         rows.append(
@@ -110,6 +122,11 @@ def build_catalog_locations_table(
                 # В какой системе был самый ранний визит: у строки 5 вёрст это
                 # может быть parkrun — тогда показываем это рядом с датой.
                 "first_visit_platform": first_visit_platform,
+                # Разбивка по системам — фронт пересчитывает отметку под фильтр
+                # систем (сузили до 5 вёрст → parkrun-визит не в счёт).
+                "visits_by_platform": {
+                    code: visit_date.isoformat() for code, visit_date in sorted(visits_by_platform.items())
+                },
             }
         )
 

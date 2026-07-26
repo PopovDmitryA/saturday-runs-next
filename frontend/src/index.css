@@ -4049,6 +4049,11 @@ tr.run-crosslinked td {
   background: #ea580c;
 }
 
+/* parkrun — только исторические визиты, поэтому точка приглушённая */
+.map-legend-dot-parkrun {
+  background: #94a3b8;
+}
+
 .map-legend-dot-visited {
   background: #16a34a;
 }

@@ -39,10 +39,19 @@ export type UserMapPanelProps = {
   onToggleFullscreen?: () => void;
 };
 
+// parkrun последний: своих локаций на карте у него нет (ушёл из России в 2022),
+// переключатель управляет только тем, засчитывать ли визиты той эпохи —
+// поэтому и подпись отдельная.
 const PLATFORM_DEFS = [
-  { code: "five_verst" as const, label: "5 вёрст", dot: "map-legend-dot-five-verst" },
-  { code: "s95" as const, label: "S95", dot: "map-legend-dot-s95" },
-  { code: "runpark" as const, label: "Runpark", dot: "map-legend-dot-runpark" },
+  { code: "five_verst" as const, label: "5 вёрст", dot: "map-legend-dot-five-verst", title: undefined },
+  { code: "s95" as const, label: "S95", dot: "map-legend-dot-s95", title: undefined },
+  { code: "runpark" as const, label: "Runpark", dot: "map-legend-dot-runpark", title: undefined },
+  {
+    code: "parkrun" as const,
+    label: "parkrun",
+    dot: "map-legend-dot-parkrun",
+    title: "Своих локаций у parkrun на карте нет — переключатель учитывает визиты parkrun-эпохи в отметке «посещал»",
+  },
 ];
 
 export function UserMapPanel({
@@ -223,7 +232,7 @@ export function UserMapPanel({
           <>
             <span className="map-toolbar-sep" aria-hidden />
             <div className="map-toolbar-group" role="group" aria-label="Системы">
-              {PLATFORM_DEFS.map(({ code, label, dot }) => (
+              {PLATFORM_DEFS.map(({ code, label, dot, title }) => (
                 <button
                   key={code}
                   type="button"
@@ -234,6 +243,7 @@ export function UserMapPanel({
                   }
                   onClick={() => togglePlatformFilter(code)}
                   aria-pressed={platformFilters[code]}
+            title={title}
                 >
                   <span className={`map-legend-dot ${dot}`} aria-hidden />
                   {label}

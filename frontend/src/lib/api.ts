@@ -1674,6 +1674,8 @@ export type CatalogLocationTableRow = {
   first_visit_date: string | null;
   // Система самого раннего визита — может отличаться от platform_code строки
   first_visit_platform: string | null;
+  // {система: дата первого визита} — отметка пересчитывается под фильтр систем
+  visits_by_platform: Record<string, string>;
 };
 
 export type CatalogLocationsTableResponse = {
