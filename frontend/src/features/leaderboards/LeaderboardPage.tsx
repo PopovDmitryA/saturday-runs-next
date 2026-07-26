@@ -43,6 +43,45 @@ const TOP_LOCATION_HINT =
   "Число рядом — сколько раз участник был первым именно на этой локации, " +
   "а не сколько раз там бегал.";
 
+const BEST_TIME_HINT =
+  "Личный рекорд участника по всем системам и локациям — не только на пробежках, " +
+  "где он был первым.";
+
+// Колонка «последней» читается по-разному у двух победных рейтингов, поэтому и
+// заголовок, и подсказка разные: в рейтинге локаций считается пополнение
+// коллекции (первая победа на новой площадке), в рейтинге побед — просто
+// последняя победа, пусть и на давно знакомой локации.
+const LAST_WIN_META: Record<string, { label: string; hint: string }> = {
+  wins: {
+    label: "Последняя победа",
+    hint: "Локация и дата самого свежего первого места участника.",
+  },
+  win_locations: {
+    label: "Последняя новая локация",
+    hint:
+      "Локация, которая последней пополнила коллекцию: дата — первая победа " +
+      "именно на ней.",
+  },
+};
+
+function formatBestTime(row: {
+  best_time_sec?: number | null;
+  best_time_display?: string | null;
+}): string | null {
+  const seconds = row.best_time_sec;
+  if (seconds == null || seconds <= 0) {
+    return row.best_time_display ?? null;
+  }
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+  // Компактный вид: «17:23», а не «00:17:23» — колонка узкая, часы у 5 км редкость.
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+  }
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
 function InfoHint({ text }: { text: string }) {
   return (
     <StatHintTooltip text={text} className="lb-info-hint">
@@ -64,6 +103,49 @@ function TopWinLocation({
       {row.home_location}
       {row.home_location_wins != null && row.home_location_wins > 1 && (
         <span className="lb-home-count"> ×{row.home_location_wins}</span>
+      )}
+    </span>
+  );
+}
+
+function BestTime({
+  row,
+}: {
+  row: { best_time_sec?: number | null; best_time_display?: string | null };
+}) {
+  const value = formatBestTime(row);
+  if (!value) {
+    return <span className="lb-zero">—</span>;
+  }
+  return <span className="lb-best-time">{value}</span>;
+}
+
+function LastWinLocation({
+  row,
+}: {
+  row: {
+    last_win_location?: string | null;
+    last_win_location_slug?: string | null;
+    last_win_date?: string | null;
+  };
+}) {
+  if (!row.last_win_location) {
+    return <span className="lb-zero">—</span>;
+  }
+  // Слаг может не резолвиться только у локаций без внятного external_key —
+  // тогда показываем имя текстом, без битой ссылки.
+  const name = row.last_win_location_slug ? (
+    <a className="lb-last-win-link" href={`/locations/${row.last_win_location_slug}`}>
+      {row.last_win_location}
+    </a>
+  ) : (
+    <span>{row.last_win_location}</span>
+  );
+  return (
+    <span className="lb-last-win">
+      {name}
+      {row.last_win_date && (
+        <span className="lb-last-win-date">{formatDate(row.last_win_date)}</span>
       )}
     </span>
   );
@@ -131,6 +213,12 @@ function sortValue(row: LeaderboardRow, key: SortKey): number {
   if (key === "total") {
     return row.total;
   }
+  if (key === "best_time") {
+    // Сортировка везде по убыванию, а лучшее время — наименьшее: инвертируем.
+    // Строки без времени уходят в конец при любом направлении.
+    const seconds = row.best_time_sec;
+    return seconds != null && seconds > 0 ? -seconds : Number.NEGATIVE_INFINITY;
+  }
   return row.platforms[key]?.value ?? 0;
 }
 
@@ -157,6 +245,10 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
 
   const hasGenderSplit = GENDERED_METRICS.includes(metric);
   const effectiveGender = hasGenderSplit ? gender : "all";
+  // Победные рейтинги несут две дополнительные колонки: лучшее время (после
+  // имени) и последнюю победу/новую локацию (в конце таблицы).
+  const hasWinExtras = metric === "wins" || metric === "win_locations";
+  const lastWinMeta = LAST_WIN_META[metric];
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -213,6 +305,11 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       total_delta: me.total_delta,
       home_location: me.home_location,
       home_location_wins: me.home_location_wins,
+      best_time_sec: me.best_time_sec,
+      best_time_display: me.best_time_display,
+      last_win_location: me.last_win_location,
+      last_win_location_slug: me.last_win_location_slug,
+      last_win_date: me.last_win_date,
     };
     return [...data.rows, myRow];
   }, [data, me]);
@@ -246,6 +343,10 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   }, [myIndex]);
 
   const crumbs = METRIC_CRUMBS[metric];
+  // Место + участник + «всего» и, у победных рейтингов, лучшее время,
+  // топ-локация (только wins) и последняя победа.
+  const totalColumns =
+    columns.length + 3 + (hasWinExtras ? 2 : 0) + (metric === "wins" ? 1 : 0);
   const visibleRows = rows.slice(0, visibleCount);
   const nextChunkEnd = Math.min(visibleCount + PAGE_STEP, rows.length);
 
@@ -356,12 +457,28 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           <DeltaSlot delta={me.total_delta} />
                         </span>
                       </span>
+                      {hasWinExtras && me.best_time_sec != null && (
+                        <span className="lb-me-value">
+                          <span className="lb-me-platform">
+                            Лучшее время <InfoHint text={BEST_TIME_HINT} />
+                          </span>
+                          <BestTime row={me} />
+                        </span>
+                      )}
                       {metric === "wins" && me.home_location && (
                         <span className="lb-me-value">
                           <span className="lb-me-platform">
                             Топ-локация <InfoHint text={TOP_LOCATION_HINT} />
                           </span>
                           <TopWinLocation row={me} />
+                        </span>
+                      )}
+                      {hasWinExtras && lastWinMeta && me.last_win_location && (
+                        <span className="lb-me-value">
+                          <span className="lb-me-platform">
+                            {lastWinMeta.label} <InfoHint text={lastWinMeta.hint} />
+                          </span>
+                          <LastWinLocation row={me} />
                         </span>
                       )}
                     </span>
@@ -380,12 +497,16 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               </section>
             )}
 
-            <div className="table-wrap lb-table-wrap">
-              <table className={`data-table lb-table${metric === "wins" ? " lb-table-wins" : ""}`}>
+            <div
+              className={`table-wrap lb-table-wrap${hasWinExtras ? " lb-table-wrap-wide" : ""}`}
+            >
+              <table className={`data-table lb-table${hasWinExtras ? " lb-table-wins" : ""}`}>
                 <thead>
                   <tr>
                     {headerCell("rank", "Место", "lb-col-rank")}
-                    <th>Участник</th>
+                    <th className="lb-col-name">Участник</th>
+                    {hasWinExtras &&
+                      headerCell("best_time", "Лучшее время", "lb-col-time")}
                     {columns.map((code) =>
                       headerCell(code, PLATFORM_LABELS[code] ?? code, "lb-col-num"),
                     )}
@@ -393,6 +514,11 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                     {metric === "wins" && (
                       <th className="lb-col-home">
                         Топ-локация <InfoHint text={TOP_LOCATION_HINT} />
+                      </th>
+                    )}
+                    {hasWinExtras && lastWinMeta && (
+                      <th className="lb-col-last-win">
+                        {lastWinMeta.label} <InfoHint text={lastWinMeta.hint} />
                       </th>
                     )}
                   </tr>
@@ -412,9 +538,14 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             <RankDelta delta={row.rank_delta} />
                           </span>
                         </td>
-                        <td>
+                        <td className="lb-col-name">
                           <ParticipantName row={row} />
                         </td>
+                        {hasWinExtras && (
+                          <td className="lb-col-time">
+                            <BestTime row={row} />
+                          </td>
+                        )}
                         {columns.map((code) => (
                           <td key={code} className="lb-col-num">
                             <CellValue cell={row.platforms[code]} />
@@ -431,12 +562,17 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             <TopWinLocation row={row} />
                           </td>
                         )}
+                        {hasWinExtras && lastWinMeta && (
+                          <td className="lb-col-last-win">
+                            <LastWinLocation row={row} />
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
                   {visibleRows.length === 0 && (
                     <tr>
-                      <td colSpan={columns.length + (metric === "wins" ? 4 : 3)} className="muted">
+                      <td colSpan={totalColumns} className="muted">
                         Ничего не найдено
                       </td>
                     </tr>

@@ -6,10 +6,14 @@ from app.services.leaderboard_service import (
     METRIC_META,
     METRIC_THRESHOLD_PERCENTILE,
     PLATFORM_COLUMNS,
+    WIN_EXTRAS_METRICS,
+    _apply_last_win,
     _dominant_gender,
+    _Entity,
     _normalize_gender,
     _percentile,
     _pick_home,
+    _pick_last,
     _ranked,
     _week_start,
     metric_description,
@@ -85,6 +89,49 @@ def test_pick_home_tie_is_deterministic() -> None:
 
 def test_pick_home_empty() -> None:
     assert _pick_home({}) is None
+
+
+def test_pick_last_returns_most_recent_win() -> None:
+    dates = {"a": date(2024, 5, 1), "b": date(2026, 7, 18), "c": date(2025, 1, 1)}
+    assert _pick_last(dates) == ("b", date(2026, 7, 18))
+
+
+def test_pick_last_tie_is_deterministic() -> None:
+    # Две победы в один день на разных локациях — берём меньший ключ, чтобы
+    # снапшот не «мигал» между пересчётами.
+    same = date(2026, 7, 18)
+    assert _pick_last({"z": same, "a": same, "m": same}) == ("a", same)
+
+
+def test_pick_last_empty() -> None:
+    assert _pick_last({}) is None
+
+
+def test_apply_last_win_fills_name_and_slug() -> None:
+    entity = _Entity(key="p:1")
+    _apply_last_win(
+        entity,
+        {"catalog:1": date(2026, 1, 10), "catalog:2": date(2026, 7, 18)},
+        {"catalog:1": "Первая", "catalog:2": "Вторая"},
+        {"catalog:1": "pervaya", "catalog:2": "vtoraya"},
+    )
+    assert entity.last_win_location == "Вторая"
+    assert entity.last_win_location_slug == "vtoraya"
+    assert entity.last_win_date == date(2026, 7, 18)
+
+
+def test_apply_last_win_without_slug_keeps_name() -> None:
+    # Локация без внятного external_key: имя есть, ссылки не будет.
+    entity = _Entity(key="p:1")
+    _apply_last_win(entity, {"location:7": date(2026, 7, 18)}, {}, {})
+    assert entity.last_win_location == "location:7"
+    assert entity.last_win_location_slug is None
+
+
+def test_win_extras_only_for_win_metrics() -> None:
+    # Лучшее время и последняя победа — только у победных рейтингов.
+    assert set(WIN_EXTRAS_METRICS) == {"wins", "win_locations"}
+    assert set(WIN_EXTRAS_METRICS) <= set(LEADERBOARD_METRICS)
 
 
 def test_dominant_gender_by_majority() -> None:

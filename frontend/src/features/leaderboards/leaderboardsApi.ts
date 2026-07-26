@@ -29,6 +29,13 @@ export type LeaderboardRow = {
   // Только у метрики wins: «топ-локация побед» — локация с максимумом побед.
   home_location?: string | null;
   home_location_wins?: number | null;
+  // Только у победных рейтингов: глобальный рекорд участника и последняя победа
+  // (у win_locations — последняя НОВАЯ локация с победой, дата — первой победы там).
+  best_time_sec?: number | null;
+  best_time_display?: string | null;
+  last_win_location?: string | null;
+  last_win_location_slug?: string | null;
+  last_win_date?: string | null;
 };
 
 export type LeaderboardResponse = {
@@ -63,6 +70,11 @@ export type MyLeaderboardRow = {
   gender_mismatch?: boolean;
   home_location?: string | null;
   home_location_wins?: number | null;
+  best_time_sec?: number | null;
+  best_time_display?: string | null;
+  last_win_location?: string | null;
+  last_win_location_slug?: string | null;
+  last_win_date?: string | null;
 };
 
 async function leaderboardsFetch<T>(path: string): Promise<T> {

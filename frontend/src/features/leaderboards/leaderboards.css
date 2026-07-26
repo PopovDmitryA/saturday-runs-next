@@ -182,6 +182,16 @@
   }
 }
 
+/* У победных рейтингов колонок на три больше (лучшее время, топ-локация,
+   последняя победа), и порог, ниже которого нужен скролл, соответственно выше:
+   иначе колонка участника схлопывается в ничто, а имена налезают на время. */
+@media (max-width: 1150px) {
+  .table-wrap.lb-table-wrap-wide {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 .lb-table thead th {
   background: var(--surface);
   /* Липнет к верху ОКНА (не своего контейнера) — родитель не имеет
@@ -294,7 +304,36 @@
   overflow-wrap: break-word;
 }
 
-/* table-layout:fixed для 8-колоночного рейтинга побед — иначе браузер
+/* «Последняя победа» / «последняя новая локация»: ссылка на страницу локации
+   и дата под ней. Перенос — как у топ-локации (длинные неразрывные названия). */
+.lb-table .lb-col-last-win {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.lb-last-win {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.lb-last-win-date {
+  color: var(--text-faint);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.lb-best-time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Заголовок «Лучшее время» в узкую колонку одной строкой не влезает (у
+   .lb-sortable по умолчанию nowrap) — разрешаем перенос именно ему. */
+.lb-table th.lb-col-time {
+  white-space: normal;
+}
+
+/* table-layout:fixed для широких победных рейтингов — иначе браузер
    игнорирует заданные width и раздувает таблицу вширь под длинные
    неразрывные названия локаций («Стрежевой Городской парк», «Магнитогорск
    Экопарк» и т.п.): в table-layout:auto колонка не может стать уже своего
@@ -303,18 +342,34 @@
    участник (единственная колонка без явной ширины) получает весь остаток. */
 .lb-table.lb-table-wins {
   table-layout: fixed;
+  /* Ширины ниже в сумме дают ~66rem: без min-width fixed-раскладка ужала бы их
+     пропорционально на узком экране (имена налезали бы на время), а так ниже
+     1150px включается горизонтальный скролл обёртки. */
+  min-width: 67rem;
 }
 
 .lb-table.lb-table-wins .lb-col-rank {
-  width: 5rem;
+  width: 4.5rem;
+}
+
+.lb-table.lb-table-wins .lb-col-name {
+  width: 13rem;
 }
 
 .lb-table.lb-table-wins .lb-col-num {
-  width: 5rem;
+  width: 4.75rem;
 }
 
 .lb-table.lb-table-wins .lb-col-home {
-  width: 11rem;
+  width: 9.5rem;
+}
+
+.lb-table.lb-table-wins .lb-col-time {
+  width: 6rem;
+}
+
+.lb-table.lb-table-wins .lb-col-last-win {
+  width: 10rem;
 }
 
 /* Значок «i»: число рядом с топ-локацией — это победы там, не все пробежки. */

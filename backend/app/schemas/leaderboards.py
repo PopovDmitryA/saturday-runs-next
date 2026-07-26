@@ -19,6 +19,13 @@ class LeaderboardRowResponse(BaseModel):
     # Только у метрики wins: «топ-локация побед» — локация с максимумом побед.
     home_location: str | None = None
     home_location_wins: int | None = None
+    # Только у победных рейтингов: глобальный рекорд участника и последняя
+    # победа (у win_locations — последняя НОВАЯ локация с победой).
+    best_time_sec: int | None = None
+    best_time_display: str | None = None
+    last_win_location: str | None = None
+    last_win_location_slug: str | None = None
+    last_win_date: str | None = None
 
 
 class LeaderboardResponse(BaseModel):
@@ -53,3 +60,8 @@ class MyLeaderboardRowResponse(BaseModel):
     gender_mismatch: bool = False
     home_location: str | None = None
     home_location_wins: int | None = None
+    best_time_sec: int | None = None
+    best_time_display: str | None = None
+    last_win_location: str | None = None
+    last_win_location_slug: str | None = None
+    last_win_date: str | None = None

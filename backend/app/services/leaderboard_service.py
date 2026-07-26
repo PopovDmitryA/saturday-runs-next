@@ -34,6 +34,7 @@ from app.parkrun.volunteer_credits import (
 )
 from app.services.co_runners_service import _is_unknown_participant_name
 from app.services.location_catalog_service import LocationCatalogIndex
+from app.time_format import format_finish_time_display
 from app.volunteering_occasions import count_volunteering_occasions
 
 LeaderboardMetric = Literal["runs", "volunteering", "locations", "wins", "win_locations"]
@@ -61,7 +62,16 @@ GENDERED_PLATFORM_COLUMNS: tuple[str, ...] = ("five_verst", "s95", "runpark")
 
 TOP_LIMIT = 1000
 CACHE_TTL_SECONDS = 6 * 3600
-CACHE_KEY_PREFIX = "leaderboards:v1"
+# v2 — в снапшот победных рейтингов добавлены «лучшее время» и «последняя
+# победа» (26.07.2026): старые кэшированные payload'ы этих полей не несут,
+# поэтому ключ версионируем, а не ждём протухания по TTL.
+CACHE_KEY_PREFIX = "leaderboards:v2"
+
+# Победные рейтинги показывают две дополнительные колонки: глобальный рекорд
+# участника и последнюю победу (у win_locations — последнюю НОВУЮ локацию с
+# победой). Обе считаются только для этих метрик, чтобы не таскать лишние
+# поля в снапшотах «пробежек»/«волонтёрств»/«локаций».
+WIN_EXTRAS_METRICS: tuple[LeaderboardMetric, ...] = ("wins", "win_locations")
 
 # Порог входа = процентиль распределения (решение Дмитрия 14.07.2026, по факту
 # посчитанной на прод-данных статистике: у 82% участников ровно 1 локация —
@@ -292,7 +302,8 @@ _LOCATION_VISITS_SQL = _location_visits_sql(only_wins=False)
 _WIN_LOCATION_VISITS_SQL = _location_visits_sql(only_wins=True)
 
 # Победы (первые места в абсолюте) с разбивкой по локациям: одной выборкой
-# получаем и счёт по системам, и «топ-локацию побед» (локацию с максимумом побед).
+# получаем и счёт по системам, и «топ-локацию побед» (локацию с максимумом
+# побед), и дату последней победы на каждой локации (из неё — «последняя победа»).
 _WIN_ROWS_SQL = (
     _PARKRUN_ELIGIBLE_CTE
     + f"""
@@ -301,7 +312,8 @@ SELECT
     p.code AS platform_code,
     e.location_id AS location_id,
     COUNT(*) AS wins,
-    COUNT(*) FILTER (WHERE e.event_date >= :week_start) AS week_wins
+    COUNT(*) FILTER (WHERE e.event_date >= :week_start) AS week_wins,
+    MAX(e.event_date) AS last_date
 FROM run_results rr
 JOIN events e ON e.id = rr.event_id
 JOIN platforms p ON p.id = e.platform_id
@@ -344,7 +356,8 @@ SELECT
     {_GENDER_LABEL_SQL} AS gender_label,
     COUNT(*) AS wins,
     COUNT(*) FILTER (WHERE e.event_date >= :week_start) AS week_wins,
-    MIN(e.event_date) AS first_date
+    MIN(e.event_date) AS first_date,
+    MAX(e.event_date) AS last_date
 FROM run_results rr
 JOIN events e ON e.id = rr.event_id
 JOIN platforms p ON p.id = e.platform_id
@@ -378,6 +391,30 @@ WHERE e.is_test_event = false
   AND p.code <> 'parkrun'
 GROUP BY rr.participant_id, gender_label
 """
+
+# Глобальный рекорд участника — лучшее время по ВСЕЙ его истории финишей, а не
+# только по забегам с победой (в победных рейтингах колонка так и называется —
+# «лучшее время»). Фильтры те же, что у остальных метрик: без тестовых событий и
+# без «левых» parkrun-профилей; кросслинки не исключаем — дубль одной физической
+# пробежки в двух системах на минимум времени не влияет. Считается только по
+# участникам победных рейтингов (их немного), поэтому запрос всегда с ANY(:pids).
+_BEST_TIME_SQL = (
+    _PARKRUN_ELIGIBLE_CTE
+    + f"""
+SELECT
+    rr.participant_id AS participant_id,
+    MIN(rr.finish_time_sec) AS best_time_sec
+FROM run_results rr
+JOIN events e ON e.id = rr.event_id
+JOIN platforms p ON p.id = e.platform_id
+WHERE e.is_test_event = false
+  AND rr.participant_id = ANY(:pids)
+  AND rr.finish_time_sec IS NOT NULL
+  AND rr.finish_time_sec > 0
+  AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
+GROUP BY rr.participant_id
+"""
+)
 
 _LATEST_EVENT_DATE_SQL = """
 SELECT MAX(e.event_date)
@@ -421,6 +458,15 @@ class _Entity:
     # Только для метрики wins: «топ-локация побед» — локация с максимумом побед.
     home_location: str | None = None
     home_location_wins: int = 0
+    # Только у победных метрик (см. WIN_EXTRAS_METRICS): глобальный рекорд и
+    # последняя победа. У win_locations «последняя» — это последняя НОВАЯ
+    # локация с победой (дата = первая победа именно на ней).
+    best_time_sec: int | None = None
+    last_win_location: str | None = None
+    last_win_location_slug: str | None = None
+    last_win_date: date | None = None
+    # Участники, из которых собрана строка — нужны для запроса рекорда.
+    participant_ids: set[UUID] = field(default_factory=set)
 
 
 def latest_event_date(db: Session) -> date | None:
@@ -523,32 +569,51 @@ def _occasion_volunteering_rows(
     return result
 
 
-def _location_identity_maps(db: Session) -> tuple[dict[UUID, str], dict[str, str]]:
-    """location_id -> канонический ключ площадки + ключ -> отображаемое имя.
+def _location_identity_maps(
+    db: Session,
+) -> tuple[dict[UUID, str], dict[str, str], dict[str, str]]:
+    """location_id -> канонический ключ площадки + ключ -> имя и slug страницы.
 
-    Имя канонической площадки берём у локации самой «старшей» системы в порядке
-    PLATFORM_COLUMNS — у кросс-платформенных площадок имена в системах слегка
-    различаются, нужен один детерминированный вариант.
+    Имя и slug канонической площадки берём у локации самой «старшей» системы в
+    порядке PLATFORM_COLUMNS — у кросс-платформенных площадок имена в системах
+    слегка различаются, нужен один детерминированный вариант. Тем же порядком
+    страница локации выбирает свой публичный slug (см. resolve_location_identity),
+    и она же принимает external_key любой системы идентичности — так что ссылка
+    /locations/<slug> ведёт на нужную площадку.
     """
     catalog_index = LocationCatalogIndex(db)
     rows = db.query(Location, Platform.code).join(Platform, Location.platform_id == Platform.id).all()
     platform_priority = {code: index for index, code in enumerate(PLATFORM_COLUMNS)}
     identity_by_location: dict[UUID, str] = {}
     name_candidates: dict[str, tuple[int, str]] = {}
+    slug_candidates: dict[str, tuple[int, str]] = {}
     for location, platform_code in rows:
         identity = catalog_index.canonical_identity_key(location, platform_code)
         identity_by_location[location.id] = identity
         priority = platform_priority.get(platform_code, len(PLATFORM_COLUMNS))
         current = name_candidates.get(identity)
         if current is None or priority < current[0]:
-            name_candidates[identity] = (priority, location.name)
+            # Имя берём тем же резолвером, что и страница локации (у площадок с
+            # каноническим именем в каталоге оно отличается от сырого
+            # location.name) — иначе ссылка вела бы на страницу с другим
+            # заголовком: «Парк Лесоводов» в рейтинге → «Ufa Botanichesky Sad».
+            name_candidates[identity] = (
+                priority,
+                catalog_index.display_name(location, platform_code),
+            )
+        slug = (location.external_key or "").strip().lower()
+        if slug and slug != "unknown":
+            current_slug = slug_candidates.get(identity)
+            if current_slug is None or priority < current_slug[0]:
+                slug_candidates[identity] = (priority, slug)
     names = {identity: name for identity, (_priority, name) in name_candidates.items()}
-    return identity_by_location, names
+    slugs = {identity: slug for identity, (_priority, slug) in slug_candidates.items()}
+    return identity_by_location, names, slugs
 
 
 def _location_identity_map(db: Session) -> dict[UUID, str]:
     """location_id -> канонический ключ физической площадки (склейка систем)."""
-    identity_by_location, _names = _location_identity_maps(db)
+    identity_by_location, _names, _slugs = _location_identity_maps(db)
     return identity_by_location
 
 
@@ -611,23 +676,53 @@ def _pick_home(win_counts_by_identity: dict[str, int]) -> tuple[str, int] | None
     return identity, wins
 
 
+def _pick_last(dates_by_identity: dict[str, date]) -> tuple[str, date] | None:
+    """Последняя победа: identity-ключ локации с самой свежей датой.
+
+    При равенстве дат (две победы в один день на разных локациях) выбор
+    детерминирован (меньший ключ), чтобы снапшоты не «мигали» между пересчётами.
+    """
+    if not dates_by_identity:
+        return None
+    identity, last = min(dates_by_identity.items(), key=lambda item: (-item[1].toordinal(), item[0]))
+    return identity, last
+
+
+def _apply_last_win(
+    entity: _Entity,
+    dates_by_identity: dict[str, date],
+    identity_names: dict[str, str],
+    identity_slugs: dict[str, str],
+) -> None:
+    last = _pick_last(dates_by_identity)
+    if last is None:
+        return
+    identity, last_date = last
+    entity.last_win_location = identity_names.get(identity, identity)
+    entity.last_win_location_slug = identity_slugs.get(identity)
+    entity.last_win_date = last_date
+
+
 def _collect_win_entities(db: Session, week_start: date) -> dict[str, _Entity]:
-    """Победы (1-е места в абсолюте): счёт по системам + «топ-локация побед»."""
+    """Победы (1-е места в абсолюте): счёт по системам, «топ-локация побед» и
+    последняя победа (локация + дата)."""
     links = _site_links(db)
-    identity_by_location, identity_names = _location_identity_maps(db)
+    identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     rows = db.execute(text(_WIN_ROWS_SQL), {"week_start": week_start}).all()
 
     entities: dict[str, _Entity] = {}
     home_counts: dict[str, dict[str, int]] = {}
+    last_dates: dict[str, dict[str, date]] = {}
     participant_ids = {row[0] for row in rows}
     names = _participant_names(db, participant_ids)
-    for pid, code, location_id, wins, week_wins in rows:
+    for pid, code, location_id, wins, week_wins, last_date in rows:
         link = links.get(pid)
         key = _entity_key(pid, link)
         entity = entities.get(key)
         if entity is None:
             entity = _Entity(key=key)
             entities[key] = entity
+        entity.participant_ids.add(pid)
         if link is not None and not link.private:
             entity.site_serial_id = link.serial_id
             if link.display_name:
@@ -642,6 +737,9 @@ def _collect_win_entities(db: Session, week_start: date) -> dict[str, _Entity]:
         identity = identity_by_location.get(location_id, str(location_id))
         by_identity = home_counts.setdefault(key, {})
         by_identity[identity] = by_identity.get(identity, 0) + int(wins)
+        by_date = last_dates.setdefault(key, {})
+        known = by_date.get(identity)
+        by_date[identity] = max(known, last_date) if known is not None else last_date
 
     for key, entity in entities.items():
         home = _pick_home(home_counts.get(key, {}))
@@ -649,6 +747,7 @@ def _collect_win_entities(db: Session, week_start: date) -> dict[str, _Entity]:
             identity, wins = home
             entity.home_location = identity_names.get(identity, identity)
             entity.home_location_wins = wins
+        _apply_last_win(entity, last_dates.get(key, {}), identity_names, identity_slugs)
     return entities
 
 
@@ -679,7 +778,7 @@ def _account_gender(db: Session, participant_ids: list[UUID]) -> str | None:
 
 def _gendered_win_rows(
     db: Session, week_start: date, *, pids: list[UUID] | None = None
-) -> list[tuple[UUID, str, UUID, str | None, int, int, date]]:
+) -> list[tuple[UUID, str, UUID, str | None, int, int, date, date]]:
     sql = _GENDERED_WIN_ROWS_SQL
     params: dict[str, object] = {"week_start": week_start}
     if pids is not None:
@@ -688,7 +787,7 @@ def _gendered_win_rows(
     else:
         sql = sql.replace("/*PIDS_FILTER*/", "")
     return [
-        (row[0], row[1], row[2], row[3], int(row[4]), int(row[5]), row[6])
+        (row[0], row[1], row[2], row[3], int(row[4]), int(row[5]), row[6], row[7])
         for row in db.execute(text(sql), params).all()
     ]
 
@@ -700,22 +799,25 @@ def _collect_gendered_win_entities(
     запрошенного пола. as_locations=True → «локации с победами» (уникальные
     площадки), иначе «количество побед» (счёт + топ-локация побед)."""
     links = _site_links(db)
-    identity_by_location, identity_names = _location_identity_maps(db)
+    identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     rows = _gendered_win_rows(db, week_start)
 
     # entity -> накопители; пол определяем после полного прохода по строкам.
     gender_votes: dict[str, dict[str, int]] = {}
     win_by_platform: dict[str, dict[str, list[int]]] = {}
     home_counts: dict[str, dict[str, int]] = {}
+    last_dates: dict[str, dict[str, date]] = {}
     # entity -> identity -> (min first_date, {platform codes})
     loc_by_entity: dict[str, dict[str, tuple[date, set[str]]]] = {}
     meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
+    pids_by_entity: dict[str, set[UUID]] = {}
     participant_ids = {row[0] for row in rows}
 
-    for pid, code, location_id, gender_label, wins, week_wins, first_date in rows:
+    for pid, code, location_id, gender_label, wins, week_wins, first_date, last_date in rows:
         link = links.get(pid)
         key = _entity_key(pid, link)
         meta.setdefault(key, (pid, link))
+        pids_by_entity.setdefault(key, set()).add(pid)
         if gender_label in ("male", "female"):
             votes = gender_votes.setdefault(key, {})
             votes[gender_label] = votes.get(gender_label, 0) + int(wins)
@@ -727,6 +829,9 @@ def _collect_gendered_win_entities(
         home_counts.setdefault(key, {})[identity] = (
             home_counts.setdefault(key, {}).get(identity, 0) + int(wins)
         )
+        by_date = last_dates.setdefault(key, {})
+        known = by_date.get(identity)
+        by_date[identity] = max(known, last_date) if known is not None else last_date
         identities = loc_by_entity.setdefault(key, {})
         existing = identities.get(identity)
         if existing is None:
@@ -741,6 +846,7 @@ def _collect_gendered_win_entities(
         if _dominant_gender(gender_votes.get(key, {})) != gender:
             continue
         entity = _Entity(key=key)
+        entity.participant_ids = pids_by_entity.get(key, {pid})
         if link is not None and not link.private:
             entity.site_serial_id = link.serial_id
             entity.display_name = link.display_name or names.get(pid)
@@ -758,6 +864,14 @@ def _collect_gendered_win_entities(
                     bucket[0] += 1
                     if is_new:
                         bucket[1] += 1
+            # «Последняя» для рейтинга локаций — последняя НОВАЯ локация в
+            # коллекции, поэтому дата = первая победа именно на ней.
+            _apply_last_win(
+                entity,
+                {identity: first for identity, (first, _codes) in loc_by_entity.get(key, {}).items()},
+                identity_names,
+                identity_slugs,
+            )
         else:
             for code, cell in win_by_platform.get(key, {}).items():
                 entity.values[code] = [cell[0], cell[1]]
@@ -768,26 +882,37 @@ def _collect_gendered_win_entities(
                 identity, wins = home
                 entity.home_location = identity_names.get(identity, identity)
                 entity.home_location_wins = wins
+            _apply_last_win(entity, last_dates.get(key, {}), identity_names, identity_slugs)
         entities[key] = entity
     return entities
 
 
 def _collect_location_entities(
-    db: Session, week_start: date, *, sql: str = _LOCATION_VISITS_SQL
+    db: Session,
+    week_start: date,
+    *,
+    sql: str = _LOCATION_VISITS_SQL,
+    with_last_win: bool = False,
 ) -> dict[str, _Entity]:
+    """Уникальные локации участника. with_last_win — для рейтинга локаций с
+    победами: дополнительно заполняет последнюю НОВУЮ локацию (её первая
+    победа — самая свежая из всех «первых побед» участника)."""
     links = _site_links(db)
-    identity_by_location = _location_identity_map(db)
+    identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     rows = db.execute(text(sql)).all()
 
     # entity -> identity -> (min first_date overall, {platform codes})
     per_entity: dict[str, dict[str, tuple[date, set[str]]]] = {}
     meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
+    pids_by_entity: dict[str, set[UUID]] = {}
     participant_ids = {row[0] for row in rows}
     for pid, code, location_id, first_date in rows:
         identity = identity_by_location.get(location_id, str(location_id))
         link = links.get(pid)
         key = _entity_key(pid, link)
         meta.setdefault(key, (pid, link))
+        if with_last_win:
+            pids_by_entity.setdefault(key, set()).add(pid)
         identities = per_entity.setdefault(key, {})
         existing = identities.get(identity)
         if existing is None:
@@ -817,8 +942,51 @@ def _collect_location_entities(
                 bucket[0] += 1
                 if is_new:
                     bucket[1] += 1
+        if with_last_win:
+            entity.participant_ids = pids_by_entity.get(key, {pid})
+            _apply_last_win(
+                entity,
+                {identity: first for identity, (first, _codes) in identities.items()},
+                identity_names,
+                identity_slugs,
+            )
         entities[key] = entity
     return entities
+
+
+def _best_times(db: Session, participant_ids: list[UUID]) -> dict[UUID, int]:
+    """participant_id -> лучшее время (сек) по всей истории финишей."""
+    if not participant_ids:
+        return {}
+    rows = db.execute(text(_BEST_TIME_SQL), {"pids": participant_ids}).all()
+    return {row[0]: int(row[1]) for row in rows if row[1] is not None}
+
+
+def _attach_best_times(db: Session, entities: dict[str, _Entity]) -> None:
+    """Проставляет строкам рейтинга глобальный рекорд участника.
+
+    У зарегистрированных на сайте строка склеена из всех их участников, и
+    рекорд ищем по ВСЕМ ним, а не только по тем, где были победы: колонка
+    обещает личный рекорд человека, а не рекорд «в системе, где он выигрывал».
+    """
+    links = _site_links(db)
+    pids_by_user: dict[UUID, list[UUID]] = {}
+    for pid, link in links.items():
+        pids_by_user.setdefault(link.user_id, []).append(pid)
+
+    pids_by_entity: dict[str, set[UUID]] = {}
+    all_pids: set[UUID] = set()
+    for key, entity in entities.items():
+        pids = set(entity.participant_ids)
+        if key.startswith("u:"):
+            pids.update(pids_by_user.get(UUID(key[2:]), []))
+        pids_by_entity[key] = pids
+        all_pids |= pids
+
+    best = _best_times(db, sorted(all_pids))
+    for key, entity in entities.items():
+        times = [best[pid] for pid in pids_by_entity[key] if pid in best]
+        entity.best_time_sec = min(times) if times else None
 
 
 def _ranked(values_desc: list[int], value: int) -> int:
@@ -878,7 +1046,9 @@ def _build_snapshot(
         entities = _collect_location_entities(db, week_start)
     elif metric == "win_locations":
         if gender == "all":
-            entities = _collect_location_entities(db, week_start, sql=_WIN_LOCATION_VISITS_SQL)
+            entities = _collect_location_entities(
+                db, week_start, sql=_WIN_LOCATION_VISITS_SQL, with_last_win=True
+            )
         else:
             entities = _collect_gendered_win_entities(db, week_start, gender, as_locations=True)
     elif metric == "wins":
@@ -899,10 +1069,20 @@ def _build_snapshot(
     threshold = _percentile(totals_desc, METRIC_THRESHOLD_PERCENTILE.get(metric, 75))
 
     ranked_entities.sort(key=lambda e: (-e.total, e.display_name or ""))
-    rows: list[dict[str, object]] = []
+
+    visible: list[_Entity] = []
     for entity in ranked_entities[: TOP_LIMIT * 2]:
         if entity.total < threshold:
             break
+        visible.append(entity)
+        if len(visible) >= TOP_LIMIT:
+            break
+    # Рекорд нужен только видимым строкам — за пределами топа его никто не увидит.
+    if metric in WIN_EXTRAS_METRICS:
+        _attach_best_times(db, {entity.key: entity for entity in visible})
+
+    rows: list[dict[str, object]] = []
+    for entity in visible:
         rank = _ranked(totals_desc, entity.total)
         prev_total = entity.total - entity.week
         prev_rank = _ranked(prev_totals_desc, prev_total)
@@ -921,9 +1101,16 @@ def _build_snapshot(
         if entity.home_location is not None:
             row["home_location"] = entity.home_location
             row["home_location_wins"] = entity.home_location_wins
+        if entity.best_time_sec is not None:
+            row["best_time_sec"] = entity.best_time_sec
+            row["best_time_display"] = format_finish_time_display(entity.best_time_sec)
+        if entity.last_win_location is not None:
+            row["last_win_location"] = entity.last_win_location
+            row["last_win_location_slug"] = entity.last_win_location_slug
+            row["last_win_date"] = (
+                entity.last_win_date.isoformat() if entity.last_win_date else None
+            )
         rows.append(row)
-        if len(rows) >= TOP_LIMIT:
-            break
 
     return {
         "metric": metric,
@@ -1103,48 +1290,79 @@ def _parkrun_volunteer_counts_for(db: Session, participant_ids: list[UUID]) -> i
     return total
 
 
+@dataclass
+class _LastWin:
+    """Последняя победа для «моей» строки: локация, ссылка на неё и дата."""
+
+    location: str
+    slug: str | None
+    on_date: date
+
+
+def _resolve_last_win(
+    dates_by_identity: dict[str, date],
+    identity_names: dict[str, str],
+    identity_slugs: dict[str, str],
+) -> _LastWin | None:
+    last = _pick_last(dates_by_identity)
+    if last is None:
+        return None
+    identity, last_date = last
+    return _LastWin(
+        location=identity_names.get(identity, identity),
+        slug=identity_slugs.get(identity),
+        on_date=last_date,
+    )
+
+
 def _my_win_values(
     db: Session, participant_ids: list[UUID], week_start: date
-) -> tuple[dict[str, list[int]], tuple[str, int] | None]:
-    """Победы залогиненного: значения по системам + его «топ-локация побед»."""
+) -> tuple[dict[str, list[int]], tuple[str, int] | None, _LastWin | None]:
+    """Победы залогиненного: значения по системам, «топ-локация побед» и
+    последняя победа."""
     if not participant_ids:
-        return {}, None
+        return {}, None, None
     sql = _WIN_ROWS_SQL.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
     rows = db.execute(text(sql), {"week_start": week_start, "pids": participant_ids}).all()
     if not rows:
-        return {}, None
-    identity_by_location, identity_names = _location_identity_maps(db)
+        return {}, None, None
+    identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     values: dict[str, list[int]] = {}
     win_counts_by_identity: dict[str, int] = {}
-    for _pid, code, location_id, wins, week_wins in rows:
+    last_dates: dict[str, date] = {}
+    for _pid, code, location_id, wins, week_wins, last_date in rows:
         bucket = values.setdefault(code, [0, 0])
         bucket[0] += int(wins)
         bucket[1] += int(week_wins)
         identity = identity_by_location.get(location_id, str(location_id))
         win_counts_by_identity[identity] = win_counts_by_identity.get(identity, 0) + int(wins)
+        known = last_dates.get(identity)
+        last_dates[identity] = max(known, last_date) if known is not None else last_date
+    last_win = _resolve_last_win(last_dates, identity_names, identity_slugs)
     home = _pick_home(win_counts_by_identity)
     if home is not None:
         identity, wins = home
-        return values, (identity_names.get(identity, identity), wins)
-    return values, None
+        return values, (identity_names.get(identity, identity), wins), last_win
+    return values, None, last_win
 
 
 def _my_gendered_win_values(
     db: Session, participant_ids: list[UUID], week_start: date, gender: str, *, as_locations: bool
-) -> tuple[dict[str, list[int]], int, int, tuple[str, int] | None]:
+) -> tuple[dict[str, list[int]], int, int, tuple[str, int] | None, _LastWin | None]:
     """«Моя» строка в гендерном зачёте. Если пол участника не совпадает с
     запрошенным — он в этот рейтинг не входит (нули, not included)."""
     if not participant_ids:
-        return {}, 0, 0, None
+        return {}, 0, 0, None, None
     rows = _gendered_win_rows(db, week_start, pids=participant_ids)
     if not rows:
-        return {}, 0, 0, None
-    identity_by_location, identity_names = _location_identity_maps(db)
+        return {}, 0, 0, None, None
+    identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     votes: dict[str, int] = {}
     values: dict[str, list[int]] = {}
     win_counts_by_identity: dict[str, int] = {}
+    last_dates: dict[str, date] = {}
     loc_identities: dict[str, tuple[date, set[str]]] = {}
-    for _pid, code, location_id, gender_label, wins, week_wins, first_date in rows:
+    for _pid, code, location_id, gender_label, wins, week_wins, first_date, last_date in rows:
         if gender_label in ("male", "female"):
             votes[gender_label] = votes.get(gender_label, 0) + int(wins)
         bucket = values.setdefault(code, [0, 0])
@@ -1152,6 +1370,8 @@ def _my_gendered_win_values(
         bucket[1] += int(week_wins)
         identity = identity_by_location.get(location_id, str(location_id))
         win_counts_by_identity[identity] = win_counts_by_identity.get(identity, 0) + int(wins)
+        known = last_dates.get(identity)
+        last_dates[identity] = max(known, last_date) if known is not None else last_date
         existing = loc_identities.get(identity)
         if existing is None:
             loc_identities[identity] = (first_date, {code})
@@ -1160,7 +1380,7 @@ def _my_gendered_win_values(
             loc_identities[identity] = (min(existing[0], first_date), existing[1])
 
     if _dominant_gender(votes) != gender:
-        return {}, 0, 0, None
+        return {}, 0, 0, None, None
 
     if as_locations:
         loc_values: dict[str, list[int]] = {}
@@ -1176,13 +1396,22 @@ def _my_gendered_win_values(
                 cell[0] += 1
                 if is_new:
                     cell[1] += 1
-        return loc_values, total, week, None
+        # «Последняя» здесь — последняя новая локация в коллекции (см.
+        # _collect_location_entities): дата = первая победа именно на ней.
+        last_new = _resolve_last_win(
+            {identity: first for identity, (first, _codes) in loc_identities.items()},
+            identity_names,
+            identity_slugs,
+        )
+        return loc_values, total, week, None, last_new
 
     total = sum(v[0] for v in values.values())
     week = sum(v[1] for v in values.values())
     home = _pick_home(win_counts_by_identity)
     home_out = (identity_names.get(home[0], home[0]), home[1]) if home is not None else None
-    return values, total, week, home_out
+    return values, total, week, home_out, _resolve_last_win(
+        last_dates, identity_names, identity_slugs
+    )
 
 
 def _my_location_values(
@@ -1191,12 +1420,13 @@ def _my_location_values(
     week_start: date,
     *,
     sql_template: str = _LOCATION_VISITS_SQL,
-) -> tuple[dict[str, list[int]], int, int]:
+    with_last_win: bool = False,
+) -> tuple[dict[str, list[int]], int, int, _LastWin | None]:
     if not participant_ids:
-        return {}, 0, 0
+        return {}, 0, 0, None
     sql = sql_template.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
     rows = db.execute(text(sql), {"pids": participant_ids}).all()
-    identity_by_location = _location_identity_map(db)
+    identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     identities: dict[str, tuple[date, set[str]]] = {}
     for _pid, code, location_id, first_date in rows:
         identity = identity_by_location.get(location_id, str(location_id))
@@ -1219,7 +1449,16 @@ def _my_location_values(
             bucket[0] += 1
             if is_new:
                 bucket[1] += 1
-    return values, total, week
+    last_new = (
+        _resolve_last_win(
+            {identity: first for identity, (first, _codes) in identities.items()},
+            identity_names,
+            identity_slugs,
+        )
+        if with_last_win
+        else None
+    )
+    return values, total, week, last_new
 
 
 def get_my_leaderboard_row(
@@ -1244,24 +1483,29 @@ def get_my_leaderboard_row(
     ]
 
     my_home: tuple[str, int] | None = None
+    my_last_win: _LastWin | None = None
     if metric == "locations":
-        values, total, week = _my_location_values(db, participant_ids, week_start)
+        values, total, week, _last = _my_location_values(db, participant_ids, week_start)
     elif metric == "win_locations":
         if resolved == "all":
-            values, total, week = _my_location_values(
-                db, participant_ids, week_start, sql_template=_WIN_LOCATION_VISITS_SQL
+            values, total, week, my_last_win = _my_location_values(
+                db,
+                participant_ids,
+                week_start,
+                sql_template=_WIN_LOCATION_VISITS_SQL,
+                with_last_win=True,
             )
         else:
-            values, total, week, my_home = _my_gendered_win_values(
+            values, total, week, my_home, my_last_win = _my_gendered_win_values(
                 db, participant_ids, week_start, resolved, as_locations=True
             )
     elif metric == "wins":
         if resolved == "all":
-            values, my_home = _my_win_values(db, participant_ids, week_start)
+            values, my_home, my_last_win = _my_win_values(db, participant_ids, week_start)
             total = sum(v[0] for v in values.values())
             week = sum(v[1] for v in values.values())
         else:
-            values, total, week, my_home = _my_gendered_win_values(
+            values, total, week, my_home, my_last_win = _my_gendered_win_values(
                 db, participant_ids, week_start, resolved, as_locations=False
             )
     else:
@@ -1284,6 +1528,13 @@ def get_my_leaderboard_row(
     # вообще (по всей истории финишей, не только по победам). Если пол
     # определился и не совпадает с выбранным — это не «ещё не достиг», а
     # структурно другой зачёт, порог показывать незачем.
+    # Рекорд — только у победных рейтингов, и только если строка вообще в них
+    # попала: в чужом гендерном зачёте показывать личное время незачем.
+    my_best_time: int | None = None
+    if metric in WIN_EXTRAS_METRICS and total > 0:
+        best = _best_times(db, participant_ids)
+        my_best_time = min(best.values()) if best else None
+
     gender_mismatch = False
     if not included and resolved != "all" and metric in GENDERED_METRICS:
         account_gender = _account_gender(db, participant_ids)
@@ -1303,4 +1554,11 @@ def get_my_leaderboard_row(
         "gender_mismatch": gender_mismatch,
         "home_location": my_home[0] if my_home else None,
         "home_location_wins": my_home[1] if my_home else None,
+        "best_time_sec": my_best_time,
+        "best_time_display": (
+            format_finish_time_display(my_best_time) if my_best_time is not None else None
+        ),
+        "last_win_location": my_last_win.location if my_last_win else None,
+        "last_win_location_slug": my_last_win.slug if my_last_win else None,
+        "last_win_date": my_last_win.on_date.isoformat() if my_last_win else None,
     }
