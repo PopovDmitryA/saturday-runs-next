@@ -16,6 +16,7 @@ import {
 import { formatDate, platformCodeLabel, pluralizeRu } from "../../lib/format";
 import { GoalCard } from "./GoalCard";
 import { GoalsEditModal } from "./GoalsEditModal";
+import { StartNumbersPlanModal } from "./StartNumbersPlanModal";
 
 const LEVEL_LABELS: Record<ChallengeLevel, string> = {
   bronze: "Бронза",
@@ -357,9 +358,16 @@ const CHALLENGE_CTA: Record<string, { href: string; label: string }> = {
   reviewer: { href: "/runs", label: "Написать отзыв →" },
 };
 
+// Челленджи, где есть что планировать наперёд: таблица «номер старта → у каких
+// локаций он выпадает на ближайшие три недели». Тултипы ячеек показывают то же
+// самое, но по одной ячейке за раз — для долгого планирования это неудобно.
+const CHALLENGE_PLAN_CODES = new Set(["start_numbers", "start_numbers_pro"]);
+
 function ChallengeCard({ challenge, personal = false }: { challenge: Challenge; personal?: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
   const cta = personal ? CHALLENGE_CTA[challenge.code] : undefined;
+  const hasPlan = personal && CHALLENGE_PLAN_CODES.has(challenge.code);
   const nextHint = challenge.next_level
     ? `До ${LEVEL_LABELS_TO[challenge.next_level]}: ${
         challenge.to_next_label ?? `ещё ${challenge.to_next_level ?? "—"}`
@@ -399,6 +407,23 @@ function ChallengeCard({ challenge, personal = false }: { challenge: Challenge; 
         <a className="btn secondary btn-sm challenge-cta" href={cta.href}>
           {cta.label}
         </a>
+      )}
+      {hasPlan && (
+        <>
+          <button
+            type="button"
+            className="challenge-plan-link"
+            onClick={() => setPlanOpen(true)}
+          >
+            Планирование →
+          </button>
+          <StartNumbersPlanModal
+            open={planOpen}
+            code={challenge.code}
+            challengeTitle={challenge.title}
+            onClose={() => setPlanOpen(false)}
+          />
+        </>
       )}
       {hasDetail(challenge) && (
         <>

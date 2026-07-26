@@ -145,3 +145,35 @@ class GoalInput(BaseModel):
 
 class GoalsUpdateRequest(BaseModel):
     goals: list[GoalInput] = Field(default_factory=list)
+
+
+class StartNumberPlanEntryResponse(BaseModel):
+    """Один предсказанный старт в ячейке таблицы планирования."""
+
+    location: str
+    location_slug: str
+    platform_code: str
+    date: str
+
+
+class StartNumberPlanWeekResponse(BaseModel):
+    index: int
+    date_from: str
+    date_to: str
+
+
+class StartNumberPlanRowResponse(BaseModel):
+    number: int
+    # Закрыт ли номер участником (в любой системе)
+    done: bool
+    # По одному списку на недельное окно, в порядке weeks
+    weeks: list[list[StartNumberPlanEntryResponse]]
+
+
+class StartNumberPlanResponse(BaseModel):
+    code: str
+    low: int
+    high: int
+    generated_for: str
+    weeks: list[StartNumberPlanWeekResponse]
+    rows: list[StartNumberPlanRowResponse]

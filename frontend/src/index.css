@@ -8511,6 +8511,141 @@ tr.run-crosslinked td {
   text-decoration: underline;
 }
 
+/* Ссылка «Планирование» в карточке Нумератора — открывает таблицу
+   «номер старта → локации по неделям». */
+.challenge-plan-link {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--link);
+  align-self: flex-start;
+}
+
+.challenge-plan-link:hover {
+  color: var(--link-strong);
+  text-decoration: underline;
+}
+
+/* --- Модалка планирования --------------------------------------------- */
+.plan-intro {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+.plan-summary {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+}
+
+.plan-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
+.plan-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+/* Единственный скролл-контейнер таблицы: и по горизонтали (широкая), и по
+   вертикали (до 400 строк). Высоту задаём здесь, а не полагаемся на
+   .modal-body-scroll — иначе overflow-x делает обёртку скролл-контейнером,
+   а sticky-шапка остаётся привязанной к внешнему и уезжает вверх. */
+.plan-table-wrap {
+  overflow: auto;
+  max-height: 60vh;
+}
+
+.plan-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.plan-table th,
+.plan-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.plan-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  white-space: nowrap;
+}
+
+.plan-week-dates {
+  display: block;
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.plan-number {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* Незакрытые номера — то, ради чего таблицу и открывают, поэтому выделяем
+   именно их: заливка + акцентный номер + полоса слева. Закрытые приглушаем.
+   Полоса и галочка дублируют цвет, чтобы строка читалась и без него. */
+.plan-row-open > * {
+  background: var(--tint-blue-bg);
+}
+
+.plan-row-open .plan-number {
+  border-left: 3px solid var(--tint-blue-border-strong);
+  padding-left: 0.4rem;
+  color: var(--tint-blue-text);
+}
+
+.plan-row-done {
+  color: var(--text-muted);
+}
+
+.plan-row-done .plan-number {
+  border-left: 3px solid transparent;
+  padding-left: 0.4rem;
+  font-weight: 400;
+}
+
+.plan-number-state {
+  margin-left: 0.3rem;
+  color: #16a34a;
+}
+
+.plan-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.plan-entry-meta {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.plan-empty {
+  color: var(--text-muted);
+}
+
 /* Сетки коллекций (секунды/позиции/номера/буквы) */
 .challenge-cells {
   display: flex;

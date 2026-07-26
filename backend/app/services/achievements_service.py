@@ -40,6 +40,16 @@ from app.volunteering_occasions import count_volunteering_for_platform, is_inven
 
 LEVEL_ORDER = ("bronze", "silver", "gold")
 
+# Диапазоны номеров для «Нумератора» и «Нумератора ПРО». Одни и те же границы
+# нужны и карточке челленджа, и таблице планирования — держим в одном месте,
+# чтобы сетка ячеек и таблица не разъехались при правке порогов.
+START_NUMBER_RANGES: dict[str, tuple[int, int]] = {
+    "start_numbers": (1, 200),
+    "start_numbers_pro": (201, 400),
+}
+# Сколько недельных окон показываем в планировании: ближайшая неделя, W+1, W+2.
+START_NUMBER_PLAN_WEEKS = 3
+
 # Русский алфавит для челленджа «Алфавит» (Ё объединяем с Е, твёрдый/мягкий знак
 # и Ы не бывают первыми буквами названий).
 _RU_ALPHABET = "АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЩЭЮЯ"
@@ -462,18 +472,35 @@ def _calendar_days_challenge(rows: list[RunRow]) -> dict[str, object]:
     )
 
 
-def _upcoming_event_numbers(
+@dataclass(frozen=True)
+class PredictedStart:
+    """Один предсказанный старт: локация, дата, порядковый номер в своей системе."""
+
+    platform_code: str
+    number: int
+    event_date: date
+    location_name: str
+    location_slug: str
+    # Индекс недельного окна от сегодня: 0 — ближайшая неделя, 1 — W+1 и т.д.
+    week_index: int
+
+
+def _predict_upcoming_starts(
     db: Session,
     *,
     today: date | None = None,
     weeks: int = 3,
     max_number: int = 400,
-) -> dict[tuple[str, int], list[tuple[date, str]]]:
-    """Прогноз ближайших порядковых номеров стартов: последний известный старт
-    каждой активной локации + 1..weeks недель вперёд. Локации, у которых
-    последний старт давно (прогноз в прошлом), отпадают сами. Номер старта
-    считается ВНУТРИ своей системы (five_verst/s95/parkrun/runpark) — каждая
-    платформа нумерует свои события независимо, поэтому ключ — (платформа, номер).
+) -> list[PredictedStart]:
+    """Прогноз ближайших стартов: последний известный старт каждой активной
+    локации + 1..weeks недель вперёд. Локации, у которых последний старт давно
+    (прогноз уже в прошлом), отпадают сами. Номер старта считается ВНУТРИ своей
+    системы (five_verst/s95/parkrun/runpark) — каждая платформа нумерует события
+    независимо.
+
+    Окно недели считаем от сегодня (`week_index`), а не по счётчику цикла: у
+    локаций разные даты последнего старта, и «+1 неделя» для отставшей локации
+    попадает в то же календарное окно, что «+2 недели» для идущей вровень.
     """
     today = today or date.today()
     latest = (
@@ -504,18 +531,46 @@ def _upcoming_event_numbers(
         )
     )
     catalog_index = LocationCatalogIndex(db)
-    horizon = today + timedelta(weeks=weeks)
-    upcoming: dict[tuple[str, int], list[tuple[date, str]]] = {}
+    predictions: list[PredictedStart] = []
     for event_number, event_date, location, platform_code in query.all():
         display_name = catalog_index.display_name(location, platform_code)
         for week in range(1, weeks + 1):
             predicted_number = event_number + week
             predicted_date = event_date + timedelta(weeks=week)
-            if predicted_date < today or predicted_date > horizon:
+            if predicted_date < today:
+                continue
+            week_index = (predicted_date - today).days // 7
+            if week_index >= weeks:
                 continue
             if predicted_number > max_number:
                 break
-            upcoming.setdefault((platform_code, predicted_number), []).append((predicted_date, display_name))
+            predictions.append(
+                PredictedStart(
+                    platform_code=platform_code,
+                    number=predicted_number,
+                    event_date=predicted_date,
+                    location_name=display_name,
+                    location_slug=location.external_key.strip().lower(),
+                    week_index=week_index,
+                )
+            )
+    return predictions
+
+
+def _upcoming_event_numbers(
+    db: Session,
+    *,
+    today: date | None = None,
+    weeks: int = 3,
+    max_number: int = 400,
+) -> dict[tuple[str, int], list[tuple[date, str]]]:
+    """Прогноз для подсказок в ячейках: (платформа, номер) → отсортированные
+    пары (дата, локация)."""
+    upcoming: dict[tuple[str, int], list[tuple[date, str]]] = {}
+    for item in _predict_upcoming_starts(db, today=today, weeks=weeks, max_number=max_number):
+        upcoming.setdefault((item.platform_code, item.number), []).append(
+            (item.event_date, item.location_name)
+        )
     for entries in upcoming.values():
         entries.sort()
     return upcoming
@@ -1060,8 +1115,8 @@ def _build_challenge_list(
             code="start_numbers",
             title="Нумератор",
             description="Прими участие в стартах с порядковыми номерами от №1 до №200 — неважно, в какой системе получен каждый номер.",
-            low=1,
-            high=200,
+            low=START_NUMBER_RANGES["start_numbers"][0],
+            high=START_NUMBER_RANGES["start_numbers"][1],
             levels={"bronze": 50, "silver": 100, "gold": 200},
         ),
         _start_numbers_range_challenge(
@@ -1070,8 +1125,8 @@ def _build_challenge_list(
             code="start_numbers_pro",
             title="Нумератор ПРО",
             description="Для тех, кому мало двух сотен: старты с порядковыми номерами от №201 до №400 — неважно, в какой системе получен каждый номер.",
-            low=201,
-            high=400,
+            low=START_NUMBER_RANGES["start_numbers_pro"][0],
+            high=START_NUMBER_RANGES["start_numbers_pro"][1],
             levels={"bronze": 50, "silver": 100, "gold": 200},
         ),
         _weekdays_challenge(rows),
@@ -1119,6 +1174,80 @@ def _scope_by_platform(
     scoped_upcoming = {key: v for key, v in upcoming.items() if key[0] == platform_code}
     scoped_rating_rows = [row for row in rating_rows if row.platform_code == platform_code]
     return scoped_rows, scoped_vol_rows, scoped_upcoming, scoped_rating_rows
+
+
+class StartNumberPlanError(ValueError):
+    """Запрошен челлендж, у которого нет диапазона номеров стартов."""
+
+
+def build_start_numbers_plan(
+    db: Session,
+    user_id: UUID,
+    *,
+    code: str,
+    today: date | None = None,
+) -> dict[str, object]:
+    """Таблица планирования «Нумератора»: строка — номер старта, три колонки —
+    ближайшая неделя, W+1, W+2, в ячейках локации, у которых старт с этим
+    номером выпадает на эту неделю.
+
+    Номер закрывается пробежкой В ЛЮБОЙ системе (см. _start_numbers_range_challenge),
+    поэтому `done` считаем по номерам без привязки к платформе, а систему
+    предсказанного старта показываем в ячейке — она подсказывает, куда ехать.
+    """
+    bounds = START_NUMBER_RANGES.get(code)
+    if bounds is None:
+        raise StartNumberPlanError(f"У челленджа «{code}» нет диапазона номеров стартов")
+    low, high = bounds
+
+    today = today or date.today()
+    done_numbers = {
+        row.event_number for row in _collect_run_rows(db, user_id) if row.event_number is not None
+    }
+
+    cells: dict[int, list[list[dict[str, object]]]] = {}
+    for item in _predict_upcoming_starts(
+        db, today=today, weeks=START_NUMBER_PLAN_WEEKS, max_number=high
+    ):
+        if not low <= item.number <= high:
+            continue
+        row_cells = cells.setdefault(item.number, [[] for _ in range(START_NUMBER_PLAN_WEEKS)])
+        row_cells[item.week_index].append(
+            {
+                "location": item.location_name,
+                "location_slug": item.location_slug,
+                "platform_code": item.platform_code,
+                "date": item.event_date.isoformat(),
+            }
+        )
+    for row_cells in cells.values():
+        for week_cell in row_cells:
+            week_cell.sort(key=lambda entry: (str(entry["date"]), str(entry["location"])))
+
+    rows = [
+        {
+            "number": number,
+            "done": number in done_numbers,
+            "weeks": cells.get(number) or [[] for _ in range(START_NUMBER_PLAN_WEEKS)],
+        }
+        for number in range(low, high + 1)
+    ]
+    weeks = [
+        {
+            "index": index,
+            "date_from": (today + timedelta(weeks=index)).isoformat(),
+            "date_to": (today + timedelta(weeks=index, days=6)).isoformat(),
+        }
+        for index in range(START_NUMBER_PLAN_WEEKS)
+    ]
+    return {
+        "code": code,
+        "low": low,
+        "high": high,
+        "generated_for": today.isoformat(),
+        "weeks": weeks,
+        "rows": rows,
+    }
 
 
 def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = None) -> dict[str, object]:

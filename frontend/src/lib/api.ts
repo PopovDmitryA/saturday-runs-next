@@ -825,6 +825,39 @@ export function getAchievements(platform?: string) {
   return apiFetch<AchievementsResponse>(`/achievements${query}`);
 }
 
+export type StartNumberPlanEntry = {
+  location: string;
+  location_slug: string;
+  platform_code: string;
+  date: string;
+};
+
+export type StartNumberPlanWeek = {
+  index: number;
+  date_from: string;
+  date_to: string;
+};
+
+export type StartNumberPlanRow = {
+  number: number;
+  done: boolean;
+  // По одному списку на недельное окно, в порядке weeks
+  weeks: StartNumberPlanEntry[][];
+};
+
+export type StartNumberPlan = {
+  code: string;
+  low: number;
+  high: number;
+  generated_for: string;
+  weeks: StartNumberPlanWeek[];
+  rows: StartNumberPlanRow[];
+};
+
+export function getStartNumbersPlan(code: string) {
+  return apiFetch<StartNumberPlan>(`/achievements/start-numbers-plan?code=${encodeURIComponent(code)}`);
+}
+
 export type GoalPreset = {
   goal_type: string;
   title: string;

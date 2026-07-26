@@ -1,0 +1,177 @@
+import { useEffect, useMemo, useState } from "react";
+import { DetailModal } from "../../components/DetailModal";
+import { platformCodeLabel } from "../../lib/format";
+import { getStartNumbersPlan, type StartNumberPlan, type StartNumberPlanWeek } from "../../lib/api";
+
+/** «01.08» — в таблице год не нужен, все три окна внутри трёх недель. */
+function shortDate(iso: string): string {
+  const [, month, day] = iso.split("-");
+  return day && month ? `${day}.${month}` : iso;
+}
+
+function weekTitle(week: StartNumberPlanWeek): string {
+  if (week.index === 0) {
+    return "Ближайшая неделя";
+  }
+  return `W+${week.index}`;
+}
+
+export function StartNumbersPlanModal({
+  open,
+  code,
+  challengeTitle,
+  onClose,
+}: {
+  open: boolean;
+  code: string;
+  challengeTitle: string;
+  onClose: () => void;
+}) {
+  const [plan, setPlan] = useState<StartNumberPlan | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [onlyOpen, setOnlyOpen] = useState(false);
+  const [onlyWithStarts, setOnlyWithStarts] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getStartNumbersPlan(code)
+      .then((data) => {
+        if (!cancelled) {
+          setPlan(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError("Не удалось загрузить план. Попробуй ещё раз.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, code]);
+
+  const rows = useMemo(() => {
+    if (!plan) {
+      return [];
+    }
+    return plan.rows.filter((row) => {
+      if (onlyOpen && row.done) {
+        return false;
+      }
+      if (onlyWithStarts && row.weeks.every((week) => week.length === 0)) {
+        return false;
+      }
+      return true;
+    });
+  }, [plan, onlyOpen, onlyWithStarts]);
+
+  const plannedCount = useMemo(
+    () =>
+      (plan?.rows ?? []).filter(
+        (row) => !row.done && row.weeks.some((week) => week.length > 0),
+      ).length,
+    [plan],
+  );
+
+  return (
+    <DetailModal open={open} title={`Планирование — ${challengeTitle}`} onClose={onClose}>
+      <p className="muted plan-intro">
+        Прогноз строится по последнему известному старту каждой локации: номер и дата сдвигаются на
+        неделю вперёд. Локация может пропустить субботу — тогда старт уедет на неделю позже.
+      </p>
+
+      {plan && (
+        <p className="plan-summary">
+          Незакрытых номеров, которые можно взять в ближайшие 3 недели: <strong>{plannedCount}</strong>
+        </p>
+      )}
+
+      <div className="plan-filters">
+        <label className="plan-filter">
+          <input
+            type="checkbox"
+            checked={onlyOpen}
+            onChange={(event) => setOnlyOpen(event.target.checked)}
+          />
+          Только незакрытые мной
+        </label>
+        <label className="plan-filter">
+          <input
+            type="checkbox"
+            checked={onlyWithStarts}
+            onChange={(event) => setOnlyWithStarts(event.target.checked)}
+          />
+          Только со стартами
+        </label>
+      </div>
+
+      {loading && <p className="muted">Загружаю…</p>}
+      {error && <p className="form-error">{error}</p>}
+
+      {plan && !loading && (
+        <div className="plan-table-wrap">
+          <table className="plan-table">
+            <thead>
+              <tr>
+                <th scope="col">№</th>
+                {plan.weeks.map((week) => (
+                  <th key={week.index} scope="col">
+                    {weekTitle(week)}
+                    <span className="plan-week-dates">
+                      {shortDate(week.date_from)}–{shortDate(week.date_to)}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.number} className={row.done ? "plan-row-done" : "plan-row-open"}>
+                  <th scope="row" className="plan-number">
+                    <span className="plan-number-value">№{row.number}</span>
+                    <span className="plan-number-state" aria-hidden="true">
+                      {row.done ? "✓" : ""}
+                    </span>
+                    <span className="visually-hidden">
+                      {row.done ? "закрыт" : "не закрыт"}
+                    </span>
+                  </th>
+                  {row.weeks.map((entries, index) => (
+                    <td key={plan.weeks[index]?.index ?? index}>
+                      {entries.length === 0 ? (
+                        <span className="plan-empty">—</span>
+                      ) : (
+                        <ul className="plan-entries">
+                          {entries.map((entry) => (
+                            <li key={`${entry.location_slug}-${entry.platform_code}-${entry.date}`}>
+                              <a href={`/locations/${entry.location_slug}`}>{entry.location}</a>
+                              <span className="plan-entry-meta">
+                                {shortDate(entry.date)} · {platformCodeLabel(entry.platform_code)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {rows.length === 0 && <p className="muted">Под выбранные фильтры ничего не попало.</p>}
+        </div>
+      )}
+    </DetailModal>
+  );
+}

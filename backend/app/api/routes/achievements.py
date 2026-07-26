@@ -8,9 +8,16 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models import User
-from app.schemas.achievements import AchievementsResponse, GoalsResponse, GoalsUpdateRequest
+from app.schemas.achievements import (
+    AchievementsResponse,
+    GoalsResponse,
+    GoalsUpdateRequest,
+    StartNumberPlanResponse,
+)
 from app.services.achievements_service import (
     GoalValidationError,
+    StartNumberPlanError,
+    build_start_numbers_plan,
     compute_challenges,
     get_goals_payload,
     save_goals,
@@ -26,6 +33,19 @@ def get_achievements(
     platform: Annotated[str | None, Query(description="Сузить челленджи до одной системы")] = None,
 ) -> AchievementsResponse:
     return AchievementsResponse.model_validate(compute_challenges(db, user.id, platform_code=platform))
+
+
+@router.get("/start-numbers-plan", response_model=StartNumberPlanResponse)
+def get_start_numbers_plan(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    code: Annotated[str, Query(description="Код челленджа: start_numbers | start_numbers_pro")],
+) -> StartNumberPlanResponse:
+    try:
+        payload = build_start_numbers_plan(db, user.id, code=code)
+    except StartNumberPlanError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return StartNumberPlanResponse.model_validate(payload)
 
 
 @router.get("/goals", response_model=GoalsResponse)
