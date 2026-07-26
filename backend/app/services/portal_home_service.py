@@ -17,7 +17,7 @@ from typing import Any
 from uuid import UUID
 
 import redis
-from sqlalchemy import String, case, cast, func, select
+from sqlalchemy import String, case, cast, exists, func, select
 from sqlalchemy.orm import Session
 
 from app.core.redis_client import get_redis_client
@@ -70,10 +70,20 @@ ACTIVE_PLATFORM_CODES = {"five_verst", "s95", "runpark"}
 
 
 def _not_crosslink_secondary(query: Any) -> Any:
-    """Исключить события-дубли (вторичная сторона кросслинка)."""
-    return query.outerjoin(
-        EventCrosslink, EventCrosslink.secondary_event_id == Event.id
-    ).filter(EventCrosslink.id.is_(None))
+    """Исключить события-дубли (вторичная сторона кросслинка).
+
+    NOT EXISTS, а не LEFT JOIN + `IS NULL`: планировщик распознаёт эту форму как
+    антиджойн и строит Hash Anti Join. С прежним LEFT JOIN он оценивал результат
+    в ОДНУ строку вместо двух миллионов (условие `IS NULL` шло по ec.id, а не по
+    ключу соединения) и на этой оценке выбирал Nested Loop — 2 млн итераций и
+    14.5 млн обращений к буферам. Замер на проде 26.07.2026: самый тяжёлый
+    агрегат главной 17.4 с → 5.0 с только от этой замены.
+
+    Функция стоит в 19 запросах главной, поэтому правка одна, а эффект общий.
+    """
+    return query.filter(
+        ~exists().where(EventCrosslink.secondary_event_id == Event.id)
+    )
 
 
 def _gender_expr() -> Any:
@@ -251,6 +261,20 @@ def _course_minima_before(db: Session, week_start: date) -> list[Any]:
 
     Дата достаётся лексикографическим минимумом строки
     «зеропаддед-секунды|дата» — одним проходом, без второго запроса.
+
+    JOIN platforms здесь больше не нужен: платформа не участвует ни в выборке,
+    ни в фильтре с тех пор, как пол стал колонкой participants.gender (раньше
+    её требовал CASE по platforms.code внутри _gender_expr).
+
+    gender IS NOT NULL — вызывающий код всё равно берёт только male/female,
+    но раньше строки со скрытым полом доезжали до Python отдельной группой
+    (163 группы на проде).
+
+    Замеры на проде 26.07.2026 (та же выборка, 5422 строки результата):
+    было 17.4 с → 2.0 с. Основной вклад — NOT EXISTS в _not_crosslink_secondary,
+    остальное дают снятый JOIN и отсечение пустого пола. Вариант с DISTINCT ON
+    вместо min(concat) проверялся и оказался МЕДЛЕННЕЕ (25.3 с): он требует
+    полной сортировки 2 млн строк, тогда как GROUP BY укладывается в хеш.
     """
     gender = _gender_expr()
     packed = func.min(
@@ -265,13 +289,13 @@ def _course_minima_before(db: Session, week_start: date) -> list[Any]:
             db.query(Event.location_id, gender, packed)
             .select_from(RunResult)
             .join(Event, Event.id == RunResult.event_id)
-            .join(Platform, Platform.id == Event.platform_id)
             .join(Participant, Participant.id == RunResult.participant_id)
         )
         .filter(
             Event.event_date < week_start,
             RunResult.finish_time_sec.isnot(None),
             RunResult.finish_time_sec >= MIN_SANE_FINISH_SEC,
+            gender.isnot(None),
         )
         .group_by(Event.location_id, gender)
         .all()
