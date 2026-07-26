@@ -1,8 +1,7 @@
 import type { MapLocationPoint } from "../../lib/api";
 
-// parkrun ушёл из России в 2022 — своих локаций в каталоге и точек на карте у
-// него нет. В фильтре он есть только затем, чтобы можно было учитывать (или не
-// учитывать) визиты той эпохи в отметке «посещал».
+// parkrun ушёл из России в 2022. Его локации показываем как историю: строки в
+// каталоге со статусом «отменена» и точки там, где известны координаты.
 export type MapPlatformCode = "five_verst" | "s95" | "runpark" | "parkrun";
 
 export type PlatformFilters = Record<MapPlatformCode, boolean>;
@@ -11,16 +10,13 @@ export const DEFAULT_PLATFORM_FILTERS: PlatformFilters = {
   five_verst: true,
   s95: true,
   runpark: true,
-  parkrun: true,
+  // По умолчанию выключен: parkrun закрыт с 2022 года, и по умолчанию карта
+  // должна показывать, где можно бегать сейчас. Включается вручную, когда
+  // нужна история.
+  parkrun: false,
 };
 
 const MAP_PLATFORM_CODES: MapPlatformCode[] = ["five_verst", "s95", "runpark", "parkrun"];
-
-// Системы, у которых есть свои точки на карте. parkrun сюда не входит: его
-// переключатель влияет только на отметку «посещал», поэтому в гарантии
-// «хотя бы одна система включена» он не участвует — иначе можно было бы
-// выключить все рисующие системы и остаться с пустой картой.
-const MAP_POINT_PLATFORM_CODES: MapPlatformCode[] = ["five_verst", "s95", "runpark"];
 
 export function coordKey(point: MapLocationPoint): string {
   return `${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}`;
@@ -82,7 +78,7 @@ export function buildVisitedByCoord(
 }
 
 export function hasActivePlatformFilter(filters: PlatformFilters): boolean {
-  return MAP_POINT_PLATFORM_CODES.some((code) => filters[code]);
+  return MAP_PLATFORM_CODES.some((code) => filters[code]);
 }
 
 /** Первое посещение локации среди включённых в фильтре систем. */

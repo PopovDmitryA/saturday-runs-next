@@ -9,10 +9,16 @@ from app.activity_date import has_real_activity_date
 from app.location_page_url import location_page_url
 from app.models import Location, Platform
 from app.services.location_catalog_service import LocationCatalogIndex
-from app.services.location_map_service import _location_is_cancelled, _location_is_paused
+from app.services.location_map_service import (
+    _location_is_cancelled,
+    _location_is_paused,
+    MAP_HISTORIC_PLATFORM,
+    inherited_geo_fields,
+    is_russian_historic,
+    map_location_filter,
+    map_platform_order,
+)
 from app.services.user_unique_locations_detail import build_user_unique_location_details
-
-MAP_PLATFORMS = ("five_verst", "s95", "runpark")
 
 
 def _first_platform_visit_date(platform_payload: dict[str, object]) -> date | None:
@@ -34,7 +40,7 @@ def _build_visit_index(
 
     Ключ — только локация, без платформы. Раньше ключ был (локация, система), и
     посещение терялось, если система визита не совпадала с системой строки
-    каталога: строки заводятся лишь для MAP_PLATFORMS, поэтому пробежка в
+    каталога: строки заводятся лишь для действующих систем, поэтому пробежка в
     parkrun-эпоху на пятивёрстовской строке давала «Не посещал».
 
     Разбивку по системам не схлопываем: фильтр систем на карте живёт на фронте,
@@ -84,20 +90,36 @@ def build_catalog_locations_table(
     rows_query = (
         db.query(Location, Platform)
         .join(Platform, Location.platform_id == Platform.id)
-        .filter(
-            Platform.code.in_(MAP_PLATFORMS),
-            Location.is_official_map.is_(True),
-        )
-        .order_by(Platform.code.asc(), Location.name.asc())
+        .filter(map_location_filter())
+        .order_by(map_platform_order(), Platform.code.asc(), Location.name.asc())
         .all()
     )
 
     catalog_index = LocationCatalogIndex(db)
     rows: list[dict[str, object]] = []
+    # См. map_platform_order: действующие строки идут первыми, поэтому к моменту
+    # разбора parkrun-строки её связка уже здесь.
+    live_locations: dict[str, Location] = {}
+    historic_seen: set[str] = set()
 
     for location, platform in rows_query:
         platform_code = platform.code
         identity_key = catalog_index.canonical_identity_key(location, platform_code)
+        if platform_code == MAP_HISTORIC_PLATFORM:
+            if not is_russian_historic(location, live_locations, identity_key):
+                continue
+            # Одна и та же parkrun-площадка лежит в базе под двумя написаниями
+            # слага (angarskie-prudy и angarskieprudy) — 46 таких пар. Обе ведут
+            # на одну страницу локации, поэтому в каталоге показываем одну
+            # строку. Сами дубли этим не лечатся: события у них разрезаны между
+            # строками, это отдельная работа по данным.
+            if identity_key in historic_seen:
+                continue
+            historic_seen.add(identity_key)
+        else:
+            live_locations.setdefault(identity_key, location)
+        country, city = inherited_geo_fields(location, live_locations.get(identity_key))
+        latitude, longitude = catalog_index.coordinates_for(location, platform_code)
         visits_by_platform = visit_index.get(identity_key) or {}
         visit = _earliest_visit(visits_by_platform)
         first_visit = visit[0] if visit is not None else None
@@ -109,13 +131,15 @@ def build_catalog_locations_table(
                 "location_id": str(location.id),
                 "location_slug": location.external_key.strip().lower(),
                 "name": catalog_index.display_name(location, platform_code),
-                "city": location.city,
+                "city": city,
                 "region": location.region,
-                "country": location.country,
+                "country": country,
                 "platform_code": platform_code,
                 "is_paused": _location_is_paused(location, catalog_index, platform_code),
-                "is_cancelled": _location_is_cancelled(location),
-                "has_coordinates": location.latitude is not None and location.longitude is not None,
+                "is_cancelled": _location_is_cancelled(location, platform_code),
+                # Как на карте: у parkrun-строк своих координат нет, но связанные с
+                # действующей локацией берут её точку.
+                "has_coordinates": latitude is not None and longitude is not None,
                 "location_url": location_page_url(platform_code, location.external_key, location.source_url),
                 "visited": first_visit is not None,
                 "first_visit_date": first_visit.isoformat() if first_visit is not None else None,

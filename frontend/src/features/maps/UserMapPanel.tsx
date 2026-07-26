@@ -50,7 +50,7 @@ const PLATFORM_DEFS = [
     code: "parkrun" as const,
     label: "parkrun",
     dot: "map-legend-dot-parkrun",
-    title: "Своих локаций у parkrun на карте нет — переключатель учитывает визиты parkrun-эпохи в отметке «посещал»",
+    title: "Локации parkrun-эпохи: закрыты с 2022 года",
   },
 ];
 
