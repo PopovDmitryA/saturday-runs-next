@@ -1,13 +1,8 @@
 """AB-события главной: сырые события экспериментов (вариант, скролл, клики, конверсия)
 
 Revision ID: 056_ab_events
-Revises: 053_participant_gender
+Revises: 054_login_events
 Create Date: 2026-07-25
-
-ВНИМАНИЕ ПРИ МЕРЖЕ: на момент создания ветки в параллельных сессиях были
-незакоммиченные миграции 054_user_avatar и 055_login_events. Если к моменту
-мержа они уже в main — перецепить down_revision на актуальный head
-(например "055_login_events"), иначе alembic получит два head и деплой упадёт.
 """
 
 import sqlalchemy as sa
@@ -15,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "056_ab_events"
-down_revision = "053_participant_gender"
+down_revision = "054_login_events"
 branch_labels = None
 depends_on = None
 

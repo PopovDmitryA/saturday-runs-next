@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from "react";
 export function CountUpNumber({
   value,
   format,
-  durationMs = 1200,
+  durationMs = 2000,
   enabled = true,
 }: {
   value: number;
