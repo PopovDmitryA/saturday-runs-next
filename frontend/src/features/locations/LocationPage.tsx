@@ -205,14 +205,6 @@ function PlatformTimeline({ page }: { page: LocationPageData }) {
   );
 }
 
-/** Подиумная раскраска первых трёх мест в топе группы. */
-function podiumClass(place: number): string {
-  if (place === 1) return "gold";
-  if (place === 2) return "silver";
-  if (place === 3) return "bronze";
-  return "plain";
-}
-
 /**
  * Ширина полосы в строке топа: 100% у лидера группы, дальше пропорционально
  * отставанию. Считается от размаха самой пятёрки, иначе на плотных группах
@@ -296,9 +288,7 @@ function AgeGroupRecordsTable({
                       <ol className="loc-age-top-list">
                         {record.top.map((row) => (
                           <li key={`${record.key}-${row.place}-${row.name}`} className="loc-age-top-item">
-                            <span className={`loc-age-top-place loc-age-top-place-${podiumClass(row.place)}`}>
-                              {row.place}
-                            </span>
+                            <span className="loc-age-top-place">{row.place}</span>
                             <span className="loc-age-top-name">
                               <RunnerName name={row.name} handle={row.handle} />
                             </span>

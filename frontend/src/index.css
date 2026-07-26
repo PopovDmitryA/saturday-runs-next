@@ -10795,37 +10795,11 @@ tr.run-crosslinked td {
 }
 
 .loc-age-top-place {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.35rem;
-  height: 1.35rem;
-  border-radius: 50%;
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: 0.78rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-3);
-  background: var(--surface);
-  border: 1px solid var(--border);
-}
-
-/* Подиум: первые три места узнаются цветом, как медали в достижениях. */
-.loc-age-top-place-gold {
-  color: #7a4c05;
-  background: linear-gradient(180deg, #ffe9a3, #f5b93f);
-  border-color: #e0a52e;
-}
-
-.loc-age-top-place-silver {
-  color: #47505d;
-  background: linear-gradient(180deg, #f3f6fa, #c6d0dc);
-  border-color: #b2bdcc;
-}
-
-.loc-age-top-place-bronze {
-  color: #fff;
-  background: linear-gradient(180deg, #e0a276, #c0784a);
-  border-color: #a8663c;
+  text-align: right;
 }
 
 .loc-age-top-name {
