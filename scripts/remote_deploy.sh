@@ -44,7 +44,16 @@ compose exec -T redis redis-cli LLEN s95 </dev/null || true
 compose exec -T redis redis-cli LLEN s95_user </dev/null || true
 
 echo "--- frontend build ---"
-docker run --rm -v "$PWD/frontend:/app" -w /app node:22-alpine sh -c "npm ci && npm run build"
+# Флаги фронта (VITE_*) Vite зашивает в бандл во время сборки. Собираем в
+# контейнере, куда примонтирована только папка frontend, — корневой .env туда
+# не попадает, поэтому нужные значения читаем здесь и передаём через -e.
+# Пилот АБ-теста главной по умолчанию ВЫКЛЮЧЕН: нет строки в .env — все видят
+# вариант A (см. frontend/src/lib/abTest.ts).
+AB_HOME_ACTIVE="$(sed -n 's/^VITE_AB_HOME_ACTIVE=//p' .env 2>/dev/null | tail -1)"
+echo "VITE_AB_HOME_ACTIVE=${AB_HOME_ACTIVE:-false}"
+docker run --rm -v "$PWD/frontend:/app" -w /app \
+  -e VITE_AB_HOME_ACTIVE="${AB_HOME_ACTIVE:-false}" \
+  node:22-alpine sh -c "npm ci && npm run build"
 
 echo "--- build api image (нужен свежий образ для миграций) ---"
 compose build api
