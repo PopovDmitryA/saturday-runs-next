@@ -10,9 +10,11 @@
 run_results.age_category (и participants.age_category, куда уехала та же
 обрезка). По умолчанию — сухой прогон без единой записи.
 
-    python scripts/backfill_truncated_age_categories.py            # только показать
-    python scripts/backfill_truncated_age_categories.py --limit 5  # первые 5 протоколов
-    python scripts/backfill_truncated_age_categories.py --apply    # записать
+    ./scripts/run_prod_script.sh scripts/backfill_truncated_age_categories.py --dry-run
+    CONFIRM_PROD=1 ./scripts/run_prod_script.sh scripts/backfill_truncated_age_categories.py --apply
+
+Прогон возобновляем: уже исправленные строки под выборку не подпадают,
+так что повторный запуск просто доберёт остаток.
 
 DATABASE_URL берётся из окружения: для прода — через scripts/prod_db_env.sh.
 """
@@ -100,6 +102,9 @@ def _write(engine: object, updates: list[tuple[Affected, str | None]]) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="записать изменения (по умолчанию сухой прогон)")
+    # Для совместимости с scripts/run_prod_script.sh: он требует либо --dry-run,
+    # либо CONFIRM_PROD=1. Здесь сухой прогон и так по умолчанию.
+    parser.add_argument("--dry-run", action="store_true", help="явно ничего не писать (поведение по умолчанию)")
     parser.add_argument("--limit", type=int, default=None, help="обработать только первые N протоколов")
     parser.add_argument(
         "--only",
@@ -107,6 +112,8 @@ def main() -> int:
         help="взять только эти обрезки, через запятую (например «М11,Ж11») — для точечной проверки",
     )
     args = parser.parse_args()
+    if args.dry_run:
+        args.apply = False
 
     engine = get_engine()
 
