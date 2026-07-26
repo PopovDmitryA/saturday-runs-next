@@ -216,6 +216,78 @@ def test_unique_location_counts_merge_catalog_and_coords(db_session) -> None:
     assert counts.unique_without_coordinates == 0
 
 
+def test_coordinates_come_from_active_platform_not_first_link(db_session) -> None:
+    """Мытищи: точка сбора — старт действующих 5 вёрст, а не runpark-лавочки.
+
+    runpark-связку добавляем первой: раньше побеждала любая связка, пришедшая из БД
+    раньше остальных, и на карте оказывалась точка в ~3 км от реального старта.
+    """
+    from uuid import uuid4
+
+    from app.models import Location, LocationCatalog, LocationCatalogLink, Platform
+
+    try:
+        five_verst = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+        runpark = db_session.query(Platform).filter(Platform.code == "runpark").one_or_none()
+    except Exception:
+        pytest.skip("Database not available")
+
+    if runpark is None:
+        runpark = Platform(code="runpark", name="runpark")
+        db_session.add(runpark)
+        db_session.flush()
+
+    suffix = uuid4().hex[:8]
+    runpark_location = Location(
+        platform_id=runpark.id,
+        external_key=f"runpark-coords-{suffix}",
+        name="Лавочки у зелёного моста",
+        latitude=55.8984,
+        longitude=37.713,
+    )
+    five_verst_location = Location(
+        platform_id=five_verst.id,
+        external_key=f"fiveverst-coords-{suffix}",
+        name="Мытищи Центральный парк",
+        latitude=55.910941,
+        longitude=37.742125,
+    )
+    db_session.add_all([runpark_location, five_verst_location])
+    db_session.flush()
+
+    catalog = LocationCatalog(
+        canonical_name=f"Coords Test Park {suffix}",
+        active_platform="five_verst",
+        is_closed=False,
+    )
+    db_session.add(catalog)
+    db_session.flush()
+    db_session.add_all(
+        [
+            LocationCatalogLink(
+                catalog_id=catalog.id,
+                platform_id=runpark.id,
+                external_key=runpark_location.external_key,
+                location_id=runpark_location.id,
+            ),
+            LocationCatalogLink(
+                catalog_id=catalog.id,
+                platform_id=five_verst.id,
+                external_key=five_verst_location.external_key,
+                location_id=five_verst_location.id,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    index = LocationCatalogIndex(db_session)
+    expected = (five_verst_location.latitude, five_verst_location.longitude)
+    # Через любую связку узла — координаты действующей платформы.
+    assert index.coordinates_for(runpark_location, "runpark") == expected
+    assert index.coordinates_for(five_verst_location, "five_verst") == expected
+    assert index.coordinates_for_identity_key(f"catalog:{catalog.id}") == expected
+
+
 def test_backfill_region_from_catalog_fills_gap_from_sibling_platform(db_session) -> None:
     from uuid import uuid4
 

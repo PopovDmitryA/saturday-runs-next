@@ -1385,6 +1385,27 @@ a.on-this-day-location {
   text-transform: lowercase;
 }
 
+/* На узком экране в колонку месяца влезает ~4 символа, и «август»/«сентябрь»
+   наезжали на соседей. Разворачиваем подписи вертикально: ширина колонки
+   перестаёт их ограничивать. Столбцам добавляем высоты, чтобы подписи
+   отъедали её у пустого места, а не у самих баров. */
+@media (max-width: 640px) {
+  .analytics-chart-label-month {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    margin-top: 0.3rem;
+    line-height: 1;
+  }
+
+  .analytics-chart-bars-month {
+    height: 190px;
+  }
+
+  .analytics-chart-pace-labels {
+    justify-items: center;
+  }
+}
+
 .analytics-chart-legend {
   display: flex;
   flex-wrap: wrap;

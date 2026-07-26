@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.location_page_url import PLATFORM_ORDER
 from app.models import EventSummary, Location, LocationCatalog, LocationCatalogLink, Platform
 
 DISPLAY_OVERRIDE_PLATFORMS = frozenset({"five_verst", "s95"})
@@ -58,6 +59,9 @@ class LocationCatalogIndex:
         self._by_platform_slug: dict[tuple[str, str], LocationCatalog] = {}
         self._catalogs: dict[UUID, LocationCatalog] = {}
         self._catalog_coords: dict[UUID, tuple[float, float]] = {}
+        # Ранг платформы, из которой взяты текущие координаты узла (см. _coord_rank):
+        # нужен, чтобы более приоритетная связка перебивала уже записанную.
+        self._catalog_coords_rank: dict[UUID, tuple[int, int, str]] = {}
         # Голоса «на паузе» по каталожному узлу: отдельно от платформ с забегами
         # и от платформ без единого события (у них флаг паузы ничего не значит).
         self._catalog_pause_votes: dict[UUID, tuple[int, int]] = {}
@@ -71,6 +75,36 @@ class LocationCatalogIndex:
         normalized = normalize_location_slug(slug)
         if normalized:
             self._by_platform_slug[(platform_code, normalized)] = catalog
+
+    def _set_coords(
+        self,
+        catalog: LocationCatalog,
+        platform_code: str,
+        coords: tuple[float, float],
+    ) -> None:
+        """Координаты узла берём у действующей платформы, а не у первой попавшейся.
+
+        Связки одного узла приходят из БД в произвольном порядке, и раньше побеждала
+        любая из них. У «Мытищи Центральный парк» так выигрывал runpark: его точка
+        сбора («лавочки у зелёного моста») лежит в ~3 км от старта действующих
+        5 вёрст, и страница показывала на карте чужое место.
+        """
+        rank = self._coord_rank(catalog, platform_code)
+        current = self._catalog_coords_rank.get(catalog.id)
+        if current is not None and current <= rank:
+            return
+        self._catalog_coords[catalog.id] = coords
+        self._catalog_coords_rank[catalog.id] = rank
+
+    @staticmethod
+    def _coord_rank(catalog: LocationCatalog, platform_code: str) -> tuple[int, int, str]:
+        active = normalize_platform_code(catalog.active_platform)
+        try:
+            order = PLATFORM_ORDER.index(platform_code)
+        except ValueError:
+            order = len(PLATFORM_ORDER)
+        # platform_code в хвосте — детерминированный тай-брейк для платформ вне списка.
+        return (0 if platform_code == active else 1, order, platform_code)
 
     def _add_pause_vote(self, catalog_id: UUID, *, has_events: bool, is_paused: bool) -> None:
         target = self._catalog_pause_votes if has_events else self._catalog_pause_fallback
@@ -100,7 +134,7 @@ class LocationCatalogIndex:
             if location is not None:
                 self._index_platform_slug(platform.code, location.external_key, catalog)
             if location is not None and location.latitude is not None and location.longitude is not None:
-                self._catalog_coords.setdefault(catalog.id, (location.latitude, location.longitude))
+                self._set_coords(catalog, platform.code, (location.latitude, location.longitude))
             if location is not None and not getattr(location, "is_cancelled", False):
                 self._add_pause_vote(
                     catalog.id,

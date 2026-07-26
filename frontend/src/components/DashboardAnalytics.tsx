@@ -414,7 +414,11 @@ function ActivityMonthChart({ data }: { data: DashboardAnalyticsData["activity_b
 
   return (
     <div className="analytics-chart">
-      <div className="analytics-chart-bars" role="img" aria-label="Активность по месяцам">
+      <div
+        className="analytics-chart-bars analytics-chart-bars-month"
+        role="img"
+        aria-label="Активность по месяцам"
+      >
         {data.map((item) => {
           const total = item.runs + item.volunteering;
           const stackHeight = total > 0 ? (total / maxValue) * 100 : 0;
@@ -441,7 +445,9 @@ function ActivityMonthChart({ data }: { data: DashboardAnalyticsData["activity_b
                   )}
                 </div>
               </ChartColumnTooltip>
-              <span className="analytics-chart-label">{formatMonthShort(item.month)}</span>
+              <span className="analytics-chart-label analytics-chart-label-month">
+                {formatMonthShort(item.month)}
+              </span>
             </div>
           );
         })}
@@ -529,7 +535,7 @@ function PaceTrendChart({ data }: { data: DashboardAnalyticsData["pace_trend"] }
           style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
         >
           {points.map((point) => (
-            <span key={point.item.month} className="analytics-chart-label">
+            <span key={point.item.month} className="analytics-chart-label analytics-chart-label-month">
               {formatMonthShort(point.item.month)}
             </span>
           ))}
