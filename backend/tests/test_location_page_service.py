@@ -21,6 +21,9 @@ from app.services.location_page_service import (
     build_locations_index,
     invalidate_location_page_cache,
     invalidate_locations_index_cache,
+    location_events_cache_key,
+    location_leaders_cache_key,
+    location_page_cache_key,
     normalize_age_group,
 )
 
@@ -241,9 +244,19 @@ def test_invalidate_location_page_cache_clears_all_three(
     build_location_page(None, "izmailovo")  # type: ignore[arg-type]
     build_location_events(None, "izmailovo")  # type: ignore[arg-type]
     build_location_leaders(None, "izmailovo")  # type: ignore[arg-type]
-    assert fake_redis.exists("locations:page:v3:izmailovo")
+
+    # Ключи берём у тех же строителей, что и продовый код: раньше тест сверялся
+    # с захардкоженными v3/v1, которых писатели давно не пишут, и «ничего не
+    # удалилось» проходило как успех.
+    keys = [
+        location_page_cache_key("izmailovo"),
+        location_events_cache_key("izmailovo"),
+        location_leaders_cache_key("izmailovo"),
+    ]
+    for key in keys:
+        assert fake_redis.exists(key), key
 
     invalidate_location_page_cache("izmailovo")
 
-    for key in ("locations:page:v3:izmailovo", "locations:events:v3:izmailovo", "locations:leaders:v1:izmailovo"):
+    for key in keys:
         assert not fake_redis.exists(key), key

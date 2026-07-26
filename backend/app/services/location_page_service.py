@@ -60,6 +60,21 @@ LOCATIONS_INDEX_CACHE_TTL_SECONDS = 3 * 60 * 60
 # смысла в точечной инвалидации нет. Отдельно от индекса, потому что меняется
 # per-slug, а не одним блобом на весь каталог.
 LOCATION_PAGE_CACHE_TTL_SECONDS = 3 * 60 * 60
+# Версии ключей держим здесь, а не по месту: писатели ушли на v5/v2, а
+# invalidate_location_page_cache остался на v3/v1 — ручной сброс молча тёр
+# несуществующие ключи, и страница жила до истечения TTL.
+
+
+def location_page_cache_key(slug: str) -> str:
+    return f"locations:page:v5:{slug.strip().lower()}"
+
+
+def location_events_cache_key(slug: str) -> str:
+    return f"locations:events:v3:{slug.strip().lower()}"
+
+
+def location_leaders_cache_key(slug: str) -> str:
+    return f"locations:leaders:v2:{slug.strip().lower()}"
 # Незачётные статусы протоколов не влияют на finish_time (он у них NULL),
 # поэтому отдельного фильтра по status нет: гистограмма и рекорды строятся
 # только по строкам с известным временем.
@@ -369,7 +384,7 @@ def _location_event_ids(db: Session, location_ids: list[UUID]) -> list[UUID]:
 def build_location_leaders(
     db: Session, slug: str, *, limit: int = 20, use_cache: bool = True
 ) -> dict[str, object] | None:
-    cache_key = f"locations:leaders:v2:{slug.strip().lower()}"
+    cache_key = location_leaders_cache_key(slug)
     if use_cache:
         cached = _read_json_cache(cache_key)
         if cached is not None:
@@ -691,7 +706,7 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
 
 
 def build_location_page(db: Session, slug: str, *, use_cache: bool = True) -> dict[str, object] | None:
-    cache_key = f"locations:page:v5:{slug.strip().lower()}"
+    cache_key = location_page_cache_key(slug)
     if use_cache:
         cached = _read_json_cache(cache_key)
         if cached is not None:
@@ -956,7 +971,7 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
 
 
 def build_location_events(db: Session, slug: str, *, use_cache: bool = True) -> dict[str, object] | None:
-    cache_key = f"locations:events:v3:{slug.strip().lower()}"
+    cache_key = location_events_cache_key(slug)
     if use_cache:
         cached = _read_json_cache(cache_key)
         if cached is not None:
@@ -1354,9 +1369,9 @@ def invalidate_location_page_cache(slug: str) -> None:
     try:
         client = get_redis_client()
         client.delete(
-            f"locations:page:v3:{normalized}",
-            f"locations:events:v3:{normalized}",
-            f"locations:leaders:v1:{normalized}",
+            location_page_cache_key(normalized),
+            location_events_cache_key(normalized),
+            location_leaders_cache_key(normalized),
         )
     except redis.RedisError:
         pass
