@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "../../components/AppShell";
-import { RequireAuth } from "../../components/RequireAuth";
 import { ON_THIS_DAY_SHARE_KEY } from "../../components/OnThisDayCard";
 import {
   getCurrentUser,
@@ -1144,6 +1143,3 @@ export function ShareContent({ bare = false }: { bare?: boolean } = {}) {
   );
 }
 
-export function SharePage() {
-  return <RequireAuth>{() => <ShareContent />}</RequireAuth>;
-}

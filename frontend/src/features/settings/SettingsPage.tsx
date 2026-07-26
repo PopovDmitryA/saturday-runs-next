@@ -6,7 +6,6 @@ import { HistoryMilestonesSection } from "./HistoryMilestonesSection";
 import { HomeLocationSection } from "./HomeLocationSection";
 import { PrivacySettingsSection } from "./PrivacySettingsSection";
 import { ProfileLinkSection } from "./ProfileLinkSection";
-import { RequireAuth } from "../../components/RequireAuth";
 
 // bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
 // оборачивает контент в собственный каркас с сайдбаром.
@@ -38,6 +37,3 @@ export function SettingsContent({ bare = false }: { bare?: boolean } = {}) {
   );
 }
 
-export function SettingsPage() {
-  return <RequireAuth>{() => <SettingsContent />}</RequireAuth>;
-}

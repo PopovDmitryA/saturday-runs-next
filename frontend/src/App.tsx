@@ -11,10 +11,7 @@ import { AdminLocationContactsPage } from "./features/admin/AdminLocationContact
 import { AdminRecordsDigestPage } from "./features/admin/AdminRecordsDigestPage";
 import { ProfileRoute } from "./features/profile/ProfileRoute";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
-import { AchievementsPage } from "./features/achievements/AchievementsPage";
-import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
-import { DemoDashboardPage } from "./features/demo/DemoDashboardPage";
 import { PortalAboutPage } from "./features/portal/PortalAboutPage";
 import { PortalBlogPage } from "./features/portal/PortalBlogPage";
 import { PortalHomePage } from "./features/portal/PortalHomePage";
@@ -46,19 +43,12 @@ import {
   PortalCabinetSettingsPage,
   PortalCabinetSharePage,
 } from "./features/portal/cabinet/PortalCabinetPages";
-import { DemoMapsPage, MapsPage } from "./features/maps/MapsPage";
 import { LocationEventsPage } from "./features/locations/LocationEventsPage";
 import { LocationPage } from "./features/locations/LocationPage";
 import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
-import { CoRunnersPage, DemoCoRunnersPage } from "./features/co_runners/CoRunnersPage";
-import { DemoRunsPage, RunsPage } from "./features/runs/RunsPage";
-import { DemoHistoryPage, HistoryPage } from "./features/history/HistoryPage";
-import { DemoVolunteeringPage, VolunteeringPage } from "./features/volunteering/VolunteeringPage";
 import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
 import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
 import { QueuePage } from "./features/queue/QueuePage";
-import { SettingsPage } from "./features/settings/SettingsPage";
-import { SharePage } from "./features/share/SharePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { LegacySiteBanner } from "./components/LegacySiteBanner";
@@ -129,6 +119,17 @@ function CabinetLegacyRedirect({ tab }: { tab: CabinetTabSegmentKey }) {
   );
 }
 
+function PathRedirect({ to }: { to: string }) {
+  useEffect(() => {
+    window.location.replace(to);
+  }, [to]);
+  return (
+    <main className="app">
+      <p className="muted">Переход…</p>
+    </main>
+  );
+}
+
 function AdminRedirect() {
   useEffect(() => {
     window.location.replace("/admin/users");
@@ -155,24 +156,23 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   [PORTAL_CABINET_HISTORY_HREF]: () => <CabinetLegacyRedirect tab="history" />,
   [PORTAL_CABINET_SHARE_HREF]: () => <PortalCabinetSharePage />,
   [PORTAL_CABINET_SETTINGS_HREF]: () => <PortalCabinetSettingsPage />,
+  // Адреса тёмного запуска остаются работающими ссылками.
+  "/new/share": () => <PathRedirect to={PORTAL_CABINET_SHARE_HREF} />,
+  "/new/settings": () => <PathRedirect to={PORTAL_CABINET_SETTINGS_HREF} />,
   "/oauth/yandex/callback": () => <OAuthCallbackPage provider="yandex" />,
   "/oauth/vk/callback": () => <OAuthCallbackPage provider="vk" />,
-  "/demo": () => <DemoDashboardPage />,
-  "/demo/runs": () => <DemoRunsPage />,
-  "/demo/co-runners": () => <DemoCoRunnersPage />,
-  "/demo/volunteering": () => <DemoVolunteeringPage />,
-  "/demo/maps": () => <DemoMapsPage />,
-  "/demo/history": () => <DemoHistoryPage />,
-  "/dashboard": () => <DashboardPage />,
-  "/profiles": () => <DashboardPage />,
-  "/runs": () => <RunsPage />,
-  "/achievements": () => <AchievementsPage />,
-  "/co-runners": () => <CoRunnersPage />,
-  "/volunteering": () => <VolunteeringPage />,
-  "/maps": () => <MapsPage />,
+  // Старые адреса кабинета уводят на публичный адрес участника. Демо-режим
+  // удалён вместе со старым дизайном (решение Дмитрия 26.07.2026).
+  "/dashboard": () => <CabinetLegacyRedirect tab="dashboard" />,
+  "/profiles": () => <CabinetLegacyRedirect tab="dashboard" />,
+  "/runs": () => <CabinetLegacyRedirect tab="runs" />,
+  "/achievements": () => <CabinetLegacyRedirect tab="achievements" />,
+  "/co-runners": () => <CabinetLegacyRedirect tab="meetings" />,
+  "/volunteering": () => <CabinetLegacyRedirect tab="volunteering" />,
+  "/maps": () => <CabinetLegacyRedirect tab="map" />,
   // Локации открыты без логина (25.07.2026) — публичная витрина.
   "/locations": () => <LocationsIndexPage />,
-  "/history": () => <HistoryPage />,
+  "/history": () => <CabinetLegacyRedirect tab="history" />,
   // Рейтинги открыты без логина (решение 25.07.2026): аноним видит таблицы,
   // а свою строку и позицию — только залогиненный (баннер-призыв на страницах).
   "/ratings": () => <LeaderboardsHubPage />,
@@ -184,7 +184,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,
-  "/share": () => <SharePage />,
+
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
   "/admin": () => <AdminRedirect />,
@@ -201,7 +201,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/location-contacts": () => <AdminLocationContactsPage />,
   "/admin/blog": () => <AdminBlogPage />,
   "/admin/backlog": () => <AdminBacklogPage />,
-  "/settings": () => <SettingsPage />,
+
 };
 
 function LegacyGrafanaRedirect() {

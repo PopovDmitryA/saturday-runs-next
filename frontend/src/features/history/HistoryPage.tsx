@@ -1,16 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { AppShell } from "../../components/AppShell";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { RequireAuth } from "../../components/RequireAuth";
 import {
-  demoGetMyHistory,
   getDashboard,
-  getMyHistory,
   type MyHistory,
   type MyHistoryMilestone,
 } from "../../lib/api";
 import { formatDate, formatDateLong, pluralFormRu } from "../../lib/format";
-import { DemoShell } from "../demo/DemoShell";
 import {
   milestoneBragText,
   runNumberLabel,
@@ -487,24 +482,3 @@ export function useOwnSiteUrl(): string {
   return siteUrl;
 }
 
-function HistoryPageContent() {
-  const siteUrl = useOwnSiteUrl();
-
-  return (
-    <AppShell title="Моя история" activePath="/history">
-      <HistoryContent load={getMyHistory} shareBase="/share" siteUrl={siteUrl} />
-    </AppShell>
-  );
-}
-
-export function HistoryPage() {
-  return <RequireAuth>{() => <HistoryPageContent />}</RequireAuth>;
-}
-
-export function DemoHistoryPage() {
-  return (
-    <DemoShell title="Моя история">
-      <HistoryContent load={demoGetMyHistory} shareBase="/share" siteUrl={window.location.origin} />
-    </DemoShell>
-  );
-}

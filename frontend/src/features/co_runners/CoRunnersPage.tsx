@@ -1,18 +1,11 @@
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
-import { AppShell } from "../../components/AppShell";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { RequireAuth } from "../../components/RequireAuth";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
-  demoGetCoRunnerMeetings,
-  demoGetCoRunners,
-  getCoRunnerMeetings,
-  getCoRunners,
   type CoRunnerItem,
   type CoRunnerMeetingItem,
 } from "../../lib/api";
 import { formatDate, formatDuration, platformCodeLabel, pluralizeRu } from "../../lib/format";
-import { DemoShell } from "../demo/DemoShell";
 
 function SiteProfileIcon() {
   return (
@@ -341,22 +334,3 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
   return pageBody;
 }
 
-export function CoRunnersPage() {
-  return (
-    <RequireAuth>
-      {() => (
-        <AppShell title="Встречи">
-          <CoRunnersContent load={getCoRunners} loadMeetings={getCoRunnerMeetings} />
-        </AppShell>
-      )}
-    </RequireAuth>
-  );
-}
-
-export function DemoCoRunnersPage() {
-  return (
-    <DemoShell title="Встречи">
-      <CoRunnersContent load={demoGetCoRunners} loadMeetings={demoGetCoRunnerMeetings} />
-    </DemoShell>
-  );
-}

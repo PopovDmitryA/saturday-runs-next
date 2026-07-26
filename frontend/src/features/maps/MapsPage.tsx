@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { RegionChoropleth } from "../../components/RegionChoropleth";
-import { RequireAuth } from "../../components/RequireAuth";
-import { AppDataSourceProvider, demoDataSource, useAppDataSource } from "../../lib/appDataSource";
+import { useAppDataSource } from "../../lib/appDataSource";
 import type { CatalogLocationsTableResponse, UniqueLocationsDetailResponse } from "../../lib/api";
 import type { MapViewport, MapViewportRef } from "../../lib/mapViewport";
 import { DemoShell } from "../demo/DemoShell";
@@ -180,14 +179,3 @@ function MapsContent({ bare = false }: { bare?: boolean } = {}) {
 
 export { MapsContent };
 
-export function MapsPage() {
-  return <RequireAuth>{() => <MapsContent />}</RequireAuth>;
-}
-
-export function DemoMapsPage() {
-  return (
-    <AppDataSourceProvider source={demoDataSource}>
-      <MapsContent />
-    </AppDataSourceProvider>
-  );
-}

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { AppShell } from "../../components/AppShell";
 import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { RequireAuth } from "../../components/RequireAuth";
 import {
   getAchievements,
   getGoals,
@@ -766,6 +765,3 @@ function AchievementsContent({ bare = false }: { bare?: boolean } = {}) {
 
 export { AchievementsContent };
 
-export function AchievementsPage() {
-  return <RequireAuth>{() => <AchievementsContent />}</RequireAuth>;
-}

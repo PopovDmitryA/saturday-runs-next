@@ -6,7 +6,6 @@ import { ActivityDateLink } from "../../components/ActivityDateLink";
 import { AppShell } from "../../components/AppShell";
 import { EmptyActivityState } from "../../components/EmptyActivityState";
 import { LocationNameLink } from "../../components/LocationNameLink";
-import { RequireAuth } from "../../components/RequireAuth";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RateRunModal } from "../../components/RateRunModal";
 import { RunRatingStar } from "../../components/RunRatingStar";
@@ -19,7 +18,7 @@ import {
   type MyRating,
   type VolunteeringItem,
 } from "../../lib/api";
-import { useAppDataSource, AppDataSourceProvider, demoDataSource } from "../../lib/appDataSource";
+import { useAppDataSource } from "../../lib/appDataSource";
 import { createFullSelection, sortVolunteering, toggleDateSort, uniquePlatforms } from "../../lib/activityList";
 import { platformCodeLabel } from "../../lib/format";
 import { DemoShell } from "../demo/DemoShell";
@@ -452,14 +451,3 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
 
 export { VolunteeringContent };
 
-export function VolunteeringPage() {
-  return <RequireAuth>{() => <VolunteeringContent />}</RequireAuth>;
-}
-
-export function DemoVolunteeringPage() {
-  return (
-    <AppDataSourceProvider source={demoDataSource}>
-      <VolunteeringContent />
-    </AppDataSourceProvider>
-  );
-}

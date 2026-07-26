@@ -9,7 +9,6 @@ import { EmptyActivityState } from "../../components/EmptyActivityState";
 import { GlobalPrFinishTime } from "../../components/GlobalPrFinishTime";
 import { LocationNameLink } from "../../components/LocationNameLink";
 import { LocationPrLocationName } from "../../components/LocationPrLocationName";
-import { RequireAuth } from "../../components/RequireAuth";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RateRunModal } from "../../components/RateRunModal";
 import { RunRatingStar } from "../../components/RunRatingStar";
@@ -23,7 +22,7 @@ import {
   type MyRating,
   type RunItem,
 } from "../../lib/api";
-import { useAppDataSource, AppDataSourceProvider, demoDataSource } from "../../lib/appDataSource";
+import { useAppDataSource } from "../../lib/appDataSource";
 import { createFullSelection, sortRuns, toggleDateSort, toggleFinishSort, togglePaceSort, togglePositionSort, uniquePlatforms } from "../../lib/activityList";
 import { formatFinishTimeValue, platformCodeLabel } from "../../lib/format";
 import { DemoShell } from "../demo/DemoShell";
@@ -461,14 +460,3 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
 
 export { RunsContent };
 
-export function RunsPage() {
-  return <RequireAuth>{() => <RunsContent />}</RequireAuth>;
-}
-
-export function DemoRunsPage() {
-  return (
-    <AppDataSourceProvider source={demoDataSource}>
-      <RunsContent />
-    </AppDataSourceProvider>
-  );
-}
