@@ -73,12 +73,15 @@ def task_parse() -> None:
     script = os.path.join(pm, "athlete_sweep", "file_parser.py")
     if not os.path.exists(script):
         sys.exit(f"не нашёл парсер: {script}\nклонируй parkrun-monitoring в ~/Projects/")
+    print("  Потоки: пока один поток ждёт файл с сервера, остальные работают.")
+    print("  Замер на Маке: 1 поток ≈ 13/мин, 8 потоков ≈ 119/мин. Выше 8 роста почти нет.")
+    threads = ask("Во сколько потоков обрабатывать", "8")
     limit = ask("Сколько атлетов за сессию (0 = без предела)", "0")
     delete = ask_yn("Удалять файлы сырья после записи в БД?", default=False)
     py = os.path.join(ROOT, ".conda-parkrun", "bin", "python")
     if not os.path.exists(py):
         py = sys.executable
-    argv = [py, script, "--limit", limit]
+    argv = [py, script, "--limit", limit, "--threads", threads]
     if delete:
         argv.append("--delete")
     print("\nЗапускаю офлайн-парсер…\n")
