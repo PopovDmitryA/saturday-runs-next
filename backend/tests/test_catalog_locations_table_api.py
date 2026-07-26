@@ -5,8 +5,19 @@ from fastapi.testclient import TestClient
 pytest_plugins = ["tests.test_dashboard_api"]
 
 
-def test_catalog_table_requires_auth(client: TestClient) -> None:
-    assert client.get("/api/locations/catalog/table").status_code == 401
+def test_catalog_table_is_public_without_visited_marks(client: TestClient) -> None:
+    """Аноним видит таблицу каталога, но без отметок «посещено».
+
+    Роут на get_optional_user (см. locations.py — решение Дмитрия 25.07.2026:
+    Локации и Рейтинги публичные). user_id в build_catalog_locations_table
+    уходит None, поэтому visited у всех строк False.
+    """
+    response = client.get("/api/locations/catalog/table")
+    assert response.status_code == 200
+    payload = response.json()
+    assert "rows" in payload
+    assert payload["total_rows"] == len(payload["rows"])
+    assert all(row["visited"] is False for row in payload["rows"])
 
 
 def test_catalog_table_returns_rows(authenticated_client: TestClient) -> None:

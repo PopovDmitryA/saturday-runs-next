@@ -9,8 +9,17 @@ def test_visited_map_requires_auth(client: TestClient) -> None:
     assert client.get("/api/locations/visited/map").status_code == 401
 
 
-def test_catalog_map_requires_auth(client: TestClient) -> None:
-    assert client.get("/api/locations/catalog/map").status_code == 401
+def test_catalog_map_is_public(client: TestClient) -> None:
+    """Каталожная карта открыта без логина: в ней нет личных данных.
+
+    Логина требуют только /visited/* (см. locations.py — решение Дмитрия
+    25.07.2026: Локации и Рейтинги — публичная витрина сайта).
+    """
+    response = client.get("/api/locations/catalog/map")
+    assert response.status_code == 200
+    payload = response.json()
+    assert "points" in payload
+    assert payload["total_locations"] >= 0
 
 
 def test_visited_map_returns_payload(authenticated_client: TestClient) -> None:
