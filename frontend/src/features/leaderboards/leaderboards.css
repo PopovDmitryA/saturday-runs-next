@@ -372,7 +372,11 @@
   width: 10rem;
 }
 
-/* Значок «i»: число рядом с топ-локацией — это победы там, не все пробежки. */
+/* Значок «i» — пояснение к колонке по наведению.
+   Собственная типографика обязательна: значок живёт в шапке таблицы, а та
+   набрана uppercase с разрядкой — без сброса «i» превращалась в прописную «I»,
+   которую курсив довершал до косой палки (читалось как слэш). Засечный шрифт
+   даёт узнаваемую «i» вместо голой вертикальной черты. */
 .lb-info-hint {
   display: inline-flex;
   align-items: center;
@@ -382,9 +386,13 @@
   border-radius: 50%;
   background: var(--surface-2, rgba(127, 127, 127, 0.18));
   color: var(--text-muted, inherit);
-  font-size: 0.65rem;
-  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 0.78rem;
+  font-style: normal;
   font-weight: 700;
+  line-height: 1;
+  text-transform: none;
+  letter-spacing: 0;
   cursor: help;
   vertical-align: middle;
 }

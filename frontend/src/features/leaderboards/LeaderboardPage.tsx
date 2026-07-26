@@ -44,8 +44,8 @@ const TOP_LOCATION_HINT =
   "а не сколько раз там бегал.";
 
 const BEST_TIME_HINT =
-  "Личный рекорд участника по всем системам и локациям — не только на пробежках, " +
-  "где он был первым.";
+  "Глобальный рекорд участника: лучшее время по всем системам и локациям — " +
+  "не только на пробежках, где он был первым.";
 
 // Колонка «последней» читается по-разному у двух победных рейтингов, поэтому и
 // заголовок, и подсказка разные: в рейтинге локаций считается пополнение
@@ -350,7 +350,10 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const visibleRows = rows.slice(0, visibleCount);
   const nextChunkEnd = Math.min(visibleCount + PAGE_STEP, rows.length);
 
-  const headerCell = (key: SortKey, label: string, className: string) => (
+  // hint — значок «i» рядом с названием колонки: пояснение по наведению, как у
+  // «Топ-локации». Свой title у значка перекрывает «Сортировать по этому
+  // столбцу» с самого th, чтобы подсказки не наслаивались.
+  const headerCell = (key: SortKey, label: string, className: string, hint?: string) => (
     <th
       key={key}
       className={`${className} lb-sortable${sortKey === key ? " lb-sorted" : ""}`}
@@ -358,6 +361,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       title="Сортировать по этому столбцу"
     >
       {label}
+      {hint && <InfoHint text={hint} />}
       {sortKey === key && <span className="lb-sort-mark" aria-hidden>▾</span>}
     </th>
   );
@@ -506,7 +510,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                     {headerCell("rank", "Место", "lb-col-rank")}
                     <th className="lb-col-name">Участник</th>
                     {hasWinExtras &&
-                      headerCell("best_time", "Лучшее время", "lb-col-time")}
+                      headerCell("best_time", "Лучшее время", "lb-col-time", BEST_TIME_HINT)}
                     {columns.map((code) =>
                       headerCell(code, PLATFORM_LABELS[code] ?? code, "lb-col-num"),
                     )}
