@@ -1,7 +1,7 @@
 """AB-события главной: сырые события экспериментов (вариант, скролл, клики, конверсия)
 
-Revision ID: 056_ab_events
-Revises: 054_login_events
+Revision ID: 057_ab_events
+Revises: 056_backlog_done_at
 Create Date: 2026-07-25
 """
 
@@ -9,8 +9,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "056_ab_events"
-down_revision = "054_login_events"
+revision = "057_ab_events"
+down_revision = "056_backlog_done_at"
 branch_labels = None
 depends_on = None
 
