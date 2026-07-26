@@ -65,13 +65,31 @@ def test_closed_keeps_source_name() -> None:
     assert resolve_location_display_name(catalog, platform_code="parkrun", source_name="Memorialny Park") == "Memorialny Park"
 
 
-def test_runpark_keeps_source_name() -> None:
+def test_runpark_is_a_valid_name_source() -> None:
+    """Площадка, которая сегодня бегает только в runpark, называется по нему.
+
+    Раньше runpark отсеивался наравне с parkrun, и «Покровское-Стрешнево» с
+    «Лесопарк Северный» оставались латиницей: действующей системы, чьё имя
+    разрешено брать, у этих узлов просто не было.
+    """
     catalog = _catalog(canonical_name="Покровское-Стрешнево", active_platform="runpark", is_closed=False)
-    assert should_use_catalog_display(catalog, "parkrun") is False
+    assert should_use_catalog_display(catalog, "parkrun") is True
     assert (
-        resolve_location_display_name(catalog, platform_code="parkrun", source_name="Pokrovskoe-Streshnevo")
-        == "Pokrovskoe-Streshnevo"
+        resolve_location_display_name(
+            catalog,
+            platform_code="parkrun",
+            source_name="Pokrovskoe-Streshnevo",
+            active_platform_name="Покровское-Стрешнево",
+        )
+        == "Покровское-Стрешнево"
     )
+
+
+def test_parkrun_never_overrides_name() -> None:
+    """Узел, где действующей осталась parkrun-строка, имя не переопределяет —
+    её латиница и есть то, от чего мы уходим."""
+    catalog = _catalog(canonical_name="Тимирязевский", active_platform="parkrun", is_closed=False)
+    assert should_use_catalog_display(catalog, "parkrun") is False
 
 
 def test_catalog_lookup_matches_hyphenated_parkrun_slug(db_session) -> None:

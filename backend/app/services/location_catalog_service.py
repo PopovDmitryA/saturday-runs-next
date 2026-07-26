@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 from app.location_page_url import PLATFORM_ORDER
 from app.models import EventSummary, Location, LocationCatalog, LocationCatalogLink, Platform
 
-DISPLAY_OVERRIDE_PLATFORMS = frozenset({"five_verst", "s95"})
+# Системы, чьё название площадки считаем актуальным. parkrun сюда не входит:
+# он закрыт с 2022, и его латинское имя как раз то, от которого мы уходим.
+DISPLAY_OVERRIDE_PLATFORMS = frozenset({"five_verst", "s95", "runpark"})
 
 
 def normalize_location_slug(value: str) -> str:
@@ -37,8 +39,10 @@ def should_use_catalog_display(catalog: LocationCatalog, platform_code: str) -> 
     if catalog.is_closed:
         return False
     active = normalize_platform_code(catalog.active_platform)
-    if active in ("parkrun", "runpark"):
-        return False
+    # Отдельного отсева runpark больше нет: имя берём у действующей системы узла,
+    # какой бы она ни была. Если площадка сегодня живёт только в runpark, её
+    # русское название — единственное актуальное, и parkrun-строка не должна
+    # оставаться латиницей («Pokrovskoe-Streshnevo» вместо «Покровское-Стрешнево»).
     return active in DISPLAY_OVERRIDE_PLATFORMS
 
 
@@ -52,8 +56,8 @@ def resolve_location_display_name(
     """Как площадка называется сегодня — одинаково во всех системах.
 
     Смысл переопределения через каталог: результат parkrun-времён не должен
-    показываться латиницей, если площадка жива и в 5 вёрст/S95 называется
-    по-русски. Поэтому имя берём У ЛОКАЦИИ ДЕЙСТВУЮЩЕЙ СИСТЕМЫ
+    показываться латиницей, если площадка жива и в действующей системе
+    называется по-русски — неважно, 5 вёрст это, S95 или runpark. Поэтому имя берём У ЛОКАЦИИ ДЕЙСТВУЮЩЕЙ СИСТЕМЫ
     (active_platform_name) — это её актуальное название. canonical_name из
     каталога остаётся запасным вариантом: у части узлов там лежит легаси —
     транслитерация времён parkrun («Ufa Botanichesky Sad» у площадки, которая
