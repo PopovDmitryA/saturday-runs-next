@@ -317,6 +317,36 @@ class CatalogLocationsTableResponse(BaseModel):
     total_rows: int = 0
 
 
+class LocationAgeGroupTopRowResponse(BaseModel):
+    """Строка топ-5 внутри возрастной группы локации."""
+
+    place: int
+    name: str | None = None
+    handle: str | None = None
+    best_time_sec: int
+    best_time_display: str
+    is_me: bool = False
+
+
+class LocationAgeGroupStandingResponse(BaseModel):
+    """Место пользователя в топе локации по одной его возрастной группе.
+
+    Групп у человека столько, сколько он успел пройти на этой площадке:
+    перешёл из «М30-34» в «М35-39» — будут обе, каждая со своими цифрами.
+    """
+
+    age_category: str
+    label: str
+    runs_count: int
+    best_time_sec: int
+    best_time_display: str
+    best_time_date: date | None = None
+    last_run_date: date | None = None
+    place: int | None = None
+    total: int = 0
+    top: list[LocationAgeGroupTopRowResponse] = Field(default_factory=list)
+
+
 class LocationPersonalStatsResponse(BaseModel):
     """Личная статистика пользователя на локации (блок «Вы на этой локации»)."""
 
@@ -336,3 +366,5 @@ class LocationPersonalStatsResponse(BaseModel):
     # Место в топе локации по числу пробежек (та же группировка, что у лидеров).
     rank_by_runs: int | None = None
     runners_total: int | None = None
+    # Возрастные группы 5 вёрст, в которых пользователь здесь бегал.
+    age_groups: list[LocationAgeGroupStandingResponse] = Field(default_factory=list)

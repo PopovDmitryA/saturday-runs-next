@@ -15,12 +15,15 @@ from app.services.location_page_service import (
     _sort_identity_locations,
     _start_point_url,
     _write_locations_index_cache,
+    age_group_label,
+    build_location_age_group_standings,
     build_location_events,
     build_location_leaders,
     build_location_page,
     build_locations_index,
     invalidate_location_page_cache,
     invalidate_locations_index_cache,
+    is_five_verst_age_group,
     location_events_cache_key,
     location_leaders_cache_key,
     location_page_cache_key,
@@ -48,6 +51,33 @@ def test_normalize_age_group_unknown() -> None:
     assert normalize_age_group(None) is None
     assert normalize_age_group("") is None
     assert normalize_age_group("хостел") is None
+
+
+def test_is_five_verst_age_group_accepts_protocol_categories() -> None:
+    assert is_five_verst_age_group("М35-39")
+    assert is_five_verst_age_group("Ж45-49")
+    # Детские группы 5 вёрст записываются одним числом: «М10» — 10 и младше.
+    assert is_five_verst_age_group("М10")
+
+
+def test_is_five_verst_age_group_rejects_other_platforms() -> None:
+    # У parkrun в run_results.age_category лежит age grade, у runpark — свои коды.
+    assert not is_five_verst_age_group("54.38%")
+    assert not is_five_verst_age_group("SM25-29")
+    assert not is_five_verst_age_group("VM40-44")
+    assert not is_five_verst_age_group(None)
+    assert not is_five_verst_age_group("")
+    assert not is_five_verst_age_group("М40-44 (2)")
+
+
+def test_age_group_label_uses_typographic_dash() -> None:
+    assert age_group_label("М35-39") == "М35–39"
+    assert age_group_label("Ж10") == "Ж10"
+
+
+def test_build_location_age_group_standings_without_five_verst_events() -> None:
+    """Локация без 5 вёрст (например только parkrun) — блока групп нет."""
+    assert build_location_age_group_standings(db=None, user_id=None, five_verst_event_ids=[]) == []  # type: ignore[arg-type]
 
 
 def test_sort_identity_locations_prefers_catalog_active_platform() -> None:

@@ -8,6 +8,7 @@ import {
   getLocationPage,
   getLocationPersonalStats,
   type LocationAgeGroupRecord,
+  type LocationAgeGroupStanding,
   type LocationCourseRecord,
   type LocationLastEvent,
   type LocationLeaders,
@@ -453,6 +454,105 @@ function LocationInfoCard({ page }: { page: LocationPageData }) {
 }
 
 /**
+ * Карточка одной возрастной группы: место участника в ней и спойлер с топ-5
+ * группы. Групп у человека столько, сколько он прошёл на этой площадке.
+ */
+function PersonalAgeGroupCard({ standing }: { standing: LocationAgeGroupStanding }) {
+  const [open, setOpen] = useState(false);
+  const topId = `age-group-top-${standing.age_category}`;
+
+  return (
+    <div className="loc-age-group-card">
+      <div className="loc-age-group-head">
+        <span className="loc-age-group-place">
+          {standing.place != null ? `#${standing.place}` : "—"}
+        </span>
+        <span className="loc-age-group-name">{standing.label}</span>
+      </div>
+      <span className="loc-age-group-sub">
+        {standing.total > 0
+          ? `из ${standing.total} ${pluralFormRu(standing.total, ["участника", "участников", "участников"])} в группе`
+          : "в группе"}
+      </span>
+      <span className="loc-age-group-sub">
+        ваше лучшее здесь — {stripLeadingHours(standing.best_time_display)}
+        {standing.best_time_date ? ` · ${formatDate(standing.best_time_date)}` : ""}
+      </span>
+      <span className="loc-age-group-sub">
+        {standing.runs_count}{" "}
+        {pluralFormRu(standing.runs_count, ["пробежка", "пробежки", "пробежек"])} в этой группе
+      </span>
+      {standing.top.length > 0 && (
+        <button
+          type="button"
+          className="loc-age-group-toggle"
+          aria-expanded={open}
+          aria-controls={topId}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? "Скрыть топ-5 группы" : "Топ-5 группы"}
+          <span className="loc-age-group-toggle-caret" aria-hidden="true">
+            {open ? "▲" : "▼"}
+          </span>
+        </button>
+      )}
+      {open && (
+        <table className="data-table loc-age-group-table" id={topId}>
+          <colgroup>
+            <col className="loc-age-group-col-rank" />
+            <col />
+            <col className="loc-age-group-col-time" />
+          </colgroup>
+          <tbody>
+            {standing.top.map((row, index) => (
+              <tr
+                key={`${row.place}-${row.name}-${index}`}
+                className={row.is_me ? "loc-age-group-row-me" : undefined}
+              >
+                <td className="loc-leaders-rank">{row.place}</td>
+                <td>
+                  <RunnerName name={row.name} handle={row.handle} />
+                  {row.is_me && <span className="loc-age-group-me-badge">вы</span>}
+                </td>
+                <td>{stripLeadingHours(row.best_time_display)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/**
+ * «Ваши возрастные группы здесь» — по плитке на каждую категорию, в которой
+ * участник тут бегал. Показывается только для локаций 5 вёрст: у остальных
+ * систем возрастной категории в протоколе нет (см. бэкенд).
+ */
+function PersonalAgeGroupsSection({ standings }: { standings: LocationAgeGroupStanding[] }) {
+  if (standings.length === 0) {
+    return null;
+  }
+  return (
+    <div className="loc-age-groups">
+      <h3 className="loc-age-groups-title">
+        Ваши возрастные группы здесь
+        <StatHintTooltip text="Топ группы — все уникальные участники, бегавшие на этой локации в этой возрастной категории, и лучшее время каждого именно в ней. Если вы за годы перешли в следующую категорию, у прошлой остаются свои цифры. Место пересчитывается после каждого старта: кто-то может пробежать быстрее вас. Считается только по 5 вёрст.">
+          <span className="loc-section-title-info" aria-label="Как считается">
+            ⓘ
+          </span>
+        </StatHintTooltip>
+      </h3>
+      <div className="loc-age-groups-list">
+        {standings.map((standing) => (
+          <PersonalAgeGroupCard key={standing.age_category} standing={standing} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Блок «Вы на этой локации»: залогиненному с привязанным профилем — личные
  * цифры площадки, анониму — продающая карточка «войдите и увидите свою
  * статистику». Пользователю без привязки — подсказка привязать профиль.
@@ -568,6 +668,7 @@ function LocationPersonalSection({ slug }: { slug: string }) {
           />
         )}
       </div>
+      <PersonalAgeGroupsSection standings={stats.age_groups ?? []} />
       {stats.runs_count > 0 && (
         <div className="loc-personal-actions">
           {/* Открывает «Пробежки» кабинета сразу с фильтром по этой локации. */}

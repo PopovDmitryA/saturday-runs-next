@@ -1526,6 +1526,210 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
     return {"items": items, "total": len(items)}
 
 
+# Возрастная группа 5 вёрст в протоколе: «М35-39», «Ж45-49», «М10» (10 и младше).
+# Проверяем формат явно, потому что в run_results.age_category лежит разное:
+# у parkrun там age grade («54.38%»), у runpark — parkrun-коды («VM40-44»),
+# у s95 категории нет вовсе. Топ по возрастным группам строим только по
+# 5 вёрст — единственной системе, где категория протокола пригодна как есть.
+_FIVE_VERST_AGE_GROUP_RE = re.compile(r"^[МЖ]\d{1,2}(?:-\d{1,2})?$")
+AGE_GROUP_TOP_LIMIT = 5
+
+
+def is_five_verst_age_group(age_category: str | None) -> bool:
+    if not age_category:
+        return False
+    return bool(_FIVE_VERST_AGE_GROUP_RE.match(age_category.strip()))
+
+
+def age_group_label(age_category: str) -> str:
+    """«М35-39» → «М35–39»: тот же код группы, но с типографским тире."""
+    return age_category.strip().replace("-", "–")
+
+
+def _five_verst_age_group_sort_key(age_category: str) -> int:
+    """Нижняя граница возраста категории: «М35-39» → 35. Буква пола не мешает."""
+    return _age_group_sort_key(age_category[1:])
+
+
+def build_location_age_group_standings(
+    db: Session,
+    user_id: UUID,
+    five_verst_event_ids: list[UUID],
+    *,
+    top_limit: int = AGE_GROUP_TOP_LIMIT,
+) -> list[dict[str, object]]:
+    """Места пользователя в топах локации по каждой его возрастной группе.
+
+    Топ группы: все уникальные участники, бегавшие здесь в этой категории, и
+    лучшее время каждого — именно в этой категории. Поэтому человек, успевший
+    побывать в «М30-34» и «М35-39», получает две отдельные строчки со своими
+    результатами и своим местом: сравнение всегда идёт с теми, кто бежал в той
+    же группе. От недели к неделе место плавает — пересчитывается на лету.
+
+    Уникальность участника — по participants.id, без слияния по
+    platform_links.user_id как у общих рейтингов локации: выборка ограничена
+    одной платформой, а привязка уникальна по (пользователь, платформа), так
+    что один человек здесь и так даёт ровно одну строку.
+    """
+    if not five_verst_event_ids:
+        return []
+
+    time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
+
+    # Свои строки берём целиком и разбираем в Python: их десятки, зато формат
+    # категории проверяется одним и тем же кодом, что и в тестах.
+    my_rows = [
+        row
+        for row in db.query(
+            RunResult.participant_id,
+            RunResult.age_category,
+            RunResult.event_id,
+            RunResult.finish_time_sec,
+            Event.event_date,
+        )
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Participant, RunResult.participant_id == Participant.id)
+        .join(PlatformLink, _platform_link_join())
+        .filter(
+            PlatformLink.user_id == user_id,
+            RunResult.event_id.in_(five_verst_event_ids),
+            time_ok,
+        )
+        .all()
+        if is_five_verst_age_group(row.age_category) and row.participant_id is not None
+    ]
+    if not my_rows:
+        return []
+
+    my_participant_ids = {row.participant_id for row in my_rows}
+    mine: dict[str, dict[str, object]] = {}
+    for row in my_rows:
+        group = mine.setdefault(
+            row.age_category,
+            {"events": set(), "best_sec": None, "best_date": None, "last_date": None},
+        )
+        cast(set[UUID], group["events"]).add(row.event_id)
+        best_sec = cast(int | None, group["best_sec"])
+        if best_sec is None or row.finish_time_sec < best_sec:
+            group["best_sec"] = int(row.finish_time_sec)
+            group["best_date"] = row.event_date
+        last_date = cast(date | None, group["last_date"])
+        if row.event_date is not None and (last_date is None or row.event_date > last_date):
+            group["last_date"] = row.event_date
+
+    my_groups = list(mine)
+
+    # Лучшее время каждого участника в каждой из «моих» категорий. Сужение по
+    # категориям здесь не косметика: на крупной локации (Затюменский — 75 тыс.
+    # протокольных строк) оно срезает основную часть работы запроса.
+    best = (
+        db.query(
+            RunResult.participant_id.label("runner_id"),
+            RunResult.age_category.label("age_category"),
+            func.min(RunResult.finish_time_sec).label("best_sec"),
+        )
+        .filter(
+            RunResult.event_id.in_(five_verst_event_ids),
+            RunResult.participant_id.isnot(None),
+            RunResult.age_category.in_(my_groups),
+            time_ok,
+        )
+        .group_by(RunResult.participant_id, RunResult.age_category)
+        .cte("age_group_best")
+    )
+
+    # rank() — спортивное место: одинаковое время делит одно место.
+    # row_number() отдельно, потому что для витрины топ-5 нужны ровно пять строк.
+    place = func.rank().over(partition_by=best.c.age_category, order_by=best.c.best_sec.asc())
+    row_number = func.row_number().over(
+        partition_by=best.c.age_category, order_by=(best.c.best_sec.asc(), best.c.runner_id.asc())
+    )
+    total = func.count().over(partition_by=best.c.age_category)
+    ranked = (
+        db.query(
+            best.c.runner_id.label("runner_id"),
+            best.c.age_category.label("age_category"),
+            best.c.best_sec.label("best_sec"),
+            place.label("place"),
+            row_number.label("row_number"),
+            total.label("total"),
+        )
+        .select_from(best)
+        .subquery()
+    )
+
+    rows = (
+        db.query(
+            ranked.c.runner_id,
+            ranked.c.age_category,
+            ranked.c.best_sec,
+            ranked.c.place,
+            ranked.c.row_number,
+            ranked.c.total,
+            func.coalesce(User.display_name, Participant.display_name).label("name"),
+            User.public_slug,
+            User.serial_id,
+        )
+        .select_from(ranked)
+        .outerjoin(Participant, Participant.id == ranked.c.runner_id)
+        .outerjoin(PlatformLink, _platform_link_join())
+        .outerjoin(User, PlatformLink.user_id == User.id)
+        .filter(
+            (ranked.c.row_number <= top_limit) | ranked.c.runner_id.in_(my_participant_ids),
+        )
+        .order_by(ranked.c.age_category.asc(), ranked.c.row_number.asc())
+        .all()
+    )
+
+    tops: dict[str, list[dict[str, object]]] = {group: [] for group in my_groups}
+    totals: dict[str, int] = {}
+    my_places: dict[str, int] = {}
+    for row in rows:
+        totals[row.age_category] = int(row.total)
+        if row.runner_id in my_participant_ids:
+            my_places[row.age_category] = int(row.place)
+        if row.row_number <= top_limit:
+            tops[row.age_category].append(
+                {
+                    "place": int(row.place),
+                    "name": row.name,
+                    "handle": row.public_slug or (str(row.serial_id) if row.serial_id else None),
+                    "best_time_sec": int(row.best_sec),
+                    "best_time_display": format_finish_time_display(int(row.best_sec)),
+                    "is_me": row.runner_id in my_participant_ids,
+                }
+            )
+
+    standings: list[dict[str, object]] = []
+    for age_category, group in mine.items():
+        best_sec = cast(int, group["best_sec"])
+        standings.append(
+            {
+                "age_category": age_category,
+                "label": age_group_label(age_category),
+                "runs_count": len(cast(set[UUID], group["events"])),
+                "best_time_sec": best_sec,
+                "best_time_display": format_finish_time_display(best_sec),
+                "best_time_date": group["best_date"],
+                "last_run_date": group["last_date"],
+                "place": my_places.get(age_category),
+                "total": totals.get(age_category, 0),
+                "top": tops.get(age_category, []),
+            }
+        )
+
+    # Свежая группа первой: обычно это текущая категория бегуна, а прошлые
+    # уходят вниз. При равенстве дат — по возрасту, чтобы порядок был устойчив.
+    standings.sort(
+        key=lambda item: (
+            cast(date | None, item["last_run_date"]) or date.min,
+            _five_verst_age_group_sort_key(cast(str, item["age_category"])),
+        ),
+        reverse=True,
+    )
+    return standings
+
+
 def build_location_personal_stats(db: Session, user_id: UUID, slug: str) -> dict[str, object] | None:
     """Личная статистика пользователя на локации (блок «Вы на этой локации»).
 
@@ -1536,6 +1740,10 @@ def build_location_personal_stats(db: Session, user_id: UUID, slug: str) -> dict
     if identity is None:
         return None
     event_ids = _location_event_ids(db, [location.id for location, _code in identity.locations])
+    # Возрастные группы есть только у 5 вёрст, поэтому для них — свой набор
+    # событий. У parkrun-/s95-идентичности список пуст, лишнего запроса нет.
+    five_verst_location_ids = [location.id for location, code in identity.locations if code == "five_verst"]
+    five_verst_event_ids = _location_event_ids(db, five_verst_location_ids) if five_verst_location_ids else []
 
     payload: dict[str, object] = {
         "slug": identity.slug,
@@ -1552,6 +1760,7 @@ def build_location_personal_stats(db: Session, user_id: UUID, slug: str) -> dict
         "volunteering_count": 0,
         "rank_by_runs": None,
         "runners_total": None,
+        "age_groups": [],
     }
 
     # Все пробежки пользователя (по всем локациям) — для строки «это N% ваших стартов».
@@ -1627,5 +1836,7 @@ def build_location_personal_stats(db: Session, user_id: UUID, slug: str) -> dict
     )
     payload["rank_by_runs"] = int(ahead) + 1
     payload["runners_total"] = int(runners_total)
+
+    payload["age_groups"] = build_location_age_group_standings(db, user_id, five_verst_event_ids)
 
     return payload

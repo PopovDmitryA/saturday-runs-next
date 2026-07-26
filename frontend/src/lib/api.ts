@@ -1884,6 +1884,29 @@ export function getLocationLeaders(slug: string) {
   return apiFetch<LocationLeaders>(`/locations/page/${encodeURIComponent(slug)}/leaders`);
 }
 
+export type LocationAgeGroupTopRow = {
+  place: number;
+  name: string | null;
+  handle?: string | null;
+  best_time_sec: number;
+  best_time_display: string;
+  is_me: boolean;
+};
+
+/** Место участника в топе локации по одной его возрастной группе. */
+export type LocationAgeGroupStanding = {
+  age_category: string;
+  label: string;
+  runs_count: number;
+  best_time_sec: number;
+  best_time_display: string;
+  best_time_date: string | null;
+  last_run_date: string | null;
+  place: number | null;
+  total: number;
+  top: LocationAgeGroupTopRow[];
+};
+
 export type LocationPersonalStats = {
   slug: string;
   name: string;
@@ -1899,6 +1922,7 @@ export type LocationPersonalStats = {
   volunteering_count: number;
   rank_by_runs: number | null;
   runners_total: number | null;
+  age_groups: LocationAgeGroupStanding[];
 };
 
 export function getLocationPersonalStats(slug: string) {
