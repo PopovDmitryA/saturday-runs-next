@@ -48,21 +48,25 @@ def test_normalize_age_group_parkrun_and_runpark() -> None:
 
 
 def test_normalize_age_group_under_ten() -> None:
-    """«М10» у 5 вёрст — «10 и младше», отдельная ступень рядом с «10–14».
-
-    Обе категории встречаются в одном протоколе, и все, кто побывал в обеих,
-    сначала бежали в «М10», — поэтому «≤10», а не «10».
-    """
-    assert normalize_age_group("М10") == "≤10"
-    assert normalize_age_group("Ж10") == "≤10"
-    assert normalize_age_group("JM10") == "≤10"
+    """«М10» — строго «младше 10»: десятилетний бежит уже в «10-14»."""
+    assert normalize_age_group("М10") == "<10"
+    assert normalize_age_group("Ж10") == "<10"
+    assert normalize_age_group("JM10") == "<10"
     assert normalize_age_group("М10-14") == "10–14"
 
 
+def test_normalize_age_group_ignores_stray_exact_ages() -> None:
+    """«М11»/«М12» — мусор в исходных протоколах, такой категории не бывает."""
+    assert normalize_age_group("М11") is None
+    assert normalize_age_group("М12") is None
+    assert normalize_age_group("Ж11") is None
+    assert normalize_age_group("М13") is None
+
+
 def test_age_group_sort_key_puts_under_before_range() -> None:
-    """«≤10» и «10–14» дают одно число — порядок между ними фиксирован."""
-    assert sorted(["35–39", "10–14", "≤10", "75+"], key=_age_group_sort_key) == [
-        "≤10",
+    """«<10» и «10–14» дают одно число — порядок между ними фиксирован."""
+    assert sorted(["35–39", "10–14", "<10", "75+"], key=_age_group_sort_key) == [
+        "<10",
         "10–14",
         "35–39",
         "75+",

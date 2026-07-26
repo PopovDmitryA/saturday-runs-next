@@ -80,14 +80,17 @@ def location_leaders_cache_key(slug: str) -> str:
 # только по строкам с известным временем.
 _AGE_RANGE_RE = re.compile(r"(\d{1,2})\s*[-–—]\s*(\d{1,2})")
 _AGE_PLUS_RE = re.compile(r"(\d{2,3})\s*\+")
-# Детская категория без верхней границы: «М10»/«Ж10» у 5 вёрст, «JM10» у
-# parkrun-систем — это «10 лет и младше», а не «ровно 10». В данных она идёт
-# параллельно с «М10-14» (7 тыс. протоколов содержат обе), и все 718 участников,
-# побывавших в обеих, сначала бежали в «М10» — то есть это ступень ниже.
-# Поэтому «≤10», а не «10»: рядом со строкой «10–14» голое «10» читалось бы как
-# пересекающийся диапазон. Буквы впереди обязательны — иначе под правило попал
-# бы age grade parkrun («54.38%» отсекается ещё и якорем на конце).
-_AGE_UNDER_RE = re.compile(r"^[A-Za-zА-Яа-я]{1,3}(\d{1,2})$")
+# Младшая детская категория: «М10»/«Ж10» у 5 вёрст, «JM10» у parkrun-систем.
+# Это строго «младше 10»: десятилетний бежит уже в «10-14». В данных обе идут
+# параллельно (7 тыс. протоколов содержат и ту, и другую), и все 718 участников,
+# побывавших в обеих, сначала бежали в «М10» — ступень действительно ниже.
+# Поэтому «<10», а не «10»: голое «10» рядом со строкой «10–14» читалось бы как
+# пересекающийся диапазон.
+#
+# Только 10 и никаких других чисел: «М11»/«М12» в базе есть (16 человек на
+# 21 локацию), но такой категории у 5 вёрст не существует — это мусор в
+# исходных протоколах, и заводить под него группы неправильно.
+_AGE_UNDER_TEN_RE = re.compile(r"^[A-Za-zА-Яа-я]{1,3}10$")
 
 
 def _platform_order_index(code: str) -> int:
@@ -98,7 +101,7 @@ def _platform_order_index(code: str) -> int:
 
 
 def normalize_age_group(age_category: str | None) -> str | None:
-    """«М18-24», «SM25-29», «VM35-39» → «18–24»; «М75+» → «75+»; «М10» → «≤10»."""
+    """«М18-24», «SM25-29», «VM35-39» → «18–24»; «М75+» → «75+»; «М10» → «<10»."""
     if not age_category:
         return None
     cleaned = age_category.strip()
@@ -108,9 +111,8 @@ def normalize_age_group(age_category: str | None) -> str | None:
     match = _AGE_PLUS_RE.search(cleaned)
     if match:
         return f"{int(match.group(1))}+"
-    match = _AGE_UNDER_RE.match(cleaned)
-    if match:
-        return f"≤{int(match.group(1))}"
+    if _AGE_UNDER_TEN_RE.match(cleaned):
+        return "<10"
     return None
 
 
@@ -619,20 +621,20 @@ def _last_event_stats(
     return last_event_payload, avg_delta, median_delta
 
 
-# Не якорим на начало: у «≤10» впереди знак, и с якорем группа улетала бы
+# Не якорим на начало: у «<10» впереди знак, и с якорем группа улетала бы
 # в конец таблицы вместо первой строки.
 _AGE_GROUP_SORT_RE = re.compile(r"\d+")
 
 
 def _age_group_sort_key(age_group: str) -> tuple[int, int]:
-    """Порядок групп в таблице: по возрасту, а при равном — «≤N» перед «N–…».
+    """Порядок групп в таблице: по возрасту, а при равном — «<N» перед «N–…».
 
-    «≤10» и «10–14» дают одно и то же число, но это разные ступени и в
+    «<10» и «10–14» дают одно и то же число, но это разные ступени и в
     протоколе они идут параллельно, так что порядок между ними фиксируем.
     """
     match = _AGE_GROUP_SORT_RE.search(age_group)
     age = int(match.group(0)) if match else 999
-    if age_group.startswith("≤"):
+    if age_group.startswith("<"):
         return (age, 0)
     if age_group.endswith("+"):
         return (age, 2)
@@ -663,7 +665,7 @@ def age_group_key(gender: str, age_group: str) -> str:
     локации» ссылается по нему на нужную строку в «Рекордах по возрастным
     группам», где под спойлером лежит топ-5 этой группы.
     """
-    return f"{gender}-{age_group.replace('–', '-').replace('+', 'plus').replace('≤', 'under')}"
+    return f"{gender}-{age_group.replace('–', '-').replace('+', 'plus').replace('<', 'under')}"
 
 
 def _protocol_age_category_gender() -> Any:
@@ -696,8 +698,8 @@ def _age_group_match_clauses(age_groups: Iterable[str]) -> list[Any]:
         if age_group.endswith("+"):
             clauses.append(RunResult.age_category.like(f"%{age_group}%"))
             continue
-        if age_group.startswith("≤"):
-            # «≤10» — это категория, которая числом и заканчивается («М10»);
+        if age_group.startswith("<"):
+            # «<10» — это категория, которая числом и заканчивается («М10»);
             # «М10-14» под шаблон не подойдёт, она кончается на «14».
             clauses.append(RunResult.age_category.like(f"%{age_group[1:]}"))
             continue
@@ -851,8 +853,7 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
 
     Считается только по 5 вёрст (FIVE_VERST_PLATFORM_CODE) — см. комментарий
     у константы. Нормализация в Python (normalize_age_group) дополнительно
-    отбрасывает всё, что не приводится к диапазону (детские «М10» без верхней
-    границы); из БД берём лучшую строку на каждую СЫРУЮ категорию
+    отбрасывает всё, что не приводится к группе; из БД берём лучшую строку на каждую СЫРУЮ категорию
     (DISTINCT ON), затем минимум на группу.
     """
     if not event_ids:

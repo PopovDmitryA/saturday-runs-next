@@ -10745,37 +10745,132 @@ tr.run-crosslinked td {
 }
 
 .loc-age-records-top-row > td {
-  padding-top: 0;
+  padding: 0 0 0.55rem;
+}
+
+.loc-age-top {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.loc-age-top-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-3);
+}
+
+.loc-age-top-hint {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .loc-age-top-list {
-  display: grid;
-  gap: 0.1rem;
-  margin: 0 0 0.4rem;
-  padding: 0.4rem 0.6rem;
+  margin: 0;
+  padding: 0;
   list-style: none;
-  border-radius: 10px;
-  background: var(--bg-muted);
 }
 
-.loc-age-top-list li {
+.loc-age-top-item {
   display: grid;
-  grid-template-columns: 1.4rem 1fr auto;
-  align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.18rem 0;
-  font-size: 0.82rem;
+  grid-template-columns: 1.35rem minmax(0, 1fr) 4.5rem auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+.loc-age-top-item + .loc-age-top-item {
+  border-top: 1px solid var(--border);
 }
 
 .loc-age-top-place {
-  color: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  color: var(--text-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+/* Подиум: первые три места узнаются цветом, как медали в достижениях. */
+.loc-age-top-place-gold {
+  color: #7a4c05;
+  background: linear-gradient(180deg, #ffe9a3, #f5b93f);
+  border-color: #e0a52e;
+}
+
+.loc-age-top-place-silver {
+  color: #47505d;
+  background: linear-gradient(180deg, #f3f6fa, #c6d0dc);
+  border-color: #b2bdcc;
+}
+
+.loc-age-top-place-bronze {
+  color: #fff;
+  background: linear-gradient(180deg, #e0a276, #c0784a);
+  border-color: #a8663c;
+}
+
+.loc-age-top-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Полоса отрыва: 100% у лидера группы, дальше короче. Чисто иллюстративная,
+   поэтому на узких экранах прячется, чтобы не отжимать имя и время. */
+.loc-age-top-bar {
+  display: block;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.loc-age-top-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent-indigo);
+  opacity: 0.55;
 }
 
 .loc-age-top-time {
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .loc-age-top-item {
+    grid-template-columns: 1.35rem minmax(0, 1fr) auto;
+  }
+
+  .loc-age-top-bar {
+    display: none;
+  }
+
+  .loc-age-top-hint {
+    display: none;
+  }
 }
 
 /* Шапка публичного профиля: аватар рядом с именем участника. */

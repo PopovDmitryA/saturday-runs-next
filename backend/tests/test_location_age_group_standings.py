@@ -255,7 +255,7 @@ def test_results_without_time_or_category_are_skipped(db_session: Session) -> No
 
 
 def test_under_ten_is_its_own_group(db_session: Session) -> None:
-    """«М10» («10 и младше») не сваливается в «10–14» — это разные ступени."""
+    """«М10» («младше 10») не сваливается в «10–14» — это разные ступени."""
     suffix = uuid4().hex[:8]
     five_verst = _platform(db_session, "five_verst", "5 вёрст")
     location = _make_location(db_session, five_verst, f"kid-{suffix}", "Парк детский")
@@ -276,16 +276,16 @@ def test_under_ten_is_its_own_group(db_session: Session) -> None:
     standings = build_location_age_group_standings(db_session, user.id, event_ids)
     assert [(s["age_group"], s["place"], s["total"]) for s in standings] == [
         ("10–14", 1, 1),
-        ("≤10", 2, 2),
+        ("<10", 2, 2),
     ]
-    assert [s["label"] for s in standings] == ["М10–14", "М≤10"]
+    assert [s["label"] for s in standings] == ["М10–14", "М<10"]
     # Ключ-якорь уходит в id строки таблицы — без «≤».
     assert {s["key"] for s in standings} == {"male-10-14", "male-under10"}
 
     tops = _age_group_tops(db_session, event_ids)
-    assert [row["name"] for row in tops[("male", "≤10")]] == ["Сосед по группе", "Юный Бегун"]
-    # «10 и младше» идёт в таблице раньше «10–14».
-    assert [r["age_group"] for r in _age_group_records(db_session, event_ids)] == ["≤10", "10–14"]
+    assert [row["name"] for row in tops[("male", "<10")]] == ["Сосед по группе", "Юный Бегун"]
+    # «младше 10» идёт в таблице раньше «10–14».
+    assert [r["age_group"] for r in _age_group_records(db_session, event_ids)] == ["<10", "10–14"]
 
 
 def test_equal_best_times_share_one_place(db_session: Session) -> None:

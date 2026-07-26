@@ -205,6 +205,28 @@ function PlatformTimeline({ page }: { page: LocationPageData }) {
   );
 }
 
+/** Подиумная раскраска первых трёх мест в топе группы. */
+function podiumClass(place: number): string {
+  if (place === 1) return "gold";
+  if (place === 2) return "silver";
+  if (place === 3) return "bronze";
+  return "plain";
+}
+
+/**
+ * Ширина полосы в строке топа: 100% у лидера группы, дальше пропорционально
+ * отставанию. Считается от размаха самой пятёрки, иначе на плотных группах
+ * (все в пределах минуты) полосы были бы неотличимы.
+ */
+function topBarWidth(seconds: number, rows: { best_time_sec: number }[]): number {
+  const best = rows[0]?.best_time_sec ?? seconds;
+  const worst = rows[rows.length - 1]?.best_time_sec ?? seconds;
+  if (worst <= best) {
+    return 100;
+  }
+  return Math.round(100 - ((seconds - best) / (worst - best)) * 55);
+}
+
 function AgeGroupRecordsTable({
   records,
   openKey,
@@ -266,19 +288,34 @@ function AgeGroupRecordsTable({
               {open && (
                 <tr className="loc-age-records-top-row">
                   <td colSpan={4}>
-                    <ol className="loc-age-top-list">
-                      {record.top.map((row) => (
-                        <li key={`${record.key}-${row.place}-${row.name}`}>
-                          <span className="loc-age-top-place">{row.place}</span>
-                          <span className="loc-age-top-name">
-                            <RunnerName name={row.name} handle={row.handle} />
-                          </span>
-                          <span className="loc-age-top-time">
-                            {stripLeadingHours(row.best_time_display)}
-                          </span>
-                        </li>
-                      ))}
-                    </ol>
+                    <div className="loc-age-top">
+                      <div className="loc-age-top-head">
+                        Топ-{record.top.length} группы {record.age_group}
+                        <span className="loc-age-top-hint">лучшее время каждого участника</span>
+                      </div>
+                      <ol className="loc-age-top-list">
+                        {record.top.map((row) => (
+                          <li key={`${record.key}-${row.place}-${row.name}`} className="loc-age-top-item">
+                            <span className={`loc-age-top-place loc-age-top-place-${podiumClass(row.place)}`}>
+                              {row.place}
+                            </span>
+                            <span className="loc-age-top-name">
+                              <RunnerName name={row.name} handle={row.handle} />
+                            </span>
+                            {/* Полоса длиной от лучшего времени в группе: видно отрыв. */}
+                            <span className="loc-age-top-bar" aria-hidden="true">
+                              <span
+                                className="loc-age-top-bar-fill"
+                                style={{ width: `${topBarWidth(row.best_time_sec, record.top)}%` }}
+                              />
+                            </span>
+                            <span className="loc-age-top-time">
+                              {stripLeadingHours(row.best_time_display)}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
                   </td>
                 </tr>
               )}
