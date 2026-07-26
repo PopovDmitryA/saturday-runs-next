@@ -40,6 +40,44 @@
       "city": "Сочи",
       "latitude": 43.408577,
       "longitude": 39.938242
+    },
+    {
+      "platform": "parkrun",
+      "slug": "parkguskova",
+      "name": "Парк Гуськова",
+      "city": "Оренбург",
+      "latitude": 51.805244,
+      "longitude": 55.141219
+    },
+    {
+      "platform": "parkrun",
+      "slug": "staryesady",
+      "name": "Старые сады",
+      "city": "Владимир",
+      "latitude": 56.134949,
+      "longitude": 40.384735
+    },
+    {
+      "platform": "parkrun",
+      "slug": "memorialnypark",
+      "name": "Мемориальный парк",
+      "city": "Орёл",
+      "latitude": 52.966157,
+      "longitude": 36.044661
+    },
+    {
+      "platform": "parkrun",
+      "slug": "ryazanoreshek",
+      "city": "Рязань",
+      "latitude": 54.636822,
+      "longitude": 39.765103
+    },
+    {
+      "platform": "parkrun",
+      "slug": "ryazancentral",
+      "city": "Рязань",
+      "latitude": 54.612741,
+      "longitude": 39.735395
     }
   ]
 }
