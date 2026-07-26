@@ -138,84 +138,6 @@ body {
   color: var(--text);
 }
 
-.legacy-site-banner {
-  border-bottom: 1px solid var(--tint-blue-border-strong);
-  background: linear-gradient(180deg, var(--tint-blue-bg) 0%, var(--tint-blue-bg-strong) 100%);
-}
-
-.legacy-site-banner-inner {
-  position: relative;
-  max-width: var(--layout-max-width);
-  margin: 0 auto;
-  padding: 0.7rem 2.75rem 0.7rem 1rem;
-}
-
-.legacy-site-banner-body {
-  text-align: center;
-}
-
-.legacy-site-banner-body p {
-  margin: 0 0 0.35rem;
-  font-size: 0.84rem;
-  line-height: 1.45;
-  color: var(--tint-blue-text);
-}
-
-.legacy-site-banner-body p:last-child {
-  margin-bottom: 0;
-}
-
-.legacy-site-banner-link {
-  color: var(--link-strong);
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 0.14em;
-}
-
-.legacy-site-banner-link:hover {
-  color: var(--tint-blue-text);
-}
-
-.legacy-site-banner-dismiss {
-  position: absolute;
-  top: 0.45rem;
-  right: 0.55rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--tint-blue-text);
-  font-size: 1.35rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.legacy-site-banner-dismiss:hover {
-  background: rgba(255, 255, 255, 0.55);
-  color: var(--tint-blue-text);
-}
-
-.legacy-site-banner-dismiss:focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
-}
-
-@media (max-width: 520px) {
-  .legacy-site-banner-inner {
-    padding: 0.6rem 2.35rem 0.6rem 0.75rem;
-  }
-
-  .legacy-site-banner-body p {
-    font-size: 0.8rem;
-    line-height: 1.4;
-  }
-}
-
 .page {
   width: 100%;
   max-width: var(--layout-max-width);
@@ -7923,10 +7845,6 @@ tr.run-crosslinked td {
 /* Бейдж платформы внутри цветной карточки «В этот день» */
 :root[data-theme="dark"] .on-this-day-run .badge-platform {
   background: rgba(15, 23, 42, 0.5);
-}
-
-:root[data-theme="dark"] .legacy-site-banner-dismiss:hover {
-  background: rgba(148, 163, 184, 0.18);
 }
 
 /* Стат-карточки: тёмные варианты тематических палитр */

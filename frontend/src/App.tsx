@@ -51,7 +51,6 @@ import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage
 import { QueuePage } from "./features/queue/QueuePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { NotFoundPage } from "./features/NotFoundPage";
-import { LegacySiteBanner } from "./components/LegacySiteBanner";
 import { useAppPath } from "./hooks/useAppPath";
 import { reportAbLoginOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
@@ -274,22 +273,8 @@ function renderRoute(path: string): ReactElement {
   return <NotFoundPage />;
 }
 
-// Страницы портального редизайна — на них баннер про переезд с Grafana не показываем.
-const PORTAL_PATHS = new Set([
-  PORTAL_HOME_HREF,
-  PORTAL_ABOUT_HREF,
-  PORTAL_LOGIN_HREF,
-  PORTAL_BLOG_HREF,
-]);
-
 export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
-  const hideLegacyBanner = PORTAL_PATHS.has(path) || path.startsWith("/new/") || path.startsWith("/hq/");
-  return (
-    <>
-      {!hideLegacyBanner && <LegacySiteBanner />}
-      {renderRoute(path)}
-    </>
-  );
+  return renderRoute(path);
 }
