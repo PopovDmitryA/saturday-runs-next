@@ -39,6 +39,11 @@ export function CountUpNumber({
       el === null ||
       typeof IntersectionObserver === "undefined" ||
       window.innerHeight === 0 ||
+      // Скрытая вкладка (открыли ссылку фоном, встроенная панель превью):
+      // requestAnimationFrame там не тикает, а таймеры throttling'уются, так
+      // что счётчик рискует навсегда замереть на нуле. Цифра важнее эффекта —
+      // показываем итог сразу.
+      document.visibilityState !== "visible" ||
       reducedMotion
     ) {
       setDisplay(value);
