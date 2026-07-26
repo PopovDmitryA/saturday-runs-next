@@ -10711,123 +10711,72 @@ tr.run-crosslinked td {
   margin-top: 12px;
 }
 
-/* «Ваши возрастные группы здесь» — по карточке на каждую категорию, в которой
-   участник бегал на этой локации, со спойлером топ-5 внутри группы. */
-.loc-age-groups {
-  margin-top: 1.1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-}
-
-.loc-age-groups-title {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  margin: 0 0 0.6rem;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text-2);
-}
-
-.loc-age-groups-list {
-  display: grid;
-  /* Шире плиток общей статистики: внутрь раскрывается таблица топ-5. */
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 0.6rem;
-  align-items: start;
-}
-
-.loc-age-group-card {
-  display: flex;
-  flex-direction: column;
-  padding: 0.7rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-muted);
-}
-
-.loc-age-group-head {
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-}
-
-.loc-age-group-place {
-  font-size: 1.45rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-  color: var(--text);
-}
-
-.loc-age-group-name {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text-2);
-  white-space: nowrap;
-}
-
-.loc-age-group-sub {
-  margin-top: 0.15rem;
-  font-size: 0.78rem;
-  color: var(--text-3);
-  line-height: 1.3;
-}
-
-.loc-age-group-toggle {
+/* Раскрывающийся топ-5 внутри «Рекордов по возрастным группам»: группа в
+   первой колонке становится кнопкой, под строкой рекорда выезжает пятёрка. */
+.loc-age-records-toggle {
   display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  align-self: flex-start;
-  margin-top: 0.45rem;
+  align-items: baseline;
+  gap: 0.3rem;
   padding: 0;
   border: none;
   background: none;
-  font-size: 0.78rem;
-  font-weight: 600;
+  font: inherit;
   color: var(--link);
   cursor: pointer;
 }
 
-.loc-age-group-toggle:hover {
+.loc-age-records-toggle:hover {
   text-decoration: underline;
 }
 
-.loc-age-group-toggle-caret {
-  font-size: 0.6rem;
+.loc-age-records-caret {
+  font-size: 0.7rem;
+  line-height: 1;
 }
 
-.loc-age-group-table {
-  margin-top: 0.5rem;
+.loc-age-records-row-open > td {
+  border-bottom: none;
+  font-weight: 600;
 }
 
-.loc-age-group-table .loc-age-group-col-rank {
-  width: 2rem;
+/* Подсветка группы, на которую увела плитка «место в группе». */
+.loc-age-records-row-open > td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent-indigo);
 }
 
-.loc-age-group-table .loc-age-group-col-time {
-  width: 4.5rem;
+.loc-age-records-top-row > td {
+  padding-top: 0;
 }
 
-.loc-age-group-table td {
-  font-size: 0.8rem;
+.loc-age-top-list {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0 0 0.4rem;
+  padding: 0.4rem 0.6rem;
+  list-style: none;
+  border-radius: 10px;
+  background: var(--bg-muted);
 }
 
-.loc-age-group-row-me td {
-  font-weight: 700;
+.loc-age-top-list li {
+  display: grid;
+  grid-template-columns: 1.4rem 1fr auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.18rem 0;
+  font-size: 0.82rem;
 }
 
-.loc-age-group-me-badge {
-  margin-left: 0.3rem;
-  padding: 0.05rem 0.35rem;
-  border-radius: 999px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: #fff;
-  background: var(--accent-indigo);
+.loc-age-top-place {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
+.loc-age-top-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 
 /* Шапка публичного профиля: аватар рядом с именем участника. */
 .public-profile-head {

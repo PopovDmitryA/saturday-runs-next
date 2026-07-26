@@ -172,17 +172,32 @@ class LocationHistogramResponse(BaseModel):
     rows: list[LocationHistogramRowResponse] = Field(default_factory=list)
 
 
+class LocationAgeGroupTopRowResponse(BaseModel):
+    """Строка топ-5 внутри возрастной группы локации."""
+
+    place: int
+    name: str | None = None
+    handle: str | None = None
+    best_time_sec: int
+    best_time_display: str
+
+
 class LocationAgeGroupRecordResponse(BaseModel):
-    # Хендл профиля на сайте (slug или номер) — если участник привязал систему.
     """Рекорд локации в возрастной группе (parkrun исключён — другие категории)."""
 
+    # Ключ строки: он же якорь, на который ссылается личная плитка «место в группе».
+    key: str
     gender: str
     age_group: str
     finish_time_sec: int
     finish_time_display: str | None = None
     runner_name: str | None = None
+    # Хендл профиля на сайте (slug или номер) — если участник привязал систему.
+    runner_handle: str | None = None
     event_date: date | None = None
     platform_code: str | None = None
+    # Топ-5 группы: раскрывается спойлером под строкой рекорда.
+    top: list[LocationAgeGroupTopRowResponse] = Field(default_factory=list)
 
 
 class LocationPageResponse(BaseModel):
@@ -317,25 +332,18 @@ class CatalogLocationsTableResponse(BaseModel):
     total_rows: int = 0
 
 
-class LocationAgeGroupTopRowResponse(BaseModel):
-    """Строка топ-5 внутри возрастной группы локации."""
-
-    place: int
-    name: str | None = None
-    handle: str | None = None
-    best_time_sec: int
-    best_time_display: str
-    is_me: bool = False
-
-
 class LocationAgeGroupStandingResponse(BaseModel):
     """Место пользователя в топе локации по одной его возрастной группе.
 
     Групп у человека столько, сколько он успел пройти на этой площадке:
-    перешёл из «М30-34» в «М35-39» — будут обе, каждая со своими цифрами.
+    перешёл из «30–34» в «35–39» — будут обе, каждая со своими цифрами.
+    Ключ `key` тот же, что у строки в «Рекордах по возрастным группам», —
+    по нему плитка ссылается на топ-5 своей группы.
     """
 
-    age_category: str
+    key: str
+    gender: str
+    age_group: str
     label: str
     runs_count: int
     best_time_sec: int
@@ -344,7 +352,6 @@ class LocationAgeGroupStandingResponse(BaseModel):
     last_run_date: date | None = None
     place: int | None = None
     total: int = 0
-    top: list[LocationAgeGroupTopRowResponse] = Field(default_factory=list)
 
 
 class LocationPersonalStatsResponse(BaseModel):

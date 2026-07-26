@@ -1757,7 +1757,16 @@ export type LocationHistogramRow = {
   count: number;
 };
 
+export type LocationAgeGroupTopRow = {
+  place: number;
+  name: string | null;
+  handle?: string | null;
+  best_time_sec: number;
+  best_time_display: string;
+};
+
 export type LocationAgeGroupRecord = {
+  key: string;
   runner_handle?: string | null;
   gender: "male" | "female";
   age_group: string;
@@ -1766,6 +1775,7 @@ export type LocationAgeGroupRecord = {
   runner_name: string | null;
   event_date: string | null;
   platform_code: string | null;
+  top: LocationAgeGroupTopRow[];
 };
 
 export type LocationPage = {
@@ -1884,18 +1894,12 @@ export function getLocationLeaders(slug: string) {
   return apiFetch<LocationLeaders>(`/locations/page/${encodeURIComponent(slug)}/leaders`);
 }
 
-export type LocationAgeGroupTopRow = {
-  place: number;
-  name: string | null;
-  handle?: string | null;
-  best_time_sec: number;
-  best_time_display: string;
-  is_me: boolean;
-};
-
 /** Место участника в топе локации по одной его возрастной группе. */
 export type LocationAgeGroupStanding = {
-  age_category: string;
+  // Тот же ключ, что у строки в age_group_records: по нему плитка раскрывает топ-5.
+  key: string;
+  gender: "male" | "female";
+  age_group: string;
   label: string;
   runs_count: number;
   best_time_sec: number;
@@ -1904,7 +1908,6 @@ export type LocationAgeGroupStanding = {
   last_run_date: string | null;
   place: number | null;
   total: number;
-  top: LocationAgeGroupTopRow[];
 };
 
 export type LocationPersonalStats = {

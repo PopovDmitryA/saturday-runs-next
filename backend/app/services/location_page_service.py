@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, cast
 from uuid import UUID
 
 import redis
-from sqlalchemy import and_, case, func
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.activity_url import resolve_activity_url
@@ -66,7 +66,7 @@ LOCATION_PAGE_CACHE_TTL_SECONDS = 3 * 60 * 60
 
 
 def location_page_cache_key(slug: str) -> str:
-    return f"locations:page:v5:{slug.strip().lower()}"
+    return f"locations:page:v6:{slug.strip().lower()}"
 
 
 def location_events_cache_key(slug: str) -> str:
@@ -615,8 +615,206 @@ def _age_group_sort_key(age_group: str) -> int:
     return int(match.group(1)) if match else 999
 
 
+AGE_GROUP_TOP_LIMIT = 5
+# Топ группы собираем по СЫРЫМ категориям протоколов («М30-34» у 5 вёрст,
+# «SM30-34» у RunPark), а потом сливаем в одну нормализованную группу. Берём с
+# запасом: у сырых категорий одной группы пятёрки свои, и после слияния часть
+# строк уходит вниз — иначе итоговая пятёрка могла бы недосчитаться.
+_AGE_GROUP_TOP_FETCH = AGE_GROUP_TOP_LIMIT * 2
+
+
+def age_group_key(gender: str, age_group: str) -> str:
+    """Ключ строки возрастной группы: («male», «30–34») → «male-30-34».
+
+    Служит и якорем в разметке: плитка «место в группе» из блока «Вы на этой
+    локации» ссылается по нему на нужную строку в «Рекордах по возрастным
+    группам», где под спойлером лежит топ-5 этой группы.
+    """
+    return f"{gender}-{age_group.replace('–', '-').replace('+', 'plus')}"
+
+
+def _protocol_age_category_gender() -> Any:
+    """Пол по возрастной категории самой протокольной строки.
+
+    Урезанная версия _gender_expression под выборки возрастных групп: её ветки
+    parkrun и s95 читают participants, а здесь они недостижимы — parkrun из
+    этих выборок исключён (в его age_category лежит age grade, а не категория),
+    s95 категорию не публикует вовсе. Зато без join к participants выборка по
+    крупной площадке укладывается в 0.3с вместо 2.4с: 66 тыс. случайных
+    обращений в таблицу на 1.2 млн строк были самой дорогой её частью.
+    «М35-39»/«Ж45-49» — 5 вёрст, «SM25-29»/«VW40-44» — RunPark.
+    """
+    return case(
+        (func.substr(RunResult.age_category, 1, 1) == "М", "male"),
+        (func.substr(RunResult.age_category, 1, 1) == "Ж", "female"),
+        (func.substr(RunResult.age_category, 2, 1) == "M", "male"),
+        (func.substr(RunResult.age_category, 2, 1) == "W", "female"),
+        else_=None,
+    )
+
+
+def _age_group_match_clauses(age_groups: Iterable[str]) -> list[Any]:
+    """SQL-условия «сырая категория протокола попадает в эту группу».
+
+    Зеркалят normalize_age_group в обратную сторону: в «30–34» ложится всё, где
+    есть подстрока «30-34» с любым из трёх тире, — и «М30-34» 5 вёрст, и
+    «SM30-34»/«VM30-34» RunPark. Нужны, чтобы посчитать место участника одним
+    запросом, не вычитывая перед этим все категории локации (такой скан по
+    Затюменскому стоит четверть секунды сам по себе).
+    """
+    clauses: list[Any] = []
+    for age_group in age_groups:
+        if age_group.endswith("+"):
+            clauses.append(RunResult.age_category.like(f"%{age_group}%"))
+            continue
+        low, _, high = age_group.partition("–")
+        clauses.extend(RunResult.age_category.like(f"%{low}{dash}{high}%") for dash in ("-", "–", "—"))
+    return clauses
+
+
+def _age_group_runner_bests(
+    db: Session,
+    event_ids: list[UUID],
+    *,
+    age_groups: Iterable[str] | None = None,
+) -> Any:
+    """CTE «лучшее время каждого участника в каждой сырой категории».
+
+    Уникальность — по participants.id, без слияния привязанных аккаунтов по
+    platform_links.user_id, как в общих рейтингах локации: join к participants
+    и platform_links на все протокольные строки крупной площадки стоит секунды,
+    а сливать было бы что в 57 случаях на всю базу (человек бегал здесь и в
+    5 вёрст, и в RunPark, да ещё в одной возрастной полосе). Имена
+    подтягиваются потом и только к строкам, которые реально показываем.
+    """
+    time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
+    gender_expr = _protocol_age_category_gender()
+    filters = [
+        RunResult.event_id.in_(event_ids),
+        RunResult.participant_id.isnot(None),
+        time_ok,
+        Platform.code != "parkrun",
+        RunResult.age_category.isnot(None),
+        RunResult.age_category != "",
+    ]
+    if age_groups is not None:
+        filters.append(or_(*_age_group_match_clauses(age_groups)))
+    return (
+        db.query(
+            gender_expr.label("gender"),
+            RunResult.age_category.label("age_category"),
+            RunResult.participant_id.label("runner_id"),
+            func.min(RunResult.finish_time_sec).label("best_sec"),
+        )
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .filter(*filters)
+        .group_by(gender_expr, RunResult.age_category, RunResult.participant_id)
+        .cte("age_group_runner_bests")
+    )
+
+
+def _merge_age_group_bests(rows: Iterable[Any]) -> dict[tuple[str, str], list[dict[str, object]]]:
+    """Сырые категории → нормализованные группы, по одной строке на участника.
+
+    Возвращает списки, отсортированные по времени, с проставленным спортивным
+    местом: равное лучшее время делит одно место.
+    """
+    merged: dict[tuple[str, str], dict[UUID, int]] = {}
+    for row in rows:
+        if row.gender not in ("male", "female"):
+            continue
+        age_group = normalize_age_group(row.age_category)
+        if age_group is None:
+            continue
+        runners = merged.setdefault((row.gender, age_group), {})
+        best_sec = int(row.best_sec)
+        if row.runner_id not in runners or best_sec < runners[row.runner_id]:
+            runners[row.runner_id] = best_sec
+
+    result: dict[tuple[str, str], list[dict[str, object]]] = {}
+    for key, runners in merged.items():
+        ordered = sorted(runners.items(), key=lambda item: (item[1], str(item[0])))
+        place = 0
+        previous_sec: int | None = None
+        rows_out: list[dict[str, object]] = []
+        for index, (runner_id, best_sec) in enumerate(ordered, start=1):
+            if best_sec != previous_sec:
+                place = index
+                previous_sec = best_sec
+            rows_out.append({"runner_id": runner_id, "best_time_sec": best_sec, "place": place})
+        result[key] = rows_out
+    return result
+
+
+def _participant_display_names(
+    db: Session, participant_ids: Iterable[UUID]
+) -> dict[UUID, tuple[str | None, str | None]]:
+    """participants.id → (имя, хендл профиля на сайте) для показываемых строк."""
+    ids = list(participant_ids)
+    if not ids:
+        return {}
+    rows = (
+        db.query(
+            Participant.id,
+            func.coalesce(User.display_name, Participant.display_name).label("name"),
+            User.public_slug,
+            User.serial_id,
+        )
+        .outerjoin(PlatformLink, _platform_link_join())
+        .outerjoin(User, PlatformLink.user_id == User.id)
+        .filter(Participant.id.in_(ids))
+        .all()
+    )
+    return {
+        row.id: (row.name, row.public_slug or (str(row.serial_id) if row.serial_id else None))
+        for row in rows
+    }
+
+
+def _age_group_tops(
+    db: Session, event_ids: list[UUID], *, limit: int = AGE_GROUP_TOP_LIMIT
+) -> dict[tuple[str, str], list[dict[str, object]]]:
+    """Топ-N в каждой возрастной группе локации: участники и их лучшее время.
+
+    Считается по тем же строкам, что и рекорд группы, поэтому первая строчка
+    топа всегда совпадает с рекордом в той же таблице.
+    """
+    if not event_ids:
+        return {}
+    bests = _age_group_runner_bests(db, event_ids)
+    row_number = func.row_number().over(
+        partition_by=(bests.c.gender, bests.c.age_category),
+        order_by=(bests.c.best_sec.asc(), bests.c.runner_id.asc()),
+    )
+    ranked = db.query(bests, row_number.label("row_number")).select_from(bests).subquery()
+    rows = db.query(ranked).filter(ranked.c.row_number <= _AGE_GROUP_TOP_FETCH).all()
+
+    merged = {key: runners[:limit] for key, runners in _merge_age_group_bests(rows).items()}
+    names = _participant_display_names(
+        db, {cast(UUID, runner["runner_id"]) for runners in merged.values() for runner in runners}
+    )
+    tops: dict[tuple[str, str], list[dict[str, object]]] = {}
+    for key, runners in merged.items():
+        tops[key] = [
+            {
+                "place": runner["place"],
+                "name": names.get(cast(UUID, runner["runner_id"]), (None, None))[0],
+                "handle": names.get(cast(UUID, runner["runner_id"]), (None, None))[1],
+                "best_time_sec": runner["best_time_sec"],
+                "best_time_display": format_finish_time_display(cast(int, runner["best_time_sec"])),
+            }
+            for runner in runners
+        ]
+    return tops
+
+
 def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, object]]:
     """Рекорды локации по возрастным группам: лучшее время в каждой группе М/Ж.
+
+    Вместе с рекордом каждая группа несёт свой топ-5 (_age_group_tops) — он
+    раскрывается спойлером прямо в этой таблице, и на него же ссылаются
+    личные плитки «место в группе» из блока «Вы на этой локации».
 
     Фактически строится по данным 5 вёрст — единственной системы, которая
     публикует возрастной диапазон («М35-39»). Остальные отсеиваются сами:
@@ -688,6 +886,7 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
         current = best.get(key)
         if current is None or int(finish_time_sec) < int(current["finish_time_sec"]):  # type: ignore[arg-type]
             best[key] = {
+                "key": age_group_key(gender, age_group),
                 "gender": gender,
                 "age_group": age_group,
                 "finish_time_sec": int(finish_time_sec),
@@ -697,6 +896,10 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
                 "platform_code": platform_code,
                 "runner_handle": runner_slug or (str(runner_serial_id) if runner_serial_id else None),
             }
+
+    tops = _age_group_tops(db, event_ids)
+    for key, record in best.items():
+        record["top"] = tops.get(key, [])
 
     return sorted(
         best.values(),
@@ -1526,86 +1729,59 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
     return {"items": items, "total": len(items)}
 
 
-# Возрастная группа 5 вёрст в протоколе: «М35-39», «Ж45-49», «М10» (10 и младше).
-# Проверяем формат явно, потому что в run_results.age_category лежит разное:
-# у parkrun там age grade («54.38%»), у runpark — parkrun-коды («VM40-44»),
-# у s95 категории нет вовсе. Топ по возрастным группам строим только по
-# 5 вёрст — единственной системе, где категория протокола пригодна как есть.
-_FIVE_VERST_AGE_GROUP_RE = re.compile(r"^[МЖ]\d{1,2}(?:-\d{1,2})?$")
-AGE_GROUP_TOP_LIMIT = 5
-
-
-def is_five_verst_age_group(age_category: str | None) -> bool:
-    if not age_category:
-        return False
-    return bool(_FIVE_VERST_AGE_GROUP_RE.match(age_category.strip()))
-
-
-def age_group_label(age_category: str) -> str:
-    """«М35-39» → «М35–39»: тот же код группы, но с типографским тире."""
-    return age_category.strip().replace("-", "–")
-
-
-def _five_verst_age_group_sort_key(age_category: str) -> int:
-    """Нижняя граница возраста категории: «М35-39» → 35. Буква пола не мешает."""
-    return _age_group_sort_key(age_category[1:])
-
-
 def build_location_age_group_standings(
-    db: Session,
-    user_id: UUID,
-    five_verst_event_ids: list[UUID],
-    *,
-    top_limit: int = AGE_GROUP_TOP_LIMIT,
+    db: Session, user_id: UUID, event_ids: list[UUID]
 ) -> list[dict[str, object]]:
-    """Места пользователя в топах локации по каждой его возрастной группе.
+    """Место участника в топе локации по каждой его возрастной группе.
 
-    Топ группы: все уникальные участники, бегавшие здесь в этой категории, и
-    лучшее время каждого — именно в этой категории. Поэтому человек, успевший
-    побывать в «М30-34» и «М35-39», получает две отдельные строчки со своими
-    результатами и своим местом: сравнение всегда идёт с теми, кто бежал в той
-    же группе. От недели к неделе место плавает — пересчитывается на лету.
+    Групп столько, сколько человек успел пройти на этой площадке: перешёл из
+    «30–34» в «35–39» — будут обе, у каждой своё место и своё лучшее время в
+    ней. Сравнение всегда внутри группы, поэтому результаты прошлой категории
+    не конкурируют с нынешней. Место пересчитывается на лету и меняется, когда
+    кто-то в группе пробегает быстрее.
 
-    Уникальность участника — по participants.id, без слияния по
-    platform_links.user_id как у общих рейтингов локации: выборка ограничена
-    одной платформой, а привязка уникальна по (пользователь, платформа), так
-    что один человек здесь и так даёт ровно одну строку.
+    Группировка та же, что у рекордов по возрастным группам (_age_group_tops),
+    чтобы «#16» на плитке и топ-5, на который она ссылается, сходились.
     """
-    if not five_verst_event_ids:
+    if not event_ids:
         return []
 
+    gender_expr = _protocol_age_category_gender()
     time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
 
-    # Свои строки берём целиком и разбираем в Python: их десятки, зато формат
-    # категории проверяется одним и тем же кодом, что и в тестах.
-    my_rows = [
-        row
-        for row in db.query(
-            RunResult.participant_id,
-            RunResult.age_category,
-            RunResult.event_id,
-            RunResult.finish_time_sec,
-            Event.event_date,
+    # Свои строки разбираем в Python: их десятки, зато нормализация категории
+    # одна и та же (normalize_age_group), без второй копии правил в SQL.
+    my_rows = (
+        db.query(
+            gender_expr.label("gender"),
+            RunResult.age_category.label("age_category"),
+            RunResult.event_id.label("event_id"),
+            RunResult.finish_time_sec.label("finish_time_sec"),
+            Event.event_date.label("event_date"),
         )
         .join(Event, RunResult.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
         .join(Participant, RunResult.participant_id == Participant.id)
         .join(PlatformLink, _platform_link_join())
         .filter(
             PlatformLink.user_id == user_id,
-            RunResult.event_id.in_(five_verst_event_ids),
+            RunResult.event_id.in_(event_ids),
             time_ok,
+            Platform.code != "parkrun",
+            RunResult.age_category.isnot(None),
         )
         .all()
-        if is_five_verst_age_group(row.age_category) and row.participant_id is not None
-    ]
-    if not my_rows:
-        return []
+    )
 
-    my_participant_ids = {row.participant_id for row in my_rows}
-    mine: dict[str, dict[str, object]] = {}
+    mine: dict[tuple[str, str], dict[str, object]] = {}
     for row in my_rows:
+        if row.gender not in ("male", "female"):
+            continue
+        age_group = normalize_age_group(row.age_category)
+        if age_group is None:
+            continue
         group = mine.setdefault(
-            row.age_category,
+            (row.gender, age_group),
             {"events": set(), "best_sec": None, "best_date": None, "last_date": None},
         )
         cast(set[UUID], group["events"]).add(row.event_id)
@@ -1617,113 +1793,45 @@ def build_location_age_group_standings(
         if row.event_date is not None and (last_date is None or row.event_date > last_date):
             group["last_date"] = row.event_date
 
-    my_groups = list(mine)
+    if not mine:
+        return []
 
-    # Лучшее время каждого участника в каждой из «моих» категорий. Сужение по
-    # категориям здесь не косметика: на крупной локации (Затюменский — 75 тыс.
-    # протокольных строк) оно срезает основную часть работы запроса.
-    best = (
-        db.query(
-            RunResult.participant_id.label("runner_id"),
-            RunResult.age_category.label("age_category"),
-            func.min(RunResult.finish_time_sec).label("best_sec"),
-        )
-        .filter(
-            RunResult.event_id.in_(five_verst_event_ids),
-            RunResult.participant_id.isnot(None),
-            RunResult.age_category.in_(my_groups),
-            time_ok,
-        )
-        .group_by(RunResult.participant_id, RunResult.age_category)
-        .cte("age_group_best")
-    )
-
-    # rank() — спортивное место: одинаковое время делит одно место.
-    # row_number() отдельно, потому что для витрины топ-5 нужны ровно пять строк.
-    place = func.rank().over(partition_by=best.c.age_category, order_by=best.c.best_sec.asc())
-    row_number = func.row_number().over(
-        partition_by=best.c.age_category, order_by=(best.c.best_sec.asc(), best.c.runner_id.asc())
-    )
-    total = func.count().over(partition_by=best.c.age_category)
-    ranked = (
-        db.query(
-            best.c.runner_id.label("runner_id"),
-            best.c.age_category.label("age_category"),
-            best.c.best_sec.label("best_sec"),
-            place.label("place"),
-            row_number.label("row_number"),
-            total.label("total"),
-        )
-        .select_from(best)
-        .subquery()
-    )
-
-    rows = (
-        db.query(
-            ranked.c.runner_id,
-            ranked.c.age_category,
-            ranked.c.best_sec,
-            ranked.c.place,
-            ranked.c.row_number,
-            ranked.c.total,
-            func.coalesce(User.display_name, Participant.display_name).label("name"),
-            User.public_slug,
-            User.serial_id,
-        )
-        .select_from(ranked)
-        .outerjoin(Participant, Participant.id == ranked.c.runner_id)
-        .outerjoin(PlatformLink, _platform_link_join())
-        .outerjoin(User, PlatformLink.user_id == User.id)
-        .filter(
-            (ranked.c.row_number <= top_limit) | ranked.c.runner_id.in_(my_participant_ids),
-        )
-        .order_by(ranked.c.age_category.asc(), ranked.c.row_number.asc())
-        .all()
-    )
-
-    tops: dict[str, list[dict[str, object]]] = {group: [] for group in my_groups}
-    totals: dict[str, int] = {}
-    my_places: dict[str, int] = {}
-    for row in rows:
-        totals[row.age_category] = int(row.total)
-        if row.runner_id in my_participant_ids:
-            my_places[row.age_category] = int(row.place)
-        if row.row_number <= top_limit:
-            tops[row.age_category].append(
-                {
-                    "place": int(row.place),
-                    "name": row.name,
-                    "handle": row.public_slug or (str(row.serial_id) if row.serial_id else None),
-                    "best_time_sec": int(row.best_sec),
-                    "best_time_display": format_finish_time_display(int(row.best_sec)),
-                    "is_me": row.runner_id in my_participant_ids,
-                }
-            )
+    # Соперники — только в «моих» группах: сужение по категориям срезает
+    # основную часть работы запроса на крупной локации.
+    bests = _age_group_runner_bests(db, event_ids, age_groups={key[1] for key in mine})
+    rivals = _merge_age_group_bests(db.query(bests).all())
 
     standings: list[dict[str, object]] = []
-    for age_category, group in mine.items():
+    for (gender, age_group), group in mine.items():
         best_sec = cast(int, group["best_sec"])
+        runners = rivals.get((gender, age_group), [])
+        # Своё место ищем по своему же лучшему времени: при ничьей место общее,
+        # так что искать конкретную свою строку не нужно.
+        place = next(
+            (cast(int, runner["place"]) for runner in runners if runner["best_time_sec"] == best_sec),
+            None,
+        )
         standings.append(
             {
-                "age_category": age_category,
-                "label": age_group_label(age_category),
+                "key": age_group_key(gender, age_group),
+                "gender": gender,
+                "age_group": age_group,
+                "label": f"{'М' if gender == 'male' else 'Ж'}{age_group}",
                 "runs_count": len(cast(set[UUID], group["events"])),
                 "best_time_sec": best_sec,
                 "best_time_display": format_finish_time_display(best_sec),
                 "best_time_date": group["best_date"],
                 "last_run_date": group["last_date"],
-                "place": my_places.get(age_category),
-                "total": totals.get(age_category, 0),
-                "top": tops.get(age_category, []),
+                "place": place,
+                "total": len(runners),
             }
         )
 
-    # Свежая группа первой: обычно это текущая категория бегуна, а прошлые
-    # уходят вниз. При равенстве дат — по возрасту, чтобы порядок был устойчив.
+    # Свежая группа первой: обычно это текущая категория бегуна, прошлые ниже.
     standings.sort(
         key=lambda item: (
             cast(date | None, item["last_run_date"]) or date.min,
-            _five_verst_age_group_sort_key(cast(str, item["age_category"])),
+            _age_group_sort_key(cast(str, item["age_group"])),
         ),
         reverse=True,
     )
@@ -1740,10 +1848,6 @@ def build_location_personal_stats(db: Session, user_id: UUID, slug: str) -> dict
     if identity is None:
         return None
     event_ids = _location_event_ids(db, [location.id for location, _code in identity.locations])
-    # Возрастные группы есть только у 5 вёрст, поэтому для них — свой набор
-    # событий. У parkrun-/s95-идентичности список пуст, лишнего запроса нет.
-    five_verst_location_ids = [location.id for location, code in identity.locations if code == "five_verst"]
-    five_verst_event_ids = _location_event_ids(db, five_verst_location_ids) if five_verst_location_ids else []
 
     payload: dict[str, object] = {
         "slug": identity.slug,
@@ -1837,6 +1941,6 @@ def build_location_personal_stats(db: Session, user_id: UUID, slug: str) -> dict
     payload["rank_by_runs"] = int(ahead) + 1
     payload["runners_total"] = int(runners_total)
 
-    payload["age_groups"] = build_location_age_group_standings(db, user_id, five_verst_event_ids)
+    payload["age_groups"] = build_location_age_group_standings(db, user_id, event_ids)
 
     return payload

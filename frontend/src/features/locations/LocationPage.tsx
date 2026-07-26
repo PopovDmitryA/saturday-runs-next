@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import { LocationStatusLabel } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
@@ -31,6 +31,7 @@ function StatTile({
   sub,
   badge,
   onDetails,
+  detailsLabel,
   link,
 }: {
   value: ReactNode;
@@ -38,6 +39,8 @@ function StatTile({
   sub?: ReactNode;
   badge?: { text: string; title: string };
   onDetails?: () => void;
+  // Подпись кнопки подробностей, если «подробнее» не по смыслу.
+  detailsLabel?: string;
   // Ссылка-действие внизу плитки (например «журнал протоколов →» у стартов).
   link?: { href: string; label: string };
 }) {
@@ -57,7 +60,7 @@ function StatTile({
       {sub && <span className="loc-stat-sub">{sub}</span>}
       {onDetails && (
         <button type="button" className="loc-stat-details-link" onClick={onDetails}>
-          подробнее
+          {detailsLabel ?? "подробнее"}
         </button>
       )}
       {link && (
@@ -202,7 +205,15 @@ function PlatformTimeline({ page }: { page: LocationPageData }) {
   );
 }
 
-function AgeGroupRecordsTable({ records }: { records: LocationAgeGroupRecord[] }) {
+function AgeGroupRecordsTable({
+  records,
+  openKey,
+  onToggle,
+}: {
+  records: LocationAgeGroupRecord[];
+  openKey: string | null;
+  onToggle: (key: string) => void;
+}) {
   return (
     <table className="data-table loc-age-records-table">
       <colgroup>
@@ -220,24 +231,74 @@ function AgeGroupRecordsTable({ records }: { records: LocationAgeGroupRecord[] }
         </tr>
       </thead>
       <tbody>
-        {records.map((record) => (
-          <tr key={`${record.gender}-${record.age_group}`}>
-            <td>{record.age_group}</td>
-            <td className="loc-age-records-time">
-              {stripLeadingHours(record.finish_time_display)}
-            </td>
-            <td>
-              <RunnerName name={record.runner_name} handle={record.runner_handle} />
-            </td>
-            <td>{record.event_date ? formatDate(record.event_date) : "—"}</td>
-          </tr>
-        ))}
+        {records.map((record) => {
+          const open = openKey === record.key;
+          return (
+            <Fragment key={record.key}>
+              {/* id на строке — якорь для плитки «место в группе» из блока «Вы на этой локации». */}
+              <tr id={record.key} className={open ? "loc-age-records-row-open" : undefined}>
+                <td>
+                  {record.top.length > 0 ? (
+                    <button
+                      type="button"
+                      className="loc-age-records-toggle"
+                      aria-expanded={open}
+                      onClick={() => onToggle(record.key)}
+                      title={open ? "Скрыть топ-5 группы" : "Показать топ-5 группы"}
+                    >
+                      <span className="loc-age-records-caret" aria-hidden="true">
+                        {open ? "▾" : "▸"}
+                      </span>
+                      {record.age_group}
+                    </button>
+                  ) : (
+                    record.age_group
+                  )}
+                </td>
+                <td className="loc-age-records-time">
+                  {stripLeadingHours(record.finish_time_display)}
+                </td>
+                <td>
+                  <RunnerName name={record.runner_name} handle={record.runner_handle} />
+                </td>
+                <td>{record.event_date ? formatDate(record.event_date) : "—"}</td>
+              </tr>
+              {open && (
+                <tr className="loc-age-records-top-row">
+                  <td colSpan={4}>
+                    <ol className="loc-age-top-list">
+                      {record.top.map((row) => (
+                        <li key={`${record.key}-${row.place}-${row.name}`}>
+                          <span className="loc-age-top-place">{row.place}</span>
+                          <span className="loc-age-top-name">
+                            <RunnerName name={row.name} handle={row.handle} />
+                          </span>
+                          <span className="loc-age-top-time">
+                            {stripLeadingHours(row.best_time_display)}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          );
+        })}
       </tbody>
     </table>
   );
 }
 
-function AgeGroupRecordsSection({ records }: { records: LocationAgeGroupRecord[] }) {
+function AgeGroupRecordsSection({
+  records,
+  openKey,
+  onToggle,
+}: {
+  records: LocationAgeGroupRecord[];
+  openKey: string | null;
+  onToggle: (key: string) => void;
+}) {
   if (records.length === 0) {
     return null;
   }
@@ -247,7 +308,7 @@ function AgeGroupRecordsSection({ records }: { records: LocationAgeGroupRecord[]
     <section className="card loc-section">
       <h2 className="section-title">
         Рекорды по возрастным группам
-        <StatHintTooltip text="Считается только по 5 вёрст">
+        <StatHintTooltip text="Считается только по 5 вёрст и RunPark — parkrun возрастную категорию в протоколе не публикует. Нажмите на группу, чтобы раскрыть её топ-5: уникальные участники и лучшее время каждого именно в этой категории.">
           <span className="loc-section-title-info" aria-label="Как считается">
             ⓘ
           </span>
@@ -257,13 +318,13 @@ function AgeGroupRecordsSection({ records }: { records: LocationAgeGroupRecord[]
         {male.length > 0 && (
           <div>
             <h3 className="loc-age-records-subtitle">Мужчины</h3>
-            <AgeGroupRecordsTable records={male} />
+            <AgeGroupRecordsTable records={male} openKey={openKey} onToggle={onToggle} />
           </div>
         )}
         {female.length > 0 && (
           <div>
             <h3 className="loc-age-records-subtitle">Женщины</h3>
-            <AgeGroupRecordsTable records={female} />
+            <AgeGroupRecordsTable records={female} openKey={openKey} onToggle={onToggle} />
           </div>
         )}
       </div>
@@ -454,101 +515,28 @@ function LocationInfoCard({ page }: { page: LocationPageData }) {
 }
 
 /**
- * Карточка одной возрастной группы: место участника в ней и спойлер с топ-5
- * группы. Групп у человека столько, сколько он прошёл на этой площадке.
+ * Плитка «место в группе»: у участника их столько, сколько возрастных
+ * категорий он успел пройти на этой площадке. Ссылка ведёт к топ-5 этой же
+ * группы — в таблицу «Рекорды по возрастным группам» ниже по странице.
  */
-function PersonalAgeGroupCard({ standing }: { standing: LocationAgeGroupStanding }) {
-  const [open, setOpen] = useState(false);
-  const topId = `age-group-top-${standing.age_category}`;
-
-  return (
-    <div className="loc-age-group-card">
-      <div className="loc-age-group-head">
-        <span className="loc-age-group-place">
-          {standing.place != null ? `#${standing.place}` : "—"}
-        </span>
-        <span className="loc-age-group-name">{standing.label}</span>
-      </div>
-      <span className="loc-age-group-sub">
-        {standing.total > 0
-          ? `из ${standing.total} ${pluralFormRu(standing.total, ["участника", "участников", "участников"])} в группе`
-          : "в группе"}
-      </span>
-      <span className="loc-age-group-sub">
-        ваше лучшее здесь — {stripLeadingHours(standing.best_time_display)}
-        {standing.best_time_date ? ` · ${formatDate(standing.best_time_date)}` : ""}
-      </span>
-      <span className="loc-age-group-sub">
-        {standing.runs_count}{" "}
-        {pluralFormRu(standing.runs_count, ["пробежка", "пробежки", "пробежек"])} в этой группе
-      </span>
-      {standing.top.length > 0 && (
-        <button
-          type="button"
-          className="loc-age-group-toggle"
-          aria-expanded={open}
-          aria-controls={topId}
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? "Скрыть топ-5 группы" : "Топ-5 группы"}
-          <span className="loc-age-group-toggle-caret" aria-hidden="true">
-            {open ? "▲" : "▼"}
-          </span>
-        </button>
-      )}
-      {open && (
-        <table className="data-table loc-age-group-table" id={topId}>
-          <colgroup>
-            <col className="loc-age-group-col-rank" />
-            <col />
-            <col className="loc-age-group-col-time" />
-          </colgroup>
-          <tbody>
-            {standing.top.map((row, index) => (
-              <tr
-                key={`${row.place}-${row.name}-${index}`}
-                className={row.is_me ? "loc-age-group-row-me" : undefined}
-              >
-                <td className="loc-leaders-rank">{row.place}</td>
-                <td>
-                  <RunnerName name={row.name} handle={row.handle} />
-                  {row.is_me && <span className="loc-age-group-me-badge">вы</span>}
-                </td>
-                <td>{stripLeadingHours(row.best_time_display)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-/**
- * «Ваши возрастные группы здесь» — по плитке на каждую категорию, в которой
- * участник тут бегал. Показывается только для локаций 5 вёрст: у остальных
- * систем возрастной категории в протоколе нет (см. бэкенд).
- */
-function PersonalAgeGroupsSection({ standings }: { standings: LocationAgeGroupStanding[] }) {
-  if (standings.length === 0) {
+function AgeGroupPlaceTile({
+  group,
+  onOpen,
+}: {
+  group: LocationAgeGroupStanding;
+  onOpen: (key: string) => void;
+}) {
+  if (group.place == null) {
     return null;
   }
   return (
-    <div className="loc-age-groups">
-      <h3 className="loc-age-groups-title">
-        Ваши возрастные группы здесь
-        <StatHintTooltip text="Топ группы — все уникальные участники, бегавшие на этой локации в этой возрастной категории, и лучшее время каждого именно в ней. Если вы за годы перешли в следующую категорию, у прошлой остаются свои цифры. Место пересчитывается после каждого старта: кто-то может пробежать быстрее вас. Считается только по 5 вёрст.">
-          <span className="loc-section-title-info" aria-label="Как считается">
-            ⓘ
-          </span>
-        </StatHintTooltip>
-      </h3>
-      <div className="loc-age-groups-list">
-        {standings.map((standing) => (
-          <PersonalAgeGroupCard key={standing.age_category} standing={standing} />
-        ))}
-      </div>
-    </div>
+    <StatTile
+      value={`#${group.place}`}
+      label={`место в группе ${group.label}`}
+      sub={`результат ${stripLeadingHours(group.best_time_display)}`}
+      onDetails={() => onOpen(group.key)}
+      detailsLabel="топ-5 группы →"
+    />
   );
 }
 
@@ -557,7 +545,14 @@ function PersonalAgeGroupsSection({ standings }: { standings: LocationAgeGroupSt
  * цифры площадки, анониму — продающая карточка «войдите и увидите свою
  * статистику». Пользователю без привязки — подсказка привязать профиль.
  */
-function LocationPersonalSection({ slug }: { slug: string }) {
+function LocationPersonalSection({
+  slug,
+  onOpenAgeGroup,
+}: {
+  slug: string;
+  // Плитка «место в группе» раскрывает и подсвечивает её топ-5 в «Рекордах» ниже.
+  onOpenAgeGroup: (key: string) => void;
+}) {
   const user = useOptionalUser();
   const [stats, setStats] = useState<LocationPersonalStats | null>(null);
 
@@ -657,6 +652,9 @@ function LocationPersonalSection({ slug }: { slug: string }) {
         {stats.last_run_date && stats.last_run_date !== stats.first_run_date && (
           <StatTile value={formatDate(stats.last_run_date)} label="последний старт" />
         )}
+        {(stats.age_groups ?? []).map((group) => (
+          <AgeGroupPlaceTile key={group.key} group={group} onOpen={onOpenAgeGroup} />
+        ))}
         {stats.volunteering_count > 0 && (
           <StatTile
             value={stats.volunteering_count}
@@ -668,7 +666,6 @@ function LocationPersonalSection({ slug }: { slug: string }) {
           />
         )}
       </div>
-      <PersonalAgeGroupsSection standings={stats.age_groups ?? []} />
       {stats.runs_count > 0 && (
         <div className="loc-personal-actions">
           {/* Открывает «Пробежки» кабинета сразу с фильтром по этой локации. */}
@@ -686,6 +683,21 @@ function LocationPageContent({ slug }: { slug: string }) {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recordsModalType, setRecordsModalType] = useState<RecordType | null>(null);
+  // Раскрытая возрастная группа в «Рекордах». Живёт на уровне страницы, потому
+  // что открывать её умеет и плитка «место в группе» из блока «Вы на этой локации».
+  const [openAgeGroupKey, setOpenAgeGroupKey] = useState<string | null>(null);
+
+  const toggleAgeGroup = useCallback((key: string) => {
+    setOpenAgeGroupKey((current) => (current === key ? null : key));
+  }, []);
+
+  const revealAgeGroup = useCallback((key: string) => {
+    setOpenAgeGroupKey(key);
+    // Скролл после перерисовки: до неё строки топа ещё нет и высота другая.
+    requestAnimationFrame(() => {
+      document.getElementById(key)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -776,7 +788,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
       <LocationRatingPrompt identityKey={page.identity_key} />
 
-      <LocationPersonalSection slug={page.slug} />
+      <LocationPersonalSection slug={page.slug} onOpenAgeGroup={revealAgeGroup} />
 
       <section className="card loc-section">
         <div className="loc-section-head">
@@ -855,7 +867,11 @@ function LocationPageContent({ slug }: { slug: string }) {
         <LocationFinishHistogram rows={page.histogram.rows} binSizeSec={page.histogram.bin_size_sec} />
       </section>
 
-      <AgeGroupRecordsSection records={page.age_group_records ?? []} />
+      <AgeGroupRecordsSection
+        records={page.age_group_records ?? []}
+        openKey={openAgeGroupKey}
+        onToggle={toggleAgeGroup}
+      />
 
       <LocationLeadersSection slug={page.slug} />
 
