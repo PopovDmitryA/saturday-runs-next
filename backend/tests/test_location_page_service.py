@@ -56,11 +56,22 @@ def test_normalize_age_group_under_ten() -> None:
 
 
 def test_normalize_age_group_ignores_stray_exact_ages() -> None:
-    """«М11»/«М12» — мусор в исходных протоколах, такой категории не бывает."""
+    """«М11»/«М12» — обрезки старого парсера, такой категории не бывает."""
     assert normalize_age_group("М11") is None
     assert normalize_age_group("М12") is None
     assert normalize_age_group("Ж11") is None
     assert normalize_age_group("М13") is None
+
+
+def test_normalize_age_group_ignores_absurd_bands() -> None:
+    """«М110-114» — группа участника без даты рождения, в рекорды не идёт.
+
+    Проверяем именно эту форму: поиск подстрокой вытаскивал из неё «10–11»
+    и заводил в таблице несуществующую группу.
+    """
+    assert normalize_age_group("М110-114") is None
+    assert normalize_age_group("Ж110-114") is None
+    assert normalize_age_group("М120-124") is None
 
 
 def test_age_group_sort_key_puts_under_before_range() -> None:

@@ -78,8 +78,11 @@ def location_leaders_cache_key(slug: str) -> str:
 # Незачётные статусы протоколов не влияют на finish_time (он у них NULL),
 # поэтому отдельного фильтра по status нет: гистограмма и рекорды строятся
 # только по строкам с известным временем.
-_AGE_RANGE_RE = re.compile(r"(\d{1,2})\s*[-–—]\s*(\d{1,2})")
-_AGE_PLUS_RE = re.compile(r"(\d{2,3})\s*\+")
+# Якорим по всей строке, а не ищем подстроку: у участника с незаполненной датой
+# рождения 5 вёрст пишет абсурдную группу «М110-114», и поиск подстрокой вытащил
+# бы из неё «10–11» — несуществующую группу в таблице рекордов.
+_AGE_RANGE_RE = re.compile(r"^[A-Za-zА-Яа-я]{0,3}(\d{1,2})\s*[-–—]\s*(\d{1,2})$")
+_AGE_PLUS_RE = re.compile(r"^[A-Za-zА-Яа-я]{0,3}(\d{2,3})\s*\+$")
 # Младшая детская категория: «М10»/«Ж10» у 5 вёрст, «JM10» у parkrun-систем.
 # Это строго «младше 10»: десятилетний бежит уже в «10-14». В данных обе идут
 # параллельно (7 тыс. протоколов содержат и ту, и другую), и все 718 участников,
@@ -105,10 +108,10 @@ def normalize_age_group(age_category: str | None) -> str | None:
     if not age_category:
         return None
     cleaned = age_category.strip()
-    match = _AGE_RANGE_RE.search(cleaned)
+    match = _AGE_RANGE_RE.match(cleaned)
     if match:
         return f"{int(match.group(1))}–{int(match.group(2))}"
-    match = _AGE_PLUS_RE.search(cleaned)
+    match = _AGE_PLUS_RE.match(cleaned)
     if match:
         return f"{int(match.group(1))}+"
     if _AGE_UNDER_TEN_RE.match(cleaned):

@@ -230,3 +230,27 @@ def test_parse_unknown_participant_in_protocol() -> None:
     assert results[0].status == "unknown"
     assert results[0].external_user_id.startswith("unknown:")
     assert results[0].finish_time_sec is None
+
+
+def test_age_category_regex_keeps_three_digit_bands() -> None:
+    """«М110-114» не должна обрезаться до «М11».
+
+    У участника с незаполненной датой рождения 5 вёрст считает абсурдный
+    возраст и печатает трёхзначную границу. Старая регулярка брала «М» и ровно
+    две цифры, поэтому в базу уезжала несуществующая категория «М11» — 114
+    таких строк накопилось на проде (Анатолий БАЕВ, Елена КРУЧИНИНА и др.).
+    """
+    from app.platform_adapters.five_verst.bulk_parser import AGE_CATEGORY_RE
+
+    def parse(text: str) -> str | None:
+        match = AGE_CATEGORY_RE.search(text)
+        return match.group(1) if match else None
+
+    assert parse("М110-114") == "М110-114"
+    assert parse("Ж110-114") == "Ж110-114"
+    assert parse("М120-124") == "М120-124"
+    # Обычные группы и хвост с местом в группе разбираются как раньше.
+    assert parse("М40-44") == "М40-44"
+    assert parse("М40-44 (2)") == "М40-44"
+    assert parse("М10") == "М10"
+    assert parse("Ж65-69  (12)") == "Ж65-69"
