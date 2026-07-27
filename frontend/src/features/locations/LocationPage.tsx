@@ -51,6 +51,15 @@ function StatTile({
     <div className="stat-card loc-stat-card">
       <span className="stat-value loc-stat-value">
         {value}
+        {/* Значок «i» сразу после цифры: подсказка относится к самому числу,
+            а не к подписи под ним. */}
+        {hint && (
+          <StatHintTooltip text={hint}>
+            <span className="loc-stat-info" aria-label="Как считается">
+              i
+            </span>
+          </StatHintTooltip>
+        )}
         {badge && (
           <StatHintTooltip text={badge.title}>
             <span className="loc-record-badge" aria-label={badge.title}>
@@ -59,16 +68,7 @@ function StatTile({
           </StatHintTooltip>
         )}
       </span>
-      <span className="stat-label">
-        {label}
-        {hint && (
-          <StatHintTooltip text={hint}>
-            <span className="loc-stat-info" aria-label="Как считается">
-              i
-            </span>
-          </StatHintTooltip>
-        )}
-      </span>
+      <span className="stat-label">{label}</span>
       {sub && <span className="loc-stat-sub">{sub}</span>}
       {onDetails && (
         <button type="button" className="loc-stat-details-link" onClick={onDetails}>
@@ -691,28 +691,39 @@ function LocationPersonalSection({
         {stats.avg_time_display && (
           <StatTile value={stripLeadingHours(stats.avg_time_display)} label="среднее время здесь" />
         )}
-        {stats.rank_by_runs != null && stats.runs_count > 0 && (
+        {/* Топ по пробежкам — внутри своего пола. Общий топ убран: сравнение
+            мужчин и женщин одной строкой мало что говорит бегуну. Если пол в
+            базе неизвестен, показываем общий — иначе плитка просто исчезнет. */}
+        {stats.rank_by_runs_gender != null && stats.runs_count > 0 ? (
           <StatTile
-            value={`#${stats.rank_by_runs}`}
-            label="в топе по пробежкам"
-            hint="Место по числу пробежек на этой площадке за всю её историю — во всех системах сразу, включая parkrun-эпоху. Привязанные профили считаются одним человеком."
+            value={`#${stats.rank_by_runs_gender}`}
+            label={`в топе по пробежкам · ${stats.gender === "female" ? "Ж" : "М"}`}
+            hint={`Место по числу пробежек на этой площадке среди ${
+              stats.gender === "female" ? "женщин" : "мужчин"
+            } за всю её историю — во всех системах сразу, включая parkrun-эпоху. Привязанные профили считаются одним человеком.`}
             sub={
-              <>
-                {stats.runners_total != null && (
-                  <>
-                    из {stats.runners_total}{" "}
-                    {pluralFormRu(stats.runners_total, ["бегуна", "бегунов", "бегунов"])}
-                  </>
-                )}
-                {stats.rank_by_runs_gender != null && stats.runners_total_gender != null && (
-                  <span className="loc-stat-sub-line">
-                    #{stats.rank_by_runs_gender} из {stats.runners_total_gender}{" "}
-                    {stats.gender === "female" ? "среди женщин" : "среди мужчин"}
-                  </span>
-                )}
-              </>
+              stats.runners_total_gender != null
+                ? `из ${stats.runners_total_gender} ${pluralFormRu(
+                    stats.runners_total_gender,
+                    ["бегуна", "бегунов", "бегунов"],
+                  )}`
+                : undefined
             }
           />
+        ) : (
+          stats.rank_by_runs != null &&
+          stats.runs_count > 0 && (
+            <StatTile
+              value={`#${stats.rank_by_runs}`}
+              label="в топе по пробежкам"
+              hint="Место по числу пробежек на этой площадке за всю её историю — во всех системах сразу, включая parkrun-эпоху. Разбивку по полу не показываем: пол в базе неизвестен."
+              sub={
+                stats.runners_total != null
+                  ? `из ${stats.runners_total} ${pluralFormRu(stats.runners_total, ["бегуна", "бегунов", "бегунов"])}`
+                  : undefined
+              }
+            />
+          )
         )}
         {stats.first_run_date && (
           <StatTile value={formatDate(stats.first_run_date)} label="первый старт здесь" />
