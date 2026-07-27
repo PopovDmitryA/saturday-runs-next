@@ -12,11 +12,18 @@
 events.finishers_count, и ловит ровно то, что потеряно. Дополнительно берём
 события, где строк меньше заявленного платформой числа финишёров.
 
-Скрипт ходит в сеть по одному событию и уважает лимиты 5 вёрст (пауза между
-запросами). Прогоняется частями: --limit ограничивает пачку, повторный запуск
-берёт следующие.
+Два режима.
 
-По умолчанию только показывает, что будет перезалито. Запись — с --apply.
+--mark-stale (рекомендуемый): обнуляет last_protocol_check_at у найденных
+событий. Штатный reconcile выбирает протоколы по этому полю по возрастанию,
+NULL первыми, и разберёт очередь сам — каждые 3 часа по
+FIVE_VERST_RECONCILE_BATCH_LIMIT штук. Никакой длинной ручной прогонки и
+нагрузки на 5 вёрст сверх обычной.
+
+Без флага — перезаливает сам, по одному событию с паузой между запросами.
+Годится, когда нужно починить конкретную локацию прямо сейчас (--slug).
+
+По умолчанию только показывает, что будет сделано. Запись — с --apply.
 """
 
 from __future__ import annotations
@@ -81,6 +88,14 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=50, help="Сколько событий обработать за прогон (0 — все)")
     parser.add_argument("--delay", type=float, default=1.5, help="Пауза между запросами к 5 вёрст, сек")
     parser.add_argument("--slug", help="Ограничить одной локацией (для проверки)")
+    parser.add_argument(
+        "--mark-stale",
+        action="store_true",
+        help=(
+            "Не перезаливать самому, а обнулить last_protocol_check_at — "
+            "штатный reconcile подхватит эти протоколы первыми"
+        ),
+    )
     args = parser.parse_args()
 
     session_factory = get_session_factory()
@@ -92,6 +107,32 @@ def main() -> int:
         total_missing = sum(int(row.missing) for row in rows)
         print(f"дырявых протоколов: {len(rows)}, не хватает строк всего: {total_missing}")
         if not rows:
+            return 0
+
+        # Пометка вместо перезаливки: reconcile выбирает протоколы по
+        # last_protocol_check_at ASC NULLS FIRST, поэтому обнулённые уходят в
+        # начало очереди и обновятся штатным расписанием (каждые 3 часа по
+        # FIVE_VERST_RECONCILE_BATCH_LIMIT штук). Так мы не долбим 5 вёрст
+        # длинным ручным прогоном и не держим процесс часами.
+        if args.mark_stale:
+            event_ids = [row.id for row in rows]
+            if not args.apply:
+                print(f"будет помечено к перечитке: {len(event_ids)}")
+                print("пробный прогон, ничего не записано — добавь --apply")
+                return 0
+            updated = db.execute(
+                text(
+                    "UPDATE protocol_sync_state SET last_protocol_check_at = NULL "
+                    "WHERE event_id = ANY(:ids)"
+                ),
+                {"ids": event_ids},
+            ).rowcount
+            db.commit()
+            print(f"помечено к перечитке: {updated} из {len(event_ids)}")
+            print(
+                "штатный reconcile идёт каждые 3 часа по "
+                "FIVE_VERST_RECONCILE_BATCH_LIMIT протоколов — очередь разойдётся сама"
+            )
             return 0
 
         batch = rows if args.limit <= 0 else rows[: args.limit]
