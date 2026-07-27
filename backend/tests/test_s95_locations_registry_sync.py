@@ -92,3 +92,77 @@ def test_s95_sync_registry_creates_location_without_coords(db_session: Session, 
         Location.external_key == slug,
     ).one()
     assert row.latitude is None
+
+
+def test_s95_sync_registry_heals_official_map_flag(db_session: Session, s95_platform: Platform) -> None:
+    """Координаты есть, а флага нет — синк реестра это чинит.
+
+    Так выглядит локация, которую первой увидел не реестр, а протокол: строка
+    рождается с координатами, но без флага, и потому не попадает ни на карту, ни
+    в каталог. Прежде реестр трогал флаг только когда сам дозаполнял координаты,
+    поэтому такая строка оставалась невидимой навсегда (так пропало Кратово).
+    """
+    slug = f"heal-{uuid4().hex[:8]}"
+    location = Location(
+        platform_id=s95_platform.id,
+        external_key=slug,
+        name="Кратово",
+        is_paused=False,
+        is_cancelled=False,
+        latitude=55.586661,
+        longitude=38.158979,
+        is_official_map=False,
+        source_url=f"https://s95.ru/events/{slug}",
+    )
+    db_session.add(location)
+    db_session.commit()
+
+    entries = [_api_location(slug, "Кратово", active=True, lat=55.586661, lon=38.158979)]
+
+    with patch("app.sync.s95_locations_registry.fetch_all_locations", return_value=entries):
+        sync_s95_locations_registry(db_session, S95LocationRegistrySyncOptions())
+
+    db_session.refresh(location)
+    assert location.is_official_map is True
+
+
+def test_s95_sync_registry_keeps_flag_off_without_coords(db_session: Session, s95_platform: Platform) -> None:
+    """Разъездным сериям («С95 и друзья») на карте по-прежнему не место."""
+    slug = f"noheal-{uuid4().hex[:8]}"
+    location = Location(
+        platform_id=s95_platform.id,
+        external_key=slug,
+        name="С95 и друзья",
+        is_paused=False,
+        is_cancelled=False,
+        is_official_map=False,
+        source_url=f"https://s95.ru/events/{slug}",
+    )
+    db_session.add(location)
+    db_session.commit()
+
+    entries = [_api_location(slug, "С95 и друзья", active=True)]
+
+    with patch("app.sync.s95_locations_registry.fetch_all_locations", return_value=entries):
+        sync_s95_locations_registry(db_session, S95LocationRegistrySyncOptions())
+
+    db_session.refresh(location)
+    assert location.is_official_map is False
+
+
+def test_s95_protocol_discovery_marks_official_map(db_session: Session, s95_platform: Platform) -> None:
+    """Локация, найденная через протокол, сразу попадает на карту.
+
+    Координаты в этой ветке приходят из того же реестра s95, что и у синка
+    локаций, — ждать его ближайшего прогона, чтобы показать точку, незачем.
+    """
+    from app.sync.s95_global_sync_api import _ensure_location
+
+    slug = f"protocol-{uuid4().hex[:8]}"
+    entry = _api_location(slug, "Кратово", active=True, lat=55.586661, lon=38.158979)
+
+    with patch("app.geo.reverse_geocode.lookup_address", return_value={"country": "Россия", "region": "Московская", "city": "Раменское"}):
+        row = _ensure_location(db_session, s95_platform, entry)
+
+    assert row.is_official_map is True
+    assert row.country == "Россия"

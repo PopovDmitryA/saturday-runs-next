@@ -98,6 +98,12 @@ def _ensure_location(db: Session, platform: Platform, api_loc: S95ApiLocation) -
         source_url=f"{api_loc.domain}/events/{api_loc.slug}",
     )
     row, _ = upsert.upsert_location(db, platform, canonical)
+    # Координаты пришли из того же реестра s95, что и у синка локаций, — значит
+    # это полноценная точка, и на карте с каталогом ей место сразу, а не после
+    # ближайшего прогона реестра.
+    if api_loc.latitude is not None and api_loc.longitude is not None:
+        row.is_official_map = True
+        db.flush()
     return row
 
 

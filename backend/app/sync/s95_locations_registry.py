@@ -133,6 +133,15 @@ def _process_entry(
         row.longitude = entry.longitude
         changed = True
 
+    # Координаты есть, а флага нет — так остаётся локация, которую первым увидел
+    # не реестр, а протокол (_ensure_location в s95_global_sync_api). Ветка выше
+    # трогает флаг только когда координаты ДОЗАПОЛНЯЮТСЯ, поэтому такая строка
+    # навсегда оставалась вне карты и каталога — так пропало Кратово. У 5 вёрст
+    # это лечение есть (five_verst_locations), приводим s95 к тому же поведению.
+    if row.latitude is not None and row.longitude is not None and not row.is_official_map:
+        row.is_official_map = True
+        changed = True
+
     _, _, cancel_changed = apply_location_registry_flags(row, is_paused=False, is_cancelled=is_cancelled)
     if cancel_changed:
         result.cancel_status_changed += 1
