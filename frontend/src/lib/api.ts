@@ -1928,6 +1928,10 @@ export type LocationPersonalStats = {
   volunteering_count: number;
   rank_by_runs: number | null;
   runners_total: number | null;
+  // То же место внутри своего пола
+  gender: string | null;
+  rank_by_runs_gender: number | null;
+  runners_total_gender: number | null;
   age_groups: LocationAgeGroupStanding[];
 };
 

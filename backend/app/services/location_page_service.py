@@ -1961,6 +1961,9 @@ def build_location_personal_stats(db: Session, user_id: UUID, slug: str) -> dict
         "volunteering_count": 0,
         "rank_by_runs": None,
         "runners_total": None,
+        "gender": None,
+        "rank_by_runs_gender": None,
+        "runners_total_gender": None,
         "age_groups": [],
     }
 
@@ -2037,6 +2040,37 @@ def build_location_personal_stats(db: Session, user_id: UUID, slug: str) -> dict
     )
     payload["rank_by_runs"] = int(ahead) + 1
     payload["runners_total"] = int(runners_total)
+
+    # То же место внутри своего пола. Пол берём из participants.gender — он
+    # материализован по всем системам (gender_position_service), поэтому срез
+    # работает и на parkrun-эпохе, где протокол категории не публикует.
+    my_gender = (
+        db.query(Participant.gender)
+        .join(PlatformLink, _platform_link_join())
+        .filter(PlatformLink.user_id == user_id, Participant.gender.isnot(None))
+        .limit(1)
+        .scalar()
+    )
+    if my_gender in ("male", "female"):
+        gender_runs = (
+            db.query(func.count(func.distinct(RunResult.event_id)).label("runs"))
+            .join(Participant, RunResult.participant_id == Participant.id)
+            .outerjoin(PlatformLink, _platform_link_join())
+            .filter(RunResult.event_id.in_(event_ids), Participant.gender == my_gender)
+            .group_by(func.coalesce(PlatformLink.user_id, RunResult.participant_id))
+            .subquery()
+        )
+        ahead_gender, total_gender = (
+            db.query(
+                func.count(case((gender_runs.c.runs > runs_count, 1))),
+                func.count(),
+            )
+            .select_from(gender_runs)
+            .one()
+        )
+        payload["gender"] = my_gender
+        payload["rank_by_runs_gender"] = int(ahead_gender) + 1
+        payload["runners_total_gender"] = int(total_gender)
 
     payload["age_groups"] = build_location_age_group_standings(db, user_id, event_ids)
 

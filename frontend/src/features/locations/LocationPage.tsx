@@ -30,6 +30,7 @@ function StatTile({
   label,
   sub,
   badge,
+  hint,
   onDetails,
   detailsLabel,
   link,
@@ -38,6 +39,8 @@ function StatTile({
   label: string;
   sub?: ReactNode;
   badge?: { text: string; title: string };
+  // Пояснение «как это считается» — значком «i» рядом с подписью.
+  hint?: string;
   onDetails?: () => void;
   // Подпись кнопки подробностей, если «подробнее» не по смыслу.
   detailsLabel?: string;
@@ -56,7 +59,16 @@ function StatTile({
           </StatHintTooltip>
         )}
       </span>
-      <span className="stat-label">{label}</span>
+      <span className="stat-label">
+        {label}
+        {hint && (
+          <StatHintTooltip text={hint}>
+            <span className="loc-stat-info" aria-label="Как считается">
+              i
+            </span>
+          </StatHintTooltip>
+        )}
+      </span>
       {sub && <span className="loc-stat-sub">{sub}</span>}
       {onDetails && (
         <button type="button" className="loc-stat-details-link" onClick={onDetails}>
@@ -127,7 +139,9 @@ function LastEventSection({ lastEvent }: { lastEvent: LocationLastEvent }) {
       ? (lastEvent.debutants ?? 0) + (lastEvent.first_at_location ?? 0)
       : null;
   return (
-    <section className="card loc-section">
+    // Акцентная заливка — как у «Последней субботы» на главной: свежий старт
+    // не должен теряться среди агрегатов за всю историю.
+    <section className="card loc-section loc-section-accent">
       <h2 className="section-title">Последний старт</h2>
       <div className="loc-stats-grid">
         <StatTile value={formatDate(lastEvent.event_date)} label={platformCodeLabel(lastEvent.platform_code)} />
@@ -573,6 +587,7 @@ function AgeGroupPlaceTile({
       // хотя это 35-е из 54 — место осмысленно только в размере группы.
       value={group.total > 0 ? `#${group.place} из ${group.total}` : `#${group.place}`}
       label={`место в группе ${group.label}`}
+      hint="Место по лучшему времени внутри своей возрастной категории на этой площадке. Считается только по 5 вёрст — остальные системы категорию в протоколе не публикуют. Групп столько, сколько категорий вы успели пройти здесь."
       sub={`результат ${stripLeadingHours(group.best_time_display)}`}
       onDetails={() => onOpen(group.key)}
       detailsLabel="топ-5 группы →"
@@ -657,7 +672,8 @@ function LocationPersonalSection({
     stats.total_runs > 0 ? Math.round((stats.runs_count / stats.total_runs) * 100) : null;
 
   return (
-    <section className="card loc-section">
+    // Свой блок среди общих: выделяем, чтобы взгляд цеплялся за личные цифры.
+    <section className="card loc-section loc-section-personal">
       <h2 className="section-title">Вы на этой локации</h2>
       <div className="loc-stats-grid">
         <StatTile
@@ -679,10 +695,22 @@ function LocationPersonalSection({
           <StatTile
             value={`#${stats.rank_by_runs}`}
             label="в топе по пробежкам"
+            hint="Место по числу пробежек на этой площадке за всю её историю — во всех системах сразу, включая parkrun-эпоху. Привязанные профили считаются одним человеком."
             sub={
-              stats.runners_total != null
-                ? `из ${stats.runners_total} ${pluralFormRu(stats.runners_total, ["бегуна", "бегунов", "бегунов"])}`
-                : undefined
+              <>
+                {stats.runners_total != null && (
+                  <>
+                    из {stats.runners_total}{" "}
+                    {pluralFormRu(stats.runners_total, ["бегуна", "бегунов", "бегунов"])}
+                  </>
+                )}
+                {stats.rank_by_runs_gender != null && stats.runners_total_gender != null && (
+                  <span className="loc-stat-sub-line">
+                    #{stats.rank_by_runs_gender} из {stats.runners_total_gender}{" "}
+                    {stats.gender === "female" ? "среди женщин" : "среди мужчин"}
+                  </span>
+                )}
+              </>
             }
           />
         )}
@@ -830,6 +858,8 @@ function LocationPageContent({ slug }: { slug: string }) {
 
       <LocationPersonalSection slug={page.slug} onOpenAgeGroup={revealAgeGroup} />
 
+      {stats.last_event && <LastEventSection lastEvent={stats.last_event} />}
+
       <section className="card loc-section">
         <div className="loc-section-head">
           <h2 className="section-title">Локация в цифрах</h2>
@@ -900,7 +930,6 @@ function LocationPageContent({ slug }: { slug: string }) {
         </div>
       </section>
 
-      {stats.last_event && <LastEventSection lastEvent={stats.last_event} />}
 
       <section className="card loc-section">
         <h2 className="section-title">Распределение финишных времён</h2>

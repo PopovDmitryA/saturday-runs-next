@@ -377,5 +377,9 @@ class LocationPersonalStatsResponse(BaseModel):
     # Место в топе локации по числу пробежек (та же группировка, что у лидеров).
     rank_by_runs: int | None = None
     runners_total: int | None = None
+    # То же место внутри своего пола (пол — материализованный participants.gender)
+    gender: str | None = None
+    rank_by_runs_gender: int | None = None
+    runners_total_gender: int | None = None
     # Возрастные группы 5 вёрст, в которых пользователь здесь бегал.
     age_groups: list[LocationAgeGroupStandingResponse] = Field(default_factory=list)
