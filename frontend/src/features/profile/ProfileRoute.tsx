@@ -73,10 +73,11 @@ export function ProfileRoute({ handle, segment }: { handle: string; segment?: st
     return CABINET_PAGES[tab]();
   }
 
-  // Чужой профиль: вкладки внутри страницы переключаются без смены адреса,
-  // поэтому лишний сегмент здесь — не наш адрес.
-  if (segment) {
+  // Чужой профиль: сегмент — это вкладка. Адреса те же, что у своего кабинета,
+  // поэтому ссылкой на чужую карту («/users/{хендл}/maps») можно делиться.
+  const foreignTab = segment ? SEGMENT_TO_TAB[segment] : "dashboard";
+  if (!foreignTab) {
     return <NotFoundPage />;
   }
-  return <PublicProfilePage handle={handle} />;
+  return <PublicProfilePage handle={handle} initialTab={foreignTab} />;
 }

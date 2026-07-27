@@ -3,6 +3,7 @@ import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { PortalHeader } from "../portal/PortalHeader";
+import { CABINET_TAB_SEGMENTS, profileTabHref } from "../../lib/portalRoutes";
 import { SiteSidebar, type SidebarExtraGroup } from "../portal/SiteSidebar";
 import "../portal/portal.css";
 import "../portal/portalSection.css";
@@ -32,6 +33,14 @@ import {
 import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 
 type ProfileTab = "dashboard" | "runs" | "volunteering" | "map" | "achievements" | "history" | "meetings";
+
+// Сегмент адреса → вкладка. Сегменты те же, что у кабинета (CABINET_TAB_SEGMENTS),
+// чтобы свой и чужой профиль имели одинаковые адреса вкладок.
+const PROFILE_SEGMENT_TO_TAB: Record<string, ProfileTab> = Object.fromEntries(
+  Object.entries(CABINET_TAB_SEGMENTS)
+    .filter(([, segment]) => segment)
+    .map(([tab, segment]) => [segment, tab as ProfileTab]),
+);
 
 function profileDisplayName(user: AdminUserPreviewDashboard["user"]): string {
   if (user.display_name) return user.display_name;
@@ -76,9 +85,43 @@ function ProfileShell({
   );
 }
 
-function PublicProfileContent({ serialId }: { serialId: number }) {
+function PublicProfileContent({
+  serialId,
+  handle,
+  initialTab = "dashboard",
+}: {
+  serialId: number;
+  // Хендл из адреса — по нему строим ссылки вкладок, чтобы адрес совпадал с тем,
+  // что видит пользователь (ник, а не номер).
+  handle: string;
+  initialTab?: ProfileTab;
+}) {
   const dataSource = useMemo(() => createPublicProfileDataSource(serialId), [serialId]);
-  const [tab, setTab] = useState<ProfileTab>("dashboard");
+  const [tab, setTabState] = useState<ProfileTab>(initialTab);
+
+  // Вкладка живёт в адресе: иначе ссылкой на чужую карту не поделиться —
+  // в строке браузера всегда оставалась бы главная страница участника.
+  const setTab = useCallback(
+    (next: ProfileTab) => {
+      setTabState(next);
+      const href = profileTabHref(handle, next);
+      if (window.location.pathname !== href) {
+        window.history.pushState({ tab: next }, "", href);
+      }
+    },
+    [handle],
+  );
+
+  // Кнопка «назад» должна возвращать на предыдущую вкладку, а не уводить с профиля.
+  useEffect(() => {
+    const onPop = () => {
+      const segment = window.location.pathname.split("/")[3] ?? "";
+      const restored = PROFILE_SEGMENT_TO_TAB[segment];
+      setTabState(restored ?? "dashboard");
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const [dashboard, setDashboard] = useState<AdminUserPreviewDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -339,7 +382,13 @@ function PublicProfileContent({ serialId }: { serialId: number }) {
 
 // Хэндл из URL (/users/{handle}) — либо числовой serial_id, либо vanity-slug.
 // Числовой используем напрямую; slug сначала резолвим в serial_id.
-export function PublicProfilePage({ handle }: { handle: string }) {
+export function PublicProfilePage({
+  handle,
+  initialTab,
+}: {
+  handle: string;
+  initialTab?: ProfileTab;
+}) {
   const isNumeric = /^\d+$/.test(handle);
   const [serialId, setSerialId] = useState<number | null>(isNumeric ? Number(handle) : null);
   const [state, setState] = useState<"ready" | "resolving" | "not-found">(
@@ -357,7 +406,11 @@ export function PublicProfilePage({ handle }: { handle: string }) {
         .then((res) => {
           const slug = res.public_slug?.trim();
           if (!cancelled && slug) {
-            window.history.replaceState(null, "", `/users/${encodeURIComponent(slug)}`);
+            // Сегмент вкладки сохраняем: иначе переход по ссылке на чужую карту
+            // по числовому адресу сбрасывал бы её на главную страницу профиля.
+            const segment = window.location.pathname.split("/")[3] ?? "";
+            const suffix = segment ? `/${encodeURIComponent(segment)}` : "";
+            window.history.replaceState(null, "", `/users/${encodeURIComponent(slug)}${suffix}`);
           }
         })
         .catch(() => {
@@ -400,5 +453,5 @@ export function PublicProfilePage({ handle }: { handle: string }) {
       </div>
     );
   }
-  return <PublicProfileContent serialId={serialId} />;
+  return <PublicProfileContent serialId={serialId} handle={handle} initialTab={initialTab} />;
 }

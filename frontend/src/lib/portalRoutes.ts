@@ -82,6 +82,19 @@ export function cabinetTabHref(
   return segment ? `${base}/${segment}` : base;
 }
 
+/**
+ * Адрес вкладки чужого профиля: /users/{хендл}[/сегмент].
+ *
+ * Нужен, чтобы вкладками публичного профиля можно было делиться: раньше они
+ * переключались только во внутреннем состоянии, и в адресной строке всегда
+ * оставалась главная страница участника.
+ */
+export function profileTabHref(handle: string, tab: CabinetTabSegmentKey): string {
+  const segment = CABINET_TAB_SEGMENTS[tab];
+  const base = `/users/${encodeURIComponent(handle)}`;
+  return segment ? `${base}/${segment}` : base;
+}
+
 /** Служебные адреса кабинета — вход по ним редиректит на публичный. */
 export const LEGACY_CABINET_HREFS: Record<CabinetTabSegmentKey, string> = {
   dashboard: PORTAL_CABINET_HREF,

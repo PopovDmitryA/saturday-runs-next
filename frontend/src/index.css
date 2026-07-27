@@ -9535,6 +9535,14 @@ tr.run-crosslinked td {
   line-height: 1.3;
 }
 
+/* Знаменатель места («из 130») — мельче самой позиции. */
+.loc-stat-value-denominator {
+  margin-left: 0.28rem;
+  font-size: 0.72em;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 /* Значок «i» сразу после числа: пояснение, как считается цифра. */
 .loc-stat-info {
   display: inline-flex;
