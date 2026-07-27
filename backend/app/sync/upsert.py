@@ -37,17 +37,40 @@ logger = logging.getLogger(__name__)
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def _resolve_region(location: CanonicalLocation) -> str | None:
-    if location.region:
-        return location.region
-    if location.latitude is None or location.longitude is None:
-        return None
-    try:
-        from app.geo.reverse_geocode import lookup_region
+def _resolve_geo(
+    location: CanonicalLocation, row: Location | None
+) -> tuple[str | None, str | None, str | None]:
+    """Страна, регион и город: что дала система — то и берём, пробелы добираем
+    обратным геокодом по координатам.
 
-        return lookup_region(location.latitude, location.longitude)
+    Раньше геокод доставал только регион, а страну каждый вызывающий должен был
+    заполнить сам. s95 её не отдаёт вовсе, и локация, найденная не через реестр,
+    а через протокол (см. s95_global_sync_api._ensure_location), оставалась без
+    страны — так появилось Кратово. Заполняем здесь, чтобы это работало для всех
+    систем и всех путей создания, а не только там, где вызывающий не забыл.
+
+    Один запрос вместо прежнего запроса-на-регион: у Nominatim в ответе и так
+    все три поля. Если всё уже известно — в сеть не ходим совсем.
+    """
+    country = location.country or (row.country if row else None)
+    region = location.region or (row.region if row else None)
+    city = location.city or (row.city if row else None)
+    if country and region and city:
+        return country, region, city
+    if location.latitude is None or location.longitude is None:
+        return country, region, city
+    try:
+        from app.geo.reverse_geocode import lookup_address
+
+        address = lookup_address(location.latitude, location.longitude)
     except Exception:
-        return None
+        logger.warning("geocode failed for %s", location.external_key, exc_info=True)
+        return country, region, city
+    return (
+        country or address.get("country"),
+        region or address.get("region"),
+        city or address.get("city"),
+    )
 
 
 def get_platform(db: Session, platform_code: str) -> Platform:
@@ -76,15 +99,15 @@ def upsert_location(
     changed = False
     if location.latitude is not None and location.longitude is not None and location.region is None:
         logger.info("geocode region for %s", location.external_key)
-    region = _resolve_region(location)
+    country, region, city = _resolve_geo(location, row)
 
     if row is None:
         row = Location(
             platform_id=platform.id,
             external_key=location.external_key,
             name=location.name,
-            country=location.country,
-            city=location.city,
+            country=country,
+            city=city,
             region=region,
             latitude=location.latitude,
             longitude=location.longitude,
@@ -100,14 +123,18 @@ def upsert_location(
         return row, True
 
     if row.source_hash == source_hash and source_hash is not None:
-        if row.region is None and region is not None:
-            row.region = region
+        # Ничего не изменилось, но геопробелы дозаполняем: строка могла родиться
+        # до того, как геокод стал общим для всех путей создания.
+        if (row.country, row.region, row.city) != (country, region, city):
+            row.country, row.region, row.city = country, region, city
             db.flush()
         return row, False
 
     row.name = location.name
-    row.country = location.country
-    row.city = location.city or row.city
+    # `or row.country` — s95 страну не отдаёт, и без этого каждый синк стирал бы
+    # уже известную. Город и регион так и жили, страна была исключением.
+    row.country = country or row.country
+    row.city = city or row.city
     row.region = region or row.region
     row.latitude = location.latitude or row.latitude
     row.longitude = location.longitude or row.longitude
