@@ -294,6 +294,7 @@ export type VolunteeringItem = {
   rating_entry_id?: string | null;
   is_crosslinked: boolean;
   is_test_event: boolean;
+  parkrun_total_credits?: number | null;
   event_url?: string | null;
 };
 

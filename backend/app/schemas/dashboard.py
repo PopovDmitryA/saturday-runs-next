@@ -327,6 +327,9 @@ class VolunteeringItemResponse(BaseModel):
     rating_entry_id: str | None = None
     is_crosslinked: bool = False
     is_test_event: bool = False
+    # parkrun: "Total Credits" из профиля — не равно числу строк ниже, если одна
+    # смена дала несколько ролей. Заполнено только для platform_code == "parkrun".
+    parkrun_total_credits: int | None = None
     event_url: str | None = None
 
 

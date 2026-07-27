@@ -45,16 +45,15 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
 
   // parkrun volunteering: counted but not shown in table
-  // count taken from "Total Credits" summary row, e.g. role = "Total Credits (2×)"
+  // счётчик — из parkrun_total_credits (см. parkrun_total_credits в бэкенде,
+  // берётся из "Total Credits" профиля parkrun), а не числа строк ролей:
+  // одна смена волонтёрства может дать кредит сразу нескольким ролям.
   const tableItems = useMemo(() => items.filter((i) => i.platform_code !== "parkrun"), [items]);
   const parkrunCount = useMemo(() => {
-    const totalCreditsRow = items.find(
-      (i) => i.platform_code === "parkrun" && i.role?.startsWith("Total Credits"),
+    const rowWithCredits = items.find(
+      (i) => i.platform_code === "parkrun" && i.parkrun_total_credits != null,
     );
-    if (totalCreditsRow?.role) {
-      const match = /\((\d+)×\)/.exec(totalCreditsRow.role);
-      if (match) return parseInt(match[1], 10);
-    }
+    if (rowWithCredits) return rowWithCredits.parkrun_total_credits as number;
     return items.filter((i) => i.platform_code === "parkrun").length;
   }, [items]);
 

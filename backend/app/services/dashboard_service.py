@@ -26,6 +26,7 @@ from app.models import (
     User,
     VolunteerResult,
 )
+from app.parkrun.volunteer_credits import count_parkrun_volunteering
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.location_map_service import _location_is_cancelled, _location_is_paused
 from app.services.location_records_service import get_user_location_records
@@ -1256,6 +1257,19 @@ def list_user_volunteering(
     catalog_index = LocationCatalogIndex(db)
     summary_urls = _event_summary_source_urls(db, [event for _vol, event, _loc, _plat, _link in rows])
 
+    # parkrun считает волонтёрства своим "Total Credits" (может отличаться от
+    # числа наших строк VolunteerResult — одна смена даёт несколько ролей).
+    # Кэш по participant_id, чтобы не пересчитывать на каждой строке.
+    parkrun_credits_cache: dict[UUID, int] = {}
+
+    def _parkrun_total_credits(participant_id: UUID, platform_id: UUID) -> int:
+        if participant_id not in parkrun_credits_cache:
+            participant = db.query(Participant).filter(Participant.id == participant_id).one_or_none()
+            parkrun_credits_cache[participant_id] = (
+                count_parkrun_volunteering(db, participant, platform_id) if participant else 0
+            )
+        return parkrun_credits_cache[participant_id]
+
     # Canonical volunteer_result_id для оценки одной физической площадки: min id
     # среди строк с одним (дата, каноническая локация) — так волонтёрство с
     # несколькими ролями (или кросслинк) оценивается один раз. Логика совпадает
@@ -1289,6 +1303,11 @@ def list_user_volunteering(
                 "rating_entry_id": f"vol:{canonical_vol_id}",
                 "is_crosslinked": event.id in crosslinked_event_ids,
                 "is_test_event": event.is_test_event,
+                "parkrun_total_credits": (
+                    _parkrun_total_credits(volunteer.participant_id, platform.id)
+                    if platform.code == "parkrun"
+                    else None
+                ),
                 "event_url": _activity_event_url(
                     platform_code=platform.code,
                     event=event,
