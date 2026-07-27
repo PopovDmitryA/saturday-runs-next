@@ -292,6 +292,13 @@
 
 /* ---------- нижняя навигация (телефон) ---------- */
 
+/* Высота панели (6px + иконка + подпись + 6px, без safe-area — она в padding).
+   Плавающие кнопки поднимаются на неё, иначе «наверх» садится прямо на «Ещё».
+   На ширинах без панели — ноль, кнопки остаются у нижнего края. */
+:root {
+  --portal-bottomnav-h: 0px;
+}
+
 .portal-cab-bottomnav {
   display: none;
 }
@@ -301,6 +308,10 @@
 }
 
 @media (max-width: 900px) {
+  :root {
+    --portal-bottomnav-h: 58px;
+  }
+
   .portal-cab-layout {
     display: block;
     padding-bottom: 92px;
