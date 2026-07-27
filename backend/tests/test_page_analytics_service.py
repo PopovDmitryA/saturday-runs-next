@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from datetime import date, datetime, timedelta
 from uuid import uuid4
 
@@ -42,11 +44,11 @@ from app.services.page_analytics_service import (
         ("/ratings/wins", ("ratings_wins", "")),
         ("/ratings/win-locations", ("ratings_win_locations", "")),
         ("/backlog", ("backlog", "")),
-        # Вкладки профиля живут в адресе — самая частая группа в «прочем»
-        # до этой правки. В entity_key кладём вкладку, а не хендл.
-        ("/users/ivan/maps", ("profile_tab", "maps")),
-        ("/users/12345/achievements", ("profile_tab", "achievements")),
-        ("/users/ivan/co-runners", ("profile_tab", "co-runners")),
+        # Вкладка профиля — тот же просмотр профиля: в entity_key хендл, чтобы
+        # просмотр доресолвился до user_id и попал в «топ профилей».
+        ("/users/ivan/maps", ("profile", "ivan")),
+        ("/users/12345/achievements", ("profile", "12345")),
+        ("/users/ivan/co-runners", ("profile", "ivan")),
         ("/hq/hq-2kl5kfrlzmnvn8sc", ("sweep_hq", "")),
         ("/new/cabinet-preview", ("cabinet_preview", "")),
         # Старые адреса кабинета сами ничего не показывают — это редиректы.
@@ -90,53 +92,57 @@ def test_classify_legacy_grafana_paths(path: str) -> None:
 # Все маршруты приложения — копия STATIC_ROUTES + динамических веток renderRoute
 # из frontend/src/App.tsx. Страховка от «добавили раздел, забыли в аналитике»:
 # новый роут без записи в _STATIC_PAGE_TYPES свалится в "other" и уронит тест.
-APP_ROUTES = [
-    "/",
-    "/blog",
-    "/new/map-lab",
-    "/login",
-    "/oauth/yandex/callback",
-    "/oauth/vk/callback",
-    "/demo",
-    "/demo/runs",
-    "/demo/co-runners",
-    "/demo/volunteering",
-    "/demo/maps",
-    "/demo/history",
-    "/dashboard",
-    "/profiles",
-    "/runs",
-    "/achievements",
-    "/co-runners",
-    "/volunteering",
-    "/maps",
-    "/locations",
-    "/history",
-    "/ratings",
-    "/ratings/runs",
-    "/ratings/volunteering",
-    "/ratings/locations",
-    "/share",
-    "/sync",
-    "/queue",
-    "/admin",
-    "/admin/queue",
-    "/admin/users",
-    "/admin/abuse",
-    "/admin/profile-slugs",
-    "/admin/stats",
-    "/admin/page-analytics",
-    "/admin/ratings",
-    "/admin/event-report",
-    "/admin/records-digest",
-    "/admin/location-contacts",
-    "/admin/blog",
-    "/settings",
-    "/about",
-    "/users/ivan",
-    "/locations/kuzminki",
-    "/locations/kuzminki/events",
-]
+# Роуты читаем из самого App.tsx, а не держим копию списка.
+#
+# Копия была, и она не сработала: добавить строку в APP_ROUTES забывали ровно
+# так же, как в классификатор, — тест зеленел, а раздел молча уезжал в «Прочее».
+# Так пропали /backlog и победные рейтинги (47 и 50 просмотров за 30 дней).
+# Теперь список берётся из исходника: забыть его обновить невозможно.
+# В контейнере фронт примонтирован в /frontend-src (см. docker-compose.yml),
+# при запуске из репозитория — лежит рядом. Проверяем оба места.
+_FRONTEND_SRC_CANDIDATES = (
+    Path("/frontend-src"),
+    Path(__file__).resolve().parents[2] / "frontend" / "src",
+)
+
+
+def _frontend_src() -> Path:
+    for candidate in _FRONTEND_SRC_CANDIDATES:
+        if (candidate / "App.tsx").exists():
+            return candidate
+    raise AssertionError(
+        "Не найден App.tsx — сторож роутов не может работать. "
+        f"Искали в: {', '.join(str(c) for c in _FRONTEND_SRC_CANDIDATES)}"
+    )
+
+
+def _static_routes_from_app() -> list[str]:
+    """Ключи STATIC_ROUTES: строковые литералы и константы из portalRoutes.ts."""
+    src = _frontend_src()
+    app_src = (src / "App.tsx").read_text(encoding="utf-8")
+    block_start = app_src.index("const STATIC_ROUTES")
+    block_end = app_src.index("\n};", block_start)
+    block = app_src[block_start:block_end]
+
+    consts = dict(
+        re.findall(
+            r'export const ([A-Z0-9_]+)\s*=\s*"([^"]+)"',
+            (src / "lib" / "portalRoutes.ts").read_text(encoding="utf-8"),
+        )
+    )
+
+    routes: list[str] = []
+    for literal in re.findall(r'^\s*"([^"]+)"\s*:', block, re.M):
+        routes.append(literal)
+    for name in re.findall(r"^\s*\[([A-Z0-9_]+)\]\s*:", block, re.M):
+        value = consts.get(name)
+        assert value is not None, f"Константа {name} не найдена в portalRoutes.ts"
+        routes.append(value)
+    assert len(routes) > 20, "Разбор STATIC_ROUTES сломался — роутов подозрительно мало"
+    return sorted(set(routes))
+
+
+APP_ROUTES = _static_routes_from_app()
 
 
 @pytest.mark.parametrize("path", APP_ROUTES)
@@ -151,14 +157,20 @@ def test_user_facing_pages_have_distinct_page_types() -> None:
     Исключения — маршруты, которым отдельная строка не нужна: /admin/* и
     /demo/* сведены в одну строку каждый (внутренняя админка и витрина целиком —
     решение Дмитрия 17.07.2026); /profiles рисует тот же компонент, что
-    /dashboard; /sync, /queue, /admin — заглушки-редиректы; оба
-    /oauth/*/callback — одна страница OAuthCallbackPage с разным провайдером.
+    /dashboard; заглушки-редиректы (/sync, /queue, /admin, старые адреса
+    кабинета /new/*) своей страницы не имеют; оба /oauth/*/callback — одна
+    страница OAuthCallbackPage с разным провайдером.
     """
-    not_own_page = {"/profiles", "/sync", "/queue", "/admin", "/oauth/yandex/callback"}
+    not_own_page = {"/profiles", "/oauth/yandex/callback"}
     user_facing = [
         p
         for p in APP_ROUTES
-        if not p.startswith(("/admin/", "/demo/")) and p not in not_own_page
+        if not p.startswith(("/admin/", "/demo/"))
+        and p not in not_own_page
+        # Заглушки-редиректы своей страницы не имеют по определению: /sync,
+        # /queue, /admin и старые адреса кабинета /new/* сразу уводят на другой
+        # адрес, поэтому делят один page_type законно.
+        and classify_page(p)[0] != "redirect"
     ]
     page_types = [classify_page(path)[0] for path in user_facing]
     assert len(page_types) == len(set(page_types)), "Разные страницы делят один page_type"

@@ -28,7 +28,6 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   maps: "Карта",
   history: "Моя история",
   profile: "Публичные профили",
-  profile_tab: "Профиль: вкладки",
   locations_index: "Локации (список)",
   location: "Локация (карточка)",
   location_events: "Локация (забеги)",

@@ -34,10 +34,10 @@ HOME_EXPERIMENT = "home_v1"
 EARLIEST_STATS_DATE = date(2026, 7, 1)
 
 _PROFILE_RE = re.compile(r"^/users/([^/]+)$")
-# Вкладка чужого/своего профиля: /users/{хендл}/{сегмент}. С тех пор как вкладки
-# живут в адресе, это самая частая группа — 217 просмотров за 30 дней уезжали
-# в «прочее» единственным блоком.
-_PROFILE_TAB_RE = re.compile(r"^/users/([^/]+)/([^/]+)$")
+# Вкладка профиля: /users/{хендл}/{сегмент}. Считается обычным просмотром
+# профиля — вкладка в отчёте не нужна, а хендл важен: по нему просмотр
+# доресолвливается до user_id и попадает в «топ профилей».
+_PROFILE_TAB_RE = re.compile(r"^/users/([^/]+)/[^/]+$")
 # Служебная страница мирового обхода parkrun: /hq/{токен}. Токен в entity_key
 # не кладём — он одноразовый и в отчёте бесполезен.
 _SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
@@ -137,11 +137,9 @@ def classify_page(path: str) -> tuple[str, str]:
     if profile:
         return "profile", profile.group(1)[:128]
 
-    # Вкладка профиля — отдельный тип: в entity_key кладём саму вкладку, чтобы
-    # в отчёте было видно, какие разделы чужих профилей смотрят.
     profile_tab = _PROFILE_TAB_RE.match(normalized)
     if profile_tab:
-        return "profile_tab", profile_tab.group(2)[:128]
+        return "profile", profile_tab.group(1)[:128]
 
     if _SWEEP_HQ_RE.match(normalized):
         return "sweep_hq", ""

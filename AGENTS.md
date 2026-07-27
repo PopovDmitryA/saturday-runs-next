@@ -324,10 +324,21 @@ Scheduled sync → лог в `scheduled_run_logs` через `run_reported_sync(
 
 1. `_STATIC_PAGE_TYPES` — `page_analytics_service.py`
 2. `PAGE_TYPE_LABELS` — `AdminPageAnalyticsPage.tsx`
-3. `APP_ROUTES` — `tests/test_page_analytics_service.py` (тест упадёт, если забыть)
 
-Иначе раздел уедет в «Прочее» и метрик по нему не будет. Подробности и нюансы —
-в CLAUDE.md, раздел «Аналитика страниц».
+Третьего пункта больше нет: список роутов для теста **читается прямо из
+`App.tsx`** (`_static_routes_from_app` в `tests/test_page_analytics_service.py`),
+поэтому забыть его обновить нельзя. Раньше там лежала копия списка, и её
+забывали ровно так же, как классификатор: тест зеленел, а раздел молча уезжал
+в «Прочее» — так пропали `/backlog` и победные рейтинги.
+
+Проверить: `pytest tests/test_page_analytics_service.py` — упадёт с текстом
+«Раздел X не попадает в статистику». Тесту нужен доступ к `frontend/src`, в
+контейнере он примонтирован в `/frontend-src` (см. `docker-compose.yml`).
+
+Динамические адреса (`/users/{хендл}`, `/locations/{slug}`, `/hq/{токен}`)
+разбираются регулярками в `classify_page` — их сторож не покрывает, добавлять
+руками. Вкладки профиля (`/users/{хендл}/{вкладка}`) считаются обычным
+просмотром профиля: в `entity_key` едет хендл, а не вкладка.
 
 ---
 

@@ -49,6 +49,10 @@ services:
       - ./data:/data
       - ./.env:/app/.env:ro
       - ./.cursor:/cursor-debug
+      # Только для теста-сторожа аналитики: он читает список роутов прямо из
+      # App.tsx, чтобы забыть внести новый раздел в классификатор было нельзя.
+      # Read-only и на работу приложения не влияет.
+      - ./frontend/src:/frontend-src:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
       postgres:
