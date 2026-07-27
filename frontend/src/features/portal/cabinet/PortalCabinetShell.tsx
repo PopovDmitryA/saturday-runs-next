@@ -6,6 +6,7 @@ import { clearCachedUser } from "../../../lib/useOptionalUser";
 import {
   CABINET_NAV,
   SECONDARY_NAV,
+  SITE_SECTIONS_NAV,
   SiteSidebar,
   icon,
   type CabinetTabKey,
@@ -149,6 +150,16 @@ export function PortalCabinetShell({
                 href={tabHref(item)}
                 className={`portal-cab-more-item${item.key === active ? " active" : ""}`}
               >
+                <span className="portal-cab-nav-icon">{item.icon}</span>
+                {item.label}
+              </a>
+            ))}
+            {/* Публичные разделы сайта: на десктопе они в сайдбаре, а на
+                телефоне сайдбар скрыт — без них «Локации» и «Рейтинги» с
+                телефона было не открыть вовсе. */}
+            <div className="portal-cab-more-sep" />
+            {SITE_SECTIONS_NAV.map((item) => (
+              <a key={item.href} href={item.href} className="portal-cab-more-item">
                 <span className="portal-cab-nav-icon">{item.icon}</span>
                 {item.label}
               </a>

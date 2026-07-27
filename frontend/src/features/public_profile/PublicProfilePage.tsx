@@ -212,17 +212,19 @@ function PublicProfileContent({
     { key: "history", label: "История" },
     { key: "meetings", label: "Встречи" },
   ];
-  const tabsGroup: SidebarExtraGroup | undefined = profileName
-    ? {
-        title: profileName,
-        items: TAB_LABELS.map((item) => ({
-          key: item.key,
-          label: item.label,
-          active: tab === item.key,
-          onClick: () => setTab(item.key),
-        })),
-      }
-    : undefined;
+  // Группу вкладок отдаём всегда, а не только когда загружено имя: имя приезжает
+  // вместе с дашбордом, а он грузится лишь на вкладке «Главная». Из-за этого
+  // заход по прямой ссылке на карту или достижения оставлял сайдбар без вкладок
+  // — уйти с открытой вкладки было некуда, кроме как через адресную строку.
+  const tabsGroup: SidebarExtraGroup = {
+    title: profileName ?? "Профиль участника",
+    items: TAB_LABELS.map((item) => ({
+      key: item.key,
+      label: item.label,
+      active: tab === item.key,
+      onClick: () => setTab(item.key),
+    })),
+  };
 
   if (currentUser === undefined) {
     return <main className="app"><p className="muted">Загрузка…</p></main>;

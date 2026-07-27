@@ -194,6 +194,17 @@ export const CABINET_NAV: CabinetNavItem[] = [
 
 export type SecondaryNavItem = { href: string; label: string; adminOnly?: boolean; authOnly?: boolean };
 
+/**
+ * Публичные разделы сайта. В сайдбаре они рисуются отдельными ссылками (у
+ * «Локаций» бывает подпункт с текущей площадкой), но список нужен и нижней
+ * навигации телефона: без него «Локации» и «Рейтинги» не попадали в шторку
+ * «Ещё» и на телефоне были недостижимы вовсе.
+ */
+export const SITE_SECTIONS_NAV: { key: "locations" | "ratings"; href: string; label: string; icon: ReactNode }[] = [
+  { key: "locations", href: "/locations", label: "Локации", icon: LOCATIONS_ICON },
+  { key: "ratings", href: "/ratings", label: "Рейтинги", icon: RATINGS_ICON },
+];
+
 // Служебные разделы — видны на всех страницах с сайдбаром.
 // «Админка» подсвечена янтарным (см. .portal-cab-nav-item-admin).
 export const SECONDARY_NAV: SecondaryNavItem[] = [
