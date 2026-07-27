@@ -21,6 +21,7 @@ from app.models import Event, Location, Participant, Platform, PlatformLink, Run
 from app.services.location_page_service import (
     _age_group_records,
     _age_group_tops,
+    _age_group_totals,
     build_location_age_group_standings,
 )
 
@@ -310,3 +311,52 @@ def test_equal_best_times_share_one_place(db_session: Session) -> None:
     assert (standings[0]["place"], standings[0]["total"]) == (2, 3)
     top = _age_group_tops(db_session, [event.id])[("male", "40–44")]
     assert [row["place"] for row in top] == [1, 2, 2]
+
+
+def test_group_totals_count_runners_and_finishes(db_session: Session) -> None:
+    """Размер группы: участников — уникальных, финишей — все старты.
+
+    Знаменатель для места («35 из 54») и подпись над топ-5. Считается по тем же
+    строкам, что и сам топ, иначе плитка и таблица разошлись бы.
+    """
+    suffix = uuid4().hex[:8]
+    five_verst = _platform(db_session, "five_verst", "5 вёрст")
+    location = _make_location(db_session, five_verst, f"tot-{suffix}", "Парк итогов")
+    events = [
+        _make_event(db_session, five_verst, location, f"{suffix}-{index}", date(2024, 3, 2 + index * 7))
+        for index in range(3)
+    ]
+
+    first = _make_participant(db_session, five_verst, f"a-{suffix}", "Первый")
+    second = _make_participant(db_session, five_verst, f"b-{suffix}", "Второй")
+    woman = _make_participant(db_session, five_verst, f"w-{suffix}", "Третья")
+
+    # Двое мужчин в «30–34», у первого три финиша, у второго один.
+    _add_result(db_session, events[0], first, finish_time_sec=1500, age_category="М30-34")
+    _add_result(db_session, events[1], first, finish_time_sec=1490, age_category="М30-34")
+    _add_result(db_session, events[2], first, finish_time_sec=1480, age_category="М30-34")
+    _add_result(db_session, events[0], second, finish_time_sec=1600, age_category="М30-34")
+    # Женщина в своей группе — в мужской итог попасть не должна.
+    _add_result(db_session, events[0], woman, finish_time_sec=1700, age_category="Ж30-34")
+
+    db_session.commit()
+    totals = _age_group_totals(db_session, [event.id for event in events])
+
+    assert totals[("male", "30–34")] == (2, 4)
+    assert totals[("female", "30–34")] == (1, 1)
+
+
+def test_group_totals_ignore_results_without_time(db_session: Session) -> None:
+    """«Неизвестные» без времени в рейтинг группы не входят — как и в топ-5."""
+    suffix = uuid4().hex[:8]
+    five_verst = _platform(db_session, "five_verst", "5 вёрст")
+    location = _make_location(db_session, five_verst, f"nt-{suffix}", "Парк без времени")
+    event = _make_event(db_session, five_verst, location, f"{suffix}-0", date(2024, 4, 6))
+
+    runner = _make_participant(db_session, five_verst, f"r-{suffix}", "Бегун")
+    unknown = _make_participant(db_session, five_verst, f"u-{suffix}", "Неизвестный")
+    _add_result(db_session, event, runner, finish_time_sec=1500, age_category="М30-34")
+    _add_result(db_session, event, unknown, finish_time_sec=None, age_category="М30-34")
+
+    db_session.commit()
+    assert _age_group_totals(db_session, [event.id])[("male", "30–34")] == (1, 1)

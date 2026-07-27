@@ -198,6 +198,10 @@ class LocationAgeGroupRecordResponse(BaseModel):
     platform_code: str | None = None
     # Топ-5 группы: раскрывается спойлером под строкой рекорда.
     top: list[LocationAgeGroupTopRowResponse] = Field(default_factory=list)
+    # Размер группы — знаменатель для места: сколько всего участников бегало в
+    # ней на этой локации и сколько у них финишей.
+    runners_total: int = 0
+    finishes_total: int = 0
 
 
 class LocationPageResponse(BaseModel):

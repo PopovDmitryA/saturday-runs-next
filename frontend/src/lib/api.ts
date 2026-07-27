@@ -1776,6 +1776,9 @@ export type LocationAgeGroupRecord = {
   event_date: string | null;
   platform_code: string | null;
   top: LocationAgeGroupTopRow[];
+  // Размер группы: участников и финишей всего на локации
+  runners_total: number;
+  finishes_total: number;
 };
 
 export type LocationPage = {

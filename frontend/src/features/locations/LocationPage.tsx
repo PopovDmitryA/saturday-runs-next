@@ -283,7 +283,18 @@ function AgeGroupRecordsTable({
                     <div className="loc-age-top">
                       <div className="loc-age-top-head">
                         Топ-{record.top.length} группы {record.age_group}
-                        <span className="loc-age-top-hint">лучшее время каждого участника</span>
+                        <span className="loc-age-top-hint">
+                          лучшее время каждого участника
+                          {/* Размер группы: без него непонятно, топ-5 из скольких. */}
+                          {record.runners_total > 0 && (
+                            <>
+                              {" · всего "}
+                              {pluralizeRu(record.runners_total, ["участник", "участника", "участников"])}
+                              {record.finishes_total > 0 &&
+                                ` и ${pluralizeRu(record.finishes_total, ["финиш", "финиша", "финишей"])}`}
+                            </>
+                          )}
+                        </span>
                       </div>
                       <ol className="loc-age-top-list">
                         {record.top.map((row) => (
@@ -558,7 +569,9 @@ function AgeGroupPlaceTile({
   }
   return (
     <StatTile
-      value={`#${group.place}`}
+      // Знаменатель обязателен: «#35» без него читается как слабый результат,
+      // хотя это 35-е из 54 — место осмысленно только в размере группы.
+      value={group.total > 0 ? `#${group.place} из ${group.total}` : `#${group.place}`}
       label={`место в группе ${group.label}`}
       sub={`результат ${stripLeadingHours(group.best_time_display)}`}
       onDetails={() => onOpen(group.key)}

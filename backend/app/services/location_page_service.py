@@ -856,6 +856,55 @@ def _age_group_tops(
     return tops
 
 
+def _age_group_totals(db: Session, event_ids: list[UUID]) -> dict[tuple[str, str], tuple[int, int]]:
+    """Размер каждой возрастной группы: (участников, финишей).
+
+    Место без знаменателя не читается: «#35» выглядит слабо, пока не видно, что
+    это 35-е из 54. Тот же итог показываем и над топ-5, чтобы плитка и таблица
+    сходились.
+
+    Агрегат считает БД, наружу приезжает по строке на сырую категорию — на
+    порядки меньше, чем выборка лучших времён каждого участника, которой
+    пользуется топ-5. Нормализуем и складываем уже здесь.
+    """
+    if not event_ids:
+        return {}
+    gender_expr = _protocol_age_category_gender()
+    time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
+    rows = (
+        db.query(
+            gender_expr.label("gender"),
+            RunResult.age_category.label("age_category"),
+            func.count(func.distinct(RunResult.participant_id)).label("runners"),
+            func.count().label("finishes"),
+        )
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .filter(
+            RunResult.event_id.in_(event_ids),
+            RunResult.participant_id.isnot(None),
+            time_ok,
+            Platform.code == FIVE_VERST_PLATFORM_CODE,
+            RunResult.age_category.isnot(None),
+            RunResult.age_category != "",
+        )
+        .group_by(gender_expr, RunResult.age_category)
+        .all()
+    )
+
+    totals: dict[tuple[str, str], tuple[int, int]] = {}
+    for row in rows:
+        if row.gender not in ("male", "female"):
+            continue
+        age_group = normalize_age_group(row.age_category)
+        if age_group is None:
+            continue
+        key = (row.gender, age_group)
+        runners, finishes = totals.get(key, (0, 0))
+        totals[key] = (runners + int(row.runners), finishes + int(row.finishes))
+    return totals
+
+
 def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, object]]:
     """Рекорды локации по возрастным группам: лучшее время в каждой группе М/Ж.
 
@@ -941,8 +990,12 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
             }
 
     tops = _age_group_tops(db, event_ids)
+    totals = _age_group_totals(db, event_ids)
     for key, record in best.items():
         record["top"] = tops.get(key, [])
+        runners_total, finishes_total = totals.get(key, (0, 0))
+        record["runners_total"] = runners_total
+        record["finishes_total"] = finishes_total
 
     return sorted(
         best.values(),
