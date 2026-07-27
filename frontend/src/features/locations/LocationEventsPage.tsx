@@ -167,29 +167,33 @@ function LocationEventsContent({ slug }: { slug: string }) {
         </div>
       </header>
 
-      <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по системам">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={platformFilter === null}
-          className={platformFilter === null ? "map-mode-tab active" : "map-mode-tab"}
-          onClick={() => setPlatformFilter(null)}
-        >
-          Все ({data.items.length})
-        </button>
-        {[...platformCounts.entries()].map(([code, count]) => (
+      {/* У большинства локаций протоколы одной системы — фильтровать нечего,
+          и ряд из «Все (N)» и единственной кнопки только утяжеляет страницу. */}
+      {platformCounts.size > 1 && (
+        <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по системам">
           <button
-            key={code}
             type="button"
             role="tab"
-            aria-selected={platformFilter === code}
-            className={platformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
-            onClick={() => setPlatformFilter(platformFilter === code ? null : code)}
+            aria-selected={platformFilter === null}
+            className={platformFilter === null ? "map-mode-tab active" : "map-mode-tab"}
+            onClick={() => setPlatformFilter(null)}
           >
-            {platformCodeLabel(code)} ({count})
+            Все ({data.items.length})
           </button>
-        ))}
-      </div>
+          {[...platformCounts.entries()].map(([code, count]) => (
+            <button
+              key={code}
+              type="button"
+              role="tab"
+              aria-selected={platformFilter === code}
+              className={platformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
+              onClick={() => setPlatformFilter(platformFilter === code ? null : code)}
+            >
+              {platformCodeLabel(code)} ({count})
+            </button>
+          ))}
+        </div>
+      )}
 
       <section className="loc-section">
         <div ref={attachFloatingHead} className="table-wrap loc-events-wrap">
