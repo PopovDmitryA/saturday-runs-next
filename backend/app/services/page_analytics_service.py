@@ -32,6 +32,13 @@ DEFAULT_PERIOD_DAYS = 30
 EARLIEST_STATS_DATE = date(2026, 7, 1)
 
 _PROFILE_RE = re.compile(r"^/users/([^/]+)$")
+# Вкладка чужого/своего профиля: /users/{хендл}/{сегмент}. С тех пор как вкладки
+# живут в адресе, это самая частая группа — 217 просмотров за 30 дней уезжали
+# в «прочее» единственным блоком.
+_PROFILE_TAB_RE = re.compile(r"^/users/([^/]+)/([^/]+)$")
+# Служебная страница мирового обхода parkrun: /hq/{токен}. Токен в entity_key
+# не кладём — он одноразовый и в отчёте бесполезен.
+_SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
 _LOCATION_EVENTS_RE = re.compile(r"^/locations/([^/]+)/events$")
 _LOCATION_RE = re.compile(r"^/locations/([^/]+)$")
 
@@ -59,12 +66,36 @@ _STATIC_PAGE_TYPES = {
     "/ratings/runs": "ratings_runs",
     "/ratings/volunteering": "ratings_volunteering",
     "/ratings/locations": "ratings_locations",
+    "/ratings/wins": "ratings_wins",
+    "/ratings/win-locations": "ratings_win_locations",
+    "/backlog": "backlog",
+    # Превью кабинета на демо-данных — витрина дизайна, а не раздел сайта.
+    "/new/cabinet-preview": "cabinet_preview",
     "/share": "share",
     "/settings": "settings",
 }
 
 # Страницы-заглушки: сразу редиректят на другой адрес, своего содержимого нет.
-_REDIRECT_PATHS = frozenset({"/sync", "/queue", "/admin"})
+# Служебные адреса кабинета времён тёмного запуска: сами ничего не показывают,
+# сразу уводят на /users/{хендл}/… Держим отдельно от «прочего», иначе выглядят
+# как забытый раздел, хотя это просто старые ссылки.
+_REDIRECT_PATHS = frozenset(
+    {
+        "/sync",
+        "/queue",
+        "/admin",
+        "/new/dashboard",
+        "/new/runs",
+        "/new/volunteering",
+        "/new/achievements",
+        "/new/co-runners",
+        "/new/maps",
+        "/new/history",
+        "/new/share",
+        "/new/settings",
+        "/dashboards",
+    }
+)
 
 
 def _is_legacy_grafana_path(raw_path: str) -> bool:
@@ -103,6 +134,15 @@ def classify_page(path: str) -> tuple[str, str]:
     profile = _PROFILE_RE.match(normalized)
     if profile:
         return "profile", profile.group(1)[:128]
+
+    # Вкладка профиля — отдельный тип: в entity_key кладём саму вкладку, чтобы
+    # в отчёте было видно, какие разделы чужих профилей смотрят.
+    profile_tab = _PROFILE_TAB_RE.match(normalized)
+    if profile_tab:
+        return "profile_tab", profile_tab.group(2)[:128]
+
+    if _SWEEP_HQ_RE.match(normalized):
+        return "sweep_hq", ""
 
     location_events = _LOCATION_EVENTS_RE.match(normalized)
     if location_events:

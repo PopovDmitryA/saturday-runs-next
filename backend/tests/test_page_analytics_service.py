@@ -39,7 +39,21 @@ from app.services.page_analytics_service import (
         ("/locations/kuzminki/events", ("location_events", "kuzminki")),
         ("/ratings", ("ratings_hub", "")),
         ("/ratings/runs", ("ratings_runs", "")),
-        # Адреса тёмного запуска портала удалены — теперь это "other".
+        ("/ratings/wins", ("ratings_wins", "")),
+        ("/ratings/win-locations", ("ratings_win_locations", "")),
+        ("/backlog", ("backlog", "")),
+        # Вкладки профиля живут в адресе — самая частая группа в «прочем»
+        # до этой правки. В entity_key кладём вкладку, а не хендл.
+        ("/users/ivan/maps", ("profile_tab", "maps")),
+        ("/users/12345/achievements", ("profile_tab", "achievements")),
+        ("/users/ivan/co-runners", ("profile_tab", "co-runners")),
+        ("/hq/hq-2kl5kfrlzmnvn8sc", ("sweep_hq", "")),
+        ("/new/cabinet-preview", ("cabinet_preview", "")),
+        # Старые адреса кабинета сами ничего не показывают — это редиректы.
+        ("/new/dashboard", ("redirect", "/new/dashboard")),
+        ("/new/maps", ("redirect", "/new/maps")),
+        ("/dashboards", ("redirect", "/dashboards")),
+        # Несуществующие адреса по-прежнему попадают в «прочее» — бакет живой.
         ("/new", ("other", "/new")),
         ("/new/about", ("other", "/new/about")),
         ("/new/map-lab", ("portal_map_lab", "")),
