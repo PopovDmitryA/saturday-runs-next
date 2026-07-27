@@ -14,6 +14,8 @@ export const DASHBOARD_ANALYTICS_CARD_ORDER = [
   "total_distance",
   "next_milestone",
   "pr_count",
+  "location_records",
+  "age_group_records",
   "last_global_pr_date",
   "days_since_first_run",
   "saturday_streak",

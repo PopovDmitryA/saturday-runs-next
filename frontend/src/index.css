@@ -4821,6 +4821,25 @@ tr.run-crosslinked td {
   line-height: 1.45;
 }
 
+/* Утерянный рекорд локации: строка приглушена, но остаётся читаемой —
+   участник пришёл сюда как раз посмотреть, что и когда у него перебили. */
+.location-records-table tr.location-record-lost td {
+  color: var(--text-muted);
+}
+
+.location-records-table tr.location-record-lost .unique-locations-name {
+  color: var(--text-muted);
+}
+
+.location-record-level {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.location-record-beaten-by {
+  font-size: 0.85rem;
+}
+
 .unique-locations-badge-muted {
   display: inline-block;
   margin-top: 0.15rem;

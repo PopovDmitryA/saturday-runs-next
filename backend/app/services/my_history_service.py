@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from functools import partial
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -19,6 +20,7 @@ from app.models import (
 from app.services.dashboard_service import _week_saturday
 from app.services.history_milestone_settings_service import get_disabled_milestone_kinds
 from app.services.location_catalog_service import LocationCatalogIndex, is_foreign_location
+from app.services.location_records_service import get_user_location_records
 from app.services.user_history_milestone_service import get_user_disabled_milestone_kinds_by_id
 from app.services.user_location_stats import _canonical_region, _normalize_geo_value
 from app.time_format import normalize_finish_time_display
@@ -55,18 +57,22 @@ _KIND_ORDER = {
     "saturday_streak": 6,
     "saturday_run_streak": 7,
     "saturday_volunteer_streak": 8,
-    "global_pr": 9,
-    "pr": 10,
-    "location_pr": 11,
-    "first_foreign_parkrun": 12,
-    "first_foreign_run": 13,
-    "new_country": 14,
-    "new_region": 15,
-    "new_city": 16,
-    "new_location": 17,
-    "first_volunteer": 18,
-    "volunteer_club": 19,
-    "volunteer_club_platform": 20,
+    # Рекорды площадки крупнее личных: событие сравнивает бегуна со всей
+    # историей локации, а не только с самим собой.
+    "location_course_record": 9,
+    "location_age_group_record": 10,
+    "global_pr": 11,
+    "pr": 12,
+    "location_pr": 13,
+    "first_foreign_parkrun": 14,
+    "first_foreign_run": 15,
+    "new_country": 16,
+    "new_region": 17,
+    "new_city": 18,
+    "new_location": 19,
+    "first_volunteer": 20,
+    "volunteer_club": 21,
+    "volunteer_club_platform": 22,
 }
 
 
@@ -786,6 +792,57 @@ def _collect_location_geo_milestones(
     return milestones
 
 
+def _collect_location_record_milestones(db: Session, user_id: UUID) -> list[dict[str, object]]:
+    """Вехи «рекорд локации» и «рекорд локации в возрастной группе».
+
+    Моменты установки рекорда отдаёт location_records_service (прогрессия
+    префиксных минимумов по истории протоколов площадки); здесь только
+    оборачиваем их в формат вех и достраиваем ссылку на протокол. Тестовые
+    события сервис исключает всегда, поэтому include_test_events сюда не
+    пробрасывается — рекорды площадки на тестовых стартах не ставятся.
+    """
+    payload = get_user_location_records(db, user_id)
+    rows = cast(list[dict[str, object]], payload.get("milestones") or [])
+    if not rows:
+        return []
+
+    event_ids = {UUID(str(row["event_id"])) for row in rows}
+    event_rows = (
+        db.query(Event, Location)
+        .join(Location, Event.location_id == Location.id)
+        .filter(Event.id.in_(event_ids))
+        .all()
+    )
+    events_by_id: dict[UUID, tuple[Event, Location]] = {
+        event.id: (event, location) for event, location in event_rows
+    }
+
+    milestones: list[dict[str, object]] = []
+    for row in rows:
+        platform_code = str(row["platform_code"])
+        event_url: str | None = None
+        pair = events_by_id.get(UUID(str(row["event_id"])))
+        if pair is not None:
+            event, location = pair
+            event_url = _milestone_event_url(
+                platform_code=platform_code, event=event, location=location, profile_url=None
+            )
+        entry = _base_entry(
+            kind=str(row["kind"]),
+            event_date=date.fromisoformat(str(row["event_date"])),
+            platform_code=platform_code,
+            location_name=str(row["location_name"]),
+            location_city=cast(str | None, row.get("location_city")),
+            finish_time_display=cast(str | None, row.get("finish_time_display")),
+            finish_time_sec=cast(int | None, row.get("finish_time_sec")),
+            event_url=event_url,
+        )
+        entry["record_scope"] = row.get("record_scope")
+        entry["age_group"] = row.get("age_group")
+        milestones.append(entry)
+    return milestones
+
+
 def get_my_history(
     db: Session,
     user_id: UUID,
@@ -803,13 +860,15 @@ def get_my_history(
     волонтёрство), первый зарубежный старт (и отдельно первый зарубежный
     паркран), первое волонтёрство и клубы волонтёрств (сквозные и по каждой
     системе), рекорды серий суббот подряд (общая серия, только пробежки,
-    только волонтёрства).
+    только волонтёрства), рекорды локации (лучшее время площадки — общий и по
+    возрастной группе, см. location_records_service).
     """
     milestones = (
         _collect_run_milestones(db, user_id, include_test_events=include_test_events)
         + _collect_volunteer_milestones(db, user_id, include_test_events=include_test_events)
         + _collect_location_geo_milestones(db, user_id, include_test_events=include_test_events)
         + _collect_saturday_streak_milestones(db, user_id, include_test_events=include_test_events)
+        + _collect_location_record_milestones(db, user_id)
     )
 
     # Скрытые виды вех: глобально (админ) + персонально (сам пользователь).

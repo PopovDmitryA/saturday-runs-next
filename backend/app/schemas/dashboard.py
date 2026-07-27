@@ -50,6 +50,35 @@ class ActivityCalendarDayResponse(BaseModel):
     volunteer_items: list[ActivityCalendarItemResponse] = Field(default_factory=list)
 
 
+class LocationRecordEntryResponse(BaseModel):
+    """Рекорд локации, который пользователь держит или держал раньше."""
+
+    location_name: str
+    location_slug: str | None = None
+    location_city: str | None = None
+    # Уровень рекорда: "global" | код системы — только для площадок, живших в
+    # нескольких системах; у монолокаций None (уровень один, не показываем).
+    level: str | None = None
+    platform_code: str
+    # Возрастная группа («30–34») — только для рекордов по возрастным группам.
+    age_group: str | None = None
+    finish_time_sec: int
+    finish_time_display: str
+    event_date: date
+    is_current: bool = True
+    # Когда/кем/каким временем рекорд перебит (для утерянных).
+    beaten_date: date | None = None
+    beaten_by: str | None = None
+    beaten_time_sec: int | None = None
+    beaten_time_display: str | None = None
+
+
+class LocationRecordsBlockResponse(BaseModel):
+    current_count: int = 0
+    lost_count: int = 0
+    entries: list[LocationRecordEntryResponse] = Field(default_factory=list)
+
+
 class DashboardAnalyticsResponse(BaseModel):
     analytics_version: int = 1
     unique_locations: int = 0
@@ -104,6 +133,8 @@ class DashboardAnalyticsResponse(BaseModel):
     platform_metrics: list[PlatformRunMetricsResponse] = Field(default_factory=list)
     activity_by_month: list[MonthlyActivityResponse] = Field(default_factory=list)
     pace_trend: list[MonthlyPaceResponse] = Field(default_factory=list)
+    location_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
+    age_group_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
 
 
 class OnThisDayRunResponse(BaseModel):
@@ -149,6 +180,11 @@ class MyHistoryMilestoneResponse(BaseModel):
     # Волонтёрская роль (для волонтёрских вех).
     role: str | None = None
     event_url: str | None = None
+    # Охват рекорда локации: "global" | код системы (мультисистемные площадки),
+    # None — монолокация (для kind=location_course_record).
+    record_scope: str | None = None
+    # Возрастная группа («30–34») — для kind=location_age_group_record.
+    age_group: str | None = None
 
 
 class MyHistoryResponse(BaseModel):

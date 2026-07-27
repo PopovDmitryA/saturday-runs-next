@@ -58,6 +58,10 @@ export function milestoneVisual(milestone: MyHistoryMilestone): MilestoneVisual 
       return { icon: "⚡", className: "history-kind-pr" };
     case "location_pr":
       return { icon: "🥉", className: "history-kind-pr-location" };
+    case "location_course_record":
+      return { icon: "👑", className: "history-kind-pr-global" };
+    case "location_age_group_record":
+      return { icon: "🏵️", className: "history-kind-pr-location" };
     case "new_country":
       return { icon: "🌍", className: "history-kind-geo" };
     case "new_region":
@@ -127,6 +131,21 @@ export function milestoneTitle(milestone: MyHistoryMilestone): string {
       return time ? `Личный рекорд в системе — ${time}` : "Личный рекорд в системе";
     case "location_pr":
       return time ? `Личный рекорд в локации — ${time}` : "Личный рекорд в локации";
+    case "location_course_record": {
+      const base =
+        milestone.record_scope === "global"
+          ? "Глобальный рекорд локации"
+          : milestone.record_scope
+            ? "Рекорд локации в системе"
+            : "Рекорд локации";
+      return time ? `${base} — ${time}` : base;
+    }
+    case "location_age_group_record": {
+      const base = milestone.age_group
+        ? `Рекорд локации в группе ${milestone.age_group}`
+        : "Рекорд локации в возрастной группе";
+      return time ? `${base} — ${time}` : base;
+    }
     case "new_country":
       return `Новая страна: ${milestone.country ?? milestone.location_name}`;
     case "new_region":
@@ -173,6 +192,18 @@ function milestoneHint(milestone: MyHistoryMilestone): string | null {
     case "pr":
     case "location_pr":
       return milestone.delta_sec != null ? deltaLabel(milestone.delta_sec) : null;
+    case "location_course_record":
+      // Пояснение уровня нужно только мультисистемным площадкам (у них охват
+      // проставлен); у монолокаций record_scope пуст — и пояснять нечего.
+      if (milestone.record_scope === "global") {
+        return "лучшее время сквозь все системы площадки";
+      }
+      if (milestone.record_scope) {
+        return "лучшее время площадки в этой системе";
+      }
+      return "лучшее время площадки";
+    case "location_age_group_record":
+      return "лучшее время площадки в возрастной группе";
     default:
       return null;
   }

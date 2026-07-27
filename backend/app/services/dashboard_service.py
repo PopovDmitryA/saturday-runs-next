@@ -28,6 +28,7 @@ from app.models import (
 )
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.location_map_service import _location_is_cancelled, _location_is_paused
+from app.services.location_records_service import get_user_location_records
 from app.services.sync_error_format import present_sync_error
 from app.services.user_location_stats import count_unique_geo_from_rows, count_unique_locations_from_rows
 from app.services.user_unique_locations_detail import _platform_sort_key
@@ -49,7 +50,9 @@ class SyncRefreshRateLimitedError(Exception):
 # списком PR-пробежек.
 # 27: тестовые события исключены из пересчёта is_pr/дебютов + бэкфилл на проде —
 # кэш должен пересчитать pr_count по обновлённым флагам.
-ANALYTICS_VERSION = 28
+# 29: плитки «Рекорды локаций» и «Рекорды в возрастных группах» — в аналитике
+# появились location_records / age_group_records (location_records_service).
+ANALYTICS_VERSION = 29
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -785,6 +788,10 @@ def _compute_dashboard_analytics(
     next_run_club = _next_run_club(total_runs)
     total_distance_km = total_runs * DISTANCE_KM_PER_RUN
 
+    # Пересчёт аналитики — момент освежить и рекорды локаций: force_refresh
+    # перезаписывает redis-кэш, которым дальше пользуется «Моя история».
+    location_records = get_user_location_records(db, user_id, force_refresh=True)
+
     return {
         "analytics_version": ANALYTICS_VERSION,
         "unique_locations": all_unique_counts.unique_total,
@@ -839,6 +846,8 @@ def _compute_dashboard_analytics(
         "next_run_club": next_run_club,
         "avg_vs_field_pct": avg_vs_field_pct,
         "runs_with_field_avg_count": runs_with_field_avg_count,
+        "location_records": location_records["course"],
+        "age_group_records": location_records["age_group"],
     }
 
 

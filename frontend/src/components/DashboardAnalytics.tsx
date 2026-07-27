@@ -16,6 +16,7 @@ import { TopLocationValue } from "./TopLocationValue";
 import { VolunteerRolesModal } from "./VolunteerRolesModal";
 import { UniqueLocationsModal } from "./UniqueLocationsModal";
 import { RegionsCitiesModal, type GroupBy } from "./RegionsCitiesModal";
+import { LocationRecordsModal } from "./LocationRecordsModal";
 import {
   formatDate,
   formatDuration,
@@ -56,7 +57,15 @@ type AnalyticsCard = {
   /** Пара с другой half-картой делит ряд пополам (не на всю ширину, но и не в общей сетке). */
   half?: boolean;
   clickable?: boolean;
-  modalTarget?: "unique_locations" | "best_results" | "personal_records" | "volunteer_roles" | "unique_regions" | "unique_cities";
+  modalTarget?:
+    | "unique_locations"
+    | "best_results"
+    | "personal_records"
+    | "volunteer_roles"
+    | "unique_regions"
+    | "unique_cities"
+    | "location_records"
+    | "age_group_records";
   modalActivity?: "all" | "runs" | "volunteering";
   firstVisitSince?: string;
   tooltipContent?: ReactNode;
@@ -309,6 +318,37 @@ function buildAnalyticsCards(
     });
   }
 
+  // Плитки рекордов локаций показываем и когда все рекорды утеряны (счётчик 0,
+  // но есть утерянные): участник должен суметь открыть модалку и увидеть, какой
+  // рекорд он потерял, кем и когда перебит.
+  const locationRecords = analytics.location_records;
+  if (locationRecords && (locationRecords.current_count > 0 || locationRecords.lost_count > 0)) {
+    cards.push({
+      key: "location_records",
+      value: String(locationRecords.current_count),
+      label: locationRecords.current_count === 1 ? "Рекорд локации" : "Рекорды локаций",
+      category: "runs",
+      clickable: true,
+      modalTarget: "location_records",
+    });
+  }
+
+  const ageGroupRecords = analytics.age_group_records;
+  if (ageGroupRecords && (ageGroupRecords.current_count > 0 || ageGroupRecords.lost_count > 0)) {
+    cards.push({
+      key: "age_group_records",
+      value: String(ageGroupRecords.current_count),
+      label:
+        ageGroupRecords.current_count === 1
+          ? "Рекорд в возрастной группе"
+          : "Рекорды в возрастных группах",
+      category: "runs",
+      clickable: true,
+      modalTarget: "age_group_records",
+      labelMultiline: true,
+    });
+  }
+
   // Плашка «Последний PR» временно скрыта (02.07.2026) — вернём, если попросят пользователи.
 
   if (analytics.last_global_pr_date) {
@@ -555,6 +595,8 @@ export function DashboardAnalytics({
   const [bestResultsOpen, setBestResultsOpen] = useState(false);
   const [personalRecordsOpen, setPersonalRecordsOpen] = useState(false);
   const [volunteerRolesOpen, setVolunteerRolesOpen] = useState(false);
+  const [locationRecordsOpen, setLocationRecordsOpen] = useState(false);
+  const [ageGroupRecordsOpen, setAgeGroupRecordsOpen] = useState(false);
   const [regionsCitiesOpen, setRegionsCitiesOpen] = useState(false);
   const [regionsCitiesGroupBy, setRegionsCitiesGroupBy] = useState<GroupBy>("region");
   const [modalActivity, setModalActivity] = useState<"all" | "runs" | "volunteering">("all");
@@ -582,6 +624,14 @@ export function DashboardAnalytics({
     }
     if (card.modalTarget === "volunteer_roles") {
       setVolunteerRolesOpen(true);
+      return;
+    }
+    if (card.modalTarget === "location_records") {
+      setLocationRecordsOpen(true);
+      return;
+    }
+    if (card.modalTarget === "age_group_records") {
+      setAgeGroupRecordsOpen(true);
       return;
     }
     if (card.modalTarget === "unique_regions") {
@@ -802,6 +852,20 @@ export function DashboardAnalytics({
       />
 
       <VolunteerRolesModal open={volunteerRolesOpen} onClose={() => setVolunteerRolesOpen(false)} />
+
+      <LocationRecordsModal
+        open={locationRecordsOpen}
+        onClose={() => setLocationRecordsOpen(false)}
+        kind="course"
+        block={analytics.location_records}
+      />
+
+      <LocationRecordsModal
+        open={ageGroupRecordsOpen}
+        onClose={() => setAgeGroupRecordsOpen(false)}
+        kind="age_group"
+        block={analytics.age_group_records}
+      />
 
       <RegionsCitiesModal
         open={regionsCitiesOpen}

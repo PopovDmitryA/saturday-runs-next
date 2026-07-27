@@ -97,6 +97,32 @@ export type PlatformLink = {
   data_through_date?: string | null;
 };
 
+export type LocationRecordEntry = {
+  location_name: string;
+  location_slug: string | null;
+  location_city: string | null;
+  // Уровень рекорда: "global" | код системы — только для площадок, живших в
+  // нескольких системах; у монолокаций null.
+  level: string | null;
+  platform_code: string;
+  // Возрастная группа («30–34») — только у рекордов по возрастным группам.
+  age_group: string | null;
+  finish_time_sec: number;
+  finish_time_display: string;
+  event_date: string;
+  is_current: boolean;
+  beaten_date: string | null;
+  beaten_by: string | null;
+  beaten_time_sec: number | null;
+  beaten_time_display: string | null;
+};
+
+export type LocationRecordsBlock = {
+  current_count: number;
+  lost_count: number;
+  entries: LocationRecordEntry[];
+};
+
 export type DashboardAnalytics = {
   analytics_version?: number;
   unique_locations: number;
@@ -167,6 +193,8 @@ export type DashboardAnalytics = {
   }>;
   activity_by_month: Array<{ month: string; runs: number; volunteering: number }>;
   pace_trend: Array<{ month: string; avg_pace_sec_per_km: number | null }>;
+  location_records?: LocationRecordsBlock;
+  age_group_records?: LocationRecordsBlock;
 };
 
 export type DashboardStats = {
@@ -926,6 +954,8 @@ export type MyHistoryMilestoneKind =
   | "global_pr"
   | "pr"
   | "location_pr"
+  | "location_course_record"
+  | "location_age_group_record"
   | "first_foreign_parkrun"
   | "first_foreign_run"
   | "new_region"
@@ -960,6 +990,11 @@ export type MyHistoryMilestone = {
   country: string | null;
   role: string | null;
   event_url: string | null;
+  // Охват рекорда локации: "global" | код системы (мультисистемные площадки),
+  // null — монолокация (kind=location_course_record).
+  record_scope?: string | null;
+  // Возрастная группа («30–34») — kind=location_age_group_record.
+  age_group?: string | null;
 };
 
 export type MyHistory = {

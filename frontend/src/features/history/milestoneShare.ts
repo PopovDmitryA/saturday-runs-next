@@ -57,6 +57,16 @@ export function milestoneAccentLabel(milestone: MyHistoryMilestone): string {
       return "Личный рекорд в системе";
     case "location_pr":
       return "Личный рекорд в локации";
+    case "location_course_record":
+      return milestone.record_scope === "global"
+        ? "Глобальный рекорд локации"
+        : milestone.record_scope
+          ? "Рекорд локации в системе"
+          : "Рекорд локации";
+    case "location_age_group_record":
+      return milestone.age_group
+        ? `Рекорд локации · группа ${milestone.age_group}`
+        : "Рекорд локации в группе";
     case "new_region": {
       const milestoneNumber = geoMilestoneNumber(milestone.number);
       if (milestoneNumber != null) {
@@ -233,6 +243,21 @@ export function milestoneBragText(milestone: MyHistoryMilestone, siteUrl: string
     case "location_pr":
       headline = `🥉 Новый личный рекорд в локации «${milestone.location_name}»!`;
       details = milestoneDetailsLine(milestone, { time: true, position: true, delta: true });
+      break;
+    case "location_course_record":
+      headline =
+        milestone.record_scope === "global"
+          ? `👑 Глобальный рекорд локации «${milestone.location_name}» — лучшее время площадки за всю историю!`
+          : milestone.record_scope
+            ? `👑 Рекорд локации «${milestone.location_name}» в системе «${platform}»!`
+            : `👑 Рекорд локации «${milestone.location_name}» — лучшее время площадки!`;
+      details = milestoneDetailsLine(milestone, { time: true, position: true });
+      break;
+    case "location_age_group_record":
+      headline = milestone.age_group
+        ? `🏵️ Рекорд локации «${milestone.location_name}» в группе ${milestone.age_group}!`
+        : `🏵️ Рекорд локации «${milestone.location_name}» в возрастной группе!`;
+      details = milestoneDetailsLine(milestone, { time: true, position: true });
       break;
     case "first_foreign_parkrun":
       headline = "✈️ Первый зарубежный паркран!";
