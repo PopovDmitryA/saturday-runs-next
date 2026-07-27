@@ -40,7 +40,7 @@ if str(ROOT) not in sys.path:
 from sqlalchemy import text
 
 from app.db.session import get_session_factory
-from app.models import EventSummary, Location, Platform, RunResult
+from app.models import EventSummary, Location, Platform, ProtocolSyncState, RunResult
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
 from app.sync.five_verst_reconcile import _summary_to_canonical
 
@@ -120,13 +120,13 @@ def main() -> int:
                 print(f"будет помечено к перечитке: {len(event_ids)}")
                 print("пробный прогон, ничего не записано — добавь --apply")
                 return 0
-            updated = db.execute(
-                text(
-                    "UPDATE protocol_sync_state SET last_protocol_check_at = NULL "
-                    "WHERE event_id = ANY(:ids)"
-                ),
-                {"ids": event_ids},
-            ).rowcount
+            # Через модель, а не сырым SQL: имя таблицы не должно расходиться
+            # с ProtocolSyncState (оно во множественном числе, легко ошибиться).
+            updated = (
+                db.query(ProtocolSyncState)
+                .filter(ProtocolSyncState.event_id.in_(event_ids))
+                .update({ProtocolSyncState.last_protocol_check_at: None}, synchronize_session=False)
+            )
             db.commit()
             print(f"помечено к перечитке: {updated} из {len(event_ids)}")
             print(
