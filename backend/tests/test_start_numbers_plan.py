@@ -36,11 +36,19 @@ def _platform(db, code: str) -> Platform:
     return platform
 
 
-def _location_with_last_event(db, platform: Platform, name: str, last_date: date, last_number: int) -> Location:
+def _location_with_last_event(
+    db,
+    platform: Platform,
+    name: str,
+    last_date: date,
+    last_number: int,
+    country: str | None = None,
+) -> Location:
     location = Location(
         platform_id=platform.id,
         external_key=f"plan-{uuid4().hex[:8]}",
         name=name,
+        country=country,
         is_cancelled=False,
         is_paused=False,
     )
@@ -237,3 +245,30 @@ def test_plan_scopes_to_platform_filter(db_session) -> None:
     assert _entries(only_s95, 101) == [[], [], []]
     # Пробежка была в 5 вёрстах — под фильтром s95 номер не считается закрытым.
     assert {row["number"] for row in only_s95["rows"] if row["done"]} == set()
+
+
+def test_plan_keeps_russia_only(db_session) -> None:
+    """Зарубежные локации в прогноз не идут.
+
+    Из активных локаций подавляющее большинство — parkrun из мирового каталога,
+    и подсказка вида «Скоро: Westpark ≈ 01.08» предлагала номер, который человек
+    закрыть не может. Пустая страна означает «не заполнили» — такие строки у нас
+    российские, и их прогноз обязан сохранить.
+    """
+    try:
+        five_verst = _platform(db_session, "five_verst")
+    except Exception:
+        pytest.skip("Database not available")
+
+    _location_with_last_event(db_session, five_verst, "Наша", date(2026, 7, 25), 100, country="Россия")
+    _location_with_last_event(db_session, five_verst, "БезСтраны", date(2026, 7, 25), 120, country=None)
+    _location_with_last_event(db_session, five_verst, "Заграничная", date(2026, 7, 25), 140, country="United Kingdom")
+    user = _user_with_run(db_session, five_verst, _location_with_last_event(
+        db_session, five_verst, "Домашняя", date(2026, 7, 25), 160, country="Россия"
+    ), event_number=7)
+
+    plan = build_start_numbers_plan(db_session, user.id, code="start_numbers", today=TODAY)
+
+    assert _entries(plan, 101)[0] == ["Наша"]
+    assert _entries(plan, 121)[0] == ["БезСтраны"]
+    assert _entries(plan, 141) == [[], [], []]

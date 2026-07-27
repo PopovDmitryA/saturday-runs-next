@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -34,6 +34,7 @@ from app.models import (
     VolunteerResult,
 )
 from app.services.location_catalog_service import LocationCatalogIndex
+from app.services.location_map_service import RU_COUNTRY_NAMES
 from app.services.user_location_stats import _canonical_region, _normalize_geo_value
 from app.time_format import normalize_finish_time_display
 from app.volunteering_occasions import count_volunteering_for_platform, is_inventory_day, volunteer_occasion_dates
@@ -498,6 +499,11 @@ def _predict_upcoming_starts(
     системы (five_verst/s95/parkrun/runpark) — каждая платформа нумерует события
     независимо.
 
+    Только Россия: из 2859 активных локаций 2437 — зарубежные (почти все
+    parkrun из мирового каталога), и подсказка «Скоро: Westpark ≈ 01.08»
+    предлагала номер, который человек закрыть не может. Пустая страна означает
+    «не заполнили», и такие строки у нас российские — их оставляем.
+
     Окно недели считаем от сегодня (`week_index`), а не по счётчику цикла: у
     локаций разные даты последнего старта, и «+1 неделя» для отставшей локации
     попадает в то же календарное окно, что «+2 недели» для идущей вровень.
@@ -528,6 +534,7 @@ def _predict_upcoming_starts(
             Event.event_number.isnot(None),
             Location.is_cancelled.is_(False),
             Location.is_paused.is_(False),
+            or_(Location.country.is_(None), Location.country.in_(RU_COUNTRY_NAMES)),
         )
     )
     catalog_index = LocationCatalogIndex(db)
