@@ -10,8 +10,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": apiTarget,
-      "/health": apiTarget,
+      // changeOrigin: с пустой локальной базой удобно смотреть вёрстку на живых
+      // данных (API_PROXY_TARGET=https://run5k.run), а туда нужен свой Host —
+      // иначе на сервере не сматчится vhost. Для localhost-цели безвредно.
+      "/api": { target: apiTarget, changeOrigin: true },
+      "/health": { target: apiTarget, changeOrigin: true },
     },
   },
 });

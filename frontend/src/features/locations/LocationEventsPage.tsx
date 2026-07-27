@@ -11,6 +11,7 @@ import {
   type LocationEvents,
 } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
+import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 
 type SortKey = "date" | "finishers" | "volunteers" | "best_male" | "best_female" | "avg" | "newcomers" | "prs";
@@ -51,6 +52,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [platformFilter, setPlatformFilter] = useState<string | null>(null);
   const [sort, setSort] = useState<SortState>({ key: "date", asc: false });
+  const attachFloatingHead = useFloatingTableHead();
 
   useEffect(() => {
     let cancelled = false;
@@ -190,7 +192,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
       </div>
 
       <section className="loc-section">
-        <div className="table-wrap loc-events-wrap">
+        <div ref={attachFloatingHead} className="table-wrap loc-events-wrap">
           <table className="data-table data-table-layout-fixed loc-events-table">
             <colgroup>
               <col className="col-number" />

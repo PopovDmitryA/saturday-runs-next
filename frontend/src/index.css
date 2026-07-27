@@ -2009,9 +2009,32 @@ a.on-this-day-location {
 
 .data-table thead th {
   position: sticky;
-  top: 0;
+  /* По умолчанию 0 — для таблиц внутри своих скролл-боксов (модалки), где
+     липнуть надо к верху бокса. Страничные таблицы липнут к окну, и там ноль
+     означал бы «под шапкой сайта»: она непрозрачная и выше по z-index. */
+  top: var(--table-head-top, 0);
   z-index: 2;
   box-shadow: 0 1px 0 var(--border);
+}
+
+/* Плавающая копия шапки для узких экранов — её создаёт useFloatingTableHead,
+   когда обёртка таблицы стала скролл-контейнером и настоящий sticky бесполезен.
+   z-index ниже шапки сайта (40): полоса встаёт под неё, а не поверх. */
+.float-thead {
+  position: fixed;
+  z-index: 30;
+  overflow: hidden;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.float-thead[hidden] {
+  display: none;
+}
+
+/* Внутри копии липкость только мешает: полоса и так закреплена. */
+.float-thead thead th {
+  position: static;
 }
 
 .data-table-filterable thead th {
@@ -10045,21 +10068,26 @@ tr.run-crosslinked td {
    возвращает overflow-x: visible: прокручивается страница целиком. */
 .table-wrap.loc-events-wrap {
   overflow-x: visible;
+  /* Липнет к окну — значит ниже шапки сайта, иначе прячется под ней. */
+  --table-head-top: var(--portal-header-h);
 }
 
 @media (max-width: 1200px) {
   /* Уже этой ширины 10 колонок журнала без горизонтального скролла не
-     помещаются — включаем его обратно (ценой sticky-шапки на узких экранах). */
+     помещаются — включаем его обратно. Обёртка становится скролл-контейнером,
+     шапка липнет уже к её верху (ноль), а видимой при листании страницы её
+     делает плавающая копия из useFloatingTableHead. */
   .table-wrap.loc-events-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    --table-head-top: 0px;
   }
 }
 
 /* Своя подложка вместо прозрачной: под шапкой при прокрутке проезжают строки. */
 .loc-events-table thead th {
   background: var(--surface);
-  top: 0;
+  top: var(--table-head-top, 0);
 }
 
 .loc-events-table .col-date {

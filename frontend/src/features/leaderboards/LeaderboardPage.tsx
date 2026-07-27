@@ -12,6 +12,7 @@ import {
   type LeaderboardRow,
   type MyLeaderboardRow,
 } from "./leaderboardsApi";
+import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import "./leaderboards.css";
@@ -233,6 +234,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
+  const attachFloatingHead = useFloatingTableHead();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -502,6 +504,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
             )}
 
             <div
+              ref={attachFloatingHead}
               className={`table-wrap lb-table-wrap${hasWinExtras ? " lb-table-wrap-wide" : ""}`}
             >
               <table className={`data-table lb-table${hasWinExtras ? " lb-table-wins" : ""}`}>
