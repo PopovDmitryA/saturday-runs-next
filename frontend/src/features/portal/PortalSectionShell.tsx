@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { PortalHeader } from "./PortalHeader";
 import { SiteSidebar, type SiteSidebarProps } from "./SiteSidebar";
+import { PortalSectionBottomNav } from "./PortalSectionBottomNav";
 import "./portal.css";
 import "./portalSection.css";
 
@@ -39,6 +40,9 @@ export function PortalSectionShell({
         <SiteSidebar active={sidebar.active} location={sidebar.location} />
         <main className="portal-cab-main portal-section">{children}</main>
       </div>
+      {/* На телефоне сайдбар скрыт: без этой панели раздел оставался вообще
+          без навигации — вернуться в кабинет было не по чему. */}
+      <PortalSectionBottomNav active={sidebar.active} />
     </div>
   );
 }
