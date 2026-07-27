@@ -232,6 +232,59 @@ def test_parse_unknown_participant_in_protocol() -> None:
     assert results[0].finish_time_sec is None
 
 
+def test_parse_unregistered_participant_is_kept() -> None:
+    """«(Нужна регистрация)» — тоже финишёр, 5 вёрст считает его в численности.
+
+    У него есть имя и позиция, но нет ссылки на профиль, времени и категории.
+    Раньше такая строка выбрасывалась (сохранялись только «НЕИЗВЕСТНЫЙ»), и
+    протокол приезжал короче: у Дружбы 29.11.2025 не хватало позиций 67 и 118,
+    из-за чего рекорд посещаемости показывался как 193 вместо 195.
+    """
+    html = """
+    <table>
+    <tr><td>67</td>
+      <td><div class="cell-label cell-label_name">Михаил МИХАЙЛОВ (Нужна регистрация)</div></td>
+      <td></td><td>&nbsp;</td>
+    </tr>
+    </table>
+    """
+    results = bulk_parser.parse_run_protocol_html(
+        html,
+        slug="druzhba",
+        event_date=date(2025, 11, 29),
+        event_number=189,
+    )
+    assert len(results) == 1
+    assert results[0].position == 67
+    assert results[0].status == "unknown"
+    assert results[0].external_user_id == "unknown:druzhba:2025-11-29:67"
+    assert results[0].finish_time_sec is None
+
+
+def test_parse_protocol_keeps_every_numbered_row() -> None:
+    """В протоколе не должно быть дыр по позициям: каждая строка — финишёр."""
+    html = """
+    <table>
+    <tr><td>1</td>
+      <td><a href="/userstats/?id=100">Быстрый Бегун</a></td>
+      <td>М30-34 (1)</td><td>00:17:00</td>
+    </tr>
+    <tr><td>2</td>
+      <td><div class="cell-label cell-label_name">Без Профиля (Нужна регистрация)</div></td>
+      <td></td><td>&nbsp;</td>
+    </tr>
+    <tr><td>3</td>
+      <td><div class="unknown cell-label cell-label_name">НЕИЗВЕСТНЫЙ</div></td>
+      <td></td><td></td>
+    </tr>
+    </table>
+    """
+    results = bulk_parser.parse_run_protocol_html(
+        html, slug="druzhba", event_date=date(2025, 11, 29), event_number=189
+    )
+    assert [row.position for row in results] == [1, 2, 3]
+
+
 def test_age_category_regex_keeps_three_digit_bands() -> None:
     """«М110-114» не должна обрезаться до «М11».
 

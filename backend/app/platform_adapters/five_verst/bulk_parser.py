@@ -614,9 +614,16 @@ def parse_run_protocol_html(
 
         external_user_id = _extract_user_id_from_row(row)
         participant_name = _extract_participant_name_from_row(row)
-        is_unknown = external_user_id is None and participant_name is not None and "неизвест" in participant_name.lower()
-        if external_user_id is None and not is_unknown:
-            continue
+        # Строка протокола без ссылки на профиль — это финишировавший бегун без
+        # аккаунта. 5 вёрст печатает их двумя способами: «НЕИЗВЕСТНЫЙ» (не
+        # опознан вовсе) и «Имя Фамилия (Нужна регистрация)» (штрихкод считан,
+        # профиля нет). В численность старта площадка засчитывает обоих.
+        #
+        # Раньше сохранялись только первые, а вторые молча выпадали: у Дружбы
+        # 29.11.2025 так потерялись позиции 67 и 118, и рекорд посещаемости
+        # показывался как 193 вместо 195. По всей базе 5 вёрст не хватало 4473
+        # строк в 2972 протоколах.
+        is_unknown = external_user_id is None
         if is_unknown:
             external_user_id = f"unknown:{slug}:{event_date.isoformat()}:{position}"
             participant_name = participant_name or "НЕИЗВЕСТНЫЙ"
