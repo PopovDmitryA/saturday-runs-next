@@ -1959,8 +1959,6 @@ def build_location_personal_stats(db: Session, user_id: UUID, slug: str) -> dict
         "first_run_date": None,
         "last_run_date": None,
         "volunteering_count": 0,
-        "rank_by_runs": None,
-        "runners_total": None,
         "gender": None,
         "rank_by_runs_gender": None,
         "runners_total_gender": None,
@@ -2020,28 +2018,13 @@ def build_location_personal_stats(db: Session, user_id: UUID, slug: str) -> dict
         payload["first_run_date"] = min(real_dates)
         payload["last_run_date"] = max(real_dates)
 
-    # Место в топе локации по числу пробежек — та же группировка, что в
-    # build_location_leaders: привязанные аккаунты сливаются по user_id.
-    runs_per_group = (
-        db.query(func.count(func.distinct(RunResult.event_id)).label("runs"))
-        .join(Participant, RunResult.participant_id == Participant.id)
-        .outerjoin(PlatformLink, _platform_link_join())
-        .filter(RunResult.event_id.in_(event_ids))
-        .group_by(func.coalesce(PlatformLink.user_id, RunResult.participant_id))
-        .subquery()
-    )
-    ahead, runners_total = (
-        db.query(
-            func.count(case((runs_per_group.c.runs > runs_count, 1))),
-            func.count(),
-        )
-        .select_from(runs_per_group)
-        .one()
-    )
-    payload["rank_by_runs"] = int(ahead) + 1
-    payload["runners_total"] = int(runners_total)
-
-    # То же место внутри своего пола. Пол берём из participants.gender — он
+    # Место в топе локации по числу пробежек — внутри своего пола. Группировка
+    # та же, что в build_location_leaders: привязанные аккаунты сливаются по
+    # user_id. Общего места (без разбивки) больше нет: сравнение мужчин и женщин
+    # одной строкой мало что говорит, а в знаменатель попадали неопознанные
+    # финишёры протокола — у них пол не заполнен, и срез по полу отсекает их сам.
+    #
+    # Пол берём из participants.gender — он
     # материализован по всем системам (gender_position_service), поэтому срез
     # работает и на parkrun-эпохе, где протокол категории не публикует.
     my_gender = (

@@ -375,9 +375,8 @@ class LocationPersonalStatsResponse(BaseModel):
     last_run_date: date | None = None
     volunteering_count: int = 0
     # Место в топе локации по числу пробежек (та же группировка, что у лидеров).
-    rank_by_runs: int | None = None
-    runners_total: int | None = None
-    # То же место внутри своего пола (пол — материализованный participants.gender)
+    # Место в топе по пробежкам — внутри своего пола (пол материализован в
+    # participants.gender). Общего места нет: см. build_location_personal_stats.
     gender: str | None = None
     rank_by_runs_gender: int | None = None
     runners_total_gender: int | None = None

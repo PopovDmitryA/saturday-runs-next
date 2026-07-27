@@ -1926,9 +1926,7 @@ export type LocationPersonalStats = {
   first_run_date: string | null;
   last_run_date: string | null;
   volunteering_count: number;
-  rank_by_runs: number | null;
-  runners_total: number | null;
-  // То же место внутри своего пола
+  // Место в топе по пробежкам — только внутри своего пола
   gender: string | null;
   rank_by_runs_gender: number | null;
   runners_total_gender: number | null;

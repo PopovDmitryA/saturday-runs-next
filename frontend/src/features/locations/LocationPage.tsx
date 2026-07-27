@@ -691,16 +691,18 @@ function LocationPersonalSection({
         {stats.avg_time_display && (
           <StatTile value={stripLeadingHours(stats.avg_time_display)} label="среднее время здесь" />
         )}
-        {/* Топ по пробежкам — внутри своего пола. Общий топ убран: сравнение
-            мужчин и женщин одной строкой мало что говорит бегуну. Если пол в
-            базе неизвестен, показываем общий — иначе плитка просто исчезнет. */}
-        {stats.rank_by_runs_gender != null && stats.runs_count > 0 ? (
+        {/* Топ по пробежкам — только внутри своего пола. Общий топ убран:
+            сравнение мужчин и женщин одной строкой бегуну мало что говорит, а
+            в знаменатель попадали «неизвестные» из протоколов — у них пола нет,
+            поэтому срез по полу отсекает их сам. У всех привязанных
+            пользователей пол известен, так что плитка не пропадёт. */}
+        {stats.rank_by_runs_gender != null && stats.runs_count > 0 && (
           <StatTile
             value={`#${stats.rank_by_runs_gender}`}
             label={`в топе по пробежкам · ${stats.gender === "female" ? "Ж" : "М"}`}
             hint={`Место по числу пробежек на этой площадке среди ${
               stats.gender === "female" ? "женщин" : "мужчин"
-            } за всю её историю — во всех системах сразу, включая parkrun-эпоху. Привязанные профили считаются одним человеком.`}
+            } за всю её историю — во всех системах сразу, включая parkrun-эпоху. Привязанные профили считаются одним человеком, неопознанные финишёры протокола в счёт не идут.`}
             sub={
               stats.runners_total_gender != null
                 ? `из ${stats.runners_total_gender} ${pluralFormRu(
@@ -710,20 +712,6 @@ function LocationPersonalSection({
                 : undefined
             }
           />
-        ) : (
-          stats.rank_by_runs != null &&
-          stats.runs_count > 0 && (
-            <StatTile
-              value={`#${stats.rank_by_runs}`}
-              label="в топе по пробежкам"
-              hint="Место по числу пробежек на этой площадке за всю её историю — во всех системах сразу, включая parkrun-эпоху. Разбивку по полу не показываем: пол в базе неизвестен."
-              sub={
-                stats.runners_total != null
-                  ? `из ${stats.runners_total} ${pluralFormRu(stats.runners_total, ["бегуна", "бегунов", "бегунов"])}`
-                  : undefined
-              }
-            />
-          )
         )}
         {stats.first_run_date && (
           <StatTile value={formatDate(stats.first_run_date)} label="первый старт здесь" />
