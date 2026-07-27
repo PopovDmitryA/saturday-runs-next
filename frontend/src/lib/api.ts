@@ -2464,10 +2464,23 @@ export type PageAnalyticsEntity = PageAnalyticsRowStats & {
   href: string | null;
 };
 
+export type HomeAbVariantStats = {
+  variant: string;
+  views: number;
+  viewers: number;
+  cta_views: number;
+  cta_clicks: number;
+  logins: number;
+  // null, когда знаменатель нулевой
+  cta_ctr_pct: number | null;
+  login_conversion_pct: number | null;
+};
+
 export type PageAnalyticsResponse = {
   date_from: string;
   date_to: string;
   generated_at: string;
+  home_ab: HomeAbVariantStats[];
   sections: PageAnalyticsSection[];
   top_profiles: PageAnalyticsEntity[];
   top_locations: PageAnalyticsEntity[];

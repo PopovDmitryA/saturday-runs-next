@@ -100,6 +100,20 @@ class PageAnalyticsEntity(PageAnalyticsRowStats):
     href: str | None
 
 
+class HomeAbVariantStats(BaseModel):
+    """Показы и воронка одного варианта главной."""
+
+    variant: str
+    views: int
+    viewers: int
+    cta_views: int
+    cta_clicks: int
+    logins: int
+    # None, когда знаменатель нулевой — процент в этом случае не определён
+    cta_ctr_pct: float | None = None
+    login_conversion_pct: float | None = None
+
+
 class PageAnalyticsResponse(BaseModel):
     # Границы включительно; сервер отдаёт их разрешёнными (в т.ч. когда клиент
     # прислал period_days), чтобы UI показывал ровно то, что посчитано.
@@ -107,5 +121,6 @@ class PageAnalyticsResponse(BaseModel):
     date_to: date
     generated_at: datetime
     sections: list[PageAnalyticsSection]
+    home_ab: list[HomeAbVariantStats] = Field(default_factory=list)
     top_profiles: list[PageAnalyticsEntity]
     top_locations: list[PageAnalyticsEntity]

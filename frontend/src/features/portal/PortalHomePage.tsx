@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { getHomeVariant, trackAbEvent, useAbCtaView, useAbScrollDepth } from "../../lib/abTest";
+import {
+  getHomeVariant,
+  trackAbEvent,
+  useAbCtaView,
+  useAbScrollDepth,
+  useAbVariantView,
+} from "../../lib/abTest";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { CountUpNumber } from "./CountUpNumber";
 import { PortalBlogSection } from "./PortalBlogSection";
@@ -235,6 +241,9 @@ export function PortalHomePage() {
   // АБ-аналитика главной: глубина скролла и видимость CTA (нижней и hero).
   const ctaRef = useRef<HTMLElement | null>(null);
   const heroCtaRef = useRef<HTMLDivElement | null>(null);
+  // Показ варианта — до загрузки данных: считаем всех, кто открыл страницу,
+  // а не только тех, у кого она успела дорисоваться.
+  useAbVariantView();
   useAbScrollDepth(data !== null);
   useAbCtaView(ctaRef, "bottom", data !== null);
   useAbCtaView(heroCtaRef, "hero", isB && data !== null);
