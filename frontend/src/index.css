@@ -131,6 +131,15 @@
   box-sizing: border-box;
 }
 
+/* Safari на iPhone сам раздувает шрифт в блоках, которые шире вьюпорта
+   («text autosizing»). Ловилось в модалке планирования Нумератора: таблица
+   широкая, и текст в ней внезапно становился крупнее остального интерфейса.
+   Размеры у нас заданы явно и адаптивно, доверять этой эвристике нечего. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, sans-serif;
