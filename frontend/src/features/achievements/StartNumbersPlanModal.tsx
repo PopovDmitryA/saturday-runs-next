@@ -25,11 +25,16 @@ export function StartNumbersPlanModal({
   open,
   code,
   challengeTitle,
+  platform = null,
   onClose,
 }: {
   open: boolean;
   code: string;
   challengeTitle: string;
+  // Фильтр систем со страницы достижений: под «5 вёрст» таблица не должна
+  // предлагать старты s95 и runpark — челлендж в этом режиме считается только
+  // по выбранной системе.
+  platform?: string | null;
   onClose: () => void;
 }) {
   const [plan, setPlan] = useState<StartNumberPlan | null>(null);
@@ -45,7 +50,7 @@ export function StartNumbersPlanModal({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    getStartNumbersPlan(code)
+    getStartNumbersPlan(code, platform)
       .then((data) => {
         if (!cancelled) {
           setPlan(data);
@@ -64,7 +69,7 @@ export function StartNumbersPlanModal({
     return () => {
       cancelled = true;
     };
-  }, [open, code]);
+  }, [open, code, platform]);
 
   const rows = useMemo(() => {
     if (!plan) {
@@ -91,6 +96,12 @@ export function StartNumbersPlanModal({
 
   return (
     <DetailModal open={open} title={`Планирование — ${challengeTitle}`} onClose={onClose}>
+      {platform && (
+        <p className="plan-summary">
+          Показаны только старты системы <strong>{platformCodeLabel(platform)}</strong> — как и
+          выбрано фильтром на странице достижений.
+        </p>
+      )}
       <p className="muted plan-intro">
         Прогноз строится по последнему известному старту каждой локации: номер и дата сдвигаются на
         неделю вперёд. Локация может пропустить субботу — тогда старт уедет на неделю позже.

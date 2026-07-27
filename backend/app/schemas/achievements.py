@@ -166,6 +166,8 @@ class StartNumberPlanRowResponse(BaseModel):
 
 class StartNumberPlanResponse(BaseModel):
     code: str
+    # Система, к которой сужен план (фильтр со страницы достижений); None — все
+    platform_code: str | None = None
     low: int
     high: int
     generated_for: str

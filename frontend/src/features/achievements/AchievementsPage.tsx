@@ -363,7 +363,18 @@ const CHALLENGE_CTA: Record<string, { href: string; label: string }> = {
 // самое, но по одной ячейке за раз — для долгого планирования это неудобно.
 const CHALLENGE_PLAN_CODES = new Set(["start_numbers", "start_numbers_pro"]);
 
-function ChallengeCard({ challenge, personal = false }: { challenge: Challenge; personal?: boolean }) {
+function ChallengeCard({
+  challenge,
+  personal = false,
+  platformFilter = null,
+}: {
+  challenge: Challenge;
+  personal?: boolean;
+  // Фильтр систем со страницы достижений: планирование обязано показывать те же
+  // системы, что и сама карточка, иначе под фильтром «5 вёрст» в таблице
+  // всплывали бы старты s95 и runpark.
+  platformFilter?: string | null;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const cta = personal ? CHALLENGE_CTA[challenge.code] : undefined;
@@ -421,6 +432,7 @@ function ChallengeCard({ challenge, personal = false }: { challenge: Challenge; 
             open={planOpen}
             code={challenge.code}
             challengeTitle={challenge.title}
+            platform={platformFilter}
             onClose={() => setPlanOpen(false)}
           />
         </>
@@ -699,7 +711,11 @@ export function AchievementsShowcase({
                 <div className="challenge-grid">
                   {grouped[category].map((challenge) => (
                     <div key={challenge.code} id={`challenge-${challenge.code}`}>
-                      <ChallengeCard challenge={challenge} personal={personal} />
+                      <ChallengeCard
+                        challenge={challenge}
+                        personal={personal}
+                        platformFilter={platformFilter}
+                      />
                     </div>
                   ))}
                 </div>

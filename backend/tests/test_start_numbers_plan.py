@@ -199,3 +199,41 @@ def test_plan_skips_paused_and_cancelled_locations(db_session) -> None:
     assert _entries(plan, 101)[0] == ["Живая"]
     assert _entries(plan, 121) == [[], [], []]
     assert _entries(plan, 141) == [[], [], []]
+
+
+def test_plan_scopes_to_platform_filter(db_session) -> None:
+    """Фильтр систем со страницы достижений сужает и планирование.
+
+    Иначе под фильтром «5 вёрст» таблица предлагала бы старты s95 и runpark,
+    которые в этом скоупе всё равно не засчитаются, а отметка «закрыто» ставилась
+    бы по номерам из чужой системы.
+    """
+    try:
+        five_verst = _platform(db_session, "five_verst")
+        s95 = _platform(db_session, "s95")
+    except Exception:
+        pytest.skip("Database not available")
+
+    fv_loc = _location_with_last_event(db_session, five_verst, "Пятивёрстовая", date(2026, 7, 25), 100)
+    s95_loc = _location_with_last_event(db_session, s95, "Эска", date(2026, 7, 25), 40)
+    user = _user_with_run(db_session, five_verst, fv_loc, event_number=7)
+
+    all_systems = build_start_numbers_plan(db_session, user.id, code="start_numbers", today=TODAY)
+    assert _entries(all_systems, 101)[0] == ["Пятивёрстовая"]
+    assert _entries(all_systems, 41)[0] == ["Эска"]
+
+    only_fv = build_start_numbers_plan(
+        db_session, user.id, code="start_numbers", platform_code="five_verst", today=TODAY
+    )
+    assert only_fv["platform_code"] == "five_verst"
+    assert _entries(only_fv, 101)[0] == ["Пятивёрстовая"]
+    # Старт s95 из таблицы уходит целиком.
+    assert _entries(only_fv, 41) == [[], [], []]
+
+    only_s95 = build_start_numbers_plan(
+        db_session, user.id, code="start_numbers", platform_code="s95", today=TODAY
+    )
+    assert _entries(only_s95, 41)[0] == ["Эска"]
+    assert _entries(only_s95, 101) == [[], [], []]
+    # Пробежка была в 5 вёрстах — под фильтром s95 номер не считается закрытым.
+    assert {row["number"] for row in only_s95["rows"] if row["done"]} == set()

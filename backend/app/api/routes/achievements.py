@@ -40,9 +40,10 @@ def get_start_numbers_plan(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     code: Annotated[str, Query(description="Код челленджа: start_numbers | start_numbers_pro")],
+    platform: Annotated[str | None, Query(description="Сузить план до одной системы")] = None,
 ) -> StartNumberPlanResponse:
     try:
-        payload = build_start_numbers_plan(db, user.id, code=code)
+        payload = build_start_numbers_plan(db, user.id, code=code, platform_code=platform)
     except StartNumberPlanError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return StartNumberPlanResponse.model_validate(payload)

@@ -841,6 +841,8 @@ export type StartNumberPlanRow = {
 
 export type StartNumberPlan = {
   code: string;
+  // Система, к которой сужен план; null — все
+  platform_code: string | null;
   low: number;
   high: number;
   generated_for: string;
@@ -849,8 +851,12 @@ export type StartNumberPlan = {
   rows: StartNumberPlanRow[];
 };
 
-export function getStartNumbersPlan(code: string) {
-  return apiFetch<StartNumberPlan>(`/achievements/start-numbers-plan?code=${encodeURIComponent(code)}`);
+export function getStartNumbersPlan(code: string, platform?: string | null) {
+  const query = new URLSearchParams({ code });
+  if (platform) {
+    query.set("platform", platform);
+  }
+  return apiFetch<StartNumberPlan>(`/achievements/start-numbers-plan?${query.toString()}`);
 }
 
 export type GoalPreset = {

@@ -1185,6 +1185,7 @@ def build_start_numbers_plan(
     user_id: UUID,
     *,
     code: str,
+    platform_code: str | None = None,
     today: date | None = None,
 ) -> dict[str, object]:
     """Таблица планирования «Нумератора»: строка — номер старта, три колонки —
@@ -1194,6 +1195,11 @@ def build_start_numbers_plan(
     Номер закрывается пробежкой В ЛЮБОЙ системе (см. _start_numbers_range_challenge),
     поэтому `done` считаем по номерам без привязки к платформе, а систему
     предсказанного старта показываем в ячейке — она подсказывает, куда ехать.
+
+    platform_code повторяет фильтр систем со страницы достижений: когда там
+    выбраны только 5 вёрст, и сам челлендж, и это планирование считаются по
+    одной системе, иначе таблица предлагала бы старты, которые в текущем
+    скоупе всё равно не засчитаются.
     """
     bounds = START_NUMBER_RANGES.get(code)
     if bounds is None:
@@ -1201,15 +1207,18 @@ def build_start_numbers_plan(
     low, high = bounds
 
     today = today or date.today()
-    done_numbers = {
-        row.event_number for row in _collect_run_rows(db, user_id) if row.event_number is not None
-    }
+    my_rows = _collect_run_rows(db, user_id)
+    if platform_code:
+        my_rows = [row for row in my_rows if row.platform_code == platform_code]
+    done_numbers = {row.event_number for row in my_rows if row.event_number is not None}
 
     cells: dict[int, list[list[dict[str, object]]]] = {}
     for item in _predict_upcoming_starts(
         db, today=today, weeks=START_NUMBER_PLAN_WEEKS, max_number=high
     ):
         if not low <= item.number <= high:
+            continue
+        if platform_code and item.platform_code != platform_code:
             continue
         row_cells = cells.setdefault(item.number, [[] for _ in range(START_NUMBER_PLAN_WEEKS)])
         row_cells[item.week_index].append(
@@ -1234,6 +1243,7 @@ def build_start_numbers_plan(
     ]
     return {
         "code": code,
+        "platform_code": platform_code,
         "low": low,
         "high": high,
         "generated_for": today.isoformat(),
