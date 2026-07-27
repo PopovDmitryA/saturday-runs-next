@@ -101,17 +101,11 @@ class PageAnalyticsEntity(PageAnalyticsRowStats):
 
 
 class HomeAbVariantStats(BaseModel):
-    """Показы и воронка одного варианта главной."""
+    """Показы одного варианта главной. Воронка считается офлайн."""
 
     variant: str
     views: int
     viewers: int
-    cta_views: int
-    cta_clicks: int
-    logins: int
-    # None, когда знаменатель нулевой — процент в этом случае не определён
-    cta_ctr_pct: float | None = None
-    login_conversion_pct: float | None = None
 
 
 class PageAnalyticsResponse(BaseModel):

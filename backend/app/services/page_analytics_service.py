@@ -470,27 +470,24 @@ def _location_labels(db: Session, entity_keys: list[str]) -> dict[str, dict[str,
 
 
 def build_home_ab_stats(db: Session, *, start: date, end: date) -> list[dict[str, object]]:
-    """Показы главной и воронка по вариантам АБ-теста.
+    """Сколько раз показали каждый вариант главной и скольким посетителям.
 
-    Конверсия считается от показов (variant_view), а не от всех событий: клики
-    и логины сами по себе — абсолютные числа, зависящие от того, кому сколько
-    раз показали, и сравнивать по ним A с B нельзя.
+    Только показы. Воронку (клики CTA, логины, конверсия) сознательно не
+    считаем: до выводов по эксперименту цифры разбираются офлайн, а
+    полуавтоматический отчёт подталкивал бы делать выводы по горстке событий.
 
-    До появления variant_view (добавлен 27.07.2026) показов в данных нет —
-    у старых периодов колонка покажет ноль, и это честнее, чем подставлять
-    туда scroll_depth: тот требует действия и считает не всех, кто открыл.
+    Показы пишутся с 27.07.2026 (событие variant_view), у более ранних
+    периодов будут нули.
     """
     rows = db.execute(
         text(
             """
             SELECT variant,
-                   count(*) FILTER (WHERE event_type = 'variant_view') AS views,
-                   count(DISTINCT visitor_key) FILTER (WHERE event_type = 'variant_view') AS viewers,
-                   count(*) FILTER (WHERE event_type = 'cta_view') AS cta_views,
-                   count(*) FILTER (WHERE event_type = 'cta_click') AS cta_clicks,
-                   count(*) FILTER (WHERE event_type = 'login_complete') AS logins
+                   count(*) AS views,
+                   count(DISTINCT visitor_key) AS viewers
             FROM ab_events
             WHERE experiment = :experiment
+              AND event_type = 'variant_view'
               AND ts >= :start AND ts < :end_exclusive
             GROUP BY variant
             ORDER BY variant
@@ -501,22 +498,7 @@ def build_home_ab_stats(db: Session, *, start: date, end: date) -> list[dict[str
         {"experiment": HOME_EXPERIMENT, "start": start, "end_exclusive": end + timedelta(days=1)},
     ).all()
 
-    result: list[dict[str, object]] = []
-    for row in rows:
-        views = int(row.views or 0)
-        result.append(
-            {
-                "variant": row.variant,
-                "views": views,
-                "viewers": int(row.viewers or 0),
-                "cta_views": int(row.cta_views or 0),
-                "cta_clicks": int(row.cta_clicks or 0),
-                "logins": int(row.logins or 0),
-                # Проценты считает сервер: одна формула вместо копии на фронте.
-                "cta_ctr_pct": round(100 * int(row.cta_clicks or 0) / row.cta_views, 1)
-                if row.cta_views
-                else None,
-                "login_conversion_pct": round(100 * int(row.logins or 0) / views, 1) if views else None,
-            }
-        )
-    return result
+    return [
+        {"variant": row.variant, "views": int(row.views or 0), "viewers": int(row.viewers or 0)}
+        for row in rows
+    ]

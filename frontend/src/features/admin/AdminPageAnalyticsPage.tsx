@@ -258,10 +258,10 @@ function AdminPageAnalyticsContent() {
         <>
           {data.home_ab.length > 0 && (
             <section className="card">
-              <h2 className="section-title">АБ-тест главной</h2>
+              <h2 className="section-title">Показы вариантов главной</h2>
               <p className="muted">
-                Показы — сколько раз отрисовалась главная каждого варианта. Конверсия считается от
-                показов: клики и логины сами по себе зависят от того, кому сколько раз показали.
+                Сколько раз открылась главная каждого варианта АБ-теста и скольким посетителям.
+                Пишется с 27.07.2026 — за более ранние периоды будут нули.
               </p>
               <div className="table-scroll">
                 <table className="data-table page-analytics-table">
@@ -270,11 +270,6 @@ function AdminPageAnalyticsContent() {
                       <th>Вариант</th>
                       <th>Показы</th>
                       <th>Посетители</th>
-                      <th>Показы CTA</th>
-                      <th>Клики CTA</th>
-                      <th>CTR кнопки</th>
-                      <th>Логины</th>
-                      <th>Конверсия в логин</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -283,24 +278,11 @@ function AdminPageAnalyticsContent() {
                         <td>Вариант {row.variant}</td>
                         <td>{row.views}</td>
                         <td>{row.viewers}</td>
-                        <td>{row.cta_views}</td>
-                        <td>{row.cta_clicks}</td>
-                        <td>{row.cta_ctr_pct === null ? "—" : `${row.cta_ctr_pct}%`}</td>
-                        <td>{row.logins}</td>
-                        <td>
-                          {row.login_conversion_pct === null ? "—" : `${row.login_conversion_pct}%`}
-                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              {data.home_ab.every((row) => row.views === 0) && (
-                <p className="muted">
-                  Показы пишутся с 27.07.2026 — за более ранние периоды колонка пустая, а проценты
-                  не считаются.
-                </p>
-              )}
             </section>
           )}
 
