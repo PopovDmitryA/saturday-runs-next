@@ -4756,6 +4756,14 @@ tr.run-crosslinked td {
   color: var(--text);
 }
 
+/* Насколько строка срезала предыдущий рекорд своей системы: вторичная
+   информация рядом с самим значением, поэтому приглушена и тоньше. */
+.best-results-table .col-record-gap {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
 .best-results-table .col-runner {
   color: var(--text);
 }
