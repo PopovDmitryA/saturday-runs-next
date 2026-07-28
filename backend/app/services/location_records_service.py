@@ -18,18 +18,29 @@ runpark + s95 и т.п., связь — location_catalog), рекорд двух
 системе с возрастной категорией в протоколе (см. комментарий к
 FIVE_VERST_PLATFORM_CODE в location_page_service) — и потому всегда
 одноуровневые.
+
+Как это считается. Прогрессия — свойство площадки, а не пользователя: у всех,
+кто там бегал, она одна и та же. Поэтому расчёт разложен на три фазы:
+перечислить нужные прогрессии, разом их достать (общий кэш + один батч-запрос
+на всё, чего в кэше нет), и только потом разложить на серии рекордов конкретного
+участника. Запрос на площадку в цикле давал 25 с на профиль «туриста» и ронял
+загрузку личного кабинета по таймауту.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, cast
 from uuid import UUID
 
 import redis
-from sqlalchemy import func, or_
+from sqlalchemy import Integer, bindparam, func, or_, select
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Session
 
 from app.core.redis_client import get_redis_client
@@ -64,6 +75,14 @@ GLOBAL_LEVEL = "global"
 # значением (force_refresh), TTL страхует от чужих результатов между синками.
 LOCATION_RECORDS_CACHE_TTL_SECONDS = 3 * 60 * 60
 
+# Прогрессия рекордов площадки одинакова для всех — она про саму площадку, а не
+# про пользователя. Поэтому она лежит в общем кэше: посчитал первый зашедший,
+# остальные читают. Ключ включает отпечаток данных локаций (см.
+# _location_fingerprints), так что доливка протокола меняет ключ и стухшую
+# запись никто не увидит — явная инвалидация не нужна, TTL просто подчищает.
+PROGRESSION_CACHE_PREFIX = "locrec:prog:v1"
+PROGRESSION_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
+
 
 def user_location_records_cache_key(user_id: UUID) -> str:
     return f"dashboard:location-records:v1:{user_id}"
@@ -81,32 +100,60 @@ class _ProgressionRow:
     platform_code: str
 
 
-def _prefix_minima(db: Session, base: Any) -> list[Any]:
+def _prefix_minima(db: Session, base: Any, *, partitioned: bool = False) -> list[Any]:
     """Префиксные минимумы: окно бежит по хронологии, наружу выходят только
     строки, побившие всё, что было до них. Внутри одного дня первым идёт самое
     быстрое время — остальные результаты дня рекорда не получают. Фильтр по
-    оконной функции в WHERE запрещён, отсюда двухэтажный subquery."""
+    оконной функции в WHERE запрещён, отсюда двухэтажный subquery.
+
+    С partitioned=True в base есть колонка scope_idx и окно бежит внутри
+    каждого скоупа отдельно — так прогрессии десятков площадок считаются одним
+    запросом вместо запроса на площадку (см. _batch_course_progressions)."""
     subq = base.subquery()
-    prev_min = (
-        func.min(subq.c.finish_time_sec)
-        .over(
-            order_by=(
-                subq.c.event_date.asc(),
-                subq.c.finish_time_sec.asc(),
-                subq.c.position.asc().nulls_last(),
-                subq.c.run_result_id.asc(),
-            ),
-            rows=(None, -1),
-        )
-        .label("prev_min")
-    )
+    over: dict[str, Any] = {
+        "order_by": (
+            subq.c.event_date.asc(),
+            subq.c.finish_time_sec.asc(),
+            subq.c.position.asc().nulls_last(),
+            subq.c.run_result_id.asc(),
+        ),
+        "rows": (None, -1),
+    }
+    if partitioned:
+        over["partition_by"] = subq.c.scope_idx
+    prev_min = func.min(subq.c.finish_time_sec).over(**over).label("prev_min")
     ranked = db.query(subq, prev_min).subquery()
+    order = [ranked.c.event_date.asc(), ranked.c.finish_time_sec.asc()]
+    if partitioned:
+        order.insert(0, ranked.c.scope_idx)
     return (
         db.query(ranked)
         .filter(or_(ranked.c.prev_min.is_(None), ranked.c.finish_time_sec < ranked.c.prev_min))
-        .order_by(ranked.c.event_date.asc(), ranked.c.finish_time_sec.asc())
+        .order_by(*order)
         .all()
     )
+
+
+def _scope_events(event_id_lists: list[list[UUID]]) -> Any:
+    """Развёрнутая таблица (scope_idx, event_id) из двух параллельных массивов.
+
+    Списки скоупов сильно пересекаются (глобальный = объединение системных),
+    поэтому пары передаются как есть — так одна строка результата попадает во
+    все свои скоупы, и PARTITION BY считает их независимо."""
+    idx_arr: list[int] = []
+    evt_arr: list[UUID] = []
+    for scope_idx, event_ids in enumerate(event_id_lists):
+        for event_id in event_ids:
+            idx_arr.append(scope_idx)
+            evt_arr.append(event_id)
+    return select(
+        func.unnest(bindparam("scope_idx_arr", value=idx_arr, type_=ARRAY(Integer))).label(
+            "scope_idx"
+        ),
+        func.unnest(
+            bindparam("scope_event_id_arr", value=evt_arr, type_=ARRAY(PG_UUID(as_uuid=True)))
+        ).label("event_id"),
+    ).subquery("scope_events")
 
 
 def _to_progression_row(row: Any) -> _ProgressionRow:
@@ -120,14 +167,20 @@ def _to_progression_row(row: Any) -> _ProgressionRow:
     )
 
 
-def _course_progression(db: Session, event_ids: list[UUID], gender: str) -> list[_ProgressionRow]:
-    if not event_ids:
-        return []
+def _batch_course_progressions(
+    db: Session, event_id_lists: list[list[UUID]], gender: str
+) -> list[list[_ProgressionRow]]:
+    """Прогрессии рекорда трассы сразу для набора скоупов — одним запросом."""
+    out: list[list[_ProgressionRow]] = [[] for _ in event_id_lists]
+    if not any(event_id_lists):
+        return out
+    scope_events = _scope_events(event_id_lists)
     gender_expr = _gender_expression(
         Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
     )
     base = (
         db.query(
+            scope_events.c.scope_idx.label("scope_idx"),
             RunResult.id.label("run_result_id"),
             RunResult.participant_id.label("participant_id"),
             RunResult.finish_time_sec.label("finish_time_sec"),
@@ -136,68 +189,81 @@ def _course_progression(db: Session, event_ids: list[UUID], gender: str) -> list
             Event.id.label("event_id"),
             Platform.code.label("platform_code"),
         )
-        .select_from(RunResult)
+        .select_from(scope_events)
+        .join(RunResult, RunResult.event_id == scope_events.c.event_id)
         .join(Event, RunResult.event_id == Event.id)
         .join(Platform, Event.platform_id == Platform.id)
         .outerjoin(Participant, RunResult.participant_id == Participant.id)
         .filter(
-            RunResult.event_id.in_(event_ids),
             RunResult.finish_time_sec.isnot(None),
             RunResult.finish_time_sec > 0,
             gender_expr == gender,
         )
     )
-    return [_to_progression_row(row) for row in _prefix_minima(db, base)]
+    for row in _prefix_minima(db, base, partitioned=True):
+        out[row.scope_idx].append(_to_progression_row(row))
+    return out
 
 
-def _age_group_progression(
-    db: Session, event_ids: list[UUID], gender: str, age_group: str
-) -> list[_ProgressionRow]:
-    """Прогрессия рекорда возрастной группы (только 5 вёрст).
+def _batch_age_group_progressions(
+    db: Session, requests: list[tuple[list[UUID], str]], gender: str
+) -> list[list[_ProgressionRow]]:
+    """Прогрессии рекорда возрастной группы (только 5 вёрст), запрос на группу.
 
     LIKE-паттерны зеркалят normalize_age_group приблизительно, поэтому пол
     фильтруется отдельно, а точная принадлежность группе перепроверяется
     нормализацией в Python; после отсева прогрессия пересобирается заново —
     чужая категория могла «занять» рекорд, которого в этой группе не было.
+
+    Батчим по возрастной группе: LIKE-условие у скоупов одной группы общее, а
+    разных — разное, поэтому в один запрос их не свести без риска, что строка
+    подойдёт под чужой паттерн.
     """
-    if not event_ids:
-        return []
-    base = (
-        db.query(
-            RunResult.id.label("run_result_id"),
-            RunResult.participant_id.label("participant_id"),
-            RunResult.finish_time_sec.label("finish_time_sec"),
-            RunResult.position.label("position"),
-            RunResult.age_category.label("age_category"),
-            Event.event_date.label("event_date"),
-            Event.id.label("event_id"),
-            Platform.code.label("platform_code"),
+    out: list[list[_ProgressionRow]] = [[] for _ in requests]
+    by_group: dict[str, list[int]] = {}
+    for index, (event_ids, age_group) in enumerate(requests):
+        if event_ids:
+            by_group.setdefault(age_group, []).append(index)
+
+    for age_group, indexes in by_group.items():
+        scope_events = _scope_events([requests[index][0] for index in indexes])
+        base = (
+            db.query(
+                scope_events.c.scope_idx.label("scope_idx"),
+                RunResult.id.label("run_result_id"),
+                RunResult.participant_id.label("participant_id"),
+                RunResult.finish_time_sec.label("finish_time_sec"),
+                RunResult.position.label("position"),
+                RunResult.age_category.label("age_category"),
+                Event.event_date.label("event_date"),
+                Event.id.label("event_id"),
+                Platform.code.label("platform_code"),
+            )
+            .select_from(scope_events)
+            .join(RunResult, RunResult.event_id == scope_events.c.event_id)
+            .join(Event, RunResult.event_id == Event.id)
+            .join(Platform, Event.platform_id == Platform.id)
+            .filter(
+                Platform.code == FIVE_VERST_PLATFORM_CODE,
+                RunResult.finish_time_sec.isnot(None),
+                RunResult.finish_time_sec > 0,
+                RunResult.age_category.isnot(None),
+                RunResult.age_category != "",
+                _protocol_age_category_gender() == gender,
+                or_(*_age_group_match_clauses([age_group])),
+            )
         )
-        .select_from(RunResult)
-        .join(Event, RunResult.event_id == Event.id)
-        .join(Platform, Event.platform_id == Platform.id)
-        .filter(
-            RunResult.event_id.in_(event_ids),
-            Platform.code == FIVE_VERST_PLATFORM_CODE,
-            RunResult.finish_time_sec.isnot(None),
-            RunResult.finish_time_sec > 0,
-            RunResult.age_category.isnot(None),
-            RunResult.age_category != "",
-            _protocol_age_category_gender() == gender,
-            or_(*_age_group_match_clauses([age_group])),
-        )
-    )
-    kept: list[_ProgressionRow] = []
-    running_min: int | None = None
-    for row in _prefix_minima(db, base):
-        if normalize_age_group(row.age_category) != age_group:
-            continue
-        finish = int(row.finish_time_sec)
-        if running_min is not None and finish >= running_min:
-            continue
-        running_min = finish
-        kept.append(_to_progression_row(row))
-    return kept
+        running_min: dict[int, int] = {}
+        for row in _prefix_minima(db, base, partitioned=True):
+            if normalize_age_group(row.age_category) != age_group:
+                continue
+            finish = int(row.finish_time_sec)
+            previous = running_min.get(row.scope_idx)
+            if previous is not None and finish >= previous:
+                continue
+            running_min[row.scope_idx] = finish
+            out[indexes[row.scope_idx]].append(_to_progression_row(row))
+    return out
 
 
 @dataclass
@@ -416,6 +482,124 @@ def _sort_entries(entries: list[dict[str, object]]) -> None:
     entries.sort(key=lambda entry: 0 if entry["is_current"] else 1)
 
 
+def _location_fingerprints(db: Session, location_ids: set[UUID]) -> dict[UUID, str]:
+    """Отпечаток данных локации для ключа кэша прогрессий.
+
+    Число протоколов, дата последнего и время последней правки: доливка нового
+    протокола или пересбор старого меняют отпечаток, а с ним и ключ кэша.
+    Запрос идёт только по events (без run_results) — на 176 локациях это ~50 мс.
+    """
+    if not location_ids:
+        return {}
+    rows = (
+        db.query(
+            Event.location_id,
+            func.count(Event.id),
+            func.max(Event.event_date),
+            func.max(Event.updated_at),
+        )
+        .filter(Event.location_id.in_(location_ids), Event.is_test_event.is_(False))
+        .group_by(Event.location_id)
+        .all()
+    )
+    return {row[0]: f"{row[1]}/{row[2]}/{row[3]}" for row in rows}
+
+
+def _scope_cache_key(
+    identity: _IdentityScopes,
+    *,
+    kind: str,
+    variant: str | None,
+    gender: str,
+    fingerprints: dict[UUID, str],
+) -> str:
+    parts = [kind, identity.identity_key, variant or "-", gender]
+    parts.extend(
+        f"{location_id}={fingerprints.get(location_id, '-')}"
+        for location_id in sorted(identity.location_ids, key=str)
+    )
+    digest = hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()
+    return f"{PROGRESSION_CACHE_PREFIX}:{digest}"
+
+
+def _dump_progression(rows: list[_ProgressionRow]) -> str:
+    return json.dumps(
+        [
+            [
+                str(row.run_result_id),
+                str(row.participant_id) if row.participant_id is not None else None,
+                row.finish_time_sec,
+                row.event_date.isoformat(),
+                str(row.event_id),
+                row.platform_code,
+            ]
+            for row in rows
+        ]
+    )
+
+
+def _load_progression(raw: str) -> list[_ProgressionRow] | None:
+    try:
+        items = json.loads(raw)
+        return [
+            _ProgressionRow(
+                run_result_id=UUID(item[0]),
+                participant_id=UUID(item[1]) if item[1] is not None else None,
+                finish_time_sec=int(item[2]),
+                event_date=date.fromisoformat(item[3]),
+                event_id=UUID(item[4]),
+                platform_code=item[5],
+            )
+            for item in items
+        ]
+    except (TypeError, ValueError, IndexError, KeyError):
+        return None
+
+
+def _resolve_progressions(
+    keys: list[str], compute: Callable[[list[int]], list[list[_ProgressionRow]]]
+) -> list[list[_ProgressionRow]]:
+    """Отдать прогрессии по ключам: что есть в общем кэше — оттуда, остальное
+    посчитать одним батчем через compute(indexes) и положить в кэш."""
+    positions: dict[str, list[int]] = {}
+    for index, key in enumerate(keys):
+        positions.setdefault(key, []).append(index)
+    unique_keys = list(positions)
+
+    cached: list[str | None] = [None] * len(unique_keys)
+    if unique_keys:
+        try:
+            raw_values = cast(list[Any], get_redis_client().mget(unique_keys))
+            cached = [value if isinstance(value, str) else None for value in raw_values]
+        except redis.RedisError:
+            pass
+
+    resolved: list[list[_ProgressionRow] | None] = [None] * len(keys)
+    missing: list[str] = []
+    for key, raw in zip(unique_keys, cached, strict=True):
+        rows = _load_progression(raw) if raw is not None else None
+        if rows is None:
+            missing.append(key)
+            continue
+        for index in positions[key]:
+            resolved[index] = rows
+
+    if missing:
+        computed = compute([positions[key][0] for key in missing])
+        for key, rows in zip(missing, computed, strict=True):
+            for index in positions[key]:
+                resolved[index] = rows
+        try:
+            pipe = get_redis_client().pipeline()
+            for key, rows in zip(missing, computed, strict=True):
+                pipe.setex(key, PROGRESSION_CACHE_TTL_SECONDS, _dump_progression(rows))
+            pipe.execute()
+        except redis.RedisError:
+            pass
+
+    return [[] if rows is None else rows for rows in resolved]
+
+
 def compute_user_location_records(db: Session, user_id: UUID) -> dict[str, object]:
     """Полная картина рекордов пользователя: действующие, утерянные, вехи."""
     participants = _user_participants(db, user_id)
@@ -461,15 +645,11 @@ def compute_user_location_records(db: Session, user_id: UUID) -> dict[str, objec
 
     identities = _load_identity_scopes(db, visited_location_ids)
 
-    raw_course: list[tuple[_IdentityScopes, str | None, _UserStreak]] = []
-    raw_age: list[tuple[_IdentityScopes, str, _UserStreak]] = []
-    global_user_runs_by_identity: dict[str, set[UUID]] = {}
-    beaten_participant_ids: set[UUID] = set()
-
-    def collect(streak: _UserStreak) -> None:
-        if streak.next_row is not None and streak.next_row.participant_id is not None:
-            beaten_participant_ids.add(streak.next_row.participant_id)
-
+    # Фаза 1: перечислить нужные прогрессии. Каждая из них — свойство площадки,
+    # а не пользователя, поэтому дальше они разрешаются через общий кэш и один
+    # батч-запрос на всё недостающее.
+    course_specs: list[tuple[_IdentityScopes, str | None, list[UUID]]] = []
+    age_specs: list[tuple[_IdentityScopes, str, list[UUID]]] = []
     for identity in identities:
         user_platforms = {
             code
@@ -480,26 +660,11 @@ def compute_user_location_records(db: Session, user_id: UUID) -> dict[str, objec
             continue
 
         if identity.multi_system:
-            global_progression = _course_progression(db, identity.all_event_ids, gender)
-            global_user_runs_by_identity[identity.identity_key] = {
-                row.run_result_id
-                for row in global_progression
-                if row.participant_id in participant_ids
-            }
-            for streak in _user_streaks(global_progression, participant_ids):
-                raw_course.append((identity, GLOBAL_LEVEL, streak))
-                collect(streak)
+            course_specs.append((identity, GLOBAL_LEVEL, identity.all_event_ids))
             for code in sorted(user_platforms):
-                progression = _course_progression(db, identity.events_by_platform[code], gender)
-                for streak in _user_streaks(progression, participant_ids):
-                    raw_course.append((identity, code, streak))
-                    collect(streak)
+                course_specs.append((identity, code, identity.events_by_platform[code]))
         else:
-            for streak in _user_streaks(
-                _course_progression(db, identity.all_event_ids, gender), participant_ids
-            ):
-                raw_course.append((identity, None, streak))
-                collect(streak)
+            course_specs.append((identity, None, identity.all_event_ids))
 
         five_verst_events = identity.events_by_platform.get(FIVE_VERST_PLATFORM_CODE)
         if five_verst_events:
@@ -507,10 +672,64 @@ def compute_user_location_records(db: Session, user_id: UUID) -> dict[str, objec
             for location_id in identity.location_ids:
                 identity_groups |= user_groups_by_location.get(location_id, set())
             for age_group in sorted(identity_groups):
-                progression = _age_group_progression(db, five_verst_events, gender, age_group)
-                for streak in _user_streaks(progression, participant_ids):
-                    raw_age.append((identity, age_group, streak))
-                    collect(streak)
+                age_specs.append((identity, age_group, five_verst_events))
+
+    # Фаза 2: разрешить прогрессии — кэш плюс батч на промахи.
+    fingerprints = _location_fingerprints(
+        db, {location_id for identity in identities for location_id in identity.location_ids}
+    )
+    course_progressions = _resolve_progressions(
+        [
+            _scope_cache_key(
+                identity, kind="course", variant=level, gender=gender, fingerprints=fingerprints
+            )
+            for identity, level, _event_ids in course_specs
+        ],
+        lambda indexes: _batch_course_progressions(
+            db, [course_specs[index][2] for index in indexes], gender
+        ),
+    )
+    age_progressions = _resolve_progressions(
+        [
+            _scope_cache_key(
+                identity, kind="age", variant=age_group, gender=gender, fingerprints=fingerprints
+            )
+            for identity, age_group, _event_ids in age_specs
+        ],
+        lambda indexes: _batch_age_group_progressions(
+            db, [(age_specs[index][2], age_specs[index][1]) for index in indexes], gender
+        ),
+    )
+
+    # Фаза 3: разложить прогрессии на серии рекордов пользователя.
+    raw_course: list[tuple[_IdentityScopes, str | None, _UserStreak]] = []
+    raw_age: list[tuple[_IdentityScopes, str, _UserStreak]] = []
+    global_user_runs_by_identity: dict[str, set[UUID]] = {}
+    beaten_participant_ids: set[UUID] = set()
+
+    def collect(streak: _UserStreak) -> None:
+        if streak.next_row is not None and streak.next_row.participant_id is not None:
+            beaten_participant_ids.add(streak.next_row.participant_id)
+
+    for (identity, level, _event_ids), progression in zip(
+        course_specs, course_progressions, strict=True
+    ):
+        if level == GLOBAL_LEVEL:
+            global_user_runs_by_identity[identity.identity_key] = {
+                row.run_result_id
+                for row in progression
+                if row.participant_id in participant_ids
+            }
+        for streak in _user_streaks(progression, participant_ids):
+            raw_course.append((identity, level, streak))
+            collect(streak)
+
+    for (identity, age_group, _event_ids), progression in zip(
+        age_specs, age_progressions, strict=True
+    ):
+        for streak in _user_streaks(progression, participant_ids):
+            raw_age.append((identity, age_group, streak))
+            collect(streak)
 
     beaten_names = _participant_display_names(db, beaten_participant_ids)
 
