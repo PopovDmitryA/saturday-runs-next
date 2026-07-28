@@ -3,10 +3,15 @@ import { DetailModal } from "./DetailModal";
 import { StarRating } from "./StarRating";
 import { PlatformBadge } from "./PlatformBadge";
 import { ParticipationBadge } from "./ParticipationBadge";
+import { PhotoAttachments } from "./PhotoAttachments";
 import {
+  MAX_RATING_PHOTOS,
+  deleteRatingPhoto,
   deleteRunRating,
   putRunRating,
+  uploadRatingPhoto,
   type EligibleRun,
+  type Photo,
   type RunRating,
 } from "../lib/api";
 import { formatDateLong } from "../lib/format";
@@ -46,6 +51,7 @@ export function RateRunModal({ run, onClose, onSaved, onDeleted }: RateRunModalP
   const [community, setCommunity] = useState(existing?.score_community ?? 0);
   const [comment, setComment] = useState(existing?.comment ?? "");
   const [isPublic, setIsPublic] = useState(existing?.is_public ?? false);
+  const [photos, setPhotos] = useState<Photo[]>(existing?.photos ?? []);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -175,6 +181,27 @@ export function RateRunModal({ run, onClose, onSaved, onDeleted }: RateRunModalP
               </span>
             )}
           </label>
+        )}
+
+        {existing != null ? (
+          <PhotoAttachments
+            photos={photos}
+            maxPhotos={MAX_RATING_PHOTOS}
+            readOnly={readOnly}
+            label="Фото со старта"
+            onUpload={(file) => uploadRatingPhoto(run.entry_id, file)}
+            onDelete={deleteRatingPhoto}
+            onChange={setPhotos}
+          />
+        ) : (
+          // Фото привязываются к уже существующей оценке — до первого
+          // сохранения привязывать нечего, поэтому показываем подсказку,
+          // а не неработающую кнопку.
+          !readOnly && (
+            <p className="rate-run-criterion-hint">
+              Фото можно приложить после того, как оценка сохранена — до 5 штук.
+            </p>
+          )
         )}
 
         <label className="rate-run-public">

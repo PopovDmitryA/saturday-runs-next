@@ -21,6 +21,25 @@ class Settings(BaseSettings):
     # В БД лежит только имя файла (users.avatar_path), файлы — здесь.
     avatars_dir: str = "/data/avatars"
 
+    # Публичное S3-совместимое хранилище пользовательских картинок (фото в
+    # отзывах на локации, фото в карточках бэклога, аватарки). Пустой
+    # s3_bucket = режим локального диска (media_dir + отдача через
+    # /api/media/...), чтобы dev и тесты работали без облака —
+    # см. app/core/media_storage.py.
+    s3_bucket: str = ""
+    s3_endpoint_url: str = ""
+    s3_region: str = "ru-1"
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    # База для публичных ссылок. Пусто — собирается из endpoint + bucket.
+    s3_public_base_url: str = ""
+    # Разные папки в бакете под каждого потребителя (решение Дмитрия 28.07.2026).
+    s3_prefix_location_reviews: str = "location-reviews"
+    s3_prefix_backlog: str = "backlog"
+    s3_prefix_avatars: str = "avatars"
+    # Локальный фолбэк, когда S3 не сконфигурирован (том ./data:/data).
+    media_dir: str = "/data/media"
+
     telegram_bot_token: str = ""
     telegram_bot_username: str = ""
     telegram_bot_internal_secret: str = ""

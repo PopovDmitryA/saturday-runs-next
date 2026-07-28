@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.models import BacklogCardStatus, BacklogCardType
+from app.schemas.photo import PhotoResponse
 
 
 class BacklogCardCreateRequest(BaseModel):
@@ -52,6 +53,8 @@ class BacklogCardResponse(BaseModel):
     author_handle: str | None = None
     # Аватар автора, если загружен и карточка не анонимная.
     author_avatar_url: str | None = None
+    # Оригинал аватара — раскрывается по клику на неё.
+    author_avatar_full_url: str | None = None
     upvotes: int
     downvotes: int
     score: int
@@ -63,6 +66,7 @@ class BacklogCardResponse(BaseModel):
     # author_user_id) — по нему рисуется кнопка «Редактировать». Работает и для
     # своих анонимных карточек, где автор скрыт от остальных.
     is_mine: bool = False
+    photos: list[PhotoResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -114,6 +118,8 @@ class BacklogCardAdminResponse(BaseModel):
     author_handle: str | None = None
     # Аватар автора, если загружен и карточка не анонимная.
     author_avatar_url: str | None = None
+    # Оригинал аватара — раскрывается по клику на неё.
+    author_avatar_full_url: str | None = None
     upvotes: int
     downvotes: int
     score: int

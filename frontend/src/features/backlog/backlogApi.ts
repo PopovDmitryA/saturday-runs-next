@@ -5,6 +5,17 @@
 export type BacklogCardType = "bug" | "feature";
 export type BacklogCardStatus = "pending" | "in_progress" | "rejected" | "done";
 
+// Фото карточки: ссылку собирает бэкенд (публичный S3 на проде,
+// /api/media в локальной разработке).
+export type BacklogPhoto = {
+  id: string;
+  url: string;
+  width: number;
+  height: number;
+};
+
+export const MAX_BACKLOG_PHOTOS = 3;
+
 export type BacklogCard = {
   id: string;
   type: BacklogCardType;
@@ -16,6 +27,7 @@ export type BacklogCard = {
   author_display_name: string | null;
   author_handle: string | null;
   author_avatar_url: string | null;
+  author_avatar_full_url: string | null;
   upvotes: number;
   downvotes: number;
   score: number;
@@ -24,6 +36,7 @@ export type BacklogCard = {
   done_at: string | null;
   // Своя ли карточка для текущего зрителя — по нему рисуем «Редактировать».
   is_mine: boolean;
+  photos: BacklogPhoto[];
   created_at: string;
   updated_at: string;
 };
@@ -183,6 +196,33 @@ export function voteBacklogCard(cardId: string, value: -1 | 0 | 1) {
     method: "POST",
     body: JSON.stringify({ value }),
   });
+}
+
+// Загрузка идёт мимо backlogFetch: тот всегда ставит Content-Type
+// application/json, а multipart нужен со своим boundary от браузера.
+export async function uploadBacklogPhoto(cardId: string, file: File): Promise<BacklogPhoto> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(`/api/backlog/cards/${cardId}/photos`, {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
+  if (!response.ok) {
+    let detail = `Не удалось загрузить фото (${response.status})`;
+    try {
+      const data = await response.json();
+      if (typeof data?.detail === "string") detail = data.detail;
+    } catch {
+      // тело не JSON — оставляем сообщение по умолчанию
+    }
+    throw new BacklogApiError(detail, response.status);
+  }
+  return (await response.json()) as BacklogPhoto;
+}
+
+export function deleteBacklogPhoto(photoId: string) {
+  return backlogFetch<void>(`/backlog/photos/${photoId}`, { method: "DELETE" });
 }
 
 export function listBacklogComments(cardId: string) {

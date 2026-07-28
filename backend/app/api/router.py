@@ -13,6 +13,7 @@ from app.api.routes import (
     leaderboards,
     location_ratings,
     locations,
+    media,
     portal,
     profiles,
     public_profiles,
@@ -37,6 +38,7 @@ api_router.include_router(runs.router)
 api_router.include_router(leaderboards.router)
 api_router.include_router(location_ratings.router)
 api_router.include_router(locations.router)
+api_router.include_router(media.router)
 api_router.include_router(portal.router)
 api_router.include_router(blog.router)
 api_router.include_router(backlog.router)

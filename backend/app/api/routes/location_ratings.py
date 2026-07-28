@@ -1,24 +1,34 @@
 from __future__ import annotations
 
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.image_processing import MAX_UPLOAD_BYTES
 from app.db.session import get_db
-from app.models import User
+from app.models import LocationRating, LocationRatingPhoto, User
 from app.schemas.rating import (
     MyRatingsResponse,
+    PhotoResponse,
     RatingEligibilityResponse,
     RatingResponse,
     RatingUpsertRequest,
+)
+from app.services.photo_service import (
+    PhotoError,
+    add_rating_photo,
+    delete_rating_photo,
+    photo_payload,
 )
 from app.services.rating_service import (
     RatingError,
     delete_rating,
     list_eligible_runs,
     list_my_ratings,
+    load_editable_rating,
     upsert_rating,
 )
 
@@ -64,6 +74,58 @@ def put_rating(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     return RatingResponse.model_validate(result)
+
+
+@router.post(
+    "/entry/{entry_id}/photos",
+    response_model=PhotoResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_photo(
+    entry_id: str,
+    file: UploadFile,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> PhotoResponse:
+    """Приложить фото к своему отзыву (до 5 штук, пока отзыв редактируем)."""
+    raw = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Файл больше 15 МБ — выберите изображение поменьше",
+        )
+    if not raw:
+        raise HTTPException(status_code=400, detail="Пустой файл")
+
+    try:
+        rating = load_editable_rating(db, user.id, entry_id)
+        photo = add_rating_photo(db, rating, raw)
+    except RatingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PhotoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    db.commit()
+    payload = photo_payload(photo)
+    return PhotoResponse(id=payload.id, url=payload.url, width=payload.width, height=payload.height)
+
+
+@router.delete("/photos/{photo_id}", status_code=204)
+def remove_photo(
+    photo_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> None:
+    # Join на саму оценку — чтобы чужое фото нельзя было снести по угаданному id.
+    photo = (
+        db.query(LocationRatingPhoto)
+        .join(LocationRating, LocationRatingPhoto.rating_id == LocationRating.id)
+        .filter(LocationRatingPhoto.id == photo_id, LocationRating.user_id == user.id)
+        .one_or_none()
+    )
+    if photo is None:
+        raise HTTPException(status_code=404, detail="Фото не найдено")
+    delete_rating_photo(db, photo)
+    db.commit()
 
 
 @router.delete("/entry/{entry_id}", status_code=204)

@@ -1,0 +1,34 @@
+"""Раздача картинок в режиме локального хранилища (dev, тесты).
+
+На проде бакет публичный: браузер идёт за картинкой прямо в S3, и этот роут
+не участвует вообще — он отдаёт 404, потому что LocalMediaStorage там не
+выбран. Держим его именно ради того, чтобы фича целиком (загрузка → показ)
+проверялась локально без единого облачного ключа.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import FileResponse
+
+from app.core.media_storage import LocalMediaStorage, content_type_for, get_media_storage, is_safe_key
+
+router = APIRouter(tags=["media"])
+
+
+@router.get("/media/{key:path}")
+def get_media(key: str) -> FileResponse:
+    storage = get_media_storage()
+    if not isinstance(storage, LocalMediaStorage):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файл не найден")
+    # Ключ приходит из URL — валидируем алфавитом, а не санитизацией пути.
+    if not is_safe_key(key):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файл не найден")
+    path = storage.local_path(key)
+    if not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файл не найден")
+    return FileResponse(
+        path,
+        media_type=content_type_for(key),
+        headers={"Cache-Control": "public, max-age=604800, immutable"},
+    )

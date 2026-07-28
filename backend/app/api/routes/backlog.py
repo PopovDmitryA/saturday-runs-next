@@ -3,12 +3,15 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_optional_user
+from app.config import get_settings
+from app.core.admin import is_admin_user
+from app.core.image_processing import MAX_UPLOAD_BYTES
 from app.db.session import get_db
-from app.models import BacklogCardStatus, BacklogCardType, User
+from app.models import BacklogCard, BacklogCardPhoto, BacklogCardStatus, BacklogCardType, User
 from app.schemas.backlog import (
     BacklogCardCreateRequest,
     BacklogCardListResponse,
@@ -19,6 +22,7 @@ from app.schemas.backlog import (
     BacklogCommentResponse,
     BacklogVoteRequest,
 )
+from app.schemas.photo import PhotoResponse
 from app.services.backlog_service import (
     BacklogError,
     create_card,
@@ -28,6 +32,12 @@ from app.services.backlog_service import (
     list_comments,
     update_card,
     vote_card,
+)
+from app.services.photo_service import (
+    PhotoError,
+    add_backlog_photo,
+    delete_backlog_photo,
+    photo_payload,
 )
 
 # Просмотр открыт всем, включая анонимов — это витрина предложений. Писать
@@ -116,6 +126,58 @@ def backlog_vote(
         return vote_card(db, card_id, user_id=user.id, value=body.value)
     except BacklogError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post(
+    "/cards/{card_id}/photos",
+    response_model=PhotoResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def backlog_add_photo(
+    card_id: UUID,
+    file: UploadFile,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> PhotoResponse:
+    """Приложить фото к карточке (до 3). Автор — к своей, админ — к любой."""
+    raw = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Файл больше 15 МБ — выберите изображение поменьше",
+        )
+    if not raw:
+        raise HTTPException(status_code=400, detail="Пустой файл")
+
+    card = db.query(BacklogCard).filter(BacklogCard.id == card_id).one_or_none()
+    if card is None:
+        raise HTTPException(status_code=404, detail="Карточка не найдена")
+    if card.author_user_id != user.id and not is_admin_user(user, get_settings()):
+        raise HTTPException(status_code=403, detail="Можно прикладывать фото только к своей карточке")
+
+    try:
+        photo = add_backlog_photo(db, card.id, raw)
+    except PhotoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    db.commit()
+    payload = photo_payload(photo)
+    return PhotoResponse(id=payload.id, url=payload.url, width=payload.width, height=payload.height)
+
+
+@router.delete("/photos/{photo_id}", status_code=204)
+def backlog_remove_photo(
+    photo_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> None:
+    photo = db.query(BacklogCardPhoto).filter(BacklogCardPhoto.id == photo_id).one_or_none()
+    if photo is None:
+        raise HTTPException(status_code=404, detail="Фото не найдено")
+    card = db.query(BacklogCard).filter(BacklogCard.id == photo.card_id).one()
+    if card.author_user_id != user.id and not is_admin_user(user, get_settings()):
+        raise HTTPException(status_code=403, detail="Удалять можно только свои фото")
+    delete_backlog_photo(db, photo)
+    db.commit()
 
 
 @router.get("/cards/{card_id}/comments", response_model=BacklogCommentListResponse)

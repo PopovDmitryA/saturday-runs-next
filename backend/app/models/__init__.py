@@ -751,6 +751,22 @@ class VolunteerResult(Base):
     participant: Mapped["Participant | None"] = relationship(back_populates="volunteer_results")
 
 
+def _media_url(key: str | None) -> str | None:
+    """Ссылка на картинку в хранилище.
+
+    Ключ с "/" — новый формат (media-хранилище: публичный S3 на проде,
+    /api/media локально). Значение без "/" — аватарка, загруженная до переезда
+    на S3: это имя файла на диске, которое ещё отдаёт роут /api/avatars.
+    """
+    if not key:
+        return None
+    if "/" not in key:
+        return f"/api/avatars/{key}"
+    from app.core.media_storage import get_media_storage
+
+    return get_media_storage().public_url(key)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -772,7 +788,11 @@ class User(Base):
     public_slug: Mapped[str | None] = mapped_column(String(64), unique=True)
     # Имя файла аватарки в settings.avatars_dir ("{user_id}-{token}.jpg").
     # NULL — аватарки нет. Сам файл живёт на диске, при замене старый удаляется.
-    avatar_path: Mapped[str | None] = mapped_column(String(128))
+    avatar_path: Mapped[str | None] = mapped_column(String(512))
+    # Оригинал без пережатия — открывается по клику на аватарку (решение
+    # Дмитрия 28.07.2026: «не будем их сжимать, а по клику раскрывать»).
+    # NULL — аватарка загружена до появления оригиналов либо её нет.
+    avatar_full_path: Mapped[str | None] = mapped_column(String(512))
     serial_id: Mapped[int] = mapped_column(
         BigInteger,
         nullable=False,
@@ -809,9 +829,13 @@ class User(Base):
     def avatar_url(self) -> str | None:
         """Публичный адрес аватарки; UserResponse (from_attributes) подхватывает
         это свойство, поэтому avatar_url есть везде, где отдаётся пользователь."""
-        if not self.avatar_path:
-            return None
-        return f"/api/avatars/{self.avatar_path}"
+        return _media_url(self.avatar_path)
+
+    @property
+    def avatar_full_url(self) -> str | None:
+        """Оригинал аватарки — им открывается просмотр по клику. Если оригинала
+        нет (аватарка старая), фронт показывает превью."""
+        return _media_url(self.avatar_full_path)
 
 
 class BlockedProfileSlug(Base):
@@ -1348,3 +1372,42 @@ class BacklogComment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     author: Mapped["User"] = relationship()
+
+
+class LocationRatingPhoto(Base):
+    """Фото, приложенное к отзыву на локацию (до 5 на отзыв).
+
+    storage_key — ключ объекта в публичном бакете (или относительный путь в
+    локальном media_dir, см. core/media_storage.py); сам URL не храним, чтобы
+    смена домена/бакета не требовала переписывания строк в БД.
+    """
+
+    __tablename__ = "location_rating_photos"
+    __table_args__ = (Index("ix_location_rating_photos_rating", "rating_id", "sort_order"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    rating_id: Mapped[UUID] = mapped_column(
+        ForeignKey("location_ratings.id", ondelete="CASCADE"), nullable=False
+    )
+    storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    sort_order: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class BacklogCardPhoto(Base):
+    """Фото, приложенное к карточке бэклога (до 3 на карточку)."""
+
+    __tablename__ = "backlog_card_photos"
+    __table_args__ = (Index("ix_backlog_card_photos_card", "card_id", "sort_order"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    card_id: Mapped[UUID] = mapped_column(ForeignKey("backlog_cards.id", ondelete="CASCADE"), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    sort_order: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

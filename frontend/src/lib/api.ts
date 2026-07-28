@@ -416,6 +416,19 @@ function extractApiErrorDetail(body: unknown, status: number, rawText: string): 
   return `Не удалось выполнить запрос (HTTP ${status})`;
 }
 
+// Тот же разбор detail, что у apiFetch, но для «сырых» fetch-запросов
+// (загрузка файлов идёт мимо apiFetch из-за multipart).
+async function readErrorDetail(response: Response): Promise<string> {
+  const rawText = await response.text().catch(() => "");
+  let body: unknown = null;
+  try {
+    body = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    body = null;
+  }
+  return extractApiErrorDetail(body, response.status, rawText);
+}
+
 function sanitizeApiErrorMessage(message: string): string {
   const trimmed = message.trim();
   if (/traceback \(most recent call last\)/i.test(trimmed)) {
@@ -1356,7 +1369,18 @@ export function setHistoryMilestoneEnabled(kind: string, enabled: boolean) {
 
 export type ParticipationType = "run" | "volunteer";
 
+// Загруженное фото: ссылку собирает бэкенд (публичный S3 на проде,
+// /api/media в локальной разработке) — фронт её только показывает.
+export type Photo = {
+  id: string;
+  url: string;
+  width: number;
+  height: number;
+};
+
 export type RunRating = {
+  id: string;
+  photos: Photo[];
   // Опаковый id старта: 'run:<uuid>' (бегун) / 'vol:<uuid>' (волонтёр).
   entry_id: string;
   participation_type: ParticipationType;
@@ -1521,6 +1545,34 @@ export function deleteRunRating(entryId: string) {
   return apiFetch<void>(`/ratings/entry/${encodeURIComponent(entryId)}`, {
     method: "DELETE",
   });
+}
+
+// Фото в отзыве: до 5 штук, сжатие до 2K делает сервер. Отдельный upload —
+// apiFetch всегда ставит Content-Type: application/json, а multipart нужен
+// со своим boundary, который проставляет сам браузер.
+export const MAX_RATING_PHOTOS = 5;
+
+export async function uploadRatingPhoto(entryId: string, file: File): Promise<Photo> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(
+    `${API_BASE}/ratings/entry/${encodeURIComponent(entryId)}/photos`,
+    { method: "POST", credentials: "include", body: form },
+  );
+  if (!response.ok) {
+    throw new ApiError(await readErrorDetail(response), response.status);
+  }
+  return (await response.json()) as Photo;
+}
+
+export async function deleteRatingPhoto(photoId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/ratings/photos/${photoId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new ApiError(await readErrorDetail(response), response.status);
+  }
 }
 
 export type CoRunnerItem = {

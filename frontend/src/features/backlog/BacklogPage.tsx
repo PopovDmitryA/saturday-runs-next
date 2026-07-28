@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { DetailModal } from "../../components/DetailModal";
+import { ImageLightbox } from "../../components/ImageLightbox";
+import { PhotoAttachments } from "../../components/PhotoAttachments";
 import { DonateBlock } from "../../components/DonateBlock";
 import { probeCurrentUser, type User } from "../../lib/api";
 import { formatRelativeTime } from "../../lib/format";
@@ -8,11 +10,14 @@ import {
   BACKLOG_CATEGORIES,
   BACKLOG_STATUS_LABELS,
   BACKLOG_TYPE_LABELS,
+  MAX_BACKLOG_PHOTOS,
   createBacklogCard,
   createBacklogComment,
+  deleteBacklogPhoto,
   listBacklogCards,
   listBacklogComments,
   updateBacklogCard,
+  uploadBacklogPhoto,
   voteBacklogCard,
   type BacklogCard,
   type BacklogCardStatus,
@@ -84,9 +89,38 @@ function findCardBySlug(cards: BacklogCard[], slug: string): BacklogCard | null 
 }
 
 /** Аватар автора: картинка, если загружена, иначе инициалы. Аноним — без имени. */
-function AuthorAvatar({ name, avatarUrl }: { name: string | null; avatarUrl?: string | null }) {
+function AuthorAvatar({
+  name,
+  avatarUrl,
+  fullUrl,
+}: {
+  name: string | null;
+  avatarUrl?: string | null;
+  fullUrl?: string | null;
+}) {
+  const [zoomed, setZoomed] = useState(false);
   if (avatarUrl) {
-    return <img className="backlog-avatar" src={avatarUrl} alt="" />;
+    // Показываем превью, а по клику раскрываем оригинал без пережатия
+    // (решение Дмитрия 28.07.2026). stopPropagation — иначе клик по аватарке
+    // внутри карточки заодно открывал бы саму карточку.
+    return (
+      <>
+        <button
+          type="button"
+          className="backlog-avatar backlog-avatar-button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setZoomed(true);
+          }}
+          aria-label={name ? `Аватар: ${name}` : "Аватар"}
+        >
+          <img src={avatarUrl} alt="" />
+        </button>
+        {zoomed && (
+          <ImageLightbox src={fullUrl || avatarUrl} onClose={() => setZoomed(false)} />
+        )}
+      </>
+    );
   }
   const initials = (name ?? "?")
     .replace(/^@/, "")
@@ -424,6 +458,7 @@ function BacklogContent() {
           <AuthorAvatar
             name={card.is_anonymous ? null : card.author_display_name}
             avatarUrl={card.is_anonymous ? null : card.author_avatar_url}
+            fullUrl={card.is_anonymous ? null : card.author_avatar_full_url}
           />
           {card.is_anonymous || !card.author_display_name ? "Аноним" : card.author_display_name}
           {" · "}
@@ -650,6 +685,7 @@ function BacklogContent() {
               <AuthorAvatar
                 name={openedCard.is_anonymous ? null : openedCard.author_display_name}
                 avatarUrl={openedCard.is_anonymous ? null : openedCard.author_avatar_url}
+                fullUrl={openedCard.is_anonymous ? null : openedCard.author_avatar_full_url}
               />
               {openedCard.is_anonymous || !openedCard.author_display_name ? (
                 "Аноним"
@@ -760,6 +796,20 @@ function BacklogContent() {
             ) : (
               <>
                 <p className="backlog-card-description">{openedCard.description}</p>
+
+            <PhotoAttachments
+              photos={openedCard.photos ?? []}
+              maxPhotos={MAX_BACKLOG_PHOTOS}
+              readOnly={!isLoggedIn || (!openedCard.is_mine && !isAdmin)}
+              label="Фото к карточке"
+              onUpload={(file) => uploadBacklogPhoto(openedCard.id, file)}
+              onDelete={deleteBacklogPhoto}
+              onChange={(photos) =>
+                setCards((prev) =>
+                  prev.map((item) => (item.id === openedCard.id ? { ...item, photos } : item)),
+                )
+              }
+            />
                 {(openedCard.is_mine || isAdmin) && (
                   <div className="actions-row backlog-edit-actions">
                     <button type="button" className="btn btn-sm" onClick={() => startEdit(openedCard)}>

@@ -17,7 +17,15 @@ from sqlalchemy.orm import Session, joinedload
 from app.backlog_categories import BACKLOG_CATEGORY_KEYS
 from app.config import get_settings
 from app.core.admin import is_admin_user
-from app.models import BacklogCard, BacklogCardStatus, BacklogCardType, BacklogComment, BacklogVote, User
+from app.models import (
+    BacklogCard,
+    BacklogCardPhoto,
+    BacklogCardStatus,
+    BacklogCardType,
+    BacklogComment,
+    BacklogVote,
+    User,
+)
 from app.schemas.backlog import (
     BacklogCardAdminResponse,
     BacklogCardResponse,
@@ -25,6 +33,8 @@ from app.schemas.backlog import (
     BacklogVoteAdminItem,
     BacklogVoteAdminListResponse,
 )
+from app.schemas.photo import PhotoResponse
+from app.services.photo_service import PhotoPayload, delete_backlog_photo, list_backlog_photos
 from app.services.vk_admin_notify import send_vk_admin_message
 
 _TYPE_LABELS = {BacklogCardType.bug: "баг", BacklogCardType.feature: "фича"}
@@ -117,7 +127,12 @@ def _my_votes(db: Session, card_ids: list[UUID], viewer_id: UUID | None) -> dict
 
 
 def _card_to_response(
-    card: BacklogCard, *, my_vote: int, comment_count: int, viewer_id: UUID | None
+    card: BacklogCard,
+    *,
+    my_vote: int,
+    comment_count: int,
+    viewer_id: UUID | None,
+    photos: list[PhotoPayload] | None = None,
 ) -> BacklogCardResponse:
     author_name, author_handle = (None, None) if card.is_anonymous else _author_display(card.author)
     return BacklogCardResponse(
@@ -131,6 +146,7 @@ def _card_to_response(
         author_display_name=author_name,
         author_handle=author_handle,
         author_avatar_url=None if card.is_anonymous else card.author.avatar_url,
+        author_avatar_full_url=None if card.is_anonymous else card.author.avatar_full_url,
         upvotes=card.upvotes,
         downvotes=card.downvotes,
         score=card.score,
@@ -138,6 +154,10 @@ def _card_to_response(
         comment_count=comment_count,
         done_at=card.done_at,
         is_mine=viewer_id is not None and card.author_user_id == viewer_id,
+        photos=[
+            PhotoResponse(id=photo.id, url=photo.url, width=photo.width, height=photo.height)
+            for photo in (photos or [])
+        ],
         created_at=card.created_at,
         updated_at=card.updated_at,
     )
@@ -149,12 +169,14 @@ def _cards_to_responses(
     card_ids = [card.id for card in cards]
     comment_counts = _comment_counts(db, card_ids)
     my_votes = _my_votes(db, card_ids, viewer_id)
+    photos = list_backlog_photos(db, card_ids)
     return [
         _card_to_response(
             card,
             my_vote=my_votes.get(card.id, 0),
             comment_count=comment_counts.get(card.id, 0),
             viewer_id=viewer_id,
+            photos=photos.get(card.id),
         )
         for card in cards
     ]
@@ -460,6 +482,7 @@ def _card_to_admin_response(card: BacklogCard, *, comment_count: int) -> Backlog
         author_display_name=author_name,
         author_handle=author_handle,
         author_avatar_url=None if card.is_anonymous else card.author.avatar_url,
+        author_avatar_full_url=None if card.is_anonymous else card.author.avatar_full_url,
         upvotes=card.upvotes,
         downvotes=card.downvotes,
         score=card.score,
@@ -531,6 +554,10 @@ def list_card_votes_admin(db: Session, card_id: UUID) -> BacklogVoteAdminListRes
 
 def delete_card(db: Session, card_id: UUID) -> None:
     card = _get_card(db, card_id)
+    # Строки фото снимет FK ON DELETE CASCADE, а файлы в хранилище — нет:
+    # убираем их явно, иначе бакет копит сирот после каждой удалённой карточки.
+    for photo in db.query(BacklogCardPhoto).filter(BacklogCardPhoto.card_id == card.id).all():
+        delete_backlog_photo(db, photo)
     db.delete(card)
     db.commit()
 

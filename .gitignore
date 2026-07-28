@@ -58,6 +58,9 @@ docs/release_posts_style.md
 data/parkrun_playwright_state.json
 data/grafana/dashboards/
 data/*.log
+# Локальный режим media-хранилища (на проде картинки живут в S3).
+data/media/
+data/avatars/
 
 # Local club-stats outputs (not for repo)
 .club_members.json

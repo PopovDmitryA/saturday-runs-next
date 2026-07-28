@@ -1,20 +1,27 @@
-"""Аватарки пользователей: загрузка со сжатием, отдача, удаление.
+"""Аватарки пользователей: загрузка, отдача, удаление.
 
-Любая загруженная картинка приводится к маленькому квадратному JPEG
-(256×256, качество 85 — обычно 10–30 КБ), поэтому в хранилище никогда не
-попадают «сырые» многомегабайтные файлы. При замене или удалении старый файл
-стирается с диска совсем — на сервере не остаётся осиротевших картинок.
+Хранятся в общем media-хранилище (публичный S3 на проде, локальный диск в
+dev — см. core/media_storage.py) в отдельной папке `s3_prefix_avatars`, рядом
+с папками фото отзывов и бэклога.
 
-Файлы лежат в settings.avatars_dir (том ./data:/data), в БД — только имя
-"{user_id}-{token}.jpg". Случайный токен в имени ломает браузерный кэш при
-замене и не даёт подобрать чужой адрес перебором user_id.
+С каждой загрузки сохраняется ДВА объекта:
+- превью — квадрат 256×256 JPEG (обычно 10–30 КБ): это то, что рисуется в
+  интерфейсе, где аватарок на экране бывает много;
+- оригинал — байт-в-байт как прислал пользователь, без перекодирования
+  (решение Дмитрия 28.07.2026: «не будем их сжимать, а по клику раскрывать»).
+  Он открывается по клику на аватарку.
+
+В БД лежат только ключи (users.avatar_path / avatar_full_path). При замене и
+удалении старые объекты стираются из хранилища, чтобы не копить сирот.
+
+Роут GET /avatars/{filename} оставлен для аватарок, загруженных ДО переезда на
+S3: тогда в avatar_path лежало имя файла в settings.avatars_dir.
 """
 
 from __future__ import annotations
 
 import io
 import re
-import secrets
 from pathlib import Path
 from typing import Annotated
 
@@ -26,6 +33,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.config import Settings, get_settings
 from app.core.admin import user_response
+from app.core.media_storage import MediaStorageError, build_key, content_type_for, get_media_storage
 from app.db.session import get_db
 from app.models import User
 from app.schemas.auth import UserResponse
@@ -37,25 +45,31 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 AVATAR_SIZE = 256
 AVATAR_JPEG_QUALITY = 85
 _FILENAME_RE = re.compile(r"^[0-9a-f-]{36}-[0-9a-f]{16}\.jpg$")
+# Расширение оригинала берём по формату, который распознал Pillow, а не по
+# имени файла от клиента — так в ключ не попадёт ничего произвольного.
+_EXTENSION_BY_FORMAT = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp", "GIF": "gif"}
 
 
 def _avatar_file(settings: Settings, filename: str) -> Path:
     return Path(settings.avatars_dir) / filename
 
 
-def _delete_avatar_file(settings: Settings, filename: str | None) -> None:
-    if not filename:
+def _delete_stored(key: str | None, settings: Settings) -> None:
+    """Снять старую аватарку: ключ хранилища или файл на диске (старый формат)."""
+    if not key:
         return
     try:
-        _avatar_file(settings, filename).unlink(missing_ok=True)
-    except OSError:
-        # Недоступный диск не должен ронять запрос: файл-сирота хуже 500-ки,
-        # но заметно менее вреден.
+        if "/" in key:
+            get_media_storage().delete(key)
+        else:
+            _avatar_file(settings, key).unlink(missing_ok=True)
+    except (MediaStorageError, OSError):
+        # Недоступное хранилище не должно ронять запрос: файл-сирота хуже
+        # 500-ки, но заметно менее вреден.
         pass
 
 
-def _process_image(raw: bytes) -> bytes:
-    """Любой поддерживаемый формат → квадратный JPEG 256×256."""
+def _read_image(raw: bytes) -> Image.Image:
     try:
         image = Image.open(io.BytesIO(raw))
         image.load()
@@ -64,13 +78,19 @@ def _process_image(raw: bytes) -> bytes:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Не удалось прочитать изображение — поддерживаются JPEG, PNG и WebP",
         ) from exc
+    return image
+
+
+def _make_preview(image: Image.Image) -> bytes:
+    """Квадратное превью 256×256 JPEG для показа в интерфейсе."""
     # Фото с телефона часто «лежит на боку» из-за EXIF-ориентации.
     image = ImageOps.exif_transpose(image) or image
     if image.mode != "RGB":
         # PNG с прозрачностью кладём на белый фон, а не на чёрный по умолчанию.
         if image.mode in ("RGBA", "LA", "P"):
-            background = Image.new("RGB", image.size, (255, 255, 255))
-            background.paste(image.convert("RGBA"), mask=image.convert("RGBA").split()[-1])
+            converted = image.convert("RGBA")
+            background = Image.new("RGB", converted.size, (255, 255, 255))
+            background.paste(converted, mask=converted.split()[-1])
             image = background
         else:
             image = image.convert("RGB")
@@ -96,19 +116,33 @@ async def upload_avatar(
     if not raw:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пустой файл")
 
-    processed = _process_image(raw)
+    image = _read_image(raw)
+    extension = _EXTENSION_BY_FORMAT.get(image.format or "", "jpg")
+    preview = _make_preview(image)
 
-    filename = f"{user.id}-{secrets.token_hex(8)}.jpg"
-    directory = Path(settings.avatars_dir)
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / filename).write_bytes(processed)
+    prefix = settings.s3_prefix_avatars
+    preview_key = build_key(prefix)
+    full_key = build_key(prefix, extension=extension)
+    storage = get_media_storage()
+    try:
+        storage.put(preview_key, preview)
+        # Оригинал кладём как пришёл — без ресайза и перекодирования.
+        storage.put(full_key, raw, content_type_for(full_key))
+    except MediaStorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Хранилище картинок недоступно, попробуйте позже",
+        ) from exc
 
-    old_filename = user.avatar_path
-    user.avatar_path = filename
+    old_preview, old_full = user.avatar_path, user.avatar_full_path
+    user.avatar_path = preview_key
+    user.avatar_full_path = full_key
     db.commit()
-    # Старый файл стираем ПОСЛЕ коммита: если коммит упал, аватарка не потеряна.
-    if old_filename and old_filename != filename:
-        _delete_avatar_file(settings, old_filename)
+    # Старые файлы стираем ПОСЛЕ коммита: если коммит упал, аватарка не потеряна.
+    if old_preview != preview_key:
+        _delete_stored(old_preview, settings)
+    if old_full != full_key:
+        _delete_stored(old_full, settings)
     # Ответ собираем канонически (как /auth/me): model_validate на ORM-модели
     # падает на вложенных auth_identities и не проставляет is_admin.
     return user_response(user, settings)
@@ -120,10 +154,12 @@ def delete_avatar(
     user: Annotated[User, Depends(get_current_user)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> UserResponse:
-    old_filename = user.avatar_path
+    old_preview, old_full = user.avatar_path, user.avatar_full_path
     user.avatar_path = None
+    user.avatar_full_path = None
     db.commit()
-    _delete_avatar_file(settings, old_filename)
+    _delete_stored(old_preview, settings)
+    _delete_stored(old_full, settings)
     return user_response(user, settings)
 
 
@@ -132,6 +168,7 @@ def get_avatar(
     filename: str,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> FileResponse:
+    """Аватарки, загруженные до переезда на S3 (файл на диске)."""
     # Жёсткая валидация имени вместо санитизации пути: никакие "../" не пройдут.
     if not _FILENAME_RE.fullmatch(filename):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файл не найден")

@@ -6,6 +6,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.photo import PhotoResponse
+
+__all__ = ["PhotoResponse"]  # роут рейтингов берёт схему фото отсюда же
+
 Score = Annotated[int, Field(ge=1, le=5)]
 OptScore = Annotated[int | None, Field(ge=1, le=5)]
 
@@ -35,6 +39,9 @@ class RatingUpsertRequest(BaseModel):
 
 
 class RatingResponse(BaseModel):
+    # id самой оценки нужен фронту, чтобы адресовать удаление фото.
+    id: UUID
+    photos: list[PhotoResponse] = Field(default_factory=list)
     # Опаковый id старта: 'run:<uuid>' (бегун) / 'vol:<uuid>' (волонтёр).
     entry_id: str
     participation_type: str = "run"
