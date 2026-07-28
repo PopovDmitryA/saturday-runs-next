@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Event,
+    EventCrosslink,
     Location,
     LocationCatalog,
     LocationCatalogLink,
@@ -282,6 +283,70 @@ def test_multi_system_levels(db_session: Session) -> None:
         if row["kind"] == "location_course_record"
     ]
     assert "global" in scopes
+
+
+def test_mirror_system_gives_no_own_record(db_session: Session) -> None:
+    """Система-зеркало своего уровня рекорда не получает (кейс Липецка).
+
+    Липецк Парк Победы стартует в 5 вёрст, а RunPark лишь публикует протокол
+    того же старта — каждое runpark-событие связано кросслинком с 5-вёрстным.
+    Пользователь перестал держать рекорд площадки ещё в январе, но внутри
+    runpark-зеркала его время оставалось «рекордом системы RunPark».
+    """
+    five_verst = _platform(db_session, "five_verst", "5 вёрст")
+    runpark = _platform(db_session, "runpark", "RunPark")
+    runner = _participant(db_session, five_verst, "runner-mirror", "Бегун", gender="male")
+    rival = _participant(db_session, five_verst, "rival-mirror", "Соперница")
+    user = _link_user(db_session, [(five_verst, runner)])
+
+    fv_location = _location(db_session, five_verst, "mirror-fv", "Липецк Парк Победы")
+    rp_location = _location(db_session, runpark, "mirror-rp", "Парк Победы Липецк")
+    catalog = LocationCatalog(canonical_name="Липецк Парк Победы", active_platform="five_verst")
+    db_session.add(catalog)
+    db_session.flush()
+    db_session.add_all(
+        [
+            LocationCatalogLink(
+                catalog_id=catalog.id,
+                platform_id=five_verst.id,
+                external_key=fv_location.external_key,
+                location_id=fv_location.id,
+            ),
+            LocationCatalogLink(
+                catalog_id=catalog.id,
+                platform_id=runpark.id,
+                external_key=rp_location.external_key,
+                location_id=rp_location.id,
+            ),
+        ]
+    )
+    db_session.flush()
+
+    def mirrored_day(day: date, participant: Participant, finish_time_sec: int) -> None:
+        """Один физический старт в двух протоколах, связанных кросслинком."""
+        primary = _event(db_session, five_verst, fv_location, day)
+        secondary = _event(db_session, runpark, rp_location, day)
+        _result(db_session, primary, participant, finish_time_sec=finish_time_sec)
+        _result(db_session, secondary, participant, finish_time_sec=finish_time_sec)
+        db_session.add(
+            EventCrosslink(primary_event_id=primary.id, secondary_event_id=secondary.id)
+        )
+        db_session.flush()
+
+    mirrored_day(date(2024, 1, 13), runner, 1752)  # рекорд площадки
+    mirrored_day(date(2024, 1, 20), rival, 1617)  # перебит
+    mirrored_day(date(2024, 2, 10), runner, 1752)  # то же время — уже не рекорд
+
+    payload = compute_user_location_records(db_session, user.id)
+    course = payload["course"]
+    # Действующих рекордов нет: RunPark — зеркало, своего уровня у него нет.
+    assert course["current_count"] == 0
+    assert course["lost_count"] == 1
+    # Уровень не показывается: после дедупа площадка снова моносистемная.
+    assert [entry["level"] for entry in course["entries"]] == [None]
+    entry = course["entries"][0]
+    assert entry["beaten_date"] == "2024-01-20"
+    assert entry["beaten_by"] == "Соперница"
 
 
 def test_foreign_parkrun_location_gives_no_record(db_session: Session) -> None:

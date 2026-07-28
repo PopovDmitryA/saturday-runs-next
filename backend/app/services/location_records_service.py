@@ -14,6 +14,10 @@ runpark + s95 и т.п., связь — location_catalog), рекорд двух
 прогрессия включает все её результаты), поэтому такие пары схлопываются в одну
 запись уровня «глобальный». Для монолокаций уровень один и не показывается.
 
+Кросслинк-дубли (один физический старт в протоколах двух систем) не участвуют
+ни в глобальной прогрессии, ни в системных: система, которая лишь зеркалит
+чужие протоколы, своих стартов не имеет и уровня рекорда не получает.
+
 Какие площадки участвуют. Только те, чьи протоколы мы собираем целиком: все
 системы, кроме зарубежного parkrun (см. _eligible). По зарубежной площадке в БД
 лежат лишь результаты наших участников из их профилей, и любой из них выглядел
@@ -87,14 +91,19 @@ LOCATION_RECORDS_CACHE_TTL_SECONDS = 3 * 60 * 60
 # остальные читают. Ключ включает отпечаток данных локаций (см.
 # _location_fingerprints), так что доливка протокола меняет ключ и стухшую
 # запись никто не увидит — явная инвалидация не нужна, TTL просто подчищает.
-PROGRESSION_CACHE_PREFIX = "locrec:prog:v1"
+# v2: системные скоупы теперь без кросслинк-дублей. Ключ считается по
+# отпечатку локаций, а не по списку событий, поэтому сам он от этой правки не
+# меняется — версию в префиксе поднимаем руками, иначе неделю (TTL) отдавались
+# бы прогрессии, посчитанные по зеркальным протоколам.
+PROGRESSION_CACHE_PREFIX = "locrec:prog:v2"
 PROGRESSION_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 
 
 def user_location_records_cache_key(user_id: UUID) -> str:
-    # v2: из расчёта выброшен зарубежный parkrun — записи v1 отдавали бы старую
-    # картину до истечения TTL.
-    return f"dashboard:location-records:v2:{user_id}"
+    # v2: из расчёта выброшен зарубежный parkrun; v3: из системных скоупов
+    # выброшены кросслинк-дубли — старые записи отдавали бы прежнюю картину до
+    # истечения TTL.
+    return f"dashboard:location-records:v3:{user_id}"
 
 
 @dataclass
@@ -414,6 +423,22 @@ def _load_identity_scopes(db: Session, visited_location_ids: set[UUID]) -> list[
             continue
         all_ids = [event_id for ids in events_by_platform.values() for event_id in ids]
         kept = _dedupe_crosslinked_events(db, all_ids)
+        # Кросслинк-дубли выкидываем и из СИСТЕМНЫХ скоупов, не только из
+        # глобального. Иначе у площадки, которую вторая система лишь зеркалит
+        # (Липецк Парк Победы: каждое runpark-событие — вторичная сторона
+        # кросслинка с 5 вёрст того же дня), внутри этого зеркала считается своя
+        # прогрессия, и участник получает «рекорд в системе RunPark», которого
+        # нет: те же самые финиши в 5 вёрст рекордом давно быть перестали.
+        # Система, у которой после дедупа не осталось ни одного своего старта,
+        # уходит из идентичности целиком — вместе с уровнями рекорда.
+        deduped_by_platform: dict[str, list[UUID]] = {}
+        for code, ids in events_by_platform.items():
+            own_ids = [event_id for event_id in ids if event_id in kept]
+            if own_ids:
+                deduped_by_platform[code] = own_ids
+        events_by_platform = deduped_by_platform
+        if not events_by_platform:
+            continue
         result.append(
             _IdentityScopes(
                 identity_key=key,
@@ -791,7 +816,12 @@ def compute_user_location_records(db: Session, user_id: UUID) -> dict[str, objec
         if identity.multi_system:
             course_specs.append((identity, GLOBAL_LEVEL, identity.all_event_ids))
             for code in sorted(user_platforms):
-                course_specs.append((identity, code, identity.events_by_platform[code]))
+                # Системы у пользователя те, где он бегал, а у идентичности —
+                # те, где остались свои старты после дедупа кросслинков. У
+                # системы-зеркала своих стартов нет, уровня рекорда тоже.
+                own_events = identity.events_by_platform.get(code)
+                if own_events:
+                    course_specs.append((identity, code, own_events))
         else:
             course_specs.append((identity, None, identity.all_event_ids))
 
