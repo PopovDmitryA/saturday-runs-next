@@ -575,3 +575,10 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Капчи у приватных воркеров: «решено/всего», подробности в тултипе. */
+.hq-captcha {
+  cursor: help;
+  color: #c084fc;
+  font-variant-numeric: tabular-nums;
+}

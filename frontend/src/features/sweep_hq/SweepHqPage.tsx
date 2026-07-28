@@ -19,6 +19,9 @@ type Bot = {
   delay_sec: number;
   ban_level: number;
   last_ok_at: string | null;
+  captcha_total?: number;
+  captcha_solved?: number;
+  last_captcha_at?: string | null;
 };
 
 type SweepData = {
@@ -176,6 +179,7 @@ function BotTable({
   bots,
   showUptime,
   showFlag,
+  showCaptcha = false,
   prevMap,
 }: {
   title: string;
@@ -183,6 +187,7 @@ function BotTable({
   bots: Bot[];
   showUptime: boolean;
   showFlag: boolean;
+  showCaptcha?: boolean;
   prevMap: Map<string, number>;
 }) {
   const [workingOnly, setWorkingOnly] = useState(false);
@@ -208,6 +213,7 @@ function BotTable({
               </th>
               <th className="hq-num">Задержка</th>
               {showUptime && <th className="hq-num">В работе</th>}
+              {showCaptcha && <th className="hq-num">Капчи</th>}
               <th className="hq-num">Атлетов</th>
             </tr>
           </thead>
@@ -231,6 +237,20 @@ function BotTable({
                   </td>
                   <td className="hq-num hq-muted">{bot.delay_sec}с</td>
                   {showUptime && <td className="hq-num">{fmtDuration(bot.active_seconds ?? 0)}</td>}
+                  {showCaptcha && (
+                    <td className="hq-num">
+                      {bot.captcha_total ? (
+                        <span
+                          className="hq-hint hq-captcha"
+                          data-hint={`Решено ${bot.captcha_solved ?? 0} из ${bot.captcha_total}. Последняя: ${fmtMoscowDateTime(bot.last_captcha_at ?? null)}`}
+                        >
+                          {bot.captcha_solved ?? 0}/{bot.captcha_total}
+                        </span>
+                      ) : (
+                        <span className="hq-muted">—</span>
+                      )}
+                    </td>
+                  )}
                   <td className="hq-num hq-collected">
                     {fmt(bot.collected_total)}
                     <Delta value={bot.collected_total - (prevMap.get(id) ?? bot.collected_total)} />
@@ -240,7 +260,7 @@ function BotTable({
             })}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={showUptime ? 6 : 5} className="hq-empty">
+                <td colSpan={(showUptime ? 6 : 5) + (showCaptcha ? 1 : 0)} className="hq-empty">
                   {workingOnly ? "сейчас никто не работает" : "пока пусто — прогрев"}
                 </td>
               </tr>
@@ -677,6 +697,7 @@ export function SweepHqPage({ token }: { token: string }) {
             bots={data.vpn}
             showUptime
             showFlag
+            showCaptcha
             prevMap={prevVpnMap}
           />
           <BotTable

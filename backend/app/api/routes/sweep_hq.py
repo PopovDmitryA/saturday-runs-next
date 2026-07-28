@@ -104,6 +104,8 @@ def sweep_hq(
             FROM crawl_queue""")[0]
         vpn = _rows(conn, """
             SELECT name, account, collected_total, active_seconds, delay_sec,
+                   captcha_total, captcha_solved,
+                   to_char(last_captcha_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_captcha_at,
                    CASE WHEN account='mac' AND (worker_heartbeat_at IS NULL
                              OR worker_heartbeat_at <= now() - interval '90 seconds')
                              THEN 'off'   -- локальный скрипт: нет heartbeat = не запущен
@@ -157,6 +159,8 @@ def sweep_hq(
         return float(x) if x is not None else 0.0
 
     for r in vpn:
+        r["captcha_total"] = int(r.get("captcha_total") or 0)
+        r["captcha_solved"] = int(r.get("captcha_solved") or 0)
         r["collected_total"] = int(r["collected_total"] or 0)
         r["active_seconds"] = int(r["active_seconds"] or 0)
         r["delay_sec"] = round(num(r["delay_sec"]), 1)
