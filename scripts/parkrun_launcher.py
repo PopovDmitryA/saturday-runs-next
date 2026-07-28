@@ -98,7 +98,7 @@ def task_waf() -> None:
     print("\n  Выходы (порт на сервере): de2=10859, lt=10853, us=10855, ee=10875,")
     print("                            gf05=10864, gf06=10863, gf07=10862")
     port = ask("Порт выхода", "10859")
-    limit = ask("Сколько атлетов за сессию", "500")
+    limit = ask("Сколько атлетов за сессию (0 = без предела, до Ctrl+C)", "0")
     delay = ask("Задержка между атлетами, сек", "2")
     py = os.path.join(ROOT, ".conda-parkrun", "bin", "python")
     if not os.path.exists(py):
