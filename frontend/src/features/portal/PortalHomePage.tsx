@@ -609,12 +609,14 @@ export function PortalHomePage() {
                   <div>
                     <h2>Рекорды посещаемости за неделю</h2>
                     <p className="portal-panel-sub">
-                      Локации, собравшие больше финишёров, чем когда-либо
+                      Локации, собравшие больше финишёров, чем когда-либо, и открытия новых площадок
                     </p>
                   </div>
                 </div>
                 {!data.week_records || data.week_records.attendance.length === 0 ? (
-                  <p className="portal-empty-note">На этой неделе рекордов посещаемости нет.</p>
+                  <p className="portal-empty-note">
+                    На этой неделе рекордов посещаемости и открытий нет.
+                  </p>
                 ) : (
                   <ul className="portal-record-list">
                     {data.week_records.attendance.map((record) => (
@@ -622,23 +624,44 @@ export function PortalHomePage() {
                         className="portal-record-row"
                         key={`${record.location_name}-${record.event_date}`}
                       >
-                        <span className="portal-record-icon">🏆</span>
+                        <span
+                          className={`portal-record-icon${record.is_debut ? " is-debut" : ""}`}
+                          title={record.is_debut ? "Открытие площадки" : "Рекорд посещаемости"}
+                        >
+                          {record.is_debut ? "🎉" : "🏆"}
+                        </span>
                         <span className="portal-record-main">
-                          <b>{record.location_name}</b>
+                          <b>
+                            {record.location_name}
+                            {record.is_debut && (
+                              <>
+                                {" "}
+                                <span className="portal-record-tag">открытие</span>
+                              </>
+                            )}
+                          </b>
                           <span>{formatDateShort(record.event_date)}</span>
                         </span>
                         <PlatformBadge code={record.platform_code} />
                         <span className="portal-record-value">
                           <b className="num">
                             {formatInt(record.finishers)}
-                            <span className="portal-delta up">
-                              ↑ +{formatInt(record.finishers - record.previous_record)}
-                            </span>
+                            {!record.is_debut && (
+                              <span className="portal-delta up">
+                                ↑ +{formatInt(record.finishers - record.previous_record)}
+                              </span>
+                            )}
                           </b>
                           <span>
-                            было {formatInt(record.previous_record)}
-                            {record.previous_record_date &&
-                              ` · ${formatDateCompact(record.previous_record_date)}`}
+                            {record.is_debut ? (
+                              "первый старт"
+                            ) : (
+                              <>
+                                было {formatInt(record.previous_record)}
+                                {record.previous_record_date &&
+                                  ` · ${formatDateCompact(record.previous_record_date)}`}
+                              </>
+                            )}
                           </span>
                         </span>
                       </li>

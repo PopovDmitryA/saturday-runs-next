@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
@@ -37,7 +38,7 @@ from app.services.location_catalog_service import LocationCatalogIndex
 
 logger = logging.getLogger(__name__)
 
-PORTAL_HOME_CACHE_KEY = "portal:home:v17"
+PORTAL_HOME_CACHE_KEY = "portal:home:v18"
 # TTL сильно больше периода прогрева (раз в час): пересчёт занимает ~2 мин и идёт
 # синхронно в запросе пользователя, поэтому пустой кэш — это минута ожидания на
 # главной. Запас в 24 часа переживает и пропущенные прогревы, и рестарт воркера:
@@ -116,7 +117,15 @@ def format_finish_time(seconds: int) -> str:
 
 
 class _EventRow:
-    __slots__ = ("event_id", "location_id", "platform_code", "event_date", "finishers")
+    __slots__ = (
+        "event_id",
+        "location_id",
+        "platform_code",
+        "event_date",
+        "finishers",
+        "event_number",
+        "is_test_event",
+    )
 
     def __init__(
         self,
@@ -125,12 +134,16 @@ class _EventRow:
         platform_code: str,
         event_date: date,
         finishers: int,
+        event_number: int | None = None,
+        is_test_event: bool = False,
     ) -> None:
         self.event_id = event_id
         self.location_id = location_id
         self.platform_code = platform_code
         self.event_date = event_date
         self.finishers = finishers
+        self.event_number = event_number
+        self.is_test_event = is_test_event
 
 
 def _load_events(db: Session) -> list[_EventRow]:
@@ -154,15 +167,36 @@ def _load_events(db: Session) -> list[_EventRow]:
                 Event.event_date,
                 Event.finishers_count,
                 EventSummary.finishers_count,
+                Event.event_number,
+                Event.is_test_event,
             )
             .join(Platform, Platform.id == Event.platform_id)
             .outerjoin(EventSummary, EventSummary.event_id == Event.id)
         )
     ).filter(Event.event_date >= MIN_SANE_EVENT_DATE).all()
     events: list[_EventRow] = []
-    for event_id, location_id, platform_code, event_date, event_cnt, summary_cnt in rows:
+    for (
+        event_id,
+        location_id,
+        platform_code,
+        event_date,
+        event_cnt,
+        summary_cnt,
+        event_number,
+        is_test_event,
+    ) in rows:
         finishers = protocol_counts.get(event_id) or event_cnt or summary_cnt or 0
-        events.append(_EventRow(event_id, location_id, platform_code, event_date, finishers))
+        events.append(
+            _EventRow(
+                event_id,
+                location_id,
+                platform_code,
+                event_date,
+                finishers,
+                event_number,
+                bool(is_test_event),
+            )
+        )
     return events
 
 
@@ -741,6 +775,85 @@ def _total_time_sec_in_range(
     )
 
 
+def _week_attendance_records(
+    events: list[_EventRow],
+    week_start: date,
+    week_end: date,
+    identity_of: Callable[[UUID], str],
+    display_of: Callable[[UUID], str],
+) -> list[dict[str, Any]]:
+    """Рекорды посещаемости недели: побитые максимумы и открытия площадок.
+
+    Открытие — тоже рекорд, причём часто самый долгоживущий: на первый старт
+    приезжает толпа, и планка держится год и дольше. Такие строки помечаются
+    `is_debut`, прежний рекорд у них нулевой.
+
+    Открытием считается локация, у которой до недели нет ни одного события
+    (ни по одной системе — ключ сквозной, identity каталога). Дополнительная
+    страховка от «открытий» задним числом: если у события есть номер, он
+    должен быть первым — иначе это только что подключённая к сайту площадка
+    с ещё не залитой историей, а не новая точка на карте (так на неделе
+    25.07.2026 отсеялся RunPark «Парк Ангарские Пруды» со стартом №231).
+
+    Тестовые забеги 5 вёрст (пробный прогон за неделю-другую до запуска,
+    `is_test_event`) в этом блоке не участвуют вовсе: сами открытием не
+    считаются и не мешают засчитать открытием настоящий первый старт.
+    """
+    # исторический максимум по физической локации до недели
+    best_before: dict[str, tuple[int, date]] = {}
+    seen_before: set[str] = set()
+    for row in events:
+        if row.event_date >= week_start or row.is_test_event:
+            continue
+        key = identity_of(row.location_id)
+        seen_before.add(key)
+        if row.finishers <= 0:
+            continue
+        known = best_before.get(key)
+        if known is None or row.finishers > known[0]:
+            best_before[key] = (row.finishers, row.event_date)
+
+    week_rows: list[tuple[str, _EventRow]] = [
+        (identity_of(row.location_id), row)
+        for row in events
+        if week_start <= row.event_date <= week_end
+        and row.finishers > 0
+        and not row.is_test_event
+    ]
+    debut_keys = {
+        key
+        for key, row in week_rows
+        if key not in seen_before and row.event_number in (None, 1)
+    }
+
+    records: dict[str, dict[str, Any]] = {}
+    for key, row in week_rows:
+        known = best_before.get(key)
+        is_debut = key in debut_keys
+        if not is_debut and (known is None or row.finishers <= known[0]):
+            continue
+        existing = records.get(key)
+        if existing is not None and existing["finishers"] >= row.finishers:
+            continue
+        records[key] = {
+            "location_name": display_of(row.location_id),
+            "platform_code": row.platform_code,
+            "event_date": row.event_date,
+            "finishers": row.finishers,
+            "previous_record": known[0] if known is not None and not is_debut else 0,
+            "previous_record_date": known[1] if known is not None and not is_debut else None,
+            "is_debut": is_debut,
+        }
+    return sorted(
+        records.values(),
+        key=lambda item: (
+            item["finishers"] - item["previous_record"],
+            item["finishers"],
+        ),
+        reverse=True,
+    )[:WEEK_RECORDS_LIMIT]
+
+
 def _compute_portal_home(db: Session) -> dict[str, Any]:
     resolver = LocationCatalogIndex(db)
     locations = {loc.id: loc for loc in db.query(Location).all()}
@@ -858,38 +971,9 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         week_end = pulse_date
         week_start = week_end - timedelta(days=WEEK_RECORD_WINDOW_DAYS - 1)
 
-        # посещаемость: исторический максимум по физической локации до недели
-        attendance_before: dict[str, tuple[int, date]] = {}
-        for row in events:
-            if row.event_date < week_start and row.finishers > 0:
-                key = identity_of(row.location_id)
-                known = attendance_before.get(key)
-                if known is None or row.finishers > known[0]:
-                    attendance_before[key] = (row.finishers, row.event_date)
-        attendance_records: dict[str, dict[str, Any]] = {}
-        for row in events:
-            if not (week_start <= row.event_date <= week_end) or row.finishers <= 0:
-                continue
-            key = identity_of(row.location_id)
-            known = attendance_before.get(key)
-            if known is None or row.finishers <= known[0]:
-                continue
-            existing_attendance = attendance_records.get(key)
-            if existing_attendance is not None and existing_attendance["finishers"] >= row.finishers:
-                continue
-            attendance_records[key] = {
-                "location_name": display_of(row.location_id),
-                "platform_code": row.platform_code,
-                "event_date": row.event_date,
-                "finishers": row.finishers,
-                "previous_record": known[0],
-                "previous_record_date": known[1],
-            }
-        attendance_list = sorted(
-            attendance_records.values(),
-            key=lambda item: item["finishers"] - item["previous_record"],
-            reverse=True,
-        )[:WEEK_RECORDS_LIMIT]
+        attendance_list = _week_attendance_records(
+            events, week_start, week_end, identity_of, display_of
+        )
 
         # рекорды трассы М/Ж: лучшее время недели против исторического
         # минимума физической локации

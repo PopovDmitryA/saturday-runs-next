@@ -28,6 +28,8 @@ class PortalAttendanceRecordResponse(BaseModel):
     finishers: int
     previous_record: int
     previous_record_date: date | None = None
+    # открытие площадки: рекорд «с нуля», прежнего максимума не было
+    is_debut: bool = False
 
 
 class PortalCourseRecordResponse(BaseModel):

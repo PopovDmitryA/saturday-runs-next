@@ -21,6 +21,7 @@ export type PortalAttendanceRecord = {
   finishers: number;
   previous_record: number;
   previous_record_date: string | null;
+  is_debut?: boolean;
 };
 
 export type PortalCourseRecord = {
