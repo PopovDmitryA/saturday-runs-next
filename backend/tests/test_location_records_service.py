@@ -284,6 +284,53 @@ def test_multi_system_levels(db_session: Session) -> None:
     assert "global" in scopes
 
 
+def test_foreign_parkrun_location_gives_no_record(db_session: Session) -> None:
+    """Зарубежный parkrun в рекордах не участвует, русский — участвует.
+
+    Протоколы зарубежных площадок мы не собираем: в БД от Spring Rock есть
+    только результат самого туриста, и он автоматически оказывался «рекордом
+    трассы». Признак русскости — связь с каталогом локаций (country у parkrun
+    в БД всегда стаб), поэтому тест доводит ту же площадку до каталога и ждёт
+    рекорд обратно.
+    """
+    parkrun = _platform(db_session, "parkrun", "parkrun")
+    tourist = _participant(
+        db_session, parkrun, "tourist", "Турист", gender="male", age_category="SM30-34"
+    )
+    user = _link_user(db_session, [(parkrun, tourist)])
+    location = _location(db_session, parkrun, "spring-rock", "Spring Rock")
+    _result(
+        db_session,
+        _event(db_session, parkrun, location, date(2025, 10, 18)),
+        tourist,
+        finish_time_sec=1190,
+        age_category=None,  # у parkrun пол берётся из participants.age_category
+    )
+
+    payload = compute_user_location_records(db_session, user.id)
+    assert payload["course"]["current_count"] == 0
+    assert payload["course"]["entries"] == []
+    assert payload["milestones"] == []
+
+    # Та же площадка, заведённая в каталог локаций, — русская, рекорд считается.
+    catalog = LocationCatalog(canonical_name="Spring Rock", active_platform="five_verst")
+    db_session.add(catalog)
+    db_session.flush()
+    db_session.add(
+        LocationCatalogLink(
+            catalog_id=catalog.id,
+            platform_id=parkrun.id,
+            external_key=location.external_key,
+            location_id=location.id,
+        )
+    )
+    db_session.flush()
+
+    payload = compute_user_location_records(db_session, user.id)
+    assert payload["course"]["current_count"] == 1
+    assert payload["course"]["entries"][0]["finish_time_sec"] == 1190
+
+
 def test_age_group_records_only_five_verst_and_gender_scoped(db_session: Session) -> None:
     """Возрастные рекорды: только 5 вёрст, женское время не бьёт мужской рекорд группы."""
     five_verst = _platform(db_session, "five_verst", "5 вёрст")

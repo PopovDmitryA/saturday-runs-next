@@ -54,7 +54,9 @@ class SyncRefreshRateLimitedError(Exception):
 # кэш должен пересчитать pr_count по обновлённым флагам.
 # 29: плитки «Рекорды локаций» и «Рекорды в возрастных группах» — в аналитике
 # появились location_records / age_group_records (location_records_service).
-ANALYTICS_VERSION = 29
+# 30: зарубежный parkrun выброшен из рекордов локаций — по нему нет протоколов,
+# и одинокий финиш туриста зачитывался как рекорд трассы.
+ANALYTICS_VERSION = 30
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)

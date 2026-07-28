@@ -14,6 +14,11 @@ runpark + s95 и т.п., связь — location_catalog), рекорд двух
 прогрессия включает все её результаты), поэтому такие пары схлопываются в одну
 запись уровня «глобальный». Для монолокаций уровень один и не показывается.
 
+Какие площадки участвуют. Только те, чьи протоколы мы собираем целиком: все
+системы, кроме зарубежного parkrun (см. _eligible). По зарубежной площадке в БД
+лежат лишь результаты наших участников из их профилей, и любой из них выглядел
+бы рекордом трассы.
+
 Рекорды по возрастным группам считаются только по 5 вёрст — единственной
 системе с возрастной категорией в протоколе (см. комментарий к
 FIVE_VERST_PLATFORM_CODE в location_page_service) — и потому всегда
@@ -53,7 +58,7 @@ from app.models import (
     PlatformLink,
     RunResult,
 )
-from app.services.location_catalog_service import LocationCatalogIndex
+from app.services.location_catalog_service import LocationCatalogIndex, is_foreign_location
 from app.services.location_page_service import (
     FIVE_VERST_PLATFORM_CODE,
     _age_group_match_clauses,
@@ -70,6 +75,8 @@ from app.time_format import format_finish_time_display
 
 GLOBAL_LEVEL = "global"
 
+PARKRUN_PLATFORM_CODE = "parkrun"
+
 # Тот же TTL, что у страницы локации: рекорды меняются только при доливке
 # протоколов. После user-sync пересчёт дашборда перезаписывает кэш свежим
 # значением (force_refresh), TTL страхует от чужих результатов между синками.
@@ -85,7 +92,9 @@ PROGRESSION_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 
 
 def user_location_records_cache_key(user_id: UUID) -> str:
-    return f"dashboard:location-records:v1:{user_id}"
+    # v2: из расчёта выброшен зарубежный parkrun — записи v1 отдавали бы старую
+    # картину до истечения TTL.
+    return f"dashboard:location-records:v2:{user_id}"
 
 
 @dataclass
@@ -311,6 +320,29 @@ class _IdentityScopes:
     events_by_platform: dict[str, list[UUID]]
 
 
+def _eligible(
+    locations: list[tuple[Location, str]], catalog_index: LocationCatalogIndex
+) -> list[tuple[Location, str]]:
+    """Отсеять зарубежные parkrun-площадки.
+
+    Протоколы зарубежного parkrun мы не собираем: в БД от такой площадки есть
+    только результаты наших же участников, попавшие туда из их профилей. Считать
+    по ним «рекорд трассы» нельзя — единственный известный финиш площадки
+    автоматически оказывается её рекордом (кейс Spring Rock). Русский parkrun
+    собран протоколами целиком, поэтому остаётся; заодно уходит псевдолокация
+    «parkrun (сводка ролей)», у которой финишей нет вовсе.
+
+    Зарубежность parkrun определяется связью с каталогом локаций, а не полем
+    country — у parkrun-строк там всегда стаб (см. is_foreign_location).
+    """
+    return [
+        (location, code)
+        for location, code in locations
+        if code != PARKRUN_PLATFORM_CODE
+        or not is_foreign_location(location, code, catalog_index)
+    ]
+
+
 def _load_identity_scopes(db: Session, visited_location_ids: set[UUID]) -> list[_IdentityScopes]:
     """Сгруппировать посещённые локации в идентичности каталога и подтянуть
     «соседние» строки других систем: непосещённая parkrun-эра тоже участвует
@@ -328,7 +360,9 @@ def _load_identity_scopes(db: Session, visited_location_ids: set[UUID]) -> list[
             .all(),
         )
 
-    visited = load_locations(visited_location_ids)
+    visited = _eligible(load_locations(visited_location_ids), catalog_index)
+    if not visited:
+        return []
     catalog_ids: set[UUID] = set()
     for location, code in visited:
         catalog = catalog_index.get_for_location(location, code)
@@ -347,7 +381,8 @@ def _load_identity_scopes(db: Session, visited_location_ids: set[UUID]) -> list[
         )
         sibling_ids = {row[0] for row in rows} - visited_location_ids
 
-    members = visited + (load_locations(sibling_ids) if sibling_ids else [])
+    siblings = _eligible(load_locations(sibling_ids), catalog_index) if sibling_ids else []
+    members = visited + siblings
 
     identity_locations: dict[str, list[tuple[Location, str]]] = {}
     for location, code in members:
