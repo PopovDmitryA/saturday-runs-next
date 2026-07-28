@@ -88,6 +88,27 @@ def task_parse() -> None:
     os.execvp(py, argv)
 
 
+def task_waf() -> None:
+    print("\n— Обход через приватный выход с решателем капчи —")
+    print("  Страницы качает httpx (быстро), браузер поднимается только когда")
+    print("  прилетела капча: решает её сам (CLIP) и отдаёт токен. ~1 капча на 25 атлетов.")
+    pm = os.path.join(os.path.expanduser("~"), "Projects", "parkrun-monitoring")
+    if not os.path.exists(os.path.join(pm, "athlete_sweep", "waf_solver.py")):
+        sys.exit(f"не нашёл решатель в {pm}\nклонируй parkrun-monitoring в ~/Projects/")
+    print("\n  Выходы (порт на сервере): de2=10859, lt=10853, us=10855, ee=10875,")
+    print("                            gf05=10864, gf06=10863, gf07=10862")
+    port = ask("Порт выхода", "10859")
+    limit = ask("Сколько атлетов за сессию", "500")
+    delay = ask("Задержка между атлетами, сек", "2")
+    py = os.path.join(ROOT, ".conda-parkrun", "bin", "python")
+    if not os.path.exists(py):
+        py = sys.executable
+    print("\nЗапускаю обход с решателем капчи…\n")
+    os.execvpe(py, [py, "-u", "-m", "athlete_sweep.waf_solver", "unused",
+                    "--fast", "--exit-port", port, "--limit", limit, "--delay", delay],
+               {**os.environ, "PYTHONPATH": pm})
+
+
 def main() -> None:
     print("═" * 56)
     print(" parkrun — что запускаем?")
@@ -95,11 +116,14 @@ def main() -> None:
     print("  1) Обработать очередь сайта run5k.run  (демон, браузер)")
     print("  2) Парсинг parkrun-профилей в диапазоне (обход, macbook)")
     print("  3) Обработать собранное сырьё в БД      (офлайн-парсер)")
+    print("  4) Обход через выход + решатель капчи   (httpx + CLIP)")
     choice = ask("Выбор", "1")
     if choice == "2":
         task_sweep()
     elif choice == "3":
         task_parse()
+    elif choice == "4":
+        task_waf()
     else:
         task_site()
 
