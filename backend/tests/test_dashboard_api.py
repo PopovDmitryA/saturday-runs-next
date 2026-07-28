@@ -1422,9 +1422,16 @@ def test_user_sync_updates_cache(authenticated_client: TestClient, db_session: S
         club_name="Test Club",
     )
 
-    with patch("app.platform_adapters.five_verst.adapter.FiveVerstAdapter.fetch_user_profile", return_value=profile):
+    # У five_verst синк идёт мимо адаптера — напрямую через fetch_userstats_html,
+    # поэтому патчим именно его, иначе тест уходит в живую сеть на 5verst.ru.
+    with (
+        patch("app.sync.user_sync.fetch_userstats_html", return_value="<html></html>"),
+        patch("app.sync.user_sync.parse_userstats_html", return_value=profile),
+        patch("app.sync.user_sync.parse_userstats_runs_html", return_value=[]),
+        patch("app.sync.user_sync.parse_userstats_volunteering_html", return_value=[]),
+    ):
         job = run_user_sync(db_session, user.id, SyncJobTrigger.manual)
-        assert job.status.value == "success"
+        assert job.status.value == "success", job.error_message
 
     dashboard = authenticated_client.get("/api/dashboard")
     assert dashboard.status_code == 200

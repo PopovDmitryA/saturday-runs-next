@@ -408,4 +408,6 @@ def test_runpark_crosslink_duplicate_merges_into_primary_rival_bucket(db_session
     # (five_verst). Теперь ссылки хранятся по платформам отдельно и ни одна
     # не теряется — включая ссылку в RunPark, хоть её бейдж и не показан.
     assert item["profile_urls"]["five_verst"] == rival_fv.profile_url
-    assert item["profile_urls"]["runpark"] == rival_rp.profile_url
+    # У RunPark ссылка всегда каноническая, из external_user_id (сохранённый
+    # profile_url там ненадёжен) — см. co_runners_service.
+    assert item["profile_urls"]["runpark"] == f"https://runpark.ru/Account/Karmas/{rival_rp.external_user_id}"

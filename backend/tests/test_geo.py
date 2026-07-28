@@ -19,5 +19,6 @@ def test_lookup_address_fills_country_and_city() -> None:
     with patch("app.geo.reverse_geocode._fetch_address", return_value=address):
         result = lookup_address(55.91, 37.74)
     assert result["country"] == "Россия"
-    assert result["region"] == "Московская область"
+    # normalize_region() срезает суффиксы « область» / « край» — это намеренно.
+    assert result["region"] == "Московская"
     assert result["city"] == "Мытищи"

@@ -35,7 +35,7 @@ def map_location_filter() -> object:
     )
 
 
-def is_russian_historic(location: Location, live_identities: dict[str, "Location"], identity_key: str) -> bool:
+def is_russian_historic(location: Location, live_identities: dict[str, Location], identity_key: str) -> bool:
     """Нужна ли эта parkrun-локация на нашей карте.
 
     Основной признак — связка с действующей локацией: если парк живёт в 5 вёрстах
@@ -48,7 +48,7 @@ def is_russian_historic(location: Location, live_identities: dict[str, "Location
 
 
 def inherited_geo_fields(
-    location: Location, live: "Location | None"
+    location: Location, live: Location | None
 ) -> tuple[str | None, str | None]:
     """Страна и город для исторической строки: у связки они верные, у своей — стаб."""
     if live is not None:

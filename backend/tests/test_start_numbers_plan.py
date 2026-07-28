@@ -223,7 +223,7 @@ def test_plan_scopes_to_platform_filter(db_session) -> None:
         pytest.skip("Database not available")
 
     fv_loc = _location_with_last_event(db_session, five_verst, "Пятивёрстовая", date(2026, 7, 25), 100)
-    s95_loc = _location_with_last_event(db_session, s95, "Эска", date(2026, 7, 25), 40)
+    _location_with_last_event(db_session, s95, "Эска", date(2026, 7, 25), 40)
     user = _user_with_run(db_session, five_verst, fv_loc, event_number=7)
 
     all_systems = build_start_numbers_plan(db_session, user.id, code="start_numbers", today=TODAY)

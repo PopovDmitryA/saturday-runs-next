@@ -77,7 +77,8 @@ def test_s95_keys() -> None:
     event_date = date(2024, 5, 18)
     user_id = "12345"
     assert s95_run_key(slug, event_date, user_id, 7) == "izmailovo:2024-05-18:12345:7"
+    # Канонические русские роли живут в ключе как есть — «Сканер», не «сканер».
     assert (
         s95_volunteer_key(slug, event_date, user_id, "Сканер")
-        == "vol:izmailovo:2024-05-18:12345:сканер"
+        == "vol:izmailovo:2024-05-18:12345:Сканер"
     )

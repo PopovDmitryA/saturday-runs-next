@@ -83,7 +83,7 @@ def test_create_card_anonymous_hides_author(db_session: Session) -> None:
 def test_list_cards_ranked_by_score_then_recency(db_session: Session) -> None:
     author = _make_user(db_session)
     voter = _make_user(db_session, name="Голосующий")
-    low = _make_card(db_session, author.id, title="низкий")
+    _make_card(db_session, author.id, title="низкий")
     high = _make_card(db_session, author.id, title="высокий")
 
     vote_card(db_session, high.id, user_id=voter.id, value=1)

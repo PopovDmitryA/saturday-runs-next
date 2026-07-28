@@ -29,6 +29,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0",
+    "pytest-timeout>=2.3.0",
     "httpx>=0.28.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
@@ -70,3 +71,10 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# Предохранитель: ни один тест не имеет права висеть на сети/локе дольше 2 минут.
+timeout = 120
+markers = [
+    "network: ходит в живую сеть; по умолчанию не запускается (pytest -m network)",
+]
+# Сетевые тесты выключены по умолчанию — иначе CI зависит от доступности 5vesrt.ru.
+addopts = "-m 'not network'"

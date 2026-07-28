@@ -118,7 +118,7 @@ def test_parse_athlete_runs_and_volunteering_fixture() -> None:
     )
     assert len(vols) == 1
     assert vols[0].role == "Маршал"
-    assert vols[0].external_result_key == "vol:парк_горького:2025-01-05:5207:маршал"
+    assert vols[0].external_result_key == "vol:парк_горького:2025-01-05:5207:Маршал"
 
 
 def test_parse_athlete_volunteering_accordion_fixture() -> None:

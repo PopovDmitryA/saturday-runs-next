@@ -83,8 +83,8 @@ def test_page_stats_rollup_schedule() -> None:
     rollup = schedule["page-stats-rollup"]
     assert rollup["task"] == "page_stats.rollup"
     assert rollup["schedule"].minute == {35}
-    # Дефолтная очередь "celery" (без options) — общий worker без -Q.
-    assert "options" not in rollup
+    # Дефолтная очередь "celery" — общий worker без -Q, никакой своей queue.
+    assert "queue" not in rollup.get("options", {})
 
 
 def test_daily_sync_summary_schedule() -> None:

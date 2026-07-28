@@ -10,9 +10,9 @@ from app.location_page_url import location_page_url
 from app.models import Location, Platform
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.location_map_service import (
+    MAP_HISTORIC_PLATFORM,
     _location_is_cancelled,
     _location_is_paused,
-    MAP_HISTORIC_PLATFORM,
     inherited_geo_fields,
     is_russian_historic,
     map_location_filter,

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest

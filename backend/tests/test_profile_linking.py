@@ -29,15 +29,16 @@ def test_confirm_rejects_external_profile_linked_to_other_user(db_session: Sessi
         platform_code="five_verst",
     )
 
-    from unittest.mock import patch
+    from app.services.profile_preview_cache import store_profile_preview
 
-    with patch(
-        "app.platform_adapters.five_verst.adapter.FiveVerstAdapter.fetch_profile_preview",
-        return_value=preview,
-    ):
-        confirm_profile_link(db_session, user_a, "five_verst", profile_url)
+    # confirm_profile_link требует свежий предпросмотр в кэше — имитируем шаг
+    # «Предпросмотр» для обоих пользователей, чтобы проверять именно конфликт привязки.
+    store_profile_preview(user_a.id, "five_verst", profile_url, preview)
+    store_profile_preview(user_b.id, "five_verst", profile_url, preview)
 
-        with pytest.raises(ProfileLinkingError) as exc_info:
-            confirm_profile_link(db_session, user_b, "five_verst", profile_url)
+    confirm_profile_link(db_session, user_a, "five_verst", profile_url)
+
+    with pytest.raises(ProfileLinkingError) as exc_info:
+        confirm_profile_link(db_session, user_b, "five_verst", profile_url)
 
     assert exc_info.value.status_code == 409
