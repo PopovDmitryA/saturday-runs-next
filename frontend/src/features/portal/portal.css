@@ -633,6 +633,21 @@
   flex: none;
 }
 
+/* Бейдж системы и число держим колонками. Иначе правый блок гуляет по ширине
+   («первый старт» против «было 50 · 20.06.2026») и тащит бейдж за собой на
+   45 пикселей от строки к строке. На узком экране ширину не фиксируем: там
+   строка и так переносится, а жёсткие колонки съели бы название локации. */
+@media (min-width: 641px) {
+  .portal-record-row .badge-platform {
+    min-width: 66px;
+    text-align: center;
+  }
+
+  .portal-record-value {
+    min-width: 142px;
+  }
+}
+
 .portal-record-value b {
   display: flex;
   align-items: baseline;
