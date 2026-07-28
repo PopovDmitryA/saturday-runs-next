@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
+from datetime import datetime, timezone
 from typing import Any
 
 from app.db.session import get_session_factory
-from app.services.dashboard_service import invalidate_dashboard_cache_for_platform
 from app.services.sync_run_params import (
     five_verst_clubs_details_details,
     five_verst_clubs_registry_details,
@@ -25,6 +25,19 @@ from app.workers.celery_app import celery_app
 from app.workers.tasks.sync_task_reporting import run_reported_sync
 
 logger = logging.getLogger(__name__)
+
+
+def _schedule_dashboard_warm(started_at: datetime) -> None:
+    """Отдать прогрев дашбордов в фоновую задачу.
+
+    Синк знает только момент своего старта; кого именно затронули новые
+    протоколы — разбирается dashboard_warm по run_results.fetched_at. Раньше
+    здесь сносился кэш всем пользователям платформы, и пересчёт доставался
+    первому зашедшему в профиль.
+    """
+    from app.workers.tasks.dashboard_warm import warm_dashboards_after_sync
+
+    warm_dashboards_after_sync.delay(started_at.isoformat())
 
 
 def _protocol_limit(settings) -> int | None:
@@ -60,6 +73,7 @@ def sync_location_task(
     def _run() -> dict[str, object]:
         db = get_session_factory()()
         try:
+            started_at = datetime.now(timezone.utc)
             result = sync_location(
                 db,
                 LocationSyncOptions(
@@ -70,8 +84,8 @@ def sync_location_task(
                 ),
             )
             if result.run_results_upserted > 0:
-                invalidate_dashboard_cache_for_platform(db, "five_verst")
                 db.commit()
+                _schedule_dashboard_warm(started_at)
             return {
                 "location_slug": result.location_slug,
                 "summaries_total": result.summaries_total,
@@ -178,6 +192,7 @@ def sync_latest_results_task(
     def _run() -> dict[str, object]:
         db = get_session_factory()()
         try:
+            started_at = datetime.now(timezone.utc)
             result = sync_latest_results(
                 db,
                 LatestResultsSyncOptions(
@@ -187,8 +202,8 @@ def sync_latest_results_task(
                 ),
             )
             if result.run_results_upserted > 0:
-                invalidate_dashboard_cache_for_platform(db, "five_verst")
                 db.commit()
+                _schedule_dashboard_warm(started_at)
             return {
                 "summaries_total": result.summaries_total,
                 "needs_update": result.needs_update,
@@ -230,10 +245,11 @@ def sync_location_rotation_task(*, force: bool = False) -> dict[str, object]:
     def _run() -> dict[str, object]:
         db = get_session_factory()()
         try:
+            started_at = datetime.now(timezone.utc)
             result = sync_next_location_batch(db)
             if result.sync is not None and result.sync.run_results_upserted > 0:
-                invalidate_dashboard_cache_for_platform(db, "five_verst")
                 db.commit()
+                _schedule_dashboard_warm(started_at)
             payload: dict[str, Any] = {
                 "location_slug": result.location_slug,
                 "rotation_index": result.rotation_index,

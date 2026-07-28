@@ -27,6 +27,7 @@ celery_app.conf.update(
         "app.workers.tasks.leaderboards_warm",
         "app.workers.tasks.portal_cache",
         "app.workers.tasks.locations_warm",
+        "app.workers.tasks.dashboard_warm",
         "app.workers.tasks.page_stats",
         "app.workers.tasks.admin_digest",
     ),

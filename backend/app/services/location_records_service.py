@@ -600,6 +600,100 @@ def _resolve_progressions(
     return [[] if rows is None else rows for rows in resolved]
 
 
+def warm_location_progressions(db: Session, location_ids: set[UUID], *, chunk: int = 150) -> int:
+    """Прогреть общий кэш прогрессий по этим локациям.
+
+    Считает то же, что посчитал бы первый зашедший в профиль пользователь, но
+    в воркере и пачками. Возвращает число посчитанных скоупов; уже лежащие в
+    кэше пропускаются, так что повторный вызов почти бесплатный.
+    """
+    if not location_ids:
+        return 0
+    identities = _load_identity_scopes(db, location_ids)
+    if not identities:
+        return 0
+    fingerprints = _location_fingerprints(
+        db, {location_id for identity in identities for location_id in identity.location_ids}
+    )
+
+    # Какие возрастные группы вообще встречаются на этих площадках (только
+    # 5 вёрст — см. комментарий к _batch_age_group_progressions).
+    groups_by_location: dict[UUID, set[str]] = {}
+    group_rows = (
+        db.query(Event.location_id, RunResult.age_category)
+        .select_from(RunResult)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .filter(
+            Platform.code == FIVE_VERST_PLATFORM_CODE,
+            Event.location_id.in_(
+                {location_id for identity in identities for location_id in identity.location_ids}
+            ),
+            Event.is_test_event.is_(False),
+            RunResult.age_category.isnot(None),
+            RunResult.age_category != "",
+        )
+        .distinct()
+        .all()
+    )
+    for location_id, age_category in group_rows:
+        group = normalize_age_group(age_category)
+        if group is not None:
+            groups_by_location.setdefault(location_id, set()).add(group)
+
+    course_specs: list[tuple[_IdentityScopes, str | None, list[UUID]]] = []
+    age_specs: list[tuple[_IdentityScopes, str, list[UUID]]] = []
+    for identity in identities:
+        if identity.multi_system:
+            course_specs.append((identity, GLOBAL_LEVEL, identity.all_event_ids))
+            for code, event_ids in sorted(identity.events_by_platform.items()):
+                course_specs.append((identity, code, event_ids))
+        else:
+            course_specs.append((identity, None, identity.all_event_ids))
+        five_verst_events = identity.events_by_platform.get(FIVE_VERST_PLATFORM_CODE)
+        if five_verst_events:
+            groups: set[str] = set()
+            for location_id in identity.location_ids:
+                groups |= groups_by_location.get(location_id, set())
+            for age_group in sorted(groups):
+                age_specs.append((identity, age_group, five_verst_events))
+
+    computed = 0
+    for gender in ("male", "female"):
+        for kind, specs in (("course", course_specs), ("age", age_specs)):
+            keys = [
+                _scope_cache_key(
+                    identity, kind=kind, variant=variant, gender=gender, fingerprints=fingerprints
+                )
+                for identity, variant, _event_ids in specs
+            ]
+            # Пачками: один батч-запрос на 150 скоупов — иначе массив
+            # event_id разрастается на десятки тысяч элементов.
+            for start in range(0, len(specs), chunk):
+                window_keys = keys[start : start + chunk]
+
+                def compute(
+                    indexes: list[int],
+                    _kind: str = kind,
+                    _specs: Any = specs,
+                    _gender: str = gender,
+                    _offset: int = start,
+                ) -> list[list[_ProgressionRow]]:
+                    nonlocal computed
+                    computed += len(indexes)
+                    absolute = [_offset + index for index in indexes]
+                    if _kind == "course":
+                        return _batch_course_progressions(
+                            db, [_specs[i][2] for i in absolute], _gender
+                        )
+                    return _batch_age_group_progressions(
+                        db, [(_specs[i][2], _specs[i][1]) for i in absolute], _gender
+                    )
+
+                _resolve_progressions(window_keys, compute)
+    return computed
+
+
 def compute_user_location_records(db: Session, user_id: UUID) -> dict[str, object]:
     """Полная картина рекордов пользователя: действующие, утерянные, вехи."""
     participants = _user_participants(db, user_id)

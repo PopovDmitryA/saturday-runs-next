@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import Integer, and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.activity_date import has_real_activity_date
@@ -852,17 +853,110 @@ def _compute_dashboard_analytics(
     }
 
 
-def invalidate_dashboard_cache_for_platform(db: Session, platform_code: str) -> int:
-    """Delete dashboard_cache for all users linked to the given platform.
+def _dashboard_platform_link_join() -> Any:
+    """Надёжный ключ между participants и platform_links — (platform_id,
+    external_user_id), а не platform_links.participant_id (не всегда
+    проставлен). Тот же принцип, что в location_page_service."""
+    return and_(
+        PlatformLink.platform_id == Participant.platform_id,
+        PlatformLink.external_user_id == Participant.external_user_id,
+    )
 
-    Called after bulk sync that upserted new run results so the cache is
-    lazily recomputed on the next profile page load.
+
+def locations_touched_since(db: Session, since: datetime) -> set[UUID]:
+    """Локации, чьи результаты трогал синк.
+
+    `run_results.fetched_at` проставляется на каждой строке разобранного
+    протокола, поэтому «тронуто» = протокол этой локации перезабирали.
     """
-    platform = db.query(Platform).filter(Platform.code == platform_code).one_or_none()
-    if platform is None:
+    rows = (
+        db.query(Event.location_id)
+        .join(RunResult, RunResult.event_id == Event.id)
+        .filter(RunResult.fetched_at >= since, Event.location_id.isnot(None))
+        .distinct()
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def users_with_touched_results(db: Session, since: datetime) -> set[UUID]:
+    """Пользователи, чьи собственные результаты трогал синк.
+
+    Почти всё в дашборде считается по своим результатам — включая среднее
+    «быстрее поля», потому что чужие времена берутся из тех же протоколов,
+    где бежал сам пользователь.
+
+    Сужать по локациям бессмысленно: наши бегуны — «туристы», и любая
+    затронутая площадка задевает 80–90% пользователей (замерено на проде).
+    А вот своих тронутых результатов за час синка набирается ~9%.
+    """
+    rows = (
+        db.query(PlatformLink.user_id)
+        .select_from(RunResult)
+        .join(Participant, RunResult.participant_id == Participant.id)
+        .join(PlatformLink, _dashboard_platform_link_join())
+        .filter(RunResult.fetched_at >= since)
+        .distinct()
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def users_holding_location_records(db: Session) -> set[UUID]:
+    """Действующие держатели рекордов локаций и возрастных групп.
+
+    Единственные, чей дашборд может измениться без их участия: рекорд мог
+    перебить кто-то другой. Читаем из уже посчитанного кэша — таких единицы
+    (на проде 7 из 112), так что пересчитать их всех дешевле, чем вычислять,
+    какой именно рекорд пал.
+    """
+    current = DashboardCache.stats["analytics"]
+    rows = (
+        db.query(DashboardCache.user_id)
+        .filter(
+            or_(
+                current["location_records"]["current_count"].astext.cast(Integer) > 0,
+                current["age_group_records"]["current_count"].astext.cast(Integer) > 0,
+            )
+        )
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def order_users_by_recent_login(db: Session, user_ids: set[UUID]) -> list[UUID]:
+    """Отсортировать пользователей «кто заходил недавно — раньше».
+
+    Прогрев ограничен по времени, и если затронутых больше потолка, греть
+    осмысленно тех, кто скорее всего откроет профиль. Остальные пересчитаются
+    лениво при заходе.
+    """
+    if not user_ids:
+        return []
+    rows = (
+        db.query(User.id)
+        .filter(User.id.in_(user_ids))
+        .order_by(User.last_login_at.desc().nulls_last(), User.created_at.desc())
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
+def invalidate_dashboard_cache_for_users(db: Session, user_ids: set[UUID]) -> int:
+    """Снести dashboard_cache перечисленным пользователям.
+
+    Раньше сносили всем, кто привязан к платформе: любой упсерт 5 вёрст
+    обнулял кэш всем 500+ пользователям, и каждый следующий заход в профиль
+    платил полный пересчёт. Теперь список считает
+    users_with_results_at_locations по реально затронутым локациям.
+    """
+    if not user_ids:
         return 0
-    user_ids = db.query(PlatformLink.user_id).filter(PlatformLink.platform_id == platform.id).subquery()
-    deleted = db.query(DashboardCache).filter(DashboardCache.user_id.in_(user_ids)).delete(synchronize_session=False)
+    deleted = (
+        db.query(DashboardCache)
+        .filter(DashboardCache.user_id.in_(user_ids))
+        .delete(synchronize_session=False)
+    )
     db.flush()
     return deleted
 

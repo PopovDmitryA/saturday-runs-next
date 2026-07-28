@@ -25,7 +25,10 @@ from app.models import (
     RunResult,
     User,
 )
-from app.services.location_records_service import compute_user_location_records
+from app.services.location_records_service import (
+    compute_user_location_records,
+    warm_location_progressions,
+)
 
 
 def _platform(db: Session, code: str, name: str) -> Platform:
@@ -322,3 +325,32 @@ def test_no_gender_no_course_records(db_session: Session) -> None:
     assert payload["course"]["current_count"] == 0
     assert payload["age_group"]["current_count"] == 0
     assert payload["milestones"] == []
+
+
+def test_warm_location_progressions_fills_shared_cache(db_session: Session) -> None:
+    """Прогрев считает прогрессии заранее; повторный вызов уже бесплатен.
+
+    Прогрессия — свойство площадки, поэтому её греет фоновая задача после
+    синка, а не первый зашедший в профиль пользователь.
+    """
+    five_verst = _platform(db_session, "five_verst", "5 вёрст")
+    runner = _participant(db_session, five_verst, "warm", "Бегун", gender="male")
+    location = _location(db_session, five_verst, "warm", "Парк прогрева")
+    _result(
+        db_session,
+        _event(db_session, five_verst, location, date(2025, 1, 4)),
+        runner,
+        finish_time_sec=1100,
+    )
+
+    computed = warm_location_progressions(db_session, {location.id})
+    assert computed > 0
+
+    # Второй прогон читает готовое из кэша и ничего не пересчитывает.
+    assert warm_location_progressions(db_session, {location.id}) == 0
+
+
+def test_warm_location_progressions_on_empty_input(db_session: Session) -> None:
+    """Синк без затронутых локаций не должен ничего греть и не должен падать."""
+    assert warm_location_progressions(db_session, set()) == 0
+
