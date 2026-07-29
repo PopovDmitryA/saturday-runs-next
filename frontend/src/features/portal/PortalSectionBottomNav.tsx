@@ -2,17 +2,22 @@ import { useState } from "react";
 import { logout } from "../../lib/api";
 import { clearCachedUser, useOptionalUser } from "../../lib/useOptionalUser";
 import { PORTAL_LOGIN_HREF, cabinetTabHref } from "../../lib/portalRoutes";
-import { SECONDARY_NAV, SITE_SECTIONS_NAV, icon } from "./SiteSidebar";
+import { SECONDARY_NAV, SITE_SECTIONS_NAV, icon, type SidebarExtraGroup } from "./SiteSidebar";
 import "./cabinet/cabinet.css";
 
 /**
- * Нижняя навигация телефона для разделов сайта (Локации, Рейтинги, Бэклог).
+ * Нижняя навигация телефона для разделов сайта (Локации, Рейтинги, Бэклог,
+ * публичный профиль участника).
  *
  * На мобильной ширине сайдбар скрыт, а своей нижней панели у разделов не было
  * вовсе: зайдя в «Локации», человек оставался без навигации совсем — вернуться
  * в кабинет можно было только через шапку. Панель повторяет кабинетную по
  * вёрстке (те же классы), но состав другой: возврат в кабинет, сами разделы и
  * «Ещё» со служебными пунктами.
+ *
+ * `extraGroup` — группа страниц текущей сущности (вкладки чужого профиля). На
+ * десктопе она живёт в сайдбаре; на телефоне попадает в шторку «Ещё», чтобы
+ * разделы участника оставались доступны и оттуда, а не только чипами.
  */
 const MORE_ICON = icon(
   <>
@@ -29,7 +34,13 @@ const CABINET_ICON = icon(
   </>,
 );
 
-export function PortalSectionBottomNav({ active }: { active?: string | null }) {
+export function PortalSectionBottomNav({
+  active,
+  extraGroup,
+}: {
+  active?: string | null;
+  extraGroup?: SidebarExtraGroup;
+}) {
   const user = useOptionalUser();
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -61,6 +72,28 @@ export function PortalSectionBottomNav({ active }: { active?: string | null }) {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="portal-cab-more-grabber" aria-hidden="true" />
+            {/* Страницы текущего участника — первым блоком: на телефоне это
+                замена группы профиля из сайдбара. */}
+            {extraGroup && (
+              <>
+                <div className="portal-cab-more-title">{extraGroup.title}</div>
+                {extraGroup.items.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className={`portal-cab-more-item${item.active ? " active" : ""}`}
+                    aria-current={item.active ? "page" : undefined}
+                    onClick={() => {
+                      item.onClick();
+                      setMoreOpen(false);
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+                <div className="portal-cab-more-sep" />
+              </>
+            )}
             {SECONDARY_NAV.filter(
               (item) =>
                 (!item.adminOnly || user?.is_admin) && (!item.authOnly || user != null),

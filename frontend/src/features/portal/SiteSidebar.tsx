@@ -240,7 +240,13 @@ function userInitials(label: string): string {
   return clean.slice(0, 2).toUpperCase();
 }
 
-function CabinetUserCard({ initialUser, collapsed = false }: { initialUser: User; collapsed?: boolean }) {
+/**
+ * Карточка участника: аватар, имя и «✎» — правка отображаемого имени.
+ * Экспортируется, потому что на телефоне сайдбар скрыт целиком, и кабинет
+ * рисует эту же карточку над контентом (иначе имя правилось только с
+ * компьютера — баг, 29.07.2026).
+ */
+export function CabinetUserCard({ initialUser, collapsed = false }: { initialUser: User; collapsed?: boolean }) {
   const [user, setUser] = useState(initialUser);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");

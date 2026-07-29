@@ -133,6 +133,13 @@
   color: var(--accent-red-text);
 }
 
+/* Дубль карточки участника над контентом кабинета: на телефоне сайдбар
+   скрыт, и правка имени («✎») была недостижима. На десктопе не показываем —
+   там карточка живёт в сайдбаре (включается в медиазапросе на 900px). */
+.portal-cab-user-mobile {
+  display: none;
+}
+
 /* ---------- навигация сайдбара ---------- */
 
 .portal-cab-nav {
@@ -321,6 +328,21 @@
     display: none;
   }
 
+  .portal-cab-user-mobile {
+    display: block;
+    margin-bottom: 14px;
+  }
+
+  /* Имя на телефоне крупнее: карточка здесь работает заголовком страницы. */
+  .portal-cab-user-mobile .portal-cab-user-name {
+    font-size: 16px;
+  }
+
+  .portal-cab-user-mobile .portal-cab-user-edit {
+    font-size: 16px;
+    padding: 6px 8px;
+  }
+
   .portal-cab-bottomnav {
     position: fixed;
     left: 0;
@@ -389,6 +411,20 @@
     flex-direction: column;
     gap: 2px;
     box-shadow: 0 -12px 40px rgba(15, 23, 42, 0.25);
+    /* Со вкладками участника пунктов набирается больше экрана — шторка
+       скроллится сама, а не уезжает под верхний край. */
+    max-height: 82vh;
+    overflow-y: auto;
+  }
+
+  /* Заголовок блока в шторке (например, имя участника над его вкладками). */
+  .portal-cab-more-title {
+    padding: 6px 10px 2px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-faint);
   }
 
   .portal-cab-more-grabber {

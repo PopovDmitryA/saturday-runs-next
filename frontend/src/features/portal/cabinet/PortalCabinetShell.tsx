@@ -5,6 +5,7 @@ import { PortalHeader } from "../PortalHeader";
 import { clearCachedUser } from "../../../lib/useOptionalUser";
 import {
   CABINET_NAV,
+  CabinetUserCard,
   SECONDARY_NAV,
   SITE_SECTIONS_NAV,
   SiteSidebar,
@@ -121,6 +122,13 @@ export function PortalCabinetShell({
         />
 
         <main className="portal-cab-main" ref={mainRef}>
+          {/* Телефон: сайдбар скрыт, вместе с ним пропадала и карточка
+              участника — карандаш правки имени был доступен только с
+              компьютера. Здесь та же карточка, видна только на узких
+              экранах (см. .portal-cab-user-mobile). */}
+          <div className="portal-cab-user-mobile">
+            <CabinetUserCard initialUser={user} />
+          </div>
           {title && (
             <div className="portal-cab-pagehead">
               <h1>{title}</h1>
