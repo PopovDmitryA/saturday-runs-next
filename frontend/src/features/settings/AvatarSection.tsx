@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { deleteAvatar, getCurrentUser, uploadAvatar, type User } from "../../lib/api";
 import { userLabel } from "../../lib/userLabel";
 import { AvatarCropModal } from "./AvatarCropModal";
+import { ImageLightbox } from "../../components/ImageLightbox";
 
 /**
  * Настройки → «Аватар»: выбор фото, кадрирование (зум/перетаскивание) в
@@ -14,6 +15,7 @@ export function AvatarSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [zoomed, setZoomed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,13 +73,32 @@ export function AvatarSection() {
     <section className="card">
       <h2 className="section-title">Аватар</h2>
       <div className="avatar-settings-row">
-        {user?.avatar_url ? (
-          <img className="avatar-settings-preview" src={user.avatar_url} alt="Ваш аватар" />
-        ) : (
-          <span className="avatar-settings-preview avatar-settings-placeholder" aria-hidden="true">
-            {initials}
-          </span>
-        )}
+        <div className="avatar-settings-preview-wrap">
+          {user?.avatar_url ? (
+            // Клик открывает оригинал без пережатия (у старых аватарок —
+            // то же превью, оригинала для них не существует).
+            <button
+              type="button"
+              className="avatar-settings-preview avatar-settings-preview-button"
+              onClick={() => setZoomed(true)}
+              aria-label="Открыть аватар"
+              title="Открыть аватар"
+            >
+              <img src={user.avatar_url} alt="Ваш аватар" />
+            </button>
+          ) : (
+            <span className="avatar-settings-preview avatar-settings-placeholder" aria-hidden="true">
+              {initials}
+            </span>
+          )}
+          {busy && (
+            // Загрузка идёт на сервер и обычно занимает секунду-две — без
+            // этой плашки было непонятно, происходит ли что-то вообще.
+            <span className="avatar-settings-busy" role="status">
+              Загрузка…
+            </span>
+          )}
+        </div>
         <div className="avatar-settings-controls">
           <p className="muted">Виден в сайдбаре кабинета и в шапке сайта.</p>
           <div className="avatar-settings-buttons">
@@ -87,7 +108,11 @@ export function AvatarSection() {
               disabled={busy || !user}
               onClick={() => fileInputRef.current?.click()}
             >
-              {user?.avatar_url ? "Заменить фото" : "Загрузить фото"}
+              {busy
+                ? "Загрузка…"
+                : user?.avatar_url
+                  ? "Заменить фото"
+                  : "Загрузить фото"}
             </button>
             {user?.avatar_url && (
               <button type="button" className="btn secondary" disabled={busy} onClick={() => void handleDelete()}>
@@ -113,6 +138,13 @@ export function AvatarSection() {
           event.target.value = "";
         }}
       />
+      {zoomed && user?.avatar_url && (
+        <ImageLightbox
+          src={user.avatar_full_url || user.avatar_url}
+          alt="Ваш аватар"
+          onClose={() => setZoomed(false)}
+        />
+      )}
       {pendingFile && (
         <AvatarCropModal
           file={pendingFile}

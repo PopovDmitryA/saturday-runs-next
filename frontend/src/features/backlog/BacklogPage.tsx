@@ -204,6 +204,9 @@ function BacklogContent() {
   const [formOpen, setFormOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [saving, setSaving] = useState(false);
+  // Фото новой карточки выбираются сразу, вместе с текстом: файлы ждут здесь
+  // и уезжают на сервер сразу после создания карточки.
+  const [draftPhotos, setDraftPhotos] = useState<File[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Из адреса приходит слаг (или старый id) — разрешаем его в id, когда лента
@@ -376,8 +379,14 @@ function BacklogContent() {
     }
     setSaving(true);
     try {
-      await createBacklogCard(draft);
+      const card = await createBacklogCard(draft);
+      // Отложенные файлы отправляем следом: до этого момента карточки не
+      // существовало и привязывать фото было не к чему.
+      for (const file of draftPhotos) {
+        await uploadBacklogPhoto(card.id, file);
+      }
       setDraft(EMPTY_DRAFT);
+      setDraftPhotos([]);
       setFormOpen(false);
       await load();
     } catch (err) {
@@ -600,6 +609,14 @@ function BacklogContent() {
                 <span>Отправить анонимно (имя не будет показано другим пользователям)</span>
               </label>
             )}
+            <PhotoAttachments
+              photos={[]}
+              maxPhotos={MAX_BACKLOG_PHOTOS}
+              label="Фото (необязательно)"
+              pending={draftPhotos}
+              onPendingChange={setDraftPhotos}
+              hint="Скриншот бага или пример — фото загрузятся вместе с карточкой"
+            />
             {formError && (
               <div className="profile-form-error" role="alert">
                 <p>{formError}</p>
@@ -607,7 +624,11 @@ function BacklogContent() {
             )}
             <div className="actions-row">
               <button type="submit" className="btn primary" disabled={saving}>
-                {saving ? "Отправка…" : "Отправить"}
+                {saving
+                  ? draftPhotos.length > 0
+                    ? "Отправка и загрузка фото…"
+                    : "Отправка…"
+                  : "Отправить"}
               </button>
             </div>
           </form>
@@ -839,6 +860,7 @@ function BacklogContent() {
                         <AuthorAvatar
                           name={comment.is_anonymous ? null : comment.author_display_name}
                           avatarUrl={comment.is_anonymous ? null : comment.author_avatar_url}
+                          fullUrl={comment.is_anonymous ? null : comment.author_avatar_full_url}
                         />
                         <span className="backlog-bubble-author">{commentAuthorLabel(comment)}</span>
                         {comment.is_admin_author && <span className="backlog-tag backlog-tag-admin">Админ</span>}

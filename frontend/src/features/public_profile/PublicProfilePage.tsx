@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
+import { ImageLightbox } from "../../components/ImageLightbox";
 import { PortalHeader } from "../portal/PortalHeader";
 import { CABINET_TAB_SEGMENTS, profileTabHref } from "../../lib/portalRoutes";
 import { SiteSidebar, type SidebarExtraGroup } from "../portal/SiteSidebar";
@@ -51,12 +52,15 @@ function ProfileShell({
   children,
   profileName,
   profileAvatarUrl,
+  profileAvatarFullUrl,
   tabsGroup,
 }: {
   children: React.ReactNode;
   currentUser: User | null;
   profileName: string | null;
   profileAvatarUrl?: string | null;
+  /** Оригинал аватарки участника — раскрывается по клику на неё. */
+  profileAvatarFullUrl?: string | null;
   /** Вкладки профиля для единого сайдбара (группа с именем участника). */
   tabsGroup?: SidebarExtraGroup;
 }) {
@@ -72,7 +76,11 @@ function ProfileShell({
             {profileName && (
               <div className="public-profile-head">
                 {profileAvatarUrl && (
-                  <img className="public-profile-avatar" src={profileAvatarUrl} alt="" />
+                  <ProfileAvatar
+                    url={profileAvatarUrl}
+                    fullUrl={profileAvatarFullUrl}
+                    name={profileName}
+                  />
                 )}
                 <h1 className="public-profile-name">{profileName}</h1>
               </div>
@@ -82,6 +90,35 @@ function ProfileShell({
         </main>
       </div>
     </div>
+  );
+}
+
+/** Аватарка участника в шапке его профиля: клик раскрывает оригинал. */
+function ProfileAvatar({
+  url,
+  fullUrl,
+  name,
+}: {
+  url: string;
+  fullUrl?: string | null;
+  name?: string | null;
+}) {
+  const [zoomed, setZoomed] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className="public-profile-avatar public-profile-avatar-button"
+        onClick={() => setZoomed(true)}
+        aria-label={name ? `Открыть аватар: ${name}` : "Открыть аватар"}
+        title="Открыть аватар"
+      >
+        <img src={url} alt="" />
+      </button>
+      {zoomed && (
+        <ImageLightbox src={fullUrl || url} alt={name ?? ""} onClose={() => setZoomed(false)} />
+      )}
+    </>
   );
 }
 
@@ -257,6 +294,7 @@ function PublicProfileContent({
       currentUser={currentUser}
       profileName={profileName}
       profileAvatarUrl={dashboard?.user.avatar_url}
+      profileAvatarFullUrl={dashboard?.user.avatar_full_url}
       tabsGroup={tabsGroup}
     >
 

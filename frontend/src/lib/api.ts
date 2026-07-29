@@ -21,6 +21,9 @@ export type User = {
   consent_accepted: boolean;
   is_admin: boolean;
   avatar_url: string | null;
+  // Оригинал аватарки без пережатия — раскрывается по клику. null у аватарок,
+  // загруженных до переезда на S3.
+  avatar_full_url: string | null;
   // Публичный адрес участника: /users/{public_slug ?? serial_id}.
   serial_id: number | null;
   public_slug: string | null;
@@ -2209,6 +2212,7 @@ export type AdminUserPreviewDashboard = {
     display_name: string | null;
     news_subscribed: boolean;
     avatar_url: string | null;
+    avatar_full_url: string | null;
     auth_logins: AdminUserAuthBrief[];
   };
   stats: DashboardStats;

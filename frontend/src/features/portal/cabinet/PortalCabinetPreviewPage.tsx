@@ -41,6 +41,7 @@ const PREVIEW_USER: User = {
   consent_accepted: true,
   is_admin: false,
   avatar_url: null,
+  avatar_full_url: null,
   serial_id: null,
   public_slug: null,
   auth_identities: [],

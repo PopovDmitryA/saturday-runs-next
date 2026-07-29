@@ -28,6 +28,7 @@ import {
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_LOGIN_HREF,
 } from "../../lib/portalRoutes";
+import { ImageLightbox } from "../../components/ImageLightbox";
 import { clearCachedUser, useOptionalUser } from "../../lib/useOptionalUser";
 import "./cabinet/cabinet.css";
 
@@ -245,11 +246,31 @@ function CabinetUserCard({ initialUser, collapsed = false }: { initialUser: User
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [avatarZoomed, setAvatarZoomed] = useState(false);
 
   const label = userLabel(user);
 
+  // Аватарка кликабельна: открывает оригинал без пережатия (просьба Дмитрия
+  // 29.07.2026 — «по клику на аватарку должно в сайдбаре открываться»).
   const avatar = user.avatar_url ? (
-    <img className="portal-cab-user-avatar portal-cab-user-avatar-img" src={user.avatar_url} alt="" />
+    <>
+      <button
+        type="button"
+        className="portal-cab-user-avatar portal-cab-user-avatar-img portal-cab-user-avatar-button"
+        onClick={() => setAvatarZoomed(true)}
+        aria-label="Открыть аватар"
+        title="Открыть аватар"
+      >
+        <img src={user.avatar_url} alt="" />
+      </button>
+      {avatarZoomed && (
+        <ImageLightbox
+          src={user.avatar_full_url || user.avatar_url}
+          alt={label}
+          onClose={() => setAvatarZoomed(false)}
+        />
+      )}
+    </>
   ) : (
     <span className="portal-cab-user-avatar" aria-hidden="true">
       {userInitials(label)}

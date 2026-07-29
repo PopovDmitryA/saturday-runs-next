@@ -88,11 +88,24 @@
   color: #fff;
 }
 
+/* .card из index.css без вертикальных отступов, поэтому кнопка «Предложить
+   идею», форма и фильтры шли встык. Разводим их. */
+.backlog-hero + .card,
+.card.backlog-filters {
+  margin-top: 16px;
+}
+
 .card.backlog-filters {
   display: flex;
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
+}
+
+/* Внутри самой формы поля тоже стояли слишком плотно. */
+.backlog-form {
+  display: grid;
+  gap: 14px;
 }
 
 .backlog-filters select {

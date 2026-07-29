@@ -52,6 +52,9 @@ export function RateRunModal({ run, onClose, onSaved, onDeleted }: RateRunModalP
   const [comment, setComment] = useState(existing?.comment ?? "");
   const [isPublic, setIsPublic] = useState(existing?.is_public ?? false);
   const [photos, setPhotos] = useState<Photo[]>(existing?.photos ?? []);
+  // Фото у новой оценки выбираются сразу, до сохранения: файлы ждут здесь и
+  // уезжают на сервер сразу после того, как оценка создана.
+  const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +98,14 @@ export function RateRunModal({ run, onClose, onSaved, onDeleted }: RateRunModalP
         comment: trimmedComment || null,
         is_public: isPublic,
       });
-      onSaved(rating);
+      // Отложенные файлы отправляем следом: до этого момента оценки не
+      // существовало и привязывать фото было не к чему.
+      const uploaded: Photo[] = [];
+      for (const file of pendingPhotos) {
+        uploaded.push(await uploadRatingPhoto(run.entry_id, file));
+      }
+      setPendingPhotos([]);
+      onSaved(uploaded.length > 0 ? { ...rating, photos: [...rating.photos, ...uploaded] } : rating);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось сохранить оценку");
     } finally {
@@ -183,26 +193,20 @@ export function RateRunModal({ run, onClose, onSaved, onDeleted }: RateRunModalP
           </label>
         )}
 
-        {existing != null ? (
-          <PhotoAttachments
-            photos={photos}
-            maxPhotos={MAX_RATING_PHOTOS}
-            readOnly={readOnly}
-            label="Фото со старта"
-            onUpload={(file) => uploadRatingPhoto(run.entry_id, file)}
-            onDelete={deleteRatingPhoto}
-            onChange={setPhotos}
-          />
-        ) : (
-          // Фото привязываются к уже существующей оценке — до первого
-          // сохранения привязывать нечего, поэтому показываем подсказку,
-          // а не неработающую кнопку.
-          !readOnly && (
-            <p className="rate-run-criterion-hint">
-              Фото можно приложить после того, как оценка сохранена — до 5 штук.
-            </p>
-          )
-        )}
+        <PhotoAttachments
+          photos={photos}
+          maxPhotos={MAX_RATING_PHOTOS}
+          readOnly={readOnly}
+          label="Фото со старта"
+          // У сохранённой оценки файл уходит сразу; у новой — копится и
+          // отправляется вместе с оценкой (см. handleSave).
+          onUpload={existing != null ? (file) => uploadRatingPhoto(run.entry_id, file) : undefined}
+          onDelete={existing != null ? deleteRatingPhoto : undefined}
+          onChange={setPhotos}
+          pending={existing != null ? undefined : pendingPhotos}
+          onPendingChange={existing != null ? undefined : setPendingPhotos}
+          hint={existing != null ? undefined : "Фото загрузятся вместе с оценкой"}
+        />
 
         <label className="rate-run-public">
           <input
@@ -253,7 +257,7 @@ export function RateRunModal({ run, onClose, onSaved, onDeleted }: RateRunModalP
                 disabled={saving || deleting}
                 onClick={() => void handleSave()}
               >
-                {saving ? "Сохранение…" : existing ? "Сохранить" : "Оценить"}
+                {saving ? (pendingPhotos.length > 0 ? "Сохранение и загрузка фото…" : "Сохранение…") : existing ? "Сохранить" : "Оценить"}
               </button>
             </>
           )}

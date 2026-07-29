@@ -81,6 +81,8 @@ class AdminUserPreviewUser(BaseModel):
     news_subscribed: bool = False
     # Аватар участника — виден и гостю на публичном профиле (26.07.2026).
     avatar_url: str | None = None
+    # Оригинал аватарки — раскрывается по клику на неё (29.07.2026).
+    avatar_full_url: str | None = None
 
 
 class AdminUserPreviewDashboardResponse(BaseModel):

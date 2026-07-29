@@ -49,6 +49,7 @@ export type BacklogComment = {
   author_display_name: string | null;
   author_handle: string | null;
   author_avatar_url: string | null;
+  author_avatar_full_url: string | null;
   is_admin_author: boolean;
   // Считается на бэкенде: своя ли реплика для текущего зрителя (для чата).
   is_mine: boolean;

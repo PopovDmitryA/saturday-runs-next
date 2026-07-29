@@ -6,6 +6,13 @@
   gap: 0.5rem;
 }
 
+/* Зона перетаскивания подсвечивается, пока над ней держат файл. */
+.photo-attachments--dragover {
+  outline: 2px dashed var(--accent-indigo);
+  outline-offset: 6px;
+  border-radius: 12px;
+}
+
 .photo-attachments__head {
   display: flex;
   align-items: baseline;
@@ -107,6 +114,12 @@
 
 .photo-attachments__add-text {
   font-size: 0.75rem;
+}
+
+.photo-attachments__hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-3);
 }
 
 .photo-attachments__error {

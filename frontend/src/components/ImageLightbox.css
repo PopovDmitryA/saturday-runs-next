@@ -1,34 +1,65 @@
+/* Поверх всего: самый высокий z-index в проекте — 2000 (мобильная навигация),
+   лайтбокс должен перекрывать и её. */
 .image-lightbox {
   position: fixed;
   inset: 0;
-  z-index: 1000;
-  display: grid;
-  place-items: center;
-  padding: 1.5rem;
-  background: rgba(0, 0, 0, 0.82);
+  z-index: 5000;
+  /* border-box обязателен: иначе padding прибавляется к 100% высоты, и
+     картинка вылезает за экран. */
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.88);
   cursor: zoom-out;
 }
 
 .image-lightbox img {
+  /* Картинка никогда не выходит за видимую область: dvh — чтобы на мобильных
+     не мешала выезжающая адресная строка. */
   max-width: 100%;
   max-height: 100%;
-  border-radius: 12px;
+  max-height: calc(100dvh - 4rem);
+  width: auto;
+  height: auto;
   object-fit: contain;
+  border-radius: 12px;
+  cursor: default;
+  /* Тень отделяет светлое фото от затемнения. */
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
 }
 
 .image-lightbox__close {
   position: absolute;
   top: 1rem;
   right: 1rem;
-  width: 2.25rem;
-  height: 2.25rem;
+  z-index: 1;
+  width: 2.5rem;
+  height: 2.5rem;
   display: grid;
   place-items: center;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(15, 23, 42, 0.75);
   color: #fff;
-  font-size: 1.5rem;
+  font-size: 1.6rem;
   line-height: 1;
   cursor: pointer;
+}
+
+.image-lightbox__close:hover {
+  background: rgba(15, 23, 42, 0.95);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+@media (max-width: 480px) {
+  .image-lightbox {
+    padding: 1rem;
+  }
+
+  .image-lightbox img {
+    max-height: calc(100dvh - 2rem);
+  }
 }

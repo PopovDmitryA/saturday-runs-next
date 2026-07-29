@@ -431,6 +431,7 @@ def _resolve_anonymous(db: Session, author_id: UUID, requested: bool) -> bool:
 def _comment_to_response(comment: BacklogComment, *, viewer_id: UUID | None = None) -> BacklogCommentResponse:
     author_name, author_handle = (None, None) if comment.is_anonymous else _author_display(comment.author)
     author_avatar = None if comment.is_anonymous else comment.author.avatar_url
+    author_avatar_full = None if comment.is_anonymous else comment.author.avatar_full_url
     return BacklogCommentResponse(
         id=comment.id,
         card_id=comment.card_id,
@@ -439,6 +440,7 @@ def _comment_to_response(comment: BacklogComment, *, viewer_id: UUID | None = No
         author_display_name=author_name,
         author_handle=author_handle,
         author_avatar_url=author_avatar,
+        author_avatar_full_url=author_avatar_full,
         is_admin_author=_is_admin_author(comment),
         is_mine=viewer_id is not None and comment.author_user_id == viewer_id,
         created_at=comment.created_at,
