@@ -398,16 +398,94 @@ def test_runpark_crosslink_duplicate_merges_into_primary_rival_bucket(db_session
     assert len(matching) == 1
     item = matching[0]
     assert item["meetings"] == 3
-    # RunPark-запись здесь — дубликат уже засчитанной 5-вёрстной встречи (то же
-    # место и время), поэтому своей системы в бейджах не добавляет.
+    # Пользователь привязал только 5 вёрст, RunPark — нет: встреч на RunPark у
+    # него быть не может (там он как участник не бегал), а RunPark-строка — лишь
+    # дубль уже засчитанной 5-вёрстной встречи. Поэтому RunPark не даёт ни своей
+    # системы в бейджах, ни ссылки — см. _user_platform_codes.
     assert item["platform_codes"] == ["five_verst"]
     assert item["my_wins"] == 3
     assert item["their_wins"] == 0
-    # Регрессия: раньше расхождение profile_url между RunPark-дублем и основной
-    # записью соперника обнуляло ссылку целиком, даже когда бейдж один
-    # (five_verst). Теперь ссылки хранятся по платформам отдельно и ни одна
-    # не теряется — включая ссылку в RunPark, хоть её бейдж и не показан.
+    # Ссылки хранятся по платформам отдельно; у отфильтрованного RunPark её нет.
     assert item["profile_urls"]["five_verst"] == rival_fv.profile_url
-    # У RunPark ссылка всегда каноническая, из external_user_id (сохранённый
-    # profile_url там ненадёжен) — см. co_runners_service.
-    assert item["profile_urls"]["runpark"] == f"https://runpark.ru/Account/Karmas/{rival_rp.external_user_id}"
+    assert "runpark" not in item["profile_urls"]
+
+
+def test_unlinked_runpark_self_copy_is_not_a_meeting(db_session: Session) -> None:
+    """Свой же непривязанный RunPark-профиль не должен становиться «встречей».
+
+    Локации публикуют один протокол сразу в 5 вёрст и RunPark. Если человек
+    привязал 5 вёрст, но не привязал RunPark, его RunPark-строка — это дубль
+    его собственного забега под отдельным Participant. Такой дубль попадает в
+    user_event_ids (кросслинк-секондари) и без фильтра по привязанным системам
+    засчитывался бы как встреча с самим собой (баг Андрея Кошкина)."""
+    suffix = str(uuid4().int % 1_000_000)
+    five_verst = _get_platform(db_session, "five_verst", "5 верст")
+    runpark = _get_platform(db_session, "runpark", "RunPark")
+
+    location = Location(
+        platform_id=five_verst.id,
+        external_key=f"loc-self-{suffix}",
+        name="Druzhba",
+        city="Москва",
+        country="Россия",
+    )
+    runpark_location = Location(
+        platform_id=runpark.id,
+        external_key=f"loc-self-runpark-{suffix}",
+        name="Druzhba RunPark",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add_all([location, runpark_location])
+    db_session.flush()
+
+    user = User()
+    db_session.add(user)
+    db_session.flush()
+
+    # Привязан только 5 вёрст; RunPark-профиль того же человека НЕ привязан.
+    me_fv = _make_participant(db_session, five_verst, f"me-fv-{suffix}", "Андрей КОШКИН")
+    me_rp = _make_participant(db_session, runpark, f"me-rp-{suffix}", "Андрей Кошкин")
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=five_verst.id,
+            participant_id=me_fv.id,
+            external_user_id=me_fv.external_user_id,
+            external_url=me_fv.profile_url,
+        )
+    )
+
+    primary_event = _make_event(db_session, five_verst, location, f"self-primary-{suffix}", date(2025, 5, 17), 900_400)
+    runpark_event = _make_event(
+        db_session, runpark, runpark_location, f"self-runpark-{suffix}", date(2025, 5, 17), 900_401
+    )
+    db_session.add(EventCrosslink(primary_event_id=primary_event.id, secondary_event_id=runpark_event.id))
+    db_session.add(
+        RunResult(
+            event_id=primary_event.id,
+            participant_id=me_fv.id,
+            external_result_key=f"self-me-fv-{suffix}",
+            position=8,
+            finish_time_sec=19 * 60 + 57,
+            finish_time_display="00:19:57",
+            status="finished",
+        )
+    )
+    # Тот же человек в RunPark-дубле события — то же место и время.
+    db_session.add(
+        RunResult(
+            event_id=runpark_event.id,
+            participant_id=me_rp.id,
+            external_result_key=f"self-me-rp-{suffix}",
+            position=8,
+            finish_time_sec=19 * 60 + 57,
+            finish_time_display="00:19:57",
+            status="finished",
+        )
+    )
+    db_session.commit()
+
+    items = list_co_runners(db_session, user.id)
+    # Единственный «другой» участник — собственный RunPark-профиль; встреч нет.
+    assert [item["display_name"] for item in items] == []

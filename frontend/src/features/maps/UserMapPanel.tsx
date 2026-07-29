@@ -135,9 +135,19 @@ export function UserMapPanel({
     [visited?.points, activityFilter],
   );
 
+  // Визиты, попадающие под выбранные системы. От них же считаем «посещено» для
+  // карты: локацию, где человек бегал только на parkrun (система по умолчанию
+  // выключена), под фильтром «5 вёрст» показываем как непосещённую. Иначе карта
+  // расходилась бы с таблицей каталога, где отметка визита — по системам: там
+  // строка «5 вёрст Бутово» честно «Не посещал», если визит был лишь на parkrun.
+  const filteredVisitedOnMap = useMemo(
+    () => filterPointsByPlatform(visitedActivityPoints, platformFilters),
+    [platformFilters, visitedActivityPoints],
+  );
+
   const visitedActivityByIdentity = useMemo(
-    () => buildVisitedByIdentity(visitedActivityPoints),
-    [visitedActivityPoints],
+    () => buildVisitedByIdentity(filteredVisitedOnMap),
+    [filteredVisitedOnMap],
   );
 
   const sourcePoints = mode === "visited" ? visitedActivityPoints : catalog?.points ?? [];
@@ -150,11 +160,6 @@ export function UserMapPanel({
     }
     return points;
   }, [isCatalogMode, mode, platformFilters, sourcePoints, visitedActivityByIdentity]);
-
-  const filteredVisitedOnMap = useMemo(
-    () => filterPointsByPlatform(visitedActivityPoints, platformFilters),
-    [platformFilters, visitedActivityPoints],
-  );
 
   const togglePlatformFilter = (code: keyof PlatformFilters) => {
     setPlatformsInternal((current) => {
