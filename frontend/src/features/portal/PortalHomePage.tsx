@@ -7,7 +7,8 @@ import {
   useAbScrollDepth,
   useAbVariantView,
 } from "../../lib/abTest";
-import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import { cabinetTabHref, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import { CountUpNumber } from "./CountUpNumber";
 import { PortalBlogSection } from "./PortalBlogSection";
 import { PortalGeoMap } from "./PortalGeoMap";
@@ -230,6 +231,13 @@ type ChartTabKey = "finishes" | "newcomers" | "records" | "locations";
 export function PortalHomePage() {
   // Вариант АБ-эксперимента home_v1: B — новая главная (Т1–Т10), A — как было.
   const isB = getHomeVariant() === "B";
+
+  // CTA «Найти себя в статистике» раньше вёл на /login безусловно: залогиненный
+  // на секунду видел вход, пока тот сам проверял сессию и уводил в кабинет.
+  // Кэшированная (см. useOptionalUser) сессия сразу даёт правильный адрес.
+  const optionalUser = useOptionalUser();
+  const ctaHref =
+    optionalUser != null ? cabinetTabHref(optionalUser, "dashboard") : PORTAL_LOGIN_HREF;
 
   const [data, setData] = useState<PortalHomeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -791,10 +799,10 @@ export function PortalHomePage() {
                   <div className="portal-hero-cta" ref={heroCtaRef}>
                     <a
                       className="btn primary"
-                      href={PORTAL_LOGIN_HREF}
+                      href={ctaHref}
                       onClick={() => trackAbEvent("cta_click", "hero")}
                     >
-                      Найти себя в статистике
+                      {optionalUser != null ? "Открыть кабинет" : "Найти себя в статистике"}
                     </a>
                     {data.registered_parks > 0 && (
                       <span className="portal-hero-proof">
@@ -1014,10 +1022,14 @@ export function PortalHomePage() {
                 <div className="portal-cta-actions">
                   <a
                     className="btn primary"
-                    href={PORTAL_LOGIN_HREF}
+                    href={ctaHref}
                     onClick={() => trackAbEvent("cta_click", "bottom")}
                   >
-                    {isB ? "Найти себя в статистике" : "Создать кабинет"}
+                    {optionalUser != null
+                      ? "Открыть кабинет"
+                      : isB
+                        ? "Найти себя в статистике"
+                        : "Создать кабинет"}
                   </a>
                 </div>
               </div>
