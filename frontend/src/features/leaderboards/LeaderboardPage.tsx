@@ -5,6 +5,8 @@ import {
   GENDERED_METRICS,
   getLeaderboard,
   getMyLeaderboardRow,
+  MIN_VISITS_METRICS,
+  MIN_VISITS_OPTIONS,
   PLATFORM_LABELS,
   type LeaderboardGender,
   type LeaderboardMetric,
@@ -43,6 +45,12 @@ const METRIC_CRUMBS: Record<LeaderboardMetric, { section: string; label: string 
 const TOP_LOCATION_HINT =
   "Число рядом — сколько раз участник был первым именно на этой локации, " +
   "а не сколько раз там бегал.";
+
+// Фильтр туризма: «локация засчитывается от N визитов». Кнопка 1+ — обычный
+// рейтинг (любая локация, где человек был хоть раз), дальше планка растёт.
+const MIN_VISITS_HINT =
+  "Сколько раз надо пробежать на локации, чтобы она дала балл. " +
+  "При «3+» разовые заезды в зачёт не идут.";
 
 const BEST_TIME_HINT =
   "Глобальный рекорд участника: лучшее время по всем системам и локациям — " +
@@ -231,6 +239,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("rank");
   const [gender, setGender] = useState<LeaderboardGender>("all");
+  const [minVisits, setMinVisits] = useState(1);
   const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -247,6 +256,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
 
   const hasGenderSplit = GENDERED_METRICS.includes(metric);
   const effectiveGender = hasGenderSplit ? gender : "all";
+  const hasMinVisits = MIN_VISITS_METRICS.includes(metric);
+  const effectiveMinVisits = hasMinVisits ? minVisits : 1;
   // Победные рейтинги несут две дополнительные колонки: лучшее время (после
   // имени) и последнюю победу/новую локацию (в конце таблицы).
   const hasWinExtras = metric === "wins" || metric === "win_locations";
@@ -257,8 +268,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     setError(null);
     try {
       const [board, myRow] = await Promise.all([
-        getLeaderboard(metric, 1000, effectiveGender),
-        getMyLeaderboardRow(metric, effectiveGender).catch(() => null),
+        getLeaderboard(metric, 1000, effectiveGender, effectiveMinVisits),
+        getMyLeaderboardRow(metric, effectiveGender, effectiveMinVisits).catch(() => null),
       ]);
       setData(board);
       setMe(myRow);
@@ -267,20 +278,22 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [metric, effectiveGender]);
+  }, [metric, effectiveGender, effectiveMinVisits]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  // Метрика сменилась (напр. переход между рейтингами) — сбрасываем пол в «Абсолют».
+  // Метрика сменилась (напр. переход между рейтингами) — сбрасываем фильтры:
+  // пол в «Абсолют», порог визитов в «от 1».
   useEffect(() => {
     setGender("all");
+    setMinVisits(1);
   }, [metric]);
 
   useEffect(() => {
     setVisibleCount(PAGE_STEP);
-  }, [query, sortKey, effectiveGender]);
+  }, [query, sortKey, effectiveGender, effectiveMinVisits]);
 
   const columns = data?.platform_columns ?? [];
 
@@ -379,7 +392,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
           </span>
         </nav>
 
-        {loading && <p className="muted">Считаем рейтинг… Первый расчёт может занять до минуты.</p>}
+        {loading && !data && (
+          <p className="muted">Считаем рейтинг… Первый расчёт может занять до минуты.</p>
+        )}
         {error && (
           <div className="lb-error">
             <p>{error}</p>
@@ -389,8 +404,11 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
           </div>
         )}
 
-        {data && !loading && (
-          <>
+        {/* Пересчёт под новый фильтр держим на месте: старая таблица гаснет, но
+            не исчезает — иначе кнопки прыгают, а первый (непрогретый) вариант
+            фильтра оставляет пустой экран на десятки секунд. */}
+        {data && (
+          <div className={`lb-page-body${loading ? " lb-refreshing" : ""}`}>
             <header className="lb-header">
               <h1>{data.title}</h1>
               <p className="lb-description">{data.description}</p>
@@ -423,6 +441,36 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                     {effectiveGender !== "all" && (
                       <p className="lb-gender-note muted">parkrun в разбивку по полу не входит.</p>
                     )}
+                  </div>
+                )}
+                {hasMinVisits && (
+                  <div className="lb-visits">
+                    <span className="lb-visits-label">
+                      Локация засчитывается от <InfoHint text={MIN_VISITS_HINT} />
+                    </span>
+                    <div
+                      className="lb-gender-tabs"
+                      role="group"
+                      aria-label="Минимум визитов на локацию"
+                    >
+                      {MIN_VISITS_OPTIONS.map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-pressed={minVisits === value}
+                          className={`lb-gender-tab${minVisits === value ? " lb-gender-tab-active" : ""}`}
+                          onClick={() => setMinVisits(value)}
+                        >
+                          {value}+
+                        </button>
+                      ))}
+                    </div>
+                    <p className="lb-gender-note muted">
+                      {minVisits === 1
+                        ? "Сейчас в зачёте любая локация, где участник бегал хотя бы раз."
+                        : `Сейчас в зачёте только локации с ${minVisits} и более пробежками.`}
+                      {loading && " Пересчитываем…"}
+                    </p>
                   </div>
                 )}
               </div>
@@ -598,7 +646,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 </button>
               </div>
             )}
-          </>
+          </div>
         )}
         {showScrollTop && (
           <button

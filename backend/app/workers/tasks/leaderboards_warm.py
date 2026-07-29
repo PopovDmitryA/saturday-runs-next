@@ -6,6 +6,8 @@ from app.db.session import get_session_factory
 from app.services.leaderboard_service import (
     GENDERED_METRICS,
     LEADERBOARD_METRICS,
+    MAX_MIN_VISITS,
+    MIN_VISITS_METRICS,
     refresh_leaderboard_cache,
 )
 from app.workers.celery_app import celery_app
@@ -24,14 +26,26 @@ def warm_leaderboards_cache() -> dict[str, object]:
     """
     db = get_session_factory()()
     results: dict[str, object] = {}
-    # Абсолют у всех метрик + разрез М/Ж у победных (wins/win_locations).
-    variants = [(metric, "all") for metric in LEADERBOARD_METRICS]
-    variants += [(metric, gender) for metric in GENDERED_METRICS for gender in ("male", "female")]
+    # Абсолют у всех метрик + разрез М/Ж у победных (wins/win_locations) +
+    # пороги визитов 2..5 у рейтинга туризма (вариант «от 1» уже в списке
+    # абсолютов): каждая кнопка фильтра — свой снапшот, без прогрева первый
+    # клик по ней ждал бы полный пересчёт.
+    variants = [(metric, "all", 1) for metric in LEADERBOARD_METRICS]
+    variants += [
+        (metric, gender, 1) for metric in GENDERED_METRICS for gender in ("male", "female")
+    ]
+    variants += [
+        (metric, "all", visits)
+        for metric in MIN_VISITS_METRICS
+        for visits in range(2, MAX_MIN_VISITS + 1)
+    ]
     try:
-        for metric, gender in variants:
+        for metric, gender, min_visits in variants:
             key = metric if gender == "all" else f"{metric}:{gender}"
+            if min_visits > 1:
+                key = f"{key}:v{min_visits}"
             try:
-                snapshot = refresh_leaderboard_cache(db, metric, gender)
+                snapshot = refresh_leaderboard_cache(db, metric, gender, min_visits)
                 results[key] = snapshot.get("entrants", 0)
             except Exception:
                 logger.exception("leaderboards warm failed for %s", key)

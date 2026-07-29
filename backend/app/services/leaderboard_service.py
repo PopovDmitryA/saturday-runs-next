@@ -55,6 +55,12 @@ LEADERBOARD_GENDERS: tuple[LeaderboardGender, ...] = ("all", "male", "female")
 # его пол известен только по неполным профилям и ненадёжен (см. _GENDER_LABEL_SQL).
 GENDERED_METRICS: tuple[LeaderboardMetric, ...] = ("wins", "win_locations")
 
+# Метрики с фильтром «локация засчитывается от N визитов» (перенос фильтра из
+# старого дашборда Grafana): при N=3 локация даёт 1 балл, только если участник
+# бегал там минимум 3 раза. Пока это только рейтинг туризма.
+MIN_VISITS_METRICS: tuple[LeaderboardMetric, ...] = ("locations",)
+MAX_MIN_VISITS = 5
+
 # Порядок колонок-систем (как на портале: активные, затем архив parkrun).
 PLATFORM_COLUMNS: tuple[str, ...] = ("five_verst", "s95", "runpark", "parkrun")
 # В гендерном зачёте parkrun исключён — и из подсчёта, и из колонок таблицы.
@@ -163,8 +169,21 @@ METRIC_GENDER_DESCRIPTION: dict[str, dict[str, str]] = {
 }
 
 
-def metric_description(metric: str, gender: str) -> str:
-    """Описание рейтинга под выбранный зачёт (абсолют / мужской / женский)."""
+def _visits_plural(count: int) -> str:
+    """«раза» / «раз» для 1..5 — больше значений у фильтра не бывает."""
+    return "раз" if count == 5 else "раза"
+
+
+def metric_description(metric: str, gender: str, min_visits: int = 1) -> str:
+    """Описание рейтинга под выбранный зачёт (абсолют / мужской / женский) и
+    выбранный порог визитов."""
+    if metric in MIN_VISITS_METRICS and min_visits > 1:
+        return (
+            f"Засчитываются только локации, где участник финишировал минимум "
+            f"{min_visits} {_visits_plural(min_visits)}. Одна и та же локация в "
+            "разных системах считается одной, визиты в них суммируются. «Всего» "
+            "— уникальные локации по всем системам (не сумма колонок)."
+        )
     gendered = METRIC_GENDER_DESCRIPTION.get(metric, {}).get(gender)
     return gendered or METRIC_META[metric]["description"]
 
@@ -272,8 +291,13 @@ WHERE e.is_test_event = false
 """
 
 def _location_visits_sql(*, only_wins: bool) -> str:
-    """Первые визиты участника по локациям; в варианте only_wins — только
-    финиши первым в абсолюте (first_date тогда = дата первой победы там)."""
+    """Визиты участника по локациям: дата первого, всего и за последнюю неделю.
+
+    В варианте only_wins — только финиши первым в абсолюте (first_date тогда =
+    дата первой победы там). Счётчики визитов нужны фильтру «локация от N
+    визитов»: из них видно и то, набрана ли норма, и то, набрана ли она именно
+    на этой неделе (visits - week_visits < N ≤ visits).
+    """
     wins_filter = "AND rr.position = 1" if only_wins else ""
     return (
         _PARKRUN_ELIGIBLE_CTE
@@ -282,7 +306,9 @@ SELECT
     rr.participant_id AS participant_id,
     p.code AS platform_code,
     e.location_id AS location_id,
-    MIN(e.event_date) AS first_date
+    MIN(e.event_date) AS first_date,
+    COUNT(*) AS visits,
+    COUNT(*) FILTER (WHERE e.event_date >= :week_start) AS week_visits
 FROM run_results rr
 JOIN events e ON e.id = rr.event_id
 JOIN platforms p ON p.id = e.platform_id
@@ -886,40 +912,83 @@ def _collect_gendered_win_entities(
     return entities
 
 
+@dataclass
+class _LocationVisits:
+    """Визиты участника на одну физическую площадку (сумма по её системам)."""
+
+    first_date: date
+    codes: set[str] = field(default_factory=set)
+    visits: int = 0
+    week_visits: int = 0
+
+    def counts(self, min_visits: int) -> bool:
+        """Локация набрала норму визитов и идёт в зачёт."""
+        return self.visits >= min_visits
+
+    def is_new(self, min_visits: int) -> bool:
+        """Норма набрана именно на этой неделе — локация «прибавилась».
+
+        При min_visits=1 это ровно прежняя семантика «первый визит на неделе».
+        """
+        return self.visits - self.week_visits < min_visits
+
+
+def _merge_visit_row(
+    identities: dict[str, _LocationVisits],
+    identity: str,
+    code: str,
+    first_date: date,
+    visits: int,
+    week_visits: int,
+) -> None:
+    """Свести строку (система × локация) в счётчики физической площадки."""
+    existing = identities.get(identity)
+    if existing is None:
+        identities[identity] = _LocationVisits(
+            first_date=first_date, codes={code}, visits=visits, week_visits=week_visits
+        )
+        return
+    existing.first_date = min(existing.first_date, first_date)
+    existing.codes.add(code)
+    existing.visits += visits
+    existing.week_visits += week_visits
+
+
 def _collect_location_entities(
     db: Session,
     week_start: date,
     *,
     sql: str = _LOCATION_VISITS_SQL,
     with_last_win: bool = False,
+    min_visits: int = 1,
 ) -> dict[str, _Entity]:
     """Уникальные локации участника. with_last_win — для рейтинга локаций с
     победами: дополнительно заполняет последнюю НОВУЮ локацию (её первая
-    победа — самая свежая из всех «первых побед» участника)."""
+    победа — самая свежая из всех «первых побед» участника). min_visits —
+    порог визитов, ниже которого локация в зачёт не идёт."""
     links = _site_links(db)
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
-    rows = db.execute(text(sql)).all()
+    rows = db.execute(text(sql), {"week_start": week_start}).all()
 
-    # entity -> identity -> (min first_date overall, {platform codes})
-    per_entity: dict[str, dict[str, tuple[date, set[str]]]] = {}
+    per_entity: dict[str, dict[str, _LocationVisits]] = {}
     meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
     pids_by_entity: dict[str, set[UUID]] = {}
     participant_ids = {row[0] for row in rows}
-    for pid, code, location_id, first_date in rows:
+    for pid, code, location_id, first_date, visits, week_visits in rows:
         identity = identity_by_location.get(location_id, str(location_id))
         link = links.get(pid)
         key = _entity_key(pid, link)
         meta.setdefault(key, (pid, link))
         if with_last_win:
             pids_by_entity.setdefault(key, set()).add(pid)
-        identities = per_entity.setdefault(key, {})
-        existing = identities.get(identity)
-        if existing is None:
-            identities[identity] = (first_date, {code})
-        else:
-            best = min(existing[0], first_date)
-            existing[1].add(code)
-            identities[identity] = (best, existing[1])
+        _merge_visit_row(
+            per_entity.setdefault(key, {}),
+            identity,
+            code,
+            first_date,
+            int(visits),
+            int(week_visits),
+        )
 
     names = _participant_names(db, participant_ids)
     entities: dict[str, _Entity] = {}
@@ -931,12 +1000,17 @@ def _collect_location_entities(
             entity.display_name = link.display_name or names.get(pid)
         else:
             entity.display_name = names.get(pid)
-        for _identity, (first_date, codes) in identities.items():
-            is_new = first_date >= week_start
+        counted = {
+            identity: visits
+            for identity, visits in identities.items()
+            if visits.counts(min_visits)
+        }
+        for visits in counted.values():
+            is_new = visits.is_new(min_visits)
             entity.total += 1
             if is_new:
                 entity.week += 1
-            for code in codes:
+            for code in visits.codes:
                 bucket = entity.values.setdefault(code, [0, 0])
                 bucket[0] += 1
                 if is_new:
@@ -945,7 +1019,7 @@ def _collect_location_entities(
             entity.participant_ids = pids_by_entity.get(key, {pid})
             _apply_last_win(
                 entity,
-                {identity: first for identity, (first, _codes) in identities.items()},
+                {identity: visits.first_date for identity, visits in counted.items()},
                 identity_names,
                 identity_slugs,
             )
@@ -1021,14 +1095,25 @@ def _normalize_gender(metric: LeaderboardMetric, gender: str) -> LeaderboardGend
     return "all"
 
 
+def _normalize_min_visits(metric: LeaderboardMetric, min_visits: int) -> int:
+    """Порог визитов есть только у рейтинга туризма; у остальных всегда 1."""
+    if metric not in MIN_VISITS_METRICS:
+        return 1
+    return max(1, min(int(min_visits), MAX_MIN_VISITS))
+
+
 def _build_snapshot(
-    db: Session, metric: LeaderboardMetric, gender: LeaderboardGender = "all"
+    db: Session,
+    metric: LeaderboardMetric,
+    gender: LeaderboardGender = "all",
+    min_visits: int = 1,
 ) -> dict[str, object]:
     latest = latest_event_date(db)
     if latest is None:
         return {
             "metric": metric,
             "gender": gender,
+            "min_visits": min_visits,
             "rows": [],
             "totals_desc": [],
             "prev_totals_desc": [],
@@ -1042,7 +1127,7 @@ def _build_snapshot(
     week_start = _week_start(latest)
 
     if metric == "locations":
-        entities = _collect_location_entities(db, week_start)
+        entities = _collect_location_entities(db, week_start, min_visits=min_visits)
     elif metric == "win_locations":
         if gender == "all":
             entities = _collect_location_entities(
@@ -1114,6 +1199,7 @@ def _build_snapshot(
     return {
         "metric": metric,
         "gender": gender,
+        "min_visits": min_visits,
         "rows": rows,
         "totals_desc": totals_desc,
         "prev_totals_desc": prev_totals_desc,
@@ -1126,17 +1212,21 @@ def _build_snapshot(
     }
 
 
-def _cache_key(metric: str, gender: str = "all") -> str:
-    # Гендерные варианты — отдельным суффиксом; all оставляет прежний ключ, чтобы
-    # не плодить лишние ключи у метрик без разреза по полу.
-    if gender == "all":
-        return f"{CACHE_KEY_PREFIX}:{metric}"
-    return f"{CACHE_KEY_PREFIX}:{metric}:{gender}"
+def _cache_key(metric: str, gender: str = "all", min_visits: int = 1) -> str:
+    # Гендерные варианты и пороги визитов — отдельными суффиксами; базовый
+    # вариант (all / от 1 визита) оставляет прежний ключ, чтобы не плодить
+    # лишние ключи у метрик без этих разрезов.
+    key = f"{CACHE_KEY_PREFIX}:{metric}"
+    if gender != "all":
+        key = f"{key}:{gender}"
+    if min_visits > 1:
+        key = f"{key}:v{min_visits}"
+    return key
 
 
-def _read_cache(metric: str, gender: str = "all") -> dict[str, object] | None:
+def _read_cache(metric: str, gender: str = "all", min_visits: int = 1) -> dict[str, object] | None:
     try:
-        raw = get_redis_client().get(_cache_key(metric, gender))
+        raw = get_redis_client().get(_cache_key(metric, gender, min_visits))
     except Exception:
         return None
     if not raw or not isinstance(raw, (str, bytes, bytearray)):
@@ -1148,31 +1238,41 @@ def _read_cache(metric: str, gender: str = "all") -> dict[str, object] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _write_cache(metric: str, payload: dict[str, object], gender: str = "all") -> None:
+def _write_cache(
+    metric: str, payload: dict[str, object], gender: str = "all", min_visits: int = 1
+) -> None:
     try:
         get_redis_client().setex(
-            _cache_key(metric, gender), CACHE_TTL_SECONDS, json.dumps(payload, ensure_ascii=False)
+            _cache_key(metric, gender, min_visits),
+            CACHE_TTL_SECONDS,
+            json.dumps(payload, ensure_ascii=False),
         )
     except Exception:
         return
 
 
 def get_leaderboard_snapshot(
-    db: Session, metric: LeaderboardMetric, gender: str = "all", *, use_cache: bool = True
+    db: Session,
+    metric: LeaderboardMetric,
+    gender: str = "all",
+    *,
+    use_cache: bool = True,
+    min_visits: int = 1,
 ) -> dict[str, object]:
     resolved = _normalize_gender(metric, gender)
+    visits = _normalize_min_visits(metric, min_visits)
     if use_cache:
-        cached = _read_cache(metric, resolved)
+        cached = _read_cache(metric, resolved, visits)
         if cached is not None:
             return cached
-    payload = _build_snapshot(db, metric, resolved)
+    payload = _build_snapshot(db, metric, resolved, visits)
     if use_cache:
-        _write_cache(metric, payload, resolved)
+        _write_cache(metric, payload, resolved, visits)
     return payload
 
 
 def refresh_leaderboard_cache(
-    db: Session, metric: LeaderboardMetric, gender: str = "all"
+    db: Session, metric: LeaderboardMetric, gender: str = "all", min_visits: int = 1
 ) -> dict[str, object]:
     """Пересчитать снапшот и перезаписать кэш, даже если тот ещё не протух.
 
@@ -1180,8 +1280,9 @@ def refresh_leaderboard_cache(
     пересчитывает, и кэш умирал бы по TTL между запусками.
     """
     resolved = _normalize_gender(metric, gender)
-    payload = _build_snapshot(db, metric, resolved)
-    _write_cache(metric, payload, resolved)
+    visits = _normalize_min_visits(metric, min_visits)
+    payload = _build_snapshot(db, metric, resolved, visits)
+    _write_cache(metric, payload, resolved, visits)
     return payload
 
 
@@ -1192,18 +1293,23 @@ def get_leaderboard(
     *,
     limit: int = 100,
     use_cache: bool = True,
+    min_visits: int = 1,
 ) -> dict[str, object]:
     """Публичная часть снапшота (без служебных массивов рангов)."""
     resolved = _normalize_gender(metric, gender)
-    snapshot = get_leaderboard_snapshot(db, metric, resolved, use_cache=use_cache)
+    visits = _normalize_min_visits(metric, min_visits)
+    snapshot = get_leaderboard_snapshot(
+        db, metric, resolved, use_cache=use_cache, min_visits=visits
+    )
     meta = METRIC_META[metric]
     rows = cast("list[dict[str, object]]", snapshot.get("rows") or [])
     columns = GENDERED_PLATFORM_COLUMNS if resolved != "all" else PLATFORM_COLUMNS
     return {
         "metric": metric,
         "gender": resolved,
+        "min_visits": visits,
         "title": meta["title"],
-        "description": metric_description(metric, resolved),
+        "description": metric_description(metric, resolved, visits),
         "unit": meta["unit"],
         "platform_columns": list(columns),
         "rows": rows[: max(1, min(limit, TOP_LIMIT))],
@@ -1420,37 +1526,36 @@ def _my_location_values(
     *,
     sql_template: str = _LOCATION_VISITS_SQL,
     with_last_win: bool = False,
+    min_visits: int = 1,
 ) -> tuple[dict[str, list[int]], int, int, _LastWin | None]:
     if not participant_ids:
         return {}, 0, 0, None
     sql = sql_template.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
-    rows = db.execute(text(sql), {"pids": participant_ids}).all()
+    rows = db.execute(text(sql), {"pids": participant_ids, "week_start": week_start}).all()
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
-    identities: dict[str, tuple[date, set[str]]] = {}
-    for _pid, code, location_id, first_date in rows:
+    identities: dict[str, _LocationVisits] = {}
+    for _pid, code, location_id, first_date, visits, week_visits in rows:
         identity = identity_by_location.get(location_id, str(location_id))
-        existing = identities.get(identity)
-        if existing is None:
-            identities[identity] = (first_date, {code})
-        else:
-            existing[1].add(code)
-            identities[identity] = (min(existing[0], first_date), existing[1])
+        _merge_visit_row(identities, identity, code, first_date, int(visits), int(week_visits))
+    counted = {
+        identity: visits for identity, visits in identities.items() if visits.counts(min_visits)
+    }
     values: dict[str, list[int]] = {}
     total = 0
     week = 0
-    for _identity, (first_date, codes) in identities.items():
-        is_new = first_date >= week_start
+    for visits in counted.values():
+        is_new = visits.is_new(min_visits)
         total += 1
         if is_new:
             week += 1
-        for code in codes:
+        for code in visits.codes:
             bucket = values.setdefault(code, [0, 0])
             bucket[0] += 1
             if is_new:
                 bucket[1] += 1
     last_new = (
         _resolve_last_win(
-            {identity: first for identity, (first, _codes) in identities.items()},
+            {identity: visits.first_date for identity, visits in counted.items()},
             identity_names,
             identity_slugs,
         )
@@ -1461,11 +1566,16 @@ def _my_location_values(
 
 
 def get_my_leaderboard_row(
-    db: Session, metric: LeaderboardMetric, user: User, gender: str = "all"
+    db: Session,
+    metric: LeaderboardMetric,
+    user: User,
+    gender: str = "all",
+    min_visits: int = 1,
 ) -> dict[str, object]:
     """Строка залогиненного участника: значения, место, дельта места, порог."""
     resolved = _normalize_gender(metric, gender)
-    snapshot = get_leaderboard_snapshot(db, metric, resolved)
+    visits = _normalize_min_visits(metric, min_visits)
+    snapshot = get_leaderboard_snapshot(db, metric, resolved, min_visits=visits)
     week_start_raw = snapshot.get("week_start")
     latest = latest_event_date(db)
     week_start = (
@@ -1484,7 +1594,9 @@ def get_my_leaderboard_row(
     my_home: tuple[str, int] | None = None
     my_last_win: _LastWin | None = None
     if metric == "locations":
-        values, total, week, _last = _my_location_values(db, participant_ids, week_start)
+        values, total, week, _last = _my_location_values(
+            db, participant_ids, week_start, min_visits=visits
+        )
     elif metric == "win_locations":
         if resolved == "all":
             values, total, week, my_last_win = _my_location_values(
@@ -1541,6 +1653,7 @@ def get_my_leaderboard_row(
 
     return {
         "metric": metric,
+        "min_visits": visits,
         "display_name": user.display_name,
         "site_serial_id": user.serial_id,
         "platforms": {code: {"value": v[0], "delta": v[1]} for code, v in values.items()},

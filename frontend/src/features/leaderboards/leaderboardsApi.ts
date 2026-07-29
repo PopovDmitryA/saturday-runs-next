@@ -13,6 +13,11 @@ export type LeaderboardGender = "all" | "male" | "female";
 // Разрез М/Ж есть только у победных рейтингов (parkrun в него не идёт).
 export const GENDERED_METRICS: LeaderboardMetric[] = ["wins", "win_locations"];
 
+// Фильтр «локация засчитывается от N визитов» — только у рейтинга туризма
+// (перенос фильтра из старого дашборда Grafana).
+export const MIN_VISITS_METRICS: LeaderboardMetric[] = ["locations"];
+export const MIN_VISITS_OPTIONS = [1, 2, 3, 4, 5] as const;
+
 export type LeaderboardCell = {
   value: number;
   delta: number;
@@ -41,6 +46,7 @@ export type LeaderboardRow = {
 export type LeaderboardResponse = {
   metric: string;
   gender?: LeaderboardGender;
+  min_visits?: number;
   title: string;
   description: string;
   unit: string;
@@ -56,6 +62,7 @@ export type LeaderboardResponse = {
 
 export type MyLeaderboardRow = {
   metric: string;
+  min_visits?: number;
   display_name: string | null;
   site_serial_id: number;
   platforms: Record<string, LeaderboardCell>;
@@ -95,19 +102,31 @@ export function getLeaderboard(
   metric: LeaderboardMetric,
   limit = 1000,
   gender: LeaderboardGender = "all",
+  minVisits = 1,
 ) {
   const genderParam = gender === "all" ? "" : `&gender=${gender}`;
+  const visitsParam = minVisits > 1 ? `&min_visits=${minVisits}` : "";
   return leaderboardsFetch<LeaderboardResponse>(
-    `/leaderboards/${metric}?limit=${limit}${genderParam}`,
+    `/leaderboards/${metric}?limit=${limit}${genderParam}${visitsParam}`,
   );
 }
 
 export function getMyLeaderboardRow(
   metric: LeaderboardMetric,
   gender: LeaderboardGender = "all",
+  minVisits = 1,
 ) {
-  const genderParam = gender === "all" ? "" : `?gender=${gender}`;
-  return leaderboardsFetch<MyLeaderboardRow>(`/leaderboards/${metric}/me${genderParam}`);
+  const params = new URLSearchParams();
+  if (gender !== "all") {
+    params.set("gender", gender);
+  }
+  if (minVisits > 1) {
+    params.set("min_visits", String(minVisits));
+  }
+  const query = params.toString();
+  return leaderboardsFetch<MyLeaderboardRow>(
+    `/leaderboards/${metric}/me${query ? `?${query}` : ""}`,
+  );
 }
 
 export const PLATFORM_LABELS: Record<string, string> = {

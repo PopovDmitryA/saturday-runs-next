@@ -31,6 +31,8 @@ class LeaderboardRowResponse(BaseModel):
 class LeaderboardResponse(BaseModel):
     metric: str
     gender: str = "all"
+    # Порог визитов рейтинга туризма: локация идёт в зачёт от N посещений.
+    min_visits: int = 1
     title: str
     description: str
     unit: str
@@ -46,6 +48,7 @@ class LeaderboardResponse(BaseModel):
 
 class MyLeaderboardRowResponse(BaseModel):
     metric: str
+    min_visits: int = 1
     display_name: str | None
     site_serial_id: int
     platforms: dict[str, LeaderboardCellResponse]

@@ -12,6 +12,7 @@ from app.schemas.leaderboards import LeaderboardResponse, MyLeaderboardRowRespon
 from app.services.leaderboard_service import (
     LEADERBOARD_GENDERS,
     LEADERBOARD_METRICS,
+    MAX_MIN_VISITS,
     LeaderboardMetric,
     get_leaderboard,
     get_my_leaderboard_row,
@@ -41,8 +42,17 @@ def leaderboard(
     db: Annotated[Session, Depends(get_db)],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     gender: str = "all",
+    # Порог визитов есть только у рейтинга туризма; у остальных метрик сервис
+    # его молча игнорирует (см. _normalize_min_visits).
+    min_visits: Annotated[int, Query(ge=1, le=MAX_MIN_VISITS)] = 1,
 ) -> LeaderboardResponse:
-    payload = get_leaderboard(db, _validate_metric(metric), _validate_gender(gender), limit=limit)
+    payload = get_leaderboard(
+        db,
+        _validate_metric(metric),
+        _validate_gender(gender),
+        limit=limit,
+        min_visits=min_visits,
+    )
     return LeaderboardResponse.model_validate(payload)
 
 
@@ -53,6 +63,9 @@ def my_leaderboard_row(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     gender: str = "all",
+    min_visits: Annotated[int, Query(ge=1, le=MAX_MIN_VISITS)] = 1,
 ) -> MyLeaderboardRowResponse:
-    payload = get_my_leaderboard_row(db, _validate_metric(metric), user, _validate_gender(gender))
+    payload = get_my_leaderboard_row(
+        db, _validate_metric(metric), user, _validate_gender(gender), min_visits
+    )
     return MyLeaderboardRowResponse.model_validate(payload)

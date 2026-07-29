@@ -12,9 +12,18 @@
 
 /* flex-дети по умолчанию не сжимаются ниже min-content — широкая таблица
    распирала бы страницу на мобильных; скроллится сам .lb-table-wrap */
-.lb-page > * {
+.lb-page > *,
+.lb-page-body > * {
   min-width: 0;
   max-width: 100%;
+}
+
+/* Обёртка загруженного рейтинга: живёт внутри .lb-page, поэтому повторяет её
+   колоночную раскладку — иначе шапка, баннер и таблица слипаются без отступов. */
+.lb-page-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .lb-breadcrumb {
@@ -295,6 +304,33 @@
   max-width: 60ch;
   font-size: 0.82rem;
   line-height: 1.45;
+}
+
+/* Фильтр «локация засчитывается от N визитов» (рейтинг туризма): подпись над
+   тем же сегментированным переключателем, что и у зачёта по полу. */
+.lb-visits {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.lb-visits-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted, inherit);
+}
+
+/* Пересчёт под новый фильтр: таблица гаснет, но остаётся на месте, а кнопки
+   продолжают работать (клик по другому порогу просто отменит ожидание). */
+.lb-refreshing .lb-table-wrap,
+.lb-refreshing .lb-me,
+.lb-refreshing .lb-more {
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
 }
 
 /* «Топ-локация» (только рейтинг побед): имя локации + счёт побед там.

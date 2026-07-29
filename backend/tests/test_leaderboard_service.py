@@ -3,14 +3,20 @@ from datetime import date
 from app.services.leaderboard_service import (
     GENDERED_METRICS,
     LEADERBOARD_METRICS,
+    MAX_MIN_VISITS,
     METRIC_META,
     METRIC_THRESHOLD_PERCENTILE,
+    MIN_VISITS_METRICS,
     PLATFORM_COLUMNS,
     WIN_EXTRAS_METRICS,
     _apply_last_win,
+    _cache_key,
     _dominant_gender,
     _Entity,
+    _LocationVisits,
+    _merge_visit_row,
     _normalize_gender,
+    _normalize_min_visits,
     _percentile,
     _pick_home,
     _pick_last,
@@ -157,3 +163,60 @@ def test_normalize_gender_only_for_win_metrics() -> None:
     assert _normalize_gender("win_locations", "female") == "female"
     assert _normalize_gender("runs", "male") == "all"
     assert _normalize_gender("wins", "нечто") == "all"
+
+
+def test_normalize_min_visits_only_for_locations() -> None:
+    # Порог визитов есть только у рейтинга туризма и зажат в 1..5.
+    assert MIN_VISITS_METRICS == ("locations",)
+    assert _normalize_min_visits("locations", 3) == 3
+    assert _normalize_min_visits("locations", 0) == 1
+    assert _normalize_min_visits("locations", 99) == MAX_MIN_VISITS
+    assert _normalize_min_visits("runs", 3) == 1
+    assert _normalize_min_visits("win_locations", 4) == 1
+
+
+def test_location_visits_threshold() -> None:
+    # Локация даёт балл, только когда визитов набралось не меньше порога.
+    visits = _LocationVisits(first_date=date(2026, 7, 4), visits=3, week_visits=0)
+    assert visits.counts(3)
+    assert not visits.counts(4)
+    assert visits.counts(1)
+
+
+def test_location_visits_new_when_threshold_crossed_this_week() -> None:
+    # «Прибавилась на неделе» = норма набрана именно сейчас: до недели визитов
+    # было меньше порога, с учётом недели — уже хватает.
+    third_this_week = _LocationVisits(first_date=date(2026, 5, 2), visits=3, week_visits=1)
+    assert third_this_week.counts(3) and third_this_week.is_new(3)
+    # Та же локация при пороге «от 1» новой не считается: первый визит был давно.
+    assert not third_this_week.is_new(1)
+    # А четвёртый визит на этой неделе порога 3 уже не пересекает — не новая.
+    fourth_this_week = _LocationVisits(first_date=date(2026, 5, 2), visits=4, week_visits=1)
+    assert fourth_this_week.counts(3) and not fourth_this_week.is_new(3)
+
+
+def test_merge_visit_row_sums_platforms_of_one_location() -> None:
+    # Одна физическая площадка в двух системах — один зачёт, визиты суммируются.
+    identities: dict[str, _LocationVisits] = {}
+    _merge_visit_row(identities, "loc:1", "five_verst", date(2026, 3, 7), 2, 1)
+    _merge_visit_row(identities, "loc:1", "s95", date(2026, 1, 10), 1, 0)
+    merged = identities["loc:1"]
+    assert merged.visits == 3
+    assert merged.week_visits == 1
+    assert merged.codes == {"five_verst", "s95"}
+    assert merged.first_date == date(2026, 1, 10)
+    assert merged.counts(3)
+
+
+def test_cache_key_versions_min_visits() -> None:
+    # Базовый вариант сохраняет прежний ключ, пороги — отдельными снапшотами.
+    assert _cache_key("locations") == _cache_key("locations", "all", 1)
+    assert _cache_key("locations", "all", 3).endswith(":locations:v3")
+    assert _cache_key("wins", "male", 1).endswith(":wins:male")
+
+
+def test_metric_description_mentions_min_visits() -> None:
+    assert "минимум 3 раза" in metric_description("locations", "all", 3)
+    assert "минимум 5 раз" in metric_description("locations", "all", 5)
+    # Порог «от 1» — обычное описание рейтинга туризма.
+    assert metric_description("locations", "all", 1) == METRIC_META["locations"]["description"]
