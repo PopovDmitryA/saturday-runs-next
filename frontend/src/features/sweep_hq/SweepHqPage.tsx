@@ -183,7 +183,7 @@ function BotTable({
   prevMap,
 }: {
   title: string;
-  subtitle: string;
+  subtitle: React.ReactNode;
   bots: Bot[];
   showUptime: boolean;
   showFlag: boolean;
@@ -402,7 +402,7 @@ function AthletesTab({ token }: { token: string }) {
 
 function Calculator({ remaining }: { remaining: number }) {
   const [rate, setRate] = useState<string>("10000");
-  const [unit, setUnit] = useState<"hour" | "day">("day");
+  const [unit, setUnit] = useState<"hour" | "day">("hour");
   const result = useMemo(() => {
     const r = Number(rate.replace(/\s/g, ""));
     if (!r || r <= 0) return null;
@@ -542,6 +542,13 @@ export function SweepHqPage({ token }: { token: string }) {
   const vpnWorking = data.vpn.filter((b) => b.status === "working").length;
   const prevVpnMap = collectedMap(prev?.vpn);
   const prevFreeMap = collectedMap(prev?.free.top);
+  // Сумма собранного флотом целиком + дельта за интервал опроса — виден вклад
+  // платных/бесплатных за последние 3 минуты, не только общий счётчик.
+  const vpnCollectedSum = data.vpn.reduce((s, b) => s + b.collected_total, 0);
+  const prevVpnCollectedSum = prev ? prev.vpn.reduce((s, b) => s + b.collected_total, 0) : null;
+  const vpnCollectedDelta = prevVpnCollectedSum != null ? vpnCollectedSum - prevVpnCollectedSum : 0;
+  const prevFreeCollected = prev ? prev.free.summary.collected : null;
+  const freeCollectedDelta = prevFreeCollected != null ? freeSum.collected - prevFreeCollected : 0;
   const collectedDelta = prev ? p.collected - prev.progress.collected : 0;
   const rate1hDelta = prev ? data.rate_1h - prev.rate_1h : 0;
   const rate24hDelta = prev ? data.rate_24h - prev.rate_24h : 0;
@@ -693,7 +700,12 @@ export function SweepHqPage({ token }: { token: string }) {
           <div className="hq-fleet">
             <BotTable
               title="🛡️ Приватные VPN"
-            subtitle={`${vpnWorking} в работе · ${data.vpn.length} всего`}
+            subtitle={
+              <>
+                {vpnWorking} в работе · {data.vpn.length} всего · собрали {fmt(vpnCollectedSum)}
+                <RateDelta value={vpnCollectedDelta} />
+              </>
+            }
             bots={data.vpn}
             showUptime
             showFlag
@@ -702,9 +714,13 @@ export function SweepHqPage({ token }: { token: string }) {
           />
           <BotTable
             title="🌐 Бесплатные прокси"
-            subtitle={`${freeSum.active} живых · ${freeSum.cooldown} в отлёжке · собрали ${fmt(
-              freeSum.collected,
-            )}`}
+            subtitle={
+              <>
+                {freeSum.active} живых · {freeSum.cooldown} в отлёжке · собрали{" "}
+                {fmt(freeSum.collected)}
+                <RateDelta value={freeCollectedDelta} />
+              </>
+            }
             bots={data.free.top}
             showUptime
             showFlag={false}
