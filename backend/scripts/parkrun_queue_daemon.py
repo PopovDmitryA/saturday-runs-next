@@ -79,6 +79,15 @@ def main() -> int:
         default=3.0,
         help="With --no-browser: seconds between requests (jittered ±30%%)",
     )
+    parser.add_argument(
+        "--solve-captcha",
+        action="store_true",
+        help=(
+            "With --no-browser: on WAF/captcha, raise a headless browser, solve "
+            "with CLIP, harvest aws-waf-token and continue via httpx — no manual "
+            "captcha window. Needs parkrun-monitoring + torch/open_clip"
+        ),
+    )
     args = parser.parse_args()
 
     default_log = Path(os.environ.get("PARKRUN_DAEMON_LOG") or (Path.cwd() / "data" / "parkrun_daemon.log"))
@@ -97,6 +106,7 @@ def main() -> int:
                 include_sync=not args.pending_only,
                 use_httpx=args.no_browser,
                 fast_delay_seconds=args.fast_delay if args.no_browser else None,
+                solve_captcha=args.solve_captcha and args.no_browser,
             )
     except Exception:
         # Полное падение скрипта (не отдельная строка очереди) — единственный

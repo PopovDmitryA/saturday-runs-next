@@ -33,10 +33,12 @@ def ask_yn(prompt: str, default: bool = False) -> bool:
 def task_site() -> None:
     print("\n— Очередь сайта run5k.run —")
     env = dict(os.environ)
-    no_browser = ask_yn("Без браузера (httpx, быстрее, но риск бана)?", default=False)
-    if no_browser:
+    fast = ask_yn("Быстрый режим (httpx + решатель капчи CLIP)?", default=False)
+    if fast:
         env["NO_BROWSER"] = "1"
+        env["SOLVE_CAPTCHA"] = "1"
         env["FAST_DELAY"] = ask("Задержка между запросами, сек", "3")
+        print("  httpx качает профили; при капче браузер решит её сам (CLIP).")
     limit = ask("Лимит профилей за прогон (пусто = штатно)", "")
     if limit:
         env["LIMIT"] = limit

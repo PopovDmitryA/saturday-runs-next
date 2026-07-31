@@ -294,6 +294,7 @@ def run_daemon(
     include_sync: bool = True,
     use_httpx: bool = False,
     fast_delay_seconds: float | None = None,
+    solve_captcha: bool = False,
 ) -> dict[str, object]:
     from app.config import get_settings
     from app.services.parkrun_monitoring_bridge import (
@@ -337,7 +338,9 @@ def run_daemon(
         cdp = use_cdp if use_cdp is not None else bool(
             settings.parkrun_use_cdp_for_fetch and settings.parkrun_cdp_url.strip()
         )
-        if use_httpx:
+        if use_httpx and solve_captcha:
+            mode = "httpx + решатель капчи (CLIP)"
+        elif use_httpx:
             mode = "httpx БЕЗ БРАУЗЕРА (--no-browser, эксперимент)"
         elif cdp:
             mode = f"Chrome CDP ({cdp_url or settings.parkrun_cdp_url})"

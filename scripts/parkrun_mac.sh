@@ -117,6 +117,9 @@ fi
 if [[ "${NO_BROWSER:-}" == "1" ]]; then
   ARGS+=(--no-browser)
 fi
+if [[ "${SOLVE_CAPTCHA:-}" == "1" ]]; then
+  ARGS+=(--solve-captcha)
+fi
 if [[ -n "${FAST_DELAY:-}" ]]; then
   ARGS+=(--fast-delay "$FAST_DELAY")
 fi
