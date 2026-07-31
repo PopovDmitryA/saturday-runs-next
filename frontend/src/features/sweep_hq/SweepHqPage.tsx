@@ -516,13 +516,13 @@ function RateHistoryTab({ token }: { token: string }) {
       <header className="hq-card__head">
         <h2>📈 Динамика скорости сбора</h2>
         <div className="hq-calc__unit">
-          {[24, 48, 24 * 7].map((h) => (
+          {[24, 48, 24 * 7, 0].map((h) => (
             <button
               key={h}
               className={hours === h ? "hq-ubtn hq-ubtn--on" : "hq-ubtn"}
               onClick={() => setHours(h)}
             >
-              {h < 24 * 7 ? `${h}ч` : "7д"}
+              {h === 0 ? "весь период" : h < 24 * 7 ? `${h}ч` : "7д"}
             </button>
           ))}
         </div>
