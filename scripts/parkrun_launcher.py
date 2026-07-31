@@ -109,6 +109,25 @@ def task_waf() -> None:
                {**os.environ, "PYTHONPATH": pm})
 
 
+def task_event_pages() -> None:
+    print("\n— Описания событий: главная + /course/ каждой локации —")
+    print("  ~2950 активных событий × 2 страницы, свой канал (httpx),")
+    print("  капчи решает сам (CLIP). Токен WAF свой на каждый домен страны.")
+    print("  Уже собранное пропускается — можно прерывать и дозапускать.")
+    pm = os.path.join(os.path.expanduser("~"), "Projects", "parkrun-monitoring")
+    if not os.path.exists(os.path.join(pm, "athlete_sweep", "event_pages.py")):
+        sys.exit(f"не нашёл сборщик в {pm}\nобнови parkrun-monitoring (git pull)")
+    delay = ask("Задержка между страницами, сек", "2")
+    limit = ask("Сколько событий за сессию (0 = все)", "0")
+    py = os.path.join(ROOT, ".conda-parkrun", "bin", "python")
+    if not os.path.exists(py):
+        py = sys.executable
+    print("\nЗапускаю сбор описаний…\n")
+    os.execvpe(py, [py, "-u", "-m", "athlete_sweep.event_pages",
+                    "--delay", delay, "--limit", limit],
+               {**os.environ, "PYTHONPATH": pm})
+
+
 def main() -> None:
     print("═" * 56)
     print(" parkrun — что запускаем?")
@@ -117,6 +136,7 @@ def main() -> None:
     print("  2) Парсинг parkrun-профилей в диапазоне (обход, macbook)")
     print("  3) Обработать собранное сырьё в БД      (офлайн-парсер)")
     print("  4) Обход через выход + решатель капчи   (httpx + CLIP)")
+    print("  5) Описания событий: главная + трасса   (httpx + CLIP)")
     choice = ask("Выбор", "1")
     if choice == "2":
         task_sweep()
@@ -124,6 +144,8 @@ def main() -> None:
         task_parse()
     elif choice == "4":
         task_waf()
+    elif choice == "5":
+        task_event_pages()
     else:
         task_site()
 
