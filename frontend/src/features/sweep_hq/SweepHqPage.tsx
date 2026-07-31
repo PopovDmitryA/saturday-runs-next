@@ -441,6 +441,15 @@ function RateChart({ points }: { points: RateHour[] }) {
 
   return (
     <div className="hq-ratechart">
+      <div className="hq-ratechart__tip">
+        {hp ? (
+          <>
+            {fmtHourLabel(hp.hour)} · <b>{fmt(hp.collected)}</b> атлетов
+          </>
+        ) : (
+          " "
+        )}
+      </div>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
@@ -473,11 +482,6 @@ function RateChart({ points }: { points: RateHour[] }) {
             ),
         )}
       </svg>
-      {hp && (
-        <div className="hq-ratechart__tip">
-          {fmtHourLabel(hp.hour)} · <b>{fmt(hp.collected)}</b> атлетов
-        </div>
-      )}
     </div>
   );
 }
@@ -501,7 +505,11 @@ function RateHistoryTab({ token }: { token: string }) {
         return res.json();
       })
       .then((d: { hours: RateHour[] } | undefined) => {
-        if (alive && d) setRows(d.hours);
+        if (!alive || !d) return;
+        // Текущий час ещё не закончился — его столбец всегда занижен (частичные
+        // данные), на графике это выглядит как обвал темпа. Прячем его целиком.
+        const curHourStart = Math.floor(Date.now() / 3_600_000) * 3_600_000;
+        setRows(d.hours.filter((p) => new Date(p.hour).getTime() < curHourStart));
       })
       .catch(() => {
         if (alive) setError(true);

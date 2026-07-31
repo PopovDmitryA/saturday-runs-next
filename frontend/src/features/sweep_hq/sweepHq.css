@@ -596,7 +596,8 @@
   fill: #8091ad;
 }
 .hq-ratechart__tip {
-  margin-top: 8px;
+  min-height: 18px;
+  margin-bottom: 8px;
   text-align: center;
   font-size: 13px;
   color: #b9c6dd;
