@@ -79,6 +79,30 @@ def sweep_hq_athletes(
     return {"athletes": rows}
 
 
+@router.get("/rate-history")
+def sweep_hq_rate_history(
+    token: Annotated[str, Query()] = "",
+    hours: Annotated[int, Query(ge=1, le=24 * 14)] = 48,
+    settings: Annotated[Settings, Depends(get_settings)] = None,  # type: ignore[assignment]
+) -> dict:
+    """Сколько атлетов собрано за каждый час — динамика скорости обхода.
+    fetched_at хранится на каждой строке crawl_queue постоянно, отдельного
+    снапшота не нужно: считаем ретроспективно группировкой по часу."""
+    dsn = _guard(token, settings)
+    import psycopg
+
+    with psycopg.connect(dsn, connect_timeout=5) as conn:
+        rows = _rows(conn, f"""
+            SELECT to_char(date_trunc('hour', fetched_at), 'YYYY-MM-DD"T"HH24:00:00"Z"') AS hour,
+                   count(*) AS collected
+            FROM crawl_queue
+            WHERE fetched_at > now() - interval '{hours} hours'
+            GROUP BY 1 ORDER BY 1""")
+    for r in rows:
+        r["collected"] = int(r["collected"] or 0)
+    return {"hours": rows}
+
+
 @router.get("")
 def sweep_hq(
     token: Annotated[str, Query()] = "",

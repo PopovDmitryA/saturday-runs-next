@@ -582,3 +582,25 @@
   color: #c084fc;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- rate history chart ---------- */
+.hq-ratechart {
+  position: relative;
+}
+.hq-ratechart svg {
+  width: 100%;
+  height: auto;
+}
+.hq-ratechart svg text {
+  font-size: 11px;
+  fill: #8091ad;
+}
+.hq-ratechart__tip {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 13px;
+  color: #b9c6dd;
+}
+.hq-ratechart__tip b {
+  color: #67e8f9;
+}

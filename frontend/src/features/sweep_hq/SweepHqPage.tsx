@@ -400,6 +400,140 @@ function AthletesTab({ token }: { token: string }) {
   );
 }
 
+type RateHour = { hour: string; collected: number };
+
+function fmtHourLabel(iso: string): string {
+  return new Date(iso).toLocaleString("ru-RU", {
+    timeZone: "Europe/Moscow",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function RateChart({ points }: { points: RateHour[] }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const width = 720;
+  const height = 220;
+  const plot = { left: 46, right: 712, top: 12, bottom: 190 };
+
+  if (points.length < 2) {
+    return <p className="hq-muted hq-pad">Пока недостаточно данных для графика.</p>;
+  }
+
+  const maxValue = Math.max(1, ...points.map((p) => p.collected));
+  const lastIndex = points.length - 1;
+  const stepX = (plot.right - plot.left) / lastIndex;
+  const xFor = (i: number) => plot.left + i * stepX;
+  const yFor = (v: number) => plot.bottom - (v / maxValue) * (plot.bottom - plot.top);
+  const gridValues = [0.25, 0.5, 0.75, 1].map((s) => Math.round(maxValue * s));
+  const labelEvery = Math.max(1, Math.ceil(points.length / 8));
+  const line = points.map((p, i) => `${xFor(i).toFixed(1)},${yFor(p.collected).toFixed(1)}`).join(" ");
+
+  const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (width / rect.width);
+    setHoverIdx(Math.min(lastIndex, Math.max(0, Math.round((px - plot.left) / stepX))));
+  };
+
+  const hp = hoverIdx != null ? points[hoverIdx] : null;
+
+  return (
+    <div className="hq-ratechart">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label="Скорость сбора по часам"
+        onMouseMove={handleMove}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
+        {gridValues.map((v) => (
+          <g key={v}>
+            <line x1={plot.left} x2={plot.right} y1={yFor(v)} y2={yFor(v)} stroke="rgba(94, 128, 190, 0.18)" />
+            <text x={plot.left - 6} y={yFor(v) + 3} textAnchor="end">
+              {fmt(v)}
+            </text>
+          </g>
+        ))}
+        <line x1={plot.left} x2={plot.right} y1={plot.bottom} y2={plot.bottom} stroke="rgba(94, 128, 190, 0.3)" />
+        <polyline points={line} fill="none" stroke="#38bdf8" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {points.map((p, i) => (
+          <circle key={p.hour} cx={xFor(i)} cy={yFor(p.collected)} r={hoverIdx === i ? 4 : 2} fill="#38bdf8" />
+        ))}
+        {hoverIdx != null && (
+          <line x1={xFor(hoverIdx)} x2={xFor(hoverIdx)} y1={plot.top} y2={plot.bottom} stroke="rgba(230, 237, 247, 0.35)" strokeDasharray="3 3" />
+        )}
+        {points.map(
+          (p, i) =>
+            (i % labelEvery === 0 || i === lastIndex) && (
+              <text key={p.hour} x={xFor(i)} y={height - 4} textAnchor="middle">
+                {fmtHourLabel(p.hour)}
+              </text>
+            ),
+        )}
+      </svg>
+      {hp && (
+        <div className="hq-ratechart__tip">
+          {fmtHourLabel(hp.hour)} · <b>{fmt(hp.collected)}</b> атлетов
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RateHistoryTab({ token }: { token: string }) {
+  const [rows, setRows] = useState<RateHour[] | null>(null);
+  const [error, setError] = useState(false);
+  const [hours, setHours] = useState(48);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/sweep-hq/rate-history?token=${encodeURIComponent(token)}&hours=${hours}`, {
+      credentials: "same-origin",
+    })
+      .then((res) => {
+        if (!alive) return;
+        if (!res.ok) {
+          setError(true);
+          return;
+        }
+        setError(false);
+        return res.json();
+      })
+      .then((d: { hours: RateHour[] } | undefined) => {
+        if (alive && d) setRows(d.hours);
+      })
+      .catch(() => {
+        if (alive) setError(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [token, hours]);
+
+  return (
+    <section className="hq-card">
+      <header className="hq-card__head">
+        <h2>📈 Динамика скорости сбора</h2>
+        <div className="hq-calc__unit">
+          {[24, 48, 24 * 7].map((h) => (
+            <button
+              key={h}
+              className={hours === h ? "hq-ubtn hq-ubtn--on" : "hq-ubtn"}
+              onClick={() => setHours(h)}
+            >
+              {h < 24 * 7 ? `${h}ч` : "7д"}
+            </button>
+          ))}
+        </div>
+      </header>
+      {error && <p className="hq-muted hq-pad">Не удалось загрузить.</p>}
+      {!error && !rows && <p className="hq-muted hq-pad">Загрузка…</p>}
+      {!error && rows && <RateChart points={rows} />}
+    </section>
+  );
+}
+
 function Calculator({ remaining }: { remaining: number }) {
   const [rate, setRate] = useState<string>("10000");
   const [unit, setUnit] = useState<"hour" | "day">("hour");
@@ -457,7 +591,7 @@ export function SweepHqPage({ token }: { token: string }) {
   const [prev, setPrev] = useState<SweepData | null>(() => loadSnap(token));
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [error, setError] = useState<number | null>(null);
-  const [tab, setTab] = useState<"fleet" | "athletes">("fleet");
+  const [tab, setTab] = useState<"fleet" | "athletes" | "rate">("fleet");
   const [now, setNow] = useState<number>(() => Date.now());
   const curRef = useRef<SweepData | null>(loadSnap(token));
 
@@ -692,10 +826,18 @@ export function SweepHqPage({ token }: { token: string }) {
           >
             🏃 Атлеты
           </button>
+          <button
+            className={tab === "rate" ? "hq-tab hq-tab--on" : "hq-tab"}
+            onClick={() => setTab("rate")}
+          >
+            📈 Динамика
+          </button>
         </nav>
 
         {tab === "athletes" ? (
           <AthletesTab token={token} />
+        ) : tab === "rate" ? (
+          <RateHistoryTab token={token} />
         ) : (
           <div className="hq-fleet">
             <BotTable
