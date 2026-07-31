@@ -29,29 +29,30 @@ def warm_leaderboards_cache() -> dict[str, object]:
     db = get_session_factory()()
     results: dict[str, object] = {}
     # Абсолют у всех метрик + разрез М/Ж у победных (wins/win_locations) +
-    # пороги визитов 2..5 и фильтр по системе у рейтинга туризма (варианты «от
-    # 1»/«все системы» уже в списке абсолютов): каждая кнопка фильтра — свой
-    # снапшот, без прогрева первый клик по ней ждал бы полный пересчёт.
-    # Комбинацию «своя система» × «свой порог визитов» не прогреваем — это
-    # 16 дополнительных полных пересчётов ради редкого сочетания двух фильтров
-    # разом; посетитель, который дойдёт до неё, один раз подождёт расчёт (тот же
-    # компромисс, что и у непрогретого кэша вообще).
+    # полная сетка «порог визитов × система» у рейтинга туризма: каждая
+    # кнопка (и их сочетание) — свой снапшот в кэше, без прогрева первый
+    # заход на него ждал бы полный пересчёт прямо в запросе (31.07.2026 —
+    # именно так и вышло: «2+» × «5 вёрст» не прогревались, посетитель ждал
+    # больше минуты). Комбинаций у туризма немного (5×5=25, замкнутый набор
+    # кнопок, а не открытый диапазон), прогреть все — дешевле, чем оставлять
+    # часть непрогретой.
     variants = [(metric, "all", 1, "all") for metric in LEADERBOARD_METRICS]
     variants += [
         (metric, gender, 1, "all")
         for metric in GENDERED_METRICS
         for gender in ("male", "female")
     ]
+    # Комбинируются только метрики, у которых оба фильтра есть разом — сейчас
+    # это всегда «locations», но пересечение вместо MIN_VISITS_METRICS не
+    # даёт сетке молча раздуться, если один из фильтров позже достанется
+    # ещё какой-то метрике без второго.
+    tourism_metrics = set(MIN_VISITS_METRICS) & set(PLATFORM_FILTER_METRICS)
     variants += [
-        (metric, "all", visits, "all")
-        for metric in MIN_VISITS_METRICS
-        for visits in range(2, MAX_MIN_VISITS + 1)
-    ]
-    variants += [
-        (metric, "all", 1, platform)
-        for metric in PLATFORM_FILTER_METRICS
+        (metric, "all", visits, platform)
+        for metric in tourism_metrics
+        for visits in range(1, MAX_MIN_VISITS + 1)
         for platform in PLATFORM_FILTER_VALUES
-        if platform != "all"
+        if visits > 1 or platform != "all"
     ]
     try:
         for metric, gender, min_visits, platform in variants:
