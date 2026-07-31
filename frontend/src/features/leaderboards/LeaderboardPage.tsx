@@ -59,7 +59,7 @@ const MIN_VISITS_HINT =
 // бежали); кнопка системы переключает на зачёт только по ней, с пересчётом
 // места и «Всего» — это не колонка, а отдельный рейтинг.
 const PLATFORM_TABS: { value: PlatformFilter; label: string }[] = [
-  { value: "all", label: "Объединённо" },
+  { value: "all", label: "Все" },
   { value: "five_verst", label: PLATFORM_LABELS.five_verst },
   { value: "s95", label: PLATFORM_LABELS.s95 },
   { value: "runpark", label: PLATFORM_LABELS.runpark },
@@ -467,60 +467,68 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                     )}
                   </div>
                 )}
-                {hasMinVisits && (
-                  <div className="lb-visits">
-                    <span className="lb-visits-label">
-                      Локация засчитывается от <InfoHint text={MIN_VISITS_HINT} />
-                    </span>
-                    <div
-                      className="lb-gender-tabs"
-                      role="group"
-                      aria-label="Минимум визитов на локацию"
-                    >
-                      {MIN_VISITS_OPTIONS.map((value) => (
-                        <button
-                          key={value}
-                          type="button"
-                          aria-pressed={minVisits === value}
-                          className={`lb-gender-tab${minVisits === value ? " lb-gender-tab-active" : ""}`}
-                          onClick={() => setMinVisits(value)}
+                {(hasMinVisits || hasPlatformFilter) && (
+                  <div className="lb-filters-row">
+                    {hasMinVisits && (
+                      <div className="lb-visits">
+                        <span className="lb-visits-label">
+                          Локация засчитывается от <InfoHint text={MIN_VISITS_HINT} />
+                        </span>
+                        <div
+                          className="lb-gender-tabs"
+                          role="group"
+                          aria-label="Минимум визитов на локацию"
                         >
-                          {value}+
-                        </button>
-                      ))}
-                    </div>
-                    <p className="lb-gender-note muted">
-                      {minVisits === 1
-                        ? "Сейчас в зачёте любая локация, где участник бегал хотя бы раз."
-                        : `Сейчас в зачёте только локации с ${minVisits} и более пробежками.`}
-                      {loading && " Пересчитываем…"}
-                    </p>
-                  </div>
-                )}
-                {hasPlatformFilter && (
-                  <div className="lb-visits">
-                    <span className="lb-visits-label">
-                      Система <InfoHint text={PLATFORM_FILTER_HINT} />
-                    </span>
-                    <div className="lb-gender-tabs" role="group" aria-label="Смотреть по системе">
-                      {PLATFORM_TABS.map((tab) => (
-                        <button
-                          key={tab.value}
-                          type="button"
-                          aria-pressed={platform === tab.value}
-                          className={`lb-gender-tab${platform === tab.value ? " lb-gender-tab-active" : ""}`}
-                          onClick={() => setPlatform(tab.value)}
+                          {MIN_VISITS_OPTIONS.map((value) => (
+                            <button
+                              key={value}
+                              type="button"
+                              aria-pressed={minVisits === value}
+                              className={`lb-gender-tab${minVisits === value ? " lb-gender-tab-active" : ""}`}
+                              onClick={() => setMinVisits(value)}
+                            >
+                              {value}+
+                            </button>
+                          ))}
+                        </div>
+                        <p className="lb-gender-note muted">
+                          {minVisits === 1
+                            ? "Сейчас в зачёте любая локация, где участник бегал хотя бы раз."
+                            : `Сейчас в зачёте только локации с ${minVisits} и более пробежками.`}
+                          {loading && " Пересчитываем…"}
+                        </p>
+                      </div>
+                    )}
+                    {hasPlatformFilter && (
+                      <div className="lb-visits">
+                        <span className="lb-visits-label">
+                          Система <InfoHint text={PLATFORM_FILTER_HINT} />
+                        </span>
+                        <div
+                          className="lb-gender-tabs"
+                          role="group"
+                          aria-label="Смотреть по системе"
                         >
-                          {tab.label}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="lb-gender-note muted">
-                      {platform === "all"
-                        ? "Сейчас — объединённый зачёт по всем системам."
-                        : `Показаны только локации в системе «${PLATFORM_LABELS[platform] ?? platform}» — столбцы остальных систем скрыты.`}
-                      {loading && " Пересчитываем…"}
-                    </p>
+                          {PLATFORM_TABS.map((tab) => (
+                            <button
+                              key={tab.value}
+                              type="button"
+                              aria-pressed={platform === tab.value}
+                              className={`lb-gender-tab${platform === tab.value ? " lb-gender-tab-active" : ""}`}
+                              onClick={() => setPlatform(tab.value)}
+                            >
+                              {tab.label}
+                            </button>
+                          ))}
+                        </div>
+                        {(platform === "all" || loading) && (
+                          <p className="lb-gender-note muted">
+                            {platform === "all" && "Сейчас — объединённый зачёт по всем системам."}
+                            {loading && " Пересчитываем…"}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
