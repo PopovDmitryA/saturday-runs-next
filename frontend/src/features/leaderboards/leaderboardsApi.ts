@@ -18,6 +18,19 @@ export const GENDERED_METRICS: LeaderboardMetric[] = ["wins", "win_locations"];
 export const MIN_VISITS_METRICS: LeaderboardMetric[] = ["locations"];
 export const MIN_VISITS_OPTIONS = [1, 2, 3, 4, 5] as const;
 
+// Фильтр «смотреть по одной системе» — тоже только у рейтинга туризма: люди
+// хотели объединённый зачёт как норму, но не отказались от возможности
+// смотреть результат внутри одной системы.
+export const PLATFORM_FILTER_METRICS: LeaderboardMetric[] = ["locations"];
+export type PlatformFilter = "all" | "five_verst" | "s95" | "runpark" | "parkrun";
+export const PLATFORM_FILTER_OPTIONS: PlatformFilter[] = [
+  "all",
+  "five_verst",
+  "s95",
+  "runpark",
+  "parkrun",
+];
+
 export type LeaderboardCell = {
   value: number;
   delta: number;
@@ -47,6 +60,7 @@ export type LeaderboardResponse = {
   metric: string;
   gender?: LeaderboardGender;
   min_visits?: number;
+  platform?: PlatformFilter;
   title: string;
   description: string;
   unit: string;
@@ -63,6 +77,7 @@ export type LeaderboardResponse = {
 export type MyLeaderboardRow = {
   metric: string;
   min_visits?: number;
+  platform?: PlatformFilter;
   display_name: string | null;
   site_serial_id: number;
   platforms: Record<string, LeaderboardCell>;
@@ -103,18 +118,26 @@ export function getLeaderboard(
   limit = 1000,
   gender: LeaderboardGender = "all",
   minVisits = 1,
+  platform: PlatformFilter = "all",
 ) {
-  const genderParam = gender === "all" ? "" : `&gender=${gender}`;
-  const visitsParam = minVisits > 1 ? `&min_visits=${minVisits}` : "";
-  return leaderboardsFetch<LeaderboardResponse>(
-    `/leaderboards/${metric}?limit=${limit}${genderParam}${visitsParam}`,
-  );
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (gender !== "all") {
+    params.set("gender", gender);
+  }
+  if (minVisits > 1) {
+    params.set("min_visits", String(minVisits));
+  }
+  if (platform !== "all") {
+    params.set("platform", platform);
+  }
+  return leaderboardsFetch<LeaderboardResponse>(`/leaderboards/${metric}?${params}`);
 }
 
 export function getMyLeaderboardRow(
   metric: LeaderboardMetric,
   gender: LeaderboardGender = "all",
   minVisits = 1,
+  platform: PlatformFilter = "all",
 ) {
   const params = new URLSearchParams();
   if (gender !== "all") {
@@ -122,6 +145,9 @@ export function getMyLeaderboardRow(
   }
   if (minVisits > 1) {
     params.set("min_visits", String(minVisits));
+  }
+  if (platform !== "all") {
+    params.set("platform", platform);
   }
   const query = params.toString();
   return leaderboardsFetch<MyLeaderboardRow>(

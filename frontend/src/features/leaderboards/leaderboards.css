@@ -136,6 +136,11 @@
 
 .lb-controls-left {
   min-width: 0;
+  /* «Локации» несёт сразу два независимых фильтра (визиты + система) —
+     без gap их сегментированные переключатели слипались бы вплотную. */
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
 }
 
 .lb-controls-right {
@@ -279,6 +284,12 @@
   padding: 0.25rem;
   border-radius: 999px;
   background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  /* Пять кнопок фильтра по системе не помещаются на узких экранах — скроллим
+     сам переключатель, а не даём ему распереть страницу (см. тот же приём у
+     .lb-table-wrap). Кнопки внутри с nowrap не сжимаются ниже своей ширины. */
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .lb-gender-tab {
@@ -291,6 +302,7 @@
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .lb-gender-tab-active {

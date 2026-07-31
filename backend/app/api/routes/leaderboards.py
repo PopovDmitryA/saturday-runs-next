@@ -13,6 +13,7 @@ from app.services.leaderboard_service import (
     LEADERBOARD_GENDERS,
     LEADERBOARD_METRICS,
     MAX_MIN_VISITS,
+    PLATFORM_FILTER_VALUES,
     LeaderboardMetric,
     get_leaderboard,
     get_my_leaderboard_row,
@@ -33,6 +34,12 @@ def _validate_gender(gender: str) -> str:
     return gender if gender in LEADERBOARD_GENDERS else "all"
 
 
+def _validate_platform(platform: str) -> str:
+    # Та же логика, что у пола: неизвестную/неприменимую систему сервис сам
+    # игнорирует (см. _normalize_platform_filter).
+    return platform if platform in PLATFORM_FILTER_VALUES else "all"
+
+
 # Таблицы рейтингов открыты БЕЗ логина (решение Дмитрия 25.07.2026:
 # локации и рейтинги — публичная витрина сайта; до этого с 16.07.2026
 # раздел был только для залогиненных).
@@ -42,9 +49,11 @@ def leaderboard(
     db: Annotated[Session, Depends(get_db)],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     gender: str = "all",
-    # Порог визитов есть только у рейтинга туризма; у остальных метрик сервис
-    # его молча игнорирует (см. _normalize_min_visits).
+    # Порог визитов и фильтр «по одной системе» есть только у рейтинга
+    # туризма; у остальных метрик сервис их молча игнорирует (см.
+    # _normalize_min_visits / _normalize_platform_filter).
     min_visits: Annotated[int, Query(ge=1, le=MAX_MIN_VISITS)] = 1,
+    platform: str = "all",
 ) -> LeaderboardResponse:
     payload = get_leaderboard(
         db,
@@ -52,6 +61,7 @@ def leaderboard(
         _validate_gender(gender),
         limit=limit,
         min_visits=min_visits,
+        platform=_validate_platform(platform),
     )
     return LeaderboardResponse.model_validate(payload)
 
@@ -64,8 +74,14 @@ def my_leaderboard_row(
     user: Annotated[User, Depends(get_current_user)],
     gender: str = "all",
     min_visits: Annotated[int, Query(ge=1, le=MAX_MIN_VISITS)] = 1,
+    platform: str = "all",
 ) -> MyLeaderboardRowResponse:
     payload = get_my_leaderboard_row(
-        db, _validate_metric(metric), user, _validate_gender(gender), min_visits
+        db,
+        _validate_metric(metric),
+        user,
+        _validate_gender(gender),
+        min_visits,
+        _validate_platform(platform),
     )
     return MyLeaderboardRowResponse.model_validate(payload)

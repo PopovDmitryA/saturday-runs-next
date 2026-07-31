@@ -66,6 +66,20 @@ PLATFORM_COLUMNS: tuple[str, ...] = ("five_verst", "s95", "runpark", "parkrun")
 # В гендерном зачёте parkrun исключён — и из подсчёта, и из колонок таблицы.
 GENDERED_PLATFORM_COLUMNS: tuple[str, ...] = ("five_verst", "s95", "runpark")
 
+PLATFORM_LABELS: dict[str, str] = {
+    "five_verst": "5 вёрст",
+    "s95": "С95",
+    "runpark": "RunPark",
+    "parkrun": "parkrun",
+}
+
+# Метрики с фильтром «смотреть по одной системе»: люди хотят объединённый
+# зачёт по умолчанию, но иногда — только результаты одной конкретной системы,
+# без чужих столбцов (решение Дмитрия 31.07.2026). Пока это только рейтинг
+# туризма, независимо и совместно с фильтром MIN_VISITS_METRICS.
+PLATFORM_FILTER_METRICS: tuple[LeaderboardMetric, ...] = ("locations",)
+PLATFORM_FILTER_VALUES: tuple[str, ...] = ("all", *PLATFORM_COLUMNS)
+
 TOP_LIMIT = 1000
 CACHE_TTL_SECONDS = 6 * 3600
 # v2 — в снапшот победных рейтингов добавлены «лучшее время» и «последняя
@@ -174,16 +188,32 @@ def _visits_plural(count: int) -> str:
     return "раз" if count == 5 else "раза"
 
 
-def metric_description(metric: str, gender: str, min_visits: int = 1) -> str:
-    """Описание рейтинга под выбранный зачёт (абсолют / мужской / женский) и
-    выбранный порог визитов."""
-    if metric in MIN_VISITS_METRICS and min_visits > 1:
-        return (
-            f"Засчитываются только локации, где участник финишировал минимум "
-            f"{min_visits} {_visits_plural(min_visits)}. Одна и та же локация в "
-            "разных системах считается одной, визиты в них суммируются. «Всего» "
-            "— уникальные локации по всем системам (не сумма колонок)."
-        )
+def metric_description(
+    metric: str, gender: str, min_visits: int = 1, platform: str = "all"
+) -> str:
+    """Описание рейтинга под выбранный зачёт (абсолют / мужской / женский), порог
+    визитов и фильтр «по одной системе» — два последних есть только у туризма и
+    комбинируются свободно."""
+    if metric in MIN_VISITS_METRICS and (min_visits > 1 or platform != "all"):
+        parts: list[str] = []
+        if min_visits > 1:
+            parts.append(
+                f"Засчитываются только локации, где участник финишировал минимум "
+                f"{min_visits} {_visits_plural(min_visits)}."
+            )
+        if platform == "all":
+            parts.append(
+                "Одна и та же локация в разных системах считается одной, визиты "
+                "в них суммируются."
+            )
+            parts.append("«Всего» — уникальные локации по всем системам (не сумма колонок).")
+        else:
+            label = PLATFORM_LABELS.get(platform, platform)
+            parts.append(
+                f"Показаны только локации системы «{label}» — столбцы остальных "
+                "систем скрыты, «Всего» — счёт именно по ней."
+            )
+        return " ".join(parts)
     gendered = METRIC_GENDER_DESCRIPTION.get(metric, {}).get(gender)
     return gendered or METRIC_META[metric]["description"]
 
@@ -961,11 +991,15 @@ def _collect_location_entities(
     sql: str = _LOCATION_VISITS_SQL,
     with_last_win: bool = False,
     min_visits: int = 1,
+    platform: str = "all",
 ) -> dict[str, _Entity]:
     """Уникальные локации участника. with_last_win — для рейтинга локаций с
     победами: дополнительно заполняет последнюю НОВУЮ локацию (её первая
     победа — самая свежая из всех «первых побед» участника). min_visits —
-    порог визитов, ниже которого локация в зачёт не идёт."""
+    порог визитов, ниже которого локация в зачёт не идёт. platform — фильтр
+    «смотреть по одной системе»: локации других систем просто не попадают в
+    выборку (мерж по identity тут ни при чём — сырые строки уже отфильтрованы
+    по коду системы, так что дополнительной SQL-выборки не нужно)."""
     links = _site_links(db)
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     rows = db.execute(text(sql), {"week_start": week_start}).all()
@@ -975,6 +1009,8 @@ def _collect_location_entities(
     pids_by_entity: dict[str, set[UUID]] = {}
     participant_ids = {row[0] for row in rows}
     for pid, code, location_id, first_date, visits, week_visits in rows:
+        if platform != "all" and code != platform:
+            continue
         identity = identity_by_location.get(location_id, str(location_id))
         link = links.get(pid)
         key = _entity_key(pid, link)
@@ -1102,11 +1138,20 @@ def _normalize_min_visits(metric: LeaderboardMetric, min_visits: int) -> int:
     return max(1, min(int(min_visits), MAX_MIN_VISITS))
 
 
+def _normalize_platform_filter(metric: LeaderboardMetric, platform: str) -> str:
+    """Фильтр «по одной системе» есть только у рейтинга туризма; у остальных
+    и у неизвестного кода — всегда «all»."""
+    if metric in PLATFORM_FILTER_METRICS and platform in PLATFORM_FILTER_VALUES:
+        return platform
+    return "all"
+
+
 def _build_snapshot(
     db: Session,
     metric: LeaderboardMetric,
     gender: LeaderboardGender = "all",
     min_visits: int = 1,
+    platform: str = "all",
 ) -> dict[str, object]:
     latest = latest_event_date(db)
     if latest is None:
@@ -1114,6 +1159,7 @@ def _build_snapshot(
             "metric": metric,
             "gender": gender,
             "min_visits": min_visits,
+            "platform": platform,
             "rows": [],
             "totals_desc": [],
             "prev_totals_desc": [],
@@ -1127,7 +1173,9 @@ def _build_snapshot(
     week_start = _week_start(latest)
 
     if metric == "locations":
-        entities = _collect_location_entities(db, week_start, min_visits=min_visits)
+        entities = _collect_location_entities(
+            db, week_start, min_visits=min_visits, platform=platform
+        )
     elif metric == "win_locations":
         if gender == "all":
             entities = _collect_location_entities(
@@ -1200,6 +1248,7 @@ def _build_snapshot(
         "metric": metric,
         "gender": gender,
         "min_visits": min_visits,
+        "platform": platform,
         "rows": rows,
         "totals_desc": totals_desc,
         "prev_totals_desc": prev_totals_desc,
@@ -1212,21 +1261,27 @@ def _build_snapshot(
     }
 
 
-def _cache_key(metric: str, gender: str = "all", min_visits: int = 1) -> str:
-    # Гендерные варианты и пороги визитов — отдельными суффиксами; базовый
-    # вариант (all / от 1 визита) оставляет прежний ключ, чтобы не плодить
-    # лишние ключи у метрик без этих разрезов.
+def _cache_key(
+    metric: str, gender: str = "all", min_visits: int = 1, platform: str = "all"
+) -> str:
+    # Гендерные варианты, пороги визитов и фильтр по системе — отдельными
+    # суффиксами; базовый вариант (all / от 1 визита / все системы) оставляет
+    # прежний ключ, чтобы не плодить лишние ключи у метрик без этих разрезов.
     key = f"{CACHE_KEY_PREFIX}:{metric}"
     if gender != "all":
         key = f"{key}:{gender}"
     if min_visits > 1:
         key = f"{key}:v{min_visits}"
+    if platform != "all":
+        key = f"{key}:p{platform}"
     return key
 
 
-def _read_cache(metric: str, gender: str = "all", min_visits: int = 1) -> dict[str, object] | None:
+def _read_cache(
+    metric: str, gender: str = "all", min_visits: int = 1, platform: str = "all"
+) -> dict[str, object] | None:
     try:
-        raw = get_redis_client().get(_cache_key(metric, gender, min_visits))
+        raw = get_redis_client().get(_cache_key(metric, gender, min_visits, platform))
     except Exception:
         return None
     if not raw or not isinstance(raw, (str, bytes, bytearray)):
@@ -1239,11 +1294,15 @@ def _read_cache(metric: str, gender: str = "all", min_visits: int = 1) -> dict[s
 
 
 def _write_cache(
-    metric: str, payload: dict[str, object], gender: str = "all", min_visits: int = 1
+    metric: str,
+    payload: dict[str, object],
+    gender: str = "all",
+    min_visits: int = 1,
+    platform: str = "all",
 ) -> None:
     try:
         get_redis_client().setex(
-            _cache_key(metric, gender, min_visits),
+            _cache_key(metric, gender, min_visits, platform),
             CACHE_TTL_SECONDS,
             json.dumps(payload, ensure_ascii=False),
         )
@@ -1258,21 +1317,27 @@ def get_leaderboard_snapshot(
     *,
     use_cache: bool = True,
     min_visits: int = 1,
+    platform: str = "all",
 ) -> dict[str, object]:
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
+    platform_resolved = _normalize_platform_filter(metric, platform)
     if use_cache:
-        cached = _read_cache(metric, resolved, visits)
+        cached = _read_cache(metric, resolved, visits, platform_resolved)
         if cached is not None:
             return cached
-    payload = _build_snapshot(db, metric, resolved, visits)
+    payload = _build_snapshot(db, metric, resolved, visits, platform_resolved)
     if use_cache:
-        _write_cache(metric, payload, resolved, visits)
+        _write_cache(metric, payload, resolved, visits, platform_resolved)
     return payload
 
 
 def refresh_leaderboard_cache(
-    db: Session, metric: LeaderboardMetric, gender: str = "all", min_visits: int = 1
+    db: Session,
+    metric: LeaderboardMetric,
+    gender: str = "all",
+    min_visits: int = 1,
+    platform: str = "all",
 ) -> dict[str, object]:
     """Пересчитать снапшот и перезаписать кэш, даже если тот ещё не протух.
 
@@ -1281,8 +1346,9 @@ def refresh_leaderboard_cache(
     """
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
-    payload = _build_snapshot(db, metric, resolved, visits)
-    _write_cache(metric, payload, resolved, visits)
+    platform_resolved = _normalize_platform_filter(metric, platform)
+    payload = _build_snapshot(db, metric, resolved, visits, platform_resolved)
+    _write_cache(metric, payload, resolved, visits, platform_resolved)
     return payload
 
 
@@ -1294,22 +1360,34 @@ def get_leaderboard(
     limit: int = 100,
     use_cache: bool = True,
     min_visits: int = 1,
+    platform: str = "all",
 ) -> dict[str, object]:
     """Публичная часть снапшота (без служебных массивов рангов)."""
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
+    platform_resolved = _normalize_platform_filter(metric, platform)
     snapshot = get_leaderboard_snapshot(
-        db, metric, resolved, use_cache=use_cache, min_visits=visits
+        db, metric, resolved, use_cache=use_cache, min_visits=visits, platform=platform_resolved
     )
     meta = METRIC_META[metric]
     rows = cast("list[dict[str, object]]", snapshot.get("rows") or [])
-    columns = GENDERED_PLATFORM_COLUMNS if resolved != "all" else PLATFORM_COLUMNS
+    # Фильтр по одной системе прячет колонки-системы целиком (люди хотели
+    # объединённый зачёт как норму, а не постоянный набор колонок «своя
+    # система + остальные нули») — остаётся только «Всего», уже посчитанное
+    # именно по этой системе.
+    if platform_resolved != "all":
+        columns: tuple[str, ...] = ()
+    elif resolved != "all":
+        columns = GENDERED_PLATFORM_COLUMNS
+    else:
+        columns = PLATFORM_COLUMNS
     return {
         "metric": metric,
         "gender": resolved,
         "min_visits": visits,
+        "platform": platform_resolved,
         "title": meta["title"],
-        "description": metric_description(metric, resolved, visits),
+        "description": metric_description(metric, resolved, visits, platform_resolved),
         "unit": meta["unit"],
         "platform_columns": list(columns),
         "rows": rows[: max(1, min(limit, TOP_LIMIT))],
@@ -1527,6 +1605,7 @@ def _my_location_values(
     sql_template: str = _LOCATION_VISITS_SQL,
     with_last_win: bool = False,
     min_visits: int = 1,
+    platform: str = "all",
 ) -> tuple[dict[str, list[int]], int, int, _LastWin | None]:
     if not participant_ids:
         return {}, 0, 0, None
@@ -1535,6 +1614,8 @@ def _my_location_values(
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     identities: dict[str, _LocationVisits] = {}
     for _pid, code, location_id, first_date, visits, week_visits in rows:
+        if platform != "all" and code != platform:
+            continue
         identity = identity_by_location.get(location_id, str(location_id))
         _merge_visit_row(identities, identity, code, first_date, int(visits), int(week_visits))
     counted = {
@@ -1571,11 +1652,15 @@ def get_my_leaderboard_row(
     user: User,
     gender: str = "all",
     min_visits: int = 1,
+    platform: str = "all",
 ) -> dict[str, object]:
     """Строка залогиненного участника: значения, место, дельта места, порог."""
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
-    snapshot = get_leaderboard_snapshot(db, metric, resolved, min_visits=visits)
+    platform_resolved = _normalize_platform_filter(metric, platform)
+    snapshot = get_leaderboard_snapshot(
+        db, metric, resolved, min_visits=visits, platform=platform_resolved
+    )
     week_start_raw = snapshot.get("week_start")
     latest = latest_event_date(db)
     week_start = (
@@ -1595,7 +1680,7 @@ def get_my_leaderboard_row(
     my_last_win: _LastWin | None = None
     if metric == "locations":
         values, total, week, _last = _my_location_values(
-            db, participant_ids, week_start, min_visits=visits
+            db, participant_ids, week_start, min_visits=visits, platform=platform_resolved
         )
     elif metric == "win_locations":
         if resolved == "all":
@@ -1654,6 +1739,7 @@ def get_my_leaderboard_row(
     return {
         "metric": metric,
         "min_visits": visits,
+        "platform": platform_resolved,
         "display_name": user.display_name,
         "site_serial_id": user.serial_id,
         "platforms": {code: {"value": v[0], "delta": v[1]} for code, v in values.items()},

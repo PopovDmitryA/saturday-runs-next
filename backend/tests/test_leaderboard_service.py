@@ -8,6 +8,8 @@ from app.services.leaderboard_service import (
     METRIC_THRESHOLD_PERCENTILE,
     MIN_VISITS_METRICS,
     PLATFORM_COLUMNS,
+    PLATFORM_FILTER_METRICS,
+    PLATFORM_FILTER_VALUES,
     WIN_EXTRAS_METRICS,
     _apply_last_win,
     _cache_key,
@@ -17,6 +19,7 @@ from app.services.leaderboard_service import (
     _merge_visit_row,
     _normalize_gender,
     _normalize_min_visits,
+    _normalize_platform_filter,
     _percentile,
     _pick_home,
     _pick_last,
@@ -220,3 +223,30 @@ def test_metric_description_mentions_min_visits() -> None:
     assert "минимум 5 раз" in metric_description("locations", "all", 5)
     # Порог «от 1» — обычное описание рейтинга туризма.
     assert metric_description("locations", "all", 1) == METRIC_META["locations"]["description"]
+
+
+def test_normalize_platform_filter_only_for_locations() -> None:
+    # Фильтр по системе есть только у рейтинга туризма и только для известных кодов.
+    assert PLATFORM_FILTER_METRICS == ("locations",)
+    assert _normalize_platform_filter("locations", "five_verst") == "five_verst"
+    assert _normalize_platform_filter("locations", "нечто") == "all"
+    assert _normalize_platform_filter("runs", "five_verst") == "all"
+    assert set(PLATFORM_FILTER_VALUES) == {"all", *PLATFORM_COLUMNS}
+
+
+def test_cache_key_versions_platform_and_combines_with_min_visits() -> None:
+    assert _cache_key("locations") == _cache_key("locations", "all", 1, "all")
+    assert _cache_key("locations", "all", 1, "s95").endswith(":locations:ps95")
+    # Оба фильтра сразу — суффиксы идут в фиксированном порядке.
+    assert _cache_key("locations", "all", 3, "s95").endswith(":locations:v3:ps95")
+
+
+def test_metric_description_mentions_platform_filter() -> None:
+    only_platform = metric_description("locations", "all", 1, "five_verst")
+    assert "5 вёрст" in only_platform
+    assert "минимум" not in only_platform
+    combined = metric_description("locations", "all", 3, "parkrun")
+    assert "минимум 3 раза" in combined
+    assert "parkrun" in combined
+    # Фильтр по системе не про пары систем — упоминание «суммируются» тут неуместно.
+    assert "суммируются" not in only_platform
