@@ -491,12 +491,6 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             </button>
                           ))}
                         </div>
-                        <p className="lb-gender-note muted">
-                          {minVisits === 1
-                            ? "Сейчас в зачёте любая локация, где участник бегал хотя бы раз."
-                            : `Сейчас в зачёте только локации с ${minVisits} и более пробежками.`}
-                          {loading && " Пересчитываем…"}
-                        </p>
                       </div>
                     )}
                     {hasPlatformFilter && (
@@ -521,12 +515,6 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             </button>
                           ))}
                         </div>
-                        {(platform === "all" || loading) && (
-                          <p className="lb-gender-note muted">
-                            {platform === "all" && "Сейчас — объединённый зачёт по всем системам."}
-                            {loading && " Пересчитываем…"}
-                          </p>
-                        )}
                       </div>
                     )}
                   </div>
