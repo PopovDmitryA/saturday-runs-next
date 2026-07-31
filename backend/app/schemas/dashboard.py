@@ -35,6 +35,13 @@ class MonthlyActivityResponse(BaseModel):
 class MonthlyPaceResponse(BaseModel):
     month: str
     avg_pace_sec_per_km: int | None = None
+    avg_finish_time_sec: int | None = None
+
+
+class YearlyPaceResponse(BaseModel):
+    year: str
+    avg_pace_sec_per_km: int | None = None
+    avg_finish_time_sec: int | None = None
 
 
 class ActivityCalendarItemResponse(BaseModel):
@@ -133,6 +140,7 @@ class DashboardAnalyticsResponse(BaseModel):
     platform_metrics: list[PlatformRunMetricsResponse] = Field(default_factory=list)
     activity_by_month: list[MonthlyActivityResponse] = Field(default_factory=list)
     pace_trend: list[MonthlyPaceResponse] = Field(default_factory=list)
+    pace_trend_yearly: list[YearlyPaceResponse] = Field(default_factory=list)
     location_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
     age_group_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
 

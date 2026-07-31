@@ -56,7 +56,9 @@ class SyncRefreshRateLimitedError(Exception):
 # появились location_records / age_group_records (location_records_service).
 # 30: зарубежный parkrun выброшен из рекордов локаций — по нему нет протоколов,
 # и одинокий финиш туриста зачитывался как рекорд трассы.
-ANALYTICS_VERSION = 30
+# 31: график темпа на главной — переключатель «весь период» (по годам) и
+# среднее время финиша в каждой точке графика.
+ANALYTICS_VERSION = 31
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 RUN_CLUBS = (50, 100, 250, 500, 1000)
@@ -740,12 +742,21 @@ def _compute_dashboard_analytics(
         for value in sorted(set(runs_per_date) | set(vols_per_date))
     ]
 
-    run_month_rows = runs_query.with_entities(Event.event_date, RunResult.pace_sec_per_km).all()
+    run_month_rows = runs_query.with_entities(
+        Event.event_date, RunResult.pace_sec_per_km, RunResult.finish_time_sec
+    ).all()
     runs_by_month: Counter[str] = Counter(_month_key(row[0]) for row in run_month_rows)
     pace_by_month: dict[str, list[int]] = defaultdict(list)
-    for event_date, pace_sec in run_month_rows:
+    finish_by_month: dict[str, list[int]] = defaultdict(list)
+    pace_by_year: dict[str, list[int]] = defaultdict(list)
+    finish_by_year: dict[str, list[int]] = defaultdict(list)
+    for event_date, pace_sec, finish_sec in run_month_rows:
         if pace_sec is not None:
             pace_by_month[_month_key(event_date)].append(int(pace_sec))
+            pace_by_year[str(event_date.year)].append(int(pace_sec))
+        if finish_sec is not None:
+            finish_by_month[_month_key(event_date)].append(int(finish_sec))
+            finish_by_year[str(event_date.year)].append(int(finish_sec))
 
     month_keys = _last_n_month_keys(today)
     activity_by_month = [
@@ -761,10 +772,29 @@ def _compute_dashboard_analytics(
         pace_values = pace_by_month.get(month, [])
         if not pace_values:
             continue
+        finish_values = finish_by_month.get(month, [])
         pace_trend.append(
             {
                 "month": month,
                 "avg_pace_sec_per_km": round(sum(pace_values) / len(pace_values)),
+                "avg_finish_time_sec": round(sum(finish_values) / len(finish_values))
+                if finish_values
+                else None,
+            }
+        )
+    pace_trend_yearly = []
+    for year in sorted(pace_by_year):
+        pace_values = pace_by_year[year]
+        if not pace_values:
+            continue
+        finish_values = finish_by_year.get(year, [])
+        pace_trend_yearly.append(
+            {
+                "year": year,
+                "avg_pace_sec_per_km": round(sum(pace_values) / len(pace_values)),
+                "avg_finish_time_sec": round(sum(finish_values) / len(finish_values))
+                if finish_values
+                else None,
             }
         )
 
@@ -834,6 +864,7 @@ def _compute_dashboard_analytics(
         "platform_metrics": platform_metrics,
         "activity_by_month": activity_by_month,
         "pace_trend": pace_trend,
+        "pace_trend_yearly": pace_trend_yearly,
         "volunteering_last_12_months": volunteering_last_12_months,
         "volunteering_current_year": volunteering_current_year,
         "total_distance_km": total_distance_km,

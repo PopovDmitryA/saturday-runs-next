@@ -1442,6 +1442,12 @@ a.on-this-day-location {
   border-bottom: 1px solid var(--border);
 }
 
+.analytics-chart-pace-toggle {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
 .analytics-chart-pace-line-wrap {
   position: relative;
 }

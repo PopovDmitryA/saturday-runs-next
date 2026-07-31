@@ -195,7 +195,16 @@ export type DashboardAnalytics = {
     avg_pace_sec_per_km: number | null;
   }>;
   activity_by_month: Array<{ month: string; runs: number; volunteering: number }>;
-  pace_trend: Array<{ month: string; avg_pace_sec_per_km: number | null }>;
+  pace_trend: Array<{
+    month: string;
+    avg_pace_sec_per_km: number | null;
+    avg_finish_time_sec?: number | null;
+  }>;
+  pace_trend_yearly?: Array<{
+    year: string;
+    avg_pace_sec_per_km: number | null;
+    avg_finish_time_sec?: number | null;
+  }>;
   location_records?: LocationRecordsBlock;
   age_group_records?: LocationRecordsBlock;
 };

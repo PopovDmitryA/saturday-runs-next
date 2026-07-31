@@ -506,12 +506,46 @@ function ActivityMonthChart({ data }: { data: DashboardAnalyticsData["activity_b
   );
 }
 
-function PaceTrendChart({ data }: { data: DashboardAnalyticsData["pace_trend"] }) {
+type PacePoint = {
+  key: string;
+  axisLabel: string;
+  tooltipTitle: string;
+  avgPaceSecPerKm: number | null;
+  avgFinishTimeSec: number | null;
+};
+
+function PaceTrendChart({
+  monthly,
+  yearly,
+}: {
+  monthly: DashboardAnalyticsData["pace_trend"];
+  yearly: NonNullable<DashboardAnalyticsData["pace_trend_yearly"]>;
+}) {
+  const hasYearly = yearly.length > 1;
+  const [period, setPeriod] = useState<"months" | "all">("months");
+  const showYearly = period === "all" && hasYearly;
+
+  const data: PacePoint[] = showYearly
+    ? yearly.map((item) => ({
+        key: item.year,
+        axisLabel: item.year,
+        tooltipTitle: item.year,
+        avgPaceSecPerKm: item.avg_pace_sec_per_km,
+        avgFinishTimeSec: item.avg_finish_time_sec ?? null,
+      }))
+    : monthly.map((item) => ({
+        key: item.month,
+        axisLabel: formatMonthShort(item.month),
+        tooltipTitle: formatMonthYear(item.month),
+        avgPaceSecPerKm: item.avg_pace_sec_per_km,
+        avgFinishTimeSec: item.avg_finish_time_sec ?? null,
+      }));
+
   if (data.length === 0) {
     return null;
   }
 
-  const paces = data.map((item) => item.avg_pace_sec_per_km ?? 0);
+  const paces = data.map((item) => item.avgPaceSecPerKm ?? 0);
   const minPace = Math.min(...paces);
   const maxPace = Math.max(...paces);
   const spread = Math.max(maxPace - minPace, 1);
@@ -521,23 +555,39 @@ function PaceTrendChart({ data }: { data: DashboardAnalyticsData["pace_trend"] }
   const plotRange = plotBottom - plotTop;
 
   const points = data.map((item, index) => {
-    const pace = item.avg_pace_sec_per_km ?? minPace;
+    const pace = item.avgPaceSecPerKm ?? minPace;
     const x = ((index + 0.5) / data.length) * 100;
     const y = plotTop + ((pace - minPace) / spread) * plotRange;
-    return {
-      item,
-      pace,
-      x,
-      y,
-      monthLabel: formatMonthYear(item.month),
-    };
+    return { item, pace, x, y };
   });
 
   const linePoints = points.map((point) => `${point.x},${point.y}`).join(" ");
 
   return (
     <div className="analytics-chart analytics-chart-pace">
-      <div className="analytics-chart-pace-line-wrap" role="img" aria-label="Динамика темпа по месяцам">
+      <div className="analytics-chart-pace-toggle" role="tablist" aria-label="Период графика темпа">
+        <button
+          type="button"
+          className={`insights-filter-chip${period === "months" ? " active" : ""}`}
+          onClick={() => setPeriod("months")}
+        >
+          12 месяцев
+        </button>
+        {hasYearly && (
+          <button
+            type="button"
+            className={`insights-filter-chip${period === "all" ? " active" : ""}`}
+            onClick={() => setPeriod("all")}
+          >
+            Весь период
+          </button>
+        )}
+      </div>
+      <div
+        className="analytics-chart-pace-line-wrap"
+        role="img"
+        aria-label={showYearly ? "Динамика темпа по годам" : "Динамика темпа по месяцам"}
+      >
         <div className="analytics-chart-pace-plot">
           <svg className="analytics-chart-pace-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
             <polyline
@@ -549,7 +599,7 @@ function PaceTrendChart({ data }: { data: DashboardAnalyticsData["pace_trend"] }
           </svg>
           {points.map((point) => (
             <span
-              key={point.item.month}
+              key={point.item.key}
               className="analytics-chart-pace-marker"
               style={{ left: `${point.x}%`, top: `${point.y}%` }}
               aria-hidden="true"
@@ -561,9 +611,14 @@ function PaceTrendChart({ data }: { data: DashboardAnalyticsData["pace_trend"] }
           >
             {points.map((point) => (
               <ChartColumnTooltip
-                key={point.item.month}
-                title={point.monthLabel}
-                lines={[`Средний темп: ${formatPace(point.pace)} /км`]}
+                key={point.item.key}
+                title={point.item.tooltipTitle}
+                lines={[
+                  `Средний темп: ${formatPace(point.pace)} /км`,
+                  ...(point.item.avgFinishTimeSec != null
+                    ? [`Среднее время финиша: ${formatDuration(point.item.avgFinishTimeSec)}`]
+                    : []),
+                ]}
               >
                 <span className="analytics-chart-pace-hit" aria-hidden="true" />
               </ChartColumnTooltip>
@@ -575,8 +630,8 @@ function PaceTrendChart({ data }: { data: DashboardAnalyticsData["pace_trend"] }
           style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
         >
           {points.map((point) => (
-            <span key={point.item.month} className="analytics-chart-label analytics-chart-label-month">
-              {formatMonthShort(point.item.month)}
+            <span key={point.item.key} className="analytics-chart-label analytics-chart-label-month">
+              {point.item.axisLabel}
             </span>
           ))}
         </div>
@@ -794,8 +849,8 @@ export function DashboardAnalytics({
       key: "pace_trend",
       node: (
         <>
-          <h2 className="section-title">Динамика темпа за год</h2>
-          <PaceTrendChart data={analytics.pace_trend} />
+          <h2 className="section-title">Динамика темпа</h2>
+          <PaceTrendChart monthly={analytics.pace_trend} yearly={analytics.pace_trend_yearly ?? []} />
         </>
       ),
     });
