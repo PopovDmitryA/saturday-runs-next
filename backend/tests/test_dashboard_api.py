@@ -1071,6 +1071,126 @@ def test_dashboard_wins_counts_gender_places_for_women(
     assert item["scope"] == "female"
 
 
+def _seed_parkrun_win(
+    db_session: Session,
+    user: User,
+    *,
+    catalogued: bool,
+    gender: str = "female",
+) -> None:
+    """Победа на parkrun-площадке: catalogued=True — русская (есть связка с
+    каталогом локаций), False — зарубежная (протокола у нас нет)."""
+    suffix = str(uuid4().int % 1_000_000)
+    parkrun = db_session.query(Platform).filter(Platform.code == "parkrun").one_or_none()
+    if parkrun is None:
+        parkrun = Platform(code="parkrun", name="parkrun")
+        db_session.add(parkrun)
+        db_session.flush()
+
+    location = Location(
+        platform_id=parkrun.id,
+        external_key=f"parkrun-win-{suffix}",
+        name="Parkrun Win Park",
+        country="United Kingdom",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    if catalogued:
+        catalog = LocationCatalog(
+            canonical_name=f"Parkrun Win Park {suffix}",
+            active_platform="five_verst",
+            is_closed=False,
+        )
+        db_session.add(catalog)
+        db_session.flush()
+        db_session.add(
+            LocationCatalogLink(
+                catalog_id=catalog.id,
+                platform_id=parkrun.id,
+                external_key=location.external_key,
+                location_id=location.id,
+            )
+        )
+
+    participant = Participant(
+        platform_id=parkrun.id,
+        external_user_id=f"parkrun-win-user-{suffix}",
+        display_name="Parkrun Win Tester",
+        profile_url=f"https://www.parkrun.com/parkrunner/{suffix}/",
+        gender=gender,
+    )
+    db_session.add(participant)
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=parkrun.id,
+            participant_id=participant.id,
+            external_user_id=participant.external_user_id,
+            external_url=participant.profile_url,
+        )
+    )
+
+    event = Event(
+        platform_id=parkrun.id,
+        location_id=location.id,
+        external_event_key=f"parkrun-win-event-{suffix}",
+        event_date=date(2019, 6, 1),
+        event_number=100,
+        title="Parkrun Win Event",
+        finishers_count=1,
+        runners_count=1,
+    )
+    db_session.add(event)
+    db_session.flush()
+    db_session.add(
+        RunResult(
+            event_id=event.id,
+            participant_id=participant.id,
+            external_result_key=f"parkrun-win-result-{suffix}",
+            position=1,
+            gender_position=1,
+            finish_time_sec=22 * 60,
+            finish_time_display="00:22:00",
+            status="finished",
+        )
+    )
+    db_session.flush()
+    db_session.commit()
+
+
+def test_dashboard_wins_ignore_foreign_parkrun(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """Зарубежный parkrun в зачёт побед не идёт: протокола у нас нет, и
+    единственная строка из профиля всегда оказывается первой."""
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+    _seed_parkrun_win(db_session, user, catalogued=False)
+
+    analytics = authenticated_client.get("/api/dashboard").json()["stats"]["analytics"]
+    assert analytics["wins_count"] == 0
+    assert authenticated_client.get("/api/runs/wins").json() == []
+
+
+def test_dashboard_wins_count_russian_parkrun(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """Русский parkrun собран протоколами целиком — его победы в зачёте."""
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+    _seed_parkrun_win(db_session, user, catalogued=True)
+
+    analytics = authenticated_client.get("/api/dashboard").json()["stats"]["analytics"]
+    assert analytics["wins_count"] == 1
+    wins = authenticated_client.get("/api/runs/wins").json()
+    assert len(wins) == 1
+    assert wins[0]["platform_code"] == "parkrun"
+
+
 def test_wins_require_auth(client: TestClient) -> None:
     assert client.get("/api/runs/wins").status_code == 401
 
