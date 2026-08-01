@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -39,7 +40,12 @@ from app.services.location_catalog_service import (
     russian_parkrun_location_ids,
 )
 from app.time_format import format_finish_time_display
-from app.volunteer_role_taxonomy import canonical_volunteer_role, role_occasions
+from app.volunteer_role_taxonomy import (
+    CANONICAL_ROLE_LABELS,
+    canonical_volunteer_role,
+    preset_role_keys,
+    role_occasions,
+)
 from app.volunteering_occasions import count_volunteering_occasions
 
 LeaderboardMetric = Literal[
@@ -99,6 +105,11 @@ PLATFORM_LABELS: dict[str, str] = {
 # конкретной системы, без чужих столбцов. Место и «Всего» при этом
 # пересчитываются заново: это не колонка, а отдельный рейтинг.
 PLATFORM_FILTER_METRICS: tuple[LeaderboardMetric, ...] = LEADERBOARD_METRICS
+
+# Фильтр «какие роли считать» — только у рейтингов по числу выходов. В
+# «Мультиволонтёре» роли и есть сама метрика (число разных освоенных),
+# фильтровать их там значило бы менять смысл рейтинга.
+ROLE_FILTER_METRICS: tuple[LeaderboardMetric, ...] = ("volunteering", "volunteer_locations")
 PLATFORM_FILTER_VALUES: tuple[str, ...] = ("all", *PLATFORM_COLUMNS)
 
 # Набор систем у метрики, если он отличается от общего PLATFORM_COLUMNS.
@@ -514,6 +525,25 @@ _WIN_LOCATION_VISITS_SQL = _location_visits_sql(only_wins=True)
 # суженная до одной локации, поэтому отдельный проход по датам тут не нужен.
 # parkrun исключён: его волонтёрства приходят сводкой ролей на псевдоплощадку
 # parkrun-summary с датой-заглушкой, локации у них нет.
+# Построчный вариант для фильтра ролей: агрегировать визиты в SQL нельзя,
+# пока роли не приведены к канону (это умеет только Python).
+_VOLUNTEER_LOCATION_ROLE_ROWS_SQL = """
+SELECT
+    vr.participant_id AS participant_id,
+    p.code AS platform_code,
+    e.location_id AS location_id,
+    e.event_date AS event_date,
+    vr.role AS role
+FROM volunteer_results vr
+JOIN events e ON e.id = vr.event_id
+JOIN platforms p ON p.id = e.platform_id
+LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
+WHERE e.is_test_event = false
+  AND vr.participant_id IS NOT NULL
+  AND p.code <> 'parkrun'
+  AND ec.secondary_event_id IS NULL
+"""
+
 _VOLUNTEER_LOCATION_VISITS_SQL = """
 SELECT
     vr.participant_id AS participant_id,
@@ -769,8 +799,17 @@ def _role_allowed(role: str | None, role_filter: frozenset[str]) -> bool:
     return canonical is not None and canonical.key in role_filter
 
 
-def _parkrun_volunteer_counts(db: Session, eligible_ids: set[UUID]) -> dict[UUID, int]:
-    """parkrun: волонтёрства по кредитам профиля (дат у parkrun-волонтёрств нет)."""
+def _parkrun_volunteer_counts(
+    db: Session, eligible_ids: set[UUID], role_filter: frozenset[str] | None = None
+) -> dict[UUID, int]:
+    """parkrun: волонтёрства по кредитам профиля (дат у parkrun-волонтёрств нет).
+
+    С фильтром ролей считаем иначе — суммой кредитов только разрешённых ролей.
+    Строка «Total Credits» тут неприменима: она по всем ролям сразу. Из-за
+    отсутствия дат такая сумма слегка завышает зачёт (день с двумя ролями
+    посчитается дважды) — это осознанный компромисс, оговорён в подсказке
+    к фильтру на витрине (решение Дмитрия 02.08.2026).
+    """
     profiles = {row[0]: row[1] for row in db.execute(text(_PARKRUN_VOLUNTEER_PROFILES_SQL)).all()}
     roles_by_pid: dict[UUID, list[str]] = {}
     for pid, role in db.execute(text(_PARKRUN_VOLUNTEER_ROLES_SQL)).all():
@@ -779,13 +818,31 @@ def _parkrun_volunteer_counts(db: Session, eligible_ids: set[UUID]) -> dict[UUID
     for pid, profile_extra in profiles.items():
         if pid not in eligible_ids:
             continue
-        count = resolve_parkrun_volunteering_count(
-            profile_extra=profile_extra if isinstance(profile_extra, dict) else None,
-            summary_role_labels=roles_by_pid.get(pid),
-        )
+        if role_filter is not None:
+            count = _parkrun_filtered_credits(roles_by_pid.get(pid), role_filter)
+        else:
+            count = resolve_parkrun_volunteering_count(
+                profile_extra=profile_extra if isinstance(profile_extra, dict) else None,
+                summary_role_labels=roles_by_pid.get(pid),
+            )
         if count > 0:
             counts[pid] = count
     return counts
+
+
+def _parkrun_filtered_credits(
+    role_labels: list[str] | None, role_filter: frozenset[str]
+) -> int:
+    """Сумма кредитов parkrun по ролям из фильтра («Marshal (12×)» → 12)."""
+    if not role_labels:
+        return 0
+    total = 0
+    for label in role_labels:
+        if not _role_allowed(label, role_filter):
+            continue
+        # Роль без счётчика в ярлыке — это одно волонтёрство.
+        total += role_occasions(label) or 1
+    return total
 
 
 def _occasion_volunteering_rows(
@@ -894,8 +951,10 @@ class _MetricSource:
         self._identity: tuple[dict[UUID, str], dict[str, str], dict[str, str]] | None = None
         self._names: dict[UUID, str | None] | None = None
         self._rows: dict[str, Sequence[Row[Any]]] = {}
-        self._occasion_rows: list[tuple[UUID, str, int, int]] | None = None
-        self._parkrun_volunteering: dict[UUID, int] | None = None
+        # Волонтёрские выборки зависят от фильтра ролей, поэтому кэшируются
+        # по нему: базовый вариант (None) и каждый набор ролей — своя запись.
+        self._occasion_rows: dict[frozenset[str] | None, list[tuple[UUID, str, int, int]]] = {}
+        self._parkrun_volunteering: dict[frozenset[str] | None, dict[UUID, int]] = {}
 
     def links(self) -> dict[UUID, _SiteLink]:
         if self._links is None:
@@ -924,25 +983,31 @@ class _MetricSource:
             self._rows[sql] = cached
         return cached
 
-    def occasion_volunteering_rows(self) -> list[tuple[UUID, str, int, int]]:
-        if self._occasion_rows is None:
-            self._occasion_rows = _occasion_volunteering_rows(self.db, self.week_start)
-        return self._occasion_rows
+    def occasion_volunteering_rows(
+        self, role_filter: frozenset[str] | None = None
+    ) -> list[tuple[UUID, str, int, int]]:
+        cached = self._occasion_rows.get(role_filter)
+        if cached is None:
+            cached = _occasion_volunteering_rows(self.db, self.week_start, role_filter)
+            self._occasion_rows[role_filter] = cached
+        return cached
 
-    def parkrun_volunteering(self) -> dict[UUID, int]:
-        if self._parkrun_volunteering is None:
-            self._parkrun_volunteering = _parkrun_volunteer_counts(
-                self.db, _parkrun_eligible_ids(self.db)
+    def parkrun_volunteering(self, role_filter: frozenset[str] | None = None) -> dict[UUID, int]:
+        cached = self._parkrun_volunteering.get(role_filter)
+        if cached is None:
+            cached = _parkrun_volunteer_counts(
+                self.db, _parkrun_eligible_ids(self.db), role_filter
             )
-        return self._parkrun_volunteering
+            self._parkrun_volunteering[role_filter] = cached
+        return cached
 
     def release(self) -> None:
         """Отпустить сырые данные метрики, оставив общие справочники локаций и
         привязок — их переиспользует следующий рейтинг."""
         self._rows.clear()
         self._names = None
-        self._occasion_rows = None
-        self._parkrun_volunteering = None
+        self._occasion_rows.clear()
+        self._parkrun_volunteering.clear()
 
 
 def make_snapshot_source(db: Session) -> _MetricSource | None:
@@ -954,10 +1019,26 @@ def make_snapshot_source(db: Session) -> _MetricSource | None:
     return _MetricSource(db, latest)
 
 
+def _s95_volunteering_rows(
+    source: _MetricSource, role_filter: frozenset[str]
+) -> list[tuple[UUID, str, int, int]]:
+    """С95 с фильтром ролей: считаем строки сами, оставив разрешённые роли."""
+    totals: dict[UUID, list[int]] = {}
+    for pid, _platform_code, role, event_date in source.rows(_VOLUNTEERING_ROLE_ROWS_SQL):
+        if not _role_allowed(role, role_filter):
+            continue
+        bucket = totals.setdefault(pid, [0, 0])
+        bucket[0] += 1
+        if event_date >= source.week_start:
+            bucket[1] += 1
+    return [(pid, "s95", total, week) for pid, (total, week) in totals.items()]
+
+
 def _collect_numeric_entities(
     source: _MetricSource,
     metric: str,
     platform: str = "all",
+    role_filter: frozenset[str] | None = None,
 ) -> dict[str, _Entity]:
     links = source.links()
     entities: dict[str, _Entity] = {}
@@ -967,6 +1048,13 @@ def _collect_numeric_entities(
         rows = [
             (row[0], row[1], int(row[2]), int(row[3])) for row in source.rows(_RUNS_SQL)
         ]
+    elif role_filter is not None:
+        # С фильтром ролей С95 считаем построчно: агрегат из _VOLUNTEERING_SQL
+        # роли не знает, а канонизировать синонимы систем умеет только Python.
+        rows = _s95_volunteering_rows(source, role_filter)
+        rows.extend(source.occasion_volunteering_rows(role_filter))
+        for pid, count in source.parkrun_volunteering(role_filter).items():
+            rows.append((pid, "parkrun", count, 0))
     else:
         rows = [
             (row[0], row[1], int(row[2]), int(row[3]))
@@ -1455,6 +1543,29 @@ def _merge_visit_row(
     cell[1] += week_visits
 
 
+def _volunteer_location_rows_filtered(
+    source: _MetricSource, role_filter: frozenset[str]
+) -> list[tuple[UUID, str, UUID, date, int, int]]:
+    """Строки волонтёрского туризма с фильтром ролей.
+
+    Формат тот же, что у _VOLUNTEER_LOCATION_VISITS_SQL, но визиты считаются по
+    датам, оставшимся после фильтра: локация набирает порог только теми днями,
+    где человек выходил в разрешённой роли.
+    """
+    dates: dict[tuple[UUID, str, UUID], set[date]] = {}
+    for pid, code, location_id, event_date, role in source.rows(
+        _VOLUNTEER_LOCATION_ROLE_ROWS_SQL
+    ):
+        if not _role_allowed(role, role_filter):
+            continue
+        dates.setdefault((pid, code, location_id), set()).add(event_date)
+    rows: list[tuple[UUID, str, UUID, date, int, int]] = []
+    for (pid, code, location_id), event_dates in dates.items():
+        week = sum(1 for d in event_dates if d >= source.week_start)
+        rows.append((pid, code, location_id, min(event_dates), len(event_dates), week))
+    return rows
+
+
 def _collect_location_entities(
     source: _MetricSource,
     *,
@@ -1462,6 +1573,7 @@ def _collect_location_entities(
     with_last_win: bool = False,
     min_visits: int = 1,
     platform: str = "all",
+    role_filter: frozenset[str] | None = None,
 ) -> dict[str, _Entity]:
     """Уникальные локации участника. with_last_win — для рейтинга локаций с
     победами: дополнительно заполняет последнюю НОВУЮ локацию (её первая
@@ -1472,7 +1584,11 @@ def _collect_location_entities(
     по коду системы, так что дополнительной SQL-выборки не нужно)."""
     links = source.links()
     identity_by_location, identity_names, identity_slugs = source.identity_maps()
-    rows = source.rows(sql)
+    rows = (
+        _volunteer_location_rows_filtered(source, role_filter)
+        if role_filter is not None
+        else source.rows(sql)
+    )
 
     per_entity: dict[str, dict[str, _LocationVisits]] = {}
     meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
@@ -1630,6 +1746,7 @@ def _build_snapshot(
     min_visits: int = 1,
     platform: str = "all",
     source: _MetricSource | None = None,
+    role_filter: frozenset[str] | None = None,
 ) -> dict[str, object]:
     latest = source.latest if source is not None else latest_event_date(db)
     if latest is None:
@@ -1661,6 +1778,7 @@ def _build_snapshot(
             sql=_VOLUNTEER_LOCATION_VISITS_SQL,
             min_visits=min_visits,
             platform=platform,
+            role_filter=role_filter,
         )
     elif metric == "win_locations":
         if gender == "all":
@@ -1679,7 +1797,9 @@ def _build_snapshot(
                 src, gender, as_locations=False, platform=platform
             )
     else:
-        entities = _collect_numeric_entities(src, metric, platform=platform)
+        entities = _collect_numeric_entities(
+            src, metric, platform=platform, role_filter=role_filter
+        )
 
     ranked_entities = [
         e for e in entities.values() if e.total > 0 and not _is_unknown_participant_name(e.display_name)
@@ -1756,7 +1876,11 @@ def _build_snapshot(
 
 
 def _cache_key(
-    metric: str, gender: str = "all", min_visits: int = 1, platform: str = "all"
+    metric: str,
+    gender: str = "all",
+    min_visits: int = 1,
+    platform: str = "all",
+    roles_key: str = "",
 ) -> str:
     # Гендерные варианты, пороги визитов и фильтр по системе — отдельными
     # суффиксами; базовый вариант (all / от 1 визита / все системы) оставляет
@@ -1768,14 +1892,24 @@ def _cache_key(
         key = f"{key}:v{min_visits}"
     if platform != "all":
         key = f"{key}:p{platform}"
+    if roles_key:
+        # Пресет — читаемым суффиксом, произвольный набор — короткой сигнатурой
+        # (полный список ключей в имени Redis-ключа не нужен).
+        key = f"{key}:r{roles_key}"
     return key
 
 
 def _read_cache(
-    metric: str, gender: str = "all", min_visits: int = 1, platform: str = "all"
+    metric: str,
+    gender: str = "all",
+    min_visits: int = 1,
+    platform: str = "all",
+    roles_key: str = "",
 ) -> dict[str, object] | None:
     try:
-        raw = get_redis_client().get(_cache_key(metric, gender, min_visits, platform))
+        raw = get_redis_client().get(
+            _cache_key(metric, gender, min_visits, platform, roles_key)
+        )
     except Exception:
         return None
     if not raw or not isinstance(raw, (str, bytes, bytearray)):
@@ -1793,15 +1927,39 @@ def _write_cache(
     gender: str = "all",
     min_visits: int = 1,
     platform: str = "all",
+    roles_key: str = "",
 ) -> None:
     try:
         get_redis_client().setex(
-            _cache_key(metric, gender, min_visits, platform),
+            _cache_key(metric, gender, min_visits, platform, roles_key),
             CACHE_TTL_SECONDS,
             json.dumps(payload, ensure_ascii=False),
         )
     except Exception:
         return
+
+
+def normalize_role_filter(
+    metric: str, roles: Sequence[str] | None
+) -> tuple[frozenset[str] | None, str]:
+    """Фильтр ролей → (набор канонических ключей, суффикс кэша).
+
+    Фильтр есть только у волонтёрских рейтингов по числу выходов; у остальных
+    (пробежки, победы, «Мультиволонтёр» — там роли и есть сама метрика) он
+    молча игнорируется, как и прочие неприменимые параметры.
+    """
+    if not roles or metric not in ROLE_FILTER_METRICS:
+        return None, ""
+    known = set(CANONICAL_ROLE_LABELS)
+    selected = frozenset(role for role in roles if role in known)
+    # Пустой или полный набор — это «все роли», фильтровать нечего.
+    if not selected or selected == known:
+        return None, ""
+    for preset in ("on_site", "on_site_no_run"):
+        if preset_role_keys(preset) == selected:
+            return selected, preset
+    digest = hashlib.sha1(",".join(sorted(selected)).encode()).hexdigest()[:10]
+    return selected, f"c{digest}"
 
 
 def get_leaderboard_snapshot(
@@ -1812,17 +1970,21 @@ def get_leaderboard_snapshot(
     use_cache: bool = True,
     min_visits: int = 1,
     platform: str = "all",
+    roles: Sequence[str] | None = None,
 ) -> dict[str, object]:
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
     platform_resolved = _normalize_platform_filter(metric, platform, resolved)
+    role_filter, roles_key = normalize_role_filter(metric, roles)
     if use_cache:
-        cached = _read_cache(metric, resolved, visits, platform_resolved)
+        cached = _read_cache(metric, resolved, visits, platform_resolved, roles_key)
         if cached is not None:
             return cached
-    payload = _build_snapshot(db, metric, resolved, visits, platform_resolved)
+    payload = _build_snapshot(
+        db, metric, resolved, visits, platform_resolved, role_filter=role_filter
+    )
     if use_cache:
-        _write_cache(metric, payload, resolved, visits, platform_resolved)
+        _write_cache(metric, payload, resolved, visits, platform_resolved, roles_key)
     return payload
 
 
@@ -1857,13 +2019,20 @@ def get_leaderboard(
     use_cache: bool = True,
     min_visits: int = 1,
     platform: str = "all",
+    roles: Sequence[str] | None = None,
 ) -> dict[str, object]:
     """Публичная часть снапшота (без служебных массивов рангов)."""
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
     platform_resolved = _normalize_platform_filter(metric, platform, resolved)
     snapshot = get_leaderboard_snapshot(
-        db, metric, resolved, use_cache=use_cache, min_visits=visits, platform=platform_resolved
+        db,
+        metric,
+        resolved,
+        use_cache=use_cache,
+        min_visits=visits,
+        platform=platform_resolved,
+        roles=roles
     )
     meta = METRIC_META[metric]
     rows = cast("list[dict[str, object]]", snapshot.get("rows") or [])

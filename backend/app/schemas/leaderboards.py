@@ -90,3 +90,20 @@ class MyLeaderboardRowResponse(BaseModel):
     top_role: str | None = None
     top_role_count: int | None = None
     role_details: list[VolunteerRoleDetailResponse] = []
+
+
+class VolunteerRoleItem(BaseModel):
+    """Роль в справочнике фильтра: ярлык и признаки для пресетов."""
+
+    key: str
+    label: str
+    # Нужно ли быть на площадке и можно ли в этот же день пробежать.
+    on_site: bool
+    runnable: bool
+
+
+class VolunteerRoleCatalogResponse(BaseModel):
+    presets: list[str]
+    # Рейтинги, где фильтр ролей вообще применяется.
+    metrics: list[str]
+    roles: list[VolunteerRoleItem]

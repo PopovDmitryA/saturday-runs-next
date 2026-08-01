@@ -8,14 +8,26 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models import User
-from app.schemas.leaderboards import LeaderboardResponse, MyLeaderboardRowResponse
+from app.schemas.leaderboards import (
+    LeaderboardResponse,
+    MyLeaderboardRowResponse,
+    VolunteerRoleCatalogResponse,
+    VolunteerRoleItem,
+)
 from app.services.leaderboard_service import (
     LEADERBOARD_GENDERS,
     LEADERBOARD_METRICS,
     MAX_MIN_VISITS,
+    ROLE_FILTER_METRICS,
     LeaderboardMetric,
     get_leaderboard,
     get_my_leaderboard_row,
+)
+from app.volunteer_role_taxonomy import (
+    CANONICAL_ROLE_LABELS,
+    ROLE_PRESETS,
+    role_is_on_site,
+    role_is_runnable,
 )
 
 router = APIRouter(prefix="/leaderboards", tags=["leaderboards"])
@@ -33,6 +45,26 @@ def _validate_gender(gender: str) -> str:
     return gender if gender in LEADERBOARD_GENDERS else "all"
 
 
+# Справочник ролей для модалки «какие роли считать». Отдаём вместе с
+# признаками, чтобы витрина сама рисовала группы и пресеты и не держала
+# собственную копию разметки.
+@router.get("/volunteer-roles/catalog", response_model=VolunteerRoleCatalogResponse)
+def volunteer_role_catalog() -> VolunteerRoleCatalogResponse:
+    return VolunteerRoleCatalogResponse(
+        presets=list(ROLE_PRESETS),
+        metrics=list(ROLE_FILTER_METRICS),
+        roles=[
+            VolunteerRoleItem(
+                key=key,
+                label=label,
+                on_site=role_is_on_site(key),
+                runnable=role_is_runnable(key),
+            )
+            for key, label in CANONICAL_ROLE_LABELS.items()
+        ],
+    )
+
+
 # Таблицы рейтингов открыты БЕЗ логина (решение Дмитрия 25.07.2026:
 # локации и рейтинги — публичная витрина сайта; до этого с 16.07.2026
 # раздел был только для залогиненных).
@@ -48,6 +80,9 @@ def leaderboard(
     # _normalize_min_visits / _normalize_platform_filter), 400 тут был бы избыточен.
     min_visits: Annotated[int, Query(ge=1, le=MAX_MIN_VISITS)] = 1,
     platform: str = "all",
+    # Какие волонтёрские роли считать. Пустой список = все роли; неизвестные
+    # ключи и неприменимые метрики сервис отбрасывает сам.
+    roles: Annotated[list[str] | None, Query()] = None,
 ) -> LeaderboardResponse:
     payload = get_leaderboard(
         db,
@@ -56,6 +91,7 @@ def leaderboard(
         limit=limit,
         min_visits=min_visits,
         platform=platform,
+        roles=roles,
     )
     return LeaderboardResponse.model_validate(payload)
 
