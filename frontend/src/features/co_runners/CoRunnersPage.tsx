@@ -297,7 +297,7 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
               onChange={(event) => setQuery(event.target.value)}
             />
             <TableViewToggle value={tableView} onChange={setTableView} />
-            <TableWrap>
+            <TableWrap stickyFirstCol={showFull}>
               <table className="data-table co-runners-table">
                 <thead>
                   <tr>
@@ -320,7 +320,7 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
                         onClick={() => toggleRow(item.participant_key)}
                       >
                         <td className="td-num muted">{index + 1}</td>
-                        <td>
+                        <td className="co-runners-name-cell">
                           <span
                             className={`co-runners-caret${expanded ? " co-runners-caret-open" : ""}`}
                             aria-hidden="true"

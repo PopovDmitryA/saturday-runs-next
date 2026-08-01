@@ -11046,9 +11046,13 @@ tr.run-crosslinked td {
 }
 
 /* Хост теней-подсказок горизонтального скролла. Сам скролл остаётся
-   у вложенного .table-wrap; тени лежат поверх его краёв и не ловят тапы. */
+   у вложенного .table-wrap; тени лежат поверх его краёв и не ловят тапы.
+   min-width:0 обязателен: как flex/grid-ребёнок хост иначе не сжимается ниже
+   min-content широкой таблицы и распирает страницу вместо своего скролла. */
 .tshadow-host {
   position: relative;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .tshadow-host::before,
@@ -11121,6 +11125,10 @@ tr.run-crosslinked td {
 @media (max-width: 820px) {
   .tview-toggle {
     display: inline-flex;
+    /* Родители таблиц — flex-колонки: без align-self ребёнок растягивается
+       на всю ширину (stretch), и рамка сегмента уезжала бы через весь экран. */
+    align-self: flex-start;
+    width: fit-content;
     border: 1px solid var(--border);
     border-radius: 10px;
     overflow: hidden;
@@ -11239,7 +11247,9 @@ tr.run-crosslinked td {
   left: 50%;
   transform: translate(-50%, 0);
   bottom: 12px;
-  z-index: 40;
+  /* Выше нижней навигации кабинета (.portal-cab-bottomnav, z-index 60),
+     иначе бар физически есть, но прячется под ней. */
+  z-index: 61;
   width: min(560px, calc(100vw - 24px));
   display: flex;
   align-items: center;
@@ -11336,4 +11346,142 @@ tr.run-crosslinked td {
   .data-table-layout-fixed th {
     white-space: nowrap;
   }
+}
+
+/* Ниже 900px появляется фиксированная нижняя навигация кабинета (высота
+   ~56px + safe-area) — поднимаем над ней липкую строку, иначе она под нею. */
+@media (max-width: 900px) {
+  .pinned-me-bar {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .pinned-me-bar.pinned-me-hidden {
+    transform: translate(-50%, 140px);
+  }
+}
+
+/* Ячейка имени в «Соседях»: стрелка раскрытия и ФИО в одной строке.
+   Раньше caret (inline-block) переносил имя на следующую строку в узкой
+   колонке — теперь это флекс-ряд, переносится только сам текст имени. */
+.co-runners-name-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.co-runners-name-cell .co-runners-caret {
+  flex: 0 0 auto;
+  margin-top: 0.42em;
+}
+
+.co-runners-name-cell .co-runners-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* В полном виде колонка имени узкая и липкая — держим ФИО в одну строку,
+   иначе строка расходится на два этажа. Длинные имена обрезаем многоточием:
+   полное видно в раскрытой карточке встреч. В кратком виде колонка широкая,
+   перенос там не мешает и не добавляет лишнего скролла. */
+@media (max-width: 820px) {
+  .table-sticky-first .co-runners-name-cell {
+    align-items: center;
+  }
+
+  .table-sticky-first .co-runners-name-cell .co-runners-caret {
+    margin-top: 0;
+  }
+
+  .table-sticky-first .co-runners-name-cell .co-runners-name > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Полный вид на мобильном: # и Участник липнут слева, чтобы при скролле
+   вправо было видно, чья это строка. Ширины фиксируем — sticky-смещение
+   второй колонки нужно посчитать заранее. */
+@media (max-width: 820px) {
+  .co-runners-table th:first-child,
+  .co-runners-table td:first-child {
+    width: 2.6rem;
+    min-width: 2.6rem;
+    max-width: 2.6rem;
+  }
+
+  .table-sticky-first .co-runners-table th:nth-child(2),
+  .table-sticky-first .co-runners-table td:nth-child(2) {
+    position: sticky;
+    left: 2.6rem;
+    z-index: 2;
+    background: var(--surface);
+    min-width: 9.5rem;
+    max-width: 9.5rem;
+  }
+
+  .table-sticky-first .co-runners-table thead th:nth-child(2) {
+    z-index: 4;
+    background: var(--bg-muted);
+  }
+
+  .tshadow-left .table-sticky-first .co-runners-table th:nth-child(2),
+  .tshadow-left .table-sticky-first .co-runners-table td:nth-child(2) {
+    box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+  }
+
+  /* Раскрытая строка встреч не должна прилипать — она во всю ширину. */
+  .co-runners-detail-row td {
+    position: static;
+  }
+}
+
+/* Волонтёрства на мобильном: Дата | Волонтёрство (роль + локация) | ★.
+   Дата отдельной колонкой — по ней сортировка и фильтр по периоду. */
+.data-table-vol-mobile {
+  table-layout: auto;
+  min-width: 0;
+}
+
+.data-table-vol-mobile .col-date {
+  width: 6.4rem;
+}
+
+.td-vol-role {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.td-vol-sub {
+  margin-top: 3px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+/* Две группы фильтров в одной шторке (роль и локация): каждая со своим
+   списком, поэтому ограничиваем их высоту — иначе попап не помещается. */
+.filter-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.filter-group-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.filter-groups .checkbox-filter-list {
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.filter-group + .filter-group {
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
 }

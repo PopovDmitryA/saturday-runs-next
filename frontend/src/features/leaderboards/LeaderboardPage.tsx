@@ -113,6 +113,22 @@ function formatBestTime(row: {
   return `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
+/**
+ * Место → человеческая доля. У верхушки рейтинга «опережаете 100 %» звучит
+ * абсурдно (58-й из 123 626 округлялся именно так), поэтому у топа говорим
+ * «в топ-0,1 %», а ниже — сколько людей позади, с округлением вниз.
+ */
+function formatPercentile(rank: number, entrants: number): string {
+  const topShare = (rank / entrants) * 100;
+  if (topShare < 5) {
+    const rounded = Math.max(0.1, Math.round(topShare * 10) / 10);
+    const value = rounded.toLocaleString("ru-RU", { maximumFractionDigits: 1 });
+    return `Вы в топ-${value} % участников рейтинга`;
+  }
+  const ahead = Math.floor(100 - topShare);
+  return `Вы опережаете ${ahead} % из ${entrants.toLocaleString("ru-RU")} участников рейтинга`;
+}
+
 function InfoHint({ text }: { text: string }) {
   return (
     <StatHintTooltip text={text} className="lb-info-hint">
@@ -402,9 +418,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   // Перцентиль осмысленнее абсолютного места: «опережаете 97 %» мотивирует
   // и 128-го, и 3128-го. entrants — все прошедшие порог рейтинга.
   const entrants = data?.entrants ?? 0;
-  const percentile =
+  const percentileText =
     me?.included && me.rank != null && entrants > 1
-      ? Math.max(0, Math.round(((entrants - me.rank) / entrants) * 100))
+      ? formatPercentile(me.rank, entrants)
       : null;
 
   // hint — значок «i» рядом с названием колонки: пояснение по наведению, как у
@@ -605,10 +621,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         Показать в таблице
                       </button>
                     )}
-                    {percentile != null && (
-                      <p className="lb-me-percentile muted">
-                        Вы опережаете {percentile}&nbsp;% из {entrants} участников рейтинга
-                      </p>
+                    {percentileText != null && (
+                      <p className="lb-me-percentile muted">{percentileText}</p>
                     )}
                   </div>
                 ) : (

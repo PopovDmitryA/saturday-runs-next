@@ -11,6 +11,7 @@ import { RateRunModal } from "../../components/RateRunModal";
 import { RunRatingStar } from "../../components/RunRatingStar";
 import { useVolunteeringFilters } from "../../hooks/useVolunteeringFilters";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
+import { TableWrap } from "../../components/tableUx/TableWrap";
 import {
   getEligibleRuns,
   getMyRatings,
@@ -61,8 +62,9 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
   const allPlatforms = useMemo(() => uniquePlatforms(tableItems), [tableItems]);
 
   const filters = useVolunteeringFilters(tableItems);
-  // На телефоне волонтёрства — карточки: роль главная, остальное подстрокой.
-  // Фильтры/сортировка заголовков доступны в табличном (десктопном) виде.
+  // На телефоне роль и локация схлопываются в одну колонку (роль крупно,
+  // система и локация подстрокой), дата остаётся отдельной — по ней нужны
+  // сортировка и фильтр. Фильтры роли и локации переезжают в общую шторку.
   const narrowViewport = useNarrowViewport();
 
   const displayedItems = useMemo(
@@ -254,56 +256,164 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
           </div>
 
           {narrowViewport ? (
-            <div className="rowcards vol-cards">
-              {displayedItems.length === 0 ? (
-                <div className="rowcard">
-                  <div className="rowcard-mid muted">Нет строк по фильтрам</div>
-                </div>
-              ) : (
-                displayedItems.map((item, index) => {
-                  const rating = item.rating_entry_id
-                    ? ratingsMap.get(item.rating_entry_id)
-                    : undefined;
-                  const canCreate =
-                    canRate &&
-                    !rating &&
-                    !!item.rating_entry_id &&
-                    !item.is_crosslinked &&
-                    isEligible(item.rating_entry_id);
-                  return (
-                    <div
-                      className={`rowcard${item.is_crosslinked ? " rowcard-muted" : ""}`}
-                      key={`${item.platform_code}-${item.event_date}-${item.location_name}-${index}`}
-                    >
-                      <div className="rowcard-mid">
-                        <div className="rowcard-title">
-                          {item.role ?? "—"}
-                          {item.is_test_event && <span className="badge">тест</span>}
-                          {item.is_crosslinked && (
-                            <span className="badge badge-crosslinked">не в зачёте</span>
+            <TableWrap>
+              <table className="data-table data-table-filterable data-table-vol-mobile">
+                <colgroup>
+                  <col className="col-date" />
+                  <col />
+                  {showRating && <col className="col-rating" />}
+                </colgroup>
+                <thead>
+                  <tr>
+                    <ColumnHeader
+                      label="Дата"
+                      filterActive={filters.dateFilterActive}
+                      sortActive={dateSortActive}
+                      sortAsc={filters.sort === "date_asc"}
+                      onSort={() => filters.setSort((current) => toggleDateSort(current))}
+                      filterTitle="Фильтр по дате"
+                      filterContent={
+                        <div className="date-filter-fields">
+                          <label className="filter-field">
+                            <span className="filter-field-label">С</span>
+                            <input
+                              className="filter-field-input"
+                              type="date"
+                              value={filters.dateFrom}
+                              onChange={(event) => filters.setDateFrom(event.target.value)}
+                            />
+                          </label>
+                          <label className="filter-field">
+                            <span className="filter-field-label">По</span>
+                            <input
+                              className="filter-field-input"
+                              type="date"
+                              value={filters.dateTo}
+                              onChange={(event) => filters.setDateTo(event.target.value)}
+                            />
+                          </label>
+                        </div>
+                      }
+                      filterFooter={
+                        filters.dateFilterActive ? (
+                          <button
+                            type="button"
+                            className="filter-popover-link"
+                            onClick={() => {
+                              filters.setDateFrom("");
+                              filters.setDateTo("");
+                            }}
+                          >
+                            Сбросить фильтр
+                          </button>
+                        ) : undefined
+                      }
+                    />
+                    {/* Роль и локация схлопнуты в одну колонку — фильтры обоих
+                        живут в общей шторке. Система не нужна: она фильтруется
+                        табами над таблицей. */}
+                    <ColumnHeader
+                      label="Волонтёрство"
+                      filterActive={filters.roleFilterActive || filters.locationFilterActive}
+                      filterTitle="Роль и локация"
+                      filterContent={
+                        <div className="filter-groups">
+                          <div className="filter-group">
+                            <p className="filter-group-title">Роль</p>
+                            <CheckboxListFilter
+                              options={filters.roleOptions}
+                              selected={filters.selectedRoles}
+                              onSelectedChange={filters.setSelectedRoles}
+                              searchPlaceholder="Поиск роли…"
+                            />
+                          </div>
+                          <div className="filter-group">
+                            <p className="filter-group-title">Локация</p>
+                            <CheckboxListFilter
+                              options={filters.locationOptions}
+                              selected={filters.selectedLocations}
+                              onSelectedChange={filters.setSelectedLocations}
+                              searchPlaceholder="Поиск локации…"
+                            />
+                          </div>
+                        </div>
+                      }
+                    />
+                    {showRating && (
+                      <ColumnHeader
+                        label="★"
+                        filterable={false}
+                        headerTitle="Оценка старта — жёлтая звезда, если вы оценили"
+                      />
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayedItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={showRating ? 3 : 2} className="table-empty-cell">
+                        <span className="muted">Нет строк по фильтрам</span>
+                        {filters.hasActiveFilters && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm table-empty-reset"
+                            onClick={filters.resetFilters}
+                          >
+                            Сбросить
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ) : (
+                    displayedItems.map((item, index) => {
+                      const rating = item.rating_entry_id
+                        ? ratingsMap.get(item.rating_entry_id)
+                        : undefined;
+                      const canCreate =
+                        canRate &&
+                        !rating &&
+                        !!item.rating_entry_id &&
+                        !item.is_crosslinked &&
+                        isEligible(item.rating_entry_id);
+                      return (
+                        <tr
+                          key={`${item.platform_code}-${item.event_date}-${item.location_name}-${index}`}
+                          className={item.is_crosslinked ? "run-crosslinked" : undefined}
+                        >
+                          <td className="td-date">
+                            <ActivityDateLink date={item.event_date} url={item.event_url} />
+                            {item.is_test_event && <span className="badge">тест</span>}
+                            {item.is_crosslinked && (
+                              <span className="badge badge-crosslinked">не в зачёте</span>
+                            )}
+                          </td>
+                          <td className="td-vol">
+                            <div className="td-vol-role">{item.role ?? "—"}</div>
+                            <div className="td-vol-sub">
+                              <PlatformBadge code={item.platform_code} />{" "}
+                              <LocationNameLink
+                                name={item.location_name}
+                                slug={item.location_slug}
+                              />
+                            </div>
+                          </td>
+                          {showRating && (
+                            <td className="td-rating">
+                              <RunRatingStar
+                                rating={rating}
+                                canCreate={canCreate}
+                                canRate={canRate}
+                                onOpen={() => setActiveRun(buildEligibleRun(item, rating))}
+                              />
+                            </td>
                           )}
-                        </div>
-                        <div className="rowcard-sub">
-                          <ActivityDateLink date={item.event_date} url={item.event_url} /> ·{" "}
-                          <PlatformBadge code={item.platform_code} />{" "}
-                          <LocationNameLink name={item.location_name} slug={item.location_slug} />
-                        </div>
-                      </div>
-                      {showRating && (
-                        <div className="rowcard-right">
-                          <RunRatingStar
-                            rating={rating}
-                            canCreate={canCreate}
-                            canRate={canRate}
-                            onOpen={() => setActiveRun(buildEligibleRun(item, rating))}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </TableWrap>
           ) : (
           <div className="table-wrap">
             <table className="data-table data-table-filterable data-table-layout-fixed data-table-volunteering">
