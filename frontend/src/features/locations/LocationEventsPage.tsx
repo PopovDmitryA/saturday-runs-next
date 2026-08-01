@@ -260,12 +260,12 @@ function LocationEventsContent({ slug }: { slug: string }) {
                 )}
                 <ColumnHeader
                   label="Луч. М"
-                  hint="Лучшее время дня среди мужчин"
+                  hint="Лучшее время среди мужчин"
                   {...sortProps("best_male")}
                 />
                 <ColumnHeader
                   label="Луч. Ж"
-                  hint="Лучшее время дня среди женщин"
+                  hint="Лучшее время среди женщин"
                   {...sortProps("best_female")}
                 />
                 {showFull && (

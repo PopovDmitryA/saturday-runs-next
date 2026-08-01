@@ -861,3 +861,29 @@ a.lb-hub-card:hover {
   font-size: 0.82rem;
   flex-basis: 100%;
 }
+
+/* Краткий вид победных рейтингов («Первые места», «Локации с первым местом»):
+   в нём остаются три колонки, поэтому жёсткая раскладка полного вида
+   (table-layout: fixed + min-width 67rem под 7 колонок) не нужна — из-за неё
+   три колонки растягивались на 67rem и таблица зря скроллилась вбок. */
+@media (max-width: 820px) {
+  .lb-table.lb-table-wins:not(.lb-table-full) {
+    table-layout: auto;
+    min-width: 0;
+  }
+
+  .lb-table.lb-table-wins:not(.lb-table-full) .lb-col-rank,
+  .lb-table.lb-table-wins:not(.lb-table-full) .lb-col-name,
+  .lb-table.lb-table-wins:not(.lb-table-full) .lb-col-num,
+  .lb-table.lb-table-wins:not(.lb-table-full) .lb-col-total {
+    width: auto;
+  }
+}
+
+/* Пока видна липкая «моя строка», кнопка «наверх» уезжает над ней — иначе
+   круглая кнопка садится прямо на строку и закрывает кнопку «Показать». */
+body.has-pinned-me .lb-scroll-top {
+  bottom: calc(
+    4.5rem + var(--portal-bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px)
+  );
+}

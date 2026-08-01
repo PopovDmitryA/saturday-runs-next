@@ -1,31 +1,14 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 
 export type TableView = "short" | "full";
 
-// Режим «Кратко | Полно» живёт per-таблица и переживает перезагрузку.
-export function useTableView(storageKey: string): [TableView, (view: TableView) => void] {
-  const fullKey = `tableView:${storageKey}`;
-  const [view, setViewState] = useState<TableView>(() => {
-    try {
-      return localStorage.getItem(fullKey) === "full" ? "full" : "short";
-    } catch {
-      return "short";
-    }
-  });
-
-  const setView = useCallback(
-    (next: TableView) => {
-      setViewState(next);
-      try {
-        localStorage.setItem(fullKey, next);
-      } catch {
-        // приватный режим — просто не сохраняем
-      }
-    },
-    [fullKey],
-  );
-
-  return [view, setView];
+/**
+ * Режим «Кратко | Полно». Всегда открывается кратким: это дефолт для телефона,
+ * а запоминание выбора между заходами сбивало — страница неожиданно
+ * открывалась широкой таблицей со скроллом.
+ */
+export function useTableView(_storageKey: string): [TableView, (view: TableView) => void] {
+  return useState<TableView>("short");
 }
 
 type TableViewToggleProps = {

@@ -1135,7 +1135,9 @@ a.on-this-day-location {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  max-width: 20rem;
+  /* На телефоне 20rem шире экрана — подсказка вылезала за правый край
+     (заметно на узких колонках вроде PR). Позицию дополнительно вжимает JS. */
+  max-width: min(20rem, calc(100vw - 1rem));
 }
 
 .stat-hint-tooltip-note {
@@ -11348,16 +11350,14 @@ tr.run-crosslinked td {
   }
 }
 
-/* Ниже 900px появляется фиксированная нижняя навигация кабинета (высота
-   ~56px + safe-area) — поднимаем над ней липкую строку, иначе она под нею. */
-@media (max-width: 900px) {
-  .pinned-me-bar {
-    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
-  }
+/* Поднимаем над нижней навигацией телефона (её высота — в той же переменной,
+   что используют плавающие кнопки), иначе бар физически есть, но под нею. */
+.pinned-me-bar {
+  bottom: calc(0.75rem + var(--portal-bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px));
+}
 
-  .pinned-me-bar.pinned-me-hidden {
-    transform: translate(-50%, 140px);
-  }
+.pinned-me-bar.pinned-me-hidden {
+  transform: translate(-50%, 140px);
 }
 
 /* Ячейка имени в «Соседях»: стрелка раскрытия и ФИО в одной строке.
@@ -11416,8 +11416,10 @@ tr.run-crosslinked td {
     left: 2.6rem;
     z-index: 2;
     background: var(--surface);
-    min-width: 9.5rem;
-    max-width: 9.5rem;
+    /* Больше половины экрана под ФИО: почти все имена влезают целиком,
+       остальные обрезаются многоточием (полное — в title и в карточке встреч). */
+    min-width: 11.5rem;
+    max-width: 11.5rem;
   }
 
   .table-sticky-first .co-runners-table thead th:nth-child(2) {
@@ -11430,9 +11432,22 @@ tr.run-crosslinked td {
     box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
   }
 
-  /* Раскрытая строка встреч не должна прилипать — она во всю ширину. */
+  /* Раскрытая карточка встреч шириной со всю таблицу (в полном виде это шире
+     экрана), поэтому при скролле вбок она уезжала вместе с колонками. Липнем
+     к левому краю и ограничиваем шириной видимой области — карточка остаётся
+     на месте, вбок ездят только колонки таблицы. */
   .co-runners-detail-row td {
     position: static;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .co-runners-detail-row .co-runners-detail-card {
+    position: sticky;
+    left: 0;
+    width: calc(100vw - 2.5rem);
+    max-width: calc(100vw - 2.5rem);
+    box-sizing: border-box;
   }
 }
 

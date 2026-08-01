@@ -70,7 +70,9 @@ function ParticipantName({ item }: { item: CoRunnerItem }) {
 
   return (
     <span className="co-runners-name">
-      <span>{name}</span>
+      {/* В полном виде колонка узкая и длинное ФИО обрезается многоточием —
+          нативный title отдаёт его целиком (и озвучивается скринридером). */}
+      <span title={name}>{name}</span>
       {item.site_serial_id != null && (
         <StatHintTooltip
           text="Откроется профиль участника на этом сайте"

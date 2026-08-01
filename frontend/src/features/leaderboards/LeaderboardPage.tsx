@@ -282,6 +282,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
+  const tableRef = useRef<HTMLTableElement | null>(null);
   const attachFloatingHead = useFloatingTableHead();
   // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
   const [tableView, setTableView] = useTableView("leaderboard");
@@ -640,6 +641,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               className={`lb-table-wrap${hasWinExtras ? " lb-table-wrap-wide" : ""}`}
             >
               <table
+                ref={tableRef}
                 className={`data-table lb-table${hasWinExtras ? " lb-table-wins" : ""}${
                   showFull ? " lb-table-full" : ""
                 }`}
@@ -729,6 +731,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
             {me?.included && me.rank != null && (
               <PinnedMeBar
                 rowRef={myRowRef}
+                tableRef={tableRef}
                 rank={me.rank}
                 name={me.display_name ?? "Вы"}
                 value={me.total}
