@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
@@ -14,6 +14,7 @@ import {
   type LeaderboardRow,
   type MyLeaderboardRow,
   type PlatformFilter,
+  type VolunteerRoleDetail,
 } from "./leaderboardsApi";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { unitLabel } from "./pluralize";
@@ -41,11 +42,23 @@ type SortKey = "rank" | "total" | "best_time";
 const METRIC_CRUMBS: Record<LeaderboardMetric, { section: string; label: string }> = {
   runs: { section: "Бегуны", label: "Количество пробежек" },
   volunteering: { section: "Волонтёры", label: "Количество волонтёрств" },
+  volunteer_roles: { section: "Волонтёры", label: "Мультиволонтёр" },
   locations: { section: "Паркран-туристы", label: "Уникальные локации" },
   volunteer_locations: { section: "Волонтёры", label: "Уникальные локации" },
   wins: { section: "Бегуны", label: "Количество первых мест" },
   win_locations: { section: "Паркран-туристы", label: "Локации с первым местом" },
 };
+
+// Мультиволонтёр: колонка «Любимая роль» + детализация ролей по клику на
+// строке (в отдельную колонку список не влезает — у ветеранов ролей под три
+// десятка).
+const TOP_ROLE_HINT =
+  "Роль, в которой участник выходил чаще всего. Число рядом — сколько раз он " +
+  "волонтёрил именно в ней.";
+
+const ROLES_TOTAL_HINT =
+  "Число разных освоенных ролей, а не число волонтёрств. Одна и та же роль в " +
+  "разных системах считается один раз — кликните по строке, чтобы увидеть разбор.";
 
 const TOP_LOCATION_HINT =
   "Число рядом — сколько раз участник был первым именно на этой локации, " +
@@ -142,6 +155,67 @@ function TopWinLocation({
   );
 }
 
+function TopRole({ row }: { row: { top_role?: string | null; top_role_count?: number | null } }) {
+  if (!row.top_role) {
+    return <span className="lb-zero">—</span>;
+  }
+  return (
+    <span className="lb-home">
+      {row.top_role}
+      {row.top_role_count != null && row.top_role_count > 1 && (
+        <span className="lb-home-count"> ×{row.top_role_count}</span>
+      )}
+    </span>
+  );
+}
+
+// Детализация мультиволонтёра: из чего собралось «Всего» — какие роли и
+// сколько волонтёрств в каждой системе. Колонки те же, что в самой таблице,
+// чтобы цифры читались по вертикали.
+function RoleBreakdown({
+  details,
+  columns,
+}: {
+  details: VolunteerRoleDetail[];
+  columns: string[];
+}) {
+  if (details.length === 0) {
+    return <p className="muted lb-roles-empty">Ролей пока нет.</p>;
+  }
+  return (
+    <table className="lb-roles-table">
+      <thead>
+        <tr>
+          <th className="lb-roles-col-name">Роль</th>
+          {columns.map((code) => (
+            <th key={code} className="lb-col-num">
+              {PLATFORM_LABELS[code] ?? code}
+            </th>
+          ))}
+          <th className="lb-col-num lb-col-total">Волонтёрств</th>
+        </tr>
+      </thead>
+      <tbody>
+        {details.map((detail) => (
+          <tr key={detail.role}>
+            <td className="lb-roles-col-name">{detail.role}</td>
+            {columns.map((code) => (
+              <td key={code} className="lb-col-num">
+                {detail.platforms[code] ? (
+                  detail.platforms[code]
+                ) : (
+                  <span className="lb-zero">—</span>
+                )}
+              </td>
+            ))}
+            <td className="lb-col-num lb-col-total">{detail.total}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function BestTime({
   row,
 }: {
@@ -232,7 +306,11 @@ function ParticipantName({ row }: { row: { display_name: string | null; site_ser
   const name = row.display_name?.trim() || "Участник";
   if (row.site_serial_id != null) {
     return (
-      <a className="lb-name lb-name-link" href={`/users/${row.site_serial_id}`}>
+      <a
+        className="lb-name lb-name-link"
+        href={`/users/${row.site_serial_id}`}
+        onClick={(event) => event.stopPropagation()}
+      >
         {name}
       </a>
     );
@@ -264,6 +342,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [minVisits, setMinVisits] = useState(1);
   const [platform, setPlatform] = useState<PlatformFilter>("all");
   const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
+  // Развёрнутые строки мультиволонтёра (детализация «роль × система»).
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [showScrollTop, setShowScrollTop] = useState(false);
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
   const attachFloatingHead = useFloatingTableHead();
@@ -285,6 +365,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   // имени) и последнюю победу/новую локацию (в конце таблицы).
   const hasWinExtras = metric === "wins" || metric === "win_locations";
   const lastWinMeta = LAST_WIN_META[metric];
+  const isRoles = metric === "volunteer_roles";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -327,7 +408,20 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
 
   useEffect(() => {
     setVisibleCount(PAGE_STEP);
+    // Развёрнутые детализации закрываем: под новым фильтром это уже другой
+    // набор строк, держать «раскрытым» уехавшее место незачем.
+    setExpandedRows(new Set());
   }, [query, sortKey, effectiveGender, effectiveMinVisits, platform]);
+
+  const toggleRow = useCallback((key: string) => {
+    setExpandedRows((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
 
   const columns = data?.platform_columns ?? [];
   const platformOptions = data?.platform_options ?? [];
@@ -363,6 +457,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       last_win_location: me.last_win_location,
       last_win_location_slug: me.last_win_location_slug,
       last_win_date: me.last_win_date,
+      top_role: me.top_role,
+      top_role_count: me.top_role_count,
+      role_details: me.role_details,
     };
     return [...data.rows, myRow];
   }, [data, me]);
@@ -399,7 +496,11 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   // Место + участник + «всего» и, у победных рейтингов, лучшее время,
   // топ-локация (только wins) и последняя победа.
   const totalColumns =
-    columns.length + 3 + (hasWinExtras ? 2 : 0) + (metric === "wins" ? 1 : 0);
+    columns.length +
+    3 +
+    (hasWinExtras ? 2 : 0) +
+    (metric === "wins" ? 1 : 0) +
+    (isRoles ? 1 : 0);
   const visibleRows = rows.slice(0, visibleCount);
   const nextChunkEnd = Math.min(visibleCount + PAGE_STEP, rows.length);
 
@@ -571,6 +672,14 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           <DeltaSlot delta={me.total_delta} />
                         </span>
                       </span>
+                      {isRoles && me.top_role && (
+                        <span className="lb-me-value">
+                          <span className="lb-me-platform">
+                            Любимая роль <InfoHint text={TOP_ROLE_HINT} />
+                          </span>
+                          <TopRole row={me} />
+                        </span>
+                      )}
                       {hasWinExtras && me.best_time_sec != null && (
                         <span className="lb-me-value">
                           <span className="lb-me-platform">
@@ -630,7 +739,17 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         {PLATFORM_LABELS[code] ?? code}
                       </th>
                     ))}
-                    {headerCell("total", "Всего", "lb-col-num lb-col-total")}
+                    {headerCell(
+                      "total",
+                      "Всего",
+                      "lb-col-num lb-col-total",
+                      isRoles ? ROLES_TOTAL_HINT : undefined,
+                    )}
+                    {isRoles && (
+                      <th className="lb-col-home">
+                        Любимая роль <InfoHint text={TOP_ROLE_HINT} />
+                      </th>
+                    )}
                     {metric === "wins" && (
                       <th className="lb-col-home">
                         Топ-локация <InfoHint text={TOP_LOCATION_HINT} />
@@ -646,14 +765,42 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 <tbody>
                   {visibleRows.map((row, index) => {
                     const isMe = me != null && row.site_serial_id === me.site_serial_id;
+                    const rowKey = `${row.rank}-${row.display_name}-${row.site_serial_id ?? index}`;
+                    const expanded = expandedRows.has(rowKey);
+                    const rowClass = [
+                      isMe ? "lb-row-me" : "",
+                      isRoles ? "lb-row-expandable" : "",
+                      expanded ? "lb-row-expanded" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ");
                     return (
+                      <Fragment key={rowKey}>
                       <tr
-                        key={`${row.rank}-${row.display_name}-${row.site_serial_id ?? index}`}
                         ref={isMe ? myRowRef : undefined}
-                        className={isMe ? "lb-row-me" : undefined}
+                        className={rowClass || undefined}
+                        // Клик по строке разворачивает детализацию; клик по имени
+                        // остаётся переходом в профиль (ссылка гасит всплытие).
+                        onClick={isRoles ? () => toggleRow(rowKey) : undefined}
                       >
                         <td className="lb-col-rank">
                           <span className="lb-rank">
+                            {isRoles && (
+                              <button
+                                type="button"
+                                className="lb-expand-toggle"
+                                aria-expanded={expanded}
+                                aria-label={
+                                  expanded ? "Свернуть роли" : "Показать роли участника"
+                                }
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  toggleRow(rowKey);
+                                }}
+                              >
+                                <span aria-hidden>{expanded ? "▾" : "▸"}</span>
+                              </button>
+                            )}
                             {row.rank}
                             <RankDelta delta={row.rank_delta} />
                           </span>
@@ -677,6 +824,11 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             <DeltaSlot delta={row.total_delta} />
                           </span>
                         </td>
+                        {isRoles && (
+                          <td className="lb-col-home">
+                            <TopRole row={row} />
+                          </td>
+                        )}
                         {metric === "wins" && (
                           <td className="lb-col-home">
                             <TopWinLocation row={row} />
@@ -688,6 +840,24 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           </td>
                         )}
                       </tr>
+                      {isRoles && expanded && (
+                        <tr className="lb-detail-row">
+                          <td colSpan={totalColumns}>
+                            <div className="lb-roles-detail">
+                              <p className="lb-roles-caption muted">
+                                Роли участника и число волонтёрств в каждой системе.
+                                «Всего» в таблице — сколько разных ролей освоено, а не
+                                сумма волонтёрств.
+                              </p>
+                              <RoleBreakdown
+                                details={row.role_details ?? []}
+                                columns={columns}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })}
                   {visibleRows.length === 0 && (

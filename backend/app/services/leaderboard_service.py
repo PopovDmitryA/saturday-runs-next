@@ -36,11 +36,13 @@ from app.parkrun.volunteer_credits import (
 from app.services.co_runners_service import _is_unknown_participant_name
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.time_format import format_finish_time_display
+from app.volunteer_role_taxonomy import canonical_volunteer_role, role_occasions
 from app.volunteering_occasions import count_volunteering_occasions
 
 LeaderboardMetric = Literal[
     "runs",
     "volunteering",
+    "volunteer_roles",
     "locations",
     "volunteer_locations",
     "wins",
@@ -50,6 +52,7 @@ LeaderboardMetric = Literal[
 LEADERBOARD_METRICS: tuple[LeaderboardMetric, ...] = (
     "runs",
     "volunteering",
+    "volunteer_roles",
     "locations",
     "volunteer_locations",
     "wins",
@@ -136,6 +139,7 @@ WIN_EXTRAS_METRICS: tuple[LeaderboardMetric, ...] = ("wins", "win_locations")
 METRIC_THRESHOLD_PERCENTILE: dict[str, float] = {
     "runs": 75,
     "volunteering": 75,
+    "volunteer_roles": 75,
     "locations": 95,
     # Волонтёрский туризм — та же форма распределения, что у бегового (подавляющее
     # большинство волонтёров знает ровно одну площадку), поэтому и перцентиль тот же.
@@ -157,6 +161,16 @@ METRIC_META: dict[str, dict[str, str]] = {
         "title": "Рейтинг количества волонтёрств",
         "unit": "волонтёрств",
         "description": "Волонтёрства во всех системах. Дельта — за последнюю неделю.",
+    },
+    "volunteer_roles": {
+        "title": "Мультиволонтёр — разнообразие ролей",
+        "unit": "ролей",
+        "description": (
+            "Сколько РАЗНЫХ волонтёрских ролей освоил участник. Одна и та же "
+            "роль, названная в системах по-разному («Сканер», «Сканирование», "
+            "«Barcode Scanning»), считается одной, поэтому «Всего» — "
+            "объединение ролей по всем системам, а не сумма колонок."
+        ),
     },
     "locations": {
         "title": "Рейтинг туризма — уникальные локации",
@@ -378,6 +392,42 @@ WHERE e.is_test_event = false
   AND p.code IN ('five_verst', 'runpark')
   AND ec.secondary_event_id IS NULL
 """
+
+# Роли волонтёра по системам: дата первого выхода в роли (для дельты недели) и
+# число волонтёрств в ней (для «любимой роли»). Ярлыки сырые — канонизирует их Python
+# (см. app.volunteer_role_taxonomy), потому что схлопывание межсистемных
+# синонимов в SQL превратилось бы в нечитаемый CASE на сотню строк.
+# У parkrun строки волонтёрства — сводка профиля на псевдо-локации
+# «parkrun-summary» с датой 1970-01-01: в окно недели такие роли не попадут
+# никогда (у parkrun дат волонтёрств нет в принципе), а их число берётся из
+# счётчика кредитов в самом ярлыке — «Marshal (12×)».
+_VOLUNTEER_ROLE_ROWS_SQL = (
+    _PARKRUN_ELIGIBLE_CTE
+    + """
+SELECT
+    vr.participant_id AS participant_id,
+    p.code AS platform_code,
+    vr.role AS role,
+    MIN(e.event_date) AS first_date,
+    COUNT(*) AS times
+FROM volunteer_results vr
+JOIN events e ON e.id = vr.event_id
+JOIN platforms p ON p.id = e.platform_id
+LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
+WHERE e.is_test_event = false
+  AND vr.participant_id IS NOT NULL
+  AND vr.role IS NOT NULL
+  AND vr.role <> ''
+  AND ec.secondary_event_id IS NULL
+  AND (
+    p.code <> 'parkrun'
+    OR EXISTS (SELECT 1 FROM parkrun_eligible pe WHERE pe.participant_id = vr.participant_id)
+  )
+  /*PIDS_FILTER*/
+GROUP BY vr.participant_id, p.code, vr.role
+"""
+)
+
 
 def _location_visits_sql(*, only_wins: bool) -> str:
     """Визиты участника по локациям: дата первого, всего и за последнюю неделю.
@@ -608,6 +658,12 @@ class _Entity:
     last_win_location: str | None = None
     last_win_location_slug: str | None = None
     last_win_date: date | None = None
+    # Только для метрики volunteer_roles: «любимая роль» (чаще всего выходил) и
+    # полный список освоенных ролей — он раскрывается по клику на строке.
+    top_role: str | None = None
+    top_role_count: int = 0
+    # Детализация «роль × система × волонтёрств» — раскрывается по клику на строке.
+    role_details: list[dict[str, object]] = field(default_factory=list)
     # Участники, из которых собрана строка — нужны для запроса рекорда.
     participant_ids: set[UUID] = field(default_factory=set)
 
@@ -875,6 +931,164 @@ def _collect_numeric_entities(
             bucket[1] += week
             entity.total += total
             entity.week += week
+    return entities
+
+
+@dataclass
+class _RoleUsage:
+    """Освоенная роль: когда впервые вышел в ней и сколько раз волонтёрил."""
+
+    first_date: date
+    times: int
+
+
+def _my_volunteer_role_rows(
+    db: Session, pids: list[UUID]
+) -> list[tuple[UUID, str, str, date, int]]:
+    """Те же строки ролей, но только по участникам залогиненного (строка «Вы»)."""
+    sql = _VOLUNTEER_ROLE_ROWS_SQL.replace(
+        "/*PIDS_FILTER*/", "AND vr.participant_id = ANY(:pids)"
+    )
+    return [
+        (row[0], row[1], row[2], row[3], int(row[4]))
+        for row in db.execute(text(sql), {"pids": pids}).all()
+    ]
+
+
+def _add_role_row(
+    by_platform: dict[str, dict[str, _RoleUsage]],
+    labels: dict[str, str],
+    platform_code: str,
+    raw_role: str,
+    first_date: date,
+    times: int,
+) -> None:
+    """Свести сырую строку роли в счётчики канонической роли внутри системы.
+
+    Разные ярлыки одной системы могут схлопнуться в одну каноническую роль
+    (у С95 «Сканер» и «Сканер 25» — это одна роль, просто с вехой), поэтому
+    строки суммируются, а не перезаписываются.
+    """
+    canonical = canonical_volunteer_role(raw_role)
+    if canonical is None:
+        return
+    labels.setdefault(canonical.key, canonical.label)
+    # parkrun не хранит отдельные волонтёрства — только сводку «роль × кредитов».
+    occasions = role_occasions(raw_role)
+    weight = occasions if occasions is not None else times
+    roles = by_platform.setdefault(platform_code, {})
+    existing = roles.get(canonical.key)
+    if existing is None:
+        roles[canonical.key] = _RoleUsage(first_date=first_date, times=weight)
+        return
+    existing.first_date = min(existing.first_date, first_date)
+    existing.times += weight
+
+
+@dataclass
+class _RoleSummary:
+    """Итог по ролям одной строки рейтинга."""
+
+    # platform code -> [ролей всего, из них освоено на этой неделе]
+    values: dict[str, list[int]]
+    total: int
+    week: int
+    top_role: tuple[str, int] | None
+    # Детализация для разворачивания строки: роль → сколько волонтёрств в
+    # каждой системе. Порядок — по их числу, как и «любимая роль».
+    details: list[dict[str, object]]
+
+
+def _summarize_roles(
+    by_platform: dict[str, dict[str, _RoleUsage]],
+    labels: dict[str, str],
+    week_start: date,
+) -> _RoleSummary:
+    """Значения по системам, «всего» (объединение ролей), дельта недели,
+    любимая роль и построчная детализация «роль × система × волонтёрств»."""
+    values: dict[str, list[int]] = {}
+    merged: dict[str, _RoleUsage] = {}
+    for code, roles in by_platform.items():
+        cell = values.setdefault(code, [0, 0])
+        for role_key, usage in roles.items():
+            cell[0] += 1
+            if usage.first_date >= week_start:
+                cell[1] += 1
+            existing = merged.get(role_key)
+            if existing is None:
+                merged[role_key] = _RoleUsage(first_date=usage.first_date, times=usage.times)
+            else:
+                existing.first_date = min(existing.first_date, usage.first_date)
+                existing.times += usage.times
+    total = len(merged)
+    # Роль «новая», если ПЕРВЫЙ выход в ней случился в окне недели — по всем
+    # системам сразу: освоил в 5 вёрст год назад, повторил в С95 вчера — роль
+    # не новая.
+    week = sum(1 for usage in merged.values() if usage.first_date >= week_start)
+    ordered = sorted(
+        merged.items(), key=lambda item: (-item[1].times, labels.get(item[0], item[0]))
+    )
+    top = (labels.get(ordered[0][0], ordered[0][0]), ordered[0][1].times) if ordered else None
+    details: list[dict[str, object]] = []
+    for role_key, usage in ordered:
+        by_code = {
+            code: roles[role_key].times
+            for code, roles in by_platform.items()
+            if role_key in roles
+        }
+        # Дату первого выхода в детализацию не выносим: у parkrun её нет (сводка
+        # профиля лежит на псевдо-событии 1970-01-01), и колонка «освоена с»
+        # врала бы ровно там, где у человека есть parkrun.
+        details.append(
+            {
+                "role": labels.get(role_key, role_key),
+                "total": usage.times,
+                "platforms": by_code,
+            }
+        )
+    return _RoleSummary(
+        values=values, total=total, week=week, top_role=top, details=details
+    )
+
+
+def _collect_volunteer_role_entities(
+    source: _MetricSource, platform: str = "all"
+) -> dict[str, _Entity]:
+    """Мультиволонтёр: число РАЗНЫХ ролей, канонизированных между системами."""
+    links = source.links()
+    rows = source.rows(_VOLUNTEER_ROLE_ROWS_SQL.replace("/*PIDS_FILTER*/", ""))
+
+    per_entity: dict[str, dict[str, dict[str, _RoleUsage]]] = {}
+    labels: dict[str, str] = {}
+    meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
+    for pid, code, raw_role, first_date, times in rows:
+        if platform != "all" and code != platform:
+            continue
+        link = links.get(pid)
+        key = _entity_key(pid, link)
+        meta.setdefault(key, (pid, link))
+        _add_role_row(
+            per_entity.setdefault(key, {}), labels, code, raw_role, first_date, int(times)
+        )
+
+    names = source.names()
+    entities: dict[str, _Entity] = {}
+    for key, by_platform in per_entity.items():
+        pid, link = meta[key]
+        entity = _Entity(key=key)
+        if link is not None and not link.private:
+            entity.site_serial_id = link.serial_id
+            entity.display_name = link.display_name or names.get(pid)
+        else:
+            entity.display_name = names.get(pid)
+        summary = _summarize_roles(by_platform, labels, source.week_start)
+        entity.values = summary.values
+        entity.total = summary.total
+        entity.week = summary.week
+        entity.role_details = summary.details
+        if summary.top_role is not None:
+            entity.top_role, entity.top_role_count = summary.top_role
+        entities[key] = entity
     return entities
 
 
@@ -1364,7 +1578,9 @@ def _build_snapshot(
     week_start = _week_start(latest)
     src = source if source is not None else _MetricSource(db, latest)
 
-    if metric == "locations":
+    if metric == "volunteer_roles":
+        entities = _collect_volunteer_role_entities(src, platform=platform)
+    elif metric == "locations":
         entities = _collect_location_entities(src, min_visits=min_visits, platform=platform)
     elif metric == "volunteer_locations":
         entities = _collect_location_entities(
@@ -1434,6 +1650,10 @@ def _build_snapshot(
         if entity.home_location is not None:
             row["home_location"] = entity.home_location
             row["home_location_wins"] = entity.home_location_wins
+        if entity.top_role is not None:
+            row["top_role"] = entity.top_role
+            row["top_role_count"] = entity.top_role_count
+            row["role_details"] = entity.role_details
         if entity.best_time_sec is not None:
             row["best_time_sec"] = entity.best_time_sec
             row["best_time_display"] = format_finish_time_display(entity.best_time_sec)
@@ -1691,6 +1911,27 @@ def _parkrun_volunteer_counts_for(db: Session, participant_ids: list[UUID]) -> i
     return total
 
 
+def _my_volunteer_role_values(
+    db: Session,
+    participant_ids: list[UUID],
+    week_start: date,
+    platform: str = "all",
+) -> _RoleSummary:
+    """«Моя» строка мультиволонтёра: роли по системам, всего, любимая роль
+    и та же детализация «роль × система», что у строк таблицы."""
+    if not participant_ids:
+        return _RoleSummary(values={}, total=0, week=0, top_role=None, details=[])
+    by_platform: dict[str, dict[str, _RoleUsage]] = {}
+    labels: dict[str, str] = {}
+    for _pid, code, raw_role, first_date, times in _my_volunteer_role_rows(
+        db, participant_ids
+    ):
+        if platform != "all" and code != platform:
+            continue
+        _add_role_row(by_platform, labels, code, raw_role, first_date, times)
+    return _summarize_roles(by_platform, labels, week_start)
+
+
 @dataclass
 class _LastWin:
     """Последняя победа для «моей» строки: локация, ссылка на неё и дата."""
@@ -1909,7 +2150,18 @@ def get_my_leaderboard_row(
 
     my_home: tuple[str, int] | None = None
     my_last_win: _LastWin | None = None
-    if metric == "locations":
+    my_top_role: tuple[str, int] | None = None
+    my_role_details: list[dict[str, object]] = []
+    if metric == "volunteer_roles":
+        role_summary = _my_volunteer_role_values(
+            db, participant_ids, week_start, platform_resolved
+        )
+        values = role_summary.values
+        total = role_summary.total
+        week = role_summary.week
+        my_top_role = role_summary.top_role
+        my_role_details = role_summary.details
+    elif metric == "locations":
         values, total, week, _last = _my_location_values(
             db, participant_ids, week_start, min_visits=visits, platform=platform_resolved
         )
@@ -2007,6 +2259,9 @@ def get_my_leaderboard_row(
         "gender_mismatch": gender_mismatch,
         "home_location": my_home[0] if my_home else None,
         "home_location_wins": my_home[1] if my_home else None,
+        "top_role": my_top_role[0] if my_top_role else None,
+        "top_role_count": my_top_role[1] if my_top_role else None,
+        "role_details": my_role_details,
         "best_time_sec": my_best_time,
         "best_time_display": (
             format_finish_time_display(my_best_time) if my_best_time is not None else None

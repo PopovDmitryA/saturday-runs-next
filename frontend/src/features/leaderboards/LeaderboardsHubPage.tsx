@@ -54,8 +54,18 @@ const SECTIONS: HubSection[] = [
         href: "/ratings/volunteer-locations",
         title: "Уникальные локации",
       },
+      {
+        metric: "volunteer_roles",
+        href: "/ratings/volunteer-roles",
+        title: "Мультиволонтёр — разнообразие ролей",
+      },
     ],
-    soon: [{ title: "Мультиволонтёр", description: "Кто освоил больше всего разных ролей." }],
+    soon: [
+      {
+        title: "Дуализм",
+        description: "Кто одинаково силён и как бегун, и как волонтёр.",
+      },
+    ],
   },
   {
     emoji: "🧭",
