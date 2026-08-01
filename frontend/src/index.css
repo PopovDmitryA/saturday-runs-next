@@ -634,6 +634,22 @@ body {
   color: #fff;
 }
 
+.btn-spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-right: 0.5rem;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: btn-spinner-spin 0.6s linear infinite;
+}
+
+@keyframes btn-spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .btn.secondary {
   background: var(--chip-bg);
   color: var(--text);

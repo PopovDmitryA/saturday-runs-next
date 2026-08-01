@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { PlatformBadge } from "./PlatformBadge";
 import { ParticipationBadge } from "./ParticipationBadge";
 import { RateRunModal } from "./RateRunModal";
+import { Snackbar } from "./Snackbar";
+import { useSnackbar } from "../hooks/useSnackbar";
 import { getEligibleRuns, type EligibleRun, type RatingEligibility, type RunRating } from "../lib/api";
 import { formatDateLong, pluralizeRu } from "../lib/format";
 import { loadDismissedRatings, saveDismissedRatings } from "../lib/ratingDismissals";
@@ -10,6 +12,7 @@ export function RecentRunsRating() {
   const [data, setData] = useState<RatingEligibility | null>(null);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissedRatings());
+  const { snackbar, showSnackbar, dismissSnackbar } = useSnackbar();
 
   useEffect(() => {
     let cancelled = false;
@@ -64,7 +67,13 @@ export function RecentRunsRating() {
     : 0;
 
   if (!data || (pending.length === 0 && legacyCount === 0)) {
-    return null;
+    // Блок мог только что схлопнуться из-за успешной оценки — снекбар должен
+    // пережить это скрытие.
+    return (
+      <Snackbar open={snackbar.open} title={snackbar.title} variant={snackbar.variant} onDismiss={dismissSnackbar}>
+        {snackbar.message}
+      </Snackbar>
+    );
   }
 
   return (
@@ -165,6 +174,7 @@ export function RecentRunsRating() {
           onSaved={(rating) => {
             applyRating(activeRun.entry_id, rating);
             setActiveRun(null);
+            showSnackbar({ variant: "default", title: "Спасибо!", message: "Отзыв сохранён" });
           }}
           onDeleted={() => {
             applyRating(activeRun.entry_id, null);
@@ -172,6 +182,10 @@ export function RecentRunsRating() {
           }}
         />
       )}
+
+      <Snackbar open={snackbar.open} title={snackbar.title} variant={snackbar.variant} onDismiss={dismissSnackbar}>
+        {snackbar.message}
+      </Snackbar>
     </section>
   );
 }

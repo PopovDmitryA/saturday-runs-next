@@ -19,8 +19,19 @@ export function DetailModal({ open, title, children, onClose, footer }: DetailMo
     if (!open) {
       return;
     }
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    // Просто overflow:hidden на body не держит iOS Safari — фон всё равно
+    // скроллится тачем (rubber-banding). Фиксируем body на текущей позиции
+    // и возвращаем скролл на место при закрытии.
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const previousPosition = body.style.position;
+    const previousTop = body.style.top;
+    const previousWidth = body.style.width;
+    const previousOverflow = body.style.overflow;
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
@@ -28,7 +39,11 @@ export function DetailModal({ open, title, children, onClose, footer }: DetailMo
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      body.style.position = previousPosition;
+      body.style.top = previousTop;
+      body.style.width = previousWidth;
+      body.style.overflow = previousOverflow;
+      window.scrollTo(0, scrollY);
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [open, onClose]);
