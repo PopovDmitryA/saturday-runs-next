@@ -7,6 +7,7 @@ import {
   demoGetUniqueLocationsDetail,
   demoGetVisitedLocationsMap,
   demoGetVolunteerRoleStats,
+  demoGetWins,
   demoListRuns,
   demoListVolunteering,
   getPublicProfileBestResults,
@@ -15,6 +16,7 @@ import {
   getPublicProfileVisitedDetail,
   getPublicProfileVisitedMap,
   getPublicProfileVolunteerRoleStats,
+  getPublicProfileWins,
   getAllPublicProfileRuns,
   getAllPublicProfileVolunteering,
   getBestResults,
@@ -24,6 +26,7 @@ import {
   getUniqueLocationsDetail,
   getVisitedLocationsMap,
   getVolunteerRoleStats,
+  getWins,
   getAllUserRuns,
   getAllUserVolunteering,
   type BestResultItem,
@@ -33,6 +36,7 @@ import {
   type RunItem,
   type UniqueLocationsDetailResponse,
   type VolunteerRoleStatItem,
+  type WinItem,
   type VolunteeringItem,
 } from "./api";
 
@@ -44,6 +48,7 @@ export type AppDataSource = {
   listVolunteering: (includeTest?: boolean, limit?: number) => Promise<VolunteeringItem[]>;
   getBestResults: (includeTest?: boolean) => Promise<BestResultItem[]>;
   getPersonalRecords: (includeTest?: boolean) => Promise<PersonalRecordItem[]>;
+  getWins: (includeTest?: boolean) => Promise<WinItem[]>;
   getVolunteerRoleStats: (includeTest?: boolean) => Promise<VolunteerRoleStatItem[]>;
   getUniqueLocationsDetail: (includeTest?: boolean) => Promise<UniqueLocationsDetailResponse>;
   getVisitedLocationsMap: (includeTest?: boolean) => Promise<MapLocationsResponse>;
@@ -57,6 +62,7 @@ export const authDataSource: AppDataSource = {
   listVolunteering: (includeTest) => getAllUserVolunteering(includeTest),
   getBestResults,
   getPersonalRecords,
+  getWins,
   getVolunteerRoleStats,
   getUniqueLocationsDetail,
   getVisitedLocationsMap,
@@ -70,6 +76,7 @@ export const demoDataSource: AppDataSource = {
   listVolunteering: () => demoListVolunteering(),
   getBestResults: () => demoGetBestResults(),
   getPersonalRecords: () => demoGetPersonalRecords(),
+  getWins: () => demoGetWins(),
   getVolunteerRoleStats: () => demoGetVolunteerRoleStats(),
   getUniqueLocationsDetail: () => demoGetUniqueLocationsDetail(),
   getVisitedLocationsMap: () => demoGetVisitedLocationsMap(),
@@ -84,6 +91,7 @@ export function createPublicProfileDataSource(serialId: number): AppDataSource {
     listVolunteering: (includeTest) => getAllPublicProfileVolunteering(serialId, includeTest),
     getBestResults: (includeTest) => getPublicProfileBestResults(serialId, includeTest),
     getPersonalRecords: (includeTest) => getPublicProfilePersonalRecords(serialId, includeTest),
+    getWins: (includeTest) => getPublicProfileWins(serialId, includeTest),
     getVolunteerRoleStats: (includeTest) => getPublicProfileVolunteerRoleStats(serialId, includeTest),
     getUniqueLocationsDetail: (includeTest) => getPublicProfileVisitedDetail(serialId, includeTest),
     getVisitedLocationsMap: (includeTest) => getPublicProfileVisitedMap(serialId, includeTest),

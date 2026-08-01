@@ -4,7 +4,9 @@
 export type LeaderboardMetric =
   | "runs"
   | "volunteering"
+  | "volunteer_roles"
   | "locations"
+  | "volunteer_locations"
   | "wins"
   | "win_locations";
 
@@ -13,23 +15,25 @@ export type LeaderboardGender = "all" | "male" | "female";
 // Разрез М/Ж есть только у победных рейтингов (parkrun в него не идёт).
 export const GENDERED_METRICS: LeaderboardMetric[] = ["wins", "win_locations"];
 
-// Фильтр «локация засчитывается от N визитов» — только у рейтинга туризма
-// (перенос фильтра из старого дашборда Grafana).
-export const MIN_VISITS_METRICS: LeaderboardMetric[] = ["locations"];
+// Фильтр «локация засчитывается от N визитов» — у туристических рейтингов
+// (перенос фильтра из старого дашборда Grafana): бегового и волонтёрского.
+export const MIN_VISITS_METRICS: LeaderboardMetric[] = ["locations", "volunteer_locations"];
 export const MIN_VISITS_OPTIONS = [1, 2, 3, 4, 5] as const;
 
-// Фильтр «смотреть по одной системе» — тоже только у рейтинга туризма: люди
-// хотели объединённый зачёт как норму, но не отказались от возможности
-// смотреть результат внутри одной системы.
-export const PLATFORM_FILTER_METRICS: LeaderboardMetric[] = ["locations"];
+// Фильтр «смотреть по одной системе» есть у каждого рейтинга: объединённый
+// зачёт — норма, но результат внутри одной системы всегда можно посмотреть
+// отдельно. Набор кнопок зависит от рейтинга и зачёта (в гендерном нет
+// parkrun, в волонтёрском туризме — тоже), поэтому его присылает бэкенд в
+// platform_options, а не повторяет фронт.
 export type PlatformFilter = "all" | "five_verst" | "s95" | "runpark" | "parkrun";
-export const PLATFORM_FILTER_OPTIONS: PlatformFilter[] = [
-  "all",
-  "five_verst",
-  "s95",
-  "runpark",
-  "parkrun",
-];
+
+// Одна освоенная роль в детализации мультиволонтёра: сколько волонтёрств и в
+// каких системах. Приходит только у метрики volunteer_roles.
+export type VolunteerRoleDetail = {
+  role: string;
+  total: number;
+  platforms: Record<string, number>;
+};
 
 export type LeaderboardCell = {
   value: number;
@@ -54,6 +58,11 @@ export type LeaderboardRow = {
   last_win_location?: string | null;
   last_win_location_slug?: string | null;
   last_win_date?: string | null;
+  // Только у мультиволонтёра: любимая роль (чаще всего выходил) и детализация
+  // «роль × система × волонтёрств» — она раскрывается по клику на строке.
+  top_role?: string | null;
+  top_role_count?: number | null;
+  role_details?: VolunteerRoleDetail[];
 };
 
 export type LeaderboardResponse = {
@@ -65,6 +74,8 @@ export type LeaderboardResponse = {
   description: string;
   unit: string;
   platform_columns: string[];
+  // Кнопки фильтра «по системе» для этого рейтинга и зачёта: "all" + коды систем.
+  platform_options?: PlatformFilter[];
   rows: LeaderboardRow[];
   threshold: number;
   median: number;
@@ -97,6 +108,9 @@ export type MyLeaderboardRow = {
   last_win_location?: string | null;
   last_win_location_slug?: string | null;
   last_win_date?: string | null;
+  top_role?: string | null;
+  top_role_count?: number | null;
+  role_details?: VolunteerRoleDetail[];
 };
 
 async function leaderboardsFetch<T>(path: string): Promise<T> {

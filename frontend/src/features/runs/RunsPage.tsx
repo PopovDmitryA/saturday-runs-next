@@ -12,7 +12,9 @@ import { LocationPrLocationName } from "../../components/LocationPrLocationName"
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RateRunModal } from "../../components/RateRunModal";
 import { RunRatingStar } from "../../components/RunRatingStar";
+import { Snackbar } from "../../components/Snackbar";
 import { useActivityFilters } from "../../hooks/useActivityFilters";
+import { useSnackbar } from "../../hooks/useSnackbar";
 import {
   getEligibleRuns,
   getMyRatings,
@@ -50,6 +52,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const [eligibleIds, setEligibleIds] = useState<Set<string>>(new Set());
   const [ratingsVersion, setRatingsVersion] = useState(0);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
+  const { snackbar, showSnackbar, dismissSnackbar } = useSnackbar();
 
   const allPlatforms = useMemo(() => uniquePlatforms(runs), [runs]);
 
@@ -460,6 +463,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
           onSaved={() => {
             reloadRatings();
             setActiveRun(null);
+            showSnackbar({ variant: "default", title: "Спасибо!", message: "Отзыв сохранён" });
           }}
           onDeleted={() => {
             reloadRatings();
@@ -467,6 +471,10 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
           }}
         />
       )}
+
+      <Snackbar open={snackbar.open} title={snackbar.title} variant={snackbar.variant} onDismiss={dismissSnackbar}>
+        {snackbar.message}
+      </Snackbar>
     </>
   );
 

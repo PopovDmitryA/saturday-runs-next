@@ -15,7 +15,7 @@ from typing import Any
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, text
+from sqlalchemy import false, func, or_, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -68,6 +68,7 @@ _STATIC_PAGE_TYPES = {
     "/ratings/runs": "ratings_runs",
     "/ratings/volunteering": "ratings_volunteering",
     "/ratings/locations": "ratings_locations",
+    "/ratings/volunteer-locations": "ratings_volunteer_locations",
     "/ratings/wins": "ratings_wins",
     "/ratings/win-locations": "ratings_win_locations",
     "/backlog": "backlog",
@@ -465,6 +466,91 @@ def _location_labels(db: Session, entity_keys: list[str]) -> dict[str, dict[str,
         key: {"label": name, "href": f"/locations/{key}"}
         for key, (_rank, name) in best.items()
     }
+
+
+def _handle_labels(db: Session, handles: list[str]) -> dict[str, dict[str, object]]:
+    """Имя участника по хендлу из адреса профиля: public_slug или номер участника."""
+    if not handles:
+        return {}
+    lowered = {handle.lower(): handle for handle in handles}
+    serials = [int(handle) for handle in lowered if handle.isdigit()]
+    users = (
+        db.query(User)
+        .filter(
+            or_(
+                func.lower(User.public_slug).in_(list(lowered)),
+                User.serial_id.in_(serials) if serials else false(),
+            )
+        )
+        .all()
+    )
+    labels: dict[str, dict[str, object]] = {}
+    for user in users:
+        name = user.display_name or user.telegram_first_name or f"#{user.serial_id}"
+        for candidate in ((user.public_slug or "").lower(), str(user.serial_id)):
+            key = lowered.get(candidate)
+            if key is not None:
+                labels[key] = {"label": name, "href": f"/users/{key}"}
+    return labels
+
+
+def build_home_link_clicks(
+    db: Session, *, start: date, end: date, limit: int = 20
+) -> list[dict[str, object]]:
+    """Переходы по ссылкам с главной: куда именно уводит главная страница.
+
+    Ссылки на локации и профили участников появились на главной 01.08.2026 —
+    за более ранние периоды таблица пустая. Событие пишется обоими вариантами
+    АБ-теста (ссылки есть и в A, и в B), поэтому вариант здесь не разделяем:
+    вопрос отчёта — «куда переходят», а не «какой вариант лучше».
+    """
+    rows = db.execute(
+        text(
+            """
+            SELECT value,
+                   count(*) AS clicks,
+                   count(DISTINCT visitor_key) AS visitors
+            FROM ab_events
+            WHERE experiment = :experiment
+              AND event_type = 'home_link_click'
+              AND ts >= :start AND ts < :end_exclusive
+            GROUP BY value
+            ORDER BY clicks DESC, value
+            LIMIT :limit
+            """
+        ),
+        {
+            "experiment": HOME_EXPERIMENT,
+            "start": start,
+            "end_exclusive": end + timedelta(days=1),
+            "limit": limit,
+        },
+    ).all()
+
+    parsed = [(row.value.split(":", 1), row) for row in rows if ":" in (row.value or "")]
+    location_keys = [target for (kind, target), _row in parsed if kind == "location"]
+    runner_handles = [target for (kind, target), _row in parsed if kind == "runner"]
+    location_labels = _location_labels(db, location_keys)
+    runner_labels = _handle_labels(db, runner_handles)
+
+    result: list[dict[str, object]] = []
+    for (kind, target), row in parsed:
+        if kind == "location":
+            fallback = {"label": target, "href": f"/locations/{target}"}
+            label = location_labels.get(target, fallback)
+        else:
+            fallback = {"label": target, "href": f"/users/{target}"}
+            label = runner_labels.get(target, fallback)
+        result.append(
+            {
+                "kind": kind,
+                "entity_key": target,
+                **label,
+                "clicks": int(row.clicks or 0),
+                "visitors": int(row.visitors or 0),
+            }
+        )
+    return result
 
 
 def build_home_ab_stats(db: Session, *, start: date, end: date) -> list[dict[str, object]]:

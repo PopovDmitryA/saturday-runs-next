@@ -12,6 +12,7 @@ from app.models import PageStatsDaily, PageViewEvent, User
 from app.services.page_analytics_service import (
     EARLIEST_STATS_DATE,
     STATS_TIMEZONE,
+    build_home_link_clicks,
     build_page_analytics,
     classify_page,
     cleanup_old_events,
@@ -401,3 +402,49 @@ def test_cleanup_old_events(db_session: Session) -> None:
     assert deleted >= 1
     remaining = db_session.query(PageViewEvent).filter(PageViewEvent.view_id == fresh_id).count()
     assert remaining == 1
+
+
+def test_build_home_link_clicks_groups_and_labels(db_session: Session) -> None:
+    """Переходы с главной: локации и профили в одной таблице, имена подставлены."""
+    from app.services.ab_service import record_ab_event
+
+    slug = f"link-loc-{uuid4().int % 1_000_000}"
+    user = _make_user(db_session, slug=f"link-runner-{uuid4().int % 1_000_000}")
+    for _ in range(2):
+        record_ab_event(
+            db_session,
+            experiment="home_v1",
+            variant="A",
+            visitor_key="a:visitor-1",
+            event_type="home_link_click",
+            value=f"location:{slug}",
+            path="/",
+        )
+    record_ab_event(
+        db_session,
+        experiment="home_v1",
+        variant="B",
+        visitor_key="a:visitor-2",
+        event_type="home_link_click",
+        value=f"runner:{user.public_slug}",
+        path="/",
+    )
+
+    # Границы отчёта — календарные даты, ts события в UTC: под полночь по Москве
+    # «сегодня» разъезжается на день, поэтому берём окно ±сутки.
+    today = local_today()
+    rows = build_home_link_clicks(
+        db_session, start=today - timedelta(days=1), end=today + timedelta(days=1)
+    )
+    by_key = {row["entity_key"]: row for row in rows}
+
+    # Локации нет в БД — метка остаётся слагом, но ссылка всё равно рабочая.
+    assert by_key[slug]["kind"] == "location"
+    assert by_key[slug]["clicks"] == 2
+    assert by_key[slug]["visitors"] == 1
+    assert by_key[slug]["href"] == f"/locations/{slug}"
+
+    runner_row = by_key[user.public_slug]
+    assert runner_row["kind"] == "runner"
+    assert runner_row["label"] == "Тест"
+    assert runner_row["href"] == f"/users/{user.public_slug}"

@@ -257,6 +257,7 @@ export function RateRunModal({ run, onClose, onSaved, onDeleted }: RateRunModalP
                 disabled={saving || deleting}
                 onClick={() => void handleSave()}
               >
+                {saving && <span className="btn-spinner" aria-hidden="true" />}
                 {saving ? (pendingPhotos.length > 0 ? "Сохранение и загрузка фото…" : "Сохранение…") : existing ? "Сохранить" : "Оценить"}
               </button>
             </>

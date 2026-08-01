@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { ParticipationBadge } from "../../components/ParticipationBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RateRunModal } from "../../components/RateRunModal";
+import { Snackbar } from "../../components/Snackbar";
+import { useSnackbar } from "../../hooks/useSnackbar";
 import { getEligibleRuns, type EligibleRun } from "../../lib/api";
 import { formatDateLong } from "../../lib/format";
 import { loadDismissedRatings, saveDismissedRatings } from "../../lib/ratingDismissals";
@@ -19,6 +21,7 @@ export function LocationRatingPrompt({ identityKey }: { identityKey: string }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [rated, setRated] = useState(false);
+  const { snackbar, showSnackbar, dismissSnackbar } = useSnackbar();
 
   useEffect(() => {
     let cancelled = false;
@@ -49,8 +52,17 @@ export function LocationRatingPrompt({ identityKey }: { identityKey: string }) {
 
   // Право оценивать ещё не открыто — не дразним карточкой (полное объяснение
   // про порог живёт в блоке на дашборде).
-  if (!run || !canRate || dismissed || rated) {
+  if (!run || !canRate || dismissed) {
     return null;
+  }
+
+  // После сохранения карточка прячется, но снекбар должен пережить её скрытие.
+  if (rated) {
+    return (
+      <Snackbar open={snackbar.open} title={snackbar.title} variant={snackbar.variant} onDismiss={dismissSnackbar}>
+        {snackbar.message}
+      </Snackbar>
+    );
   }
 
   const details: string[] = [];
@@ -111,6 +123,7 @@ export function LocationRatingPrompt({ identityKey }: { identityKey: string }) {
           onSaved={() => {
             setModalOpen(false);
             setRated(true);
+            showSnackbar({ variant: "default", title: "Спасибо!", message: "Отзыв сохранён" });
           }}
           onDeleted={() => {
             setModalOpen(false);

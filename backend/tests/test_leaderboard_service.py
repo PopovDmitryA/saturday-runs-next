@@ -2,6 +2,7 @@ from datetime import date
 
 from app.services.leaderboard_service import (
     GENDERED_METRICS,
+    GENDERED_PLATFORM_COLUMNS,
     LEADERBOARD_METRICS,
     MAX_MIN_VISITS,
     METRIC_META,
@@ -10,7 +11,9 @@ from app.services.leaderboard_service import (
     PLATFORM_COLUMNS,
     PLATFORM_FILTER_METRICS,
     PLATFORM_FILTER_VALUES,
+    VOLUNTEER_LOCATION_PLATFORM_COLUMNS,
     WIN_EXTRAS_METRICS,
+    _add_role_row,
     _apply_last_win,
     _cache_key,
     _dominant_gender,
@@ -24,8 +27,12 @@ from app.services.leaderboard_service import (
     _pick_home,
     _pick_last,
     _ranked,
+    _RoleUsage,
+    _summarize_roles,
     _week_start,
     metric_description,
+    platform_columns_for,
+    platform_filter_values,
 )
 
 
@@ -168,10 +175,12 @@ def test_normalize_gender_only_for_win_metrics() -> None:
     assert _normalize_gender("wins", "нечто") == "all"
 
 
-def test_normalize_min_visits_only_for_locations() -> None:
-    # Порог визитов есть только у рейтинга туризма и зажат в 1..5.
-    assert MIN_VISITS_METRICS == ("locations",)
+def test_normalize_min_visits_only_for_tourism_metrics() -> None:
+    # Порог визитов есть у туристических рейтингов (бегового и волонтёрского)
+    # и зажат в 1..5.
+    assert set(MIN_VISITS_METRICS) == {"locations", "volunteer_locations"}
     assert _normalize_min_visits("locations", 3) == 3
+    assert _normalize_min_visits("volunteer_locations", 3) == 3
     assert _normalize_min_visits("locations", 0) == 1
     assert _normalize_min_visits("locations", 99) == MAX_MIN_VISITS
     assert _normalize_min_visits("runs", 3) == 1
@@ -211,6 +220,24 @@ def test_merge_visit_row_sums_platforms_of_one_location() -> None:
     assert merged.counts(3)
 
 
+def test_merge_visit_row_tracks_per_platform_visits() -> None:
+    # Порог визитов в колонке системы должен набираться ЕЙ САМОЙ: 1 визит на
+    # 5В + 1 визит на S95 даёт «Всего» 2+ (легитимно), но ни одна из систем
+    # по отдельности порог 2 не набрала — это баг из отчёта про Глазкова
+    # Александра (5В-колонка «в разрезе всех систем» была больше, чем при
+    # прямом подсчёте только по 5В).
+    identities: dict[str, _LocationVisits] = {}
+    _merge_visit_row(identities, "loc:1", "five_verst", date(2026, 3, 7), 1, 0)
+    _merge_visit_row(identities, "loc:1", "s95", date(2026, 1, 10), 1, 0)
+    merged = identities["loc:1"]
+    assert merged.counts(2)  # «Всего» видит эту локацию как 2+
+    assert not merged.platform_counts("five_verst", 2)
+    assert not merged.platform_counts("s95", 2)
+    # А если один визит на 5В был дважды (два разных события) — сама 5В уже набрала порог.
+    _merge_visit_row(identities, "loc:1", "five_verst", date(2026, 4, 4), 1, 0)
+    assert merged.platform_counts("five_verst", 2)
+
+
 def test_cache_key_versions_min_visits() -> None:
     # Базовый вариант сохраняет прежний ключ, пороги — отдельными снапшотами.
     assert _cache_key("locations") == _cache_key("locations", "all", 1)
@@ -225,13 +252,27 @@ def test_metric_description_mentions_min_visits() -> None:
     assert metric_description("locations", "all", 1) == METRIC_META["locations"]["description"]
 
 
-def test_normalize_platform_filter_only_for_locations() -> None:
-    # Фильтр по системе есть только у рейтинга туризма и только для известных кодов.
-    assert PLATFORM_FILTER_METRICS == ("locations",)
-    assert _normalize_platform_filter("locations", "five_verst") == "five_verst"
-    assert _normalize_platform_filter("locations", "нечто") == "all"
-    assert _normalize_platform_filter("runs", "five_verst") == "all"
+def test_platform_filter_is_standard_for_every_metric() -> None:
+    # Фильтр по системе — стандарт всех рейтингов, а не привилегия туризма.
+    assert set(PLATFORM_FILTER_METRICS) == set(LEADERBOARD_METRICS)
+    for metric in LEADERBOARD_METRICS:
+        assert _normalize_platform_filter(metric, "five_verst") == "five_verst"
+        assert _normalize_platform_filter(metric, "нечто") == "all"
     assert set(PLATFORM_FILTER_VALUES) == {"all", *PLATFORM_COLUMNS}
+
+
+def test_platform_filter_values_follow_metric_and_gender() -> None:
+    # parkrun есть в абсолюте, но не в гендерном зачёте и не в волонтёрском туризме.
+    assert "parkrun" in platform_filter_values("wins", "all")
+    assert "parkrun" not in platform_filter_values("wins", "male")
+    assert "parkrun" not in platform_filter_values("volunteer_locations")
+    assert platform_columns_for("volunteer_locations") == VOLUNTEER_LOCATION_PLATFORM_COLUMNS
+    assert platform_columns_for("win_locations", "female") == GENDERED_PLATFORM_COLUMNS
+    # Систему, которой в этом рейтинге нет, фильтр не принимает — молча «все».
+    assert _normalize_platform_filter("wins", "parkrun", "male") == "all"
+    assert _normalize_platform_filter("wins", "parkrun", "all") == "parkrun"
+    assert _normalize_platform_filter("volunteer_locations", "parkrun") == "all"
+    assert _normalize_platform_filter("volunteer_locations", "s95") == "s95"
 
 
 def test_cache_key_versions_platform_and_combines_with_min_visits() -> None:
@@ -250,3 +291,121 @@ def test_metric_description_mentions_platform_filter() -> None:
     assert "parkrun" in combined
     # Фильтр по системе не про пары систем — упоминание «суммируются» тут неуместно.
     assert "суммируются" not in only_platform
+
+
+def test_metric_description_mentions_platform_filter_for_every_metric() -> None:
+    # Фильтр по системе теперь у всех рейтингов — и описание про него у всех.
+    for metric in LEADERBOARD_METRICS:
+        assert "С95" in metric_description(metric, "all", 1, "s95")
+    # Без фильтров описание остаётся базовым.
+    assert metric_description("runs", "all") == METRIC_META["runs"]["description"]
+
+
+def test_metric_description_uses_volunteer_verb_for_volunteer_tourism() -> None:
+    # Порог визитов у волонтёрского туризма про смены, а не про финиши.
+    volunteer = metric_description("volunteer_locations", "all", 3)
+    assert "волонтёрил минимум 3 раза" in volunteer
+    assert "финишировал" not in volunteer
+    assert "финишировал минимум 3 раза" in metric_description("locations", "all", 3)
+
+
+def test_volunteer_locations_registered_as_tourism_metric() -> None:
+    # Волонтёрский туризм устроен как беговой: те же фильтры, тот же перцентиль,
+    # только parkrun из него исключён (у его волонтёрств нет локации).
+    assert "volunteer_locations" in LEADERBOARD_METRICS
+    assert "volunteer_locations" in MIN_VISITS_METRICS
+    assert (
+        METRIC_THRESHOLD_PERCENTILE["volunteer_locations"]
+        == METRIC_THRESHOLD_PERCENTILE["locations"]
+    )
+    assert "volunteer_locations" not in GENDERED_METRICS
+    assert "volunteer_locations" not in WIN_EXTRAS_METRICS
+
+
+def test_volunteer_roles_registered_as_plain_metric() -> None:
+    # Мультиволонтёр — обычный рейтинг: без порога визитов, без разреза М/Ж,
+    # с общим для всех фильтром по системе (parkrun в нём участвует: роли
+    # приходят сводкой профиля).
+    assert "volunteer_roles" in LEADERBOARD_METRICS
+    assert "volunteer_roles" not in MIN_VISITS_METRICS
+    assert "volunteer_roles" not in GENDERED_METRICS
+    assert "volunteer_roles" not in WIN_EXTRAS_METRICS
+    assert "parkrun" in platform_filter_values("volunteer_roles")
+
+
+def test_summarize_roles_counts_union_not_sum() -> None:
+    # Одна и та же роль в двух системах — одна освоенная роль, но в колонке
+    # каждой системы она видна.
+    week_start = date(2026, 7, 27)
+    long_ago = date(2024, 1, 6)
+    by_platform = {
+        "five_verst": {
+            "marshal": _RoleUsage(first_date=long_ago, times=10),
+            "timekeeper": _RoleUsage(first_date=long_ago, times=3),
+        },
+        "s95": {"marshal": _RoleUsage(first_date=date(2025, 5, 3), times=4)},
+    }
+    labels = {"marshal": "Маршал", "timekeeper": "Секундомер"}
+    summary = _summarize_roles(by_platform, labels, week_start)
+    assert summary.total == 2
+    assert summary.values["five_verst"] == [2, 0]
+    assert summary.values["s95"] == [1, 0]
+    assert summary.week == 0
+    # Любимая роль — по сумме смен во всех системах (10 + 4 против 3).
+    assert summary.top_role == ("Маршал", 14)
+    # Детализация показывает, из каких систем собралась каждая роль.
+    assert summary.details == [
+        {"role": "Маршал", "total": 14, "platforms": {"five_verst": 10, "s95": 4}},
+        {"role": "Секундомер", "total": 3, "platforms": {"five_verst": 3}},
+    ]
+
+
+def test_summarize_roles_week_delta_counts_only_first_time_ever() -> None:
+    # Роль «новая», если ПЕРВАЯ смена в ней случилась на этой неделе — освоенное
+    # год назад в другой системе повторение новой ролью не делает.
+    week_start = date(2026, 7, 27)
+    by_platform = {
+        "five_verst": {"marshal": _RoleUsage(first_date=date(2024, 1, 6), times=9)},
+        "s95": {
+            "marshal": _RoleUsage(first_date=date(2026, 7, 31), times=1),
+            "pacer": _RoleUsage(first_date=date(2026, 7, 31), times=1),
+        },
+    }
+    labels = {"marshal": "Маршал", "pacer": "Пейсмейкер"}
+    summary = _summarize_roles(by_platform, labels, week_start)
+    assert summary.total == 2
+    assert summary.week == 1
+
+
+def test_add_role_row_folds_system_synonyms_into_one_role() -> None:
+    # Внутри одной системы разные ярлыки одной роли («Сканер» и веха «Сканер 25»)
+    # складываются, а не затирают друг друга.
+    by_platform: dict[str, dict[str, _RoleUsage]] = {}
+    labels: dict[str, str] = {}
+    _add_role_row(by_platform, labels, "s95", "Сканер", date(2025, 3, 1), 20)
+    _add_role_row(by_platform, labels, "s95", "Сканер 25", date(2024, 9, 7), 1)
+    assert list(by_platform["s95"]) == ["barcode_scanning"]
+    usage = by_platform["s95"]["barcode_scanning"]
+    assert usage.times == 21
+    assert usage.first_date == date(2024, 9, 7)
+
+
+def test_add_role_row_uses_parkrun_credits_as_shift_count() -> None:
+    # У parkrun отдельных смен нет — только сводка «роль × кредитов», и число
+    # смен берётся из самого ярлыка, а не из числа строк.
+    by_platform: dict[str, dict[str, _RoleUsage]] = {}
+    labels: dict[str, str] = {}
+    _add_role_row(by_platform, labels, "parkrun", "Marshal (12×)", date(1970, 1, 1), 1)
+    assert by_platform["parkrun"]["marshal"].times == 12
+
+
+def test_add_role_row_skips_only_parkrun_summary_total() -> None:
+    # «Total Credits» — итог сводки профиля, а не роль. «Разное» — роль как
+    # любая другая (решение Дмитрия 01.08.2026), в зачёт идёт.
+    by_platform: dict[str, dict[str, _RoleUsage]] = {}
+    labels: dict[str, str] = {}
+    _add_role_row(by_platform, labels, "parkrun", "Total Credits (115×)", date(1970, 1, 1), 1)
+    assert by_platform == {}
+    _add_role_row(by_platform, labels, "five_verst", "Разное", date(2026, 1, 3), 5)
+    assert list(by_platform["five_verst"]) == ["other"]
+    assert labels["other"] == "Разное"

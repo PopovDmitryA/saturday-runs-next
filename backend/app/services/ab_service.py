@@ -36,6 +36,10 @@ KNOWN_EVENT_TYPES = frozenset(
         "period",  # value: "all" | "year"
         "cta_view",  # value: размещение CTA ("bottom", позже "hero", "week")
         "cta_click",  # value: размещение CTA
+        # Переход по внутренней ссылке главной: value — "location:<slug>" или
+        # "runner:<хендл>". Кроме самого эксперимента отвечает на вопрос
+        # «уводит ли главная людей вглубь сайта» (сводка в /admin/page-analytics).
+        "home_link_click",
         "teaser_preview",  # value: код системы (тизер Т10, на будущее)
         "login_complete",  # когорта считается на сервере
     }

@@ -184,6 +184,7 @@ const ROLE_CAP_FORMS = ["Роль", "Роли", "Ролей"] as const;
 const TIME_FORMS = ["раз", "раза", "раз"] as const;
 const DAY_CAP_FORMS = ["День", "Дня", "Дней"] as const;
 const PR_RUN_FORMS = ["PR-пробежка", "PR-пробежки", "PR-пробежек"] as const;
+const WIN_CAP_FORMS = ["Победа", "Победы", "Побед"] as const;
 const SATURDAY_FORMS = ["суббота", "субботы", "суббот"] as const;
 const VISIT_FORMS = ["визит", "визита", "визитов"] as const;
 
@@ -255,6 +256,10 @@ export function prRunsLabel(count: number): string {
   return pluralFormRu(count, PR_RUN_FORMS);
 }
 
+export function winsCapLabel(count: number): string {
+  return pluralFormRu(count, WIN_CAP_FORMS);
+}
+
 export function saturdaysLabel(count: number): string {
   return pluralFormRu(count, SATURDAY_FORMS);
 }
@@ -298,6 +303,26 @@ export function platformCodeLabel(code: string): string {
     runpark: "RunPark",
   };
   return labels[code] ?? code;
+}
+
+/**
+ * Текст личного QR/штрихкода участника для платформы — то же значение,
+ * что показывают штатные приложения parkrun/S95/RunPark/5 вёрст на экране
+ * «мой QR-код». У 5 вёрст отдельного barcode_id в базе нет (см. url.py
+ * BARCODE_RE) — на сайте это буква A + номер участника (external_user_id).
+ */
+export function platformScanCode(
+  platformCode: string,
+  barcodeId: string | null | undefined,
+  externalUserId: string | null | undefined,
+): string | null {
+  if (barcodeId) {
+    return barcodeId.toUpperCase();
+  }
+  if (platformCode === "five_verst" && externalUserId) {
+    return `A${externalUserId}`;
+  }
+  return null;
 }
 
 type PlatformActivityStats = {

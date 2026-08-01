@@ -183,7 +183,9 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings": () => <LeaderboardsHubPage />,
   "/ratings/runs": () => <LeaderboardPage metric="runs" />,
   "/ratings/volunteering": () => <LeaderboardPage metric="volunteering" />,
+  "/ratings/volunteer-roles": () => <LeaderboardPage metric="volunteer_roles" />,
   "/ratings/locations": () => <LeaderboardPage metric="locations" />,
+  "/ratings/volunteer-locations": () => <LeaderboardPage metric="volunteer_locations" />,
   "/ratings/wins": () => <LeaderboardPage metric="wins" />,
   "/ratings/win-locations": () => <LeaderboardPage metric="win_locations" />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только

@@ -27,6 +27,7 @@ from app.services.admin_users_service import (
     get_admin_user_preview_dashboard,
     get_admin_user_preview_personal_records,
     get_admin_user_preview_volunteer_role_stats,
+    get_admin_user_preview_wins,
 )
 from app.services.co_runners_service import list_co_runner_meetings, list_co_runners
 from app.services.dashboard_service import list_user_runs, list_user_volunteering
@@ -166,6 +167,18 @@ def public_profile_personal_records(
 ):
     user_id = _get_user_uuid(serial_id, db, requester, settings)
     return get_admin_user_preview_personal_records(db, user_id, include_test_events=include_test)
+
+
+@router.get("/{serial_id}/profile/runs/wins")
+def public_profile_wins(
+    serial_id: int,
+    include_test: bool = False,
+    db: Session = Depends(get_db),
+    requester: User | None = Depends(get_optional_user),
+    settings: Settings = Depends(get_settings),
+):
+    user_id = _get_user_uuid(serial_id, db, requester, settings)
+    return get_admin_user_preview_wins(db, user_id, include_test_events=include_test)
 
 
 @router.get("/{serial_id}/profile/volunteering/role-stats")

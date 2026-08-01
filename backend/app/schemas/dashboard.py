@@ -102,6 +102,9 @@ class DashboardAnalyticsResponse(BaseModel):
     avg_position: float | None = None
     avg_gender_position: float | None = None
     pr_count: int = 0
+    # Победы: "absolute" (первое место в протоколе) либо "female" (среди женщин).
+    wins_count: int = 0
+    wins_scope: str = "absolute"
     unique_volunteer_roles: int = 0
     first_activity_date: date | None = None
     last_activity_date: date | None = None
@@ -283,6 +286,24 @@ class PersonalRecordResponse(BaseModel):
     # в системе» (никогда не побит позже). Может сочетаться с is_global_pr/
     # is_location_pr (дебют на платформе способен быть глобальным рекордом).
     is_debut: bool = False
+    event_url: str | None = None
+
+
+class WinResponse(BaseModel):
+    """Победа: первое место в своём разрезе (см. wins_scope в аналитике)."""
+
+    platform_code: str
+    event_date: date
+    event_number: int | None = None
+    location_name: str
+    location_city: str | None = None
+    finish_time_display: str | None = None
+    finish_time_sec: int | None = None
+    position: int | None = None
+    gender_position: int | None = None
+    # Сколько финишёров было в этом зачёте (абсолют или женский) — знаменатель «1 из N».
+    field_size: int | None = None
+    scope: str = "absolute"
     event_url: str | None = None
 
 

@@ -108,6 +108,17 @@ class HomeAbVariantStats(BaseModel):
     viewers: int
 
 
+class HomeLinkClickStats(BaseModel):
+    """Переход по ссылке с главной: локация или профиль участника."""
+
+    kind: str
+    entity_key: str
+    label: str
+    href: str | None
+    clicks: int
+    visitors: int
+
+
 class PageAnalyticsResponse(BaseModel):
     # Границы включительно; сервер отдаёт их разрешёнными (в т.ч. когда клиент
     # прислал period_days), чтобы UI показывал ровно то, что посчитано.
@@ -116,5 +127,6 @@ class PageAnalyticsResponse(BaseModel):
     generated_at: datetime
     sections: list[PageAnalyticsSection]
     home_ab: list[HomeAbVariantStats] = Field(default_factory=list)
+    home_links: list[HomeLinkClickStats] = Field(default_factory=list)
     top_profiles: list[PageAnalyticsEntity]
     top_locations: list[PageAnalyticsEntity]

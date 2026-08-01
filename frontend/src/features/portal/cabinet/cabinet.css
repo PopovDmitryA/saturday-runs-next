@@ -868,6 +868,27 @@ a.portal-cab-nav-item-disabled {
   box-shadow: inset 3px 0 0 var(--accent-indigo);
 }
 
+/* Победы — та же нейтральная панель с полоской, но янтарной, и значение
+   тоже янтарное: это единственная плитка-награда в сетке, и в отличие от
+   счётчиков локаций её стоит замечать. Одна цветная цифра из трёх десятков
+   пестроты не создаёт. */
+.portal-cab-main .stat-card.stat-card-wins,
+.portal-section .stat-card.stat-card-wins {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: inset 3px 0 0 var(--accent-amber-text);
+}
+
+.portal-cab-main .stat-card.stat-card-wins .stat-value,
+.portal-section .stat-card.stat-card-wins .stat-value {
+  color: var(--accent-amber-text);
+}
+
+.portal-cab-main .stat-card.stat-card-wins .stat-label,
+.portal-section .stat-card.stat-card-wins .stat-label {
+  color: var(--text-muted);
+}
+
 /* Значение — обычный цвет текста: цветными остаются только полоски,
    иначе сетка из 15 плиток снова превращается в пестроту. */
 .portal-cab-main .stat-card.stat-card-runs .stat-value,

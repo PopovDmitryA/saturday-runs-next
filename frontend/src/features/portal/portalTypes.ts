@@ -16,6 +16,8 @@ export type PortalPulse = {
 
 export type PortalAttendanceRecord = {
   location_name: string;
+  /** Слаг страницы локации: имя рендерится ссылкой на /locations/{slug}. */
+  location_slug?: string | null;
   platform_code: string;
   event_date: string;
   finishers: number;
@@ -26,11 +28,14 @@ export type PortalAttendanceRecord = {
 
 export type PortalCourseRecord = {
   location_name: string;
+  location_slug?: string | null;
   platform_code: string;
   event_date: string;
   gender: "male" | "female";
   time_display: string;
   runner_name: string | null;
+  /** Хендл профиля на сайте, если рекордсмен привязал систему и профиль открыт. */
+  runner_handle?: string | null;
   previous_display: string | null;
   previous_record_date: string | null;
   delta_sec: number | null;
@@ -45,6 +50,7 @@ export type PortalWeekRecords = {
 
 export type PortalTopSaturdayRow = {
   location_name: string;
+  location_slug?: string | null;
   platform_code: string;
   finishers: number;
 };
@@ -72,13 +78,16 @@ export type PortalFastestRow = {
   gender: "male" | "female";
   value_display: string;
   runner_name: string | null;
+  runner_handle?: string | null;
   location_name: string;
+  location_slug?: string | null;
   event_date: string;
   delta_sec: number | null;
 };
 
 export type PortalAttendanceTopRow = {
   location_name: string;
+  location_slug?: string | null;
   platform_code: string;
   event_date: string;
   finishers: number;
@@ -100,6 +109,7 @@ export type PortalGeoPoint = {
   longitude: number;
   starts: number;
   location_name: string;
+  location_slug?: string | null;
   platform_code: string;
   region: string | null;
 };

@@ -8,6 +8,15 @@ class LeaderboardCellResponse(BaseModel):
     delta: int
 
 
+class VolunteerRoleDetailResponse(BaseModel):
+    """Одна освоенная роль в детализации строки: сколько волонтёрств и где."""
+
+    role: str
+    total: int
+    # platform code -> число волонтёрств в этой системе (пустые не приходят).
+    platforms: dict[str, int]
+
+
 class LeaderboardRowResponse(BaseModel):
     rank: int
     rank_delta: int
@@ -26,19 +35,26 @@ class LeaderboardRowResponse(BaseModel):
     last_win_location: str | None = None
     last_win_location_slug: str | None = None
     last_win_date: str | None = None
+    # Только у метрики volunteer_roles: любимая роль (чаще всего выходил) и
+    # детализация «роль × система × волонтёрств» для разворачивания строки.
+    top_role: str | None = None
+    top_role_count: int | None = None
+    role_details: list[VolunteerRoleDetailResponse] = []
 
 
 class LeaderboardResponse(BaseModel):
     metric: str
     gender: str = "all"
-    # Порог визитов рейтинга туризма: локация идёт в зачёт от N посещений.
+    # Порог визитов туристических рейтингов: локация идёт в зачёт от N посещений.
     min_visits: int = 1
-    # Фильтр «по одной системе» рейтинга туризма: "all" или код платформы.
+    # Фильтр «по одной системе»: "all" или код платформы.
     platform: str = "all"
     title: str
     description: str
     unit: str
     platform_columns: list[str]
+    # Кнопки фильтра «по системе» для этого рейтинга и зачёта: "all" + коды систем.
+    platform_options: list[str] = []
     rows: list[LeaderboardRowResponse]
     threshold: int
     median: int
@@ -71,3 +87,6 @@ class MyLeaderboardRowResponse(BaseModel):
     last_win_location: str | None = None
     last_win_location_slug: str | None = None
     last_win_date: str | None = None
+    top_role: str | None = None
+    top_role_count: int | None = None
+    role_details: list[VolunteerRoleDetailResponse] = []

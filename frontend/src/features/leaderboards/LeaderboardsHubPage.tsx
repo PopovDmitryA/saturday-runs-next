@@ -1,17 +1,43 @@
 import { useEffect, useState } from "react";
+import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
   getLeaderboard,
   getMyLeaderboardRow,
+  PLATFORM_LABELS,
   type LeaderboardMetric,
   type LeaderboardResponse,
   type MyLeaderboardRow,
+  type PlatformFilter,
 } from "./leaderboardsApi";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import "./leaderboards.css";
 
 const HUB_TOP_N = 3;
+
+// Тот же фильтр «по системе», что и на странице конкретного рейтинга —
+// здесь он один на весь хаб и сразу пересчитывает топ-3 и «моё место» во
+// всех живых карточках (решение Дмитрия 01.08.2026: хотел его именно на
+// главной «Рейтингов», не только внутри отдельных таблиц). Полный список
+// кнопок захардкожен (не с бэкенда, как на странице метрики) — на хабе
+// фильтр общий сразу для нескольких рейтингов с разным набором систем;
+// карточка, которой выбранная система не подходит (parkrun у волонтёрского
+// туризма), сама откатывается на общий зачёт и подписывает это под собой.
+const HUB_PLATFORM_OPTIONS: PlatformFilter[] = ["all", "five_verst", "s95", "runpark", "parkrun"];
+const HUB_PLATFORM_TAB_LABELS: Record<string, string> = { all: "Все", ...PLATFORM_LABELS };
+
+const HUB_PLATFORM_FILTER_HINT =
+  "Пересчитывает топ-3 и ваше место по одной системе вместо общего зачёта. " +
+  "Если система не участвует в конкретном рейтинге — карточка покажет общий зачёт.";
+
+function InfoHint({ text }: { text: string }) {
+  return (
+    <StatHintTooltip text={text} className="lb-info-hint">
+      <span aria-hidden="true">i</span>
+    </StatHintTooltip>
+  );
+}
 
 type LiveCard = {
   metric: LeaderboardMetric;
@@ -47,8 +73,25 @@ const SECTIONS: HubSection[] = [
   {
     emoji: "🤝",
     title: "Волонтёры",
-    live: [{ metric: "volunteering", href: "/ratings/volunteering", title: "Количество волонтёрств" }],
-    soon: [{ title: "Мультиволонтёр", description: "Кто освоил больше всего разных ролей." }],
+    live: [
+      { metric: "volunteering", href: "/ratings/volunteering", title: "Количество волонтёрств" },
+      {
+        metric: "volunteer_locations",
+        href: "/ratings/volunteer-locations",
+        title: "Уникальные локации",
+      },
+      {
+        metric: "volunteer_roles",
+        href: "/ratings/volunteer-roles",
+        title: "Мультиволонтёр — разнообразие ролей",
+      },
+    ],
+    soon: [
+      {
+        title: "Дуализм",
+        description: "Кто одинаково силён и как бегун, и как волонтёр.",
+      },
+    ],
   },
   {
     emoji: "🧭",
@@ -86,15 +129,15 @@ type CardState = {
   error: boolean;
 };
 
-function LiveRatingCard({ card }: { card: LiveCard }) {
+function LiveRatingCard({ card, platform }: { card: LiveCard; platform: PlatformFilter }) {
   const [state, setState] = useState<CardState>({ board: null, me: null, loading: true, error: false });
 
   useEffect(() => {
     let cancelled = false;
     setState({ board: null, me: null, loading: true, error: false });
     Promise.all([
-      getLeaderboard(card.metric, HUB_TOP_N),
-      getMyLeaderboardRow(card.metric).catch(() => null),
+      getLeaderboard(card.metric, HUB_TOP_N, "all", 1, platform),
+      getMyLeaderboardRow(card.metric, "all", 1, platform).catch(() => null),
     ])
       .then(([board, me]) => {
         if (!cancelled) {
@@ -109,9 +152,13 @@ function LiveRatingCard({ card }: { card: LiveCard }) {
     return () => {
       cancelled = true;
     };
-  }, [card.metric]);
+  }, [card.metric, platform]);
 
   const { board, me, loading, error } = state;
+  // Бэкенд молча откатывает фильтр на общий зачёт, если система не участвует
+  // в этом рейтинге (напр. parkrun у волонтёрского туризма) — сверяем с тем,
+  // что реально пришло, а не с тем, что выбрано глобально на хабе.
+  const fellBackToAll = platform !== "all" && board != null && board.platform === "all";
 
   return (
     <a className="lb-hub-card lb-hub-card-live" href={card.href}>
@@ -121,6 +168,11 @@ function LiveRatingCard({ card }: { card: LiveCard }) {
 
       {loading && <p className="lb-hub-loading muted">Считаем…</p>}
       {error && <p className="lb-hub-loading muted">Не удалось загрузить</p>}
+      {fellBackToAll && (
+        <p className="lb-hub-card-fallback muted">
+          {HUB_PLATFORM_TAB_LABELS[platform]} не участвует — показан общий зачёт
+        </p>
+      )}
 
       {board && (
         <div className="lb-hub-top3">
@@ -177,6 +229,8 @@ function SoonRatingCard({ card }: { card: SoonCard }) {
 }
 
 export function LeaderboardsHubPage() {
+  const [platform, setPlatform] = useState<PlatformFilter>("all");
+
   return (
     <PortalSectionShell sidebar={{ active: "ratings" }}>
       <div className="lb-page lb-hub">
@@ -192,6 +246,25 @@ export function LeaderboardsHubPage() {
 
         <RatingsLoginBanner />
 
+        <div className="lb-visits lb-hub-platform-filter">
+          <span className="lb-visits-label">
+            Система <InfoHint text={HUB_PLATFORM_FILTER_HINT} />
+          </span>
+          <div className="lb-gender-tabs" role="group" aria-label="Смотреть по системе">
+            {HUB_PLATFORM_OPTIONS.map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={platform === value}
+                className={`lb-gender-tab${platform === value ? " lb-gender-tab-active" : ""}`}
+                onClick={() => setPlatform(value)}
+              >
+                {HUB_PLATFORM_TAB_LABELS[value] ?? value}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {SECTIONS.map((section) => (
           <section key={section.title} className="lb-hub-section">
             <h2>
@@ -199,7 +272,7 @@ export function LeaderboardsHubPage() {
             </h2>
             <div className="lb-hub-cards">
               {section.live.map((card) => (
-                <LiveRatingCard key={card.metric} card={card} />
+                <LiveRatingCard key={card.metric} card={card} platform={platform} />
               ))}
               {section.soon.map((card) => (
                 <SoonRatingCard key={card.title} card={card} />

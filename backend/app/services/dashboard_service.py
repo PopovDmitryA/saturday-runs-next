@@ -58,9 +58,16 @@ class SyncRefreshRateLimitedError(Exception):
 # и одинокий финиш туриста зачитывался как рекорд трассы.
 # 31: график темпа на главной — переключатель «весь период» (по годам) и
 # среднее время финиша в каждой точке графика.
-ANALYTICS_VERSION = 31
+# 32: плитка «Победы» — в аналитике появились wins_count / wins_scope.
+ANALYTICS_VERSION = 32
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
+
+# Разрез, в котором считается победа. Решение Дмитрия (01.08.2026): женщинам —
+# победы среди женщин, мужчинам — победы в абсолюте. Пол неизвестен — считаем
+# абсолют: это честная победа в любом разрезе.
+WIN_SCOPE_ABSOLUTE = "absolute"
+WIN_SCOPE_FEMALE = "female"
 RUN_CLUBS = (50, 100, 250, 500, 1000)
 DISTANCE_KM_PER_RUN = 5
 
@@ -539,6 +546,19 @@ def _compute_dashboard_analytics(
         .with_entities(func.avg(RunResult.gender_position))
         .scalar()
     )
+    # Победы: у женщин — среди женщин (gender_position), у мужчин — в абсолюте
+    # (position). Счётчик и список в модалке считаются одним фильтром
+    # (run_win_sql_filter) по одному и тому же runs_query — тестовые события и
+    # кросслинк-дубли уже отсечены выше, поэтому цифра плитки и число строк
+    # детализации совпадают по построению.
+    wins_scope = win_scope_for_gender(user_gender(db, user_id))
+    wins_count = (
+        runs_query.filter(run_win_sql_filter(wins_scope))
+        .with_entities(func.count(func.distinct(RunResult.id)))
+        .scalar()
+        or 0
+    )
+
     # Плашка «N личных рекордов» на главной открывает список PR-пробежек —
     # счётчик обязан совпадать с числом строк в этом списке (рекорды системы,
     # глобальные, рекорды локации и дебюты), иначе цифры расходятся (Дмитрий,
@@ -842,6 +862,8 @@ def _compute_dashboard_analytics(
         "avg_position": _to_float(avg_position),
         "avg_gender_position": _to_float(avg_gender_position),
         "pr_count": pr_count,
+        "wins_count": int(wins_count),
+        "wins_scope": wins_scope,
         "unique_volunteer_roles": unique_volunteer_roles,
         "first_activity_date": first_activity.isoformat() if first_activity else None,
         "last_activity_date": last_activity.isoformat() if last_activity else None,
@@ -894,6 +916,33 @@ def _dashboard_platform_link_join() -> Any:
         PlatformLink.platform_id == Participant.platform_id,
         PlatformLink.external_user_id == Participant.external_user_id,
     )
+
+
+def user_gender(db: Session, user_id: UUID) -> str | None:
+    """Пол участника — готовое поле participants.gender (материализовано
+    миграцией 052, источники по платформам см. gender_position_service).
+
+    Аккаунтов у пользователя может быть несколько; берём первый заполненный —
+    пол один и тот же во всех системах.
+    """
+    return (
+        db.query(Participant.gender)
+        .join(PlatformLink, _dashboard_platform_link_join())
+        .filter(PlatformLink.user_id == user_id, Participant.gender.isnot(None))
+        .limit(1)
+        .scalar()
+    )
+
+
+def win_scope_for_gender(gender: str | None) -> str:
+    return WIN_SCOPE_FEMALE if gender == "female" else WIN_SCOPE_ABSOLUTE
+
+
+def run_win_sql_filter(scope: str) -> Any:
+    """Победа в своём разрезе: первое место среди женщин либо в абсолюте."""
+    if scope == WIN_SCOPE_FEMALE:
+        return RunResult.gender_position == 1
+    return RunResult.position == 1
 
 
 def locations_touched_since(db: Session, since: datetime) -> set[UUID]:
@@ -1330,6 +1379,99 @@ def list_user_personal_records(
             "is_global_pr": bool(run.is_global_pr) or run.id == first_timed_run_id,
             "is_location_pr": run.is_location_pr,
             "is_debut": bool(run.is_first_run),
+            "event_url": _activity_event_url(
+                platform_code=platform.code,
+                event=event,
+                location=location,
+                profile_url=platform_link.external_url,
+                summary_source_url=summary_urls.get(
+                    (event.platform_id, event.location_id, event.event_date)
+                ),
+            ),
+        }
+        for run, event, location, platform, platform_link in rows
+    ]
+
+
+def _win_field_sizes(db: Session, event_ids: list[UUID], scope: str) -> dict[UUID, int]:
+    """Размер поля на каждом из событий — знаменатель победы («1 из N»).
+
+    Абсолют — все финишёры протокола, женский зачёт — финишёрки с известным
+    полом. У parkrun/RunPark пол заполнен не у всех строк протокола, так что
+    женский знаменатель может быть занижен; сама победа от этого не зависит
+    (gender_position считается по тем же данным).
+    """
+    if not event_ids:
+        return {}
+    query = db.query(RunResult.event_id, func.count(func.distinct(RunResult.id))).filter(
+        RunResult.event_id.in_(event_ids),
+        RunResult.position.isnot(None),
+    )
+    if scope == WIN_SCOPE_FEMALE:
+        query = query.join(Participant, RunResult.participant_id == Participant.id).filter(
+            Participant.gender == "female"
+        )
+    return {row[0]: int(row[1]) for row in query.group_by(RunResult.event_id).all()}
+
+
+def list_user_wins(
+    db: Session,
+    user_id: UUID,
+    *,
+    include_test_events: bool = False,
+) -> list[dict[str, object]]:
+    """Победы участника — детализация плитки «Победы» на главной кабинета.
+
+    Разрез тот же, что у счётчика (см. win_scope_for_gender): женщинам —
+    первые места среди женщин, мужчинам — в абсолюте.
+    """
+    from app.services.personal_record_service import user_secondary_crosslinked_run_ids
+
+    scope = win_scope_for_gender(user_gender(db, user_id))
+    query = (
+        db.query(RunResult, Event, Location, Platform, PlatformLink)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Location, Event.location_id == Location.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
+        .filter(
+            PlatformLink.user_id == user_id,
+            PlatformLink.platform_id == Platform.id,
+            run_win_sql_filter(scope),
+        )
+    )
+    if not include_test_events:
+        query = query.filter(Event.is_test_event.is_(False))
+
+    # Дубль «не в зачёте» (secondary crosslink) победой не считается — так же,
+    # как он не считается личным рекордом.
+    excluded_ids = user_secondary_crosslinked_run_ids(
+        db, user_id, include_test_events=include_test_events
+    )
+    if excluded_ids:
+        query = query.filter(RunResult.id.notin_(excluded_ids))
+
+    rows = query.order_by(Event.event_date.desc(), Platform.code.asc()).all()
+
+    field_sizes = _win_field_sizes(db, [event.id for _run, event, _loc, _plat, _link in rows], scope)
+    catalog_index = LocationCatalogIndex(db)
+    summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
+    return [
+        {
+            "platform_code": platform.code,
+            "event_date": event.event_date,
+            "event_number": event.event_number,
+            "location_name": catalog_index.display_name(location, platform.code),
+            "location_city": location.city,
+            "finish_time_display": normalize_finish_time_display(
+                run.finish_time_sec,
+                run.finish_time_display,
+            ),
+            "finish_time_sec": run.finish_time_sec,
+            "position": run.position,
+            "gender_position": run.gender_position,
+            "field_size": field_sizes.get(event.id),
+            "scope": scope,
             "event_url": _activity_event_url(
                 platform_code=platform.code,
                 event=event,

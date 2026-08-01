@@ -8,8 +8,9 @@ from app.services.leaderboard_service import (
     LEADERBOARD_METRICS,
     MAX_MIN_VISITS,
     MIN_VISITS_METRICS,
-    PLATFORM_FILTER_METRICS,
-    PLATFORM_FILTER_VALUES,
+    LeaderboardMetric,
+    make_snapshot_source,
+    platform_filter_values,
     refresh_leaderboard_cache,
 )
 from app.workers.celery_app import celery_app
@@ -28,45 +29,53 @@ def warm_leaderboards_cache() -> dict[str, object]:
     """
     db = get_session_factory()()
     results: dict[str, object] = {}
-    # Абсолют у всех метрик + разрез М/Ж у победных (wins/win_locations) +
-    # полная сетка «порог визитов × система» у рейтинга туризма: каждая
-    # кнопка (и их сочетание) — свой снапшот в кэше, без прогрева первый
-    # заход на него ждал бы полный пересчёт прямо в запросе (31.07.2026 —
-    # именно так и вышло: «2+» × «5 вёрст» не прогревались, посетитель ждал
-    # больше минуты). Комбинаций у туризма немного (5×5=25, замкнутый набор
-    # кнопок, а не открытый диапазон), прогреть все — дешевле, чем оставлять
-    # часть непрогретой.
-    variants = [(metric, "all", 1, "all") for metric in LEADERBOARD_METRICS]
-    variants += [
-        (metric, gender, 1, "all")
-        for metric in GENDERED_METRICS
-        for gender in ("male", "female")
-    ]
-    # Комбинируются только метрики, у которых оба фильтра есть разом — сейчас
-    # это всегда «locations», но пересечение вместо MIN_VISITS_METRICS не
-    # даёт сетке молча раздуться, если один из фильтров позже достанется
-    # ещё какой-то метрике без второго.
-    tourism_metrics = set(MIN_VISITS_METRICS) & set(PLATFORM_FILTER_METRICS)
-    variants += [
-        (metric, "all", visits, platform)
-        for metric in tourism_metrics
-        for visits in range(1, MAX_MIN_VISITS + 1)
-        for platform in PLATFORM_FILTER_VALUES
-        if visits > 1 or platform != "all"
-    ]
+    # Прогреваем всю сетку кнопок каждого рейтинга: зачёт (абсолют/М/Ж) ×
+    # порог визитов × система. Каждое сочетание — свой снапшот в кэше, и без
+    # прогрева первый заход на него ждал бы полный пересчёт прямо в запросе
+    # (31.07.2026 именно так и вышло: «2+» × «5 вёрст» у туризма не
+    # прогревались, посетитель ждал больше минуты). Наборы кнопок замкнутые,
+    # так что сетка конечная и предсказуемая.
+    variants: list[tuple[LeaderboardMetric, str, int, str]] = []
+    for metric in LEADERBOARD_METRICS:
+        genders = ("all", "male", "female") if metric in GENDERED_METRICS else ("all",)
+        visits_options = (
+            range(1, MAX_MIN_VISITS + 1) if metric in MIN_VISITS_METRICS else range(1, 2)
+        )
+        for gender in genders:
+            for visits in visits_options:
+                for platform in platform_filter_values(metric, gender):
+                    variants.append((metric, gender, visits, platform))
+
+    # Один источник на всю задачу: сырые выборки и справочники читаются из базы
+    # один раз на рейтинг, а не на каждое сочетание фильтров (фильтры
+    # применяются в Python — см. _MetricSource). Иначе десятки вариантов
+    # означали бы десятки полных сканирований протоколов.
+    source = make_snapshot_source(db)
+    current_metric: str | None = None
     try:
         for metric, gender, min_visits, platform in variants:
+            if source is not None and metric != current_metric:
+                # Сырые строки прошлого рейтинга больше не нужны — отпускаем их,
+                # чтобы пик памяти остался как при расчёте одного снапшота.
+                source.release()
+                current_metric = metric
             key = metric if gender == "all" else f"{metric}:{gender}"
             if min_visits > 1:
                 key = f"{key}:v{min_visits}"
             if platform != "all":
                 key = f"{key}:p{platform}"
             try:
-                snapshot = refresh_leaderboard_cache(db, metric, gender, min_visits, platform)
+                snapshot = refresh_leaderboard_cache(
+                    db, metric, gender, min_visits, platform, source
+                )
                 results[key] = snapshot.get("entrants", 0)
             except Exception:
                 logger.exception("leaderboards warm failed for %s", key)
                 db.rollback()
+                # Откат транзакции обесценивает кэш источника (строки читались в
+                # ней) — начинаем следующий рейтинг с чистого листа.
+                if source is not None:
+                    source.release()
                 results[key] = "error"
     finally:
         db.close()

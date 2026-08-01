@@ -142,6 +142,9 @@ export type DashboardAnalytics = {
   avg_position: number | null;
   avg_gender_position?: number | null;
   pr_count: number;
+  /** Победы: у женщин — среди женщин, у мужчин — в абсолюте (см. wins_scope). */
+  wins_count?: number;
+  wins_scope?: WinScope;
   unique_volunteer_roles: number;
   first_activity_date: string | null;
   last_activity_date: string | null;
@@ -282,6 +285,24 @@ export type PersonalRecordItem = {
   is_global_pr: boolean;
   is_location_pr?: boolean;
   is_debut?: boolean;
+  event_url?: string | null;
+};
+
+export type WinScope = "absolute" | "female";
+
+export type WinItem = {
+  platform_code: string;
+  event_date: string;
+  event_number: number | null;
+  location_name: string;
+  location_city: string | null;
+  finish_time_display: string | null;
+  finish_time_sec: number | null;
+  position: number | null;
+  gender_position: number | null;
+  /** Сколько всего было финишёров в этом зачёте — знаменатель «1 из N». */
+  field_size: number | null;
+  scope: WinScope;
   event_url?: string | null;
 };
 
@@ -1646,6 +1667,15 @@ export function getPersonalRecords(includeTest = false) {
   return apiFetch<PersonalRecordItem[]>(`/runs/personal-records${query ? `?${query}` : ""}`);
 }
 
+export function getWins(includeTest = false) {
+  const params = new URLSearchParams();
+  if (includeTest) {
+    params.set("include_test", "true");
+  }
+  const query = params.toString();
+  return apiFetch<WinItem[]>(`/runs/wins${query ? `?${query}` : ""}`);
+}
+
 export function listVolunteering(includeTest = false, limit = 200, offset = 0) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (includeTest) {
@@ -2382,6 +2412,11 @@ export function getPublicProfilePersonalRecords(serialId: number, includeTest = 
   return apiFetch<PersonalRecordItem[]>(`/users/${serialId}/profile/runs/personal-records${query}`);
 }
 
+export function getPublicProfileWins(serialId: number, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<WinItem[]>(`/users/${serialId}/profile/runs/wins${query}`);
+}
+
 export function getPublicProfileVolunteerRoleStats(serialId: number, includeTest = false) {
   const query = includeTest ? "?include_test=true" : "";
   return apiFetch<VolunteerRoleStatItem[]>(
@@ -2571,11 +2606,22 @@ export type HomeAbVariantStats = {
   viewers: number;
 };
 
+/** Переход по ссылке с главной: локация или профиль участника. */
+export type HomeLinkClickStats = {
+  kind: string;
+  entity_key: string;
+  label: string;
+  href: string | null;
+  clicks: number;
+  visitors: number;
+};
+
 export type PageAnalyticsResponse = {
   date_from: string;
   date_to: string;
   generated_at: string;
   home_ab: HomeAbVariantStats[];
+  home_links: HomeLinkClickStats[];
   sections: PageAnalyticsSection[];
   top_profiles: PageAnalyticsEntity[];
   top_locations: PageAnalyticsEntity[];
@@ -2718,6 +2764,10 @@ export function demoGetBestResults() {
 
 export function demoGetPersonalRecords() {
   return apiFetch<PersonalRecordItem[]>("/demo/runs/personal-records");
+}
+
+export function demoGetWins() {
+  return apiFetch<WinItem[]>("/demo/runs/wins");
 }
 
 export function demoGetVolunteerRoleStats() {

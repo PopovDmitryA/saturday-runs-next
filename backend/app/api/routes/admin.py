@@ -110,7 +110,12 @@ from app.services.location_contacts_service import (
     update_location_contact_link,
 )
 from app.services.login_journal_service import list_login_events, summarize_login_events
-from app.services.page_analytics_service import build_home_ab_stats, build_page_analytics, resolve_period
+from app.services.page_analytics_service import (
+    build_home_ab_stats,
+    build_home_link_clicks,
+    build_page_analytics,
+    resolve_period,
+)
 from app.services.rating_service import (
     list_all_ratings,
     location_rating_aggregates,
@@ -388,6 +393,7 @@ def admin_page_analytics(
     start, end = resolve_period(period_days=period_days, date_from=date_from, date_to=date_to)
     payload = build_page_analytics(db, start=start, end=end)
     payload["home_ab"] = build_home_ab_stats(db, start=start, end=end)
+    payload["home_links"] = build_home_link_clicks(db, start=start, end=end)
     payload["generated_at"] = datetime.now(timezone.utc)
     return PageAnalyticsResponse.model_validate(payload)
 

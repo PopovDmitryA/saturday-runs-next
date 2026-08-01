@@ -24,6 +24,7 @@ from app.services.dashboard_service import (
     list_user_runs,
     list_user_volunteer_role_stats,
     list_user_volunteering,
+    list_user_wins,
 )
 
 
@@ -371,6 +372,17 @@ def get_admin_user_preview_personal_records(
     if get_admin_user(db, user_id) is None:
         return None
     return list_user_personal_records(db, user_id, include_test_events=include_test_events)
+
+
+def get_admin_user_preview_wins(
+    db: Session,
+    user_id: UUID,
+    *,
+    include_test_events: bool = False,
+) -> list[dict[str, object]] | None:
+    if get_admin_user(db, user_id) is None:
+        return None
+    return list_user_wins(db, user_id, include_test_events=include_test_events)
 
 
 def get_admin_user_preview_volunteer_role_stats(

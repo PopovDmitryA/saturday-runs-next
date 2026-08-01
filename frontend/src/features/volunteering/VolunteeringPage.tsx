@@ -9,6 +9,8 @@ import { LocationNameLink } from "../../components/LocationNameLink";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RateRunModal } from "../../components/RateRunModal";
 import { RunRatingStar } from "../../components/RunRatingStar";
+import { Snackbar } from "../../components/Snackbar";
+import { useSnackbar } from "../../hooks/useSnackbar";
 import { useVolunteeringFilters } from "../../hooks/useVolunteeringFilters";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 import { TableWrap } from "../../components/tableUx/TableWrap";
@@ -45,6 +47,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
   const [eligibleIds, setEligibleIds] = useState<Set<string>>(new Set());
   const [ratingsVersion, setRatingsVersion] = useState(0);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
+  const { snackbar, showSnackbar, dismissSnackbar } = useSnackbar();
 
   // parkrun volunteering: counted but not shown in table
   // счётчик — из parkrun_total_credits (см. parkrun_total_credits в бэкенде,
@@ -594,6 +597,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
           onSaved={() => {
             reloadRatings();
             setActiveRun(null);
+            showSnackbar({ variant: "default", title: "Спасибо!", message: "Отзыв сохранён" });
           }}
           onDeleted={() => {
             reloadRatings();
@@ -601,6 +605,10 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
           }}
         />
       )}
+
+      <Snackbar open={snackbar.open} title={snackbar.title} variant={snackbar.variant} onDismiss={dismissSnackbar}>
+        {snackbar.message}
+      </Snackbar>
     </>
   );
 

@@ -634,6 +634,22 @@ body {
   color: #fff;
 }
 
+.btn-spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-right: 0.5rem;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: btn-spinner-spin 0.6s linear infinite;
+}
+
+@keyframes btn-spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .btn.secondary {
   background: var(--chip-bg);
   color: var(--text);
@@ -931,6 +947,26 @@ a.on-this-day-location {
   color: var(--stat-theme-label);
 }
 
+/* Победы — золотая плитка: награда, а не очередной счётчик. */
+.stat-card-wins {
+  --stat-theme-bg: #fdf3d8;
+  --stat-theme-border: #e8c977;
+  --stat-theme-value: #a16207;
+  --stat-theme-label: #86601a;
+  --stat-theme-border-hover: #d9b155;
+  --stat-theme-shadow: rgba(161, 98, 7, 0.14);
+  background: var(--stat-theme-bg);
+  border-color: var(--stat-theme-border);
+}
+
+.stat-card-wins .stat-value {
+  color: var(--stat-theme-value);
+}
+
+.stat-card-wins .stat-label {
+  color: var(--stat-theme-label);
+}
+
 .stat-card-volunteering {
   --stat-theme-bg: #e3eefb;
   --stat-theme-border: #9ec0e8;
@@ -1005,6 +1041,17 @@ a.on-this-day-location {
   transform: translateY(-1px);
 }
 
+.stat-card-clickable.stat-card-wins {
+  background: var(--stat-theme-bg);
+  border-color: var(--stat-theme-border);
+}
+
+.stat-card-clickable.stat-card-wins:hover {
+  border-color: var(--stat-theme-border-hover);
+  box-shadow: 0 8px 20px var(--stat-theme-shadow);
+  transform: translateY(-1px);
+}
+
 .stat-card-clickable.stat-card-volunteering {
   background: var(--stat-theme-bg);
   border-color: var(--stat-theme-border);
@@ -1023,9 +1070,14 @@ a.on-this-day-location {
 }
 
 .stat-card-runs .stat-card-hint,
-.stat-card-volunteering .stat-card-hint {
+.stat-card-volunteering .stat-card-hint,
+.stat-card-wins .stat-card-hint {
   color: inherit;
   opacity: 0.72;
+}
+
+.stat-card-wins .stat-card-hint {
+  color: var(--stat-theme-value);
 }
 
 .stat-card-runs .stat-card-hint {
@@ -2866,6 +2918,83 @@ tr.run-crosslinked td {
   flex: 1;
   padding: 0.65rem 0.75rem;
   font-size: 0.9rem;
+}
+
+.qr-modal-panel {
+  position: relative;
+  width: min(100%, 22rem);
+  text-align: center;
+}
+
+.qr-modal-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+}
+
+.qr-modal-head {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.6rem;
+}
+
+.qr-modal-name {
+  margin: 0 0 0.15rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.qr-modal-code {
+  margin: 0 0 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-3);
+}
+
+.qr-modal-image-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.9rem;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.qr-modal-image {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  height: auto;
+}
+
+.qr-modal-image-placeholder {
+  width: 260px;
+  height: 260px;
+  max-width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--bg-muted),
+    var(--bg-muted) 10px,
+    var(--surface) 10px,
+    var(--surface) 20px
+  );
+}
+
+.qr-modal-hint {
+  margin: 0.85rem 0 0;
+  font-size: 0.8rem;
+}
+
+.qr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
 }
 
 .btn-danger-confirm {
@@ -4829,6 +4958,23 @@ tr.run-crosslinked td {
   display: block;
   margin-top: 0.15rem;
   font-size: 0.78rem;
+}
+
+.wins-modal-note {
+  margin: 0 0 1rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.wins-table .best-results-city {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+}
+
+.wins-table .wins-place {
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .personal-records-hint {
@@ -7922,6 +8068,15 @@ tr.run-crosslinked td {
   --stat-theme-value: #7bdfa0;
   --stat-theme-label: #93c7a8;
   --stat-theme-border-hover: #3b7452;
+  --stat-theme-shadow: rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme="dark"] .stat-card-wins {
+  --stat-theme-bg: #2e2412;
+  --stat-theme-border: #6b5222;
+  --stat-theme-value: #f5c451;
+  --stat-theme-label: #d4b478;
+  --stat-theme-border-hover: #8a6a2c;
   --stat-theme-shadow: rgba(0, 0, 0, 0.35);
 }
 

@@ -134,13 +134,18 @@
   gap: 0.75rem 1.5rem;
 }
 
+/* У победных рейтингов зачёт по полу и фильтр систем стоят друг под другом —
+   без собственного отступа подпись «Система» липла бы к кнопкам зачёта. */
 .lb-controls-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   min-width: 0;
 }
 
-/* «Локации» несёт сразу два независимых фильтра (визиты + система) — на
-   широких экранах кладём их переключатели в один ряд, на узких перенос
-   сам разведёт их по строкам. */
+/* Туристические рейтинги несут сразу два независимых фильтра (визиты +
+   система) — на широких экранах кладём их переключатели в один ряд, на узких
+   перенос сам разведёт их по строкам. */
 .lb-filters-row {
   display: flex;
   flex-wrap: wrap;
@@ -534,12 +539,117 @@
   background: var(--tint-indigo-bg);
 }
 
+/* --- Разворачивание строки: детализация ролей (мультиволонтёр) --- */
+
+.lb-row-expandable {
+  cursor: pointer;
+}
+
+.lb-row-expandable:hover td {
+  background: var(--bg-muted);
+}
+
+/* Развёрнутая строка и её детализация читаются как один блок: у верхней
+   убираем нижнюю границу, чтобы между ними не было «шва». */
+.lb-row-expanded td {
+  border-bottom: none;
+}
+
+.lb-expand-toggle {
+  border: 0;
+  background: none;
+  padding: 0;
+  margin-right: 0.35rem;
+  color: var(--text-faint);
+  font-size: 0.85em;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lb-row-expandable:hover .lb-expand-toggle,
+.lb-row-expanded .lb-expand-toggle {
+  color: var(--link);
+}
+
+.lb-detail-row td {
+  padding: 0 0 0.9rem;
+  background: var(--bg-muted);
+}
+
+.lb-roles-detail {
+  padding: 0.2rem 0.9rem 0;
+}
+
+.lb-roles-caption {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+}
+
+.lb-roles-table {
+  width: auto;
+  min-width: min(100%, 34rem);
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.lb-roles-table th,
+.lb-roles-table td {
+  padding: 0.28rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.lb-roles-table th {
+  color: var(--text-faint);
+  font-weight: 500;
+  text-align: right;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+
+.lb-roles-table tr:last-child td {
+  border-bottom: none;
+}
+
+.lb-roles-table .lb-roles-col-name {
+  text-align: left;
+  white-space: normal;
+}
+
+.lb-roles-table .lb-col-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-roles-table .lb-col-total {
+  font-weight: 600;
+}
+
+.lb-roles-empty {
+  margin: 0;
+}
+
 .lb-more {
   display: flex;
   justify-content: center;
 }
 
 /* --- Хаб --- */
+
+/* Общий для всех карточек фильтр «Система» — визуально тот же переключатель,
+   что и на странице конкретного рейтинга (.lb-visits/.lb-gender-tabs), но
+   своя нижняя отбивка, т.к. дальше сразу идут секции с карточками, а не
+   таблица. */
+.lb-hub-platform-filter {
+  margin-bottom: 0.2rem;
+}
+
+.lb-hub-card-fallback {
+  margin: 0.1rem 0 0;
+  font-size: 0.76rem;
+  font-style: italic;
+}
 
 .lb-hub-section {
   border: 1px solid var(--border);

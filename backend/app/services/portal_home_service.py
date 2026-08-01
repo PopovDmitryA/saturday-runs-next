@@ -18,7 +18,7 @@ from typing import Any
 from uuid import UUID
 
 import redis
-from sqlalchemy import String, case, cast, exists, func, select
+from sqlalchemy import String, and_, case, cast, exists, func, select
 from sqlalchemy.orm import Session
 
 from app.core.redis_client import get_redis_client
@@ -31,6 +31,7 @@ from app.models import (
     Platform,
     PlatformLink,
     RunResult,
+    User,
     VolunteerResult,
 )
 from app.schemas.portal import PortalHomeResponse
@@ -38,7 +39,7 @@ from app.services.location_catalog_service import LocationCatalogIndex
 
 logger = logging.getLogger(__name__)
 
-PORTAL_HOME_CACHE_KEY = "portal:home:v18"
+PORTAL_HOME_CACHE_KEY = "portal:home:v19"
 # TTL сильно больше периода прогрева (раз в час): пересчёт занимает ~2 мин и идёт
 # синхронно в запросе пользователя, поэтому пустой кэш — это минута ожидания на
 # главной. Запас в 24 часа переживает и пропущенные прогревы, и рестарт воркера:
@@ -346,6 +347,47 @@ def _unpack_min(packed: str | None) -> tuple[int, date] | None:
         return None
 
 
+def _runner_handles(db: Session, participant_ids: list[UUID]) -> dict[UUID, str]:
+    """Хендл профиля на сайте для участников из витрин рекордов главной.
+
+    Нужен, чтобы имя рекордсмена было ссылкой на /users/{хендл}. Ключ связи
+    participants → users — (platform_id, external_user_id) в platform_links, а
+    не platform_links.participant_id (он проставлен не всегда) — тот же приём,
+    что в location_page_service._platform_link_join.
+
+    Скрытые профили (profile_private) хендл не получают: страница участника
+    отдала бы анониму 403, а ответ главной кэшируется один на всех, так что
+    «показать ссылку только своим» здесь всё равно невозможно.
+
+    Вызывается на горсти строк (рекорды недели и рекорды систем), поэтому
+    один запрос по списку id, а не join в тяжёлых агрегатах выше.
+    """
+    if not participant_ids:
+        return {}
+    rows = (
+        db.query(Participant.id, User.public_slug, User.serial_id)
+        .join(
+            PlatformLink,
+            and_(
+                PlatformLink.platform_id == Participant.platform_id,
+                PlatformLink.external_user_id == Participant.external_user_id,
+            ),
+        )
+        .join(User, User.id == PlatformLink.user_id)
+        .filter(
+            Participant.id.in_(set(participant_ids)),
+            User.profile_private.is_(False),
+        )
+        .all()
+    )
+    handles: dict[UUID, str] = {}
+    for participant_id, public_slug, serial_id in rows:
+        handle = (public_slug or "").strip() or (str(serial_id) if serial_id else "")
+        if handle:
+            handles[participant_id] = handle
+    return handles
+
+
 def _week_results(
     db: Session, week_start: date, week_end: date, excluded_location_ids: list[UUID]
 ) -> list[Any]:
@@ -362,6 +404,7 @@ def _week_results(
                 RunResult.finish_time_sec,
                 RunResult.finish_time_display,
                 Participant.display_name,
+                Participant.id,
             )
             .select_from(RunResult)
             .join(Event, Event.id == RunResult.event_id)
@@ -421,6 +464,7 @@ def _fastest_by_platform(
                 Participant.display_name,
                 Event.event_date,
                 Event.location_id,
+                Participant.id,
             )
             .select_from(RunResult)
             .join(Event, Event.id == RunResult.event_id)
@@ -430,7 +474,7 @@ def _fastest_by_platform(
         excluded_location_ids,
     ).all()
     picked: dict[tuple[str, str], dict[str, Any]] = {}
-    for code, g, sec, display, runner, event_date, location_id in rows:
+    for code, g, sec, display, runner, event_date, location_id, participant_id in rows:
         key = (code, g or "")
         if wanted.get(key) != sec or key in picked:
             continue
@@ -441,6 +485,7 @@ def _fastest_by_platform(
             "runner_name": runner,
             "event_date": event_date,
             "_location_id": location_id,
+            "_participant_id": participant_id,
         }
     ordered: list[dict[str, Any]] = []
     for code in PLATFORM_ORDER:
@@ -458,6 +503,9 @@ def _fastest_by_platform(
                 if previous_sec is not None:
                     item["delta_sec"] = previous_sec - current_sec
             ordered.append(item)
+    handles = _runner_handles(db, [item["_participant_id"] for item in ordered])
+    for item in ordered:
+        item["runner_handle"] = handles.get(item.pop("_participant_id"))
     return ordered
 
 
@@ -781,6 +829,7 @@ def _week_attendance_records(
     week_end: date,
     identity_of: Callable[[UUID], str],
     display_of: Callable[[UUID], str],
+    slug_of: Callable[[UUID], str] | None = None,
 ) -> list[dict[str, Any]]:
     """Рекорды посещаемости недели: побитые максимумы и открытия площадок.
 
@@ -837,6 +886,7 @@ def _week_attendance_records(
             continue
         records[key] = {
             "location_name": display_of(row.location_id),
+            "location_slug": slug_of(row.location_id) if slug_of is not None else None,
             "platform_code": row.platform_code,
             "event_date": row.event_date,
             "finishers": row.finishers,
@@ -873,6 +923,15 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
     def display_of(location_id: UUID) -> str:
         location = locations[location_id]
         return resolver.display_name(location, platform_code_by_location[location_id])
+
+    def slug_of(location_id: UUID) -> str:
+        """Слаг страницы локации — external_key самой строки.
+
+        Страница /locations/{slug} резолвит слаг любой из платформ в одну
+        физическую локацию (resolve_location_identity) и сама переписывает
+        адрес на канонический, поэтому строить его здесь не нужно.
+        """
+        return locations[location_id].external_key.strip().lower()
 
     def is_foreign_parkrun(location_id: UUID) -> bool:
         """Зарубежные parkrun-площадки из синка профилей: финиши учитываем,
@@ -959,6 +1018,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         top_saturday = [
             {
                 "location_name": display_of(row.location_id),
+                "location_slug": slug_of(row.location_id),
                 "platform_code": row.platform_code,
                 "finishers": row.finishers,
             }
@@ -972,7 +1032,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         week_start = week_end - timedelta(days=WEEK_RECORD_WINDOW_DAYS - 1)
 
         attendance_list = _week_attendance_records(
-            events, week_start, week_end, identity_of, display_of
+            events, week_start, week_end, identity_of, display_of, slug_of
         )
 
         # рекорды трассы М/Ж: лучшее время недели против исторического
@@ -1002,6 +1062,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
             finish_sec,
             finish_display,
             runner_name,
+            participant_id,
         ) in _week_results(db, week_start, week_end, excluded_location_ids):
             if gender not in ("male", "female"):
                 continue
@@ -1014,7 +1075,9 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
                 continue
             course_records[course_key] = {
                 "_finish_sec": finish_sec,
+                "_participant_id": participant_id,
                 "location_name": display_of(location_id),
+                "location_slug": slug_of(location_id),
                 "platform_code": platform_code,
                 "event_date": event_date,
                 "gender": gender,
@@ -1024,15 +1087,23 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
                 "previous_record_date": previous_min[1],
                 "delta_sec": previous_min[0] - finish_sec,
             }
+        course_top = sorted(
+            course_records.values(),
+            key=lambda item: (
+                str(item["location_name"]),
+                0 if item["gender"] == "male" else 1,
+            ),
+        )[:WEEK_RECORDS_LIMIT]
+        # Хендлы ищем только для попавших в выдачу строк — их не больше дюжины.
+        course_handles = _runner_handles(
+            db, [item["_participant_id"] for item in course_top]
+        )
         course_list = [
-            {key: value for key, value in item.items() if not key.startswith("_")}
-            for item in sorted(
-                course_records.values(),
-                key=lambda item: (
-                    str(item["location_name"]),
-                    0 if item["gender"] == "male" else 1,
-                ),
-            )[:WEEK_RECORDS_LIMIT]
+            {
+                **{key: value for key, value in item.items() if not key.startswith("_")},
+                "runner_handle": course_handles.get(item["_participant_id"]),
+            }
+            for item in course_top
         ]
         week_records = {
             "week_start": week_start,
@@ -1301,6 +1372,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
                 "longitude": longitude,
                 "starts": starts_by_identity[key],
                 "location_name": display_of(location_id),
+                "location_slug": slug_of(location_id),
                 "platform_code": platform_code_by_location[location_id],
                 "region": location.region,
             }
@@ -1330,6 +1402,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         return [
             {
                 "location_name": display_of(row.location_id),
+                "location_slug": slug_of(row.location_id),
                 "platform_code": row.platform_code,
                 "event_date": row.event_date,
                 "finishers": row.finishers,
@@ -1382,6 +1455,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
     for item in _fastest_by_platform(db, excluded_location_ids, fresh_since):
         location_id = item.pop("_location_id")
         item["location_name"] = display_of(location_id)
+        item["location_slug"] = slug_of(location_id)
         fastest.append(item)
 
     # --- недельные дельты для факт-плашек (Дмитрий, 13.07.2026) ---

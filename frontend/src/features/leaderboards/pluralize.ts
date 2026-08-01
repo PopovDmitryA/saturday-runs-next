@@ -4,7 +4,9 @@ import type { LeaderboardMetric } from "./leaderboardsApi";
 const UNIT_FORMS: Record<LeaderboardMetric, [string, string, string]> = {
   runs: ["пробежка", "пробежки", "пробежек"],
   volunteering: ["волонтёрство", "волонтёрства", "волонтёрств"],
+  volunteer_roles: ["роль", "роли", "ролей"],
   locations: ["локация", "локации", "локаций"],
+  volunteer_locations: ["локация", "локации", "локаций"],
   wins: ["первое место", "первых места", "первых мест"],
   win_locations: [
     "локация с первым местом",

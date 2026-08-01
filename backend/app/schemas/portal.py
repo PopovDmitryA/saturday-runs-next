@@ -23,6 +23,9 @@ class PortalPulseResponse(BaseModel):
 
 class PortalAttendanceRecordResponse(BaseModel):
     location_name: str
+    # Слаг страницы локации: имя на главной становится ссылкой /locations/{slug}.
+    # None у старого кэша главной (ключ бампается, но перестраховка дешевле).
+    location_slug: str | None = None
     platform_code: str
     event_date: date
     finishers: int
@@ -34,11 +37,15 @@ class PortalAttendanceRecordResponse(BaseModel):
 
 class PortalCourseRecordResponse(BaseModel):
     location_name: str
+    location_slug: str | None = None
     platform_code: str
     event_date: date
     gender: str
     time_display: str
     runner_name: str | None = None
+    # Хендл профиля на сайте (/users/{handle}), если рекордсмен привязал систему
+    # и не скрыл профиль; иначе имя остаётся текстом.
+    runner_handle: str | None = None
     previous_display: str | None = None
     previous_record_date: date | None = None
     delta_sec: int | None = None
@@ -53,6 +60,7 @@ class PortalWeekRecordsResponse(BaseModel):
 
 class PortalTopSaturdayRowResponse(BaseModel):
     location_name: str
+    location_slug: str | None = None
     platform_code: str
     finishers: int
 
@@ -88,6 +96,7 @@ class PortalLocationsWeekPointResponse(BaseModel):
 
 class PortalAttendanceTopRowResponse(BaseModel):
     location_name: str
+    location_slug: str | None = None
     platform_code: str
     event_date: date
     finishers: int
@@ -109,6 +118,7 @@ class PortalGeoPointResponse(BaseModel):
     longitude: float
     starts: int
     location_name: str
+    location_slug: str | None = None
     platform_code: str
     region: str | None = None
 
@@ -142,7 +152,9 @@ class PortalFastestRowResponse(BaseModel):
     gender: str
     value_display: str
     runner_name: str | None = None
+    runner_handle: str | None = None
     location_name: str
+    location_slug: str | None = None
     event_date: date
     delta_sec: int | None = None
 
