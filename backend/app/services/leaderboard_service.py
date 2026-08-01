@@ -1115,6 +1115,11 @@ class _LocationVisits:
     codes: set[str] = field(default_factory=set)
     visits: int = 0
     week_visits: int = 0
+    # Визиты по каждой системе отдельно (code -> [visits, week_visits): порог
+    # визитов в колонке конкретной системы должен набираться ЕЙ САМОЙ, а не
+    # суммой систем — иначе один визит на 5В + один на S95 (в «Всего» это
+    # законно 2+) попал бы в зачёт колонки «5В», хотя там всего 1 визит.
+    by_platform: dict[str, list[int]] = field(default_factory=dict)
 
     def counts(self, min_visits: int) -> bool:
         """Локация набрала норму визитов и идёт в зачёт."""
@@ -1126,6 +1131,15 @@ class _LocationVisits:
         При min_visits=1 это ровно прежняя семантика «первый визит на неделе».
         """
         return self.visits - self.week_visits < min_visits
+
+    def platform_counts(self, code: str, min_visits: int) -> bool:
+        """Порог визитов набран именно в этой системе (без суммирования с другими)."""
+        cell = self.by_platform.get(code)
+        return cell is not None and cell[0] >= min_visits
+
+    def platform_is_new(self, code: str, min_visits: int) -> bool:
+        cell = self.by_platform[code]
+        return cell[0] - cell[1] < min_visits
 
 
 def _merge_visit_row(
@@ -1139,14 +1153,19 @@ def _merge_visit_row(
     """Свести строку (система × локация) в счётчики физической площадки."""
     existing = identities.get(identity)
     if existing is None:
-        identities[identity] = _LocationVisits(
+        existing = _LocationVisits(
             first_date=first_date, codes={code}, visits=visits, week_visits=week_visits
         )
+        existing.by_platform[code] = [visits, week_visits]
+        identities[identity] = existing
         return
     existing.first_date = min(existing.first_date, first_date)
     existing.codes.add(code)
     existing.visits += visits
     existing.week_visits += week_visits
+    cell = existing.by_platform.setdefault(code, [0, 0])
+    cell[0] += visits
+    cell[1] += week_visits
 
 
 def _collect_location_entities(
@@ -1210,9 +1229,11 @@ def _collect_location_entities(
             if is_new:
                 entity.week += 1
             for code in visits.codes:
+                if not visits.platform_counts(code, min_visits):
+                    continue
                 bucket = entity.values.setdefault(code, [0, 0])
                 bucket[0] += 1
-                if is_new:
+                if visits.platform_is_new(code, min_visits):
                     bucket[1] += 1
         if with_last_win:
             entity.participant_ids = pids_by_entity.get(key, {pid})
@@ -1838,9 +1859,11 @@ def _my_location_values(
         if is_new:
             week += 1
         for code in visits.codes:
+            if not visits.platform_counts(code, min_visits):
+                continue
             bucket = values.setdefault(code, [0, 0])
             bucket[0] += 1
-            if is_new:
+            if visits.platform_is_new(code, min_visits):
                 bucket[1] += 1
     last_new = (
         _resolve_last_win(

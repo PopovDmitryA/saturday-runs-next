@@ -217,6 +217,24 @@ def test_merge_visit_row_sums_platforms_of_one_location() -> None:
     assert merged.counts(3)
 
 
+def test_merge_visit_row_tracks_per_platform_visits() -> None:
+    # Порог визитов в колонке системы должен набираться ЕЙ САМОЙ: 1 визит на
+    # 5В + 1 визит на S95 даёт «Всего» 2+ (легитимно), но ни одна из систем
+    # по отдельности порог 2 не набрала — это баг из отчёта про Глазкова
+    # Александра (5В-колонка «в разрезе всех систем» была больше, чем при
+    # прямом подсчёте только по 5В).
+    identities: dict[str, _LocationVisits] = {}
+    _merge_visit_row(identities, "loc:1", "five_verst", date(2026, 3, 7), 1, 0)
+    _merge_visit_row(identities, "loc:1", "s95", date(2026, 1, 10), 1, 0)
+    merged = identities["loc:1"]
+    assert merged.counts(2)  # «Всего» видит эту локацию как 2+
+    assert not merged.platform_counts("five_verst", 2)
+    assert not merged.platform_counts("s95", 2)
+    # А если один визит на 5В был дважды (два разных события) — сама 5В уже набрала порог.
+    _merge_visit_row(identities, "loc:1", "five_verst", date(2026, 4, 4), 1, 0)
+    assert merged.platform_counts("five_verst", 2)
+
+
 def test_cache_key_versions_min_visits() -> None:
     # Базовый вариант сохраняет прежний ключ, пороги — отдельными снапшотами.
     assert _cache_key("locations") == _cache_key("locations", "all", 1)
