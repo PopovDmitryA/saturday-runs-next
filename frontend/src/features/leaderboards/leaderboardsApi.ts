@@ -4,6 +4,7 @@
 export type LeaderboardMetric =
   | "runs"
   | "volunteering"
+  | "volunteer_roles"
   | "locations"
   | "volunteer_locations"
   | "wins"
@@ -25,6 +26,14 @@ export const MIN_VISITS_OPTIONS = [1, 2, 3, 4, 5] as const;
 // parkrun, в волонтёрском туризме — тоже), поэтому его присылает бэкенд в
 // platform_options, а не повторяет фронт.
 export type PlatformFilter = "all" | "five_verst" | "s95" | "runpark" | "parkrun";
+
+// Одна освоенная роль в детализации мультиволонтёра: сколько волонтёрств и в
+// каких системах. Приходит только у метрики volunteer_roles.
+export type VolunteerRoleDetail = {
+  role: string;
+  total: number;
+  platforms: Record<string, number>;
+};
 
 export type LeaderboardCell = {
   value: number;
@@ -49,6 +58,11 @@ export type LeaderboardRow = {
   last_win_location?: string | null;
   last_win_location_slug?: string | null;
   last_win_date?: string | null;
+  // Только у мультиволонтёра: любимая роль (чаще всего выходил) и детализация
+  // «роль × система × волонтёрств» — она раскрывается по клику на строке.
+  top_role?: string | null;
+  top_role_count?: number | null;
+  role_details?: VolunteerRoleDetail[];
 };
 
 export type LeaderboardResponse = {
@@ -94,6 +108,9 @@ export type MyLeaderboardRow = {
   last_win_location?: string | null;
   last_win_location_slug?: string | null;
   last_win_date?: string | null;
+  top_role?: string | null;
+  top_role_count?: number | null;
+  role_details?: VolunteerRoleDetail[];
 };
 
 async function leaderboardsFetch<T>(path: string): Promise<T> {

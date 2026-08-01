@@ -13,6 +13,7 @@ from app.services.leaderboard_service import (
     PLATFORM_FILTER_VALUES,
     VOLUNTEER_LOCATION_PLATFORM_COLUMNS,
     WIN_EXTRAS_METRICS,
+    _add_role_row,
     _apply_last_win,
     _cache_key,
     _dominant_gender,
@@ -26,6 +27,8 @@ from app.services.leaderboard_service import (
     _pick_home,
     _pick_last,
     _ranked,
+    _RoleUsage,
+    _summarize_roles,
     _week_start,
     metric_description,
     platform_columns_for,
@@ -317,3 +320,92 @@ def test_volunteer_locations_registered_as_tourism_metric() -> None:
     )
     assert "volunteer_locations" not in GENDERED_METRICS
     assert "volunteer_locations" not in WIN_EXTRAS_METRICS
+
+
+def test_volunteer_roles_registered_as_plain_metric() -> None:
+    # Мультиволонтёр — обычный рейтинг: без порога визитов, без разреза М/Ж,
+    # с общим для всех фильтром по системе (parkrun в нём участвует: роли
+    # приходят сводкой профиля).
+    assert "volunteer_roles" in LEADERBOARD_METRICS
+    assert "volunteer_roles" not in MIN_VISITS_METRICS
+    assert "volunteer_roles" not in GENDERED_METRICS
+    assert "volunteer_roles" not in WIN_EXTRAS_METRICS
+    assert "parkrun" in platform_filter_values("volunteer_roles")
+
+
+def test_summarize_roles_counts_union_not_sum() -> None:
+    # Одна и та же роль в двух системах — одна освоенная роль, но в колонке
+    # каждой системы она видна.
+    week_start = date(2026, 7, 27)
+    long_ago = date(2024, 1, 6)
+    by_platform = {
+        "five_verst": {
+            "marshal": _RoleUsage(first_date=long_ago, times=10),
+            "timekeeper": _RoleUsage(first_date=long_ago, times=3),
+        },
+        "s95": {"marshal": _RoleUsage(first_date=date(2025, 5, 3), times=4)},
+    }
+    labels = {"marshal": "Маршал", "timekeeper": "Секундомер"}
+    summary = _summarize_roles(by_platform, labels, week_start)
+    assert summary.total == 2
+    assert summary.values["five_verst"] == [2, 0]
+    assert summary.values["s95"] == [1, 0]
+    assert summary.week == 0
+    # Любимая роль — по сумме смен во всех системах (10 + 4 против 3).
+    assert summary.top_role == ("Маршал", 14)
+    # Детализация показывает, из каких систем собралась каждая роль.
+    assert summary.details == [
+        {"role": "Маршал", "total": 14, "platforms": {"five_verst": 10, "s95": 4}},
+        {"role": "Секундомер", "total": 3, "platforms": {"five_verst": 3}},
+    ]
+
+
+def test_summarize_roles_week_delta_counts_only_first_time_ever() -> None:
+    # Роль «новая», если ПЕРВАЯ смена в ней случилась на этой неделе — освоенное
+    # год назад в другой системе повторение новой ролью не делает.
+    week_start = date(2026, 7, 27)
+    by_platform = {
+        "five_verst": {"marshal": _RoleUsage(first_date=date(2024, 1, 6), times=9)},
+        "s95": {
+            "marshal": _RoleUsage(first_date=date(2026, 7, 31), times=1),
+            "pacer": _RoleUsage(first_date=date(2026, 7, 31), times=1),
+        },
+    }
+    labels = {"marshal": "Маршал", "pacer": "Пейсмейкер"}
+    summary = _summarize_roles(by_platform, labels, week_start)
+    assert summary.total == 2
+    assert summary.week == 1
+
+
+def test_add_role_row_folds_system_synonyms_into_one_role() -> None:
+    # Внутри одной системы разные ярлыки одной роли («Сканер» и веха «Сканер 25»)
+    # складываются, а не затирают друг друга.
+    by_platform: dict[str, dict[str, _RoleUsage]] = {}
+    labels: dict[str, str] = {}
+    _add_role_row(by_platform, labels, "s95", "Сканер", date(2025, 3, 1), 20)
+    _add_role_row(by_platform, labels, "s95", "Сканер 25", date(2024, 9, 7), 1)
+    assert list(by_platform["s95"]) == ["barcode_scanning"]
+    usage = by_platform["s95"]["barcode_scanning"]
+    assert usage.times == 21
+    assert usage.first_date == date(2024, 9, 7)
+
+
+def test_add_role_row_uses_parkrun_credits_as_shift_count() -> None:
+    # У parkrun отдельных смен нет — только сводка «роль × кредитов», и число
+    # смен берётся из самого ярлыка, а не из числа строк.
+    by_platform: dict[str, dict[str, _RoleUsage]] = {}
+    labels: dict[str, str] = {}
+    _add_role_row(by_platform, labels, "parkrun", "Marshal (12×)", date(1970, 1, 1), 1)
+    assert by_platform["parkrun"]["marshal"].times == 12
+
+
+def test_add_role_row_skips_only_parkrun_summary_total() -> None:
+    # «Total Credits» — итог сводки профиля, а не роль. «Разное» — роль как
+    # любая другая (решение Дмитрия 01.08.2026), в зачёт идёт.
+    by_platform: dict[str, dict[str, _RoleUsage]] = {}
+    labels: dict[str, str] = {}
+    _add_role_row(by_platform, labels, "parkrun", "Total Credits (115×)", date(1970, 1, 1), 1)
+    assert by_platform == {}
+    _add_role_row(by_platform, labels, "five_verst", "Разное", date(2026, 1, 3), 5)
+    assert list(by_platform["five_verst"]) == ["other"]
+    assert labels["other"] == "Разное"
