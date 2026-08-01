@@ -305,6 +305,26 @@ export function platformCodeLabel(code: string): string {
   return labels[code] ?? code;
 }
 
+/**
+ * Текст личного QR/штрихкода участника для платформы — то же значение,
+ * что показывают штатные приложения parkrun/S95/RunPark/5 вёрст на экране
+ * «мой QR-код». У 5 вёрст отдельного barcode_id в базе нет (см. url.py
+ * BARCODE_RE) — на сайте это буква A + номер участника (external_user_id).
+ */
+export function platformScanCode(
+  platformCode: string,
+  barcodeId: string | null | undefined,
+  externalUserId: string | null | undefined,
+): string | null {
+  if (barcodeId) {
+    return barcodeId.toUpperCase();
+  }
+  if (platformCode === "five_verst" && externalUserId) {
+    return `A${externalUserId}`;
+  }
+  return null;
+}
+
 type PlatformActivityStats = {
   runs: number;
   volunteering: number;
