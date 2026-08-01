@@ -67,6 +67,7 @@ _STATIC_PAGE_TYPES = {
     "/ratings": "ratings_hub",
     "/ratings/runs": "ratings_runs",
     "/ratings/volunteering": "ratings_volunteering",
+    "/ratings/volunteer-roles": "ratings_volunteer_roles",
     "/ratings/locations": "ratings_locations",
     "/ratings/volunteer-locations": "ratings_volunteer_locations",
     "/ratings/wins": "ratings_wins",
