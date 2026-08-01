@@ -1,5 +1,17 @@
 from datetime import date
+from uuid import UUID, uuid4
 
+from sqlalchemy.orm import Session
+
+from app.models import (
+    Event,
+    Location,
+    LocationCatalog,
+    LocationCatalogLink,
+    Participant,
+    Platform,
+    RunResult,
+)
 from app.services.leaderboard_service import (
     GENDERED_METRICS,
     GENDERED_PLATFORM_COLUMNS,
@@ -20,6 +32,7 @@ from app.services.leaderboard_service import (
     _Entity,
     _LocationVisits,
     _merge_visit_row,
+    _my_win_values,
     _normalize_gender,
     _normalize_min_visits,
     _normalize_platform_filter,
@@ -409,3 +422,95 @@ def test_add_role_row_skips_only_parkrun_summary_total() -> None:
     _add_role_row(by_platform, labels, "five_verst", "Разное", date(2026, 1, 3), 5)
     assert list(by_platform["five_verst"]) == ["other"]
     assert labels["other"] == "Разное"
+
+
+def _seed_parkrun_wins_for_rating(db_session: Session, *, catalogued: list[bool]) -> UUID:
+    """Один parkrun-участник с первым местом на каждой из площадок.
+
+    catalogued задаёт по площадке: True — русская (есть связка с каталогом
+    локаций), False — зарубежная. Половина русских стартов заодно делает
+    участника «допущенным» до рейтингов (см. _PARKRUN_ELIGIBLE_CTE), поэтому
+    зарубежная строка отсеивается именно правилом площадки, а не допуском.
+    """
+    suffix = str(uuid4().int % 1_000_000)
+    platform = db_session.query(Platform).filter(Platform.code == "parkrun").one_or_none()
+    if platform is None:
+        platform = Platform(code="parkrun", name="parkrun")
+        db_session.add(platform)
+        db_session.flush()
+
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=f"parkrun-rating-user-{suffix}",
+        display_name="Rating Tester",
+        profile_url=f"https://www.parkrun.com/parkrunner/{suffix}/",
+    )
+    db_session.add(participant)
+    db_session.flush()
+
+    for index, is_russian in enumerate(catalogued):
+        location = Location(
+            platform_id=platform.id,
+            external_key=f"parkrun-rating-{suffix}-{index}",
+            name="Parkrun Rating Park",
+            country="United Kingdom",
+        )
+        db_session.add(location)
+        db_session.flush()
+
+        if is_russian:
+            catalog = LocationCatalog(
+                canonical_name=f"Parkrun Rating Park {suffix}-{index}",
+                active_platform="five_verst",
+                is_closed=False,
+            )
+            db_session.add(catalog)
+            db_session.flush()
+            db_session.add(
+                LocationCatalogLink(
+                    catalog_id=catalog.id,
+                    platform_id=platform.id,
+                    external_key=location.external_key,
+                    location_id=location.id,
+                )
+            )
+
+        event = Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=f"parkrun-rating-event-{suffix}-{index}",
+            event_date=date(2019, 6, 1 + index),
+            event_number=100 + index,
+            title="Parkrun Rating Event",
+            finishers_count=1,
+            runners_count=1,
+        )
+        db_session.add(event)
+        db_session.flush()
+        db_session.add(
+            RunResult(
+                event_id=event.id,
+                participant_id=participant.id,
+                external_result_key=f"parkrun-rating-result-{suffix}-{index}",
+                position=1,
+                finish_time_sec=22 * 60,
+                finish_time_display="00:22:00",
+                status="finished",
+            )
+        )
+    db_session.flush()
+    return participant.id
+
+
+def test_win_rating_counts_only_russian_parkrun(db_session: Session) -> None:
+    """Рейтинг побед считает parkrun только на русских площадках: зарубежный
+    протокол мы не видим, и одинокая строка из профиля всегда первая."""
+    participant_id = _seed_parkrun_wins_for_rating(db_session, catalogued=[True, False])
+    values, _home, _last = _my_win_values(db_session, [participant_id], date(2026, 7, 27))
+    assert values["parkrun"][0] == 1
+
+
+def test_win_rating_skips_parkrun_without_russian_starts(db_session: Session) -> None:
+    participant_id = _seed_parkrun_wins_for_rating(db_session, catalogued=[False, False])
+    values, _home, _last = _my_win_values(db_session, [participant_id], date(2026, 7, 27))
+    assert values == {}

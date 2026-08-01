@@ -28,7 +28,11 @@ from app.models import (
     VolunteerResult,
 )
 from app.parkrun.volunteer_credits import count_parkrun_volunteering
-from app.services.location_catalog_service import LocationCatalogIndex
+from app.services.location_catalog_service import (
+    PARKRUN_PLATFORM_CODE,
+    LocationCatalogIndex,
+    russian_parkrun_location_ids,
+)
 from app.services.location_map_service import _location_is_cancelled, _location_is_paused
 from app.services.location_records_service import get_user_location_records
 from app.services.sync_error_format import present_sync_error
@@ -59,7 +63,10 @@ class SyncRefreshRateLimitedError(Exception):
 # 31: график темпа на главной — переключатель «весь период» (по годам) и
 # среднее время финиша в каждой точке графика.
 # 32: плитка «Победы» — в аналитике появились wins_count / wins_scope.
-ANALYTICS_VERSION = 32
+# 33: зарубежный parkrun выброшен из побед (протокола нет — «первое место»
+# по одинокой строке из профиля не победа), заодно ушло фиктивное
+# gender_position=1 из среднего места по полу.
+ANALYTICS_VERSION = 33
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 
@@ -550,10 +557,14 @@ def _compute_dashboard_analytics(
     # (position). Счётчик и список в модалке считаются одним фильтром
     # (run_win_sql_filter) по одному и тому же runs_query — тестовые события и
     # кросслинк-дубли уже отсечены выше, поэтому цифра плитки и число строк
-    # детализации совпадают по построению.
+    # детализации совпадают по построению. Зарубежный parkrun отсекается тем же
+    # фильтром в обоих местах (foreign_parkrun_exclusion_filter).
     wins_scope = win_scope_for_gender(user_gender(db, user_id))
     wins_count = (
-        runs_query.filter(run_win_sql_filter(wins_scope))
+        runs_query.filter(
+            run_win_sql_filter(wins_scope),
+            foreign_parkrun_exclusion_filter(db),
+        )
         .with_entities(func.count(func.distinct(RunResult.id)))
         .scalar()
         or 0
@@ -943,6 +954,21 @@ def run_win_sql_filter(scope: str) -> Any:
     if scope == WIN_SCOPE_FEMALE:
         return RunResult.gender_position == 1
     return RunResult.position == 1
+
+
+def foreign_parkrun_exclusion_filter(db: Session) -> Any:
+    """Отсечь строки зарубежного parkrun (запрос должен джойнить Event и Platform).
+
+    Протоколов зарубежных площадок у нас нет: в БД от них лежит только пробежка
+    самого участника, вытащенная из его профиля. Первое место по такой строке —
+    артефакт, а не победа, поэтому в зачёт побед зарубежный parkrun не идёт
+    вовсе (решение Дмитрия 01.08.2026). Русский parkrun собран протоколами
+    целиком и в зачёте остаётся.
+    """
+    return or_(
+        Platform.code != PARKRUN_PLATFORM_CODE,
+        Event.location_id.in_(russian_parkrun_location_ids(db)),
+    )
 
 
 def locations_touched_since(db: Session, since: datetime) -> set[UUID]:
@@ -1423,7 +1449,8 @@ def list_user_wins(
     """Победы участника — детализация плитки «Победы» на главной кабинета.
 
     Разрез тот же, что у счётчика (см. win_scope_for_gender): женщинам —
-    первые места среди женщин, мужчинам — в абсолюте.
+    первые места среди женщин, мужчинам — в абсолюте. Зарубежный parkrun не
+    в зачёте (см. foreign_parkrun_exclusion_filter).
     """
     from app.services.personal_record_service import user_secondary_crosslinked_run_ids
 
@@ -1438,6 +1465,7 @@ def list_user_wins(
             PlatformLink.user_id == user_id,
             PlatformLink.platform_id == Platform.id,
             run_win_sql_filter(scope),
+            foreign_parkrun_exclusion_filter(db),
         )
     )
     if not include_test_events:

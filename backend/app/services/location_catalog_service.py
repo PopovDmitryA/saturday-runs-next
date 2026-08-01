@@ -194,12 +194,21 @@ class LocationCatalogIndex:
                 )
 
     def get_for_location(self, location: Location, platform_code: str) -> LocationCatalog | None:
-        if location.id in self._by_location_id:
-            return self._by_location_id[location.id]
-        catalog = self._by_platform_slug.get((platform_code, location.external_key))
+        return self.get_for_location_key(location.id, location.external_key, platform_code)
+
+    def get_for_location_key(
+        self, location_id: UUID | None, external_key: str | None, platform_code: str
+    ) -> LocationCatalog | None:
+        """То же, что get_for_location, но по паре «id + слаг» — чтобы не тянуть
+        из БД ORM-объекты локаций там, где нужен только сам факт связки."""
+        if location_id is not None and location_id in self._by_location_id:
+            return self._by_location_id[location_id]
+        if not external_key:
+            return None
+        catalog = self._by_platform_slug.get((platform_code, external_key))
         if catalog is not None:
             return catalog
-        normalized = normalize_location_slug(location.external_key)
+        normalized = normalize_location_slug(external_key)
         if normalized:
             return self._by_platform_slug.get((platform_code, normalized))
         return None
@@ -304,6 +313,50 @@ def is_foreign_location(location: Location, platform_code: str, catalog_index: L
         return catalog_index.get_for_location(location, platform_code) is None
     country = (location.country or "").strip()
     return bool(country) and country != "Россия"
+
+
+PARKRUN_PLATFORM_CODE = "parkrun"
+
+# Ключ кэша в Session.info: набор русских parkrun-локаций считается один раз на
+# сессию. Список закрыт по построению (parkrun ушёл из России в 2022, новых
+# русских площадок там не появится), а пополнение каталога — ручная операция,
+# после которой процессы всё равно перезапускаются.
+_RUSSIAN_PARKRUN_IDS_KEY = "russian_parkrun_location_ids"
+
+
+def russian_parkrun_location_ids(
+    db: Session, catalog_index: LocationCatalogIndex | None = None
+) -> frozenset[UUID]:
+    """id parkrun-локаций, которые считаем русскими (см. is_foreign_location).
+
+    Русский parkrun собран протоколами целиком, поэтому по нему честно считаются
+    места — и в абсолюте, и среди своего пола. От зарубежной площадки в БД лежат
+    только строки наших же участников, вытащенные из их профилей: в «протоколе»
+    из одной строки любой финишёр автоматически первый. Отсюда правило: места по
+    зарубежному parkrun не считаем вовсе.
+
+    Считается по всем parkrun-локациям сразу: правило связки узнаёт не только
+    прямую ссылку location_catalog_links, но и совпадение по слагу — у половины
+    русских площадок parkrun-строка задвоена, и связка есть только у одной из них.
+    """
+    cached = db.info.get(_RUSSIAN_PARKRUN_IDS_KEY)
+    if isinstance(cached, frozenset):
+        return cached
+    index = catalog_index or LocationCatalogIndex(db)
+    rows = (
+        db.query(Location.id, Location.external_key)
+        .join(Platform, Location.platform_id == Platform.id)
+        .filter(Platform.code == PARKRUN_PLATFORM_CODE)
+        .all()
+    )
+    ids = frozenset(
+        location_id
+        for location_id, external_key in rows
+        if external_key in RUSSIAN_PARKRUN_SLUGS_OUTSIDE_CATALOG
+        or index.get_for_location_key(location_id, external_key, PARKRUN_PLATFORM_CODE) is not None
+    )
+    db.info[_RUSSIAN_PARKRUN_IDS_KEY] = ids
+    return ids
 
 
 def backfill_city_from_catalog(db: Session, location: Location) -> bool:

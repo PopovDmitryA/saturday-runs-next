@@ -34,7 +34,10 @@ from app.parkrun.volunteer_credits import (
     resolve_parkrun_volunteering_count,
 )
 from app.services.co_runners_service import _is_unknown_participant_name
-from app.services.location_catalog_service import LocationCatalogIndex
+from app.services.location_catalog_service import (
+    LocationCatalogIndex,
+    russian_parkrun_location_ids,
+)
 from app.time_format import format_finish_time_display
 from app.volunteer_role_taxonomy import canonical_volunteer_role, role_occasions
 from app.volunteering_occasions import count_volunteering_occasions
@@ -329,6 +332,18 @@ _PARKRUN_ELIGIBLE_EXISTS = (
     "EXISTS (SELECT 1 FROM parkrun_eligible pe WHERE pe.participant_id = rr.participant_id)"
 )
 
+# Победы по parkrun засчитываются только на русских площадках. Протоколы
+# зарубежного parkrun мы не собираем: от такой площадки в БД есть лишь
+# пробежка самого участника из его профиля, и «первое место» по ней —
+# артефакт неполных данных, а не победа (решение Дмитрия 01.08.2026).
+# Список русских площадок приходит параметром: правило связки с каталогом
+# живёт в Python (см. russian_parkrun_location_ids) — в нём, кроме прямой
+# ссылки location_catalog_links, есть совпадение по слагу, без которого
+# половина русских площадок (задвоенные строки) считалась бы зарубежной.
+_RUSSIAN_PARKRUN_ONLY = (
+    "AND (p.code <> 'parkrun' OR e.location_id = ANY(:russian_parkrun_locations))"
+)
+
 _PARKRUN_ELIGIBLE_IDS_SQL = _PARKRUN_ELIGIBLE_CTE + "SELECT participant_id FROM parkrun_eligible"
 
 _RUNS_SQL = (
@@ -437,7 +452,12 @@ def _location_visits_sql(*, only_wins: bool) -> str:
     визитов»: из них видно и то, набрана ли норма, и то, набрана ли она именно
     на этой неделе (visits - week_visits < N ≤ visits).
     """
-    wins_filter = "AND rr.position = 1" if only_wins else ""
+    # only_wins — зачёт побед, поэтому зарубежный parkrun из него выпадает
+    # целиком (_RUSSIAN_PARKRUN_ONLY). В обычном туризме он остаётся: съездить
+    # на зарубежный старт — настоящий визит на площадку.
+    wins_filter = (
+        f"AND rr.position = 1\n  {_RUSSIAN_PARKRUN_ONLY}" if only_wins else ""
+    )
     return (
         _PARKRUN_ELIGIBLE_CTE
         + f"""
@@ -516,6 +536,7 @@ WHERE e.is_test_event = false
   AND rr.position = 1
   AND ec.secondary_event_id IS NULL
   AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
+  {_RUSSIAN_PARKRUN_ONLY}
   /*PIDS_FILTER*/
 GROUP BY rr.participant_id, p.code, e.location_id
 """
@@ -798,6 +819,20 @@ def _location_identity_maps(
     return identity_by_location, names, slugs
 
 
+def _row_params(db: Session, week_start: date, **extra: object) -> dict[str, object]:
+    """Общие параметры сырых выборок рейтингов.
+
+    russian_parkrun_locations нужен только зачётам побед (_RUSSIAN_PARKRUN_ONLY),
+    но передаётся всем: лишние bind-параметры text() игнорирует, а один набор
+    параметров на все выборки избавляет от дублирования на каждом вызове.
+    """
+    return {
+        "week_start": week_start,
+        "russian_parkrun_locations": list(russian_parkrun_location_ids(db)),
+        **extra,
+    }
+
+
 class _MetricSource:
     """Данные снапшота, не зависящие от фильтров: SQL-выборки и справочники.
 
@@ -847,7 +882,7 @@ class _MetricSource:
     def rows(self, sql: str) -> Sequence[Row[Any]]:
         cached = self._rows.get(sql)
         if cached is None:
-            cached = self.db.execute(text(sql), {"week_start": self.week_start}).all()
+            cached = self.db.execute(text(sql), _row_params(self.db, self.week_start)).all()
             self._rows[sql] = cached
         return cached
 
@@ -1965,7 +2000,7 @@ def _my_win_values(
     if not participant_ids:
         return {}, None, None
     sql = _WIN_ROWS_SQL.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
-    rows = db.execute(text(sql), {"week_start": week_start, "pids": participant_ids}).all()
+    rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
     if not rows:
         return {}, None, None
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
@@ -2080,7 +2115,7 @@ def _my_location_values(
     if not participant_ids:
         return {}, 0, 0, None
     sql = sql_template.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
-    rows = db.execute(text(sql), {"pids": participant_ids, "week_start": week_start}).all()
+    rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     identities: dict[str, _LocationVisits] = {}
     for _pid, code, location_id, first_date, visits, week_visits in rows:
