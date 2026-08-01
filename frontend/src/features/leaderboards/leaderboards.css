@@ -637,6 +637,20 @@
 
 /* --- Хаб --- */
 
+/* Общий для всех карточек фильтр «Система» — визуально тот же переключатель,
+   что и на странице конкретного рейтинга (.lb-visits/.lb-gender-tabs), но
+   своя нижняя отбивка, т.к. дальше сразу идут секции с карточками, а не
+   таблица. */
+.lb-hub-platform-filter {
+  margin-bottom: 0.2rem;
+}
+
+.lb-hub-card-fallback {
+  margin: 0.1rem 0 0;
+  font-size: 0.76rem;
+  font-style: italic;
+}
+
 .lb-hub-section {
   border: 1px solid var(--border);
   border-radius: 12px;
