@@ -917,7 +917,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 </tbody>
               </table>
             </TableWrap>
-            {me?.included && me.rank != null && (
+            {/* Во время поиска бар не показываем: список короткий, а строка
+                внизу закрывала как раз того участника, которого ищут. */}
+            {me?.included && me.rank != null && !query.trim() && (
               <PinnedMeBar
                 rowRef={myRowRef}
                 tableRef={tableRef}
