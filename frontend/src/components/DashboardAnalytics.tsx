@@ -15,6 +15,7 @@ import { StatHintTooltip } from "./StatHintTooltip";
 import { TopLocationValue } from "./TopLocationValue";
 import { VolunteerRolesModal } from "./VolunteerRolesModal";
 import { UniqueLocationsModal } from "./UniqueLocationsModal";
+import { WinsModal } from "./WinsModal";
 import { RegionsCitiesModal, type GroupBy } from "./RegionsCitiesModal";
 import { LocationRecordsModal } from "./LocationRecordsModal";
 import {
@@ -38,6 +39,7 @@ import {
   timesLabel,
   volunteerRolesLabel,
   volunteeringCapLabel,
+  winsCapLabel,
 } from "../lib/format";
 
 type DashboardAnalyticsProps = {
@@ -46,7 +48,7 @@ type DashboardAnalyticsProps = {
   totalVolunteering: number;
 };
 
-type AnalyticsCardCategory = "runs" | "volunteering";
+type AnalyticsCardCategory = "runs" | "volunteering" | "wins";
 
 type AnalyticsCard = {
   key: string;
@@ -65,7 +67,8 @@ type AnalyticsCard = {
     | "unique_regions"
     | "unique_cities"
     | "location_records"
-    | "age_group_records";
+    | "age_group_records"
+    | "wins";
   modalActivity?: "all" | "runs" | "volunteering";
   firstVisitSince?: string;
   tooltipContent?: ReactNode;
@@ -109,6 +112,11 @@ function cardThemeClass(category?: AnalyticsCardCategory): string {
   }
   if (category === "volunteering") {
     return " stat-card-volunteering";
+  }
+  // Победы — золотая плитка: единственная награда в сетке, зелёный «беговой»
+  // фон её теряет среди счётчиков локаций и километров.
+  if (category === "wins") {
+    return " stat-card-wins";
   }
   return "";
 }
@@ -304,6 +312,25 @@ function buildAnalyticsCards(
       value: `${analytics.saturday_consistency_pct}%`,
       label: `${saturdaysLabel(analytics.saturday_consistency_active)} из ${analytics.saturday_consistency_total}`,
       tooltipContent: SATURDAY_CONSISTENCY_TOOLTIP,
+    });
+  }
+
+  // Победы: у женщин — среди женщин, у мужчин — в абсолюте (разрез приходит
+  // с бэка в wins_scope). Плитку без побед не показываем — как и остальные
+  // счётчики, она появляется, когда есть что показать.
+  const winsCount = analytics.wins_count ?? 0;
+  if (winsCount > 0) {
+    cards.push({
+      key: "wins",
+      value: String(winsCount),
+      label:
+        analytics.wins_scope === "female"
+          ? `${winsCapLabel(winsCount)} среди женщин`
+          : `${winsCapLabel(winsCount)} в абсолюте`,
+      category: "wins",
+      clickable: true,
+      modalTarget: "wins",
+      labelMultiline: true,
     });
   }
 
@@ -649,6 +676,7 @@ export function DashboardAnalytics({
   const [uniqueLocationsOpen, setUniqueLocationsOpen] = useState(false);
   const [bestResultsOpen, setBestResultsOpen] = useState(false);
   const [personalRecordsOpen, setPersonalRecordsOpen] = useState(false);
+  const [winsOpen, setWinsOpen] = useState(false);
   const [volunteerRolesOpen, setVolunteerRolesOpen] = useState(false);
   const [locationRecordsOpen, setLocationRecordsOpen] = useState(false);
   const [ageGroupRecordsOpen, setAgeGroupRecordsOpen] = useState(false);
@@ -675,6 +703,10 @@ export function DashboardAnalytics({
     }
     if (card.modalTarget === "personal_records") {
       setPersonalRecordsOpen(true);
+      return;
+    }
+    if (card.modalTarget === "wins") {
+      setWinsOpen(true);
       return;
     }
     if (card.modalTarget === "volunteer_roles") {
@@ -904,6 +936,12 @@ export function DashboardAnalytics({
       <PersonalRecordsModal
         open={personalRecordsOpen}
         onClose={() => setPersonalRecordsOpen(false)}
+      />
+
+      <WinsModal
+        open={winsOpen}
+        onClose={() => setWinsOpen(false)}
+        scope={analytics.wins_scope ?? "absolute"}
       />
 
       <VolunteerRolesModal open={volunteerRolesOpen} onClose={() => setVolunteerRolesOpen(false)} />

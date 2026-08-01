@@ -184,6 +184,7 @@ const ROLE_CAP_FORMS = ["Роль", "Роли", "Ролей"] as const;
 const TIME_FORMS = ["раз", "раза", "раз"] as const;
 const DAY_CAP_FORMS = ["День", "Дня", "Дней"] as const;
 const PR_RUN_FORMS = ["PR-пробежка", "PR-пробежки", "PR-пробежек"] as const;
+const WIN_CAP_FORMS = ["Победа", "Победы", "Побед"] as const;
 const SATURDAY_FORMS = ["суббота", "субботы", "суббот"] as const;
 const VISIT_FORMS = ["визит", "визита", "визитов"] as const;
 
@@ -253,6 +254,10 @@ export function daysCapLabel(count: number): string {
 
 export function prRunsLabel(count: number): string {
   return pluralFormRu(count, PR_RUN_FORMS);
+}
+
+export function winsCapLabel(count: number): string {
+  return pluralFormRu(count, WIN_CAP_FORMS);
 }
 
 export function saturdaysLabel(count: number): string {

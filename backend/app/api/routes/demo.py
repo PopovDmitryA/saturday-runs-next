@@ -17,6 +17,7 @@ from app.schemas.dashboard import (
     RunItemResponse,
     VolunteeringItemResponse,
     VolunteerRoleStatResponse,
+    WinResponse,
 )
 from app.schemas.locations import CatalogLocationsTableResponse, MapLocationsResponse, UniqueLocationsDetailResponse
 from app.services.admin_users_service import (
@@ -28,6 +29,7 @@ from app.services.dashboard_service import (
     list_user_best_results,
     list_user_personal_records,
     list_user_volunteer_role_stats,
+    list_user_wins,
 )
 from app.services.demo_service import (
     get_demo_dashboard,
@@ -115,6 +117,13 @@ def demo_personal_records(db: Annotated[Session, Depends(get_db)]) -> list[Perso
     user_id = get_demo_user_id(db)
     items = list_user_personal_records(db, user_id, include_test_events=False)
     return [PersonalRecordResponse.model_validate(item) for item in items]
+
+
+@router.get("/runs/wins", response_model=list[WinResponse])
+def demo_wins(db: Annotated[Session, Depends(get_db)]) -> list[WinResponse]:
+    user_id = get_demo_user_id(db)
+    items = list_user_wins(db, user_id, include_test_events=False)
+    return [WinResponse.model_validate(item) for item in items]
 
 
 @router.get("/volunteering", response_model=list[VolunteeringItemResponse])

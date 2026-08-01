@@ -3,6 +3,7 @@ export const DASHBOARD_ANALYTICS_CARD_ORDER = [
   "unique_run_locations",
   "unique_run_regions",
   "unique_run_cities",
+  "wins",
   "avg_position",
   "avg_gender_position",
   "avg_finish",
