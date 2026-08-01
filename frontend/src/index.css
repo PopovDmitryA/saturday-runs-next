@@ -2918,6 +2918,83 @@ tr.run-crosslinked td {
   font-size: 0.9rem;
 }
 
+.qr-modal-panel {
+  position: relative;
+  width: min(100%, 22rem);
+  text-align: center;
+}
+
+.qr-modal-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+}
+
+.qr-modal-head {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.6rem;
+}
+
+.qr-modal-name {
+  margin: 0 0 0.15rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.qr-modal-code {
+  margin: 0 0 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-3);
+}
+
+.qr-modal-image-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.9rem;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.qr-modal-image {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  height: auto;
+}
+
+.qr-modal-image-placeholder {
+  width: 260px;
+  height: 260px;
+  max-width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--bg-muted),
+    var(--bg-muted) 10px,
+    var(--surface) 10px,
+    var(--surface) 20px
+  );
+}
+
+.qr-modal-hint {
+  margin: 0.85rem 0 0;
+  font-size: 0.8rem;
+}
+
+.qr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
 .btn-danger-confirm {
   background: #dc2626;
   color: #fff;

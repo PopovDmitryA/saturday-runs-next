@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConfirmModal } from "./ConfirmModal";
 import { PlatformBadge } from "./PlatformBadge";
+import { QrCodeModal } from "./QrCodeModal";
 import { Snackbar } from "./Snackbar";
+import { useOptionalUser } from "../lib/useOptionalUser";
 import {
   ApiError,
   confirmFiveVerstProfile,
@@ -22,6 +24,7 @@ import {
   formatDate,
   formatDateTime,
   platformCodeLabel,
+  platformScanCode,
   profileDataFreshnessLines,
 } from "../lib/format";
 
@@ -177,6 +180,8 @@ type PlatformSpoilerProps = {
   onConfirm: (linkParkrun?: boolean) => void;
   onUnlink: () => void;
   onSyncRequest: () => void;
+  onShowQr: () => void;
+  canShowQr: boolean;
   previewBlockRef?: (el: HTMLDivElement | null) => void;
 };
 
@@ -194,11 +199,18 @@ function PlatformCard({
   onConfirm,
   onUnlink,
   onSyncRequest,
+  onShowQr,
+  canShowQr,
   previewBlockRef,
 }: PlatformSpoilerProps) {
   // Форма привязки раскрывается по кнопке внутри карточки (вместо спойлера).
   const [expanded, setExpanded] = useState(false);
   const skipParkrunLookup = config.code === "s95" && parkrunLinked;
+  // Фича на обкатке — до проверки на реальных стартах видна только админу
+  // (см. feedback пользователя). Штрихкод как текст уже виден всем ниже.
+  const scanCode = linked && canShowQr
+    ? platformScanCode(config.code, linked.barcode_id, linked.external_user_id)
+    : null;
 
   const syncTimeLabel = isSyncing ? "Обновление…" : linked?.last_user_sync_at
     ? formatDateTime(linked.last_user_sync_at)
@@ -263,6 +275,17 @@ function PlatformCard({
             </button>
           </div>
           <div className="profile-platform-card-actions">
+            {scanCode && (
+              <button type="button" className="btn secondary btn-sm qr-btn" onClick={() => onShowQr()}>
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm10-2h2v2h-2v-2zm4 0h2v2h-2v-2zm-4 4h2v2h-2v-2zm4 0h2v2h-2v-2zm-2 4h2v2h-2v-2zm-4 0h2v2h-2v-2z"
+                  />
+                </svg>
+                QR-код
+              </button>
+            )}
             {externalUrl && (
               <a className="btn secondary btn-sm" href={externalUrl} target="_blank" rel="noreferrer">
                 Открыть профиль ↗
@@ -473,6 +496,10 @@ type ProfileLinkSectionProps = {
 };
 
 export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLinkSectionProps) {
+  // QR-коды систем — на обкатке, до проверки на реальных стартах видны
+  // только админу (см. platformScanCode/canShowQr в PlatformCard).
+  const currentUser = useOptionalUser();
+  const canShowQr = currentUser?.is_admin === true;
   const [links, setLinks] = useState<PlatformLink[]>([]);
   const [loadingLinks, setLoadingLinks] = useState(true);
   const [forms, setForms] = useState<Record<string, PlatformFormState>>(() =>
@@ -489,6 +516,11 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLi
   } | null>(null);
   const [syncLoadingPlatform, setSyncLoadingPlatform] = useState<string | null>(null);
   const [pendingSyncPlatforms, setPendingSyncPlatforms] = useState<Set<string>>(() => new Set());
+  const [qrModal, setQrModal] = useState<{
+    platformCode: string;
+    code: string;
+    displayName: string | null;
+  } | null>(null);
   const [snackbar, setSnackbar] = useState<SnackbarState>(closedSnackbar);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -798,6 +830,15 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLi
                 onProfileUrlChange={(value) =>
                   updateForm(config.code, { profileUrl: value, formError: null })
                 }
+                canShowQr={canShowQr}
+                onShowQr={() => {
+                  const code = linked && canShowQr
+                    ? platformScanCode(config.code, linked.barcode_id, linked.external_user_id)
+                    : null;
+                  if (code) {
+                    setQrModal({ platformCode: config.code, code, displayName: linked?.display_name ?? null });
+                  }
+                }}
                 onPreview={() => void handlePreview(config)}
                 onConfirm={(linkParkrun) => void handleConfirm(config, linkParkrun)}
                 onUnlink={() => requestUnlink(config.code)}
@@ -865,6 +906,14 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLi
           </>
         )}
       </ConfirmModal>
+
+      <QrCodeModal
+        open={qrModal !== null}
+        platformCode={qrModal?.platformCode ?? ""}
+        displayName={qrModal?.displayName ?? null}
+        code={qrModal?.code ?? ""}
+        onClose={() => setQrModal(null)}
+      />
 
       <Snackbar
         open={snackbar.open}
