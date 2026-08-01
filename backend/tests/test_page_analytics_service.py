@@ -177,6 +177,33 @@ def test_user_facing_pages_have_distinct_page_types() -> None:
     assert len(page_types) == len(set(page_types)), "Разные страницы делят один page_type"
 
 
+def _hub_rating_links() -> list[str]:
+    """Адреса карточек из хаба рейтингов (/ratings)."""
+    src = _frontend_src()
+    hub = (src / "features" / "leaderboards" / "LeaderboardsHubPage.tsx").read_text(
+        encoding="utf-8"
+    )
+    links = sorted(set(re.findall(r'href:\s*"(/ratings/[^"]+)"', hub)))
+    assert len(links) > 4, "Разбор карточек хаба сломался — ссылок подозрительно мало"
+    return links
+
+
+@pytest.mark.parametrize("href", _hub_rating_links())
+def test_every_hub_link_has_route(href: str) -> None:
+    """Карточка хаба обязана вести на живой роут.
+
+    Обратная сторона сторожа выше: тот ловит «роут есть, но не заведён в
+    аналитике», а этот — «ссылка есть, а роут потерян». Так 01.08.2026 при
+    мерже табло /world из App.tsx пропала строка /ratings/volunteer-locations:
+    карточка «Волонтёрский туризм» осталась на месте, бэкенд-метрика работала,
+    а переход выдавал «Страница не найдена» — и ни один тест этого не заметил.
+    """
+    assert href in APP_ROUTES, (
+        f"Карточка хаба ведёт на {href}, но такого роута нет в App.tsx — "
+        "переход даст «Страница не найдена»"
+    )
+
+
 def test_resolve_period_defaults_to_last_n_days() -> None:
     today = local_today()
 
