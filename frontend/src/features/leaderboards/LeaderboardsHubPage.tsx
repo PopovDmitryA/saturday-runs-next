@@ -47,7 +47,14 @@ const SECTIONS: HubSection[] = [
   {
     emoji: "🤝",
     title: "Волонтёры",
-    live: [{ metric: "volunteering", href: "/ratings/volunteering", title: "Количество волонтёрств" }],
+    live: [
+      { metric: "volunteering", href: "/ratings/volunteering", title: "Количество волонтёрств" },
+      {
+        metric: "volunteer_locations",
+        href: "/ratings/volunteer-locations",
+        title: "Уникальные локации",
+      },
+    ],
     soon: [{ title: "Мультиволонтёр", description: "Кто освоил больше всего разных ролей." }],
   },
   {

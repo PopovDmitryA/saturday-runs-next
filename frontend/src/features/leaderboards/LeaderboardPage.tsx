@@ -7,7 +7,6 @@ import {
   getMyLeaderboardRow,
   MIN_VISITS_METRICS,
   MIN_VISITS_OPTIONS,
-  PLATFORM_FILTER_METRICS,
   PLATFORM_LABELS,
   type LeaderboardGender,
   type LeaderboardMetric,
@@ -34,12 +33,16 @@ type LeaderboardPageProps = {
   metric: LeaderboardMetric;
 };
 
-type SortKey = "rank" | "total" | string;
+// Колонки-системы больше не сортируются: чтобы посмотреть зачёт одной системы,
+// есть фильтр «Система» — он пересчитывает и место, и «Всего», а не просто
+// переставляет строки по одному столбцу (решение Дмитрия 01.08.2026).
+type SortKey = "rank" | "total" | "best_time";
 
 const METRIC_CRUMBS: Record<LeaderboardMetric, { section: string; label: string }> = {
   runs: { section: "Бегуны", label: "Количество пробежек" },
   volunteering: { section: "Волонтёры", label: "Количество волонтёрств" },
   locations: { section: "Паркран-туристы", label: "Уникальные локации" },
+  volunteer_locations: { section: "Волонтёры", label: "Уникальные локации" },
   wins: { section: "Бегуны", label: "Количество первых мест" },
   win_locations: { section: "Паркран-туристы", label: "Локации с первым местом" },
 };
@@ -50,21 +53,25 @@ const TOP_LOCATION_HINT =
 
 // Фильтр туризма: «локация засчитывается от N визитов». Кнопка 1+ — обычный
 // рейтинг (любая локация, где человек был хоть раз), дальше планка растёт.
+// У волонтёрского туризма визит — это смена, а не забег.
 const MIN_VISITS_HINT =
   "Сколько раз надо пробежать на локации, чтобы она дала балл. " +
   "При «3+» разовые заезды в зачёт не идут.";
 
-// Фильтр туризма: «смотреть по одной системе». По умолчанию — объединённый
-// зачёт (одна физическая площадка = одна локация, в какой бы системе ни
-// бежали); кнопка системы переключает на зачёт только по ней, с пересчётом
-// места и «Всего» — это не колонка, а отдельный рейтинг.
-const PLATFORM_TABS: { value: PlatformFilter; label: string }[] = [
-  { value: "all", label: "Все" },
-  { value: "five_verst", label: PLATFORM_LABELS.five_verst },
-  { value: "s95", label: PLATFORM_LABELS.s95 },
-  { value: "runpark", label: PLATFORM_LABELS.runpark },
-  { value: "parkrun", label: PLATFORM_LABELS.parkrun },
-];
+const VOLUNTEER_MIN_VISITS_HINT =
+  "Сколько раз надо отволонтёрить на локации, чтобы она дала балл. " +
+  "При «3+» разовые смены в зачёт не идут. Несколько ролей в одну субботу — одна смена.";
+
+// Фильтр «смотреть по одной системе» — общий для всех рейтингов. По умолчанию
+// объединённый зачёт (у туризма одна физическая площадка = одна локация, в
+// какой бы системе ни бежали); кнопка системы переключает на зачёт только по
+// ней, с пересчётом места и «Всего» — это не колонка, а отдельный рейтинг.
+// Список кнопок приходит с бэкенда (platform_options): в гендерном зачёте и в
+// волонтёрском туризме parkrun отсутствует.
+const PLATFORM_TAB_LABELS: Record<string, string> = {
+  all: "Все",
+  ...PLATFORM_LABELS,
+};
 
 const PLATFORM_FILTER_HINT =
   "Переключает объединённый зачёт на одну систему: место и «Всего» " +
@@ -237,16 +244,13 @@ function sortValue(row: LeaderboardRow, key: SortKey): number {
   if (key === "rank") {
     return -row.rank;
   }
-  if (key === "total") {
-    return row.total;
-  }
   if (key === "best_time") {
     // Сортировка везде по убыванию, а лучшее время — наименьшее: инвертируем.
     // Строки без времени уходят в конец при любом направлении.
     const seconds = row.best_time_sec;
     return seconds != null && seconds > 0 ? -seconds : Number.NEGATIVE_INFINITY;
   }
-  return row.platforms[key]?.value ?? 0;
+  return row.total;
 }
 
 export function LeaderboardPage({ metric }: LeaderboardPageProps) {
@@ -277,8 +281,6 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const effectiveGender = hasGenderSplit ? gender : "all";
   const hasMinVisits = MIN_VISITS_METRICS.includes(metric);
   const effectiveMinVisits = hasMinVisits ? minVisits : 1;
-  const hasPlatformFilter = PLATFORM_FILTER_METRICS.includes(metric);
-  const effectivePlatform = hasPlatformFilter ? platform : "all";
   // Победные рейтинги несут две дополнительные колонки: лучшее время (после
   // имени) и последнюю победу/новую локацию (в конце таблицы).
   const hasWinExtras = metric === "wins" || metric === "win_locations";
@@ -289,19 +291,27 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     setError(null);
     try {
       const [board, myRow] = await Promise.all([
-        getLeaderboard(metric, 1000, effectiveGender, effectiveMinVisits, effectivePlatform),
-        getMyLeaderboardRow(metric, effectiveGender, effectiveMinVisits, effectivePlatform).catch(
+        getLeaderboard(metric, 1000, effectiveGender, effectiveMinVisits, platform),
+        getMyLeaderboardRow(metric, effectiveGender, effectiveMinVisits, platform).catch(
           () => null,
         ),
       ]);
       setData(board);
       setMe(myRow);
+      // Выбранная система могла оказаться неприменимой к этому зачёту (parkrun
+      // не участвует в разбивке М/Ж) — бэкенд тогда считает «все системы».
+      // Сверяемся именно с тем, что запрашивали: сравнивать с состоянием на
+      // каждый рендер нельзя, иначе ответ по прошлому фильтру откатывал бы
+      // только что нажатую кнопку.
+      if (board.platform && board.platform !== platform) {
+        setPlatform(board.platform);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить рейтинг");
     } finally {
       setLoading(false);
     }
-  }, [metric, effectiveGender, effectiveMinVisits, effectivePlatform]);
+  }, [metric, effectiveGender, effectiveMinVisits, platform]);
 
   useEffect(() => {
     void load();
@@ -317,9 +327,13 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
 
   useEffect(() => {
     setVisibleCount(PAGE_STEP);
-  }, [query, sortKey, effectiveGender, effectiveMinVisits, effectivePlatform]);
+  }, [query, sortKey, effectiveGender, effectiveMinVisits, platform]);
 
   const columns = data?.platform_columns ?? [];
+  const platformOptions = data?.platform_options ?? [];
+  const hasPlatformFilter = platformOptions.length > 1;
+  const minVisitsHint =
+    metric === "volunteer_locations" ? VOLUNTEER_MIN_VISITS_HINT : MIN_VISITS_HINT;
 
   // Строка залогиненного всегда присутствует в списке: если её нет среди
   // загруженного топа (за топ-1000 или приватный профиль), вставляем синтетическую.
@@ -472,7 +486,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                     {hasMinVisits && (
                       <div className="lb-visits">
                         <span className="lb-visits-label">
-                          Локация засчитывается от <InfoHint text={MIN_VISITS_HINT} />
+                          Локация засчитывается от <InfoHint text={minVisitsHint} />
                         </span>
                         <div
                           className="lb-gender-tabs"
@@ -503,15 +517,15 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           role="group"
                           aria-label="Смотреть по системе"
                         >
-                          {PLATFORM_TABS.map((tab) => (
+                          {platformOptions.map((value) => (
                             <button
-                              key={tab.value}
+                              key={value}
                               type="button"
-                              aria-pressed={platform === tab.value}
-                              className={`lb-gender-tab${platform === tab.value ? " lb-gender-tab-active" : ""}`}
-                              onClick={() => setPlatform(tab.value)}
+                              aria-pressed={platform === value}
+                              className={`lb-gender-tab${platform === value ? " lb-gender-tab-active" : ""}`}
+                              onClick={() => setPlatform(value)}
                             >
-                              {tab.label}
+                              {PLATFORM_TAB_LABELS[value] ?? value}
                             </button>
                           ))}
                         </div>
@@ -608,9 +622,14 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                     <th className="lb-col-name">Участник</th>
                     {hasWinExtras &&
                       headerCell("best_time", "Лучшее время", "lb-col-time", BEST_TIME_HINT)}
-                    {columns.map((code) =>
-                      headerCell(code, PLATFORM_LABELS[code] ?? code, "lb-col-num"),
-                    )}
+                    {/* Колонки систем не сортируются — для «посмотреть одну
+                        систему» есть фильтр «Система» выше, он пересчитывает
+                        место и «Всего», а не переставляет строки по столбцу. */}
+                    {columns.map((code) => (
+                      <th key={code} className="lb-col-num">
+                        {PLATFORM_LABELS[code] ?? code}
+                      </th>
+                    ))}
                     {headerCell("total", "Всего", "lb-col-num lb-col-total")}
                     {metric === "wins" && (
                       <th className="lb-col-home">

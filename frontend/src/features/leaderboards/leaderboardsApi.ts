@@ -5,6 +5,7 @@ export type LeaderboardMetric =
   | "runs"
   | "volunteering"
   | "locations"
+  | "volunteer_locations"
   | "wins"
   | "win_locations";
 
@@ -13,23 +14,17 @@ export type LeaderboardGender = "all" | "male" | "female";
 // Разрез М/Ж есть только у победных рейтингов (parkrun в него не идёт).
 export const GENDERED_METRICS: LeaderboardMetric[] = ["wins", "win_locations"];
 
-// Фильтр «локация засчитывается от N визитов» — только у рейтинга туризма
-// (перенос фильтра из старого дашборда Grafana).
-export const MIN_VISITS_METRICS: LeaderboardMetric[] = ["locations"];
+// Фильтр «локация засчитывается от N визитов» — у туристических рейтингов
+// (перенос фильтра из старого дашборда Grafana): бегового и волонтёрского.
+export const MIN_VISITS_METRICS: LeaderboardMetric[] = ["locations", "volunteer_locations"];
 export const MIN_VISITS_OPTIONS = [1, 2, 3, 4, 5] as const;
 
-// Фильтр «смотреть по одной системе» — тоже только у рейтинга туризма: люди
-// хотели объединённый зачёт как норму, но не отказались от возможности
-// смотреть результат внутри одной системы.
-export const PLATFORM_FILTER_METRICS: LeaderboardMetric[] = ["locations"];
+// Фильтр «смотреть по одной системе» есть у каждого рейтинга: объединённый
+// зачёт — норма, но результат внутри одной системы всегда можно посмотреть
+// отдельно. Набор кнопок зависит от рейтинга и зачёта (в гендерном нет
+// parkrun, в волонтёрском туризме — тоже), поэтому его присылает бэкенд в
+// platform_options, а не повторяет фронт.
 export type PlatformFilter = "all" | "five_verst" | "s95" | "runpark" | "parkrun";
-export const PLATFORM_FILTER_OPTIONS: PlatformFilter[] = [
-  "all",
-  "five_verst",
-  "s95",
-  "runpark",
-  "parkrun",
-];
 
 export type LeaderboardCell = {
   value: number;
@@ -65,6 +60,8 @@ export type LeaderboardResponse = {
   description: string;
   unit: string;
   platform_columns: string[];
+  // Кнопки фильтра «по системе» для этого рейтинга и зачёта: "all" + коды систем.
+  platform_options?: PlatformFilter[];
   rows: LeaderboardRow[];
   threshold: number;
   median: number;

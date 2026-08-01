@@ -31,14 +31,16 @@ class LeaderboardRowResponse(BaseModel):
 class LeaderboardResponse(BaseModel):
     metric: str
     gender: str = "all"
-    # Порог визитов рейтинга туризма: локация идёт в зачёт от N посещений.
+    # Порог визитов туристических рейтингов: локация идёт в зачёт от N посещений.
     min_visits: int = 1
-    # Фильтр «по одной системе» рейтинга туризма: "all" или код платформы.
+    # Фильтр «по одной системе»: "all" или код платформы.
     platform: str = "all"
     title: str
     description: str
     unit: str
     platform_columns: list[str]
+    # Кнопки фильтра «по системе» для этого рейтинга и зачёта: "all" + коды систем.
+    platform_options: list[str] = []
     rows: list[LeaderboardRowResponse]
     threshold: int
     median: int

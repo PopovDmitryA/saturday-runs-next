@@ -2,6 +2,7 @@ from datetime import date
 
 from app.services.leaderboard_service import (
     GENDERED_METRICS,
+    GENDERED_PLATFORM_COLUMNS,
     LEADERBOARD_METRICS,
     MAX_MIN_VISITS,
     METRIC_META,
@@ -10,6 +11,7 @@ from app.services.leaderboard_service import (
     PLATFORM_COLUMNS,
     PLATFORM_FILTER_METRICS,
     PLATFORM_FILTER_VALUES,
+    VOLUNTEER_LOCATION_PLATFORM_COLUMNS,
     WIN_EXTRAS_METRICS,
     _apply_last_win,
     _cache_key,
@@ -26,6 +28,8 @@ from app.services.leaderboard_service import (
     _ranked,
     _week_start,
     metric_description,
+    platform_columns_for,
+    platform_filter_values,
 )
 
 
@@ -168,10 +172,12 @@ def test_normalize_gender_only_for_win_metrics() -> None:
     assert _normalize_gender("wins", "нечто") == "all"
 
 
-def test_normalize_min_visits_only_for_locations() -> None:
-    # Порог визитов есть только у рейтинга туризма и зажат в 1..5.
-    assert MIN_VISITS_METRICS == ("locations",)
+def test_normalize_min_visits_only_for_tourism_metrics() -> None:
+    # Порог визитов есть у туристических рейтингов (бегового и волонтёрского)
+    # и зажат в 1..5.
+    assert set(MIN_VISITS_METRICS) == {"locations", "volunteer_locations"}
     assert _normalize_min_visits("locations", 3) == 3
+    assert _normalize_min_visits("volunteer_locations", 3) == 3
     assert _normalize_min_visits("locations", 0) == 1
     assert _normalize_min_visits("locations", 99) == MAX_MIN_VISITS
     assert _normalize_min_visits("runs", 3) == 1
@@ -225,13 +231,27 @@ def test_metric_description_mentions_min_visits() -> None:
     assert metric_description("locations", "all", 1) == METRIC_META["locations"]["description"]
 
 
-def test_normalize_platform_filter_only_for_locations() -> None:
-    # Фильтр по системе есть только у рейтинга туризма и только для известных кодов.
-    assert PLATFORM_FILTER_METRICS == ("locations",)
-    assert _normalize_platform_filter("locations", "five_verst") == "five_verst"
-    assert _normalize_platform_filter("locations", "нечто") == "all"
-    assert _normalize_platform_filter("runs", "five_verst") == "all"
+def test_platform_filter_is_standard_for_every_metric() -> None:
+    # Фильтр по системе — стандарт всех рейтингов, а не привилегия туризма.
+    assert set(PLATFORM_FILTER_METRICS) == set(LEADERBOARD_METRICS)
+    for metric in LEADERBOARD_METRICS:
+        assert _normalize_platform_filter(metric, "five_verst") == "five_verst"
+        assert _normalize_platform_filter(metric, "нечто") == "all"
     assert set(PLATFORM_FILTER_VALUES) == {"all", *PLATFORM_COLUMNS}
+
+
+def test_platform_filter_values_follow_metric_and_gender() -> None:
+    # parkrun есть в абсолюте, но не в гендерном зачёте и не в волонтёрском туризме.
+    assert "parkrun" in platform_filter_values("wins", "all")
+    assert "parkrun" not in platform_filter_values("wins", "male")
+    assert "parkrun" not in platform_filter_values("volunteer_locations")
+    assert platform_columns_for("volunteer_locations") == VOLUNTEER_LOCATION_PLATFORM_COLUMNS
+    assert platform_columns_for("win_locations", "female") == GENDERED_PLATFORM_COLUMNS
+    # Систему, которой в этом рейтинге нет, фильтр не принимает — молча «все».
+    assert _normalize_platform_filter("wins", "parkrun", "male") == "all"
+    assert _normalize_platform_filter("wins", "parkrun", "all") == "parkrun"
+    assert _normalize_platform_filter("volunteer_locations", "parkrun") == "all"
+    assert _normalize_platform_filter("volunteer_locations", "s95") == "s95"
 
 
 def test_cache_key_versions_platform_and_combines_with_min_visits() -> None:
@@ -250,3 +270,32 @@ def test_metric_description_mentions_platform_filter() -> None:
     assert "parkrun" in combined
     # Фильтр по системе не про пары систем — упоминание «суммируются» тут неуместно.
     assert "суммируются" not in only_platform
+
+
+def test_metric_description_mentions_platform_filter_for_every_metric() -> None:
+    # Фильтр по системе теперь у всех рейтингов — и описание про него у всех.
+    for metric in LEADERBOARD_METRICS:
+        assert "С95" in metric_description(metric, "all", 1, "s95")
+    # Без фильтров описание остаётся базовым.
+    assert metric_description("runs", "all") == METRIC_META["runs"]["description"]
+
+
+def test_metric_description_uses_volunteer_verb_for_volunteer_tourism() -> None:
+    # Порог визитов у волонтёрского туризма про смены, а не про финиши.
+    volunteer = metric_description("volunteer_locations", "all", 3)
+    assert "волонтёрил минимум 3 раза" in volunteer
+    assert "финишировал" not in volunteer
+    assert "финишировал минимум 3 раза" in metric_description("locations", "all", 3)
+
+
+def test_volunteer_locations_registered_as_tourism_metric() -> None:
+    # Волонтёрский туризм устроен как беговой: те же фильтры, тот же перцентиль,
+    # только parkrun из него исключён (у его волонтёрств нет локации).
+    assert "volunteer_locations" in LEADERBOARD_METRICS
+    assert "volunteer_locations" in MIN_VISITS_METRICS
+    assert (
+        METRIC_THRESHOLD_PERCENTILE["volunteer_locations"]
+        == METRIC_THRESHOLD_PERCENTILE["locations"]
+    )
+    assert "volunteer_locations" not in GENDERED_METRICS
+    assert "volunteer_locations" not in WIN_EXTRAS_METRICS

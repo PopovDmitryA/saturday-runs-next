@@ -68,6 +68,7 @@ _STATIC_PAGE_TYPES = {
     "/ratings/runs": "ratings_runs",
     "/ratings/volunteering": "ratings_volunteering",
     "/ratings/locations": "ratings_locations",
+    "/ratings/volunteer-locations": "ratings_volunteer_locations",
     "/ratings/wins": "ratings_wins",
     "/ratings/win-locations": "ratings_win_locations",
     "/backlog": "backlog",
