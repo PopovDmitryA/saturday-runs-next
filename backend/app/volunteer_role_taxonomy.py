@@ -138,6 +138,7 @@ _ROLE_ALIASES: dict[str, str] = {
     "Guide Runner": "vi_guide",
     "Ведущий группы": "walk_leader",
     "Сурдопереводчик": "sign_language",
+    "Sign Language Support": "sign_language",
     "Координатор парковки": "parking",
     "Car Park Marshal": "parking",
     # --- финиш ---
@@ -198,6 +199,9 @@ _ROLE_ALIASES: dict[str, str] = {
     "Составление отчёта": "report_writer",
     "Репортер мероприятия": "report_writer",  # RunPark
     "Report Writer": "report_writer",
+    # parkrun-роль Parkwalker — тот же ведущий пешеходной группы; без алиаса
+    # она уезжала в raw:parkwalker и считалась «ещё одной» ролью.
+    "Parkwalker": "walk_leader",
     "Волонтёр": "volunteer",
     "Volunteer": "volunteer",
     # Корзина «прочего» есть в каждой системе под своим именем — это одна и та
@@ -211,6 +215,125 @@ _ROLE_ALIASES: dict[str, str] = {
 
 # Служебная строка сводки parkrun-профиля («Total Credits (37×)») — итог, а не роль.
 _TOTAL_CREDITS_MARKER = "total credit"
+
+# --- Свойства ролей: чем волонтёрство «весит» в глазах сообщества ---
+#
+# В сообществе спорят, что считать волонтёрством: одни приходят на площадку и
+# работают вместо бега, другие берут роль, которую можно выполнить из дома, а
+# третьи и бегут, и волонтёрят в одну субботу. Рассудить это можно только
+# фильтром, поэтому у каждой роли два признака (разметка согласована с Дмитрием
+# 02.08.2026 по реальным данным прода — 598 тыс. строк, 39 ролей):
+#
+# - on_site: нужно физически быть на старте;
+# - runnable: в этот же день можно пробежать 5 км (роль до/после забега, либо
+#   выполняется прямо на дистанции — пейсмейкер, замыкающий).
+#
+# Строгий зачёт («пришёл и работал вместо бега») — это on_site и не runnable.
+ROLE_ON_SITE: frozenset[str] = frozenset(
+    {
+        # до старта — можно потом бежать
+        "volunteer_coordinator",
+        "pre_event_setup",
+        "course_setup",
+        "course_check",
+        "first_timers",
+        "pre_run_briefing",
+        "warm_up",
+        # во время забега, но бег не мешает
+        "funnel_manager",
+        "photographer",
+        "number_checker",
+        "token_sorting",
+        "parking",
+        "sign_language",
+        "bib_numbers",
+        "lead_bike",
+        # роль выполняется прямо на дистанции
+        "pacer",
+        "tail_walker",
+        "vi_guide",
+        "walk_leader",
+        # после финиша
+        "post_event",
+        "course_takedown",
+        "refreshments",
+        "equipment",
+        # общая роль без уточнения: на площадке, но в строгий зачёт не берём
+        "volunteer",
+        # строгое ядро — на площадке, бежать нельзя
+        "timekeeper",
+        "barcode_scanning",
+        "marshal",
+        "finish_tokens",
+        "finish_token_support",
+        "run_director",
+        "videographer",
+        "host",
+    }
+)
+
+# Роли, совместимые с забегом. Всё, что on_site и НЕ здесь, — строгое ядро.
+ROLE_RUNNABLE: frozenset[str] = frozenset(
+    {
+        "volunteer_coordinator",
+        "pre_event_setup",
+        "course_setup",
+        "course_check",
+        "first_timers",
+        "pre_run_briefing",
+        "warm_up",
+        "funnel_manager",
+        "photographer",
+        "number_checker",
+        "token_sorting",
+        "parking",
+        "sign_language",
+        "bib_numbers",
+        "lead_bike",
+        "pacer",
+        "tail_walker",
+        "vi_guide",
+        "walk_leader",
+        "post_event",
+        "course_takedown",
+        "refreshments",
+        "equipment",
+        "volunteer",
+        # удалённые роли бегу тем более не мешают
+        "communications",
+        "results_processor",
+        "report_writer",
+        "designer",
+        "other",
+    }
+)
+
+# Наборы для кнопок пресетов. «custom» собирается пользователем галочками.
+ROLE_PRESETS: tuple[str, ...] = ("all", "on_site", "on_site_no_run", "custom")
+
+
+def role_is_on_site(key: str) -> bool:
+    """Нужно ли быть на площадке. Неизвестная роль (raw:*) — считаем удалённой.
+
+    Решение Дмитрия: незнакомые и служебные роли (Ambassador, Board & Committee,
+    Unknown, «Разное») в зачёт «на площадке» не идут — иначе строгий рейтинг
+    завышался бы на ролях, о которых мы ничего не знаем.
+    """
+    return key in ROLE_ON_SITE
+
+
+def role_is_runnable(key: str) -> bool:
+    """Можно ли в этот же день пробежать. Неизвестная роль — да (бегу не мешает)."""
+    return key not in ROLE_ON_SITE or key in ROLE_RUNNABLE
+
+
+def preset_role_keys(preset: str) -> frozenset[str] | None:
+    """Ключи ролей пресета. None — «все роли», фильтровать не нужно."""
+    if preset == "on_site":
+        return ROLE_ON_SITE
+    if preset == "on_site_no_run":
+        return frozenset(key for key in ROLE_ON_SITE if key not in ROLE_RUNNABLE)
+    return None
 
 
 @dataclass(frozen=True)

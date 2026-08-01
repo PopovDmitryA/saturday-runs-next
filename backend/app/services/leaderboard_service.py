@@ -391,12 +391,32 @@ WHERE e.is_test_event = false
 GROUP BY vr.participant_id, p.code
 """
 
+# То же, но построчно и с ярлыком роли: нужно, когда включён фильтр ролей —
+# схлопнуть синонимы систем в канон умеет только Python (см.
+# app.volunteer_role_taxonomy), поэтому агрегируем уже после фильтрации.
+_VOLUNTEERING_ROLE_ROWS_SQL = """
+SELECT
+    vr.participant_id AS participant_id,
+    p.code AS platform_code,
+    vr.role AS role,
+    e.event_date AS event_date
+FROM volunteer_results vr
+JOIN events e ON e.id = vr.event_id
+JOIN platforms p ON p.id = e.platform_id
+LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
+WHERE e.is_test_event = false
+  AND vr.participant_id IS NOT NULL
+  AND p.code = 's95'
+  AND ec.secondary_event_id IS NULL
+"""
+
 _OCCASION_VOLUNTEER_ROWS_SQL = """
 SELECT
     vr.participant_id AS participant_id,
     p.code AS platform_code,
     e.event_date AS event_date,
-    l.external_key AS location_key
+    l.external_key AS location_key,
+    vr.role AS role
 FROM volunteer_results vr
 JOIN events e ON e.id = vr.event_id
 JOIN platforms p ON p.id = e.platform_id
@@ -739,6 +759,16 @@ def _parkrun_eligible_ids(db: Session) -> set[UUID]:
     return {row[0] for row in db.execute(text(_PARKRUN_ELIGIBLE_IDS_SQL)).all()}
 
 
+def _role_allowed(role: str | None, role_filter: frozenset[str]) -> bool:
+    """Идёт ли роль в зачёт при включённом фильтре.
+
+    Строка без роли (в данных такое есть) в фильтрованный зачёт не идёт: мы не
+    знаем, что это было, а тихо засчитывать её в «строгий» рейтинг нечестно.
+    """
+    canonical = canonical_volunteer_role(role)
+    return canonical is not None and canonical.key in role_filter
+
+
 def _parkrun_volunteer_counts(db: Session, eligible_ids: set[UUID]) -> dict[UUID, int]:
     """parkrun: волонтёрства по кредитам профиля (дат у parkrun-волонтёрств нет)."""
     profiles = {row[0]: row[1] for row in db.execute(text(_PARKRUN_VOLUNTEER_PROFILES_SQL)).all()}
@@ -759,13 +789,21 @@ def _parkrun_volunteer_counts(db: Session, eligible_ids: set[UUID]) -> dict[UUID
 
 
 def _occasion_volunteering_rows(
-    db: Session, week_start: date
+    db: Session, week_start: date, role_filter: frozenset[str] | None = None
 ) -> list[tuple[UUID, str, int, int]]:
     """5в и RunPark: волонтёрства через occasion-логику (см. комментарий у
-    _VOLUNTEERING_SQL) — считается отдельно на каждую систему, но одинаково."""
+    _VOLUNTEERING_SQL) — считается отдельно на каждую систему, но одинаково.
+
+    role_filter — канонические ключи ролей, которые идут в зачёт (None — все).
+    Фильтруем до схлопывания в occasions: если человек в одну субботу взял и
+    отфильтрованную роль, и оставшуюся, день всё равно засчитается — по
+    оставшейся, как и должно быть.
+    """
     raw = db.execute(text(_OCCASION_VOLUNTEER_ROWS_SQL)).all()
     by_pid_platform: dict[tuple[UUID, str], list[tuple[date, str]]] = {}
-    for pid, platform_code, event_date, location_key in raw:
+    for pid, platform_code, event_date, location_key, role in raw:
+        if role_filter is not None and not _role_allowed(role, role_filter):
+            continue
         by_pid_platform.setdefault((pid, platform_code), []).append(
             (event_date, location_key or "unknown")
         )
