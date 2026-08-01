@@ -22,12 +22,17 @@ const PRESET_LABELS: { value: VolunteerRolePreset; title: string; note: string }
   {
     value: "on_site",
     title: "Только на площадке",
-    note: "Без ролей, которые можно выполнить из дома",
+    note: "Роли, ради которых нужно приехать на старт",
   },
   {
     value: "on_site_no_run",
-    title: "На площадке, без совмещения с бегом",
-    note: "Строгий зачёт: человек пришёл и работал вместо забега",
+    title: "На площадке, без совмещения с пробежкой",
+    note: "Строгий зачёт: волонтёрство вместо забега",
+  },
+  {
+    value: "remote",
+    title: "Можно не приезжать",
+    note: "Роли, которые выполняют вне площадки",
   },
   { value: "custom", title: "Свой набор", note: "Отметьте роли вручную" },
 ];
@@ -41,13 +46,13 @@ function roleGroups(roles: VolunteerRoleItem[]) {
       items: roles.filter((role) => role.on_site && !role.runnable),
     },
     {
-      title: "На площадке, но забег не мешает",
+      title: "На площадке, но можно совмещать с пробежкой",
       note: "Роль до, после или во время дистанции",
       items: roles.filter((role) => role.on_site && role.runnable),
     },
     {
-      title: "Можно выполнить не приходя",
-      note: "Сюда же попадают роли, о которых мы ничего не знаем",
+      title: "Можно выполнить не приезжая",
+      note: "Присутствие на старте не требуется",
       items: roles.filter((role) => !role.on_site),
     },
   ].filter((group) => group.items.length > 0);
@@ -98,7 +103,8 @@ export function VolunteerRolesModal({
   };
 
   const apply = () => {
-    if (draftPreset === "all") {
+    // «Все роли» — это отсутствие фильтра; выбранные вручную все роли тоже.
+    if (draftPreset === "all" || draftKeys.size === roles.length) {
       onApply("all", []);
       return;
     }
@@ -122,9 +128,8 @@ export function VolunteerRolesModal({
         </header>
 
         <p className="vrm-intro muted">
-          В сообществе спорят, что считать волонтёрством: одни приходят на площадку и работают
-          вместо бега, другие берут роль, которую можно сделать из дома, третьи и бегут, и
-          волонтёрят. Соберите рейтинг по своим правилам.
+          Вы сами выбираете, из каких ролей строить рейтинг: возьмите готовый набор или
+          отметьте роли вручную.
         </p>
 
         <div className="vrm-presets">
@@ -167,11 +172,28 @@ export function VolunteerRolesModal({
           ))}
         </div>
 
-        <p className="vrm-note muted">
-          У parkrun дат волонтёрств нет — только сводка кредитов по ролям в профиле. С фильтром
-          его волонтёрства считаются суммой кредитов выбранных ролей, поэтому день, в который
-          человек взял две роли, посчитается дважды.
-        </p>
+        <div className="vrm-bulk">
+          <button
+            type="button"
+            className="vrm-bulk-btn"
+            onClick={() => {
+              setDraftKeys(new Set(roles.map((role) => role.key)));
+              setDraftPreset("all");
+            }}
+          >
+            Выделить все
+          </button>
+          <button
+            type="button"
+            className="vrm-bulk-btn"
+            onClick={() => {
+              setDraftKeys(new Set());
+              setDraftPreset("custom");
+            }}
+          >
+            Снять все
+          </button>
+        </div>
 
         <footer className="vrm-foot">
           <span className="muted vrm-count">Выбрано ролей: {draftKeys.size} из {roles.length}</span>

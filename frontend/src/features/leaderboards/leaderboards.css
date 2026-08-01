@@ -1216,3 +1216,23 @@ body.has-pinned-me .lb-scroll-top {
   display: flex;
   gap: 8px;
 }
+
+/* Массовые действия над галочками ролей. */
+.vrm-bulk {
+  display: flex;
+  gap: 10px;
+}
+
+.vrm-bulk-btn {
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  font-family: inherit;
+  font-size: 0.83rem;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.vrm-bulk-btn:hover {
+  text-decoration: underline;
+}

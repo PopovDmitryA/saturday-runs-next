@@ -22,6 +22,7 @@ from app.services.leaderboard_service import (
     LeaderboardMetric,
     get_leaderboard,
     get_my_leaderboard_row,
+    used_role_keys,
 )
 from app.volunteer_role_taxonomy import (
     CANONICAL_ROLE_LABELS,
@@ -49,7 +50,13 @@ def _validate_gender(gender: str) -> str:
 # признаками, чтобы витрина сама рисовала группы и пресеты и не держала
 # собственную копию разметки.
 @router.get("/volunteer-roles/catalog", response_model=VolunteerRoleCatalogResponse)
-def volunteer_role_catalog() -> VolunteerRoleCatalogResponse:
+def volunteer_role_catalog(
+    db: Annotated[Session, Depends(get_db)],
+) -> VolunteerRoleCatalogResponse:
+    # Показываем только роли, которыми реально выходили: в таксономии есть
+    # объявленные системами, но ни разу не использованные — в списке фильтра
+    # они лишь путают.
+    used = used_role_keys(db)
     return VolunteerRoleCatalogResponse(
         presets=list(ROLE_PRESETS),
         metrics=list(ROLE_FILTER_METRICS),
@@ -61,6 +68,7 @@ def volunteer_role_catalog() -> VolunteerRoleCatalogResponse:
                 runnable=role_is_runnable(key),
             )
             for key, label in CANONICAL_ROLE_LABELS.items()
+            if key in used
         ],
     )
 

@@ -100,6 +100,7 @@ const ROLE_PRESET_SHORT: Record<string, string> = {
   all: "все роли",
   on_site: "на площадке",
   on_site_no_run: "вместо бега",
+  remote: "не приезжая",
   custom: "свой набор",
 };
 
@@ -377,7 +378,12 @@ function roleStorageKey(metric: LeaderboardMetric): string {
 
 function readStoredRolePreset(metric: LeaderboardMetric): VolunteerRolePreset {
   const fromUrl = new URLSearchParams(window.location.search).get("roles");
-  if (fromUrl === "on_site" || fromUrl === "on_site_no_run" || fromUrl === "all") {
+  if (
+    fromUrl === "on_site" ||
+    fromUrl === "on_site_no_run" ||
+    fromUrl === "remote" ||
+    fromUrl === "all"
+  ) {
     return fromUrl;
   }
   if (fromUrl) {
@@ -387,7 +393,12 @@ function readStoredRolePreset(metric: LeaderboardMetric): VolunteerRolePreset {
     const raw = localStorage.getItem(roleStorageKey(metric));
     const parsed = raw ? (JSON.parse(raw) as { preset?: string }) : null;
     const preset = parsed?.preset;
-    if (preset === "on_site" || preset === "on_site_no_run" || preset === "custom") {
+    if (
+      preset === "on_site" ||
+      preset === "on_site_no_run" ||
+      preset === "remote" ||
+      preset === "custom"
+    ) {
       return preset;
     }
   } catch {
@@ -398,7 +409,8 @@ function readStoredRolePreset(metric: LeaderboardMetric): VolunteerRolePreset {
 
 function readStoredRoleKeys(metric: LeaderboardMetric): string[] {
   const fromUrl = new URLSearchParams(window.location.search).get("roles");
-  if (fromUrl && fromUrl !== "all" && fromUrl !== "on_site" && fromUrl !== "on_site_no_run") {
+  const presetNames = ["all", "on_site", "on_site_no_run", "remote"];
+  if (fromUrl && !presetNames.includes(fromUrl)) {
     return fromUrl.split(",").filter(Boolean);
   }
   if (fromUrl) {
@@ -466,7 +478,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     if (!hasRoleFilter || roleCatalog.length === 0) {
       return;
     }
-    if ((rolePreset === "on_site" || rolePreset === "on_site_no_run") && roleKeys.length === 0) {
+    const isPresetWithKeys =
+      rolePreset === "on_site" || rolePreset === "on_site_no_run" || rolePreset === "remote";
+    if (isPresetWithKeys && roleKeys.length === 0) {
       setRoleKeys(presetRoleKeys(rolePreset, roleCatalog) ?? []);
     }
   }, [hasRoleFilter, roleCatalog, rolePreset, roleKeys.length]);

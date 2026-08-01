@@ -272,6 +272,7 @@ ROLE_ON_SITE: frozenset[str] = frozenset(
     }
 )
 
+
 # Роли, совместимые с забегом. Всё, что on_site и НЕ здесь, — строгое ядро.
 ROLE_RUNNABLE: frozenset[str] = frozenset(
     {
@@ -299,6 +300,7 @@ ROLE_RUNNABLE: frozenset[str] = frozenset(
         "refreshments",
         "equipment",
         "volunteer",
+        "videographer",
         # удалённые роли бегу тем более не мешают
         "communications",
         "results_processor",
@@ -309,7 +311,7 @@ ROLE_RUNNABLE: frozenset[str] = frozenset(
 )
 
 # Наборы для кнопок пресетов. «custom» собирается пользователем галочками.
-ROLE_PRESETS: tuple[str, ...] = ("all", "on_site", "on_site_no_run", "custom")
+ROLE_PRESETS: tuple[str, ...] = ("all", "on_site", "on_site_no_run", "remote", "custom")
 
 
 def role_is_on_site(key: str) -> bool:
@@ -333,6 +335,8 @@ def preset_role_keys(preset: str) -> frozenset[str] | None:
         return ROLE_ON_SITE
     if preset == "on_site_no_run":
         return frozenset(key for key in ROLE_ON_SITE if key not in ROLE_RUNNABLE)
+    if preset == "remote":
+        return frozenset(key for key in CANONICAL_ROLE_LABELS if key not in ROLE_ON_SITE)
     return None
 
 

@@ -31,7 +31,7 @@ export type PlatformFilter = "all" | "five_verst" | "s95" | "runpark" | "parkrun
 // «Мультиволонтёре» роли и есть сама метрика, фильтровать их там нечего.
 export const ROLE_FILTER_METRICS: LeaderboardMetric[] = ["volunteering", "volunteer_locations"];
 
-export type VolunteerRolePreset = "all" | "on_site" | "on_site_no_run" | "custom";
+export type VolunteerRolePreset = "all" | "on_site" | "on_site_no_run" | "remote" | "custom";
 
 // Роль справочника: ярлык плюс признаки, по которым собираются пресеты.
 // Разметку держит бэкенд (app/volunteer_role_taxonomy.py) — фронт её не копирует.
@@ -62,6 +62,9 @@ export function presetRoleKeys(
   }
   if (preset === "on_site_no_run") {
     return roles.filter((role) => role.on_site && !role.runnable).map((role) => role.key);
+  }
+  if (preset === "remote") {
+    return roles.filter((role) => !role.on_site).map((role) => role.key);
   }
   return null;
 }

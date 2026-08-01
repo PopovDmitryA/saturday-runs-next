@@ -1939,6 +1939,41 @@ def _write_cache(
         return
 
 
+_USED_ROLES_CACHE_KEY = f"{CACHE_KEY_PREFIX}:used_roles"
+_USED_ROLES_TTL_SECONDS = 24 * 3600
+
+
+def used_role_keys(db: Session) -> set[str]:
+    """Канонические роли, которые реально встречаются в данных.
+
+    В таксономии есть роли «про запас» (у систем они объявлены, но ими никто не
+    выходил) — в списке фильтра они только мешают. Считается редко и кэшируется
+    на сутки: полный проход по ярлыкам ролей стоит дорого.
+    """
+    try:
+        cached = get_redis_client().get(_USED_ROLES_CACHE_KEY)
+        if isinstance(cached, (str, bytes, bytearray)):
+            parsed = json.loads(cached)
+            if isinstance(parsed, list):
+                return set(parsed)
+    except Exception:
+        pass
+    keys: set[str] = set()
+    for (label,) in db.execute(
+        text("SELECT DISTINCT role FROM volunteer_results WHERE role IS NOT NULL")
+    ).all():
+        canonical = canonical_volunteer_role(label)
+        if canonical is not None:
+            keys.add(canonical.key)
+    try:
+        get_redis_client().setex(
+            _USED_ROLES_CACHE_KEY, _USED_ROLES_TTL_SECONDS, json.dumps(sorted(keys))
+        )
+    except Exception:
+        pass
+    return keys
+
+
 def normalize_role_filter(
     metric: str, roles: Sequence[str] | None
 ) -> tuple[frozenset[str] | None, str]:
@@ -1955,7 +1990,7 @@ def normalize_role_filter(
     # Пустой или полный набор — это «все роли», фильтровать нечего.
     if not selected or selected == known:
         return None, ""
-    for preset in ("on_site", "on_site_no_run"):
+    for preset in ("on_site", "on_site_no_run", "remote"):
         if preset_role_keys(preset) == selected:
             return selected, preset
     digest = hashlib.sha1(",".join(sorted(selected)).encode()).hexdigest()[:10]
