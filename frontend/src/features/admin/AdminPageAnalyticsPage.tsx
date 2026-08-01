@@ -285,6 +285,48 @@ function AdminPageAnalyticsContent() {
             </section>
           )}
 
+          {data.home_links.length > 0 && (
+            <section className="card">
+              <h2 className="section-title">Переходы с главной</h2>
+              <p className="muted">
+                Клики по ссылкам в текстах главной: названия локаций и имена участников.
+                Пишется с 01.08.2026 — за более ранние периоды таблица пустая.
+              </p>
+              <div className="table-scroll">
+                <table className="data-table page-analytics-table">
+                  <thead>
+                    <tr>
+                      <th>Куда</th>
+                      <th>Тип</th>
+                      <th>Переходы</th>
+                      <th>Посетители</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.home_links.map((row) => (
+                      <tr key={`${row.kind}:${row.entity_key}`}>
+                        <td>
+                          {row.href ? (
+                            <a href={row.href} target="_blank" rel="noreferrer">
+                              {row.label}
+                            </a>
+                          ) : (
+                            row.label
+                          )}
+                        </td>
+                        <td className="muted">
+                          {row.kind === "location" ? "Локация" : "Участник"}
+                        </td>
+                        <td>{row.clicks}</td>
+                        <td>{row.visitors}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
           <section className="card">
             <h2 className="section-title">Разделы сайта</h2>
             {data.sections.length === 0 ? (

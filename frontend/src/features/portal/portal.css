@@ -761,6 +761,25 @@
   color: var(--amber-text, var(--tint-amber-text));
 }
 
+/* Ссылки внутри текстов главной: названия локаций и имена участников.
+   Цвет намеренно наследуется — синими их на странице набирается несколько
+   десятков, и вёрстка превращается в сплошную ссылку. Связь показывает
+   мягкое подчёркивание, полноценный цвет ссылки — на наведении. */
+.portal-inline-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--border);
+  text-underline-offset: 2px;
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+
+.portal-inline-link:hover,
+.portal-inline-link:focus-visible {
+  color: var(--link);
+  text-decoration-color: currentColor;
+}
+
 .portal-top-name {
   min-width: 0;
   flex: 1;

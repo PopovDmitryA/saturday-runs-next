@@ -3,10 +3,14 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID, uuid4
 
+from sqlalchemy.orm import Session
+
+from app.models import Participant, Platform, PlatformLink, User
 from app.services.portal_home_service import (
     PORTAL_HOME_CACHE_KEY,
     _EventRow,
     _read_portal_home_cache,
+    _runner_handles,
     _week_attendance_records,
     _write_portal_home_cache,
     clean_time_display,
@@ -43,6 +47,7 @@ def _attendance(events: list[_EventRow]) -> list[dict]:
         WEEK_END,
         lambda location_id: str(location_id),
         lambda location_id: f"loc-{location_id}",
+        lambda location_id: f"slug-{location_id}",
     )
 
 
@@ -179,3 +184,68 @@ def test_cache_invalidate(fake_redis) -> None:  # type: ignore[no-untyped-def]
     invalidate_portal_home_cache()
     assert fake_redis.get(PORTAL_HOME_CACHE_KEY) is None
     assert _read_portal_home_cache() is None
+
+
+def test_attendance_record_carries_location_slug() -> None:
+    """Слаг едет рядом с названием — из него на главной строится ссылка."""
+    loc = uuid4()
+    rows = _attendance([_event(loc, date(2026, 7, 25), 120, 1)])
+    assert rows[0]["location_slug"] == f"slug-{loc}"
+
+
+def _linked_participant(
+    db_session: Session, suffix: str, *, private: bool = False, slug: str | None = None
+) -> tuple[Participant, User]:
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        platform = Platform(code="five_verst", name="5 вёрст")
+        db_session.add(platform)
+        db_session.flush()
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=f"portal-link-{suffix}",
+        display_name="Рекордсмен",
+    )
+    db_session.add(participant)
+    user = User(display_name="Рекордсмен", public_slug=slug, profile_private=private)
+    db_session.add(user)
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=platform.id,
+            # participant_id намеренно пуст: связь ищется по
+            # (platform_id, external_user_id), как в проде.
+            external_user_id=participant.external_user_id,
+            external_url=f"https://example.test/{suffix}/",
+        )
+    )
+    db_session.flush()
+    return participant, user
+
+
+def test_runner_handle_prefers_public_slug(db_session: Session) -> None:
+    suffix = str(uuid4().int % 1_000_000)
+    participant, _user = _linked_participant(db_session, suffix, slug=f"runner-{suffix}")
+    assert _runner_handles(db_session, [participant.id]) == {
+        participant.id: f"runner-{suffix}"
+    }
+
+
+def test_runner_handle_falls_back_to_serial_id(db_session: Session) -> None:
+    suffix = str(uuid4().int % 1_000_000)
+    participant, user = _linked_participant(db_session, suffix)
+    assert _runner_handles(db_session, [participant.id]) == {
+        participant.id: str(user.serial_id)
+    }
+
+
+def test_runner_handle_skips_private_profile(db_session: Session) -> None:
+    """Скрытый профиль отдал бы анониму 403 — ссылку на него не ставим."""
+    suffix = str(uuid4().int % 1_000_000)
+    participant, _user = _linked_participant(db_session, suffix, private=True)
+    assert _runner_handles(db_session, [participant.id]) == {}
+
+
+def test_runner_handles_empty_input_makes_no_query() -> None:
+    assert _runner_handles(None, []) == {}  # type: ignore[arg-type]

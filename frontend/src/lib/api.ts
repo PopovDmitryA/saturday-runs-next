@@ -2606,11 +2606,22 @@ export type HomeAbVariantStats = {
   viewers: number;
 };
 
+/** Переход по ссылке с главной: локация или профиль участника. */
+export type HomeLinkClickStats = {
+  kind: string;
+  entity_key: string;
+  label: string;
+  href: string | null;
+  clicks: number;
+  visitors: number;
+};
+
 export type PageAnalyticsResponse = {
   date_from: string;
   date_to: string;
   generated_at: string;
   home_ab: HomeAbVariantStats[];
+  home_links: HomeLinkClickStats[];
   sections: PageAnalyticsSection[];
   top_profiles: PageAnalyticsEntity[];
   top_locations: PageAnalyticsEntity[];

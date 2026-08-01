@@ -99,3 +99,18 @@ def test_classify_login_cohort_naive_created_at(db_session: Session) -> None:
     user = _make_user(db_session)
     user.created_at = datetime.now() - timedelta(minutes=5)  # noqa: DTZ005 — намеренно naive
     assert classify_login_cohort(user) == "new"
+
+
+def test_home_link_click_is_a_known_event(db_session: Session) -> None:
+    """Переход по ссылке с главной пишется — тип в белом списке ab_service."""
+    event = record_ab_event(
+        db_session,
+        experiment="home_v1",
+        variant="A",
+        visitor_key="a:link-1",
+        event_type="home_link_click",
+        value="location:pushkinsky",
+        path="/",
+    )
+    assert event is not None
+    assert event.value == "location:pushkinsky"

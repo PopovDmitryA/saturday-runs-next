@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { trackHomeLinkClick } from "../../lib/abTest";
 import { PLATFORM_CHART_META } from "./PortalTrendChart";
 import type { PortalGeoPoint } from "./portalTypes";
 
@@ -13,6 +14,28 @@ function inHomeRegion(point: PortalGeoPoint): boolean {
     point.latitude <= HOME_REGION.maxLat &&
     point.longitude >= HOME_REGION.minLon &&
     point.longitude <= HOME_REGION.maxLon
+  );
+}
+
+/** Попап собирается строкой — имя локации из БД экранируем. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Заголовок попапа: название локации ссылкой на её страницу, если слаг известен. */
+function popupTitle(point: PortalGeoPoint): string {
+  const name = escapeHtml(point.location_name);
+  if (!point.location_slug) {
+    return `<strong>${name}</strong>`;
+  }
+  const slug = encodeURIComponent(point.location_slug);
+  return (
+    `<strong><a class="map-popup-link" data-location-slug="${escapeHtml(point.location_slug)}"` +
+    ` href="/locations/${slug}">${name}</a></strong>`
   );
 }
 
@@ -30,6 +53,19 @@ export function PortalGeoMap({ points }: { points: PortalGeoPoint[] }) {
     if (!containerRef.current || mapRef.current || points.length === 0) {
       return;
     }
+
+    const container = containerRef.current;
+    // Попапы Leaflet — это HTML-строка, обычного onClick у ссылки нет: клик
+    // ловим делегированием на контейнере карты.
+    const onContainerClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const link = target?.closest<HTMLAnchorElement>("a[data-location-slug]");
+      const slug = link?.dataset.locationSlug;
+      if (slug) {
+        trackHomeLinkClick("location", slug);
+      }
+    };
+    container.addEventListener("click", onContainerClick);
 
     const map = L.map(containerRef.current, {
       scrollWheelZoom: false,
@@ -68,7 +104,7 @@ export function PortalGeoMap({ points }: { points: PortalGeoPoint[] }) {
         fillOpacity: 0.5,
       })
         .bindPopup(
-          `<strong>${point.location_name}</strong><br>${point.starts.toLocaleString("ru-RU")} стартов`,
+          `${popupTitle(point)}<br>${point.starts.toLocaleString("ru-RU")} стартов`,
         )
         .addTo(map);
     }
@@ -81,6 +117,7 @@ export function PortalGeoMap({ points }: { points: PortalGeoPoint[] }) {
     mapRef.current = map;
 
     return () => {
+      container.removeEventListener("click", onContainerClick);
       map.remove();
       mapRef.current = null;
     };

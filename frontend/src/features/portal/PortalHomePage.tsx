@@ -3,6 +3,7 @@ import { PlatformBadge } from "../../components/PlatformBadge";
 import {
   getHomeVariant,
   trackAbEvent,
+  trackHomeLinkClick,
   useAbCtaView,
   useAbScrollDepth,
   useAbVariantView,
@@ -76,6 +77,47 @@ function funTimeNote(totalSec: number): string {
   return `${formatInt(Math.round(days))} суток непрерывного бега`;
 }
 
+/**
+ * Название локации ссылкой на её страницу.
+ *
+ * Главная — самая посещаемая страница сайта, и до этого она была тупиком:
+ * десятки названий локаций и имён рекордсменов текстом, без единого перехода
+ * вглубь. Слага может не быть (старый кэш ответа) — тогда остаётся текст.
+ */
+function LocationLink({ name, slug }: { name: string; slug?: string | null }) {
+  if (!slug) {
+    return <>{name}</>;
+  }
+  return (
+    <a
+      className="portal-inline-link"
+      href={`/locations/${encodeURIComponent(slug)}`}
+      title="Открыть страницу локации"
+      onClick={() => trackHomeLinkClick("location", slug)}
+    >
+      {name}
+    </a>
+  );
+}
+
+/** Имя участника ссылкой на его профиль — если он привязал систему на сайте. */
+function RunnerLink({ name, handle }: { name: string | null; handle?: string | null }) {
+  const label = name?.trim() || "Участник";
+  if (!handle) {
+    return <>{label}</>;
+  }
+  return (
+    <a
+      className="portal-inline-link"
+      href={`/users/${encodeURIComponent(handle)}`}
+      title="Открыть профиль участника"
+      onClick={() => trackHomeLinkClick("runner", handle)}
+    >
+      {label}
+    </a>
+  );
+}
+
 function FastestPlatformCard({
   title,
   code,
@@ -109,7 +151,8 @@ function FastestPlatformCard({
               )}
             </b>
             <span>
-              {row.runner_name ?? "Участник"} · {row.location_name},{" "}
+              <RunnerLink name={row.runner_name} handle={row.runner_handle} /> ·{" "}
+              <LocationLink name={row.location_name} slug={row.location_slug} />,{" "}
               {formatDateCompact(row.event_date)}
             </span>
           </span>
@@ -128,7 +171,9 @@ function AttendanceTopList({ rows }: { rows: PortalAttendanceTopRow[] }) {
       {rows.map((row, index) => (
         <li key={`${row.location_name}-${row.event_date}`}>
           <span className="portal-top-rank num">{index + 1}</span>
-          <span className="portal-top-name">{row.location_name}</span>
+          <span className="portal-top-name">
+            <LocationLink name={row.location_name} slug={row.location_slug} />
+          </span>
           <PlatformBadge code={row.platform_code} />
           <span className="portal-top-value">
             <b className="num">{formatInt(row.finishers)}</b>
@@ -640,7 +685,10 @@ export function PortalHomePage() {
                         </span>
                         <span className="portal-record-main">
                           <b>
-                            {record.location_name}
+                            <LocationLink
+                              name={record.location_name}
+                              slug={record.location_slug}
+                            />
                             {record.is_debut && (
                               <>
                                 {" "}
@@ -697,7 +745,9 @@ export function PortalHomePage() {
                       const widthPct = Math.max(14, Math.round((row.finishers / max) * 100));
                       return (
                         <div className="portal-bar-row" key={row.location_name}>
-                          <span className="portal-bar-name">{row.location_name}</span>
+                          <span className="portal-bar-name">
+                            <LocationLink name={row.location_name} slug={row.location_slug} />
+                          </span>
                           <span className="portal-bar-track">
                             <span
                               className={`portal-bar-fill portal-bar-fill-${row.platform_code}`}
@@ -746,7 +796,8 @@ export function PortalHomePage() {
                       </span>
                       <span className="portal-record-main">
                         <b>
-                          {record.runner_name ?? "Участник"} · {record.location_name}
+                          <RunnerLink name={record.runner_name} handle={record.runner_handle} />{" "}
+                          · <LocationLink name={record.location_name} slug={record.location_slug} />
                         </b>
                         <span>{formatDateShort(record.event_date)}</span>
                       </span>
