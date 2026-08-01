@@ -50,6 +50,7 @@ import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
 import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
+import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { useAppPath } from "./hooks/useAppPath";
 import { reportAbLoginOnce } from "./lib/abTest";
@@ -185,7 +186,6 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/volunteering": () => <LeaderboardPage metric="volunteering" />,
   "/ratings/volunteer-roles": () => <LeaderboardPage metric="volunteer_roles" />,
   "/ratings/locations": () => <LeaderboardPage metric="locations" />,
-  "/ratings/volunteer-locations": () => <LeaderboardPage metric="volunteer_locations" />,
   "/ratings/wins": () => <LeaderboardPage metric="wins" />,
   "/ratings/win-locations": () => <LeaderboardPage metric="win_locations" />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
@@ -248,6 +248,10 @@ function renderRoute(path: string): ReactElement {
   const sweepHqMatch = path.match(/^\/hq\/(.+)$/);
   if (sweepHqMatch) {
     return <SweepHqPage token={decodeURIComponent(sweepHqMatch[1])} />;
+  }
+  // Публичная витрина обхода — без имён, прокси и счётчиков капч (см. /hq).
+  if (path === "/world" || path === "/world/") {
+    return <SweepWorldPage />;
   }
   // Публичный адрес участника = адрес его кабинета: свой хендл открывает
   // кабинет, чужой — гостевой профиль (см. ProfileRoute).
