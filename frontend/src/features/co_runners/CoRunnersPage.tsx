@@ -6,6 +6,9 @@ import {
   type CoRunnerMeetingItem,
 } from "../../lib/api";
 import { formatDate, formatDuration, platformCodeLabel, pluralizeRu } from "../../lib/format";
+import { TableWrap } from "../../components/tableUx/TableWrap";
+import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
+import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 
 function SiteProfileIcon() {
   return (
@@ -90,7 +93,74 @@ function timeWithPosition(timeSec: number | null, position: number | null): stri
   return position != null ? `${time} · ${position} место` : time;
 }
 
+/** Чип-итог встречи: разница времён со знаком («+1:38» — вы быстрее). */
+function meetingDiff(meeting: CoRunnerMeetingItem): { label: string; tone: string } | null {
+  if (meeting.my_time_sec == null || meeting.their_time_sec == null) {
+    return null;
+  }
+  const diff = meeting.their_time_sec - meeting.my_time_sec;
+  if (diff === 0) {
+    return { label: "=", tone: "" };
+  }
+  const formatted = formatDuration(Math.abs(diff));
+  return diff > 0
+    ? { label: `+${formatted}`, tone: " co-runners-score-win" }
+    : { label: `−${formatted}`, tone: " co-runners-score-loss" };
+}
+
+function MeetingDate({ meeting }: { meeting: CoRunnerMeetingItem }) {
+  if (meeting.event_url) {
+    return (
+      <a href={meeting.event_url} target="_blank" rel="noreferrer">
+        {formatDate(meeting.event_date)}
+      </a>
+    );
+  }
+  return <>{formatDate(meeting.event_date)}</>;
+}
+
 function MeetingsDetail({ meetings }: { meetings: CoRunnerMeetingItem[] }) {
+  const narrowViewport = useNarrowViewport();
+
+  // На телефоне встречи читаются строкой-карточкой: дата+локация, оба
+  // результата подстрокой, итог — чипом с разницей времён. Таблица с пятью
+  // колонками в ширину телефона не помещается.
+  if (narrowViewport) {
+    return (
+      <div className="rowcards co-runners-meetings-cards">
+        {meetings.map((meeting) => {
+          const outcome = meetingOutcome(meeting);
+          const diff = meetingDiff(meeting);
+          return (
+            <div
+              className="rowcard"
+              key={`${meeting.event_date}-${meeting.platform_code}-${meeting.location_name}`}
+            >
+              <div className="rowcard-mid">
+                <div className="rowcard-title">
+                  <MeetingDate meeting={meeting} /> · {meeting.location_name}{" "}
+                  <PlatformBadge code={meeting.platform_code} />
+                </div>
+                <div className="rowcard-sub">
+                  вы {timeWithPosition(meeting.my_time_sec, meeting.my_position)}
+                </div>
+                <div className="rowcard-sub">
+                  участник {timeWithPosition(meeting.their_time_sec, meeting.their_position)}
+                </div>
+              </div>
+              <span
+                className={`co-runners-outcome${(diff ?? outcome).tone}`}
+                title={outcome.label}
+              >
+                {diff ? diff.label : outcome.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <table className="data-table co-runners-meetings-table">
       <thead>
@@ -108,13 +178,7 @@ function MeetingsDetail({ meetings }: { meetings: CoRunnerMeetingItem[] }) {
           return (
             <tr key={`${meeting.event_date}-${meeting.platform_code}-${meeting.location_name}`}>
               <td>
-                {meeting.event_url ? (
-                  <a href={meeting.event_url} target="_blank" rel="noreferrer">
-                    {formatDate(meeting.event_date)}
-                  </a>
-                ) : (
-                  formatDate(meeting.event_date)
-                )}
+                <MeetingDate meeting={meeting} />
               </td>
               <td>
                 {meeting.location_name} <PlatformBadge code={meeting.platform_code} />
@@ -143,6 +207,10 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
   const [items, setItems] = useState<CoRunnerItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
+  const [tableView, setTableView] = useTableView("coRunners");
+  const narrowViewport = useNarrowViewport();
+  const showFull = !narrowViewport || tableView === "full";
   const [query, setQuery] = useState("");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [meetingsByKey, setMeetingsByKey] = useState<Record<string, CoRunnerMeetingItem[]>>({});
@@ -228,17 +296,18 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
-            <div className="table-scroll">
+            <TableViewToggle value={tableView} onChange={setTableView} />
+            <TableWrap>
               <table className="data-table co-runners-table">
                 <thead>
                   <tr>
                     <th className="td-num">#</th>
                     <th>Участник</th>
-                    <th>Система</th>
+                    {showFull && <th>Система</th>}
                     <th className="td-num">Встреч</th>
-                    <th className="td-num">Счёт</th>
-                    <th>Первая встреча</th>
-                    <th>Последняя встреча</th>
+                    {showFull && <th className="td-num">Счёт</th>}
+                    {showFull && <th>Первая встреча</th>}
+                    {showFull && <th>Последняя встреча</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -258,7 +327,8 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
                           />
                           <ParticipantName item={item} />
                         </td>
-                        <td>
+                        {showFull && (
+                          <td>
                           <span className="co-runners-badges">
                             {item.platform_codes.map((code) => {
                               const profileUrl = item.profile_urls[code];
@@ -285,17 +355,24 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
                               );
                             })}
                           </span>
-                        </td>
+                          </td>
+                        )}
                         <td className="td-num">{item.meetings}</td>
-                        <td className={`td-num co-runners-score${scoreTone(item)}`}>
-                          {scoreLabel(item)}
-                        </td>
-                        <td>{item.first_meeting_date ? formatDate(item.first_meeting_date) : "—"}</td>
-                        <td>{item.last_meeting_date ? formatDate(item.last_meeting_date) : "—"}</td>
+                        {showFull && (
+                          <td className={`td-num co-runners-score${scoreTone(item)}`}>
+                            {scoreLabel(item)}
+                          </td>
+                        )}
+                        {showFull && (
+                          <td>{item.first_meeting_date ? formatDate(item.first_meeting_date) : "—"}</td>
+                        )}
+                        {showFull && (
+                          <td>{item.last_meeting_date ? formatDate(item.last_meeting_date) : "—"}</td>
+                        )}
                       </tr>,
                       expanded ? (
                         <tr key={`${item.participant_key}-detail`} className="co-runners-detail-row">
-                          <td colSpan={7}>
+                          <td colSpan={showFull ? 7 : 3}>
                             <div className="co-runners-detail-card">
                               <p className="co-runners-detail-title">
                                 Встречи с участником · {item.display_name ?? "Без имени"}
@@ -317,7 +394,7 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
                   })}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
             <p className="table-foot muted">
               <span>
                 Показано: {filtered.length} из{" "}

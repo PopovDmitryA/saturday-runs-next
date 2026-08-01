@@ -25,6 +25,9 @@ import {
 import { useAppDataSource } from "../../lib/appDataSource";
 import { createFullSelection, sortRuns, toggleDateSort, toggleFinishSort, togglePaceSort, togglePositionSort, uniquePlatforms } from "../../lib/activityList";
 import { formatFinishTimeValue, platformCodeLabel } from "../../lib/format";
+import { TableWrap } from "../../components/tableUx/TableWrap";
+import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
+import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 import { DemoShell } from "../demo/DemoShell";
 
 // bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
@@ -51,6 +54,10 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const allPlatforms = useMemo(() => uniquePlatforms(runs), [runs]);
 
   const filters = useActivityFilters(runs);
+  // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
+  const [tableView, setTableView] = useTableView("runs");
+  const narrowViewport = useNarrowViewport();
+  const showFull = !narrowViewport || tableView === "full";
 
   const displayedRuns = useMemo(
     () =>
@@ -236,9 +243,14 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
             ))}
           </div>
 
-          <div className="table-wrap">
-            <table className="data-table data-table-filterable data-table-layout-fixed">
-              <ActivityTableCols variant="runs" withRating={showRating} />
+          <TableViewToggle value={tableView} onChange={setTableView} />
+          <TableWrap stickyFirstCol={showFull}>
+            <table
+              className={`data-table data-table-filterable data-table-layout-fixed${
+                showFull ? "" : " data-table-short"
+              }`}
+            >
+              <ActivityTableCols variant="runs" withRating={showFull && showRating} short={!showFull} />
               <thead>
                 <tr>
                   <ColumnHeader
@@ -309,7 +321,13 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                     sortAsc={filters.sort === "position_asc"}
                     onSort={() => filters.setSort((current) => togglePositionSort(current))}
                   />
-                  <ColumnHeader label="Место (пол)" filterable={false} />
+                  {showFull && (
+                    <ColumnHeader
+                      label={narrowViewport ? "Пол" : "Место (пол)"}
+                      filterable={false}
+                      hint={narrowViewport ? "Место среди своего пола" : undefined}
+                    />
+                  )}
                   <ColumnHeader
                     label="Время"
                     filterable={false}
@@ -317,14 +335,16 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                     sortAsc={filters.sort === "finish_asc"}
                     onSort={() => filters.setSort((current) => toggleFinishSort(current))}
                   />
-                  <ColumnHeader
-                    label="Темп"
-                    filterable={false}
-                    sortActive={paceSortActive}
-                    sortAsc={filters.sort === "pace_asc"}
-                    onSort={() => filters.setSort((current) => togglePaceSort(current))}
-                  />
-                  {showRating && (
+                  {showFull && (
+                    <ColumnHeader
+                      label="Темп"
+                      filterable={false}
+                      sortActive={paceSortActive}
+                      sortAsc={filters.sort === "pace_asc"}
+                      onSort={() => filters.setSort((current) => togglePaceSort(current))}
+                    />
+                  )}
+                  {showFull && showRating && (
                     <ColumnHeader
                       label="★"
                       filterable={false}
@@ -336,7 +356,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
               <tbody>
                 {displayedRuns.length === 0 ? (
                   <tr>
-                    <td colSpan={showRating ? 8 : 7} className="table-empty-cell">
+                    <td colSpan={showFull ? (showRating ? 8 : 7) : 5} className="table-empty-cell">
                       <span className="muted">Нет строк по фильтрам</span>
                       {filters.hasActiveFilters && (
                         <button
@@ -383,16 +403,19 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                         </LocationPrLocationName>
                       </td>
                       <td className="td-compact">{run.position ?? "—"}</td>
-                      <td className="td-compact">{run.gender_position ?? "—"}</td>
+                      {showFull && <td className="td-compact">{run.gender_position ?? "—"}</td>}
                       <td className="td-time">
                         <GlobalPrFinishTime isGlobalPr={run.is_global_pr}>
                           {formatFinishTimeValue(run.finish_time_display, run.finish_time_sec)}
                         </GlobalPrFinishTime>
                       </td>
-                      <td className="td-pace">
-                        {run.pace_display ? `${run.pace_display} /км` : "—"}
-                      </td>
-                      {showRating &&
+                      {showFull && (
+                        <td className="td-pace">
+                          {run.pace_display ? `${run.pace_display} /км` : "—"}
+                        </td>
+                      )}
+                      {showFull &&
+                        showRating &&
                         (() => {
                           const rating = run.run_result_id
                             ? ratingsMap.get(run.run_result_id)
@@ -415,7 +438,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                 )}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
 
           <p className="table-foot muted">
             <span>

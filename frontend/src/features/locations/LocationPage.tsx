@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState, type ReactNode } from "reac
 import { LocationStatusLabel } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
+import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 import {
   ApiError,
   getLocationLeaders,
@@ -387,6 +388,8 @@ function AgeGroupRecordsSection({
 function LocationLeadersSection({ slug }: { slug: string }) {
   const [leaders, setLeaders] = useState<LocationLeaders | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // На телефоне топы — карточки: имя не тесно соседствует с цифрами.
+  const narrowViewport = useNarrowViewport();
 
   useEffect(() => {
     let cancelled = false;
@@ -433,34 +436,56 @@ function LocationLeadersSection({ slug }: { slug: string }) {
               </span>
             </StatHintTooltip>
           </h2>
-          <table className="data-table loc-leaders-table">
-            <colgroup>
-              <col className="loc-leaders-col-rank" />
-              <col />
-              <col className="loc-leaders-col-num" />
-              <col className="loc-leaders-col-time" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Участник</th>
-                <th title="Пробежек на этой локации">Пробежек</th>
-                <th title="Лучшее время участника здесь">Лучшее</th>
-              </tr>
-            </thead>
-            <tbody>
+          {narrowViewport ? (
+            <div className="rowcards loc-leaders-cards">
               {leaders.runners.map((runner, index) => (
-                <tr key={`${runner.name}-${index}`}>
-                  <td className="loc-leaders-rank">{index + 1}</td>
-                  <td>
-                    <RunnerName name={runner.name} handle={runner.handle} />
-                  </td>
-                  <td>{runner.runs_count}</td>
-                  <td>{stripLeadingHours(runner.best_time_display)}</td>
-                </tr>
+                <div className="rowcard" key={`${runner.name}-${index}`}>
+                  <div className="rowcard-rank">{index + 1}</div>
+                  <div className="rowcard-mid">
+                    <div className="rowcard-title">
+                      <RunnerName name={runner.name} handle={runner.handle} />
+                    </div>
+                    <div className="rowcard-sub">
+                      {pluralizeRu(runner.runs_count, ["пробежка", "пробежки", "пробежек"])} здесь
+                    </div>
+                  </div>
+                  <div className="rowcard-right">
+                    <div className="rowcard-value">{stripLeadingHours(runner.best_time_display)}</div>
+                    <div className="rowcard-sub">лучшее</div>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          ) : (
+            <table className="data-table loc-leaders-table">
+              <colgroup>
+                <col className="loc-leaders-col-rank" />
+                <col />
+                <col className="loc-leaders-col-num" />
+                <col className="loc-leaders-col-time" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Участник</th>
+                  <th title="Пробежек на этой локации">Пробежек</th>
+                  <th title="Лучшее время участника здесь">Лучшее</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leaders.runners.map((runner, index) => (
+                  <tr key={`${runner.name}-${index}`}>
+                    <td className="loc-leaders-rank">{index + 1}</td>
+                    <td>
+                      <RunnerName name={runner.name} handle={runner.handle} />
+                    </td>
+                    <td>{runner.runs_count}</td>
+                    <td>{stripLeadingHours(runner.best_time_display)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </section>
       )}
       {leaders.volunteers.length > 0 && (
@@ -473,31 +498,50 @@ function LocationLeadersSection({ slug }: { slug: string }) {
               </span>
             </StatHintTooltip>
           </h2>
-          <table className="data-table loc-leaders-table">
-            <colgroup>
-              <col className="loc-leaders-col-rank" />
-              <col />
-              <col className="loc-leaders-col-num" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Волонтёр</th>
-                <th title="Волонтёрств на этой локации">Волонтёрств</th>
-              </tr>
-            </thead>
-            <tbody>
+          {narrowViewport ? (
+            <div className="rowcards loc-leaders-cards">
               {leaders.volunteers.map((volunteer, index) => (
-                <tr key={`${volunteer.name}-${index}`}>
-                  <td className="loc-leaders-rank">{index + 1}</td>
-                  <td>
-                    <RunnerName name={volunteer.name} handle={volunteer.handle} />
-                  </td>
-                  <td>{volunteer.count}</td>
-                </tr>
+                <div className="rowcard" key={`${volunteer.name}-${index}`}>
+                  <div className="rowcard-rank">{index + 1}</div>
+                  <div className="rowcard-mid">
+                    <div className="rowcard-title">
+                      <RunnerName name={volunteer.name} handle={volunteer.handle} />
+                    </div>
+                    <div className="rowcard-sub">
+                      {pluralizeRu(volunteer.count, ["волонтёрство", "волонтёрства", "волонтёрств"])}{" "}
+                      здесь
+                    </div>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          ) : (
+            <table className="data-table loc-leaders-table">
+              <colgroup>
+                <col className="loc-leaders-col-rank" />
+                <col />
+                <col className="loc-leaders-col-num" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Волонтёр</th>
+                  <th title="Волонтёрств на этой локации">Волонтёрств</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leaders.volunteers.map((volunteer, index) => (
+                  <tr key={`${volunteer.name}-${index}`}>
+                    <td className="loc-leaders-rank">{index + 1}</td>
+                    <td>
+                      <RunnerName name={volunteer.name} handle={volunteer.handle} />
+                    </td>
+                    <td>{volunteer.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </section>
       )}
     </div>

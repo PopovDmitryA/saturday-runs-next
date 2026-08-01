@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { FilterIcon } from "./FilterIcon";
 import { FilterPopover } from "./FilterPopover";
+import { HeaderHint } from "../tableUx/HeaderHint";
 
 type ColumnHeaderProps = {
   label: string;
@@ -14,6 +15,8 @@ type ColumnHeaderProps = {
   filterFooter?: ReactNode;
   /** Нативный тултип на всю ячейку заголовка (для компактных заголовков-иконок). */
   headerTitle?: string;
+  /** Расшифровка сокращённого заголовка: «?» с тап/ховер-подсказкой. */
+  hint?: string;
 };
 
 function ColumnHeaderText({ label }: { label: string }) {
@@ -57,6 +60,7 @@ export function ColumnHeader({
   filterContent,
   filterFooter,
   headerTitle,
+  hint,
 }: ColumnHeaderProps) {
   const [open, setOpen] = useState(false);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
@@ -79,6 +83,7 @@ export function ColumnHeader({
             <ColumnHeaderText label={label} />
           </span>
         )}
+        {hint && <HeaderHint text={hint} />}
         {showFilter && (
           <button
             ref={filterButtonRef}

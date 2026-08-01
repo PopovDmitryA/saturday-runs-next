@@ -12,6 +12,9 @@ import {
 } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
+import { TableWrap } from "../../components/tableUx/TableWrap";
+import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
+import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 
 type SortKey = "date" | "finishers" | "volunteers" | "best_male" | "best_female" | "avg" | "newcomers" | "prs";
@@ -53,6 +56,10 @@ function LocationEventsContent({ slug }: { slug: string }) {
   const [platformFilter, setPlatformFilter] = useState<string | null>(null);
   const [sort, setSort] = useState<SortState>({ key: "date", asc: false });
   const attachFloatingHead = useFloatingTableHead();
+  // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
+  const [tableView, setTableView] = useTableView("locationEvents");
+  const narrowViewport = useNarrowViewport();
+  const showFull = !narrowViewport || tableView === "full";
 
   useEffect(() => {
     let cancelled = false;
@@ -196,19 +203,32 @@ function LocationEventsContent({ slug }: { slug: string }) {
       )}
 
       <section className="loc-section">
-        <div ref={attachFloatingHead} className="table-wrap loc-events-wrap">
-          <table className="data-table data-table-layout-fixed loc-events-table">
+        <TableViewToggle value={tableView} onChange={setTableView} />
+        <TableWrap innerRef={attachFloatingHead} className="loc-events-wrap" stickyFirstCol={showFull}>
+          <table
+            className={`data-table data-table-layout-fixed loc-events-table${
+              showFull ? "" : " data-table-short"
+            }`}
+          >
             <colgroup>
               <col className="col-number" />
               <col className="col-date" />
               <col className="col-platform" />
               <col className="col-compact" />
-              <col className="col-compact" />
-              <col className="col-compact" />
+              {showFull && (
+                <>
+                  <col className="col-compact" />
+                  <col className="col-compact" />
+                </>
+              )}
               <col className="col-time" />
               <col className="col-time" />
-              <col className="col-time" />
-              <col className="col-compact" />
+              {showFull && (
+                <>
+                  <col className="col-time" />
+                  <col className="col-compact" />
+                </>
+              )}
             </colgroup>
             <thead>
               <tr>
@@ -221,45 +241,53 @@ function LocationEventsContent({ slug }: { slug: string }) {
                 <ColumnHeader label="Система" filterable={false} />
                 <ColumnHeader
                   label="Фин."
-                  headerTitle="Финишёров на старте"
+                  hint="Финишёров на старте"
                   {...sortProps("finishers")}
                 />
-                <ColumnHeader
-                  label="Вол."
-                  headerTitle="Волонтёров на старте"
-                  {...sortProps("volunteers")}
-                />
-                <ColumnHeader
-                  label="Нов."
-                  headerTitle="Новички: дебютанты движения + впервые на этой локации"
-                  {...sortProps("newcomers")}
-                />
+                {showFull && (
+                  <ColumnHeader
+                    label="Вол."
+                    hint="Волонтёров на старте"
+                    {...sortProps("volunteers")}
+                  />
+                )}
+                {showFull && (
+                  <ColumnHeader
+                    label="Нов."
+                    hint="Новички: дебютанты движения + впервые на этой локации"
+                    {...sortProps("newcomers")}
+                  />
+                )}
                 <ColumnHeader
                   label="Луч. М"
-                  headerTitle="Лучшее время дня среди мужчин"
+                  hint="Лучшее время дня среди мужчин"
                   {...sortProps("best_male")}
                 />
                 <ColumnHeader
                   label="Луч. Ж"
-                  headerTitle="Лучшее время дня среди женщин"
+                  hint="Лучшее время дня среди женщин"
                   {...sortProps("best_female")}
                 />
-                <ColumnHeader
-                  label="Средн."
-                  headerTitle="Среднее время финиша"
-                  {...sortProps("avg")}
-                />
-                <ColumnHeader
-                  label="PR"
-                  headerTitle="Личных рекордов установлено в этот день"
-                  {...sortProps("prs")}
-                />
+                {showFull && (
+                  <ColumnHeader
+                    label="Средн."
+                    hint="Среднее время финиша"
+                    {...sortProps("avg")}
+                  />
+                )}
+                {showFull && (
+                  <ColumnHeader
+                    label="PR"
+                    hint="Личных рекордов установлено в этот день"
+                    {...sortProps("prs")}
+                  />
+                )}
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="table-empty-cell">
+                  <td colSpan={showFull ? 10 : 6} className="table-empty-cell">
                     <span className="muted">Нет стартов по выбранному фильтру</span>
                   </td>
                 </tr>
@@ -288,8 +316,8 @@ function LocationEventsContent({ slug }: { slug: string }) {
                       <PlatformBadge code={row.platform_code} />
                     </td>
                     <td className="td-compact">{row.finishers ?? "—"}</td>
-                    <td className="td-compact">{row.volunteers ?? "—"}</td>
-                    <td className="td-compact">{rowNewcomers(row) ?? "—"}</td>
+                    {showFull && <td className="td-compact">{row.volunteers ?? "—"}</td>}
+                    {showFull && <td className="td-compact">{rowNewcomers(row) ?? "—"}</td>}
                     <td className="td-time">
                       <span className="loc-events-number">
                         {stripHours(row.best_male_time_display)}
@@ -314,14 +342,14 @@ function LocationEventsContent({ slug }: { slug: string }) {
                         )}
                       </span>
                     </td>
-                    <td className="td-time">{stripHours(row.avg_time_display)}</td>
-                    <td className="td-compact">{row.prs ?? "—"}</td>
+                    {showFull && <td className="td-time">{stripHours(row.avg_time_display)}</td>}
+                    {showFull && <td className="td-compact">{row.prs ?? "—"}</td>}
                   </tr>
                 ))
               )}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
         {rows.some((row) => !row.has_protocol) && (
           <p className="table-foot muted">
             У части стартов нет полного протокола — по ним показаны только сводные цифры (обычно это события

@@ -810,3 +810,54 @@ a.lb-hub-card:hover {
 .lb-login-banner .btn {
   flex-shrink: 0;
 }
+
+/* === Мобильный полный вид: липкие «Место» и «Участник» === */
+
+/* В кратком виде (3 колонки) скролла нет и липкость не нужна; в полном
+   идентификатор строки не должен уезжать за экран. Ширины фиксируем,
+   иначе sticky-смещение второй колонки не посчитать. */
+@media (max-width: 820px) {
+  .lb-table-full .lb-col-rank {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+    width: 4.4rem;
+    min-width: 4.4rem;
+    max-width: 4.4rem;
+  }
+
+  .lb-table-full .lb-col-name {
+    position: sticky;
+    left: 4.4rem;
+    z-index: 2;
+    background: var(--surface);
+    min-width: 8.5rem;
+    max-width: 8.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lb-table-full thead .lb-col-rank,
+  .lb-table-full thead .lb-col-name {
+    z-index: 4;
+  }
+
+  /* Подсветка своей строки должна побеждать фон липких ячеек. */
+  .lb-table-full .lb-row-me .lb-col-rank,
+  .lb-table-full .lb-row-me .lb-col-name {
+    background: var(--tint-indigo-bg);
+  }
+
+  /* Тень-отрыв у липкого блока, когда таблица прокручена вбок. */
+  .tshadow-left .lb-table-full .lb-col-name {
+    box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+  }
+}
+
+.lb-me-percentile {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  flex-basis: 100%;
+}

@@ -39,16 +39,26 @@ export function StatHintTooltip({ text, content, children, className }: StatHint
     setVisible(false);
   };
 
+
   useEffect(() => {
     if (!visible) {
       return;
     }
     const handleReposition = () => updatePosition();
+    // Тап мимо триггера закрывает тултип (десктопный mouseleave на таче не сработает).
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      const trigger = triggerRef.current;
+      if (trigger && event.target instanceof Node && !trigger.contains(event.target)) {
+        setVisible(false);
+      }
+    };
     window.addEventListener("scroll", handleReposition, true);
     window.addEventListener("resize", handleReposition);
+    document.addEventListener("click", handleOutside);
     return () => {
       window.removeEventListener("scroll", handleReposition, true);
       window.removeEventListener("resize", handleReposition);
+      document.removeEventListener("click", handleOutside);
     };
   }, [visible]);
 
@@ -59,6 +69,13 @@ export function StatHintTooltip({ text, content, children, className }: StatHint
         className={className ?? "stat-hint-tooltip-trigger"}
         onMouseEnter={show}
         onMouseLeave={hide}
+        // Тап на тачскринах: mouseenter там не живёт, показываем по клику;
+        // закрытие — тапом мимо (см. handleOutside). stopPropagation глушит
+        // клик-сортировку на th, чтобы тап по «?» не менял сортировку.
+        onClick={(event) => {
+          event.stopPropagation();
+          show();
+        }}
         onFocus={show}
         onBlur={hide}
         tabIndex={0}

@@ -19,6 +19,10 @@ import {
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
+import { TableWrap } from "../../components/tableUx/TableWrap";
+import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
+import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
+import { PinnedMeBar } from "../../components/tableUx/PinnedMeBar";
 import "./leaderboards.css";
 
 const PAGE_STEP = 100;
@@ -263,6 +267,10 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
   const attachFloatingHead = useFloatingTableHead();
+  // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
+  const [tableView, setTableView] = useTableView("leaderboard");
+  const narrowViewport = useNarrowViewport();
+  const showFull = !narrowViewport || tableView === "full";
 
   useEffect(() => {
     const handleScroll = () => {
@@ -383,11 +391,21 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
 
   const crumbs = METRIC_CRUMBS[metric];
   // Место + участник + «всего» и, у победных рейтингов, лучшее время,
-  // топ-локация (только wins) и последняя победа.
-  const totalColumns =
-    columns.length + 3 + (hasWinExtras ? 2 : 0) + (metric === "wins" ? 1 : 0);
+  // топ-локация (только wins) и последняя победа. В кратком виде — только
+  // первые три: остальные колонки скрыты целиком.
+  const totalColumns = showFull
+    ? columns.length + 3 + (hasWinExtras ? 2 : 0) + (metric === "wins" ? 1 : 0)
+    : 3;
   const visibleRows = rows.slice(0, visibleCount);
   const nextChunkEnd = Math.min(visibleCount + PAGE_STEP, rows.length);
+
+  // Перцентиль осмысленнее абсолютного места: «опережаете 97 %» мотивирует
+  // и 128-го, и 3128-го. entrants — все прошедшие порог рейтинга.
+  const entrants = data?.entrants ?? 0;
+  const percentile =
+    me?.included && me.rank != null && entrants > 1
+      ? Math.max(0, Math.round(((entrants - me.rank) / entrants) * 100))
+      : null;
 
   // hint — значок «i» рядом с названием колонки: пояснение по наведению, как у
   // «Топ-локации». Свой title у значка перекрывает «Сортировать по этому
@@ -587,6 +605,11 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         Показать в таблице
                       </button>
                     )}
+                    {percentile != null && (
+                      <p className="lb-me-percentile muted">
+                        Вы опережаете {percentile}&nbsp;% из {entrants} участников рейтинга
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <p className="lb-me-threshold">
@@ -597,27 +620,34 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               </section>
             )}
 
-            <div
-              ref={attachFloatingHead}
-              className={`table-wrap lb-table-wrap${hasWinExtras ? " lb-table-wrap-wide" : ""}`}
+            <TableViewToggle value={tableView} onChange={setTableView} />
+            <TableWrap
+              innerRef={attachFloatingHead}
+              className={`lb-table-wrap${hasWinExtras ? " lb-table-wrap-wide" : ""}`}
             >
-              <table className={`data-table lb-table${hasWinExtras ? " lb-table-wins" : ""}`}>
+              <table
+                className={`data-table lb-table${hasWinExtras ? " lb-table-wins" : ""}${
+                  showFull ? " lb-table-full" : ""
+                }`}
+              >
                 <thead>
                   <tr>
                     {headerCell("rank", "Место", "lb-col-rank")}
                     <th className="lb-col-name">Участник</th>
-                    {hasWinExtras &&
+                    {showFull &&
+                      hasWinExtras &&
                       headerCell("best_time", "Лучшее время", "lb-col-time", BEST_TIME_HINT)}
-                    {columns.map((code) =>
-                      headerCell(code, PLATFORM_LABELS[code] ?? code, "lb-col-num"),
-                    )}
+                    {showFull &&
+                      columns.map((code) =>
+                        headerCell(code, PLATFORM_LABELS[code] ?? code, "lb-col-num"),
+                      )}
                     {headerCell("total", "Всего", "lb-col-num lb-col-total")}
-                    {metric === "wins" && (
+                    {showFull && metric === "wins" && (
                       <th className="lb-col-home">
                         Топ-локация <InfoHint text={TOP_LOCATION_HINT} />
                       </th>
                     )}
-                    {hasWinExtras && lastWinMeta && (
+                    {showFull && hasWinExtras && lastWinMeta && (
                       <th className="lb-col-last-win">
                         {lastWinMeta.label} <InfoHint text={lastWinMeta.hint} />
                       </th>
@@ -642,28 +672,29 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         <td className="lb-col-name">
                           <ParticipantName row={row} />
                         </td>
-                        {hasWinExtras && (
+                        {showFull && hasWinExtras && (
                           <td className="lb-col-time">
                             <BestTime row={row} />
                           </td>
                         )}
-                        {columns.map((code) => (
-                          <td key={code} className="lb-col-num">
-                            <CellValue cell={row.platforms[code]} />
-                          </td>
-                        ))}
+                        {showFull &&
+                          columns.map((code) => (
+                            <td key={code} className="lb-col-num">
+                              <CellValue cell={row.platforms[code]} />
+                            </td>
+                          ))}
                         <td className="lb-col-num lb-col-total">
                           <span className="lb-cell lb-total">
                             {row.total}
                             <DeltaSlot delta={row.total_delta} />
                           </span>
                         </td>
-                        {metric === "wins" && (
+                        {showFull && metric === "wins" && (
                           <td className="lb-col-home">
                             <TopWinLocation row={row} />
                           </td>
                         )}
-                        {hasWinExtras && lastWinMeta && (
+                        {showFull && hasWinExtras && lastWinMeta && (
                           <td className="lb-col-last-win">
                             <LastWinLocation row={row} />
                           </td>
@@ -680,7 +711,17 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                   )}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
+            {me?.included && me.rank != null && (
+              <PinnedMeBar
+                rowRef={myRowRef}
+                rank={me.rank}
+                name={me.display_name ?? "Вы"}
+                value={me.total}
+                onShow={showMyRow}
+                watchKey={`${visibleRows.length}:${sortKey}:${query}`}
+              />
+            )}
             {rows.length > visibleCount && (
               <div className="lb-more">
                 <button

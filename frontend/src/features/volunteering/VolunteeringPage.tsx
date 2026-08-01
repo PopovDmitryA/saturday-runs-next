@@ -10,6 +10,7 @@ import { PlatformBadge } from "../../components/PlatformBadge";
 import { RateRunModal } from "../../components/RateRunModal";
 import { RunRatingStar } from "../../components/RunRatingStar";
 import { useVolunteeringFilters } from "../../hooks/useVolunteeringFilters";
+import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 import {
   getEligibleRuns,
   getMyRatings,
@@ -60,6 +61,9 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
   const allPlatforms = useMemo(() => uniquePlatforms(tableItems), [tableItems]);
 
   const filters = useVolunteeringFilters(tableItems);
+  // На телефоне волонтёрства — карточки: роль главная, остальное подстрокой.
+  // Фильтры/сортировка заголовков доступны в табличном (десктопном) виде.
+  const narrowViewport = useNarrowViewport();
 
   const displayedItems = useMemo(
     () =>
@@ -249,6 +253,58 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
             )}
           </div>
 
+          {narrowViewport ? (
+            <div className="rowcards vol-cards">
+              {displayedItems.length === 0 ? (
+                <div className="rowcard">
+                  <div className="rowcard-mid muted">Нет строк по фильтрам</div>
+                </div>
+              ) : (
+                displayedItems.map((item, index) => {
+                  const rating = item.rating_entry_id
+                    ? ratingsMap.get(item.rating_entry_id)
+                    : undefined;
+                  const canCreate =
+                    canRate &&
+                    !rating &&
+                    !!item.rating_entry_id &&
+                    !item.is_crosslinked &&
+                    isEligible(item.rating_entry_id);
+                  return (
+                    <div
+                      className={`rowcard${item.is_crosslinked ? " rowcard-muted" : ""}`}
+                      key={`${item.platform_code}-${item.event_date}-${item.location_name}-${index}`}
+                    >
+                      <div className="rowcard-mid">
+                        <div className="rowcard-title">
+                          {item.role ?? "—"}
+                          {item.is_test_event && <span className="badge">тест</span>}
+                          {item.is_crosslinked && (
+                            <span className="badge badge-crosslinked">не в зачёте</span>
+                          )}
+                        </div>
+                        <div className="rowcard-sub">
+                          <ActivityDateLink date={item.event_date} url={item.event_url} /> ·{" "}
+                          <PlatformBadge code={item.platform_code} />{" "}
+                          <LocationNameLink name={item.location_name} slug={item.location_slug} />
+                        </div>
+                      </div>
+                      {showRating && (
+                        <div className="rowcard-right">
+                          <RunRatingStar
+                            rating={rating}
+                            canCreate={canCreate}
+                            canRate={canRate}
+                            onOpen={() => setActiveRun(buildEligibleRun(item, rating))}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ) : (
           <div className="table-wrap">
             <table className="data-table data-table-filterable data-table-layout-fixed data-table-volunteering">
               <ActivityTableCols variant="volunteering" withRating={showRating} />
@@ -406,6 +462,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
               </tbody>
             </table>
           </div>
+          )}
 
           <p className="table-foot muted">
             <span>
