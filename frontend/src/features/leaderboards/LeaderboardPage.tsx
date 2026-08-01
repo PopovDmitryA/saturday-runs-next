@@ -5,6 +5,11 @@ import {
   GENDERED_METRICS,
   getLeaderboard,
   getMyLeaderboardRow,
+  getVolunteerRoleCatalog,
+  presetRoleKeys,
+  ROLE_FILTER_METRICS,
+  type VolunteerRoleItem,
+  type VolunteerRolePreset,
   MIN_VISITS_METRICS,
   MIN_VISITS_OPTIONS,
   PLATFORM_LABELS,
@@ -19,6 +24,7 @@ import {
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
+import { VolunteerRolesModal } from "./VolunteerRolesModal";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
@@ -89,6 +95,17 @@ const PLATFORM_TAB_LABELS: Record<string, string> = {
   all: "Все",
   ...PLATFORM_LABELS,
 };
+
+const ROLE_PRESET_SHORT: Record<string, string> = {
+  all: "все роли",
+  on_site: "на площадке",
+  on_site_no_run: "вместо бега",
+  custom: "свой набор",
+};
+
+const ROLE_FILTER_HINT =
+  "Какие волонтёрские роли идут в зачёт: только те, ради которых надо приехать " +
+  "на старт, только «вместо бега» или свой набор. По умолчанию — все роли.";
 
 const PLATFORM_FILTER_HINT =
   "Переключает объединённый зачёт на одну систему: место и «Всего» " +
@@ -351,6 +368,51 @@ function sortValue(row: LeaderboardRow, key: SortKey): number {
   return row.total;
 }
 
+// Выбор ролей живёт в ссылке (ей можно поделиться) и в localStorage (чтобы не
+// выбирать заново при каждом заходе). Ключ хранения — на рейтинг: в туризме и
+// в счёте волонтёрств люди спорят о разном.
+function roleStorageKey(metric: LeaderboardMetric): string {
+  return `lbRoles:${metric}`;
+}
+
+function readStoredRolePreset(metric: LeaderboardMetric): VolunteerRolePreset {
+  const fromUrl = new URLSearchParams(window.location.search).get("roles");
+  if (fromUrl === "on_site" || fromUrl === "on_site_no_run" || fromUrl === "all") {
+    return fromUrl;
+  }
+  if (fromUrl) {
+    return "custom";
+  }
+  try {
+    const raw = localStorage.getItem(roleStorageKey(metric));
+    const parsed = raw ? (JSON.parse(raw) as { preset?: string }) : null;
+    const preset = parsed?.preset;
+    if (preset === "on_site" || preset === "on_site_no_run" || preset === "custom") {
+      return preset;
+    }
+  } catch {
+    // повреждённое или недоступное хранилище — просто «все роли»
+  }
+  return "all";
+}
+
+function readStoredRoleKeys(metric: LeaderboardMetric): string[] {
+  const fromUrl = new URLSearchParams(window.location.search).get("roles");
+  if (fromUrl && fromUrl !== "all" && fromUrl !== "on_site" && fromUrl !== "on_site_no_run") {
+    return fromUrl.split(",").filter(Boolean);
+  }
+  if (fromUrl) {
+    return [];
+  }
+  try {
+    const raw = localStorage.getItem(roleStorageKey(metric));
+    const parsed = raw ? (JSON.parse(raw) as { keys?: string[] }) : null;
+    return Array.isArray(parsed?.keys) ? parsed.keys : [];
+  } catch {
+    return [];
+  }
+}
+
 export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [me, setMe] = useState<MyLeaderboardRow | null>(null);
@@ -361,6 +423,53 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [gender, setGender] = useState<LeaderboardGender>("all");
   const [minVisits, setMinVisits] = useState(1);
   const [platform, setPlatform] = useState<PlatformFilter>("all");
+  // Фильтр ролей: пресет + конкретные ключи. Стартовое значение — из ссылки
+  // (можно кинуть в чат и спорить предметно), иначе из прошлого выбора
+  // в этом браузере.
+  const [rolePreset, setRolePreset] = useState<VolunteerRolePreset>(() =>
+    readStoredRolePreset(metric),
+  );
+  const [roleKeys, setRoleKeys] = useState<string[]>(() => readStoredRoleKeys(metric));
+  const [roleCatalog, setRoleCatalog] = useState<VolunteerRoleItem[]>([]);
+  const [rolesModalOpen, setRolesModalOpen] = useState(false);
+  const hasRoleFilter = ROLE_FILTER_METRICS.includes(metric);
+  // В запрос уходят только реально выбранные роли; «все роли» — пустой список.
+  const effectiveRoles = hasRoleFilter && rolePreset !== "all" ? roleKeys : null;
+  const roleFilterKey = effectiveRoles ? [...effectiveRoles].sort().join(",") : "";
+
+  const applyRoleFilter = useCallback(
+    (preset: VolunteerRolePreset, keys: string[]) => {
+      setRolePreset(preset);
+      setRoleKeys(keys);
+      setRolesModalOpen(false);
+      try {
+        localStorage.setItem(roleStorageKey(metric), JSON.stringify({ preset, keys }));
+      } catch {
+        // приватный режим — выбор проживёт до перезагрузки
+      }
+      // Ссылку правим без перезагрузки: у пресета читаемое имя, у своего
+      // набора — перечень ролей, чтобы её можно было отправить в чат.
+      const url = new URL(window.location.href);
+      if (preset === "all") {
+        url.searchParams.delete("roles");
+      } else {
+        url.searchParams.set("roles", preset === "custom" ? keys.join(",") : preset);
+      }
+      window.history.replaceState(null, "", url.toString());
+    },
+    [metric],
+  );
+
+  // Пресет из ссылки приходит именем — ключи ролей подставляем, когда доехал
+  // справочник (своя копия разметки на фронте была бы вторым источником правды).
+  useEffect(() => {
+    if (!hasRoleFilter || roleCatalog.length === 0) {
+      return;
+    }
+    if ((rolePreset === "on_site" || rolePreset === "on_site_no_run") && roleKeys.length === 0) {
+      setRoleKeys(presetRoleKeys(rolePreset, roleCatalog) ?? []);
+    }
+  }, [hasRoleFilter, roleCatalog, rolePreset, roleKeys.length]);
   const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
   // Развёрнутые строки мультиволонтёра (детализация «роль × система»).
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -392,15 +501,38 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const lastWinMeta = LAST_WIN_META[metric];
   const isRoles = metric === "volunteer_roles";
 
+  useEffect(() => {
+    if (!hasRoleFilter || roleCatalog.length > 0) {
+      return;
+    }
+    let cancelled = false;
+    getVolunteerRoleCatalog()
+      .then((catalog) => {
+        if (!cancelled) {
+          setRoleCatalog(catalog.roles);
+        }
+      })
+      .catch(() => {
+        // без справочника просто не покажем модалку — рейтинг остаётся рабочим
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasRoleFilter, roleCatalog.length]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [board, myRow] = await Promise.all([
-        getLeaderboard(metric, 1000, effectiveGender, effectiveMinVisits, platform),
-        getMyLeaderboardRow(metric, effectiveGender, effectiveMinVisits, platform).catch(
-          () => null,
-        ),
+        getLeaderboard(metric, 1000, effectiveGender, effectiveMinVisits, platform, effectiveRoles),
+        getMyLeaderboardRow(
+          metric,
+          effectiveGender,
+          effectiveMinVisits,
+          platform,
+          effectiveRoles,
+        ).catch(() => null),
       ]);
       setData(board);
       setMe(myRow);
@@ -417,7 +549,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [metric, effectiveGender, effectiveMinVisits, platform]);
+    // effectiveRoles — массив, поэтому в зависимости идёт его строковый ключ:
+    // иначе новая ссылка на тот же набор гоняла бы запрос на каждый рендер.
+  }, [metric, effectiveGender, effectiveMinVisits, platform, roleFilterKey]);
 
   useEffect(() => {
     void load();
@@ -665,6 +799,25 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             </button>
                           ))}
                         </div>
+                      </div>
+                    )}
+                    {hasRoleFilter && roleCatalog.length > 0 && (
+                      <div className="lb-visits lb-roles-filter">
+                        <span className="lb-visits-label">
+                          Роли <InfoHint text={ROLE_FILTER_HINT} />
+                        </span>
+                        <button
+                          type="button"
+                          className={`lb-roles-gear${rolePreset !== "all" ? " lb-roles-gear-active" : ""}`}
+                          aria-label="Настроить, какие роли считать"
+                          title="Какие роли считать"
+                          onClick={() => setRolesModalOpen(true)}
+                        >
+                          <span aria-hidden="true">⚙</span>
+                          <span className="lb-roles-gear-text">
+                            {ROLE_PRESET_SHORT[rolePreset]}
+                          </span>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -942,6 +1095,17 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               </div>
             )}
           </div>
+        )}
+        {rolesModalOpen && roleCatalog.length > 0 && (
+          <VolunteerRolesModal
+            roles={roleCatalog}
+            preset={rolePreset}
+            selected={
+              rolePreset === "all" ? roleCatalog.map((role) => role.key) : roleKeys
+            }
+            onApply={applyRoleFilter}
+            onClose={() => setRolesModalOpen(false)}
+          />
         )}
         {showScrollTop && (
           <button
