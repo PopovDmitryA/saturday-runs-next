@@ -9,6 +9,7 @@ export const PORTAL_ABOUT_HREF = "/about";
 export const PORTAL_ABOUT_PRIVACY_HREF = `${PORTAL_ABOUT_HREF}#privacy`;
 export const PORTAL_LOGIN_HREF = "/login";
 export const PORTAL_BLOG_HREF = "/blog";
+export const PORTAL_UPDATES_HREF = "/updates";
 
 /**
  * Личный кабинет в портальном дизайне — пока тёмный запуск под /new/*, рядом

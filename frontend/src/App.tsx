@@ -17,7 +17,9 @@ import { PortalBlogPage } from "./features/portal/PortalBlogPage";
 import { PortalHomePage } from "./features/portal/PortalHomePage";
 import { PortalLoginPage } from "./features/portal/PortalLoginPage";
 import { PortalMapLab } from "./features/portal/PortalMapLab";
+import { PortalUpdatesPage } from "./features/portal/PortalUpdatesPage";
 import { AdminBlogPage } from "./features/admin/AdminBlogPage";
+import { AdminReleasesPage } from "./features/admin/AdminReleasesPage";
 import { AdminBacklogPage } from "./features/admin/AdminBacklogPage";
 import { BacklogPage } from "./features/backlog/BacklogPage";
 import {
@@ -37,6 +39,7 @@ import {
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
+  PORTAL_UPDATES_HREF,
 } from "./lib/portalRoutes";
 import { PortalCabinetPreviewPage } from "./features/portal/cabinet/PortalCabinetPreviewPage";
 import {
@@ -148,6 +151,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   [PORTAL_ABOUT_HREF]: () => <PortalAboutPage />,
   [PORTAL_LOGIN_HREF]: () => <PortalLoginPage />,
   [PORTAL_BLOG_HREF]: () => <PortalBlogPage />,
+  // История релизов сайта — публичная, ссылки в футере (раздел + номер версии).
+  [PORTAL_UPDATES_HREF]: () => <PortalUpdatesPage />,
   "/new/map-lab": () => <PortalMapLab />,
   // Личный кабинет в портальном дизайне — тёмный запуск под /new/*, рядом со
   // старым кабинетом на канонических адресах. Превью на демо-данных (без
@@ -208,6 +213,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/records-digest": () => <AdminRecordsDigestPage />,
   "/admin/location-contacts": () => <AdminLocationContactsPage />,
   "/admin/blog": () => <AdminBlogPage />,
+  "/admin/releases": () => <AdminReleasesPage />,
   "/admin/backlog": () => <AdminBacklogPage />,
 
 };
