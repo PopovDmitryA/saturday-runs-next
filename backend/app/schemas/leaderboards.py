@@ -17,6 +17,16 @@ class VolunteerRoleDetailResponse(BaseModel):
     platforms: dict[str, int]
 
 
+class WeekLocationResponse(BaseModel):
+    """Где участник был за последнюю неделю (одна площадка колонки «Последняя
+    неделя»): площадка и дата визита — тем же видом, что «Последняя победа»
+    в победных рейтингах."""
+
+    name: str
+    slug: str | None = None
+    date: str | None = None
+
+
 class LeaderboardRowResponse(BaseModel):
     rank: int
     rank_delta: int
@@ -40,6 +50,13 @@ class LeaderboardRowResponse(BaseModel):
     top_role: str | None = None
     top_role_count: int | None = None
     role_details: list[VolunteerRoleDetailResponse] = []
+    # Только у туристических рейтингов: площадки / города / регионы. Одно из
+    # трёх совпадает с total — какое, решает фильтр count_by.
+    locations_total: int | None = None
+    cities_total: int | None = None
+    regions_total: int | None = None
+    # Колонка «Последняя неделя» (см. WEEK_LOCATIONS_METRICS).
+    week_locations: list[WeekLocationResponse] = []
 
 
 class LeaderboardResponse(BaseModel):
@@ -49,6 +66,12 @@ class LeaderboardResponse(BaseModel):
     min_visits: int = 1
     # Фильтр «по одной системе»: "all" или код платформы.
     platform: str = "all"
+    # Единица зачёта туристических рейтингов: locations / cities / regions.
+    count_by: str = "locations"
+    # Кнопки фильтра «единица зачёта» (пусто — у рейтинга такого фильтра нет).
+    count_by_options: list[str] = []
+    # Есть ли у рейтинга колонка «Последняя неделя».
+    has_week_locations: bool = False
     title: str
     description: str
     unit: str
@@ -68,6 +91,11 @@ class MyLeaderboardRowResponse(BaseModel):
     metric: str
     min_visits: int = 1
     platform: str = "all"
+    count_by: str = "locations"
+    locations_total: int | None = None
+    cities_total: int | None = None
+    regions_total: int | None = None
+    week_locations: list[WeekLocationResponse] = []
     display_name: str | None
     site_serial_id: int
     platforms: dict[str, LeaderboardCellResponse]
