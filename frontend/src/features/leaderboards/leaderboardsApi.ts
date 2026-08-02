@@ -20,6 +20,24 @@ export const GENDERED_METRICS: LeaderboardMetric[] = ["wins", "win_locations"];
 export const MIN_VISITS_METRICS: LeaderboardMetric[] = ["locations", "volunteer_locations"];
 export const MIN_VISITS_OPTIONS = [1, 2, 3, 4, 5] as const;
 
+// Единица зачёта туристических рейтингов: считать площадки, города или регионы.
+// Колонки видны все три всегда, фильтр решает, что попадает в «Всего» и по чему
+// строится место. Набор кнопок приходит с бэкенда (count_by_options).
+export type CountBy = "locations" | "cities" | "regions";
+export const COUNT_BY_LABELS: Record<CountBy, string> = {
+  locations: "Локаций",
+  cities: "Городов",
+  regions: "Регионов",
+};
+
+// Площадка недели в колонке «Последняя неделя»: площадка и дата визита — тем же
+// видом, что «Последняя победа» в победных рейтингах.
+export type WeekLocation = {
+  name: string;
+  slug: string | null;
+  date: string | null;
+};
+
 // Фильтр «смотреть по одной системе» есть у каждого рейтинга: объединённый
 // зачёт — норма, но результат внутри одной системы всегда можно посмотреть
 // отдельно. Набор кнопок зависит от рейтинга и зачёта (в гендерном нет
@@ -105,6 +123,13 @@ export type LeaderboardRow = {
   top_role?: string | null;
   top_role_count?: number | null;
   role_details?: VolunteerRoleDetail[];
+  // Только у туристических рейтингов: площадки / города / регионы. Одно из трёх
+  // совпадает с total — какое, решает фильтр count_by.
+  locations_total?: number | null;
+  cities_total?: number | null;
+  regions_total?: number | null;
+  // Колонка «Последняя неделя»: где участник был за окно дельты.
+  week_locations?: WeekLocation[];
 };
 
 export type LeaderboardResponse = {
@@ -112,6 +137,10 @@ export type LeaderboardResponse = {
   gender?: LeaderboardGender;
   min_visits?: number;
   platform?: PlatformFilter;
+  count_by?: CountBy;
+  // Кнопки фильтра «единица зачёта»; пусто — у рейтинга такого фильтра нет.
+  count_by_options?: CountBy[];
+  has_week_locations?: boolean;
   title: string;
   description: string;
   unit: string;
@@ -131,6 +160,11 @@ export type MyLeaderboardRow = {
   metric: string;
   min_visits?: number;
   platform?: PlatformFilter;
+  count_by?: CountBy;
+  locations_total?: number | null;
+  cities_total?: number | null;
+  regions_total?: number | null;
+  week_locations?: WeekLocation[];
   display_name: string | null;
   site_serial_id: number;
   platforms: Record<string, LeaderboardCell>;
@@ -175,6 +209,7 @@ export function getLeaderboard(
   gender: LeaderboardGender = "all",
   minVisits = 1,
   platform: PlatformFilter = "all",
+  countBy: CountBy = "locations",
   roles: string[] | null = null,
 ) {
   const params = new URLSearchParams({ limit: String(limit) });
@@ -187,6 +222,9 @@ export function getLeaderboard(
   if (platform !== "all") {
     params.set("platform", platform);
   }
+  if (countBy !== "locations") {
+    params.set("count_by", countBy);
+  }
   for (const role of roles ?? []) {
     params.append("roles", role);
   }
@@ -198,6 +236,7 @@ export function getMyLeaderboardRow(
   gender: LeaderboardGender = "all",
   minVisits = 1,
   platform: PlatformFilter = "all",
+  countBy: CountBy = "locations",
   roles: string[] | null = null,
 ) {
   const params = new URLSearchParams();
@@ -209,6 +248,9 @@ export function getMyLeaderboardRow(
   }
   if (platform !== "all") {
     params.set("platform", platform);
+  }
+  if (countBy !== "locations") {
+    params.set("count_by", countBy);
   }
   for (const role of roles ?? []) {
     params.append("roles", role);

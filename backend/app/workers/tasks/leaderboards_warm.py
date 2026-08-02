@@ -9,6 +9,7 @@ from app.services.leaderboard_service import (
     MAX_MIN_VISITS,
     MIN_VISITS_METRICS,
     LeaderboardMetric,
+    count_by_values,
     make_snapshot_source,
     platform_filter_values,
     refresh_leaderboard_cache,
@@ -35,16 +36,20 @@ def warm_leaderboards_cache() -> dict[str, object]:
     # (31.07.2026 именно так и вышло: «2+» × «5 вёрст» у туризма не
     # прогревались, посетитель ждал больше минуты). Наборы кнопок замкнутые,
     # так что сетка конечная и предсказуемая.
-    variants: list[tuple[LeaderboardMetric, str, int, str]] = []
+    variants: list[tuple[LeaderboardMetric, str, int, str, str]] = []
     for metric in LEADERBOARD_METRICS:
         genders = ("all", "male", "female") if metric in GENDERED_METRICS else ("all",)
         visits_options = (
             range(1, MAX_MIN_VISITS + 1) if metric in MIN_VISITS_METRICS else range(1, 2)
         )
+        # Единица зачёта (площадки/города/регионы) — ещё одно измерение сетки у
+        # туристических рейтингов; у остальных вариант ровно один.
+        units = count_by_values(metric) or ("locations",)
         for gender in genders:
             for visits in visits_options:
                 for platform in platform_filter_values(metric, gender):
-                    variants.append((metric, gender, visits, platform))
+                    for unit in units:
+                        variants.append((metric, gender, visits, platform, unit))
 
     # Один источник на всю задачу: сырые выборки и справочники читаются из базы
     # один раз на рейтинг, а не на каждое сочетание фильтров (фильтры
@@ -53,7 +58,7 @@ def warm_leaderboards_cache() -> dict[str, object]:
     source = make_snapshot_source(db)
     current_metric: str | None = None
     try:
-        for metric, gender, min_visits, platform in variants:
+        for metric, gender, min_visits, platform, count_by in variants:
             if source is not None and metric != current_metric:
                 # Сырые строки прошлого рейтинга больше не нужны — отпускаем их,
                 # чтобы пик памяти остался как при расчёте одного снапшота.
@@ -64,9 +69,11 @@ def warm_leaderboards_cache() -> dict[str, object]:
                 key = f"{key}:v{min_visits}"
             if platform != "all":
                 key = f"{key}:p{platform}"
+            if count_by != "locations":
+                key = f"{key}:c{count_by}"
             try:
                 snapshot = refresh_leaderboard_cache(
-                    db, metric, gender, min_visits, platform, source
+                    db, metric, gender, min_visits, platform, count_by, source
                 )
                 results[key] = snapshot.get("entrants", 0)
             except Exception:

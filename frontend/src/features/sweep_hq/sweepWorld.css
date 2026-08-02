@@ -173,11 +173,56 @@
 }
 
 .world-block h2 {
-  margin: 0 0 18px;
+  margin: 0;
   font-family: Georgia, "Iowan Old Style", serif;
   font-weight: 400;
   font-size: 24px;
   letter-spacing: -0.01em;
+}
+
+.world-block__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px 18px;
+  margin-bottom: 18px;
+}
+
+/* переключатель периода — как на главной, но в токенах этой страницы */
+.world-periods {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  background: var(--w-accent-soft);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.world-period {
+  background: transparent;
+  border: none;
+  color: var(--w-muted);
+  border-radius: 7px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.world-period:hover {
+  color: var(--w-ink);
+}
+
+.world-period--on {
+  background: var(--w-surface);
+  color: var(--w-accent);
+}
+
+.world-chart__empty {
+  padding: 40px 0;
+  text-align: center;
 }
 
 /* ---------- график ---------- */
@@ -237,24 +282,6 @@
   fill: var(--w-accent);
   stroke: var(--w-surface);
   stroke-width: 2;
-}
-
-/* ---------- текстовый блок ---------- */
-.world-about p {
-  max-width: 64ch;
-  margin: 0 0 14px;
-  font-size: 16px;
-}
-
-.world-about__foot {
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 1px solid var(--w-line);
-  font-size: 14px;
-}
-
-.world-about a {
-  color: var(--w-accent);
 }
 
 @media (max-width: 560px) {

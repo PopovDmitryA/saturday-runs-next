@@ -88,6 +88,8 @@ def leaderboard(
     # _normalize_min_visits / _normalize_platform_filter), 400 тут был бы избыточен.
     min_visits: Annotated[int, Query(ge=1, le=MAX_MIN_VISITS)] = 1,
     platform: str = "all",
+    # Единица зачёта туристических рейтингов: площадки / города / регионы.
+    count_by: str = "locations",
     # Какие волонтёрские роли считать. Пустой список = все роли; неизвестные
     # ключи и неприменимые метрики сервис отбрасывает сам.
     roles: Annotated[list[str] | None, Query()] = None,
@@ -99,6 +101,7 @@ def leaderboard(
         limit=limit,
         min_visits=min_visits,
         platform=platform,
+        count_by=count_by,
         roles=roles,
     )
     return LeaderboardResponse.model_validate(payload)
@@ -113,6 +116,7 @@ def my_leaderboard_row(
     gender: str = "all",
     min_visits: Annotated[int, Query(ge=1, le=MAX_MIN_VISITS)] = 1,
     platform: str = "all",
+    count_by: str = "locations",
 ) -> MyLeaderboardRowResponse:
     payload = get_my_leaderboard_row(
         db,
@@ -121,5 +125,6 @@ def my_leaderboard_row(
         _validate_gender(gender),
         min_visits,
         platform,
+        count_by,
     )
     return MyLeaderboardRowResponse.model_validate(payload)

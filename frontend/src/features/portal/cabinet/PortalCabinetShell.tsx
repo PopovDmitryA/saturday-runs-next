@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { logout, type User } from "../../../lib/api";
 import { PORTAL_LOGIN_HREF } from "../../../lib/portalRoutes";
+import { PortalFooter } from "../PortalFooter";
 import { PortalHeader } from "../PortalHeader";
 import { clearCachedUser } from "../../../lib/useOptionalUser";
 import {
@@ -146,6 +147,8 @@ export function PortalCabinetShell({
           {children}
         </main>
       </div>
+
+      <PortalFooter />
 
       {moreOpen && (
         <div

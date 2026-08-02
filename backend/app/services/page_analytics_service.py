@@ -53,6 +53,7 @@ _STATIC_PAGE_TYPES = {
     "/": "portal_home",
     "/about": "portal_about",
     "/blog": "portal_blog",
+    "/updates": "updates",
     "/login": "portal_login",
     "/new/map-lab": "portal_map_lab",
     "/dashboard": "dashboard",

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, getCurrentUser, oauthStartUrl } from "../../lib/api";
 import { PORTAL_ABOUT_PRIVACY_HREF } from "../../lib/portalRoutes";
+import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
 import "./portal.css";
 
@@ -268,6 +269,7 @@ export function PortalLoginPage() {
           </section>
         </div>
       </main>
+      <PortalFooter />
     </>
   );
 }

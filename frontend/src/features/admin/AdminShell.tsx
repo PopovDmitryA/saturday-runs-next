@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { PortalFooter } from "../portal/PortalFooter";
 import { PortalHeader } from "../portal/PortalHeader";
 import "../portal/portal.css";
 import "../portal/portalSection.css";
@@ -21,6 +22,7 @@ export function AdminShell({ title, children }: { title: string; children: React
         </div>
       </div>
       <main className="portal-section admin-shell-main">{children}</main>
+      <PortalFooter />
     </div>
   );
 }

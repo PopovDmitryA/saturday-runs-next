@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
 import { SiteSidebar, type SiteSidebarProps } from "./SiteSidebar";
 import { PortalSectionBottomNav } from "./PortalSectionBottomNav";
@@ -30,6 +31,7 @@ export function PortalSectionShell({
       <div className="portal-section-page">
         <PortalHeader />
         <main className="portal-section">{children}</main>
+        <PortalFooter />
       </div>
     );
   }
@@ -40,6 +42,7 @@ export function PortalSectionShell({
         <SiteSidebar active={sidebar.active} location={sidebar.location} />
         <main className="portal-cab-main portal-section">{children}</main>
       </div>
+      <PortalFooter />
       {/* На телефоне сайдбар скрыт: без этой панели раздел оставался вообще
           без навигации — вернуться в кабинет было не по чему. */}
       <PortalSectionBottomNav active={sidebar.active} />

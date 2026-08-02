@@ -17,6 +17,7 @@ from app.api.routes import (
     portal,
     profiles,
     public_profiles,
+    releases,
     reports,
     runs,
     settings,
@@ -41,6 +42,7 @@ api_router.include_router(locations.router)
 api_router.include_router(media.router)
 api_router.include_router(portal.router)
 api_router.include_router(blog.router)
+api_router.include_router(releases.router)
 api_router.include_router(backlog.router)
 api_router.include_router(sync.router)
 api_router.include_router(settings.router)

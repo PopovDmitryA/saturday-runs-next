@@ -107,6 +107,12 @@ Git-based (не rsync, см. scripts/remote_deploy.sh): прод перевод�
 
 **Если фронт не обновился** — remote build мог не выполниться; см. PROJECT_HANDOFF.local.md §1.
 
+**Версия релиза.** Каждый деплой получает версию X.Y.Z (или X.Y.Z-fixN) по
+протоколу docs/release_management.md: ПЕРЕД деплоем согласовать номер с
+Дмитрием (`scripts/add_release.py --suggest` печатает кандидатов), ПОСЛЕ —
+внести скрытую запись релиза на проде (`scripts/add_release.py`). Публикация
+и правки — в админке `/admin/releases`.
+
 **Фронт локально:**
 
 ```bash

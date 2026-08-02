@@ -12,6 +12,7 @@ import { cabinetTabHref, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { CountUpNumber } from "./CountUpNumber";
 import { PortalBlogSection } from "./PortalBlogSection";
+import { PortalFooter } from "./PortalFooter";
 import { PortalGeoMap } from "./PortalGeoMap";
 import { PortalHeader } from "./PortalHeader";
 import { PLATFORM_CHART_META, PortalTrendChart, type TrendPoint } from "./PortalTrendChart";
@@ -1226,6 +1227,7 @@ export function PortalHomePage() {
           </>
         )}
       </main>
+      <PortalFooter />
     </>
   );
 }

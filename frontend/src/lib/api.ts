@@ -1372,6 +1372,58 @@ export function deleteAdminBlogPost(postId: string) {
   return apiFetch<{ message: string }>(`/admin/blog/posts/${postId}`, { method: "DELETE" });
 }
 
+export type ReleaseAdmin = {
+  id: string;
+  version: string;
+  title: string;
+  body: string;
+  released_at: string;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReleaseAdminPayload = {
+  version: string;
+  title: string;
+  body: string;
+  released_at: string | null;
+  is_published: boolean;
+};
+
+/** Кандидаты следующей версии от последнего релиза в таблице (включая скрытые). */
+export type ReleaseNextVersions = {
+  current: string;
+  major: string;
+  minor: string;
+  patch: string;
+  fix: string;
+};
+
+export function listAdminReleases() {
+  return apiFetch<{ items: ReleaseAdmin[]; total: number; next_versions: ReleaseNextVersions }>(
+    "/admin/releases",
+  );
+}
+
+export function createAdminRelease(body: ReleaseAdminPayload) {
+  return apiFetch<ReleaseAdmin>("/admin/releases", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateAdminRelease(releaseId: string, body: ReleaseAdminPayload) {
+  return apiFetch<ReleaseAdmin>(`/admin/releases/${releaseId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteAdminRelease(releaseId: string) {
+  return apiFetch<{ message: string }>(`/admin/releases/${releaseId}`, { method: "DELETE" });
+}
+
 export function getAdminEventReport(eventId: string) {
   return apiFetch<EventReport>(
     `/admin/event-report?event_id=${encodeURIComponent(eventId)}`,
