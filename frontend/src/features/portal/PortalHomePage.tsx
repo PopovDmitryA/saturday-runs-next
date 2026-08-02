@@ -810,12 +810,16 @@ export function PortalHomePage() {
                             <span className="portal-delta down">↓ −{record.delta_sec} сек</span>
                           )}
                         </b>
-                        {record.previous_display && (
-                          <span>
-                            было {record.previous_display}
-                            {record.previous_record_date &&
-                              ` · ${formatDateCompact(record.previous_record_date)}`}
-                          </span>
+                        {record.is_debut ? (
+                          <span>первый рекорд трассы</span>
+                        ) : (
+                          record.previous_display && (
+                            <span>
+                              было {record.previous_display}
+                              {record.previous_record_date &&
+                                ` · ${formatDateCompact(record.previous_record_date)}`}
+                            </span>
+                          )
                         )}
                       </span>
                     </li>
