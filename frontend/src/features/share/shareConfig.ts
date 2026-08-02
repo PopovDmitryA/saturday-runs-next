@@ -83,7 +83,7 @@ export type ShareFieldDef = {
 
 export const SHARE_FIELDS: ShareFieldDef[] = [
   { id: "total_runs", label: "Всего пробежек", hint: "Сумма по всем системам" },
-  { id: "total_volunteering", label: "Волонтёрств", hint: "Смены и роли" },
+  { id: "total_volunteering", label: "Волонтёрств", hint: "По всем системам и ролям" },
   { id: "unique_locations", label: "Уникальных локаций", hint: "Пробежки и волонтёрство" },
   { id: "unique_run_locations", label: "Локаций с пробежками", hint: "География стартов" },
   { id: "unique_run_regions", label: "Регионов с пробежками", hint: "Где бегали" },

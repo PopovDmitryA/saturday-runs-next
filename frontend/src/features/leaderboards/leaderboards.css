@@ -1074,3 +1074,242 @@ body.has-pinned-me .lb-scroll-top {
     4.5rem + var(--portal-bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px)
   );
 }
+
+/* --- Фильтр «какие роли считать»: кнопка-шестерёнка и модалка --- */
+
+.lb-roles-gear {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.lb-roles-gear:hover {
+  border-color: var(--border-strong);
+}
+
+.lb-roles-gear:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+/* Активный фильтр видно, не открывая модалку: рейтинг посчитан не по всем ролям. */
+.lb-roles-gear-active {
+  background: var(--tint-indigo-bg);
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+  font-weight: 600;
+}
+
+.vrm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.vrm-panel {
+  width: min(560px, 100%);
+  max-height: min(86vh, 720px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 20px 16px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vrm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vrm-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.vrm-close {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 2px 8px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.vrm-close:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.vrm-intro,
+.vrm-note {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.vrm-note {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  font-size: 0.8rem;
+}
+
+.vrm-presets {
+  display: grid;
+  gap: 8px;
+}
+
+@media (min-width: 520px) {
+  .vrm-presets {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.vrm-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 10px 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.vrm-preset:hover {
+  border-color: var(--border-strong);
+}
+
+.vrm-preset-active {
+  border-color: var(--accent-indigo);
+  background: var(--tint-indigo-bg);
+}
+
+.vrm-preset-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.vrm-preset-note {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.vrm-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.vrm-group-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.vrm-group-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
+
+.vrm-group-note {
+  font-size: 0.76rem;
+}
+
+.vrm-role-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+@media (min-width: 520px) {
+  .vrm-role-list {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.vrm-role {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  font-size: 0.88rem;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.vrm-role:hover {
+  background: var(--bg-muted);
+}
+
+.vrm-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  position: sticky;
+  bottom: -16px;
+  background: var(--surface);
+}
+
+.vrm-count {
+  font-size: 0.82rem;
+}
+
+.vrm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Массовые действия над галочками ролей. */
+.vrm-bulk {
+  display: flex;
+  gap: 10px;
+}
+
+.vrm-bulk-btn {
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  font-family: inherit;
+  font-size: 0.83rem;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.vrm-bulk-btn:hover {
+  text-decoration: underline;
+}

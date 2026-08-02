@@ -45,6 +45,48 @@ export type WeekLocation = {
 // platform_options, а не повторяет фронт.
 export type PlatformFilter = "all" | "five_verst" | "s95" | "runpark" | "parkrun";
 
+// Фильтр «какие роли считать» — только у рейтингов по числу выходов; в
+// «Мультиволонтёре» роли и есть сама метрика, фильтровать их там нечего.
+export const ROLE_FILTER_METRICS: LeaderboardMetric[] = ["volunteering", "volunteer_locations"];
+
+export type VolunteerRolePreset = "all" | "on_site" | "on_site_no_run" | "remote" | "custom";
+
+// Роль справочника: ярлык плюс признаки, по которым собираются пресеты.
+// Разметку держит бэкенд (app/volunteer_role_taxonomy.py) — фронт её не копирует.
+export type VolunteerRoleItem = {
+  key: string;
+  label: string;
+  on_site: boolean;
+  runnable: boolean;
+};
+
+export type VolunteerRoleCatalog = {
+  presets: string[];
+  metrics: string[];
+  roles: VolunteerRoleItem[];
+};
+
+export function getVolunteerRoleCatalog() {
+  return leaderboardsFetch<VolunteerRoleCatalog>("/leaderboards/volunteer-roles/catalog");
+}
+
+/** Ключи ролей пресета. null — «все роли», параметр в запрос не уходит. */
+export function presetRoleKeys(
+  preset: VolunteerRolePreset,
+  roles: VolunteerRoleItem[],
+): string[] | null {
+  if (preset === "on_site") {
+    return roles.filter((role) => role.on_site).map((role) => role.key);
+  }
+  if (preset === "on_site_no_run") {
+    return roles.filter((role) => role.on_site && !role.runnable).map((role) => role.key);
+  }
+  if (preset === "remote") {
+    return roles.filter((role) => !role.on_site).map((role) => role.key);
+  }
+  return null;
+}
+
 // Одна освоенная роль в детализации мультиволонтёра: сколько волонтёрств и в
 // каких системах. Приходит только у метрики volunteer_roles.
 export type VolunteerRoleDetail = {
@@ -168,6 +210,7 @@ export function getLeaderboard(
   minVisits = 1,
   platform: PlatformFilter = "all",
   countBy: CountBy = "locations",
+  roles: string[] | null = null,
 ) {
   const params = new URLSearchParams({ limit: String(limit) });
   if (gender !== "all") {
@@ -182,6 +225,9 @@ export function getLeaderboard(
   if (countBy !== "locations") {
     params.set("count_by", countBy);
   }
+  for (const role of roles ?? []) {
+    params.append("roles", role);
+  }
   return leaderboardsFetch<LeaderboardResponse>(`/leaderboards/${metric}?${params}`);
 }
 
@@ -191,6 +237,7 @@ export function getMyLeaderboardRow(
   minVisits = 1,
   platform: PlatformFilter = "all",
   countBy: CountBy = "locations",
+  roles: string[] | null = null,
 ) {
   const params = new URLSearchParams();
   if (gender !== "all") {
@@ -204,6 +251,9 @@ export function getMyLeaderboardRow(
   }
   if (countBy !== "locations") {
     params.set("count_by", countBy);
+  }
+  for (const role of roles ?? []) {
+    params.append("roles", role);
   }
   const query = params.toString();
   return leaderboardsFetch<MyLeaderboardRow>(
