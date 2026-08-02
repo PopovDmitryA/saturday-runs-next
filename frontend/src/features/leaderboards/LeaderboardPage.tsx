@@ -60,6 +60,7 @@ const METRIC_CRUMBS: Record<LeaderboardMetric, { section: string; label: string 
   volunteer_locations: { section: "Волонтёры", label: "Уникальные локации" },
   wins: { section: "Бегуны", label: "Количество первых мест" },
   win_locations: { section: "Паркран-туристы", label: "Локации с первым местом" },
+  home_distance: { section: "Паркран-туристы", label: "Дальность от дома" },
 };
 
 // Мультиволонтёр: колонка «Любимая роль» + детализация ролей по клику на
@@ -76,6 +77,14 @@ const ROLES_TOTAL_HINT =
 const TOP_LOCATION_HINT =
   "Число рядом — сколько раз участник был первым именно на этой локации, " +
   "а не сколько раз там бегал.";
+
+const HOME_LOCATION_HINT =
+  "Площадка, от которой считаются километры: где у участника больше всего " +
+  "пробежек. Зарегистрированные на сайте могут выбрать её вручную в настройках.";
+
+const HOME_DISTANCE_LOCATIONS_HINT =
+  "Сколько разных площадок посещено, включая домашнюю. Километры каждой " +
+  "засчитываются один раз — повторные поездки сумму не увеличивают.";
 
 // Фильтр туризма: «локация засчитывается от N визитов». Кнопка 1+ — обычный
 // рейтинг (любая локация, где человек был хоть раз), дальше планка растёт.
@@ -600,6 +609,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const hasWinExtras = metric === "wins" || metric === "win_locations";
   const lastWinMeta = LAST_WIN_META[metric];
   const isRoles = metric === "volunteer_roles";
+  // «Дальность от дома» несёт две свои колонки: домашняя локация и сколько
+  // площадок посещено — без них число километров ни о чём не говорит.
+  const isHomeDistance = metric === "home_distance";
   // Гео-зачёт есть ровно там же, где порог визитов, — у туристических рейтингов.
   const effectiveCountBy = hasMinVisits ? countBy : "locations";
 
@@ -812,6 +824,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       (metric === "wins" ? 1 : 0) +
       (isRoles ? 1 : 0) +
       (hasGeoColumns ? 2 : 0) +
+      (isHomeDistance ? 2 : 0) +
       (hasWeekLocations ? 1 : 0)
     : 3;
   const visibleRows = rows.slice(0, visibleCount);
@@ -1073,6 +1086,14 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           <TopWinLocation row={me} />
                         </span>
                       )}
+                      {isHomeDistance && me.home_location && (
+                        <span className="lb-me-value">
+                          <span className="lb-me-platform">
+                            Дом <InfoHint text={HOME_LOCATION_HINT} />
+                          </span>
+                          <TopWinLocation row={me} />
+                        </span>
+                      )}
                       {hasWinExtras && lastWinMeta && me.last_win_location && (
                         <span className="lb-me-value">
                           <span className="lb-me-platform">
@@ -1161,6 +1182,16 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         </th>
                         <th className="lb-col-num lb-col-geo">
                           Регионов <InfoHint text={REGIONS_HINT} />
+                        </th>
+                      </>
+                    )}
+                    {showFull && isHomeDistance && (
+                      <>
+                        <th className="lb-col-num lb-col-geo">
+                          Локаций <InfoHint text={HOME_DISTANCE_LOCATIONS_HINT} />
+                        </th>
+                        <th className="lb-col-home">
+                          Дом <InfoHint text={HOME_LOCATION_HINT} />
                         </th>
                       </>
                     )}
@@ -1257,6 +1288,16 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             </td>
                             <td className="lb-col-num lb-col-geo">
                               <GeoCount value={row.regions_total} />
+                            </td>
+                          </>
+                        )}
+                        {showFull && isHomeDistance && (
+                          <>
+                            <td className="lb-col-num lb-col-geo">
+                              <GeoCount value={row.locations_total} />
+                            </td>
+                            <td className="lb-col-home">
+                              <TopWinLocation row={row} />
                             </td>
                           </>
                         )}

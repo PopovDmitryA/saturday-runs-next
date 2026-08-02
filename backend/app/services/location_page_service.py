@@ -37,6 +37,7 @@ from app.models import (
     User,
     VolunteerResult,
 )
+from app.services.home_distance_service import location_distance_from_home
 from app.services.location_catalog_service import (
     LocationCatalogIndex,
     is_foreign_location,
@@ -1935,12 +1936,33 @@ def build_location_age_group_standings(
     return standings
 
 
-def build_location_personal_stats(db: Session, user_id: UUID, slug: str) -> dict[str, object] | None:
+def _location_home_distance(
+    db: Session, user: User, identity: LocationIdentity
+) -> dict[str, object] | None:
+    """Плитка «сколько отсюда до дома» — координаты берём у любой строки
+    идентичности: у parkrun-строк своих нет, но связка с действующей системой
+    отдаёт точку площадки (см. LocationCatalogIndex.coordinates_for)."""
+    coordinates: tuple[float | None, float | None] = (None, None)
+    for location, platform_code in identity.locations:
+        coordinates = identity.catalog_index.coordinates_for(location, platform_code)
+        if coordinates[0] is not None and coordinates[1] is not None:
+            break
+    return location_distance_from_home(
+        db,
+        user,
+        identity.identity_key,
+        coordinates,
+        catalog_index=identity.catalog_index,
+    )
+
+
+def build_location_personal_stats(db: Session, user: User, slug: str) -> dict[str, object] | None:
     """Личная статистика пользователя на локации (блок «Вы на этой локации»).
 
     Без кэша: выборка per-user дешёвая (фильтр по platform_links.user_id),
     а общий Redis-кэш страницы её содержать не может.
     """
+    user_id = user.id
     identity = resolve_location_identity(db, slug)
     if identity is None:
         return None
@@ -1963,6 +1985,7 @@ def build_location_personal_stats(db: Session, user_id: UUID, slug: str) -> dict
         "rank_by_runs_gender": None,
         "runners_total_gender": None,
         "age_groups": [],
+        "home_distance": _location_home_distance(db, user, identity),
     }
 
     # Все пробежки пользователя (по всем локациям) — для строки «это N% ваших стартов».

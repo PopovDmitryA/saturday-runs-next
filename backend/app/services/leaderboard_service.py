@@ -35,6 +35,7 @@ from app.parkrun.volunteer_credits import (
     resolve_parkrun_volunteering_count,
 )
 from app.services.co_runners_service import _is_unknown_participant_name
+from app.services.home_distance_service import haversine_km
 from app.services.location_catalog_service import (
     LocationCatalogIndex,
     russian_parkrun_location_ids,
@@ -56,6 +57,7 @@ LeaderboardMetric = Literal[
     "volunteer_locations",
     "wins",
     "win_locations",
+    "home_distance",
 ]
 
 LEADERBOARD_METRICS: tuple[LeaderboardMetric, ...] = (
@@ -66,6 +68,7 @@ LEADERBOARD_METRICS: tuple[LeaderboardMetric, ...] = (
     "volunteer_locations",
     "wins",
     "win_locations",
+    "home_distance",
 )
 
 LeaderboardGender = Literal["all", "male", "female"]
@@ -171,6 +174,10 @@ METRIC_THRESHOLD_PERCENTILE: dict[str, float] = {
     "volunteer_locations": 95,
     "wins": 0,
     "win_locations": 0,
+    # Дальность от дома: у 89% участников ровно одна площадка, и сумма у них
+    # ноль — их отсекает общее правило «в рейтинг идут строки с total > 0»,
+    # перцентиль сверх этого не нужен.
+    "home_distance": 0,
 }
 
 METRIC_META: dict[str, dict[str, str]] = {
@@ -232,6 +239,19 @@ METRIC_META: dict[str, dict[str, str]] = {
             "Уникальные локации, где участник финишировал первым в абсолютном "
             "зачёте. Одна и та же локация в разных системах считается одной. "
             "«Всего» — уникальные локации по всем системам (не сумма колонок)."
+        ),
+    },
+    "home_distance": {
+        "title": "Рейтинг дальности от дома",
+        "unit": "км от дома",
+        "description": (
+            "Сумма расстояний от домашней локации до каждой площадки, где "
+            "участник финишировал. Каждая площадка даёт свои километры один "
+            "раз, сколько бы раз человек туда ни ездил. Домашняя локация — где "
+            "больше всего пробежек (зарегистрированные на сайте могут выбрать "
+            "её вручную в настройках). Расстояние — по прямой. «Всего» — не "
+            "сумма колонок: площадка, где бегали в двух системах, попадает в "
+            "обе колонки, но в зачёт идёт один раз."
         ),
     },
 }
@@ -1169,6 +1189,47 @@ def _location_geo_map(db: Session) -> dict[str, _LocationGeo]:
     return geo_map
 
 
+def _location_coordinates_map(db: Session) -> dict[str, tuple[float, float]]:
+    """identity-ключ площадки -> её координаты.
+
+    Через LocationCatalogIndex.coordinates_for, поэтому parkrun-строка получает
+    точку своего действующего преемника, а не остаётся без координат. У
+    зарубежных parkrun координаты проставлены бэкфиллом из мирового каталога
+    (см. backend/scripts/backfill_parkrun_coordinates.py); у оставшихся закрытых
+    площадок их нет — такая площадка в сумму километров не идёт.
+    """
+    catalog_index = LocationCatalogIndex(db)
+    rows = (
+        db.query(Location, Platform.code)
+        .join(Platform, Location.platform_id == Platform.id)
+        .all()
+    )
+    platform_priority = {code: index for index, code in enumerate(PLATFORM_COLUMNS)}
+    best: dict[str, tuple[int, tuple[float, float]]] = {}
+    for location, platform_code in rows:
+        latitude, longitude = catalog_index.coordinates_for(location, platform_code)
+        if latitude is None or longitude is None:
+            continue
+        identity = catalog_index.canonical_identity_key(location, platform_code)
+        priority = platform_priority.get(platform_code, len(PLATFORM_COLUMNS))
+        current = best.get(identity)
+        if current is None or priority < current[0]:
+            best[identity] = (priority, (latitude, longitude))
+    return {identity: coords for identity, (_priority, coords) in best.items()}
+
+
+def _manual_home_identity_keys(db: Session) -> dict[UUID, str]:
+    """user_id -> домашняя локация, выбранная руками в настройках.
+
+    Рейтинг считается по всем участникам, у большинства дом определяется
+    автоматически (где больше пробежек). Но если человек завёл кабинет и
+    поправил выбор — уважаем его: иначе рейтинг спорил бы с тем, что тот же
+    сайт показывает ему на главной.
+    """
+    rows = db.query(User.id, User.home_location_key).filter(User.home_location_key.isnot(None)).all()
+    return {user_id: str(key) for user_id, key in rows if key}
+
+
 def _row_params(db: Session, week_start: date, **extra: object) -> dict[str, object]:
     """Общие параметры сырых выборок рейтингов.
 
@@ -1205,6 +1266,8 @@ class _MetricSource:
         self._links: dict[UUID, _SiteLink] | None = None
         self._identity: tuple[dict[UUID, str], dict[str, str], dict[str, str]] | None = None
         self._geo: dict[str, _LocationGeo] | None = None
+        self._coordinates: dict[str, tuple[float, float]] | None = None
+        self._manual_homes: dict[UUID, str] | None = None
         self._names: dict[UUID, str | None] | None = None
         self._rows: dict[str, Sequence[Row[Any]]] = {}
         # Волонтёрские выборки зависят от фильтра ролей, поэтому кэшируются
@@ -1228,6 +1291,17 @@ class _MetricSource:
         if self._geo is None:
             self._geo = _location_geo_map(self.db)
         return self._geo
+
+    def coordinates_map(self) -> dict[str, tuple[float, float]]:
+        """Координаты площадок — справочник того же рода, что geo_map."""
+        if self._coordinates is None:
+            self._coordinates = _location_coordinates_map(self.db)
+        return self._coordinates
+
+    def manual_home_keys(self) -> dict[UUID, str]:
+        if self._manual_homes is None:
+            self._manual_homes = _manual_home_identity_keys(self.db)
+        return self._manual_homes
 
     def names(self) -> dict[UUID, str | None]:
         """Имена всех участников: справочник целиком дешевле, чем гигантский IN
@@ -2074,6 +2148,125 @@ def _collect_location_entities(
     return entities
 
 
+def _home_identity(
+    identities: dict[str, _LocationVisits],
+    identity_names: dict[str, str],
+    manual_key: str | None,
+) -> str | None:
+    """Домашняя площадка участника: выбранная руками, иначе — где больше визитов.
+
+    Ничьи разводим по названию, чтобы рейтинг не «дышал» между пересчётами:
+    у 4846 участников первое место делят две площадки.
+    """
+    if manual_key is not None and manual_key in identities:
+        return manual_key
+    if not identities:
+        return None
+    return min(
+        identities,
+        key=lambda identity: (
+            -identities[identity].visits,
+            identity_names.get(identity, identity).casefold(),
+        ),
+    )
+
+
+def _home_distance_tally(
+    identities: dict[str, _LocationVisits],
+    home: str,
+    coordinates: dict[str, tuple[float, float]],
+    week_start: date,
+) -> tuple[int, int, dict[str, list[int]]]:
+    """(сумма км, из них прибавилось за неделю, разбивка по системам).
+
+    Площадка даёт свои километры один раз — сколько бы раз человек туда ни
+    ездил (решение Дмитрия 02.08.2026). «За неделю» — километры площадок,
+    впервые посещённых в окне дельты.
+    """
+    home_point = coordinates.get(home)
+    if home_point is None:
+        return 0, 0, {}
+    total = 0
+    week = 0
+    values: dict[str, list[int]] = {}
+    for identity, visits in identities.items():
+        if identity == home:
+            continue
+        point = coordinates.get(identity)
+        if point is None:
+            continue
+        km = int(round(haversine_km(home_point, point)))
+        if km <= 0:
+            continue
+        total += km
+        if visits.first_date >= week_start:
+            week += km
+        for code in visits.codes:
+            cell = values.setdefault(code, [0, 0])
+            cell[0] += km
+            if visits.platform_is_new(code, 1):
+                cell[1] += km
+    return total, week, values
+
+
+def _collect_home_distance_entities(
+    source: _MetricSource, *, platform: str = "all"
+) -> dict[str, _Entity]:
+    """Рейтинг дальности от дома: сумма километров до уникальных площадок.
+
+    Считается по тем же строкам визитов, что беговой туризм, — меняется только
+    способ превратить набор площадок в число.
+    """
+    links = source.links()
+    identity_by_location, identity_names, _identity_slugs = source.identity_maps()
+    coordinates = source.coordinates_map()
+    manual_homes = source.manual_home_keys()
+    rows = source.rows(_LOCATION_VISITS_SQL)
+
+    per_entity: dict[str, dict[str, _LocationVisits]] = {}
+    meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
+    for pid, code, location_id, first_date, visits, week_visits in rows:
+        if platform != "all" and code != platform:
+            continue
+        identity = identity_by_location.get(location_id, str(location_id))
+        link = links.get(pid)
+        key = _entity_key(pid, link)
+        meta.setdefault(key, (pid, link))
+        _merge_visit_row(
+            per_entity.setdefault(key, {}),
+            identity,
+            code,
+            first_date,
+            int(visits),
+            int(week_visits),
+        )
+
+    names = source.names()
+    entities: dict[str, _Entity] = {}
+    for key, identities in per_entity.items():
+        pid, link = meta[key]
+        entity = _Entity(key=key)
+        if link is not None and not link.private:
+            entity.site_serial_id = link.serial_id
+            entity.display_name = link.display_name or names.get(pid)
+        else:
+            entity.display_name = names.get(pid)
+        manual_key = manual_homes.get(link.user_id) if link is not None else None
+        home = _home_identity(identities, identity_names, manual_key)
+        if home is None:
+            continue
+        total, week, values = _home_distance_tally(
+            identities, home, coordinates, source.week_start
+        )
+        entity.total = total
+        entity.week = week
+        entity.values = values
+        entity.home_location = identity_names.get(home, home)
+        entity.locations_total = len(identities)
+        entities[key] = entity
+    return entities
+
+
 def _best_times(db: Session, participant_ids: list[UUID]) -> dict[UUID, int]:
     """participant_id -> лучшее время (сек) по всей истории финишей."""
     if not participant_ids:
@@ -2204,6 +2397,8 @@ def _build_snapshot(
 
     if metric == "volunteer_roles":
         entities = _collect_volunteer_role_entities(src, platform=platform)
+    elif metric == "home_distance":
+        entities = _collect_home_distance_entities(src, platform=platform)
     elif metric == "locations":
         entities = _collect_location_entities(
             src,
@@ -2302,7 +2497,10 @@ def _build_snapshot(
             row["week_locations"] = entity.week_locations
         if entity.home_location is not None:
             row["home_location"] = entity.home_location
-            row["home_location_wins"] = entity.home_location_wins
+            # У «дальности от дома» колонка «Дом» — это домашняя локация, а не
+            # топ-локация побед: числа побед у неё нет.
+            if metric != "home_distance":
+                row["home_location_wins"] = entity.home_location_wins
         if entity.top_role is not None:
             row["top_role"] = entity.top_role
             row["top_role_count"] = entity.top_role_count
@@ -2893,6 +3091,55 @@ def _my_location_values(
     return row
 
 
+@dataclass
+class _MyHomeDistanceRow:
+    """«Моя» строка рейтинга дальности: километры, дом и число площадок."""
+
+    values: dict[str, list[int]]
+    total: int
+    week: int
+    home_location: str | None = None
+    locations_total: int | None = None
+
+
+def _my_home_distance_values(
+    db: Session,
+    user: User,
+    participant_ids: list[UUID],
+    week_start: date,
+    platform: str = "all",
+) -> _MyHomeDistanceRow:
+    """Та же арифметика, что в снапшоте, но по одному человеку.
+
+    Домашняя локация берётся из настроек кабинета, если он её задал, — так «моя
+    строка» рейтинга совпадает с плиткой на главной.
+    """
+    if not participant_ids:
+        return _MyHomeDistanceRow(values={}, total=0, week=0)
+    sql = _LOCATION_VISITS_SQL.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
+    rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
+    identity_by_location, identity_names, _identity_slugs = _location_identity_maps(db)
+    identities: dict[str, _LocationVisits] = {}
+    for _pid, code, location_id, first_date, visits, week_visits in rows:
+        if platform != "all" and code != platform:
+            continue
+        identity = identity_by_location.get(location_id, str(location_id))
+        _merge_visit_row(identities, identity, code, first_date, int(visits), int(week_visits))
+    home = _home_identity(identities, identity_names, user.home_location_key)
+    if home is None:
+        return _MyHomeDistanceRow(values={}, total=0, week=0)
+    total, week, values = _home_distance_tally(
+        identities, home, _location_coordinates_map(db), week_start
+    )
+    return _MyHomeDistanceRow(
+        values=values,
+        total=total,
+        week=week,
+        home_location=identity_names.get(home, home),
+        locations_total=len(identities),
+    )
+
+
 def _my_week_locations(
     db: Session,
     metric: str,
@@ -2965,6 +3212,10 @@ def get_my_leaderboard_row(
     my_top_role: tuple[str, int] | None = None
     my_role_details: list[dict[str, object]] = []
     my_geo: _MyLocationRow | None = None
+    # Только у «дальности от дома»: домашняя локация без числа побед и общее
+    # число посещённых площадок (у туристических рейтингов это считает my_geo).
+    my_home_name: str | None = None
+    my_locations_total: int | None = None
     if metric == "volunteer_roles":
         role_summary = _my_volunteer_role_values(
             db, participant_ids, week_start, platform_resolved
@@ -2974,6 +3225,13 @@ def get_my_leaderboard_row(
         week = role_summary.week
         my_top_role = role_summary.top_role
         my_role_details = role_summary.details
+    elif metric == "home_distance":
+        distance_row = _my_home_distance_values(
+            db, user, participant_ids, week_start, platform_resolved
+        )
+        values, total, week = distance_row.values, distance_row.total, distance_row.week
+        my_home_name = distance_row.home_location
+        my_locations_total = distance_row.locations_total
     elif metric in ("locations", "volunteer_locations"):
         my_geo = _my_location_values(
             db,
@@ -3072,7 +3330,7 @@ def get_my_leaderboard_row(
         "min_visits": visits,
         "platform": platform_resolved,
         "count_by": unit,
-        "locations_total": my_geo.locations_total if my_geo else None,
+        "locations_total": my_geo.locations_total if my_geo else my_locations_total,
         "cities_total": my_geo.cities_total if my_geo else None,
         "regions_total": my_geo.regions_total if my_geo else None,
         "week_locations": my_week_locations,
@@ -3086,7 +3344,7 @@ def get_my_leaderboard_row(
         "included": included,
         "threshold": threshold,
         "gender_mismatch": gender_mismatch,
-        "home_location": my_home[0] if my_home else None,
+        "home_location": my_home[0] if my_home else my_home_name,
         "home_location_wins": my_home[1] if my_home else None,
         "top_role": my_top_role[0] if my_top_role else None,
         "top_role_count": my_top_role[1] if my_top_role else None,

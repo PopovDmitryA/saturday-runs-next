@@ -8,7 +8,8 @@ export type LeaderboardMetric =
   | "locations"
   | "volunteer_locations"
   | "wins"
-  | "win_locations";
+  | "win_locations"
+  | "home_distance";
 
 export type LeaderboardGender = "all" | "male" | "female";
 

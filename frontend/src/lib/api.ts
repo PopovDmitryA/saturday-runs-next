@@ -126,6 +126,49 @@ export type LocationRecordsBlock = {
   entries: LocationRecordEntry[];
 };
 
+/** Строка таблиц «Дальности от дома»: посещённая или ещё не посещённая площадка. */
+export type HomeDistanceLocation = {
+  catalog_identity_key: string;
+  location_slug: string | null;
+  name: string;
+  city: string | null;
+  region: string | null;
+  /** null — координат площадки нет, в зачёт километров она не идёт. */
+  distance_km: number | null;
+  run_count: number;
+  last_visit_date: string | null;
+  is_home: boolean;
+  is_paused: boolean;
+};
+
+export type HomeLocationSummary = {
+  catalog_identity_key: string;
+  location_slug: string | null;
+  name: string;
+  city: string | null;
+  region: string | null;
+  run_count: number;
+  is_auto: boolean;
+  /** "tie" — ничья по числу пробежек, "close" — вторая площадка рядом. */
+  ambiguity: "tie" | "close" | null;
+  runner_up_name: string | null;
+  has_coordinates: boolean;
+};
+
+export type HomeDistance = {
+  home: HomeLocationSummary | null;
+  total_distance_km: number;
+  farthest: HomeDistanceLocation | null;
+  visited_count: number;
+  counted_count: number;
+  unknown_count: number;
+};
+
+export type HomeDistanceDetail = HomeDistance & {
+  visited: HomeDistanceLocation[];
+  unvisited: HomeDistanceLocation[];
+};
+
 export type DashboardAnalytics = {
   analytics_version?: number;
   unique_locations: number;
@@ -210,6 +253,7 @@ export type DashboardAnalytics = {
   }>;
   location_records?: LocationRecordsBlock;
   age_group_records?: LocationRecordsBlock;
+  home_distance?: HomeDistance | null;
 };
 
 export type DashboardStats = {
@@ -1840,6 +1884,11 @@ export function getUniqueLocationsDetail(includeTest = false) {
   return apiFetch<UniqueLocationsDetailResponse>(`/locations/visited/detail${query}`);
 }
 
+export function getHomeDistanceDetail(includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<HomeDistanceDetail>(`/locations/visited/home-distance${query}`);
+}
+
 export function getCatalogLocationsMap() {
   return apiFetch<MapLocationsResponse>("/locations/catalog/map");
 }
@@ -2101,6 +2150,19 @@ export type LocationAgeGroupStanding = {
   total: number;
 };
 
+/** Плитка «сколько отсюда до дома» на странице локации. */
+export type LocationHomeDistance = {
+  /** null — координат площадки или домашней локации нет. */
+  distance_km: number | null;
+  is_home: boolean;
+  /** Зелёная маркировка плитки — «здесь уже бегал», серая — «ещё не был». */
+  visited: boolean;
+  run_count: number;
+  home_name: string;
+  home_slug: string | null;
+  home_is_auto: boolean;
+};
+
 export type LocationPersonalStats = {
   slug: string;
   name: string;
@@ -2119,6 +2181,8 @@ export type LocationPersonalStats = {
   rank_by_runs_gender: number | null;
   runners_total_gender: number | null;
   age_groups: LocationAgeGroupStanding[];
+  /** null — домашняя локация не определилась (у пользователя нет пробежек). */
+  home_distance: LocationHomeDistance | null;
 };
 
 export function getLocationPersonalStats(slug: string) {

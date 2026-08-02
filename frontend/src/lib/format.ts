@@ -275,6 +275,14 @@ export function kilometersLabel(count: number): string {
   return pluralizeRu(count, KM_FORMS);
 }
 
+/** «6 141 км», близкие расстояния — с десятыми: «0,8 км» честнее, чем «1 км». */
+export function formatKm(value: number): string {
+  if (value < 10 && !Number.isInteger(value)) {
+    return `${value.toFixed(1).replace(".", ",")} км`;
+  }
+  return `${Math.round(value).toLocaleString("ru-RU")} км`;
+}
+
 export function runClubsLabel(count: number): string {
   return pluralFormRu(count, CLUB_FORMS);
 }

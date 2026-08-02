@@ -77,7 +77,11 @@ def build_user_unique_location_details(
     user_id: UUID,
     *,
     include_test_events: bool = False,
+    catalog_index: LocationCatalogIndex | None = None,
 ) -> dict[str, object]:
+    """catalog_index передают, когда индекс уже построен вызывающим кодом:
+    его загрузка тянет все связки каталога, и на дашборде она иначе повторялась
+    бы дважды за один запрос."""
     runs_query = (
         db.query(RunResult.id, Event.event_date, Location, Platform.code)
         .select_from(RunResult)
@@ -113,7 +117,8 @@ def build_user_unique_location_details(
     ]
     vol_rows = vol_query.all()
 
-    catalog_index = LocationCatalogIndex(db)
+    if catalog_index is None:
+        catalog_index = LocationCatalogIndex(db)
     buckets: dict[str, dict[str, object]] = {}
 
     def _ensure_bucket(identity_key: str) -> dict[str, object]:

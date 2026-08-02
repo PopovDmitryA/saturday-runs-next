@@ -358,6 +358,20 @@ class LocationAgeGroupStandingResponse(BaseModel):
     total: int = 0
 
 
+class LocationHomeDistanceResponse(BaseModel):
+    """Плитка «сколько отсюда до дома» на странице локации."""
+
+    # None — координат площадки или домашней локации нет; расстояние неизвестно.
+    distance_km: float | None = None
+    is_home: bool = False
+    # Зелёная маркировка плитки — «здесь уже бегал», серая — «ещё не был».
+    visited: bool = False
+    run_count: int = 0
+    home_name: str
+    home_slug: str | None = None
+    home_is_auto: bool = True
+
+
 class LocationPersonalStatsResponse(BaseModel):
     """Личная статистика пользователя на локации (блок «Вы на этой локации»)."""
 
@@ -382,3 +396,6 @@ class LocationPersonalStatsResponse(BaseModel):
     runners_total_gender: int | None = None
     # Возрастные группы 5 вёрст, в которых пользователь здесь бегал.
     age_groups: list[LocationAgeGroupStandingResponse] = Field(default_factory=list)
+    # Расстояние от домашней локации. None — дом не определился (нет пробежек),
+    # плитку на странице тогда не показываем.
+    home_distance: LocationHomeDistanceResponse | None = None

@@ -31,7 +31,12 @@ def list_home_location_candidates(db: Session, user_id: UUID) -> list[HomeLocati
     Reuses the same catalog-identity dedup as the unique-locations modal, so a
     location present under both five_verst and runpark shows up once.
     """
-    detail = build_user_unique_location_details(db, user_id)
+    return home_location_candidates_from_detail(build_user_unique_location_details(db, user_id))
+
+
+def home_location_candidates_from_detail(detail: dict[str, object]) -> list[HomeLocationCandidate]:
+    """Тот же список, но из уже посчитанной детализации: «дальность от дома»
+    строит её ради координат и не должна считать всё второй раз."""
     locations = cast(list[dict[str, object]], detail["locations"])
     return [
         HomeLocationCandidate(
@@ -63,7 +68,12 @@ def resolve_home_location(
     db: Session, user: User
 ) -> tuple[HomeLocationCandidate | None, bool]:
     """Returns (candidate, is_auto). Falls back to auto if the stored key is stale."""
-    candidates = list_home_location_candidates(db, user.id)
+    return resolve_home_location_from_candidates(list_home_location_candidates(db, user.id), user)
+
+
+def resolve_home_location_from_candidates(
+    candidates: list[HomeLocationCandidate], user: User
+) -> tuple[HomeLocationCandidate | None, bool]:
     if user.home_location_key:
         for candidate in candidates:
             if candidate.catalog_identity_key == user.home_location_key:

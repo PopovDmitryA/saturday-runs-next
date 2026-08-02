@@ -28,6 +28,7 @@ from app.models import (
     VolunteerResult,
 )
 from app.parkrun.volunteer_credits import count_parkrun_volunteering
+from app.services.home_distance_service import build_home_distance_overview
 from app.services.location_catalog_service import (
     PARKRUN_PLATFORM_CODE,
     LocationCatalogIndex,
@@ -66,7 +67,9 @@ class SyncRefreshRateLimitedError(Exception):
 # 33: зарубежный parkrun выброшен из побед (протокола нет — «первое место»
 # по одинокой строке из профиля не победа), заодно ушло фиктивное
 # gender_position=1 из среднего места по полу.
-ANALYTICS_VERSION = 33
+# 34: плитка «Дальность от дома» — сумма км до уникальных посещённых площадок,
+# самый дальний старт и признак неоднозначной домашней локации.
+ANALYTICS_VERSION = 34
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 
@@ -857,6 +860,20 @@ def _compute_dashboard_analytics(
     # перезаписывает redis-кэш, которым дальше пользуется «Моя история».
     location_records = get_user_location_records(db, user_id, force_refresh=True)
 
+    # Дальность от дома: детализацию локаций строим один раз и переиспользуем
+    # уже построенный catalog_index — иначе связки каталога грузились бы дважды.
+    dashboard_user = db.get(User, user_id)
+    home_distance = (
+        build_home_distance_overview(
+            db,
+            dashboard_user,
+            include_test_events=include_test_events,
+            catalog_index=catalog_index,
+        ).as_dict()
+        if dashboard_user is not None
+        else None
+    )
+
     return {
         "analytics_version": ANALYTICS_VERSION,
         "unique_locations": all_unique_counts.unique_total,
@@ -916,6 +933,7 @@ def _compute_dashboard_analytics(
         "runs_with_field_avg_count": runs_with_field_avg_count,
         "location_records": location_records["course"],
         "age_group_records": location_records["age_group"],
+        "home_distance": home_distance,
     }
 
 
