@@ -22,8 +22,10 @@ QUEUE_TOTAL_FALLBACK = 6_693_994  # для прогноза, если запро
 
 # Кэш публичного табло: адрес открытый, а каждый запрос — коннект к staging-БД
 # на сервере. Данные и так меняются раз в минуты, поэтому отдаём из памяти.
+# Отдельный кэш на каждый период графика (ключ — число часов).
 PUBLIC_CACHE_TTL_SECONDS = 60
 _public_cache: dict[str, object] = {"at": 0.0, "data": None}
+_public_rate_cache: dict[int, tuple[float, dict]] = {}
 
 
 def _rows(conn, sql: str) -> list[dict]:
@@ -113,22 +115,18 @@ def sweep_public() -> dict:
         prog = _rows(conn, """
             SELECT count(*) AS total,
                    count(*) FILTER (WHERE status IN
-                       ('collected','ok','not_found','registered_empty','unclassified')) AS done,
+                       ('collected','ok','not_found','registered_empty','unclassified')) AS checked,
                    count(*) FILTER (WHERE fetched_at > now() - interval '24 hours') AS rate_24h,
                    count(*) FILTER (WHERE fetched_at > now() - interval '1 hour') AS rate_1h,
                    (SELECT count(*) FROM runs) AS runs,
                    (SELECT count(*) FROM athletes WHERE source='crawl' AND status='ok') AS profiles
             FROM crawl_queue""")[0]
-        hours = _rows(conn, """
-            SELECT to_char(date_trunc('hour', fetched_at), 'YYYY-MM-DD"T"HH24:00:00"Z"') AS hour,
-                   count(*) AS collected
-            FROM crawl_queue
-            WHERE fetched_at > now() - interval '48 hours'
-            GROUP BY 1 ORDER BY 1""")
 
-    done = int(prog["done"] or 0)
+    # "checked" — сколько ID проверено (включая пустые/несуществующие), это и есть
+    # прогресс по диапазону. "profiles" — сколько из них оказались живыми бегунами.
+    checked = int(prog["checked"] or 0)
     total = int(prog["total"] or 0) or QUEUE_TOTAL_FALLBACK
-    remaining = max(0, total - done)
+    remaining = max(0, total - checked)
     rate_24h = int(prog["rate_24h"] or 0)
 
     forecast: dict = {"days": None, "date": None}
@@ -139,18 +137,48 @@ def sweep_public() -> dict:
 
     data = {
         "progress": {
-            "done": done, "total": total, "remaining": remaining,
-            "pct": round(done / total * 100, 3) if total else 0.0,
+            "checked": checked, "total": total, "remaining": remaining,
+            "pct": round(checked / total * 100, 3) if total else 0.0,
             "runs": int(prog["runs"] or 0),
             "profiles": int(prog["profiles"] or 0),
         },
         "rate_1h": int(prog["rate_1h"] or 0),
         "rate_24h": rate_24h,
         "forecast": forecast,
-        "hours": [{"hour": r["hour"], "collected": int(r["collected"] or 0)} for r in hours],
     }
     _public_cache["at"] = now
     _public_cache["data"] = data
+    return data
+
+
+@router.get("/public/rate-history")
+def sweep_public_rate_history(
+    hours: Annotated[int, Query(ge=0, le=24 * 365)] = 48,
+) -> dict:
+    """Публичная динамика темпа сбора по часам. hours=0 — весь период.
+    Без имён/прокси — просто «сколько ID проверено за час». Кэш по периоду."""
+    now = time.time()
+    hit = _public_rate_cache.get(hours)
+    if hit is not None and now - hit[0] < PUBLIC_CACHE_TTL_SECONDS:
+        return hit[1]
+
+    dsn = _dsn_or_503()
+    import psycopg
+
+    where = (
+        f"fetched_at > now() - interval '{hours} hours'"
+        if hours
+        else "fetched_at IS NOT NULL"
+    )
+    with psycopg.connect(dsn, connect_timeout=5) as conn:
+        rows = _rows(conn, f"""
+            SELECT to_char(date_trunc('hour', fetched_at), 'YYYY-MM-DD"T"HH24:00:00"Z"') AS hour,
+                   count(*) AS collected
+            FROM crawl_queue
+            WHERE {where}
+            GROUP BY 1 ORDER BY 1""")
+    data = {"hours": [{"hour": r["hour"], "collected": int(r["collected"] or 0)} for r in rows]}
+    _public_rate_cache[hours] = (now, data)
     return data
 
 
