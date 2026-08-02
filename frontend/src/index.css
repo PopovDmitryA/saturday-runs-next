@@ -2845,8 +2845,10 @@ tr.run-crosslinked td {
      центрируется с полями до max-width) вылезает за правый край карточки.
      Везде, где переменные не выставлены, — 0px, старое поведение (центр по
      всему viewport). */
-  padding-left: calc(1.25rem + var(--modal-center-offset-left, 0px));
-  padding-right: calc(1.25rem + var(--modal-center-offset-right, 0px));
+  /* Смещение ограничено: при неверно посчитанных офсетах (замер до раскладки,
+     устаревшее значение) модалка-таблица иначе сжимается в узкую полосу. */
+  padding-left: calc(1.25rem + min(var(--modal-center-offset-left, 0px), 22vw));
+  padding-right: calc(1.25rem + min(var(--modal-center-offset-right, 0px), 22vw));
   background: rgba(15, 23, 42, 0.4);
   backdrop-filter: blur(3px);
   animation: modal-fade-in 0.18s ease-out;

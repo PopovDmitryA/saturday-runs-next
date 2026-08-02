@@ -87,7 +87,15 @@ export function PortalCabinetShell({
   useEffect(() => {
     measureModalOffset();
     window.addEventListener("resize", measureModalOffset);
+    // Ширина колонки меняется и без ресайза окна (догрузка данных, свёрнутый
+    // сайдбар, смена вкладки). Без наблюдателя переменные оставались от
+    // первого замера, и модалка-таблица открывалась узкой полосой.
+    const observer = new ResizeObserver(() => measureModalOffset());
+    if (mainRef.current) {
+      observer.observe(mainRef.current);
+    }
     return () => {
+      observer.disconnect();
       window.removeEventListener("resize", measureModalOffset);
       const root = document.documentElement;
       root.style.removeProperty(MODAL_CENTER_OFFSET_LEFT_VAR);
