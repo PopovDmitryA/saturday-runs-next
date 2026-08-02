@@ -20,7 +20,6 @@ from app.services.leaderboard_service import (
     COUNT_BY_METRICS,
     COUNT_BY_VALUES,
     GENDERED_METRICS,
-    GENDERED_PLATFORM_COLUMNS,
     LEADERBOARD_METRICS,
     MAX_MIN_VISITS,
     METRIC_META,
@@ -41,6 +40,7 @@ from app.services.leaderboard_service import (
     _geo_keys,
     _LocationVisits,
     _merge_visit_row,
+    _my_gendered_win_values,
     _my_win_values,
     _normalize_count_by,
     _normalize_gender,
@@ -478,16 +478,15 @@ def test_platform_filter_is_standard_for_every_metric() -> None:
     assert set(PLATFORM_FILTER_VALUES) == {"all", *PLATFORM_COLUMNS}
 
 
-def test_platform_filter_values_follow_metric_and_gender() -> None:
-    # parkrun есть в абсолюте, но не в гендерном зачёте и не в волонтёрском туризме.
-    assert "parkrun" in platform_filter_values("wins", "all")
-    assert "parkrun" not in platform_filter_values("wins", "male")
+def test_platform_filter_values_follow_metric() -> None:
+    # parkrun есть везде, кроме волонтёрского туризма, — в том числе в гендерном
+    # зачёте побед (до 02.08.2026 он оттуда вырезался).
+    assert "parkrun" in platform_filter_values("wins")
     assert "parkrun" not in platform_filter_values("volunteer_locations")
     assert platform_columns_for("volunteer_locations") == VOLUNTEER_LOCATION_PLATFORM_COLUMNS
-    assert platform_columns_for("win_locations", "female") == GENDERED_PLATFORM_COLUMNS
+    assert platform_columns_for("win_locations") == PLATFORM_COLUMNS
     # Систему, которой в этом рейтинге нет, фильтр не принимает — молча «все».
-    assert _normalize_platform_filter("wins", "parkrun", "male") == "all"
-    assert _normalize_platform_filter("wins", "parkrun", "all") == "parkrun"
+    assert _normalize_platform_filter("wins", "parkrun") == "parkrun"
     assert _normalize_platform_filter("volunteer_locations", "parkrun") == "all"
     assert _normalize_platform_filter("volunteer_locations", "s95") == "s95"
 
@@ -628,13 +627,20 @@ def test_add_role_row_skips_only_parkrun_summary_total() -> None:
     assert labels["other"] == "Разное"
 
 
-def _seed_parkrun_wins_for_rating(db_session: Session, *, catalogued: list[bool]) -> UUID:
+def _seed_parkrun_wins_for_rating(
+    db_session: Session, *, catalogued: list[bool], gender: str | None = None
+) -> UUID:
     """Один parkrun-участник с первым местом на каждой из площадок.
 
     catalogued задаёт по площадке: True — русская (есть связка с каталогом
     локаций), False — зарубежная. Половина русских стартов заодно делает
     участника «допущенным» до рейтингов (см. _PARKRUN_ELIGIBLE_CTE), поэтому
     зарубежная строка отсеивается именно правилом площадки, а не допуском.
+
+    gender (если задан) проставляет participants.gender — источник пола для
+    parkrun — и gender_position = 1 на ВСЕХ строках, включая зарубежные: так
+    гендерный зачёт проверяется на явный фильтр площадки, а не на то, что у
+    зарубежных стартов gender_position и так обычно NULL.
     """
     suffix = str(uuid4().int % 1_000_000)
     platform = db_session.query(Platform).filter(Platform.code == "parkrun").one_or_none()
@@ -648,6 +654,7 @@ def _seed_parkrun_wins_for_rating(db_session: Session, *, catalogued: list[bool]
         external_user_id=f"parkrun-rating-user-{suffix}",
         display_name="Rating Tester",
         profile_url=f"https://www.parkrun.com/parkrunner/{suffix}/",
+        gender=gender,
     )
     db_session.add(participant)
     db_session.flush()
@@ -697,6 +704,7 @@ def _seed_parkrun_wins_for_rating(db_session: Session, *, catalogued: list[bool]
                 participant_id=participant.id,
                 external_result_key=f"parkrun-rating-result-{suffix}-{index}",
                 position=1,
+                gender_position=1 if gender else None,
                 finish_time_sec=22 * 60,
                 finish_time_display="00:22:00",
                 status="finished",
@@ -718,3 +726,40 @@ def test_win_rating_skips_parkrun_without_russian_starts(db_session: Session) ->
     participant_id = _seed_parkrun_wins_for_rating(db_session, catalogued=[False, False])
     values, _home, _last = _my_win_values(db_session, [participant_id], date(2026, 7, 27))
     assert values == {}
+
+
+def test_gendered_win_rating_includes_parkrun(db_session: Session) -> None:
+    """С 02.08.2026 parkrun входит в разбивку по полу: пол берётся из
+    participants.gender (в run_results.age_category у parkrun лежит age-grade %)."""
+    participant_id = _seed_parkrun_wins_for_rating(
+        db_session, catalogued=[True, False], gender="male"
+    )
+    values, total, _week, _home, _last = _my_gendered_win_values(
+        db_session, [participant_id], date(2026, 7, 27), "male", as_locations=False
+    )
+    # Зачтена только русская площадка — зарубежная отсечена, хотя gender_position там тоже 1.
+    assert values["parkrun"][0] == 1
+    assert total == 1
+
+
+def test_gendered_win_rating_skips_foreign_parkrun(db_session: Session) -> None:
+    participant_id = _seed_parkrun_wins_for_rating(
+        db_session, catalogued=[False, False], gender="female"
+    )
+    values, total, _week, _home, _last = _my_gendered_win_values(
+        db_session, [participant_id], date(2026, 7, 27), "female", as_locations=False
+    )
+    assert values == {}
+    assert total == 0
+
+
+def test_gendered_win_rating_excludes_other_gender(db_session: Session) -> None:
+    # Мужчина в женском зачёте не появляется, даже с первыми местами среди мужчин.
+    participant_id = _seed_parkrun_wins_for_rating(
+        db_session, catalogued=[True, True], gender="male"
+    )
+    values, total, _week, _home, _last = _my_gendered_win_values(
+        db_session, [participant_id], date(2026, 7, 27), "female", as_locations=False
+    )
+    assert values == {}
+    assert total == 0

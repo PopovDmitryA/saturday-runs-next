@@ -94,8 +94,6 @@ COUNT_BY_METRICS: tuple[LeaderboardMetric, ...] = ("locations", "volunteer_locat
 
 # Порядок колонок-систем (как на портале: активные, затем архив parkrun).
 PLATFORM_COLUMNS: tuple[str, ...] = ("five_verst", "s95", "runpark", "parkrun")
-# В гендерном зачёте parkrun исключён — и из подсчёта, и из колонок таблицы.
-GENDERED_PLATFORM_COLUMNS: tuple[str, ...] = ("five_verst", "s95", "runpark")
 # В волонтёрском туризме parkrun не участвует вовсе: его волонтёрства приходят
 # сводкой ролей на псевдоплощадку parkrun-summary, без локации и даты, а
 # рейтинг — именно про площадки.
@@ -127,19 +125,19 @@ METRIC_PLATFORM_COLUMNS: dict[str, tuple[str, ...]] = {
 }
 
 
-def platform_columns_for(metric: str, gender: str = "all") -> tuple[str, ...]:
-    """Колонки-системы рейтинга: гендерный зачёт режет parkrun у всех метрик,
-    остальные отличия — в METRIC_PLATFORM_COLUMNS."""
-    if metric in GENDERED_METRICS and gender != "all":
-        return GENDERED_PLATFORM_COLUMNS
+def platform_columns_for(metric: str) -> tuple[str, ...]:
+    """Колонки-системы рейтинга: общий набор, если метрика не переопределяет его
+    в METRIC_PLATFORM_COLUMNS. От выбранного зачёта (абсолют / М / Ж) набор не
+    зависит: до 02.08.2026 гендерный зачёт резал parkrun, но теперь пол его
+    участников известен (см. _GENDER_LABEL_SQL)."""
     return METRIC_PLATFORM_COLUMNS.get(metric, PLATFORM_COLUMNS)
 
 
-def platform_filter_values(metric: str, gender: str = "all") -> tuple[str, ...]:
+def platform_filter_values(metric: str) -> tuple[str, ...]:
     """Допустимые значения фильтра «по системе»: «все» + системы этого рейтинга.
-    Система, которой в рейтинге нет (parkrun в гендерном зачёте или в
-    волонтёрском туризме), кнопкой не предлагается и не принимается."""
-    return ("all", *platform_columns_for(metric, gender))
+    Система, которой в рейтинге нет (parkrun в волонтёрском туризме), кнопкой не
+    предлагается и не принимается."""
+    return ("all", *platform_columns_for(metric))
 
 TOP_LIMIT = 1000
 CACHE_TTL_SECONDS = 6 * 3600
@@ -148,7 +146,9 @@ CACHE_TTL_SECONDS = 6 * 3600
 # поэтому ключ версионируем, а не ждём протухания по TTL.
 # v3 — города/регионы у туристических рейтингов и колонка «Последняя неделя»
 # (02.08.2026): по той же причине.
-CACHE_KEY_PREFIX = "leaderboards:v3"
+# v4 — parkrun вошёл в разбивку по полу (02.08.2026): состав и порядок гендерных
+# рейтингов изменились, старые снапшоты пришлось бы ждать до конца TTL.
+CACHE_KEY_PREFIX = "leaderboards:v4"
 
 # Победные рейтинги показывают две дополнительные колонки: глобальный рекорд
 # участника и последнюю победу (у win_locations — последнюю НОВУЮ локацию с
@@ -237,8 +237,7 @@ METRIC_META: dict[str, dict[str, str]] = {
 }
 
 # Описание меняется под выбранный зачёт: в режимах М/Ж первое место — среди
-# своего пола, а не в абсолюте. Оговорка про исключённый parkrun живёт
-# отдельной заметкой во фронте, чтобы не дублировать её здесь. Термин
+# своего пола, а не в абсолюте. Термин
 # «первое место», а не «победа», — сознательный выбор: в parkrun-сообществе
 # нет «победителей», есть «первый финишировавший» (first finisher), замыкающий
 # так же почётен, как лидер.
@@ -729,11 +728,16 @@ GROUP BY rr.participant_id, p.code, e.location_id
 """
 )
 
-# Пол результата по системам — для гендерного зачёта побед (parkrun исключён):
+# Пол результата по системам — для гендерного зачёта побед:
 # 5в — первая буква age_category (М/Ж); runpark — вторая буква категории (M/W);
-# s95 — из profile_extra (в протоколе категории нет). parkrun сюда не попадает:
-# в run_results.age_category у него лежит age-grade %, а пол профиля собран по
-# неполным данным — гендерные запросы жёстко фильтруют p.code <> 'parkrun'.
+# s95 и parkrun — от участника, в их протоколах категории нет (у parkrun в
+# run_results.age_category лежит age-grade %, а не категория).
+#
+# parkrun сюда добавлен 02.08.2026. До этого гендерные запросы жёстко фильтровали
+# p.code <> 'parkrun': на 21.07.2026, когда разрез М/Ж делался, пол parkrun-профилей
+# был собран по неполным данным. Сейчас он известен у 99.5% участников (54 890 из
+# 55 141 на проде) и материализован в participants.gender (миграция 053), так что
+# причина исключения отпала.
 _GENDER_LABEL_SQL = """
 CASE p.code
     WHEN 'five_verst' THEN CASE LEFT(rr.age_category, 1)
@@ -741,15 +745,24 @@ CASE p.code
     WHEN 'runpark' THEN CASE SUBSTRING(rr.age_category FROM 2 FOR 1)
         WHEN 'M' THEN 'male' WHEN 'W' THEN 'female' END
     WHEN 's95' THEN pt.profile_extra -> 'platform_codes' ->> 'gender'
+    WHEN 'parkrun' THEN pt.gender
 END
 """
 
-# Победы среди своего пола (gender_position = 1), без parkrun. Одной выборкой
-# обслуживает оба гендерных рейтинга: COUNT — «Количество побед», набор
-# локаций + first_date — «Локации с победами». gender_label может быть NULL
-# на части строк (напр. runpark без категории) — пол участника определяется
-# в Python по большинству ненулевых меток его строк.
-_GENDERED_WIN_ROWS_SQL = f"""
+# Победы среди своего пола (gender_position = 1). Одной выборкой обслуживает оба
+# гендерных рейтинга: COUNT — «Количество побед», набор локаций + first_date —
+# «Локации с победами». gender_label может быть NULL на части строк (напр.
+# runpark без категории) — пол участника определяется в Python по большинству
+# ненулевых меток его строк.
+#
+# parkrun живёт по тем же двум правилам, что и в абсолютном зачёте (_WIN_ROWS_SQL):
+# только русские площадки и только «свои» участники (parkrun_eligible). Само по
+# себе gender_position у зарубежных стартов и так NULL, но фильтр держим явным —
+# он не даёт зачёту разъехаться с абсолютным, если бэкфилл когда-нибудь заполнит
+# эти строки.
+_GENDERED_WIN_ROWS_SQL = (
+    _PARKRUN_ELIGIBLE_CTE
+    + f"""
 SELECT
     rr.participant_id AS participant_id,
     p.code AS platform_code,
@@ -767,17 +780,23 @@ LEFT JOIN participants pt ON pt.id = rr.participant_id
 WHERE e.is_test_event = false
   AND rr.participant_id IS NOT NULL
   AND rr.gender_position = 1
-  AND p.code <> 'parkrun'
   AND ec.secondary_event_id IS NULL
+  AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
+  {_RUSSIAN_PARKRUN_ONLY}
   /*PIDS_FILTER*/
 GROUP BY rr.participant_id, p.code, e.location_id, gender_label
 """
+)
 
 # Пол участника по ВСЕЙ его истории финишей (любая позиция, не только 1-е
 # место) — нужен, чтобы понять «этот зачёт вообще про него», когда первых
 # мест в выбранном поле у него ноль (см. _account_gender): участник мужского
 # пола без единой победы среди мужчин не должен видеть в женском зачёте
 # «вы появитесь после 1 первого места» — это не про него в принципе.
+#
+# Здесь, в отличие от выборки побед, ни «русскости» площадки, ни parkrun_eligible
+# не требуем: вопрос «какого пола этот человек», а не «идёт ли этот результат в
+# зачёт», и лишние строки его пол не искажают.
 _PARTICIPANT_GENDER_VOTES_SQL = f"""
 SELECT
     rr.participant_id AS participant_id,
@@ -789,7 +808,6 @@ JOIN platforms p ON p.id = e.platform_id
 LEFT JOIN participants pt ON pt.id = rr.participant_id
 WHERE e.is_test_event = false
   AND rr.participant_id = ANY(:pids)
-  AND p.code <> 'parkrun'
 GROUP BY rr.participant_id, gender_label
 """
 
@@ -1703,7 +1721,7 @@ def _gendered_win_rows(
     db: Session, week_start: date, *, pids: list[UUID] | None = None
 ) -> list[tuple[UUID, str, UUID, str | None, int, int, date, date]]:
     sql = _GENDERED_WIN_ROWS_SQL
-    params: dict[str, object] = {"week_start": week_start}
+    params: dict[str, object] = _row_params(db, week_start)
     if pids is not None:
         sql = sql.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
         params["pids"] = pids
@@ -1718,7 +1736,7 @@ def _gendered_win_rows(
 def _collect_gendered_win_entities(
     source: _MetricSource, gender: str, *, as_locations: bool, platform: str = "all"
 ) -> dict[str, _Entity]:
-    """Гендерный зачёт побед (gender_position=1, без parkrun) — только участники
+    """Гендерный зачёт побед (gender_position=1) — только участники
     запрошенного пола. as_locations=True → «локации с победами» (уникальные
     площадки), иначе «количество побед» (счёт + топ-локация побед)."""
     links = source.links()
@@ -2144,16 +2162,11 @@ def count_by_values(metric: str) -> tuple[str, ...]:
     return COUNT_BY_VALUES if metric in COUNT_BY_METRICS else ()
 
 
-def _normalize_platform_filter(
-    metric: LeaderboardMetric, platform: str, gender: str = "all"
-) -> str:
+def _normalize_platform_filter(metric: LeaderboardMetric, platform: str) -> str:
     """Фильтр «по одной системе» есть у всех рейтингов, но набор систем зависит
-    от метрики и зачёта (см. platform_filter_values). Систему, которой в этом
-    рейтинге нет, и неизвестный код молча трактуем как «все системы».
-
-    gender ожидается уже нормализованным (_normalize_gender).
-    """
-    if platform in platform_filter_values(metric, gender):
+    от метрики (см. platform_filter_values). Систему, которой в этом рейтинге
+    нет, и неизвестный код молча трактуем как «все системы»."""
+    if platform in platform_filter_values(metric):
         return platform
     return "all"
 
@@ -2464,7 +2477,7 @@ def get_leaderboard_snapshot(
 ) -> dict[str, object]:
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
-    platform_resolved = _normalize_platform_filter(metric, platform, resolved)
+    platform_resolved = _normalize_platform_filter(metric, platform)
     unit = _normalize_count_by(metric, count_by)
     role_filter, roles_key = normalize_role_filter(metric, roles)
     if use_cache:
@@ -2504,7 +2517,7 @@ def refresh_leaderboard_cache(
     """
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
-    platform_resolved = _normalize_platform_filter(metric, platform, resolved)
+    platform_resolved = _normalize_platform_filter(metric, platform)
     unit = _normalize_count_by(metric, count_by)
     payload = _build_snapshot(
         db, metric, resolved, visits, platform_resolved, unit, source
@@ -2528,7 +2541,7 @@ def get_leaderboard(
     """Публичная часть снапшота (без служебных массивов рангов)."""
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
-    platform_resolved = _normalize_platform_filter(metric, platform, resolved)
+    platform_resolved = _normalize_platform_filter(metric, platform)
     unit = _normalize_count_by(metric, count_by)
     snapshot = get_leaderboard_snapshot(
         db,
@@ -2546,7 +2559,7 @@ def get_leaderboard(
     # система + остальные нули») — остаётся только «Всего», уже посчитанное
     # именно по этой системе.
     columns: tuple[str, ...] = (
-        () if platform_resolved != "all" else platform_columns_for(metric, resolved)
+        () if platform_resolved != "all" else platform_columns_for(metric)
     )
     return {
         "metric": metric,
@@ -2558,9 +2571,9 @@ def get_leaderboard(
         "description": metric_description(metric, resolved, visits, platform_resolved, unit),
         "unit": metric_unit(metric, unit),
         "platform_columns": list(columns),
-        # Кнопки фильтра «по системе» — их набор зависит от рейтинга и зачёта,
-        # поэтому фронт берёт его отсюда, а не повторяет правила у себя.
-        "platform_options": list(platform_filter_values(metric, resolved)),
+        # Кнопки фильтра «по системе» — их набор зависит от рейтинга, поэтому
+        # фронт берёт его отсюда, а не повторяет правила у себя.
+        "platform_options": list(platform_filter_values(metric)),
         # Кнопки фильтра «единица зачёта» (пусто — фильтра у рейтинга нет) и
         # флаг колонки «Последняя неделя»: те же правила, что и у систем, живут
         # на бэкенде, фронт их не повторяет.
@@ -2922,7 +2935,7 @@ def get_my_leaderboard_row(
     """Строка залогиненного участника: значения, место, дельта места, порог."""
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
-    platform_resolved = _normalize_platform_filter(metric, platform, resolved)
+    platform_resolved = _normalize_platform_filter(metric, platform)
     unit = _normalize_count_by(metric, count_by)
     snapshot = get_leaderboard_snapshot(
         db,

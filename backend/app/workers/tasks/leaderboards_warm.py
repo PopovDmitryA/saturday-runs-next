@@ -47,7 +47,7 @@ def warm_leaderboards_cache() -> dict[str, object]:
         units = count_by_values(metric) or ("locations",)
         for gender in genders:
             for visits in visits_options:
-                for platform in platform_filter_values(metric, gender):
+                for platform in platform_filter_values(metric):
                     for unit in units:
                         variants.append((metric, gender, visits, platform, unit))
 
