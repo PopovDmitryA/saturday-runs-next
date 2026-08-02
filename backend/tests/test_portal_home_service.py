@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User
 from app.services.portal_home_service import (
     PORTAL_HOME_CACHE_KEY,
-    _EventRow,
     _course_minima_before,
+    _EventRow,
     _read_portal_home_cache,
     _runner_handles,
     _week_attendance_records,
