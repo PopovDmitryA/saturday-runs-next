@@ -2,12 +2,19 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
+  COUNT_BY_LABELS,
   GENDERED_METRICS,
   getLeaderboard,
   getMyLeaderboardRow,
+  getVolunteerRoleCatalog,
+  presetRoleKeys,
+  ROLE_FILTER_METRICS,
+  type VolunteerRoleItem,
+  type VolunteerRolePreset,
   MIN_VISITS_METRICS,
   MIN_VISITS_OPTIONS,
   PLATFORM_LABELS,
+  type CountBy,
   type LeaderboardGender,
   type LeaderboardMetric,
   type LeaderboardResponse,
@@ -15,10 +22,12 @@ import {
   type MyLeaderboardRow,
   type PlatformFilter,
   type VolunteerRoleDetail,
+  type WeekLocation,
 } from "./leaderboardsApi";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
+import { VolunteerRolesModal } from "./VolunteerRolesModal";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
@@ -70,14 +79,14 @@ const TOP_LOCATION_HINT =
 
 // Фильтр туризма: «локация засчитывается от N визитов». Кнопка 1+ — обычный
 // рейтинг (любая локация, где человек был хоть раз), дальше планка растёт.
-// У волонтёрского туризма визит — это смена, а не забег.
+// У волонтёрского туризма визит — это волонтёрство, а не забег.
 const MIN_VISITS_HINT =
   "Сколько раз надо пробежать на локации, чтобы она дала балл. " +
   "При «3+» разовые заезды в зачёт не идут.";
 
 const VOLUNTEER_MIN_VISITS_HINT =
   "Сколько раз надо отволонтёрить на локации, чтобы она дала балл. " +
-  "При «3+» разовые смены в зачёт не идут. Несколько ролей в одну субботу — одна смена.";
+  "При «3+» разовые визиты в зачёт не идут. Несколько ролей в одну субботу — одно волонтёрство.";
 
 // Фильтр «смотреть по одной системе» — общий для всех рейтингов. По умолчанию
 // объединённый зачёт (у туризма одна физическая площадка = одна локация, в
@@ -90,9 +99,57 @@ const PLATFORM_TAB_LABELS: Record<string, string> = {
   ...PLATFORM_LABELS,
 };
 
+const ROLE_PRESET_SHORT: Record<string, string> = {
+  all: "все роли",
+  on_site: "на площадке",
+  on_site_no_run: "вместо бега",
+  remote: "не приезжая",
+  custom: "свой набор",
+};
+
+const ROLE_FILTER_HINT =
+  "Какие волонтёрские роли идут в зачёт: только те, ради которых надо приехать " +
+  "на старт, только «вместо бега» или свой набор. По умолчанию — все роли.";
+
 const PLATFORM_FILTER_HINT =
   "Переключает объединённый зачёт на одну систему: место и «Всего» " +
   "пересчитываются заново, столбцы остальных систем скрываются.";
+
+// Гео-зачёт туристических рейтингов: колонки «Городов»/«Регионов» видны всегда,
+// а фильтр «Считаем» переключает, что идёт в «Всего» и по чему строится место —
+// 30 площадок в одной Москве и 10 площадок в 10 регионах это разные достижения.
+const COUNT_BY_HINT =
+  "Что считает «Всего» и по чему строится место. Города и регионы видны " +
+  "столбцами при любом выборе. Зарубежные старты идут по стране: одна страна — " +
+  "один регион.";
+
+const CITIES_HINT =
+  "Сколько РАЗНЫХ городов набрано засчитанными площадками: несколько парков " +
+  "одного города дают один город.";
+
+const REGIONS_HINT =
+  "Сколько РАЗНЫХ регионов набрано засчитанными площадками. Зарубежные старты " +
+  "считаются по стране: одна страна — один регион.";
+
+// Колонка «Последняя неделя»: площадка и дата — тем же видом, что «Последняя
+// победа» в победных рейтингах. Показывает, где человек был за окно дельты,
+// независимо от того, дало это +1 или нет: в туризме повторный заезд на давно
+// освоенную площадку в «Всего» не идёт, но в колонке виден (решение Дмитрия
+// 02.08.2026). Не был нигде — прочерк.
+const WEEK_LOCATIONS_HINT: Record<string, string> = {
+  runs: "Где участник бежал за последнюю неделю.",
+  volunteering: "Где участник волонтёрил за последнюю неделю.",
+  locations:
+    "Где участник бежал за последнюю неделю. Знакомая площадка «Всего» не " +
+    "увеличивает — новых локаций она не добавляет, — но в колонке видна.",
+  volunteer_locations:
+    "Где участник волонтёрил за последнюю неделю. Знакомая площадка «Всего» не " +
+    "увеличивает — новых локаций она не добавляет, — но в колонке видна.",
+};
+
+// Сколько площадок недели показываем в ячейке — остальное сворачиваем в «+N»,
+// иначе у волонтёра-многостаночника колонка растягивает всю таблицу.
+const WEEK_LOCATIONS_VISIBLE = 2;
 
 const BEST_TIME_HINT =
   "Глобальный рекорд участника: лучшее время по всем системам и локациям — " +
@@ -279,6 +336,52 @@ function LastWinLocation({
   );
 }
 
+function WeekLocations({ items }: { items?: WeekLocation[] }) {
+  if (!items || items.length === 0) {
+    return <span className="lb-zero">—</span>;
+  }
+  const shown = items.slice(0, WEEK_LOCATIONS_VISIBLE);
+  const hidden = items.length - shown.length;
+  return (
+    <span className="lb-week-locations">
+      {shown.map((item) => (
+        <span key={`${item.name}-${item.slug ?? ""}`} className="lb-week-location">
+          {/* Слаг может не резолвиться у площадок без внятного external_key —
+              тогда просто текст, как и в «Последней победе». */}
+          {item.slug ? (
+            <a className="lb-last-win-link" href={`/locations/${item.slug}`}>
+              {item.name}
+            </a>
+          ) : (
+            <span>{item.name}</span>
+          )}
+          {item.date && (
+            <span className="lb-last-win-date">{formatDate(item.date)}</span>
+          )}
+        </span>
+      ))}
+      {hidden > 0 && (
+        <span
+          className="lb-week-more"
+          title={items
+            .slice(WEEK_LOCATIONS_VISIBLE)
+            .map((item) => item.name)
+            .join(", ")}
+        >
+          +{hidden}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function GeoCount({ value }: { value?: number | null }) {
+  if (value == null) {
+    return <span className="lb-zero">—</span>;
+  }
+  return <span className="lb-cell">{value}</span>;
+}
+
 function formatDate(value: string | null): string {
   if (!value) {
     return "—";
@@ -351,6 +454,62 @@ function sortValue(row: LeaderboardRow, key: SortKey): number {
   return row.total;
 }
 
+// Выбор ролей живёт в ссылке (ей можно поделиться) и в localStorage (чтобы не
+// выбирать заново при каждом заходе). Ключ хранения — на рейтинг: в туризме и
+// в счёте волонтёрств люди спорят о разном.
+function roleStorageKey(metric: LeaderboardMetric): string {
+  return `lbRoles:${metric}`;
+}
+
+function readStoredRolePreset(metric: LeaderboardMetric): VolunteerRolePreset {
+  const fromUrl = new URLSearchParams(window.location.search).get("roles");
+  if (
+    fromUrl === "on_site" ||
+    fromUrl === "on_site_no_run" ||
+    fromUrl === "remote" ||
+    fromUrl === "all"
+  ) {
+    return fromUrl;
+  }
+  if (fromUrl) {
+    return "custom";
+  }
+  try {
+    const raw = localStorage.getItem(roleStorageKey(metric));
+    const parsed = raw ? (JSON.parse(raw) as { preset?: string }) : null;
+    const preset = parsed?.preset;
+    if (
+      preset === "on_site" ||
+      preset === "on_site_no_run" ||
+      preset === "remote" ||
+      preset === "custom"
+    ) {
+      return preset;
+    }
+  } catch {
+    // повреждённое или недоступное хранилище — просто «все роли»
+  }
+  return "all";
+}
+
+function readStoredRoleKeys(metric: LeaderboardMetric): string[] {
+  const fromUrl = new URLSearchParams(window.location.search).get("roles");
+  const presetNames = ["all", "on_site", "on_site_no_run", "remote"];
+  if (fromUrl && !presetNames.includes(fromUrl)) {
+    return fromUrl.split(",").filter(Boolean);
+  }
+  if (fromUrl) {
+    return [];
+  }
+  try {
+    const raw = localStorage.getItem(roleStorageKey(metric));
+    const parsed = raw ? (JSON.parse(raw) as { keys?: string[] }) : null;
+    return Array.isArray(parsed?.keys) ? parsed.keys : [];
+  } catch {
+    return [];
+  }
+}
+
 export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [me, setMe] = useState<MyLeaderboardRow | null>(null);
@@ -361,6 +520,56 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [gender, setGender] = useState<LeaderboardGender>("all");
   const [minVisits, setMinVisits] = useState(1);
   const [platform, setPlatform] = useState<PlatformFilter>("all");
+  const [countBy, setCountBy] = useState<CountBy>("locations");
+  // Фильтр ролей: пресет + конкретные ключи. Стартовое значение — из ссылки
+  // (можно кинуть в чат и спорить предметно), иначе из прошлого выбора
+  // в этом браузере.
+  const [rolePreset, setRolePreset] = useState<VolunteerRolePreset>(() =>
+    readStoredRolePreset(metric),
+  );
+  const [roleKeys, setRoleKeys] = useState<string[]>(() => readStoredRoleKeys(metric));
+  const [roleCatalog, setRoleCatalog] = useState<VolunteerRoleItem[]>([]);
+  const [rolesModalOpen, setRolesModalOpen] = useState(false);
+  const hasRoleFilter = ROLE_FILTER_METRICS.includes(metric);
+  // В запрос уходят только реально выбранные роли; «все роли» — пустой список.
+  const effectiveRoles = hasRoleFilter && rolePreset !== "all" ? roleKeys : null;
+  const roleFilterKey = effectiveRoles ? [...effectiveRoles].sort().join(",") : "";
+
+  const applyRoleFilter = useCallback(
+    (preset: VolunteerRolePreset, keys: string[]) => {
+      setRolePreset(preset);
+      setRoleKeys(keys);
+      setRolesModalOpen(false);
+      try {
+        localStorage.setItem(roleStorageKey(metric), JSON.stringify({ preset, keys }));
+      } catch {
+        // приватный режим — выбор проживёт до перезагрузки
+      }
+      // Ссылку правим без перезагрузки: у пресета читаемое имя, у своего
+      // набора — перечень ролей, чтобы её можно было отправить в чат.
+      const url = new URL(window.location.href);
+      if (preset === "all") {
+        url.searchParams.delete("roles");
+      } else {
+        url.searchParams.set("roles", preset === "custom" ? keys.join(",") : preset);
+      }
+      window.history.replaceState(null, "", url.toString());
+    },
+    [metric],
+  );
+
+  // Пресет из ссылки приходит именем — ключи ролей подставляем, когда доехал
+  // справочник (своя копия разметки на фронте была бы вторым источником правды).
+  useEffect(() => {
+    if (!hasRoleFilter || roleCatalog.length === 0) {
+      return;
+    }
+    const isPresetWithKeys =
+      rolePreset === "on_site" || rolePreset === "on_site_no_run" || rolePreset === "remote";
+    if (isPresetWithKeys && roleKeys.length === 0) {
+      setRoleKeys(presetRoleKeys(rolePreset, roleCatalog) ?? []);
+    }
+  }, [hasRoleFilter, roleCatalog, rolePreset, roleKeys.length]);
   const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
   // Развёрнутые строки мультиволонтёра (детализация «роль × система»).
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -391,16 +600,50 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const hasWinExtras = metric === "wins" || metric === "win_locations";
   const lastWinMeta = LAST_WIN_META[metric];
   const isRoles = metric === "volunteer_roles";
+  // Гео-зачёт есть ровно там же, где порог визитов, — у туристических рейтингов.
+  const effectiveCountBy = hasMinVisits ? countBy : "locations";
+
+  useEffect(() => {
+    if (!hasRoleFilter || roleCatalog.length > 0) {
+      return;
+    }
+    let cancelled = false;
+    getVolunteerRoleCatalog()
+      .then((catalog) => {
+        if (!cancelled) {
+          setRoleCatalog(catalog.roles);
+        }
+      })
+      .catch(() => {
+        // без справочника просто не покажем модалку — рейтинг остаётся рабочим
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasRoleFilter, roleCatalog.length]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [board, myRow] = await Promise.all([
-        getLeaderboard(metric, 1000, effectiveGender, effectiveMinVisits, platform),
-        getMyLeaderboardRow(metric, effectiveGender, effectiveMinVisits, platform).catch(
-          () => null,
+        getLeaderboard(
+          metric,
+          1000,
+          effectiveGender,
+          effectiveMinVisits,
+          platform,
+          effectiveCountBy,
+          effectiveRoles,
         ),
+        getMyLeaderboardRow(
+          metric,
+          effectiveGender,
+          effectiveMinVisits,
+          platform,
+          effectiveCountBy,
+          effectiveRoles,
+        ).catch(() => null),
       ]);
       setData(board);
       setMe(myRow);
@@ -417,18 +660,29 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [metric, effectiveGender, effectiveMinVisits, platform]);
+    // effectiveRoles — массив, поэтому в зависимости идёт его строковый ключ:
+    // иначе новая ссылка на тот же набор гоняла бы запрос на каждый рендер.
+  }, [
+    metric,
+    effectiveGender,
+    effectiveMinVisits,
+    platform,
+    effectiveCountBy,
+    roleFilterKey,
+  ]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   // Метрика сменилась (напр. переход между рейтингами) — сбрасываем фильтры:
-  // пол в «Абсолют», порог визитов в «от 1», систему в «Объединённо».
+  // пол в «Абсолют», порог визитов в «от 1», систему в «Объединённо»,
+  // единицу зачёта в «Локации».
   useEffect(() => {
     setGender("all");
     setMinVisits(1);
     setPlatform("all");
+    setCountBy("locations");
   }, [metric]);
 
   useEffect(() => {
@@ -436,7 +690,15 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     // Развёрнутые детализации закрываем: под новым фильтром это уже другой
     // набор строк, держать «раскрытым» уехавшее место незачем.
     setExpandedRows(new Set());
-  }, [query, sortKey, effectiveGender, effectiveMinVisits, platform]);
+  }, [
+    query,
+    sortKey,
+    effectiveGender,
+    effectiveMinVisits,
+    platform,
+    effectiveCountBy,
+    roleFilterKey,
+  ]);
 
   const toggleRow = useCallback((key: string) => {
     setExpandedRows((current) => {
@@ -451,6 +713,24 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const columns = data?.platform_columns ?? [];
   const platformOptions = data?.platform_options ?? [];
   const hasPlatformFilter = platformOptions.length > 1;
+  // Набор кнопок «единицы зачёта» и наличие колонки «Последняя неделя» решает
+  // бэкенд — фронт не повторяет правила, какие рейтинги их получают.
+  const countByOptions = data?.count_by_options ?? [];
+  const hasCountByFilter = countByOptions.length > 1;
+  const hasGeoColumns = hasCountByFilter;
+  const hasWeekLocations = data?.has_week_locations ?? false;
+  // Таблицы с колонками-названиями (локации, роли, «последняя неделя») ведём в
+  // жёсткой раскладке: в table-layout:auto колонка не может стать уже своего
+  // самого длинного слова, и «Стрежевой Городской парк» раздувает всю таблицу.
+  // Минимальная ширина у каждого набора колонок своя — отсюда три модификатора.
+  const wideTableKind = hasWinExtras
+    ? "lb-table-wins"
+    : hasGeoColumns
+      ? "lb-table-geo"
+      : hasWeekLocations
+        ? "lb-table-week"
+        : "";
+  const wideTable = wideTableKind !== "";
   const minVisitsHint =
     metric === "volunteer_locations" ? VOLUNTEER_MIN_VISITS_HINT : MIN_VISITS_HINT;
 
@@ -485,6 +765,10 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       top_role: me.top_role,
       top_role_count: me.top_role_count,
       role_details: me.role_details,
+      locations_total: me.locations_total,
+      cities_total: me.cities_total,
+      regions_total: me.regions_total,
+      week_locations: me.week_locations,
     };
     return [...data.rows, myRow];
   }, [data, me]);
@@ -526,7 +810,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       3 +
       (hasWinExtras ? 2 : 0) +
       (metric === "wins" ? 1 : 0) +
-      (isRoles ? 1 : 0)
+      (isRoles ? 1 : 0) +
+      (hasGeoColumns ? 2 : 0) +
+      (hasWeekLocations ? 1 : 0)
     : 3;
   const visibleRows = rows.slice(0, visibleCount);
   const nextChunkEnd = Math.min(visibleCount + PAGE_STEP, rows.length);
@@ -617,8 +903,32 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                     )}
                   </div>
                 )}
-                {(hasMinVisits || hasPlatformFilter) && (
+                {(hasMinVisits || hasPlatformFilter || hasCountByFilter) && (
                   <div className="lb-filters-row">
+                    {hasCountByFilter && (
+                      <div className="lb-visits">
+                        <span className="lb-visits-label">
+                          Считаем <InfoHint text={COUNT_BY_HINT} />
+                        </span>
+                        <div
+                          className="lb-gender-tabs"
+                          role="group"
+                          aria-label="Единица зачёта"
+                        >
+                          {countByOptions.map((value) => (
+                            <button
+                              key={value}
+                              type="button"
+                              aria-pressed={countBy === value}
+                              className={`lb-gender-tab${countBy === value ? " lb-gender-tab-active" : ""}`}
+                              onClick={() => setCountBy(value)}
+                            >
+                              {COUNT_BY_LABELS[value] ?? value}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {hasMinVisits && (
                       <div className="lb-visits">
                         <span className="lb-visits-label">
@@ -667,6 +977,25 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         </div>
                       </div>
                     )}
+                    {hasRoleFilter && roleCatalog.length > 0 && (
+                      <div className="lb-visits lb-roles-filter">
+                        <span className="lb-visits-label">
+                          Роли <InfoHint text={ROLE_FILTER_HINT} />
+                        </span>
+                        <button
+                          type="button"
+                          className={`lb-roles-gear${rolePreset !== "all" ? " lb-roles-gear-active" : ""}`}
+                          aria-label="Настроить, какие роли считать"
+                          title="Какие роли считать"
+                          onClick={() => setRolesModalOpen(true)}
+                        >
+                          <span aria-hidden="true">⚙</span>
+                          <span className="lb-roles-gear-text">
+                            {ROLE_PRESET_SHORT[rolePreset]}
+                          </span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -707,6 +1036,22 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           <DeltaSlot delta={me.total_delta} />
                         </span>
                       </span>
+                      {hasGeoColumns && (
+                        <>
+                          <span className="lb-me-value">
+                            <span className="lb-me-platform">
+                              Городов <InfoHint text={CITIES_HINT} />
+                            </span>
+                            <GeoCount value={me.cities_total} />
+                          </span>
+                          <span className="lb-me-value">
+                            <span className="lb-me-platform">
+                              Регионов <InfoHint text={REGIONS_HINT} />
+                            </span>
+                            <GeoCount value={me.regions_total} />
+                          </span>
+                        </>
+                      )}
                       {isRoles && me.top_role && (
                         <span className="lb-me-value">
                           <span className="lb-me-platform">
@@ -739,20 +1084,41 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           <LastWinLocation row={me} />
                         </span>
                       )}
+                      {hasWeekLocations && (me.week_locations?.length ?? 0) > 0 && (
+                        <span className="lb-me-value lb-me-value-wide">
+                          <span className="lb-me-platform">
+                            Последняя неделя{" "}
+                            <InfoHint text={WEEK_LOCATIONS_HINT[metric] ?? ""} />
+                          </span>
+                          <WeekLocations items={me.week_locations} />
+                        </span>
+                      )}
                     </span>
-                    {myIndex >= 0 && (
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={showMyRow}>
-                        Показать в таблице
-                      </button>
-                    )}
-                    {percentileText != null && (
-                      <p className="lb-me-percentile muted">{percentileText}</p>
+                    {/* Кнопка и перцентиль — одна связка: приписка встаёт справа
+                        от кнопки и переносится вместе с ней, а не занимает
+                        отдельную строку высотой в целый ряд. */}
+                    {(myIndex >= 0 || percentileText != null) && (
+                      <div className="lb-me-actions">
+                        {myIndex >= 0 && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={showMyRow}
+                          >
+                            Показать в таблице
+                          </button>
+                        )}
+                        {percentileText != null && (
+                          <p className="lb-me-percentile muted">{percentileText}</p>
+                        )}
+                      </div>
                     )}
                   </div>
                 ) : (
                   <p className="lb-me-threshold">
                     Вы появитесь в рейтинге после достижения {me.threshold}{" "}
-                    {unitLabel(metric, me.threshold)} — сейчас у вас {me.total}.
+                    {unitLabel(metric, me.threshold, effectiveCountBy)} — сейчас у вас{" "}
+                    {me.total}.
                   </p>
                 )}
               </section>
@@ -761,11 +1127,11 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
             <TableViewToggle value={tableView} onChange={setTableView} />
             <TableWrap
               innerRef={attachFloatingHead}
-              className={`lb-table-wrap${hasWinExtras ? " lb-table-wrap-wide" : ""}`}
+              className={`lb-table-wrap${wideTable ? " lb-table-wrap-wide" : ""}`}
             >
               <table
                 ref={tableRef}
-                className={`data-table lb-table${hasWinExtras ? " lb-table-wins" : ""}${
+                className={`data-table lb-table${wideTable ? ` lb-table-fixed ${wideTableKind}` : ""}${
                   showFull ? " lb-table-full" : ""
                 }`}
               >
@@ -791,6 +1157,16 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                       "lb-col-num lb-col-total",
                       isRoles ? ROLES_TOTAL_HINT : undefined,
                     )}
+                    {showFull && hasGeoColumns && (
+                      <>
+                        <th className="lb-col-num lb-col-geo">
+                          Городов <InfoHint text={CITIES_HINT} />
+                        </th>
+                        <th className="lb-col-num lb-col-geo">
+                          Регионов <InfoHint text={REGIONS_HINT} />
+                        </th>
+                      </>
+                    )}
                     {showFull && isRoles && (
                       <th className="lb-col-home">
                         Любимая роль <InfoHint text={TOP_ROLE_HINT} />
@@ -804,6 +1180,12 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                     {showFull && hasWinExtras && lastWinMeta && (
                       <th className="lb-col-last-win">
                         {lastWinMeta.label} <InfoHint text={lastWinMeta.hint} />
+                      </th>
+                    )}
+                    {showFull && hasWeekLocations && (
+                      <th className="lb-col-last-win">
+                        Последняя неделя{" "}
+                        <InfoHint text={WEEK_LOCATIONS_HINT[metric] ?? ""} />
                       </th>
                     )}
                   </tr>
@@ -871,6 +1253,16 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             <DeltaSlot delta={row.total_delta} />
                           </span>
                         </td>
+                        {showFull && hasGeoColumns && (
+                          <>
+                            <td className="lb-col-num lb-col-geo">
+                              <GeoCount value={row.cities_total} />
+                            </td>
+                            <td className="lb-col-num lb-col-geo">
+                              <GeoCount value={row.regions_total} />
+                            </td>
+                          </>
+                        )}
                         {showFull && isRoles && (
                           <td className="lb-col-home">
                             <TopRole row={row} />
@@ -884,6 +1276,11 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         {showFull && hasWinExtras && lastWinMeta && (
                           <td className="lb-col-last-win">
                             <LastWinLocation row={row} />
+                          </td>
+                        )}
+                        {showFull && hasWeekLocations && (
+                          <td className="lb-col-last-win">
+                            <WeekLocations items={row.week_locations} />
                           </td>
                         )}
                       </tr>
@@ -942,6 +1339,17 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               </div>
             )}
           </div>
+        )}
+        {rolesModalOpen && roleCatalog.length > 0 && (
+          <VolunteerRolesModal
+            roles={roleCatalog}
+            preset={rolePreset}
+            selected={
+              rolePreset === "all" ? roleCatalog.map((role) => role.key) : roleKeys
+            }
+            onApply={applyRoleFilter}
+            onClose={() => setRolesModalOpen(false)}
+          />
         )}
         {showScrollTop && (
           <button

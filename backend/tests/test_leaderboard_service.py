@@ -13,6 +13,12 @@ from app.models import (
     RunResult,
 )
 from app.services.leaderboard_service import (
+    _WEEK_LOCATIONS_PIDS_ALIAS,
+    _WEEK_LOCATIONS_SQL_BY_METRIC,
+    _WEEK_RUN_LOCATIONS_SQL,
+    _WEEK_VOLUNTEER_LOCATIONS_SQL,
+    COUNT_BY_METRICS,
+    COUNT_BY_VALUES,
     GENDERED_METRICS,
     GENDERED_PLATFORM_COLUMNS,
     LEADERBOARD_METRICS,
@@ -24,15 +30,19 @@ from app.services.leaderboard_service import (
     PLATFORM_FILTER_METRICS,
     PLATFORM_FILTER_VALUES,
     VOLUNTEER_LOCATION_PLATFORM_COLUMNS,
+    WEEK_LOCATIONS_LIMIT,
+    WEEK_LOCATIONS_METRICS,
     WIN_EXTRAS_METRICS,
     _add_role_row,
     _apply_last_win,
     _cache_key,
     _dominant_gender,
     _Entity,
+    _geo_keys,
     _LocationVisits,
     _merge_visit_row,
     _my_win_values,
+    _normalize_count_by,
     _normalize_gender,
     _normalize_min_visits,
     _normalize_platform_filter,
@@ -42,8 +52,14 @@ from app.services.leaderboard_service import (
     _ranked,
     _RoleUsage,
     _summarize_roles,
+    _unit_counts,
+    _unit_key_getters,
+    _week_location_entries,
     _week_start,
+    count_by_values,
     metric_description,
+    metric_title,
+    metric_unit,
     platform_columns_for,
     platform_filter_values,
 )
@@ -249,6 +265,194 @@ def test_merge_visit_row_tracks_per_platform_visits() -> None:
     # А если один визит на 5В был дважды (два разных события) — сама 5В уже набрала порог.
     _merge_visit_row(identities, "loc:1", "five_verst", date(2026, 4, 4), 1, 0)
     assert merged.platform_counts("five_verst", 2)
+
+
+def test_geo_keys_russia_uses_region_and_city() -> None:
+    geo = _geo_keys("Россия", "Московская область", "Балашиха")
+    assert geo.region == "московская область"
+    # Город ключуется парой «регион + город»: одноимённые города разных регионов
+    # (Троицк в Москве и в Челябинской области) — это два разных города.
+    assert geo.city == "московская область|балашиха"
+    other = _geo_keys("Россия", "Челябинская область", "Троицк")
+    moscow = _geo_keys("Россия", "Москва", "Троицк")
+    assert other.city != moscow.city
+
+
+def test_geo_keys_foreign_country_is_one_region() -> None:
+    # «1 страна = 1 регион» (решение Дмитрия 02.08.2026): все британские
+    # parkrun-площадки дают ровно один регион, сколько бы их ни было.
+    london = _geo_keys("Великобритания", None, None)
+    bushy = _geo_keys("Великобритания", None, None)
+    assert london.region == bushy.region == "country:великобритания"
+    # Города за границей почти всегда неизвестны — тогда страна идёт и за город,
+    # чтобы столбец не обнулялся на зарубежных поездках.
+    assert london.city == "country:великобритания"
+    # А если город всё-таки известен — считаем именно его.
+    tbilisi = _geo_keys("Грузия", None, "Тбилиси")
+    assert tbilisi.city == "грузия|тбилиси"
+    assert tbilisi.region == "country:грузия"
+
+
+def test_geo_keys_fold_country_spellings() -> None:
+    # На проде британские parkrun-площадки записаны двумя способами
+    # («Великобритания» и «United Kingdom») — это одна страна и один регион,
+    # иначе турист по паркранам Британии получал бы два региона вместо одного.
+    assert _geo_keys("United Kingdom", None, None).region == _geo_keys(
+        "Великобритания", None, None
+    ).region
+
+
+def test_geo_keys_without_data_drop_out_of_geo_ratings() -> None:
+    # Ни страны, ни региона, ни города — площадка не идёт ни в зачёт городов,
+    # ни в зачёт регионов (бакет «неизвестно» был бы враньём).
+    empty = _geo_keys(None, None, None)
+    assert empty.city is None and empty.region is None
+    # Русская площадка без региона всё же даёт город — по имени города.
+    assert _geo_keys("Россия", None, "Курск").city == "|курск"
+
+
+def _visits(*, visits: int, week_visits: int, code: str = "five_verst") -> _LocationVisits:
+    row = _LocationVisits(
+        first_date=date(2026, 1, 3), codes={code}, visits=visits, week_visits=week_visits
+    )
+    row.by_platform[code] = [visits, week_visits]
+    return row
+
+
+def test_unit_counts_locations_counts_every_venue() -> None:
+    # Единица «площадки» — это ровно прежний построчный подсчёт.
+    counted = {
+        "loc:1": _visits(visits=2, week_visits=0),
+        "loc:2": _visits(visits=1, week_visits=1),
+    }
+    tally = _unit_counts(counted, lambda identity: identity, 1)
+    assert tally.total == 2
+    assert tally.week == 1
+    assert tally.values["five_verst"] == [2, 1]
+
+
+def test_unit_counts_collapses_venues_of_one_city() -> None:
+    # Два парка одного города дают ОДИН город, а не два.
+    counted = {
+        "loc:1": _visits(visits=3, week_visits=0),
+        "loc:2": _visits(visits=1, week_visits=1),
+        "loc:3": _visits(visits=1, week_visits=1),
+    }
+    geo = {
+        "loc:1": _geo_keys("Россия", "Москва", "Москва"),
+        "loc:2": _geo_keys("Россия", "Москва", "Москва"),
+        "loc:3": _geo_keys("Россия", "Курская область", "Курск"),
+    }
+    cities = _unit_counts(counted, _unit_key_getters(geo)["cities"], 1)
+    assert cities.total == 2
+    # Москва не «прибавилась»: один из её парков был освоен ещё до недели.
+    # Курск — целиком новый город.
+    assert cities.week == 1
+    regions = _unit_counts(counted, _unit_key_getters(geo)["regions"], 1)
+    assert regions.total == 2
+
+
+def test_unit_counts_skips_venues_without_geo() -> None:
+    # Площадка без города в зачёт городов не идёт, но в зачёте площадок остаётся.
+    counted = {"loc:1": _visits(visits=1, week_visits=0)}
+    geo = {"loc:1": _geo_keys(None, None, None)}
+    assert _unit_counts(counted, _unit_key_getters(geo)["cities"], 1).total == 0
+    assert _unit_counts(counted, lambda identity: identity, 1).total == 1
+
+
+def test_normalize_count_by_only_for_tourism_metrics() -> None:
+    assert _normalize_count_by("locations", "cities") == "cities"
+    assert _normalize_count_by("volunteer_locations", "regions") == "regions"
+    # У остальных рейтингов гео-зачёта нет — молча откатываем к площадкам.
+    assert _normalize_count_by("runs", "cities") == "locations"
+    assert _normalize_count_by("win_locations", "regions") == "locations"
+    assert _normalize_count_by("locations", "мусор") == "locations"
+
+
+def test_count_by_options_offered_only_where_supported() -> None:
+    for metric in LEADERBOARD_METRICS:
+        options = count_by_values(metric)
+        if metric in COUNT_BY_METRICS:
+            assert options == COUNT_BY_VALUES
+        else:
+            assert options == ()
+    # Гео-зачёт живёт ровно там же, где порог визитов, — у туризма.
+    assert COUNT_BY_METRICS == MIN_VISITS_METRICS
+
+
+def test_metric_title_and_unit_follow_count_by() -> None:
+    assert "города" in metric_title("locations", "cities")
+    assert "регионы" in metric_title("volunteer_locations", "regions")
+    assert metric_title("locations", "locations") == METRIC_META["locations"]["title"]
+    assert metric_unit("locations", "cities") == "городов"
+    assert metric_unit("locations", "regions") == "регионов"
+    assert metric_unit("runs", "cities") == METRIC_META["runs"]["unit"]
+
+
+def test_metric_description_mentions_count_by() -> None:
+    cities = metric_description("locations", "all", 1, "all", "cities")
+    assert "ГОРОДА" in cities
+    assert "Зарубежные старты считаются по стране" in cities
+    # Гео-зачёт комбинируется с порогом визитов, не вытесняя его.
+    combined = metric_description("locations", "all", 3, "all", "regions")
+    assert "РЕГИОНЫ" in combined and "минимум 3 раза" in combined
+
+
+def test_cache_key_versions_count_by() -> None:
+    # Базовый вариант (площадки) сохраняет прежний ключ.
+    assert _cache_key("locations") == _cache_key("locations", "all", 1, "all", "locations")
+    assert _cache_key("locations", "all", 1, "all", "cities").endswith(":locations:ccities")
+    # Единица зачёта комбинируется с порогом визитов и системой.
+    assert _cache_key("locations", "all", 3, "s95", "regions").endswith(
+        ":locations:v3:ps95:cregions"
+    )
+
+
+def test_week_locations_metrics_registered() -> None:
+    # Колонка «Последняя неделя» — у пробежек, волонтёрств и обоих туристических
+    # рейтингов; у победных её место занимает «Последняя победа».
+    assert set(WEEK_LOCATIONS_METRICS) == {
+        "runs",
+        "volunteering",
+        "locations",
+        "volunteer_locations",
+    }
+    assert set(WEEK_LOCATIONS_METRICS) <= set(LEADERBOARD_METRICS)
+    assert set(WEEK_LOCATIONS_METRICS) & set(WIN_EXTRAS_METRICS) == set()
+    assert "volunteer_roles" not in WEEK_LOCATIONS_METRICS
+
+
+def test_week_locations_read_the_metrics_own_protocols() -> None:
+    # Беговые рейтинги берут окно из протоколов забегов, волонтёрские — из
+    # волонтёрских смен: иначе в «Последней неделе» туризма оказались бы смены,
+    # а в волонтёрском туризме — пробежки.
+    assert _WEEK_LOCATIONS_SQL_BY_METRIC["locations"] is _WEEK_RUN_LOCATIONS_SQL
+    assert _WEEK_LOCATIONS_SQL_BY_METRIC["runs"] is _WEEK_RUN_LOCATIONS_SQL
+    assert (
+        _WEEK_LOCATIONS_SQL_BY_METRIC["volunteer_locations"]
+        is _WEEK_VOLUNTEER_LOCATIONS_SQL
+    )
+    assert _WEEK_LOCATIONS_SQL_BY_METRIC["volunteering"] is _WEEK_VOLUNTEER_LOCATIONS_SQL
+    # Фильтр участников «моей» строки должен ссылаться на таблицу этой выборки.
+    for metric, alias in _WEEK_LOCATIONS_PIDS_ALIAS.items():
+        assert f"{alias}.participant_id IS NOT NULL" in _WEEK_LOCATIONS_SQL_BY_METRIC[metric]
+
+
+def test_week_location_entries_order_and_limit() -> None:
+    names = {f"loc:{i}": f"Площадка {i}" for i in range(1, 8)}
+    slugs = {"loc:1": "park-one"}
+    dates = {f"loc:{i}": date(2026, 7, 19 + (i % 3)) for i in range(1, 8)}
+    entries = _week_location_entries(dates, names, slugs)
+    # Свежие первыми, длинный хвост обрезан — его фронт сворачивает в «+N».
+    assert len(entries) == WEEK_LOCATIONS_LIMIT
+    assert entries[0]["date"] >= entries[-1]["date"]
+    # При равной дате порядок детерминирован по названию, слаг подставляется.
+    same_day = _week_location_entries(
+        {"loc:2": date(2026, 7, 25), "loc:1": date(2026, 7, 25)}, names, slugs
+    )
+    assert [item["name"] for item in same_day] == ["Площадка 1", "Площадка 2"]
+    assert same_day[0]["slug"] == "park-one"
+    assert same_day[0]["date"] == "2026-07-25"
 
 
 def test_cache_key_versions_min_visits() -> None:
