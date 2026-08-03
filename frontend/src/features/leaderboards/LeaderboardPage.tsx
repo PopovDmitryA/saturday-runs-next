@@ -251,7 +251,7 @@ function TopWinLocation({
 const HOME_NOTE_META: Record<string, { level: "warn" | "danger"; hint: string }> = {
   ambiguous: {
     level: "warn",
-    hint: "Домашняя локация определена автоматически. Выбор неоднозначен: вторая площадка отстаёт менее чем на 30% визитов.",
+    hint: "Домашняя локация определена автоматически: у участника несколько локаций с близким числом пробежек.",
   },
   manual_off_top: {
     level: "danger",
