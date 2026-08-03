@@ -3,6 +3,7 @@ import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
   COUNT_BY_LABELS,
+  COUNT_BY_TOTAL_LABELS,
   GENDERED_METRICS,
   getLeaderboard,
   getMyLeaderboardRow,
@@ -719,6 +720,11 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const hasCountByFilter = countByOptions.length > 1;
   const hasGeoColumns = hasCountByFilter;
   const hasWeekLocations = data?.has_week_locations ?? false;
+  // В туризме «Всего» называет единицу зачёта («Всего городов»): рядом стоят
+  // столбцы «Городов» и «Регионов», и без уточнения непонятно, что в итоге.
+  const totalLabel = hasCountByFilter
+    ? COUNT_BY_TOTAL_LABELS[effectiveCountBy]
+    : "Всего";
   // Таблицы с колонками-названиями (локации, роли, «последняя неделя») ведём в
   // жёсткой раскладке: в table-layout:auto колонка не может стать уже своего
   // самого длинного слова, и «Стрежевой Городской парк» раздувает всю таблицу.
@@ -1030,7 +1036,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         </span>
                       ))}
                       <span className="lb-me-value lb-me-total">
-                        <span className="lb-me-platform">Всего</span>
+                        <span className="lb-me-platform">{totalLabel}</span>
                         <span className="lb-cell">
                           {me.total}
                           <DeltaSlot delta={me.total_delta} />
@@ -1153,7 +1159,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                       ))}
                     {headerCell(
                       "total",
-                      "Всего",
+                      totalLabel,
                       "lb-col-num lb-col-total",
                       isRoles ? ROLES_TOTAL_HINT : undefined,
                     )}
