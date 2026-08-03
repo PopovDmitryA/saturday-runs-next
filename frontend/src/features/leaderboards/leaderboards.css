@@ -441,6 +441,18 @@
    сколько бы width ей ни задали. Fixed жёстко фиксирует ширины столбцов и
    переносит длинный текст внутри колонки — участник (единственная колонка без
    явной ширины) получает весь остаток. */
+/* border-collapse:collapse ломает position:sticky на ячейках в WebKit (Safari
+   и все браузеры на iPhone): стиль применяется, а колонка при горизонтальном
+   скролле всё равно уезжает. Границы у нас и так нарисованы на самих ячейках
+   (.data-table th/td { border-bottom }), поэтому separate ничего не меняет
+   визуально, но возвращает липкость «Места» и «Участника» на телефоне.
+   Селектор двухклассовый: у .data-table та же одноклассовая специфичность, и
+   какой из двух файлов окажется ниже в бандле — не наша забота. */
+.data-table.lb-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
 .lb-table.lb-table-fixed {
   table-layout: fixed;
 }
@@ -1021,41 +1033,68 @@ a.lb-hub-card:hover {
    идентификатор строки не должен уезжать за экран. Ширины фиксируем,
    иначе sticky-смещение второй колонки не посчитать. */
 @media (max-width: 820px) {
-  .lb-table-full .lb-col-rank {
+  /* Ширина «Места» и есть смещение для «Участника» — держим их одной
+     переменной, чтобы колонки не разъехались при правке одной из них. */
+  .lb-table {
+    --lb-sticky-rank-w: 4.4rem;
+    --lb-sticky-name-w: 8.5rem;
+  }
+
+  /* Ширина по содержимому — обязательна для липкости второй колонки.
+     С min-width таблица тянется до ширины обёртки, а table-layout:fixed
+     распределяет разницу по колонкам: «Место» получало 77px вместо заданных
+     4.4rem (70.4px). Смещение «Участника» задано константой left:4.4rem, и он
+     прилипал на 7px левее правого края «Места» — заезжал под него, из-за чего
+     колонка выглядела неприлипающей. При width:max-content колонки получают
+     ровно свои ширины, и стык сходится в ноль. min-width:100% оставляет
+     таблицу во всю обёртку, когда колонок мало и скролла нет. */
+  .lb-table.lb-table-fixed.lb-table-full {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  /* Селекторы с .lb-table (три класса) обязательны: у широких рейтингов
+     ширины колонок заданы правилами .lb-table.lb-table-fixed .lb-col-*, и
+     двухклассовый мобильный селектор им проигрывал по специфичности —
+     «Участник» получал десктопные 13rem вместо 8.5rem и занимал пол-экрана,
+     а «Место» — 4.5rem вместо 4.4rem, из-за чего липкая колонка вставала не
+     на границе соседней. Медиазапрос специфичность не повышает. */
+  .lb-table.lb-table-full .lb-col-rank {
     position: sticky;
     left: 0;
     z-index: 2;
     background: var(--surface);
-    width: 4.4rem;
-    min-width: 4.4rem;
-    max-width: 4.4rem;
+    width: var(--lb-sticky-rank-w);
+    min-width: var(--lb-sticky-rank-w);
+    max-width: var(--lb-sticky-rank-w);
   }
 
-  .lb-table-full .lb-col-name {
+  .lb-table.lb-table-full .lb-col-name {
     position: sticky;
-    left: 4.4rem;
+    left: var(--lb-sticky-rank-w);
     z-index: 2;
     background: var(--surface);
-    min-width: 8.5rem;
-    max-width: 8.5rem;
+    width: var(--lb-sticky-name-w);
+    min-width: var(--lb-sticky-name-w);
+    max-width: var(--lb-sticky-name-w);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .lb-table-full thead .lb-col-rank,
-  .lb-table-full thead .lb-col-name {
+  .lb-table.lb-table-full thead .lb-col-rank,
+  .lb-table.lb-table-full thead .lb-col-name {
     z-index: 4;
   }
 
   /* Подсветка своей строки должна побеждать фон липких ячеек. */
-  .lb-table-full .lb-row-me .lb-col-rank,
-  .lb-table-full .lb-row-me .lb-col-name {
+  .lb-table.lb-table-full .lb-row-me .lb-col-rank,
+  .lb-table.lb-table-full .lb-row-me .lb-col-name {
     background: var(--tint-indigo-bg);
   }
 
   /* Тень-отрыв у липкого блока, когда таблица прокручена вбок. */
-  .tshadow-left .lb-table-full .lb-col-name {
+  .tshadow-left .lb-table.lb-table-full .lb-col-name {
     box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
   }
 }
