@@ -20,6 +20,7 @@ from app.services.leaderboard_service import (
     COUNT_BY_METRICS,
     COUNT_BY_VALUES,
     GENDERED_METRICS,
+    LEADERBOARD_GENDERS,
     LEADERBOARD_METRICS,
     MAX_MIN_VISITS,
     METRIC_META,
@@ -185,22 +186,31 @@ def test_dominant_gender_by_majority() -> None:
 
 
 def test_metric_description_follows_gender() -> None:
-    # В гендерных зачётах описание говорит про мужчин/женщин, не про абсолют.
+    # В женском зачёте описание говорит про женщин, не про абсолют.
     assert "абсолютном зачёте" in metric_description("wins", "all")
-    assert "среди мужчин" in metric_description("wins", "male")
     assert "среди женщин" in metric_description("wins", "female")
-    assert "среди мужчин" in metric_description("win_locations", "male")
+    assert "среди женщин" in metric_description("win_locations", "female")
     # У метрик без разреза по полу описание всегда базовое.
-    assert metric_description("runs", "male") == METRIC_META["runs"]["description"]
+    assert metric_description("runs", "female") == METRIC_META["runs"]["description"]
 
 
 def test_normalize_gender_only_for_win_metrics() -> None:
     # Пол применяется только к победным метрикам; у остальных всегда «all».
     assert set(GENDERED_METRICS) == {"wins", "win_locations"}
-    assert _normalize_gender("wins", "male") == "male"
     assert _normalize_gender("win_locations", "female") == "female"
-    assert _normalize_gender("runs", "male") == "all"
+    assert _normalize_gender("runs", "female") == "all"
     assert _normalize_gender("wins", "нечто") == "all"
+
+
+def test_male_gender_scope_is_gone() -> None:
+    # Мужского зачёта нет: первые места среди мужчин завышены на стартах, где
+    # у части финишёров протокол не даёт пола (нет возрастной категории).
+    assert set(LEADERBOARD_GENDERS) == {"all", "female"}
+    # Старые ссылки с ?gender=male не 404-ят и не считают мужской зачёт —
+    # молча открывают абсолют.
+    assert _normalize_gender("wins", "male") == "all"
+    assert _normalize_gender("win_locations", "male") == "all"
+    assert "мужчин" not in metric_description("wins", "male")
 
 
 def test_normalize_min_visits_only_for_tourism_metrics() -> None:
@@ -466,7 +476,7 @@ def test_cache_key_versions_min_visits() -> None:
     # Базовый вариант сохраняет прежний ключ, пороги — отдельными снапшотами.
     assert _cache_key("locations") == _cache_key("locations", "all", 1)
     assert _cache_key("locations", "all", 3).endswith(":locations:v3")
-    assert _cache_key("wins", "male", 1).endswith(":wins:male")
+    assert _cache_key("wins", "female", 1).endswith(":wins:female")
 
 
 def test_metric_description_mentions_min_visits() -> None:
@@ -739,10 +749,10 @@ def test_gendered_win_rating_includes_parkrun(db_session: Session) -> None:
     """С 02.08.2026 parkrun входит в разбивку по полу: пол берётся из
     participants.gender (в run_results.age_category у parkrun лежит age-grade %)."""
     participant_id = _seed_parkrun_wins_for_rating(
-        db_session, catalogued=[True, False], gender="male"
+        db_session, catalogued=[True, False], gender="female"
     )
     values, total, _week, _home, _last = _my_gendered_win_values(
-        db_session, [participant_id], date(2026, 7, 27), "male", as_locations=False
+        db_session, [participant_id], date(2026, 7, 27), "female", as_locations=False
     )
     # Зачтена только русская площадка — зарубежная отсечена, хотя gender_position там тоже 1.
     assert values["parkrun"][0] == 1

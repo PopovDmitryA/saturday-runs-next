@@ -30,7 +30,7 @@ def warm_leaderboards_cache() -> dict[str, object]:
     """
     db = get_session_factory()()
     results: dict[str, object] = {}
-    # Прогреваем всю сетку кнопок каждого рейтинга: зачёт (абсолют/М/Ж) ×
+    # Прогреваем всю сетку кнопок каждого рейтинга: зачёт (абсолют/женский) ×
     # порог визитов × система. Каждое сочетание — свой снапшот в кэше, и без
     # прогрева первый заход на него ждал бы полный пересчёт прямо в запросе
     # (31.07.2026 именно так и вышло: «2+» × «5 вёрст» у туризма не
@@ -38,7 +38,7 @@ def warm_leaderboards_cache() -> dict[str, object]:
     # так что сетка конечная и предсказуемая.
     variants: list[tuple[LeaderboardMetric, str, int, str, str]] = []
     for metric in LEADERBOARD_METRICS:
-        genders = ("all", "male", "female") if metric in GENDERED_METRICS else ("all",)
+        genders = ("all", "female") if metric in GENDERED_METRICS else ("all",)
         visits_options = (
             range(1, MAX_MIN_VISITS + 1) if metric in MIN_VISITS_METRICS else range(1, 2)
         )

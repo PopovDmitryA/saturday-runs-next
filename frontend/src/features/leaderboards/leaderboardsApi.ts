@@ -11,9 +11,13 @@ export type LeaderboardMetric =
   | "win_locations"
   | "home_distance";
 
-export type LeaderboardGender = "all" | "male" | "female";
+// Мужского зачёта нет — только абсолют и женский. Пол мы знаем лишь по
+// возрастной категории протокола, а у финишёров без аккаунта её нет: такой
+// человек выпадает из строя мужчин, и следующий за ним получает «первое место
+// среди мужчин», стоя в протоколе вторым (см. LEADERBOARD_GENDERS на бэкенде).
+export type LeaderboardGender = "all" | "female";
 
-// Разрез М/Ж есть только у победных рейтингов (parkrun в него не идёт).
+// Женский зачёт есть только у победных рейтингов (parkrun в него не идёт).
 export const GENDERED_METRICS: LeaderboardMetric[] = ["wins", "win_locations"];
 
 // Фильтр «локация засчитывается от N визитов» — у туристических рейтингов

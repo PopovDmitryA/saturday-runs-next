@@ -42,7 +42,9 @@ def _validate_metric(metric: str) -> LeaderboardMetric:
 
 def _validate_gender(gender: str) -> str:
     # Незнакомый пол молча трактуем как «all» — сервис сам игнорирует разрез у
-    # метрик без М/Ж (см. _normalize_gender), так что 400 тут был бы избыточен.
+    # метрик без женского зачёта (см. _normalize_gender), так что 400 тут был бы
+    # избыточен. Сюда же попадает gender=male из старых ссылок: мужского зачёта
+    # больше нет, и старая ссылка открывает абсолют, а не ошибку.
     return gender if gender in LEADERBOARD_GENDERS else "all"
 
 

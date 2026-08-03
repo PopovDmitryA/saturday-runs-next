@@ -38,9 +38,10 @@ import "./leaderboards.css";
 const PAGE_STEP = 100;
 const SCROLL_TOP_THRESHOLD = 480;
 
+// Мужского зачёта нет: у мужчин «первое место среди мужчин» завышалось на
+// стартах, где протокол не знает пол части финишёров (см. LeaderboardGender).
 const GENDER_TABS: { value: LeaderboardGender; label: string }[] = [
   { value: "all", label: "Абсолют" },
-  { value: "male", label: "Мужчины" },
   { value: "female", label: "Женщины" },
 ];
 
