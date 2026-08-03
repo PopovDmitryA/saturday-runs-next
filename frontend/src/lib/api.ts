@@ -1574,6 +1574,8 @@ export type AdminRatingRow = {
   editable: boolean;
   participation_type: ParticipationType;
   created_at: string;
+  /** Фото, приложенные к отзыву. */
+  photos: { id: string; url: string; width: number; height: number }[];
 };
 
 export type AdminRatingsStatGroup = {

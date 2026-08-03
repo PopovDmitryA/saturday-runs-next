@@ -8,7 +8,6 @@ import { getLocationsIndex, type LocationIndexItem } from "../../lib/api";
 import { formatDate, formatFinishTimeValue, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
-import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 
 const PLATFORM_FILTERS = ["five_verst", "s95", "runpark"] as const;
 
@@ -89,8 +88,10 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
   const [sort, setSort] = useState<SortState>({ key: "events_count", asc: false });
   // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
   const [tableView, setTableView] = useTableView("locationsIndex");
-  const narrowViewport = useNarrowViewport();
-  const showFull = !narrowViewport || tableView === "full";
+  // Краткий вид доступен и на компьютере (решение Дмитрия 04.08.2026): в полном
+  // наборе колонок названиям локаций достаётся слишком мало места и они режутся
+  // многоточием, а лишние столбцы нужны не всегда.
+  const showFull = tableView === "full";
 
   const sorted = useMemo(() => {
     const copy = [...items];
@@ -132,7 +133,11 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
 
   return (
     <>
-      <TableViewToggle value={tableView} onChange={setTableView} />
+      <TableViewToggle
+          value={tableView}
+          onChange={setTableView}
+          className="tview-toggle-always"
+        />
       <TableWrap stickyFirstCol={showFull}>
         <table
           className={`data-table data-table-layout-fixed loc-index-table${

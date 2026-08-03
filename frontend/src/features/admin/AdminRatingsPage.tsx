@@ -103,6 +103,9 @@ function compareRows(a: AdminRatingRow, b: AdminRatingRow, key: RawSortKey): num
 
 function AdminRatingsContent() {
   const [raw, setRaw] = useState<AdminRatings | null>(null);
+  // Фото открывается прямо на странице: уходить в бакет за картинкой, чтобы
+  // понять, что приложил участник, — лишний шаг.
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [locations, setLocations] = useState<AdminLocationRatings | null>(null);
   const [excludeLocals, setExcludeLocals] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -338,12 +341,13 @@ function AdminRatingsContent() {
                     sortKey="comment"
                     title="Сортировка: сначала строки с комментарием (▲)"
                   />
+                  <th>Фото</th>
                 </tr>
               </thead>
               <tbody>
                 {raw && visibleRatings.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="muted">
+                    <td colSpan={14} className="muted">
                       {raw.ratings.length === 0 ? "Пока нет оценок" : "Ничего не найдено"}
                     </td>
                   </tr>
@@ -387,6 +391,23 @@ function AdminRatingsContent() {
                         "—"
                       )}
                     </td>
+                    <td className="admin-ratings-photos">
+                      {r.photos.length > 0 ? (
+                        r.photos.map((photo, index) => (
+                          <button
+                            key={photo.id}
+                            type="button"
+                            className="admin-ratings-photo-thumb"
+                            onClick={() => setPhotoPreview(photo.url)}
+                            title={`Фото ${index + 1} из ${r.photos.length} — открыть`}
+                          >
+                            <img src={photo.url} alt="" loading="lazy" />
+                          </button>
+                        ))
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -394,6 +415,20 @@ function AdminRatingsContent() {
           </div>
         </section>
       </div>
+
+      {photoPreview && (
+        <div
+          className="admin-photo-overlay"
+          role="dialog"
+          aria-label="Фото отзыва"
+          onClick={() => setPhotoPreview(null)}
+        >
+          <img src={photoPreview} alt="Фото отзыва" />
+          <button type="button" className="admin-photo-close" aria-label="Закрыть">
+            ×
+          </button>
+        </div>
+      )}
     </AdminShell>
   );
 }

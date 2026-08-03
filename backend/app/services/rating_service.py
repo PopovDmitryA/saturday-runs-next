@@ -676,11 +676,18 @@ def list_all_ratings(db: Session) -> list[dict[str, object]]:
     )
     today = date.today()
     catalog_index = LocationCatalogIndex(db)
+    # Фото одной пачкой на все отзывы: админке нужно видеть, что приложено, и
+    # открыть картинку не выходя со страницы.
+    photos_by_rating = list_rating_photos(db, [rating.id for rating, _user, _loc in rows])
     result: list[dict[str, object]] = []
     for rating, user, location in rows:
         result.append(
             {
                 "id": rating.id,
+                "photos": [
+                    {"id": photo.id, "url": photo.url, "width": photo.width, "height": photo.height}
+                    for photo in photos_by_rating.get(rating.id, [])
+                ],
                 "user_id": rating.user_id,
                 "user_display": _user_display(user),
                 "user_serial": user.serial_id,

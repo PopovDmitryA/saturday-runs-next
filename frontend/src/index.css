@@ -11813,3 +11813,62 @@ tr.run-crosslinked td {
   vertical-align: middle;
   white-space: nowrap;
 }
+
+/* Фото отзыва в админке: миниатюра в таблице и просмотр во весь экран по клику
+   — чтобы понять, что приложил участник, не уходя в бакет за ссылкой. */
+.admin-ratings-photos {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.admin-ratings-photo-thumb {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  cursor: zoom-in;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.admin-ratings-photo-thumb img {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  display: block;
+}
+
+.admin-photo-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.85);
+  cursor: zoom-out;
+}
+
+.admin-photo-overlay img {
+  max-width: min(100%, 1100px);
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
+.admin-photo-close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}

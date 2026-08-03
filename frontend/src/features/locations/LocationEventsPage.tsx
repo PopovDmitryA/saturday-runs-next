@@ -15,7 +15,6 @@ import { platformCodeLabel } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
-import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 
 type SortKey = "date" | "finishers" | "volunteers" | "best_male" | "best_female" | "avg" | "newcomers" | "prs";
@@ -59,8 +58,10 @@ function LocationEventsContent({ slug }: { slug: string }) {
   const attachFloatingHead = useFloatingTableHead();
   // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
   const [tableView, setTableView] = useTableView("locationEvents");
-  const narrowViewport = useNarrowViewport();
-  const showFull = !narrowViewport || tableView === "full";
+  // Краткий вид доступен и на компьютере (решение Дмитрия 04.08.2026): в полном
+  // наборе колонок названиям локаций достаётся слишком мало места и они режутся
+  // многоточием, а лишние столбцы нужны не всегда.
+  const showFull = tableView === "full";
 
   useEffect(() => {
     let cancelled = false;
@@ -205,7 +206,11 @@ function LocationEventsContent({ slug }: { slug: string }) {
       )}
 
       <section className="loc-section">
-        <TableViewToggle value={tableView} onChange={setTableView} />
+        <TableViewToggle
+          value={tableView}
+          onChange={setTableView}
+          className="tview-toggle-always"
+        />
         <TableWrap innerRef={attachFloatingHead} className="loc-events-wrap" stickyFirstCol={showFull}>
           <table
             className={`data-table data-table-layout-fixed loc-events-table${
