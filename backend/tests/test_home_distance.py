@@ -30,9 +30,9 @@ from app.services.home_distance_service import (
 )
 from app.services.home_location_service import HomeLocationCandidate
 from app.services.leaderboard_service import (
+    _home_eligible_identities,
     _home_location_note,
     _LocationVisits,
-    _russian_identities,
 )
 from app.services.location_catalog_service import LocationCatalogIndex
 
@@ -270,21 +270,32 @@ def test_rating_marks_manual_home_outside_the_top_three() -> None:
     assert _home_location_note(identities, names, "c", "c") is None
 
 
-def test_rating_counts_only_russian_home_locations(db_session: Session) -> None:
-    """Живущие за границей в рейтинг не идут: их нулевая точка на другом
-    континенте, и любой старт в России давал бы десятки тысяч километров."""
+def test_rating_home_is_any_of_our_systems_but_not_foreign_parkrun(
+    db_session: Session,
+) -> None:
+    """Дом — площадка наших систем в любой стране; зарубежный parkrun — нет.
+
+    С95 работает в Сербии и Беларуси, RunPark — в Турции и Грузии: их бегуны
+    такие же наши. А человек с домом в лондонском parkrun живёт вне наших
+    систем, и любой его старт в России дал бы десятки тысяч километров.
+    """
     suffix = uuid4().hex[:8]
-    home = _location(db_session, f"hd-ru-{suffix}", "Русский парк", MOSCOW)
-    abroad = _location(
-        db_session, f"hd-abroad-{suffix}", "Заграничный парк", KHABAROVSK, platform_code="s95"
+    russian = _location(db_session, f"hd-ru-{suffix}", "Русский парк", MOSCOW)
+    serbian = _location(
+        db_session, f"hd-rs-{suffix}", "Сербский парк", KHABAROVSK, platform_code="s95"
     )
-    abroad.country = "Serbia"
+    serbian.country = "Сербия"
+    foreign_parkrun = _location(
+        db_session, f"hd-uk-{suffix}", "Лондонский parkrun", NEARBY, platform_code="parkrun"
+    )
+    foreign_parkrun.country = "United Kingdom"
     db_session.commit()
 
-    russian = _russian_identities(db_session)
+    eligible = _home_eligible_identities(db_session)
     catalog_index = LocationCatalogIndex(db_session)
-    assert catalog_index.canonical_identity_key(home, "five_verst") in russian
-    assert catalog_index.canonical_identity_key(abroad, "s95") not in russian
+    assert catalog_index.canonical_identity_key(russian, "five_verst") in eligible
+    assert catalog_index.canonical_identity_key(serbian, "s95") in eligible
+    assert catalog_index.canonical_identity_key(foreign_parkrun, "parkrun") not in eligible
 
 
 def test_dashboard_tile_sums_unique_locations_once(

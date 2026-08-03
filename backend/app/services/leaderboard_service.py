@@ -37,6 +37,7 @@ from app.parkrun.volunteer_credits import (
 from app.services.co_runners_service import _is_unknown_participant_name
 from app.services.home_distance_service import AMBIGUITY_RATIO, haversine_km
 from app.services.location_catalog_service import (
+    PARKRUN_PLATFORM_CODE,
     LocationCatalogIndex,
     is_foreign_location,
     russian_parkrun_location_ids,
@@ -259,10 +260,11 @@ METRIC_META: dict[str, dict[str, str]] = {
             "участник финишировал. Каждая площадка даёт свои километры один "
             "раз, сколько бы раз человек туда ни ездил. Домашняя локация — где "
             "больше всего пробежек (зарегистрированные на сайте могут выбрать "
-            "её вручную в настройках). В рейтинг идут участники с домашней "
-            "локацией в России. Расстояние — по прямой. «Всего» — не сумма "
-            "колонок: площадка, где бегали в двух системах, попадает в обе "
-            "колонки, но в зачёт идёт один раз."
+            "её вручную в настройках). В рейтинг идут участники, чей дом — "
+            "площадка 5 вёрст, С95 или RunPark либо российский parkrun. "
+            "Расстояние — по прямой. «Всего» — не сумма колонок: площадка, где "
+            "бегали в двух системах, попадает в обе колонки, но в зачёт идёт "
+            "один раз."
         ),
     },
 }
@@ -1223,12 +1225,20 @@ def _location_coordinates_map(db: Session) -> dict[str, tuple[float, float]]:
     return {identity: coords for identity, (_priority, coords) in best.items()}
 
 
-def _russian_identities(db: Session) -> set[str]:
-    """identity-ключи площадок, которые считаются российскими.
+def _home_eligible_identities(db: Session) -> set[str]:
+    """Площадки, которые могут быть «домом» в рейтинге дальности.
 
-    Площадка русская, если русская хотя бы одна её строка: у кросс-платформенной
-    идентичности parkrun-строка несёт страну-заглушку «United Kingdom» (источник
-    — parkrun.org.uk), и по ней одной парк в Сокольниках выглядел бы зарубежным.
+    Граница проходит по системам, а не по странам (решение Дмитрия 03.08.2026):
+    дом — любая площадка 5 вёрст, С95 или RunPark, в какой бы стране она ни
+    была. Это сразу включает С95 в Сербии и Беларуси и RunPark в Турции,
+    Грузии, Аргентине и Таджикистане — их бегуны такие же наши, как московские,
+    — и не требует правки кода, когда система откроет площадку в новой стране.
+
+    Отсекается только зарубежный parkrun: человек с домом в Лондоне живёт вне
+    наших систем, а любой его старт в России давал бы десятки тысяч километров.
+    Русскость parkrun-площадки берём тем же правилом, что карта и каталог
+    (is_foreign_location): страна у его строк — заглушка «United Kingdom»
+    (источник parkrun.org.uk), поэтому решает связь с каталогом локаций.
     """
     catalog_index = LocationCatalogIndex(db)
     rows = (
@@ -1236,12 +1246,14 @@ def _russian_identities(db: Session) -> set[str]:
         .join(Platform, Location.platform_id == Platform.id)
         .all()
     )
-    russian: set[str] = set()
+    eligible: set[str] = set()
     for location, platform_code in rows:
-        if is_foreign_location(location, platform_code, catalog_index):
+        if platform_code == PARKRUN_PLATFORM_CODE and is_foreign_location(
+            location, platform_code, catalog_index
+        ):
             continue
-        russian.add(catalog_index.canonical_identity_key(location, platform_code))
-    return russian
+        eligible.add(catalog_index.canonical_identity_key(location, platform_code))
+    return eligible
 
 
 def _manual_home_identity_keys(db: Session) -> dict[UUID, str]:
@@ -1294,7 +1306,7 @@ class _MetricSource:
         self._geo: dict[str, _LocationGeo] | None = None
         self._coordinates: dict[str, tuple[float, float]] | None = None
         self._manual_homes: dict[UUID, str] | None = None
-        self._russian_identities: set[str] | None = None
+        self._home_eligible: set[str] | None = None
         self._names: dict[UUID, str | None] | None = None
         self._rows: dict[str, Sequence[Row[Any]]] = {}
         # Волонтёрские выборки зависят от фильтра ролей, поэтому кэшируются
@@ -1330,11 +1342,11 @@ class _MetricSource:
             self._manual_homes = _manual_home_identity_keys(self.db)
         return self._manual_homes
 
-    def russian_identities(self) -> set[str]:
-        """Русские площадки — справочник того же рода, что geo_map."""
-        if self._russian_identities is None:
-            self._russian_identities = _russian_identities(self.db)
-        return self._russian_identities
+    def home_eligible_identities(self) -> set[str]:
+        """Площадки, годные в «дом» — справочник того же рода, что geo_map."""
+        if self._home_eligible is None:
+            self._home_eligible = _home_eligible_identities(self.db)
+        return self._home_eligible
 
     def names(self) -> dict[UUID, str | None]:
         """Имена всех участников: справочник целиком дешевле, чем гигантский IN
@@ -2288,7 +2300,7 @@ def _collect_home_distance_entities(
     identity_by_location, identity_names, _identity_slugs = source.identity_maps()
     coordinates = source.coordinates_map()
     manual_homes = source.manual_home_keys()
-    russian_identities = source.russian_identities()
+    eligible_homes = source.home_eligible_identities()
     rows = source.rows(_LOCATION_VISITS_SQL)
 
     per_entity: dict[str, dict[str, _LocationVisits]] = {}
@@ -2323,11 +2335,10 @@ def _collect_home_distance_entities(
         home = _home_identity(identities, identity_names, manual_key)
         if home is None:
             continue
-        # Рейтинг про то, как далеко от дома забираются НАШИ бегуны. У живущих
-        # за границей нулевая точка стоит на другом континенте, и любой их
-        # старт в России даёт десятки тысяч километров — соревноваться с этим
-        # бессмысленно (решение Дмитрия 03.08.2026).
-        if home not in russian_identities:
+        # Дом вне наших систем (зарубежный parkrun) — участника в рейтинге нет:
+        # его нулевая точка на другом континенте, и любой старт в России дал бы
+        # десятки тысяч километров (см. _home_eligible_identities).
+        if home not in eligible_homes:
             continue
         total, week, values = _home_distance_tally(
             identities, home, coordinates, source.week_start
@@ -3212,9 +3223,9 @@ def _my_home_distance_values(
         identity = identity_by_location.get(location_id, str(location_id))
         _merge_visit_row(identities, identity, code, first_date, int(visits), int(week_visits))
     home = _home_identity(identities, identity_names, user.home_location_key)
-    # Домашняя локация за границей — участника в этом рейтинге нет (см.
-    # _collect_home_distance_entities).
-    if home is None or home not in _russian_identities(db):
+    # Дом вне наших систем — участника в этом рейтинге нет (см.
+    # _home_eligible_identities).
+    if home is None or home not in _home_eligible_identities(db):
         return _MyHomeDistanceRow(values={}, total=0, week=0)
     total, week, values = _home_distance_tally(
         identities, home, _location_coordinates_map(db), week_start
