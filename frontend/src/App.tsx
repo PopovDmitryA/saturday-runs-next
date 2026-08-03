@@ -56,6 +56,7 @@ import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { useAppPath } from "./hooks/useAppPath";
+import { ShareSheetProvider } from "./features/sharing/ShareSheetContext";
 import { reportAbLoginOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
 import { useOptionalUser } from "./lib/useOptionalUser";
@@ -303,5 +304,6 @@ export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
   usePageMeta(path);
-  return renderRoute(path);
+  // Шторка «Поделиться» доступна из любого раздела — провайдер на всё дерево.
+  return <ShareSheetProvider>{renderRoute(path)}</ShareSheetProvider>;
 }

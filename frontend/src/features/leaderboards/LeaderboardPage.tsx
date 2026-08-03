@@ -26,6 +26,9 @@ import {
   type WeekLocation,
 } from "./leaderboardsApi";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
+import { useOptionalUser } from "../../lib/useOptionalUser";
+import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
+import { ratingSubject } from "../sharing/subjects";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import { VolunteerRolesModal } from "./VolunteerRolesModal";
@@ -545,6 +548,8 @@ function readStoredRoleKeys(metric: LeaderboardMetric): string[] {
 }
 
 export function LeaderboardPage({ metric }: LeaderboardPageProps) {
+  const shareSheet = useOptionalShareSheet();
+  const currentUser = useOptionalUser();
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [me, setMe] = useState<MyLeaderboardRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1145,7 +1150,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                     {/* Кнопка и перцентиль — одна связка: приписка встаёт справа
                         от кнопки и переносится вместе с ней, а не занимает
                         отдельную строку высотой в целый ряд. */}
-                    {(myIndex >= 0 || percentileText != null) && (
+                    {(myIndex >= 0 || percentileText != null || shareSheet !== null) && (
                       <div className="lb-me-actions">
                         {myIndex >= 0 && (
                           <button
@@ -1154,6 +1159,20 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             onClick={showMyRow}
                           >
                             Показать в таблице
+                          </button>
+                        )}
+                        {shareSheet !== null && data !== null && me.rank != null && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => {
+                              const subject = ratingSubject(data, me, currentUser ?? null);
+                              if (subject) {
+                                shareSheet.open({ subject, entry: "rating" });
+                              }
+                            }}
+                          >
+                            📤 Поделиться местом
                           </button>
                         )}
                         {percentileText != null && (

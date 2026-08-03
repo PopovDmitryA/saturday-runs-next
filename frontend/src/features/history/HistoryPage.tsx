@@ -6,11 +6,13 @@ import {
   type MyHistoryMilestone,
 } from "../../lib/api";
 import { formatDate, formatDateLong, pluralFormRu } from "../../lib/format";
+import { useOptionalUser } from "../../lib/useOptionalUser";
+import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
+import { milestoneSubject } from "../sharing/subjects";
 import {
   milestoneBragText,
   runNumberLabel,
   saturdayStreakLabel,
-  storeMilestoneShare,
   volunteerNumberLabel,
 } from "./milestoneShare";
 
@@ -231,24 +233,23 @@ function MilestoneLocation({ milestone }: { milestone: MyHistoryMilestone }) {
   );
 }
 
-function MilestoneShareButton({
-  milestone,
-  shareBase,
-}: {
-  milestone: MyHistoryMilestone;
-  shareBase: string;
-}) {
+function MilestoneShareButton({ milestone }: { milestone: MyHistoryMilestone }) {
+  const sheet = useOptionalShareSheet();
+  const user = useOptionalUser();
+  if (sheet === null) {
+    return null;
+  }
   return (
-    <a
+    <button
+      type="button"
       className="history-share"
-      href={`${shareBase}?story=milestone`}
       title="Сделать картинку-сториз с этой вехой"
       aria-label="Поделиться вехой"
-      onClick={() => storeMilestoneShare(milestone)}
+      onClick={() => sheet.open({ subject: milestoneSubject(milestone, user ?? null), entry: "history" })}
     >
       <ShareIcon />
       <span className="history-share-label">Поделиться</span>
-    </a>
+    </button>
   );
 }
 
@@ -356,7 +357,7 @@ function MilestoneCard({
             {formatDate(milestone.event_date)}
           </span>
           {siteUrl && <MilestoneBragButton milestone={milestone} siteUrl={siteUrl} />}
-          {shareBase && <MilestoneShareButton milestone={milestone} shareBase={shareBase} />}
+          {shareBase && <MilestoneShareButton milestone={milestone} />}
         </span>
       </div>
     </li>

@@ -3,19 +3,16 @@ import { PlatformBadge } from "./PlatformBadge";
 import { DetailModal } from "./DetailModal";
 import type { OnThisDay, OnThisDayRun } from "../lib/api";
 import { formatDateLong, formatFinishTimeValue, pluralFormRu } from "../lib/format";
+import { useOptionalUser } from "../lib/useOptionalUser";
+import { useOptionalShareSheet } from "../features/sharing/ShareSheetContext";
+import { onThisDaySubject } from "../features/sharing/subjects";
 
 type OnThisDayCardProps = {
   load: () => Promise<OnThisDay>;
-  /** База ссылки «Поделиться»; добавляется ?story=on_this_day + пробежка в sessionStorage. */
-  shareBase: string;
 };
 
 const YEAR_FORMS = ["год", "года", "лет"] as const;
 const RUN_FORMS = ["пробежка", "пробежки", "пробежек"] as const;
-
-// Ключ, по которому карточка «В этот день» передаёт конкретную историческую
-// пробежку в мастер «Поделиться» (SharePage читает его при ?story=on_this_day).
-export const ON_THIS_DAY_SHARE_KEY = "shareOnThisDayRun";
 // localStorage: today_iso, на который карточку закрыли (скрываем до следующего дня).
 const ON_THIS_DAY_DISMISS_KEY = "onThisDayDismissedDate";
 
@@ -84,9 +81,11 @@ function RunLocation({ run }: { run: OnThisDayRun }) {
   );
 }
 
-export function OnThisDayCard({ load, shareBase }: OnThisDayCardProps) {
+export function OnThisDayCard({ load }: OnThisDayCardProps) {
   const [data, setData] = useState<OnThisDay | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const sheet = useOptionalShareSheet();
+  const user = useOptionalUser();
   // Дата (today_iso), на которую карточку закрыли крестиком. Пока совпадает с
   // сегодняшней — карточку не показываем; на следующий день today_iso другой →
   // карточка снова появится со свежими данными.
@@ -131,19 +130,13 @@ export function OnThisDayCard({ load, shareBase }: OnThisDayCardProps) {
     }
     setDismissedDate(todayIso);
   };
-  const shareHref = `${shareBase}?story=on_this_day`;
   const runs = data.runs.length > 0 ? data.runs : [run];
   const otherCount = Math.max(runs.length - 1, data.also_count);
   const hasMore = otherCount > 0;
 
-  // «Поделиться» кладёт конкретную пробежку в sessionStorage — SharePage
-  // подхватит её по ?story=on_this_day и откроет мастер с ней в главной роли.
-  const storeShareRun = (target: OnThisDayRun) => {
-    try {
-      sessionStorage.setItem(ON_THIS_DAY_SHARE_KEY, JSON.stringify(target));
-    } catch {
-      // приватный режим/переполнение — не критично, мастер откроется без пресета
-    }
+  // «Поделиться» открывает шторку с этой пробежкой — без навигации.
+  const openShare = (target: OnThisDayRun) => {
+    sheet?.open({ subject: onThisDaySubject(target, user ?? null), entry: "on_this_day" });
   };
 
   const detailsLine = runDetailsLine(run);
@@ -196,17 +189,17 @@ export function OnThisDayCard({ load, shareBase }: OnThisDayCardProps) {
             </span>
           )}
         </div>
-        <a
+        <button
+          type="button"
           className="btn on-this-day-share"
-          href={shareHref}
           onClick={(event) => {
             event.stopPropagation();
-            storeShareRun(run);
+            openShare(run);
           }}
         >
           <ShareIcon />
           Поделиться
-        </a>
+        </button>
       </section>
 
       <DetailModal open={modalOpen} title="Пробежки в этот день" onClose={() => setModalOpen(false)}>
@@ -226,15 +219,15 @@ export function OnThisDayCard({ load, shareBase }: OnThisDayCardProps) {
                     {line && <span className="on-this-day-list-details">{line}</span>}
                   </p>
                 </div>
-                <a
+                <button
+                  type="button"
                   className="on-this-day-list-share"
-                  href={shareHref}
-                  onClick={() => storeShareRun(item)}
+                  onClick={() => openShare(item)}
                   aria-label="Поделиться"
                   title="Поделиться"
                 >
                   <ShareIcon />
-                </a>
+                </button>
               </li>
             );
           })}

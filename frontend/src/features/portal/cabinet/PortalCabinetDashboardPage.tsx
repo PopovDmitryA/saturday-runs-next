@@ -18,11 +18,11 @@ import { formatDuration, pluralFormRu } from "../../../lib/format";
 import {
   PORTAL_CABINET_HISTORY_HREF,
   PORTAL_CABINET_MAP_HREF,
-  PORTAL_CABINET_SHARE_HREF,
   PORTAL_CABINET_RUNS_HREF,
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_LOGIN_HREF,
 } from "../../../lib/portalRoutes";
+import { ShareMomentCard } from "../../sharing/ShareMomentCard";
 import { PortalCabinetShell, userLabel } from "./PortalCabinetShell";
 
 // «00:23:12» → «23:12»: в герое часы почти всегда нулевые, укорачиваем.
@@ -250,7 +250,9 @@ function PortalDashboardContent({ user }: { user: User }) {
         <>
           <DashboardHero data={data} userName={userLabel(user)} />
 
-          <OnThisDayCard load={getOnThisDay} shareBase={PORTAL_CABINET_SHARE_HREF} />
+          {stats && <ShareMomentCard stats={stats} user={user} />}
+
+          <OnThisDayCard load={getOnThisDay} />
 
           <GoalsTeaser />
 
