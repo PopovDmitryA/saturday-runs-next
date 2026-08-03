@@ -147,7 +147,11 @@ export function milestoneSubject(milestone: MyHistoryMilestone, user: User | nul
   } else if (milestone.number != null && /клуб|регион|город/i.test(accent)) {
     hero = { value: String(milestone.number), caption: accent.toLowerCase() };
   } else if (milestone.finish_time_display) {
-    hero = { value: stripLeadingHours(milestone.finish_time_display) ?? "", caption: "новое лучшее время" };
+    const isRecord = milestone.kind.includes("pr") || milestone.kind.includes("record");
+    hero = {
+      value: stripLeadingHours(milestone.finish_time_display) ?? "",
+      caption: isRecord ? "новое лучшее время" : "финишное время",
+    };
     // Время уже в герое — из плиток его убираем.
     const timeIndex = metrics.findIndex((metric) => metric.id === "time");
     if (timeIndex >= 0) {

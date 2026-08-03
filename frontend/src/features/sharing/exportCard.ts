@@ -11,16 +11,23 @@ import { toBlob } from "html-to-image";
  * Снимает PNG с оффскрин-узла карточки. Узел уже должен иметь нативные
  * пиксельные размеры формата; pixelRatio фиксируем в 1, чтобы retina-экраны
  * не раздували файл вдвое.
+ *
+ * fontEmbedCss ОБЯЗАТЕЛЕН: без него html-to-image сканирует все стили
+ * документа в поисках @font-face (index.css — 12 тысяч строк) и экспорт
+ * зависает; готовый CSS с data:-шрифтами (fonts.shareFontEmbedCss) это
+ * отключает.
  */
-export async function exportCardToPng(node: HTMLElement, width: number, height: number): Promise<Blob> {
+export async function exportCardToPng(
+  node: HTMLElement,
+  width: number,
+  height: number,
+  fontEmbedCss: string,
+): Promise<Blob> {
   const blob = await toBlob(node, {
     width,
     height,
     pixelRatio: 1,
-    cacheBust: true,
-    // Стили карточки самодостаточны (инлайн + .s2-классы); тащить весь
-    // 200-килобайтный index.css в SVG не нужно.
-    skipFonts: false,
+    fontEmbedCSS: fontEmbedCss,
   });
   if (!blob) {
     throw new Error("Не удалось сформировать постер");

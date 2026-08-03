@@ -20,6 +20,13 @@ from app.services.page_analytics_service import build_og_fetch_stats, build_shar
 from app.services.seo_service import _og_image_tags, location_og_image_url
 
 
+def _clear_share_events(db: Session) -> None:
+    """Тесты идут по общей dev-БД: выметаем живые события канала внутри
+    тестовой транзакции (откатится вместе с ней), иначе агрегаты не сойдутся."""
+    db.query(AbEvent).filter(AbEvent.experiment == "share").delete()
+    db.commit()
+
+
 def _add_event(db: Session, event_type: str, value: str, visitor: str = "a:v1") -> None:
     db.add(
         AbEvent(
@@ -65,6 +72,7 @@ def test_record_ab_event_accepts_og_preview_fetch(db_session: Session) -> None:
 
 
 def test_build_share_stats_funnel_and_breakdowns(db_session: Session) -> None:
+    _clear_share_events(db_session)
     _add_event(db_session, "share_moment_shown", "run:dashboard", "a:v1")
     _add_event(db_session, "share_moment_shown", "milestone:history", "a:v2")
     _add_event(db_session, "share_open", "run:dashboard", "a:v1")
@@ -101,6 +109,7 @@ def test_build_share_stats_funnel_and_breakdowns(db_session: Session) -> None:
 
 
 def test_build_og_fetch_stats_groups_by_value(db_session: Session) -> None:
+    _clear_share_events(db_session)
     _add_event(db_session, "og_preview_fetch", "location:no-such-slug", "bot:telegrambot")
     _add_event(db_session, "og_preview_fetch", "location:no-such-slug", "bot:whatsapp")
     _add_event(db_session, "og_preview_fetch", "portal_home:", "bot:telegrambot")

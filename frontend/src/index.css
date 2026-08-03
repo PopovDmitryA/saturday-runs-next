@@ -11796,7 +11796,9 @@ tr.run-crosslinked td {
 .s2-export-stage {
   position: fixed;
   top: 0;
-  left: -200vw;
+  /* Абсолютные пиксели, не vw: карточка 1080–1200px шире узкого вьюпорта,
+     и -200vw на мобильном оставлял её край на экране. */
+  left: -4000px;
   pointer-events: none;
 }
 

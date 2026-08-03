@@ -57,6 +57,45 @@ export function shareFontFromQuery(): ShareFontId {
   }
 }
 
+// Готовый CSS c data:-шрифтами для html-to-image. Без него библиотека
+// сканирует ВСЕ стили документа (у нас index.css на 12 тысяч строк) и
+// экспорт зависает; с fontEmbedCSS она берёт шрифты как есть.
+const embedCssCache = new Map<ShareFontId, Promise<string>>();
+
+async function fontToDataUrl(url: string): Promise<string> {
+  const response = await fetch(url);
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Не удалось прочитать шрифт"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+export function shareFontEmbedCss(font: ShareFontId): Promise<string> {
+  const cached = embedCssCache.get(font);
+  if (cached) {
+    return cached;
+  }
+  const family = font === "inter" ? "Inter" : "Golos Text";
+  const sources = FONT_SOURCES.filter((source) => source.family === family);
+  const promise = Promise.all(
+    sources.map(async (source) => {
+      const dataUrl = await fontToDataUrl(source.url);
+      return `@font-face {
+  font-family: '${source.family}';
+  font-style: normal;
+  font-weight: ${source.weight};
+  src: url(${dataUrl}) format('woff2');
+  unicode-range: ${source.range};
+}`;
+    }),
+  ).then((faces) => faces.join("\n"));
+  embedCssCache.set(font, promise);
+  return promise;
+}
+
 let injected = false;
 
 /** Однократно добавляет @font-face постеров в документ. */

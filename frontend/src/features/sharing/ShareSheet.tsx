@@ -24,7 +24,7 @@ import {
   trackShareTemplateSwitch,
 } from "./analytics";
 import { exportCardToPng } from "./exportCard";
-import { ensureShareFontsLoaded, shareFontFromQuery } from "./fonts";
+import { ensureShareFontsLoaded, shareFontEmbedCss, shareFontFromQuery } from "./fonts";
 import {
   DEFAULT_PHOTO_TRANSFORM,
   PHOTO_LOOK,
@@ -269,12 +269,12 @@ export function ShareSheet({
   };
 
   const exportPng = useCallback(async (): Promise<Blob> => {
-    await ensureShareFontsLoaded(font);
+    const [, fontCss] = await Promise.all([ensureShareFontsLoaded(font), shareFontEmbedCss(font)]);
     const node = exportRef.current;
     if (!node) {
       throw new Error("Экспортный узел не смонтирован");
     }
-    return exportCardToPng(node, format.width, format.height);
+    return exportCardToPng(node, format.width, format.height, fontCss);
   }, [font, format.width, format.height]);
 
   const systemShare = canShareFiles();

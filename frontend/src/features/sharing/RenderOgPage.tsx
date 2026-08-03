@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { getLocationPage, type LocationPage } from "../../lib/api";
-import { ensureShareFontsLoaded } from "./fonts";
+import { ensureShareFontsLoaded, shareFontFromQuery } from "./fonts";
 import { LOCATION_LOOKS, RUNNER_LOOKS } from "./looks";
 import { ShareCardView } from "./ShareCardView";
 import { locationCardSubject } from "./subjects";
@@ -44,13 +44,14 @@ function usePaintedAfter(loaded: boolean): boolean {
 }
 
 export function RenderOgLocationPage({ slug }: { slug: string }) {
+  const font = shareFontFromQuery();
   const [page, setPage] = useState<LocationPage | null>(null);
   const [failed, setFailed] = useState(false);
   const ready = usePaintedAfter(page !== null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getLocationPage(slug), ensureShareFontsLoaded("golos")])
+    Promise.all([getLocationPage(slug), ensureShareFontsLoaded(font)])
       .then(([data]) => {
         if (!cancelled) {
           setPage(data);
@@ -64,7 +65,7 @@ export function RenderOgLocationPage({ slug }: { slug: string }) {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, font]);
 
   if (failed) {
     // Явный маркер ошибки: Playwright дождётся таймаута и запишет локацию в failed.
@@ -81,7 +82,7 @@ export function RenderOgLocationPage({ slug }: { slug: string }) {
         format={WIDE}
         look={LOCATION_LOOKS[0]}
         photo={null}
-        font="golos"
+        font={font}
       />
     </RenderStage>
   );
@@ -100,11 +101,12 @@ const DEFAULT_CARD: ShareCardData = {
 };
 
 export function RenderOgDefaultPage() {
+  const font = shareFontFromQuery();
   const [loaded, setLoaded] = useState(false);
   const ready = usePaintedAfter(loaded);
   useEffect(() => {
-    void ensureShareFontsLoaded("golos").then(() => setLoaded(true));
-  }, []);
+    void ensureShareFontsLoaded(font).then(() => setLoaded(true));
+  }, [font]);
   if (!loaded) {
     return null;
   }
@@ -115,7 +117,7 @@ export function RenderOgDefaultPage() {
         format={WIDE}
         look={RUNNER_LOOKS[0]}
         photo={null}
-        font="golos"
+        font={font}
       />
     </RenderStage>
   );
