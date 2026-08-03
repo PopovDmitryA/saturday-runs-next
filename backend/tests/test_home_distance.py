@@ -31,7 +31,9 @@ from app.services.home_distance_service import (
 from app.services.home_location_service import HomeLocationCandidate
 from app.services.leaderboard_service import (
     _home_eligible_identities,
+    _home_identity,
     _home_location_note,
+    _HomePickStats,
     _LocationVisits,
 )
 from app.services.location_catalog_service import LocationCatalogIndex
@@ -246,6 +248,42 @@ def test_home_ambiguity_flags_tie_and_close_runner_up() -> None:
 
 def _visits(count: int) -> _LocationVisits:
     return _LocationVisits(first_date=date(2099, 1, 3), codes={"five_verst"}, visits=count)
+
+
+def _pick(run_days: int, volunteer_days: int = 0, first: date | None = None) -> _HomePickStats:
+    return _HomePickStats(
+        run_days=run_days, volunteer_days=volunteer_days, first_run_date=first
+    )
+
+
+def test_rating_picks_home_by_the_same_three_steps_as_the_cabinet() -> None:
+    """Пробежки → волонтёрства → кто раньше начал (как _auto_home_location)."""
+    names = {"a": "Альфа", "b": "Бета", "c": "Гамма"}
+
+    # 1. Решают пробежки, волонтёрства их перебить не могут.
+    by_runs = {"a": _pick(10, volunteer_days=0), "b": _pick(9, volunteer_days=50)}
+    assert _home_identity(by_runs, names, None) == "a"
+
+    # 2. Ничья по пробежкам — сравниваем волонтёрства, но только среди лидеров.
+    by_volunteering = {
+        "a": _pick(10, volunteer_days=1),
+        "b": _pick(10, volunteer_days=4),
+        "c": _pick(9, volunteer_days=99),
+    }
+    assert _home_identity(by_volunteering, names, None) == "b"
+
+    # 3. Ничья и там — побеждает площадка с самой ранней пробежкой.
+    by_first_run = {
+        "a": _pick(5, 2, date(2025, 6, 1)),
+        "b": _pick(5, 2, date(2024, 3, 15)),
+    }
+    assert _home_identity(by_first_run, names, None) == "b"
+
+    # Площадка без известной даты проигрывает любой реальной.
+    assert _home_identity({"a": _pick(5, 2), "b": _pick(5, 2, date(2025, 1, 1))}, names, None) == "b"
+
+    # Ручной выбор сильнее всех ступеней.
+    assert _home_identity(by_runs, names, "b") == "b"
 
 
 def test_rating_marks_shaky_auto_home_but_not_a_clear_leader() -> None:

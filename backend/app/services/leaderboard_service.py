@@ -645,6 +645,34 @@ WHERE e.is_test_event = false
   AND ec.secondary_event_id IS NULL
 """
 
+# Выбор домашней локации в рейтинге дальности повторяет кабинет
+# (app.services.home_location_service._auto_home_location), поэтому и считать
+# надо теми же величинами: пробежки — по уникальным ДНЯМ, а не по строкам
+# протоколов. Общий _LOCATION_VISITS_SQL для этого не годится: там COUNT(*), и
+# менять его нельзя — на нём стоит порог визитов рейтинга туризма. Отдельная
+# выборка дешевле правки семантики соседнего рейтинга.
+_HOME_PICK_RUN_SQL = (
+    _PARKRUN_ELIGIBLE_CTE
+    + f"""
+SELECT
+    rr.participant_id AS participant_id,
+    p.code AS platform_code,
+    e.location_id AS location_id,
+    MIN(e.event_date) AS first_date,
+    COUNT(DISTINCT e.event_date) AS run_days
+FROM run_results rr
+JOIN events e ON e.id = rr.event_id
+JOIN platforms p ON p.id = e.platform_id
+LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
+WHERE e.is_test_event = false
+  AND rr.participant_id IS NOT NULL
+  AND ec.secondary_event_id IS NULL
+  AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
+  /*PIDS_FILTER*/
+GROUP BY rr.participant_id, p.code, e.location_id
+"""
+)
+
 _VOLUNTEER_LOCATION_VISITS_SQL = """
 SELECT
     vr.participant_id AS participant_id,
@@ -2197,27 +2225,78 @@ def _collect_location_entities(
     return entities
 
 
+@dataclass
+class _HomePickStats:
+    """Чем площадка соревнуется за звание домашней (см. _home_identity)."""
+
+    run_days: int = 0
+    volunteer_days: int = 0
+    first_run_date: date | None = None
+
+    def add_runs(self, days: int, first_date: date) -> None:
+        self.run_days += days
+        if self.first_run_date is None or first_date < self.first_run_date:
+            self.first_run_date = first_date
+
+
+# Заглушка для площадок без известной даты пробежки: в сравнении «кто раньше»
+# они должны проигрывать любой реальной дате, а не выигрывать пустотой.
+_NO_RUN_DATE = date(9999, 12, 31)
+
+
 def _home_identity(
-    identities: dict[str, _LocationVisits],
+    stats: dict[str, _HomePickStats],
     identity_names: dict[str, str],
     manual_key: str | None,
 ) -> str | None:
-    """Домашняя площадка участника: выбранная руками, иначе — где больше визитов.
+    """Домашняя площадка участника — те же три ступени, что в кабинете
+    (app.services.home_location_service._auto_home_location, решение Дмитрия
+    03.08.2026): больше пробежек → больше волонтёрств → раньше начал.
 
-    Ничьи разводим по названию, чтобы рейтинг не «дышал» между пересчётами:
-    у 4846 участников первое место делят две площадки.
+    Волонтёрства сравниваются только среди лидеров по пробежкам и перебить их
+    не могут — за это отвечает порядок ключей в кортеже. Полная ничья
+    разрешается названием, чтобы выбор не «дышал» между пересчётами: первое
+    место по пробежкам делят две площадки у 4846 участников.
     """
-    if manual_key is not None and manual_key in identities:
+    if manual_key is not None and manual_key in stats:
         return manual_key
-    if not identities:
+    if not stats:
         return None
     return min(
-        identities,
+        stats,
         key=lambda identity: (
-            -identities[identity].visits,
+            -stats[identity].run_days,
+            -stats[identity].volunteer_days,
+            stats[identity].first_run_date or _NO_RUN_DATE,
             identity_names.get(identity, identity).casefold(),
         ),
     )
+
+
+def _collect_home_pick_stats(
+    rows: Sequence[Row[Any]],
+    volunteer_rows: Sequence[Row[Any]],
+    identity_by_location: dict[UUID, str],
+    links: dict[UUID, _SiteLink],
+) -> dict[str, dict[str, _HomePickStats]]:
+    """Счётчики выбора дома по участникам: пробежки, волонтёрства, начало.
+
+    Считаются по ВСЕМ данным человека, без фильтра «по системе»: дом у него
+    один и тот же, какой бы срез рейтинга ни смотрели — иначе при переключении
+    вкладки система «переезжала» бы вместе с нулевой точкой.
+    """
+    per_entity: dict[str, dict[str, _HomePickStats]] = {}
+
+    def bucket(pid: UUID, location_id: UUID) -> _HomePickStats:
+        key = _entity_key(pid, links.get(pid))
+        identity = identity_by_location.get(location_id, str(location_id))
+        return per_entity.setdefault(key, {}).setdefault(identity, _HomePickStats())
+
+    for pid, _code, location_id, first_date, run_days in rows:
+        bucket(pid, location_id).add_runs(int(run_days), first_date)
+    for pid, _code, location_id, _first_date, visits, _week in volunteer_rows:
+        bucket(pid, location_id).volunteer_days += int(visits)
+    return per_entity
 
 
 def _home_location_note(
@@ -2302,6 +2381,12 @@ def _collect_home_distance_entities(
     manual_homes = source.manual_home_keys()
     eligible_homes = source.home_eligible_identities()
     rows = source.rows(_LOCATION_VISITS_SQL)
+    home_stats = _collect_home_pick_stats(
+        source.rows(_HOME_PICK_RUN_SQL),
+        source.rows(_VOLUNTEER_LOCATION_VISITS_SQL),
+        identity_by_location,
+        links,
+    )
 
     per_entity: dict[str, dict[str, _LocationVisits]] = {}
     meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
@@ -2332,7 +2417,7 @@ def _collect_home_distance_entities(
         else:
             entity.display_name = names.get(pid)
         manual_key = manual_homes.get(link.user_id) if link is not None else None
-        home = _home_identity(identities, identity_names, manual_key)
+        home = _home_identity(home_stats.get(key, {}), identity_names, manual_key)
         if home is None:
             continue
         # Дом вне наших систем (зарубежный parkrun) — участника в рейтинге нет:
@@ -3222,7 +3307,35 @@ def _my_home_distance_values(
             continue
         identity = identity_by_location.get(location_id, str(location_id))
         _merge_visit_row(identities, identity, code, first_date, int(visits), int(week_visits))
-    home = _home_identity(identities, identity_names, user.home_location_key)
+    # Дом — по всем данным человека и теми же тремя ступенями, что в кабинете.
+    pick_params = _row_params(db, week_start, pids=participant_ids)
+    home_stats = _collect_home_pick_stats(
+        db.execute(
+            text(_HOME_PICK_RUN_SQL.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")),
+            pick_params,
+        ).all(),
+        db.execute(
+            text(
+                _VOLUNTEER_LOCATION_VISITS_SQL.replace(
+                    "/*PIDS_FILTER*/", "AND vr.participant_id = ANY(:pids)"
+                )
+            ),
+            pick_params,
+        ).all(),
+        identity_by_location,
+        _site_links(db),
+    )
+    my_stats: dict[str, _HomePickStats] = {}
+    for entity_stats in home_stats.values():
+        for identity, stat in entity_stats.items():
+            merged = my_stats.setdefault(identity, _HomePickStats())
+            merged.run_days += stat.run_days
+            merged.volunteer_days += stat.volunteer_days
+            if stat.first_run_date is not None and (
+                merged.first_run_date is None or stat.first_run_date < merged.first_run_date
+            ):
+                merged.first_run_date = stat.first_run_date
+    home = _home_identity(my_stats, identity_names, user.home_location_key)
     # Дом вне наших систем — участника в этом рейтинге нет (см.
     # _home_eligible_identities).
     if home is None or home not in _home_eligible_identities(db):
