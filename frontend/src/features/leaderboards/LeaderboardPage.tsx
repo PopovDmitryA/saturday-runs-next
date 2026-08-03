@@ -25,6 +25,7 @@ import {
   type VolunteerRoleDetail,
   type WeekLocation,
 } from "./leaderboardsApi";
+import { formatInt } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
@@ -413,7 +414,7 @@ function GeoCount({ value }: { value?: number | null }) {
   if (value == null) {
     return <span className="lb-zero">—</span>;
   }
-  return <span className="lb-cell">{value}</span>;
+  return <span className="lb-cell">{formatInt(value)}</span>;
 }
 
 function formatDate(value: string | null): string {
@@ -426,7 +427,7 @@ function formatDate(value: string | null): string {
 
 function DeltaSlot({ delta }: { delta: number }) {
   // Слот фиксированной ширины: дельта не сдвигает цифры в колонке.
-  return <span className="lb-delta">{delta > 0 ? `+${delta}` : ""}</span>;
+  return <span className="lb-delta">{delta > 0 ? `+${formatInt(delta)}` : ""}</span>;
 }
 
 function RankDelta({ delta }: { delta: number | null }) {
@@ -442,7 +443,21 @@ function RankDelta({ delta }: { delta: number | null }) {
   );
 }
 
-function CellValue({ cell }: { cell?: { value: number; delta: number } }) {
+/** Единица измерения мелким шрифтом сразу за числом: «126 789 км». */
+function Unit({ unit }: { unit?: string }) {
+  if (!unit) {
+    return null;
+  }
+  return <span className="lb-unit">{unit}</span>;
+}
+
+function CellValue({
+  cell,
+  unit,
+}: {
+  cell?: { value: number; delta: number };
+  unit?: string;
+}) {
   if (!cell || cell.value === 0) {
     return (
       <span className="lb-cell">
@@ -453,7 +468,8 @@ function CellValue({ cell }: { cell?: { value: number; delta: number } }) {
   }
   return (
     <span className="lb-cell">
-      {cell.value}
+      {formatInt(cell.value)}
+      <Unit unit={unit} />
       <DeltaSlot delta={cell.delta} />
     </span>
   );
@@ -637,6 +653,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   // «Дальность от дома» несёт две свои колонки: домашняя локация и сколько
   // площадок посещено — без них число километров ни о чём не говорит.
   const isHomeDistance = metric === "home_distance";
+  // Без подписи колонка «Всего» у дальности читается как счётчик пробежек.
+  const valueUnit = isHomeDistance ? "км" : undefined;
   // Гео-зачёт есть ровно там же, где порог визитов, — у туристических рейтингов.
   const effectiveCountBy = hasMinVisits ? countBy : "locations";
 
@@ -1066,13 +1084,14 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                       {columns.map((code) => (
                         <span key={code} className="lb-me-value">
                           <span className="lb-me-platform">{PLATFORM_LABELS[code] ?? code}</span>
-                          <CellValue cell={me.platforms[code]} />
+                          <CellValue cell={me.platforms[code]} unit={valueUnit} />
                         </span>
                       ))}
                       <span className="lb-me-value lb-me-total">
                         <span className="lb-me-platform">{totalLabel}</span>
                         <span className="lb-cell">
-                          {me.total}
+                          {formatInt(me.total)}
+                          <Unit unit={valueUnit} />
                           <DeltaSlot delta={me.total_delta} />
                         </span>
                       </span>
@@ -1166,7 +1185,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                   <p className="lb-me-threshold">
                     Вы появитесь в рейтинге после достижения {me.threshold}{" "}
                     {unitLabel(metric, me.threshold, effectiveCountBy)} — сейчас у вас{" "}
-                    {me.total}.
+                    {formatInt(me.total)}{valueUnit ? ` ${valueUnit}` : ""}.
                   </p>
                 )}
               </section>
@@ -1302,12 +1321,13 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         {showFull &&
                           columns.map((code) => (
                             <td key={code} className="lb-col-num">
-                              <CellValue cell={row.platforms[code]} />
+                              <CellValue cell={row.platforms[code]} unit={valueUnit} />
                             </td>
                           ))}
                         <td className="lb-col-num lb-col-total">
                           <span className="lb-cell lb-total">
-                            {row.total}
+                            {formatInt(row.total)}
+                            <Unit unit={valueUnit} />
                             <DeltaSlot delta={row.total_delta} />
                           </span>
                         </td>
@@ -1390,7 +1410,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 tableRef={tableRef}
                 rank={me.rank}
                 name={me.display_name ?? "Вы"}
-                value={me.total}
+                value={`${formatInt(me.total)}${valueUnit ? ` ${valueUnit}` : ""}`}
                 onShow={showMyRow}
                 watchKey={`${visibleRows.length}:${sortKey}:${query}`}
               />

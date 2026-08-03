@@ -25,6 +25,7 @@ import {
   type PortalHomeResponse,
 } from "./portalTypes";
 import "./portal.css";
+import { formatInt } from "../../lib/format";
 
 const EARTH_EQUATOR_KM = 40_075;
 const SECONDS_PER_YEAR = 365 * 24 * 3600;
@@ -36,10 +37,6 @@ function plural(count: number, one: string, few: string, many: string): string {
   if (mod10 === 1) return one;
   if (mod10 >= 2 && mod10 <= 4) return few;
   return many;
-}
-
-function formatInt(value: number): string {
-  return value.toLocaleString("ru-RU");
 }
 
 function formatDateLong(iso: string): string {
