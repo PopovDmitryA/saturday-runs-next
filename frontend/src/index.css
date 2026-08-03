@@ -5840,6 +5840,19 @@ tr.run-crosslinked td {
   font-weight: 600;
 }
 
+/* Внешние панели вебмастеров: пунктир вместо заливки — отличить от разделов
+   сайта на первый взгляд, до того как прочитан текст ссылки. */
+.admin-subnav-link-external {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-2);
+}
+
+.admin-subnav-link-external:hover {
+  border-color: var(--link);
+  color: var(--link);
+}
+
 .admin-tile-grid {
   display: grid;
   gap: 0.85rem;
