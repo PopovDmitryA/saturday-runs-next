@@ -299,15 +299,24 @@ Scheduled sync → лог в `scheduled_run_logs` через `run_reported_sync(
 `scheduled_sync_guard.py`; суточная сводка (`admin_digest.daily_sync_summary`) уходит
 в Telegram.
 
-Уведомления от фич сайта (сейчас — бэклог: карточки, голоса, комментарии) идут через
-`services/admin_notify.notify_admin()` — тот же канал, что у сводки. Прямой вызов
-`send_vk_admin_message()` оставлен только там, где нужен диалог в ВК с `reply_to`
-(заявки на координаты локаций) и в фолбэке `send_admin_report()`.
+Все уведомления админу идут через `services/admin_notify.py` — прямых вызовов
+`send_vk_admin_message()` в фичах не осталось (03.08.2026), ВК живёт только внутри
+фолбэка `send_admin_report()`:
+
+- `notify_admin(text) -> bool` — в один конец: карточки/голоса/комментарии бэклога,
+  алерты синков (дубль локации 5 вёрст, смена slug клуба). Возвращает признак
+  доставки: алерты помечают заявку отправленной только после успеха.
+- `notify_admin_dialog(text, reply_to_message_id=None) -> (chat_id, message_id)` —
+  для диалогов Reply (заявки на координаты новых локаций, `location_coordinate_service`).
+  Только Telegram, без фолбэка: ответы разбирает бот через
+  `/internal/bot/coordinate-message`, а слушателя ВК нет с перевода бота на Telegram —
+  до 03.08.2026 запрос уходил в ВК, и ответить на него было некому.
 
 На прогоне тестов admin-уведомления не уходят никуда: `core/runtime_env.is_test_run()`
-глушит их в `notify_admin()` и в `send_vk_admin_message()`. Локальный pytest работает
-с боевым `.env`, и до 03.08.2026 каждый прогон тестов бэклога прилетал админу в ВК
-живыми сообщениями («Новая карточка бэклога: [фича] «Идея»», «Комментарий … Первый»).
+глушит их в `notify_admin()`, `notify_admin_dialog()` и в самом `send_vk_admin_message()`.
+Локальный pytest работает с боевым `.env`, и до 03.08.2026 каждый прогон тестов бэклога
+прилетал админу в ВК живыми сообщениями («Новая карточка бэклога: [фича] «Идея»»,
+«Комментарий … Первый»).
 
 Команды (bot_app, admin-only): `/stats`, `/status`, `/sweep`, `/sync registry|latest|…`,
 `/sync s95-latest|…`.

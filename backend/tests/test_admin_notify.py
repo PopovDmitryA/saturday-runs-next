@@ -28,6 +28,26 @@ def test_notify_admin_goes_to_telegram_channel(monkeypatch: pytest.MonkeyPatch) 
     assert sent == ["🆕 Новая карточка бэклога"]
 
 
+def test_notify_admin_dialog_returns_chat_and_message_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(admin_notify, "is_test_run", lambda: False)
+    monkeypatch.setattr(
+        admin_notify,
+        "get_settings",
+        lambda: Settings(
+            app_secret_key="test-secret-key", telegram_bot_token="t", telegram_admin_chat_id=4242
+        ),
+    )
+    monkeypatch.setattr(admin_notify, "send_admin_telegram_message", lambda text, **k: 777)
+
+    assert admin_notify.notify_admin_dialog("Локация без координат") == (4242, 777)
+
+
+def test_notify_admin_dialog_is_silent_under_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(admin_notify, "send_admin_telegram_message", lambda text, **k: 777)
+
+    assert admin_notify.notify_admin_dialog("Локация без координат") is None
+
+
 def test_vk_admin_message_skipped_under_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
     """Даже с боевым токеном в .env прогон тестов не пишет админу в ВК."""
     calls: list[tuple] = []

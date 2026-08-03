@@ -16,8 +16,8 @@ from app.platform_adapters.five_verst.bulk_parser import (
     registry_entry_is_paused,
 )
 from app.platform_adapters.five_verst.http import NotFoundError
+from app.services.admin_notify import notify_admin
 from app.services.location_geo_service import apply_reverse_geocode_to_location
-from app.services.vk_admin_notify import send_vk_admin_message, vk_admin_configured
 from app.sync import upsert
 from app.sync.iteration_commit import commit_step, rollback_step
 from app.sync.location_registry_status import apply_location_registry_flags
@@ -238,10 +238,6 @@ def _create_merge_request_if_needed(
 
 
 def _notify_merge_request(request: LocationMergeRequest) -> bool:
-    if not vk_admin_configured():
-        logger.info("VK admin notify not configured, skip merge notification for %s", request.candidate_slug)
-        return False
-
     sample_dates = ", ".join(request.overlap_event_dates[:5])
     if len(request.overlap_event_dates) > 5:
         sample_dates += ", …"
@@ -256,7 +252,7 @@ def _notify_merge_request(request: LocationMergeRequest) -> bool:
         f"Примеры дат: {sample_dates}\n\n"
         "Проверьте вручную: возможно, локация сменила URL/имя."
     )
-    return send_vk_admin_message(text) is not None
+    return notify_admin(text)
 
 
 def _friendly_fetch_error(exc: Exception) -> str:

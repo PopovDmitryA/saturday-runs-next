@@ -22,7 +22,7 @@ from app.models import (
 from app.platform_adapters.five_verst import clubs_parser
 from app.platform_adapters.five_verst.clubs_parser import ParsedClubsListEntry
 from app.platform_adapters.five_verst.http import NotFoundError, source_hash
-from app.services.vk_admin_notify import send_vk_admin_message, vk_admin_configured
+from app.services.admin_notify import notify_admin
 from app.sync import upsert
 from app.sync.iteration_commit import commit_step, rollback_step
 
@@ -298,9 +298,6 @@ def _detect_slug_change(db: Session, platform: Platform, club: Club, member_ids:
 
 
 def _notify_slug_change(club: Club, matched: Club, overlap: int, roster_size: int) -> bool:
-    if not vk_admin_configured():
-        logger.info("VK admin notify not configured, skip club slug-change alert for %s", club.external_key)
-        return False
     text = (
         "⚠️ Возможная смена slug клуба 5 вёрст\n\n"
         f"Новый клуб: {club.external_key} ({club.name})\n"
@@ -310,7 +307,7 @@ def _notify_slug_change(club: Club, matched: Club, overlap: int, roster_size: in
         f"Если это тот же клуб — объединить вручную:\n"
         f"scripts/link_club_catalog.py --rename-slug {matched.external_key} {club.external_key}"
     )
-    return send_vk_admin_message(text) is not None
+    return notify_admin(text)
 
 
 def _sync_club_membership(
