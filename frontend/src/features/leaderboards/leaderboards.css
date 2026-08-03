@@ -1027,11 +1027,19 @@ a.lb-hub-card:hover {
   flex-shrink: 0;
 }
 
-/* === Мобильный полный вид: липкие «Место» и «Участник» === */
+/* === Узкий полный вид: липкие «Место» и «Участник» === */
 
 /* В кратком виде (3 колонки) скролла нет и липкость не нужна; в полном
    идентификатор строки не должен уезжать за экран. Ширины фиксируем,
-   иначе sticky-смещение второй колонки не посчитать. */
+   иначе sticky-смещение второй колонки не посчитать.
+
+   Порог совпадает с тем, на котором обёртка получает overflow-x:auto: липкость
+   нужна ровно там, где таблицу можно листать вбок. Здесь — общий случай (820),
+   а у широких рейтингов (.lb-table-wrap-wide: туризм, победы, «последняя
+   неделя») скролл включается раньше, с 1150px, и для них тот же набор правил
+   продублирован ниже. Объединить в один медиазапрос нельзя: у остальных
+   рейтингов между 820 и 1150 скролла нет, и узкие колонки там только зря
+   обрезали бы имена. */
 @media (max-width: 820px) {
   /* Ширина «Места» и есть смещение для «Участника» — держим их одной
      переменной, чтобы колонки не разъехались при правке одной из них. */
@@ -1095,6 +1103,60 @@ a.lb-hub-card:hover {
 
   /* Тень-отрыв у липкого блока, когда таблица прокручена вбок. */
   .tshadow-left .lb-table.lb-table-full .lb-col-name {
+    box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+  }
+}
+
+/* Широкие рейтинги на планшете и в узком окне десктопа: обёртка получает
+   горизонтальный скролл уже с 1150px, значит и липкость нужна с той же ширины —
+   иначе колонка с именем уезжает ровно так же, как уезжала на телефоне.
+   Набор правил тот же, что выше, отличается только областью применения;
+   «Участнику» тут оставляем 10rem — места больше, чем на телефоне. */
+@media (min-width: 821px) and (max-width: 1150px) {
+  .lb-table-wrap-wide .lb-table {
+    --lb-sticky-rank-w: 4.4rem;
+    --lb-sticky-name-w: 10rem;
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-fixed.lb-table-full {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-full .lb-col-rank {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+    width: var(--lb-sticky-rank-w);
+    min-width: var(--lb-sticky-rank-w);
+    max-width: var(--lb-sticky-rank-w);
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-full .lb-col-name {
+    position: sticky;
+    left: var(--lb-sticky-rank-w);
+    z-index: 2;
+    background: var(--surface);
+    width: var(--lb-sticky-name-w);
+    min-width: var(--lb-sticky-name-w);
+    max-width: var(--lb-sticky-name-w);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-full thead .lb-col-rank,
+  .lb-table-wrap-wide .lb-table.lb-table-full thead .lb-col-name {
+    z-index: 4;
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-full .lb-row-me .lb-col-rank,
+  .lb-table-wrap-wide .lb-table.lb-table-full .lb-row-me .lb-col-name {
+    background: var(--tint-indigo-bg);
+  }
+
+  .tshadow-left .lb-table-wrap-wide .lb-table.lb-table-full .lb-col-name {
     box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
   }
 }
