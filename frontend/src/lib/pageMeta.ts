@@ -340,6 +340,14 @@ export function applyPageMeta(meta: PageMeta): void {
   setMetaTag('meta[property="og:site_name"]', "property", "og:site_name", SITE_NAME);
   setMetaTag('meta[property="og:type"]', "property", "og:type", "website");
   setMetaTag('meta[property="og:url"]', "property", "og:url", window.location.href);
+  // Дефолтная брендовая картинка. Роботы мессенджеров сюда не смотрят (они
+  // получают пререндер с точным og:image от бэкенда) — это для JS-краулеров.
+  setMetaTag(
+    'meta[property="og:image"]',
+    "property",
+    "og:image",
+    `${window.location.origin}/og/default.png`,
+  );
 
   let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
   if (!canonical) {

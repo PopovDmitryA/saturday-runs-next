@@ -56,6 +56,7 @@ import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { useAppPath } from "./hooks/useAppPath";
+import { RenderOgDefaultPage, RenderOgLocationPage } from "./features/sharing/RenderOgPage";
 import { ShareSheetProvider } from "./features/sharing/ShareSheetContext";
 import { reportAbLoginOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
@@ -67,6 +68,11 @@ import { buildVisitorKey } from "./lib/siteVisitor";
 
 function useSitePageviewTracking(path: string) {
   useEffect(() => {
+    // Служебный рендер OG-картинок открывает Playwright — это не визиты людей,
+    // в аналитику им нельзя.
+    if (path.startsWith("/render/")) {
+      return;
+    }
     let cleanup: (() => void) | null = null;
     let cancelled = false;
     const begin = (authenticated: boolean, userId: string | undefined) => {
@@ -292,6 +298,15 @@ function renderRoute(path: string): ReactElement {
   const locationMatch = path.match(/^\/locations\/([^/]+)$/);
   if (locationMatch) {
     return <LocationPage slug={decodeURIComponent(locationMatch[1])} />;
+  }
+  // Служебный рендер OG-картинок: открывает Playwright из celery-задачи
+  // og_render (снаружи путь закрыт в host-nginx). См. features/sharing/RenderOgPage.
+  const renderOgLocationMatch = path.match(/^\/render\/og\/location\/([^/]+)$/);
+  if (renderOgLocationMatch) {
+    return <RenderOgLocationPage slug={decodeURIComponent(renderOgLocationMatch[1])} />;
+  }
+  if (path === "/render/og/default") {
+    return <RenderOgDefaultPage />;
   }
   const render = STATIC_ROUTES[path];
   if (render) {

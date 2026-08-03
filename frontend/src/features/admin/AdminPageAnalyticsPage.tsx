@@ -52,6 +52,7 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   backlog: "Бэклог",
   cabinet_preview: "Превью кабинета (демо)",
   sweep_hq: "Штаб обхода parkrun",
+  og_render: "Служебный рендер OG-картинок",
   redirect: "Редиректы и старые адреса кабинета",
   legacy_grafana: "Старые адреса Grafana",
   other: "Прочее (неизвестные адреса)",
@@ -60,6 +61,39 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
 function pageTypeLabel(pageType: string): string {
   return PAGE_TYPE_LABELS[pageType] ?? pageType;
 }
+
+// Ярлыки событий шаринга. Канон значений — frontend/src/features/sharing/.
+const SHARE_FUNNEL_LABELS: Record<string, string> = {
+  share_moment_shown: "Показы приглашений",
+  share_open: "Открытия шторки",
+  share_customize: "Заходы в «Настроить»",
+  share_success: "Отправленные постеры",
+};
+
+const SHARE_SUBJECT_LABELS: Record<string, string> = {
+  milestone: "Веха",
+  run: "Пробежка",
+  summary: "Сводка",
+  location_event: "Локация: последний старт",
+  location_card: "Локация: визитка",
+  rating: "Позиция в рейтинге",
+};
+
+const SHARE_ENTRY_LABELS: Record<string, string> = {
+  dashboard: "дашборд",
+  runs: "пробежки",
+  history: "вехи",
+  on_this_day: "«В этот день»",
+  location: "локация",
+  rating: "рейтинги",
+  gallery: "страница /share",
+};
+
+const SHARE_CHANNEL_LABELS: Record<string, string> = {
+  system: "системный шит",
+  download: "скачивание",
+  copy: "копирование",
+};
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null) {
@@ -320,6 +354,128 @@ function AdminPageAnalyticsContent() {
                         </td>
                         <td>{row.clicks}</td>
                         <td>{row.visitors}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          {data.share.funnel.length > 0 && (
+            <section className="card">
+              <h2 className="section-title">Шаринг</h2>
+              <p className="muted">
+                Фича «Поделиться»: воронка от показа приглашения до отправленного постера.
+                Пишется с релиза «Поделиться 2.0» — за более ранние периоды таблицы пустые.
+              </p>
+              <div className="table-scroll">
+                <table className="data-table page-analytics-table">
+                  <thead>
+                    <tr>
+                      <th>Шаг воронки</th>
+                      <th>Событий</th>
+                      <th>Посетителей</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.share.funnel.map((row) => (
+                      <tr key={row.event_type}>
+                        <td>{SHARE_FUNNEL_LABELS[row.event_type] ?? row.event_type}</td>
+                        <td>{row.events}</td>
+                        <td>{row.visitors}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {data.share.subjects.length > 0 && (
+                <div className="table-scroll">
+                  <table className="data-table page-analytics-table">
+                    <thead>
+                      <tr>
+                        <th>Сюжет</th>
+                        <th>Показы</th>
+                        <th>Открытия</th>
+                        <th>Шеринги</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.share.subjects.map((row) => (
+                        <tr key={row.subject}>
+                          <td>{SHARE_SUBJECT_LABELS[row.subject] ?? row.subject}</td>
+                          <td>{row.shown}</td>
+                          <td>{row.opens}</td>
+                          <td>{row.successes}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {(data.share.entries.length > 0 || data.share.channels.length > 0) && (
+                <p className="muted">
+                  {data.share.entries.length > 0 && (
+                    <>
+                      Входы:{" "}
+                      {data.share.entries
+                        .map(
+                          (row) =>
+                            `${SHARE_ENTRY_LABELS[row.entry] ?? row.entry} — ${row.opens}`,
+                        )
+                        .join(" · ")}
+                      .{" "}
+                    </>
+                  )}
+                  {data.share.channels.length > 0 && (
+                    <>
+                      Каналы:{" "}
+                      {data.share.channels
+                        .map(
+                          (row) =>
+                            `${SHARE_CHANNEL_LABELS[row.channel] ?? row.channel} — ${row.successes}`,
+                        )
+                        .join(" · ")}
+                      .
+                    </>
+                  )}
+                </p>
+              )}
+            </section>
+          )}
+
+          {data.og_fetches.length > 0 && (
+            <section className="card">
+              <h2 className="section-title">Разворачивания ссылок</h2>
+              <p className="muted">
+                Боты мессенджеров и поисковиков запрашивали превью страниц — прокси-метрика
+                «ссылку на сайт кинули в чат». Считается по заходам на пререндер.
+              </p>
+              <div className="table-scroll">
+                <table className="data-table page-analytics-table">
+                  <thead>
+                    <tr>
+                      <th>Страница</th>
+                      <th>Тип</th>
+                      <th>Запросов</th>
+                      <th>Ботов</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.og_fetches.map((row) => (
+                      <tr key={`${row.page_type}:${row.entity_key}`}>
+                        <td>
+                          {row.href ? (
+                            <a href={row.href} target="_blank" rel="noreferrer">
+                              {row.label}
+                            </a>
+                          ) : (
+                            row.label
+                          )}
+                        </td>
+                        <td className="muted">{pageTypeLabel(row.page_type)}</td>
+                        <td>{row.fetches}</td>
+                        <td>{row.bots}</td>
                       </tr>
                     ))}
                   </tbody>

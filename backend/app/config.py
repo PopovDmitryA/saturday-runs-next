@@ -11,6 +11,12 @@ class Settings(BaseSettings):
     app_secret_key: str = "change-me-in-production"
     app_base_url: str = "http://localhost:8080"
 
+    # OG-превью (Л19): куда celery-задача складывает готовые PNG (nginx раздаёт
+    # /og/locations/* из этой папки) и по какому адресу Playwright открывает
+    # внутренний рендер-роут фронта (docker-сеть).
+    og_image_dir: str = "/data/og"
+    og_render_base_url: str = "http://nginx"
+
     database_url: str = "postgresql+psycopg://saturday_runs:saturday_runs@localhost:5433/saturday_runs_lk"
     redis_url: str = "redis://localhost:6379/0"
 

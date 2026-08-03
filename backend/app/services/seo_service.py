@@ -24,6 +24,7 @@ import re
 from dataclasses import dataclass
 from datetime import date
 from html import escape
+from pathlib import Path
 from typing import Any, cast
 from xml.sax.saxutils import escape as xml_escape
 
@@ -440,13 +441,49 @@ def build_robots_txt() -> str:
 # --------------------------------------------------------------------------
 
 
-def _og_image_tags() -> list[str]:
-    """Место под og:image.
+# Размер OG-картинок: стандарт превью Telegram/VK/Facebook.
+OG_IMAGE_WIDTH = 1200
+OG_IMAGE_HEIGHT = 630
 
-    Динамическая картинка-превью (Л19) делается в отдельной ветке; когда
-    появится эндпоинт, тег добавляется здесь и подхватится всеми страницами.
+# Дефолтная брендовая карточка: лежит в статике фронта (frontend/public/og/),
+# показывается для всех страниц без собственной картинки.
+DEFAULT_OG_IMAGE_PATH = "/og/default.png"
+
+
+def location_og_image_url(payload: dict[str, Any]) -> str | None:
+    """Адрес прегенерированной OG-картинки локации, если файл уже отрендерен.
+
+    Картинки складывает celery-задача og_render (очередь parkrun — только там
+    есть Chromium) в settings.og_image_dir; nginx раздаёт их как /og/locations/*.
+    Версия в query — дата последнего старта: Telegram кэширует превью надолго,
+    новый URL сбрасывает кэш после каждой субботы.
     """
-    return []
+    slug = str(payload.get("slug") or "")
+    if not slug:
+        return None
+    image_path = Path(get_settings().og_image_dir) / "locations" / f"{slug}.png"
+    if not image_path.is_file():
+        return None
+    stats = payload.get("stats") or {}
+    last_event = stats.get("last_event_date")
+    version = last_event.isoformat() if isinstance(last_event, date) else str(last_event or "")
+    suffix = f"?v={version}" if version else ""
+    return f"{site_base_url()}/og/locations/{slug}.png{suffix}"
+
+
+def _og_image_tags(og_image_url: str | None) -> list[str]:
+    """og:image страницы: своя картинка либо дефолтная брендовая.
+
+    twitter:card=summary_large_image — иначе Telegram/X показывают картинку
+    мелкой иконкой сбоку вместо полноwidth-превью.
+    """
+    url = og_image_url or f"{site_base_url()}{DEFAULT_OG_IMAGE_PATH}"
+    return [
+        f'<meta property="og:image" content="{escape(url, quote=True)}">',
+        f'<meta property="og:image:width" content="{OG_IMAGE_WIDTH}">',
+        f'<meta property="og:image:height" content="{OG_IMAGE_HEIGHT}">',
+        '<meta name="twitter:card" content="summary_large_image">',
+    ]
 
 
 def _render_html(
@@ -454,6 +491,7 @@ def _render_html(
     meta: PageMeta,
     canonical: str,
     body_html: str,
+    og_image_url: str | None = None,
 ) -> str:
     robots = "index,follow" if meta.indexable else "noindex,follow"
     head = [
@@ -467,8 +505,7 @@ def _render_html(
         f'<meta property="og:title" content="{escape(meta.title, quote=True)}">',
         f'<meta property="og:description" content="{escape(meta.description, quote=True)}">',
         f'<meta property="og:url" content="{escape(canonical, quote=True)}">',
-        '<meta name="twitter:card" content="summary">',
-        *_og_image_tags(),
+        *_og_image_tags(og_image_url),
     ]
     head_html = "\n    ".join(head)
     return (
@@ -583,6 +620,7 @@ def render_prerendered_page(db: Session, raw_path: str) -> str:
                 meta=meta,
                 canonical=canonical,
                 body_html=_location_body(payload, events_log=bool(events_match)),
+                og_image_url=location_og_image_url(payload),
             )
 
     meta = resolve_page_meta(path)

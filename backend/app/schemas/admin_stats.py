@@ -119,6 +119,65 @@ class HomeLinkClickStats(BaseModel):
     visitors: int
 
 
+class ShareFunnelRow(BaseModel):
+    """Ступень воронки шаринга: событие, сколько раз и сколько посетителей."""
+
+    event_type: str
+    events: int
+    visitors: int
+
+
+class ShareSubjectRow(BaseModel):
+    """Разрез по сюжетам: показы приглашений, открытия шторки, успехи."""
+
+    subject: str
+    shown: int
+    opens: int
+    successes: int
+
+
+class ShareEntryRow(BaseModel):
+    """Разрез по точкам входа (дашборд, вехи, локация…)."""
+
+    entry: str
+    shown: int
+    opens: int
+
+
+class ShareChannelRow(BaseModel):
+    """Успешные шеринги по каналам: system / download / copy."""
+
+    channel: str
+    successes: int
+
+
+class ShareSwitchRow(BaseModel):
+    """Переключения оформления: look:<id> / format:<id>."""
+
+    kind: str
+    value: str
+    count: int
+
+
+class ShareStats(BaseModel):
+    funnel: list[ShareFunnelRow] = Field(default_factory=list)
+    subjects: list[ShareSubjectRow] = Field(default_factory=list)
+    entries: list[ShareEntryRow] = Field(default_factory=list)
+    channels: list[ShareChannelRow] = Field(default_factory=list)
+    switches: list[ShareSwitchRow] = Field(default_factory=list)
+
+
+class OgFetchRow(BaseModel):
+    """Разворачивание ссылки ботом: страница и сколько раз запросили превью."""
+
+    page_type: str
+    entity_key: str
+    label: str
+    href: str | None
+    fetches: int
+    bots: int
+
+
 class PageAnalyticsResponse(BaseModel):
     # Границы включительно; сервер отдаёт их разрешёнными (в т.ч. когда клиент
     # прислал period_days), чтобы UI показывал ровно то, что посчитано.
@@ -128,5 +187,7 @@ class PageAnalyticsResponse(BaseModel):
     sections: list[PageAnalyticsSection]
     home_ab: list[HomeAbVariantStats] = Field(default_factory=list)
     home_links: list[HomeLinkClickStats] = Field(default_factory=list)
+    share: ShareStats = Field(default_factory=ShareStats)
+    og_fetches: list[OgFetchRow] = Field(default_factory=list)
     top_profiles: list[PageAnalyticsEntity]
     top_locations: list[PageAnalyticsEntity]

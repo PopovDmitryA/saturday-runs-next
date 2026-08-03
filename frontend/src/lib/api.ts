@@ -2733,12 +2733,39 @@ export type HomeLinkClickStats = {
   visitors: number;
 };
 
+export type ShareFunnelRow = { event_type: string; events: number; visitors: number };
+export type ShareSubjectRow = { subject: string; shown: number; opens: number; successes: number };
+export type ShareEntryRow = { entry: string; shown: number; opens: number };
+export type ShareChannelRow = { channel: string; successes: number };
+export type ShareSwitchRow = { kind: string; value: string; count: number };
+
+/** Воронка и разрезы фичи «Поделиться» (канал experiment="share"). */
+export type ShareStats = {
+  funnel: ShareFunnelRow[];
+  subjects: ShareSubjectRow[];
+  entries: ShareEntryRow[];
+  channels: ShareChannelRow[];
+  switches: ShareSwitchRow[];
+};
+
+/** Разворачивание ссылки ботом мессенджера/поисковика (превью в чате). */
+export type OgFetchRow = {
+  page_type: string;
+  entity_key: string;
+  label: string;
+  href: string | null;
+  fetches: number;
+  bots: number;
+};
+
 export type PageAnalyticsResponse = {
   date_from: string;
   date_to: string;
   generated_at: string;
   home_ab: HomeAbVariantStats[];
   home_links: HomeLinkClickStats[];
+  share: ShareStats;
+  og_fetches: OgFetchRow[];
   sections: PageAnalyticsSection[];
   top_profiles: PageAnalyticsEntity[];
   top_locations: PageAnalyticsEntity[];

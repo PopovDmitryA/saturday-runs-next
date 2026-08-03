@@ -48,7 +48,9 @@ function MetricTiles({ metrics, limit }: { metrics: ShareMetric[]; limit: number
     <div className="s2-metrics">
       {visible.map((metric) => (
         <div key={metric.id} className="s2-tile">
-          <div className="s2-tile-value">{metric.value}</div>
+          <div className={`s2-tile-value ${metric.value.length > 4 ? "s2-tile-value--long" : ""}`}>
+            {metric.value}
+          </div>
           <div className="s2-tile-label">{metric.label}</div>
         </div>
       ))}
