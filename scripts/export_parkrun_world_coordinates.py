@@ -59,15 +59,20 @@ def main() -> int:
         for eventname, long_name, latitude, longitude in rows
     ]
 
-    payload = {
-        "source": "parkrun-monitoring (data/parkrun.db, таблица events)",
-        "count": len(events),
-        "events": events,
-    }
-    args.target.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=1) + "\n",
-        encoding="utf-8",
+    # По строке на площадку: json.dumps с отступами раздувал файл до 18 тыс.
+    # строк на 3 тыс. площадок, и любое обновление каталога давало нечитаемый
+    # diff. Одна строка = одна площадка — diff показывает ровно то, что изменилось.
+    lines = [
+        "  " + json.dumps(event, ensure_ascii=False, sort_keys=True) for event in events
+    ]
+    body = (
+        '{\n  "source": "parkrun-monitoring (data/parkrun.db, таблица events)",\n'
+        f'  "count": {len(events)},\n'
+        '  "events": [\n'
+        + ",\n".join(lines)
+        + "\n  ]\n}\n"
     )
+    args.target.write_text(body, encoding="utf-8")
     print(f"{args.target}: {len(events)} площадок")
     return 0
 
