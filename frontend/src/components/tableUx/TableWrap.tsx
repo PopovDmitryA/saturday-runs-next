@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, type ReactNode, type Ref } from "react";
+import { useCallback, type ReactNode, type Ref } from "react";
+import { useScrollShadows } from "./useScrollShadows";
 
 type TableWrapProps = {
   children: ReactNode;
@@ -14,43 +15,10 @@ type TableWrapProps = {
  * Обёртка таблицы с тенями-подсказками горизонтального скролла: пока справа
  * (или слева) есть скрытые колонки, у соответствующего края висит градиентная
  * тень. Скроллбары на мобильных не видны, тень — единственный намёк, что
- * таблицу можно листать вбок.
+ * таблицу можно листать вбок. Сама механика тени — в useScrollShadows.
  */
 export function TableWrap({ children, className = "", stickyFirstCol = false, innerRef }: TableWrapProps) {
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  const update = useCallback(() => {
-    const host = hostRef.current;
-    const sc = scrollRef.current;
-    if (!host || !sc) {
-      return;
-    }
-    const maxLeft = sc.scrollWidth - sc.clientWidth;
-    host.classList.toggle("tshadow-left", sc.scrollLeft > 4);
-    host.classList.toggle("tshadow-right", maxLeft > 4 && sc.scrollLeft < maxLeft - 4);
-  }, []);
-
-  useEffect(() => {
-    const sc = scrollRef.current;
-    if (!sc) {
-      return;
-    }
-    update();
-    sc.addEventListener("scroll", update, { passive: true });
-    const observer = new ResizeObserver(update);
-    observer.observe(sc);
-    // Ширина контента меняется и без ресайза контейнера (переключение
-    // «Кратко | Полно», догрузка строк) — следим и за таблицей.
-    const table = sc.firstElementChild;
-    if (table) {
-      observer.observe(table);
-    }
-    return () => {
-      sc.removeEventListener("scroll", update);
-      observer.disconnect();
-    };
-  }, [update]);
+  const { hostRef, scrollRef } = useScrollShadows<HTMLDivElement, HTMLDivElement>();
 
   const setScrollRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -61,7 +29,7 @@ export function TableWrap({ children, className = "", stickyFirstCol = false, in
         (innerRef as { current: HTMLDivElement | null }).current = node;
       }
     },
-    [innerRef],
+    [innerRef, scrollRef],
   );
 
   return (

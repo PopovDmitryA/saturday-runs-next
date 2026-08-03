@@ -1240,6 +1240,19 @@ a.on-this-day-location {
   gap: 0.75rem;
 }
 
+/* Между бейджем системы и средними — сколько пробежек в неё набежало.
+   nowrap: перенос «пробе-жек» посреди строки выглядит как опечатка. */
+.platform-metrics-count {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.platform-metrics-count b {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .platform-metrics-values {
   display: flex;
   flex-wrap: wrap;
@@ -1282,12 +1295,16 @@ a.on-this-day-location {
   min-height: 0;
 }
 
+/* display: none, а не только opacity: 0 — скрытый тултип у крайнего столбца
+   всё равно занимает место и тянет вправо scrollWidth страницы: на телефоне
+   от этого весь ЛК ездил вбок. Тот же приём был точечно применён в календаре
+   суббот, теперь он общий для графиков. */
 .analytics-chart-tooltip {
   position: absolute;
   bottom: calc(100% + 0.4rem);
   left: 50%;
   transform: translateX(-50%);
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 0.15rem;
   padding: 0.4rem 0.55rem;
@@ -1324,6 +1341,7 @@ a.on-this-day-location {
 
 .analytics-chart-tooltip-wrap:hover .analytics-chart-tooltip,
 .analytics-chart-tooltip-wrap:focus-within .analytics-chart-tooltip {
+  display: flex;
   opacity: 1;
 }
 
@@ -1373,8 +1391,8 @@ a.on-this-day-location {
 
 /* На узком экране в колонку месяца влезает ~4 символа, и «август»/«сентябрь»
    наезжали на соседей. Разворачиваем подписи вертикально: ширина колонки
-   перестаёт их ограничивать. Столбцам добавляем высоты, чтобы подписи
-   отъедали её у пустого места, а не у самих баров. */
+   перестаёт их ограничивать. Ряд подписей отдельный (не внутри колонки бара),
+   поэтому их разная длина больше не двигает основание столбцов. */
 @media (max-width: 640px) {
   .analytics-chart-label-month {
     writing-mode: vertical-rl;
@@ -1383,10 +1401,7 @@ a.on-this-day-location {
     line-height: 1;
   }
 
-  .analytics-chart-bars-month {
-    height: 190px;
-  }
-
+  .analytics-chart-month-labels,
   .analytics-chart-pace-labels {
     justify-items: center;
   }
@@ -1560,11 +1575,13 @@ a.on-this-day-location {
   justify-content: stretch;
 }
 
+.analytics-chart-month-labels,
 .analytics-chart-pace-labels {
   display: grid;
   gap: 0.35rem;
   margin-top: 0.35rem;
   text-align: center;
+  align-items: start;
 }
 
 .analytics-chart-caption {
@@ -1592,6 +1609,15 @@ a.on-this-day-location {
   padding-top: 5.5rem;
   margin-top: -5.5rem;
   padding-bottom: 0.25rem;
+}
+
+/* Тени-подсказки скролла (.tshadow-host) обычно висят во всю высоту хоста, но
+   здесь сверху лежит 5.5rem запаса под всплывающие тултипы — без сдвига тень
+   торчала бы поперёк заголовка панели. Снизу отступаем на padding-bottom. */
+.tshadow-host.activity-cal-shadow::before,
+.tshadow-host.activity-cal-shadow::after {
+  top: 5.5rem;
+  bottom: 0.25rem;
 }
 
 .activity-cal-grid {
@@ -1631,18 +1657,6 @@ a.on-this-day-location {
 
 .activity-cal-cell-wrap .analytics-chart-tooltip-wrap {
   height: 100%;
-}
-
-/* Скрытые тултипы (opacity: 0) расширяли scrollWidth скролл-контейнера
-   и включали горизонтальный скроллбар даже там, где сетка помещается. */
-.activity-cal-cell-wrap .analytics-chart-tooltip {
-  display: none;
-}
-
-.activity-cal-cell-wrap .analytics-chart-tooltip-wrap:hover .analytics-chart-tooltip,
-.activity-cal-cell-wrap .analytics-chart-tooltip-wrap:focus-within .analytics-chart-tooltip {
-  display: flex;
-  opacity: 1;
 }
 
 /* У крайних колонок центрированный тултип выходит за границы скролл-контейнера

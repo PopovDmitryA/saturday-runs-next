@@ -38,6 +38,7 @@ import {
   pluralizeRu,
   prRunsLabel,
   runsCapLabel,
+  runsFormLabel,
   saturdaysLabel,
   timesLabel,
   volunteerRolesLabel,
@@ -515,6 +516,7 @@ function ActivityMonthChart({ data }: { data: DashboardAnalyticsData["activity_b
     <div className="analytics-chart">
       <div
         className="analytics-chart-bars analytics-chart-bars-month"
+        style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
         role="img"
         aria-label="Активность по месяцам"
       >
@@ -544,12 +546,24 @@ function ActivityMonthChart({ data }: { data: DashboardAnalyticsData["activity_b
                   )}
                 </div>
               </ChartColumnTooltip>
-              <span className="analytics-chart-label analytics-chart-label-month">
-                {formatMonthShort(item.month)}
-              </span>
             </div>
           );
         })}
+      </div>
+      {/* Подписи вынесены из колонок в отдельный ряд: на телефоне они
+          вертикальные и разной длины («нояб.» против «дек.»), а внутри колонки
+          съедали её высоту неодинаково — столбцы стояли на разных уровнях и
+          график «плясал». Своя сетка с теми же колонками держит их под баром. */}
+      <div
+        className="analytics-chart-month-labels"
+        style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
+        aria-hidden="true"
+      >
+        {data.map((item) => (
+          <span key={item.month} className="analytics-chart-label analytics-chart-label-month">
+            {formatMonthShort(item.month)}
+          </span>
+        ))}
       </div>
       <div className="analytics-chart-legend">
         <span className="analytics-legend-item">
@@ -870,6 +884,11 @@ export function DashboardAnalytics({
             {analytics.platform_metrics.map((item) => (
               <li key={item.platform_code} className="platform-metrics-row">
                 <PlatformBadge code={item.platform_code} />
+                {(item.runs_count ?? 0) > 0 && (
+                  <span className="platform-metrics-count">
+                    <b>{item.runs_count}</b> {runsFormLabel(item.runs_count ?? 0)}
+                  </span>
+                )}
                 <div className="platform-metrics-values">
                   {item.avg_finish_time_sec != null && (
                     <span>{formatDuration(item.avg_finish_time_sec)}</span>

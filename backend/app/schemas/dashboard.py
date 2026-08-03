@@ -65,6 +65,7 @@ class TopVolunteerRoleResponse(BaseModel):
 
 class PlatformRunMetricsResponse(BaseModel):
     platform_code: str
+    runs_count: int = 0
     avg_finish_time_sec: int | None = None
     avg_pace_sec_per_km: int | None = None
 

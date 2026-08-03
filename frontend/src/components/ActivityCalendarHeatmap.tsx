@@ -1,4 +1,5 @@
 import { ChartColumnTooltip } from "./ChartColumnTooltip";
+import { useScrollShadows } from "./tableUx/useScrollShadows";
 import { formatDate, platformCodeLabel, pluralizeRu, saturdaysLabel } from "../lib/format";
 
 type CalendarItem = { platform_code: string; location: string };
@@ -141,6 +142,9 @@ export function ActivityCalendarHeatmap({
   bestStreak,
   currentStreak,
 }: ActivityCalendarHeatmapProps) {
+  // Сетка суббот шире телефона и листается вбок; тени у краёв — тот же намёк,
+  // что и в таблицах, иначе о скрытых справа годах никак не догадаться.
+  const { hostRef, scrollRef } = useScrollShadows<HTMLDivElement, HTMLDivElement>();
   const byWeekSaturday = new Map<string, WeekAggregate>();
   let firstActivity: Date | null = null;
 
@@ -174,8 +178,9 @@ export function ActivityCalendarHeatmap({
 
   return (
     <div className="activity-cal">
-      <div className="activity-cal-scroll">
-        <div className="activity-cal-grid">
+      <div ref={hostRef} className="tshadow-host activity-cal-shadow">
+        <div ref={scrollRef} className="activity-cal-scroll">
+          <div className="activity-cal-grid">
           {years.map((year) => {
             const saturdays = saturdaysOfYear(year);
             return (
@@ -223,6 +228,7 @@ export function ActivityCalendarHeatmap({
               </div>
             );
           })}
+          </div>
         </div>
       </div>
       <div className="analytics-chart-legend activity-cal-legend">

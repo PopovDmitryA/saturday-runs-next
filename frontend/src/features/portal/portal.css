@@ -1374,9 +1374,12 @@
 }
 
 /* CTA с постером */
+/* minmax(0, 1fr), а не 1fr: иначе колонка не может стать уже min-content
+   своего содержимого, и полоса вкладок «5 вёрст / S95 / …» (она со своим
+   overflow-x) распирает блок за край экрана. */
 .portal-cta-split {
   display: grid;
-  grid-template-columns: 1fr minmax(320px, 460px);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 460px);
   gap: 28px;
   align-items: center;
 }
@@ -1589,7 +1592,7 @@
 
 @media (max-width: 760px) {
   .portal-cta-split {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .portal-panel-head-split {
     flex-wrap: wrap;
@@ -2910,6 +2913,21 @@
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+}
+
+/* Ширина детей у всех трёх колоночных флексов — обязательно 100%, не «сколько
+   попросят». В колоночном флексе ширина ребёнка считается как fit-content, а
+   он не бывает уже min-content содержимого. Из-за этого широкое содержимое
+   распирало не свой скролл-контейнер, а всю страницу: витрина блога раздувала
+   главную до max-width 1440px (Safari на телефоне ужимал масштабом всю
+   страницу под эту ширину), а таблица в режиме «Полно» — страницу раздела до
+   ширины таблицы вместо горизонтального скролла внутри .table-wrap.
+   С явными 100% широкие блоки снова скроллятся внутри себя, а max-width
+   страниц продолжает работать. */
+#root > *,
+.portal-section-page > *,
+.portal-cab > * {
+  width: 100%;
 }
 
 .portal-section-page,

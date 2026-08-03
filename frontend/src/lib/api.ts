@@ -237,6 +237,7 @@ export type DashboardAnalytics = {
   runs_with_field_avg_count: number;
   platform_metrics: Array<{
     platform_code: string;
+    runs_count?: number;
     avg_finish_time_sec: number | null;
     avg_pace_sec_per_km: number | null;
   }>;

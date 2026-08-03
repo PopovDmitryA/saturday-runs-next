@@ -236,6 +236,11 @@ export function runsCapLabel(count: number): string {
   return pluralFormRu(count, RUN_CAP_FORMS);
 }
 
+/** Только слово, без числа: «пробежка / пробежки / пробежек». */
+export function runsFormLabel(count: number): string {
+  return pluralFormRu(count, RUN_FORMS);
+}
+
 export function volunteeringCapLabel(count: number): string {
   return pluralFormRu(count, VOLUNTEERING_CAP_FORMS);
 }

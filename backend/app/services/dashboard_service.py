@@ -701,6 +701,7 @@ def _compute_dashboard_analytics(
     platform_metric_rows = (
         runs_query.with_entities(
             Platform.code,
+            func.count(RunResult.id),
             func.avg(RunResult.finish_time_sec),
             func.avg(RunResult.pace_sec_per_km),
         )
@@ -709,12 +710,13 @@ def _compute_dashboard_analytics(
         .all()
     )
     platform_metrics = []
-    for platform_code, platform_avg_finish, platform_avg_pace in platform_metric_rows:
+    for platform_code, platform_runs, platform_avg_finish, platform_avg_pace in platform_metric_rows:
         if platform_avg_finish is None and platform_avg_pace is None:
             continue
         platform_metrics.append(
             {
                 "platform_code": platform_code,
+                "runs_count": int(platform_runs or 0),
                 "avg_finish_time_sec": _to_int(platform_avg_finish),
                 "avg_pace_sec_per_km": _to_int(platform_avg_pace),
             }
