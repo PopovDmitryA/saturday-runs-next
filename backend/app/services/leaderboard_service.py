@@ -2929,6 +2929,7 @@ def refresh_leaderboard_cache(
     platform: str = "all",
     count_by: str = "locations",
     source: _MetricSource | None = None,
+    hide_ambiguous_home: bool = False,
 ) -> dict[str, object]:
     """Пересчитать снапшот и перезаписать кэш, даже если тот ещё не протух.
 
@@ -2940,10 +2941,20 @@ def refresh_leaderboard_cache(
     visits = _normalize_min_visits(metric, min_visits)
     platform_resolved = _normalize_platform_filter(metric, platform)
     unit = _normalize_count_by(metric, count_by)
+    hide_ambiguous = _normalize_hide_ambiguous_home(metric, hide_ambiguous_home)
     payload = _build_snapshot(
-        db, metric, resolved, visits, platform_resolved, unit, source
+        db,
+        metric,
+        resolved,
+        visits,
+        platform_resolved,
+        unit,
+        source,
+        hide_ambiguous_home=hide_ambiguous,
     )
-    _write_cache(metric, payload, resolved, visits, platform_resolved, unit)
+    _write_cache(
+        metric, payload, resolved, visits, platform_resolved, unit, "", hide_ambiguous
+    )
     return payload
 
 
