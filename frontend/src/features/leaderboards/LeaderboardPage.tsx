@@ -244,16 +244,19 @@ function TopWinLocation({
   );
 }
 
-// Домашняя локация в рейтинге дальности: от неё считаются все километры строки,
-// поэтому спорный выбор помечаем прямо в таблице. «!» ставится в двух случаях
-// (решение Дмитрия 03.08.2026) — подсказка объясняет, в каком именно.
-const HOME_NOTE_HINT: Record<string, string> = {
-  ambiguous:
-    "Домашняя локация выбрана автоматически, но неуверенно: на второй площадке " +
-    "у участника почти столько же пробежек. Километры могли бы считаться от неё.",
-  manual_off_top:
-    "Участник указал домашнюю локацию вручную, и она не входит в топ-3 его " +
-    "площадок по числу пробежек.",
+// Домашняя локация в рейтинге дальности задаёт нулевую точку для всех
+// километров строки, поэтому спорный выбор помечаем прямо в таблице. Два
+// уровня (решение Дмитрия 03.08.2026): ручной выбор вне тройки — красное
+// предупреждение, неоднозначный автовыбор — мягкая янтарная пометка.
+const HOME_NOTE_META: Record<string, { level: "warn" | "danger"; hint: string }> = {
+  ambiguous: {
+    level: "warn",
+    hint: "Домашняя локация определена автоматически. Выбор неоднозначен: вторая площадка отстаёт менее чем на 30% визитов.",
+  },
+  manual_off_top: {
+    level: "danger",
+    hint: "Домашняя локация указана вручную и не входит в топ-3 площадок участника по числу пробежек.",
+  },
 };
 
 function HomeLocationCell({
@@ -264,13 +267,16 @@ function HomeLocationCell({
   if (!row.home_location) {
     return <span className="lb-zero">—</span>;
   }
-  const note = row.home_location_note ? HOME_NOTE_HINT[row.home_location_note] : null;
+  const note = row.home_location_note ? HOME_NOTE_META[row.home_location_note] : null;
   return (
     <span className="lb-home">
       {row.home_location}
       {note && (
-        <StatHintTooltip text={note}>
-          <span className="lb-home-warn" aria-label="Домашняя локация под вопросом">
+        <StatHintTooltip text={note.hint}>
+          <span
+            className={`lb-home-warn lb-home-warn-${note.level}`}
+            aria-label={note.hint}
+          >
             !
           </span>
         </StatHintTooltip>

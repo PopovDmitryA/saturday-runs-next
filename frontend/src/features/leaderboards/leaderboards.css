@@ -540,7 +540,8 @@
 }
 
 /* «!» у домашней локации в рейтинге дальности: от неё считаются все километры
-   строки, поэтому спорный выбор дома видно прямо в таблице. */
+   строки, поэтому спорный выбор дома видно прямо в таблице. Красный — ручной
+   выбор вне тройки (предупреждение), янтарный — неоднозначный автовыбор. */
 .lb-home-warn {
   display: inline-flex;
   align-items: center;
@@ -549,13 +550,21 @@
   height: 1.05rem;
   margin-left: 0.3rem;
   border-radius: 50%;
-  background: var(--tint-red-bg-strong);
-  color: var(--tint-red-text);
   font-size: 0.72rem;
   font-weight: 800;
   line-height: 1;
   cursor: help;
   vertical-align: middle;
+}
+
+.lb-home-warn-danger {
+  background: var(--tint-red-bg-strong);
+  color: var(--tint-red-text);
+}
+
+.lb-home-warn-warn {
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
 }
 
 .lb-rank {
