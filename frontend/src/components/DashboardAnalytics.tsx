@@ -308,8 +308,8 @@ function buildAnalyticsCards(
       key: "home_distance",
       value: formatKm(homeDistance.total_distance_km),
       label: homeDistance.farthest
-        ? `от дома · дальше всего — ${homeDistance.farthest.name}`
-        : "от дома",
+        ? `бегового туризма · дальше всего — ${homeDistance.farthest.name}`
+        : "бегового туризма",
       category: "runs",
       clickable: true,
       modalTarget: "home_distance",

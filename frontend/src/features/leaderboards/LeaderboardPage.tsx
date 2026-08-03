@@ -1151,7 +1151,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 ref={tableRef}
                 className={`data-table lb-table${wideTable ? ` lb-table-fixed ${wideTableKind}` : ""}${
                   showFull ? " lb-table-full" : ""
-                }`}
+                }${isHomeDistance ? " lb-table-wide-values" : ""}`}
               >
                 <thead>
                   <tr>
