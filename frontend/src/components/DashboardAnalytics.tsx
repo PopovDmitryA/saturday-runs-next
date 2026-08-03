@@ -50,6 +50,12 @@ type DashboardAnalyticsProps = {
   analytics: DashboardAnalyticsData | undefined;
   totalRuns: number;
   totalVolunteering: number;
+  /**
+   * Показывать ли красную подсказку «проверьте домашнюю локацию». Только в
+   * своём кабинете: в чужом публичном профиле это совет, который гость всё
+   * равно не может выполнить, — настройки чужого профиля ему недоступны.
+   */
+  showHomeLocationWarning?: boolean;
 };
 
 type AnalyticsCardCategory = "runs" | "volunteering" | "wins";
@@ -718,6 +724,7 @@ export function DashboardAnalytics({
   analytics,
   totalRuns,
   totalVolunteering,
+  showHomeLocationWarning = false,
 }: DashboardAnalyticsProps) {
   const [uniqueLocationsOpen, setUniqueLocationsOpen] = useState(false);
   const [bestResultsOpen, setBestResultsOpen] = useState(false);
@@ -794,9 +801,10 @@ export function DashboardAnalytics({
   // Красным подсвечиваем только шаткий автовыбор (ничья по числу пробежек или
   // вторая площадка почти вровень) — выбранное руками не трогаем, иначе баннер
   // висел бы у всех, кто в настройки просто не заходил.
-  const homeAmbiguity = analytics.home_distance?.home?.ambiguity
-    ? analytics.home_distance.home
-    : null;
+  const homeAmbiguity =
+    showHomeLocationWarning && analytics.home_distance?.home?.ambiguity
+      ? analytics.home_distance.home
+      : null;
 
   const cards = sortByLayoutOrder(
     buildAnalyticsCards(analytics, totalRuns, totalVolunteering),

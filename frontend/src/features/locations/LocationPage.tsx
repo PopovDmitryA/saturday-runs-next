@@ -828,6 +828,19 @@ function LocationPersonalSection({
               "волонтёрства",
               "волонтёрств",
             ])}
+            sub="здесь"
+          />
+        )}
+        {stats.top_volunteer_role && (
+          <StatTile
+            value={stats.top_volunteer_role.role}
+            label="любимая роль здесь"
+            sub={`${stats.top_volunteer_role.count} ${pluralFormRu(stats.top_volunteer_role.count, [
+              "раз",
+              "раза",
+              "раз",
+            ])}`}
+            hint="Роль, в которой вы выходили на этой локации чаще всего. Ярлыки разных систем считаются одной ролью."
           />
         )}
       </div>

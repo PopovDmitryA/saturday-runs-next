@@ -11304,21 +11304,28 @@ tr.run-crosslinked td {
 
 /* Сегмент «Кратко | Полно»: только на узких экранах — на десктопе колонок
    всегда полный набор и переключать нечего. */
+/* Оформление сегмента задано без display — показ включают правила ниже:
+   по умолчанию только на узких экранах, а с модификатором tview-toggle-always
+   (рейтинги) — на любой ширине. */
 .tview-toggle {
   display: none;
+  /* Родители таблиц — flex-колонки: без align-self ребёнок растягивается
+     на всю ширину (stretch), и рамка сегмента уезжала бы через весь экран. */
+  align-self: flex-start;
+  width: fit-content;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.tview-toggle-always {
+  display: inline-flex;
 }
 
 @media (max-width: 820px) {
   .tview-toggle {
     display: inline-flex;
-    /* Родители таблиц — flex-колонки: без align-self ребёнок растягивается
-       на всю ширину (stretch), и рамка сегмента уезжала бы через весь экран. */
-    align-self: flex-start;
-    width: fit-content;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
-    margin-bottom: 10px;
   }
 }
 
@@ -11795,4 +11802,14 @@ tr.run-crosslinked td {
 .loc-stats-grid-single {
   margin-top: 0.75rem;
   max-width: 280px;
+}
+
+/* Плашки систем в таблицах «Дальности от дома»: идут за названием и городом,
+   поэтому нужен небольшой отступ и запрет переноса внутри группы. */
+.home-distance-place-badges {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+  white-space: nowrap;
 }

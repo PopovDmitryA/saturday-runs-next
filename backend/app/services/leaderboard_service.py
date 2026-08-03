@@ -131,6 +131,17 @@ PLATFORM_FILTER_METRICS: tuple[LeaderboardMetric, ...] = LEADERBOARD_METRICS
 # «Мультиволонтёре» роли и есть сама метрика (число разных освоенных),
 # фильтровать их там значило бы менять смысл рейтинга.
 ROLE_FILTER_METRICS: tuple[LeaderboardMetric, ...] = ("volunteering", "volunteer_locations")
+
+# Фильтр «спрятать участников с неочевидным домом» — только у дальности: у
+# остальных рейтингов домашней локации нет вовсе. Неочевидный дом — это
+# автовыбор при почти равных площадках (см. _home_location_note): нулевая точка
+# там условна, и километры такого участника зависят от того, какую из двух
+# площадок выбрал алгоритм.
+AMBIGUOUS_HOME_METRICS: tuple[LeaderboardMetric, ...] = ("home_distance",)
+
+
+def _normalize_hide_ambiguous_home(metric: str, value: bool) -> bool:
+    return bool(value) and metric in AMBIGUOUS_HOME_METRICS
 PLATFORM_FILTER_VALUES: tuple[str, ...] = ("all", *PLATFORM_COLUMNS)
 
 # Набор систем у метрики, если он отличается от общего PLATFORM_COLUMNS.
@@ -2368,7 +2379,10 @@ def _home_distance_tally(
 
 
 def _collect_home_distance_entities(
-    source: _MetricSource, *, platform: str = "all"
+    source: _MetricSource,
+    *,
+    platform: str = "all",
+    hide_ambiguous_home: bool = False,
 ) -> dict[str, _Entity]:
     """Рейтинг дальности от дома: сумма километров до уникальных площадок.
 
@@ -2435,6 +2449,10 @@ def _collect_home_distance_entities(
         entity.home_location_note = _home_location_note(
             identities, identity_names, home, manual_key
         )
+        # Фильтр «только очевидный дом»: у участника с почти равными площадками
+        # нулевая точка условна, и километры зависят от выбора алгоритма.
+        if hide_ambiguous_home and entity.home_location_note == "ambiguous":
+            continue
         entity.locations_total = len(identities)
         entities[key] = entity
     return entities
@@ -2551,6 +2569,7 @@ def _build_snapshot(
     count_by: str = "locations",
     source: _MetricSource | None = None,
     role_filter: frozenset[str] | None = None,
+    hide_ambiguous_home: bool = False,
 ) -> dict[str, object]:
     latest = source.latest if source is not None else latest_event_date(db)
     if latest is None:
@@ -2576,7 +2595,9 @@ def _build_snapshot(
     if metric == "volunteer_roles":
         entities = _collect_volunteer_role_entities(src, platform=platform)
     elif metric == "home_distance":
-        entities = _collect_home_distance_entities(src, platform=platform)
+        entities = _collect_home_distance_entities(
+            src, platform=platform, hide_ambiguous_home=hide_ambiguous_home
+        )
     elif metric == "locations":
         entities = _collect_location_entities(
             src,
@@ -2722,6 +2743,7 @@ def _cache_key(
     platform: str = "all",
     count_by: str = "locations",
     roles_key: str = "",
+    hide_ambiguous_home: bool = False,
 ) -> str:
     # Гендерные варианты, пороги визитов, фильтр по системе, единица зачёта и
     # набор ролей — отдельными суффиксами; базовый вариант (all / от 1 визита /
@@ -2736,6 +2758,8 @@ def _cache_key(
         key = f"{key}:p{platform}"
     if count_by != "locations":
         key = f"{key}:c{count_by}"
+    if hide_ambiguous_home:
+        key = f"{key}:home-sure"
     if roles_key:
         # Пресет — читаемым суффиксом, произвольный набор — короткой сигнатурой
         # (полный список ключей в имени Redis-ключа не нужен).
@@ -2750,10 +2774,13 @@ def _read_cache(
     platform: str = "all",
     count_by: str = "locations",
     roles_key: str = "",
+    hide_ambiguous_home: bool = False,
 ) -> dict[str, object] | None:
     try:
         raw = get_redis_client().get(
-            _cache_key(metric, gender, min_visits, platform, count_by, roles_key)
+            _cache_key(
+                metric, gender, min_visits, platform, count_by, roles_key, hide_ambiguous_home
+            )
         )
     except Exception:
         return None
@@ -2774,10 +2801,13 @@ def _write_cache(
     platform: str = "all",
     count_by: str = "locations",
     roles_key: str = "",
+    hide_ambiguous_home: bool = False,
 ) -> None:
     try:
         get_redis_client().setex(
-            _cache_key(metric, gender, min_visits, platform, count_by, roles_key),
+            _cache_key(
+                metric, gender, min_visits, platform, count_by, roles_key, hide_ambiguous_home
+            ),
             CACHE_TTL_SECONDS,
             json.dumps(payload, ensure_ascii=False),
         )
@@ -2853,14 +2883,18 @@ def get_leaderboard_snapshot(
     platform: str = "all",
     count_by: str = "locations",
     roles: Sequence[str] | None = None,
+    hide_ambiguous_home: bool = False,
 ) -> dict[str, object]:
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
     platform_resolved = _normalize_platform_filter(metric, platform)
     unit = _normalize_count_by(metric, count_by)
     role_filter, roles_key = normalize_role_filter(metric, roles)
+    hide_ambiguous = _normalize_hide_ambiguous_home(metric, hide_ambiguous_home)
     if use_cache:
-        cached = _read_cache(metric, resolved, visits, platform_resolved, unit, roles_key)
+        cached = _read_cache(
+            metric, resolved, visits, platform_resolved, unit, roles_key, hide_ambiguous
+        )
         if cached is not None:
             return cached
     payload = _build_snapshot(
@@ -2871,10 +2905,18 @@ def get_leaderboard_snapshot(
         platform_resolved,
         unit,
         role_filter=role_filter,
+        hide_ambiguous_home=hide_ambiguous,
     )
     if use_cache:
         _write_cache(
-            metric, payload, resolved, visits, platform_resolved, unit, roles_key
+            metric,
+            payload,
+            resolved,
+            visits,
+            platform_resolved,
+            unit,
+            roles_key,
+            hide_ambiguous,
         )
     return payload
 
@@ -2916,12 +2958,14 @@ def get_leaderboard(
     platform: str = "all",
     count_by: str = "locations",
     roles: Sequence[str] | None = None,
+    hide_ambiguous_home: bool = False,
 ) -> dict[str, object]:
     """Публичная часть снапшота (без служебных массивов рангов)."""
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
     platform_resolved = _normalize_platform_filter(metric, platform)
     unit = _normalize_count_by(metric, count_by)
+    hide_ambiguous = _normalize_hide_ambiguous_home(metric, hide_ambiguous_home)
     snapshot = get_leaderboard_snapshot(
         db,
         metric,
@@ -2931,6 +2975,7 @@ def get_leaderboard(
         platform=platform_resolved,
         count_by=unit,
         roles=roles,
+        hide_ambiguous_home=hide_ambiguous,
     )
     rows = cast("list[dict[str, object]]", snapshot.get("rows") or [])
     # Фильтр по одной системе прячет колонки-системы целиком (люди хотели
@@ -2958,6 +3003,9 @@ def get_leaderboard(
         # на бэкенде, фронт их не повторяет.
         "count_by_options": list(count_by_values(metric)),
         "has_week_locations": metric in WEEK_LOCATIONS_METRICS,
+        # Фильтр «только очевидный дом»: есть ли он у рейтинга и включён ли.
+        "has_home_filter": metric in AMBIGUOUS_HOME_METRICS,
+        "hide_ambiguous_home": hide_ambiguous,
         "rows": rows[: max(1, min(limit, TOP_LIMIT))],
         "threshold": snapshot.get("threshold", 0),
         "median": snapshot.get("median", 0),

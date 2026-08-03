@@ -139,6 +139,8 @@ export type HomeDistanceLocation = {
   last_visit_date: string | null;
   is_home: boolean;
   is_paused: boolean;
+  /** Системы площадки — плашками рядом с названием. */
+  platform_codes: string[];
 };
 
 export type HomeLocationSummary = {
@@ -2177,6 +2179,8 @@ export type LocationPersonalStats = {
   first_run_date: string | null;
   last_run_date: string | null;
   volunteering_count: number;
+  /** Любимая роль на этой локации: чаще всего выходил. */
+  top_volunteer_role: { role: string; count: number } | null;
   // Место в топе по пробежкам — только внутри своего пола
   gender: string | null;
   rank_by_runs_gender: number | null;

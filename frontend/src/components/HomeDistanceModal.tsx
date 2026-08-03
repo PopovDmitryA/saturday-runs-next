@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { DetailModal } from "./DetailModal";
+import { PlatformBadge } from "./PlatformBadge";
 import { getHomeDistanceDetail, type HomeDistanceDetail, type HomeDistanceLocation } from "../lib/api";
 import { formatKm } from "../lib/format";
 
@@ -28,6 +29,13 @@ function LocationCell({ row }: { row: HomeDistanceLocation }) {
       )}
       {subtitle && (
         <span className="muted home-distance-place-sub"> · {subtitle}</span>
+      )}
+      {row.platform_codes.length > 0 && (
+        <span className="home-distance-place-badges">
+          {row.platform_codes.map((code) => (
+            <PlatformBadge key={code} code={code} />
+          ))}
+        </span>
       )}
     </span>
   );

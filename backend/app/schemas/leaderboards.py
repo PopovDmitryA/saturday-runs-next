@@ -76,6 +76,9 @@ class LeaderboardResponse(BaseModel):
     count_by_options: list[str] = []
     # Есть ли у рейтинга колонка «Последняя неделя».
     has_week_locations: bool = False
+    # Фильтр «только очевидный дом» (есть у дальности от дома) и его состояние.
+    has_home_filter: bool = False
+    hide_ambiguous_home: bool = False
     title: str
     description: str
     unit: str

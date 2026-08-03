@@ -394,6 +394,12 @@ export function isCabinetTab(active: SiteSidebarActive): active is CabinetTabKey
 export type SidebarExtraGroup = {
   /** Заголовок группы (например, имя участника на публичном профиле). */
   title: string;
+  /**
+   * Клик по заголовку. Задан — заголовок становится кнопкой: на публичном
+   * профиле имя участника ведёт на его главную, как ожидается от «шапки»
+   * раздела (репорт Дмитрия 04.08.2026 — раньше клик не делал ничего).
+   */
+  onTitleClick?: () => void;
   items: { key: string; label: string; active: boolean; onClick: () => void }[];
 };
 
@@ -620,13 +626,25 @@ export function SiteSidebar({
             {/* Линия-разделитель: пункты чужого профиля временные, их надо
                 визуально отделить от постоянной навигации сайта. */}
             <div className="portal-cab-nav-sep" aria-hidden="true" />
-            <div
-              className="portal-cab-nav-item portal-cab-group-head portal-cab-group-head-static"
-              title={collapsed ? extraGroup.title : undefined}
-            >
-              <span className="portal-cab-nav-icon">{PROFILE_ICON}</span>
-              <span className="portal-cab-nav-label">{extraGroup.title}</span>
-            </div>
+            {extraGroup.onTitleClick ? (
+              <button
+                type="button"
+                onClick={extraGroup.onTitleClick}
+                className="portal-cab-nav-item portal-cab-group-head portal-cab-nav-textitem"
+                title={collapsed ? extraGroup.title : undefined}
+              >
+                <span className="portal-cab-nav-icon">{PROFILE_ICON}</span>
+                <span className="portal-cab-nav-label">{extraGroup.title}</span>
+              </button>
+            ) : (
+              <div
+                className="portal-cab-nav-item portal-cab-group-head portal-cab-group-head-static"
+                title={collapsed ? extraGroup.title : undefined}
+              >
+                <span className="portal-cab-nav-icon">{PROFILE_ICON}</span>
+                <span className="portal-cab-nav-label">{extraGroup.title}</span>
+              </div>
+            )}
             {extraGroup.items.map((item) => (
               <button
                 key={item.key}

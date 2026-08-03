@@ -358,6 +358,11 @@ class LocationAgeGroupStandingResponse(BaseModel):
     total: int = 0
 
 
+class LocationTopRoleResponse(BaseModel):
+    role: str
+    count: int
+
+
 class LocationHomeDistanceResponse(BaseModel):
     """Плитка «сколько отсюда до дома» на странице локации."""
 
@@ -388,6 +393,9 @@ class LocationPersonalStatsResponse(BaseModel):
     first_run_date: date | None = None
     last_run_date: date | None = None
     volunteering_count: int = 0
+    # Любимая роль на этой локации: чаще всего выходил (ярлыки систем схлопнуты
+    # в канон, см. volunteer_role_taxonomy).
+    top_volunteer_role: LocationTopRoleResponse | None = None
     # Место в топе локации по числу пробежек (та же группировка, что у лидеров).
     # Место в топе по пробежкам — внутри своего пола (пол материализован в
     # participants.gender). Общего места нет: см. build_location_personal_stats.

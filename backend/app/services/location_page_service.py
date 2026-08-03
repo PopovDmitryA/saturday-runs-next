@@ -46,6 +46,7 @@ from app.services.location_catalog_service import (
     resolve_location_display_name,
 )
 from app.time_format import format_finish_time_display
+from app.volunteer_role_taxonomy import canonical_volunteer_role
 
 HISTOGRAM_BIN_SEC = 10
 # Индекс локаций — тяжёлая агрегация (~35 тыс. событий + join по протоколам
@@ -1936,6 +1937,45 @@ def build_location_age_group_standings(
     return standings
 
 
+def _top_volunteer_role_here(
+    db: Session, user_id: UUID, event_ids: list[UUID]
+) -> dict[str, object] | None:
+    """Любимая роль пользователя на этой локации: чаще всего выходил.
+
+    Ярлыки систем схлопываем в канон (см. app.volunteer_role_taxonomy): «Сканер»,
+    «Сканирование» и «Barcode Scanning» — одна и та же роль, и без канонизации
+    она делилась бы на три с меньшими счётчиками.
+    """
+    if not event_ids:
+        return None
+    rows = (
+        db.query(VolunteerResult.role, VolunteerResult.event_id)
+        .join(Participant, VolunteerResult.participant_id == Participant.id)
+        .join(PlatformLink, _platform_link_join())
+        .filter(
+            PlatformLink.user_id == user_id,
+            VolunteerResult.event_id.in_(event_ids),
+            VolunteerResult.role.isnot(None),
+            VolunteerResult.role != "",
+        )
+        .all()
+    )
+    # Считаем по разным стартам: две роли в одну субботу — это один выход,
+    # но каждая роль засчитывается себе (как в разборе ролей кабинета).
+    events_by_role: dict[str, set[UUID]] = {}
+    labels: dict[str, str] = {}
+    for role, event_id in rows:
+        canonical = canonical_volunteer_role(role)
+        if canonical is None:
+            continue
+        events_by_role.setdefault(canonical.key, set()).add(event_id)
+        labels[canonical.key] = canonical.label
+    if not events_by_role:
+        return None
+    key = min(events_by_role, key=lambda item: (-len(events_by_role[item]), labels[item].casefold()))
+    return {"role": labels[key], "count": len(events_by_role[key])}
+
+
 def _location_home_distance(
     db: Session, user: User, identity: LocationIdentity
 ) -> dict[str, object] | None:
@@ -1981,6 +2021,7 @@ def build_location_personal_stats(db: Session, user: User, slug: str) -> dict[st
         "first_run_date": None,
         "last_run_date": None,
         "volunteering_count": 0,
+        "top_volunteer_role": None,
         "gender": None,
         "rank_by_runs_gender": None,
         "runners_total_gender": None,
@@ -2018,6 +2059,7 @@ def build_location_personal_stats(db: Session, user: User, slug: str) -> dict[st
         .scalar()
     )
     payload["volunteering_count"] = int(volunteering_count or 0)
+    payload["top_volunteer_role"] = _top_volunteer_role_here(db, user_id, event_ids)
 
     if not rows:
         return payload

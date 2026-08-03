@@ -4,12 +4,14 @@ import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
   getLeaderboard,
   getMyLeaderboardRow,
+  METRIC_VALUE_UNIT,
   PLATFORM_LABELS,
   type LeaderboardMetric,
   type LeaderboardResponse,
   type MyLeaderboardRow,
   type PlatformFilter,
 } from "./leaderboardsApi";
+import { formatInt } from "../../lib/format";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import "./leaderboards.css";
@@ -155,6 +157,7 @@ function LiveRatingCard({ card, platform }: { card: LiveCard; platform: Platform
   }, [card.metric, platform]);
 
   const { board, me, loading, error } = state;
+  const valueUnit = METRIC_VALUE_UNIT[card.metric];
   // Бэкенд молча откатывает фильтр на общий зачёт, если система не участвует
   // в этом рейтинге (напр. parkrun у волонтёрского туризма) — сверяем с тем,
   // что реально пришло, а не с тем, что выбрано глобально на хабе.
@@ -184,7 +187,8 @@ function LiveRatingCard({ card, platform }: { card: LiveCard; platform: Platform
               </span>
               <span className="lb-hub-rank-name">{row.display_name?.trim() || "Участник"}</span>
               <span className="lb-hub-rank-value">
-                {row.total}
+                {formatInt(row.total)}
+                {valueUnit && <span className="lb-unit">{valueUnit}</span>}
                 <DeltaSlot delta={row.total_delta} />
               </span>
             </div>
@@ -199,14 +203,15 @@ function LiveRatingCard({ card, platform }: { card: LiveCard; platform: Platform
               <span className="lb-hub-rank-chip lb-hub-rank-me">{me.rank}</span>
               <span className="lb-hub-rank-name">Вы</span>
               <span className="lb-hub-rank-value">
-                {me.total}
+                {formatInt(me.total)}
+                {valueUnit && <span className="lb-unit">{valueUnit}</span>}
                 <DeltaSlot delta={me.total_delta} />
               </span>
             </div>
           ) : (
             <p className="lb-hub-me-threshold">
               Вы появитесь после {me.threshold} {unitLabel(card.metric, me.threshold)} — сейчас у вас{" "}
-              {me.total}.
+              {formatInt(me.total)}{valueUnit ? ` ${valueUnit}` : ""}.
             </p>
           )}
         </div>

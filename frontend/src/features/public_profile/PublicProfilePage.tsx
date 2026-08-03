@@ -262,6 +262,9 @@ function PublicProfileContent({
   // — уйти с открытой вкладки было некуда, кроме как через адресную строку.
   const tabsGroup: SidebarExtraGroup = {
     title: profileName ?? "Профиль участника",
+    // Имя участника — это «шапка» его раздела, поэтому ведёт на главную
+    // профиля: раньше клик по нему не делал ничего.
+    onTitleClick: () => setTab("dashboard"),
     items: TAB_LABELS.map((item) => ({
       key: item.key,
       label: item.label,

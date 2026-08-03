@@ -17,6 +17,15 @@ export type LeaderboardMetric =
 // среди мужчин», стоя в протоколе вторым (см. LEADERBOARD_GENDERS на бэкенде).
 export type LeaderboardGender = "all" | "female";
 
+/**
+ * Единица измерения значения рейтинга — мелким шрифтом сразу за числом.
+ * Живёт здесь, а не на странице рейтинга: то же число показывает хаб, и без
+ * общей константы «км» там терялось (репорт Дмитрия 04.08.2026).
+ */
+export const METRIC_VALUE_UNIT: Partial<Record<LeaderboardMetric, string>> = {
+  home_distance: "км",
+};
+
 // Женский зачёт есть только у победных рейтингов (parkrun в него не идёт).
 export const GENDERED_METRICS: LeaderboardMetric[] = ["wins", "win_locations"];
 
@@ -159,6 +168,9 @@ export type LeaderboardResponse = {
   // Кнопки фильтра «единица зачёта»; пусто — у рейтинга такого фильтра нет.
   count_by_options?: CountBy[];
   has_week_locations?: boolean;
+  /** Фильтр «только очевидный дом»: есть ли он у рейтинга и включён ли. */
+  has_home_filter?: boolean;
+  hide_ambiguous_home?: boolean;
   title: string;
   description: string;
   unit: string;
@@ -232,8 +244,12 @@ export function getLeaderboard(
   platform: PlatformFilter = "all",
   countBy: CountBy = "locations",
   roles: string[] | null = null,
+  hideAmbiguousHome = false,
 ) {
   const params = new URLSearchParams({ limit: String(limit) });
+  if (hideAmbiguousHome) {
+    params.set("hide_ambiguous_home", "true");
+  }
   if (gender !== "all") {
     params.set("gender", gender);
   }

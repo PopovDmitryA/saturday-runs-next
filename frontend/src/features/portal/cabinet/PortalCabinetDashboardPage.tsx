@@ -259,6 +259,7 @@ function PortalDashboardContent({ user }: { user: User }) {
           <MyHistoryTeaser load={getMyHistory} href={PORTAL_CABINET_HISTORY_HREF} />
 
           <DashboardAnalytics
+            showHomeLocationWarning
             analytics={stats?.analytics}
             totalRuns={stats?.total_runs ?? 0}
             totalVolunteering={stats?.total_volunteering ?? 0}

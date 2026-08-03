@@ -68,6 +68,8 @@ class DistanceRow:
     last_visit_date: str | None
     is_home: bool
     is_paused: bool
+    # Системы, в которых площадка живёт сейчас, — плашками рядом с названием.
+    platform_codes: list[str]
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -81,6 +83,7 @@ class DistanceRow:
             "last_visit_date": self.last_visit_date,
             "is_home": self.is_home,
             "is_paused": self.is_paused,
+            "platform_codes": list(self.platform_codes),
         }
 
 
@@ -187,6 +190,10 @@ def _visited_rows(
                 last_visit_date=cast("str | None", item["last_visit_date"]),
                 is_home=identity_key == home_key,
                 is_paused=bool(item["is_paused"]),
+                platform_codes=[
+                    str(platform["platform_code"])
+                    for platform in cast(list[dict[str, object]], item["platforms"])
+                ],
             )
         )
     rows.sort(key=lambda row: (row.distance_km is None, -(row.distance_km or 0.0), row.name.casefold()))
@@ -362,6 +369,9 @@ def _unvisited_rows(
                 last_visit_date=None,
                 is_home=False,
                 is_paused=False,
+                platform_codes=[
+                    str(code) for code in cast(list[str], point.get("platform_codes") or [])
+                ],
             )
         )
     rows.sort(key=lambda row: (row.distance_km is None, row.distance_km or 0.0, row.name.casefold()))

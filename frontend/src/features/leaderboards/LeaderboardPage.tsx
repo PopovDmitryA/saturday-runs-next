@@ -12,6 +12,7 @@ import {
   ROLE_FILTER_METRICS,
   type VolunteerRoleItem,
   type VolunteerRolePreset,
+  METRIC_VALUE_UNIT,
   MIN_VISITS_METRICS,
   MIN_VISITS_OPTIONS,
   PLATFORM_LABELS,
@@ -84,6 +85,11 @@ const TOP_LOCATION_HINT =
 const HOME_LOCATION_HINT =
   "Площадка, от которой считаются километры: где у участника больше всего " +
   "пробежек. Зарегистрированные на сайте могут выбрать её вручную в настройках.";
+
+const HOME_FILTER_HINT =
+  "«Только явный дом» убирает участников, у которых домашняя локация выбрана " +
+  "автоматически из нескольких почти равных площадок: нулевая точка у них " +
+  "условна, и километры зависят от того, какую площадку выбрал алгоритм.";
 
 const HOME_DISTANCE_LOCATIONS_HINT =
   "Сколько разных площадок посещено, включая домашнюю. Километры каждой " +
@@ -571,6 +577,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [minVisits, setMinVisits] = useState(1);
   const [platform, setPlatform] = useState<PlatformFilter>("all");
   const [countBy, setCountBy] = useState<CountBy>("locations");
+  // Фильтр «только очевидный дом» — у рейтинга дальности: прячет участников,
+  // у которых нулевая точка выбрана автоматически из почти равных площадок.
+  const [hideAmbiguousHome, setHideAmbiguousHome] = useState(false);
   // Фильтр ролей: пресет + конкретные ключи. Стартовое значение — из ссылки
   // (можно кинуть в чат и спорить предметно), иначе из прошлого выбора
   // в этом браузере.
@@ -630,7 +639,13 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
   const [tableView, setTableView] = useTableView("leaderboard");
   const narrowViewport = useNarrowViewport();
-  const showFull = !narrowViewport || tableView === "full";
+  // Колонки систем — самая тяжёлая часть таблицы: четыре числовых столбца,
+  // которые перегружают страницу и на компьютере (решение Дмитрия 04.08.2026).
+  // Их прячет краткий вид на ЛЮБОЙ ширине. Смысловые колонки (локаций, дом,
+  // лучшее время, последняя неделя) на компьютере остаются всегда — там место
+  // есть; на телефоне краткий вид по-прежнему сводит таблицу к трём столбцам.
+  const showPlatforms = tableView === "full";
+  const showExtras = !narrowViewport || tableView === "full";
 
   useEffect(() => {
     const handleScroll = () => {
@@ -654,7 +669,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   // площадок посещено — без них число километров ни о чём не говорит.
   const isHomeDistance = metric === "home_distance";
   // Без подписи колонка «Всего» у дальности читается как счётчик пробежек.
-  const valueUnit = isHomeDistance ? "км" : undefined;
+  const valueUnit = METRIC_VALUE_UNIT[metric];
   // Гео-зачёт есть ровно там же, где порог визитов, — у туристических рейтингов.
   const effectiveCountBy = hasMinVisits ? countBy : "locations";
 
@@ -690,6 +705,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
           platform,
           effectiveCountBy,
           effectiveRoles,
+          hideAmbiguousHome,
         ),
         getMyLeaderboardRow(
           metric,
@@ -724,6 +740,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     platform,
     effectiveCountBy,
     roleFilterKey,
+    hideAmbiguousHome,
   ]);
 
   useEffect(() => {
@@ -864,9 +881,10 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const crumbs = METRIC_CRUMBS[metric];
   // Место + участник + «всего» и, у победных рейтингов, лучшее время,
   // топ-локация (только wins), последняя победа и любимая роль («Мультиволонтёр»).
-  // В кратком виде — только первые три: остальные колонки скрыты целиком.
-  const totalColumns = showFull
-    ? columns.length +
+  // Колонки систем считаются отдельно: их прячет краткий вид на любой ширине,
+  // а смысловые колонки на компьютере остаются всегда.
+  const totalColumns = showExtras
+    ? (showPlatforms ? columns.length : 0) +
       3 +
       (hasWinExtras ? 2 : 0) +
       (metric === "wins" ? 1 : 0) +
@@ -874,7 +892,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       (hasGeoColumns ? 2 : 0) +
       (isHomeDistance ? 2 : 0) +
       (hasWeekLocations ? 1 : 0)
-    : 3;
+    : showPlatforms
+      ? columns.length + 3
+      : 3;
   const visibleRows = rows.slice(0, visibleCount);
   const nextChunkEnd = Math.min(visibleCount + PAGE_STEP, rows.length);
 
@@ -984,6 +1004,32 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                               {COUNT_BY_LABELS[value] ?? value}
                             </button>
                           ))}
+                        </div>
+                      </div>
+                    )}
+                    {isHomeDistance && (
+                      <div className="lb-controls-row">
+                        <span className="lb-controls-label">
+                          Домашняя локация{" "}
+                          <InfoHint text={HOME_FILTER_HINT} />
+                        </span>
+                        <div className="lb-gender-tabs" role="group" aria-label="Домашняя локация">
+                          <button
+                            type="button"
+                            aria-pressed={!hideAmbiguousHome}
+                            className={`lb-gender-tab${!hideAmbiguousHome ? " lb-gender-tab-active" : ""}`}
+                            onClick={() => setHideAmbiguousHome(false)}
+                          >
+                            Все
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={hideAmbiguousHome}
+                            className={`lb-gender-tab${hideAmbiguousHome ? " lb-gender-tab-active" : ""}`}
+                            onClick={() => setHideAmbiguousHome(true)}
+                          >
+                            Только явный дом
+                          </button>
                         </div>
                       </div>
                     )}
@@ -1191,7 +1237,13 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               </section>
             )}
 
-            <TableViewToggle value={tableView} onChange={setTableView} />
+            {/* На компьютере переключатель тоже нужен: в кратком виде уходят
+                колонки систем, из-за которых таблица перегружена. */}
+            <TableViewToggle
+              value={tableView}
+              onChange={setTableView}
+              className="tview-toggle-always"
+            />
             <TableWrap
               innerRef={attachFloatingHead}
               className={`lb-table-wrap${wideTable ? " lb-table-wrap-wide" : ""}`}
@@ -1199,20 +1251,20 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               <table
                 ref={tableRef}
                 className={`data-table lb-table${wideTable ? ` lb-table-fixed ${wideTableKind}` : ""}${
-                  showFull ? " lb-table-full" : ""
+                  showExtras ? " lb-table-full" : ""
                 }${isHomeDistance ? " lb-table-wide-values" : ""}`}
               >
                 <thead>
                   <tr>
                     {headerCell("rank", "Место", "lb-col-rank")}
                     <th className="lb-col-name">Участник</th>
-                    {showFull &&
+                    {showExtras &&
                       hasWinExtras &&
                       headerCell("best_time", "Лучшее время", "lb-col-time", BEST_TIME_HINT)}
                     {/* Колонки систем не сортируются — для «посмотреть одну
                         систему» есть фильтр «Система» выше, он пересчитывает
                         место и «Всего», а не переставляет строки по столбцу. */}
-                    {showFull &&
+                    {showPlatforms &&
                       columns.map((code) => (
                         <th key={code} className="lb-col-num">
                           {PLATFORM_LABELS[code] ?? code}
@@ -1224,7 +1276,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                       "lb-col-num lb-col-total",
                       isRoles ? ROLES_TOTAL_HINT : undefined,
                     )}
-                    {showFull && hasGeoColumns && (
+                    {showExtras && hasGeoColumns && (
                       <>
                         <th className="lb-col-num lb-col-geo">
                           Городов <InfoHint text={CITIES_HINT} />
@@ -1234,7 +1286,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         </th>
                       </>
                     )}
-                    {showFull && isHomeDistance && (
+                    {showExtras && isHomeDistance && (
                       <>
                         <th className="lb-col-num lb-col-geo">
                           Локаций <InfoHint text={HOME_DISTANCE_LOCATIONS_HINT} />
@@ -1244,22 +1296,22 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         </th>
                       </>
                     )}
-                    {showFull && isRoles && (
+                    {showExtras && isRoles && (
                       <th className="lb-col-home">
                         Любимая роль <InfoHint text={TOP_ROLE_HINT} />
                       </th>
                     )}
-                    {showFull && metric === "wins" && (
+                    {showExtras && metric === "wins" && (
                       <th className="lb-col-home">
                         Топ-локация <InfoHint text={TOP_LOCATION_HINT} />
                       </th>
                     )}
-                    {showFull && hasWinExtras && lastWinMeta && (
+                    {showExtras && hasWinExtras && lastWinMeta && (
                       <th className="lb-col-last-win">
                         {lastWinMeta.label} <InfoHint text={lastWinMeta.hint} />
                       </th>
                     )}
-                    {showFull && hasWeekLocations && (
+                    {showExtras && hasWeekLocations && (
                       <th className="lb-col-last-win">
                         Последняя неделя{" "}
                         <InfoHint text={WEEK_LOCATIONS_HINT[metric] ?? ""} />
@@ -1313,12 +1365,12 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         <td className="lb-col-name">
                           <ParticipantName row={row} />
                         </td>
-                        {showFull && hasWinExtras && (
+                        {showExtras && hasWinExtras && (
                           <td className="lb-col-time">
                             <BestTime row={row} />
                           </td>
                         )}
-                        {showFull &&
+                        {showPlatforms &&
                           columns.map((code) => (
                             <td key={code} className="lb-col-num">
                               <CellValue cell={row.platforms[code]} unit={valueUnit} />
@@ -1331,7 +1383,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             <DeltaSlot delta={row.total_delta} />
                           </span>
                         </td>
-                        {showFull && hasGeoColumns && (
+                        {showExtras && hasGeoColumns && (
                           <>
                             <td className="lb-col-num lb-col-geo">
                               <GeoCount value={row.cities_total} />
@@ -1341,7 +1393,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             </td>
                           </>
                         )}
-                        {showFull && isHomeDistance && (
+                        {showExtras && isHomeDistance && (
                           <>
                             <td className="lb-col-num lb-col-geo">
                               <GeoCount value={row.locations_total} />
@@ -1351,22 +1403,22 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             </td>
                           </>
                         )}
-                        {showFull && isRoles && (
+                        {showExtras && isRoles && (
                           <td className="lb-col-home">
                             <TopRole row={row} />
                           </td>
                         )}
-                        {showFull && metric === "wins" && (
+                        {showExtras && metric === "wins" && (
                           <td className="lb-col-home">
                             <TopWinLocation row={row} />
                           </td>
                         )}
-                        {showFull && hasWinExtras && lastWinMeta && (
+                        {showExtras && hasWinExtras && lastWinMeta && (
                           <td className="lb-col-last-win">
                             <LastWinLocation row={row} />
                           </td>
                         )}
-                        {showFull && hasWeekLocations && (
+                        {showExtras && hasWeekLocations && (
                           <td className="lb-col-last-win">
                             <WeekLocationCell item={row.week_location} />
                           </td>
