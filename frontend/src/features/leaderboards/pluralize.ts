@@ -13,6 +13,7 @@ const UNIT_FORMS: Record<LeaderboardMetric, [string, string, string]> = {
     "локации с первым местом",
     "локаций с первым местом",
   ],
+  home_distance: ["километр от дома", "километра от дома", "километров от дома"],
 };
 
 function pluralForm(count: number, forms: [string, string, string]): string {

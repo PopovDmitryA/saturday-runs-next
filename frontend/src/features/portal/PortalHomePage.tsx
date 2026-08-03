@@ -12,6 +12,7 @@ import { cabinetTabHref, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { CountUpNumber } from "./CountUpNumber";
 import { PortalBlogSection } from "./PortalBlogSection";
+import { PortalFooter } from "./PortalFooter";
 import { PortalGeoMap } from "./PortalGeoMap";
 import { PortalHeader } from "./PortalHeader";
 import { PLATFORM_CHART_META, PortalTrendChart, type TrendPoint } from "./PortalTrendChart";
@@ -809,12 +810,16 @@ export function PortalHomePage() {
                             <span className="portal-delta down">↓ −{record.delta_sec} сек</span>
                           )}
                         </b>
-                        {record.previous_display && (
-                          <span>
-                            было {record.previous_display}
-                            {record.previous_record_date &&
-                              ` · ${formatDateCompact(record.previous_record_date)}`}
-                          </span>
+                        {record.is_debut ? (
+                          <span>первый рекорд трассы</span>
+                        ) : (
+                          record.previous_display && (
+                            <span>
+                              было {record.previous_display}
+                              {record.previous_record_date &&
+                                ` · ${formatDateCompact(record.previous_record_date)}`}
+                            </span>
+                          )
                         )}
                       </span>
                     </li>
@@ -1226,6 +1231,7 @@ export function PortalHomePage() {
           </>
         )}
       </main>
+      <PortalFooter />
     </>
   );
 }

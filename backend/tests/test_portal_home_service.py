@@ -5,9 +5,10 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
-from app.models import Participant, Platform, PlatformLink, User
+from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User
 from app.services.portal_home_service import (
     PORTAL_HOME_CACHE_KEY,
+    _course_minima_before,
     _EventRow,
     _read_portal_home_cache,
     _runner_handles,
@@ -191,6 +192,62 @@ def test_attendance_record_carries_location_slug() -> None:
     loc = uuid4()
     rows = _attendance([_event(loc, date(2026, 7, 25), 120, 1)])
     assert rows[0]["location_slug"] == f"slug-{loc}"
+
+
+def test_course_minima_before_ignores_test_events(db_session: Session) -> None:
+    """Пробный старт не должен становиться «прежним рекордом» трассы.
+
+    Баг на Мирном (02.08.2026): результат тестового прогона попадал в минимум
+    до недели, и первый настоящий рекорд трассы выглядел как «побитие»
+    рекорда, которого на самом деле не было.
+    """
+    suffix = uuid4().hex[:8]
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        platform = Platform(code="five_verst", name="5 вёрст")
+        db_session.add(platform)
+        db_session.flush()
+    location = Location(
+        platform_id=platform.id,
+        external_key=f"mirny-{suffix}",
+        name="Мирный",
+        city="Мирный",
+    )
+    db_session.add(location)
+    db_session.flush()
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=f"course-test-{suffix}",
+        display_name="Тестовый бегун",
+        gender="male",
+    )
+    db_session.add(participant)
+    db_session.flush()
+
+    test_event = Event(
+        platform_id=platform.id,
+        location_id=location.id,
+        external_event_key=f"course-test-event-{suffix}",
+        event_date=date(2026, 7, 4),
+        event_number=None,
+        is_test_event=True,
+        title=location.name,
+    )
+    db_session.add(test_event)
+    db_session.flush()
+    db_session.add(
+        RunResult(
+            event_id=test_event.id,
+            participant_id=participant.id,
+            external_result_key=f"{test_event.external_event_key}:{participant.external_user_id}",
+            finish_time_sec=900,
+            status="finished",
+        )
+    )
+    db_session.flush()
+
+    rows = _course_minima_before(db_session, WEEK_START)
+    assert [row for row in rows if row[0] == location.id] == []
 
 
 def _linked_participant(

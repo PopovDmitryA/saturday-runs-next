@@ -8,7 +8,8 @@ export type LeaderboardMetric =
   | "locations"
   | "volunteer_locations"
   | "wins"
-  | "win_locations";
+  | "win_locations"
+  | "home_distance";
 
 export type LeaderboardGender = "all" | "male" | "female";
 
@@ -38,8 +39,10 @@ export const COUNT_BY_TOTAL_LABELS: Record<CountBy, string> = {
   regions: "Всего регионов",
 };
 
-// Площадка недели в колонке «Последняя неделя»: площадка и дата визита — тем же
-// видом, что «Последняя победа» в победных рейтингах.
+// Колонка «Последняя неделя»: последний старт участника за окно дельты —
+// площадка и дата, тем же видом, что «Последняя победа» в победных рейтингах.
+// Всегда ровно одна площадка: если стартов было несколько, бэкенд отдаёт
+// самый поздний.
 export type WeekLocation = {
   name: string;
   slug: string | null;
@@ -119,6 +122,9 @@ export type LeaderboardRow = {
   // Только у метрики wins: «топ-локация побед» — локация с максимумом побед.
   home_location?: string | null;
   home_location_wins?: number | null;
+  // Только у home_distance: "ambiguous" — автовыбор дома шаткий,
+  // "manual_off_top" — человек выбрал руками площадку вне своей тройки.
+  home_location_note?: "ambiguous" | "manual_off_top" | null;
   // Только у победных рейтингов: глобальный рекорд участника и последняя победа
   // (у win_locations — последняя НОВАЯ локация с победой, дата — первой победы там).
   best_time_sec?: number | null;
@@ -137,7 +143,7 @@ export type LeaderboardRow = {
   cities_total?: number | null;
   regions_total?: number | null;
   // Колонка «Последняя неделя»: где участник был за окно дельты.
-  week_locations?: WeekLocation[];
+  week_location?: WeekLocation | null;
 };
 
 export type LeaderboardResponse = {
@@ -172,7 +178,7 @@ export type MyLeaderboardRow = {
   locations_total?: number | null;
   cities_total?: number | null;
   regions_total?: number | null;
-  week_locations?: WeekLocation[];
+  week_location?: WeekLocation | null;
   display_name: string | null;
   site_serial_id: number;
   platforms: Record<string, LeaderboardCell>;
@@ -187,6 +193,9 @@ export type MyLeaderboardRow = {
   gender_mismatch?: boolean;
   home_location?: string | null;
   home_location_wins?: number | null;
+  // Только у home_distance: "ambiguous" — автовыбор дома шаткий,
+  // "manual_off_top" — человек выбрал руками площадку вне своей тройки.
+  home_location_note?: "ambiguous" | "manual_off_top" | null;
   best_time_sec?: number | null;
   best_time_display?: string | null;
   last_win_location?: string | null;

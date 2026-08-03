@@ -99,12 +99,11 @@ const SECTIONS: HubSection[] = [
     live: [
       { metric: "locations", href: "/ratings/locations", title: "Уникальные локации" },
       { metric: "win_locations", href: "/ratings/win-locations", title: "Локации с первым местом" },
+      { metric: "home_distance", href: "/ratings/home-distance", title: "Дальность от дома" },
     ],
     // «Гео-коллекционер» (уникальные города и регионы) переехал внутрь рейтинга
     // уникальных локаций фильтром «Считаем» — отдельной карточки ему не нужно.
-    soon: [
-      { title: "Дальность от дома", description: "Кто уезжает бегать дальше всех от домашней локации." },
-    ],
+    soon: [],
   },
   {
     emoji: "📍",

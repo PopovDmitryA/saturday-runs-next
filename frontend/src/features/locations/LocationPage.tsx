@@ -11,12 +11,14 @@ import {
   type LocationAgeGroupRecord,
   type LocationAgeGroupStanding,
   type LocationCourseRecord,
+  type LocationHomeDistance,
   type LocationLastEvent,
   type LocationLeaders,
   type LocationPage as LocationPageData,
   type LocationPersonalStats,
 } from "../../lib/api";
-import { formatDate, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
+import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
+import { formatDate, formatKm, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { cabinetTabHref } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
@@ -81,6 +83,41 @@ function StatTile({
           {link.label}
         </a>
       )}
+    </div>
+  );
+}
+
+/**
+ * Плитка «сколько отсюда до дома». Зелёная — здесь уже бегали, серая — ещё нет:
+ * по цвету видно, добавит эта площадка километров в зачёт или уже добавила.
+ */
+function HomeDistanceTile({ home }: { home: LocationHomeDistance }) {
+  if (home.is_home) {
+    return (
+      <div className="stat-card loc-stat-card loc-stat-home loc-stat-home-visited">
+        <span className="stat-value loc-stat-value">дом</span>
+        <span className="stat-label">ваша домашняя локация</span>
+        <span className="loc-stat-sub">от неё считается дальность ваших стартов</span>
+      </div>
+    );
+  }
+  const visitedClass = home.visited ? " loc-stat-home-visited" : " loc-stat-home-unvisited";
+  return (
+    <div className={`stat-card loc-stat-card loc-stat-home${visitedClass}`}>
+      <span className="stat-value loc-stat-value">
+        {home.distance_km == null ? "—" : formatKm(home.distance_km)}
+        <StatHintTooltip
+          text={`Расстояние по прямой от вашей домашней локации («${home.home_name}») до этой площадки. Домашняя локация меняется в настройках.`}
+        >
+          <span className="loc-stat-info" aria-label="Как считается">
+            i
+          </span>
+        </StatHintTooltip>
+      </span>
+      <span className="stat-label">от дома</span>
+      <span className="loc-stat-sub">
+        {home.visited ? "вы здесь уже бегали" : "вы здесь ещё не были"}
+      </span>
     </div>
   );
 }
@@ -719,6 +756,11 @@ function LocationPersonalSection({
             К настройкам
           </a>
         )}
+        {stats.home_distance && (
+          <div className="loc-stats-grid loc-stats-grid-single">
+            <HomeDistanceTile home={stats.home_distance} />
+          </div>
+        )}
       </section>
     );
   }
@@ -774,6 +816,7 @@ function LocationPersonalSection({
         {stats.last_run_date && stats.last_run_date !== stats.first_run_date && (
           <StatTile value={formatDate(stats.last_run_date)} label="последний старт" />
         )}
+        {stats.home_distance && <HomeDistanceTile home={stats.home_distance} />}
         {(stats.age_groups ?? []).map((group) => (
           <AgeGroupPlaceTile key={group.key} group={group} onOpen={onOpenAgeGroup} />
         ))}
@@ -832,6 +875,9 @@ function LocationPageContent({ slug }: { slug: string }) {
           return;
         }
         setPage(data);
+        // Родовой заголовок «Локация — run5k.run» из App.tsx уточняем именем
+        // и цифрами, как только данные приехали.
+        applyPageMeta(locationPageMeta(data));
         // Канонический URL страницы — slug основной системы локации.
         if (data.slug && data.slug !== slug) {
           window.history.replaceState(null, "", `/locations/${data.slug}`);

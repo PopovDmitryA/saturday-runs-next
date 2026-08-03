@@ -30,7 +30,6 @@ import { formatFinishTimeValue, platformCodeLabel } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
-import { DemoShell } from "../demo/DemoShell";
 
 // bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
 // оборачивает контент в собственный каркас с сайдбаром.
@@ -480,10 +479,6 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
 
   if (bare || mode === "public-profile") {
     return <>{pageBody}</>;
-  }
-
-  if (isDemo) {
-    return <DemoShell title="Пробежки">{pageBody}</DemoShell>;
   }
 
   return <AppShell title="Пробежки">{pageBody}</AppShell>;

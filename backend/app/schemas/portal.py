@@ -49,6 +49,8 @@ class PortalCourseRecordResponse(BaseModel):
     previous_display: str | None = None
     previous_record_date: date | None = None
     delta_sec: int | None = None
+    # первый рекорд трассы: прежнего минимума не было (см. is_debut в посещаемости)
+    is_debut: bool = False
 
 
 class PortalWeekRecordsResponse(BaseModel):

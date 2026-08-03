@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
-from app.api.routes import health
+from app.api.routes import health, seo
 from app.config import get_settings
 from app.core.playwright_executor import shutdown_playwright_executor
 from app.middleware.abuse_middleware import AbuseProtectionMiddleware
@@ -45,6 +45,9 @@ app.add_middleware(
 app.add_middleware(AbuseProtectionMiddleware)
 
 app.include_router(health.router)
+# sitemap.xml, robots.txt и пререндер живут на корневых адресах, не под /api —
+# роботы ходят по обычным путям сайта (см. nginx/conf.d/default.conf).
+app.include_router(seo.router)
 app.include_router(api_router, prefix="/api")
 
 

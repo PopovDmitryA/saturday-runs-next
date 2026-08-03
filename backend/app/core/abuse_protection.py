@@ -65,6 +65,13 @@ def classify_route(path: str, method: str) -> RouteTier:
     if normalized in {"/health", "/health/ready"}:
         return RouteTier.exempt
 
+    # SEO-адреса: sitemap, robots и пререндер для роботов. Ответы дешёвые и
+    # кэшируются, а вот 429 в адрес Яндекса или Google читается им как «сайт
+    # лежит» — и обход останавливается. Общий потолок 180 запросов в минуту с
+    # адреса (проверяется до тарифа) при этом остаётся.
+    if normalized in {"/sitemap.xml", "/robots.txt"} or normalized.startswith("/__prerender"):
+        return RouteTier.exempt
+
     if normalized.startswith("/api/stats"):
         return RouteTier.public_read
 

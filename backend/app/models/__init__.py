@@ -1297,6 +1297,31 @@ class BlogPost(Base):
     )
 
 
+class SiteRelease(Base):
+    """Релиз сайта — блок на публичной странице «Обновления» (/updates).
+
+    Версия X.Y.Z (опционально с суффиксом -fixN) присваивается при деплое по
+    протоколу из docs/release_management.md. Запись создаётся скрытой
+    (is_published=false): администратор правит текст и сам открывает релиз
+    на сайте. Скрытые и удалённые релизы оставляют пропуски в опубликованных
+    номерах — это допустимо.
+    """
+
+    __tablename__ = "site_releases"
+    __table_args__ = (Index("ix_site_releases_released_at", "released_at"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    version: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    released_at: Mapped[date] = mapped_column(Date, nullable=False)
+    is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class HistoryMilestoneSetting(Base):
     """Вкл/выкл конкретного вида вехи «Моя история» (админ-переключатель).
 

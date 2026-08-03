@@ -61,6 +61,7 @@ const METRIC_CRUMBS: Record<LeaderboardMetric, { section: string; label: string 
   volunteer_locations: { section: "Волонтёры", label: "Уникальные локации" },
   wins: { section: "Бегуны", label: "Количество первых мест" },
   win_locations: { section: "Паркран-туристы", label: "Локации с первым местом" },
+  home_distance: { section: "Паркран-туристы", label: "Дальность от дома" },
 };
 
 // Мультиволонтёр: колонка «Любимая роль» + детализация ролей по клику на
@@ -78,6 +79,14 @@ const TOP_LOCATION_HINT =
   "Число рядом — сколько раз участник был первым именно на этой локации, " +
   "а не сколько раз там бегал.";
 
+const HOME_LOCATION_HINT =
+  "Площадка, от которой считаются километры: где у участника больше всего " +
+  "пробежек. Зарегистрированные на сайте могут выбрать её вручную в настройках.";
+
+const HOME_DISTANCE_LOCATIONS_HINT =
+  "Сколько разных площадок посещено, включая домашнюю. Километры каждой " +
+  "засчитываются один раз — повторные поездки сумму не увеличивают.";
+
 // Фильтр туризма: «локация засчитывается от N визитов». Кнопка 1+ — обычный
 // рейтинг (любая локация, где человек был хоть раз), дальше планка растёт.
 // У волонтёрского туризма визит — это волонтёрство, а не забег.
@@ -93,8 +102,8 @@ const VOLUNTEER_MIN_VISITS_HINT =
 // объединённый зачёт (у туризма одна физическая площадка = одна локация, в
 // какой бы системе ни бежали); кнопка системы переключает на зачёт только по
 // ней, с пересчётом места и «Всего» — это не колонка, а отдельный рейтинг.
-// Список кнопок приходит с бэкенда (platform_options): в гендерном зачёте и в
-// волонтёрском туризме parkrun отсутствует.
+// Список кнопок приходит с бэкенда (platform_options): в волонтёрском туризме
+// parkrun отсутствует.
 const PLATFORM_TAB_LABELS: Record<string, string> = {
   all: "Все",
   ...PLATFORM_LABELS,
@@ -132,25 +141,24 @@ const REGIONS_HINT =
   "Сколько РАЗНЫХ регионов набрано засчитанными площадками. Зарубежные старты " +
   "считаются по стране: одна страна — один регион.";
 
-// Колонка «Последняя неделя»: площадка и дата — тем же видом, что «Последняя
-// победа» в победных рейтингах. Показывает, где человек был за окно дельты,
-// независимо от того, дало это +1 или нет: в туризме повторный заезд на давно
-// освоенную площадку в «Всего» не идёт, но в колонке виден (решение Дмитрия
-// 02.08.2026). Не был нигде — прочерк.
+// Колонка «Последняя неделя»: ОДНА площадка и дата — тем же видом, что
+// «Последняя победа» в победных рейтингах. Показывает последний старт за окно
+// дельты, независимо от того, дал он +1 или нет: в туризме повторный заезд на
+// давно освоенную площадку в «Всего» не идёт, но в колонке виден (решение
+// Дмитрия 02.08.2026). Не был нигде — прочерк.
 const WEEK_LOCATIONS_HINT: Record<string, string> = {
-  runs: "Где участник бежал за последнюю неделю.",
-  volunteering: "Где участник волонтёрил за последнюю неделю.",
+  runs: "Последний старт участника за неделю.",
+  volunteering: "Последнее волонтёрство участника за неделю.",
   locations:
-    "Где участник бежал за последнюю неделю. Знакомая площадка «Всего» не " +
+    "Последний старт участника за неделю. Знакомая площадка «Всего» не " +
     "увеличивает — новых локаций она не добавляет, — но в колонке видна.",
   volunteer_locations:
-    "Где участник волонтёрил за последнюю неделю. Знакомая площадка «Всего» не " +
+    "Последнее волонтёрство участника за неделю. Знакомая площадка «Всего» не " +
     "увеличивает — новых локаций она не добавляет, — но в колонке видна.",
+  home_distance:
+    "Последний старт участника за неделю. Знакомая площадка километров не " +
+    "добавляет — её зачёт уже учтён, — но в колонке видна.",
 };
-
-// Сколько площадок недели показываем в ячейке — остальное сворачиваем в «+N»,
-// иначе у волонтёра-многостаночника колонка растягивает всю таблицу.
-const WEEK_LOCATIONS_VISIBLE = 2;
 
 const BEST_TIME_HINT =
   "Глобальный рекорд участника: лучшее время по всем системам и локациям — " +
@@ -228,6 +236,47 @@ function TopWinLocation({
       {row.home_location}
       {row.home_location_wins != null && row.home_location_wins > 1 && (
         <span className="lb-home-count"> ×{row.home_location_wins}</span>
+      )}
+    </span>
+  );
+}
+
+// Домашняя локация в рейтинге дальности задаёт нулевую точку для всех
+// километров строки, поэтому спорный выбор помечаем прямо в таблице. Два
+// уровня (решение Дмитрия 03.08.2026): ручной выбор вне тройки — красное
+// предупреждение, неоднозначный автовыбор — мягкая янтарная пометка.
+const HOME_NOTE_META: Record<string, { level: "warn" | "danger"; hint: string }> = {
+  ambiguous: {
+    level: "warn",
+    hint: "Домашняя локация определена автоматически: у участника несколько локаций с близким числом пробежек.",
+  },
+  manual_off_top: {
+    level: "danger",
+    hint: "Домашняя локация указана вручную и не входит в топ-3 площадок участника по числу пробежек.",
+  },
+};
+
+function HomeLocationCell({
+  row,
+}: {
+  row: { home_location?: string | null; home_location_note?: string | null };
+}) {
+  if (!row.home_location) {
+    return <span className="lb-zero">—</span>;
+  }
+  const note = row.home_location_note ? HOME_NOTE_META[row.home_location_note] : null;
+  return (
+    <span className="lb-home">
+      {row.home_location}
+      {note && (
+        <StatHintTooltip text={note.hint}>
+          <span
+            className={`lb-home-warn lb-home-warn-${note.level}`}
+            aria-label={note.hint}
+          >
+            !
+          </span>
+        </StatHintTooltip>
       )}
     </span>
   );
@@ -337,41 +386,24 @@ function LastWinLocation({
   );
 }
 
-function WeekLocations({ items }: { items?: WeekLocation[] }) {
-  if (!items || items.length === 0) {
+function WeekLocationCell({ item }: { item?: WeekLocation | null }) {
+  if (!item) {
     return <span className="lb-zero">—</span>;
   }
-  const shown = items.slice(0, WEEK_LOCATIONS_VISIBLE);
-  const hidden = items.length - shown.length;
   return (
     <span className="lb-week-locations">
-      {shown.map((item) => (
-        <span key={`${item.name}-${item.slug ?? ""}`} className="lb-week-location">
-          {/* Слаг может не резолвиться у площадок без внятного external_key —
-              тогда просто текст, как и в «Последней победе». */}
-          {item.slug ? (
-            <a className="lb-last-win-link" href={`/locations/${item.slug}`}>
-              {item.name}
-            </a>
-          ) : (
-            <span>{item.name}</span>
-          )}
-          {item.date && (
-            <span className="lb-last-win-date">{formatDate(item.date)}</span>
-          )}
-        </span>
-      ))}
-      {hidden > 0 && (
-        <span
-          className="lb-week-more"
-          title={items
-            .slice(WEEK_LOCATIONS_VISIBLE)
-            .map((item) => item.name)
-            .join(", ")}
-        >
-          +{hidden}
-        </span>
-      )}
+      <span className="lb-week-location">
+        {/* Слаг может не резолвиться у площадок без внятного external_key —
+            тогда просто текст, как и в «Последней победе». */}
+        {item.slug ? (
+          <a className="lb-last-win-link" href={`/locations/${item.slug}`}>
+            {item.name}
+          </a>
+        ) : (
+          <span>{item.name}</span>
+        )}
+        {item.date && <span className="lb-last-win-date">{formatDate(item.date)}</span>}
+      </span>
     </span>
   );
 }
@@ -601,6 +633,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const hasWinExtras = metric === "wins" || metric === "win_locations";
   const lastWinMeta = LAST_WIN_META[metric];
   const isRoles = metric === "volunteer_roles";
+  // «Дальность от дома» несёт две свои колонки: домашняя локация и сколько
+  // площадок посещено — без них число километров ни о чём не говорит.
+  const isHomeDistance = metric === "home_distance";
   // Гео-зачёт есть ровно там же, где порог визитов, — у туристических рейтингов.
   const effectiveCountBy = hasMinVisits ? countBy : "locations";
 
@@ -648,8 +683,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       ]);
       setData(board);
       setMe(myRow);
-      // Выбранная система могла оказаться неприменимой к этому зачёту (parkrun
-      // не участвует в разбивке М/Ж) — бэкенд тогда считает «все системы».
+      // Выбранная система могла оказаться неприменимой к этому рейтингу (parkrun
+      // не участвует в волонтёрском туризме) — бэкенд тогда считает «все системы».
       // Сверяемся именно с тем, что запрашивали: сравнивать с состоянием на
       // каждый рендер нельзя, иначе ответ по прошлому фильтру откатывал бы
       // только что нажатую кнопку.
@@ -774,7 +809,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       locations_total: me.locations_total,
       cities_total: me.cities_total,
       regions_total: me.regions_total,
-      week_locations: me.week_locations,
+      week_location: me.week_location,
     };
     return [...data.rows, myRow];
   }, [data, me]);
@@ -818,6 +853,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       (metric === "wins" ? 1 : 0) +
       (isRoles ? 1 : 0) +
       (hasGeoColumns ? 2 : 0) +
+      (isHomeDistance ? 2 : 0) +
       (hasWeekLocations ? 1 : 0)
     : 3;
   const visibleRows = rows.slice(0, visibleCount);
@@ -904,9 +940,6 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         </button>
                       ))}
                     </div>
-                    {effectiveGender !== "all" && (
-                      <p className="lb-gender-note muted">parkrun в разбивку по полу не входит.</p>
-                    )}
                   </div>
                 )}
                 {(hasMinVisits || hasPlatformFilter || hasCountByFilter) && (
@@ -1082,6 +1115,14 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           <TopWinLocation row={me} />
                         </span>
                       )}
+                      {isHomeDistance && me.home_location && (
+                        <span className="lb-me-value">
+                          <span className="lb-me-platform">
+                            Дом <InfoHint text={HOME_LOCATION_HINT} />
+                          </span>
+                          <HomeLocationCell row={me} />
+                        </span>
+                      )}
                       {hasWinExtras && lastWinMeta && me.last_win_location && (
                         <span className="lb-me-value">
                           <span className="lb-me-platform">
@@ -1090,13 +1131,13 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           <LastWinLocation row={me} />
                         </span>
                       )}
-                      {hasWeekLocations && (me.week_locations?.length ?? 0) > 0 && (
+                      {hasWeekLocations && me.week_location && (
                         <span className="lb-me-value lb-me-value-wide">
                           <span className="lb-me-platform">
                             Последняя неделя{" "}
                             <InfoHint text={WEEK_LOCATIONS_HINT[metric] ?? ""} />
                           </span>
-                          <WeekLocations items={me.week_locations} />
+                          <WeekLocationCell item={me.week_location} />
                         </span>
                       )}
                     </span>
@@ -1139,7 +1180,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 ref={tableRef}
                 className={`data-table lb-table${wideTable ? ` lb-table-fixed ${wideTableKind}` : ""}${
                   showFull ? " lb-table-full" : ""
-                }`}
+                }${isHomeDistance ? " lb-table-wide-values" : ""}`}
               >
                 <thead>
                   <tr>
@@ -1170,6 +1211,16 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         </th>
                         <th className="lb-col-num lb-col-geo">
                           Регионов <InfoHint text={REGIONS_HINT} />
+                        </th>
+                      </>
+                    )}
+                    {showFull && isHomeDistance && (
+                      <>
+                        <th className="lb-col-num lb-col-geo">
+                          Локаций <InfoHint text={HOME_DISTANCE_LOCATIONS_HINT} />
+                        </th>
+                        <th className="lb-col-home">
+                          Дом <InfoHint text={HOME_LOCATION_HINT} />
                         </th>
                       </>
                     )}
@@ -1269,6 +1320,16 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             </td>
                           </>
                         )}
+                        {showFull && isHomeDistance && (
+                          <>
+                            <td className="lb-col-num lb-col-geo">
+                              <GeoCount value={row.locations_total} />
+                            </td>
+                            <td className="lb-col-home">
+                              <HomeLocationCell row={row} />
+                            </td>
+                          </>
+                        )}
                         {showFull && isRoles && (
                           <td className="lb-col-home">
                             <TopRole row={row} />
@@ -1286,7 +1347,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         )}
                         {showFull && hasWeekLocations && (
                           <td className="lb-col-last-win">
-                            <WeekLocations items={row.week_locations} />
+                            <WeekLocationCell item={row.week_location} />
                           </td>
                         )}
                       </tr>

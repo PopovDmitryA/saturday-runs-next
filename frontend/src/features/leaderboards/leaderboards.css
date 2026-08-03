@@ -276,7 +276,7 @@
   position: relative;
   display: block;
   width: 100%;
-  padding-right: 1.4rem;
+  padding-right: var(--lb-delta-reserve, 1.4rem);
 }
 
 .lb-table .lb-col-num .lb-delta {
@@ -285,7 +285,28 @@
   right: 0.2rem;
   transform: translateY(-50%);
   width: auto;
+  max-width: var(--lb-delta-reserve, 1.4rem);
   margin-left: 0;
+}
+
+/* Рейтинги в километрах: и значение, и дельта на порядок длиннее, чем у
+   счётчиков пробежек («12875» и «+12581» против «172» и «+2»). Резерв
+   фиксированной ширины тут не спасает — сколько его ни закладывай, дельта на
+   разряд длиннее снова наедет на число. Поэтому у таких рейтингов дельта не
+   позиционируется поверх ячейки, а встаёт отдельной строкой под числом:
+   наложение становится невозможным при любой ширине колонки. */
+.lb-table-wide-values .lb-col-num .lb-cell {
+  padding-right: 0;
+}
+
+.lb-table-wide-values .lb-col-num .lb-delta {
+  position: static;
+  display: block;
+  width: auto;
+  max-width: none;
+  margin-left: 0;
+  transform: none;
+  text-align: center;
 }
 
 /* «Всего» — то самое число, по которому построен рейтинг, поэтому колонка
@@ -351,13 +372,6 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
-.lb-gender-note {
-  margin: 0.55rem 0 0;
-  max-width: 60ch;
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
 /* Фильтр «локация засчитывается от N визитов» (рейтинг туризма): подпись над
    тем же сегментированным переключателем, что и у зачёта по полу. */
 .lb-visits {
@@ -370,15 +384,6 @@
      страницу вбок (переключатель внутри и так умеет скроллиться сам). */
   min-width: 0;
   max-width: 100%;
-}
-
-/* Поясняющая строка под кнопками — самый широкий элемент блока (кнопок в
-   переключателе меньше, чем букв в предложении). Без потолка её ширины она
-   растягивала бы весь блок и не давала двум фильтрам встать в один ряд
-   .lb-filters-row; кнопки при этом остаются на своей естественной ширине —
-   сужаем только текст, он и так переносится максимум на две строки. */
-.lb-filters-row .lb-gender-note {
-  max-width: 16rem;
 }
 
 .lb-visits-label {
@@ -442,12 +447,6 @@
   gap: 0.1rem;
 }
 
-.lb-week-more {
-  color: var(--text-faint);
-  font-size: 0.82rem;
-  cursor: help;
-}
-
 .lb-best-time {
   font-variant-numeric: tabular-nums;
 }
@@ -465,6 +464,18 @@
    сколько бы width ей ни задали. Fixed жёстко фиксирует ширины столбцов и
    переносит длинный текст внутри колонки — участник (единственная колонка без
    явной ширины) получает весь остаток. */
+/* border-collapse:collapse ломает position:sticky на ячейках в WebKit (Safari
+   и все браузеры на iPhone): стиль применяется, а колонка при горизонтальном
+   скролле всё равно уезжает. Границы у нас и так нарисованы на самих ячейках
+   (.data-table th/td { border-bottom }), поэтому separate ничего не меняет
+   визуально, но возвращает липкость «Места» и «Участника» на телефоне.
+   Селектор двухклассовый: у .data-table та же одноклассовая специфичность, и
+   какой из двух файлов окажется ниже в бандле — не наша забота. */
+.data-table.lb-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
 .lb-table.lb-table-fixed {
   table-layout: fixed;
 }
@@ -574,6 +585,34 @@
   font-weight: 600;
   /* счёт не отрывается от последнего слова названия при переносе */
   white-space: nowrap;
+}
+
+/* «!» у домашней локации в рейтинге дальности: от неё считаются все километры
+   строки, поэтому спорный выбор дома видно прямо в таблице. Красный — ручной
+   выбор вне тройки (предупреждение), янтарный — неоднозначный автовыбор. */
+.lb-home-warn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-left: 0.3rem;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+}
+
+.lb-home-warn-danger {
+  background: var(--tint-red-bg-strong);
+  color: var(--tint-red-text);
+}
+
+.lb-home-warn-warn {
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
 }
 
 .lb-rank {
@@ -1017,47 +1056,136 @@ a.lb-hub-card:hover {
   flex-shrink: 0;
 }
 
-/* === Мобильный полный вид: липкие «Место» и «Участник» === */
+/* === Узкий полный вид: липкие «Место» и «Участник» === */
 
 /* В кратком виде (3 колонки) скролла нет и липкость не нужна; в полном
    идентификатор строки не должен уезжать за экран. Ширины фиксируем,
-   иначе sticky-смещение второй колонки не посчитать. */
+   иначе sticky-смещение второй колонки не посчитать.
+
+   Порог совпадает с тем, на котором обёртка получает overflow-x:auto: липкость
+   нужна ровно там, где таблицу можно листать вбок. Здесь — общий случай (820),
+   а у широких рейтингов (.lb-table-wrap-wide: туризм, победы, «последняя
+   неделя») скролл включается раньше, с 1150px, и для них тот же набор правил
+   продублирован ниже. Объединить в один медиазапрос нельзя: у остальных
+   рейтингов между 820 и 1150 скролла нет, и узкие колонки там только зря
+   обрезали бы имена. */
 @media (max-width: 820px) {
-  .lb-table-full .lb-col-rank {
+  /* Ширина «Места» и есть смещение для «Участника» — держим их одной
+     переменной, чтобы колонки не разъехались при правке одной из них. */
+  .lb-table {
+    --lb-sticky-rank-w: 4.4rem;
+    --lb-sticky-name-w: 8.5rem;
+  }
+
+  /* Ширина по содержимому — обязательна для липкости второй колонки.
+     С min-width таблица тянется до ширины обёртки, а table-layout:fixed
+     распределяет разницу по колонкам: «Место» получало 77px вместо заданных
+     4.4rem (70.4px). Смещение «Участника» задано константой left:4.4rem, и он
+     прилипал на 7px левее правого края «Места» — заезжал под него, из-за чего
+     колонка выглядела неприлипающей. При width:max-content колонки получают
+     ровно свои ширины, и стык сходится в ноль. min-width:100% оставляет
+     таблицу во всю обёртку, когда колонок мало и скролла нет. */
+  .lb-table.lb-table-fixed.lb-table-full {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  /* Селекторы с .lb-table (три класса) обязательны: у широких рейтингов
+     ширины колонок заданы правилами .lb-table.lb-table-fixed .lb-col-*, и
+     двухклассовый мобильный селектор им проигрывал по специфичности —
+     «Участник» получал десктопные 13rem вместо 8.5rem и занимал пол-экрана,
+     а «Место» — 4.5rem вместо 4.4rem, из-за чего липкая колонка вставала не
+     на границе соседней. Медиазапрос специфичность не повышает. */
+  .lb-table.lb-table-full .lb-col-rank {
     position: sticky;
     left: 0;
     z-index: 2;
     background: var(--surface);
-    width: 4.4rem;
-    min-width: 4.4rem;
-    max-width: 4.4rem;
+    width: var(--lb-sticky-rank-w);
+    min-width: var(--lb-sticky-rank-w);
+    max-width: var(--lb-sticky-rank-w);
   }
 
-  .lb-table-full .lb-col-name {
+  .lb-table.lb-table-full .lb-col-name {
     position: sticky;
-    left: 4.4rem;
+    left: var(--lb-sticky-rank-w);
     z-index: 2;
     background: var(--surface);
-    min-width: 8.5rem;
-    max-width: 8.5rem;
+    width: var(--lb-sticky-name-w);
+    min-width: var(--lb-sticky-name-w);
+    max-width: var(--lb-sticky-name-w);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .lb-table-full thead .lb-col-rank,
-  .lb-table-full thead .lb-col-name {
+  .lb-table.lb-table-full thead .lb-col-rank,
+  .lb-table.lb-table-full thead .lb-col-name {
     z-index: 4;
   }
 
   /* Подсветка своей строки должна побеждать фон липких ячеек. */
-  .lb-table-full .lb-row-me .lb-col-rank,
-  .lb-table-full .lb-row-me .lb-col-name {
+  .lb-table.lb-table-full .lb-row-me .lb-col-rank,
+  .lb-table.lb-table-full .lb-row-me .lb-col-name {
     background: var(--tint-indigo-bg);
   }
 
   /* Тень-отрыв у липкого блока, когда таблица прокручена вбок. */
-  .tshadow-left .lb-table-full .lb-col-name {
+  .tshadow-left .lb-table.lb-table-full .lb-col-name {
+    box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+  }
+}
+
+/* Широкие рейтинги на планшете и в узком окне десктопа: обёртка получает
+   горизонтальный скролл уже с 1150px, значит и липкость нужна с той же ширины —
+   иначе колонка с именем уезжает ровно так же, как уезжала на телефоне.
+   Набор правил тот же, что выше, отличается только областью применения;
+   «Участнику» тут оставляем 10rem — места больше, чем на телефоне. */
+@media (min-width: 821px) and (max-width: 1150px) {
+  .lb-table-wrap-wide .lb-table {
+    --lb-sticky-rank-w: 4.4rem;
+    --lb-sticky-name-w: 10rem;
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-fixed.lb-table-full {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-full .lb-col-rank {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+    width: var(--lb-sticky-rank-w);
+    min-width: var(--lb-sticky-rank-w);
+    max-width: var(--lb-sticky-rank-w);
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-full .lb-col-name {
+    position: sticky;
+    left: var(--lb-sticky-rank-w);
+    z-index: 2;
+    background: var(--surface);
+    width: var(--lb-sticky-name-w);
+    min-width: var(--lb-sticky-name-w);
+    max-width: var(--lb-sticky-name-w);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-full thead .lb-col-rank,
+  .lb-table-wrap-wide .lb-table.lb-table-full thead .lb-col-name {
+    z-index: 4;
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-full .lb-row-me .lb-col-rank,
+  .lb-table-wrap-wide .lb-table.lb-table-full .lb-row-me .lb-col-name {
+    background: var(--tint-indigo-bg);
+  }
+
+  .tshadow-left .lb-table-wrap-wide .lb-table.lb-table-full .lb-col-name {
     box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
   }
 }

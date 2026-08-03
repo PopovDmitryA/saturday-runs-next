@@ -2845,8 +2845,10 @@ tr.run-crosslinked td {
      центрируется с полями до max-width) вылезает за правый край карточки.
      Везде, где переменные не выставлены, — 0px, старое поведение (центр по
      всему viewport). */
-  padding-left: calc(1.25rem + var(--modal-center-offset-left, 0px));
-  padding-right: calc(1.25rem + var(--modal-center-offset-right, 0px));
+  /* Смещение ограничено: при неверно посчитанных офсетах (замер до раскладки,
+     устаревшее значение) модалка-таблица иначе сжимается в узкую полосу. */
+  padding-left: calc(1.25rem + min(var(--modal-center-offset-left, 0px), 22vw));
+  padding-right: calc(1.25rem + min(var(--modal-center-offset-right, 0px), 22vw));
   background: rgba(15, 23, 42, 0.4);
   backdrop-filter: blur(3px);
   animation: modal-fade-in 0.18s ease-out;
@@ -11654,4 +11656,116 @@ tr.run-crosslinked td {
 .filter-group + .filter-group {
   border-top: 1px solid var(--border);
   padding-top: 0.7rem;
+}
+
+/* ── Дальность стартов от дома ───────────────────────────────────────────── */
+
+/* Замечание о домашней локации: красное — автовыбор шаткий (ничья или вторая
+   площадка вровень) либо выбор вне тройки самых частых; мягкое жёлтое — просто
+   «не самая частая». Цветом, а не текстом: от домашней локации считается вся
+   дальность, ошибка здесь ломает и плитку, и место в рейтинге. */
+.home-location-warning {
+  margin: 0.75rem 0 0;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--tint-red-border-strong);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: var(--tint-red-bg);
+  color: var(--tint-red-text);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.home-location-warning a {
+  color: inherit;
+  font-weight: 600;
+}
+
+.home-location-warning-soft {
+  border-color: var(--tint-amber-border-strong);
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-text);
+}
+
+/* Баннер на главной кабинета стоит над сеткой плиток — отбиваем его снизу. */
+.dashboard-analytics > .home-location-warning {
+  margin: 0 0 1rem;
+}
+
+.home-distance-summary {
+  margin: 0.35rem 0 1rem;
+  color: var(--text);
+}
+
+.home-distance-table-title {
+  margin: 1.35rem 0 0.35rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.home-distance-table-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+/* Название и город одной строкой: на компе места в модалке хватает, а две
+   строки на площадку растягивали таблицу вдвое (решение Дмитрия 03.08.2026). */
+.home-distance-place {
+  display: block;
+  min-width: 0;
+}
+
+.home-distance-place-sub {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.home-distance-home-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--tint-indigo-bg);
+  color: var(--accent-indigo);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.home-distance-row-home {
+  background: var(--tint-indigo-bg);
+}
+
+/* Непосещённые площадки — приглушённый список целей, а не результат. */
+.home-distance-table-unvisited tbody {
+  color: var(--text-muted);
+}
+
+.home-distance-table-unvisited tbody tr {
+  background: var(--bg);
+}
+
+/* Плитка расстояния на странице локации: зелёная — здесь уже бегали, серая —
+   ещё нет. Цвет и есть маркер «в зачёте / ещё можно взять». */
+.loc-stat-card.loc-stat-home {
+  border-left: 4px solid var(--border-strong);
+}
+
+.loc-stat-card.loc-stat-home-visited {
+  border-left-color: var(--accent-green-text);
+  background: var(--tint-green-bg);
+}
+
+.loc-stat-card.loc-stat-home-unvisited {
+  border-left-color: var(--border-strong);
+  background: var(--bg);
+  color: var(--text-muted);
+}
+
+.loc-stat-card.loc-stat-home-unvisited .stat-value {
+  color: var(--text-muted);
+}
+
+/* Одинокая плитка в блоке-призыве: сетка на всю ширину растянула бы её. */
+.loc-stats-grid-single {
+  margin-top: 0.75rem;
+  max-width: 280px;
 }

@@ -13,6 +13,7 @@ const LINKS = [
   { href: "/admin/records-digest", label: "Рекорды локаций" },
   { href: "/admin/location-contacts", label: "Контакты локаций" },
   { href: "/admin/blog", label: "Блог" },
+  { href: "/admin/releases", label: "Релизы" },
   { href: "/admin/backlog", label: "Бэклог" },
   { href: "/admin/abuse", label: "Блокировки" },
   { href: "/admin/profile-slugs", label: "Резерв ссылок" },

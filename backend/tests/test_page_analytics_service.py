@@ -30,6 +30,7 @@ from app.services.page_analytics_service import (
         ("/", ("portal_home", "")),
         ("/about", ("portal_about", "")),
         ("/blog", ("portal_blog", "")),
+        ("/updates", ("updates", "")),
         ("/login", ("portal_login", "")),
         ("/dashboard", ("dashboard", "")),
         ("/profiles", ("dashboard", "")),

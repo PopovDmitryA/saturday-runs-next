@@ -39,6 +39,7 @@ export type PortalCourseRecord = {
   previous_display: string | null;
   previous_record_date: string | null;
   delta_sec: number | null;
+  is_debut?: boolean;
 };
 
 export type PortalWeekRecords = {

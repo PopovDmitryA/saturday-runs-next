@@ -39,7 +39,7 @@ from app.services.location_catalog_service import LocationCatalogIndex
 
 logger = logging.getLogger(__name__)
 
-PORTAL_HOME_CACHE_KEY = "portal:home:v19"
+PORTAL_HOME_CACHE_KEY = "portal:home:v20"
 # TTL сильно больше периода прогрева (раз в час): пересчёт занимает ~2 мин и идёт
 # синхронно в запросе пользователя, поэтому пустой кэш — это минута ожидания на
 # главной. Запас в 24 часа переживает и пропущенные прогревы, и рестарт воркера:
@@ -305,6 +305,10 @@ def _course_minima_before(db: Session, week_start: date) -> list[Any]:
     но раньше строки со скрытым полом доезжали до Python отдельной группой
     (163 группы на проде).
 
+    is_test_event исключён: пробный прогон не должен становиться «прежним
+    рекордом», который потом «побивает» настоящий первый старт (баг на
+    Мирном, 02.08.2026).
+
     Замеры на проде 26.07.2026 (та же выборка, 5422 строки результата):
     было 17.4 с → 2.0 с. Основной вклад — NOT EXISTS в _not_crosslink_secondary,
     остальное дают снятый JOIN и отсечение пустого пола. Вариант с DISTINCT ON
@@ -328,6 +332,7 @@ def _course_minima_before(db: Session, week_start: date) -> list[Any]:
         )
         .filter(
             Event.event_date < week_start,
+            Event.is_test_event.is_(False),
             RunResult.finish_time_sec.isnot(None),
             RunResult.finish_time_sec >= MIN_SANE_FINISH_SEC,
             gender.isnot(None),
@@ -405,6 +410,7 @@ def _week_results(
                 RunResult.finish_time_display,
                 Participant.display_name,
                 Participant.id,
+                Event.event_number,
             )
             .select_from(RunResult)
             .join(Event, Event.id == RunResult.event_id)
@@ -414,6 +420,7 @@ def _week_results(
         .filter(
             Event.event_date >= week_start,
             Event.event_date <= week_end,
+            Event.is_test_event.is_(False),
             RunResult.finish_time_sec.isnot(None),
             RunResult.finish_time_sec >= MIN_SANE_FINISH_SEC,
         ),
@@ -1063,12 +1070,18 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
             finish_display,
             runner_name,
             participant_id,
+            event_number,
         ) in _week_results(db, week_start, week_end, excluded_location_ids):
             if gender not in ("male", "female"):
                 continue
             course_key = (location_id, gender)
             previous_min = course_before.get(course_key)
-            if previous_min is None or finish_sec >= previous_min[0]:
+            # Рекорд трассы «с нуля» — как is_debut в посещаемости: страховка
+            # event_number in (None, 1) отсекает площадки, только что
+            # подключённые к сайту (история ещё не залита), от настоящих
+            # первых стартов.
+            is_debut = previous_min is None and event_number in (None, 1)
+            if not is_debut and (previous_min is None or finish_sec >= previous_min[0]):
                 continue
             existing_course = course_records.get(course_key)
             if existing_course is not None and existing_course["_finish_sec"] <= finish_sec:
@@ -1083,9 +1096,10 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
                 "gender": gender,
                 "time_display": clean_time_display(finish_display, finish_sec),
                 "runner_name": runner_name,
-                "previous_display": format_finish_time(previous_min[0]),
-                "previous_record_date": previous_min[1],
-                "delta_sec": previous_min[0] - finish_sec,
+                "previous_display": format_finish_time(previous_min[0]) if previous_min is not None else None,
+                "previous_record_date": previous_min[1] if previous_min is not None else None,
+                "delta_sec": previous_min[0] - finish_sec if previous_min is not None else None,
+                "is_debut": is_debut,
             }
         course_top = sorted(
             course_records.values(),

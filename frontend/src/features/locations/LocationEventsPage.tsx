@@ -10,6 +10,7 @@ import {
   type LocationEventRow,
   type LocationEvents,
 } from "../../lib/api";
+import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
 import { platformCodeLabel } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { TableWrap } from "../../components/tableUx/TableWrap";
@@ -67,6 +68,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
       .then((payload) => {
         if (!cancelled) {
           setData(payload);
+          applyPageMeta(locationPageMeta(payload, { eventsLog: true }));
         }
       })
       .catch((err) => {

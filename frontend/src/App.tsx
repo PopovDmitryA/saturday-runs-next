@@ -17,7 +17,9 @@ import { PortalBlogPage } from "./features/portal/PortalBlogPage";
 import { PortalHomePage } from "./features/portal/PortalHomePage";
 import { PortalLoginPage } from "./features/portal/PortalLoginPage";
 import { PortalMapLab } from "./features/portal/PortalMapLab";
+import { PortalUpdatesPage } from "./features/portal/PortalUpdatesPage";
 import { AdminBlogPage } from "./features/admin/AdminBlogPage";
+import { AdminReleasesPage } from "./features/admin/AdminReleasesPage";
 import { AdminBacklogPage } from "./features/admin/AdminBacklogPage";
 import { BacklogPage } from "./features/backlog/BacklogPage";
 import {
@@ -37,6 +39,7 @@ import {
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
+  PORTAL_UPDATES_HREF,
 } from "./lib/portalRoutes";
 import { PortalCabinetPreviewPage } from "./features/portal/cabinet/PortalCabinetPreviewPage";
 import {
@@ -57,6 +60,7 @@ import { reportAbLoginOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
 import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
+import { applyPageMeta, resolvePageMeta } from "./lib/pageMeta";
 import { isLegacyGrafanaPath, legacyGrafanaHref } from "./lib/siteBrand";
 import { buildVisitorKey } from "./lib/siteVisitor";
 
@@ -81,6 +85,17 @@ function useSitePageviewTracking(path: string) {
       cancelled = true;
       cleanup?.();
     };
+  }, [path]);
+}
+
+/**
+ * Заголовок вкладки и мета-теги по адресу. Страницы с сущностью (локация)
+ * уточняют их у себя, когда данные загрузятся, — здесь ставится родовой
+ * вариант, чтобы вкладка не оставалась с заголовком предыдущей страницы.
+ */
+function usePageMeta(path: string) {
+  useEffect(() => {
+    applyPageMeta(resolvePageMeta(path));
   }, [path]);
 }
 
@@ -148,6 +163,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   [PORTAL_ABOUT_HREF]: () => <PortalAboutPage />,
   [PORTAL_LOGIN_HREF]: () => <PortalLoginPage />,
   [PORTAL_BLOG_HREF]: () => <PortalBlogPage />,
+  // История релизов сайта — публичная, ссылки в футере (раздел + номер версии).
+  [PORTAL_UPDATES_HREF]: () => <PortalUpdatesPage />,
   "/new/map-lab": () => <PortalMapLab />,
   // Личный кабинет в портальном дизайне — тёмный запуск под /new/*, рядом со
   // старым кабинетом на канонических адресах. Превью на демо-данных (без
@@ -189,6 +206,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/volunteer-locations": () => <LeaderboardPage metric="volunteer_locations" />,
   "/ratings/wins": () => <LeaderboardPage metric="wins" />,
   "/ratings/win-locations": () => <LeaderboardPage metric="win_locations" />,
+  "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,
@@ -208,6 +226,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/records-digest": () => <AdminRecordsDigestPage />,
   "/admin/location-contacts": () => <AdminLocationContactsPage />,
   "/admin/blog": () => <AdminBlogPage />,
+  "/admin/releases": () => <AdminReleasesPage />,
   "/admin/backlog": () => <AdminBacklogPage />,
 
 };
@@ -283,5 +302,6 @@ function renderRoute(path: string): ReactElement {
 export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
+  usePageMeta(path);
   return renderRoute(path);
 }
