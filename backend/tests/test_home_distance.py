@@ -29,7 +29,12 @@ from app.services.home_distance_service import (
     round_km,
 )
 from app.services.home_location_service import HomeLocationCandidate
-from app.services.leaderboard_service import _home_location_note, _LocationVisits
+from app.services.leaderboard_service import (
+    _home_location_note,
+    _LocationVisits,
+    _russian_identities,
+)
+from app.services.location_catalog_service import LocationCatalogIndex
 
 # Опорные точки: Москва — «дом», Хабаровск — самый дальний старт (~6140 км по
 # прямой), соседний парк — проверка десятых долей на близких расстояниях.
@@ -263,6 +268,23 @@ def test_rating_marks_manual_home_outside_the_top_three() -> None:
     # Внутри тройки ручной выбор не комментируем, даже если площадки вровень.
     assert _home_location_note(identities, names, "b", "b") is None
     assert _home_location_note(identities, names, "c", "c") is None
+
+
+def test_rating_counts_only_russian_home_locations(db_session: Session) -> None:
+    """Живущие за границей в рейтинг не идут: их нулевая точка на другом
+    континенте, и любой старт в России давал бы десятки тысяч километров."""
+    suffix = uuid4().hex[:8]
+    home = _location(db_session, f"hd-ru-{suffix}", "Русский парк", MOSCOW)
+    abroad = _location(
+        db_session, f"hd-abroad-{suffix}", "Заграничный парк", KHABAROVSK, platform_code="s95"
+    )
+    abroad.country = "Serbia"
+    db_session.commit()
+
+    russian = _russian_identities(db_session)
+    catalog_index = LocationCatalogIndex(db_session)
+    assert catalog_index.canonical_identity_key(home, "five_verst") in russian
+    assert catalog_index.canonical_identity_key(abroad, "s95") not in russian
 
 
 def test_dashboard_tile_sums_unique_locations_once(
