@@ -34,8 +34,8 @@ from app.schemas.backlog import (
     BacklogVoteAdminListResponse,
 )
 from app.schemas.photo import PhotoResponse
+from app.services.admin_notify import notify_admin
 from app.services.photo_service import PhotoPayload, delete_backlog_photo, list_backlog_photos
-from app.services.vk_admin_notify import send_vk_admin_message
 
 _TYPE_LABELS = {BacklogCardType.bug: "баг", BacklogCardType.feature: "фича"}
 _COMMENT_PREVIEW_LIMIT = 200
@@ -73,7 +73,7 @@ def _notify_new_card(card: BacklogCard) -> None:
         f"🆕 Новая карточка бэклога: [{_TYPE_LABELS[card.type]}] «{card.title}» от {author}\n"
         f"{_truncate(card.description, _DESCRIPTION_PREVIEW_LIMIT)}\n\n{_card_link(card.id)}"
     )
-    send_vk_admin_message(text)
+    notify_admin(text)
 
 
 def _notify_new_vote(card: BacklogCard, value: int) -> None:
@@ -82,7 +82,7 @@ def _notify_new_vote(card: BacklogCard, value: int) -> None:
         f"{mark} Доп. голос за «{card.title}»: счёт теперь {card.score} "
         f"({card.upvotes}/{card.downvotes})\n\n{_card_link(card.id)}"
     )
-    send_vk_admin_message(text)
+    notify_admin(text)
 
 
 def _notify_new_comment(card: BacklogCard, comment: BacklogComment) -> None:
@@ -91,7 +91,7 @@ def _notify_new_comment(card: BacklogCard, comment: BacklogComment) -> None:
         f"💬 Комментарий к «{card.title}» от {author}: "
         f"{_truncate(comment.body, _COMMENT_PREVIEW_LIMIT)}\n\n{_card_link(card.id)}"
     )
-    send_vk_admin_message(text)
+    notify_admin(text)
 
 
 def _get_card(db: Session, card_id: UUID, *, for_update_author: bool = False) -> BacklogCard:

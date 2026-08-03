@@ -299,6 +299,16 @@ Scheduled sync → лог в `scheduled_run_logs` через `run_reported_sync(
 `scheduled_sync_guard.py`; суточная сводка (`admin_digest.daily_sync_summary`) уходит
 в Telegram.
 
+Уведомления от фич сайта (сейчас — бэклог: карточки, голоса, комментарии) идут через
+`services/admin_notify.notify_admin()` — тот же канал, что у сводки. Прямой вызов
+`send_vk_admin_message()` оставлен только там, где нужен диалог в ВК с `reply_to`
+(заявки на координаты локаций) и в фолбэке `send_admin_report()`.
+
+На прогоне тестов admin-уведомления не уходят никуда: `core/runtime_env.is_test_run()`
+глушит их в `notify_admin()` и в `send_vk_admin_message()`. Локальный pytest работает
+с боевым `.env`, и до 03.08.2026 каждый прогон тестов бэклога прилетал админу в ВК
+живыми сообщениями («Новая карточка бэклога: [фича] «Идея»», «Комментарий … Первый»).
+
 Команды (bot_app, admin-only): `/stats`, `/status`, `/sweep`, `/sync registry|latest|…`,
 `/sync s95-latest|…`.
 
