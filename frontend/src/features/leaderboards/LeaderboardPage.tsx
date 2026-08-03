@@ -421,7 +421,9 @@ function WeekLocations({ items }: { items?: WeekLocation[] }) {
             .map((item) => item.name)
             .join(", ")}
         >
-          +{hidden}
+          {/* Не «+N»: рядом с числовыми колонками это читалось как дельта,
+              хотя здесь просто счётчик неуместившихся площадок. */}
+          ещё {hidden}
         </span>
       )}
     </span>
