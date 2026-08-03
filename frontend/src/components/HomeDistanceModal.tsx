@@ -8,8 +8,13 @@ const HINT =
   "километры один раз, сколько бы раз вы туда ни ездили. Домашняя локация меняется " +
   "в настройках.";
 
+/** Город, а регион — только если он не повторяет город (у Москвы и Питера они совпадают). */
 function placeSubtitle(row: HomeDistanceLocation): string {
-  return [row.city, row.region].filter(Boolean).join(", ");
+  const parts = [row.city];
+  if (row.region && row.region !== row.city) {
+    parts.push(row.region);
+  }
+  return parts.filter(Boolean).join(", ");
 }
 
 function LocationCell({ row }: { row: HomeDistanceLocation }) {
@@ -21,7 +26,9 @@ function LocationCell({ row }: { row: HomeDistanceLocation }) {
       ) : (
         <span>{row.name}</span>
       )}
-      {subtitle && <span className="muted home-distance-place-sub">{subtitle}</span>}
+      {subtitle && (
+        <span className="muted home-distance-place-sub"> · {subtitle}</span>
+      )}
     </span>
   );
 }

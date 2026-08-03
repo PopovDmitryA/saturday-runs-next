@@ -11708,14 +11708,16 @@ tr.run-crosslinked td {
   font-size: 0.85rem;
 }
 
+/* Название и город одной строкой: на компе места в модалке хватает, а две
+   строки на площадку растягивали таблицу вдвое (решение Дмитрия 03.08.2026). */
 .home-distance-place {
-  display: grid;
-  gap: 0.1rem;
+  display: block;
   min-width: 0;
 }
 
 .home-distance-place-sub {
-  font-size: 0.8rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
 .home-distance-home-badge {

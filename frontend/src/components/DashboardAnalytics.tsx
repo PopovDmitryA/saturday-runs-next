@@ -300,20 +300,18 @@ function buildAnalyticsCards(
     });
   }
 
-  // Дальность от дома: в зачёте сумма расстояний до уникальных площадок, но
-  // говорит человеку больше всего самый дальний старт — его и выносим в подпись.
+  // Дальность от дома: сумма расстояний до уникальных площадок. Самый дальний
+  // старт в подписи не называем (решение Дмитрия 03.08.2026 — перегружало
+  // плитку), его видно первой строкой в модалке: она отсортирована по убыванию.
   const homeDistance = analytics.home_distance;
   if (homeDistance?.home && homeDistance.total_distance_km > 0) {
     cards.push({
       key: "home_distance",
       value: formatKm(homeDistance.total_distance_km),
-      label: homeDistance.farthest
-        ? `бегового туризма · дальше всего — ${homeDistance.farthest.name}`
-        : "бегового туризма",
+      label: "бегового туризма",
       category: "runs",
       clickable: true,
       modalTarget: "home_distance",
-      labelMultiline: true,
       tooltipContent: HOME_DISTANCE_TOOLTIP,
     });
   }
