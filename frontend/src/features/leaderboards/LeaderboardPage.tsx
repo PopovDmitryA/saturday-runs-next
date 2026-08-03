@@ -140,28 +140,24 @@ const REGIONS_HINT =
   "Сколько РАЗНЫХ регионов набрано засчитанными площадками. Зарубежные старты " +
   "считаются по стране: одна страна — один регион.";
 
-// Колонка «Последняя неделя»: площадка и дата — тем же видом, что «Последняя
-// победа» в победных рейтингах. Показывает, где человек был за окно дельты,
-// независимо от того, дало это +1 или нет: в туризме повторный заезд на давно
-// освоенную площадку в «Всего» не идёт, но в колонке виден (решение Дмитрия
-// 02.08.2026). Не был нигде — прочерк.
+// Колонка «Последняя неделя»: ОДНА площадка и дата — тем же видом, что
+// «Последняя победа» в победных рейтингах. Показывает последний старт за окно
+// дельты, независимо от того, дал он +1 или нет: в туризме повторный заезд на
+// давно освоенную площадку в «Всего» не идёт, но в колонке виден (решение
+// Дмитрия 02.08.2026). Не был нигде — прочерк.
 const WEEK_LOCATIONS_HINT: Record<string, string> = {
-  runs: "Где участник бежал за последнюю неделю.",
-  volunteering: "Где участник волонтёрил за последнюю неделю.",
+  runs: "Последний старт участника за неделю.",
+  volunteering: "Последнее волонтёрство участника за неделю.",
   locations:
-    "Где участник бежал за последнюю неделю. Знакомая площадка «Всего» не " +
+    "Последний старт участника за неделю. Знакомая площадка «Всего» не " +
     "увеличивает — новых локаций она не добавляет, — но в колонке видна.",
   volunteer_locations:
-    "Где участник волонтёрил за последнюю неделю. Знакомая площадка «Всего» не " +
+    "Последнее волонтёрство участника за неделю. Знакомая площадка «Всего» не " +
     "увеличивает — новых локаций она не добавляет, — но в колонке видна.",
   home_distance:
-    "Где участник бежал за последнюю неделю. Знакомая площадка километров не " +
+    "Последний старт участника за неделю. Знакомая площадка километров не " +
     "добавляет — её зачёт уже учтён, — но в колонке видна.",
 };
-
-// Сколько площадок недели показываем в ячейке — остальное сворачиваем в «+N»,
-// иначе у волонтёра-многостаночника колонка растягивает всю таблицу.
-const WEEK_LOCATIONS_VISIBLE = 2;
 
 const BEST_TIME_HINT =
   "Глобальный рекорд участника: лучшее время по всем системам и локациям — " +
@@ -389,43 +385,24 @@ function LastWinLocation({
   );
 }
 
-function WeekLocations({ items }: { items?: WeekLocation[] }) {
-  if (!items || items.length === 0) {
+function WeekLocationCell({ item }: { item?: WeekLocation | null }) {
+  if (!item) {
     return <span className="lb-zero">—</span>;
   }
-  const shown = items.slice(0, WEEK_LOCATIONS_VISIBLE);
-  const hidden = items.length - shown.length;
   return (
     <span className="lb-week-locations">
-      {shown.map((item) => (
-        <span key={`${item.name}-${item.slug ?? ""}`} className="lb-week-location">
-          {/* Слаг может не резолвиться у площадок без внятного external_key —
-              тогда просто текст, как и в «Последней победе». */}
-          {item.slug ? (
-            <a className="lb-last-win-link" href={`/locations/${item.slug}`}>
-              {item.name}
-            </a>
-          ) : (
-            <span>{item.name}</span>
-          )}
-          {item.date && (
-            <span className="lb-last-win-date">{formatDate(item.date)}</span>
-          )}
-        </span>
-      ))}
-      {hidden > 0 && (
-        <span
-          className="lb-week-more"
-          title={items
-            .slice(WEEK_LOCATIONS_VISIBLE)
-            .map((item) => item.name)
-            .join(", ")}
-        >
-          {/* Не «+N»: рядом с числовыми колонками это читалось как дельта,
-              хотя здесь просто счётчик неуместившихся площадок. */}
-          ещё {hidden}
-        </span>
-      )}
+      <span className="lb-week-location">
+        {/* Слаг может не резолвиться у площадок без внятного external_key —
+            тогда просто текст, как и в «Последней победе». */}
+        {item.slug ? (
+          <a className="lb-last-win-link" href={`/locations/${item.slug}`}>
+            {item.name}
+          </a>
+        ) : (
+          <span>{item.name}</span>
+        )}
+        {item.date && <span className="lb-last-win-date">{formatDate(item.date)}</span>}
+      </span>
     </span>
   );
 }
@@ -826,7 +803,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       locations_total: me.locations_total,
       cities_total: me.cities_total,
       regions_total: me.regions_total,
-      week_locations: me.week_locations,
+      week_location: me.week_location,
     };
     return [...data.rows, myRow];
   }, [data, me]);
@@ -1148,13 +1125,13 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           <LastWinLocation row={me} />
                         </span>
                       )}
-                      {hasWeekLocations && (me.week_locations?.length ?? 0) > 0 && (
+                      {hasWeekLocations && me.week_location && (
                         <span className="lb-me-value lb-me-value-wide">
                           <span className="lb-me-platform">
                             Последняя неделя{" "}
                             <InfoHint text={WEEK_LOCATIONS_HINT[metric] ?? ""} />
                           </span>
-                          <WeekLocations items={me.week_locations} />
+                          <WeekLocationCell item={me.week_location} />
                         </span>
                       )}
                     </span>
@@ -1364,7 +1341,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         )}
                         {showFull && hasWeekLocations && (
                           <td className="lb-col-last-win">
-                            <WeekLocations items={row.week_locations} />
+                            <WeekLocationCell item={row.week_location} />
                           </td>
                         )}
                       </tr>

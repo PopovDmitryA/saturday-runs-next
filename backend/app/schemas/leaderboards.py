@@ -18,9 +18,9 @@ class VolunteerRoleDetailResponse(BaseModel):
 
 
 class WeekLocationResponse(BaseModel):
-    """Где участник был за последнюю неделю (одна площадка колонки «Последняя
-    неделя»): площадка и дата визита — тем же видом, что «Последняя победа»
-    в победных рейтингах."""
+    """Последний старт участника за неделю: площадка и дата — тем же видом, что
+    «Последняя победа» в победных рейтингах. Всегда ровно одна площадка: если
+    стартов было несколько, берётся самый поздний."""
 
     name: str
     slug: str | None = None
@@ -60,7 +60,7 @@ class LeaderboardRowResponse(BaseModel):
     cities_total: int | None = None
     regions_total: int | None = None
     # Колонка «Последняя неделя» (см. WEEK_LOCATIONS_METRICS).
-    week_locations: list[WeekLocationResponse] = []
+    week_location: WeekLocationResponse | None = None
 
 
 class LeaderboardResponse(BaseModel):
@@ -99,7 +99,7 @@ class MyLeaderboardRowResponse(BaseModel):
     locations_total: int | None = None
     cities_total: int | None = None
     regions_total: int | None = None
-    week_locations: list[WeekLocationResponse] = []
+    week_location: WeekLocationResponse | None = None
     display_name: str | None
     site_serial_id: int
     platforms: dict[str, LeaderboardCellResponse]

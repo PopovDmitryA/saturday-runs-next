@@ -29,7 +29,6 @@ from app.services.leaderboard_service import (
     PLATFORM_FILTER_METRICS,
     PLATFORM_FILTER_VALUES,
     VOLUNTEER_LOCATION_PLATFORM_COLUMNS,
-    WEEK_LOCATIONS_LIMIT,
     WEEK_LOCATIONS_METRICS,
     WIN_EXTRAS_METRICS,
     _add_role_row,
@@ -38,6 +37,7 @@ from app.services.leaderboard_service import (
     _dominant_gender,
     _Entity,
     _geo_keys,
+    _latest_week_location,
     _LocationVisits,
     _merge_visit_row,
     _my_gendered_win_values,
@@ -54,7 +54,6 @@ from app.services.leaderboard_service import (
     _summarize_roles,
     _unit_counts,
     _unit_key_getters,
-    _week_location_entries,
     _week_start,
     count_by_values,
     metric_description,
@@ -441,21 +440,26 @@ def test_week_locations_read_the_metrics_own_protocols() -> None:
         assert f"{alias}.participant_id IS NOT NULL" in _WEEK_LOCATIONS_SQL_BY_METRIC[metric]
 
 
-def test_week_location_entries_order_and_limit() -> None:
+def test_latest_week_location_takes_the_freshest_start() -> None:
+    """В ячейке всегда одна площадка — самый поздний старт окна."""
     names = {f"loc:{i}": f"Площадка {i}" for i in range(1, 8)}
-    slugs = {"loc:1": "park-one"}
-    dates = {f"loc:{i}": date(2026, 7, 19 + (i % 3)) for i in range(1, 8)}
-    entries = _week_location_entries(dates, names, slugs)
-    # Свежие первыми, длинный хвост обрезан — его фронт сворачивает в «+N».
-    assert len(entries) == WEEK_LOCATIONS_LIMIT
-    assert entries[0]["date"] >= entries[-1]["date"]
-    # При равной дате порядок детерминирован по названию, слаг подставляется.
-    same_day = _week_location_entries(
+    slugs = {"loc:1": "park-one", "loc:5": "park-five"}
+    dates = {
+        "loc:3": date(2026, 7, 19),
+        "loc:5": date(2026, 7, 26),
+        "loc:7": date(2026, 7, 22),
+    }
+    latest = _latest_week_location(dates, names, slugs)
+    assert latest == {"name": "Площадка 5", "slug": "park-five", "date": "2026-07-26"}
+
+    # При равной дате выбор детерминирован по названию, слаг подставляется.
+    same_day = _latest_week_location(
         {"loc:2": date(2026, 7, 25), "loc:1": date(2026, 7, 25)}, names, slugs
     )
-    assert [item["name"] for item in same_day] == ["Площадка 1", "Площадка 2"]
-    assert same_day[0]["slug"] == "park-one"
-    assert same_day[0]["date"] == "2026-07-25"
+    assert same_day == {"name": "Площадка 1", "slug": "park-one", "date": "2026-07-25"}
+
+    # Не был нигде — ячейка пустая.
+    assert _latest_week_location({}, names, slugs) is None
 
 
 def test_cache_key_versions_min_visits() -> None:

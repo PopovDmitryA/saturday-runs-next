@@ -424,12 +424,6 @@
   gap: 0.1rem;
 }
 
-.lb-week-more {
-  color: var(--text-faint);
-  font-size: 0.82rem;
-  cursor: help;
-}
-
 .lb-best-time {
   font-variant-numeric: tabular-nums;
 }

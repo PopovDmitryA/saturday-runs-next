@@ -31,8 +31,10 @@ export const COUNT_BY_LABELS: Record<CountBy, string> = {
   regions: "Регионов",
 };
 
-// Площадка недели в колонке «Последняя неделя»: площадка и дата визита — тем же
-// видом, что «Последняя победа» в победных рейтингах.
+// Колонка «Последняя неделя»: последний старт участника за окно дельты —
+// площадка и дата, тем же видом, что «Последняя победа» в победных рейтингах.
+// Всегда ровно одна площадка: если стартов было несколько, бэкенд отдаёт
+// самый поздний.
 export type WeekLocation = {
   name: string;
   slug: string | null;
@@ -133,7 +135,7 @@ export type LeaderboardRow = {
   cities_total?: number | null;
   regions_total?: number | null;
   // Колонка «Последняя неделя»: где участник был за окно дельты.
-  week_locations?: WeekLocation[];
+  week_location?: WeekLocation | null;
 };
 
 export type LeaderboardResponse = {
@@ -168,7 +170,7 @@ export type MyLeaderboardRow = {
   locations_total?: number | null;
   cities_total?: number | null;
   regions_total?: number | null;
-  week_locations?: WeekLocation[];
+  week_location?: WeekLocation | null;
   display_name: string | null;
   site_serial_id: number;
   platforms: Record<string, LeaderboardCell>;

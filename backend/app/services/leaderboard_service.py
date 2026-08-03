@@ -921,8 +921,8 @@ class _Entity:
     cities_total: int | None = None
     regions_total: int | None = None
     # Где участник был за последнюю неделю (метрики с колонкой «Последняя
-    # неделя») — [{"name": ..., "slug": ...}], свежие первыми.
-    week_locations: list[dict[str, object]] = field(default_factory=list)
+    # неделя») — ОДНА площадка, самый поздний старт окна.
+    week_location: dict[str, object] | None = None
     # Участники, из которых собрана строка — нужны для запроса рекорда.
     participant_ids: set[UUID] = field(default_factory=set)
 
@@ -1378,7 +1378,6 @@ def _s95_volunteering_rows(
 # Сколько площадок недели показываем в строке: за окно дельты человек успевает
 # побывать на одной-двух, длинный хвост бывает только у волонтёров, которые
 # объезжают несколько площадок. Остальное фронт свернёт в «+N».
-WEEK_LOCATIONS_LIMIT = 5
 
 # Выборка окна недели для каждой метрики с колонкой «Последняя неделя»: беговые
 # рейтинги читают протоколы забегов, волонтёрские — волонтёрские смены. У
@@ -1406,29 +1405,32 @@ _WEEK_LOCATIONS_PIDS_ALIAS: dict[str, str] = {
 }
 
 
-def _week_location_entries(
+def _latest_week_location(
     dates: dict[str, date],
     identity_names: dict[str, str],
     identity_slugs: dict[str, str],
-) -> list[dict[str, object]]:
-    """Площадки недели в порядке показа: свежие первыми, при равной дате — по
-    названию. Формат тот же, что у «Последней победы» в победных рейтингах:
-    площадка и дата под ней."""
+) -> dict[str, object] | None:
+    """Последний старт окна: ОДНА площадка, самая поздняя по дате.
+
+    Список площадок в ячейке не показываем никогда (решение Дмитрия
+    03.08.2026): колонка отвечает на вопрос «где человек был в последний раз»,
+    а перечисление рядом с числовыми колонками читалось как приращение.
+    Ничью по дате разводим названием, чтобы выбор не «дышал» между пересчётами.
+    """
 
     def name_of(identity: str) -> str:
         return identity_names.get(identity, identity)
 
-    ordered = sorted(
+    if not dates:
+        return None
+    identity, on_date = min(
         dates.items(), key=lambda item: (-item[1].toordinal(), name_of(item[0]))
     )
-    return [
-        {
-            "name": name_of(identity),
-            "slug": identity_slugs.get(identity),
-            "date": on_date.isoformat(),
-        }
-        for identity, on_date in ordered[:WEEK_LOCATIONS_LIMIT]
-    ]
+    return {
+        "name": name_of(identity),
+        "slug": identity_slugs.get(identity),
+        "date": on_date.isoformat(),
+    }
 
 
 def _attach_week_locations(
@@ -1459,7 +1461,7 @@ def _attach_week_locations(
         known = by_identity.get(identity)
         by_identity[identity] = max(known, last_date) if known is not None else last_date
     for key, dates in per_entity.items():
-        entities[key].week_locations = _week_location_entries(
+        entities[key].week_location = _latest_week_location(
             dates, identity_names, identity_slugs
         )
 
@@ -2532,8 +2534,8 @@ def _build_snapshot(
             row["locations_total"] = entity.locations_total
             row["cities_total"] = entity.cities_total
             row["regions_total"] = entity.regions_total
-        if entity.week_locations:
-            row["week_locations"] = entity.week_locations
+        if entity.week_location is not None:
+            row["week_location"] = entity.week_location
         if entity.home_location is not None:
             row["home_location"] = entity.home_location
             # У «дальности от дома» колонка «Дом» — это домашняя локация, а не
@@ -3186,18 +3188,18 @@ def _my_home_distance_values(
     )
 
 
-def _my_week_locations(
+def _my_week_location(
     db: Session,
     metric: str,
     participant_ids: list[UUID],
     week_start: date,
     platform: str = "all",
     role_filter: frozenset[str] | None = None,
-) -> list[dict[str, object]]:
-    """«Где я был за последнюю неделю» — тем же способом, что и строки таблицы."""
+) -> dict[str, object] | None:
+    """«Где я был в последний раз за неделю» — как и в строках таблицы."""
     template = _WEEK_LOCATIONS_SQL_BY_METRIC.get(metric)
     if template is None or not participant_ids:
-        return []
+        return None
     alias = _WEEK_LOCATIONS_PIDS_ALIAS[metric]
     sql = template.replace(
         "/*PIDS_FILTER*/", f"AND {alias}.participant_id = ANY(:pids)"
@@ -3213,7 +3215,7 @@ def _my_week_locations(
         identity = identity_by_location.get(location_id, str(location_id))
         known = dates.get(identity)
         dates[identity] = max(known, last_date) if known is not None else last_date
-    return _week_location_entries(dates, identity_names, identity_slugs)
+    return _latest_week_location(dates, identity_names, identity_slugs)
 
 
 def get_my_leaderboard_row(
@@ -3342,7 +3344,7 @@ def get_my_leaderboard_row(
 
     # «Последняя неделя» — одинаково для всех метрик с этой колонкой: просто где
     # человек был за окно дельты, дало это +1 или нет (у остальных вернётся []).
-    my_week_locations = _my_week_locations(
+    my_week_location = _my_week_location(
         db, metric, participant_ids, week_start, platform_resolved
     )
 
@@ -3381,7 +3383,7 @@ def get_my_leaderboard_row(
         "locations_total": my_geo.locations_total if my_geo else my_locations_total,
         "cities_total": my_geo.cities_total if my_geo else None,
         "regions_total": my_geo.regions_total if my_geo else None,
-        "week_locations": my_week_locations,
+        "week_location": my_week_location,
         "display_name": user.display_name,
         "site_serial_id": user.serial_id,
         "platforms": {code: {"value": v[0], "delta": v[1]} for code, v in values.items()},
