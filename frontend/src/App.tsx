@@ -60,6 +60,7 @@ import { reportAbLoginOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
 import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
+import { applyPageMeta, resolvePageMeta } from "./lib/pageMeta";
 import { isLegacyGrafanaPath, legacyGrafanaHref } from "./lib/siteBrand";
 import { buildVisitorKey } from "./lib/siteVisitor";
 
@@ -84,6 +85,17 @@ function useSitePageviewTracking(path: string) {
       cancelled = true;
       cleanup?.();
     };
+  }, [path]);
+}
+
+/**
+ * Заголовок вкладки и мета-теги по адресу. Страницы с сущностью (локация)
+ * уточняют их у себя, когда данные загрузятся, — здесь ставится родовой
+ * вариант, чтобы вкладка не оставалась с заголовком предыдущей страницы.
+ */
+function usePageMeta(path: string) {
+  useEffect(() => {
+    applyPageMeta(resolvePageMeta(path));
   }, [path]);
 }
 
@@ -290,5 +302,6 @@ function renderRoute(path: string): ReactElement {
 export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
+  usePageMeta(path);
   return renderRoute(path);
 }

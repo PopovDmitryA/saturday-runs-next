@@ -17,6 +17,7 @@ import {
   type LocationPage as LocationPageData,
   type LocationPersonalStats,
 } from "../../lib/api";
+import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
 import { formatDate, formatKm, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { cabinetTabHref } from "../../lib/portalRoutes";
@@ -874,6 +875,9 @@ function LocationPageContent({ slug }: { slug: string }) {
           return;
         }
         setPage(data);
+        // Родовой заголовок «Локация — run5k.run» из App.tsx уточняем именем
+        // и цифрами, как только данные приехали.
+        applyPageMeta(locationPageMeta(data));
         // Канонический URL страницы — slug основной системы локации.
         if (data.slug && data.slug !== slug) {
           window.history.replaceState(null, "", `/locations/${data.slug}`);
