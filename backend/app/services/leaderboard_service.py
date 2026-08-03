@@ -35,7 +35,7 @@ from app.parkrun.volunteer_credits import (
     resolve_parkrun_volunteering_count,
 )
 from app.services.co_runners_service import _is_unknown_participant_name
-from app.services.home_distance_service import haversine_km
+from app.services.home_distance_service import AMBIGUITY_RATIO, haversine_km
 from app.services.location_catalog_service import (
     LocationCatalogIndex,
     russian_parkrun_location_ids,
@@ -897,6 +897,10 @@ class _Entity:
     # Только для метрики wins: «топ-локация побед» — локация с максимумом побед.
     home_location: str | None = None
     home_location_wins: int = 0
+    # Только у home_distance: почему домашняя локация под вопросом.
+    # "ambiguous" — автовыбор шаткий (ничья или вторая площадка вровень),
+    # "manual_off_top" — человек выбрал руками площадку вне своей тройки.
+    home_location_note: str | None = None
     # Только у победных метрик (см. WIN_EXTRAS_METRICS): глобальный рекорд и
     # последняя победа. У win_locations «последняя» — это последняя НОВАЯ
     # локация с победой (дата = первая победа именно на ней).
@@ -1382,6 +1386,7 @@ WEEK_LOCATIONS_LIMIT = 5
 _WEEK_LOCATIONS_SQL_BY_METRIC: dict[str, str] = {
     "runs": _WEEK_RUN_LOCATIONS_SQL,
     "locations": _WEEK_RUN_LOCATIONS_SQL,
+    "home_distance": _WEEK_RUN_LOCATIONS_SQL,
     "volunteering": _WEEK_VOLUNTEER_LOCATIONS_SQL,
     "volunteer_locations": _WEEK_VOLUNTEER_LOCATIONS_SQL,
 }
@@ -1395,6 +1400,7 @@ WEEK_LOCATIONS_METRICS: tuple[LeaderboardMetric, ...] = cast(
 _WEEK_LOCATIONS_PIDS_ALIAS: dict[str, str] = {
     "runs": "rr",
     "locations": "rr",
+    "home_distance": "rr",
     "volunteering": "vr",
     "volunteer_locations": "vr",
 }
@@ -2171,6 +2177,36 @@ def _home_identity(
     )
 
 
+def _home_location_note(
+    identities: dict[str, _LocationVisits],
+    identity_names: dict[str, str],
+    home: str,
+    manual_key: str | None,
+) -> str | None:
+    """Почему домашняя локация под вопросом — или None, если вопросов нет.
+
+    Автовыбор берёт площадку с максимумом визитов, поэтому «вне топ-3» у него
+    не бывает в принципе; зато бывает ничья или вторая площадка вровень —
+    тогда километры вполне могли бы считаться от другой точки. Ручной выбор
+    наоборот: человек уже решил, и придираться к почти равным площадкам
+    незачем, а вот выбор вне собственной тройки стоит пометить.
+    """
+    ranked = sorted(
+        identities,
+        key=lambda identity: (
+            -identities[identity].visits,
+            identity_names.get(identity, identity).casefold(),
+        ),
+    )
+    if manual_key is not None and manual_key in identities:
+        return "manual_off_top" if ranked.index(home) >= 3 else None
+    if len(ranked) < 2:
+        return None
+    leader = identities[ranked[0]].visits
+    runner_up = identities[ranked[1]].visits
+    return "ambiguous" if runner_up >= leader * AMBIGUITY_RATIO else None
+
+
 def _home_distance_tally(
     identities: dict[str, _LocationVisits],
     home: str,
@@ -2262,6 +2298,9 @@ def _collect_home_distance_entities(
         entity.week = week
         entity.values = values
         entity.home_location = identity_names.get(home, home)
+        entity.home_location_note = _home_location_note(
+            identities, identity_names, home, manual_key
+        )
         entity.locations_total = len(identities)
         entities[key] = entity
     return entities
@@ -2498,8 +2537,11 @@ def _build_snapshot(
         if entity.home_location is not None:
             row["home_location"] = entity.home_location
             # У «дальности от дома» колонка «Дом» — это домашняя локация, а не
-            # топ-локация побед: числа побед у неё нет.
-            if metric != "home_distance":
+            # топ-локация побед: числа побед у неё нет, зато есть пометка о том,
+            # что выбор дома под вопросом.
+            if metric == "home_distance":
+                row["home_location_note"] = entity.home_location_note
+            else:
                 row["home_location_wins"] = entity.home_location_wins
         if entity.top_role is not None:
             row["top_role"] = entity.top_role
@@ -3099,6 +3141,7 @@ class _MyHomeDistanceRow:
     total: int
     week: int
     home_location: str | None = None
+    home_location_note: str | None = None
     locations_total: int | None = None
 
 
@@ -3136,6 +3179,9 @@ def _my_home_distance_values(
         total=total,
         week=week,
         home_location=identity_names.get(home, home),
+        home_location_note=_home_location_note(
+            identities, identity_names, home, user.home_location_key
+        ),
         locations_total=len(identities),
     )
 
@@ -3215,6 +3261,7 @@ def get_my_leaderboard_row(
     # Только у «дальности от дома»: домашняя локация без числа побед и общее
     # число посещённых площадок (у туристических рейтингов это считает my_geo).
     my_home_name: str | None = None
+    my_home_note: str | None = None
     my_locations_total: int | None = None
     if metric == "volunteer_roles":
         role_summary = _my_volunteer_role_values(
@@ -3231,6 +3278,7 @@ def get_my_leaderboard_row(
         )
         values, total, week = distance_row.values, distance_row.total, distance_row.week
         my_home_name = distance_row.home_location
+        my_home_note = distance_row.home_location_note
         my_locations_total = distance_row.locations_total
     elif metric in ("locations", "volunteer_locations"):
         my_geo = _my_location_values(
@@ -3346,6 +3394,7 @@ def get_my_leaderboard_row(
         "gender_mismatch": gender_mismatch,
         "home_location": my_home[0] if my_home else my_home_name,
         "home_location_wins": my_home[1] if my_home else None,
+        "home_location_note": my_home_note,
         "top_role": my_top_role[0] if my_top_role else None,
         "top_role_count": my_top_role[1] if my_top_role else None,
         "role_details": my_role_details,

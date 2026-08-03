@@ -154,6 +154,9 @@ const WEEK_LOCATIONS_HINT: Record<string, string> = {
   volunteer_locations:
     "Где участник волонтёрил за последнюю неделю. Знакомая площадка «Всего» не " +
     "увеличивает — новых локаций она не добавляет, — но в колонке видна.",
+  home_distance:
+    "Где участник бежал за последнюю неделю. Знакомая площадка километров не " +
+    "добавляет — её зачёт уже учтён, — но в колонке видна.",
 };
 
 // Сколько площадок недели показываем в ячейке — остальное сворачиваем в «+N»,
@@ -236,6 +239,41 @@ function TopWinLocation({
       {row.home_location}
       {row.home_location_wins != null && row.home_location_wins > 1 && (
         <span className="lb-home-count"> ×{row.home_location_wins}</span>
+      )}
+    </span>
+  );
+}
+
+// Домашняя локация в рейтинге дальности: от неё считаются все километры строки,
+// поэтому спорный выбор помечаем прямо в таблице. «!» ставится в двух случаях
+// (решение Дмитрия 03.08.2026) — подсказка объясняет, в каком именно.
+const HOME_NOTE_HINT: Record<string, string> = {
+  ambiguous:
+    "Домашняя локация выбрана автоматически, но неуверенно: на второй площадке " +
+    "у участника почти столько же пробежек. Километры могли бы считаться от неё.",
+  manual_off_top:
+    "Участник указал домашнюю локацию вручную, и она не входит в топ-3 его " +
+    "площадок по числу пробежек.",
+};
+
+function HomeLocationCell({
+  row,
+}: {
+  row: { home_location?: string | null; home_location_note?: string | null };
+}) {
+  if (!row.home_location) {
+    return <span className="lb-zero">—</span>;
+  }
+  const note = row.home_location_note ? HOME_NOTE_HINT[row.home_location_note] : null;
+  return (
+    <span className="lb-home">
+      {row.home_location}
+      {note && (
+        <StatHintTooltip text={note}>
+          <span className="lb-home-warn" aria-label="Домашняя локация под вопросом">
+            !
+          </span>
+        </StatHintTooltip>
       )}
     </span>
   );
@@ -1091,7 +1129,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           <span className="lb-me-platform">
                             Дом <InfoHint text={HOME_LOCATION_HINT} />
                           </span>
-                          <TopWinLocation row={me} />
+                          <HomeLocationCell row={me} />
                         </span>
                       )}
                       {hasWinExtras && lastWinMeta && me.last_win_location && (
@@ -1297,7 +1335,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                               <GeoCount value={row.locations_total} />
                             </td>
                             <td className="lb-col-home">
-                              <TopWinLocation row={row} />
+                              <HomeLocationCell row={row} />
                             </td>
                           </>
                         )}

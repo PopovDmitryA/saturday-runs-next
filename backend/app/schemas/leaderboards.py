@@ -36,8 +36,12 @@ class LeaderboardRowResponse(BaseModel):
     total: int
     total_delta: int
     # Только у метрики wins: «топ-локация побед» — локация с максимумом побед.
+    # У home_distance в этой же колонке домашняя локация, а вместо числа побед —
+    # пометка о том, что выбор дома под вопросом (см. home_location_note).
     home_location: str | None = None
     home_location_wins: int | None = None
+    # "ambiguous" — автовыбор шаткий, "manual_off_top" — выбрано руками вне тройки.
+    home_location_note: str | None = None
     # Только у победных рейтингов: глобальный рекорд участника и последняя
     # победа (у win_locations — последняя НОВАЯ локация с победой).
     best_time_sec: int | None = None
@@ -110,6 +114,7 @@ class MyLeaderboardRowResponse(BaseModel):
     gender_mismatch: bool = False
     home_location: str | None = None
     home_location_wins: int | None = None
+    home_location_note: str | None = None
     best_time_sec: int | None = None
     best_time_display: str | None = None
     last_win_location: str | None = None

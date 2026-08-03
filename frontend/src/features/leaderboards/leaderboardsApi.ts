@@ -112,6 +112,9 @@ export type LeaderboardRow = {
   // Только у метрики wins: «топ-локация побед» — локация с максимумом побед.
   home_location?: string | null;
   home_location_wins?: number | null;
+  // Только у home_distance: "ambiguous" — автовыбор дома шаткий,
+  // "manual_off_top" — человек выбрал руками площадку вне своей тройки.
+  home_location_note?: "ambiguous" | "manual_off_top" | null;
   // Только у победных рейтингов: глобальный рекорд участника и последняя победа
   // (у win_locations — последняя НОВАЯ локация с победой, дата — первой победы там).
   best_time_sec?: number | null;
@@ -180,6 +183,9 @@ export type MyLeaderboardRow = {
   gender_mismatch?: boolean;
   home_location?: string | null;
   home_location_wins?: number | null;
+  // Только у home_distance: "ambiguous" — автовыбор дома шаткий,
+  // "manual_off_top" — человек выбрал руками площадку вне своей тройки.
+  home_location_note?: "ambiguous" | "manual_off_top" | null;
   best_time_sec?: number | null;
   best_time_display?: string | null;
   last_win_location?: string | null;

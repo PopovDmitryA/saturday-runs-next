@@ -409,13 +409,15 @@ def test_cache_key_versions_count_by() -> None:
 
 
 def test_week_locations_metrics_registered() -> None:
-    # Колонка «Последняя неделя» — у пробежек, волонтёрств и обоих туристических
-    # рейтингов; у победных её место занимает «Последняя победа».
+    # Колонка «Последняя неделя» — у пробежек, волонтёрств, обоих туристических
+    # рейтингов и дальности от дома; у победных её место занимает «Последняя
+    # победа».
     assert set(WEEK_LOCATIONS_METRICS) == {
         "runs",
         "volunteering",
         "locations",
         "volunteer_locations",
+        "home_distance",
     }
     assert set(WEEK_LOCATIONS_METRICS) <= set(LEADERBOARD_METRICS)
     assert set(WEEK_LOCATIONS_METRICS) & set(WIN_EXTRAS_METRICS) == set()
@@ -428,6 +430,7 @@ def test_week_locations_read_the_metrics_own_protocols() -> None:
     # а в волонтёрском туризме — пробежки.
     assert _WEEK_LOCATIONS_SQL_BY_METRIC["locations"] is _WEEK_RUN_LOCATIONS_SQL
     assert _WEEK_LOCATIONS_SQL_BY_METRIC["runs"] is _WEEK_RUN_LOCATIONS_SQL
+    assert _WEEK_LOCATIONS_SQL_BY_METRIC["home_distance"] is _WEEK_RUN_LOCATIONS_SQL
     assert (
         _WEEK_LOCATIONS_SQL_BY_METRIC["volunteer_locations"]
         is _WEEK_VOLUNTEER_LOCATIONS_SQL

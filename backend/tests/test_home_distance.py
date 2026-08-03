@@ -29,6 +29,7 @@ from app.services.home_distance_service import (
     round_km,
 )
 from app.services.home_location_service import HomeLocationCandidate
+from app.services.leaderboard_service import _home_location_note, _LocationVisits
 
 # Опорные точки: Москва — «дом», Хабаровск — самый дальний старт (~6140 км по
 # прямой), соседний парк — проверка десятых долей на близких расстояниях.
@@ -236,6 +237,32 @@ def test_home_ambiguity_flags_tie_and_close_runner_up() -> None:
     assert _home_ambiguity([leader, far], leader, is_auto=True) == (None, None)
     # Выбранное руками не комментируем: человек уже сказал, где его дом.
     assert _home_ambiguity([leader, tie], leader, is_auto=False) == (None, None)
+
+
+def _visits(count: int) -> _LocationVisits:
+    return _LocationVisits(first_date=date(2099, 1, 3), codes={"five_verst"}, visits=count)
+
+
+def test_rating_marks_shaky_auto_home_but_not_a_clear_leader() -> None:
+    names = {"a": "Альфа", "b": "Бета"}
+    close = {"a": _visits(10), "b": _visits(8)}
+    clear = {"a": _visits(10), "b": _visits(2)}
+    alone = {"a": _visits(10)}
+
+    assert _home_location_note(close, names, "a", None) == "ambiguous"
+    assert _home_location_note(clear, names, "a", None) is None
+    assert _home_location_note(alone, names, "a", None) is None
+
+
+def test_rating_marks_manual_home_outside_the_top_three() -> None:
+    names = {chr(ord("a") + i): f"Площадка {i}" for i in range(5)}
+    identities = {key: _visits(10 - index) for index, key in enumerate(names)}
+
+    # Руками выбрана пятая по числу визитов площадка — это и помечаем.
+    assert _home_location_note(identities, names, "e", "e") == "manual_off_top"
+    # Внутри тройки ручной выбор не комментируем, даже если площадки вровень.
+    assert _home_location_note(identities, names, "b", "b") is None
+    assert _home_location_note(identities, names, "c", "c") is None
 
 
 def test_dashboard_tile_sums_unique_locations_once(

@@ -539,6 +539,25 @@
   white-space: nowrap;
 }
 
+/* «!» у домашней локации в рейтинге дальности: от неё считаются все километры
+   строки, поэтому спорный выбор дома видно прямо в таблице. */
+.lb-home-warn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-left: 0.3rem;
+  border-radius: 50%;
+  background: var(--tint-red-bg-strong);
+  color: var(--tint-red-text);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+}
+
 .lb-rank {
   display: inline-flex;
   align-items: baseline;
