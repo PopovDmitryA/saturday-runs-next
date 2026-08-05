@@ -357,7 +357,16 @@ class ParkrunDaemonSession:
 
     def _fetch_httpx(self, url: str) -> str:
         assert self._httpx_client is not None
-        wait_for_turn(reason="daemon-httpx")
+        # Темп быстрого режима задаём сами: дефолтные 25–55 с — ритм браузерного
+        # режима, и на двухстраничный профиль они давали ~1.5 минуты чистого сна.
+        if self.fast_delay_seconds is not None:
+            wait_for_turn(
+                reason="daemon-httpx",
+                min_interval=self.fast_delay_seconds * 0.7,
+                max_interval=self.fast_delay_seconds * 1.3,
+            )
+        else:
+            wait_for_turn(reason="daemon-httpx")
         # attempt 1 — с текущим токеном (или без него); если прилетела защита и
         # включён решатель, добываем свежий токен браузером и пробуем ещё раз.
         for attempt in (1, 2):
@@ -371,12 +380,19 @@ class ParkrunDaemonSession:
                 return html
             if self._solver is not None and attempt == 1:
                 self.show_status("Капча/WAF — решаю в фоне (CLIP), это ~25 с…")
-                token = self._solver.harvest(url)
+                token, cleared = self._solver.harvest(url)
                 if token:
                     self._waf_token = token
+                if token or cleared:
+                    # cleared без токена — WAF пустил браузер без челленджа:
+                    # защита снялась, повторяем httpx даже без свежей куки.
                     clear_captcha_pending()
                     clear_platform_cooldown("parkrun")
-                    continue  # повтор с новым токеном
+                    self.show_status(
+                        "Токен получен, продолжаю…" if token
+                        else "Защита снялась (без токена), продолжаю…"
+                    )
+                    continue
             break
         # решателя нет или он не справился — ведём себя как прежний --no-browser
         set_captcha_pending(f"httpx:{inspection.summary}")

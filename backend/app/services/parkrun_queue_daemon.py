@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, cast
@@ -166,6 +167,10 @@ def _manual_sync_link_ids(db: Session, link_ids: list[UUID]) -> set[UUID]:
 # смысла молотить остаток очереди гигантскими трейсбэками.
 MAX_DB_CONNECTION_FAILURES = 3
 
+# Размер пачки для смежных подсистем (s95, сбор локаций), когда для parkrun
+# запрошена вся очередь (--limit 0).
+DEFAULT_SIDE_LIMIT = 50
+
 
 def _is_db_connection_lost(exc: BaseException) -> bool:
     """True, если ошибка — потеря соединения с БД (оборванный SSH-туннель),
@@ -203,9 +208,13 @@ def run_parkrun_queue_daemon(
     details: list[str] = []
     total = len(items)
     db_connection_failures = 0
+    started_at = time.monotonic()
+    processed = 0
+    interrupted = False
 
     for index, item in enumerate(items, start=1):
         session.show_status(f"{index}/{total}: {item.kind} {item.label}")
+        processed = index
         try:
             if item.kind == "pending":
                 outcome, user_id, external_user_id = _process_pending_item(db, item)
@@ -233,6 +242,10 @@ def run_parkrun_queue_daemon(
                 key = "sync_ok" if sync_line.startswith("sync_ok") else "sync_error"
                 summary[key] = summary.get(key, 0) + 1
             db_connection_failures = 0  # успех — сбрасываем счётчик обрывов
+        except KeyboardInterrupt:
+            interrupted = True
+            cline(f"[parkrun queue] Остановлено на {index}/{total}.")
+            break
         except Exception as exc:
             try:
                 db.rollback()
@@ -266,9 +279,24 @@ def run_parkrun_queue_daemon(
             break
 
         if index < total:
-            session.human_pause_between_jobs()
+            try:
+                session.human_pause_between_jobs()
+            except KeyboardInterrupt:
+                # Ctrl+C чаще всего прилетает именно в паузу между атлетами.
+                # Прерываем цикл штатно, чтобы наверх ушла собранная статистика
+                # и отложенный пересчёт рекордов успел отработать.
+                interrupted = True
+                cline(f"[parkrun queue] Остановлено на {index}/{total}.")
+                break
 
-    return {"summary": summary, "details": details, "total": total}
+    return {
+        "summary": summary,
+        "details": details,
+        "total": total,
+        "processed": processed,
+        "elapsed": time.monotonic() - started_at,
+        "interrupted": interrupted,
+    }
 
 
 def _merge_results(*results: Mapping[str, object]) -> dict[str, object]:
@@ -282,6 +310,15 @@ def _merge_results(*results: Mapping[str, object]) -> dict[str, object]:
         details.extend(cast("list[str]", res.get("details") or []))
         total += cast("int", res.get("total") or 0)
     return {"summary": summary, "details": details, "total": total}
+
+
+def _with_run_stats(merged: dict[str, object], parkrun_result: Mapping[str, object]) -> dict[str, object]:
+    """Донести до вызывающего тайминги прогона очереди parkrun (для итоговой
+    сводки в консоли): сам _merge_results складывает только счётчики."""
+    for key in ("processed", "elapsed", "interrupted"):
+        if key in parkrun_result:
+            merged[key] = parkrun_result[key]
+    return merged
 
 
 def run_daemon(
@@ -312,8 +349,15 @@ def run_daemon(
     if stats_line:
         cline(stats_line)
 
+    # limit_pending=0 означает «вся очередь parkrun» (длинный ночной прогон).
+    # Соседние подсистемы этого не подразумевают: у s95 своя очередь, а сборщик
+    # локаций получает лимит как размер порции и считает по нему таймаут —
+    # им отдаём обычную пачку.
+    unlimited = limit_pending <= 0
+    side_limit = DEFAULT_SIDE_LIMIT if unlimited else limit_pending
+
     # s95 uses its own fetch (no parkrun browser needed) — drain it first.
-    s95_result = run_s95_pending_queue(db, limit_pending=limit_pending)
+    s95_result = run_s95_pending_queue(db, limit_pending=side_limit)
     if s95_result["total"]:
         cline(
             f"s95 очередь: {s95_result['backlog_total']} задач(и) всего — "
@@ -364,10 +408,33 @@ def run_daemon(
             launch_chrome=launch_chrome,
             use_httpx=use_httpx,
             fast_delay_seconds=fast_delay_seconds,
+            solve_captcha=solve_captcha,
         ) as browser_session:
             token = activate_daemon_session(browser_session)
             try:
-                parkrun_result = run_parkrun_queue_daemon(db, browser_session, items)
+                # Личные рекорды считаем не после каждого атлета, а одним
+                # проходом в конце: на пакете это основная статья расходов.
+                from app.services.parkrun_pr_service import (
+                    deferred_pr_recalc,
+                    flush_deferred_personal_records,
+                )
+
+                with deferred_pr_recalc() as touched:
+                    parkrun_result = run_parkrun_queue_daemon(db, browser_session, items)
+                    pr_ids = set(touched)
+                if pr_ids:
+                    cline(f"Пересчёт личных рекордов: {len(pr_ids)} участник(ов)…")
+                    try:
+                        pr_stats = flush_deferred_personal_records(db, pr_ids)
+                        db.commit()
+                        cline(
+                            f"Личные рекорды пересчитаны: {pr_stats['participants']} "
+                            f"участник(ов), обновлено строк {pr_stats['runs_updated']}"
+                        )
+                    except Exception:
+                        db.rollback()
+                        logger.exception("parkrun batch PR recalc failed")
+                        cline("ВНИМАНИЕ: пакетный пересчёт рекордов упал — см. лог")
             finally:
                 deactivate_daemon_session(token)
 
@@ -377,7 +444,7 @@ def run_daemon(
     # на сдачу, координируясь с ним через claim'ы канонической БД
     # (PM_CLAIM_COMMAND в .env parkrun-monitoring).
     if queue_was_empty:
-        work_line = monitoring_work(limit=limit_pending)
+        work_line = monitoring_work(limit=side_limit)
         if work_line:
             cline(work_line)
 
@@ -385,4 +452,4 @@ def run_daemon(
     if push_line:
         cline(push_line)
 
-    return _merge_results(s95_result, parkrun_result)
+    return _with_run_stats(_merge_results(s95_result, parkrun_result), parkrun_result)
