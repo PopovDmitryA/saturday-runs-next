@@ -630,12 +630,13 @@ def list_pending_rows(
     # seed_parkrun_queue_from_runpark.py — единственный маркер источника,
     # который у нас сейчас есть, без миграции схемы.
     is_runpark_seed = ProfileFetchPending.last_error.like(f"{RUNPARK_SEED_NOTE_PREFIX}%")
-    return (
-        query.order_by(
-            ProfileFetchPending.user_id.is_(None),
-            case((is_runpark_seed, 0), else_=1),
-            ProfileFetchPending.created_at.asc(),
-        )
-        .limit(limit)
-        .all()
+    ordered = query.order_by(
+        ProfileFetchPending.user_id.is_(None),
+        case((is_runpark_seed, 0), else_=1),
+        ProfileFetchPending.created_at.asc(),
     )
+    # limit=0 — «вся очередь»: для длинных ночных прогонов, когда не хочется
+    # угадывать размер пачки. Отрицательные значения трактуем так же.
+    if limit and limit > 0:
+        ordered = ordered.limit(limit)
+    return ordered.all()

@@ -24,18 +24,51 @@ _local_redis_running() {
   lsof -iTCP:"${LOCAL_REDIS_PORT}" -sTCP:LISTEN >/dev/null 2>&1
 }
 
+# Redis живёт в докере, поэтому демону нужен работающий Docker daemon. Раньше
+# при выключенном Docker Desktop прогон падал невнятным «Cannot connect to the
+# Docker daemon» — теперь поднимаем сами и ждём готовности.
+ensure_docker() {
+  if docker info >/dev/null 2>&1; then
+    return 0
+  fi
+  if [[ ! -d /Applications/Docker.app ]]; then
+    echo "parkrun_mac: Docker Desktop не найден в /Applications." >&2
+    echo "  Установи Docker Desktop — в нём поднимается локальный redis." >&2
+    exit 1
+  fi
+  echo "docker: не запущен — запускаю Docker Desktop и жду…" >&2
+  open -a Docker
+  for _ in $(seq 1 60); do
+    if docker info >/dev/null 2>&1; then
+      echo "docker: готов" >&2
+      return 0
+    fi
+    sleep 2
+  done
+  echo "parkrun_mac: Docker не поднялся за 2 минуты — запусти Docker Desktop вручную." >&2
+  exit 1
+}
+
 start_local_redis() {
   if _local_redis_running; then
     echo "local redis: already running on 127.0.0.1:${LOCAL_REDIS_PORT}" >&2
     return 0
   fi
+  ensure_docker
   echo "local redis: starting on 127.0.0.1:${LOCAL_REDIS_PORT}…" >&2
+  # Контейнер мог остаться от прошлого прогона (упал, не успел удалиться) —
+  # иначе docker run падает на конфликте имени.
+  docker rm -f parkrun-mac-redis >/dev/null 2>&1 || true
   docker run -d --rm --name parkrun-mac-redis \
     -p "127.0.0.1:${LOCAL_REDIS_PORT}:6379" \
     redis:7-alpine --save "" --appendonly no >/dev/null
-  sleep 1
+  for _ in $(seq 1 15); do
+    _local_redis_running && break
+    sleep 1
+  done
   if ! _local_redis_running; then
     echo "parkrun_mac: local redis failed to start" >&2
+    docker logs parkrun-mac-redis 2>&1 | tail -5 >&2 || true
     exit 1
   fi
 }
