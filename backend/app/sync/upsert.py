@@ -130,19 +130,58 @@ def upsert_location(
             db.flush()
         return row, False
 
-    row.name = location.name
+    # Собираем целевое состояние строки. Правило общее: пустое значение из
+    # источника НЕ затирает уже известное — разные пути знают о локации разное.
+    # Импорт профиля, например, видит только слаг и название, без координат,
+    # хеша страницы и карты; синк локаций — наоборот, знает всё.
+    new_name = location.name or row.name
     # `or row.country` — s95 страну не отдаёт, и без этого каждый синк стирал бы
     # уже известную. Город и регион так и жили, страна была исключением.
-    row.country = country or row.country
-    row.city = city or row.city
-    row.region = region or row.region
-    row.latitude = location.latitude or row.latitude
-    row.longitude = location.longitude or row.longitude
-    if location.map_url:
-        row.map_url = location.map_url
-    row.source_url = location.source_url
+    new_country = country or row.country
+    new_city = city or row.city
+    new_region = region or row.region
+    new_latitude = location.latitude or row.latitude
+    new_longitude = location.longitude or row.longitude
+    new_map_url = location.map_url or row.map_url
+    new_source_url = location.source_url or row.source_url
+    # Хеш ставит только тот, кто реально его посчитал (синк по HTML страницы).
+    # Раньше вызовы без хеша (импорт профиля) затирали его в NULL, и оптимизация
+    # «не обновлять, если не изменилось» переставала работать для ВСЕХ путей:
+    # на 05.08.2026 хеша не было у 2837 локаций из 2875.
+    new_source_hash = source_hash if source_hash is not None else row.source_hash
+
+    unchanged = (
+        row.name == new_name
+        and row.country == new_country
+        and row.city == new_city
+        and row.region == new_region
+        and row.latitude == new_latitude
+        and row.longitude == new_longitude
+        and row.map_url == new_map_url
+        and row.source_url == new_source_url
+        and row.source_hash == new_source_hash
+        and row.parser_version == PARSER_VERSION
+        and row.sync_status == SyncStatus.ok
+        and row.error_message is None
+    )
+    if unchanged:
+        # Ни одного отличия — не трогаем строку вообще. Раньше здесь всё равно
+        # шёл UPDATE ради fetched_at, и на прод-базе такие «пустые» апдейты
+        # вставали в очередь за блокировками боевых воркеров (23 с на запрос).
+        # fetched_at означает «когда локацию реально пересинкали», поэтому
+        # упоминание локации в чужом импорте его двигать не должно.
+        return row, False
+
+    row.name = new_name
+    row.country = new_country
+    row.city = new_city
+    row.region = new_region
+    row.latitude = new_latitude
+    row.longitude = new_longitude
+    row.map_url = new_map_url
+    row.source_url = new_source_url
     row.parser_version = PARSER_VERSION
-    row.source_hash = source_hash
+    row.source_hash = new_source_hash
     row.fetched_at = now
     row.sync_status = SyncStatus.ok
     row.error_message = None
