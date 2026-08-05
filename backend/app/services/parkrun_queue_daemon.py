@@ -215,6 +215,7 @@ def run_parkrun_queue_daemon(
     for index, item in enumerate(items, start=1):
         session.show_status(f"{index}/{total}: {item.kind} {item.label}")
         processed = index
+        item_started = time.monotonic()
         try:
             if item.kind == "pending":
                 outcome, user_id, external_user_id = _process_pending_item(db, item)
@@ -223,7 +224,12 @@ def run_parkrun_queue_daemon(
                 if outcome == "done":
                     description = describe_processed_profile(db, "parkrun", external_user_id)
                     if description:
-                        session.show_status(description)
+                        # Время рядом с объёмом профиля: видно, что долгая
+                        # обработка — это долгожитель с сотнями стартов, а не
+                        # затык в фетче или базе.
+                        session.show_status(
+                            f"{description} [{time.monotonic() - item_started:.0f} с]"
+                        )
                 if outcome == "done" and user_id is not None:
                     # Импорт только что стянул страницы атлета — user-sync
                     # переиспользует их (в пределах окна) вместо второго фетча.
