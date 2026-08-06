@@ -281,14 +281,19 @@
 }
 
 /* Рейтинги в километрах: числа шире обычных, поэтому колонкам нужен запас —
-   «372 830 км» в 4.75rem не помещается. Дельта места не занимает: она
-   надстрочная (см. .lb-delta). */
-.lb-table.lb-table-wide-values .lb-col-num {
-  width: 6.4rem;
-}
-
-.lb-table.lb-table-wide-values .lb-col-total {
-  width: 7.2rem;
+   «372 830 км +1 172» занимает ~133px (8.3rem) вместе с паддингами ячейки,
+   в 4.75rem не помещается и наезжает на соседей. Ширины заданы переменными
+   (см. блок .lb-table-fixed): модификатор лишь переопределяет значение, само
+   свойство width объявлено в одном месте — войну специфичностей, из-за которой
+   прежний запас (6.4rem) молча проигрывал более позднему правилу
+   .lb-table-fixed, устроить больше нельзя. «Всего» чуть шире: то же число
+   жирным плюс запас под пятизначную недельную дельту. */
+.lb-table.lb-table-wide-values {
+  --lb-col-num-w: 8.6rem;
+  --lb-col-total-w: 8.9rem;
+  /* «Локаций» — тоже .lb-col-num, но числа там трёхзначные; без собственной
+     ширины колонка унаследовала бы километровый запас и раздула таблицу. */
+  --lb-col-geo-w: 5.2rem;
 }
 
 /* «Всего» — то самое число, по которому построен рейтинг, поэтому колонка
@@ -480,6 +485,21 @@
   min-width: 52rem;
 }
 
+/* Километровый рейтинг: сумма ширин колонок больше обычной недельной таблицы.
+   Кратко (без колонок систем): 4.5 + 13 + 8.9 + 5.2 + 9.5 + 10 ≈ 51.1rem.
+   Полно добавляет четыре системных колонки по 8.6rem — ≈ 85.5rem; модификатор
+   .lb-table-platforms вешает фронт, когда колонки систем реально отрисованы
+   (классы таблицы в «Кратко» и «Полно» на десктопе иначе не различаются).
+   Без этого разделения краткий вид растягивался бы до полной ширины и ловил
+   бессмысленный горизонтальный скролл. */
+.lb-table.lb-table-week.lb-table-wide-values {
+  min-width: 52rem;
+}
+
+.lb-table.lb-table-week.lb-table-wide-values.lb-table-platforms {
+  min-width: 86rem;
+}
+
 .lb-table.lb-table-fixed .lb-col-rank {
   width: 4.5rem;
 }
@@ -488,8 +508,29 @@
   width: 13rem;
 }
 
+/* Ширина числовых колонок — ЕДИНСТВЕННОЕ объявление width для .lb-col-num и
+   .lb-col-total в жёсткой раскладке. Модификаторы таблиц (geo, wide-values)
+   не пишут собственных width-правил, а переопределяют переменные на самой
+   таблице: так ни одно правило не может молча перебить другое порядком в
+   файле — именно из-за такого перебоя километровые рейтинги месяц жили с
+   колонками 4.75rem и цифрами поверх соседей (репорт Дмитрия 06.08.2026). */
 .lb-table.lb-table-fixed .lb-col-num {
-  width: 4.75rem;
+  width: var(--lb-col-num-w, 4.75rem);
+}
+
+/* «Всего» несёт тот же .lb-col-num, но жирный шрифт и роль главного числа
+   рейтинга дают ей право на собственную ширину. По умолчанию совпадает с
+   обычной числовой. */
+.lb-table.lb-table-fixed .lb-col-total {
+  width: var(--lb-col-total-w, var(--lb-col-num-w, 4.75rem));
+}
+
+/* Гео-колонки («Городов», «Регионов», «Локаций») тоже носят .lb-col-num, но
+   числа в них короткие — своя переменная, чтобы километровый запас числовых
+   колонок на них не распространялся. Правило обязано стоять ПОСЛЕ .lb-col-num:
+   при равной специфичности эти классы встречаются на одной ячейке. */
+.lb-table.lb-table-fixed .lb-col-geo {
+  width: var(--lb-col-geo-w, var(--lb-col-num-w, 4.75rem));
 }
 
 .lb-table.lb-table-fixed .lb-col-home {
@@ -505,24 +546,17 @@
 }
 
 /* У туризма числовых колонок семь (четыре системы + «Всего» + города +
-   регионы), поэтому они и колонка недели ужаты: иначе таблица не влезает в
-   контентную колонку десктопа (~974px при сайдбаре) и распирает страницу.
-   Гео-колонкам оставляем побольше: «РЕГИОНОВ» — длинное неразрывное слово,
-   в шапке набранное прописными в разрядку, и в 4.4rem оно обрезается.
-   Правила идут ПОСЛЕ общих .lb-table-fixed: специфичность у них одинаковая
-   (три класса), решает порядок. */
-.lb-table.lb-table-geo .lb-col-num {
-  width: 4.4rem;
-}
-
-.lb-table.lb-table-geo .lb-col-geo {
-  width: 5.2rem;
-}
-
-/* «Всего локаций» в две строки — шире соседей: подпись называет единицу
-   зачёта, иначе среди «Городов» и «Регионов» не понять, что в итоге. */
-.lb-table.lb-table-geo .lb-col-total {
-  width: 5.6rem;
+   регионы), поэтому они ужаты: иначе таблица не влезает в контентную колонку
+   десктопа (~974px при сайдбаре) и распирает страницу. Гео-колонкам оставляем
+   побольше: «РЕГИОНОВ» — длинное неразрывное слово, в шапке набранное
+   прописными в разрядку, и в 4.4rem оно обрезается. «Всего локаций» в две
+   строки — шире соседей: подпись называет единицу зачёта, иначе среди
+   «Городов» и «Регионов» не понять, что в итоге. Ширины уходят через
+   переменные — см. комментарий у .lb-table-fixed .lb-col-num. */
+.lb-table.lb-table-geo {
+  --lb-col-num-w: 4.4rem;
+  --lb-col-total-w: 5.6rem;
+  --lb-col-geo-w: 5.2rem;
 }
 
 .lb-table.lb-table-geo .lb-col-last-win {
@@ -1189,6 +1223,70 @@ a.lb-hub-card:hover {
   }
 
   .tshadow-left .lb-table-wrap-wide .lb-table.lb-table-full .lb-col-name {
+    box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+  }
+}
+
+/* Километровый рейтинг в полном виде шире контентной колонки на любом
+   десктопе: семь числовых колонок по ~8.6rem дают ~86rem (~1376px) против
+   ~974px у контента при сайдбаре. Выше 1150px обёртка широких таблиц по
+   умолчанию overflow-x:visible (ради живого sticky шапки) — таблица тогда
+   распирала бы страницу вбок. Даём именно этой обёртке скролл на всех
+   ширинах: шапку подхватит плавающая копия из useFloatingTableHead (она
+   включается по факту скролл-контейнера, а не по ширине экрана), а «Место» и
+   «Участник» остаются липкими — тот же набор правил, что для планшета выше.
+   В кратком виде колонок систем нет, min-width таблицы меньше обёртки, и
+   скролл просто не возникает. */
+@media (min-width: 1151px) {
+  .table-wrap.lb-table-wrap-kms {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .lb-table-wrap-kms .lb-table {
+    --lb-sticky-rank-w: 4.5rem;
+    --lb-sticky-name-w: 13rem;
+  }
+
+  .lb-table-wrap-kms .lb-table.lb-table-fixed.lb-table-full {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .lb-table-wrap-kms .lb-table.lb-table-full .lb-col-rank {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+    width: var(--lb-sticky-rank-w);
+    min-width: var(--lb-sticky-rank-w);
+    max-width: var(--lb-sticky-rank-w);
+  }
+
+  .lb-table-wrap-kms .lb-table.lb-table-full .lb-col-name {
+    position: sticky;
+    left: var(--lb-sticky-rank-w);
+    z-index: 2;
+    background: var(--surface);
+    width: var(--lb-sticky-name-w);
+    min-width: var(--lb-sticky-name-w);
+    max-width: var(--lb-sticky-name-w);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lb-table-wrap-kms .lb-table.lb-table-full thead .lb-col-rank,
+  .lb-table-wrap-kms .lb-table.lb-table-full thead .lb-col-name {
+    z-index: 4;
+  }
+
+  .lb-table-wrap-kms .lb-table.lb-table-full .lb-row-me .lb-col-rank,
+  .lb-table-wrap-kms .lb-table.lb-table-full .lb-row-me .lb-col-name {
+    background: var(--tint-indigo-bg);
+  }
+
+  .tshadow-left .lb-table-wrap-kms .lb-table.lb-table-full .lb-col-name {
     box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
   }
 }

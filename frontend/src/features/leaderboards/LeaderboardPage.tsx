@@ -682,6 +682,44 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  // Дев-сторож переполнения: содержимое числовой ячейки обязано помещаться в
+  // саму ячейку, иначе цифры ложатся поверх соседней колонки. Ширины колонок
+  // заданы вручную (table-layout: fixed), браузер такой конфликт никак не
+  // сигналит, и километровый рейтинг с этим уже попадал на прод (репорт
+  // Дмитрия 06.08.2026). Меряем после каждого рендера и громко ругаемся в
+  // консоль; в прод-сборку ветка не попадает.
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+    const table = tableRef.current;
+    if (!table) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      const bad = new Set<string>();
+      table.querySelectorAll<HTMLElement>("tbody .lb-cell").forEach((cell) => {
+        const td = cell.closest("td");
+        if (!td) {
+          return;
+        }
+        const spill = cell.getBoundingClientRect().right - td.getBoundingClientRect().right;
+        if (spill > 0.5) {
+          bad.add(
+            `${td.className.trim() || "td"}: «${cell.textContent?.trim()}» вылезает на ${Math.round(spill)}px`,
+          );
+        }
+      });
+      if (bad.size > 0) {
+        console.error(
+          `Рейтинг «${metric}»: цифры не помещаются в ячейки — расширь колонку в leaderboards.css`,
+          [...bad].slice(0, 10),
+        );
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  });
+
   const hasGenderSplit = GENDERED_METRICS.includes(metric);
   const effectiveGender = hasGenderSplit ? gender : "all";
   const hasMinVisits = MIN_VISITS_METRICS.includes(metric);
@@ -1272,13 +1310,21 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
             />
             <TableWrap
               innerRef={attachFloatingHead}
-              className={`lb-table-wrap${wideTable ? " lb-table-wrap-wide" : ""}`}
+              className={`lb-table-wrap${wideTable ? " lb-table-wrap-wide" : ""}${
+                isHomeDistance ? " lb-table-wrap-kms" : ""
+              }`}
             >
               <table
                 ref={tableRef}
                 className={`data-table lb-table${wideTable ? ` lb-table-fixed ${wideTableKind}` : ""}${
                   showExtras ? " lb-table-full" : ""
-                }${isHomeDistance ? " lb-table-wide-values" : ""}`}
+                }${isHomeDistance ? " lb-table-wide-values" : ""}${
+                  /* CSS различает «Кратко» и «Полно» только по этому классу:
+                     набор остальных классов в обоих видах одинаковый, а
+                     min-width таблицы зависит от того, отрисованы ли четыре
+                     колонки систем. */
+                  showPlatforms ? " lb-table-platforms" : ""
+                }`}
               >
                 <thead>
                   <tr>
