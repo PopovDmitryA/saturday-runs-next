@@ -1,22 +1,23 @@
 /**
- * Яндекс.Метрика.
+ * Яндекс.Метрика, SPA-часть.
  *
- * Зачем (рекомендация Вебмастера, решение Дмитрия 06.08.2026): счётчик сам по
- * себе позиций не поднимает — Яндекс официально говорит, что наличие Метрики
- * не фактор ранжирования. Реальная польза для индексации другая: связка
- * Метрика↔Вебмастер включает «Обход по счётчикам» — робот узнаёт о страницах,
- * на которые реально заходят люди, и обходит их быстрее, чем дойдёт по
- * sitemap. Плюс поведенческая аналитика (глубина, отказы, источники), которой
- * наша собственная page_analytics не занимается.
+ * Сам счётчик (111350728) подключён статическим сниппетом в index.html — так
+ * проверка Метрики «код установлен» находит его в сыром HTML, а вебвизор
+ * получает настоящую страницу. Но сниппет считает только ПЕРВУЮ загрузку:
+ * дальше роутер меняет адрес без перезагрузки, и переходы Метрика сама не
+ * видит. Их дошлифовывает reportMetrikaHit — вызов на каждой смене пути в
+ * App.usePageMeta, там же, где меняется заголовок вкладки.
  *
- * Сайт — SPA: обычный счётчик увидел бы только первую загрузку, поэтому
- * инициализация с defer:true, а каждый переход роутера репортится вручную
- * через hit() (вызов — в App.usePageMeta, там же, где меняется заголовок).
+ * Первый вызов пропускается: initial-загрузку уже посчитал init (опция
+ * url: location.href в сниппете), второй hit задвоил бы просмотр.
  *
- * null — счётчик выключен совсем: ни скрипта, ни запросов. Заполнить номером
- * из metrika.yandex.ru после создания счётчика.
+ * Зачем счётчик вообще (решение Дмитрия 06.08.2026, рекомендация Вебмастера):
+ * позиции он не поднимает — Яндекс прямо говорит, что Метрика не фактор
+ * ранжирования. Реальная польза — «Обход по счётчикам» в связке с
+ * Вебмастером (робот быстрее узнаёт о живых страницах) и поведенческая
+ * аналитика, которой наша page_analytics не занимается.
  */
-export const METRIKA_COUNTER_ID: number | null = null;
+export const METRIKA_COUNTER_ID = 111350728;
 
 type YmFn = (id: number, action: string, ...args: unknown[]) => void;
 
@@ -26,34 +27,15 @@ declare global {
   }
 }
 
-/** Загружает счётчик. Вызывается один раз из main.tsx; без номера — no-op. */
-export function initMetrika(): void {
-  if (METRIKA_COUNTER_ID == null || typeof window === "undefined") {
+let initialHitDone = false;
+
+/** Просмотр страницы при SPA-переходе; первую загрузку уже посчитал init. */
+export function reportMetrikaHit(path: string): void {
+  if (!initialHitDone) {
+    initialHitDone = true;
     return;
   }
-  if (window.ym) {
-    return; // повторная инициализация в StrictMode/HMR не нужна
-  }
-  const stub: YmFn & { a?: unknown[]; l?: number } = (...args: unknown[]) => {
-    (stub.a = stub.a ?? []).push(args);
-  };
-  stub.l = Date.now();
-  window.ym = stub as unknown as YmFn;
-  const script = document.createElement("script");
-  script.async = true;
-  script.src = "https://mc.yandex.ru/metrika/tag.js";
-  document.head.appendChild(script);
-  window.ym(METRIKA_COUNTER_ID, "init", {
-    defer: true, // SPA: первый hit шлём сами, вместе с остальными переходами
-    clickmap: true,
-    trackLinks: true,
-    accurateTrackBounce: true,
-  });
-}
-
-/** Просмотр страницы — на каждый переход роутера (и на первую загрузку). */
-export function reportMetrikaHit(path: string): void {
-  if (METRIKA_COUNTER_ID == null || typeof window === "undefined" || !window.ym) {
+  if (typeof window === "undefined" || !window.ym) {
     return;
   }
   window.ym(METRIKA_COUNTER_ID, "hit", path, { title: document.title });
