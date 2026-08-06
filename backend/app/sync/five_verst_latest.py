@@ -7,6 +7,7 @@ from enum import Enum
 
 from sqlalchemy.orm import Session
 
+from app.five_verst.errors import FiveVerstBanDetected
 from app.five_verst.fetch.protocol_pause import wait_between_protocols
 from app.models import EventSummary, Location, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalEventSummary, CanonicalLocation
@@ -190,16 +191,14 @@ def _plan_protocol_queue(
     protocol_fetch_limit: int | None,
     fetch_all_protocols_on_change: bool,
 ) -> list[LatestResultPlanItem]:
+    del fetch_all_protocols_on_change  # порядок очереди от флага не зависит
     priority = [
         item
         for item in apply_items
         if item.action in (LatestResultAction.changed_summary, LatestResultAction.missing_protocol)
     ]
     regular = [item for item in apply_items if item.action == LatestResultAction.new_summary]
-    if fetch_all_protocols_on_change:
-        combined = priority + regular
-    else:
-        combined = priority + regular
+    combined = priority + regular
     if protocol_fetch_limit is None:
         return combined
     if protocol_fetch_limit <= 0:
@@ -363,6 +362,11 @@ def sync_latest_results(
                 if index + 1 < len(protocol_queue):
                     wait_between_protocols(reason="latest")
                 commit_step(db)
+            except FiveVerstBanDetected as exc:
+                # Кулдаун общий для всех фетчей — остаток очереди упал бы с той же
+                # ошибкой. Недокачанные протоколы заберёт следующий запуск.
+                result.errors.append(f"{summary.external_event_key}: {exc}; остаток очереди отложен")
+                break
             except Exception as exc:
                 result.errors.append(f"{summary.external_event_key}: {exc}")
                 persist_summary_error(
@@ -385,7 +389,8 @@ def sync_latest_results(
         return result
     except Exception as exc:
         db.rollback()
-        failed_run = _start_sync_run(db, platform)
-        _finish_sync_run(db, failed_run, success=False, fetched=0, upserted=0, unchanged=0, error=str(exc))
+        # sync_run закоммичен до цикла — закрываем его, а не создаём второй
+        # failed-ран, оставляя первый в running навсегда.
+        _finish_sync_run(db, sync_run, success=False, fetched=0, upserted=0, unchanged=0, error=str(exc))
         db.commit()
         raise

@@ -148,7 +148,9 @@ class Settings(BaseSettings):
     s95_location_batch_summaries_limit: int = 20
     s95_athlete_mismatch_check_runs: int = 10
     five_verst_reconcile_batch_limit: int = 100
-    five_verst_reconcile_min_check_interval_days: int = 0
+    # 0 = перечитывать по кругу без пауз (как было до 08.2026); 7 держит цикл
+    # ~неделю: большинство прогонов находят мало кандидатов и завершаются быстро.
+    five_verst_reconcile_min_check_interval_days: int = 7
     five_verst_clubs_batch_limit: int = 20
 
     # Fallback-канал для admin-уведомлений (см. app/services/admin_telegram_notify.py) —

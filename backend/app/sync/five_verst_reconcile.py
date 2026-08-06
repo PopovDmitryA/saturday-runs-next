@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.five_verst.errors import FiveVerstBanDetected
 from app.five_verst.fetch.protocol_pause import wait_between_protocols
 from app.models import Event, EventSummary, Location, Platform, ProtocolSyncState, RunResult, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalEventSummary
@@ -129,7 +130,6 @@ def plan_stale_protocol_reconcile(
     min_check_interval_days: int = 0,
     location_slug: str | None = None,
 ) -> list[ReconcileCandidate]:
-    del min_check_interval_days
     platform = upsert.get_platform(db, PLATFORM_CODE)
     run_counts = (
         db.query(RunResult.event_id, func.count(RunResult.id).label("run_count"))
@@ -149,6 +149,18 @@ def plan_stale_protocol_reconcile(
     )
     if location_slug:
         query = query.filter(Location.external_key == location_slug)
+    if min_check_interval_days > 0:
+        # Протокол, проверенный недавно, не перечитываем: без этого фильтра
+        # reconcile гонял всю историю (~2900 протоколов) по кругу каждые
+        # ~4 дня — час работы воркера и ~100 страниц 5verst.ru каждые 3 часа
+        # ради заведомо неизменных страниц.
+        cutoff = datetime.now(timezone.utc) - timedelta(days=min_check_interval_days)
+        query = query.filter(
+            or_(
+                ProtocolSyncState.last_protocol_check_at.is_(None),
+                ProtocolSyncState.last_protocol_check_at < cutoff,
+            )
+        )
 
     rows = query.order_by(ProtocolSyncState.last_protocol_check_at.asc().nullsfirst()).limit(limit).all()
     candidates: list[ReconcileCandidate] = []
@@ -233,6 +245,14 @@ def reconcile_stale_protocols(
                 if index + 1 < len(candidates):
                     wait_between_protocols(reason="reconcile")
                 commit_step(db)
+            except FiveVerstBanDetected as exc:
+                # Кулдаун общий на все фетчи: остаток пачки гарантированно
+                # упадёт с тем же «in cooldown». Раньше цикл шёл дальше и
+                # печатал по 40-80 таких ошибок за прогон, а mark_protocol_check
+                # помечал непроверенные протоколы проверенными.
+                rollback_step(db)
+                result.errors.append(f"{candidate.external_event_key}: {exc}; остаток пачки отложен")
+                break
             except Exception as exc:
                 result.errors.append(f"{candidate.external_event_key}: {exc}")
                 if event_id is not None:
@@ -255,7 +275,8 @@ def reconcile_stale_protocols(
         return result
     except Exception as exc:
         db.rollback()
-        failed = _start_sync_run(db, platform)
-        _finish_sync_run(db, failed, success=False, fetched=0, upserted=0, error=str(exc))
+        # sync_run закоммичен ещё до цикла — закрываем его же, а не плодим
+        # второй failed-ран, оставляя первый висеть в running навсегда.
+        _finish_sync_run(db, sync_run, success=False, fetched=0, upserted=0, error=str(exc))
         db.commit()
         raise

@@ -459,7 +459,8 @@ def sync_locations_registry(
         return result
     except Exception as exc:
         db.rollback()
-        failed_run = _start_sync_run(db, platform)
-        _finish_sync_run(db, failed_run, success=False, fetched=0, upserted=0, unchanged=0, error=str(exc))
+        # Закрываем исходный (закоммиченный) ран, а не плодим второй failed,
+        # оставляя первый висеть в running навсегда.
+        _finish_sync_run(db, sync_run, success=False, fetched=0, upserted=0, unchanged=0, error=str(exc))
         db.commit()
         raise

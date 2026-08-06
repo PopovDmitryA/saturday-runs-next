@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.five_verst.errors import FiveVerstBanDetected
 from app.five_verst.fetch.protocol_pause import wait_between_protocols
-from app.models import EventSummary, Platform, SyncRun, SyncRunStatus
+from app.models import EventSummary, Location, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.five_verst import bulk_parser
 from app.services.sync_report_labels import protocol_detail_label
 from app.sync import upsert
@@ -24,6 +25,10 @@ class LocationSyncOptions:
     summaries_limit: int | None = None
     protocol_fetch_limit: int | None = None
     fetch_all_protocols_on_change: bool = True
+    # Не перекачивать страницу локации и /course/, если локация уже в базе с
+    # координатами: имя и статусы ежедневно освежает синк реестра /events/.
+    # Экономит 2 из 3 HTTP-страниц на каждый прогон ротации.
+    skip_location_refresh: bool = False
 
 
 @dataclass
@@ -81,22 +86,40 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
     db.commit()
 
     try:
-        logger.info("location sync: %s — fetch location page", options.location_slug)
-        location_data, location_html = bulk_parser.fetch_location(options.location_slug)
-        logger.info("location sync: %s — upsert location to DB", options.location_slug)
-        location_row, location_changed = upsert.upsert_location(
-            db,
-            platform,
-            location_data,
-            source_hash=bulk_parser.source_hash(location_html),
-        )
-        result.location_upserted = location_changed
-        commit_step(db)
+        location_row = None
+        if options.skip_location_refresh:
+            location_row = (
+                db.query(Location)
+                .filter(
+                    Location.platform_id == platform.id,
+                    Location.external_key == options.location_slug,
+                )
+                .one_or_none()
+            )
+            if location_row is not None and (location_row.latitude is None or location_row.longitude is None):
+                # Координат ещё нет — страница локации всё же нужна.
+                location_row = None
+
+        if location_row is None:
+            logger.info("location sync: %s — fetch location page", options.location_slug)
+            location_data, location_html = bulk_parser.fetch_location(options.location_slug)
+            logger.info("location sync: %s — upsert location to DB", options.location_slug)
+            location_row, location_changed = upsert.upsert_location(
+                db,
+                platform,
+                location_data,
+                source_hash=bulk_parser.source_hash(location_html),
+            )
+            result.location_upserted = location_changed
+            commit_step(db)
+            location_name = location_data.name
+        else:
+            location_name = location_row.name
 
         logger.info("location sync: %s — fetch event summaries", options.location_slug)
         summaries, _ = bulk_parser.fetch_event_summaries(
             options.location_slug,
-            location_data.name,
+            location_name,
             limit=options.summaries_limit,
         )
         result.summaries_total = len(summaries)
@@ -159,6 +182,11 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
                 if index + 1 < len(protocol_queue):
                     wait_between_protocols(reason="location")
                 commit_step(db)
+            except FiveVerstBanDetected as exc:
+                # Кулдаун общий для всех фетчей — остаток очереди упал бы с той
+                # же ошибкой; недокачанное заберёт следующий прогон.
+                result.errors.append(f"{summary.external_event_key}: {exc}; остаток очереди отложен")
+                break
             except Exception as exc:
                 result.errors.append(f"{summary.external_event_key}: {exc}")
                 persist_summary_error(
@@ -176,8 +204,9 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
         return result
     except Exception as exc:
         db.rollback()
-        failed_run = _start_sync_run(db, platform, f"five_verst:location:{options.location_slug}")
-        _finish_sync_run(db, failed_run, success=False, error=str(exc))
+        # Закрываем исходный (закоммиченный) ран, а не плодим второй failed,
+        # оставляя первый висеть в running навсегда.
+        _finish_sync_run(db, sync_run, success=False, error=str(exc))
         db.commit()
         raise
 
