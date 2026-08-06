@@ -2023,6 +2023,12 @@ export type LocationAgeGroupRecord = {
   finishes_total: number;
 };
 
+export type LocationCityNeighbor = {
+  slug: string;
+  name: string;
+  events_count: number;
+};
+
 export type LocationPage = {
   slug: string;
   identity_key: string;
@@ -2040,6 +2046,7 @@ export type LocationPage = {
   stats: LocationPageStats;
   histogram: { bin_size_sec: number; rows: LocationHistogramRow[] };
   age_group_records: LocationAgeGroupRecord[];
+  city_locations?: LocationCityNeighbor[];
 };
 
 export type LocationIndexItem = {

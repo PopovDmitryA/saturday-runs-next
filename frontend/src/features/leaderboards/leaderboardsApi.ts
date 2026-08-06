@@ -134,6 +134,7 @@ export type LeaderboardRow = {
   total_delta: number;
   // Только у метрики wins: «топ-локация побед» — локация с максимумом побед.
   home_location?: string | null;
+  home_location_slug?: string | null;
   home_location_wins?: number | null;
   // Только у home_distance: "ambiguous" — автовыбор дома шаткий,
   // "manual_off_top" — человек выбрал руками площадку вне своей тройки.
@@ -208,6 +209,7 @@ export type MyLeaderboardRow = {
   // определённо не совпадает с выбранным — порог показывать не нужно.
   gender_mismatch?: boolean;
   home_location?: string | null;
+  home_location_slug?: string | null;
   home_location_wins?: number | null;
   // Только у home_distance: "ambiguous" — автовыбор дома шаткий,
   // "manual_off_top" — человек выбрал руками площадку вне своей тройки.

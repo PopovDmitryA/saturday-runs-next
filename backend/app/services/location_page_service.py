@@ -68,7 +68,7 @@ LOCATION_PAGE_CACHE_TTL_SECONDS = 3 * 60 * 60
 
 
 def location_page_cache_key(slug: str) -> str:
-    return f"locations:page:v6:{slug.strip().lower()}"
+    return f"locations:page:v7:{slug.strip().lower()}"
 
 
 def location_events_cache_key(slug: str) -> str:
@@ -1008,6 +1008,41 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
     )
 
 
+
+def _same_city_locations(
+    db: Session, identity_key: str, city: str | None
+) -> list[dict[str, object]]:
+    """Другие площадки того же города — кластер под запрос «5 вёрст [город]».
+
+    Такой запрос (у «5 верст тюмень» 868 показов/мес) не про одну площадку:
+    человеку нужен весь город. Взаимные ссылки собирают страницы города в
+    кластер и для поисковика, и для навигации. Данные — из кэшированного
+    индекса каталога; топ-10 по числу стартов, чтобы московские страницы не
+    обрастали тремя десятками ссылок.
+    """
+    city_norm = (city or "").strip().casefold()
+    if not city_norm:
+        return []
+    items = cast("list[dict[str, object]]", build_locations_index(db).get("items") or [])
+    same = [
+        item
+        for item in items
+        if str(item.get("city") or "").strip().casefold() == city_norm
+        and item.get("identity_key") != identity_key
+        and not item.get("is_cancelled")
+    ]
+    same.sort(key=lambda item: -int(cast(int, item.get("events_count") or 0)))
+    return [
+        {
+            "slug": item.get("slug"),
+            "name": item.get("name"),
+            "events_count": item.get("events_count") or 0,
+        }
+        for item in same[:10]
+        if item.get("slug")
+    ]
+
+
 def build_location_page(
     db: Session, slug: str, *, use_cache: bool = True, refresh: bool = False
 ) -> dict[str, object] | None:
@@ -1272,6 +1307,14 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
             "rows": histogram_rows,
         },
         "age_group_records": _age_group_records(db, event_ids),
+        "city_locations": _same_city_locations(
+            db,
+            identity.identity_key,
+            cast(
+                "str | None",
+                _first_by_platform_order(identity.locations, lambda loc: loc.city),
+            ),
+        ),
     }
 
 

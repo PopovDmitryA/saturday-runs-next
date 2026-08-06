@@ -9691,6 +9691,42 @@ tr.run-crosslinked td {
   flex-wrap: wrap;
 }
 
+/* Кластер города: список соседних площадок двумя колонками на десктопе. */
+.loc-city-neighbors {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.35rem 1.5rem;
+}
+
+.loc-city-neighbors li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.loc-city-neighbors a {
+  color: var(--link);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loc-city-neighbors a:hover {
+  text-decoration: underline;
+}
+
+.loc-city-neighbor-count {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
 /* Вводная фраза о локации — тот же текст, что уходит роботу в пререндере.
    Читается как подзаголовок, а не как основной контент: чуть приглушена,
    ширина ограничена, иначе на десктопе строка растягивается на весь экран. */

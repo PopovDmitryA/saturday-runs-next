@@ -173,7 +173,7 @@ CACHE_TTL_SECONDS = 6 * 3600
 # (02.08.2026): по той же причине.
 # v4 — parkrun вошёл в разбивку по полу (02.08.2026): состав и порядок гендерных
 # рейтингов изменились, старые снапшоты пришлось бы ждать до конца TTL.
-CACHE_KEY_PREFIX = "leaderboards:v4"
+CACHE_KEY_PREFIX = "leaderboards:v5"
 
 # Победные рейтинги показывают две дополнительные колонки: глобальный рекорд
 # участника и последнюю победу (у win_locations — последнюю НОВУЮ локацию с
@@ -938,6 +938,8 @@ class _Entity:
     week: int = 0
     # Только для метрики wins: «топ-локация побед» — локация с максимумом побед.
     home_location: str | None = None
+    # Слаг страницы локации: колонки «Дом»/«Топ-локация» ведут на /locations/….
+    home_location_slug: str | None = None
     home_location_wins: int = 0
     # Только у home_distance: почему домашняя локация под вопросом.
     # "ambiguous" — автовыбор шаткий (ничья или вторая площадка вровень),
@@ -1849,6 +1851,7 @@ def _collect_win_entities(source: _MetricSource, platform: str = "all") -> dict[
         if home is not None:
             identity, wins = home
             entity.home_location = identity_names.get(identity, identity)
+            entity.home_location_slug = identity_slugs.get(identity)
             entity.home_location_wins = wins
         _apply_last_win(entity, last_dates.get(key, {}), identity_names, identity_slugs)
     return entities
@@ -1988,6 +1991,7 @@ def _collect_gendered_win_entities(
             if home is not None:
                 identity, wins = home
                 entity.home_location = identity_names.get(identity, identity)
+                entity.home_location_slug = identity_slugs.get(identity)
                 entity.home_location_wins = wins
             _apply_last_win(entity, last_dates.get(key, {}), identity_names, identity_slugs)
         entities[key] = entity
@@ -2390,7 +2394,7 @@ def _collect_home_distance_entities(
     способ превратить набор площадок в число.
     """
     links = source.links()
-    identity_by_location, identity_names, _identity_slugs = source.identity_maps()
+    identity_by_location, identity_names, identity_slugs = source.identity_maps()
     coordinates = source.coordinates_map()
     manual_homes = source.manual_home_keys()
     eligible_homes = source.home_eligible_identities()
@@ -2446,6 +2450,7 @@ def _collect_home_distance_entities(
         entity.week = week
         entity.values = values
         entity.home_location = identity_names.get(home, home)
+        entity.home_location_slug = identity_slugs.get(home)
         entity.home_location_note = _home_location_note(
             identities, identity_names, home, manual_key
         )
@@ -2696,6 +2701,7 @@ def _build_snapshot(
             row["week_location"] = entity.week_location
         if entity.home_location is not None:
             row["home_location"] = entity.home_location
+            row["home_location_slug"] = entity.home_location_slug
             # У «дальности от дома» колонка «Дом» — это домашняя локация, а не
             # топ-локация побед: числа побед у неё нет, зато есть пометка о том,
             # что выбор дома под вопросом.
@@ -3163,7 +3169,7 @@ def _resolve_last_win(
 
 def _my_win_values(
     db: Session, participant_ids: list[UUID], week_start: date, platform: str = "all"
-) -> tuple[dict[str, list[int]], tuple[str, int] | None, _LastWin | None]:
+) -> tuple[dict[str, list[int]], tuple[str, str | None, int] | None, _LastWin | None]:
     """Победы залогиненного: значения по системам, «топ-локация побед» и
     последняя победа."""
     if not participant_ids:
@@ -3190,7 +3196,7 @@ def _my_win_values(
     home = _pick_home(win_counts_by_identity)
     if home is not None:
         identity, wins = home
-        return values, (identity_names.get(identity, identity), wins), last_win
+        return values, (identity_names.get(identity, identity), identity_slugs.get(identity), wins), last_win
     return values, None, last_win
 
 
@@ -3202,7 +3208,7 @@ def _my_gendered_win_values(
     *,
     as_locations: bool,
     platform: str = "all",
-) -> tuple[dict[str, list[int]], int, int, tuple[str, int] | None, _LastWin | None]:
+) -> tuple[dict[str, list[int]], int, int, tuple[str, str | None, int] | None, _LastWin | None]:
     """«Моя» строка в гендерном зачёте. Если пол участника не совпадает с
     запрошенным — он в этот рейтинг не входит (нули, not included)."""
     if not participant_ids:
@@ -3265,7 +3271,11 @@ def _my_gendered_win_values(
     total = sum(v[0] for v in values.values())
     week = sum(v[1] for v in values.values())
     home = _pick_home(win_counts_by_identity)
-    home_out = (identity_names.get(home[0], home[0]), home[1]) if home is not None else None
+    home_out = (
+        (identity_names.get(home[0], home[0]), identity_slugs.get(home[0]), home[1])
+        if home is not None
+        else None
+    )
     return values, total, week, home_out, _resolve_last_win(
         last_dates, identity_names, identity_slugs
     )
@@ -3339,6 +3349,7 @@ class _MyHomeDistanceRow:
     total: int
     week: int
     home_location: str | None = None
+    home_location_slug: str | None = None
     home_location_note: str | None = None
     locations_total: int | None = None
 
@@ -3359,7 +3370,7 @@ def _my_home_distance_values(
         return _MyHomeDistanceRow(values={}, total=0, week=0)
     sql = _LOCATION_VISITS_SQL.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
     rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
-    identity_by_location, identity_names, _identity_slugs = _location_identity_maps(db)
+    identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     identities: dict[str, _LocationVisits] = {}
     for _pid, code, location_id, first_date, visits, week_visits in rows:
         if platform != "all" and code != platform:
@@ -3407,6 +3418,7 @@ def _my_home_distance_values(
         total=total,
         week=week,
         home_location=identity_names.get(home, home),
+        home_location_slug=identity_slugs.get(home),
         home_location_note=_home_location_note(
             identities, identity_names, home, user.home_location_key
         ),
@@ -3481,7 +3493,7 @@ def get_my_leaderboard_row(
         .all()
     ]
 
-    my_home: tuple[str, int] | None = None
+    my_home: tuple[str, str | None, int] | None = None
     my_last_win: _LastWin | None = None
     my_top_role: tuple[str, int] | None = None
     my_role_details: list[dict[str, object]] = []
@@ -3489,6 +3501,7 @@ def get_my_leaderboard_row(
     # Только у «дальности от дома»: домашняя локация без числа побед и общее
     # число посещённых площадок (у туристических рейтингов это считает my_geo).
     my_home_name: str | None = None
+    my_home_slug: str | None = None
     my_home_note: str | None = None
     my_locations_total: int | None = None
     if metric == "volunteer_roles":
@@ -3506,6 +3519,7 @@ def get_my_leaderboard_row(
         )
         values, total, week = distance_row.values, distance_row.total, distance_row.week
         my_home_name = distance_row.home_location
+        my_home_slug = distance_row.home_location_slug
         my_home_note = distance_row.home_location_note
         my_locations_total = distance_row.locations_total
     elif metric in ("locations", "volunteer_locations"):
@@ -3621,7 +3635,8 @@ def get_my_leaderboard_row(
         "threshold": threshold,
         "gender_mismatch": gender_mismatch,
         "home_location": my_home[0] if my_home else my_home_name,
-        "home_location_wins": my_home[1] if my_home else None,
+        "home_location_slug": my_home[1] if my_home else my_home_slug,
+        "home_location_wins": my_home[2] if my_home else None,
         "home_location_note": my_home_note,
         "top_role": my_top_role[0] if my_top_role else None,
         "top_role_count": my_top_role[1] if my_top_role else None,

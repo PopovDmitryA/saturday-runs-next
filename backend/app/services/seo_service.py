@@ -726,6 +726,24 @@ def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
         )
         rows.append("    <h2>История систем</h2>\n    <ul>\n" + eras + "    </ul>")
 
+    # Кластер города: те же ссылки, что человек видит в блоке «Другие
+    # площадки в …» — под запросы вида «5 вёрст тюмень».
+    city_locations = payload.get("city_locations") or []
+    city = payload.get("city")
+    if city_locations and city:
+        neighbours = "".join(
+            '      <li><a href="/locations/{slug}">{name}</a></li>\n'.format(
+                slug=escape(str(item.get("slug") or "")),
+                name=escape(str(item.get("name") or "")),
+            )
+            for item in city_locations
+        )
+        rows.append(
+            f"    <h2>{escape(str(city))}: другие площадки</h2>\n    <ul>\n"
+            + neighbours
+            + "    </ul>"
+        )
+
     slug = escape(str(payload.get("slug") or ""))
     if events_log:
         rows.append(f'    <p><a href="/locations/{slug}">Страница локации</a></p>')

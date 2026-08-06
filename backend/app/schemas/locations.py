@@ -204,6 +204,14 @@ class LocationAgeGroupRecordResponse(BaseModel):
     finishes_total: int = 0
 
 
+class LocationCityNeighborResponse(BaseModel):
+    """Площадка того же города в блоке «Другие площадки в …»."""
+
+    slug: str
+    name: str
+    events_count: int = 0
+
+
 class LocationPageResponse(BaseModel):
     slug: str
     identity_key: str
@@ -221,6 +229,7 @@ class LocationPageResponse(BaseModel):
     stats: LocationPageStatsResponse = Field(default_factory=LocationPageStatsResponse)
     histogram: LocationHistogramResponse = Field(default_factory=lambda: LocationHistogramResponse(bin_size_sec=10))
     age_group_records: list[LocationAgeGroupRecordResponse] = Field(default_factory=list)
+    city_locations: list[LocationCityNeighborResponse] = Field(default_factory=list)
 
 
 class LocationEventRowResponse(BaseModel):

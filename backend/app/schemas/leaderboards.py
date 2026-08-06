@@ -39,6 +39,7 @@ class LeaderboardRowResponse(BaseModel):
     # У home_distance в этой же колонке домашняя локация, а вместо числа побед —
     # пометка о том, что выбор дома под вопросом (см. home_location_note).
     home_location: str | None = None
+    home_location_slug: str | None = None
     home_location_wins: int | None = None
     # "ambiguous" — автовыбор шаткий, "manual_off_top" — выбрано руками вне тройки.
     home_location_note: str | None = None
@@ -116,6 +117,7 @@ class MyLeaderboardRowResponse(BaseModel):
     # определённо не совпадает с выбранным — «появитесь после N» не показываем.
     gender_mismatch: bool = False
     home_location: str | None = None
+    home_location_slug: str | None = None
     home_location_wins: int | None = None
     home_location_note: str | None = None
     best_time_sec: int | None = None

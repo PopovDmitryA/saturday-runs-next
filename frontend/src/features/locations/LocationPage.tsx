@@ -1074,6 +1074,25 @@ function LocationPageContent({ slug }: { slug: string }) {
         </section>
       </div>
 
+      {/* Кластер города: запрос «5 вёрст [город]» — не про одну площадку,
+          человеку (и поисковику) нужен весь город. Тот же список уходит
+          роботу в пререндере — контент обязан совпадать. */}
+      {page.city && (page.city_locations?.length ?? 0) > 0 && (
+        <section className="card loc-section">
+          <h2 className="section-title">{page.city}: другие площадки</h2>
+          <ul className="loc-city-neighbors">
+            {(page.city_locations ?? []).map((item) => (
+              <li key={item.slug}>
+                <a href={`/locations/${item.slug}`}>{item.name}</a>
+                <span className="loc-city-neighbor-count">
+                  {item.events_count} {pluralFormRu(item.events_count, ["старт", "старта", "стартов"])}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <LocationRecordsModal
         slug={page.slug}
         type="attendance"

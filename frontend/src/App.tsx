@@ -61,6 +61,7 @@ import { getCurrentUser } from "./lib/api";
 import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
 import { applyPageMeta, resolvePageMeta } from "./lib/pageMeta";
+import { reportMetrikaHit } from "./lib/metrika";
 import { isLegacyGrafanaPath, legacyGrafanaHref } from "./lib/siteBrand";
 import { buildVisitorKey } from "./lib/siteVisitor";
 
@@ -96,6 +97,9 @@ function useSitePageviewTracking(path: string) {
 function usePageMeta(path: string) {
   useEffect(() => {
     applyPageMeta(resolvePageMeta(path));
+    // Метрика в SPA сама переходы не видит — репортим каждый (включая первый)
+    // здесь же, где меняется заголовок вкладки.
+    reportMetrikaHit(path);
   }, [path]);
 }
 

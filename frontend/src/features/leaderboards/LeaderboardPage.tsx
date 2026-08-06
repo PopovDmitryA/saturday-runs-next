@@ -234,14 +234,18 @@ function InfoHint({ text }: { text: string }) {
 function TopWinLocation({
   row,
 }: {
-  row: { home_location?: string | null; home_location_wins?: number | null };
+  row: {
+    home_location?: string | null;
+    home_location_slug?: string | null;
+    home_location_wins?: number | null;
+  };
 }) {
   if (!row.home_location) {
     return <span className="lb-zero">—</span>;
   }
   return (
     <span className="lb-home">
-      {row.home_location}
+      <HomeLocationName row={row} />
       {row.home_location_wins != null && row.home_location_wins > 1 && (
         <span className="lb-home-count"> ×{row.home_location_wins}</span>
       )}
@@ -264,10 +268,32 @@ const HOME_NOTE_META: Record<string, { level: "warn" | "danger"; hint: string }>
   },
 };
 
+// Название домашней/топ-локации — ссылкой на её страницу: внутренняя
+// перелинковка передаёт страницам локаций вес с посещаемых рейтингов
+// (решение Дмитрия 06.08.2026), а участнику даёт короткий путь к площадке.
+function HomeLocationName({
+  row,
+}: {
+  row: { home_location?: string | null; home_location_slug?: string | null };
+}) {
+  if (row.home_location_slug) {
+    return (
+      <a className="lb-last-win-link" href={`/locations/${row.home_location_slug}`}>
+        {row.home_location}
+      </a>
+    );
+  }
+  return <>{row.home_location}</>;
+}
+
 function HomeLocationCell({
   row,
 }: {
-  row: { home_location?: string | null; home_location_note?: string | null };
+  row: {
+    home_location?: string | null;
+    home_location_slug?: string | null;
+    home_location_note?: string | null;
+  };
 }) {
   if (!row.home_location) {
     return <span className="lb-zero">—</span>;
@@ -275,7 +301,7 @@ function HomeLocationCell({
   const note = row.home_location_note ? HOME_NOTE_META[row.home_location_note] : null;
   return (
     <span className="lb-home">
-      {row.home_location}
+      <HomeLocationName row={row} />
       {note && (
         <StatHintTooltip text={note.hint}>
           <span
