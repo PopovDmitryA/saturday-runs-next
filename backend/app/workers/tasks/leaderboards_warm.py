@@ -96,15 +96,37 @@ def warm_leaderboards_cache() -> dict[str, object]:
                     hide_ambiguous_home=hide_home,
                 )
                 results[key] = snapshot.get("entrants", 0)
+                # Закрываем транзакцию сразу после варианта. Сетка одного
+                # рейтинга (до нескольких десятков сочетаний фильтров) считается
+                # в Python над уже прочитанными строками — база в это время не
+                # нужна, но соединение висело бы «idle in transaction» минутами,
+                # а мы сами ставим idle_in_transaction_session_timeout=60s
+                # (см. _engine_connect_args в app/db/session.py). Postgres такое
+                # соединение убивал, и первый же запрос следующего рейтинга
+                # падал: на проде это каждый прогон был volunteer_locations —
+                # ровно тот, что идёт после большой сетки locations.
+                # rollback, а не commit: задача только читает. На консистентность
+                # это не влияет — уровень READ COMMITTED, каждый запрос и внутри
+                # одной транзакции видел свой снимок.
+                db.rollback()
             except Exception:
                 logger.exception("leaderboards warm failed for %s", key)
                 db.rollback()
-                # Откат транзакции обесценивает кэш источника (строки читались в
-                # ней) — начинаем следующий рейтинг с чистого листа.
+                # Здесь чистим кэш источника не из-за самого отката, а из-за
+                # ошибки: чтение оборвалось на полпути, и что успело осесть в
+                # кэше — доверия не заслуживает. Следующий рейтинг начинаем с
+                # чистого листа.
                 if source is not None:
                     source.release()
                 results[key] = "error"
     finally:
-        db.close()
+        # close() у SQLAlchemy делает ROLLBACK, и на убитом сервером соединении
+        # он сам бросает исключение — уже посчитанный и разложенный по Redis
+        # прогрев уходил в «Task raised unexpected» (05.08.2026 дважды). Кэш к
+        # этому моменту уже записан, терять из-за прощания с базой нечего.
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001 — прощание с базой не должно ронять прогрев
+            logger.warning("leaderboards warm: не удалось закрыть сессию", exc_info=True)
     logger.info("leaderboards cache warmed: %s", results)
     return results
