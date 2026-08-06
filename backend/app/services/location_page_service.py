@@ -412,10 +412,10 @@ def _location_event_ids(db: Session, location_ids: list[UUID]) -> list[UUID]:
 
 
 def build_location_leaders(
-    db: Session, slug: str, *, limit: int = 20, use_cache: bool = True
+    db: Session, slug: str, *, limit: int = 20, use_cache: bool = True, refresh: bool = False
 ) -> dict[str, object] | None:
     cache_key = location_leaders_cache_key(slug)
-    if use_cache:
+    if use_cache and not refresh:
         cached = _read_json_cache(cache_key)
         if cached is not None:
             return cached
@@ -1008,9 +1008,11 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
     )
 
 
-def build_location_page(db: Session, slug: str, *, use_cache: bool = True) -> dict[str, object] | None:
+def build_location_page(
+    db: Session, slug: str, *, use_cache: bool = True, refresh: bool = False
+) -> dict[str, object] | None:
     cache_key = location_page_cache_key(slug)
-    if use_cache:
+    if use_cache and not refresh:
         cached = _read_json_cache(cache_key)
         if cached is not None:
             return cached
@@ -1273,9 +1275,11 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
     }
 
 
-def build_location_events(db: Session, slug: str, *, use_cache: bool = True) -> dict[str, object] | None:
+def build_location_events(
+    db: Session, slug: str, *, use_cache: bool = True, refresh: bool = False
+) -> dict[str, object] | None:
     cache_key = location_events_cache_key(slug)
-    if use_cache:
+    if use_cache and not refresh:
         cached = _read_json_cache(cache_key)
         if cached is not None:
             return cached
@@ -1680,12 +1684,21 @@ def invalidate_location_page_cache(slug: str) -> None:
         pass
 
 
-def build_locations_index(db: Session, *, use_cache: bool = True) -> dict[str, object]:
+def build_locations_index(
+    db: Session, *, use_cache: bool = True, refresh: bool = False
+) -> dict[str, object]:
     """Публичный каталог локаций — с TTL-кэшем в Redis (см. LOCATIONS_INDEX_CACHE_TTL_SECONDS).
 
     Redis недоступен → тихо считаем без кэша (кэш — оптимизация, не зависимость).
+
+    refresh=True — прогрев: кэш не читаем (иначе живой блоб вернулся бы как есть
+    и ничего не обновилось), но результат обязательно кладём обратно. Именно
+    ради этого флаг и появился: прогрев ходил с use_cache=False, а это значило
+    «не читать И не писать» — задача честно считала каталог и все 270 страниц по
+    девять минут, а в Redis не попадало ничего, и первый посетитель после
+    протухания TTL всё равно ловил таймаут фронтенда на холодном расчёте.
     """
-    if use_cache:
+    if use_cache and not refresh:
         cached = _read_locations_index_cache()
         if cached is not None:
             return cached

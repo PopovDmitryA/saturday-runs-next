@@ -188,6 +188,25 @@ def test_build_locations_index_bypasses_cache_when_disabled(monkeypatch: pytest.
     assert calls["count"] == 2
 
 
+def test_build_locations_index_refresh_rewrites_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Прогрев обязан класть свежий каталог в Redis, а не считать его вхолостую.
+
+    До 06.08.2026 задача прогрева ходила с use_cache=False (не читать И не
+    писать): кэш наполняли только посетители, платя за это холодным расчётом
+    дольше таймаута фронтенда.
+    """
+    _write_locations_index_cache({"items": [], "total": 0, "stale": True})
+
+    def fake_compute(_db: Any) -> dict[str, object]:
+        return {"items": [], "total": 0, "stale": False}
+
+    monkeypatch.setattr(location_page_service, "_compute_locations_index", fake_compute)
+
+    build_locations_index(db=None, refresh=True)  # type: ignore[arg-type]
+
+    assert _read_locations_index_cache() == {"items": [], "total": 0, "stale": False}
+
+
 # --- Кэш страницы/журнала/рейтингов одной локации (ключ на slug) ---
 #
 # Кэш здесь не косметика: без него каждое открытие страницы гоняло полтора
@@ -244,6 +263,34 @@ def test_build_location_per_slug_bypasses_cache_when_disabled(
     build_func(None, "izmailovo", use_cache=False)
 
     assert calls["count"] == 2
+
+
+@pytest.mark.parametrize(("compute_name", "build_func"), _PER_SLUG_CASES)
+def test_build_location_per_slug_refresh_rewrites_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_redis: fakeredis.FakeRedis,
+    compute_name: str,
+    build_func: Any,
+) -> None:
+    """refresh=True — единственный режим прогрева: пересчитать и положить обратно."""
+    invalidate_location_page_cache("izmailovo")
+
+    def stale_compute(_db: Any, slug: str, **_kwargs: Any) -> dict[str, object]:
+        return {"slug": slug, "stale": True}
+
+    monkeypatch.setattr(location_page_service, compute_name, stale_compute)
+    build_func(None, "izmailovo")
+
+    def fresh_compute(_db: Any, slug: str, **_kwargs: Any) -> dict[str, object]:
+        return {"slug": slug, "stale": False}
+
+    monkeypatch.setattr(location_page_service, compute_name, fresh_compute)
+    build_func(None, "izmailovo", refresh=True)
+
+    # Следующий обычный вызов обязан увидеть уже свежий payload из кэша,
+    # а не пересчитывать его сам.
+    monkeypatch.setattr(location_page_service, compute_name, stale_compute)
+    assert build_func(None, "izmailovo") == {"slug": "izmailovo", "stale": False}
 
 
 def test_build_location_page_cache_is_isolated_per_slug(
