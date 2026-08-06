@@ -85,9 +85,15 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "История релизов run5k.run: что появилось на сайте и когда.",
         indexable=True,
     ),
+    # «5 верст личный кабинет» — 2472 запроса/мес (Вордстат, июль 2026).
+    # Решение Дмитрия 06.08.2026: за этот запрос боремся — сайт и есть личный
+    # кабинет участника субботних стартов. Поэтому /login индексируется и
+    # называет себя «личный кабинет участника», а не просто «вход».
     "/login": _meta(
-        "Вход — run5k.run",
-        "Вход в личный кабинет run5k.run через VK или Яндекс.",
+        "Личный кабинет участника — вход — run5k.run",
+        "Личный кабинет участника субботних пробежек: история стартов и волонтёрств "
+        "5 вёрст, С95, parkrun и RunPark, рекорды и достижения. Вход через VK или Яндекс.",
+        indexable=True,
     ),
     # Каталог ловит запросы без названия парка — «5 вёрст карта», «5 вёрст
     # результаты»: перечисляем системы, иначе страница не связывается с ними.
@@ -514,6 +520,7 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/ratings/home-distance", "0.6"),
     ("/blog", "0.7"),
     ("/about", "0.6"),
+    ("/login", "0.4"),
     ("/updates", "0.4"),
 )
 
@@ -586,7 +593,8 @@ def build_robots_txt() -> str:
         "Disallow: /new/",
         "Disallow: /settings",
         "Disallow: /share",
-        "Disallow: /login",
+        # /login сознательно НЕ закрыт: «5 верст личный кабинет» — 2472
+        # запроса/мес, и страница входа — наша посадочная под них.
         "Disallow: /oauth/",
         "Disallow: /dashboard",
         "Disallow: /profiles",
@@ -731,6 +739,50 @@ def _generic_body(meta: PageMeta) -> str:
     return f"    <h1>{escape(meta.title)}</h1>\n    <p>{escape(meta.description)}</p>"
 
 
+def _catalog_body(items: list[dict[str, Any]]) -> str:
+    """Тело каталога для робота: вводные фразы и список площадок ссылками.
+
+    «5 верст парки» — 1919 запросов/мес, «5 верст карта» — 302, «5 верст
+    локации» — 102 (Вордстат, июль 2026). До этого робот получал на /locations
+    два служебных предложения: сам список рисует JS, и главный контент раздела
+    для поисковика не существовал. Список здесь — то же, что человек видит в
+    таблице каталога, просто в статике; заодно каждое название города в тексте
+    отвечает хвосту «5 вёрст [город]».
+    """
+    live = [i for i in items if not i.get("is_cancelled")]
+    cities = {str(i.get("city")).strip() for i in live if i.get("city")}
+    by_platform: dict[str, int] = {}
+    for item in live:
+        for code in item.get("platform_codes") or []:
+            by_platform[str(code)] = by_platform.get(str(code), 0) + 1
+
+    rows = [
+        "    <h1>Локации 5 вёрст, С95, parkrun и RunPark</h1>",
+        "    <p>Каталог площадок субботних пробежек: "
+        f"{len(live)} {_plural(len(live), 'локация', 'локации', 'локаций')} в "
+        f"{len(cities)} {_plural(len(cities), 'городе', 'городах', 'городах')}.</p>",
+    ]
+    platform_bits = [
+        f"{PLATFORM_LABELS[code]} — {count} "
+        f"{_plural(count, 'площадка', 'площадки', 'площадок')}"
+        for code, count in sorted(by_platform.items(), key=lambda kv: -kv[1])
+        if code in PLATFORM_LABELS
+    ]
+    if platform_bits:
+        rows.append(f"    <p>{escape('; '.join(platform_bits))}.</p>")
+
+    items_html = "".join(
+        '      <li><a href="/locations/{slug}">{name}</a>{city}</li>\n'.format(
+            slug=escape(str(i.get("slug") or "")),
+            name=escape(str(i.get("name") or "")),
+            city=escape(f" — {i['city']}") if i.get("city") else "",
+        )
+        for i in sorted(live, key=lambda i: str(i.get("name") or "").casefold())
+    )
+    rows.append("    <ul>\n" + items_html + "    </ul>")
+    return "\n".join(rows)
+
+
 def render_prerendered_page(db: Session, raw_path: str) -> str:
     """HTML для робота: мета-теги плюс настоящий текст страницы.
 
@@ -758,4 +810,17 @@ def render_prerendered_page(db: Session, raw_path: str) -> str:
             )
 
     meta = resolve_page_meta(path)
+
+    if path == "/locations":
+        try:
+            items = cast(
+                "list[dict[str, Any]]", build_locations_index(db).get("items") or []
+            )
+        except Exception:  # noqa: BLE001 — робот получит родовую страницу, не 500
+            items = []
+        if items:
+            return _render_html(
+                meta=meta, canonical=canonical, body_html=_catalog_body(items)
+            )
+
     return _render_html(meta=meta, canonical=canonical, body_html=_generic_body(meta))

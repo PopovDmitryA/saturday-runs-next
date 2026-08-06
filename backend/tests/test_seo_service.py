@@ -14,6 +14,7 @@ from app.services.seo_service import (
     STATIC_PAGE_META,
     TITLE_BUDGET,
     PageMeta,
+    _catalog_body,
     build_location_meta,
     build_robots_txt,
     location_lead_sentences,
@@ -167,7 +168,8 @@ def test_normalize_path(raw: str, expected: str) -> None:
         ("/users/ivan/runs", False),
         ("/world", False),
         ("/hq/hq-2kl5kfrlzmnvn8sc", False),
-        ("/login", False),
+        # /login индексируется с 06.08.2026 — посадочная под «личный кабинет».
+        ("/login", True),
         ("/backlog", False),
         ("/admin/users", False),
         ("/settings", False),
@@ -335,12 +337,30 @@ def test_location_meta_pluralizes_starts(count: int, expected: str) -> None:
     assert expected in meta.description
 
 
+def test_catalog_body_lists_locations_with_links() -> None:
+    """Робот на /locations получает список площадок, а не два служебных предложения."""
+    items = [
+        {"slug": "a", "name": "Бутово", "city": "Москва", "platform_codes": ["five_verst"]},
+        {"slug": "b", "name": "Кузьминки", "city": "Москва", "platform_codes": ["s95"]},
+        {"slug": "c", "name": "Закрытая", "city": "Тверь", "platform_codes": ["parkrun"], "is_cancelled": True},
+    ]
+    body = _catalog_body(items)
+    assert "<h1>Локации 5 вёрст, С95, parkrun и RunPark</h1>" in body
+    assert "2 локации в 1 городе" in body
+    assert '<a href="/locations/a">Бутово</a> — Москва' in body
+    # Отменённые площадки в каталоге робота не участвуют.
+    assert "Закрытая" not in body
+    assert "5 вёрст — 1 площадка" in body
+
+
 def test_robots_lists_sitemap_and_closes_service_paths() -> None:
     robots = build_robots_txt()
     assert "Sitemap: " in robots
     assert "/sitemap.xml" in robots
     for closed in ("/api/", "/admin", "/hq/", "/settings"):
         assert f"Disallow: {closed}" in robots
+    # /login — посадочная под «5 верст личный кабинет», закрывать её нельзя.
+    assert "Disallow: /login" not in robots
 
 
 @pytest.mark.parametrize("path", ["/sitemap.xml", "/robots.txt", "/__prerender/locations/kuzminki"])
