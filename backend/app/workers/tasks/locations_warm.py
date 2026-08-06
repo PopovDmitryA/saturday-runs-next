@@ -5,6 +5,7 @@ from typing import Any, cast
 
 from app.db.session import get_session_factory
 from app.services.location_page_service import (
+    build_last_results,
     build_location_events,
     build_location_leaders,
     build_location_page,
@@ -35,6 +36,7 @@ def warm_locations_cache() -> dict[str, object]:
         # use_cache=False, но это «не читать И не писать»: прогрев считал всё
         # впустую, кэш наполняли сами посетители ценой холодного расчёта.
         index = build_locations_index(db, refresh=True)
+        build_last_results(db, refresh=True)
         items = cast(list[dict[str, Any]], index.get("items") or [])
         for item in items:
             slug = item.get("slug")

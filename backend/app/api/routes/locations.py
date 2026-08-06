@@ -11,6 +11,7 @@ from app.models import User
 from app.schemas.dashboard import HomeDistanceDetailResponse
 from app.schemas.locations import (
     CatalogLocationsTableResponse,
+    LastResultsResponse,
     LocationEventsResponse,
     LocationLeadersResponse,
     LocationPageResponse,
@@ -23,6 +24,7 @@ from app.services.home_distance_service import build_home_distance_detail
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_catalog_map_locations, list_user_visited_map_locations
 from app.services.location_page_service import (
+    build_last_results,
     build_location_events,
     build_location_leaders,
     build_location_page,
@@ -45,6 +47,15 @@ def locations_index(
     """Каталог локаций — входная точка раздела «Локации»."""
     payload = build_locations_index(db)
     return LocationsIndexResponse.model_validate(payload)
+
+
+@router.get("/last-results", response_model=LastResultsResponse)
+def locations_last_results(
+    db: Annotated[Session, Depends(get_db)],
+) -> LastResultsResponse:
+    """«Результаты последней субботы»: последний старт каждой локации по всем системам."""
+    payload = build_last_results(db)
+    return LastResultsResponse.model_validate(payload)
 
 
 @router.get("/page/{slug}", response_model=LocationPageResponse)

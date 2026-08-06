@@ -48,6 +48,7 @@ import {
 } from "./features/portal/cabinet/PortalCabinetPages";
 import { LocationEventsPage } from "./features/locations/LocationEventsPage";
 import { LocationPage } from "./features/locations/LocationPage";
+import { LastResultsPage } from "./features/locations/LastResultsPage";
 import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
 import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
 import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
@@ -204,6 +205,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/maps": () => <CabinetLegacyRedirect tab="map" />,
   // Локации открыты без логина (25.07.2026) — публичная витрина.
   "/locations": () => <LocationsIndexPage />,
+  // Посадочная под «5 вёрст результаты»: последний старт каждой площадки.
+  "/results": () => <LastResultsPage />,
   "/history": () => <CabinetLegacyRedirect tab="history" />,
   // Рейтинги открыты без логина (решение 25.07.2026): аноним видит таблицы,
   // а свою строку и позицию — только залогиненный (баннер-призыв на страницах).
