@@ -9,10 +9,14 @@ from app.core.abuse_protection import RouteTier, classify_route
 from app.services.seo_service import (
     DEFAULT_DESCRIPTION,
     DEFAULT_TITLE,
+    DESCRIPTION_BUDGET,
+    PLATFORM_LABELS,
     STATIC_PAGE_META,
+    TITLE_BUDGET,
     PageMeta,
     build_location_meta,
     build_robots_txt,
+    location_lead_sentences,
     normalize_path,
     resolve_page_meta,
 )
@@ -107,6 +111,33 @@ def test_frontend_mirror_covers_same_paths() -> None:
     )
 
 
+def test_frontend_mirror_keeps_location_wording_in_sync() -> None:
+    """Формулировки и лимиты локаций совпадают на бэкенде и на клиенте.
+
+    Полноценно сверить две реализации тестом нельзя — они на разных языках.
+    Но всё, что реально разъезжается при правках (названия систем, бюджеты
+    длины, шаблоны фраз), — это литералы, и их сверить можно. Разъедутся —
+    робот и человек увидят разные страницы, а это для поисковика подмена.
+    """
+    src = (_frontend_src() / "lib" / "pageMeta.ts").read_text(encoding="utf-8")
+
+    for code, label in PLATFORM_LABELS.items():
+        assert f'{code}: "{label}"' in src, f"Название системы {code} разошлось с бэкендом"
+
+    assert f"TITLE_BUDGET = {TITLE_BUDGET}" in src
+    assert f"DESCRIPTION_BUDGET = {DESCRIPTION_BUDGET}" in src
+
+    for phrase in (
+        "площадка субботних пробежек",
+        "Здесь прошло",
+        "старты здесь проводили",
+        "журнал протоколов",
+        " — результаты и статистика",
+        ". Результаты субботних забегов, посещаемость и рейтинги участников.",
+    ):
+        assert phrase in src, f"Формулировка {phrase!r} есть на бэкенде, но не на клиенте"
+
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
@@ -163,11 +194,14 @@ def test_every_page_title_is_distinct_enough() -> None:
     assert len(titles) == len(set(titles)), "Два разных раздела делят один заголовок вкладки"
 
 
-def test_location_meta_uses_name_and_numbers() -> None:
-    payload = {
+def _location_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
         "slug": "kuzminki",
         "name": "Кузьминки",
         "city": "Москва",
+        "platforms": [
+            {"platform_code": "five_verst", "is_active": True, "events_count": 271},
+        ],
         "stats": {
             "events_count": 271,
             "finishers_total": 40123,
@@ -177,22 +211,118 @@ def test_location_meta_uses_name_and_numbers() -> None:
             },
         },
     }
-    meta = build_location_meta(payload)
-    assert meta.title.startswith("Кузьминки, Москва")
+    payload.update(overrides)
+    return payload
+
+
+def test_location_meta_uses_name_and_numbers() -> None:
+    meta = build_location_meta(_location_payload())
+    # Система впереди названия: в поиске набирают «5 вёрст кузьминки», а не
+    # «кузьминки 5 вёрст», и первые слова заголовка весят больше.
+    assert meta.title.startswith("5 вёрст Кузьминки, Москва")
     assert "271 старт" in meta.description
     assert "40123 финиша" in meta.description
     assert "15:42 / 18:03" in meta.description
-    assert len(meta.description) <= 160, "Описание длиннее — поисковик обрежет"
+    assert len(meta.description) <= DESCRIPTION_BUDGET
     assert meta.indexable is True
 
-    log_meta = build_location_meta(payload, events_log=True)
+    log_meta = build_location_meta(_location_payload(), events_log=True)
     assert "журнал протоколов" in log_meta.title
+    # Заголовок журнала обязан отличаться от заголовка самой локации: два
+    # разных адреса с одним title поисковик считает дублем.
+    assert log_meta.title != meta.title
+
+
+@pytest.mark.parametrize(
+    ("code", "label"),
+    [("five_verst", "5 вёрст"), ("s95", "С95"), ("parkrun", "parkrun"), ("runpark", "RunPark")],
+)
+def test_location_title_names_the_active_system(code: str, label: str) -> None:
+    meta = build_location_meta(
+        _location_payload(
+            platforms=[{"platform_code": code, "is_active": True, "events_count": 10}]
+        )
+    )
+    assert meta.title.startswith(f"{label} Кузьминки")
+
+
+def test_location_title_names_last_system_when_none_active() -> None:
+    """Закрытая локация: называем систему, при которой она работала последней."""
+    meta = build_location_meta(
+        _location_payload(
+            platforms=[
+                {
+                    "platform_code": "parkrun",
+                    "is_active": False,
+                    "events_count": 200,
+                    "last_event_date": "2022-02-26",
+                },
+                {
+                    "platform_code": "runpark",
+                    "is_active": False,
+                    "events_count": 11,
+                    "last_event_date": "2022-06-04",
+                },
+            ]
+        )
+    )
+    assert meta.title.startswith("RunPark Кузьминки")
+
+
+def test_location_title_fits_the_budget_and_keeps_the_place() -> None:
+    """Длинное название жертвует описательным хвостом, но не городом."""
+    meta = build_location_meta(
+        _location_payload(name="Чертаново Кировоградские пруды", city="Москва")
+    )
+    assert len(meta.title) <= TITLE_BUDGET
+    assert meta.title.startswith("5 вёрст Чертаново Кировоградские пруды, Москва")
+
+
+def test_location_title_does_not_repeat_city_inside_name() -> None:
+    meta = build_location_meta(_location_payload(name="Томск Сосновый Бор", city="Томск"))
+    assert meta.title.count("Томск") == 1
+
+
+def test_location_lead_reads_as_sentences() -> None:
+    sentences = location_lead_sentences(_location_payload())
+    assert sentences[0] == "«Кузьминки» (Москва) — площадка субботних пробежек 5 вёрст."
+    assert "271 старт" in sentences[1]
+    # Прошлых систем нет — третьего предложения быть не должно.
+    assert len(sentences) == 2
+
+
+def test_location_lead_names_previous_systems() -> None:
+    sentences = location_lead_sentences(
+        _location_payload(
+            platforms=[
+                {"platform_code": "parkrun", "is_active": False, "events_count": 281},
+                {"platform_code": "runpark", "is_active": False, "events_count": 11},
+                {"platform_code": "five_verst", "is_active": True, "events_count": 226},
+            ]
+        )
+    )
+    assert sentences[-1] == "До 5 вёрст старты здесь проводили parkrun и RunPark."
+
+
+def test_location_lead_skips_systems_without_events() -> None:
+    """Связка в каталоге без единого протокола — не «эпоха» локации."""
+    sentences = location_lead_sentences(
+        _location_payload(
+            platforms=[
+                {"platform_code": "parkrun", "is_active": False, "events_count": 0},
+                {"platform_code": "five_verst", "is_active": True, "events_count": 226},
+            ]
+        )
+    )
+    assert not any("До 5 вёрст" in s for s in sentences)
 
 
 def test_location_meta_survives_empty_stats() -> None:
     """Локация без единого старта не должна ронять сборку мета-тегов."""
     meta = build_location_meta({"slug": "new-place", "name": "Новая", "city": None, "stats": {}})
     assert "Новая" in meta.title
+    # Систем нет вовсе — заголовок просто без приставки, без «None» в тексте.
+    assert "None" not in meta.title
     assert meta.description
 
 

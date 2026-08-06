@@ -9691,6 +9691,16 @@ tr.run-crosslinked td {
   flex-wrap: wrap;
 }
 
+/* Вводная фраза о локации — тот же текст, что уходит роботу в пререндере.
+   Читается как подзаголовок, а не как основной контент: чуть приглушена,
+   ширина ограничена, иначе на десктопе строка растягивается на весь экран. */
+.loc-header-lead {
+  margin: 0.6rem 0 0;
+  max-width: 46rem;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
 .loc-header-breadcrumb {
   margin: 0 0 0.5rem;
   font-size: 0.82rem;

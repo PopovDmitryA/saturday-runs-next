@@ -49,11 +49,13 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
     title: "Вход — run5k.run",
     description: "Вход в личный кабинет run5k.run через VK или Яндекс.",
   },
+  // Каталог ловит запросы без названия парка — «5 вёрст карта», «5 вёрст
+  // результаты»: перечисляем системы, иначе страница не связывается с ними.
   "/locations": {
-    title: "Локации — run5k.run",
+    title: "Локации 5 вёрст, С95, parkrun и RunPark — каталог площадок — run5k.run",
     description:
-      "Каталог площадок субботних пробежек: сколько было стартов и финишей, когда " +
-      "прошёл первый забег, в каких системах живёт локация.",
+      "Все площадки субботних пробежек на одной карте: сколько было стартов и " +
+      "финишей, когда прошёл первый забег, в каких системах живёт локация.",
     indexable: true,
   },
   "/ratings": {
@@ -252,9 +254,28 @@ function stripLeadingHours(display: string | null | undefined): string | null {
   return display.startsWith("00:") ? display.slice(3) : display;
 }
 
+/** Как система называется в заголовке. Зеркало PLATFORM_LABELS из seo_service.py. */
+const PLATFORM_LABELS: Record<string, string> = {
+  five_verst: "5 вёрст",
+  s95: "С95",
+  parkrun: "parkrun",
+  runpark: "RunPark",
+};
+
+const TITLE_BUDGET = 70;
+const DESCRIPTION_BUDGET = 160;
+
+type LocationMetaPlatform = {
+  platform_code: string;
+  is_active?: boolean | null;
+  events_count?: number;
+  last_event_date?: string | null;
+};
+
 type LocationMetaSource = {
   name: string;
   city?: string | null;
+  platforms?: LocationMetaPlatform[] | null;
   stats?: {
     events_count?: number;
     finishers_total?: number;
@@ -275,7 +296,8 @@ export function locationPageMeta(
 ): PageMeta {
   const name = payload.name || "Локация";
   const city = payload.city ?? null;
-  const where = city ? `${name}, ${city}` : name;
+  const platform = activePlatformLabel(payload);
+  const where = locationHeadline(name, city, platform);
 
   const stats = payload.stats ?? {};
   const parts: string[] = [];
@@ -294,30 +316,143 @@ export function locationPageMeta(
   }
   const numbers = parts.join(", ");
 
-  // Описание держим в ~155 символах: длиннее поисковик обрежет многоточием.
+  // Описание держим в 160 символах: длиннее поисковик обрежет многоточием.
   if (options.eventsLog) {
-    let description = `Все старты локации «${name}»`;
-    if (numbers) {
-      description += `: ${numbers}`;
-    }
-    description += ". Дата, номер события, финишёры, волонтёры и лучшее время дня.";
-    return { title: `${where}: журнал протоколов — ${SITE_NAME}`, description, indexable: true };
+    // «журнал протоколов» — часть head, а не хвост: только он отличает эту
+    // страницу от основной, и отбрасывать его нельзя.
+    return {
+      title: fitTitle(`${where}: журнал протоколов`),
+      description: describe(
+        `Все старты локации «${name}»`,
+        numbers,
+        ". Дата, номер события, финишёры, волонтёры и лучшее время дня.",
+        ". Дата, номер, финишёры и лучшее время дня.",
+      ),
+      indexable: true,
+    };
   }
 
-  let description = `Локация «${name}»`;
+  // Систему называем и в описании — один раз и по-человечески, подлежащим,
+  // а не списком ключевых слов.
+  let lead = platform ? `${platform}, «${name}»` : `Локация «${name}»`;
   if (city) {
-    description += ` (${city})`;
+    lead += ` (${city})`;
   }
-  if (numbers) {
-    description += `: ${numbers}`;
-  }
-  description += ". Посещаемость, история систем и рейтинги участников.";
 
   return {
-    title: `${where} — статистика субботних пробежек — ${SITE_NAME}`,
-    description,
+    title: fitTitle(where, " — результаты и статистика", " — результаты"),
+    description: describe(
+      lead,
+      numbers,
+      ". Результаты субботних забегов, посещаемость и рейтинги участников.",
+      ". Результаты забегов и рейтинги участников.",
+    ),
     indexable: true,
   };
+}
+
+/**
+ * Название текущей системы локации — зеркало _active_platform_label.
+ * Именно связку «5 вёрст + парк» набирают в поиске.
+ */
+function activePlatformLabel(payload: LocationMetaSource): string | null {
+  const platforms = payload.platforms ?? [];
+  if (platforms.length === 0) {
+    return null;
+  }
+  const active = platforms.find((p) => p.is_active);
+  if (active) {
+    return PLATFORM_LABELS[active.platform_code] ?? null;
+  }
+  // Действующей нет (локация закрыта) — называем последнюю по дате.
+  const newest = platforms.reduce((best, p) =>
+    (p.last_event_date ?? "") > (best.last_event_date ?? "") ? p : best,
+  );
+  return PLATFORM_LABELS[newest.platform_code] ?? null;
+}
+
+/** «5 вёрст Мещерское озеро, Нижний Новгород» — зеркало _location_headline. */
+function locationHeadline(name: string, city: string | null, platform: string | null): string {
+  let head = platform ? `${platform} ${name}` : name;
+  const cityText = (city ?? "").trim();
+  // Город не приписываем, если он уже внутри названия («Томск Сосновый Бор»).
+  if (cityText && !head.toLowerCase().includes(cityText.toLowerCase())) {
+    head = `${head}, ${cityText}`;
+  }
+  return head;
+}
+
+/** Заголовок под TITLE_BUDGET — зеркало _fit_title. */
+function fitTitle(head: string, ...tails: string[]): string {
+  const brand = ` — ${SITE_NAME}`;
+  for (const tail of [...tails, ""]) {
+    const candidate = `${head}${tail}${brand}`;
+    if (candidate.length <= TITLE_BUDGET) {
+      return candidate;
+    }
+  }
+  // Не влезло даже с брендом — домен и так виден в выдаче строкой адреса.
+  return head;
+}
+
+/** Описание под DESCRIPTION_BUDGET — зеркало _describe. */
+function describe(lead: string, numbers: string, ...tails: string[]): string {
+  const head = numbers ? `${lead}: ${numbers}` : lead;
+  for (const tail of tails) {
+    const candidate = `${head}${tail}`;
+    if (candidate.length <= DESCRIPTION_BUDGET) {
+      return candidate;
+    }
+  }
+  const withDot = head.endsWith(".") ? head : `${head}.`;
+  if (withDot.length <= DESCRIPTION_BUDGET) {
+    return withDot;
+  }
+  const cut = withDot.slice(0, DESCRIPTION_BUDGET);
+  const dot = cut.lastIndexOf(". ");
+  return dot > DESCRIPTION_BUDGET / 2 ? cut.slice(0, dot + 1) : `${cut.replace(/[ ,;:—-]+$/, "")}…`;
+}
+
+/**
+ * Вводные предложения о локации — зеркало location_lead_sentences.
+ * Текст обязан совпадать с серверным: иначе робот и человек видят разное.
+ */
+export function locationLeadSentences(payload: LocationMetaSource): string[] {
+  const name = payload.name || "Локация";
+  const city = (payload.city ?? "").trim();
+  const platform = activePlatformLabel(payload);
+  const stats = payload.stats ?? {};
+
+  const where = city ? `«${name}» (${city})` : `«${name}»`;
+  const sentences = [
+    platform
+      ? `${where} — площадка субботних пробежек ${platform}.`
+      : `${where} — площадка субботних пробежек.`,
+  ];
+
+  const events = stats.events_count ?? 0;
+  const finishers = stats.finishers_total ?? 0;
+  if (events && finishers) {
+    sentences.push(
+      `Здесь прошло ${events} ${plural(events, "старт", "старта", "стартов")}, ` +
+        `финишировали ${finishers} ${plural(finishers, "участник", "участника", "участников")}.`,
+    );
+  }
+
+  // У локации может быть несколько эпох: parkrun → RunPark → 5 вёрст.
+  const previous = (payload.platforms ?? [])
+    .filter((p) => !p.is_active && (p.events_count ?? 0) > 0)
+    .map((p) => PLATFORM_LABELS[p.platform_code])
+    .filter(Boolean);
+  if (platform && previous.length > 0) {
+    const joined =
+      previous.length > 1
+        ? `${previous.slice(0, -1).join(", ")} и ${previous[previous.length - 1]}`
+        : previous[0];
+    sentences.push(`До ${platform} старты здесь проводили ${joined}.`);
+  }
+
+  return sentences;
 }
 
 function setMetaTag(selector: string, attr: "name" | "property", key: string, value: string) {

@@ -17,7 +17,7 @@ import {
   type LocationPage as LocationPageData,
   type LocationPersonalStats,
 } from "../../lib/api";
-import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
+import { applyPageMeta, locationLeadSentences, locationPageMeta } from "../../lib/pageMeta";
 import { formatDate, formatKm, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { cabinetTabHref } from "../../lib/portalRoutes";
@@ -965,6 +965,11 @@ function LocationPageContent({ slug }: { slug: string }) {
             <PlatformBadge key={platform.platform_code} code={platform.platform_code} />
           ))}
         </div>
+        {/* Тот же текст, что серверный пререндер отдаёт роботу: если человек и
+            робот видят разные страницы, поисковик считает это подменой. Плюс
+            связная фраза полезнее плашек тому, кто попал сюда из поиска и
+            ещё не понял, что за место. */}
+        <p className="loc-header-lead">{locationLeadSentences(page).join(" ")}</p>
       </header>
 
       <LocationRatingPrompt identityKey={page.identity_key} />
