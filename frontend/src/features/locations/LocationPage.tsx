@@ -18,6 +18,7 @@ import {
   type LocationPersonalStats,
 } from "../../lib/api";
 import { applyPageMeta, locationLeadSentences, locationPageMeta } from "../../lib/pageMeta";
+import { flushMetrikaHit } from "../../lib/metrika";
 import { formatDate, formatKm, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { cabinetTabHref } from "../../lib/portalRoutes";
@@ -891,6 +892,7 @@ function LocationPageContent({ slug }: { slug: string }) {
         // Родовой заголовок «Локация — run5k.run» из App.tsx уточняем именем
         // и цифрами, как только данные приехали.
         applyPageMeta(locationPageMeta(data));
+        flushMetrikaHit();
         // Канонический URL страницы — slug основной системы локации.
         if (data.slug && data.slug !== slug) {
           window.history.replaceState(null, "", `/locations/${data.slug}`);
@@ -905,6 +907,8 @@ function LocationPageContent({ slug }: { slug: string }) {
         } else {
           setError(err instanceof Error ? err.message : "Не удалось загрузить локацию");
         }
+        // Просмотр был, пусть и неудачный — досылаем с родовым заголовком.
+        flushMetrikaHit();
       });
     return () => {
       cancelled = true;

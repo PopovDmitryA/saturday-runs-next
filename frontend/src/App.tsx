@@ -60,8 +60,8 @@ import { reportAbLoginOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
 import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
-import { applyPageMeta, resolvePageMeta } from "./lib/pageMeta";
-import { reportMetrikaHit } from "./lib/metrika";
+import { applyPageMeta, isLocationEntityPath, resolvePageMeta } from "./lib/pageMeta";
+import { deferMetrikaHit, reportMetrikaHit } from "./lib/metrika";
 import { isLegacyGrafanaPath, legacyGrafanaHref } from "./lib/siteBrand";
 import { buildVisitorKey } from "./lib/siteVisitor";
 
@@ -97,9 +97,14 @@ function useSitePageviewTracking(path: string) {
 function usePageMeta(path: string) {
   useEffect(() => {
     applyPageMeta(resolvePageMeta(path));
-    // Метрика в SPA сама переходы не видит — репортим каждый (включая первый)
-    // здесь же, где меняется заголовок вкладки.
-    reportMetrikaHit(path);
+    // Метрика в SPA сама переходы не видит — репортим здесь же, где меняется
+    // заголовок вкладки. Страницы-сущности досылают хит сами после данных,
+    // чтобы в отчёт ушло «5 вёрст Бутово…», а не родовое «Локация».
+    if (isLocationEntityPath(path)) {
+      deferMetrikaHit(path);
+    } else {
+      reportMetrikaHit(path);
+    }
   }, [path]);
 }
 

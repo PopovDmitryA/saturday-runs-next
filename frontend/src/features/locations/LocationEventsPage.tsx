@@ -11,6 +11,7 @@ import {
   type LocationEvents,
 } from "../../lib/api";
 import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
+import { flushMetrikaHit } from "../../lib/metrika";
 import { platformCodeLabel } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { TableWrap } from "../../components/tableUx/TableWrap";
@@ -70,6 +71,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
         if (!cancelled) {
           setData(payload);
           applyPageMeta(locationPageMeta(payload, { eventsLog: true }));
+          flushMetrikaHit();
         }
       })
       .catch((err) => {
@@ -81,6 +83,8 @@ function LocationEventsContent({ slug }: { slug: string }) {
         } else {
           setError(err instanceof Error ? err.message : "Не удалось загрузить журнал");
         }
+        // Просмотр был, пусть и неудачный — досылаем с родовым заголовком.
+        flushMetrikaHit();
       });
     return () => {
       cancelled = true;

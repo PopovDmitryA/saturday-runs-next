@@ -180,6 +180,15 @@ const LOCATION_EVENTS_RE = /^\/locations\/([^/]+)\/events$/;
 const LOCATION_RE = /^\/locations\/([^/]+)$/;
 const SWEEP_HQ_RE = /^\/hq\/.+$/;
 
+/**
+ * Страницы, чей заголовок появляется только после загрузки данных (локация и
+ * её журнал): Метрика для них шлёт хит отложенно — см. lib/metrika.ts.
+ */
+export function isLocationEntityPath(rawPath: string): boolean {
+  const path = normalizePath(rawPath);
+  return LOCATION_RE.test(path) || LOCATION_EVENTS_RE.test(path);
+}
+
 export function normalizePath(rawPath: string): string {
   let path = rawPath.split("?")[0].split("#")[0];
   if (!path.startsWith("/")) {
