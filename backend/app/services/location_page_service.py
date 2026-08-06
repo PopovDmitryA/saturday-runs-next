@@ -68,7 +68,7 @@ LOCATION_PAGE_CACHE_TTL_SECONDS = 3 * 60 * 60
 
 
 def location_page_cache_key(slug: str) -> str:
-    return f"locations:page:v7:{slug.strip().lower()}"
+    return f"locations:page:v8:{slug.strip().lower()}"
 
 
 def location_events_cache_key(slug: str) -> str:
@@ -1017,8 +1017,9 @@ def _same_city_locations(
     Такой запрос (у «5 верст тюмень» 868 показов/мес) не про одну площадку:
     человеку нужен весь город. Взаимные ссылки собирают страницы города в
     кластер и для поисковика, и для навигации. Данные — из кэшированного
-    индекса каталога; топ-10 по числу стартов, чтобы московские страницы не
-    обрастали тремя десятками ссылок.
+    индекса каталога; список полный, по убыванию числа стартов (решение
+    Дмитрия 06.08.2026: город должен быть виден целиком, даже московские
+    три десятка).
     """
     city_norm = (city or "").strip().casefold()
     if not city_norm:
@@ -1038,7 +1039,7 @@ def _same_city_locations(
             "name": item.get("name"),
             "events_count": item.get("events_count") or 0,
         }
-        for item in same[:10]
+        for item in same
         if item.get("slug")
     ]
 

@@ -9691,39 +9691,37 @@ tr.run-crosslinked td {
   flex-wrap: wrap;
 }
 
-/* Кластер города: список соседних площадок двумя колонками на десктопе. */
+/* Кластер города: каждая площадка — чип с рамкой. Колонки текста сливались
+   в сплошные строки, рамка делает границы элементов видимыми. */
 .loc-city-neighbors {
   margin: 0;
   padding: 0;
   list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-  gap: 0.35rem 1.5rem;
-}
-
-.loc-city-neighbors li {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
-.loc-city-neighbors a {
+.loc-city-neighbor {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
   color: var(--link);
   text-decoration: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 100%;
 }
 
-.loc-city-neighbors a:hover {
-  text-decoration: underline;
+.loc-city-neighbor:hover {
+  border-color: var(--link);
 }
 
 .loc-city-neighbor-count {
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   white-space: nowrap;
 }
 
