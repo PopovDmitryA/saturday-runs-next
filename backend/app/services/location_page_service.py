@@ -68,7 +68,7 @@ LOCATION_PAGE_CACHE_TTL_SECONDS = 3 * 60 * 60
 
 
 def location_page_cache_key(slug: str) -> str:
-    return f"locations:page:v8:{slug.strip().lower()}"
+    return f"locations:page:v9:{slug.strip().lower()}"
 
 
 def location_events_cache_key(slug: str) -> str:
@@ -1017,9 +1017,13 @@ def _same_city_locations(
     Такой запрос (у «5 верст тюмень» 868 показов/мес) не про одну площадку:
     человеку нужен весь город. Взаимные ссылки собирают страницы города в
     кластер и для поисковика, и для навигации. Данные — из кэшированного
-    индекса каталога; список полный, по убыванию числа стартов (решение
-    Дмитрия 06.08.2026: город должен быть виден целиком, даже московские
-    три десятка).
+    индекса каталога; список полный (решение Дмитрия 06.08.2026: город должен
+    быть виден целиком, даже московские три десятка), по алфавиту — в чипах
+    без явного порядка сортировка по стартам читалась как случайная.
+
+    Только действующие площадки: паузы отсеиваются наравне с отменёнными —
+    «Severny Rechnoy Vokzal» стоит на паузе с 2019-го, и в списке «куда ещё
+    сходить в Москве» ему делать нечего (репорт Дмитрия 06.08.2026).
     """
     city_norm = (city or "").strip().casefold()
     if not city_norm:
@@ -1031,8 +1035,9 @@ def _same_city_locations(
         if str(item.get("city") or "").strip().casefold() == city_norm
         and item.get("identity_key") != identity_key
         and not item.get("is_cancelled")
+        and not item.get("is_paused")
     ]
-    same.sort(key=lambda item: -int(cast(int, item.get("events_count") or 0)))
+    same.sort(key=lambda item: str(item.get("name") or "").casefold())
     return [
         {
             "slug": item.get("slug"),
