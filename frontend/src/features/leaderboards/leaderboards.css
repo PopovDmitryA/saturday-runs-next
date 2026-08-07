@@ -53,11 +53,46 @@
   font-size: 0.85rem;
 }
 
+/* Вторая строка шапки (у дальности — про срок пересчёта) не должна слипаться
+   с датой данных: без зазора две подписи читаются как один абзац. */
+.lb-meta + .lb-meta {
+  margin-top: 0.25rem;
+}
+
 .lb-error {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   color: var(--text-2);
+}
+
+/* Плашка «дом сменили, таблица ещё не пересчиталась»: янтарная — это не ошибка,
+   а объяснение задержки, поэтому мягче красного предупреждения. */
+.lb-home-change {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  border: 1px solid var(--tint-amber-border);
+  background: var(--tint-amber-bg);
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.lb-home-change-icon {
+  font-size: 1.1rem;
+  line-height: 1.4;
+}
+
+.lb-home-change-text {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.lb-home-change-text p {
+  margin: 0;
 }
 
 /* --- Моя строка --- */

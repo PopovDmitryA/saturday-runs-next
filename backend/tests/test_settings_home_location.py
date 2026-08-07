@@ -302,6 +302,73 @@ def test_home_location_manual_override_and_reset(
     assert reset_response.json()["location"]["name"] == "Локация Б"
 
 
+def test_home_location_change_is_timestamped(client: TestClient, db_session: Session) -> None:
+    """Отметка времени смены дома — на ней держится плашка «рейтинг пересчитается».
+
+    Ставится только при реальной смене: повторное сохранение той же площадки не
+    должно заново обещать пересчёт таблицы.
+    """
+    auth_client = _authenticated_client(client)
+    me = auth_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+    assert user.home_location_changed_at is None
+
+    test_slug = f"home-loc-stamp-{uuid4().hex[:8]}"
+    _seed_run(
+        db_session,
+        user=user,
+        platform_code="five_verst",
+        location_slug=f"a-{test_slug}",
+        location_name="Локация А",
+        city="Тестоград",
+        event_date=date(2099, 4, 4),
+    )
+    _seed_run(
+        db_session,
+        user=user,
+        platform_code="five_verst",
+        location_slug=f"b-{test_slug}",
+        location_name="Локация Б",
+        city="Тестоград",
+        event_date=date(2099, 4, 11),
+    )
+    candidates = auth_client.get("/api/settings/home-location/candidates").json()
+    location_a = next(c for c in candidates if c["name"] == "Локация А")
+
+    assert (
+        auth_client.put(
+            "/api/settings/home-location",
+            json={"catalog_identity_key": location_a["catalog_identity_key"]},
+        ).status_code
+        == 200
+    )
+    db_session.refresh(user)
+    stamped_at = user.home_location_changed_at
+    assert stamped_at is not None
+
+    # Та же площадка ещё раз — отметка не двигается.
+    assert (
+        auth_client.put(
+            "/api/settings/home-location",
+            json={"catalog_identity_key": location_a["catalog_identity_key"]},
+        ).status_code
+        == 200
+    )
+    db_session.refresh(user)
+    assert user.home_location_changed_at == stamped_at
+
+    # Сброс на авто — тоже смена дома.
+    assert (
+        auth_client.put(
+            "/api/settings/home-location", json={"catalog_identity_key": None}
+        ).status_code
+        == 200
+    )
+    db_session.refresh(user)
+    assert user.home_location_changed_at is not None
+    assert user.home_location_changed_at > stamped_at
+
+
 def test_home_location_rejects_unknown_key(client: TestClient) -> None:
     auth_client = _authenticated_client(client)
     response = auth_client.put(

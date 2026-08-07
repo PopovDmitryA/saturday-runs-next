@@ -26,7 +26,7 @@ import {
   type VolunteerRoleDetail,
   type WeekLocation,
 } from "./leaderboardsApi";
-import { formatInt } from "../../lib/format";
+import { formatDateTime, formatInt, pluralizeRu } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
@@ -313,6 +313,53 @@ function HomeLocationCell({
         </StatHintTooltip>
       )}
     </span>
+  );
+}
+
+/**
+ * Смена домашней локации доходит до таблицы не сразу: строки приходят из
+ * снапшота с TTL в несколько часов, а строка «Вы» считается вживую по текущим
+ * настройкам. Человек, только что переехавший, видит в таблице километры от
+ * прежней площадки и читает это как ошибку рейтинга — плашка объясняет разрыв
+ * и называет, когда он закроется (задача Дмитрия 07.08.2026).
+ *
+ * Показывается только тому, кто действительно менял дом позже, чем был посчитан
+ * снапшот: остальным про пересчёт достаточно строки в шапке рейтинга.
+ */
+function HomeChangeNotice({
+  changedAt,
+  builtAt,
+  refreshHours,
+  includedInTable,
+}: {
+  changedAt: string;
+  builtAt: string | null;
+  refreshHours: number;
+  includedInTable: boolean;
+}) {
+  const builtMs = builtAt ? Date.parse(builtAt) : Number.NaN;
+  const etaMs = Number.isNaN(builtMs) ? null : builtMs + refreshHours * 3600 * 1000;
+  // ETA в прошлом (снапшот пережил TTL) — не обещаем момент, которого уже нет.
+  const eta = etaMs != null && etaMs > Date.now() ? new Date(etaMs).toISOString() : null;
+  return (
+    <section className="lb-home-change" role="status">
+      <span className="lb-home-change-icon" aria-hidden="true">
+        ⏳
+      </span>
+      <div className="lb-home-change-text">
+        <p>
+          <strong>Вы сменили домашнюю локацию {formatDateTime(changedAt)}.</strong> Таблица
+          ниже посчитана раньше, поэтому в её строках пока километры от прежнего дома.
+        </p>
+        <p>
+          Пересчёт автоматический:{" "}
+          {eta
+            ? `новые километры появятся в таблице примерно к ${formatDateTime(eta)}`
+            : `новые километры появятся в таблице не позже чем через ${pluralizeRu(refreshHours, ["час", "часа", "часов"])}`}
+          .{includedInTable && " Ваша строка «Вы» уже считает от новой домашней локации."}
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -932,6 +979,17 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       ? formatPercentile(me.rank, entrants)
       : null;
 
+  // Окно пересчёта таблицы (TTL снапшота) приходит с бэкенда: витрина обещает
+  // участнику срок и не должна хранить собственную копию этого числа.
+  const refreshHours = data?.refresh_hours ?? 6;
+  // Смена дома, до которой снапшот ещё не доехал: строки таблицы посчитаны
+  // раньше, чем человек переехал, — значит километры в них от прежнего дома.
+  const homeChangedAt = isHomeDistance ? (me?.home_location_changed_at ?? null) : null;
+  const homeChangePending =
+    homeChangedAt != null &&
+    data?.built_at != null &&
+    Date.parse(homeChangedAt) > Date.parse(data.built_at);
+
   // hint — значок «i» рядом с названием колонки: пояснение по наведению, как у
   // «Топ-локации». Свой title у значка перекрывает «Сортировать по этому
   // столбцу» с самого th, чтобы подсказки не наслаивались.
@@ -983,9 +1041,29 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 Данные на {formatDate(data.latest_event_date)} · число рядом со значением (например, +1)
                 — изменение за последнюю неделю
               </p>
+              {/* Домашняя локация задаёт нулевую точку всей таблицы, и её смена
+                  доходит до строк только со следующим пересчётом — про задержку
+                  честнее сказать заранее, а не оставлять человека гадать. */}
+              {isHomeDistance && (
+                <p className="lb-meta muted">
+                  Таблица пересчитывается раз в{" "}
+                  {pluralizeRu(refreshHours, ["час", "часа", "часов"])}: если сменить
+                  домашнюю локацию в настройках, километры в рейтинге обновятся в
+                  пределах этого срока.
+                </p>
+              )}
             </header>
 
             <RatingsLoginBanner />
+
+            {homeChangePending && homeChangedAt != null && (
+              <HomeChangeNotice
+                changedAt={homeChangedAt}
+                builtAt={data.built_at}
+                refreshHours={refreshHours}
+                includedInTable={me?.included ?? false}
+              />
+            )}
 
             <div className="lb-controls-row">
               <div className="lb-controls-left">

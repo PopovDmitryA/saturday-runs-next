@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import cast
 from uuid import UUID
 
@@ -121,5 +122,9 @@ def set_home_location(db: Session, user: User, catalog_identity_key: str | None)
         valid_keys = {candidate.catalog_identity_key for candidate in candidates}
         if catalog_identity_key not in valid_keys:
             raise UnknownHomeLocationError(catalog_identity_key)
+    # Отметку времени двигаем только при РЕАЛЬНОЙ смене: повторное сохранение
+    # той же площадки не должно снова обещать пересчёт таблицы рейтинга.
+    if user.home_location_key != catalog_identity_key:
+        user.home_location_changed_at = datetime.now(timezone.utc)
     user.home_location_key = catalog_identity_key
     db.flush()

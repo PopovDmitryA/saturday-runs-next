@@ -93,6 +93,8 @@ class LeaderboardResponse(BaseModel):
     latest_event_date: str | None
     week_start: str | None
     built_at: str | None
+    # Через сколько часов после built_at таблица пересчитается (TTL снапшота).
+    refresh_hours: int = 6
 
 
 class MyLeaderboardRowResponse(BaseModel):
@@ -120,6 +122,9 @@ class MyLeaderboardRowResponse(BaseModel):
     home_location_slug: str | None = None
     home_location_wins: int | None = None
     home_location_note: str | None = None
+    # Только у home_distance: когда участник менял домашнюю локацию руками.
+    # Свежее built_at таблицы — значит в таблице ещё километры от прежнего дома.
+    home_location_changed_at: str | None = None
     best_time_sec: int | None = None
     best_time_display: str | None = None
     last_win_location: str | None = None

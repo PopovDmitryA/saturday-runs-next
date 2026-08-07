@@ -166,6 +166,9 @@ def platform_filter_values(metric: str) -> tuple[str, ...]:
 
 TOP_LIMIT = 1000
 CACHE_TTL_SECONDS = 6 * 3600
+# То же окно, но в часах: витрина обещает участнику пересчёт «в течение N
+# часов» и берёт N отсюда, а не повторяет число у себя.
+CACHE_TTL_HOURS = CACHE_TTL_SECONDS // 3600
 # v2 — в снапшот победных рейтингов добавлены «лучшее время» и «последняя
 # победа» (26.07.2026): старые кэшированные payload'ы этих полей не несут,
 # поэтому ключ версионируем, а не ждём протухания по TTL.
@@ -3030,6 +3033,10 @@ def get_leaderboard(
         "latest_event_date": snapshot.get("latest_event_date"),
         "week_start": snapshot.get("week_start"),
         "built_at": snapshot.get("built_at"),
+        # Через сколько часов после built_at таблица пересчитается: витрина
+        # объясняет этим задержку между сменой домашней локации и новыми
+        # километрами в строках.
+        "refresh_hours": CACHE_TTL_HOURS,
     }
 
 
@@ -3638,6 +3645,14 @@ def get_my_leaderboard_row(
         "home_location_slug": my_home[1] if my_home else my_home_slug,
         "home_location_wins": my_home[2] if my_home else None,
         "home_location_note": my_home_note,
+        # Когда участник менял дом руками — только у дальности: своя строка
+        # считается вживую, а таблица приходит из снапшота, и витрина по этой
+        # отметке понимает, что километры в таблице ещё от прежнего дома.
+        "home_location_changed_at": (
+            user.home_location_changed_at.isoformat()
+            if metric == "home_distance" and user.home_location_changed_at is not None
+            else None
+        ),
         "top_role": my_top_role[0] if my_top_role else None,
         "top_role_count": my_top_role[1] if my_top_role else None,
         "role_details": my_role_details,

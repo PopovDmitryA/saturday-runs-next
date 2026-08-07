@@ -185,6 +185,8 @@ export type LeaderboardResponse = {
   latest_event_date: string | null;
   week_start: string | null;
   built_at: string | null;
+  /** Через сколько часов после built_at таблица пересчитается (TTL снапшота). */
+  refresh_hours?: number;
 };
 
 export type MyLeaderboardRow = {
@@ -214,6 +216,12 @@ export type MyLeaderboardRow = {
   // Только у home_distance: "ambiguous" — автовыбор дома шаткий,
   // "manual_off_top" — человек выбрал руками площадку вне своей тройки.
   home_location_note?: "ambiguous" | "manual_off_top" | null;
+  /**
+   * Только у home_distance: когда участник менял домашнюю локацию в настройках.
+   * Своя строка считается вживую, а таблица приходит из снапшота — если отметка
+   * свежее built_at таблицы, в её строках ещё километры от прежнего дома.
+   */
+  home_location_changed_at?: string | null;
   best_time_sec?: number | null;
   best_time_display?: string | null;
   last_win_location?: string | null;
