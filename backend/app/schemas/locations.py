@@ -317,6 +317,40 @@ class LocationsIndexResponse(BaseModel):
     total: int = 0
 
 
+class LastResultsItemResponse(BaseModel):
+    slug: str
+    identity_key: str
+    name: str
+    city: str | None = None
+    region: str | None = None
+    country: str | None = None
+    platform_codes: list[str] = Field(default_factory=list)
+    is_paused: bool = False
+    is_cancelled: bool = False
+    event_date: date
+    event_platform_codes: list[str] = Field(default_factory=list)
+    event_number: int | None = None
+    is_last_saturday: bool = False
+    finishers: int | None = None
+    volunteers: int | None = None
+    debutants: int | None = None
+    prs: int | None = None
+    best_male_time_sec: int | None = None
+    best_male_time_display: str | None = None
+    best_female_time_sec: int | None = None
+    best_female_time_display: str | None = None
+    avg_time_sec: int | None = None
+    avg_time_display: str | None = None
+    has_protocol: bool = False
+    protocol_url: str | None = None
+
+
+class LastResultsResponse(BaseModel):
+    saturday_date: date | None = None
+    items: list[LastResultsItemResponse] = Field(default_factory=list)
+    total: int = 0
+
+
 class CatalogLocationTableRowResponse(BaseModel):
     row_key: str
     catalog_identity_key: str
