@@ -28,6 +28,12 @@ const LINKS = [
 // обе панели сами приводят на его дашборд после входа.
 const EXTERNAL_LINKS = [
   { href: "https://webmaster.yandex.ru/", label: "Яндекс.Вебмастер" },
+  {
+    // Метрика — исключение из правила «общий вход»: счётчик один, а его id
+    // в URL стабилен, поэтому ведём сразу на дашборд «Сводка».
+    href: "https://metrika.yandex.ru/overview?id=111350728&period=today&group=dekaminute&isMinSamplingEnabled=false&currency=RUB&attr=%7B%22attributionId%22%3A%22LastSign%22%2C%22isCrossDevice%22%3Atrue%7D&isUndefinedEnabled=false",
+    label: "Яндекс.Метрика",
+  },
   { href: "https://search.google.com/search-console", label: "Google Search Console" },
 ] as const;
 
