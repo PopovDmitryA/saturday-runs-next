@@ -13,6 +13,7 @@ import {
   type AdminUsersSortDirection,
 } from "../../lib/api";
 import { formatDateTime, platformCodeLabel } from "../../lib/format";
+import { platformProfileUrl } from "../../lib/platformProfileUrl";
 import { authLoginUrl, authProviderLabel, userLoginLines } from "./adminUserDisplay";
 
 // Платформы, для которых бэкенд поддерживает ручной запуск синка (см. ADMIN_SUPPORTED_SYNC_PLATFORMS).
@@ -96,9 +97,7 @@ function platformCell(
     <span className="admin-platform-counts muted"> ({link.run_count}/{link.volunteer_count})</span>
   );
   const label = link.display_name?.trim() || (code === "runpark" ? (link.barcode_id ?? link.external_user_id) : null);
-  const url = code === "runpark"
-    ? `https://runpark.ru/Account/Karmas/${link.external_user_id}`
-    : link.external_url || null;
+  const url = platformProfileUrl(link);
   const content = !url ? (
     <span className="admin-platform-link">
       {label ?? <span className="muted">Профиль</span>}

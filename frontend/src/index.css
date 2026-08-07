@@ -2425,6 +2425,23 @@ tr.run-crosslinked td {
   color: var(--text-3);
 }
 
+/* Бейдж-ссылка: тот же вид, при наведении — кольцо, как у бейджей во «Встречах». */
+a.badge-platform-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+a.badge-platform-link:hover {
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.badge-platform-link-arrow {
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
 .badge-participation {
   margin-left: 0;
   font-weight: 600;
@@ -11248,6 +11265,20 @@ tr.run-crosslinked td {
   display: flex;
   align-items: center;
   gap: 14px;
+}
+
+.public-profile-head-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Привязанные системы под именем: бейджи-ссылки в профиль на самой системе. */
+.public-profile-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .public-profile-avatar {

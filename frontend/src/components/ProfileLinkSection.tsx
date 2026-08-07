@@ -27,6 +27,7 @@ import {
   platformScanCode,
   profileDataFreshnessLines,
 } from "../lib/format";
+import { platformProfileUrl } from "../lib/platformProfileUrl";
 
 type ParticipantIdConfig = {
   label: string;
@@ -45,7 +46,6 @@ type PlatformConfig = {
   emptyInputError: string;
   confirmSuccess: string;
   confirmSuccessBoth?: string;
-  hasPublicProfile?: boolean;
   participantId?: ParticipantIdConfig;
 };
 
@@ -104,7 +104,6 @@ const PLATFORMS: PlatformConfig[] = [
     confirm: confirmRunparkProfile,
     emptyInputError: "Введите штрихкод участника RunPark",
     confirmSuccess: "Профиль RunPark привязан.",
-    hasPublicProfile: false,
     participantId: { label: "Штрихкод", field: "barcode_id" },
   },
 ];
@@ -216,12 +215,7 @@ function PlatformCard({
     ? formatDateTime(linked.last_user_sync_at)
     : "не обновлялось";
 
-  const externalUrl =
-    linked && config.code === "runpark" && linked.external_user_id
-      ? `https://runpark.ru/Account/Karmas/${linked.external_user_id}`
-      : linked && config.hasPublicProfile !== false && linked.external_url.startsWith("http")
-        ? linked.external_url
-        : null;
+  const externalUrl = linked ? platformProfileUrl(linked) : null;
 
   return (
     <div className={`profile-platform-card ${linked ? "profile-platform-card-linked" : "profile-platform-card-unlinked"}`}>
