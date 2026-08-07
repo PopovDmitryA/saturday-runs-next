@@ -11,10 +11,11 @@ from app.five_verst.errors import FiveVerstBanDetected
 from app.five_verst.fetch.protocol_pause import wait_between_protocols
 from app.models import Event, EventSummary, Location, Platform, ProtocolSyncState, RunResult, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalEventSummary
+from app.platform_adapters.five_verst.http import NotFoundError
 from app.services.sync_report_labels import protocol_detail_label
 from app.sync import upsert
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol, mark_protocol_check
-from app.sync.iteration_commit import commit_step, persist_step_error, rollback_step
+from app.sync.iteration_commit import commit_step, mark_event_summary_error, persist_step_error, rollback_step
 
 PLATFORM_CODE = "five_verst"
 
@@ -52,6 +53,10 @@ class ReconcileProtocolsResult:
     planned: list[str] = field(default_factory=list)
     fetched_protocols: list[str] = field(default_factory=list)
     changed_protocols: list[str] = field(default_factory=list)
+    # Протоколы, чьи страницы удалены с сайта (404). Это не сбой запуска:
+    # они помечаются в event_summaries и уходят в конец очереди проверок,
+    # а не валят прогон в статус error каждым циклом.
+    pages_missing: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
 
@@ -253,6 +258,30 @@ def reconcile_stale_protocols(
                 rollback_step(db)
                 result.errors.append(f"{candidate.external_event_key}: {exc}; остаток пачки отложен")
                 break
+            except NotFoundError as exc:
+                # Страница протокола удалена с сайта — известный факт, а не сбой:
+                # раньше такие 404 (в пачках старых дат — до 88 за прогон)
+                # засоряли errors и красили запуск в error. Помечаем summary,
+                # двигаем отметку проверки — вернёмся к ним со следующим кругом
+                # очереди, а не в каждом запуске.
+                result.pages_missing.append(f"{candidate.external_event_key}: {exc}")
+
+                def _apply_missing(
+                    session: Session,
+                    eid=event_id,
+                    key=candidate.external_event_key,
+                    message=str(exc),
+                ) -> None:
+                    if eid is not None:
+                        mark_protocol_check(session, eid)
+                    mark_event_summary_error(
+                        session,
+                        platform_id=platform.id,
+                        external_event_key=key,
+                        message=message,
+                    )
+
+                persist_step_error(db, apply=_apply_missing)
             except Exception as exc:
                 result.errors.append(f"{candidate.external_event_key}: {exc}")
                 if event_id is not None:

@@ -26,6 +26,7 @@ def runpark_sync_latest() -> dict[str, object]:
                 "since": since.isoformat(),
                 "events_total": result.events_total,
                 "events_upserted": result.events_upserted,
+                "events_unchanged": result.events_unchanged,
                 "run_results_upserted": result.run_results_upserted,
                 "volunteer_results_upserted": result.volunteer_results_upserted,
                 "errors": result.errors,
