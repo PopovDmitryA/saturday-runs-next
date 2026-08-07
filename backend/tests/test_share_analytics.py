@@ -78,6 +78,8 @@ def test_build_share_stats_funnel_and_breakdowns(db_session: Session) -> None:
     _add_event(db_session, "share_open", "run:dashboard", "a:v1")
     _add_event(db_session, "share_open", "run:gallery", "a:v2")
     _add_event(db_session, "share_template_switch", "look:night", "a:v1")
+    _add_event(db_session, "share_template_switch", "format:wide", "a:v1")
+    _add_event(db_session, "share_customize", "photo", "a:v1")
     _add_event(db_session, "share_success", "system:run", "a:v1")
     _add_event(db_session, "share_success", "download:run", "a:v2")
 
@@ -93,19 +95,19 @@ def test_build_share_stats_funnel_and_breakdowns(db_session: Session) -> None:
     order = [row["event_type"] for row in stats["funnel"]]
     assert order.index("share_moment_shown") < order.index("share_open") < order.index("share_success")
 
-    subjects = {row["subject"]: row for row in stats["subjects"]}
-    assert subjects["run"]["opens"] == 2
-    assert subjects["run"]["successes"] == 2
-    assert subjects["milestone"]["shown"] == 1
-
-    entries = {row["entry"]: row for row in stats["entries"]}
-    assert entries["dashboard"]["opens"] == 1
-    assert entries["gallery"]["opens"] == 1
+    # Главный разрез — пары «сюжет + вход»: где именно жмут «Поделиться».
+    pairs = {(row["subject"], row["entry"]): row for row in stats["pairs"]}
+    assert pairs[("run", "dashboard")]["shown"] == 1
+    assert pairs[("run", "dashboard")]["opens"] == 1
+    assert pairs[("run", "gallery")]["opens"] == 1
+    assert pairs[("milestone", "history")]["shown"] == 1
 
     channels = {row["channel"]: row["successes"] for row in stats["channels"]}
     assert channels == {"system": 1, "download": 1}
 
-    assert stats["switches"] == [{"kind": "look", "value": "night", "count": 1}]
+    assert stats["looks"] == [{"value": "night", "count": 1}]
+    assert stats["formats"] == [{"value": "wide", "count": 1}]
+    assert stats["photo_added"] == 1
 
 
 def test_build_og_fetch_stats_groups_by_value(db_session: Session) -> None:

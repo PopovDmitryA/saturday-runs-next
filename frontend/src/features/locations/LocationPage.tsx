@@ -24,7 +24,7 @@ import { cabinetTabHref } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
-import { locationCardSubject, locationEventSubject } from "../sharing/subjects";
+import { locationCardSubject, locationEventSubject, locationMeSubject } from "../sharing/subjects";
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { LocationMiniMap } from "./LocationMiniMap";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
@@ -720,6 +720,7 @@ function LocationPersonalSection({
   onOpenAgeGroup: (key: string) => void;
 }) {
   const user = useOptionalUser();
+  const personalSheet = useOptionalShareSheet();
   const [stats, setStats] = useState<LocationPersonalStats | null>(null);
 
   useEffect(() => {
@@ -790,7 +791,23 @@ function LocationPersonalSection({
   return (
     // Свой блок среди общих: выделяем, чтобы взгляд цеплялся за личные цифры.
     <section className="card loc-section loc-section-personal">
-      <h2 className="section-title">Вы на этой локации</h2>
+      <div className="loc-section-head">
+        <h2 className="section-title">Вы на этой локации</h2>
+        {personalSheet !== null && (
+          <button
+            type="button"
+            className="s2-trigger"
+            onClick={() => {
+              const subject = locationMeSubject(stats, user);
+              if (subject) {
+                personalSheet.open({ subject, entry: "location" });
+              }
+            }}
+          >
+            📤 Поделиться
+          </button>
+        )}
+      </div>
       <div className="loc-stats-grid">
         <StatTile
           value={stats.runs_count}

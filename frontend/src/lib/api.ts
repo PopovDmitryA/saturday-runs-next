@@ -2734,18 +2734,18 @@ export type HomeLinkClickStats = {
 };
 
 export type ShareFunnelRow = { event_type: string; events: number; visitors: number };
-export type ShareSubjectRow = { subject: string; shown: number; opens: number; successes: number };
-export type ShareEntryRow = { entry: string; shown: number; opens: number };
+export type SharePairRow = { subject: string; entry: string; shown: number; opens: number };
 export type ShareChannelRow = { channel: string; successes: number };
-export type ShareSwitchRow = { kind: string; value: string; count: number };
+export type ShareCountRow = { value: string; count: number };
 
 /** Воронка и разрезы фичи «Поделиться» (канал experiment="share"). */
 export type ShareStats = {
   funnel: ShareFunnelRow[];
-  subjects: ShareSubjectRow[];
-  entries: ShareEntryRow[];
+  pairs: SharePairRow[];
   channels: ShareChannelRow[];
-  switches: ShareSwitchRow[];
+  looks: ShareCountRow[];
+  formats: ShareCountRow[];
+  photo_added: number;
 };
 
 /** Разворачивание ссылки ботом мессенджера/поисковика (превью в чате). */

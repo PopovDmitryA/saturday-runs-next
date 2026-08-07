@@ -6870,7 +6870,8 @@ tr.run-crosslinked td {
 }
 
 /* Звезда-оценка в таблице пробежек */
-.col-rating { width: 36px; }
+/* Ширина под две иконки: звезда оценки + «Поделиться». */
+.col-rating { width: 68px; }
 .td-rating { text-align: center; padding-left: 0; padding-right: 0; }
 
 /* На всю ширину ячейки + центрирование — чтобы звезда и «—» имели ОДИН центр
@@ -11272,16 +11273,17 @@ tr.run-crosslinked td {
 }
 
 .s2-name {
-  font-size: 0.85em;
-  font-weight: 600;
-  opacity: 0.94;
+  font-size: 1.15em;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  opacity: 0.96;
 }
 
 .s2-sub {
-  font-size: 0.55em;
-  opacity: 0.7;
-  margin-top: 0.35em;
-  letter-spacing: 0.04em;
+  font-size: 0.6em;
+  opacity: 0.72;
+  margin-top: 0.4em;
+  letter-spacing: 0.03em;
 }
 
 .s2-body {
@@ -11371,10 +11373,10 @@ tr.run-crosslinked td {
 }
 
 .s2-tile-label {
-  font-size: 0.38em;
-  opacity: 0.68;
+  font-size: 0.44em;
+  opacity: 0.72;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   margin-top: 0.4em;
   line-height: 1.2;
   overflow-wrap: anywhere;
@@ -11474,41 +11476,120 @@ tr.run-crosslinked td {
   gap: 0.6em;
 }
 
+.s2-brand-mark {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25em;
+}
+
 .s2-brand-logo {
-  font-size: 0.7em;
+  font-size: 0.8em;
   font-weight: 800;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.03em;
+}
+
+.s2-brand-tld {
+  color: var(--s2-accent, #fbbf24);
+}
+
+.s2-brand-pulse {
+  width: 0.85em;
+  height: 0.35em;
+  stroke: var(--s2-accent, #fbbf24);
+  align-self: center;
+}
+
+.s2-brand-pulse circle {
+  fill: var(--s2-accent, #fbbf24);
+  stroke: none;
 }
 
 .s2-brand-tag {
-  font-size: 0.42em;
-  opacity: 0.66;
+  font-size: 0.46em;
+  opacity: 0.7;
 }
 
-/* Широкий формат: контент в две колонки, бренд прижат к низу. */
+/* Сториз: safe-зоны под интерфейс Instagram/Telegram — сверху таймлайн и
+   ник аккаунта (~250px), снизу поле ответа (~220px). Контент между ними
+   крупнее, чтобы не оставалось пустоты и читалось с телефона. */
+.s2-card--story .s2-content {
+  padding: 6em 1.6em 5em;
+}
+
+.s2-card--story .s2-body {
+  gap: 0.7em;
+}
+
+.s2-card--story .s2-metrics {
+  gap: 0.6em;
+}
+
+.s2-card--story .s2-tile {
+  padding: 0.75em 0.8em;
+  border-radius: 0.55em;
+}
+
+.s2-card--story .s2-tile-value {
+  font-size: 1.35em;
+}
+
+.s2-card--story .s2-tile-value--long {
+  font-size: 0.95em;
+}
+
+.s2-card--story .s2-tile-label {
+  font-size: 0.5em;
+}
+
+.s2-card--story .s2-hero-value {
+  font-size: 4.2em;
+}
+
+.s2-card--story .s2-hero-value--long {
+  font-size: 2.6em;
+}
+
+.s2-card--story .s2-fact {
+  font-size: 0.56em;
+}
+
+.s2-card--story .s2-heat i {
+  height: 0.4em;
+}
+
+/* Широкий формат: слева стопка «плашка → герой/таймлайн → факт», справа
+   сетка плиток на всю высоту. Грид, а не flex-строка: плитки получают
+   честную половину ширины и не сжимаются в столбик по буквам. */
 .s2-card--wide .s2-content {
   padding: 1.2em 1.4em 1em;
 }
 
 .s2-card--wide .s2-body {
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  column-gap: 1.1em;
+  row-gap: 0.6em;
+  align-content: center;
   align-items: center;
-  gap: 1em;
 }
 
-.s2-card--wide .s2-body > .s2-plate,
-.s2-card--wide .s2-body > .s2-hero,
-.s2-card--wide .s2-body > .s2-chip {
-  flex: none;
+.s2-card--wide .s2-body > * {
+  grid-column: 1;
+  justify-self: start;
 }
 
-.s2-card--wide .s2-metrics {
-  flex: 1;
+.s2-card--wide .s2-body > .s2-metrics {
+  grid-column: 2;
+  /* Заведомо больше числа элементов левой колонки: пустые ряды схлопываются. */
+  grid-row: 1 / span 8;
+  justify-self: stretch;
   grid-template-columns: 1fr 1fr;
+  align-content: center;
 }
 
-.s2-card--wide .s2-timeline {
-  flex: 0 0 34%;
+.s2-card--wide .s2-body > .s2-heat-wrap {
+  grid-column: 1 / -1;
+  justify-self: stretch;
 }
 
 .s2-card--wide .s2-hero-value {
@@ -11911,4 +11992,28 @@ tr.run-crosslinked td {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+}
+
+/* Кнопка «Поделиться» в строке таблицы — рядом со звездой оценки. */
+.s2-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.s2-row-share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  padding: 0.2rem;
+  border-radius: 6px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.s2-row-share:hover {
+  color: var(--accent-indigo-text);
+  background: var(--tint-indigo-bg);
 }

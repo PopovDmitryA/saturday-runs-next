@@ -1172,7 +1172,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                               }
                             }}
                           >
-                            📤 Поделиться местом
+                            📤 Поделиться
                           </button>
                         )}
                         {percentileText != null && (

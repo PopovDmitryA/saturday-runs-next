@@ -28,7 +28,7 @@ import { useAppDataSource } from "../../lib/appDataSource";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { createFullSelection, sortRuns, toggleDateSort, toggleFinishSort, togglePaceSort, togglePositionSort, uniquePlatforms } from "../../lib/activityList";
 import { formatFinishTimeValue, platformCodeLabel } from "../../lib/format";
-import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
+import { ShareRowButton } from "../sharing/ShareRowButton";
 import { runSubject } from "../sharing/subjects";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
@@ -55,7 +55,6 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const [ratingsVersion, setRatingsVersion] = useState(0);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
   const { snackbar, showSnackbar, dismissSnackbar } = useSnackbar();
-  const shareSheet = useOptionalShareSheet();
   const currentUser = useOptionalUser();
 
   const allPlatforms = useMemo(() => uniquePlatforms(runs), [runs]);
@@ -181,16 +180,6 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
       ? [...filters.selectedPlatforms][0] ?? "all"
       : "all";
 
-  // Последняя пробежка для кнопки «Поделиться» — по дате, независимо от
-  // текущей сортировки таблицы; незачётные дубли не предлагаем.
-  const lastRunForShare = useMemo(() => {
-    const candidates = runs.filter((run) => !run.is_crosslinked && !run.is_test_event);
-    if (candidates.length === 0) {
-      return null;
-    }
-    return candidates.reduce((latest, run) => (run.event_date > latest.event_date ? run : latest));
-  }, [runs]);
-
   const pageBody = (
     <>
       {!isDemo && (
@@ -260,22 +249,6 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
             ))}
           </div>
 
-          {shareSheet !== null && lastRunForShare && mode === "auth" && (
-            <div className="s2-runs-share-row">
-              <button
-                type="button"
-                className="s2-trigger"
-                onClick={() =>
-                  shareSheet.open({
-                    subject: runSubject(lastRunForShare, currentUser ?? null),
-                    entry: "runs",
-                  })
-                }
-              >
-                📤 Поделиться последней пробежкой
-              </button>
-            </div>
-          )}
 
           <TableViewToggle value={tableView} onChange={setTableView} />
           <TableWrap stickyFirstCol={showFull}>
@@ -458,12 +431,18 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                             canRate && !rating && !!run.run_result_id && isEligible(run.run_result_id);
                           return (
                             <td className="td-rating">
-                              <RunRatingStar
-                                rating={rating}
-                                canCreate={canCreate}
-                                canRate={canRate}
-                                onOpen={() => setActiveRun(buildEligibleRun(run, rating))}
-                              />
+                              <span className="s2-row-actions">
+                                <RunRatingStar
+                                  rating={rating}
+                                  canCreate={canCreate}
+                                  canRate={canRate}
+                                  onOpen={() => setActiveRun(buildEligibleRun(run, rating))}
+                                />
+                                <ShareRowButton
+                                  subject={runSubject(run, currentUser ?? null)}
+                                  entry="runs"
+                                />
+                              </span>
                             </td>
                           );
                         })()}

@@ -23,7 +23,11 @@ export function metricLimit(format: ShareFormat, data: ShareCardData): number {
   if (format.id === "story") {
     return hasHero ? 4 : 6;
   }
-  return hasHero ? 3 : 4;
+  if (format.id === "square") {
+    return hasHero ? 3 : 4;
+  }
+  // Широкий: без героя места хватает на богатую сетку (визитка локации).
+  return hasHero ? 3 : 6;
 }
 
 function photoStyle(photo: SharePhoto, format: ShareFormat): CSSProperties {
@@ -145,7 +149,21 @@ export function ShareCardView({
           {data.fact ? <div className="s2-fact">{data.fact}</div> : null}
         </div>
         <div className="s2-brand">
-          <div className="s2-brand-logo">run5k.run</div>
+          {/* Логотип как в шапке сайта: run5k + акцентный .run + линия-пульс. */}
+          <div className="s2-brand-mark">
+            <span className="s2-brand-logo">
+              run5k<span className="s2-brand-tld">.run</span>
+            </span>
+            <svg className="s2-brand-pulse" viewBox="0 0 34 14" fill="none" aria-hidden="true">
+              <polyline
+                points="1,12 8,10 14,11 20,6 26,7 32,2"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="32" cy="2" r="2.4" />
+            </svg>
+          </div>
           <div className="s2-brand-tag">статистика парковых пробежек</div>
         </div>
       </div>

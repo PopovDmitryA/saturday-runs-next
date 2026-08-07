@@ -6,10 +6,12 @@
 import type {
   DashboardStats,
   LocationPage,
+  LocationPersonalStats,
   MyHistoryMilestone,
   OnThisDayRun,
   RunItem,
   User,
+  VolunteeringItem,
 } from "../../lib/api";
 import {
   formatDate,
@@ -328,6 +330,12 @@ export function locationCardSubject(page: LocationPage): ShareSubject {
     stats.unique_participants ? String(stats.unique_participants) : null,
     "участников",
   );
+  pushMetric(
+    metrics,
+    "finishers",
+    stats.finishers_total ? String(stats.finishers_total) : null,
+    "финишей",
+  );
   const male = stats.course_records?.male;
   const female = stats.course_records?.female;
   pushMetric(metrics, "record_male", stripLeadingHours(male?.finish_time_display), "рекорд · М");
@@ -337,6 +345,24 @@ export function locationCardSubject(page: LocationPage): ShareSubject {
     "attendance",
     stats.attendance_record ? String(stats.attendance_record.finishers) : null,
     "рекорд посещаемости",
+  );
+  pushMetric(
+    metrics,
+    "volunteers",
+    stats.unique_volunteers ? String(stats.unique_volunteers) : null,
+    "волонтёров",
+  );
+  pushMetric(
+    metrics,
+    "avg_finishers",
+    stats.avg_finishers ? String(Math.round(stats.avg_finishers)) : null,
+    "в среднем на старте",
+  );
+  pushMetric(
+    metrics,
+    "median_time",
+    stripLeadingHours(stats.median_finish_time_display),
+    "медианное время",
   );
   pushMetric(metrics, "avg_time", stripLeadingHours(stats.avg_finish_time_display), "среднее время");
 
@@ -379,20 +405,18 @@ export function ratingSubject(
   }
   const metrics: ShareMetric[] = [];
   pushMetric(metrics, "total", String(me.total), board.unit);
-  if (board.entrants) {
-    pushMetric(metrics, "entrants", String(board.entrants), "участников в рейтинге");
-  }
   const platformEntries = Object.entries(me.platforms ?? {}).filter(([, cell]) => cell && cell.value > 0);
   if (platformEntries.length > 1) {
     const top = platformEntries.sort((a, b) => b[1].value - a[1].value)[0];
     pushMetric(metrics, "top_platform", String(top[1].value), `${timesLabel(top[1].value)} — ${platformCodeLabel(top[0])}`);
   }
 
+  // Название рейтинга — крупной плашкой (мелкий подзаголовок не бросался в
+  // глаза); «из N участников» — только в подписи героя, без плитки-дубля.
   const data: ShareCardData = {
     audience: "runner",
     title: displayName(user),
-    subtitle: board.title,
-    plate: "РЕЙТИНГ",
+    plate: board.title,
     hero: {
       value: `№${me.rank}`,
       caption: board.entrants ? `из ${board.entrants} участников` : undefined,
@@ -403,6 +427,87 @@ export function ratingSubject(
     kind: "rating",
     data,
     fileName: `run5k-rating-${board.metric}`,
+    defaultFormat: "story",
+  };
+}
+
+// ── Волонтёрство (строка таблицы) ───────────────────────────────────────────
+
+export function volunteeringSubject(item: VolunteeringItem, user: User | null): ShareSubject {
+  const metrics: ShareMetric[] = [];
+  pushMetric(metrics, "location", item.location_name, platformCodeLabel(item.platform_code));
+  pushMetric(metrics, "city", item.location_city, "город");
+  pushMetric(
+    metrics,
+    "event_number",
+    item.event_number != null ? `#${item.event_number}` : null,
+    "номер старта",
+  );
+
+  const data: ShareCardData = {
+    audience: "runner",
+    title: displayName(user),
+    subtitle: `${item.location_name} · ${formatDate(item.event_date)}`,
+    plate: "ВОЛОНТЁРСТВО",
+    hero: item.role
+      ? { value: item.role, caption: "роль на старте" }
+      : undefined,
+    metrics,
+  };
+  return {
+    kind: "volunteering",
+    data,
+    fileName: `run5k-volunteering-${item.event_date}`,
+    defaultFormat: "story",
+  };
+}
+
+// ── «Я на этой локации» (личная статистика на площадке) ────────────────────
+
+export function locationMeSubject(stats: LocationPersonalStats, user: User | null): ShareSubject | null {
+  if (stats.runs_count <= 0 && stats.volunteering_count <= 0) {
+    return null;
+  }
+  const metrics: ShareMetric[] = [];
+  pushMetric(
+    metrics,
+    "runs",
+    stats.runs_count > 0 ? String(stats.runs_count) : null,
+    "пробежек здесь",
+  );
+  pushMetric(metrics, "best_time", stripLeadingHours(stats.best_time_display), "лучшее время");
+  pushMetric(metrics, "avg_time", stripLeadingHours(stats.avg_time_display), "среднее время");
+  pushMetric(
+    metrics,
+    "volunteering",
+    stats.volunteering_count > 0 ? String(stats.volunteering_count) : null,
+    "волонтёрств",
+  );
+  if (stats.rank_by_runs_gender != null) {
+    const scope = stats.gender === "female" ? "среди женщин" : stats.gender === "male" ? "среди мужчин" : "в топе";
+    pushMetric(metrics, "rank", `№${stats.rank_by_runs_gender}`, `${scope} площадки`);
+  }
+  const firstYear = stats.first_run_date?.slice(0, 4);
+
+  const data: ShareCardData = {
+    audience: "runner",
+    title: displayName(user),
+    subtitle: firstYear ? `${stats.name} · с ${firstYear} года` : stats.name,
+    plate: "Я НА ЭТОЙ ЛОКАЦИИ",
+    hero:
+      stats.runs_count > 0
+        ? { value: String(stats.runs_count), caption: pluralFormRu(stats.runs_count, ["пробежка", "пробежки", "пробежек"]) }
+        : undefined,
+    metrics: stats.runs_count > 0 ? metrics.filter((metric) => metric.id !== "runs") : metrics,
+    fact:
+      stats.total_runs > 0 && stats.runs_count > 0
+        ? `${stats.runs_count} из ${stats.total_runs} моих стартов — здесь`
+        : undefined,
+  };
+  return {
+    kind: "location_me",
+    data,
+    fileName: `run5k-${stats.slug}-me`,
     defaultFormat: "story",
   };
 }

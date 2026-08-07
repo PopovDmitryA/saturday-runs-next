@@ -127,18 +127,10 @@ class ShareFunnelRow(BaseModel):
     visitors: int
 
 
-class ShareSubjectRow(BaseModel):
-    """Разрез по сюжетам: показы приглашений, открытия шторки, успехи."""
+class SharePairRow(BaseModel):
+    """Пара «сюжет + вход»: где именно жмут «Поделиться» и как часто."""
 
     subject: str
-    shown: int
-    opens: int
-    successes: int
-
-
-class ShareEntryRow(BaseModel):
-    """Разрез по точкам входа (дашборд, вехи, локация…)."""
-
     entry: str
     shown: int
     opens: int
@@ -151,20 +143,20 @@ class ShareChannelRow(BaseModel):
     successes: int
 
 
-class ShareSwitchRow(BaseModel):
-    """Переключения оформления: look:<id> / format:<id>."""
+class ShareCountRow(BaseModel):
+    """Счётчик выбора: фон (look) или формат."""
 
-    kind: str
     value: str
     count: int
 
 
 class ShareStats(BaseModel):
     funnel: list[ShareFunnelRow] = Field(default_factory=list)
-    subjects: list[ShareSubjectRow] = Field(default_factory=list)
-    entries: list[ShareEntryRow] = Field(default_factory=list)
+    pairs: list[SharePairRow] = Field(default_factory=list)
     channels: list[ShareChannelRow] = Field(default_factory=list)
-    switches: list[ShareSwitchRow] = Field(default_factory=list)
+    looks: list[ShareCountRow] = Field(default_factory=list)
+    formats: list[ShareCountRow] = Field(default_factory=list)
+    photo_added: int = 0
 
 
 class OgFetchRow(BaseModel):

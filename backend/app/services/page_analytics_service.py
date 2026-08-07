@@ -620,49 +620,54 @@ def build_share_stats(db: Session, *, start: date, end: date) -> dict[str, objec
         if event_type in by_type
     ]
 
-    subjects: dict[str, dict[str, int]] = {}
-    entries: dict[str, dict[str, int]] = {}
+    # Пары «сюжет + вход»: главный разрез — ГДЕ именно люди жмут «Поделиться»
+    # (веха в истории, своя пробежка на локации, строка таблицы пробежек…).
+    pairs: dict[tuple[str, str], dict[str, int]] = {}
     channels: dict[str, int] = {}
-    switches: list[dict[str, object]] = []
+    looks: dict[str, int] = {}
+    formats: dict[str, int] = {}
+    photo_added = 0
 
-    def subject_bucket(subject: str) -> dict[str, int]:
-        return subjects.setdefault(subject, {"shown": 0, "opens": 0, "successes": 0})
-
-    def entry_bucket(entry: str) -> dict[str, int]:
-        return entries.setdefault(entry, {"shown": 0, "opens": 0})
+    def pair_bucket(subject: str, entry: str) -> dict[str, int]:
+        return pairs.setdefault((subject, entry), {"shown": 0, "opens": 0})
 
     for row in detail_rows:
         value = row.value or ""
         count = int(row.events or 0)
         head, _, tail = value.partition(":")
         if row.event_type == "share_moment_shown" and tail:
-            subject_bucket(head)["shown"] += count
-            entry_bucket(tail)["shown"] += count
+            pair_bucket(head, tail)["shown"] += count
         elif row.event_type == "share_open" and tail:
-            subject_bucket(head)["opens"] += count
-            entry_bucket(tail)["opens"] += count
+            pair_bucket(head, tail)["opens"] += count
         elif row.event_type == "share_success" and tail:
             channels[head] = channels.get(head, 0) + count
-            subject_bucket(tail)["successes"] += count
         elif row.event_type == "share_template_switch" and tail:
-            switches.append({"kind": head, "value": tail, "count": count})
+            if head == "look":
+                looks[tail] = looks.get(tail, 0) + count
+            elif head == "format":
+                formats[tail] = formats.get(tail, 0) + count
+        elif row.event_type == "share_customize" and value == "photo":
+            photo_added += count
 
-    switches.sort(key=lambda item: (-int(item["count"]), str(item["value"])))
     return {
         "funnel": funnel,
-        "subjects": [
-            {"subject": subject, **bucket}
-            for subject, bucket in sorted(subjects.items(), key=lambda kv: -kv[1]["opens"])
-        ],
-        "entries": [
-            {"entry": entry, **bucket}
-            for entry, bucket in sorted(entries.items(), key=lambda kv: -kv[1]["opens"])
+        "pairs": [
+            {"subject": subject, "entry": entry, **bucket}
+            for (subject, entry), bucket in sorted(pairs.items(), key=lambda kv: -kv[1]["opens"])
         ],
         "channels": [
             {"channel": channel, "successes": count}
             for channel, count in sorted(channels.items(), key=lambda kv: -kv[1])
         ],
-        "switches": switches[:10],
+        "looks": [
+            {"value": value, "count": count}
+            for value, count in sorted(looks.items(), key=lambda kv: -kv[1])
+        ],
+        "formats": [
+            {"value": value, "count": count}
+            for value, count in sorted(formats.items(), key=lambda kv: -kv[1])
+        ],
+        "photo_added": photo_added,
     }
 
 

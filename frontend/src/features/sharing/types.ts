@@ -80,9 +80,11 @@ export type ShareCardData = {
 export type ShareSubjectKind =
   | "milestone"
   | "run"
+  | "volunteering"
   | "summary"
   | "location_event"
   | "location_card"
+  | "location_me"
   | "rating";
 
 export type ShareSubject = {
@@ -98,6 +100,7 @@ export type ShareSubject = {
 export type ShareEntryPoint =
   | "dashboard"
   | "runs"
+  | "volunteering"
   | "history"
   | "on_this_day"
   | "location"
