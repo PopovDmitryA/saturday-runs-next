@@ -132,6 +132,26 @@ class LocationRecordsBlockResponse(BaseModel):
     entries: list[LocationRecordEntryResponse] = Field(default_factory=list)
 
 
+class LastSaturdayResponse(BaseModel):
+    """Свежайший результат участника — герой дашборда «последняя суббота»."""
+
+    event_date: date
+    platform_code: str
+    location_name: str
+    location_slug: str | None = None
+    finish_time_sec: int | None = None
+    finish_time_display: str | None = None
+    pace_display: str | None = None
+    position: int | None = None
+    gender_position: int | None = None
+    is_pr: bool = False
+    is_first_run_at_location: bool = False
+    # Разница со своим прошлым результатом на этой же площадке:
+    # отрицательная — быстрее, положительная — медленнее.
+    delta_vs_prev_sec: int | None = None
+    prev_date: date | None = None
+
+
 class DashboardAnalyticsResponse(BaseModel):
     analytics_version: int = 1
     unique_locations: int = 0
@@ -193,6 +213,7 @@ class DashboardAnalyticsResponse(BaseModel):
     location_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
     age_group_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
     home_distance: HomeDistanceResponse | None = None
+    last_saturday: LastSaturdayResponse | None = None
 
 
 class OnThisDayRunResponse(BaseModel):

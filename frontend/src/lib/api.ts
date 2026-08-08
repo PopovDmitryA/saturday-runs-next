@@ -257,6 +257,25 @@ export type DashboardAnalytics = {
   location_records?: LocationRecordsBlock;
   age_group_records?: LocationRecordsBlock;
   home_distance?: HomeDistance | null;
+  last_saturday?: LastSaturday | null;
+};
+
+/** Свежайший результат участника — герой дашборда «последняя суббота». */
+export type LastSaturday = {
+  event_date: string;
+  platform_code: string;
+  location_name: string;
+  location_slug: string | null;
+  finish_time_sec: number | null;
+  finish_time_display: string | null;
+  pace_display: string | null;
+  position: number | null;
+  gender_position: number | null;
+  is_pr: boolean;
+  is_first_run_at_location: boolean;
+  /** Разница с прошлым визитом на эту площадку: минус — быстрее. */
+  delta_vs_prev_sec: number | null;
+  prev_date: string | null;
 };
 
 export type DashboardStats = {

@@ -1121,6 +1121,72 @@ a.on-this-day-location {
   margin-top: 0.75rem;
 }
 
+/* Герой дашборда «Твоя последняя суббота»: карточка события — локация,
+   время, темп, место, дельта к прошлому визиту. Акцентная рамка отличает
+   её от плиток статистики: это новость недели, а не вечный счётчик. */
+.last-saturday-card {
+  display: grid;
+  gap: 0.5rem;
+  border-left: 3px solid var(--accent-indigo);
+}
+
+.last-saturday-kicker {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.last-saturday-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.last-saturday-location {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.last-saturday-location:hover {
+  text-decoration: underline;
+}
+
+.last-saturday-first {
+  font-size: 0.8rem;
+  color: var(--accent-teal-text);
+  font-weight: 600;
+}
+
+.last-saturday-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.9rem;
+}
+
+.last-saturday-stat b {
+  font-size: 1.35rem;
+}
+
+.last-saturday-delta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.last-saturday-delta-faster {
+  color: var(--accent-green-text);
+}
+
+.last-saturday-delta-slower {
+  color: var(--accent-amber-text);
+}
+
 /* Тематическая группа аналитики: заголовок + витрина карточек + свои панели.
    Первая группа не отбивается — заголовок сам задаёт ритм. */
 .analytics-group {
@@ -6057,7 +6123,7 @@ tr.run-crosslinked td {
   display: inline-block;
   min-width: 4.5rem;
   margin-right: 0.35rem;
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 0.82rem;
 }
 
@@ -6085,7 +6151,7 @@ tr.run-crosslinked td {
   flex-shrink: 0;
   border: 1px solid var(--border);
   background: transparent;
-  color: var(--muted);
+  color: var(--text-muted);
   border-radius: 0.35rem;
   width: 1.5rem;
   height: 1.5rem;
@@ -10926,7 +10992,7 @@ tr.run-crosslinked td {
   align-items: center;
   gap: 10px;
   width: 100%;
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 18px;
   font-weight: 700;
 }

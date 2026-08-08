@@ -69,7 +69,7 @@ class SyncRefreshRateLimitedError(Exception):
 # gender_position=1 из среднего места по полу.
 # 34: плитка «Дальность от дома» — сумма км до уникальных посещённых площадок,
 # самый дальний старт и признак неоднозначной домашней локации.
-ANALYTICS_VERSION = 34
+ANALYTICS_VERSION = 35
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 
@@ -876,6 +876,49 @@ def _compute_dashboard_analytics(
         else None
     )
 
+    # «Последняя суббота» — герой дашборда: свежайший результат с дельтой
+    # к прошлому визиту на ту же площадку. Считается из уже отфильтрованного
+    # runs_query (без тестовых стартов и кросслинк-дублей).
+    last_saturday: dict[str, object] | None = None
+    last_row = runs_query.order_by(
+        Event.event_date.desc(), RunResult.finish_time_sec.asc().nullslast()
+    ).first()
+    if last_row is not None:
+        last_run, last_event, last_location, last_platform = last_row
+        delta_vs_prev_sec: int | None = None
+        prev_date_iso: str | None = None
+        if last_run.finish_time_sec is not None:
+            prev_same_loc = (
+                runs_query.filter(
+                    Event.location_id == last_event.location_id,
+                    Event.event_date < last_event.event_date,
+                    RunResult.finish_time_sec.isnot(None),
+                )
+                .order_by(Event.event_date.desc())
+                .first()
+            )
+            if prev_same_loc is not None:
+                prev_run, prev_event, _prev_loc, _prev_platform = prev_same_loc
+                delta_vs_prev_sec = int(last_run.finish_time_sec) - int(prev_run.finish_time_sec)
+                prev_date_iso = prev_event.event_date.isoformat()
+        last_saturday = {
+            "event_date": last_event.event_date.isoformat(),
+            "platform_code": last_platform.code,
+            "location_name": catalog_index.display_name(last_location, last_platform.code),
+            "location_slug": last_location.external_key.strip().lower(),
+            "finish_time_sec": last_run.finish_time_sec,
+            "finish_time_display": normalize_finish_time_display(
+                last_run.finish_time_sec, last_run.finish_time_display
+            ),
+            "pace_display": last_run.pace_display,
+            "position": last_run.position,
+            "gender_position": last_run.gender_position,
+            "is_pr": bool(last_run.is_pr),
+            "is_first_run_at_location": bool(last_run.is_first_run_at_location),
+            "delta_vs_prev_sec": delta_vs_prev_sec,
+            "prev_date": prev_date_iso,
+        }
+
     return {
         "analytics_version": ANALYTICS_VERSION,
         "unique_locations": all_unique_counts.unique_total,
@@ -936,6 +979,7 @@ def _compute_dashboard_analytics(
         "location_records": location_records["course"],
         "age_group_records": location_records["age_group"],
         "home_distance": home_distance,
+        "last_saturday": last_saturday,
     }
 
 
