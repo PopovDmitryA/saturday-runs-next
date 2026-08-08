@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { addZoomControl } from "../../lib/mapZoomControl";
 
 type LocationMiniMapProps = {
   latitude: number;
@@ -29,7 +30,9 @@ export function LocationMiniMap({ latitude, longitude, name }: LocationMiniMapPr
       scrollWheelZoom: false,
       // Как и на остальных картах сайта — без плашки атрибуции (у Leaflet в ней флаг).
       attributionControl: false,
+      zoomControl: false,
     });
+    addZoomControl(map);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
     }).addTo(map);

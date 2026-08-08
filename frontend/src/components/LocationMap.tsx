@@ -4,6 +4,7 @@ import "leaflet/dist/leaflet.css";
 import type { MapLocationPoint } from "../lib/api";
 import { formatDate, platformCodeLabel } from "../lib/format";
 import type { MapViewportRef } from "../lib/mapViewport";
+import { addZoomControl } from "../lib/mapZoomControl";
 import { MapFullscreenButton } from "./MapFullscreenButton";
 
 const visitedIcon = L.divIcon({
@@ -336,8 +337,10 @@ export function LocationMap({
     const map = L.map(containerRef.current, {
       scrollWheelZoom: true,
       attributionControl: false,
+      zoomControl: false,
     }).setView([55.75, 37.62], 5);
 
+    addZoomControl(map);
     L.control.attribution({ prefix: false }).addTo(map);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {

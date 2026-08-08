@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { addZoomControl } from "../../lib/mapZoomControl";
 import { regionKey } from "../../lib/regionMatch";
 import { PortalHeader } from "./PortalHeader";
 import { fetchPortalHome, type PortalGeoPoint } from "./portalTypes";
@@ -19,7 +20,12 @@ function cssColor(varName: string, fallback: string): string {
 }
 
 function baseMap(container: HTMLDivElement): L.Map {
-  const map = L.map(container, { scrollWheelZoom: false, attributionControl: false });
+  const map = L.map(container, {
+    scrollWheelZoom: false,
+    attributionControl: false,
+    zoomControl: false,
+  });
+  addZoomControl(map);
   L.control.attribution({ prefix: false }).addTo(map);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,

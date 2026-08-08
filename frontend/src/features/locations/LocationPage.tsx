@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState, type ReactNode } from "reac
 import { LocationStatusLabel } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
+import { TableWrap } from "../../components/tableUx/TableWrap";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 import {
   ApiError,
@@ -282,102 +283,106 @@ function AgeGroupRecordsTable({
   onToggle: (key: string) => void;
 }) {
   return (
-    <table className="data-table loc-age-records-table">
-      <colgroup>
-        <col className="loc-age-records-col-group" />
-        <col className="loc-age-records-col-time" />
-        <col />
-        <col className="loc-age-records-col-date" />
-      </colgroup>
-      <thead>
-        <tr>
-          <th>Группа</th>
-          <th>Время</th>
-          <th>Рекордсмен</th>
-          <th>Дата</th>
-        </tr>
-      </thead>
-      <tbody>
-        {records.map((record) => {
-          const open = openKey === record.key;
-          return (
-            <Fragment key={record.key}>
-              {/* id на строке — якорь для плитки «место в группе» из блока «Вы на этой локации». */}
-              <tr id={record.key} className={open ? "loc-age-records-row-open" : undefined}>
-                <td>
-                  {record.top.length > 0 ? (
-                    <button
-                      type="button"
-                      className="loc-age-records-toggle"
-                      aria-expanded={open}
-                      onClick={() => onToggle(record.key)}
-                      title={open ? "Скрыть топ-5 группы" : "Показать топ-5 группы"}
-                    >
-                      <span className="loc-age-records-caret" aria-hidden="true">
-                        {open ? "▾" : "▸"}
-                      </span>
-                      {record.age_group}
-                    </button>
-                  ) : (
-                    record.age_group
-                  )}
-                </td>
-                <td className="loc-age-records-time">
-                  {stripLeadingHours(record.finish_time_display)}
-                </td>
-                <td>
-                  <RunnerName name={record.runner_name} handle={record.runner_handle} />
-                </td>
-                <td>{record.event_date ? formatDate(record.event_date) : "—"}</td>
-              </tr>
-              {open && (
-                <tr className="loc-age-records-top-row">
-                  <td colSpan={4}>
-                    <div className="loc-age-top">
-                      <div className="loc-age-top-head">
-                        Топ-{record.top.length} группы {record.age_group}
-                        <span className="loc-age-top-hint">
-                          лучшее время каждого участника
-                          {/* Размер группы: без него непонятно, топ-5 из скольких. */}
-                          {record.runners_total > 0 && (
-                            <>
-                              {" · всего "}
-                              {pluralizeRu(record.runners_total, ["участник", "участника", "участников"])}
-                              {record.finishes_total > 0 &&
-                                ` и ${pluralizeRu(record.finishes_total, ["финиш", "финиша", "финишей"])}`}
-                            </>
-                          )}
+    <TableWrap className="loc-age-records-wrap">
+      <table className="data-table loc-age-records-table">
+        <colgroup>
+          <col className="loc-age-records-col-group" />
+          <col className="loc-age-records-col-time" />
+          <col />
+          <col className="loc-age-records-col-date" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Группа</th>
+            <th>Время</th>
+            <th>Рекордсмен</th>
+            <th>Дата</th>
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((record) => {
+            const open = openKey === record.key;
+            return (
+              <Fragment key={record.key}>
+                {/* id на строке — якорь для плитки «место в группе» из блока «Вы на этой локации». */}
+                <tr id={record.key} className={open ? "loc-age-records-row-open" : undefined}>
+                  <td className="loc-age-records-group">
+                    {record.top.length > 0 ? (
+                      <button
+                        type="button"
+                        className="loc-age-records-toggle"
+                        aria-expanded={open}
+                        onClick={() => onToggle(record.key)}
+                        title={open ? "Скрыть топ-5 группы" : "Показать топ-5 группы"}
+                      >
+                        <span className="loc-age-records-caret" aria-hidden="true">
+                          {open ? "▾" : "▸"}
                         </span>
-                      </div>
-                      <ol className="loc-age-top-list">
-                        {record.top.map((row) => (
-                          <li key={`${record.key}-${row.place}-${row.name}`} className="loc-age-top-item">
-                            <span className="loc-age-top-place">{row.place}</span>
-                            <span className="loc-age-top-name">
-                              <RunnerName name={row.name} handle={row.handle} />
-                            </span>
-                            {/* Полоса длиной от лучшего времени в группе: видно отрыв. */}
-                            <span className="loc-age-top-bar" aria-hidden="true">
-                              <span
-                                className="loc-age-top-bar-fill"
-                                style={{ width: `${topBarWidth(row.best_time_sec, record.top)}%` }}
-                              />
-                            </span>
-                            <span className="loc-age-top-time">
-                              {stripLeadingHours(row.best_time_display)}
-                            </span>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
+                        {record.age_group}
+                      </button>
+                    ) : (
+                      record.age_group
+                    )}
+                  </td>
+                  <td className="loc-age-records-time">
+                    {stripLeadingHours(record.finish_time_display)}
+                  </td>
+                  <td>
+                    <RunnerName name={record.runner_name} handle={record.runner_handle} />
+                  </td>
+                  <td className="loc-age-records-date">
+                    {record.event_date ? formatDate(record.event_date) : "—"}
                   </td>
                 </tr>
-              )}
-            </Fragment>
-          );
-        })}
-      </tbody>
-    </table>
+                {open && (
+                  <tr className="loc-age-records-top-row">
+                    <td colSpan={4}>
+                      <div className="loc-age-top">
+                        <div className="loc-age-top-head">
+                          Топ-{record.top.length} группы {record.age_group}
+                          <span className="loc-age-top-hint">
+                            лучшее время каждого участника
+                            {/* Размер группы: без него непонятно, топ-5 из скольких. */}
+                            {record.runners_total > 0 && (
+                              <>
+                                {" · всего "}
+                                {pluralizeRu(record.runners_total, ["участник", "участника", "участников"])}
+                                {record.finishes_total > 0 &&
+                                  ` и ${pluralizeRu(record.finishes_total, ["финиш", "финиша", "финишей"])}`}
+                              </>
+                            )}
+                          </span>
+                        </div>
+                        <ol className="loc-age-top-list">
+                          {record.top.map((row) => (
+                            <li key={`${record.key}-${row.place}-${row.name}`} className="loc-age-top-item">
+                              <span className="loc-age-top-place">{row.place}</span>
+                              <span className="loc-age-top-name">
+                                <RunnerName name={row.name} handle={row.handle} />
+                              </span>
+                              {/* Полоса длиной от лучшего времени в группе: видно отрыв. */}
+                              <span className="loc-age-top-bar" aria-hidden="true">
+                                <span
+                                  className="loc-age-top-bar-fill"
+                                  style={{ width: `${topBarWidth(row.best_time_sec, record.top)}%` }}
+                                />
+                              </span>
+                              <span className="loc-age-top-time">
+                                {stripLeadingHours(row.best_time_display)}
+                              </span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </TableWrap>
   );
 }
 

@@ -1997,7 +1997,7 @@ a.on-this-day-location {
 
 .data-table-layout-fixed {
   table-layout: fixed;
-  min-width: 43.2rem;
+  min-width: 44.2rem;
 }
 
 .data-table-layout-fixed .col-date {
@@ -2019,7 +2019,7 @@ a.on-this-day-location {
 }
 
 .data-table-layout-fixed .col-pace {
-  width: 5.25rem;
+  width: 6.25rem;
 }
 
 .data-table-layout-fixed .col-role {
@@ -2063,7 +2063,10 @@ a.on-this-day-location {
 
 .data-table-layout-fixed .td-date,
 .data-table-layout-fixed .td-compact,
-.data-table-layout-fixed .td-time {
+.data-table-layout-fixed .td-time,
+/* «4:41 / км» — в одну строку: на телефоне колонка ужималась по остатку и
+   рвала темп на два этажа, из-за чего вся строка становилась двухэтажной. */
+.data-table-layout-fixed .td-pace {
   white-space: nowrap;
   vertical-align: middle;
 }
@@ -4033,6 +4036,13 @@ a.badge-platform-link:hover {
   color: var(--text-3);
   box-shadow: 0 1px 4px rgba(0,0,0,0.1);
   transition: background 0.15s, color 0.15s;
+}
+
+/* Зум-кнопки живут в правом верхнем углу (см. lib/mapZoomControl.ts), там же —
+   кнопка фуллскрина. Где она есть, сдвигаем зум левее неё: 0.6rem отступ +
+   2rem кнопка + зазор. Высоту не трогаем — обе группы кнопок в одном ряду. */
+.location-map-shell:has(.location-map-fullscreen-btn) .leaflet-top.leaflet-right .leaflet-control-zoom {
+  margin-right: 2.9rem;
 }
 
 .location-map-fullscreen-btn:hover {
@@ -10002,6 +10012,15 @@ a.badge-platform-link:hover {
   align-items: start;
 }
 
+/* Грид-колонка по умолчанию не уже min-content своего содержимого: широкая
+   таблица (рекорды по возрастным группам) распирала не свой скролл-контейнер,
+   а всю страницу. У документа появлялась горизонтальная прокрутка, а вместе с
+   ней разъезжался layout-вьюпорт — фиксированная нижняя навигация вставала по
+   его низу и на телефоне «отклеивалась» от нижней кромки экрана. */
+.loc-columns > * {
+  min-width: 0;
+}
+
 @media (max-width: 720px) {
   .loc-columns {
     grid-template-columns: 1fr;
@@ -10031,6 +10050,14 @@ a.badge-platform-link:hover {
 .loc-age-records-time {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+/* Группу и дату не рвём на два этажа: внутри скролл-контейнера таблица ужимается
+   до min-content, и «10–14» с «27.09.2025» разъезжались по строкам, задирая
+   высоту каждой строки. Переносится только ФИО рекордсмена. */
+.loc-age-records-group,
+.loc-age-records-date {
+  white-space: nowrap;
 }
 
 .loc-mini-map {
