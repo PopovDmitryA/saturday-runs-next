@@ -30,7 +30,6 @@ import { platformCodeLabel } from "../../lib/format";
 // оборачивает контент в собственный каркас с сайдбаром.
 function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
   const { listVolunteering, mode } = useAppDataSource();
-  const isDemo = mode === "demo";
   const [items, setItems] = useState<VolunteeringItem[]>([]);
   const [hasProfileLink, setHasProfileLink] = useState(false);
   const [includeTest, setIncludeTest] = useState(false);
@@ -99,7 +98,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
     try {
       const data = await listVolunteering(includeTest);
       setItems(data);
-      if (isDemo || mode === "public-profile") {
+      if (mode === "public-profile") {
         setHasProfileLink(false);
       } else {
         const links = await listProfileLinks();
@@ -110,7 +109,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
     } finally {
       setLoading(false);
     }
-  }, [includeTest, isDemo, mode, listVolunteering]);
+  }, [includeTest, mode, listVolunteering]);
 
   useEffect(() => {
     void load();
@@ -178,26 +177,24 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
 
   const pageBody = (
     <>
-      {!isDemo && (
-        <div className="checkbox-row-group">
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={includeTest}
-              onChange={(event) => setIncludeTest(event.target.checked)}
-            />
-            Показывать тестовые мероприятия
-          </label>
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={includeDuplicates}
-              onChange={(event) => setIncludeDuplicates(event.target.checked)}
-            />
-            Показывать незачётные волонтёрства
-          </label>
-        </div>
-      )}
+      <div className="checkbox-row-group">
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={includeTest}
+            onChange={(event) => setIncludeTest(event.target.checked)}
+          />
+          Показывать тестовые мероприятия
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={includeDuplicates}
+            onChange={(event) => setIncludeDuplicates(event.target.checked)}
+          />
+          Показывать незачётные волонтёрства
+        </label>
+      </div>
 
       {loading && <p className="muted">Загрузка…</p>}
 
@@ -210,14 +207,9 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
         </div>
       )}
 
-      {showEmpty &&
-        (isDemo ? (
-          <div className="card">
-            <p className="muted">В демо-профиле нет записей о волонтёрстве.</p>
-          </div>
-        ) : (
-          <EmptyActivityState activityLabel="Записей о волонтёрстве" hasProfileLink={hasProfileLink} />
-        ))}
+      {showEmpty && (
+        <EmptyActivityState activityLabel="Записей о волонтёрстве" hasProfileLink={hasProfileLink} />
+      )}
 
       {!loading && !error && items.length > 0 && (
         <>

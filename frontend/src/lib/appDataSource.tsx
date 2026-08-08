@@ -1,15 +1,5 @@
 import { createContext, useContext, type ReactNode } from "react";
 import {
-  demoGetBestResults,
-  demoGetCatalogLocationsMap,
-  demoGetCatalogLocationsTable,
-  demoGetPersonalRecords,
-  demoGetUniqueLocationsDetail,
-  demoGetVisitedLocationsMap,
-  demoGetVolunteerRoleStats,
-  demoGetWins,
-  demoListRuns,
-  demoListVolunteering,
   getPublicProfileBestResults,
   getPublicProfileCatalogTable,
   getPublicProfilePersonalRecords,
@@ -40,7 +30,7 @@ import {
   type VolunteeringItem,
 } from "./api";
 
-export type AppDataSourceMode = "auth" | "demo" | "public-profile";
+export type AppDataSourceMode = "auth" | "public-profile";
 
 export type AppDataSource = {
   mode: AppDataSourceMode;
@@ -68,20 +58,6 @@ export const authDataSource: AppDataSource = {
   getVisitedLocationsMap,
   getCatalogLocationsMap,
   getCatalogLocationsTable,
-};
-
-export const demoDataSource: AppDataSource = {
-  mode: "demo",
-  listRuns: () => demoListRuns(),
-  listVolunteering: () => demoListVolunteering(),
-  getBestResults: () => demoGetBestResults(),
-  getPersonalRecords: () => demoGetPersonalRecords(),
-  getWins: () => demoGetWins(),
-  getVolunteerRoleStats: () => demoGetVolunteerRoleStats(),
-  getUniqueLocationsDetail: () => demoGetUniqueLocationsDetail(),
-  getVisitedLocationsMap: () => demoGetVisitedLocationsMap(),
-  getCatalogLocationsMap: () => demoGetCatalogLocationsMap(),
-  getCatalogLocationsTable: () => demoGetCatalogLocationsTable(),
 };
 
 export function createPublicProfileDataSource(serialId: number): AppDataSource {

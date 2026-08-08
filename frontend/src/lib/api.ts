@@ -1032,10 +1032,6 @@ export function saveGoals(goals: Array<{ goal_type: string; target_value: number
   });
 }
 
-export function demoGetOnThisDay() {
-  return apiFetch<OnThisDay>("/demo/dashboard/on-this-day");
-}
-
 // ── «Моя история» — таймлайн вех ─────────────────────────────────────────────
 
 export type MyHistoryMilestoneKind =
@@ -1098,10 +1094,6 @@ export type MyHistory = {
 
 export function getMyHistory() {
   return apiFetch<MyHistory>("/dashboard/my-history");
-}
-
-export function demoGetMyHistory() {
-  return apiFetch<MyHistory>("/demo/dashboard/my-history");
 }
 
 // ── Админка: виды вех «Моя история» (вкл/выкл) ──────────────────────────────
@@ -2906,54 +2898,3 @@ export function getAdminSyncRuns(params: {
   return apiFetch<AdminSyncRunsResponse>(`/admin/sync-runs?${query.toString()}`);
 }
 
-export function getDemoDashboard() {
-  return apiFetch<AdminUserPreviewDashboard>("/demo/dashboard");
-}
-
-export function demoListRuns(limit = 200) {
-  return apiFetch<RunItem[]>(`/demo/runs?limit=${limit}`);
-}
-
-export function demoGetCoRunners(limit = 100) {
-  return apiFetch<CoRunnerItem[]>(`/demo/runs/co-runners?limit=${limit}`);
-}
-
-export function demoGetCoRunnerMeetings(participantKey: string) {
-  return apiFetch<CoRunnerMeetingItem[]>(`/demo/runs/co-runners/${participantKey}/meetings`);
-}
-
-export function demoListVolunteering(limit = 200) {
-  return apiFetch<VolunteeringItem[]>(`/demo/volunteering?limit=${limit}`);
-}
-
-export function demoGetBestResults() {
-  return apiFetch<BestResultItem[]>("/demo/runs/best-results");
-}
-
-export function demoGetPersonalRecords() {
-  return apiFetch<PersonalRecordItem[]>("/demo/runs/personal-records");
-}
-
-export function demoGetWins() {
-  return apiFetch<WinItem[]>("/demo/runs/wins");
-}
-
-export function demoGetVolunteerRoleStats() {
-  return apiFetch<VolunteerRoleStatItem[]>("/demo/volunteering/role-stats");
-}
-
-export function demoGetVisitedLocationsMap() {
-  return apiFetch<MapLocationsResponse>("/demo/locations/visited/map");
-}
-
-export function demoGetUniqueLocationsDetail() {
-  return apiFetch<UniqueLocationsDetailResponse>("/demo/locations/visited/detail");
-}
-
-export function demoGetCatalogLocationsMap() {
-  return apiFetch<MapLocationsResponse>("/demo/locations/catalog/map");
-}
-
-export function demoGetCatalogLocationsTable() {
-  return apiFetch<CatalogLocationsTableResponse>("/demo/locations/catalog/table");
-}

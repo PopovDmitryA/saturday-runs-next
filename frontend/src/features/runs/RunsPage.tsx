@@ -35,7 +35,6 @@ import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 // оборачивает контент в собственный каркас с сайдбаром.
 function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const { listRuns, mode } = useAppDataSource();
-  const isDemo = mode === "demo";
   const [runs, setRuns] = useState<RunItem[]>([]);
   const [hasProfileLink, setHasProfileLink] = useState(false);
   const [includeTest, setIncludeTest] = useState(false);
@@ -76,7 +75,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
     try {
       const data = await listRuns(includeTest);
       setRuns(data);
-      if (isDemo || mode === "public-profile") {
+      if (mode === "public-profile") {
         setHasProfileLink(false);
       } else {
         const links = await listProfileLinks();
@@ -87,7 +86,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
     } finally {
       setLoading(false);
     }
-  }, [includeTest, isDemo, mode, listRuns]);
+  }, [includeTest, mode, listRuns]);
 
   useEffect(() => {
     void load();
@@ -178,26 +177,24 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
 
   const pageBody = (
     <>
-      {!isDemo && (
-        <div className="checkbox-row-group">
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={includeTest}
-              onChange={(event) => setIncludeTest(event.target.checked)}
-            />
-            Показывать тестовые мероприятия
-          </label>
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={includeDuplicates}
-              onChange={(event) => setIncludeDuplicates(event.target.checked)}
-            />
-            Показывать незачётные пробежки
-          </label>
-        </div>
-      )}
+      <div className="checkbox-row-group">
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={includeTest}
+            onChange={(event) => setIncludeTest(event.target.checked)}
+          />
+          Показывать тестовые мероприятия
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={includeDuplicates}
+            onChange={(event) => setIncludeDuplicates(event.target.checked)}
+          />
+          Показывать незачётные пробежки
+        </label>
+      </div>
 
       {loading && <p className="muted">Загрузка…</p>}
 
@@ -210,14 +207,9 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
         </div>
       )}
 
-      {showEmpty &&
-        (isDemo ? (
-          <div className="card">
-            <p className="muted">В демо-профиле нет пробежек для отображения.</p>
-          </div>
-        ) : (
-          <EmptyActivityState activityLabel="Пробежек" hasProfileLink={hasProfileLink} />
-        ))}
+      {showEmpty && (
+        <EmptyActivityState activityLabel="Пробежек" hasProfileLink={hasProfileLink} />
+      )}
 
       {!loading && !error && runs.length > 0 && (
         <>

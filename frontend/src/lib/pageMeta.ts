@@ -132,10 +132,6 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
     title: "Карта (лаборатория) — run5k.run",
     description: "Экспериментальная карта локаций.",
   },
-  "/new/cabinet-preview": {
-    title: "Превью кабинета — run5k.run",
-    description: "Как выглядит личный кабинет run5k.run — на демонстрационных данных.",
-  },
   "/share": {
     title: "Поделиться — run5k.run",
     description: "Картинки с личной статистикой для соцсетей.",

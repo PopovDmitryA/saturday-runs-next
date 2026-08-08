@@ -76,8 +76,6 @@ _STATIC_PAGE_TYPES = {
     "/ratings/win-locations": "ratings_win_locations",
     "/ratings/home-distance": "ratings_home_distance",
     "/backlog": "backlog",
-    # Превью кабинета на демо-данных — витрина дизайна, а не раздел сайта.
-    "/new/cabinet-preview": "cabinet_preview",
     "/share": "share",
     "/settings": "settings",
 }

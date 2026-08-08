@@ -75,9 +75,6 @@ def classify_route(path: str, method: str) -> RouteTier:
     if normalized.startswith("/api/stats"):
         return RouteTier.public_read
 
-    if normalized.startswith("/api/demo"):
-        return RouteTier.public_read
-
     if normalized.startswith("/api/auth/"):
         # Session reads and low-risk writes should not share the tight OAuth/login bucket.
         if method_upper == "GET" and normalized in {

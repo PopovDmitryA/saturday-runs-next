@@ -21,7 +21,7 @@ function daysSince(isoDate: string): number | null {
 
 type MyHistoryTeaserProps = {
   load: () => Promise<MyHistory>;
-  /** Ссылка на полный таймлайн: /history или /demo/history. */
+  /** Ссылка на полный таймлайн («Моя история»). */
   href: string;
 };
 

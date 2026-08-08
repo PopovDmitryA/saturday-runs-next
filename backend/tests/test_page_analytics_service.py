@@ -52,7 +52,8 @@ from app.services.page_analytics_service import (
         ("/users/12345/achievements", ("profile", "12345")),
         ("/users/ivan/co-runners", ("profile", "ivan")),
         ("/hq/hq-2kl5kfrlzmnvn8sc", ("sweep_hq", "")),
-        ("/new/cabinet-preview", ("cabinet_preview", "")),
+        # Превью кабинета удалено (08.2026) — адрес падает в «прочее».
+        ("/new/cabinet-preview", ("other", "/new/cabinet-preview")),
         # Старые адреса кабинета сами ничего не показывают — это редиректы.
         ("/new/dashboard", ("redirect", "/new/dashboard")),
         ("/new/maps", ("redirect", "/new/maps")),

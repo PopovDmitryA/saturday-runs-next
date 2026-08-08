@@ -53,8 +53,6 @@ class Settings(BaseSettings):
     telegram_proxy_url: str = ""
     # Comma-separated emails (OAuth). Grants admin if any linked auth_identity matches (case-insensitive).
     admin_emails: str = ""
-    demo_telegram_id: int = 0
-    demo_user_id: str = ""
 
     # Internal read-only reporting API (/api/internal/reports/*).
     # Пусто — эндпоинт выключен (503). Bearer-токен передаётся в заголовке.
