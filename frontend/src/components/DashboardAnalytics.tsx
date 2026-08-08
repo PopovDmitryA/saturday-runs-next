@@ -4,9 +4,8 @@ import { ChartColumnTooltip } from "./ChartColumnTooltip";
 import { FinishTimeDistribution } from "./FinishTimeDistribution";
 import type { DashboardAnalytics as DashboardAnalyticsData } from "../lib/api";
 import {
-  DASHBOARD_ANALYTICS_CARD_ORDER,
-  DASHBOARD_ANALYTICS_PANEL_ORDER,
-  sortByLayoutOrder,
+  DASHBOARD_ANALYTICS_GROUPS,
+  type DashboardAnalyticsGroup,
 } from "../lib/dashboardLayout";
 import { PlatformBadge } from "./PlatformBadge";
 import { BestResultsModal } from "./BestResultsModal";
@@ -740,6 +739,29 @@ export function DashboardAnalytics({
   const [uniqueLocationsFirstVisitSince, setUniqueLocationsFirstVisitSince] = useState<
     string | undefined
   >();
+  // Раскрытые группы аналитики; выбор переживает перезагрузку страницы.
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("dashboardAnalyticsGroups") ?? "{}") as Record<
+        string,
+        boolean
+      >;
+    } catch {
+      return {};
+    }
+  });
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem("dashboardAnalyticsGroups", JSON.stringify(next));
+      } catch {
+        // приватный режим — просто не запоминаем
+      }
+      return next;
+    });
+  };
 
   const openUniqueLocations = (
     activity: "all" | "runs" | "volunteering",
@@ -806,10 +828,7 @@ export function DashboardAnalytics({
       ? analytics.home_distance.home
       : null;
 
-  const cards = sortByLayoutOrder(
-    buildAnalyticsCards(analytics, totalRuns, totalVolunteering),
-    DASHBOARD_ANALYTICS_CARD_ORDER,
-  );
+  const cards = buildAnalyticsCards(analytics, totalRuns, totalVolunteering);
   const hasActivityChart = analytics.activity_by_month.some(
     (item) => item.runs > 0 || item.volunteering > 0,
   );
@@ -971,10 +990,75 @@ export function DashboardAnalytics({
     });
   }
 
-  const orderedPanels = sortByLayoutOrder(panels, DASHBOARD_ANALYTICS_PANEL_ORDER);
+  const cardByKey = new Map(cards.map((card) => [card.key, card]));
+  const panelByKey = new Map(panels.map((panel) => [panel.key, panel.node]));
+  const groupedKeys = new Set<string>();
+  for (const group of DASHBOARD_ANALYTICS_GROUPS) {
+    for (const key of [...group.headline, ...group.rest, ...group.panels]) {
+      groupedKeys.add(key);
+    }
+  }
+  // Страховка: карточка/панель, не расписанная по группам, не должна пропасть.
+  const leftoverCards = cards.filter((card) => !groupedKeys.has(card.key));
+  const leftoverPanels = panels.filter((panel) => !groupedKeys.has(panel.key));
 
-  const gridCards = cards.filter((card) => !card.half);
-  const halfCards = cards.filter((card) => card.half);
+  const renderCardsGrid = (items: AnalyticsCard[]) => {
+    const grid = items.filter((card) => !card.half);
+    const halves = items.filter((card) => card.half);
+    return (
+      <>
+        {grid.length > 0 && (
+          <div className="stats-grid stats-grid-secondary">{grid.map((card) => renderCard(card))}</div>
+        )}
+        {halves.length > 0 && (
+          <div className="stats-grid stats-grid-halves">{halves.map((card) => renderCard(card))}</div>
+        )}
+      </>
+    );
+  };
+
+  const renderGroup = (group: DashboardAnalyticsGroup) => {
+    const pick = (keys: readonly string[]) =>
+      keys.flatMap((key) => {
+        const card = cardByKey.get(key);
+        return card ? [card] : [];
+      });
+    const headlineCards = pick(group.headline);
+    const restCards = pick(group.rest);
+    const groupPanels = group.panels.flatMap((key) => {
+      const node = panelByKey.get(key);
+      return node ? [{ key, node }] : [];
+    });
+    if (headlineCards.length === 0 && restCards.length === 0 && groupPanels.length === 0) {
+      return null;
+    }
+    const expanded = Boolean(expandedGroups[group.key]);
+    return (
+      <section key={group.key} className="analytics-group" aria-label={group.title}>
+        <div className="analytics-group-head">
+          <h2 className="section-title">{group.title}</h2>
+          {restCards.length > 0 && (
+            <button
+              type="button"
+              className="analytics-group-toggle"
+              aria-expanded={expanded}
+              onClick={() => toggleGroup(group.key)}
+            >
+              {expanded
+                ? "Свернуть"
+                : `Ещё ${pluralizeRu(restCards.length, ["показатель", "показателя", "показателей"])}`}
+            </button>
+          )}
+        </div>
+        {renderCardsGrid(expanded ? [...headlineCards, ...restCards] : headlineCards)}
+        {groupPanels.map((panel) => (
+          <div key={panel.key} className="card analytics-panel">
+            {panel.node}
+          </div>
+        ))}
+      </section>
+    );
+  };
 
   return (
     <section className="dashboard-analytics" aria-label="Дополнительная аналитика">
@@ -991,15 +1075,12 @@ export function DashboardAnalytics({
           <a href={PORTAL_CABINET_SETTINGS_HREF}>настройках</a>.
         </p>
       )}
-      {gridCards.length > 0 && (
-        <div className="stats-grid stats-grid-secondary">{gridCards.map((card) => renderCard(card))}</div>
-      )}
 
-      {halfCards.length > 0 && (
-        <div className="stats-grid stats-grid-halves">{halfCards.map((card) => renderCard(card))}</div>
-      )}
+      {DASHBOARD_ANALYTICS_GROUPS.map((group) => renderGroup(group))}
 
-      {orderedPanels.map((panel) => (
+      {leftoverCards.length > 0 && renderCardsGrid(leftoverCards)}
+
+      {leftoverPanels.map((panel) => (
         <div key={panel.key} className="card analytics-panel">
           {panel.node}
         </div>

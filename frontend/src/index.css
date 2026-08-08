@@ -1121,6 +1121,66 @@ a.on-this-day-location {
   margin-top: 0.75rem;
 }
 
+/* Тематическая группа аналитики: заголовок + витрина карточек + свои панели.
+   Первая группа не отбивается — заголовок сам задаёт ритм. */
+.analytics-group {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.analytics-group + .analytics-group {
+  margin-top: 0.75rem;
+}
+
+.analytics-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.analytics-group-head .section-title {
+  font-size: 1.05rem;
+}
+
+.analytics-group-toggle {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--link);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.analytics-group-toggle:hover {
+  color: var(--link-strong);
+  text-decoration: underline;
+}
+
+/* Внутри группы отступ сетке даёт gap группы, свой margin ей не нужен. */
+.analytics-group .stats-grid-secondary {
+  margin-top: 0;
+}
+
+/* Витрины групп — по 4 карточки в ряд на десктопе: ряды выходят полными,
+   а карточки заметно крупнее, чем в общей сетке на 5 колонок. */
+@media (min-width: 900px) {
+  .analytics-group .stats-grid-secondary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* На телефоне общая .stats-grid складывается в одну колонку, но компактные
+   плитки аналитики в один столбец раздувают страницу на десятки экранов —
+   держим две колонки, цифры в них читаются и так. */
+@media (max-width: 520px) {
+  .analytics-group .stats-grid-secondary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .stat-card-wide {
   grid-column: 1 / -1;
 }
