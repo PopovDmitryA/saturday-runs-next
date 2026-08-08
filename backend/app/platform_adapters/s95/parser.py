@@ -8,7 +8,7 @@ from app.platform_adapters.canonical import (
     CanonicalVolunteerResult,
     ProfilePreview,
 )
-from app.platform_adapters.s95.url import ParsedAthleteUrl, parse_athlete_url
+from app.platform_adapters.s95.url import ParsedAthleteUrl, parse_athlete_url, parse_profile_input
 from app.s95.fetch import fetch_page_html
 from app.s95.parkrun import is_parkrun_eligible_barcode
 from app.s95.parsers.athlete import (
@@ -46,7 +46,8 @@ class S95ProfileActivityFetch:
 
 
 def fetch_profile_activity(profile_url: str) -> S95ProfileActivityFetch:
-    parsed = parse_athlete_url(profile_url)
+    # Со стороны пользователя сюда приходит и ссылка, и просто ID участника.
+    parsed = parse_profile_input(profile_url)
     html = fetch_page_html(parsed.canonical_url, reason="athlete_profile_preview")
     try:
         participant = enrich_participant_activity_totals(

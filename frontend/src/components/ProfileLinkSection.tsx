@@ -68,13 +68,13 @@ const PLATFORMS: PlatformConfig[] = [
   },
   {
     code: "s95",
-    hint: "Вставьте ссылку на профиль участника, например https://s95.ru/athletes/5207/",
-    placeholder: "https://s95.ru/athletes/…",
+    hint: "Ссылка на профиль https://s95.ru/athletes/5207/ или только ID участника из неё — 5207.",
+    placeholder: "https://s95.ru/athletes/… или 5207",
     openLabel: "Открыть на s95.ru",
-    inputMode: "url",
+    inputMode: "text",
     preview: previewS95Profile,
     confirm: (url, options) => confirmS95Profile(url, options?.linkParkrun ?? false),
-    emptyInputError: "Введите ссылку на профиль С95",
+    emptyInputError: "Введите ссылку на профиль С95 или ID участника",
     confirmSuccess:
       "Профиль С95 привязан. Синхронизация поставлена в очередь (может занять несколько минут).",
     confirmSuccessBoth:
