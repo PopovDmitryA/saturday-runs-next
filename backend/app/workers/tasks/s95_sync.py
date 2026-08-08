@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import asdict
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from app.db.session import get_session_factory
@@ -15,7 +18,33 @@ from app.workers.celery_app import celery_app
 from app.workers.s95_batch_yield import run_s95_batch_reported_sync
 from app.workers.tasks.sync_task_reporting import run_reported_sync
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from app.sync.s95_global_sync_api import S95ApiSyncResult
+
 logger = logging.getLogger(__name__)
+
+
+def _run_api_sync(sync: Callable[[Session], S95ApiSyncResult]) -> dict[str, object]:
+    """Прогнать батч S95 и разбудить прогрев дашбордов, если что-то записали.
+
+    До 08.08.2026 прогрев планировался только из синка 5 вёрст, и забеги S95
+    попадали в его окно лишь по случайности: у 27 человек на «Обзоре» неделями
+    не хватало пробежек, хотя во вкладках они были.
+    """
+    db = get_session_factory()()
+    try:
+        started_at = datetime.now(timezone.utc)
+        result = sync(db)
+        if result.protocols_created or result.protocols_updated:
+            db.commit()
+            from app.workers.tasks.dashboard_warm import schedule_dashboard_warm
+
+            schedule_dashboard_warm(started_at)
+        return asdict(result)
+    finally:
+        db.close()
 
 
 @celery_app.task(name="s95_sync.run_user_sync", queue="s95_user")
@@ -96,11 +125,7 @@ def s95_api_new_protocols_task() -> dict[str, object]:
     from app.sync.s95_global_sync_api import sync_updated_protocols
 
     def _run() -> dict[str, object]:
-        db = get_session_factory()()
-        try:
-            return asdict(sync_updated_protocols(db))
-        finally:
-            db.close()
+        return _run_api_sync(sync_updated_protocols)
 
     return run_reported_sync("s95 API: новые протоколы", _run)
 
@@ -112,11 +137,7 @@ def s95_api_sync_updated_task() -> dict[str, object]:
     from app.sync.s95_global_sync_api import sync_updated_protocols
 
     def _run() -> dict[str, object]:
-        db = get_session_factory()()
-        try:
-            return asdict(sync_updated_protocols(db))
-        finally:
-            db.close()
+        return _run_api_sync(sync_updated_protocols)
 
     return run_reported_sync("s95 API: обновлённые протоколы", _run)
 
@@ -132,11 +153,7 @@ def s95_api_reconcile_date_task(weeks_ago: int = 0) -> dict[str, object]:
     target = most_recent_saturday(date.today()) - timedelta(weeks=weeks_ago)
 
     def _run() -> dict[str, object]:
-        db = get_session_factory()()
-        try:
-            return asdict(reconcile_protocols_for_date(db, target))
-        finally:
-            db.close()
+        return _run_api_sync(lambda db: reconcile_protocols_for_date(db, target))
 
     return run_reported_sync(
         "s95 API: сверка протоколов",
@@ -151,11 +168,7 @@ def s95_api_full_backfill_task(limit_per_location: int | None = None) -> dict[st
     from app.sync.s95_global_sync_api import full_backfill
 
     def _run() -> dict[str, object]:
-        db = get_session_factory()()
-        try:
-            return asdict(full_backfill(db, limit_per_location=limit_per_location))
-        finally:
-            db.close()
+        return _run_api_sync(lambda db: full_backfill(db, limit_per_location=limit_per_location))
 
     return run_reported_sync("s95 API: полный backfill", _run)
 

@@ -35,9 +35,9 @@ def _schedule_dashboard_warm(started_at: datetime) -> None:
     здесь сносился кэш всем пользователям платформы, и пересчёт доставался
     первому зашедшему в профиль.
     """
-    from app.workers.tasks.dashboard_warm import warm_dashboards_after_sync
+    from app.workers.tasks.dashboard_warm import schedule_dashboard_warm
 
-    warm_dashboards_after_sync.delay(started_at.isoformat())
+    schedule_dashboard_warm(started_at)
 
 
 def _protocol_limit(settings) -> int | None:
@@ -349,6 +349,7 @@ def reconcile_stale_protocols_task(
     def _run() -> dict[str, object]:
         db = get_session_factory()()
         try:
+            started_at = datetime.now(timezone.utc)
             result = reconcile_stale_protocols(
                 db,
                 ReconcileProtocolsOptions(
@@ -357,6 +358,12 @@ def reconcile_stale_protocols_task(
                     location_slug=location_slug,
                 ),
             )
+            # Сверка переписывает уже существующие протоколы — позиции и метки
+            # рекордов после неё меняются ровно так же, как после нового
+            # протокола, поэтому дашборды тоже надо греть.
+            if result.run_results_upserted > 0:
+                db.commit()
+                _schedule_dashboard_warm(started_at)
             return asdict(result)
         finally:
             db.close()
