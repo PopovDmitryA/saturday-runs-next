@@ -11269,6 +11269,10 @@ tr.run-crosslinked td {
 }
 
 .s2-head {
+  /* flex: none + z-index: шапку не должен подминать переполнившийся body. */
+  flex: none;
+  position: relative;
+  z-index: 1;
   margin-bottom: 0.5em;
 }
 
@@ -11290,7 +11294,9 @@ tr.run-crosslinked td {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  /* safe center: при нехватке высоты контент прижимается к верху, а не
+     разъезжается в обе стороны и не наезжает на шапку. */
+  justify-content: safe center;
   gap: 0.55em;
   min-height: 0;
 }
@@ -11354,6 +11360,11 @@ tr.run-crosslinked td {
   border-radius: 0.45em;
   padding: 0.5em 0.55em;
   min-width: 0;
+  /* Плитки в сетке тянутся по высоте — содержимое держим по центру,
+     иначе в высокой плитке текст прилипает к верхнему краю. */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .s2-tone-light .s2-tile {
@@ -11569,7 +11580,9 @@ tr.run-crosslinked td {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
   column-gap: 1.1em;
   row-gap: 0.6em;
-  align-content: center;
+  /* safe: если рядов больше, чем помещается, грид растёт вниз, а не наезжает
+     на шапку (баг «плашка поверх подзаголовка»). */
+  align-content: safe center;
   align-items: center;
 }
 
@@ -11584,7 +11597,27 @@ tr.run-crosslinked td {
   grid-row: 1 / span 8;
   justify-self: stretch;
   grid-template-columns: 1fr 1fr;
-  align-content: center;
+  gap: 0.4em;
+  align-content: safe center;
+}
+
+/* Плитки в широком формате компактнее: три ряда должны уместиться по высоте
+   и не наехать на бренд-футер. */
+.s2-card--wide .s2-tile {
+  padding: 0.38em 0.5em;
+}
+
+.s2-card--wide .s2-tile-value {
+  font-size: 0.92em;
+}
+
+.s2-card--wide .s2-tile-value--long {
+  font-size: 0.72em;
+}
+
+.s2-card--wide .s2-tile-label {
+  font-size: 0.4em;
+  margin-top: 0.3em;
 }
 
 .s2-card--wide .s2-body > .s2-heat-wrap {
@@ -12016,4 +12049,70 @@ tr.run-crosslinked td {
 .s2-row-share:hover {
   color: var(--accent-indigo-text);
   background: var(--tint-indigo-bg);
+}
+
+/* Полноэкранный просмотр постера из шторки. */
+.s2-preview-box {
+  position: relative;
+}
+
+.s2-preview {
+  cursor: zoom-in;
+}
+
+.s2-preview--pannable {
+  cursor: grab;
+}
+
+.s2-zoom-btn {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 8px;
+  border: none;
+  background: rgba(15, 23, 42, 0.6);
+  color: #fff;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.s2-zoom-btn:hover {
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.s2-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 340;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 6, 23, 0.92);
+  cursor: zoom-out;
+  animation: modal-fade-in 0.15s ease;
+}
+
+.s2-zoom-card {
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+
+.s2-zoom-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
 }

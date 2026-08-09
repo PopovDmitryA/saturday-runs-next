@@ -17,17 +17,23 @@ import type { ShareCardData, ShareFormat, ShareMetric } from "./types";
 /** Базовый кегль в нативном размере: 1em = 40px. */
 const BASE_FONT_PX = 40;
 
-/** Сколько метрик-плиток влезает: формат × есть ли герой. */
+/**
+ * Сколько метрик-плиток влезает: формат × есть ли герой.
+ * Значения выверены глазами по нативному размеру каждого формата — плитки
+ * заполняют сетку без переполнения, но и без пустот.
+ */
 export function metricLimit(format: ShareFormat, data: ShareCardData): number {
   const hasHero = Boolean(data.hero);
   if (format.id === "story") {
-    return hasHero ? 4 : 6;
+    // Вертикали много: 3 ряда по 2 плитки под героем, 4 ряда без него.
+    return hasHero ? 6 : 8;
   }
   if (format.id === "square") {
-    return hasHero ? 3 : 4;
+    return hasHero ? 4 : 6;
   }
-  // Широкий: без героя места хватает на богатую сетку (визитка локации).
-  return hasHero ? 3 : 6;
+  // Широкий (1200×630): по высоте помещается ровно два ряда плиток — третий
+  // наезжает на бренд-футер. Кому нужно больше цифр — сториз и квадрат.
+  return 4;
 }
 
 function photoStyle(photo: SharePhoto, format: ShareFormat): CSSProperties {

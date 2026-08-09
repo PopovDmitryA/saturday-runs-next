@@ -1011,6 +1011,17 @@ function LocationPageContent({ slug }: { slug: string }) {
       <section className="card loc-section">
         <div className="loc-section-head">
           <h2 className="section-title">Локация в цифрах</h2>
+          {shareSheet !== null && (
+            <button
+              type="button"
+              className="s2-trigger"
+              onClick={() =>
+                shareSheet.open({ subject: locationCardSubject(page), entry: "location" })
+              }
+            >
+              📤 Поделиться
+            </button>
+          )}
         </div>
         <div className="loc-stats-grid">
           <StatTile

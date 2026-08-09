@@ -69,6 +69,10 @@ export function ShareSheet({
   const [busy, setBusy] = useState(false);
   const [fontsReady, setFontsReady] = useState(false);
   const [scale, setScale] = useState(0.25);
+  // Полноэкранный просмотр постера: в шторке превью мелкое, мелкий текст на
+  // карточке не прочитать — по тапу разворачиваем во весь экран.
+  const [zoomed, setZoomed] = useState(false);
+  const [zoomScale, setZoomScale] = useState(0.5);
 
   const format = shareFormat(formatId);
   const photoActive = photo !== null && lookId === PHOTO_LOOK.id;
@@ -111,13 +115,19 @@ export function ShareSheet({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
+      if (event.key !== "Escape") {
+        return;
       }
+      // Esc закрывает сперва полноэкранный просмотр, потом саму шторку.
+      if (zoomed) {
+        setZoomed(false);
+        return;
+      }
+      onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, zoomed]);
 
   // Освобождаем objectUrl фото при закрытии шторки.
   useEffect(
@@ -147,6 +157,20 @@ export function ShareSheet({
     observer.observe(box);
     return () => observer.disconnect();
   }, [format.width, format.height]);
+
+  // Масштаб полноэкранного просмотра: упираемся в меньшую сторону экрана.
+  useLayoutEffect(() => {
+    if (!zoomed) {
+      return;
+    }
+    const compute = () => {
+      const available = { width: window.innerWidth - 24, height: window.innerHeight - 24 };
+      setZoomScale(Math.min(available.width / format.width, available.height / format.height));
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
+  }, [zoomed, format.width, format.height]);
 
   const selectLook = (id: string) => {
     setLookId(id);
@@ -358,13 +382,29 @@ export function ShareSheet({
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
             onWheel={onWheel}
+            // В режиме своего фото жест занят перетаскиванием — там разворот
+            // только по кнопке в углу.
+            onClick={() => !photoActive && setZoomed(true)}
           >
             <div className="s2-preview-scale" style={{ transform: `scale(${scale})` }}>
               {fontsReady ? <ShareCardView {...cardProps} /> : null}
             </div>
           </div>
+          <button
+            type="button"
+            className="s2-zoom-btn"
+            title="Посмотреть во весь экран"
+            aria-label="Посмотреть во весь экран"
+            onClick={() => setZoomed(true)}
+          >
+            ⤢
+          </button>
         </div>
-        {photoActive ? <p className="s2-hint">Двигайте фото пальцем, зум — щипком или колесом</p> : null}
+        <p className="s2-hint">
+          {photoActive
+            ? "Двигайте фото пальцем, зум — щипком или колесом"
+            : "Нажмите на постер, чтобы рассмотреть его целиком"}
+        </p>
 
         <div className="s2-looks" role="tablist" aria-label="Оформление">
           {looks.map((item) => (
@@ -474,6 +514,33 @@ export function ShareSheet({
           }}
         />
       </div>
+
+      {/* Полноэкранный просмотр: тот же компонент карточки, масштаб — по
+          меньшей стороне экрана. Клик в любом месте закрывает. */}
+      {zoomed ? (
+        <div
+          className="s2-zoom-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Постер во весь экран"
+          onClick={(event) => {
+            event.stopPropagation();
+            setZoomed(false);
+          }}
+        >
+          <div
+            className="s2-zoom-card"
+            style={{ width: format.width * zoomScale, height: format.height * zoomScale }}
+          >
+            <div className="s2-preview-scale" style={{ transform: `scale(${zoomScale})` }}>
+              {fontsReady ? <ShareCardView {...cardProps} /> : null}
+            </div>
+          </div>
+          <button type="button" className="s2-zoom-close" aria-label="Закрыть просмотр">
+            ✕
+          </button>
+        </div>
+      ) : null}
 
       {/* Экспортная сцена: карточка в нативном размере, за пределами экрана. */}
       <div className="s2-export-stage" aria-hidden="true">
