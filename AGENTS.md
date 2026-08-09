@@ -89,7 +89,8 @@ GitHub: `PopovDmitryA/saturday-runs-next`, branch `main`.
 | `nginx` | React `frontend/dist` + proxy `/api` |
 | `redis` | Sessions, Celery, locks, cooldown — **не публиковать :6379** |
 | `beat` | Celery Beat (Europe/Moscow) |
-| `worker-five-verst` | `-Q five_verst_user,five_verst --concurrency=1` |
+| `worker-five-verst` | `-Q five_verst --concurrency=1` (батчи) |
+| `worker-five-verst-user` | `-Q five_verst_user --concurrency=1` (синки по кнопке) |
 | `worker-s95` | `-Q s95_user,s95 --concurrency=1` |
 | `worker-parkrun` | `-Q parkrun` |
 | `bot` | Telegram long poll (вход + admin: /stats /status /sweep /sync) |
@@ -162,7 +163,7 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 
 | Очередь | Worker | Задачи |
 |---------|--------|--------|
-| `five_verst_user` | worker-five-verst | user profile sync (приоритетная) |
+| `five_verst_user` | worker-five-verst-user | user profile sync (приоритетная) |
 | `five_verst` | worker-five-verst | registry, latest, rotation, reconcile |
 | `s95_user` | worker-s95 | user profile sync (приоритетная) |
 | `s95` | worker-s95 | batch S95 + athletes_registry |
@@ -176,16 +177,30 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 
 Код: `coordinator.py`, `rate_limit.py`, `s95_athletes_registry.py`, `workers/s95_batch_yield.py`.
 
+### 5 вёрст user priority (пауза батча)
+
+Два воркера: батчи и пользовательские синки. Пока идёт синк по кнопке (или его
+задача ждёт в `five_verst_user`), батч **замирает между фетчами** и продолжает
+с того же места — прогресс не теряется, в отличие от прерывания у S95. К
+5verst.ru по-прежнему ходит один запрос за раз: общий Redis-лок
+`five_verst:fetch:global_lock` и общий rate limit соблюдают оба воркера.
+
+Отметка `five_verst:user_sync:active` живёт по TTL, а пауза имеет потолок
+(`five_verst_user_sync_pause_max_seconds`) — умерший user-воркер или копящаяся
+очередь не заморозят батч навсегда.
+
+Код: `app/five_verst/fetch/priority.py`, `coordinator.py`, `workers/tasks/user_sync.py`.
+
 ### Beat schedule (MSK)
 
-**5 verst** — `:00`:
+**5 verst**:
 
 | Task | Расписание |
 |------|------------|
-| registry | 20:00 daily |
-| latest | пн–пт 0,5,10,15,20; сб/вс hourly |
-| rotation | каждые 4 ч |
-| reconcile | каждые 3 ч |
+| registry | 20:50 daily |
+| latest | пн–пт 0,5,10,15,20 (`:00`); сб/вс hourly |
+| rotation | `:30` каждые 4 ч |
+| reconcile | `:10` каждые 3 ч, **только пн–пт**; 200 протоколов цепочкой 2×100 |
 
 **S95** — **+30 мин** к 5verst:
 

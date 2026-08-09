@@ -135,6 +135,13 @@ class Settings(BaseSettings):
     five_verst_protocol_max_interval_seconds: float = 40.0
     five_verst_fetch_lock_timeout_seconds: int = 120
     five_verst_fetch_lock_blocking_seconds: int = 600
+    # Приоритет пользовательских синков: батч замирает между фетчами, пока
+    # пользователь качается (см. app/five_verst/fetch/priority.py).
+    # TTL отметки — страховка от умершего воркера: батч разморозится сам.
+    five_verst_user_sync_active_ttl_seconds: int = 180
+    # Потолок паузы батча. Если воркер пользовательской очереди не поднят,
+    # очередь копится и разбирать её некому — батч не должен вставать навсегда.
+    five_verst_user_sync_pause_max_seconds: int = 300
     five_verst_ban_cooldown_seconds: int = 600
     five_verst_sync_protocol_limit: int | None = None
     five_verst_sync_latest_update_limit: int | None = None

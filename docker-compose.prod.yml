@@ -72,6 +72,20 @@ services:
       redis:
         condition: service_healthy
 
+  # Пользовательские синки 5 вёрст — отдельный воркер, чтобы «обновить» в ЛК
+  # не ждало окончания батча (батч уходит на паузу, см. fetch/priority.py).
+  worker-five-verst-user:
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./.env:/app/.env:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !reset
+      redis:
+        condition: service_healthy
+
   worker-parkrun:
     environment:
       DATABASE_URL: ${DATABASE_URL}
