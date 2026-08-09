@@ -1732,9 +1732,31 @@ def get_sync_status_payload(db: Session, user_id: UUID) -> dict[str, object]:
     }
 
 
+def _dashboard_cache_is_stale(cache: DashboardCache) -> bool:
+    """Кэш просрочен по возрасту.
+
+    Страховка от промаха прогрева: до 08.08.2026 кэш жил вечно, пока не менялся
+    ANALYTICS_VERSION, и пропущенное окно прогрева означало «плитки Обзора не
+    обновятся никогда» — так у 27 человек неделями не хватало забегов S95.
+    """
+    from app.config import get_settings
+
+    max_age = timedelta(hours=get_settings().dashboard_cache_max_age_hours)
+    computed_at = cache.computed_at
+    if computed_at is None:
+        return True
+    if computed_at.tzinfo is None:
+        computed_at = computed_at.replace(tzinfo=timezone.utc)
+    return _utcnow() - computed_at > max_age
+
+
 def get_dashboard_payload(db: Session, user: User) -> dict[str, object]:
     cache = db.query(DashboardCache).filter(DashboardCache.user_id == user.id).one_or_none()
-    if cache is None or (cache.stats or {}).get("analytics", {}).get("analytics_version") != ANALYTICS_VERSION:
+    if (
+        cache is None
+        or (cache.stats or {}).get("analytics", {}).get("analytics_version") != ANALYTICS_VERSION
+        or _dashboard_cache_is_stale(cache)
+    ):
         cache = recompute_dashboard_cache(db, user.id)
         db.commit()
         db.refresh(cache)

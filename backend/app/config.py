@@ -90,6 +90,15 @@ class Settings(BaseSettings):
     sync_refresh_rate_limit_per_user: int = 1
     sync_refresh_rate_limit_window_seconds: int = 1800
 
+    # Прогрев дашбордов идёт от водяного знака «докуда уже разобрано». Если знак
+    # потерян (Redis перезапустили) — не сканируем всю историю, а откатываемся на
+    # это окно: дальше в прошлое кэш всё равно чинит dashboard_cache_max_age_hours.
+    dashboard_warm_max_lookback_hours: int = 168
+    # Страховка на чтении: кэш старше этого срока пересчитывается при заходе,
+    # даже если прогрев его почему-то не тронул. Без неё промах прогрева жил вечно
+    # (08.08.2026: у 27 человек на «Обзоре» не хватало забегов S95).
+    dashboard_cache_max_age_hours: int = 24
+
     # Сырые события page_view_events живут столько дней; вечная история — в page_stats_daily.
     page_events_retention_days: int = 90
     # Журнал входов держим дольше сырых просмотров: его ценность как раз в
