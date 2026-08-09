@@ -329,9 +329,19 @@ def reconcile_stale_protocols_task(
     limit: int | None = None,
     min_check_interval_days: int | None = None,
     location_slug: str | None = None,
+    chunks_left: int | None = None,
     *,
     force: bool = False,
 ) -> dict[str, object]:
+    """Сверка протоколов 5 вёрст пачками.
+
+    Норма прогона по расписанию — `batch_limit × chunks_per_run` протоколов, но
+    берутся они не одной задачей, а цепочкой: отработал свою пачку — поставил
+    следующую в очередь. Воркер `five_verst` один и с concurrency=1, прервать
+    задачу на середине нельзя, поэтому одна двухчасовая задача заставила бы
+    пользовательский синк ждать все два часа. Между звеньями цепочки воркер
+    успевает забрать задачу из приоритетной очереди five_verst_user.
+    """
     from app.config import get_settings
 
     settings = get_settings()
@@ -339,6 +349,8 @@ def reconcile_stale_protocols_task(
         limit = settings.five_verst_reconcile_batch_limit
     if min_check_interval_days is None:
         min_check_interval_days = settings.five_verst_reconcile_min_check_interval_days
+    if chunks_left is None:
+        chunks_left = settings.five_verst_reconcile_chunks_per_run
     name = "5v reconcile protocols"
     details = five_verst_reconcile_details(
         limit=limit,
@@ -361,7 +373,7 @@ def reconcile_stale_protocols_task(
         finally:
             db.close()
 
-    return run_reported_sync(
+    payload = run_reported_sync(
         name,
         _run,
         details=details,
@@ -369,6 +381,28 @@ def reconcile_stale_protocols_task(
         force=force,
         batch_queue_name="five_verst",
     )
+
+    # Следующее звено ставим, только если пачка реально отработала и нашла
+    # полный батч кандидатов: на скипе (кулдаун, занятая очередь) или на
+    # недоборе продолжать нечего. force=True — часовой слот уже занят этим же
+    # прогоном, иначе звено отвалится как duplicate_hour_slot.
+    if (
+        chunks_left > 1
+        and not payload.get("skipped")
+        and int(payload.get("candidates_total") or 0) >= limit
+    ):
+        reconcile_stale_protocols_task.apply_async(
+            kwargs={
+                "limit": limit,
+                "min_check_interval_days": min_check_interval_days,
+                "location_slug": location_slug,
+                "chunks_left": chunks_left - 1,
+                "force": True,
+            },
+            queue="five_verst",
+        )
+        payload = {**payload, "next_chunk_enqueued": True}
+    return payload
 
 
 @celery_app.task(name="five_verst_sync.enqueue_reconcile_protocols", queue="five_verst")

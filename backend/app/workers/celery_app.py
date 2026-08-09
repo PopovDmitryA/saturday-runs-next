@@ -72,19 +72,14 @@ celery_app.conf.update(
             "schedule": crontab(minute=30, hour="*/4"),
             "options": {"queue": "five_verst"},
         },
-        # Reconcile с полной пачкой (100 протоколов) занимает ~час из-за пауз
-        # между фетчами, поэтому днём в выходные он не ходит: на проде он
-        # задерживал часовой latest, и тот скипался по duplicate_hour_slot —
-        # свежие субботние протоколы опаздывали на час. Будни — каждые 3 часа,
-        # выходные — ночь и поздний вечер.
+        # Сверка истории протоколов — только по будням: прогон занимает пару
+        # часов (200 протоколов через паузы между фетчами), и в выходные он
+        # задерживал часовой latest, из-за чего свежие субботние протоколы
+        # опаздывали (скипы duplicate_hour_slot на проде). В будни новых
+        # результатов нет — латентность latest там не важна.
         "five-verst-reconcile-protocols-weekday": {
             "task": "five_verst_sync.reconcile_stale_protocols",
             "schedule": crontab(minute=10, hour="*/3", day_of_week="1-5"),
-            "options": {"queue": "five_verst"},
-        },
-        "five-verst-reconcile-protocols-weekend": {
-            "task": "five_verst_sync.reconcile_stale_protocols",
-            "schedule": crontab(minute=10, hour="0,3,6,21", day_of_week="6,0"),
             "options": {"queue": "five_verst"},
         },
         # Clubs list (/clubs/) — twice a week; changed rows are queued for detail re-sync.

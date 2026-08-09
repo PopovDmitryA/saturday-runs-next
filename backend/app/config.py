@@ -140,6 +140,10 @@ class Settings(BaseSettings):
     five_verst_sync_latest_update_limit: int | None = None
     five_verst_fetch_all_protocols_on_change: bool = True
     five_verst_location_batch_summaries_limit: int = 20
+    # Как часто ротация всё же перечитывает саму страницу локации и /course/
+    # (имя, координаты), а не только таблицу результатов. Между этими проходами
+    # хватает ежедневного реестра /events/, который следит за именем и статусом.
+    five_verst_location_refresh_interval_days: int = 7
     s95_sync_protocol_limit: int = 3
     s95_sync_latest_update_limit: int = 20
     s95_fetch_all_protocols_on_change: bool = True
@@ -147,9 +151,17 @@ class Settings(BaseSettings):
     s95_reconcile_min_check_interval_days: int = 7
     s95_location_batch_summaries_limit: int = 20
     s95_athlete_mismatch_check_runs: int = 10
+    # Протоколов за один заход воркера. Общая норма прогона — 200 (см.
+    # five_verst_reconcile_chunks_per_run): пачка режется пополам, чтобы
+    # пользовательский синк не ждал два часа за спиной батча.
     five_verst_reconcile_batch_limit: int = 100
-    # 0 = перечитывать по кругу без пауз (как было до 08.2026); 7 держит цикл
-    # ~неделю: большинство прогонов находят мало кандидатов и завершаются быстро.
+    # Сколько заходов подряд делает один запуск по расписанию. Каждый заход —
+    # отдельная celery-задача, и между ними воркер успевает взять задачу из
+    # приоритетной очереди five_verst_user.
+    five_verst_reconcile_chunks_per_run: int = 2
+    # 0 = перечитывать по кругу без пауз (как было до 08.2026). При пуле в 31 тыс.
+    # протоколов полный круг и так занимает недели — это страховка от повторных
+    # проверок, если поднять лимит пачки или частоту.
     five_verst_reconcile_min_check_interval_days: int = 7
     five_verst_clubs_batch_limit: int = 20
 

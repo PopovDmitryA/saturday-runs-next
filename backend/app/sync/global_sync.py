@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -25,10 +25,13 @@ class LocationSyncOptions:
     summaries_limit: int | None = None
     protocol_fetch_limit: int | None = None
     fetch_all_protocols_on_change: bool = True
-    # Не перекачивать страницу локации и /course/, если локация уже в базе с
-    # координатами: имя и статусы ежедневно освежает синк реестра /events/.
-    # Экономит 2 из 3 HTTP-страниц на каждый прогон ротации.
-    skip_location_refresh: bool = False
+    # None = перечитывать страницу локации и /course/ на каждом прогоне (как было
+    # до 08.2026). Число N = перечитывать не чаще раза в N дней: между проходами
+    # за именем и статусом следит ежедневный реестр /events/, а координаты не
+    # меняются вовсе. Экономит 2 из 3 HTTP-страниц на прогоне ротации, но раз в
+    # N дней полный проход всё же делается — на случай, если у локации сменили
+    # координаты трассы или имя мимо реестра.
+    location_refresh_interval_days: int | None = None
 
 
 @dataclass
@@ -79,6 +82,43 @@ def _select_summaries_for_protocol_fetch(
     return summaries_to_fetch[:protocol_fetch_limit]
 
 
+def _location_if_refresh_not_due(
+    db: Session,
+    platform: Platform,
+    location_slug: str,
+    *,
+    interval_days: int,
+) -> Location | None:
+    """Локация из базы, если её страницу перечитывать пока рано.
+
+    None означает «нужен полный проход» — локации нет, у неё нет координат
+    (их и берут со страницы /course/) или прошло больше interval_days с
+    последнего реального пересинка (`fetched_at` двигает только upsert_location,
+    упоминание локации в чужом импорте его не трогает).
+    """
+    row = (
+        db.query(Location)
+        .filter(
+            Location.platform_id == platform.id,
+            Location.external_key == location_slug,
+        )
+        .one_or_none()
+    )
+    if row is None or row.latitude is None or row.longitude is None:
+        return None
+    if row.fetched_at is None:
+        return None
+    age = datetime.now(timezone.utc) - row.fetched_at
+    if age >= timedelta(days=interval_days):
+        logger.info(
+            "location sync: %s — плановый полный проход (страница читалась %s дней назад)",
+            location_slug,
+            age.days,
+        )
+        return None
+    return row
+
+
 def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResult:
     platform = upsert.get_platform(db, PLATFORM_CODE)
     result = LocationSyncResult(location_slug=options.location_slug)
@@ -87,18 +127,13 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
 
     try:
         location_row = None
-        if options.skip_location_refresh:
-            location_row = (
-                db.query(Location)
-                .filter(
-                    Location.platform_id == platform.id,
-                    Location.external_key == options.location_slug,
-                )
-                .one_or_none()
+        if options.location_refresh_interval_days is not None:
+            location_row = _location_if_refresh_not_due(
+                db,
+                platform,
+                options.location_slug,
+                interval_days=options.location_refresh_interval_days,
             )
-            if location_row is not None and (location_row.latitude is None or location_row.longitude is None):
-                # Координат ещё нет — страница локации всё же нужна.
-                location_row = None
 
         if location_row is None:
             logger.info("location sync: %s — fetch location page", options.location_slug)
