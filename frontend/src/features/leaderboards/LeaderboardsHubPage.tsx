@@ -47,18 +47,18 @@ type LiveCard = {
   title: string;
 };
 
-type SoonCard = {
-  title: string;
-  description: string;
-};
-
 type HubSection = {
   emoji: string;
   title: string;
   live: LiveCard[];
-  soon: SoonCard[];
 };
 
+// Только готовые рейтинги. Карточек-анонсов «скоро» здесь нет намеренно
+// (решение Дмитрия 09.08.2026): раздел показывает то, что уже работает, а
+// планы живут в бэклоге «Рейтинги» — новый рейтинг появляется на хабе в тот
+// же момент, когда становится доступен всем. Секция «Локации» (Р18/Р19) по
+// этой же причине пока отсутствует целиком — в ней нет ни одного живого
+// рейтинга.
 const SECTIONS: HubSection[] = [
   {
     emoji: "🏃",
@@ -66,10 +66,6 @@ const SECTIONS: HubSection[] = [
     live: [
       { metric: "runs", href: "/ratings/runs", title: "Количество пробежек" },
       { metric: "wins", href: "/ratings/wins", title: "Количество первых мест" },
-    ],
-    soon: [
-      { title: "Самые быстрые", description: "Лучшие результаты и бегуны М/Ж за всю историю." },
-      { title: "Серии суббот", description: "Самые длинные серии подряд — текущие и исторические." },
     ],
   },
   {
@@ -88,12 +84,6 @@ const SECTIONS: HubSection[] = [
         title: "Мультиволонтёр — разнообразие ролей",
       },
     ],
-    soon: [
-      {
-        title: "Дуализм",
-        description: "Кто одинаково силён и как бегун, и как волонтёр.",
-      },
-    ],
   },
   {
     emoji: "🧭",
@@ -102,18 +92,6 @@ const SECTIONS: HubSection[] = [
       { metric: "locations", href: "/ratings/locations", title: "Уникальные локации" },
       { metric: "win_locations", href: "/ratings/win-locations", title: "Локации с первым местом" },
       { metric: "home_distance", href: "/ratings/home-distance", title: "Дальность от дома" },
-    ],
-    // «Гео-коллекционер» (уникальные города и регионы) переехал внутрь рейтинга
-    // уникальных локаций фильтром «Считаем» — отдельной карточки ему не нужно.
-    soon: [],
-  },
-  {
-    emoji: "📍",
-    title: "Локации",
-    live: [],
-    soon: [
-      { title: "Посещаемость локаций", description: "Самые массовые и быстрорастущие площадки." },
-      { title: "Быстрые трассы", description: "Где бегут быстрее всего." },
     ],
   },
 ];
@@ -222,17 +200,6 @@ function LiveRatingCard({ card, platform }: { card: LiveCard; platform: Platform
   );
 }
 
-function SoonRatingCard({ card }: { card: SoonCard }) {
-  return (
-    <div className="lb-hub-card lb-hub-card-soon">
-      <span className="lb-hub-card-title">
-        {card.title} <span className="lb-soon">скоро</span>
-      </span>
-      <span className="lb-hub-card-text">{card.description}</span>
-    </div>
-  );
-}
-
 export function LeaderboardsHubPage() {
   const [platform, setPlatform] = useState<PlatformFilter>("all");
 
@@ -278,9 +245,6 @@ export function LeaderboardsHubPage() {
             <div className="lb-hub-cards">
               {section.live.map((card) => (
                 <LiveRatingCard key={card.metric} card={card} platform={platform} />
-              ))}
-              {section.soon.map((card) => (
-                <SoonRatingCard key={card.title} card={card} />
               ))}
             </div>
           </section>
