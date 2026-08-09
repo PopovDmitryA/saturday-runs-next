@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User
 from app.services.portal_home_service import (
     PORTAL_HOME_CACHE_KEY,
+    _city_label,
     _course_minima_before,
     _EventRow,
     _read_portal_home_cache,
@@ -41,7 +42,7 @@ def _event(
     )
 
 
-def _attendance(events: list[_EventRow]) -> list[dict]:
+def _attendance(events: list[_EventRow], city: str | None = None) -> list[dict]:
     return _week_attendance_records(
         events,
         WEEK_START,
@@ -49,6 +50,7 @@ def _attendance(events: list[_EventRow]) -> list[dict]:
         lambda location_id: str(location_id),
         lambda location_id: f"loc-{location_id}",
         lambda location_id: f"slug-{location_id}",
+        lambda location_id: city,
     )
 
 
@@ -192,6 +194,22 @@ def test_attendance_record_carries_location_slug() -> None:
     loc = uuid4()
     rows = _attendance([_event(loc, date(2026, 7, 25), 120, 1)])
     assert rows[0]["location_slug"] == f"slug-{loc}"
+
+
+def test_attendance_record_carries_city() -> None:
+    """Город едет рядом с названием — на главной он стоит перед датой."""
+    loc = uuid4()
+    rows = _attendance([_event(loc, date(2026, 7, 25), 120, 1)], city="Ижевск")
+    assert rows[0]["location_city"] == "Ижевск"
+
+
+def test_city_label_hides_city_already_in_name() -> None:
+    """Город не дублируем: половина названий и так начинается с города."""
+    assert _city_label("Тюмень", "Тюмень Парк Гагарина") is None
+    assert _city_label("тюмень", "Тюмень Комарово") is None
+    assert _city_label("Москва", "Кусково") == "Москва"
+    assert _city_label(None, "Кусково") is None
+    assert _city_label("", "Кусково") is None
 
 
 def test_course_minima_before_ignores_test_events(db_session: Session) -> None:

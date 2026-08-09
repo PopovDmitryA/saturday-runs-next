@@ -171,6 +171,11 @@ function AttendanceTopList({ rows }: { rows: PortalAttendanceTopRow[] }) {
           <span className="portal-top-rank num">{index + 1}</span>
           <span className="portal-top-name">
             <LocationLink name={row.location_name} slug={row.location_slug} />
+            {/* Город второй строкой: список сплошь из названий парков ничего не
+                говорит о географии. */}
+            {row.location_city && (
+              <span className="portal-top-city">{row.location_city}</span>
+            )}
           </span>
           <PlatformBadge code={row.platform_code} />
           <span className="portal-top-value">
@@ -694,7 +699,12 @@ export function PortalHomePage() {
                               </>
                             )}
                           </b>
-                          <span>{formatDateShort(record.event_date)}</span>
+                          {/* Город перед датой: по одному названию парка не
+                              понять, о каком конце страны речь. */}
+                          <span>
+                            {record.location_city ? `${record.location_city} · ` : ""}
+                            {formatDateShort(record.event_date)}
+                          </span>
                         </span>
                         <PlatformBadge code={record.platform_code} />
                         <span className="portal-record-value">
