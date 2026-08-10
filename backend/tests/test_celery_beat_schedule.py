@@ -15,9 +15,35 @@ def test_s95_registry_every_3_days() -> None:
 
 def test_five_verst_schedule_intact() -> None:
     schedule = celery_app.conf.beat_schedule
-    assert schedule["five-verst-registry-daily"]["schedule"].minute == {0}
     assert schedule["five-verst-latest-weekday"]["schedule"].hour == {0, 5, 10, 15, 20}
     assert schedule["five-verst-latest-weekday"]["schedule"].day_of_week == {1, 2, 3, 4, 5}
+
+
+def test_five_verst_queue_no_same_minute_collisions() -> None:
+    """Очередь five_verst — один воркер (concurrency=1): задачи разведены по
+    минутам, чтобы beat не ставил несколько батчей в хвост в одну и ту же минуту."""
+    schedule = celery_app.conf.beat_schedule
+    assert schedule["five-verst-registry-daily"]["schedule"].minute == {50}
+    assert schedule["five-verst-registry-daily"]["schedule"].hour == {20}
+    assert schedule["five-verst-location-rotation"]["schedule"].minute == {30}
+
+    # latest на минуте :00 — единственный: свежие протоколы не ждут пачку соседей.
+    latest_keys = [key for key in schedule if key.startswith("five-verst-latest")]
+    for key, entry in schedule.items():
+        if key.startswith("five-verst") and key not in latest_keys:
+            assert 0 not in entry["schedule"].minute, key
+
+
+def test_five_verst_reconcile_weekdays_only() -> None:
+    """Прогон сверки занимает пару часов и в выходные задерживал часовой latest
+    (duplicate_hour_slot на проде), поэтому ходит только по будням."""
+    schedule = celery_app.conf.beat_schedule
+    assert "five-verst-reconcile-protocols" not in schedule
+    assert "five-verst-reconcile-protocols-weekend" not in schedule
+
+    weekday = schedule["five-verst-reconcile-protocols-weekday"]
+    assert weekday["schedule"].day_of_week == {1, 2, 3, 4, 5}
+    assert weekday["schedule"].hour == {0, 3, 6, 9, 12, 15, 18, 21}
 
 
 def test_five_verst_clubs_schedule() -> None:

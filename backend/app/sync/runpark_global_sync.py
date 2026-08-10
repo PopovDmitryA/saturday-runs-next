@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -15,6 +17,7 @@ from app.models import (
     EventCrosslink,
     Location,
     Platform,
+    ProtocolSyncState,
     RunparkLocationMapping,
     RunResult,
     SyncRun,
@@ -113,9 +116,31 @@ def _fetch_merged_vol_rows(external_event_key: str) -> list[dict]:
 class RunparkSyncResult:
     events_total: int = 0
     events_upserted: int = 0
+    events_unchanged: int = 0
     run_results_upserted: int = 0
     volunteer_results_upserted: int = 0
     errors: list[str] = field(default_factory=list)
+
+
+def _rows_content_hash(run_rows: list[dict], vol_rows: list[dict]) -> str:
+    """Стабильный хэш содержимого протокола из вьюх RunPark.
+
+    Порядок строк из MSSQL не гарантирован — сериализованные строки сортируются.
+    default=str покрывает datetime/UUID/Decimal одинаково от запуска к запуску.
+    """
+    parts = sorted(json.dumps(row, default=str, sort_keys=True) for row in run_rows)
+    parts += ["|volunteers|"]
+    parts += sorted(json.dumps(row, default=str, sort_keys=True) for row in vol_rows)
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def _get_or_create_sync_state(db: Session, event_id) -> ProtocolSyncState:
+    state = db.query(ProtocolSyncState).filter(ProtocolSyncState.event_id == event_id).one_or_none()
+    if state is None:
+        state = ProtocolSyncState(event_id=event_id)
+        db.add(state)
+        db.flush()
+    return state
 
 
 def _start_sync_run(db: Session, platform: Platform, sync_type: str) -> SyncRun:
@@ -165,8 +190,11 @@ def _get_location_mapping(db: Session) -> tuple[dict[str, Location], dict[UUID, 
     return result, protocol_bases
 
 
-def _upsert_crosslinks_for_event(db: Session, runpark_event: Event) -> None:
-    """For dual_load RunPark events: find matching primary-platform event by date and create crosslink."""
+def _upsert_crosslinks_for_event(db: Session, runpark_event: Event) -> bool:
+    """For dual_load RunPark events: find matching primary-platform event by date and create crosslink.
+
+    Returns True when a new crosslink was created (the PR flags then need a recalc
+    even if the protocol content itself is unchanged)."""
     mapping = (
         db.query(RunparkLocationMapping)
         .filter(
@@ -176,7 +204,7 @@ def _upsert_crosslinks_for_event(db: Session, runpark_event: Event) -> None:
         .one_or_none()
     )
     if mapping is None or mapping.matched_location_id is None:
-        return
+        return False
 
     primary_event = (
         db.query(Event)
@@ -188,7 +216,7 @@ def _upsert_crosslinks_for_event(db: Session, runpark_event: Event) -> None:
         .first()
     )
     if primary_event is None:
-        return
+        return False
 
     exists = (
         db.query(EventCrosslink)
@@ -201,6 +229,8 @@ def _upsert_crosslinks_for_event(db: Session, runpark_event: Event) -> None:
     if exists is None:
         db.add(EventCrosslink(primary_event_id=primary_event.id, secondary_event_id=runpark_event.id))
         db.flush()
+        return True
+    return False
 
 
 def _recalculate_event_prs(db: Session, event_row: Event) -> None:
@@ -393,16 +423,37 @@ def sync_runpark_batch(
                 continue
             try:
                 event_row = _ensure_event(db, platform, location, ev, protocol_bases.get(location.id))
-                _delete_event_results(db, event_row)
 
                 run_rows = _fetch_merged_run_rows(external_event_key)
+                vol_rows = _fetch_merged_vol_rows(external_event_key)
                 _fix_merged_finishers_count(db, event_row, external_event_key, run_rows)
+
+                # Синк ходит 5 раз в день по окну в 7 дней, и почти всегда данные
+                # не менялись. Раньше каждое событие безусловно проходило
+                # delete+reinsert всех результатов с пересчётом PR и гендерных
+                # позиций — пустой churn для базы (см. историю раздутия). Теперь
+                # содержимое сверяется по хэшу, и неизменные события пропускаются.
+                content_hash = _rows_content_hash(run_rows, vol_rows)
+                state = _get_or_create_sync_state(db, event_row.id)
+                now = datetime.now(timezone.utc)
+                if state.protocol_source_hash == content_hash:
+                    # Кросслинк всё равно сверяем: парный протокол основной
+                    # платформы мог появиться позже нашей заливки — тогда PR
+                    # нужно пересчитать, хотя сам протокол RunPark не менялся.
+                    if _upsert_crosslinks_for_event(db, event_row):
+                        _recalculate_event_prs(db, event_row)
+                    state.last_protocol_check_at = now
+                    result.events_unchanged += 1
+                    commit_step(db)
+                    continue
+
+                _delete_event_results(db, event_row)
+
                 canonical_runs = [_to_canonical_run(r) for r in run_rows]
                 run_count = upsert.upsert_run_results(db, event_row, platform, canonical_runs, recalculate_pr=False)
                 recalculate_event_gender_positions(db, event_row.id, PLATFORM_CODE)
                 result.run_results_upserted += run_count
 
-                vol_rows = _fetch_merged_vol_rows(external_event_key)
                 canonical_vols = [
                     v for r in vol_rows
                     if (v := _to_canonical_volunteer(r, external_event_key)) is not None
@@ -412,6 +463,11 @@ def sync_runpark_batch(
 
                 _upsert_crosslinks_for_event(db, event_row)
                 _recalculate_event_prs(db, event_row)
+                state.protocol_source_hash = content_hash
+                state.last_protocol_fetched_at = now
+                state.last_protocol_check_at = now
+                state.run_results_count = run_count
+                state.volunteer_results_count = vol_count
                 result.events_upserted += 1
                 commit_step(db)
                 logger.info(

@@ -281,10 +281,11 @@ def sync_updated_protocols(
         return result
     except Exception as exc:
         db.rollback()
-        failed = _start_run(db, platform, "s95:api:sync_updated")
-        failed.status = SyncRunStatus.failed
-        failed.finished_at = datetime.now(timezone.utc)
-        failed.error_message = str(exc)
+        # Закрываем исходный (закоммиченный) ран, а не плодим второй failed,
+        # оставляя первый висеть в running навсегда.
+        run.status = SyncRunStatus.failed
+        run.finished_at = datetime.now(timezone.utc)
+        run.error_message = str(exc)
         db.commit()
         raise
 
@@ -328,10 +329,10 @@ def reconcile_protocols_for_date(
         return result
     except Exception as exc:
         db.rollback()
-        failed = _start_run(db, platform, f"s95:api:reconcile:{target_date.isoformat()}")
-        failed.status = SyncRunStatus.failed
-        failed.finished_at = datetime.now(timezone.utc)
-        failed.error_message = str(exc)
+        # Закрываем исходный ран, второй не создаём (см. sync_updated_protocols).
+        run.status = SyncRunStatus.failed
+        run.finished_at = datetime.now(timezone.utc)
+        run.error_message = str(exc)
         db.commit()
         raise
 
@@ -417,9 +418,9 @@ def full_backfill(
         return result
     except Exception as exc:
         db.rollback()
-        failed = _start_run(db, platform, "s95:api:full_backfill")
-        failed.status = SyncRunStatus.failed
-        failed.finished_at = datetime.now(timezone.utc)
-        failed.error_message = str(exc)
+        # Закрываем исходный ран, второй не создаём (см. sync_updated_protocols).
+        run.status = SyncRunStatus.failed
+        run.finished_at = datetime.now(timezone.utc)
+        run.error_message = str(exc)
         db.commit()
         raise

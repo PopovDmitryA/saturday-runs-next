@@ -261,8 +261,9 @@ def sync_clubs_registry(
         return result
     except Exception as exc:
         db.rollback()
-        failed_run = _start_sync_run(db, platform, "clubs_registry")
-        _finish_sync_run(db, failed_run, success=False, fetched=0, upserted=0, unchanged=0, error=str(exc))
+        # Закрываем исходный (закоммиченный) ран, а не плодим второй failed,
+        # оставляя первый висеть в running навсегда.
+        _finish_sync_run(db, sync_run, success=False, fetched=0, upserted=0, unchanged=0, error=str(exc))
         db.commit()
         raise
 
@@ -446,7 +447,7 @@ def sync_club_details_batch(db: Session, limit: int = 20) -> ClubDetailsSyncResu
         return result
     except Exception as exc:
         db.rollback()
-        failed_run = _start_sync_run(db, platform, "clubs_details")
-        _finish_sync_run(db, failed_run, success=False, fetched=0, upserted=0, unchanged=0, error=str(exc))
+        # См. clubs_registry: закрываем исходный ран, второй не создаём.
+        _finish_sync_run(db, sync_run, success=False, fetched=0, upserted=0, unchanged=0, error=str(exc))
         db.commit()
         raise
