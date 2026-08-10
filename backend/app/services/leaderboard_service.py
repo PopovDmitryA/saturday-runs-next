@@ -1158,6 +1158,9 @@ _RUSSIA_COUNTRY_NAMES = frozenset({"россия", "russia", "russian federation
 # и ещё 274 — «United Kingdom» (проверено 02.08.2026). Без склейки турист по
 # британским паркранам получал бы два региона вместо одного. Список дополнять
 # по мере появления новых написаний: SELECT DISTINCT country FROM locations.
+# С 10.08.2026 английские написания в БД не пишутся вовсе (normalize_country_name
+# в upsert_location), а накопленное разбирает scripts/backfill_location_country.py —
+# склейка осталась страховкой на случай новой заглушки от внешней системы.
 _COUNTRY_ALIASES: dict[str, str] = {
     "united kingdom": "великобритания",
     "great britain": "великобритания",

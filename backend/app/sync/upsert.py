@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.activity_url import prefer_event_source_url
+from app.geo.country_names import normalize_country_name
 from app.models import (
     Event,
     EventSummary,
@@ -51,8 +52,11 @@ def _resolve_geo(
 
     Один запрос вместо прежнего запроса-на-регион: у Nominatim в ответе и так
     все три поля. Если всё уже известно — в сеть не ходим совсем.
+
+    Страну прогоняем через normalize_country_name: в БД она хранится по-русски,
+    одно название на одну страну (см. app/geo/country_names.py).
     """
-    country = location.country or (row.country if row else None)
+    country = normalize_country_name(location.country) or (row.country if row else None)
     region = location.region or (row.region if row else None)
     city = location.city or (row.city if row else None)
     if country and region and city:
@@ -67,7 +71,7 @@ def _resolve_geo(
         logger.warning("geocode failed for %s", location.external_key, exc_info=True)
         return country, region, city
     return (
-        country or address.get("country"),
+        country or normalize_country_name(address.get("country")),
         region or address.get("region"),
         city or address.get("city"),
     )
@@ -1072,7 +1076,11 @@ def import_profile_run_results(
             location_source_url = (
                 f"https://www.parkrun.org.uk/{slug}/" if slug != "unknown" else None
             )
-            country = "United Kingdom"
+            # Профиль не говорит, где площадка: parkrun.org.uk — общий вход в
+            # мировой каталог, а не признак Британии. Прежняя заглушка «United
+            # Kingdom» помечала ею Якутск и Йошкар-Олу. Пусто честнее — страну
+            # добирает бэкфилл по координатам (scripts/backfill_location_country.py).
+            country = None
         else:
             location_source_url = f"https://5verst.ru/{slug}/" if slug != "unknown" else None
             country = "Россия"
@@ -1327,7 +1335,9 @@ def import_profile_volunteer_results(
         slug = _normalize_location_slug(item.location_external_key, item.location_name)
         display_name = item.location_name or slug
         if platform.code == "parkrun":
-            country = "United Kingdom"
+            # См. import_profile_run_results: домен parkrun.org.uk не означает
+            # Британию, поэтому страну отсюда не выдумываем.
+            country = None
             default_source = f"https://www.parkrun.org.uk/{slug}/" if slug != "unknown" else ""
         elif platform.code == "s95":
             country = "Россия"
