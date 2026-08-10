@@ -4,6 +4,8 @@ type PlatformBadgeProps = {
   code: string;
   /** Если задан — бейдж становится ссылкой (открывается в новой вкладке). */
   href?: string | null;
+  /** Действие внутри страницы: бейдж становится кнопкой (href при этом игнорируется). */
+  onClick?: () => void;
   title?: string;
 };
 
@@ -14,8 +16,20 @@ const PLATFORM_VARIANT: Record<string, string> = {
   runpark: "badge-platform-runpark",
 };
 
-export function PlatformBadge({ code, href, title }: PlatformBadgeProps) {
+export function PlatformBadge({ code, href, onClick, title }: PlatformBadgeProps) {
   const variant = PLATFORM_VARIANT[code] ?? "badge-platform-default";
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={`badge badge-platform badge-platform-btn ${variant}`}
+        onClick={onClick}
+        title={title}
+      >
+        {platformCodeLabel(code)}
+      </button>
+    );
+  }
   if (href) {
     return (
       <a

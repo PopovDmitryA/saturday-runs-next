@@ -612,6 +612,7 @@ body {
   color: var(--tint-blue-text);
 }
 
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -2443,6 +2444,18 @@ a.badge-platform-link:hover {
 .badge-platform-link-arrow {
   font-size: 0.85em;
   opacity: 0.7;
+}
+
+/* Бейдж-кнопка: переход внутри страницы (в герое кабинета — к секции профилей). */
+button.badge-platform-btn {
+  border: none;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.badge-platform-btn:hover {
+  box-shadow: 0 0 0 1px currentColor;
 }
 
 .badge-participation {
@@ -11037,6 +11050,21 @@ a.badge-platform-link:hover {
   gap: 6px;
   font-size: 12px;
   color: var(--text-faint);
+}
+
+/* Пометка в карточке parkrun: у него нет автообновления, кнопка ↻ — единственный
+   путь. Единственная цветная вставка в сетке карточек — чтобы её заметили среди
+   одинаковых плиток систем, но без плашки на весь экран. */
+.profile-platform-card-manual-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--tint-amber-border-strong);
+  border-left-width: 3px;
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-text);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .profile-platform-card-actions {

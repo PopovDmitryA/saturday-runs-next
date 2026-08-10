@@ -256,7 +256,7 @@ function PlatformCard({
               type="button"
               className={`profile-sync-refresh-btn${isSyncing ? " profile-sync-refresh-btn-spinning" : ""}`}
               aria-label={`Обновить данные ${platformCodeLabel(config.code)}`}
-              title="Запросить свежие результаты (не чаще раза в сутки)"
+              title="Запросить свежие результаты (не чаще раза в 30 минут)"
               disabled={isSyncing || syncLoading}
               onClick={() => onSyncRequest()}
             >
@@ -268,6 +268,12 @@ function PlatformCard({
               </svg>
             </button>
           </div>
+          {config.code === "parkrun" && (
+            <p className="profile-platform-card-manual-note">
+              Автообновление по системе parkrun невозможно, если вы побегали — нажмите кнопку
+              обновления.
+            </p>
+          )}
           <div className="profile-platform-card-actions">
             {scanCode && (
               <button type="button" className="btn secondary btn-sm qr-btn" onClick={() => onShowQr()}>

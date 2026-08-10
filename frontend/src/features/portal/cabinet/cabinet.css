@@ -496,6 +496,14 @@
   color: var(--text-muted);
 }
 
+/* Бейджи привязанных систем — как на странице локации; ведут к секции профилей. */
+.portal-cab-hero-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
 .portal-cab-hero-stats {
   margin-top: 16px;
   display: grid;

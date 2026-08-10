@@ -140,7 +140,9 @@ function CabinetLegacyRedirect({ tab }: { tab: CabinetTabSegmentKey }) {
     const target = profileBaseHref(user) ? cabinetTabHref(user, tab) : null;
     // Без хендла (профиль ещё не получил номер) оставляем старый экран.
     if (target) {
-      window.location.replace(target);
+      // Якорь переезжает вместе с адресом: ссылки вида /dashboard#profiles
+      // должны докручивать до секции и после редиректа.
+      window.location.replace(target + window.location.hash);
     }
   }, [user, tab]);
   return (
