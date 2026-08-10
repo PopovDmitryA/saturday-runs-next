@@ -139,6 +139,8 @@ export type HomeDistanceLocation = {
   last_visit_date: string | null;
   is_home: boolean;
   is_paused: boolean;
+  /** Системы площадки — плашками рядом с названием. */
+  platform_codes: string[];
 };
 
 export type HomeLocationSummary = {
@@ -1572,6 +1574,8 @@ export type AdminRatingRow = {
   editable: boolean;
   participation_type: ParticipationType;
   created_at: string;
+  /** Фото, приложенные к отзыву. */
+  photos: { id: string; url: string; width: number; height: number }[];
 };
 
 export type AdminRatingsStatGroup = {
@@ -2019,6 +2023,12 @@ export type LocationAgeGroupRecord = {
   finishes_total: number;
 };
 
+export type LocationCityNeighbor = {
+  slug: string;
+  name: string;
+  events_count: number;
+};
+
 export type LocationPage = {
   slug: string;
   identity_key: string;
@@ -2036,6 +2046,7 @@ export type LocationPage = {
   stats: LocationPageStats;
   histogram: { bin_size_sec: number; rows: LocationHistogramRow[] };
   age_group_records: LocationAgeGroupRecord[];
+  city_locations?: LocationCityNeighbor[];
 };
 
 export type LocationIndexItem = {
@@ -2177,6 +2188,8 @@ export type LocationPersonalStats = {
   first_run_date: string | null;
   last_run_date: string | null;
   volunteering_count: number;
+  /** Любимая роль на этой локации: чаще всего выходил. */
+  top_volunteer_role: { role: string; count: number } | null;
   // Место в топе по пробежкам — только внутри своего пола
   gender: string | null;
   rank_by_runs_gender: number | null;
@@ -2192,6 +2205,44 @@ export function getLocationPersonalStats(slug: string) {
 
 export function getLocationsIndex() {
   return apiFetch<LocationsIndexResponse>("/locations/index");
+}
+
+export type LastResultsItem = {
+  slug: string;
+  identity_key: string;
+  name: string;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  platform_codes: string[];
+  is_paused: boolean;
+  is_cancelled: boolean;
+  event_date: string;
+  event_platform_codes: string[];
+  event_number: number | null;
+  is_last_saturday: boolean;
+  finishers: number | null;
+  volunteers: number | null;
+  debutants: number | null;
+  prs: number | null;
+  best_male_time_sec: number | null;
+  best_male_time_display: string | null;
+  best_female_time_sec: number | null;
+  best_female_time_display: string | null;
+  avg_time_sec: number | null;
+  avg_time_display: string | null;
+  has_protocol: boolean;
+  protocol_url: string | null;
+};
+
+export type LastResultsResponse = {
+  saturday_date: string | null;
+  items: LastResultsItem[];
+  total: number;
+};
+
+export function getLastResults() {
+  return apiFetch<LastResultsResponse>("/locations/last-results");
 }
 
 export type AutoSyncPlatformPreference = {

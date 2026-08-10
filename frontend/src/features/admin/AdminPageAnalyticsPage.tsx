@@ -29,6 +29,7 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   history: "Моя история",
   profile: "Публичные профили",
   locations_index: "Локации (список)",
+  last_results: "Результаты последней субботы",
   location: "Локация (карточка)",
   location_events: "Локация (забеги)",
   ratings_hub: "Рейтинги (хаб)",

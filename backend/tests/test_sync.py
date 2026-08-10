@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models import Event, EventSummary, Platform, RunResult, SyncStatus, VolunteerResult
+from app.models import Event, EventSummary, Location, Platform, RunResult, SyncStatus, VolunteerResult
 from app.platform_adapters.canonical import (
     CanonicalEventSummary,
     CanonicalLocation,
@@ -201,3 +201,136 @@ def test_sync_location_summaries_only_skips_protocol(db_session: Session, platfo
         .one()
     )
     assert summary_row.event_id is None
+
+
+def test_rotation_skips_location_page_until_refresh_due(
+    db_session: Session, platform: Platform, sync_slug: str
+) -> None:
+    """Ротация читает только таблицу результатов, пока страница локации свежая."""
+    location = _location(sync_slug)
+    summary = _summary(slug=sync_slug, event_number=7)
+
+    with (
+        patch(
+            "app.sync.global_sync.bulk_parser.fetch_location",
+            return_value=(location, "<html></html>"),
+        ) as fetch_location,
+        patch(
+            "app.sync.global_sync.bulk_parser.fetch_event_summaries",
+            return_value=([summary], "<table></table>"),
+        ),
+        patch("app.sync.global_sync.fetch_and_upsert_event_protocol"),
+    ):
+        # Первый прогон: локации в базе нет — страница читается.
+        sync_location(
+            db_session,
+            LocationSyncOptions(
+                location_slug=sync_slug,
+                summaries_limit=1,
+                protocol_fetch_limit=0,
+                location_refresh_interval_days=7,
+            ),
+        )
+        db_session.commit()
+        assert fetch_location.call_count == 1
+
+        # Второй прогон в тот же день: страница локации не перечитывается.
+        sync_location(
+            db_session,
+            LocationSyncOptions(
+                location_slug=sync_slug,
+                summaries_limit=1,
+                protocol_fetch_limit=0,
+                location_refresh_interval_days=7,
+            ),
+        )
+        db_session.commit()
+        assert fetch_location.call_count == 1
+
+        # Отметка последнего чтения состарилась — плановый полный проход.
+        location_row = (
+            db_session.query(Location)
+            .filter(Location.platform_id == platform.id, Location.external_key == sync_slug)
+            .one()
+        )
+        location_row.fetched_at = datetime.now(timezone.utc) - timedelta(days=8)
+        db_session.commit()
+
+        sync_location(
+            db_session,
+            LocationSyncOptions(
+                location_slug=sync_slug,
+                summaries_limit=1,
+                protocol_fetch_limit=0,
+                location_refresh_interval_days=7,
+            ),
+        )
+        db_session.commit()
+        assert fetch_location.call_count == 2
+
+
+def test_rotation_full_pass_picks_up_renamed_location(
+    db_session: Session, platform: Platform, sync_slug: str
+) -> None:
+    """Смена имени при том же slug: связка идёт по slug, имя обновляется."""
+    location = _location(sync_slug)
+    summary = _summary(slug=sync_slug, event_number=8)
+    with (
+        patch(
+            "app.sync.global_sync.bulk_parser.fetch_location",
+            return_value=(location, "<html></html>"),
+        ),
+        patch(
+            "app.sync.global_sync.bulk_parser.fetch_event_summaries",
+            return_value=([summary], "<table></table>"),
+        ),
+        patch("app.sync.global_sync.fetch_and_upsert_event_protocol"),
+    ):
+        sync_location(
+            db_session,
+            LocationSyncOptions(location_slug=sync_slug, summaries_limit=1, protocol_fetch_limit=0),
+        )
+        db_session.commit()
+
+    location_row = (
+        db_session.query(Location)
+        .filter(Location.platform_id == platform.id, Location.external_key == sync_slug)
+        .one()
+    )
+    location_id_before = location_row.id
+
+    renamed = CanonicalLocation(
+        external_key=sync_slug,
+        name="Парк с новым названием",
+        city="Москва",
+        latitude=55.0,
+        longitude=37.0,
+        source_url=f"https://5verst.ru/{sync_slug}/",
+    )
+    with (
+        patch(
+            "app.sync.global_sync.bulk_parser.fetch_location",
+            return_value=(renamed, "<html>new</html>"),
+        ),
+        patch(
+            "app.sync.global_sync.bulk_parser.fetch_event_summaries",
+            return_value=([summary], "<table></table>"),
+        ),
+        patch("app.sync.global_sync.fetch_and_upsert_event_protocol"),
+    ):
+        sync_location(
+            db_session,
+            LocationSyncOptions(location_slug=sync_slug, summaries_limit=1, protocol_fetch_limit=0),
+        )
+        db_session.commit()
+
+    db_session.refresh(location_row)
+    # Та же строка, новое имя: история результатов не раздваивается.
+    assert location_row.id == location_id_before
+    assert location_row.name == "Парк с новым названием"
+    assert (
+        db_session.query(Location)
+        .filter(Location.platform_id == platform.id, Location.external_key == sync_slug)
+        .count()
+        == 1
+    )

@@ -280,6 +280,17 @@ export function kilometersLabel(count: number): string {
   return pluralizeRu(count, KM_FORMS);
 }
 
+/**
+ * Целое число с разбивкой по разрядам: 123456 → «123 456».
+ *
+ * Общий помощник, потому что без него большие цифры печатались как есть и
+ * читались сплошняком — «дальность от дома» в рейтинге доходит до сотен тысяч
+ * километров. Разделитель у ru-RU — неразрывный пробел, число не переносится.
+ */
+export function formatInt(value: number): string {
+  return Math.round(value).toLocaleString("ru-RU");
+}
+
 /** «6 141 км», близкие расстояния — с десятыми: «0,8 км» честнее, чем «1 км». */
 export function formatKm(value: number): string {
   if (value < 10 && !Number.isInteger(value)) {

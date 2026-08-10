@@ -5,6 +5,7 @@ import type { CatalogLocationTableRow, UniqueLocationsDetailResponse } from "../
 import { regionKey } from "../lib/regionMatch";
 import { pluralFormRu, pluralizeRu } from "../lib/format";
 import type { MapViewportRef } from "../lib/mapViewport";
+import { addZoomControl } from "../lib/mapZoomControl";
 import type { PlatformFilters } from "../features/maps/mapFilters";
 import { MapFullscreenButton } from "./MapFullscreenButton";
 
@@ -232,11 +233,14 @@ export function RegionChoropleth({
     const map = L.map(containerRef.current, {
       scrollWheelZoom: true,
       attributionControl: false,
+      zoomControl: false,
       // Диапазон зума как у карты площадок: общий вьюпорт не должен обрезаться
       // при переключении между картами.
       minZoom: 1,
       maxZoom: 19,
     }).setView([62, 94], 3);
+
+    addZoomControl(map);
 
     L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
       subdomains: "abcd",

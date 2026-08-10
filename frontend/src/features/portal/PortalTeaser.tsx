@@ -2,6 +2,7 @@ import { useState } from "react";
 import { trackAbEvent } from "../../lib/abTest";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { fetchPortalTeaser, PortalHomeError, type PortalTeaser } from "./portalTypes";
+import { formatInt } from "../../lib/format";
 
 /**
  * Тизер Т10 (вариант B): посетитель выбирает свою систему, вводит ID — и
@@ -22,10 +23,6 @@ function formatDateShort(iso: string): string {
     month: "long",
     year: "numeric",
   });
-}
-
-function formatInt(value: number): string {
-  return value.toLocaleString("ru-RU");
 }
 
 export function PortalTeaserCard() {

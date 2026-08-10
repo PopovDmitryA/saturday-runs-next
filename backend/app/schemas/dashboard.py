@@ -27,6 +27,8 @@ class HomeDistanceLocationResponse(BaseModel):
     last_visit_date: date | None = None
     is_home: bool = False
     is_paused: bool = False
+    # Системы площадки — плашками рядом с названием в модалке.
+    platform_codes: list[str] = Field(default_factory=list)
 
 
 class HomeLocationSummaryResponse(BaseModel):

@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState, type ReactNode } from "reac
 import { LocationStatusLabel } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
+import { TableWrap } from "../../components/tableUx/TableWrap";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 import {
   ApiError,
@@ -17,7 +18,8 @@ import {
   type LocationPage as LocationPageData,
   type LocationPersonalStats,
 } from "../../lib/api";
-import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
+import { applyPageMeta, locationLeadSentences, locationPageMeta } from "../../lib/pageMeta";
+import { flushMetrikaHit } from "../../lib/metrika";
 import { formatDate, formatKm, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { cabinetTabHref } from "../../lib/portalRoutes";
@@ -300,102 +302,106 @@ function AgeGroupRecordsTable({
   onToggle: (key: string) => void;
 }) {
   return (
-    <table className="data-table loc-age-records-table">
-      <colgroup>
-        <col className="loc-age-records-col-group" />
-        <col className="loc-age-records-col-time" />
-        <col />
-        <col className="loc-age-records-col-date" />
-      </colgroup>
-      <thead>
-        <tr>
-          <th>Группа</th>
-          <th>Время</th>
-          <th>Рекордсмен</th>
-          <th>Дата</th>
-        </tr>
-      </thead>
-      <tbody>
-        {records.map((record) => {
-          const open = openKey === record.key;
-          return (
-            <Fragment key={record.key}>
-              {/* id на строке — якорь для плитки «место в группе» из блока «Вы на этой локации». */}
-              <tr id={record.key} className={open ? "loc-age-records-row-open" : undefined}>
-                <td>
-                  {record.top.length > 0 ? (
-                    <button
-                      type="button"
-                      className="loc-age-records-toggle"
-                      aria-expanded={open}
-                      onClick={() => onToggle(record.key)}
-                      title={open ? "Скрыть топ-5 группы" : "Показать топ-5 группы"}
-                    >
-                      <span className="loc-age-records-caret" aria-hidden="true">
-                        {open ? "▾" : "▸"}
-                      </span>
-                      {record.age_group}
-                    </button>
-                  ) : (
-                    record.age_group
-                  )}
-                </td>
-                <td className="loc-age-records-time">
-                  {stripLeadingHours(record.finish_time_display)}
-                </td>
-                <td>
-                  <RunnerName name={record.runner_name} handle={record.runner_handle} />
-                </td>
-                <td>{record.event_date ? formatDate(record.event_date) : "—"}</td>
-              </tr>
-              {open && (
-                <tr className="loc-age-records-top-row">
-                  <td colSpan={4}>
-                    <div className="loc-age-top">
-                      <div className="loc-age-top-head">
-                        Топ-{record.top.length} группы {record.age_group}
-                        <span className="loc-age-top-hint">
-                          лучшее время каждого участника
-                          {/* Размер группы: без него непонятно, топ-5 из скольких. */}
-                          {record.runners_total > 0 && (
-                            <>
-                              {" · всего "}
-                              {pluralizeRu(record.runners_total, ["участник", "участника", "участников"])}
-                              {record.finishes_total > 0 &&
-                                ` и ${pluralizeRu(record.finishes_total, ["финиш", "финиша", "финишей"])}`}
-                            </>
-                          )}
+    <TableWrap className="loc-age-records-wrap">
+      <table className="data-table loc-age-records-table">
+        <colgroup>
+          <col className="loc-age-records-col-group" />
+          <col className="loc-age-records-col-time" />
+          <col />
+          <col className="loc-age-records-col-date" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Группа</th>
+            <th>Время</th>
+            <th>Рекордсмен</th>
+            <th>Дата</th>
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((record) => {
+            const open = openKey === record.key;
+            return (
+              <Fragment key={record.key}>
+                {/* id на строке — якорь для плитки «место в группе» из блока «Вы на этой локации». */}
+                <tr id={record.key} className={open ? "loc-age-records-row-open" : undefined}>
+                  <td className="loc-age-records-group">
+                    {record.top.length > 0 ? (
+                      <button
+                        type="button"
+                        className="loc-age-records-toggle"
+                        aria-expanded={open}
+                        onClick={() => onToggle(record.key)}
+                        title={open ? "Скрыть топ-5 группы" : "Показать топ-5 группы"}
+                      >
+                        <span className="loc-age-records-caret" aria-hidden="true">
+                          {open ? "▾" : "▸"}
                         </span>
-                      </div>
-                      <ol className="loc-age-top-list">
-                        {record.top.map((row) => (
-                          <li key={`${record.key}-${row.place}-${row.name}`} className="loc-age-top-item">
-                            <span className="loc-age-top-place">{row.place}</span>
-                            <span className="loc-age-top-name">
-                              <RunnerName name={row.name} handle={row.handle} />
-                            </span>
-                            {/* Полоса длиной от лучшего времени в группе: видно отрыв. */}
-                            <span className="loc-age-top-bar" aria-hidden="true">
-                              <span
-                                className="loc-age-top-bar-fill"
-                                style={{ width: `${topBarWidth(row.best_time_sec, record.top)}%` }}
-                              />
-                            </span>
-                            <span className="loc-age-top-time">
-                              {stripLeadingHours(row.best_time_display)}
-                            </span>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
+                        {record.age_group}
+                      </button>
+                    ) : (
+                      record.age_group
+                    )}
+                  </td>
+                  <td className="loc-age-records-time">
+                    {stripLeadingHours(record.finish_time_display)}
+                  </td>
+                  <td>
+                    <RunnerName name={record.runner_name} handle={record.runner_handle} />
+                  </td>
+                  <td className="loc-age-records-date">
+                    {record.event_date ? formatDate(record.event_date) : "—"}
                   </td>
                 </tr>
-              )}
-            </Fragment>
-          );
-        })}
-      </tbody>
-    </table>
+                {open && (
+                  <tr className="loc-age-records-top-row">
+                    <td colSpan={4}>
+                      <div className="loc-age-top">
+                        <div className="loc-age-top-head">
+                          Топ-{record.top.length} группы {record.age_group}
+                          <span className="loc-age-top-hint">
+                            лучшее время каждого участника
+                            {/* Размер группы: без него непонятно, топ-5 из скольких. */}
+                            {record.runners_total > 0 && (
+                              <>
+                                {" · всего "}
+                                {pluralizeRu(record.runners_total, ["участник", "участника", "участников"])}
+                                {record.finishes_total > 0 &&
+                                  ` и ${pluralizeRu(record.finishes_total, ["финиш", "финиша", "финишей"])}`}
+                              </>
+                            )}
+                          </span>
+                        </div>
+                        <ol className="loc-age-top-list">
+                          {record.top.map((row) => (
+                            <li key={`${record.key}-${row.place}-${row.name}`} className="loc-age-top-item">
+                              <span className="loc-age-top-place">{row.place}</span>
+                              <span className="loc-age-top-name">
+                                <RunnerName name={row.name} handle={row.handle} />
+                              </span>
+                              {/* Полоса длиной от лучшего времени в группе: видно отрыв. */}
+                              <span className="loc-age-top-bar" aria-hidden="true">
+                                <span
+                                  className="loc-age-top-bar-fill"
+                                  style={{ width: `${topBarWidth(row.best_time_sec, record.top)}%` }}
+                                />
+                              </span>
+                              <span className="loc-age-top-time">
+                                {stripLeadingHours(row.best_time_display)}
+                              </span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </TableWrap>
   );
 }
 
@@ -864,6 +870,19 @@ function LocationPersonalSection({
               "волонтёрства",
               "волонтёрств",
             ])}
+            sub="здесь"
+          />
+        )}
+        {stats.top_volunteer_role && (
+          <StatTile
+            value={stats.top_volunteer_role.role}
+            label="любимая роль здесь"
+            sub={`${stats.top_volunteer_role.count} ${pluralFormRu(stats.top_volunteer_role.count, [
+              "раз",
+              "раза",
+              "раз",
+            ])}`}
+            hint="Роль, в которой вы выходили на этой локации чаще всего. Ярлыки разных систем считаются одной ролью."
           />
         )}
       </div>
@@ -915,6 +934,7 @@ function LocationPageContent({ slug }: { slug: string }) {
         // Родовой заголовок «Локация — run5k.run» из App.tsx уточняем именем
         // и цифрами, как только данные приехали.
         applyPageMeta(locationPageMeta(data));
+        flushMetrikaHit();
         // Канонический URL страницы — slug основной системы локации.
         if (data.slug && data.slug !== slug) {
           window.history.replaceState(null, "", `/locations/${data.slug}`);
@@ -929,6 +949,8 @@ function LocationPageContent({ slug }: { slug: string }) {
         } else {
           setError(err instanceof Error ? err.message : "Не удалось загрузить локацию");
         }
+        // Просмотр был, пусть и неудачный — досылаем с родовым заголовком.
+        flushMetrikaHit();
       });
     return () => {
       cancelled = true;
@@ -1000,6 +1022,11 @@ function LocationPageContent({ slug }: { slug: string }) {
             <PlatformBadge key={platform.platform_code} code={platform.platform_code} />
           ))}
         </div>
+        {/* Тот же текст, что серверный пререндер отдаёт роботу: если человек и
+            робот видят разные страницы, поисковик считает это подменой. Плюс
+            связная фраза полезнее плашек тому, кто попал сюда из поиска и
+            ещё не понял, что за место. */}
+        <p className="loc-header-lead">{locationLeadSentences(page).join(" ")}</p>
       </header>
 
       <LocationRatingPrompt identityKey={page.identity_key} />
@@ -1114,6 +1141,30 @@ function LocationPageContent({ slug }: { slug: string }) {
           <LocationInfoCard page={page} />
         </section>
       </div>
+
+      {/* Кластер города: запрос «5 вёрст [город]» — не про одну площадку,
+          человеку (и поисковику) нужен весь город. Тот же список уходит
+          роботу в пререндере — контент обязан совпадать. */}
+      {page.city && (page.city_locations?.length ?? 0) > 0 && (
+        <section className="card loc-section">
+          <h2 className="section-title">{page.city}: другие площадки</h2>
+          {/* Чипы, а не колонки текста: ссылки в несколько колонок сливались
+              в сплошные строки (репорт Дмитрия 06.08.2026) — рамка вокруг
+              каждой площадки делает границы элементов видимыми. */}
+          <ul className="loc-city-neighbors">
+            {(page.city_locations ?? []).map((item) => (
+              <li key={item.slug}>
+                <a className="loc-city-neighbor" href={`/locations/${item.slug}`}>
+                  {item.name}
+                  <span className="loc-city-neighbor-count">
+                    {item.events_count} {pluralFormRu(item.events_count, ["старт", "старта", "стартов"])}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <LocationRecordsModal
         slug={page.slug}

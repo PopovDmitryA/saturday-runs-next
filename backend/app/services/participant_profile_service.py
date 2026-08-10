@@ -20,7 +20,7 @@ from app.platform_adapters.five_verst.url import normalize_profile_url as parse_
 from app.platform_adapters.parkrun.url import InvalidProfileUrlError as ParkrunInvalidProfileUrlError
 from app.platform_adapters.parkrun.url import parse_profile_input as parse_parkrun_input
 from app.platform_adapters.s95.url import InvalidProfileUrlError as S95InvalidProfileUrlError
-from app.platform_adapters.s95.url import parse_athlete_url as parse_s95_input
+from app.platform_adapters.s95.url import parse_profile_input as parse_s95_input
 from app.profile_preview import build_recent_preview_activities
 from app.s95.parkrun import is_parkrun_eligible_barcode
 from app.volunteering_occasions import count_volunteering_for_platform

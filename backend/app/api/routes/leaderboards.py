@@ -95,6 +95,8 @@ def leaderboard(
     # Какие волонтёрские роли считать. Пустой список = все роли; неизвестные
     # ключи и неприменимые метрики сервис отбрасывает сам.
     roles: Annotated[list[str] | None, Query()] = None,
+    # Спрятать участников с неочевидной домашней локацией (только у дальности).
+    hide_ambiguous_home: bool = False,
 ) -> LeaderboardResponse:
     payload = get_leaderboard(
         db,
@@ -105,6 +107,7 @@ def leaderboard(
         platform=platform,
         count_by=count_by,
         roles=roles,
+        hide_ambiguous_home=hide_ambiguous_home,
     )
     return LeaderboardResponse.model_validate(payload)
 

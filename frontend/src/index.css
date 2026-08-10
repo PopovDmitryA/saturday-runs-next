@@ -1997,7 +1997,7 @@ a.on-this-day-location {
 
 .data-table-layout-fixed {
   table-layout: fixed;
-  min-width: 43.2rem;
+  min-width: 44.2rem;
 }
 
 .data-table-layout-fixed .col-date {
@@ -2019,7 +2019,7 @@ a.on-this-day-location {
 }
 
 .data-table-layout-fixed .col-pace {
-  width: 5.25rem;
+  width: 6.25rem;
 }
 
 .data-table-layout-fixed .col-role {
@@ -2063,7 +2063,10 @@ a.on-this-day-location {
 
 .data-table-layout-fixed .td-date,
 .data-table-layout-fixed .td-compact,
-.data-table-layout-fixed .td-time {
+.data-table-layout-fixed .td-time,
+/* «4:41 / км» — в одну строку: на телефоне колонка ужималась по остатку и
+   рвала темп на два этажа, из-за чего вся строка становилась двухэтажной. */
+.data-table-layout-fixed .td-pace {
   white-space: nowrap;
   vertical-align: middle;
 }
@@ -2423,6 +2426,23 @@ tr.run-crosslinked td {
 .badge-platform-default {
   background: var(--chip-bg);
   color: var(--text-3);
+}
+
+/* Бейдж-ссылка: тот же вид, при наведении — кольцо, как у бейджей во «Встречах». */
+a.badge-platform-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+a.badge-platform-link:hover {
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.badge-platform-link-arrow {
+  font-size: 0.85em;
+  opacity: 0.7;
 }
 
 .badge-participation {
@@ -4016,6 +4036,13 @@ tr.run-crosslinked td {
   color: var(--text-3);
   box-shadow: 0 1px 4px rgba(0,0,0,0.1);
   transition: background 0.15s, color 0.15s;
+}
+
+/* Зум-кнопки живут в правом верхнем углу (см. lib/mapZoomControl.ts), там же —
+   кнопка фуллскрина. Где она есть, сдвигаем зум левее неё: 0.6rem отступ +
+   2rem кнопка + зазор. Высоту не трогаем — обе группы кнопок в одном ряду. */
+.location-map-shell:has(.location-map-fullscreen-btn) .leaflet-top.leaflet-right .leaflet-control-zoom {
+  margin-right: 2.9rem;
 }
 
 .location-map-fullscreen-btn:hover {
@@ -5838,6 +5865,19 @@ tr.run-crosslinked td {
   background: var(--tint-blue-bg-strong);
   color: var(--link-strong);
   font-weight: 600;
+}
+
+/* Внешние панели вебмастеров: пунктир вместо заливки — отличить от разделов
+   сайта на первый взгляд, до того как прочитан текст ссылки. */
+.admin-subnav-link-external {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-2);
+}
+
+.admin-subnav-link-external:hover {
+  border-color: var(--link);
+  color: var(--link);
 }
 
 .admin-tile-grid {
@@ -9115,6 +9155,50 @@ tr.run-crosslinked td {
   flex-wrap: wrap;
 }
 
+/* Кластер города: каждая площадка — чип с рамкой. Колонки текста сливались
+   в сплошные строки, рамка делает границы элементов видимыми. */
+.loc-city-neighbors {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.loc-city-neighbor {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--link);
+  text-decoration: none;
+  max-width: 100%;
+}
+
+.loc-city-neighbor:hover {
+  border-color: var(--link);
+}
+
+.loc-city-neighbor-count {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+/* Вводная фраза о локации — тот же текст, что уходит роботу в пререндере.
+   Читается как подзаголовок, а не как основной контент: чуть приглушена,
+   ширина ограничена, иначе на десктопе строка растягивается на весь экран. */
+.loc-header-lead {
+  margin: 0.6rem 0 0;
+  max-width: 46rem;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
 .loc-header-breadcrumb {
   margin: 0 0 0.5rem;
   font-size: 0.82rem;
@@ -9365,6 +9449,15 @@ tr.run-crosslinked td {
   align-items: start;
 }
 
+/* Грид-колонка по умолчанию не уже min-content своего содержимого: широкая
+   таблица (рекорды по возрастным группам) распирала не свой скролл-контейнер,
+   а всю страницу. У документа появлялась горизонтальная прокрутка, а вместе с
+   ней разъезжался layout-вьюпорт — фиксированная нижняя навигация вставала по
+   его низу и на телефоне «отклеивалась» от нижней кромки экрана. */
+.loc-columns > * {
+  min-width: 0;
+}
+
 @media (max-width: 720px) {
   .loc-columns {
     grid-template-columns: 1fr;
@@ -9394,6 +9487,14 @@ tr.run-crosslinked td {
 .loc-age-records-time {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+/* Группу и дату не рвём на два этажа: внутри скролл-контейнера таблица ужимается
+   до min-content, и «10–14» с «27.09.2025» разъезжались по строкам, задирая
+   высоту каждой строки. Переносится только ФИО рекордсмена. */
+.loc-age-records-group,
+.loc-age-records-date {
+  white-space: nowrap;
 }
 
 .loc-mini-map {
@@ -9578,6 +9679,25 @@ tr.run-crosslinked td {
    обёртку по горизонтали. */
 .loc-index-table {
   min-width: 78rem;
+}
+
+/* В кратком виде колонок три, и ширина полного набора становится вредной:
+   при table-layout: fixed лишние 78rem достаются первой колонке, «Локация»
+   растягивается на весь экран, а «Системы» и «Стартов» уезжают за правый край.
+   Общий сброс для .data-table-short живёт под @media (max-width: 820px), но
+   краткий вид здесь доступен и на компьютере — поэтому свой, без медиазапроса. */
+.loc-index-table.data-table-short {
+  min-width: 0;
+  /* Ширину задаёт содержимое, а не экран. При table-layout: fixed и width: 100%
+     весь остаток доставался единственной колонке без своей ширины — «Локация»
+     раздувалась на пол-экрана, а «Системы» и «Стартов» уезжали к правому краю
+     (на широком экране — за пределы карточки, со скроллом). Названиям площадок
+     нужно заметно меньше места, поэтому в кратком виде колонки меряются по
+     содержимому и стоят рядом; max-width не даёт длинному названию растянуть
+     таблицу шире карточки. */
+  width: auto;
+  max-width: 100%;
+  table-layout: auto;
 }
 
 /* Раздел локаций шире остальных страниц (--layout-max-width: 864px):
@@ -10611,6 +10731,20 @@ tr.run-crosslinked td {
   gap: 14px;
 }
 
+.public-profile-head-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Привязанные системы под именем: бейджи-ссылки в профиль на самой системе. */
+.public-profile-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .public-profile-avatar {
   width: 56px;
   height: 56px;
@@ -10728,21 +10862,28 @@ tr.run-crosslinked td {
 
 /* Сегмент «Кратко | Полно»: только на узких экранах — на десктопе колонок
    всегда полный набор и переключать нечего. */
+/* Оформление сегмента задано без display — показ включают правила ниже:
+   по умолчанию только на узких экранах, а с модификатором tview-toggle-always
+   (рейтинги) — на любой ширине. */
 .tview-toggle {
   display: none;
+  /* Родители таблиц — flex-колонки: без align-self ребёнок растягивается
+     на всю ширину (stretch), и рамка сегмента уезжала бы через весь экран. */
+  align-self: flex-start;
+  width: fit-content;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.tview-toggle-always {
+  display: inline-flex;
 }
 
 @media (max-width: 820px) {
   .tview-toggle {
     display: inline-flex;
-    /* Родители таблиц — flex-колонки: без align-self ребёнок растягивается
-       на всю ширину (stretch), и рамка сегмента уезжала бы через весь экран. */
-    align-self: flex-start;
-    width: fit-content;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
-    margin-bottom: 10px;
   }
 }
 
@@ -12114,5 +12255,74 @@ tr.run-crosslinked td {
   background: rgba(255, 255, 255, 0.14);
   color: #fff;
   font-size: 1rem;
+  cursor: pointer;
+}
+
+/* Плашки систем в таблицах «Дальности от дома»: идут за названием и городом,
+   поэтому нужен небольшой отступ и запрет переноса внутри группы. */
+.home-distance-place-badges {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Фото отзыва в админке: миниатюра в таблице и просмотр во весь экран по клику
+   — чтобы понять, что приложил участник, не уходя в бакет за ссылкой. */
+.admin-ratings-photos {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.admin-ratings-photo-thumb {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  cursor: zoom-in;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.admin-ratings-photo-thumb img {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  display: block;
+}
+
+.admin-photo-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.85);
+  cursor: zoom-out;
+}
+
+.admin-photo-overlay img {
+  max-width: min(100%, 1100px);
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
+.admin-photo-close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 1.5rem;
+  line-height: 1;
   cursor: pointer;
 }

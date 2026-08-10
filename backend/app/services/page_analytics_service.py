@@ -64,6 +64,7 @@ _STATIC_PAGE_TYPES = {
     "/volunteering": "volunteering",
     "/maps": "maps",
     "/locations": "locations_index",
+    "/results": "last_results",
     "/history": "history",
     "/ratings": "ratings_hub",
     "/ratings/runs": "ratings_runs",

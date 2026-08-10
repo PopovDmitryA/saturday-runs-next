@@ -46,7 +46,7 @@ export type CabinetTabKey =
   | "settings";
 
 /** Что подсвечивать: вкладка ЛК, раздел сайта или ничего. */
-export type SiteSidebarActive = CabinetTabKey | "locations" | "ratings" | "backlog" | null;
+export type SiteSidebarActive = CabinetTabKey | "locations" | "last-results" | "ratings" | "backlog" | null;
 
 type CabinetNavItem = {
   key: CabinetTabKey;
@@ -161,6 +161,15 @@ const PROTOCOL_ICON = icon(
     <path d="M6 3.5h9L19 7.5V20a.5.5 0 0 1-.5.5h-12A.5.5 0 0 1 6 20V4a.5.5 0 0 1 .5-.5Z" />
     <path d="M14.5 3.5V8H19" />
     <path d="M9 12.5h6M9 16h4" />
+  </>,
+);
+
+// «Результаты последней субботы»: секундомер — свежие результаты стартов.
+const LAST_RESULTS_ICON = icon(
+  <>
+    <circle cx="12" cy="13" r="7" />
+    <path d="M12 9.5V13l2.5 2" />
+    <path d="M10 3h4M12 3v3" />
   </>,
 );
 
@@ -394,6 +403,12 @@ export function isCabinetTab(active: SiteSidebarActive): active is CabinetTabKey
 export type SidebarExtraGroup = {
   /** Заголовок группы (например, имя участника на публичном профиле). */
   title: string;
+  /**
+   * Клик по заголовку. Задан — заголовок становится кнопкой: на публичном
+   * профиле имя участника ведёт на его главную, как ожидается от «шапки»
+   * раздела (репорт Дмитрия 04.08.2026 — раньше клик не делал ничего).
+   */
+  onTitleClick?: () => void;
   items: { key: string; label: string; active: boolean; onClick: () => void }[];
 };
 
@@ -578,6 +593,18 @@ export function SiteSidebar({
           <span className="portal-cab-nav-icon">{LOCATIONS_ICON}</span>
           <span className="portal-cab-nav-label">Локации</span>
         </a>
+        {/* Постоянный подпункт раздела: последние результаты всех площадок. */}
+        <a
+          href="/results"
+          className={`portal-cab-nav-item portal-cab-nav-subitem${
+            active === "last-results" ? " active" : ""
+          }`}
+          aria-current={active === "last-results" ? "page" : undefined}
+          title={collapsed ? "Последние пробежки" : undefined}
+        >
+          <span className="portal-cab-nav-icon">{LAST_RESULTS_ICON}</span>
+          <span className="portal-cab-nav-label">Последние пробежки</span>
+        </a>
         {location && (
           <>
             <a
@@ -620,13 +647,25 @@ export function SiteSidebar({
             {/* Линия-разделитель: пункты чужого профиля временные, их надо
                 визуально отделить от постоянной навигации сайта. */}
             <div className="portal-cab-nav-sep" aria-hidden="true" />
-            <div
-              className="portal-cab-nav-item portal-cab-group-head portal-cab-group-head-static"
-              title={collapsed ? extraGroup.title : undefined}
-            >
-              <span className="portal-cab-nav-icon">{PROFILE_ICON}</span>
-              <span className="portal-cab-nav-label">{extraGroup.title}</span>
-            </div>
+            {extraGroup.onTitleClick ? (
+              <button
+                type="button"
+                onClick={extraGroup.onTitleClick}
+                className="portal-cab-nav-item portal-cab-group-head portal-cab-nav-textitem"
+                title={collapsed ? extraGroup.title : undefined}
+              >
+                <span className="portal-cab-nav-icon">{PROFILE_ICON}</span>
+                <span className="portal-cab-nav-label">{extraGroup.title}</span>
+              </button>
+            ) : (
+              <div
+                className="portal-cab-nav-item portal-cab-group-head portal-cab-group-head-static"
+                title={collapsed ? extraGroup.title : undefined}
+              >
+                <span className="portal-cab-nav-icon">{PROFILE_ICON}</span>
+                <span className="portal-cab-nav-label">{extraGroup.title}</span>
+              </div>
+            )}
             {extraGroup.items.map((item) => (
               <button
                 key={item.key}

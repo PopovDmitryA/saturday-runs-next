@@ -26,6 +26,8 @@ class PortalAttendanceRecordResponse(BaseModel):
     # Слаг страницы локации: имя на главной становится ссылкой /locations/{slug}.
     # None у старого кэша главной (ключ бампается, но перестраховка дешевле).
     location_slug: str | None = None
+    # Город рядом с названием: пусто, если он неизвестен или уже есть в имени.
+    location_city: str | None = None
     platform_code: str
     event_date: date
     finishers: int
@@ -99,6 +101,7 @@ class PortalLocationsWeekPointResponse(BaseModel):
 class PortalAttendanceTopRowResponse(BaseModel):
     location_name: str
     location_slug: str | None = None
+    location_city: str | None = None
     platform_code: str
     event_date: date
     finishers: int

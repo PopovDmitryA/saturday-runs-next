@@ -46,6 +46,7 @@ from app.services.location_catalog_service import (
     resolve_location_display_name,
 )
 from app.time_format import format_finish_time_display
+from app.volunteer_role_taxonomy import canonical_volunteer_role
 
 HISTOGRAM_BIN_SEC = 10
 # Индекс локаций — тяжёлая агрегация (~35 тыс. событий + join по протоколам
@@ -67,7 +68,7 @@ LOCATION_PAGE_CACHE_TTL_SECONDS = 3 * 60 * 60
 
 
 def location_page_cache_key(slug: str) -> str:
-    return f"locations:page:v6:{slug.strip().lower()}"
+    return f"locations:page:v9:{slug.strip().lower()}"
 
 
 def location_events_cache_key(slug: str) -> str:
@@ -411,10 +412,10 @@ def _location_event_ids(db: Session, location_ids: list[UUID]) -> list[UUID]:
 
 
 def build_location_leaders(
-    db: Session, slug: str, *, limit: int = 20, use_cache: bool = True
+    db: Session, slug: str, *, limit: int = 20, use_cache: bool = True, refresh: bool = False
 ) -> dict[str, object] | None:
     cache_key = location_leaders_cache_key(slug)
-    if use_cache:
+    if use_cache and not refresh:
         cached = _read_json_cache(cache_key)
         if cached is not None:
             return cached
@@ -1007,9 +1008,52 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
     )
 
 
-def build_location_page(db: Session, slug: str, *, use_cache: bool = True) -> dict[str, object] | None:
+
+def _same_city_locations(
+    db: Session, identity_key: str, city: str | None
+) -> list[dict[str, object]]:
+    """Другие площадки того же города — кластер под запрос «5 вёрст [город]».
+
+    Такой запрос (у «5 верст тюмень» 868 показов/мес) не про одну площадку:
+    человеку нужен весь город. Взаимные ссылки собирают страницы города в
+    кластер и для поисковика, и для навигации. Данные — из кэшированного
+    индекса каталога; список полный (решение Дмитрия 06.08.2026: город должен
+    быть виден целиком, даже московские три десятка), по алфавиту — в чипах
+    без явного порядка сортировка по стартам читалась как случайная.
+
+    Только действующие площадки: паузы отсеиваются наравне с отменёнными —
+    «Severny Rechnoy Vokzal» стоит на паузе с 2019-го, и в списке «куда ещё
+    сходить в Москве» ему делать нечего (репорт Дмитрия 06.08.2026).
+    """
+    city_norm = (city or "").strip().casefold()
+    if not city_norm:
+        return []
+    items = cast("list[dict[str, object]]", build_locations_index(db).get("items") or [])
+    same = [
+        item
+        for item in items
+        if str(item.get("city") or "").strip().casefold() == city_norm
+        and item.get("identity_key") != identity_key
+        and not item.get("is_cancelled")
+        and not item.get("is_paused")
+    ]
+    same.sort(key=lambda item: str(item.get("name") or "").casefold())
+    return [
+        {
+            "slug": item.get("slug"),
+            "name": item.get("name"),
+            "events_count": item.get("events_count") or 0,
+        }
+        for item in same
+        if item.get("slug")
+    ]
+
+
+def build_location_page(
+    db: Session, slug: str, *, use_cache: bool = True, refresh: bool = False
+) -> dict[str, object] | None:
     cache_key = location_page_cache_key(slug)
-    if use_cache:
+    if use_cache and not refresh:
         cached = _read_json_cache(cache_key)
         if cached is not None:
             return cached
@@ -1269,12 +1313,22 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
             "rows": histogram_rows,
         },
         "age_group_records": _age_group_records(db, event_ids),
+        "city_locations": _same_city_locations(
+            db,
+            identity.identity_key,
+            cast(
+                "str | None",
+                _first_by_platform_order(identity.locations, lambda loc: loc.city),
+            ),
+        ),
     }
 
 
-def build_location_events(db: Session, slug: str, *, use_cache: bool = True) -> dict[str, object] | None:
+def build_location_events(
+    db: Session, slug: str, *, use_cache: bool = True, refresh: bool = False
+) -> dict[str, object] | None:
     cache_key = location_events_cache_key(slug)
-    if use_cache:
+    if use_cache and not refresh:
         cached = _read_json_cache(cache_key)
         if cached is not None:
             return cached
@@ -1679,12 +1733,21 @@ def invalidate_location_page_cache(slug: str) -> None:
         pass
 
 
-def build_locations_index(db: Session, *, use_cache: bool = True) -> dict[str, object]:
+def build_locations_index(
+    db: Session, *, use_cache: bool = True, refresh: bool = False
+) -> dict[str, object]:
     """Публичный каталог локаций — с TTL-кэшем в Redis (см. LOCATIONS_INDEX_CACHE_TTL_SECONDS).
 
     Redis недоступен → тихо считаем без кэша (кэш — оптимизация, не зависимость).
+
+    refresh=True — прогрев: кэш не читаем (иначе живой блоб вернулся бы как есть
+    и ничего не обновилось), но результат обязательно кладём обратно. Именно
+    ради этого флаг и появился: прогрев ходил с use_cache=False, а это значило
+    «не читать И не писать» — задача честно считала каталог и все 270 страниц по
+    девять минут, а в Redis не попадало ничего, и первый посетитель после
+    протухания TTL всё равно ловил таймаут фронтенда на холодном расчёте.
     """
-    if use_cache:
+    if use_cache and not refresh:
         cached = _read_locations_index_cache()
         if cached is not None:
             return cached
@@ -1696,10 +1759,15 @@ def build_locations_index(db: Session, *, use_cache: bool = True) -> dict[str, o
     return payload
 
 
-def _compute_locations_index(db: Session) -> dict[str, object]:
-    """Тяжёлая агрегация каталога локаций: одна строка на каноническую идентичность."""
-    catalog_index = LocationCatalogIndex(db)
+def _collect_catalog_identities(
+    db: Session, catalog_index: LocationCatalogIndex
+) -> tuple[dict[str, list[tuple[Location, str]]], dict[UUID, str]]:
+    """Идентичности для строк каталога + маппинг location_id → identity_key.
 
+    Первое — какие идентичности показывать и какими локациями они представлены
+    (только «витринные» платформы), второе — ВСЕ локации этих идентичностей,
+    включая parkrun-эпоху: по нему считаются сквозные цифры истории.
+    """
     # Строки таблицы — только «официальные» локации активных систем
     # (five_verst/s95/runpark): у parkrun-локаций почти всегда есть текущий
     # преемник в каталоге, отдельной строки без него не показываем.
@@ -1781,6 +1849,14 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
         if identity_key in identity_locations:
             location_id_to_identity[location.id] = identity_key
 
+    return identity_locations, location_id_to_identity
+
+
+def _compute_locations_index(db: Session) -> dict[str, object]:
+    """Тяжёлая агрегация каталога локаций: одна строка на каноническую идентичность."""
+    catalog_index = LocationCatalogIndex(db)
+    identity_locations, location_id_to_identity = _collect_catalog_identities(db, catalog_index)
+
     identity_stats = _bulk_identity_stats(db, location_id_to_identity)
 
     items: list[dict[str, object]] = []
@@ -1824,6 +1900,252 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
 
     items.sort(key=lambda item: str(item["name"]).lower())
     return {"items": items, "total": len(items)}
+
+
+# Посадочная «Результаты последней субботы»: последний старт каждой локации по
+# всем системам разом. Тот же режим обновления, что у каталога: данные меняются
+# раз в неделю после субботнего синка, точечная инвалидация не окупается.
+LAST_RESULTS_CACHE_KEY = "locations:last-results:v1"
+
+
+def invalidate_last_results_cache() -> None:
+    try:
+        get_redis_client().delete(LAST_RESULTS_CACHE_KEY)
+    except redis.RedisError:
+        pass
+
+
+def build_last_results(db: Session, *, use_cache: bool = True, refresh: bool = False) -> dict[str, object]:
+    """Последние результаты всех локаций — с TTL-кэшем в Redis.
+
+    Семантика флагов та же, что у build_locations_index: refresh=True — прогрев
+    (не читать кэш, но обязательно записать), use_cache=False — совсем без кэша.
+    """
+    if use_cache and not refresh:
+        cached = _read_json_cache(LAST_RESULTS_CACHE_KEY)
+        if cached is not None:
+            return cached
+
+    payload = _compute_last_results(db)
+
+    if use_cache:
+        _write_json_cache(LAST_RESULTS_CACHE_KEY, payload, LOCATIONS_INDEX_CACHE_TTL_SECONDS)
+    return payload
+
+
+def _compute_last_results(db: Session) -> dict[str, object]:
+    """Одна строка на идентичность: её последний старт и цифры этого старта."""
+    catalog_index = LocationCatalogIndex(db)
+    identity_locations, location_id_to_identity = _collect_catalog_identities(db, catalog_index)
+
+    location_ids = list(location_id_to_identity.keys())
+    if not location_ids:
+        return {"saturday_date": None, "items": [], "total": 0}
+
+    event_rows = (
+        db.query(Event, Platform.code)
+        .join(Platform, Event.platform_id == Platform.id)
+        .filter(Event.location_id.in_(location_ids), Event.is_test_event.is_(False))
+        .all()
+    )
+    # Дедуп кросслинков — как в _bulk_identity_stats: JOIN по location_id,
+    # а не IN() по десяткам тысяч event_id.
+    all_event_ids = {event.id for event, _code in event_rows}
+    excluded_secondary: set[UUID] = set()
+    if all_event_ids:
+        crosslink_rows = (
+            db.query(EventCrosslink.primary_event_id, EventCrosslink.secondary_event_id)
+            .join(Event, EventCrosslink.secondary_event_id == Event.id)
+            .filter(Event.location_id.in_(location_ids), Event.is_test_event.is_(False))
+            .all()
+        )
+        excluded_secondary = {secondary for primary, secondary in crosslink_rows if primary in all_event_ids}
+    kept = [(event, code) for event, code in event_rows if event.id not in excluded_secondary]
+
+    # «Последняя суббота» — как пульс на главной: максимальная субботняя дата.
+    # Fallback на общий максимум нужен разве что теоретически (пустых суббот
+    # при живых данных не бывает), но пусть страница не падает и на нём.
+    saturday_dates = [event.event_date for event, _code in kept if event.event_date.weekday() == 5]
+    saturday_date = max(saturday_dates, default=None) or max(
+        (event.event_date for event, _code in kept), default=None
+    )
+
+    # Последний день каждой идентичности и события этого дня (обычно одно;
+    # два бывает, когда локация в один день отметилась в двух системах без
+    # кросслинка — тогда цифры складываем, времена берём лучшие).
+    latest_date: dict[str, date] = {}
+    for event, _code in kept:
+        identity_key = location_id_to_identity[event.location_id]
+        if identity_key not in latest_date or event.event_date > latest_date[identity_key]:
+            latest_date[identity_key] = event.event_date
+    chosen: dict[str, list[tuple[Event, str]]] = {}
+    for event, code in kept:
+        identity_key = location_id_to_identity[event.location_id]
+        if latest_date.get(identity_key) == event.event_date:
+            chosen.setdefault(identity_key, []).append((event, code))
+
+    chosen_event_ids = [event.id for pairs in chosen.values() for event, _code in pairs]
+    chosen_location_ids = {event.location_id for pairs in chosen.values() for event, _code in pairs}
+    location_by_id: dict[UUID, Location] = {
+        location.id: location
+        for location in db.query(Location).filter(Location.id.in_(chosen_location_ids)).all()
+    }
+
+    gender_expr = _gender_expression(
+        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+    )
+    time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
+    protocol_stats: dict[UUID, dict[str, int | None]] = {}
+    volunteer_counts: dict[UUID, int] = {}
+    summaries: dict[UUID, EventSummary] = {}
+    if chosen_event_ids:
+        rows = (
+            db.query(
+                RunResult.event_id,
+                func.count().label("finishers"),
+                func.min(case((time_ok & (gender_expr == "male"), RunResult.finish_time_sec))).label("best_male"),
+                func.min(case((time_ok & (gender_expr == "female"), RunResult.finish_time_sec))).label("best_female"),
+                func.avg(case((time_ok, RunResult.finish_time_sec))).label("avg_time"),
+                func.sum(case((RunResult.is_first_run.is_(True), 1), else_=0)).label("debutants"),
+                func.sum(case((RunResult.is_pr.is_(True), 1), else_=0)).label("prs"),
+            )
+            .join(Event, RunResult.event_id == Event.id)
+            .join(Platform, Event.platform_id == Platform.id)
+            .outerjoin(Participant, RunResult.participant_id == Participant.id)
+            .filter(RunResult.event_id.in_(chosen_event_ids))
+            .group_by(RunResult.event_id)
+            .all()
+        )
+        for row in rows:
+            protocol_stats[row.event_id] = {
+                "finishers": int(row.finishers),
+                "best_male": int(row.best_male) if row.best_male is not None else None,
+                "best_female": int(row.best_female) if row.best_female is not None else None,
+                "avg_time": int(row.avg_time) if row.avg_time is not None else None,
+                "debutants": int(row.debutants or 0),
+                "prs": int(row.prs or 0),
+            }
+        volunteer_counts = {
+            event_id: int(count)
+            for event_id, count in db.query(
+                VolunteerResult.event_id, func.count(func.distinct(VolunteerResult.participant_id))
+            )
+            .filter(VolunteerResult.event_id.in_(chosen_event_ids))
+            .group_by(VolunteerResult.event_id)
+            .all()
+        }
+        for summary_row in (
+            db.query(EventSummary).filter(EventSummary.event_id.in_(chosen_event_ids)).all()
+        ):
+            if summary_row.event_id is not None:
+                summaries[summary_row.event_id] = summary_row
+
+    def fmt(value: int | None) -> str | None:
+        return format_finish_time_display(value) if value is not None else None
+
+    items: list[dict[str, object]] = []
+    for identity_key, members in identity_locations.items():
+        events_for_key = chosen.get(identity_key)
+        if not events_for_key:
+            continue  # локация без единого старта — показывать нечего
+        catalog = catalog_index.get_for_identity_key(identity_key)
+        ordered = _sort_identity_locations(catalog, members)
+        primary_location, _primary_code = ordered[0]
+        is_paused, is_cancelled = _identity_status(catalog_index, ordered)
+
+        events_for_key.sort(key=lambda pair: _platform_order_index(pair[1]))
+        primary_event, primary_event_code = events_for_key[0]
+        finishers: int | None = None
+        volunteers: int | None = None
+        debutants: int | None = None
+        prs: int | None = None
+        best_male: int | None = None
+        best_female: int | None = None
+        avg_time: int | None = None
+        has_protocol = False
+        for event, _code in events_for_key:
+            stats = protocol_stats.get(event.id)
+            summary = summaries.get(event.id)
+            has_protocol = has_protocol or stats is not None
+            event_finishers = (
+                stats["finishers"]
+                if stats is not None
+                else (event.finishers_count or (summary.finishers_count if summary else None))
+            )
+            if event_finishers is not None:
+                finishers = (finishers or 0) + event_finishers
+            event_volunteers = volunteer_counts.get(event.id) or (summary.volunteers_count if summary else None)
+            if event_volunteers is not None:
+                volunteers = (volunteers or 0) + event_volunteers
+            if stats is not None:
+                debutants = (debutants or 0) + (stats["debutants"] or 0)
+                prs = (prs or 0) + (stats["prs"] or 0)
+            event_best_male = stats["best_male"] if stats else (summary.best_male_time_sec if summary else None)
+            if event_best_male is not None and (best_male is None or event_best_male < best_male):
+                best_male = event_best_male
+            event_best_female = (
+                stats["best_female"] if stats else (summary.best_female_time_sec if summary else None)
+            )
+            if event_best_female is not None and (best_female is None or event_best_female < best_female):
+                best_female = event_best_female
+            if avg_time is None:
+                avg_time = (stats["avg_time"] if stats else None) or (summary.avg_time_sec if summary else None)
+
+        primary_summary = summaries.get(primary_event.id)
+        items.append(
+            {
+                "slug": primary_location.external_key.strip().lower(),
+                "identity_key": identity_key,
+                "name": _identity_display_name(catalog, ordered, catalog_index),
+                "city": _first_by_platform_order(ordered, lambda loc: loc.city),
+                "region": _first_by_platform_order(ordered, lambda loc: loc.region),
+                "country": _identity_country(ordered),
+                "platform_codes": sorted({code for _loc, code in ordered}, key=_platform_order_index),
+                "is_paused": is_paused,
+                "is_cancelled": is_cancelled,
+                "event_date": primary_event.event_date,
+                "event_platform_codes": sorted(
+                    {code for _event, code in events_for_key}, key=_platform_order_index
+                ),
+                "event_number": primary_event.event_number,
+                "is_last_saturday": saturday_date is not None and primary_event.event_date == saturday_date,
+                "finishers": finishers,
+                "volunteers": volunteers,
+                "debutants": debutants,
+                "prs": prs,
+                "best_male_time_sec": best_male,
+                "best_male_time_display": fmt(best_male),
+                "best_female_time_sec": best_female,
+                "best_female_time_display": fmt(best_female),
+                "avg_time_sec": avg_time,
+                "avg_time_display": fmt(avg_time),
+                "has_protocol": has_protocol,
+                "protocol_url": resolve_activity_url(
+                    platform_code=primary_event_code,
+                    event_date=primary_event.event_date,
+                    event_number=primary_event.event_number,
+                    event_source_url=primary_event.source_url,
+                    location_external_key=(
+                        location_by_id[primary_event.location_id].external_key
+                        if primary_event.location_id in location_by_id
+                        else primary_location.external_key
+                    ),
+                    summary_source_url=primary_summary.source_url if primary_summary else None,
+                ),
+            }
+        )
+
+    # Свежие сверху, внутри даты — по явке (имя — стабильный алфавитный
+    # тай-брейк); хвост «давно не стартовали» уезжает вниз.
+    items.sort(key=lambda item: str(item["name"]).lower())
+    items.sort(
+        key=lambda item: (
+            cast(date, item["event_date"]).toordinal(),
+            cast("int | None", item["finishers"]) or 0,
+        ),
+        reverse=True,
+    )
+    return {"saturday_date": saturday_date, "items": items, "total": len(items)}
 
 
 def build_location_age_group_standings(
@@ -1936,6 +2258,45 @@ def build_location_age_group_standings(
     return standings
 
 
+def _top_volunteer_role_here(
+    db: Session, user_id: UUID, event_ids: list[UUID]
+) -> dict[str, object] | None:
+    """Любимая роль пользователя на этой локации: чаще всего выходил.
+
+    Ярлыки систем схлопываем в канон (см. app.volunteer_role_taxonomy): «Сканер»,
+    «Сканирование» и «Barcode Scanning» — одна и та же роль, и без канонизации
+    она делилась бы на три с меньшими счётчиками.
+    """
+    if not event_ids:
+        return None
+    rows = (
+        db.query(VolunteerResult.role, VolunteerResult.event_id)
+        .join(Participant, VolunteerResult.participant_id == Participant.id)
+        .join(PlatformLink, _platform_link_join())
+        .filter(
+            PlatformLink.user_id == user_id,
+            VolunteerResult.event_id.in_(event_ids),
+            VolunteerResult.role.isnot(None),
+            VolunteerResult.role != "",
+        )
+        .all()
+    )
+    # Считаем по разным стартам: две роли в одну субботу — это один выход,
+    # но каждая роль засчитывается себе (как в разборе ролей кабинета).
+    events_by_role: dict[str, set[UUID]] = {}
+    labels: dict[str, str] = {}
+    for role, event_id in rows:
+        canonical = canonical_volunteer_role(role)
+        if canonical is None:
+            continue
+        events_by_role.setdefault(canonical.key, set()).add(event_id)
+        labels[canonical.key] = canonical.label
+    if not events_by_role:
+        return None
+    key = min(events_by_role, key=lambda item: (-len(events_by_role[item]), labels[item].casefold()))
+    return {"role": labels[key], "count": len(events_by_role[key])}
+
+
 def _location_home_distance(
     db: Session, user: User, identity: LocationIdentity
 ) -> dict[str, object] | None:
@@ -1981,6 +2342,7 @@ def build_location_personal_stats(db: Session, user: User, slug: str) -> dict[st
         "first_run_date": None,
         "last_run_date": None,
         "volunteering_count": 0,
+        "top_volunteer_role": None,
         "gender": None,
         "rank_by_runs_gender": None,
         "runners_total_gender": None,
@@ -2018,6 +2380,7 @@ def build_location_personal_stats(db: Session, user: User, slug: str) -> dict[st
         .scalar()
     )
     payload["volunteering_count"] = int(volunteering_count or 0)
+    payload["top_volunteer_role"] = _top_volunteer_role_here(db, user_id, event_ids)
 
     if not rows:
         return payload

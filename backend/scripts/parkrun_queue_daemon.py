@@ -48,7 +48,13 @@ def main() -> int:
         action="store_true",
         help="With --use-cdp: do not auto-start Chrome",
     )
-    parser.add_argument("--limit", type=int, default=50, help="Max pending rows from DB")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Max pending rows from DB; 0 = вся очередь (личные рекорды "
+             "пересчитываются одним проходом в конце прогона)",
+    )
     parser.add_argument(
         "--pending-only",
         action="store_true",
@@ -115,14 +121,64 @@ def main() -> int:
         cline(f"СКРИПТ УПАЛ — подробности в {log_file}")
         return 1
 
-    cline("=== Итог ===")
-    cline(f"summary: {result.get('summary')}")
-    for line in result.get("details", []):
-        cline(f"  {line}")
+    _print_run_summary(result)
     summary = result.get("summary") or {}
     if summary.get("error") or summary.get("sync_error") or summary.get("cooldown"):
         return 1
     return 0
+
+
+# Человеческие названия исходов очереди — в консоли вместо машинных ключей.
+OUTCOME_LABELS = {
+    "done": "обработано",
+    "sync_ok": "синк профиля",
+    "not_found": "профиль не найден",
+    "error": "ошибки",
+    "sync_error": "ошибки синка",
+    "cooldown": "остановлено защитой (капча/бан)",
+    "skipped": "пропущено",
+    "db_connection_lost": "обрыв связи с БД",
+}
+
+
+def _print_run_summary(result: dict) -> None:
+    """Сводка прогона — как в мировом обходе: сколько, за сколько, с какой
+    скоростью. Печатается и при штатном финише, и при Ctrl+C."""
+    summary: dict = result.get("summary") or {}
+    processed = int(result.get("processed") or 0)
+    elapsed = float(result.get("elapsed") or 0.0)
+    interrupted = bool(result.get("interrupted"))
+    total = int(result.get("total") or 0)
+    done = int(summary.get("done", 0)) + int(summary.get("sync_ok", 0))
+
+    cline("=" * 46)
+    if interrupted:
+        cline(f"ОСТАНОВЛЕНО вручную на {processed} из {total} задач(и)")
+    else:
+        cline(f"ПРОГОН ЗАВЕРШЁН: {processed} из {total} задач(и)")
+
+    if elapsed > 0:
+        per_item = elapsed / max(processed, 1)
+        per_hour = 3600.0 / per_item if per_item > 0 else 0.0
+        cline(
+            f"успешно {done} · за {elapsed / 60:.1f} мин "
+            f"({per_item:.1f} с на задачу, ~{per_hour:.0f}/час)"
+        )
+
+    if summary:
+        parts = [
+            f"{OUTCOME_LABELS.get(key, key)}: {value}"
+            for key, value in sorted(summary.items(), key=lambda kv: -kv[1])
+        ]
+        cline("разбивка — " + " · ".join(parts))
+
+    details = result.get("details") or []
+    if details:
+        cline(f"подробности по задачам ({len(details)}):")
+        for line in details[-15:]:
+            cline(f"  {line}")
+        if len(details) > 15:
+            cline(f"  … ещё {len(details) - 15}, полный список в логе")
 
 
 if __name__ == "__main__":

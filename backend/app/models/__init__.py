@@ -783,6 +783,11 @@ class User(Base):
     news_subscribed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     profile_private: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     home_location_key: Mapped[str | None] = mapped_column(String(255))
+    # Когда человек в последний раз менял домашнюю локацию руками (в т.ч.
+    # сбрасывал на авто). NULL — не менял никогда. Нужно рейтингу дальности: его
+    # таблица кэшируется на несколько часов, и без этой отметки нельзя отличить
+    # «в таблице ещё старые километры» от «рейтинг посчитан неправильно».
+    home_location_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Уникальная НЕцифровая ссылка на публичный профиль (/users/{public_slug});
     # хранится в нижнем регистре, уникальность регистронезависима. NULL — не задана.
     public_slug: Mapped[str | None] = mapped_column(String(64), unique=True)

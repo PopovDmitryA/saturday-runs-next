@@ -17,6 +17,15 @@ export type LeaderboardMetric =
 // среди мужчин», стоя в протоколе вторым (см. LEADERBOARD_GENDERS на бэкенде).
 export type LeaderboardGender = "all" | "female";
 
+/**
+ * Единица измерения значения рейтинга — мелким шрифтом сразу за числом.
+ * Живёт здесь, а не на странице рейтинга: то же число показывает хаб, и без
+ * общей константы «км» там терялось (репорт Дмитрия 04.08.2026).
+ */
+export const METRIC_VALUE_UNIT: Partial<Record<LeaderboardMetric, string>> = {
+  home_distance: "км",
+};
+
 // Женский зачёт есть только у победных рейтингов (parkrun в него не идёт).
 export const GENDERED_METRICS: LeaderboardMetric[] = ["wins", "win_locations"];
 
@@ -125,6 +134,7 @@ export type LeaderboardRow = {
   total_delta: number;
   // Только у метрики wins: «топ-локация побед» — локация с максимумом побед.
   home_location?: string | null;
+  home_location_slug?: string | null;
   home_location_wins?: number | null;
   // Только у home_distance: "ambiguous" — автовыбор дома шаткий,
   // "manual_off_top" — человек выбрал руками площадку вне своей тройки.
@@ -159,6 +169,9 @@ export type LeaderboardResponse = {
   // Кнопки фильтра «единица зачёта»; пусто — у рейтинга такого фильтра нет.
   count_by_options?: CountBy[];
   has_week_locations?: boolean;
+  /** Фильтр «только очевидный дом»: есть ли он у рейтинга и включён ли. */
+  has_home_filter?: boolean;
+  hide_ambiguous_home?: boolean;
   title: string;
   description: string;
   unit: string;
@@ -172,6 +185,8 @@ export type LeaderboardResponse = {
   latest_event_date: string | null;
   week_start: string | null;
   built_at: string | null;
+  /** Через сколько часов после built_at таблица пересчитается (TTL снапшота). */
+  refresh_hours?: number;
 };
 
 export type MyLeaderboardRow = {
@@ -196,10 +211,17 @@ export type MyLeaderboardRow = {
   // определённо не совпадает с выбранным — порог показывать не нужно.
   gender_mismatch?: boolean;
   home_location?: string | null;
+  home_location_slug?: string | null;
   home_location_wins?: number | null;
   // Только у home_distance: "ambiguous" — автовыбор дома шаткий,
   // "manual_off_top" — человек выбрал руками площадку вне своей тройки.
   home_location_note?: "ambiguous" | "manual_off_top" | null;
+  /**
+   * Только у home_distance: когда участник менял домашнюю локацию в настройках.
+   * Своя строка считается вживую, а таблица приходит из снапшота — если отметка
+   * свежее built_at таблицы, в её строках ещё километры от прежнего дома.
+   */
+  home_location_changed_at?: string | null;
   best_time_sec?: number | null;
   best_time_display?: string | null;
   last_win_location?: string | null;
@@ -232,8 +254,12 @@ export function getLeaderboard(
   platform: PlatformFilter = "all",
   countBy: CountBy = "locations",
   roles: string[] | null = null,
+  hideAmbiguousHome = false,
 ) {
   const params = new URLSearchParams({ limit: String(limit) });
+  if (hideAmbiguousHome) {
+    params.set("hide_ambiguous_home", "true");
+  }
   if (gender !== "all") {
     params.set("gender", gender);
   }

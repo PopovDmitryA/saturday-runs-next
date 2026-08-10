@@ -37,7 +37,9 @@ from app.parkrun.volunteer_credits import (
 from app.services.co_runners_service import _is_unknown_participant_name
 from app.services.home_distance_service import AMBIGUITY_RATIO, haversine_km
 from app.services.location_catalog_service import (
+    PARKRUN_PLATFORM_CODE,
     LocationCatalogIndex,
+    is_foreign_location,
     russian_parkrun_location_ids,
 )
 from app.time_format import format_finish_time_display
@@ -129,6 +131,17 @@ PLATFORM_FILTER_METRICS: tuple[LeaderboardMetric, ...] = LEADERBOARD_METRICS
 # «Мультиволонтёре» роли и есть сама метрика (число разных освоенных),
 # фильтровать их там значило бы менять смысл рейтинга.
 ROLE_FILTER_METRICS: tuple[LeaderboardMetric, ...] = ("volunteering", "volunteer_locations")
+
+# Фильтр «спрятать участников с неочевидным домом» — только у дальности: у
+# остальных рейтингов домашней локации нет вовсе. Неочевидный дом — это
+# автовыбор при почти равных площадках (см. _home_location_note): нулевая точка
+# там условна, и километры такого участника зависят от того, какую из двух
+# площадок выбрал алгоритм.
+AMBIGUOUS_HOME_METRICS: tuple[LeaderboardMetric, ...] = ("home_distance",)
+
+
+def _normalize_hide_ambiguous_home(metric: str, value: bool) -> bool:
+    return bool(value) and metric in AMBIGUOUS_HOME_METRICS
 PLATFORM_FILTER_VALUES: tuple[str, ...] = ("all", *PLATFORM_COLUMNS)
 
 # Набор систем у метрики, если он отличается от общего PLATFORM_COLUMNS.
@@ -153,6 +166,9 @@ def platform_filter_values(metric: str) -> tuple[str, ...]:
 
 TOP_LIMIT = 1000
 CACHE_TTL_SECONDS = 6 * 3600
+# То же окно, но в часах: витрина обещает участнику пересчёт «в течение N
+# часов» и берёт N отсюда, а не повторяет число у себя.
+CACHE_TTL_HOURS = CACHE_TTL_SECONDS // 3600
 # v2 — в снапшот победных рейтингов добавлены «лучшее время» и «последняя
 # победа» (26.07.2026): старые кэшированные payload'ы этих полей не несут,
 # поэтому ключ версионируем, а не ждём протухания по TTL.
@@ -160,7 +176,7 @@ CACHE_TTL_SECONDS = 6 * 3600
 # (02.08.2026): по той же причине.
 # v4 — parkrun вошёл в разбивку по полу (02.08.2026): состав и порядок гендерных
 # рейтингов изменились, старые снапшоты пришлось бы ждать до конца TTL.
-CACHE_KEY_PREFIX = "leaderboards:v4"
+CACHE_KEY_PREFIX = "leaderboards:v5"
 
 # Победные рейтинги показывают две дополнительные колонки: глобальный рекорд
 # участника и последнюю победу (у win_locations — последнюю НОВУЮ локацию с
@@ -258,9 +274,11 @@ METRIC_META: dict[str, dict[str, str]] = {
             "участник финишировал. Каждая площадка даёт свои километры один "
             "раз, сколько бы раз человек туда ни ездил. Домашняя локация — где "
             "больше всего пробежек (зарегистрированные на сайте могут выбрать "
-            "её вручную в настройках). Расстояние — по прямой. «Всего» — не "
-            "сумма колонок: площадка, где бегали в двух системах, попадает в "
-            "обе колонки, но в зачёт идёт один раз."
+            "её вручную в настройках). В рейтинг идут участники, чей дом — "
+            "площадка 5 вёрст, С95 или RunPark либо российский parkrun. "
+            "Расстояние — по прямой. «Всего» — не сумма колонок: площадка, где "
+            "бегали в двух системах, попадает в обе колонки, но в зачёт идёт "
+            "один раз."
         ),
     },
 }
@@ -641,6 +659,34 @@ WHERE e.is_test_event = false
   AND ec.secondary_event_id IS NULL
 """
 
+# Выбор домашней локации в рейтинге дальности повторяет кабинет
+# (app.services.home_location_service._auto_home_location), поэтому и считать
+# надо теми же величинами: пробежки — по уникальным ДНЯМ, а не по строкам
+# протоколов. Общий _LOCATION_VISITS_SQL для этого не годится: там COUNT(*), и
+# менять его нельзя — на нём стоит порог визитов рейтинга туризма. Отдельная
+# выборка дешевле правки семантики соседнего рейтинга.
+_HOME_PICK_RUN_SQL = (
+    _PARKRUN_ELIGIBLE_CTE
+    + f"""
+SELECT
+    rr.participant_id AS participant_id,
+    p.code AS platform_code,
+    e.location_id AS location_id,
+    MIN(e.event_date) AS first_date,
+    COUNT(DISTINCT e.event_date) AS run_days
+FROM run_results rr
+JOIN events e ON e.id = rr.event_id
+JOIN platforms p ON p.id = e.platform_id
+LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
+WHERE e.is_test_event = false
+  AND rr.participant_id IS NOT NULL
+  AND ec.secondary_event_id IS NULL
+  AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
+  /*PIDS_FILTER*/
+GROUP BY rr.participant_id, p.code, e.location_id
+"""
+)
+
 _VOLUNTEER_LOCATION_VISITS_SQL = """
 SELECT
     vr.participant_id AS participant_id,
@@ -895,6 +941,8 @@ class _Entity:
     week: int = 0
     # Только для метрики wins: «топ-локация побед» — локация с максимумом побед.
     home_location: str | None = None
+    # Слаг страницы локации: колонки «Дом»/«Топ-локация» ведут на /locations/….
+    home_location_slug: str | None = None
     home_location_wins: int = 0
     # Только у home_distance: почему домашняя локация под вопросом.
     # "ambiguous" — автовыбор шаткий (ничья или вторая площадка вровень),
@@ -1221,6 +1269,37 @@ def _location_coordinates_map(db: Session) -> dict[str, tuple[float, float]]:
     return {identity: coords for identity, (_priority, coords) in best.items()}
 
 
+def _home_eligible_identities(db: Session) -> set[str]:
+    """Площадки, которые могут быть «домом» в рейтинге дальности.
+
+    Граница проходит по системам, а не по странам (решение Дмитрия 03.08.2026):
+    дом — любая площадка 5 вёрст, С95 или RunPark, в какой бы стране она ни
+    была. Это сразу включает С95 в Сербии и Беларуси и RunPark в Турции,
+    Грузии, Аргентине и Таджикистане — их бегуны такие же наши, как московские,
+    — и не требует правки кода, когда система откроет площадку в новой стране.
+
+    Отсекается только зарубежный parkrun: человек с домом в Лондоне живёт вне
+    наших систем, а любой его старт в России давал бы десятки тысяч километров.
+    Русскость parkrun-площадки берём тем же правилом, что карта и каталог
+    (is_foreign_location): страна у его строк — заглушка «United Kingdom»
+    (источник parkrun.org.uk), поэтому решает связь с каталогом локаций.
+    """
+    catalog_index = LocationCatalogIndex(db)
+    rows = (
+        db.query(Location, Platform.code)
+        .join(Platform, Location.platform_id == Platform.id)
+        .all()
+    )
+    eligible: set[str] = set()
+    for location, platform_code in rows:
+        if platform_code == PARKRUN_PLATFORM_CODE and is_foreign_location(
+            location, platform_code, catalog_index
+        ):
+            continue
+        eligible.add(catalog_index.canonical_identity_key(location, platform_code))
+    return eligible
+
+
 def _manual_home_identity_keys(db: Session) -> dict[UUID, str]:
     """user_id -> домашняя локация, выбранная руками в настройках.
 
@@ -1271,6 +1350,7 @@ class _MetricSource:
         self._geo: dict[str, _LocationGeo] | None = None
         self._coordinates: dict[str, tuple[float, float]] | None = None
         self._manual_homes: dict[UUID, str] | None = None
+        self._home_eligible: set[str] | None = None
         self._names: dict[UUID, str | None] | None = None
         self._rows: dict[str, Sequence[Row[Any]]] = {}
         # Волонтёрские выборки зависят от фильтра ролей, поэтому кэшируются
@@ -1305,6 +1385,12 @@ class _MetricSource:
         if self._manual_homes is None:
             self._manual_homes = _manual_home_identity_keys(self.db)
         return self._manual_homes
+
+    def home_eligible_identities(self) -> set[str]:
+        """Площадки, годные в «дом» — справочник того же рода, что geo_map."""
+        if self._home_eligible is None:
+            self._home_eligible = _home_eligible_identities(self.db)
+        return self._home_eligible
 
     def names(self) -> dict[UUID, str | None]:
         """Имена всех участников: справочник целиком дешевле, чем гигантский IN
@@ -1768,6 +1854,7 @@ def _collect_win_entities(source: _MetricSource, platform: str = "all") -> dict[
         if home is not None:
             identity, wins = home
             entity.home_location = identity_names.get(identity, identity)
+            entity.home_location_slug = identity_slugs.get(identity)
             entity.home_location_wins = wins
         _apply_last_win(entity, last_dates.get(key, {}), identity_names, identity_slugs)
     return entities
@@ -1907,6 +1994,7 @@ def _collect_gendered_win_entities(
             if home is not None:
                 identity, wins = home
                 entity.home_location = identity_names.get(identity, identity)
+                entity.home_location_slug = identity_slugs.get(identity)
                 entity.home_location_wins = wins
             _apply_last_win(entity, last_dates.get(key, {}), identity_names, identity_slugs)
         entities[key] = entity
@@ -2155,27 +2243,78 @@ def _collect_location_entities(
     return entities
 
 
+@dataclass
+class _HomePickStats:
+    """Чем площадка соревнуется за звание домашней (см. _home_identity)."""
+
+    run_days: int = 0
+    volunteer_days: int = 0
+    first_run_date: date | None = None
+
+    def add_runs(self, days: int, first_date: date) -> None:
+        self.run_days += days
+        if self.first_run_date is None or first_date < self.first_run_date:
+            self.first_run_date = first_date
+
+
+# Заглушка для площадок без известной даты пробежки: в сравнении «кто раньше»
+# они должны проигрывать любой реальной дате, а не выигрывать пустотой.
+_NO_RUN_DATE = date(9999, 12, 31)
+
+
 def _home_identity(
-    identities: dict[str, _LocationVisits],
+    stats: dict[str, _HomePickStats],
     identity_names: dict[str, str],
     manual_key: str | None,
 ) -> str | None:
-    """Домашняя площадка участника: выбранная руками, иначе — где больше визитов.
+    """Домашняя площадка участника — те же три ступени, что в кабинете
+    (app.services.home_location_service._auto_home_location, решение Дмитрия
+    03.08.2026): больше пробежек → больше волонтёрств → раньше начал.
 
-    Ничьи разводим по названию, чтобы рейтинг не «дышал» между пересчётами:
-    у 4846 участников первое место делят две площадки.
+    Волонтёрства сравниваются только среди лидеров по пробежкам и перебить их
+    не могут — за это отвечает порядок ключей в кортеже. Полная ничья
+    разрешается названием, чтобы выбор не «дышал» между пересчётами: первое
+    место по пробежкам делят две площадки у 4846 участников.
     """
-    if manual_key is not None and manual_key in identities:
+    if manual_key is not None and manual_key in stats:
         return manual_key
-    if not identities:
+    if not stats:
         return None
     return min(
-        identities,
+        stats,
         key=lambda identity: (
-            -identities[identity].visits,
+            -stats[identity].run_days,
+            -stats[identity].volunteer_days,
+            stats[identity].first_run_date or _NO_RUN_DATE,
             identity_names.get(identity, identity).casefold(),
         ),
     )
+
+
+def _collect_home_pick_stats(
+    rows: Sequence[Row[Any]],
+    volunteer_rows: Sequence[Row[Any]],
+    identity_by_location: dict[UUID, str],
+    links: dict[UUID, _SiteLink],
+) -> dict[str, dict[str, _HomePickStats]]:
+    """Счётчики выбора дома по участникам: пробежки, волонтёрства, начало.
+
+    Считаются по ВСЕМ данным человека, без фильтра «по системе»: дом у него
+    один и тот же, какой бы срез рейтинга ни смотрели — иначе при переключении
+    вкладки система «переезжала» бы вместе с нулевой точкой.
+    """
+    per_entity: dict[str, dict[str, _HomePickStats]] = {}
+
+    def bucket(pid: UUID, location_id: UUID) -> _HomePickStats:
+        key = _entity_key(pid, links.get(pid))
+        identity = identity_by_location.get(location_id, str(location_id))
+        return per_entity.setdefault(key, {}).setdefault(identity, _HomePickStats())
+
+    for pid, _code, location_id, first_date, run_days in rows:
+        bucket(pid, location_id).add_runs(int(run_days), first_date)
+    for pid, _code, location_id, _first_date, visits, _week in volunteer_rows:
+        bucket(pid, location_id).volunteer_days += int(visits)
+    return per_entity
 
 
 def _home_location_note(
@@ -2247,7 +2386,10 @@ def _home_distance_tally(
 
 
 def _collect_home_distance_entities(
-    source: _MetricSource, *, platform: str = "all"
+    source: _MetricSource,
+    *,
+    platform: str = "all",
+    hide_ambiguous_home: bool = False,
 ) -> dict[str, _Entity]:
     """Рейтинг дальности от дома: сумма километров до уникальных площадок.
 
@@ -2255,10 +2397,17 @@ def _collect_home_distance_entities(
     способ превратить набор площадок в число.
     """
     links = source.links()
-    identity_by_location, identity_names, _identity_slugs = source.identity_maps()
+    identity_by_location, identity_names, identity_slugs = source.identity_maps()
     coordinates = source.coordinates_map()
     manual_homes = source.manual_home_keys()
+    eligible_homes = source.home_eligible_identities()
     rows = source.rows(_LOCATION_VISITS_SQL)
+    home_stats = _collect_home_pick_stats(
+        source.rows(_HOME_PICK_RUN_SQL),
+        source.rows(_VOLUNTEER_LOCATION_VISITS_SQL),
+        identity_by_location,
+        links,
+    )
 
     per_entity: dict[str, dict[str, _LocationVisits]] = {}
     meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
@@ -2289,8 +2438,13 @@ def _collect_home_distance_entities(
         else:
             entity.display_name = names.get(pid)
         manual_key = manual_homes.get(link.user_id) if link is not None else None
-        home = _home_identity(identities, identity_names, manual_key)
+        home = _home_identity(home_stats.get(key, {}), identity_names, manual_key)
         if home is None:
+            continue
+        # Дом вне наших систем (зарубежный parkrun) — участника в рейтинге нет:
+        # его нулевая точка на другом континенте, и любой старт в России дал бы
+        # десятки тысяч километров (см. _home_eligible_identities).
+        if home not in eligible_homes:
             continue
         total, week, values = _home_distance_tally(
             identities, home, coordinates, source.week_start
@@ -2299,9 +2453,14 @@ def _collect_home_distance_entities(
         entity.week = week
         entity.values = values
         entity.home_location = identity_names.get(home, home)
+        entity.home_location_slug = identity_slugs.get(home)
         entity.home_location_note = _home_location_note(
             identities, identity_names, home, manual_key
         )
+        # Фильтр «только очевидный дом»: у участника с почти равными площадками
+        # нулевая точка условна, и километры зависят от выбора алгоритма.
+        if hide_ambiguous_home and entity.home_location_note == "ambiguous":
+            continue
         entity.locations_total = len(identities)
         entities[key] = entity
     return entities
@@ -2418,6 +2577,7 @@ def _build_snapshot(
     count_by: str = "locations",
     source: _MetricSource | None = None,
     role_filter: frozenset[str] | None = None,
+    hide_ambiguous_home: bool = False,
 ) -> dict[str, object]:
     latest = source.latest if source is not None else latest_event_date(db)
     if latest is None:
@@ -2443,7 +2603,9 @@ def _build_snapshot(
     if metric == "volunteer_roles":
         entities = _collect_volunteer_role_entities(src, platform=platform)
     elif metric == "home_distance":
-        entities = _collect_home_distance_entities(src, platform=platform)
+        entities = _collect_home_distance_entities(
+            src, platform=platform, hide_ambiguous_home=hide_ambiguous_home
+        )
     elif metric == "locations":
         entities = _collect_location_entities(
             src,
@@ -2542,6 +2704,7 @@ def _build_snapshot(
             row["week_location"] = entity.week_location
         if entity.home_location is not None:
             row["home_location"] = entity.home_location
+            row["home_location_slug"] = entity.home_location_slug
             # У «дальности от дома» колонка «Дом» — это домашняя локация, а не
             # топ-локация побед: числа побед у неё нет, зато есть пометка о том,
             # что выбор дома под вопросом.
@@ -2589,6 +2752,7 @@ def _cache_key(
     platform: str = "all",
     count_by: str = "locations",
     roles_key: str = "",
+    hide_ambiguous_home: bool = False,
 ) -> str:
     # Гендерные варианты, пороги визитов, фильтр по системе, единица зачёта и
     # набор ролей — отдельными суффиксами; базовый вариант (all / от 1 визита /
@@ -2603,6 +2767,8 @@ def _cache_key(
         key = f"{key}:p{platform}"
     if count_by != "locations":
         key = f"{key}:c{count_by}"
+    if hide_ambiguous_home:
+        key = f"{key}:home-sure"
     if roles_key:
         # Пресет — читаемым суффиксом, произвольный набор — короткой сигнатурой
         # (полный список ключей в имени Redis-ключа не нужен).
@@ -2617,10 +2783,13 @@ def _read_cache(
     platform: str = "all",
     count_by: str = "locations",
     roles_key: str = "",
+    hide_ambiguous_home: bool = False,
 ) -> dict[str, object] | None:
     try:
         raw = get_redis_client().get(
-            _cache_key(metric, gender, min_visits, platform, count_by, roles_key)
+            _cache_key(
+                metric, gender, min_visits, platform, count_by, roles_key, hide_ambiguous_home
+            )
         )
     except Exception:
         return None
@@ -2641,10 +2810,13 @@ def _write_cache(
     platform: str = "all",
     count_by: str = "locations",
     roles_key: str = "",
+    hide_ambiguous_home: bool = False,
 ) -> None:
     try:
         get_redis_client().setex(
-            _cache_key(metric, gender, min_visits, platform, count_by, roles_key),
+            _cache_key(
+                metric, gender, min_visits, platform, count_by, roles_key, hide_ambiguous_home
+            ),
             CACHE_TTL_SECONDS,
             json.dumps(payload, ensure_ascii=False),
         )
@@ -2720,14 +2892,18 @@ def get_leaderboard_snapshot(
     platform: str = "all",
     count_by: str = "locations",
     roles: Sequence[str] | None = None,
+    hide_ambiguous_home: bool = False,
 ) -> dict[str, object]:
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
     platform_resolved = _normalize_platform_filter(metric, platform)
     unit = _normalize_count_by(metric, count_by)
     role_filter, roles_key = normalize_role_filter(metric, roles)
+    hide_ambiguous = _normalize_hide_ambiguous_home(metric, hide_ambiguous_home)
     if use_cache:
-        cached = _read_cache(metric, resolved, visits, platform_resolved, unit, roles_key)
+        cached = _read_cache(
+            metric, resolved, visits, platform_resolved, unit, roles_key, hide_ambiguous
+        )
         if cached is not None:
             return cached
     payload = _build_snapshot(
@@ -2738,10 +2914,18 @@ def get_leaderboard_snapshot(
         platform_resolved,
         unit,
         role_filter=role_filter,
+        hide_ambiguous_home=hide_ambiguous,
     )
     if use_cache:
         _write_cache(
-            metric, payload, resolved, visits, platform_resolved, unit, roles_key
+            metric,
+            payload,
+            resolved,
+            visits,
+            platform_resolved,
+            unit,
+            roles_key,
+            hide_ambiguous,
         )
     return payload
 
@@ -2754,6 +2938,7 @@ def refresh_leaderboard_cache(
     platform: str = "all",
     count_by: str = "locations",
     source: _MetricSource | None = None,
+    hide_ambiguous_home: bool = False,
 ) -> dict[str, object]:
     """Пересчитать снапшот и перезаписать кэш, даже если тот ещё не протух.
 
@@ -2765,10 +2950,20 @@ def refresh_leaderboard_cache(
     visits = _normalize_min_visits(metric, min_visits)
     platform_resolved = _normalize_platform_filter(metric, platform)
     unit = _normalize_count_by(metric, count_by)
+    hide_ambiguous = _normalize_hide_ambiguous_home(metric, hide_ambiguous_home)
     payload = _build_snapshot(
-        db, metric, resolved, visits, platform_resolved, unit, source
+        db,
+        metric,
+        resolved,
+        visits,
+        platform_resolved,
+        unit,
+        source,
+        hide_ambiguous_home=hide_ambiguous,
     )
-    _write_cache(metric, payload, resolved, visits, platform_resolved, unit)
+    _write_cache(
+        metric, payload, resolved, visits, platform_resolved, unit, "", hide_ambiguous
+    )
     return payload
 
 
@@ -2783,12 +2978,14 @@ def get_leaderboard(
     platform: str = "all",
     count_by: str = "locations",
     roles: Sequence[str] | None = None,
+    hide_ambiguous_home: bool = False,
 ) -> dict[str, object]:
     """Публичная часть снапшота (без служебных массивов рангов)."""
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
     platform_resolved = _normalize_platform_filter(metric, platform)
     unit = _normalize_count_by(metric, count_by)
+    hide_ambiguous = _normalize_hide_ambiguous_home(metric, hide_ambiguous_home)
     snapshot = get_leaderboard_snapshot(
         db,
         metric,
@@ -2798,6 +2995,7 @@ def get_leaderboard(
         platform=platform_resolved,
         count_by=unit,
         roles=roles,
+        hide_ambiguous_home=hide_ambiguous,
     )
     rows = cast("list[dict[str, object]]", snapshot.get("rows") or [])
     # Фильтр по одной системе прячет колонки-системы целиком (люди хотели
@@ -2825,6 +3023,9 @@ def get_leaderboard(
         # на бэкенде, фронт их не повторяет.
         "count_by_options": list(count_by_values(metric)),
         "has_week_locations": metric in WEEK_LOCATIONS_METRICS,
+        # Фильтр «только очевидный дом»: есть ли он у рейтинга и включён ли.
+        "has_home_filter": metric in AMBIGUOUS_HOME_METRICS,
+        "hide_ambiguous_home": hide_ambiguous,
         "rows": rows[: max(1, min(limit, TOP_LIMIT))],
         "threshold": snapshot.get("threshold", 0),
         "median": snapshot.get("median", 0),
@@ -2832,6 +3033,10 @@ def get_leaderboard(
         "latest_event_date": snapshot.get("latest_event_date"),
         "week_start": snapshot.get("week_start"),
         "built_at": snapshot.get("built_at"),
+        # Через сколько часов после built_at таблица пересчитается: витрина
+        # объясняет этим задержку между сменой домашней локации и новыми
+        # километрами в строках.
+        "refresh_hours": CACHE_TTL_HOURS,
     }
 
 
@@ -2971,7 +3176,7 @@ def _resolve_last_win(
 
 def _my_win_values(
     db: Session, participant_ids: list[UUID], week_start: date, platform: str = "all"
-) -> tuple[dict[str, list[int]], tuple[str, int] | None, _LastWin | None]:
+) -> tuple[dict[str, list[int]], tuple[str, str | None, int] | None, _LastWin | None]:
     """Победы залогиненного: значения по системам, «топ-локация побед» и
     последняя победа."""
     if not participant_ids:
@@ -2998,7 +3203,7 @@ def _my_win_values(
     home = _pick_home(win_counts_by_identity)
     if home is not None:
         identity, wins = home
-        return values, (identity_names.get(identity, identity), wins), last_win
+        return values, (identity_names.get(identity, identity), identity_slugs.get(identity), wins), last_win
     return values, None, last_win
 
 
@@ -3010,7 +3215,7 @@ def _my_gendered_win_values(
     *,
     as_locations: bool,
     platform: str = "all",
-) -> tuple[dict[str, list[int]], int, int, tuple[str, int] | None, _LastWin | None]:
+) -> tuple[dict[str, list[int]], int, int, tuple[str, str | None, int] | None, _LastWin | None]:
     """«Моя» строка в гендерном зачёте. Если пол участника не совпадает с
     запрошенным — он в этот рейтинг не входит (нули, not included)."""
     if not participant_ids:
@@ -3073,7 +3278,11 @@ def _my_gendered_win_values(
     total = sum(v[0] for v in values.values())
     week = sum(v[1] for v in values.values())
     home = _pick_home(win_counts_by_identity)
-    home_out = (identity_names.get(home[0], home[0]), home[1]) if home is not None else None
+    home_out = (
+        (identity_names.get(home[0], home[0]), identity_slugs.get(home[0]), home[1])
+        if home is not None
+        else None
+    )
     return values, total, week, home_out, _resolve_last_win(
         last_dates, identity_names, identity_slugs
     )
@@ -3147,6 +3356,7 @@ class _MyHomeDistanceRow:
     total: int
     week: int
     home_location: str | None = None
+    home_location_slug: str | None = None
     home_location_note: str | None = None
     locations_total: int | None = None
 
@@ -3167,15 +3377,45 @@ def _my_home_distance_values(
         return _MyHomeDistanceRow(values={}, total=0, week=0)
     sql = _LOCATION_VISITS_SQL.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
     rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
-    identity_by_location, identity_names, _identity_slugs = _location_identity_maps(db)
+    identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     identities: dict[str, _LocationVisits] = {}
     for _pid, code, location_id, first_date, visits, week_visits in rows:
         if platform != "all" and code != platform:
             continue
         identity = identity_by_location.get(location_id, str(location_id))
         _merge_visit_row(identities, identity, code, first_date, int(visits), int(week_visits))
-    home = _home_identity(identities, identity_names, user.home_location_key)
-    if home is None:
+    # Дом — по всем данным человека и теми же тремя ступенями, что в кабинете.
+    pick_params = _row_params(db, week_start, pids=participant_ids)
+    home_stats = _collect_home_pick_stats(
+        db.execute(
+            text(_HOME_PICK_RUN_SQL.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")),
+            pick_params,
+        ).all(),
+        db.execute(
+            text(
+                _VOLUNTEER_LOCATION_VISITS_SQL.replace(
+                    "/*PIDS_FILTER*/", "AND vr.participant_id = ANY(:pids)"
+                )
+            ),
+            pick_params,
+        ).all(),
+        identity_by_location,
+        _site_links(db),
+    )
+    my_stats: dict[str, _HomePickStats] = {}
+    for entity_stats in home_stats.values():
+        for identity, stat in entity_stats.items():
+            merged = my_stats.setdefault(identity, _HomePickStats())
+            merged.run_days += stat.run_days
+            merged.volunteer_days += stat.volunteer_days
+            if stat.first_run_date is not None and (
+                merged.first_run_date is None or stat.first_run_date < merged.first_run_date
+            ):
+                merged.first_run_date = stat.first_run_date
+    home = _home_identity(my_stats, identity_names, user.home_location_key)
+    # Дом вне наших систем — участника в этом рейтинге нет (см.
+    # _home_eligible_identities).
+    if home is None or home not in _home_eligible_identities(db):
         return _MyHomeDistanceRow(values={}, total=0, week=0)
     total, week, values = _home_distance_tally(
         identities, home, _location_coordinates_map(db), week_start
@@ -3185,6 +3425,7 @@ def _my_home_distance_values(
         total=total,
         week=week,
         home_location=identity_names.get(home, home),
+        home_location_slug=identity_slugs.get(home),
         home_location_note=_home_location_note(
             identities, identity_names, home, user.home_location_key
         ),
@@ -3259,7 +3500,7 @@ def get_my_leaderboard_row(
         .all()
     ]
 
-    my_home: tuple[str, int] | None = None
+    my_home: tuple[str, str | None, int] | None = None
     my_last_win: _LastWin | None = None
     my_top_role: tuple[str, int] | None = None
     my_role_details: list[dict[str, object]] = []
@@ -3267,6 +3508,7 @@ def get_my_leaderboard_row(
     # Только у «дальности от дома»: домашняя локация без числа побед и общее
     # число посещённых площадок (у туристических рейтингов это считает my_geo).
     my_home_name: str | None = None
+    my_home_slug: str | None = None
     my_home_note: str | None = None
     my_locations_total: int | None = None
     if metric == "volunteer_roles":
@@ -3284,6 +3526,7 @@ def get_my_leaderboard_row(
         )
         values, total, week = distance_row.values, distance_row.total, distance_row.week
         my_home_name = distance_row.home_location
+        my_home_slug = distance_row.home_location_slug
         my_home_note = distance_row.home_location_note
         my_locations_total = distance_row.locations_total
     elif metric in ("locations", "volunteer_locations"):
@@ -3399,8 +3642,17 @@ def get_my_leaderboard_row(
         "threshold": threshold,
         "gender_mismatch": gender_mismatch,
         "home_location": my_home[0] if my_home else my_home_name,
-        "home_location_wins": my_home[1] if my_home else None,
+        "home_location_slug": my_home[1] if my_home else my_home_slug,
+        "home_location_wins": my_home[2] if my_home else None,
         "home_location_note": my_home_note,
+        # Когда участник менял дом руками — только у дальности: своя строка
+        # считается вживую, а таблица приходит из снапшота, и витрина по этой
+        # отметке понимает, что километры в таблице ещё от прежнего дома.
+        "home_location_changed_at": (
+            user.home_location_changed_at.isoformat()
+            if metric == "home_distance" and user.home_location_changed_at is not None
+            else None
+        ),
         "top_role": my_top_role[0] if my_top_role else None,
         "top_role_count": my_top_role[1] if my_top_role else None,
         "role_details": my_role_details,

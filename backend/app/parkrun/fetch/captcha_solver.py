@@ -82,20 +82,48 @@ class WafTokenHarvester:
                 pass
             self._playwright = None
 
-    def harvest(self, url: str) -> str | None:
-        """Зайти браузером на url, решить капчу если есть, вернуть aws-waf-token."""
+    def harvest(self, url: str) -> tuple[str | None, bool]:
+        """Зайти браузером на url, решить капчу если есть, снять aws-waf-token.
+
+        Возвращает (token, cleared):
+        - token — свежий aws-waf-token, если WAF его выдал;
+        - cleared — браузер увидел НОРМАЛЬНУЮ страницу (капчи нет).
+
+        Токен и «чисто» — разные вещи: когда WAF пропускает браузер без
+        челленджа, куки aws-waf-token просто не появляется. Раньше это
+        считалось провалом и роняло всю пачку, хотя защита уже снялась и
+        httpx мог спокойно продолжать.
+        """
         try:
             solver = self._ensure()
         except Exception as exc:
             logger.warning("captcha solver unavailable: %r", exc)
-            return None
+            return None, False
 
         br = self._playwright.chromium.launch(headless=True, args=["--no-proxy-server"])
         ctx = br.new_context(user_agent=self._ua, viewport={"width": 1280, "height": 900})
         token = None
+        cleared = False
         try:
             pg = ctx.new_page()
-            pg.goto(url, wait_until="domcontentloaded", timeout=60000)
+            # WAF под нагрузкой рвёт соединения браузера (ERR_CONNECTION_CLOSED),
+            # хотя через минуту тот же адрес открывается. Ретраим, а не сдаёмся.
+            last_err: Exception | None = None
+            for attempt in range(3):
+                try:
+                    pg.goto(url, wait_until="domcontentloaded", timeout=60000)
+                    last_err = None
+                    break
+                except Exception as exc:
+                    last_err = exc
+                    logger.warning(
+                        "captcha solver: goto %s failed (%d/3): %s",
+                        url, attempt + 1, str(exc)[:120],
+                    )
+                    time.sleep(8)
+            if last_err is not None:
+                raise last_err
+
             solver._wait_for(
                 pg,
                 lambda: (
@@ -117,10 +145,14 @@ class WafTokenHarvester:
                     ok, _n, self._round = solver.pass_captcha(pg, self._clip, self._round)
                     if not ok:
                         logger.warning("captcha not solved for %s", url)
-                        return None
+                        return None, False
                 except Exception:
                     pass  # гонка = страница уже уехала после успеха, проверяем куки
                 time.sleep(3)
+                cleared = True
+            else:
+                # челленджа не было — WAF пустил браузер сразу
+                cleared = len(html) > 25000
             for _ in range(20):
                 for c in ctx.cookies():
                     if c["name"] == "aws-waf-token":
@@ -139,4 +171,4 @@ class WafTokenHarvester:
                 br.close()
             except Exception as exc:
                 logger.warning("captcha solver: browser NOT closed (leak risk): %r", exc)
-        return token
+        return token, cleared

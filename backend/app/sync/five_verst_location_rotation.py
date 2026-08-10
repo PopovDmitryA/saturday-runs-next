@@ -54,6 +54,7 @@ def sync_next_location_batch(db: Session) -> LocationRotationSyncResult:
                 summaries_limit=settings.five_verst_location_batch_summaries_limit,
                 protocol_fetch_limit=None,
                 fetch_all_protocols_on_change=True,
+                location_refresh_interval_days=settings.five_verst_location_refresh_interval_days,
             ),
         )
         return LocationRotationSyncResult(

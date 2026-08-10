@@ -130,19 +130,58 @@ def upsert_location(
             db.flush()
         return row, False
 
-    row.name = location.name
+    # Собираем целевое состояние строки. Правило общее: пустое значение из
+    # источника НЕ затирает уже известное — разные пути знают о локации разное.
+    # Импорт профиля, например, видит только слаг и название, без координат,
+    # хеша страницы и карты; синк локаций — наоборот, знает всё.
+    new_name = location.name or row.name
     # `or row.country` — s95 страну не отдаёт, и без этого каждый синк стирал бы
     # уже известную. Город и регион так и жили, страна была исключением.
-    row.country = country or row.country
-    row.city = city or row.city
-    row.region = region or row.region
-    row.latitude = location.latitude or row.latitude
-    row.longitude = location.longitude or row.longitude
-    if location.map_url:
-        row.map_url = location.map_url
-    row.source_url = location.source_url
+    new_country = country or row.country
+    new_city = city or row.city
+    new_region = region or row.region
+    new_latitude = location.latitude or row.latitude
+    new_longitude = location.longitude or row.longitude
+    new_map_url = location.map_url or row.map_url
+    new_source_url = location.source_url or row.source_url
+    # Хеш ставит только тот, кто реально его посчитал (синк по HTML страницы).
+    # Раньше вызовы без хеша (импорт профиля) затирали его в NULL, и оптимизация
+    # «не обновлять, если не изменилось» переставала работать для ВСЕХ путей:
+    # на 05.08.2026 хеша не было у 2837 локаций из 2875.
+    new_source_hash = source_hash if source_hash is not None else row.source_hash
+
+    unchanged = (
+        row.name == new_name
+        and row.country == new_country
+        and row.city == new_city
+        and row.region == new_region
+        and row.latitude == new_latitude
+        and row.longitude == new_longitude
+        and row.map_url == new_map_url
+        and row.source_url == new_source_url
+        and row.source_hash == new_source_hash
+        and row.parser_version == PARSER_VERSION
+        and row.sync_status == SyncStatus.ok
+        and row.error_message is None
+    )
+    if unchanged:
+        # Ни одного отличия — не трогаем строку вообще. Раньше здесь всё равно
+        # шёл UPDATE ради fetched_at, и на прод-базе такие «пустые» апдейты
+        # вставали в очередь за блокировками боевых воркеров (23 с на запрос).
+        # fetched_at означает «когда локацию реально пересинкали», поэтому
+        # упоминание локации в чужом импорте его двигать не должно.
+        return row, False
+
+    row.name = new_name
+    row.country = new_country
+    row.city = new_city
+    row.region = new_region
+    row.latitude = new_latitude
+    row.longitude = new_longitude
+    row.map_url = new_map_url
+    row.source_url = new_source_url
     row.parser_version = PARSER_VERSION
-    row.source_hash = source_hash
+    row.source_hash = new_source_hash
     row.fetched_at = now
     row.sync_status = SyncStatus.ok
     row.error_message = None
@@ -339,14 +378,25 @@ def upsert_participant(
     age_category: str | None = None,
     barcode_id: str | None = None,
 ) -> Participant:
-    row = (
-        db.query(Participant)
-        .filter(
-            Participant.platform_id == platform.id,
-            Participant.external_user_id == external_user_id,
+    # Кеш «платформа+внешний id → строка» на время сессии: профильный импорт
+    # ищет одного и того же участника на каждой пробежке, и по SSH-туннелю к
+    # проду это были сотни одинаковых SELECT (42% времени импорта долгожителя).
+    # Живёт на самой Session, поэтому не течёт между запросами и прогонами.
+    cache: dict[tuple[UUID, str], Participant] = getattr(db, "_participant_cache", None)
+    if cache is None:
+        cache = {}
+        db._participant_cache = cache  # noqa: SLF001
+    cache_key = (platform.id, external_user_id)
+    row = cache.get(cache_key)
+    if row is None:
+        row = (
+            db.query(Participant)
+            .filter(
+                Participant.platform_id == platform.id,
+                Participant.external_user_id == external_user_id,
+            )
+            .one_or_none()
         )
-        .one_or_none()
-    )
     now = datetime.now(timezone.utc)
     if external_user_id.startswith("unknown:"):
         default_profile_url = None
@@ -373,17 +423,31 @@ def upsert_participant(
         )
         db.add(row)
     else:
-        row.display_name = display_name
-        if profile_url:
-            row.profile_url = profile_url
-        if club_name:
-            row.club_name = club_name
-        if age_category:
-            row.age_category = age_category
-        if barcode_id:
-            row.barcode_id = barcode_id
-        row.fetched_at = now
-        row.sync_status = SyncStatus.ok
+        # Профильный импорт зовёт эту функцию на КАЖДУЮ пробежку одного и того
+        # же человека (upsert_run_results вызывается по одной строке), поэтому
+        # безусловная запись fetched_at давала сотни UPDATE одинаковыми
+        # данными: у долгожителя с 284 забегами — 298 апдейтов по туннелю.
+        # Трогаем строку, только если что-то реально меняется.
+        changes = (
+            row.display_name != display_name
+            or (profile_url and row.profile_url != profile_url)
+            or (club_name and row.club_name != club_name)
+            or (age_category and row.age_category != age_category)
+            or (barcode_id and row.barcode_id != barcode_id)
+            or row.sync_status != SyncStatus.ok
+        )
+        if changes:
+            row.display_name = display_name
+            if profile_url:
+                row.profile_url = profile_url
+            if club_name:
+                row.club_name = club_name
+            if age_category:
+                row.age_category = age_category
+            if barcode_id:
+                row.barcode_id = barcode_id
+            row.fetched_at = now
+            row.sync_status = SyncStatus.ok
     # Пол пересчитываем всегда: у s95 он приезжает в profile_extra отдельным
     # апсертом профиля, у остальных — вместе с обновлённой категорией.
     # Известный пол не затираем на None (протокол без категории — не повод).
@@ -391,6 +455,7 @@ def upsert_participant(
     if gender is not None and row.gender != gender:
         row.gender = gender
     db.flush()
+    cache[cache_key] = row
     return row
 
 
@@ -994,6 +1059,9 @@ def import_profile_run_results(
 ) -> int:
     imported = 0
     touched_participant_ids: set[UUID] = set()
+    # external_user_id → Participant.id (или None). В профильном импорте ключ
+    # всегда один, но код общий для всех платформ — держим словарь.
+    participant_id_cache: dict[str, UUID | None] = {}
     for item in results:
         slug = _normalize_location_slug(item.location_external_key, item.location_name)
         display_name = item.location_name or slug
@@ -1064,16 +1132,26 @@ def import_profile_run_results(
             from app.services.gender_position_service import recalculate_event_gender_positions
 
             recalculate_event_gender_positions(db, event.id, platform.code)
-        participant = (
-            db.query(Participant)
-            .filter(
-                Participant.platform_id == platform.id,
-                Participant.external_user_id == item.external_user_id,
+        # Участник в профильном импорте один и тот же на все пробежки, но раньше
+        # его искали заново на каждой строке: у долгожителя с 284 забегами это
+        # давало сотни одинаковых SELECT по туннелю (42% всего времени импорта).
+        # Кешируем найденное в пределах вызова.
+        external_user_id = item.external_user_id
+        if external_user_id in participant_id_cache:
+            participant_id = participant_id_cache[external_user_id]
+        else:
+            participant_row = (
+                db.query(Participant.id)
+                .filter(
+                    Participant.platform_id == platform.id,
+                    Participant.external_user_id == external_user_id,
+                )
+                .one_or_none()
             )
-            .one_or_none()
-        )
-        if participant is not None:
-            touched_participant_ids.add(participant.id)
+            participant_id = participant_row[0] if participant_row is not None else None
+            participant_id_cache[external_user_id] = participant_id
+        if participant_id is not None:
+            touched_participant_ids.add(participant_id)
     if platform.code == "five_verst":
         participant_ids = {item.external_user_id for item in results}
         for external_user_id in participant_ids:

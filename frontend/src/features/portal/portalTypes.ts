@@ -18,6 +18,8 @@ export type PortalAttendanceRecord = {
   location_name: string;
   /** Слаг страницы локации: имя рендерится ссылкой на /locations/{slug}. */
   location_slug?: string | null;
+  /** Город локации; пусто, если он неизвестен или уже звучит в названии. */
+  location_city?: string | null;
   platform_code: string;
   event_date: string;
   finishers: number;
@@ -89,6 +91,8 @@ export type PortalFastestRow = {
 export type PortalAttendanceTopRow = {
   location_name: string;
   location_slug?: string | null;
+  /** Город локации; пусто, если он неизвестен или уже звучит в названии. */
+  location_city?: string | null;
   platform_code: string;
   event_date: string;
   finishers: number;

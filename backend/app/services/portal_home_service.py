@@ -39,7 +39,7 @@ from app.services.location_catalog_service import LocationCatalogIndex
 
 logger = logging.getLogger(__name__)
 
-PORTAL_HOME_CACHE_KEY = "portal:home:v20"
+PORTAL_HOME_CACHE_KEY = "portal:home:v21"
 # TTL сильно больше периода прогрева (раз в час): пересчёт занимает ~2 мин и идёт
 # синхронно в запросе пользователя, поэтому пустой кэш — это минута ожидания на
 # главной. Запас в 24 часа переживает и пропущенные прогревы, и рестарт воркера:
@@ -830,6 +830,18 @@ def _total_time_sec_in_range(
     )
 
 
+def _city_label(city: str | None, location_name: str) -> str | None:
+    """Город для подписи рядом с названием локации.
+
+    Возвращает None, если города нет или он уже звучит в самом названии:
+    «Тюмень Парк Гагарина · Тюмень» читается как ошибка вёрстки, а не как
+    уточнение географии.
+    """
+    if not city:
+        return None
+    return None if city.casefold() in location_name.casefold() else city
+
+
 def _week_attendance_records(
     events: list[_EventRow],
     week_start: date,
@@ -837,6 +849,7 @@ def _week_attendance_records(
     identity_of: Callable[[UUID], str],
     display_of: Callable[[UUID], str],
     slug_of: Callable[[UUID], str] | None = None,
+    city_of: Callable[[UUID], str | None] | None = None,
 ) -> list[dict[str, Any]]:
     """Рекорды посещаемости недели: побитые максимумы и открытия площадок.
 
@@ -894,6 +907,7 @@ def _week_attendance_records(
         records[key] = {
             "location_name": display_of(row.location_id),
             "location_slug": slug_of(row.location_id) if slug_of is not None else None,
+            "location_city": city_of(row.location_id) if city_of is not None else None,
             "platform_code": row.platform_code,
             "event_date": row.event_date,
             "finishers": row.finishers,
@@ -939,6 +953,21 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         адрес на канонический, поэтому строить его здесь не нужно.
         """
         return locations[location_id].external_key.strip().lower()
+
+    # Город физической локации. Поле заполнено не у всех строк (у parkrun его
+    # на странице просто нет), но у соседа по каталогу тот же город обычно
+    # известен — сводим по сквозной identity и берём первый непустой.
+    city_by_identity: dict[str, str] = {}
+    for location_id_with_city, location_with_city in locations.items():
+        city_value = (location_with_city.city or "").strip()
+        if not city_value:
+            continue
+        city_by_identity.setdefault(identity_of(location_id_with_city), city_value)
+
+    def city_of(location_id: UUID) -> str | None:
+        return _city_label(
+            city_by_identity.get(identity_of(location_id)), display_of(location_id)
+        )
 
     def is_foreign_parkrun(location_id: UUID) -> bool:
         """Зарубежные parkrun-площадки из синка профилей: финиши учитываем,
@@ -1039,7 +1068,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         week_start = week_end - timedelta(days=WEEK_RECORD_WINDOW_DAYS - 1)
 
         attendance_list = _week_attendance_records(
-            events, week_start, week_end, identity_of, display_of, slug_of
+            events, week_start, week_end, identity_of, display_of, slug_of, city_of
         )
 
         # рекорды трассы М/Ж: лучшее время недели против исторического
@@ -1417,6 +1446,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
             {
                 "location_name": display_of(row.location_id),
                 "location_slug": slug_of(row.location_id),
+                "location_city": city_of(row.location_id),
                 "platform_code": row.platform_code,
                 "event_date": row.event_date,
                 "finishers": row.finishers,

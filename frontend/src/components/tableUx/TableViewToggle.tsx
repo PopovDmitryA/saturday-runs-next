@@ -16,13 +16,26 @@ type TableViewToggleProps = {
   onChange: (view: TableView) => void;
   /** Подпись полного режима — по умолчанию «Полно». */
   fullLabel?: string;
+  /**
+   * Дополнительный класс. `tview-toggle-always` показывает сегмент и на
+   * компьютере: так сделано в рейтингах, где краткий вид убирает тяжёлые
+   * колонки систем. По умолчанию сегмент виден только на узких экранах.
+   */
+  className?: string;
 };
 
-// Сегмент показывается только на узких экранах (CSS .tview-toggle);
-// на десктопе всегда полный набор колонок.
-export function TableViewToggle({ value, onChange, fullLabel = "Полно" }: TableViewToggleProps) {
+export function TableViewToggle({
+  value,
+  onChange,
+  fullLabel = "Полно",
+  className = "",
+}: TableViewToggleProps) {
   return (
-    <div className="tview-toggle" role="group" aria-label="Набор колонок таблицы">
+    <div
+      className={`tview-toggle${className ? ` ${className}` : ""}`}
+      role="group"
+      aria-label="Набор колонок таблицы"
+    >
       <button
         type="button"
         aria-pressed={value === "short"}

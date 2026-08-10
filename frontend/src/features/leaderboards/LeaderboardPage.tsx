@@ -12,6 +12,7 @@ import {
   ROLE_FILTER_METRICS,
   type VolunteerRoleItem,
   type VolunteerRolePreset,
+  METRIC_VALUE_UNIT,
   MIN_VISITS_METRICS,
   MIN_VISITS_OPTIONS,
   PLATFORM_LABELS,
@@ -25,6 +26,7 @@ import {
   type VolunteerRoleDetail,
   type WeekLocation,
 } from "./leaderboardsApi";
+import { formatDateTime, formatInt, pluralizeRu } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
@@ -86,6 +88,11 @@ const TOP_LOCATION_HINT =
 const HOME_LOCATION_HINT =
   "Площадка, от которой считаются километры: где у участника больше всего " +
   "пробежек. Зарегистрированные на сайте могут выбрать её вручную в настройках.";
+
+const HOME_FILTER_HINT =
+  "«Только явный дом» убирает участников, у которых домашняя локация выбрана " +
+  "автоматически из нескольких почти равных площадок: нулевая точка у них " +
+  "условна, и километры зависят от того, какую площадку выбрал алгоритм.";
 
 const HOME_DISTANCE_LOCATIONS_HINT =
   "Сколько разных площадок посещено, включая домашнюю. Километры каждой " +
@@ -230,14 +237,18 @@ function InfoHint({ text }: { text: string }) {
 function TopWinLocation({
   row,
 }: {
-  row: { home_location?: string | null; home_location_wins?: number | null };
+  row: {
+    home_location?: string | null;
+    home_location_slug?: string | null;
+    home_location_wins?: number | null;
+  };
 }) {
   if (!row.home_location) {
     return <span className="lb-zero">—</span>;
   }
   return (
     <span className="lb-home">
-      {row.home_location}
+      <HomeLocationName row={row} />
       {row.home_location_wins != null && row.home_location_wins > 1 && (
         <span className="lb-home-count"> ×{row.home_location_wins}</span>
       )}
@@ -260,10 +271,32 @@ const HOME_NOTE_META: Record<string, { level: "warn" | "danger"; hint: string }>
   },
 };
 
+// Название домашней/топ-локации — ссылкой на её страницу: внутренняя
+// перелинковка передаёт страницам локаций вес с посещаемых рейтингов
+// (решение Дмитрия 06.08.2026), а участнику даёт короткий путь к площадке.
+function HomeLocationName({
+  row,
+}: {
+  row: { home_location?: string | null; home_location_slug?: string | null };
+}) {
+  if (row.home_location_slug) {
+    return (
+      <a className="lb-last-win-link" href={`/locations/${row.home_location_slug}`}>
+        {row.home_location}
+      </a>
+    );
+  }
+  return <>{row.home_location}</>;
+}
+
 function HomeLocationCell({
   row,
 }: {
-  row: { home_location?: string | null; home_location_note?: string | null };
+  row: {
+    home_location?: string | null;
+    home_location_slug?: string | null;
+    home_location_note?: string | null;
+  };
 }) {
   if (!row.home_location) {
     return <span className="lb-zero">—</span>;
@@ -271,7 +304,7 @@ function HomeLocationCell({
   const note = row.home_location_note ? HOME_NOTE_META[row.home_location_note] : null;
   return (
     <span className="lb-home">
-      {row.home_location}
+      <HomeLocationName row={row} />
       {note && (
         <StatHintTooltip text={note.hint}>
           <span
@@ -283,6 +316,53 @@ function HomeLocationCell({
         </StatHintTooltip>
       )}
     </span>
+  );
+}
+
+/**
+ * Смена домашней локации доходит до таблицы не сразу: строки приходят из
+ * снапшота с TTL в несколько часов, а строка «Вы» считается вживую по текущим
+ * настройкам. Человек, только что переехавший, видит в таблице километры от
+ * прежней площадки и читает это как ошибку рейтинга — плашка объясняет разрыв
+ * и называет, когда он закроется (задача Дмитрия 07.08.2026).
+ *
+ * Показывается только тому, кто действительно менял дом позже, чем был посчитан
+ * снапшот: остальным про пересчёт достаточно строки в шапке рейтинга.
+ */
+function HomeChangeNotice({
+  changedAt,
+  builtAt,
+  refreshHours,
+  includedInTable,
+}: {
+  changedAt: string;
+  builtAt: string | null;
+  refreshHours: number;
+  includedInTable: boolean;
+}) {
+  const builtMs = builtAt ? Date.parse(builtAt) : Number.NaN;
+  const etaMs = Number.isNaN(builtMs) ? null : builtMs + refreshHours * 3600 * 1000;
+  // ETA в прошлом (снапшот пережил TTL) — не обещаем момент, которого уже нет.
+  const eta = etaMs != null && etaMs > Date.now() ? new Date(etaMs).toISOString() : null;
+  return (
+    <section className="lb-home-change" role="status">
+      <span className="lb-home-change-icon" aria-hidden="true">
+        ⏳
+      </span>
+      <div className="lb-home-change-text">
+        <p>
+          <strong>Вы сменили домашнюю локацию {formatDateTime(changedAt)}.</strong> Таблица
+          ниже посчитана раньше, поэтому в её строках пока километры от прежнего дома.
+        </p>
+        <p>
+          Пересчёт автоматический:{" "}
+          {eta
+            ? `новые километры появятся в таблице примерно к ${formatDateTime(eta)}`
+            : `новые километры появятся в таблице не позже чем через ${pluralizeRu(refreshHours, ["час", "часа", "часов"])}`}
+          .{includedInTable && " Ваша строка «Вы» уже считает от новой домашней локации."}
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -416,7 +496,7 @@ function GeoCount({ value }: { value?: number | null }) {
   if (value == null) {
     return <span className="lb-zero">—</span>;
   }
-  return <span className="lb-cell">{value}</span>;
+  return <span className="lb-cell">{formatInt(value)}</span>;
 }
 
 function formatDate(value: string | null): string {
@@ -429,7 +509,7 @@ function formatDate(value: string | null): string {
 
 function DeltaSlot({ delta }: { delta: number }) {
   // Слот фиксированной ширины: дельта не сдвигает цифры в колонке.
-  return <span className="lb-delta">{delta > 0 ? `+${delta}` : ""}</span>;
+  return <span className="lb-delta">{delta > 0 ? `+${formatInt(delta)}` : ""}</span>;
 }
 
 function RankDelta({ delta }: { delta: number | null }) {
@@ -445,7 +525,21 @@ function RankDelta({ delta }: { delta: number | null }) {
   );
 }
 
-function CellValue({ cell }: { cell?: { value: number; delta: number } }) {
+/** Единица измерения мелким шрифтом сразу за числом: «126 789 км». */
+function Unit({ unit }: { unit?: string }) {
+  if (!unit) {
+    return null;
+  }
+  return <span className="lb-unit">{unit}</span>;
+}
+
+function CellValue({
+  cell,
+  unit,
+}: {
+  cell?: { value: number; delta: number };
+  unit?: string;
+}) {
   if (!cell || cell.value === 0) {
     return (
       <span className="lb-cell">
@@ -456,7 +550,8 @@ function CellValue({ cell }: { cell?: { value: number; delta: number } }) {
   }
   return (
     <span className="lb-cell">
-      {cell.value}
+      {formatInt(cell.value)}
+      <Unit unit={unit} />
       <DeltaSlot delta={cell.delta} />
     </span>
   );
@@ -560,6 +655,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [minVisits, setMinVisits] = useState(1);
   const [platform, setPlatform] = useState<PlatformFilter>("all");
   const [countBy, setCountBy] = useState<CountBy>("locations");
+  // Фильтр «только очевидный дом» — у рейтинга дальности: прячет участников,
+  // у которых нулевая точка выбрана автоматически из почти равных площадок.
+  const [hideAmbiguousHome, setHideAmbiguousHome] = useState(false);
   // Фильтр ролей: пресет + конкретные ключи. Стартовое значение — из ссылки
   // (можно кинуть в чат и спорить предметно), иначе из прошлого выбора
   // в этом браузере.
@@ -615,11 +713,17 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
-  const attachFloatingHead = useFloatingTableHead();
+  const attachFloatingHead = useFloatingTableHead(".lb-view-bar");
   // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
   const [tableView, setTableView] = useTableView("leaderboard");
   const narrowViewport = useNarrowViewport();
-  const showFull = !narrowViewport || tableView === "full";
+  // Колонки систем — самая тяжёлая часть таблицы: четыре числовых столбца,
+  // которые перегружают страницу и на компьютере (решение Дмитрия 04.08.2026).
+  // Их прячет краткий вид на ЛЮБОЙ ширине. Смысловые колонки (локаций, дом,
+  // лучшее время, последняя неделя) на компьютере остаются всегда — там место
+  // есть; на телефоне краткий вид по-прежнему сводит таблицу к трём столбцам.
+  const showPlatforms = tableView === "full";
+  const showExtras = !narrowViewport || tableView === "full";
 
   useEffect(() => {
     const handleScroll = () => {
@@ -642,6 +746,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   // «Дальность от дома» несёт две свои колонки: домашняя локация и сколько
   // площадок посещено — без них число километров ни о чём не говорит.
   const isHomeDistance = metric === "home_distance";
+  // Без подписи колонка «Всего» у дальности читается как счётчик пробежек.
+  const valueUnit = METRIC_VALUE_UNIT[metric];
   // Гео-зачёт есть ровно там же, где порог визитов, — у туристических рейтингов.
   const effectiveCountBy = hasMinVisits ? countBy : "locations";
 
@@ -677,6 +783,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
           platform,
           effectiveCountBy,
           effectiveRoles,
+          hideAmbiguousHome,
         ),
         getMyLeaderboardRow(
           metric,
@@ -711,6 +818,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     platform,
     effectiveCountBy,
     roleFilterKey,
+    hideAmbiguousHome,
   ]);
 
   useEffect(() => {
@@ -851,9 +959,10 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const crumbs = METRIC_CRUMBS[metric];
   // Место + участник + «всего» и, у победных рейтингов, лучшее время,
   // топ-локация (только wins), последняя победа и любимая роль («Мультиволонтёр»).
-  // В кратком виде — только первые три: остальные колонки скрыты целиком.
-  const totalColumns = showFull
-    ? columns.length +
+  // Колонки систем считаются отдельно: их прячет краткий вид на любой ширине,
+  // а смысловые колонки на компьютере остаются всегда.
+  const totalColumns = showExtras
+    ? (showPlatforms ? columns.length : 0) +
       3 +
       (hasWinExtras ? 2 : 0) +
       (metric === "wins" ? 1 : 0) +
@@ -861,7 +970,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       (hasGeoColumns ? 2 : 0) +
       (isHomeDistance ? 2 : 0) +
       (hasWeekLocations ? 1 : 0)
-    : 3;
+    : showPlatforms
+      ? columns.length + 3
+      : 3;
   const visibleRows = rows.slice(0, visibleCount);
   const nextChunkEnd = Math.min(visibleCount + PAGE_STEP, rows.length);
 
@@ -872,6 +983,17 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     me?.included && me.rank != null && entrants > 1
       ? formatPercentile(me.rank, entrants)
       : null;
+
+  // Окно пересчёта таблицы (TTL снапшота) приходит с бэкенда: витрина обещает
+  // участнику срок и не должна хранить собственную копию этого числа.
+  const refreshHours = data?.refresh_hours ?? 6;
+  // Смена дома, до которой снапшот ещё не доехал: строки таблицы посчитаны
+  // раньше, чем человек переехал, — значит километры в них от прежнего дома.
+  const homeChangedAt = isHomeDistance ? (me?.home_location_changed_at ?? null) : null;
+  const homeChangePending =
+    homeChangedAt != null &&
+    data?.built_at != null &&
+    Date.parse(homeChangedAt) > Date.parse(data.built_at);
 
   // hint — значок «i» рядом с названием колонки: пояснение по наведению, как у
   // «Топ-локации». Свой title у значка перекрывает «Сортировать по этому
@@ -924,9 +1046,29 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 Данные на {formatDate(data.latest_event_date)} · число рядом со значением (например, +1)
                 — изменение за последнюю неделю
               </p>
+              {/* Домашняя локация задаёт нулевую точку всей таблицы, и её смена
+                  доходит до строк только со следующим пересчётом — про задержку
+                  честнее сказать заранее, а не оставлять человека гадать. */}
+              {isHomeDistance && (
+                <p className="lb-meta muted">
+                  Таблица пересчитывается раз в{" "}
+                  {pluralizeRu(refreshHours, ["час", "часа", "часов"])}: если сменить
+                  домашнюю локацию в настройках, километры в рейтинге обновятся в
+                  пределах этого срока.
+                </p>
+              )}
             </header>
 
             <RatingsLoginBanner />
+
+            {homeChangePending && homeChangedAt != null && (
+              <HomeChangeNotice
+                changedAt={homeChangedAt}
+                builtAt={data.built_at}
+                refreshHours={refreshHours}
+                includedInTable={me?.included ?? false}
+              />
+            )}
 
             <div className="lb-controls-row">
               <div className="lb-controls-left">
@@ -971,6 +1113,32 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                               {COUNT_BY_LABELS[value] ?? value}
                             </button>
                           ))}
+                        </div>
+                      </div>
+                    )}
+                    {isHomeDistance && (
+                      <div className="lb-controls-row">
+                        <span className="lb-controls-label">
+                          Домашняя локация{" "}
+                          <InfoHint text={HOME_FILTER_HINT} />
+                        </span>
+                        <div className="lb-gender-tabs" role="group" aria-label="Домашняя локация">
+                          <button
+                            type="button"
+                            aria-pressed={!hideAmbiguousHome}
+                            className={`lb-gender-tab${!hideAmbiguousHome ? " lb-gender-tab-active" : ""}`}
+                            onClick={() => setHideAmbiguousHome(false)}
+                          >
+                            Все
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={hideAmbiguousHome}
+                            className={`lb-gender-tab${hideAmbiguousHome ? " lb-gender-tab-active" : ""}`}
+                            onClick={() => setHideAmbiguousHome(true)}
+                          >
+                            Только явный дом
+                          </button>
                         </div>
                       </div>
                     )}
@@ -1071,13 +1239,14 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                       {columns.map((code) => (
                         <span key={code} className="lb-me-value">
                           <span className="lb-me-platform">{PLATFORM_LABELS[code] ?? code}</span>
-                          <CellValue cell={me.platforms[code]} />
+                          <CellValue cell={me.platforms[code]} unit={valueUnit} />
                         </span>
                       ))}
                       <span className="lb-me-value lb-me-total">
                         <span className="lb-me-platform">{totalLabel}</span>
                         <span className="lb-cell">
-                          {me.total}
+                          {formatInt(me.total)}
+                          <Unit unit={valueUnit} />
                           <DeltaSlot delta={me.total_delta} />
                         </span>
                       </span>
@@ -1185,13 +1354,23 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                   <p className="lb-me-threshold">
                     Вы появитесь в рейтинге после достижения {me.threshold}{" "}
                     {unitLabel(metric, me.threshold, effectiveCountBy)} — сейчас у вас{" "}
-                    {me.total}.
+                    {formatInt(me.total)}{valueUnit ? ` ${valueUnit}` : ""}.
                   </p>
                 )}
               </section>
             )}
 
-            <TableViewToggle value={tableView} onChange={setTableView} />
+            {/* На компьютере переключатель тоже нужен: в кратком виде уходят
+                колонки систем, из-за которых таблица перегружена.
+                Полоса липкая: в длинной таблице переключатель уезжал вверх, и
+                чтобы сменить набор колонок, приходилось мотать страницу назад. */}
+            <div className="lb-view-bar">
+              <TableViewToggle
+                value={tableView}
+                onChange={setTableView}
+                className="tview-toggle-always"
+              />
+            </div>
             <TableWrap
               innerRef={attachFloatingHead}
               className={`lb-table-wrap${wideTable ? " lb-table-wrap-wide" : ""}`}
@@ -1199,20 +1378,20 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
               <table
                 ref={tableRef}
                 className={`data-table lb-table${wideTable ? ` lb-table-fixed ${wideTableKind}` : ""}${
-                  showFull ? " lb-table-full" : ""
+                  showExtras ? " lb-table-full" : ""
                 }${isHomeDistance ? " lb-table-wide-values" : ""}`}
               >
                 <thead>
                   <tr>
                     {headerCell("rank", "Место", "lb-col-rank")}
                     <th className="lb-col-name">Участник</th>
-                    {showFull &&
+                    {showExtras &&
                       hasWinExtras &&
                       headerCell("best_time", "Лучшее время", "lb-col-time", BEST_TIME_HINT)}
                     {/* Колонки систем не сортируются — для «посмотреть одну
                         систему» есть фильтр «Система» выше, он пересчитывает
                         место и «Всего», а не переставляет строки по столбцу. */}
-                    {showFull &&
+                    {showPlatforms &&
                       columns.map((code) => (
                         <th key={code} className="lb-col-num">
                           {PLATFORM_LABELS[code] ?? code}
@@ -1224,7 +1403,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                       "lb-col-num lb-col-total",
                       isRoles ? ROLES_TOTAL_HINT : undefined,
                     )}
-                    {showFull && hasGeoColumns && (
+                    {showExtras && hasGeoColumns && (
                       <>
                         <th className="lb-col-num lb-col-geo">
                           Городов <InfoHint text={CITIES_HINT} />
@@ -1234,7 +1413,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         </th>
                       </>
                     )}
-                    {showFull && isHomeDistance && (
+                    {showExtras && isHomeDistance && (
                       <>
                         <th className="lb-col-num lb-col-geo">
                           Локаций <InfoHint text={HOME_DISTANCE_LOCATIONS_HINT} />
@@ -1244,22 +1423,22 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         </th>
                       </>
                     )}
-                    {showFull && isRoles && (
+                    {showExtras && isRoles && (
                       <th className="lb-col-home">
                         Любимая роль <InfoHint text={TOP_ROLE_HINT} />
                       </th>
                     )}
-                    {showFull && metric === "wins" && (
+                    {showExtras && metric === "wins" && (
                       <th className="lb-col-home">
                         Топ-локация <InfoHint text={TOP_LOCATION_HINT} />
                       </th>
                     )}
-                    {showFull && hasWinExtras && lastWinMeta && (
+                    {showExtras && hasWinExtras && lastWinMeta && (
                       <th className="lb-col-last-win">
                         {lastWinMeta.label} <InfoHint text={lastWinMeta.hint} />
                       </th>
                     )}
-                    {showFull && hasWeekLocations && (
+                    {showExtras && hasWeekLocations && (
                       <th className="lb-col-last-win">
                         Последняя неделя{" "}
                         <InfoHint text={WEEK_LOCATIONS_HINT[metric] ?? ""} />
@@ -1313,24 +1492,25 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         <td className="lb-col-name">
                           <ParticipantName row={row} />
                         </td>
-                        {showFull && hasWinExtras && (
+                        {showExtras && hasWinExtras && (
                           <td className="lb-col-time">
                             <BestTime row={row} />
                           </td>
                         )}
-                        {showFull &&
+                        {showPlatforms &&
                           columns.map((code) => (
                             <td key={code} className="lb-col-num">
-                              <CellValue cell={row.platforms[code]} />
+                              <CellValue cell={row.platforms[code]} unit={valueUnit} />
                             </td>
                           ))}
                         <td className="lb-col-num lb-col-total">
                           <span className="lb-cell lb-total">
-                            {row.total}
+                            {formatInt(row.total)}
+                            <Unit unit={valueUnit} />
                             <DeltaSlot delta={row.total_delta} />
                           </span>
                         </td>
-                        {showFull && hasGeoColumns && (
+                        {showExtras && hasGeoColumns && (
                           <>
                             <td className="lb-col-num lb-col-geo">
                               <GeoCount value={row.cities_total} />
@@ -1340,7 +1520,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             </td>
                           </>
                         )}
-                        {showFull && isHomeDistance && (
+                        {showExtras && isHomeDistance && (
                           <>
                             <td className="lb-col-num lb-col-geo">
                               <GeoCount value={row.locations_total} />
@@ -1350,22 +1530,22 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             </td>
                           </>
                         )}
-                        {showFull && isRoles && (
+                        {showExtras && isRoles && (
                           <td className="lb-col-home">
                             <TopRole row={row} />
                           </td>
                         )}
-                        {showFull && metric === "wins" && (
+                        {showExtras && metric === "wins" && (
                           <td className="lb-col-home">
                             <TopWinLocation row={row} />
                           </td>
                         )}
-                        {showFull && hasWinExtras && lastWinMeta && (
+                        {showExtras && hasWinExtras && lastWinMeta && (
                           <td className="lb-col-last-win">
                             <LastWinLocation row={row} />
                           </td>
                         )}
-                        {showFull && hasWeekLocations && (
+                        {showExtras && hasWeekLocations && (
                           <td className="lb-col-last-win">
                             <WeekLocationCell item={row.week_location} />
                           </td>
@@ -1409,7 +1589,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 tableRef={tableRef}
                 rank={me.rank}
                 name={me.display_name ?? "Вы"}
-                value={me.total}
+                value={`${formatInt(me.total)}${valueUnit ? ` ${valueUnit}` : ""}`}
                 onShow={showMyRow}
                 watchKey={`${visibleRows.length}:${sortKey}:${query}`}
               />

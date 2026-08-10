@@ -17,8 +17,14 @@ import { useEffect, useState } from "react";
  * Возвращает ref-колбэк для обёртки таблицы. Именно колбэк, а не ref-объект:
  * таблица появляется только после загрузки данных, и эффект по обычному ref
  * отработал бы один раз на пустой ссылке.
+ *
+ * `belowSelector` — селектор липкой полосы над таблицей (в рейтингах это
+ * переключатель «Кратко | Полно»): копия шапки встаёт под её нижний край, а не
+ * под шапку сайта, иначе полосы наезжают друг на друга.
  */
-export function useFloatingTableHead(): (node: HTMLDivElement | null) => void {
+export function useFloatingTableHead(
+  belowSelector?: string,
+): (node: HTMLDivElement | null) => void {
   const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -80,7 +86,14 @@ export function useFloatingTableHead(): (node: HTMLDivElement | null) => void {
       const siteHeader = document.querySelector("header");
       // Низ шапки сайта, а не её высота: шапка липкая, но на других страницах
       // её может не быть вовсе — тогда полоса встаёт к верху окна.
-      const offset = Math.max(0, siteHeader?.getBoundingClientRect().bottom ?? 0);
+      // Липкая полоса над таблицей (если она есть) прилипает ниже шапки сайта,
+      // поэтому отсчитываем от того края, который сейчас ниже.
+      const below = belowSelector ? document.querySelector(belowSelector) : null;
+      const offset = Math.max(
+        0,
+        siteHeader?.getBoundingClientRect().bottom ?? 0,
+        below?.getBoundingClientRect().bottom ?? 0,
+      );
       const box = wrap.getBoundingClientRect();
       const height = head.getBoundingClientRect().height;
       if (box.top >= offset || box.bottom <= offset + height) {
@@ -124,7 +137,7 @@ export function useFloatingTableHead(): (node: HTMLDivElement | null) => void {
       headObserver.disconnect();
       float.remove();
     };
-  }, [wrap]);
+  }, [wrap, belowSelector]);
 
   return setWrap;
 }

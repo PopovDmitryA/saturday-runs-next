@@ -29,7 +29,14 @@ from app.services.home_distance_service import (
     round_km,
 )
 from app.services.home_location_service import HomeLocationCandidate
-from app.services.leaderboard_service import _home_location_note, _LocationVisits
+from app.services.leaderboard_service import (
+    _home_eligible_identities,
+    _home_identity,
+    _home_location_note,
+    _HomePickStats,
+    _LocationVisits,
+)
+from app.services.location_catalog_service import LocationCatalogIndex
 
 # Опорные точки: Москва — «дом», Хабаровск — самый дальний старт (~6140 км по
 # прямой), соседний парк — проверка десятых долей на близких расстояниях.
@@ -243,6 +250,42 @@ def _visits(count: int) -> _LocationVisits:
     return _LocationVisits(first_date=date(2099, 1, 3), codes={"five_verst"}, visits=count)
 
 
+def _pick(run_days: int, volunteer_days: int = 0, first: date | None = None) -> _HomePickStats:
+    return _HomePickStats(
+        run_days=run_days, volunteer_days=volunteer_days, first_run_date=first
+    )
+
+
+def test_rating_picks_home_by_the_same_three_steps_as_the_cabinet() -> None:
+    """Пробежки → волонтёрства → кто раньше начал (как _auto_home_location)."""
+    names = {"a": "Альфа", "b": "Бета", "c": "Гамма"}
+
+    # 1. Решают пробежки, волонтёрства их перебить не могут.
+    by_runs = {"a": _pick(10, volunteer_days=0), "b": _pick(9, volunteer_days=50)}
+    assert _home_identity(by_runs, names, None) == "a"
+
+    # 2. Ничья по пробежкам — сравниваем волонтёрства, но только среди лидеров.
+    by_volunteering = {
+        "a": _pick(10, volunteer_days=1),
+        "b": _pick(10, volunteer_days=4),
+        "c": _pick(9, volunteer_days=99),
+    }
+    assert _home_identity(by_volunteering, names, None) == "b"
+
+    # 3. Ничья и там — побеждает площадка с самой ранней пробежкой.
+    by_first_run = {
+        "a": _pick(5, 2, date(2025, 6, 1)),
+        "b": _pick(5, 2, date(2024, 3, 15)),
+    }
+    assert _home_identity(by_first_run, names, None) == "b"
+
+    # Площадка без известной даты проигрывает любой реальной.
+    assert _home_identity({"a": _pick(5, 2), "b": _pick(5, 2, date(2025, 1, 1))}, names, None) == "b"
+
+    # Ручной выбор сильнее всех ступеней.
+    assert _home_identity(by_runs, names, "b") == "b"
+
+
 def test_rating_marks_shaky_auto_home_but_not_a_clear_leader() -> None:
     names = {"a": "Альфа", "b": "Бета"}
     close = {"a": _visits(10), "b": _visits(8)}
@@ -263,6 +306,34 @@ def test_rating_marks_manual_home_outside_the_top_three() -> None:
     # Внутри тройки ручной выбор не комментируем, даже если площадки вровень.
     assert _home_location_note(identities, names, "b", "b") is None
     assert _home_location_note(identities, names, "c", "c") is None
+
+
+def test_rating_home_is_any_of_our_systems_but_not_foreign_parkrun(
+    db_session: Session,
+) -> None:
+    """Дом — площадка наших систем в любой стране; зарубежный parkrun — нет.
+
+    С95 работает в Сербии и Беларуси, RunPark — в Турции и Грузии: их бегуны
+    такие же наши. А человек с домом в лондонском parkrun живёт вне наших
+    систем, и любой его старт в России дал бы десятки тысяч километров.
+    """
+    suffix = uuid4().hex[:8]
+    russian = _location(db_session, f"hd-ru-{suffix}", "Русский парк", MOSCOW)
+    serbian = _location(
+        db_session, f"hd-rs-{suffix}", "Сербский парк", KHABAROVSK, platform_code="s95"
+    )
+    serbian.country = "Сербия"
+    foreign_parkrun = _location(
+        db_session, f"hd-uk-{suffix}", "Лондонский parkrun", NEARBY, platform_code="parkrun"
+    )
+    foreign_parkrun.country = "United Kingdom"
+    db_session.commit()
+
+    eligible = _home_eligible_identities(db_session)
+    catalog_index = LocationCatalogIndex(db_session)
+    assert catalog_index.canonical_identity_key(russian, "five_verst") in eligible
+    assert catalog_index.canonical_identity_key(serbian, "s95") in eligible
+    assert catalog_index.canonical_identity_key(foreign_parkrun, "parkrun") not in eligible
 
 
 def test_dashboard_tile_sums_unique_locations_once(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from datetime import date
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -277,6 +278,11 @@ def build_user_unique_location_details(
             )
         first_visit = bucket["first_visit_date"]
         last_visit = bucket["last_visit_date"]
+        # Дата самой ранней ПРОБЕЖКИ (не визита вообще: волонтёрство сюда не
+        # входит). Нужна авто-выбору домашней локации как последний разводящий
+        # признак, когда и пробежек, и волонтёрств поровну.
+        real_run_dates = [d for d in cast("set[date]", bucket["run_dates"]) if has_real_activity_date(d)]
+        first_run = min(real_run_dates) if real_run_dates else None
         slug_by_platform: dict[str, str] = bucket["slug_by_platform"]  # type: ignore[assignment]
         slug_platforms = sorted(slug_by_platform.keys(), key=_platform_sort_key)
         locations.append(
@@ -295,6 +301,7 @@ def build_user_unique_location_details(
                 "run_count": bucket["run_count"],
                 "volunteer_count": bucket["volunteer_count"],
                 "first_visit_date": first_visit.isoformat() if has_real_activity_date(first_visit) else None,
+                "first_run_date": first_run.isoformat() if first_run is not None else None,
                 "last_visit_date": last_visit.isoformat() if has_real_activity_date(last_visit) else None,
                 "platforms": platforms,
             }

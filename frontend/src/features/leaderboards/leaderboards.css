@@ -4,6 +4,10 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  /* Высота липкой полосы с «Кратко | Полно» (.lb-view-bar). От неё же считается
+     верх шапки таблицы: шапка встаёт вплотную под полосу, иначе в щель между
+     ними просвечивали бы уезжающие строки. Меняете высоту — только здесь. */
+  --lb-view-bar-h: 46px;
   /* .lb-page сам лежит в гриде .shell-main — без min-width:0 grid-item
      не сжимается ниже min-content широкой таблицы */
   min-width: 0;
@@ -53,11 +57,46 @@
   font-size: 0.85rem;
 }
 
+/* Вторая строка шапки (у дальности — про срок пересчёта) не должна слипаться
+   с датой данных: без зазора две подписи читаются как один абзац. */
+.lb-meta + .lb-meta {
+  margin-top: 0.25rem;
+}
+
 .lb-error {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   color: var(--text-2);
+}
+
+/* Плашка «дом сменили, таблица ещё не пересчиталась»: янтарная — это не ошибка,
+   а объяснение задержки, поэтому мягче красного предупреждения. */
+.lb-home-change {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  border: 1px solid var(--tint-amber-border);
+  background: var(--tint-amber-bg);
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.lb-home-change-icon {
+  font-size: 1.1rem;
+  line-height: 1.4;
+}
+
+.lb-home-change-text {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.lb-home-change-text p {
+  margin: 0;
 }
 
 /* --- Моя строка --- */
@@ -201,8 +240,28 @@
    тут — страница целиком, отдельного бокса не создаём. */
 .table-wrap.lb-table-wrap {
   overflow-x: visible;
-  /* Липнет к окну — значит ниже шапки сайта, иначе прячется под ней. */
-  --table-head-top: var(--portal-header-h);
+  /* Липнет к окну — значит ниже шапки сайта, иначе прячется под ней; и ниже
+     липкой полосы «Кратко | Полно», иначе шапка уходит под неё. */
+  --table-head-top: calc(var(--portal-header-h) + var(--lb-view-bar-h));
+}
+
+/* Полоса с переключателем набора колонок: липнет под шапкой сайта, чтобы
+   вернуть «Полно» можно было из любого места длинной таблицы.
+   z-index выше шапки таблицы (2) и её плавающей копии (30), но ниже шапки
+   сайта (40) — полоса уходит под неё, а не наоборот. */
+.lb-view-bar {
+  position: sticky;
+  top: var(--portal-header-h);
+  z-index: 31;
+  height: var(--lb-view-bar-h);
+  display: flex;
+  align-items: center;
+  background: var(--bg);
+}
+
+/* Отступ снизу даёт сама полоса (её высота), у сегмента он лишний. */
+.lb-view-bar .tview-toggle {
+  margin-bottom: 0;
 }
 
 @media (max-width: 820px) {
@@ -272,41 +331,23 @@
    колонке дотягивалось вплотную до дельты и наезжало на неё. Из-за резерва
    число чуть смещено от геометрического центра колонки в сторону от дельты,
    но это в разы меньше сдвига, что был при центрировании всего блока. */
+/* Дельта идёт в потоке верхним индексом, поэтому резерв под неё больше не
+   нужен — раньше он был фиксированной ширины и с ростом чисел переставал
+   спасать (см. .lb-delta). */
 .lb-table .lb-col-num .lb-cell {
-  position: relative;
   display: block;
   width: 100%;
-  padding-right: var(--lb-delta-reserve, 1.4rem);
 }
 
-.lb-table .lb-col-num .lb-delta {
-  position: absolute;
-  top: 50%;
-  right: 0.2rem;
-  transform: translateY(-50%);
-  width: auto;
-  max-width: var(--lb-delta-reserve, 1.4rem);
-  margin-left: 0;
+/* Рейтинги в километрах: числа шире обычных, поэтому колонкам нужен запас —
+   «372 830 км» в 4.75rem не помещается. Дельта места не занимает: она
+   надстрочная (см. .lb-delta). */
+.lb-table.lb-table-wide-values .lb-col-num {
+  width: 6.4rem;
 }
 
-/* Рейтинги в километрах: и значение, и дельта на порядок длиннее, чем у
-   счётчиков пробежек («12875» и «+12581» против «172» и «+2»). Резерв
-   фиксированной ширины тут не спасает — сколько его ни закладывай, дельта на
-   разряд длиннее снова наедет на число. Поэтому у таких рейтингов дельта не
-   позиционируется поверх ячейки, а встаёт отдельной строкой под числом:
-   наложение становится невозможным при любой ширине колонки. */
-.lb-table-wide-values .lb-col-num .lb-cell {
-  padding-right: 0;
-}
-
-.lb-table-wide-values .lb-col-num .lb-delta {
-  position: static;
-  display: block;
-  width: auto;
-  max-width: none;
-  margin-left: 0;
-  transform: none;
-  text-align: center;
+.lb-table.lb-table-wide-values .lb-col-total {
+  width: 7.2rem;
 }
 
 /* «Всего» — то самое число, по которому построен рейтинг, поэтому колонка
@@ -622,9 +663,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Дельта места — тоже надстрочная, как и дельта значения: «▲2» рядом с
+   номером занимало половину узкой колонки «Место». */
 .lb-rank-delta {
-  font-size: 0.72rem;
+  font-size: 0.62em;
   font-weight: 600;
+  vertical-align: super;
+  line-height: 0;
+  white-space: nowrap;
 }
 
 .lb-rank-up {
@@ -642,19 +688,33 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Слот дельты всегда занимает одну и ту же ширину — цифры в колонке не съезжают */
+/* Дельта — надстрочной пометкой у числа (решение Дмитрия 04.08.2026): раньше
+   она занимала собственный слот шириной 2rem в каждой числовой колонке, и у
+   рейтингов с большими числами («372 830 км» и «+1 172») строка не помещалась.
+   Верхний индекс не расширяет колонку и не спорит со значением за место. */
 .lb-delta {
-  display: inline-block;
-  width: 2rem;
-  margin-left: 0.15rem;
-  text-align: left;
+  display: inline;
+  margin-left: 0.1rem;
   color: #16a34a;
-  font-size: 0.75rem;
+  font-size: 0.62em;
   font-weight: 700;
+  vertical-align: super;
+  line-height: 0;
+  white-space: nowrap;
 }
 
 .lb-zero {
   color: var(--text-faint);
+}
+
+/* Единица измерения сразу за числом: без неё «126 789» в колонке «Всего»
+   у рейтинга дальности читается как счётчик пробежек. Мельче и приглушённее
+   самого числа, чтобы не спорить с ним за внимание. */
+.lb-unit {
+  margin-left: 0.15rem;
+  font-size: 0.75em;
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 .lb-name {
@@ -952,12 +1012,14 @@ a.lb-hub-card:hover {
 }
 
 .lb-hub-delta {
-  display: inline-block;
-  min-width: 1.6rem;
-  margin-left: 0.15rem;
+  display: inline;
+  margin-left: 0.1rem;
   color: #16a34a;
-  font-size: 0.7rem;
+  font-size: 0.62em;
   font-weight: 700;
+  vertical-align: super;
+  line-height: 0;
+  white-space: nowrap;
 }
 
 .lb-hub-me {

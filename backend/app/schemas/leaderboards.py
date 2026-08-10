@@ -39,6 +39,7 @@ class LeaderboardRowResponse(BaseModel):
     # У home_distance в этой же колонке домашняя локация, а вместо числа побед —
     # пометка о том, что выбор дома под вопросом (см. home_location_note).
     home_location: str | None = None
+    home_location_slug: str | None = None
     home_location_wins: int | None = None
     # "ambiguous" — автовыбор шаткий, "manual_off_top" — выбрано руками вне тройки.
     home_location_note: str | None = None
@@ -76,6 +77,9 @@ class LeaderboardResponse(BaseModel):
     count_by_options: list[str] = []
     # Есть ли у рейтинга колонка «Последняя неделя».
     has_week_locations: bool = False
+    # Фильтр «только очевидный дом» (есть у дальности от дома) и его состояние.
+    has_home_filter: bool = False
+    hide_ambiguous_home: bool = False
     title: str
     description: str
     unit: str
@@ -89,6 +93,8 @@ class LeaderboardResponse(BaseModel):
     latest_event_date: str | None
     week_start: str | None
     built_at: str | None
+    # Через сколько часов после built_at таблица пересчитается (TTL снапшота).
+    refresh_hours: int = 6
 
 
 class MyLeaderboardRowResponse(BaseModel):
@@ -113,8 +119,12 @@ class MyLeaderboardRowResponse(BaseModel):
     # определённо не совпадает с выбранным — «появитесь после N» не показываем.
     gender_mismatch: bool = False
     home_location: str | None = None
+    home_location_slug: str | None = None
     home_location_wins: int | None = None
     home_location_note: str | None = None
+    # Только у home_distance: когда участник менял домашнюю локацию руками.
+    # Свежее built_at таблицы — значит в таблице ещё километры от прежнего дома.
+    home_location_changed_at: str | None = None
     best_time_sec: int | None = None
     best_time_display: str | None = None
     last_win_location: str | None = None

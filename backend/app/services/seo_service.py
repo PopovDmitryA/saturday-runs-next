@@ -86,14 +86,30 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "История релизов run5k.run: что появилось на сайте и когда.",
         indexable=True,
     ),
+    # «5 верст личный кабинет» — 2472 запроса/мес (Вордстат, июль 2026).
+    # Решение Дмитрия 06.08.2026: за этот запрос боремся — сайт и есть личный
+    # кабинет участника субботних стартов. Поэтому /login индексируется и
+    # называет себя «личный кабинет участника», а не просто «вход».
     "/login": _meta(
-        "Вход — run5k.run",
-        "Вход в личный кабинет run5k.run через VK или Яндекс.",
+        "Личный кабинет участника — вход — run5k.run",
+        "Личный кабинет участника субботних пробежек: история стартов и волонтёрств "
+        "5 вёрст, С95, parkrun и RunPark, рекорды и достижения. Вход через VK или Яндекс.",
+        indexable=True,
     ),
+    # Каталог ловит запросы без названия парка — «5 вёрст карта», «5 вёрст
+    # результаты»: перечисляем системы, иначе страница не связывается с ними.
     "/locations": _meta(
-        "Локации — run5k.run",
-        "Каталог площадок субботних пробежек: сколько было стартов и финишей, когда "
-        "прошёл первый забег, в каких системах живёт локация.",
+        "Локации 5 вёрст, С95, parkrun и RunPark — каталог площадок — run5k.run",
+        "Все площадки субботних пробежек на одной карте: сколько было стартов и "
+        "финишей, когда прошёл первый забег, в каких системах живёт локация.",
+        indexable=True,
+    ),
+    # Посадочная под запросы «5 вёрст результаты» (решение Дмитрия 06.08.2026):
+    # свежие протоколы всех площадок разом, а не по одной локации.
+    "/results": _meta(
+        "Результаты 5 вёрст, С95 и RunPark — последняя суббота — run5k.run",
+        "Результаты последней субботы по всем паркам: сколько финишёров и волонтёров "
+        "было на каждой площадке, лучшие времена, новички и дата последнего старта.",
         indexable=True,
     ),
     "/ratings": _meta(
@@ -264,6 +280,50 @@ def _plural(count: int, one: str, few: str, many: str) -> str:
     return many
 
 
+# Как система называется в заголовке страницы. Зеркало platformCodeLabel из
+# frontend/src/lib/format.ts.
+PLATFORM_LABELS = {
+    "five_verst": "5 вёрст",
+    "s95": "С95",
+    "parkrun": "parkrun",
+    "runpark": "RunPark",
+}
+
+# Потолок заголовка. Яндекс и Google обрезают примерно здесь, а обрезанный
+# заголовок в выдаче выглядит как ошибка. Медиана наших локаций укладывается,
+# длинные («Чертаново Кировоградские пруды, Москва») ужимаются — см.
+# _location_title: сначала уходит описательный хвост, город держим до конца,
+# потому что его ищут («5 вёрст владивосток»).
+TITLE_BUDGET = 70
+
+# Потолок описания — та же логика, что у заголовка.
+DESCRIPTION_BUDGET = 160
+
+
+def _active_platform_label(payload: dict[str, Any]) -> str | None:
+    """Название текущей системы локации: «5 вёрст», «parkrun», …
+
+    Именно эту связку набирают в поиске — «5 вёрст мещерский», «5 вёрст
+    геленджик». У локации может быть несколько эпох (parkrun → RunPark →
+    5 вёрст); берём действующую, а у закрытых — последнюю по дате.
+    """
+    platforms = payload.get("platforms") or []
+    if not platforms:
+        return None
+
+    active = [p for p in platforms if p.get("is_active")]
+    if active:
+        return PLATFORM_LABELS.get(str(active[0].get("platform_code") or ""))
+
+    # Действующей нет (локация закрыта) — называем ту систему, при которой она
+    # работала последней: «parkrun Ekaterinburg» ищут и после закрытия.
+    def _last_date(platform: dict[str, Any]) -> str:
+        return str(platform.get("last_event_date") or "")
+
+    newest = max(platforms, key=_last_date)
+    return PLATFORM_LABELS.get(str(newest.get("platform_code") or ""))
+
+
 def _strip_leading_hours(display: str | None) -> str | None:
     """00:17:51 → 17:51.
 
@@ -284,7 +344,8 @@ def build_location_meta(payload: dict[str, Any], *, events_log: bool = False) ->
     """
     name = str(payload.get("name") or "Локация")
     city = payload.get("city")
-    where = f"{name}, {city}" if city else name
+    platform = _active_platform_label(payload)
+    where = _location_headline(name, city, platform)
 
     stats = payload.get("stats") or {}
     events_count = int(stats.get("events_count") or 0)
@@ -310,21 +371,142 @@ def build_location_meta(payload: dict[str, Any], *, events_log: bool = False) ->
     numbers = ", ".join(parts)
     # Описание держим в ~155 символах: длиннее поисковик обрежет многоточием.
     if events_log:
-        title = f"{where}: журнал протоколов — {SITE_NAME}"
-        description = f"Все старты локации «{name}»"
-        if numbers:
-            description += f": {numbers}"
-        description += ". Дата, номер события, финишёры, волонтёры и лучшее время дня."
+        # «журнал протоколов» здесь не хвост, а то, что отличает эту страницу
+        # от основной, — поэтому он часть head и не отбрасывается никогда.
+        title = _fit_title(f"{where}: журнал протоколов")
+        description = _describe(
+            f"Все старты локации «{name}»",
+            numbers,
+            ". Дата, номер события, финишёры, волонтёры и лучшее время дня.",
+            ". Дата, номер, финишёры и лучшее время дня.",
+        )
         return _meta(title, description, indexable=True)
 
-    title = f"{where} — статистика субботних пробежек — {SITE_NAME}"
-    description = f"Локация «{name}»"
+    title = _fit_title(where, " — результаты и статистика", " — результаты")
+    # Систему называем и в описании — но один раз и по-человечески, в роли
+    # подлежащего, а не списком ключевых слов.
+    lead = f"{platform}, «{name}»" if platform else f"Локация «{name}»"
     if city:
-        description += f" ({city})"
-    if numbers:
-        description += f": {numbers}"
-    description += ". Посещаемость, история систем и рейтинги участников."
+        lead += f" ({city})"
+    description = _describe(
+        lead,
+        numbers,
+        ". Результаты субботних забегов, посещаемость и рейтинги участников.",
+        ". Результаты забегов и рейтинги участников.",
+    )
     return _meta(title, description, indexable=True)
+
+
+def _describe(lead: str, numbers: str, *tails: str) -> str:
+    """Описание под 160 символов: цифры важнее хвоста, хвост укорачиваем.
+
+    Раньше слишком длинный текст резался по границе предложения и хвост
+    пропадал целиком, оставляя треть бюджета пустой. Теперь для хвоста есть
+    короткий вариант, и место используется до конца.
+    """
+    head = f"{lead}: {numbers}" if numbers else lead
+    for tail in tails:
+        candidate = f"{head}{tail}"
+        if len(candidate) <= DESCRIPTION_BUDGET:
+            return candidate
+    # Не влезли даже с коротким хвостом — отдаём то, что помещается, целыми
+    # предложениями (обрыв на полуслове в выдаче выглядит хуже).
+    return _fit_description(head if head.endswith(".") else f"{head}.")
+
+
+def location_lead_sentences(payload: dict[str, Any]) -> list[str]:
+    """Вводные предложения о локации, собранные из уже посчитанных данных.
+
+    Не выдумка и не «текст ради поисковика»: каждое утверждение — пересказ
+    цифр, которые и так есть на странице. Зеркало на клиенте —
+    locationLeadSentences в frontend/src/lib/pageMeta.ts; текст обязан
+    совпадать, иначе робот и человек видят разные страницы.
+    """
+    name = str(payload.get("name") or "Локация")
+    city = str(payload.get("city") or "").strip()
+    platform = _active_platform_label(payload)
+    stats = payload.get("stats") or {}
+
+    where = f"«{name}» ({city})" if city else f"«{name}»"
+    if platform:
+        first = f"{where} — площадка субботних пробежек {platform}."
+    else:
+        first = f"{where} — площадка субботних пробежек."
+    sentences = [first]
+
+    events_count = int(stats.get("events_count") or 0)
+    finishers_total = int(stats.get("finishers_total") or 0)
+    if events_count and finishers_total:
+        sentences.append(
+            f"Здесь прошло {events_count} "
+            f"{_plural(events_count, 'старт', 'старта', 'стартов')}, "
+            f"финишировали {finishers_total} "
+            f"{_plural(finishers_total, 'участник', 'участника', 'участников')}."
+        )
+
+    # У локации может быть несколько эпох: parkrun → RunPark → 5 вёрст.
+    # Прежние системы называем — их тоже ищут вместе с названием парка.
+    platforms = payload.get("platforms") or []
+    previous = [
+        PLATFORM_LABELS.get(str(p.get("platform_code") or ""))
+        for p in platforms
+        if not p.get("is_active") and int(p.get("events_count") or 0) > 0
+    ]
+    previous_named = [label for label in previous if label]
+    if platform and previous_named:
+        joined = " и ".join(
+            [", ".join(previous_named[:-1]), previous_named[-1]]
+            if len(previous_named) > 1
+            else previous_named
+        )
+        sentences.append(f"До {platform} старты здесь проводили {joined}.")
+
+    return sentences
+
+
+def _location_headline(name: str, city: Any, platform: str | None) -> str:
+    """«5 вёрст Мещерское озеро, Нижний Новгород» — основа заголовка.
+
+    Город не приписываем, если он уже внутри названия («Томск Сосновый Бор»):
+    задвоение читается как опечатка и съедает бюджет длины.
+    """
+    head = f"{platform} {name}" if platform else name
+    city_text = str(city).strip() if city else ""
+    if city_text and city_text.casefold() not in head.casefold():
+        head = f"{head}, {city_text}"
+    return head
+
+
+def _fit_title(head: str, *tails: str) -> str:
+    """Собирает заголовок под TITLE_BUDGET, жертвуя хвостами слева направо.
+
+    head (система + локация + город) не режем никогда: это и есть то, что
+    ищут. Первым уходит описательный хвост, последним — бренд.
+    """
+    brand = f" — {SITE_NAME}"
+    for tail in (*tails, ""):
+        candidate = f"{head}{tail}{brand}"
+        if len(candidate) <= TITLE_BUDGET:
+            return candidate
+    # Даже «локация + бренд» не влезли — бренд отбрасываем, домен и так виден
+    # в выдаче строкой адреса.
+    return head
+
+
+def _fit_description(description: str) -> str:
+    """Ужимает описание до 160 символов по границе предложения.
+
+    Обрыв на полуслове в выдаче выглядит хуже, чем более короткий, но целый
+    текст, поэтому отрезаем по последней точке, а не по символу.
+    """
+    limit = DESCRIPTION_BUDGET
+    if len(description) <= limit:
+        return description
+    cut = description[:limit]
+    dot = cut.rfind(". ")
+    if dot > limit // 2:
+        return cut[: dot + 1]
+    return cut.rstrip(" ,;:—-") + "…"
 
 
 # --------------------------------------------------------------------------
@@ -336,6 +518,7 @@ def build_location_meta(payload: dict[str, Any], *, events_log: bool = False) ->
 _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/", "1.0"),
     ("/locations", "0.9"),
+    ("/results", "0.9"),
     ("/ratings", "0.8"),
     ("/ratings/runs", "0.7"),
     ("/ratings/volunteering", "0.7"),
@@ -347,6 +530,7 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/ratings/home-distance", "0.6"),
     ("/blog", "0.7"),
     ("/about", "0.6"),
+    ("/login", "0.4"),
     ("/updates", "0.4"),
 )
 
@@ -419,7 +603,8 @@ def build_robots_txt() -> str:
         "Disallow: /new/",
         "Disallow: /settings",
         "Disallow: /share",
-        "Disallow: /login",
+        # /login сознательно НЕ закрыт: «5 верст личный кабинет» — 2472
+        # запроса/мес, и страница входа — наша посадочная под них.
         "Disallow: /oauth/",
         "Disallow: /dashboard",
         "Disallow: /profiles",
@@ -523,12 +708,16 @@ def _render_html(
 
 def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
     name = escape(str(payload.get("name") or "Локация"))
-    city = payload.get("city")
     stats = payload.get("stats") or {}
 
     rows: list[str] = [f"    <h1>{name}</h1>"]
-    if city:
-        rows.append(f"    <p>{escape(str(city))}</p>")
+    # Вводный абзац вместо голого названия города. Роботу нужен связный текст:
+    # по списку цифр он не понимает, о чём страница, а «площадка субботних
+    # пробежек 5 вёрст» ставит название системы рядом с названием парка —
+    # ровно так, как их набирают в поиске.
+    lead = location_lead_sentences(payload)
+    for sentence in lead:
+        rows.append(f"    <p>{escape(sentence)}</p>")
 
     facts: list[tuple[str, str]] = []
     if stats.get("events_count"):
@@ -583,6 +772,24 @@ def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
         )
         rows.append("    <h2>История систем</h2>\n    <ul>\n" + eras + "    </ul>")
 
+    # Кластер города: те же ссылки, что человек видит в блоке «Другие
+    # площадки в …» — под запросы вида «5 вёрст тюмень».
+    city_locations = payload.get("city_locations") or []
+    city = payload.get("city")
+    if city_locations and city:
+        neighbours = "".join(
+            '      <li><a href="/locations/{slug}">{name}</a></li>\n'.format(
+                slug=escape(str(item.get("slug") or "")),
+                name=escape(str(item.get("name") or "")),
+            )
+            for item in city_locations
+        )
+        rows.append(
+            f"    <h2>{escape(str(city))}: другие площадки</h2>\n    <ul>\n"
+            + neighbours
+            + "    </ul>"
+        )
+
     slug = escape(str(payload.get("slug") or ""))
     if events_log:
         rows.append(f'    <p><a href="/locations/{slug}">Страница локации</a></p>')
@@ -594,6 +801,50 @@ def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
 
 def _generic_body(meta: PageMeta) -> str:
     return f"    <h1>{escape(meta.title)}</h1>\n    <p>{escape(meta.description)}</p>"
+
+
+def _catalog_body(items: list[dict[str, Any]]) -> str:
+    """Тело каталога для робота: вводные фразы и список площадок ссылками.
+
+    «5 верст парки» — 1919 запросов/мес, «5 верст карта» — 302, «5 верст
+    локации» — 102 (Вордстат, июль 2026). До этого робот получал на /locations
+    два служебных предложения: сам список рисует JS, и главный контент раздела
+    для поисковика не существовал. Список здесь — то же, что человек видит в
+    таблице каталога, просто в статике; заодно каждое название города в тексте
+    отвечает хвосту «5 вёрст [город]».
+    """
+    live = [i for i in items if not i.get("is_cancelled")]
+    cities = {str(i.get("city")).strip() for i in live if i.get("city")}
+    by_platform: dict[str, int] = {}
+    for item in live:
+        for code in item.get("platform_codes") or []:
+            by_platform[str(code)] = by_platform.get(str(code), 0) + 1
+
+    rows = [
+        "    <h1>Локации 5 вёрст, С95, parkrun и RunPark</h1>",
+        "    <p>Каталог площадок субботних пробежек: "
+        f"{len(live)} {_plural(len(live), 'локация', 'локации', 'локаций')} в "
+        f"{len(cities)} {_plural(len(cities), 'городе', 'городах', 'городах')}.</p>",
+    ]
+    platform_bits = [
+        f"{PLATFORM_LABELS[code]} — {count} "
+        f"{_plural(count, 'площадка', 'площадки', 'площадок')}"
+        for code, count in sorted(by_platform.items(), key=lambda kv: -kv[1])
+        if code in PLATFORM_LABELS
+    ]
+    if platform_bits:
+        rows.append(f"    <p>{escape('; '.join(platform_bits))}.</p>")
+
+    items_html = "".join(
+        '      <li><a href="/locations/{slug}">{name}</a>{city}</li>\n'.format(
+            slug=escape(str(i.get("slug") or "")),
+            name=escape(str(i.get("name") or "")),
+            city=escape(f" — {i['city']}") if i.get("city") else "",
+        )
+        for i in sorted(live, key=lambda i: str(i.get("name") or "").casefold())
+    )
+    rows.append("    <ul>\n" + items_html + "    </ul>")
+    return "\n".join(rows)
 
 
 def render_prerendered_page(db: Session, raw_path: str) -> str:
@@ -624,4 +875,17 @@ def render_prerendered_page(db: Session, raw_path: str) -> str:
             )
 
     meta = resolve_page_meta(path)
+
+    if path == "/locations":
+        try:
+            items = cast(
+                "list[dict[str, Any]]", build_locations_index(db).get("items") or []
+            )
+        except Exception:  # noqa: BLE001 — робот получит родовую страницу, не 500
+            items = []
+        if items:
+            return _render_html(
+                meta=meta, canonical=canonical, body_html=_catalog_body(items)
+            )
+
     return _render_html(meta=meta, canonical=canonical, body_html=_generic_body(meta))
