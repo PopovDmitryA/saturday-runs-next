@@ -156,3 +156,32 @@ def test_parkrun_barcode_rules() -> None:
     assert normalize_parkrun_athlete_id("A7035519") == "7035519"
     assert normalize_parkrun_athlete_id("А7035519") == "7035519"
     assert normalize_parkrun_athlete_id("7035519") == "7035519"
+
+
+def test_parse_event_location_page_country_from_domain() -> None:
+    """Страну s95 на странице не пишет — берём её из домена, а не из «Россия» по умолчанию."""
+    from app.s95.parsers.location import parse_event_location_page
+
+    html = "<html><body><h1>Belgrade</h1><p>Место проведения: Белград, парк Ушће</p></body></html>"
+
+    serbian = parse_event_location_page(
+        html,
+        "https://s95.rs/events/belgrade",
+        location_external_key="belgrade",
+    )
+    assert serbian.country == "Сербия"
+    assert serbian.city == "Белград"
+
+    belarusian = parse_event_location_page(
+        html.replace("Belgrade", "Гродно"),
+        "https://s95.by/events/grodno",
+        location_external_key="grodno",
+    )
+    assert belarusian.country == "Беларусь"
+
+    russian = parse_event_location_page(
+        html.replace("Belgrade", "Измайлово"),
+        "https://s95.ru/events/izmailovo",
+        location_external_key="izmailovo",
+    )
+    assert russian.country == "Россия"
