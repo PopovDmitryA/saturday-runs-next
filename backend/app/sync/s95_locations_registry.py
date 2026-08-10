@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.migration.helpers import s95_country_from_url
 from app.models import Location, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalLocation
 from app.s95.api_client import S95ApiLocation, fetch_all_locations
@@ -67,13 +68,15 @@ def _finish_sync_run(
 
 
 def _to_canonical(entry: S95ApiLocation) -> CanonicalLocation:
+    source_url = f"{entry.domain}/events/{entry.slug}"
     return CanonicalLocation(
         external_key=entry.slug,
         name=entry.name,
+        country=s95_country_from_url(source_url),
         city=entry.town or None,
         latitude=entry.latitude,
         longitude=entry.longitude,
-        source_url=f"{entry.domain}/events/{entry.slug}",
+        source_url=source_url,
     )
 
 
@@ -114,6 +117,16 @@ def _process_entry(
         changed = True
     if row.source_url != source_url:
         row.source_url = source_url
+        changed = True
+
+    # Страна по домену реестра — единственный надёжный признак: s95 ведёт
+    # Сербию на s95.rs, Беларусь на s95.by, Россию на s95.ru. Раньше страну
+    # никто не проставлял, а upsert_location пустым значением не затирает
+    # известное — так Белград и Гродно навсегда оставались «Россией».
+    # Тут перезаписываем, а не дозаполняем: домен точнее любого прошлого значения.
+    country = s95_country_from_url(source_url)
+    if row.country != country:
+        row.country = country
         changed = True
 
     # Update coordinates if API now has them and we don't

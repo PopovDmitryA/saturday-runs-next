@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
+from app.migration.helpers import s95_country_from_url
 from app.platform_adapters.canonical import CanonicalLocation
 
 YANDEX_PT_RE = re.compile(r"yandex\.ru/maps/\?pt=\s*([0-9.]+),([0-9.]+)", re.I)
@@ -63,7 +63,9 @@ def parse_event_location_page(
     name = h1.get_text(strip=True) if h1 else location_external_key
 
     city = None
-    country = "Россия"
+    # Страну s95 на странице не пишет, зато её однозначно задаёт домен:
+    # s95.rs — Сербия, s95.by — Беларусь, s95.ru — Россия.
+    country = s95_country_from_url(page_url)
     for node in soup.find_all(string=re.compile(r"Место проведения", re.I)):
         parent = node.parent
         if parent is None:
@@ -77,7 +79,6 @@ def parse_event_location_page(
 
     latitude, longitude = parse_location_coordinates(html)
     map_url = parse_map_url(html)
-    urlparse(page_url)
     return CanonicalLocation(
         external_key=location_external_key,
         name=name,
