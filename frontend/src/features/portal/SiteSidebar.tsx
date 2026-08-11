@@ -5,8 +5,10 @@
  *
  * - группа «Личный кабинет» раскрывается по клику и автоматически при
  *   переходе в любой его раздел; анониму — задизейблена, не скрыта;
- * - «Локации» — один пункт; на странице конкретной локации под ним
- *   появляются подпункты (сама локация и её журнал протоколов);
+ * - «Локации» — один пункт с постоянными подпунктами «Последние пробежки» и
+ *   «Журнал протоколов» (второй активен только внутри локации, иначе
+ *   задизейблен с тултипом); на странице локации между ними появляется сама
+ *   площадка;
  * - «Рейтинги» — один пункт без перечня лидербордов (их будут десятки);
  * - служебный блок (Настройки/Бэклог/Админка/Выйти) виден на всех страницах;
  * - сворачивание в рельс-иконки работает везде (общий localStorage-ключ).
@@ -606,29 +608,38 @@ export function SiteSidebar({
           <span className="portal-cab-nav-label">Последние пробежки</span>
         </a>
         {location && (
-          <>
-            <a
-              href={`/locations/${location.slug}`}
-              className={`portal-cab-nav-item portal-cab-nav-subitem${
-                pathname === `/locations/${location.slug}` ? " active" : ""
-              }`}
-              title={collapsed ? location.name : undefined}
-            >
-              <span className="portal-cab-nav-icon">{LOCATION_PIN_ICON}</span>
-              <span className="portal-cab-nav-label">{location.name}</span>
-            </a>
-            <a
-              href={`/locations/${location.slug}/events`}
-              className={`portal-cab-nav-item portal-cab-nav-subitem${
-                pathname.endsWith("/events") ? " active" : ""
-              }`}
-              title={collapsed ? "Журнал протоколов" : undefined}
-            >
-              <span className="portal-cab-nav-icon">{PROTOCOL_ICON}</span>
-              <span className="portal-cab-nav-label">Журнал протоколов</span>
-            </a>
-          </>
+          <a
+            href={`/locations/${location.slug}`}
+            className={`portal-cab-nav-item portal-cab-nav-subitem${
+              pathname === `/locations/${location.slug}` ? " active" : ""
+            }`}
+            title={collapsed ? location.name : undefined}
+          >
+            <span className="portal-cab-nav-icon">{LOCATION_PIN_ICON}</span>
+            <span className="portal-cab-nav-label">{location.name}</span>
+          </a>
         )}
+        {/* Журнал протоколов виден всегда (просьба Дмитрия 11.08.2026): вне
+            локации он задизейблен и объясняет тултипом, что сначала нужно
+            открыть площадку — раньше пункт просто исчезал, и было непонятно,
+            где вообще искать протоколы. */}
+        <a
+          href={location ? `/locations/${location.slug}/events` : undefined}
+          className={`portal-cab-nav-item portal-cab-nav-subitem${
+            location && pathname.endsWith("/events") ? " active" : ""
+          }${location ? "" : " portal-cab-nav-item-disabled"}`}
+          aria-disabled={location ? undefined : true}
+          title={
+            location
+              ? collapsed
+                ? "Журнал протоколов"
+                : undefined
+              : "Сначала откройте локацию — журнал протоколов у каждой площадки свой"
+          }
+        >
+          <span className="portal-cab-nav-icon">{PROTOCOL_ICON}</span>
+          <span className="portal-cab-nav-label">Журнал протоколов</span>
+        </a>
 
         <a
           href="/ratings"

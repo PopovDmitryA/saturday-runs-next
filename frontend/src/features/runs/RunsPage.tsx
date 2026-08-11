@@ -325,9 +325,9 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                   />
                   {showFull && (
                     <ColumnHeader
-                      label={narrowViewport ? "Пол" : "Место (пол)"}
+                      label="Место (пол)"
                       filterable={false}
-                      hint={narrowViewport ? "Место среди своего пола" : undefined}
+                      hint="Место среди своего пола"
                     />
                   )}
                   <ColumnHeader

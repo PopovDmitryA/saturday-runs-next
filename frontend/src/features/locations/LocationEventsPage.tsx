@@ -56,8 +56,8 @@ function LocationEventsContent({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [platformFilter, setPlatformFilter] = useState<string | null>(null);
   const [sort, setSort] = useState<SortState>({ key: "date", asc: false });
-  const attachFloatingHead = useFloatingTableHead();
-  // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
+  // Копия шапки встаёт под липкую полосу «Кратко | Полно», а не под шапку сайта.
+  const attachFloatingHead = useFloatingTableHead(".tview-bar");
   const [tableView, setTableView] = useTableView("locationEvents");
   // Краткий вид доступен и на компьютере (решение Дмитрия 04.08.2026): в полном
   // наборе колонок названиям локаций достаётся слишком мало места и они режутся
@@ -210,11 +210,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
       )}
 
       <section className="loc-section">
-        <TableViewToggle
-          value={tableView}
-          onChange={setTableView}
-          className="tview-toggle-always"
-        />
+        <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
         <TableWrap innerRef={attachFloatingHead} className="loc-events-wrap" stickyFirstCol={showFull}>
           <table
             className={`data-table data-table-layout-fixed loc-events-table${
@@ -237,7 +233,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
               {showFull && (
                 <>
                   <col className="col-time" />
-                  <col className="col-compact" />
+                  <col className="col-compact-wide" />
                 </>
               )}
             </colgroup>
@@ -251,44 +247,44 @@ function LocationEventsContent({ slug }: { slug: string }) {
                 <ColumnHeader label="Дата" {...sortProps("date")} />
                 <ColumnHeader label="Система" filterable={false} />
                 <ColumnHeader
-                  label="Фин."
+                  label="Финишёров"
                   hint="Финишёров на старте"
                   {...sortProps("finishers")}
                 />
                 {showFull && (
                   <ColumnHeader
-                    label="Вол."
+                    label="Волонтёров"
                     hint="Волонтёров на старте"
                     {...sortProps("volunteers")}
                   />
                 )}
                 {showFull && (
                   <ColumnHeader
-                    label="Нов."
+                    label="Новичков"
                     hint="Новички: дебютанты движения + впервые на этой локации"
                     {...sortProps("newcomers")}
                   />
                 )}
                 <ColumnHeader
-                  label="Луч. М"
+                  label="Лучшее время (М)"
                   hint="Лучшее время среди мужчин"
                   {...sortProps("best_male")}
                 />
                 <ColumnHeader
-                  label="Луч. Ж"
+                  label="Лучшее время (Ж)"
                   hint="Лучшее время среди женщин"
                   {...sortProps("best_female")}
                 />
                 {showFull && (
                   <ColumnHeader
-                    label="Средн."
+                    label="Среднее время"
                     hint="Среднее время финиша"
                     {...sortProps("avg")}
                   />
                 )}
                 {showFull && (
                   <ColumnHeader
-                    label="PR"
+                    label="Личных рекордов"
                     hint="Личных рекордов установлено в этот день"
                     {...sortProps("prs")}
                   />

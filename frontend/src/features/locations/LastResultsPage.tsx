@@ -68,6 +68,9 @@ function sortValue(item: LastResultsItem, key: SortKey): number | string | null 
 function LastResultsTable({ items }: { items: LastResultsItem[] }) {
   const [sort, setSort] = useState<SortState>({ key: "event_date", asc: false });
   const [tableView, setTableView] = useTableView("lastResults");
+  // Краткий вид — «кто, где и сколько народу»: локация, город, система, дата,
+  // финишёры и волонтёры (просьба Дмитрия 11.08.2026 — раньше в нём оставались
+  // только название и дата, и на широком экране было пусто).
   const showFull = tableView === "full";
 
   const sorted = useMemo(() => {
@@ -114,11 +117,7 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
 
   return (
     <>
-      <TableViewToggle
-        value={tableView}
-        onChange={setTableView}
-        className="tview-toggle-always"
-      />
+      <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
       <TableWrap stickyFirstCol={showFull}>
         <table
           className={`data-table data-table-layout-fixed loc-index-table${
@@ -127,66 +126,64 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
         >
           <colgroup>
             <col />
-            {showFull && <col className="col-city" />}
-            {showFull && <col className="col-platform" />}
+            <col className="col-city" />
+            <col className="col-platform" />
             <col className="col-date" />
+            <col className="col-metric" />
             <col className="col-metric" />
             {showFull && (
               <>
                 <col className="col-metric" />
-                <col className="col-metric" />
-                <col className="col-metric" />
-                <col className="col-metric" />
-                <col className="col-metric" />
+                <col className="col-metric-wide" />
+                <col className="col-metric-wide" />
+                <col className="col-metric-wide" />
               </>
             )}
           </colgroup>
           <thead>
             <tr>
               <ColumnHeader label="Локация" {...sortProps("name")} />
-              {showFull && <ColumnHeader label="Город" {...sortProps("city")} />}
-              {showFull && <ColumnHeader label="Система" filterable={false} />}
+              <ColumnHeader label="Город" {...sortProps("city")} />
+              <ColumnHeader label="Система" filterable={false} />
               <ColumnHeader
                 label="Дата"
                 hint="Дата последнего старта локации (клик по дате — протокол)"
                 {...sortProps("event_date")}
               />
               <ColumnHeader
-                label="Фин."
+                label="Финишёров"
                 hint="Финишёров на последнем старте"
                 {...sortProps("finishers")}
               />
+              <ColumnHeader
+                label="Волонтёров"
+                hint="Волонтёров на последнем старте"
+                {...sortProps("volunteers")}
+              />
               {showFull && (
                 <ColumnHeader
-                  label="Вол."
-                  hint="Волонтёров на последнем старте"
-                  {...sortProps("volunteers")}
-                />
-              )}
-              {showFull && (
-                <ColumnHeader
-                  label="Нов."
+                  label="Дебютантов"
                   hint="Дебютантов: впервые вышли на субботний старт"
                   {...sortProps("debutants")}
                 />
               )}
               {showFull && (
                 <ColumnHeader
-                  label="PR"
+                  label="Личных рекордов"
                   hint="Личных рекордов на этом старте"
                   {...sortProps("prs")}
                 />
               )}
               {showFull && (
                 <ColumnHeader
-                  label="Луч. М"
+                  label="Лучшее время (М)"
                   hint="Лучшее мужское время последнего старта"
                   {...sortProps("best_male")}
                 />
               )}
               {showFull && (
                 <ColumnHeader
-                  label="Луч. Ж"
+                  label="Лучшее время (Ж)"
                   hint="Лучшее женское время последнего старта"
                   {...sortProps("best_female")}
                 />
@@ -196,7 +193,7 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={showFull ? 10 : 3} className="table-empty-cell">
+                <td colSpan={showFull ? 10 : 6} className="table-empty-cell">
                   <span className="muted">Нет локаций по фильтрам</span>
                 </td>
               </tr>
@@ -207,21 +204,17 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
                     <a href={`/locations/${item.slug}`}>{item.name}</a>
                     <LocationStatusBadge isPaused={item.is_paused} isCancelled={item.is_cancelled} />
                   </td>
-                  {showFull && (
-                    <td className="muted">
-                      {item.city ?? "—"}
-                      {item.country && item.country !== "Россия" ? ` · ${item.country}` : ""}
-                    </td>
-                  )}
-                  {showFull && (
-                    <td>
-                      <span className="loc-index-platforms">
-                        {item.event_platform_codes.map((code) => (
-                          <PlatformBadge key={code} code={code} />
-                        ))}
-                      </span>
-                    </td>
-                  )}
+                  <td className="muted">
+                    {item.city ?? "—"}
+                    {item.country && item.country !== "Россия" ? ` · ${item.country}` : ""}
+                  </td>
+                  <td>
+                    <span className="loc-index-platforms">
+                      {item.event_platform_codes.map((code) => (
+                        <PlatformBadge key={code} code={code} />
+                      ))}
+                    </span>
+                  </td>
                   <td className={item.is_last_saturday ? undefined : "muted"}>
                     {item.protocol_url ? (
                       <a href={item.protocol_url} target="_blank" rel="noreferrer" title="Открыть протокол">
@@ -232,7 +225,7 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
                     )}
                   </td>
                   <td className="td-compact">{item.finishers ?? "—"}</td>
-                  {showFull && <td className="td-compact">{item.volunteers ?? "—"}</td>}
+                  <td className="td-compact">{item.volunteers ?? "—"}</td>
                   {showFull && <td className="td-compact">{item.debutants ?? "—"}</td>}
                   {showFull && <td className="td-compact">{item.prs ?? "—"}</td>}
                   {showFull && (

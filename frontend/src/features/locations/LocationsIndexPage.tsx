@@ -86,11 +86,12 @@ function sortValue(item: LocationIndexItem, key: SortKey): number | string | nul
 
 function LocationsTable({ items }: { items: LocationIndexItem[] }) {
   const [sort, setSort] = useState<SortState>({ key: "events_count", asc: false });
-  // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
   const [tableView, setTableView] = useTableView("locationsIndex");
   // Краткий вид доступен и на компьютере (решение Дмитрия 04.08.2026): в полном
   // наборе колонок названиям локаций достаётся слишком мало места и они режутся
-  // многоточием, а лишние столбцы нужны не всегда.
+  // многоточием, а лишние столбцы нужны не всегда. Город и «Финишей» остаются и
+  // в кратком: без них на широком экране таблица выглядела полупустой
+  // (репорт Дмитрия 11.08.2026).
   const showFull = tableView === "full";
 
   const sorted = useMemo(() => {
@@ -133,11 +134,7 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
 
   return (
     <>
-      <TableViewToggle
-          value={tableView}
-          onChange={setTableView}
-          className="tview-toggle-always"
-        />
+      <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
       <TableWrap stickyFirstCol={showFull}>
         <table
           className={`data-table data-table-layout-fixed loc-index-table${
@@ -146,16 +143,16 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
         >
         <colgroup>
           <col />
-          {showFull && <col className="col-city" />}
+          <col className="col-city" />
           <col className="col-platform" />
+          <col className="col-metric" />
           <col className="col-metric" />
           {showFull && (
             <>
               <col className="col-metric" />
+              <col className="col-metric" />
               <col className="col-metric-wide" />
               <col className="col-metric-wide" />
-              <col className="col-metric" />
-              <col className="col-metric" />
               <col className="col-date" />
             </>
           )}
@@ -163,20 +160,18 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
         <thead>
           <tr>
             <ColumnHeader label="Локация" {...sortProps("name")} />
-            {showFull && <ColumnHeader label="Город" {...sortProps("city")} />}
+            <ColumnHeader label="Город" {...sortProps("city")} />
             <ColumnHeader label="Системы" filterable={false} />
             <ColumnHeader
               label="Стартов"
               hint="Мероприятий проведено за всё время"
               {...sortProps("events_count")}
             />
-            {showFull && (
-              <ColumnHeader
-                label="Финишей"
-                hint="Финишей за всё время"
-                {...sortProps("finishers_total")}
-              />
-            )}
+            <ColumnHeader
+              label="Финишей"
+              hint="Финишей за всё время"
+              {...sortProps("finishers_total")}
+            />
             {showFull && (
               <ColumnHeader
                 label="В среднем"
@@ -193,14 +188,14 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
             )}
             {showFull && (
               <ColumnHeader
-                label="Луч. М"
+                label="Лучшее время (М)"
                 hint="Рекорд локации (LR): лучшее время мужчины здесь за всю историю"
                 {...sortProps("best_male")}
               />
             )}
             {showFull && (
               <ColumnHeader
-                label="Луч. Ж"
+                label="Лучшее время (Ж)"
                 hint="Рекорд локации (LR): лучшее время женщины здесь за всю историю"
                 {...sortProps("best_female")}
               />
@@ -216,7 +211,7 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
         <tbody>
           {sorted.length === 0 ? (
             <tr>
-              <td colSpan={showFull ? 10 : 3} className="table-empty-cell">
+              <td colSpan={showFull ? 10 : 5} className="table-empty-cell">
                 <span className="muted">Нет локаций по фильтрам</span>
               </td>
             </tr>
@@ -227,12 +222,10 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                   <a href={`/locations/${item.slug}`}>{item.name}</a>
                   <LocationStatusBadge isPaused={item.is_paused} isCancelled={item.is_cancelled} />
                 </td>
-                {showFull && (
-                  <td className="muted">
-                    {item.city ?? "—"}
-                    {item.country && item.country !== "Россия" ? ` · ${item.country}` : ""}
-                  </td>
-                )}
+                <td className="muted">
+                  {item.city ?? "—"}
+                  {item.country && item.country !== "Россия" ? ` · ${item.country}` : ""}
+                </td>
                 <td>
                   <span className="loc-index-platforms">
                     {item.platform_codes.map((code) => (
@@ -241,7 +234,7 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                   </span>
                 </td>
                 <td className="td-compact">{item.events_count || "—"}</td>
-                {showFull && <td className="td-compact">{item.finishers_total || "—"}</td>}
+                <td className="td-compact">{item.finishers_total || "—"}</td>
                 {showFull && <td className="td-compact">{formatAvgFinishers(item)}</td>}
                 {showFull && (
                   <td

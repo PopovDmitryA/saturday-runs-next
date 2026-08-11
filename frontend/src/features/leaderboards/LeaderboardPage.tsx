@@ -708,7 +708,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
-  const attachFloatingHead = useFloatingTableHead(".lb-view-bar");
+  const attachFloatingHead = useFloatingTableHead(".tview-bar");
   // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
   const [tableView, setTableView] = useTableView("leaderboard");
   const narrowViewport = useNarrowViewport();
@@ -1342,16 +1342,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
             )}
 
             {/* На компьютере переключатель тоже нужен: в кратком виде уходят
-                колонки систем, из-за которых таблица перегружена.
-                Полоса липкая: в длинной таблице переключатель уезжал вверх, и
-                чтобы сменить набор колонок, приходилось мотать страницу назад. */}
-            <div className="lb-view-bar">
-              <TableViewToggle
-                value={tableView}
-                onChange={setTableView}
-                className="tview-toggle-always"
-              />
-            </div>
+                колонки систем, из-за которых таблица перегружена. */}
+            <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
             <TableWrap
               innerRef={attachFloatingHead}
               className={`lb-table-wrap${wideTable ? " lb-table-wrap-wide" : ""}`}
