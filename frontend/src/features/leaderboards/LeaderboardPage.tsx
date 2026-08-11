@@ -33,7 +33,7 @@ import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import { VolunteerRolesModal } from "./VolunteerRolesModal";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
-import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
+import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { PinnedMeBar } from "../../components/tableUx/PinnedMeBar";
 import "./leaderboards.css";
 
@@ -709,16 +709,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
   const attachFloatingHead = useFloatingTableHead(".tview-bar");
-  // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
   const [tableView, setTableView] = useTableView("leaderboard");
-  const narrowViewport = useNarrowViewport();
-  // Колонки систем — самая тяжёлая часть таблицы: четыре числовых столбца,
-  // которые перегружают страницу и на компьютере (решение Дмитрия 04.08.2026).
-  // Их прячет краткий вид на ЛЮБОЙ ширине. Смысловые колонки (локаций, дом,
-  // лучшее время, последняя неделя) на компьютере остаются всегда — там место
-  // есть; на телефоне краткий вид по-прежнему сводит таблицу к трём столбцам.
-  const showPlatforms = tableView === "full";
-  const showExtras = !narrowViewport || tableView === "full";
 
   useEffect(() => {
     const handleScroll = () => {
@@ -881,6 +872,61 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
         ? "lb-table-week"
         : "";
   const wideTable = wideTableKind !== "";
+
+  // Единый механизм со всеми таблицами сайта: краткий вид набирает колонки под
+  // ширину блока. Порядок — по важности, а не по выводу; колонки систем стоят
+  // последними: это самая тяжёлая часть таблицы (четыре числовых столбца), и
+  // именно её раньше прятал краткий вид на любой ширине.
+  const lbColumns = useMemo<AdaptiveColumn[]>(() => {
+    const list: AdaptiveColumn[] = [
+      { key: "rank", width: 88, required: true },
+      { key: "name", width: 200, required: true },
+      { key: "total", width: 112, required: true },
+    ];
+    if (hasWinExtras) {
+      list.push({ key: "best_time", width: 112 });
+    }
+    if (hasGeoColumns) {
+      list.push({ key: "geo", width: 160 });
+    }
+    if (isHomeDistance) {
+      list.push({ key: "home", width: 232 });
+    }
+    if (isRoles) {
+      list.push({ key: "top_role", width: 168 });
+    }
+    if (metric === "wins") {
+      list.push({ key: "top_location", width: 168 });
+    }
+    if (hasWinExtras && lastWinMeta) {
+      list.push({ key: "last_win", width: 176 });
+    }
+    if (hasWeekLocations) {
+      list.push({ key: "week", width: 176 });
+    }
+    if (columns.length > 0) {
+      list.push({ key: "platforms", width: columns.length * 76 });
+    }
+    return list;
+  }, [
+    columns.length,
+    hasGeoColumns,
+    hasWeekLocations,
+    hasWinExtras,
+    isHomeDistance,
+    isRoles,
+    lastWinMeta,
+    metric,
+  ]);
+
+  const adaptive = useAdaptiveColumns(lbColumns);
+  const showFull = tableView === "full";
+  const show = (key: string) => showFull || adaptive.isVisible(key);
+  const showPlatforms = show("platforms");
+  // Жёсткая раскладка нужна только полному набору: там колонки-названия
+  // (локации, роли) иначе раздувают таблицу по самому длинному слову. В кратком
+  // виде колонок мало, и auto-раскладка отдаёт остаток имени участника.
+  const fixedLayout = showFull && wideTable;
   const minVisitsHint =
     metric === "volunteer_locations" ? VOLUNTEER_MIN_VISITS_HINT : MIN_VISITS_HINT;
 
@@ -952,22 +998,21 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   }, [myIndex]);
 
   const crumbs = METRIC_CRUMBS[metric];
-  // Место + участник + «всего» и, у победных рейтингов, лучшее время,
-  // топ-локация (только wins), последняя победа и любимая роль («Мультиволонтёр»).
-  // Колонки систем считаются отдельно: их прячет краткий вид на любой ширине,
-  // а смысловые колонки на компьютере остаются всегда.
-  const totalColumns = showExtras
-    ? (showPlatforms ? columns.length : 0) +
-      3 +
-      (hasWinExtras ? 2 : 0) +
-      (metric === "wins" ? 1 : 0) +
-      (isRoles ? 1 : 0) +
-      (hasGeoColumns ? 2 : 0) +
-      (isHomeDistance ? 2 : 0) +
-      (hasWeekLocations ? 1 : 0)
-    : showPlatforms
-      ? columns.length + 3
-      : 3;
+  // Ширина colspan «нет строк»/детализации ролей: сколько колонок реально
+  // нарисовано. Группы шире одной ячейки: «геo» — города+регионы, «дом» —
+  // локаций+дом, «системы» — по столбцу на систему.
+  const totalColumns = lbColumns.reduce((sum, column) => {
+    if (!show(column.key)) {
+      return sum;
+    }
+    if (column.key === "platforms") {
+      return sum + columns.length;
+    }
+    if (column.key === "geo" || column.key === "home") {
+      return sum + 2;
+    }
+    return sum + 1;
+  }, 0);
   const visibleRows = rows.slice(0, visibleCount);
   const nextChunkEnd = Math.min(visibleCount + PAGE_STEP, rows.length);
 
@@ -1369,19 +1414,23 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
             <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
             <TableWrap
               innerRef={attachFloatingHead}
-              className={`lb-table-wrap${wideTable ? " lb-table-wrap-wide" : ""}`}
+              className={`lb-table-wrap${fixedLayout ? " lb-table-wrap-wide" : ""}`}
+              outerRef={adaptive.measureRef}
             >
               <table
                 ref={tableRef}
-                className={`data-table lb-table${wideTable ? ` lb-table-fixed ${wideTableKind}` : ""}${
-                  showExtras ? " lb-table-full" : ""
-                }${isHomeDistance ? " lb-table-wide-values" : ""}`}
+                className={`data-table lb-table${
+                  fixedLayout ? ` lb-table-fixed ${wideTableKind}` : ""
+                }${showFull ? " lb-table-full" : ""}${
+                  isHomeDistance ? " lb-table-wide-values" : ""
+                }`}
+                style={showFull ? undefined : { minWidth: adaptive.minWidth }}
               >
                 <thead>
                   <tr>
                     {headerCell("rank", "Место", "lb-col-rank")}
                     <th className="lb-col-name">Участник</th>
-                    {showExtras &&
+                    {show("best_time") &&
                       hasWinExtras &&
                       headerCell("best_time", "Лучшее время", "lb-col-time", BEST_TIME_HINT)}
                     {/* Колонки систем не сортируются — для «посмотреть одну
@@ -1399,7 +1448,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                       "lb-col-num lb-col-total",
                       isRoles ? ROLES_TOTAL_HINT : undefined,
                     )}
-                    {showExtras && hasGeoColumns && (
+                    {show("geo") && hasGeoColumns && (
                       <>
                         <th className="lb-col-num lb-col-geo">
                           Городов <InfoHint text={CITIES_HINT} />
@@ -1409,7 +1458,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         </th>
                       </>
                     )}
-                    {showExtras && isHomeDistance && (
+                    {show("home") && isHomeDistance && (
                       <>
                         <th className="lb-col-num lb-col-geo">
                           Локаций <InfoHint text={HOME_DISTANCE_LOCATIONS_HINT} />
@@ -1419,22 +1468,22 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         </th>
                       </>
                     )}
-                    {showExtras && isRoles && (
+                    {show("top_role") && isRoles && (
                       <th className="lb-col-home">
                         Любимая роль <InfoHint text={TOP_ROLE_HINT} />
                       </th>
                     )}
-                    {showExtras && metric === "wins" && (
+                    {show("top_location") && metric === "wins" && (
                       <th className="lb-col-home">
                         Топ-локация <InfoHint text={TOP_LOCATION_HINT} />
                       </th>
                     )}
-                    {showExtras && hasWinExtras && lastWinMeta && (
+                    {show("last_win") && hasWinExtras && lastWinMeta && (
                       <th className="lb-col-last-win">
                         {lastWinMeta.label} <InfoHint text={lastWinMeta.hint} />
                       </th>
                     )}
-                    {showExtras && hasWeekLocations && (
+                    {show("week") && hasWeekLocations && (
                       <th className="lb-col-last-win">
                         Последняя неделя{" "}
                         <InfoHint text={WEEK_LOCATIONS_HINT[metric] ?? ""} />
@@ -1488,7 +1537,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         <td className="lb-col-name">
                           <ParticipantName row={row} />
                         </td>
-                        {showExtras && hasWinExtras && (
+                        {show("best_time") && hasWinExtras && (
                           <td className="lb-col-time">
                             <BestTime row={row} />
                           </td>
@@ -1506,7 +1555,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             <DeltaSlot delta={row.total_delta} />
                           </span>
                         </td>
-                        {showExtras && hasGeoColumns && (
+                        {show("geo") && hasGeoColumns && (
                           <>
                             <td className="lb-col-num lb-col-geo">
                               <GeoCount value={row.cities_total} />
@@ -1516,7 +1565,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             </td>
                           </>
                         )}
-                        {showExtras && isHomeDistance && (
+                        {show("home") && isHomeDistance && (
                           <>
                             <td className="lb-col-num lb-col-geo">
                               <GeoCount value={row.locations_total} />
@@ -1526,22 +1575,22 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             </td>
                           </>
                         )}
-                        {showExtras && isRoles && (
+                        {show("top_role") && isRoles && (
                           <td className="lb-col-home">
                             <TopRole row={row} />
                           </td>
                         )}
-                        {showExtras && metric === "wins" && (
+                        {show("top_location") && metric === "wins" && (
                           <td className="lb-col-home">
                             <TopWinLocation row={row} />
                           </td>
                         )}
-                        {showExtras && hasWinExtras && lastWinMeta && (
+                        {show("last_win") && hasWinExtras && lastWinMeta && (
                           <td className="lb-col-last-win">
                             <LastWinLocation row={row} />
                           </td>
                         )}
-                        {showExtras && hasWeekLocations && (
+                        {show("week") && hasWeekLocations && (
                           <td className="lb-col-last-win">
                             <WeekLocationCell item={row.week_location} />
                           </td>

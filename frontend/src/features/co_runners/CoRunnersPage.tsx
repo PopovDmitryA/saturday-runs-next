@@ -8,6 +8,7 @@ import {
 import { formatDate, formatDuration, platformCodeLabel, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
+import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 
 function SiteProfileIcon() {
@@ -205,14 +206,26 @@ type CoRunnersContentProps = {
   loadMeetings: (participantKey: string) => Promise<CoRunnerMeetingItem[]>;
 };
 
+// Колонки «Соседей» в порядке важности; ширины — под подписи шапки.
+const CO_RUNNERS_COLUMNS: AdaptiveColumn[] = [
+  { key: "num", width: 56, required: true },
+  { key: "name", width: 200, required: true },
+  { key: "meetings", width: 104, required: true },
+  { key: "score", width: 104 },
+  { key: "platform", width: 120 },
+  { key: "last_meeting", width: 160 },
+  { key: "first_meeting", width: 160 },
+];
+
 export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) {
   const [items, setItems] = useState<CoRunnerItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
+  // «Кратко» набирает колонки по ширине блока, «Полно» — весь набор со скроллом.
   const [tableView, setTableView] = useTableView("coRunners");
-  const narrowViewport = useNarrowViewport();
-  const showFull = !narrowViewport || tableView === "full";
+  const adaptive = useAdaptiveColumns(CO_RUNNERS_COLUMNS);
+  const showFull = tableView === "full";
+  const show = (key: string) => showFull || adaptive.isVisible(key);
   const [query, setQuery] = useState("");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [meetingsByKey, setMeetingsByKey] = useState<Record<string, CoRunnerMeetingItem[]>>({});
@@ -298,18 +311,21 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
-            <TableViewToggle value={tableView} onChange={setTableView} />
-            <TableWrap stickyFirstCol={showFull}>
-              <table className="data-table co-runners-table">
+            <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
+            <TableWrap stickyFirstCol={showFull} outerRef={adaptive.measureRef}>
+              <table
+                className="data-table co-runners-table"
+                style={showFull ? undefined : { minWidth: adaptive.minWidth }}
+              >
                 <thead>
                   <tr>
                     <th className="td-num">#</th>
                     <th>Участник</th>
-                    {showFull && <th>Система</th>}
+                    {show("platform") && <th>Система</th>}
                     <th className="td-num">Встреч</th>
-                    {showFull && <th className="td-num">Счёт</th>}
-                    {showFull && <th>Первая встреча</th>}
-                    {showFull && <th>Последняя встреча</th>}
+                    {show("score") && <th className="td-num">Счёт</th>}
+                    {show("first_meeting") && <th>Первая встреча</th>}
+                    {show("last_meeting") && <th>Последняя встреча</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -329,7 +345,7 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
                           />
                           <ParticipantName item={item} />
                         </td>
-                        {showFull && (
+                        {show("platform") && (
                           <td>
                           <span className="co-runners-badges">
                             {item.platform_codes.map((code) => {
@@ -360,21 +376,21 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
                           </td>
                         )}
                         <td className="td-num">{item.meetings}</td>
-                        {showFull && (
+                        {show("score") && (
                           <td className={`td-num co-runners-score${scoreTone(item)}`}>
                             {scoreLabel(item)}
                           </td>
                         )}
-                        {showFull && (
+                        {show("first_meeting") && (
                           <td>{item.first_meeting_date ? formatDate(item.first_meeting_date) : "—"}</td>
                         )}
-                        {showFull && (
+                        {show("last_meeting") && (
                           <td>{item.last_meeting_date ? formatDate(item.last_meeting_date) : "—"}</td>
                         )}
                       </tr>,
                       expanded ? (
                         <tr key={`${item.participant_key}-detail`} className="co-runners-detail-row">
-                          <td colSpan={showFull ? 7 : 3}>
+                          <td colSpan={CO_RUNNERS_COLUMNS.filter((column) => show(column.key)).length}>
                             <div className="co-runners-detail-card">
                               <p className="co-runners-detail-title">
                                 Встречи с участником · {item.display_name ?? "Без имени"}

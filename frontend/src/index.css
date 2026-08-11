@@ -2032,6 +2032,26 @@ a.on-this-day-location {
   width: 9rem;
 }
 
+/* «Пробежки»: ширины под полные подписи шапки («Место», «Место (пол)», «Темп»).
+   Общие col-compact/col-time рассчитаны на «Фин.» и режут эти слова, а
+   сокращать подписи мы больше не сокращаем (решение Дмитрия 11.08.2026).
+   Числа здесь должны совпадать с RUNS_COLUMNS в RunsPage. */
+.runs-table .col-compact {
+  width: 6.5rem;
+}
+
+.runs-table .col-gender {
+  width: 8.5rem;
+}
+
+.runs-table .col-time {
+  width: 7rem;
+}
+
+.runs-table .col-pace {
+  width: 7.5rem;
+}
+
 .data-table-volunteering .col-role {
   width: 14.5rem;
 }
