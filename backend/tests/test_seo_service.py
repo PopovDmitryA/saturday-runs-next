@@ -15,6 +15,7 @@ from app.services.seo_service import (
     TITLE_BUDGET,
     PageMeta,
     _catalog_body,
+    _location_body,
     build_location_meta,
     build_robots_txt,
     location_lead_sentences,
@@ -335,6 +336,58 @@ def test_location_meta_survives_empty_stats() -> None:
 def test_location_meta_pluralizes_starts(count: int, expected: str) -> None:
     meta = build_location_meta({"name": "X", "stats": {"events_count": count}})
     assert expected in meta.description
+
+
+_DESCRIPTION_PAYLOAD = {
+    "platform_code": "five_verst",
+    "schedule_text": "Старт проходит по адресу: Москва, Сокольнический Вал, 1с1. Каждую субботу с 9:00.",
+    "course_text": "Маршрут проходит по дорожкам парка.\n\nСтарт у центрального входа.",
+    "travel_text": "Москва, Сокольнический Вал, 1с1",
+    "travel_sections": [
+        {"title": "Общественным транспортом", "text": "Ближайшая станция метро — Сокольники."},
+        {"title": "На автомобиле", "text": "Парковка в 200 метрах от старта."},
+        # У S95 врезка называется как наш заголовок — сервис отдаёт её без title.
+        {"title": None, "text": "Ориентир — беседка-купол у катка."},
+    ],
+    "links": [{"title": "Карта и схема проезда", "url": "https://yandex.ru/maps/-/CDHUrYj8"}],
+    "source_url": "https://5verst.ru/sokolniki/course/",
+}
+
+
+def test_location_body_shows_course_and_travel_text() -> None:
+    """Робот получает то же описание трассы, что человек видит на странице."""
+    body = _location_body(_location_payload(description=_DESCRIPTION_PAYLOAD), events_log=False)
+
+    # Заголовок блока сразу называет источник — так же, как подблок-цитата на
+    # самой странице; чужой текст обязан быть подписан ссылкой.
+    assert "Описание с официального сайта 5 вёрст" in body
+    assert 'href="https://5verst.ru/sokolniki/course/"' in body
+
+    assert "<h3>Где и когда</h3>" in body
+    assert "Каждую субботу с 9:00" in body
+    assert "<h3>Трасса</h3>" in body
+    assert "<p>Маршрут проходит по дорожкам парка.</p>" in body
+    assert "<p>Старт у центрального входа.</p>" in body
+    assert "<h3>Как добраться</h3>" in body
+    assert "<h4>Общественным транспортом</h4>" in body
+    assert "Парковка в 200 метрах" in body
+    # Секция без заголовка выводится просто абзацем, без пустого <h4>.
+    assert "Ориентир — беседка-купол у катка." in body
+    assert body.count("Как добраться") == 1
+
+    # Порядок как на странице: сначала наши данные, потом цитата с чужого сайта.
+    assert body.index("<h2>История систем</h2>") < body.index("Описание с официального сайта")
+
+
+def test_location_body_without_description() -> None:
+    body = _location_body(_location_payload(), events_log=False)
+    assert "Описание с официального сайта" not in body
+
+
+def test_events_log_body_does_not_repeat_description() -> None:
+    """Журнал протоколов — отдельный адрес; тот же текст там был бы дублем."""
+    body = _location_body(_location_payload(description=_DESCRIPTION_PAYLOAD), events_log=True)
+    assert "Маршрут проходит по дорожкам парка" not in body
 
 
 def test_catalog_body_lists_locations_with_links() -> None:

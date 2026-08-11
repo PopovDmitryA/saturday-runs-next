@@ -114,6 +114,7 @@ def _enrich_location_geo(location: CanonicalLocation) -> CanonicalLocation:
         source_url=location.source_url,
         course_source_url=location.course_source_url,
         map_url=location.map_url,
+        description=location.description,
     )
 
 
@@ -321,6 +322,8 @@ def _process_registry_entry(
                         source_hash=bulk_parser.source_hash(location_html),
                     )
                     updated_row.is_official_map = True
+                    if location_data.description is not None:
+                        upsert.upsert_location_description(db, updated_row, location_data.description)
                     result.coords_fetched += 1
                     _record_location(result, "coords_fetched_locations", entry.slug, entry.name)
                     meta_changed, pause_changed, cancel_changed = _apply_registry_meta(db, updated_row, entry)
@@ -372,6 +375,7 @@ def _process_registry_entry(
         source_url=entry.source_url,
         course_source_url=location_data.course_source_url,
         map_url=location_data.map_url,
+        description=location_data.description,
     )
     new_row, _ = upsert.upsert_location(
         db,
@@ -380,6 +384,8 @@ def _process_registry_entry(
         source_hash=bulk_parser.source_hash(location_html),
     )
     new_row.is_official_map = True
+    if location_data.description is not None:
+        upsert.upsert_location_description(db, new_row, location_data.description)
     _, pause_changed, cancel_changed = _apply_registry_meta(db, new_row, entry)
     if pause_changed:
         result.pause_status_changed += 1

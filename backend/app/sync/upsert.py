@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
 from collections import defaultdict
@@ -16,6 +18,7 @@ from app.models import (
     Event,
     EventSummary,
     Location,
+    LocationDescription,
     Participant,
     Platform,
     RunResult,
@@ -26,6 +29,7 @@ from app.pace import resolve_run_pace
 from app.platform_adapters.canonical import (
     CanonicalEventSummary,
     CanonicalLocation,
+    CanonicalLocationDescription,
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
@@ -193,6 +197,101 @@ def upsert_location(
     logger.info("DB flush location %s", location.external_key)
     db.flush()
     return row, changed
+
+
+def _description_payload(description: CanonicalLocationDescription) -> dict[str, object]:
+    return {
+        "schedule_text": description.schedule_text,
+        "course_text": description.course_text,
+        "travel_text": description.travel_text,
+        "travel_sections": [
+            {"title": section.title, "text": section.text} for section in description.travel_sections
+        ],
+        "links": [{"title": link.title, "url": link.url} for link in description.links],
+    }
+
+
+def _description_hash(payload: dict[str, object]) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
+def upsert_location_description(
+    db: Session,
+    location: Location,
+    description: CanonicalLocationDescription,
+) -> tuple[LocationDescription, bool]:
+    """Сохраняет описание площадки. Пустое описание не затирает уже собранное.
+
+    Пустым оно приходит штатно: страница «О трассе» у площадок «на паузе»
+    подменяется приглашением стать организатором, и разбор оттуда ничего не
+    достаёт. Терять из-за этого нормальный текст, собранный месяц назад, — хуже,
+    чем показать слегка устаревший.
+
+    Но отметку fetched_at ставим даже на пустое: обход S95 берёт локации по
+    давности загрузки, и локация, с которой текст не снимается никогда, иначе
+    навсегда осталась бы первой в очереди и заслоняла все остальные.
+    """
+
+    payload = _description_payload(description)
+    content_hash = _description_hash(payload)
+    now = datetime.now(timezone.utc)
+    empty = description.is_empty()
+
+    row = db.query(LocationDescription).filter(LocationDescription.location_id == location.id).one_or_none()
+    if row is not None and empty:
+        row.fetched_at = now
+        db.flush()
+        return row, False
+
+    if row is None and empty:
+        row = LocationDescription(
+            location_id=location.id,
+            source_url=description.source_url or None,
+            fetched_at=now,
+        )
+        db.add(row)
+        db.flush()
+        return row, False
+
+    if row is None:
+        row = LocationDescription(
+            location_id=location.id,
+            schedule_text=description.schedule_text,
+            course_text=description.course_text,
+            travel_text=description.travel_text,
+            travel_sections=payload["travel_sections"],
+            links=payload["links"],
+            source_url=description.source_url or None,
+            content_hash=content_hash,
+            fetched_at=now,
+            content_updated_at=now,
+            # Первый сбор — не «изменение»: revision считает, сколько раз текст
+            # поменялся ПОСЛЕ того, как мы его впервые увидели.
+            revision=0,
+        )
+        db.add(row)
+        db.flush()
+        return row, True
+
+    row.fetched_at = now
+    if row.content_hash == content_hash:
+        db.flush()
+        return row, False
+
+    row.schedule_text = description.schedule_text
+    row.course_text = description.course_text
+    row.travel_text = description.travel_text
+    row.travel_sections = payload["travel_sections"]
+    row.links = payload["links"]
+    row.source_url = description.source_url or row.source_url
+    row.content_hash = content_hash
+    row.content_updated_at = now
+    row.revision = (row.revision or 0) + 1
+    logger.info("DB flush location description %s", location.external_key)
+    db.flush()
+    return row, True
 
 
 def upsert_event_summary(

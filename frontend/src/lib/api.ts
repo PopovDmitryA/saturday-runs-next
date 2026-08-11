@@ -2029,6 +2029,28 @@ export type LocationCityNeighbor = {
   events_count: number;
 };
 
+export type LocationDescriptionSection = {
+  title: string | null;
+  text: string;
+};
+
+export type LocationDescriptionLink = {
+  title: string;
+  url: string;
+};
+
+/** Описание площадки с сайта системы: когда старт, трасса, как добраться. Текст чужой — source_url обязателен к показу. */
+export type LocationDescription = {
+  platform_code: string;
+  schedule_text: string | null;
+  course_text: string | null;
+  travel_text: string | null;
+  travel_sections: LocationDescriptionSection[];
+  links: LocationDescriptionLink[];
+  source_url: string | null;
+  updated_at: string | null;
+};
+
 export type LocationPage = {
   slug: string;
   identity_key: string;
@@ -2047,6 +2069,7 @@ export type LocationPage = {
   histogram: { bin_size_sec: number; rows: LocationHistogramRow[] };
   age_group_records: LocationAgeGroupRecord[];
   city_locations?: LocationCityNeighbor[];
+  description?: LocationDescription | null;
 };
 
 export type LocationIndexItem = {

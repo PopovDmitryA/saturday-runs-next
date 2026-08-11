@@ -38,6 +38,7 @@ class LocationSyncOptions:
 class LocationSyncResult:
     location_slug: str
     location_upserted: bool = False
+    description_upserted: bool = False
     summaries_total: int = 0
     summaries_upserted: int = 0
     summaries_unchanged: int = 0
@@ -146,6 +147,13 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
                 source_hash=bulk_parser.source_hash(location_html),
             )
             result.location_upserted = location_changed
+            # Описание берём только здесь: в ветке «страница не перечитывалась»
+            # свежего HTML нет, а старое описание и так лежит в базе.
+            if location_data.description is not None:
+                _, description_changed = upsert.upsert_location_description(
+                    db, location_row, location_data.description
+                )
+                result.description_upserted = description_changed
             commit_step(db)
             location_name = location_data.name
         else:

@@ -10158,9 +10158,116 @@ button.badge-platform-btn:hover {
   color: #64748b;
 }
 
-.loc-info-note {
-  margin: 0.7rem 0 0;
-  font-size: 0.82rem;
+/* Описание площадки: карта, трасса и как добраться (текст с сайта системы) */
+
+/* Карта слева, «где и когда» + «трасса» справа. minmax(0,·) — иначе длинное
+   слово в тексте распирает колонку и ломает страницу по ширине. */
+.loc-about-top {
+  display: grid;
+  grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
+  gap: 1.2rem;
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .loc-about-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.loc-about-intro > .loc-about-subtitle:first-child {
+  margin-top: 0;
+}
+
+.loc-about-text p {
+  margin: 0 0 0.7rem;
+  max-width: 46rem;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.loc-about-text p:last-child {
+  margin-bottom: 0;
+}
+
+.loc-about-subtitle {
+  margin: 1.2rem 0 0.6rem;
+  font-size: 1rem;
+}
+
+/* Три способа добраться рядом — как на сайте 5 вёрст: их сравнивают между
+   собой, а не читают подряд. На узком экране колонки схлопываются в столбик. */
+.loc-about-ways {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+
+.loc-about-way h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+.loc-about-links {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.loc-about-source {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.loc-about-history > .loc-about-subtitle:first-child {
+  margin-top: 0;
+}
+
+/* Цитата с сайта системы: рамка и подложка отделяют чужой текст от наших
+   данных выше. Шапка с ссылкой на источник — сверху, а не в конце простыни:
+   в конце уже непонятно, к чему относится приписка. */
+.loc-about-quote {
+  margin-top: 1.4rem;
+  padding: 1rem 1.1rem 1.1rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  /* Карточка страницы уже на --surface, поэтому цитата чуть глубже — так рамка
+     читается и в светлой, и в тёмной теме. */
+  background: var(--bg-muted);
+}
+
+.loc-about-quote-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.loc-about-quote-head > .loc-about-subtitle {
+  margin: 0;
+}
+
+.loc-about-quote-title {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+.loc-about-quote-title:first-of-type {
+  margin-top: 0.6rem;
+}
+
+.loc-about-way h5 {
+  margin: 0 0 0.4rem;
+  font-size: 0.88rem;
+  color: var(--text);
 }
 
 /* Гистограмма локации */

@@ -2,14 +2,45 @@ from __future__ import annotations
 
 import re
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 from app.migration.helpers import s95_country_from_url
-from app.platform_adapters.canonical import CanonicalLocation
+from app.platform_adapters.canonical import (
+    CanonicalDescriptionLink,
+    CanonicalDescriptionSection,
+    CanonicalLocation,
+    CanonicalLocationDescription,
+)
 
 YANDEX_PT_RE = re.compile(r"yandex\.ru/maps/\?pt=\s*([0-9.]+),([0-9.]+)", re.I)
 OG_MAP_RE = re.compile(r"center=([0-9.]+)%2C([0-9.]+)|center=([0-9.]+),([0-9.]+)", re.I)
 MAP_LINK_TITLE_RE = re.compile(r"Карта и схема проезда|Map and directions|Mapa i uputstva", re.I)
+
+# Карточки страницы локации S95: «Общая информация» (текст про трассу) и
+# «Наши контакты» (место проведения + ссылки на карту и парковку). Домены
+# s95.by/s95.rs отдают те же карточки, но заголовки могут быть переведены.
+INFO_CARD_RE = re.compile(r"Общая информация|General information|Opšte informacije", re.I)
+CONTACTS_CARD_RE = re.compile(r"Наши контакты|Our contacts|Kontakti", re.I)
+# Сербский домен пишет «Mesto događaja» — без этого варианта подпись оставалась
+# в тексте и на странице читалась как часть описания («Mesto događaja: The run…»).
+VENUE_RE = re.compile(r"^\s*(?:Место проведения|Venue|Mesto (?:doga[đd]aja|održavanja))\s*:?\s*", re.I)
+TRAVEL_HEADING_RE = re.compile(r"Как добраться|How to get|Kako (?:doći|stići)", re.I)
+# «Поддержка» — одинаковый на всех московских площадках абзац про гранты мэра;
+# для страницы локации это не описание места, а служебная сноска.
+SKIP_HEADING_RE = re.compile(r"Поддержк|Support|Podrška", re.I)
+# «Забеги проходят под названием "S95 ЗИЛ"» — название системы и площадки у нас
+# и так в заголовке страницы, в описании это лишняя строка.
+BRANDING_LINE_RE = re.compile(r"^Забеги проходят под названием|^Trke se održavaju", re.I)
+# «Длина трассы — 5000 м (5 км). Замер произведён с помощью курвиметра
+# (специального прибора для измерения расстояний на неровной местности).» —
+# одинаковый на всех площадках зачин абзаца про трассу (метод замера меняется —
+# курвиметр, колесо и т.п., — но сама пара предложений типовая и для читателя
+# не несёт ничего специфичного про конкретный парк). Дальше идёт уже уникальный
+# текст про маршрут — его и оставляем.
+TRACK_LENGTH_BOILERPLATE_RE = re.compile(
+    r"^Длина\s+трассы\s*[—-]\s*[^.]*\.\s*Замер\s+произведён[^.]*\.\s*",
+    re.I,
+)
 
 
 def parse_map_url(html: str) -> str | None:
@@ -89,4 +120,98 @@ def parse_event_location_page(
         source_url=page_url,
         course_source_url=page_url,
         map_url=map_url,
+    )
+
+
+def _text(node: Tag) -> str:
+    return re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+
+
+def _is_heading(paragraph: Tag, text: str) -> bool:
+    """Абзац-заголовок: весь его текст обёрнут в <strong> («Трасса», «Поддержка»)."""
+
+    strong = paragraph.find("strong")
+    return strong is not None and _text(strong) == text
+
+
+def _find_card(soup: BeautifulSoup, title_re: re.Pattern[str]) -> Tag | None:
+    for card in soup.select("div.card"):
+        title = card.select_one(".card-title")
+        if title is not None and title_re.search(_text(title)):
+            return card
+    return None
+
+
+def _split_info_card(card: Tag) -> tuple[list[str], list[CanonicalDescriptionSection]]:
+    """Карточка «Общая информация» → абзацы описания + секции «Как добраться»."""
+
+    body = card.select_one(".card-text") or card.select_one(".card-body")
+    if body is None:
+        return [], []
+
+    course_parts: list[str] = []
+    travel_sections: list[CanonicalDescriptionSection] = []
+    heading: str | None = None
+    for paragraph in body.find_all(["p", "ul", "ol"], recursive=False):
+        text = _text(paragraph)
+        if not text:
+            continue
+        if paragraph.name == "p" and _is_heading(paragraph, text):
+            heading = text
+            continue
+        if heading and SKIP_HEADING_RE.search(heading):
+            continue
+        if heading and TRAVEL_HEADING_RE.search(heading):
+            travel_sections.append(CanonicalDescriptionSection(title=heading, text=text))
+            continue
+        if BRANDING_LINE_RE.search(text):
+            continue
+        text = TRACK_LENGTH_BOILERPLATE_RE.sub("", text).strip()
+        if not text:
+            # Абзац целиком состоял из типового зачина — без остатка добавлять нечего.
+            continue
+        course_parts.append(text)
+    return course_parts, travel_sections
+
+
+def _contacts_card(card: Tag) -> tuple[str | None, list[CanonicalDescriptionLink]]:
+    venue_node = card.select_one(".card-text")
+    venue = VENUE_RE.sub("", _text(venue_node)) if venue_node is not None else ""
+    links: list[CanonicalDescriptionLink] = []
+    for link in card.select("a[href]"):
+        title = (link.get("title") or "").strip()
+        href = link["href"].strip()
+        # Оставляем только то, что помогает доехать: карта и парковка.
+        # Соцсети и чаты — это уже про сообщество, у них своё место на странице.
+        if not title or not href.startswith("http"):
+            continue
+        if not re.search(r"Карт|Парковк|Map|Parking|Mapa|Parking", title, re.I):
+            continue
+        links.append(CanonicalDescriptionLink(title=title, url=href))
+    return (venue or None), links
+
+
+def parse_location_description(html: str, source_url: str) -> CanonicalLocationDescription:
+    """Разбирает страницу локации S95 (`/events/{slug}`) в блок описания."""
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    course_parts: list[str] = []
+    travel_sections: list[CanonicalDescriptionSection] = []
+    info_card = _find_card(soup, INFO_CARD_RE)
+    if info_card is not None:
+        course_parts, travel_sections = _split_info_card(info_card)
+
+    travel_text: str | None = None
+    links: list[CanonicalDescriptionLink] = []
+    contacts_card = _find_card(soup, CONTACTS_CARD_RE)
+    if contacts_card is not None:
+        travel_text, links = _contacts_card(contacts_card)
+
+    return CanonicalLocationDescription(
+        course_text="\n\n".join(course_parts) or None,
+        travel_text=travel_text,
+        travel_sections=travel_sections,
+        links=links,
+        source_url=source_url,
     )

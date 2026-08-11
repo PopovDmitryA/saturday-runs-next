@@ -669,6 +669,75 @@ def _render_html(
     )
 
 
+def _paragraph_rows(text: str, indent: str = "    ") -> list[str]:
+    return [f"{indent}<p>{escape(part.strip())}</p>" for part in text.split("\n\n") if part.strip()]
+
+
+def _location_description_rows(payload: dict[str, Any]) -> list[str]:
+    """Описание площадки — цитата с сайта системы: где и когда, трасса, дорога.
+
+    Зеркало подблока LocationDescriptionQuote в LocationPage.tsx: заголовок сразу
+    называет источник, дальше те же подзаголовки в том же порядке. Текст не наш,
+    и подписать его — и честно, и полезно (внешняя ссылка на первоисточник
+    роботу тоже понятна).
+    """
+
+    description = payload.get("description") or {}
+    if not description:
+        return []
+
+    schedule_text = str(description.get("schedule_text") or "").strip()
+    course_text = str(description.get("course_text") or "").strip()
+    travel_text = str(description.get("travel_text") or "").strip()
+    travel_sections = [
+        section for section in (description.get("travel_sections") or []) if str(section.get("text") or "").strip()
+    ]
+    if not (schedule_text or course_text or travel_text or travel_sections):
+        return []
+
+    platform = PLATFORM_LABELS.get(str(description.get("platform_code") or ""))
+    source_url = str(description.get("source_url") or "").strip()
+    heading = f"Описание с официального сайта {platform}" if platform else "Описание с официального сайта системы"
+    if source_url:
+        heading_html = (
+            f'{escape(heading)} — <a href="{escape(source_url)}" rel="nofollow noopener">{escape(source_url)}</a>'
+        )
+    else:
+        heading_html = escape(heading)
+    rows: list[str] = [f"    <h2>{heading_html}</h2>"]
+
+    if schedule_text:
+        rows.append("    <h3>Где и когда</h3>")
+        rows.extend(_paragraph_rows(schedule_text))
+    if course_text:
+        rows.append("    <h3>Трасса</h3>")
+        rows.extend(_paragraph_rows(course_text))
+
+    if travel_text or travel_sections:
+        rows.append("    <h3>Как добраться</h3>")
+        if travel_text:
+            rows.extend(_paragraph_rows(travel_text))
+        for section in travel_sections:
+            title = str(section.get("title") or "").strip()
+            if title:
+                rows.append(f"    <h4>{escape(title)}</h4>")
+            rows.extend(_paragraph_rows(str(section.get("text") or "").strip()))
+
+    links = description.get("links") or []
+    if links:
+        items = "".join(
+            '      <li><a href="{url}" rel="nofollow noopener">{title}</a></li>\n'.format(
+                url=escape(str(link.get("url") or "")),
+                title=escape(str(link.get("title") or "Ссылка")),
+            )
+            for link in links
+            if link.get("url")
+        )
+        rows.append("    <ul>\n" + items + "    </ul>")
+
+    return rows
+
+
 def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
     name = escape(str(payload.get("name") or "Локация"))
     stats = payload.get("stats") or {}
@@ -734,6 +803,16 @@ def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
             for p in platforms
         )
         rows.append("    <h2>История систем</h2>\n    <ul>\n" + eras + "    </ul>")
+
+    # Описание трассы и дорога до старта — единственный на странице текст,
+    # который человек ищет словами, а не цифрами («как добраться до 5 вёрст
+    # <парк>»). Стоит после истории систем — там же, где его видит человек:
+    # на странице это отдельный подблок-цитата в самом низу карточки
+    # «О площадке» (LocationPage.tsx, LocationDescriptionQuote). В журнале
+    # протоколов его нет намеренно: один и тот же текст на двух адресах —
+    # дубль, а не польза.
+    if not events_log:
+        rows.extend(_location_description_rows(payload))
 
     # Кластер города: те же ссылки, что человек видит в блоке «Другие
     # площадки в …» — под запросы вида «5 вёрст тюмень».

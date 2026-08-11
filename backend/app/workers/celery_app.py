@@ -100,6 +100,15 @@ celery_app.conf.update(
             "schedule": crontab(hour=20, minute=30, day_of_month="*/3"),
             "options": {"queue": "s95"},
         },
+        # Описания площадок S95 (HTML /events/{slug}) — каждые 4 часа по 5 самых
+        # давно не обновлявшихся. Локаций у S95 ~35, полный круг ≈ сутки.
+        # :50 — подальше от реестра (:30) и от протоколов (:00), чтобы не
+        # толкаться за общий лок загрузок S95.
+        "s95-location-descriptions": {
+            "task": "s95_sync.sync_location_descriptions",
+            "schedule": crontab(minute=50, hour="*/4"),
+            "options": {"queue": "s95"},
+        },
         # New protocols scan (JSON API, updated_at-aware) — Sat & Sun at 11:00 / 17:00 / 23:00 MSK.
         "s95-api-new-protocols-weekend": {
             "task": "s95_sync.api_new_protocols",

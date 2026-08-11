@@ -12,6 +12,7 @@ import {
   type LocationAgeGroupRecord,
   type LocationAgeGroupStanding,
   type LocationCourseRecord,
+  type LocationDescription,
   type LocationHomeDistance,
   type LocationLastEvent,
   type LocationLeaders,
@@ -599,6 +600,137 @@ function stripLeadingHours(display: string | null): string {
   return display.replace(/^00:/, "");
 }
 
+function paragraphsOf(text: string): string[] {
+  return text
+    .split("\n\n")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function TextBlock({ text }: { text: string }) {
+  return (
+    <div className="loc-about-text">
+      {paragraphsOf(text).map((part, index) => (
+        <p key={index}>{part}</p>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Подблок с текстом, взятым со страницы системы.
+ *
+ * Вынесен в отдельную рамку с шапкой «Описание с сайта …» намеренно: это
+ * цитата с чужого сайта, а не наши данные, и читатель должен видеть границу.
+ * Раньше приписка про источник стояла в конце длинного текста — к тому моменту
+ * уже не было понятно, к чему она относится.
+ *
+ * Тот же текст серверный пререндер отдаёт роботу
+ * (seo_service._location_description_rows): расхождение человека и робота
+ * поисковик считает подменой.
+ */
+function LocationDescriptionQuote({ description }: { description: LocationDescription }) {
+  const schedule = (description.schedule_text ?? "").trim();
+  const course = (description.course_text ?? "").trim();
+  const travelText = (description.travel_text ?? "").trim();
+  const sections = (description.travel_sections ?? []).filter((section) => section.text.trim());
+  const links = (description.links ?? []).filter((link) => link.url);
+  if (!schedule && !course && !travelText && sections.length === 0) {
+    return null;
+  }
+
+  const platform = platformCodeLabel(description.platform_code);
+  return (
+    <div className="loc-about-quote">
+      <div className="loc-about-quote-head">
+        <h3 className="loc-about-subtitle">
+          Описание с официального сайта{" "}
+          {description.source_url ? (
+            <a href={description.source_url} target="_blank" rel="noreferrer nofollow">
+              {platform}
+            </a>
+          ) : (
+            platform
+          )}
+        </h3>
+        {description.updated_at && (
+          <span className="muted loc-about-source">обновлено {formatDate(description.updated_at)}</span>
+        )}
+      </div>
+
+      {schedule && (
+        <>
+          <h4 className="loc-about-quote-title">Где и когда</h4>
+          <TextBlock text={schedule} />
+        </>
+      )}
+
+      {course && (
+        <>
+          <h4 className="loc-about-quote-title">Трасса</h4>
+          <TextBlock text={course} />
+        </>
+      )}
+
+      {(travelText || sections.length > 0) && (
+        <>
+          <h4 className="loc-about-quote-title">Как добраться</h4>
+          {travelText && <TextBlock text={travelText} />}
+          {sections.length > 0 && (
+            <div className="loc-about-ways">
+              {sections.map((section, index) => (
+                <div className="loc-about-way" key={`${section.title ?? "way"}-${index}`}>
+                  {section.title && <h5>{section.title}</h5>}
+                  <TextBlock text={section.text} />
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {links.length > 0 && (
+        <ul className="loc-about-links">
+          {links.map((link) => (
+            <li key={link.url}>
+              <a href={link.url} target="_blank" rel="noreferrer nofollow">
+                {link.title || "Ссылка"}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Нижний блок страницы — всё про саму площадку.
+ *
+ * Порядок: сначала наше (карта, адрес, ссылки, история систем), потом отдельным
+ * подблоком описание с сайта системы. Своё и чужое не перемешано, поэтому видно,
+ * где кончаются наши данные и начинается цитата.
+ */
+function LocationAboutSection({ page }: { page: LocationPageData }) {
+  return (
+    <section className="card loc-section loc-about">
+      <h2 className="section-title">О площадке</h2>
+
+      <div className="loc-about-top">
+        <div className="loc-about-place">
+          <LocationInfoCard page={page} />
+        </div>
+        <div className="loc-about-history">
+          <h3 className="loc-about-subtitle">История систем</h3>
+          <PlatformTimeline page={page} />
+        </div>
+      </div>
+
+      {page.description && <LocationDescriptionQuote description={page.description} />}
+    </section>
+  );
+}
+
 function LocationInfoCard({ page }: { page: LocationPageData }) {
   const placeParts = [page.city, page.region, page.country].filter(
     (part, index, all) => part && all.indexOf(part) === index,
@@ -622,34 +754,7 @@ function LocationInfoCard({ page }: { page: LocationPageData }) {
             </a>
           </li>
         )}
-        {page.map_url && (
-          <li>
-            <span className="loc-info-label">Схема маршрута:</span>{" "}
-            <a href={page.map_url} target="_blank" rel="noreferrer">
-              посмотреть
-            </a>
-          </li>
-        )}
-        {(() => {
-          // Официальную страницу даём только в актуальной системе — старые
-          // (parkrun-эра и т.п.) часто мертвы или неинформативны.
-          const current = page.platforms.find((platform) => platform.is_active === true && platform.url);
-          if (!current) {
-            return null;
-          }
-          return (
-            <li>
-              <span className="loc-info-label">Официальная страница:</span>{" "}
-              <a href={current.url ?? "#"} target="_blank" rel="noreferrer">
-                {platformCodeLabel(current.platform_code)}
-              </a>
-            </li>
-          );
-        })()}
       </ul>
-      <p className="muted loc-info-note">
-        Старты проходят по субботам утром. Расписание и переносы уточняйте на официальной странице локации.
-      </p>
     </div>
   );
 }
@@ -1077,17 +1182,9 @@ function LocationPageContent({ slug }: { slug: string }) {
 
       <LocationLeadersSection slug={page.slug} />
 
-      <div className="loc-columns">
-        <section className="card loc-section">
-          <h2 className="section-title">История систем</h2>
-          <PlatformTimeline page={page} />
-        </section>
-
-        <section className="card loc-section">
-          <h2 className="section-title">Как добраться</h2>
-          <LocationInfoCard page={page} />
-        </section>
-      </div>
+      {/* Карта, адрес, описание и история систем — одним блоком в самом низу:
+          это справка о месте, а не статистика, ради которой страницу открывают. */}
+      <LocationAboutSection page={page} />
 
       {/* Кластер города: запрос «5 вёрст [город]» — не про одну площадку,
           человеку (и поисковику) нужен весь город. Тот же список уходит

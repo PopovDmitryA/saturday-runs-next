@@ -211,6 +211,7 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 | rotation | :30 каждые 4 ч |
 | reconcile | :30 каждые 3 ч |
 | athletes_registry | :30 каждые 2 ч, batch 50 |
+| location_descriptions | :50 каждые 4 ч, batch 5 |
 
 ---
 
@@ -445,6 +446,7 @@ Prod API **не** fetch'ит parkrun.org.uk. Очередь `profile_fetch_pendi
 | `scripts/check_failed_sync_jobs.py` | failed sync_jobs за 7 дней |
 | `scripts/recalculate_personal_records.py` | backfill PR |
 | `scripts/import_location_catalog.py` | catalog → DB |
+| `scripts/backfill_location_descriptions.py` | первый сбор описаний площадок (5 вёрст, S95) |
 | `scripts/deploy_prod.sh` | rsync + prod deploy |
 | `scripts/dev_prod_db.sh` | локальный сайт на prod DB (read-only tunnel) |
 | `make parkrun` | Mac parkrun fetch daemon |
