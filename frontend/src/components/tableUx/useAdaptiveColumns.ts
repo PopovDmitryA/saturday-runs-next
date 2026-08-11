@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * Описание колонки для краткого вида таблицы.
@@ -52,18 +52,55 @@ function estimateWidth(): number {
  */
 export function useAdaptiveColumns(columns: AdaptiveColumn[]): AdaptiveColumns {
   const [width, setWidth] = useState<number>(estimateWidth);
+  const nodeRef = useRef<HTMLElement | null>(null);
 
-  const measureRef = useCallback((node: HTMLElement | null) => {
-    if (!node) {
-      return;
+  const measure = useCallback(() => {
+    const node = nodeRef.current;
+    if (node) {
+      setWidth(node.getBoundingClientRect().width);
     }
-    const sync = () => setWidth(node.getBoundingClientRect().width);
-    sync();
-    const observer = new ResizeObserver(sync);
-    observer.observe(node);
-    // React 19 вызывает функцию, возвращённую ref-колбэком, при отвязке узла.
-    return () => observer.disconnect();
   }, []);
+
+  const measureRef = useCallback(
+    (node: HTMLElement | null) => {
+      nodeRef.current = node;
+      if (!node) {
+        return;
+      }
+      measure();
+      const observer = new ResizeObserver(measure);
+      observer.observe(node);
+      // React 19 вызывает функцию, возвращённую ref-колбэком, при отвязке узла.
+      return () => {
+        observer.disconnect();
+        nodeRef.current = null;
+      };
+    },
+    [measure],
+  );
+
+  // ResizeObserver ловит и смену ширины окна, и сворачивание сайдбара, но
+  // подстраховываемся событием resize: в части встроенных браузеров (панель
+  // превью Claude Code) наблюдатель на смену размера окна не срабатывает
+  // вовсе, и набор колонок застывал бы до перезагрузки страницы.
+  useEffect(() => {
+    let timer = 0;
+    // Меряем сразу и ещё раз, когда раскладка устоялась: на первое событие
+    // resize (и особенно на смену ориентации) ширина блока успевает приехать
+    // ещё старая, и набор колонок застыл бы на промежуточном значении.
+    const onResize = () => {
+      measure();
+      window.clearTimeout(timer);
+      timer = window.setTimeout(measure, 200);
+    };
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, [measure]);
 
   const visible = new Set<string>();
   let used = 0;
