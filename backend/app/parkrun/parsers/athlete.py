@@ -7,6 +7,7 @@ from datetime import date, datetime
 from bs4 import BeautifulSoup
 
 from app.parkrun.errors import ParkrunProfileNotFound, ParkrunProfileParseError
+from app.parkrun.event_slugs import official_event_slug
 from app.parkrun.fetch.coordinator import fetch_page_html
 from app.parkrun.volunteer_credits import is_total_credits_label
 from app.platform_adapters.canonical import (
@@ -28,6 +29,16 @@ DATE_RE = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 
 
 def _slugify_event(name: str) -> str:
+    """Слаг площадки: сперва официальный каталог, иначе транслитерация.
+
+    Транслитерация выкидывает всё не-ASCII, и площадки с умляутами получали
+    мусорный ключ («Küchenholz» → `k-chenholz`) — мёртвая ссылка и промах мимо
+    мирового каталога координат. Каталог знает действующие площадки; закрытые
+    (весь российский parkrun) идут прежним путём, их ключи в базе такие же.
+    """
+    official = official_event_slug(name)
+    if official:
+        return official
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower().strip())
     return slug.strip("-") or "unknown"
 

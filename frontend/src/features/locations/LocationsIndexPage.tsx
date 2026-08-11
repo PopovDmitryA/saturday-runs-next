@@ -90,7 +90,7 @@ function sortValue(item: LocationIndexItem, key: SortKey): number | string | nul
 // Ширины совпадают с CSS (.loc-index-table): col-city 10rem, col-platform
 // 6.5rem, col-metric 9.25rem, col-metric-wide 11.5rem, col-date 10rem.
 const LOCATIONS_COLUMNS: AdaptiveColumn[] = [
-  { key: "name", width: 220, required: true },
+  { key: "name", width: 170, required: true },
   { key: "platform", width: 104, required: true },
   { key: "events_count", width: 148, required: true },
   { key: "city", width: 160 },

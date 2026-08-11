@@ -292,7 +292,11 @@ function PortalDashboardContent({ user }: { user: User }) {
 
           <RecentRunsRating />
 
-          <MyHistoryTeaser load={getMyHistory} href={PORTAL_CABINET_HISTORY_HREF} />
+          <MyHistoryTeaser
+            load={getMyHistory}
+            href={PORTAL_CABINET_HISTORY_HREF}
+            shareBase={PORTAL_CABINET_SHARE_HREF}
+          />
 
           <DashboardAnalytics
             showHomeLocationWarning

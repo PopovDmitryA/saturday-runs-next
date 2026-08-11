@@ -979,6 +979,15 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       ? formatPercentile(me.rank, entrants)
       : null;
 
+  // «Я в рейтинге, но себя в таблице не вижу»: порог рейтинга человек прошёл,
+  // а в таблицу влезает только топ-1000 — при 48 тысячах участников это два
+  // разных числа, и без объяснения выглядит как «меня нет в рейтинге»
+  // (репорт Дмитрия 11.08.2026: 57 волонтёрств, порог 10, а в таблице не видно).
+  const tableCutTotal = allRows.length > 0 ? Math.min(...allRows.map((row) => row.total)) : null;
+  const belowTableCut =
+    me?.included === true && myIndex < 0 && tableCutTotal != null && me.total < tableCutTotal;
+  const missingToTable = belowTableCut && me ? tableCutTotal - me.total + 1 : 0;
+
   // Окно пересчёта таблицы (TTL снапшота) приходит с бэкенда: витрина обещает
   // участнику срок и не должна хранить собственную копию этого числа.
   const refreshHours = data?.refresh_hours ?? 6;
@@ -1314,7 +1323,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                     {/* Кнопка и перцентиль — одна связка: приписка встаёт справа
                         от кнопки и переносится вместе с ней, а не занимает
                         отдельную строку высотой в целый ряд. */}
-                    {(myIndex >= 0 || percentileText != null) && (
+                    {(myIndex >= 0 || percentileText != null || belowTableCut) && (
                       <div className="lb-me-actions">
                         {myIndex >= 0 && (
                           <button
@@ -1327,6 +1336,15 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         )}
                         {percentileText != null && (
                           <p className="lb-me-percentile muted">{percentileText}</p>
+                        )}
+                        {belowTableCut && (
+                          <p className="lb-me-percentile muted">
+                            В таблице — топ-{formatInt(allRows.length)}: туда попадают от{" "}
+                            {formatInt(tableCutTotal)}{" "}
+                            {unitLabel(metric, tableCutTotal, effectiveCountBy)}, вам не хватает{" "}
+                            {formatInt(missingToTable)}{" "}
+                            {unitLabel(metric, missingToTable, effectiveCountBy)}.
+                          </p>
                         )}
                       </div>
                     )}

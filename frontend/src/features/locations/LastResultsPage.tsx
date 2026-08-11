@@ -68,7 +68,7 @@ function sortValue(item: LastResultsItem, key: SortKey): number | string | null 
 
 // Колонки краткого вида в порядке важности (ширины — как в CSS .loc-index-table).
 const LAST_RESULTS_COLUMNS: AdaptiveColumn[] = [
-  { key: "name", width: 220, required: true },
+  { key: "name", width: 170, required: true },
   { key: "event_date", width: 160, required: true },
   { key: "finishers", width: 148, required: true },
   { key: "city", width: 160 },

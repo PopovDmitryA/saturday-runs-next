@@ -7848,6 +7848,44 @@ button.badge-platform-btn:hover {
   white-space: nowrap;
 }
 
+/* Вех за одну субботу бывает несколько — тизер показывает их списком, у каждой
+   своя кнопка «Поделиться» (просьба Дмитрия 11.08.2026). */
+.history-teaser-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.history-teaser-date {
+  font-size: 0.8rem;
+}
+
+.history-teaser-list {
+  list-style: none;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.history-teaser-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.history-teaser-title {
+  text-decoration: none;
+}
+
+.history-teaser-title:hover {
+  text-decoration: underline;
+}
+
 .history-teaser-more {
   flex: none;
   font-size: 0.85rem;
