@@ -727,11 +727,11 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   border-radius: 14px;
 }
 
+/* Капса нет по той же причине, что и в portalSection.css: у кнопок-заголовков
+   браузер сбрасывает text-transform, и шапка выходила разнобоем. */
 .portal-cab-main .data-table thead th {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: var(--text-muted);
 }
 

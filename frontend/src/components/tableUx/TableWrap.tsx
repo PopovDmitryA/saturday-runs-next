@@ -9,6 +9,12 @@ type TableWrapProps = {
   stickyFirstCol?: boolean;
   /** Проброс ref на скролл-контейнер (напр. для useFloatingTableHead). */
   innerRef?: Ref<HTMLDivElement>;
+  /**
+   * Проброс ref на внешний блок — его ширина равна доступной под таблицу
+   * (в отличие от внутреннего, который может быть шире и скроллиться).
+   * Нужен useAdaptiveColumns, чтобы понять, сколько колонок влезает.
+   */
+  outerRef?: Ref<HTMLDivElement>;
 };
 
 /**
@@ -17,7 +23,13 @@ type TableWrapProps = {
  * тень. Скроллбары на мобильных не видны, тень — единственный намёк, что
  * таблицу можно листать вбок. Сама механика тени — в useScrollShadows.
  */
-export function TableWrap({ children, className = "", stickyFirstCol = false, innerRef }: TableWrapProps) {
+export function TableWrap({
+  children,
+  className = "",
+  stickyFirstCol = false,
+  innerRef,
+  outerRef,
+}: TableWrapProps) {
   const { hostRef, scrollRef } = useScrollShadows<HTMLDivElement, HTMLDivElement>();
 
   const setScrollRef = useCallback(
@@ -32,8 +44,22 @@ export function TableWrap({ children, className = "", stickyFirstCol = false, in
     [innerRef, scrollRef],
   );
 
+  const setHostRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      hostRef.current = node;
+      if (typeof outerRef === "function") {
+        // Колбэк может вернуть функцию-уборщик (React 19) — пробрасываем как есть.
+        return outerRef(node);
+      }
+      if (outerRef && typeof outerRef === "object") {
+        (outerRef as { current: HTMLDivElement | null }).current = node;
+      }
+    },
+    [hostRef, outerRef],
+  );
+
   return (
-    <div ref={hostRef} className="tshadow-host">
+    <div ref={setHostRef} className="tshadow-host">
       <div
         ref={setScrollRef}
         className={`table-wrap${stickyFirstCol ? " table-sticky-first" : ""}${

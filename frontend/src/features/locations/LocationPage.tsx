@@ -19,6 +19,7 @@ import {
   type LocationPersonalStats,
 } from "../../lib/api";
 import { applyPageMeta, locationLeadSentences, locationPageMeta } from "../../lib/pageMeta";
+import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
 import { flushMetrikaHit } from "../../lib/metrika";
 import { formatDate, formatKm, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
@@ -894,6 +895,7 @@ function LocationPageContent({ slug }: { slug: string }) {
           return;
         }
         setPage(data);
+        rememberLocationHint({ slug: data.slug, name: data.name });
         // Родовой заголовок «Локация — run5k.run» из App.tsx уточняем именем
         // и цифрами, как только данные приехали.
         applyPageMeta(locationPageMeta(data));
@@ -920,9 +922,13 @@ function LocationPageContent({ slug }: { slug: string }) {
     };
   }, [slug]);
 
+  // Имя из подсказки, пока грузятся данные: иначе подпункт сайдбара с
+  // названием площадки мигает при переходах внутри локации.
+  const sidebarLocation = page ? { slug: page.slug, name: page.name } : locationHintFor(slug);
+
   if (notFound) {
     return (
-      <PortalSectionShell sidebar={{ active: "locations" }}>
+      <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
         <div className="card">
           <p className="muted">Локация не найдена.</p>
           <p>
@@ -935,7 +941,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   if (error) {
     return (
-      <PortalSectionShell sidebar={{ active: "locations" }}>
+      <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
         <div className="card error">
           <p>{error}</p>
         </div>
@@ -945,7 +951,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   if (!page) {
     return (
-      <PortalSectionShell sidebar={{ active: "locations" }}>
+      <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
         <p className="muted">Загрузка…</p>
       </PortalSectionShell>
     );
@@ -955,7 +961,7 @@ function LocationPageContent({ slug }: { slug: string }) {
   const records = stats.course_records;
 
   return (
-    <PortalSectionShell sidebar={{ active: "locations", location: { slug: page.slug, name: page.name } }}>
+    <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
       <header className="loc-header loc-wide-page">
         <p className="muted loc-header-breadcrumb">
           <a href="/locations">← Все локации</a> / {page.name}
