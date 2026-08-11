@@ -982,10 +982,14 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   // «Я в рейтинге, но себя в таблице не вижу»: порог рейтинга человек прошёл,
   // а в таблицу влезает только топ-1000 — при 48 тысячах участников это два
   // разных числа, и без объяснения выглядит как «меня нет в рейтинге»
-  // (репорт Дмитрия 11.08.2026: 57 волонтёрств, порог 10, а в таблице не видно).
-  const tableCutTotal = allRows.length > 0 ? Math.min(...allRows.map((row) => row.total)) : null;
+  // (репорт Дмитрия 11.08.2026: 57 волонтёрств, порог 10, а себя не видно).
+  // Считаем по строкам ИЗ ОТВЕТА, а не по allRows: туда своя строка уже
+  // дописана искусственно и занизила бы порог попадания до собственного числа.
+  const serverRows = data?.rows ?? [];
+  const tableCutTotal =
+    serverRows.length > 0 ? Math.min(...serverRows.map((row) => row.total)) : null;
   const belowTableCut =
-    me?.included === true && myIndex < 0 && tableCutTotal != null && me.total < tableCutTotal;
+    me?.included === true && tableCutTotal != null && me.total < tableCutTotal;
   const missingToTable = belowTableCut && me ? tableCutTotal - me.total + 1 : 0;
 
   // Окно пересчёта таблицы (TTL снапшота) приходит с бэкенда: витрина обещает
@@ -1339,11 +1343,12 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         )}
                         {belowTableCut && (
                           <p className="lb-me-percentile muted">
-                            В таблице — топ-{formatInt(allRows.length)}: туда попадают от{" "}
+                            В таблице — топ-{formatInt(serverRows.length)}: туда попадают от{" "}
                             {formatInt(tableCutTotal)}{" "}
                             {unitLabel(metric, tableCutTotal, effectiveCountBy)}, вам не хватает{" "}
                             {formatInt(missingToTable)}{" "}
-                            {unitLabel(metric, missingToTable, effectiveCountBy)}.
+                            {unitLabel(metric, missingToTable, effectiveCountBy)}. Ваша строка
+                            дописана в конец таблицы.
                           </p>
                         )}
                       </div>
