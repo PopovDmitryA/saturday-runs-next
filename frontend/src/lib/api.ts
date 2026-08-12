@@ -883,6 +883,22 @@ export type ChallengeLevelDates = {
   gold: string | null;
 };
 
+// easy | medium | hard | solo (один тир на весь челлендж — вкладки не рисуются)
+export type ChallengeTierKey = string;
+
+export type ChallengeTier = {
+  tier: ChallengeTierKey;
+  label: string | null;
+  levels: { bronze: number; silver: number; gold: number };
+  target: number;
+  level: ChallengeLevel | null;
+  next_level: ChallengeLevel | null;
+  to_next_level: number | null;
+  to_next_label: string | null;
+  pct: number;
+  level_dates: ChallengeLevelDates;
+};
+
 export type Challenge = {
   code: string;
   title: string;
@@ -890,16 +906,15 @@ export type Challenge = {
   description: string;
   category: "collection" | "coincidence" | "scale" | "community";
   current: number;
-  target: number;
-  levels: { bronze: number; silver: number; gold: number };
-  level: ChallengeLevel | null;
-  next_level: ChallengeLevel | null;
-  to_next_level: number | null;
-  to_next_label: string | null;
-  pct: number;
   unit: string | null;
   detail: ChallengeDetail;
-  level_dates: ChallengeLevelDates;
+  // [easy, medium, hard] почти везде; у «Семи дней» один элемент "solo"
+  tiers: ChallengeTier[];
+  // Самый сложный тир, где взят хоть один уровень — им подписывается карточка
+  best_tier: ChallengeTierKey | null;
+  best_level: ChallengeLevel | null;
+  // Вкладка, открытая по умолчанию: первый ещё не пройденный до золота тир
+  default_tier: ChallengeTierKey;
   // Насколько последняя пробежка продвинула счётчик (0 — не продвинула)
   recent_delta: number;
 };
@@ -932,6 +947,8 @@ export type AchievementBadge = {
   title: string;
   icon: string;
   level: ChallengeLevel;
+  tier: ChallengeTierKey | null;
+  tier_label: string | null;
   achieved_at: string | null;
 };
 

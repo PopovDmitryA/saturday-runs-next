@@ -8374,10 +8374,28 @@ button.badge-platform-btn:hover {
 /* Витрина достижений */
 .achv-showcase-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+/* Вкладки уровня и счётчик медалей — в одной строке с заголовком, справа */
+.achv-showcase-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+/* Плавный пересчёт при смене фильтра систем: блок гаснет на время запроса и
+   проявляется с новыми цифрами, вместо мгновенной подмены содержимого. */
+.achv-recalc {
+  transition: opacity 0.2s ease;
+}
+
+.achv-recalc.is-busy {
+  opacity: 0.45;
 }
 
 .achv-summary {
@@ -8614,8 +8632,44 @@ button.badge-platform-btn:hover {
 
 .challenge-card {
   gap: 0.6rem;
-  scroll-margin-top: 5rem;
   min-width: 0;
+}
+
+/* Обёртка-цель ссылок из витрины медалей (#challenge-<code>). Отступ обязан
+   висеть именно здесь, а не на .challenge-card: цель перехода — эта обёртка,
+   и без отступа верх карточки уезжал под липкие полосы.
+   Запас на .portal-header (61px) + липкий фильтр систем (~48px) + зазор.
+   Это страховка для нативных переходов по #hash; собственная прокрутка из
+   витрины считает высоты по факту — см. stickyOffsetTop(). */
+.challenge-anchor {
+  scroll-margin-top: 7.6rem;
+}
+
+/* Короткая подсветка карточки, на которую только что перешли: после плавной
+   прокрутки видно, куда именно приехали. */
+.challenge-anchor.is-jump-target .challenge-card {
+  animation: challenge-jump-flash 1.8s ease-out;
+}
+
+@keyframes challenge-jump-flash {
+  0% {
+    box-shadow: 0 0 0 2px var(--link);
+  }
+
+  60% {
+    box-shadow: 0 0 0 2px var(--link);
+  }
+
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .challenge-anchor.is-jump-target .challenge-card {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--link);
+  }
 }
 
 /* Ссылка «оценить старты» на карточках достижений за оценки — только у себя. */
@@ -8625,8 +8679,19 @@ button.badge-platform-btn:hover {
 }
 
 /* Переключатель «сквозной / по системам» над сеткой челленджей */
+/* Фильтр систем липнет под шапку: из любой карточки внизу списка видно, в каком
+   скоупе считаются достижения, и можно переключить его не уезжая наверх.
+   top = высота .portal-header (61px) — иначе фильтр прячется под ней. */
 .achv-platform-filters {
   margin-top: 0.75rem;
+  position: sticky;
+  top: 3.85rem;
+  z-index: 6;
+  /* Фон обязателен: под полосой проезжают карточки */
+  background: var(--bg);
+  padding: 0.5rem 0;
+  /* Тонкая черта отделяет липкую полосу от уезжающего под неё контента */
+  box-shadow: inset 0 -1px 0 var(--border-soft);
 }
 
 .achv-platform-filters.is-switching {
@@ -8693,35 +8758,213 @@ button.badge-platform-btn:hover {
   line-height: 1.35;
 }
 
-/* Мини-таймлайн: дата получения каждого из трёх уровней, всегда видима */
-.challenge-level-timeline {
-  display: flex;
-  gap: 0.6rem;
-  flex-wrap: wrap;
+/* Подписи уровней ПРЯМО НА прогресс-баре: медаль + порог, под ними дата
+   получения (для взятых) или «ещё N» (для оставшихся). Тултипов на мобильных
+   нет, поэтому всё, что нужно для понимания «сколько надо и когда взял»,
+   стоит на самой шкале. Риски остаются на честных позициях, подписи при
+   тесных порогах разводит spreadLabelPositions(). */
+.challenge-bar-wrap {
+  position: relative;
+  /* место под две строки подписей ниже шкалы */
+  padding-bottom: 2.5rem;
 }
 
-.challenge-level-timeline-item {
+/* Подпись двухстрочная: «🥉 40» над «18.05.24». Так она вдвое уже
+   однострочной и три подписи помещаются даже на 375px. */
+.challenge-bar-label {
+  position: absolute;
+  top: 0.75rem;
+  transform: translateX(-50%);
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.25rem;
-  font-size: 0.74rem;
+  gap: 0.05rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  /* Подписи переезжают плавно при смене вкладки сложности / фильтра систем */
+  transition: left 0.35s ease, color 0.2s ease;
 }
 
-.challenge-level-timeline-item.done {
+@media (prefers-reduced-motion: reduce) {
+  .challenge-bar-label {
+    transition: none;
+  }
+}
+
+/* У краёв шкалы центрирование обрезало бы подпись о край карточки */
+.challenge-bar-label.at-start {
+  transform: none;
+  align-items: flex-start;
+}
+
+.challenge-bar-label.at-end {
+  transform: none;
+  align-items: flex-end;
+}
+
+.challenge-bar-label.done {
   color: var(--text-2);
 }
 
-.challenge-level-timeline-icon {
-  font-size: 0.9rem;
-  filter: grayscale(1);
-  opacity: 0.5;
+.challenge-bar-label-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
 }
 
-.challenge-level-timeline-item.done .challenge-level-timeline-icon {
+.challenge-bar-label-medal {
+  font-size: 0.8rem;
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+
+.challenge-bar-label.done .challenge-bar-label-medal {
   filter: none;
   opacity: 1;
+}
+
+.challenge-bar-label-threshold {
+  font-weight: 700;
+  color: var(--text-3);
+}
+
+.challenge-bar-label.done .challenge-bar-label-threshold {
+  color: var(--text);
+}
+
+.challenge-bar-label-detail {
+  color: var(--text-faint);
+}
+
+.challenge-bar-label.done .challenge-bar-label-detail {
+  color: var(--text-muted);
+}
+
+/* Вкладки уровней сложности над прогресс-баром челленджа.
+   Тир кодируется ЦВЕТОМ (зелёный/синий/фиолетовый), а не капслочным словом —
+   иначе название тира визуально сливается с названием медали (бронза/серебро/
+   золото) в шапке карточки. Слово на вкладке — строчное и приглушённое. */
+:root {
+  --tier-easy: #16a34a;
+  --tier-medium: #2563eb;
+  --tier-hard: #7c3aed;
+}
+
+:root[data-theme="dark"] {
+  --tier-easy: #4ade80;
+  --tier-medium: #60a5fa;
+  --tier-hard: #a78bfa;
+}
+
+.tier-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  background: var(--bg-muted);
+  border-radius: 999px;
+}
+
+.tier-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  padding: 0.32rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tier-tab:hover {
+  color: var(--text-2);
+}
+
+.tier-tab.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+}
+
+/* Цветная точка тира на вкладке */
+.tier-tab-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  flex: none;
+}
+
+.tier-dot-easy { background: var(--tier-easy); }
+.tier-dot-medium { background: var(--tier-medium); }
+.tier-dot-hard { background: var(--tier-hard); }
+
+.tier-tab-medal {
+  font-size: 0.82rem;
+}
+
+.tier-tab-medal.empty {
+  filter: grayscale(1);
+  opacity: 0.35;
+}
+
+/* Кольцо цвета тира вокруг иконки достижения: показывает, в КАКОМ тире взята
+   медаль из чипа, не добавляя второго слова рядом с названием медали */
+.medal-tier-ring {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  border-radius: 50%;
+}
+
+.medal-tier-ring::before {
+  content: "";
+  position: absolute;
+  inset: -3.5px;
+  border-radius: 50%;
+  border: 2.5px solid var(--ring-color, transparent);
+  pointer-events: none;
+}
+
+.medal-ring-easy { --ring-color: var(--tier-easy); }
+.medal-ring-medium { --ring-color: var(--tier-medium); }
+.medal-ring-hard { --ring-color: var(--tier-hard); }
+
+/* Легенда цветов тиров — один раз над сеткой челленджей */
+.tier-legend {
+  display: flex;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.tier-legend-caption {
+  color: var(--text-faint);
+}
+
+.tier-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+/* Вкладки уровня в витрине медалей: там срез одного уровня сложности, а не
+   сумма по всем (золото лёгкого и золото сложного — разные достижения).
+   В шапке они компактные — не тянутся на всю ширину, как на карточках. */
+.achv-showcase-tabs .tier-tab {
+  flex: none;
+  font-size: 0.74rem;
+  padding: 0.28rem 0.6rem;
 }
 
 .challenge-bar {
