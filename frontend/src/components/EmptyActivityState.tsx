@@ -42,9 +42,6 @@ export function EmptyActivityState({
     <div className="card">
       <p>{activityLabel} пока нет.</p>
       <p className="muted">{ownerHint}</p>
-      <a className="btn secondary" href="/dashboard#profiles">
-        Обновить данные
-      </a>
     </div>
   );
 }
