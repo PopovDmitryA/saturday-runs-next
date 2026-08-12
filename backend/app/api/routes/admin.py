@@ -59,6 +59,12 @@ from app.schemas.rating import (
     AdminRatingsResponse,
 )
 from app.schemas.records_digest import DigestDatesResponse, RecordsDigestResponse
+from app.schemas.releases import (
+    ReleaseAdminListResponse,
+    ReleaseAdminResponse,
+    ReleaseCreateRequest,
+    ReleaseUpdateRequest,
+)
 from app.services.abuse_admin_service import (
     AbuseAdminError,
     clear_ip_score,
@@ -122,6 +128,14 @@ from app.services.rating_service import (
     ratings_stats,
 )
 from app.services.records_digest_service import build_records_digest, list_digest_dates
+from app.services.release_service import (
+    ReleaseError,
+    create_release,
+    delete_release,
+    list_all_releases,
+    suggest_next_versions,
+    update_release,
+)
 from app.services.scheduled_run_log_service import list_runs as list_scheduled_runs
 from app.services.scheduled_run_log_service import resolve_period as resolve_runs_period
 from app.services.scheduled_run_log_service import summarize as summarize_scheduled_runs
@@ -661,6 +675,74 @@ def admin_delete_blog_post(
     except BlogPostError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return AbuseMessageResponse(message="blog_post_deleted")
+
+
+@router.get("/releases", response_model=ReleaseAdminListResponse)
+def admin_list_releases(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> ReleaseAdminListResponse:
+    releases = list_all_releases(db)
+    return ReleaseAdminListResponse(
+        items=[ReleaseAdminResponse.model_validate(release) for release in releases],
+        total=len(releases),
+        next_versions=suggest_next_versions(db),
+    )
+
+
+@router.post("/releases", response_model=ReleaseAdminResponse, status_code=status.HTTP_201_CREATED)
+def admin_create_release(
+    body: ReleaseCreateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> ReleaseAdminResponse:
+    try:
+        release = create_release(
+            db,
+            version=body.version,
+            title=body.title,
+            body=body.body,
+            released_at=body.released_at,
+            is_published=body.is_published,
+        )
+    except ReleaseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return ReleaseAdminResponse.model_validate(release)
+
+
+@router.put("/releases/{release_id}", response_model=ReleaseAdminResponse)
+def admin_update_release(
+    release_id: UUID,
+    body: ReleaseUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> ReleaseAdminResponse:
+    try:
+        release = update_release(
+            db,
+            release_id,
+            version=body.version,
+            title=body.title,
+            body=body.body,
+            released_at=body.released_at,
+            is_published=body.is_published,
+        )
+    except ReleaseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return ReleaseAdminResponse.model_validate(release)
+
+
+@router.delete("/releases/{release_id}", response_model=AbuseMessageResponse)
+def admin_delete_release(
+    release_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AbuseMessageResponse:
+    try:
+        delete_release(db, release_id)
+    except ReleaseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return AbuseMessageResponse(message="release_deleted")
 
 
 @router.get("/backlog/cards", response_model=BacklogCardAdminListResponse)

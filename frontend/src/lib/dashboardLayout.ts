@@ -12,6 +12,7 @@ export const DASHBOARD_ANALYTICS_CARD_ORDER = [
   "runs_12m",
   "runs_year",
   "new_locations_12m",
+  "home_distance",
   "total_distance",
   "next_milestone",
   "pr_count",

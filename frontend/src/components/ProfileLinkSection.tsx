@@ -27,6 +27,7 @@ import {
   platformScanCode,
   profileDataFreshnessLines,
 } from "../lib/format";
+import { platformProfileUrl } from "../lib/platformProfileUrl";
 
 type ParticipantIdConfig = {
   label: string;
@@ -45,7 +46,6 @@ type PlatformConfig = {
   emptyInputError: string;
   confirmSuccess: string;
   confirmSuccessBoth?: string;
-  hasPublicProfile?: boolean;
   participantId?: ParticipantIdConfig;
 };
 
@@ -68,13 +68,13 @@ const PLATFORMS: PlatformConfig[] = [
   },
   {
     code: "s95",
-    hint: "Вставьте ссылку на профиль участника, например https://s95.ru/athletes/5207/",
-    placeholder: "https://s95.ru/athletes/…",
+    hint: "Ссылка на профиль https://s95.ru/athletes/5207/ или только ID участника из неё — 5207.",
+    placeholder: "https://s95.ru/athletes/… или 5207",
     openLabel: "Открыть на s95.ru",
-    inputMode: "url",
+    inputMode: "text",
     preview: previewS95Profile,
     confirm: (url, options) => confirmS95Profile(url, options?.linkParkrun ?? false),
-    emptyInputError: "Введите ссылку на профиль С95",
+    emptyInputError: "Введите ссылку на профиль С95 или ID участника",
     confirmSuccess:
       "Профиль С95 привязан. Синхронизация поставлена в очередь (может занять несколько минут).",
     confirmSuccessBoth:
@@ -104,7 +104,6 @@ const PLATFORMS: PlatformConfig[] = [
     confirm: confirmRunparkProfile,
     emptyInputError: "Введите штрихкод участника RunPark",
     confirmSuccess: "Профиль RunPark привязан.",
-    hasPublicProfile: false,
     participantId: { label: "Штрихкод", field: "barcode_id" },
   },
 ];
@@ -216,12 +215,7 @@ function PlatformCard({
     ? formatDateTime(linked.last_user_sync_at)
     : "не обновлялось";
 
-  const externalUrl =
-    linked && config.code === "runpark" && linked.external_user_id
-      ? `https://runpark.ru/Account/Karmas/${linked.external_user_id}`
-      : linked && config.hasPublicProfile !== false && linked.external_url.startsWith("http")
-        ? linked.external_url
-        : null;
+  const externalUrl = linked ? platformProfileUrl(linked) : null;
 
   return (
     <div className={`profile-platform-card ${linked ? "profile-platform-card-linked" : "profile-platform-card-unlinked"}`}>
@@ -262,7 +256,7 @@ function PlatformCard({
               type="button"
               className={`profile-sync-refresh-btn${isSyncing ? " profile-sync-refresh-btn-spinning" : ""}`}
               aria-label={`Обновить данные ${platformCodeLabel(config.code)}`}
-              title="Запросить свежие результаты (не чаще раза в сутки)"
+              title="Запросить свежие результаты (не чаще раза в 30 минут)"
               disabled={isSyncing || syncLoading}
               onClick={() => onSyncRequest()}
             >
@@ -274,6 +268,12 @@ function PlatformCard({
               </svg>
             </button>
           </div>
+          {config.code === "parkrun" && (
+            <p className="profile-platform-card-manual-note">
+              Автообновление по системе parkrun невозможно, если вы побегали — нажмите кнопку
+              обновления.
+            </p>
+          )}
           <div className="profile-platform-card-actions">
             {scanCode && (
               <button type="button" className="btn secondary btn-sm qr-btn" onClick={() => onShowQr()}>

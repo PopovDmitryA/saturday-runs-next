@@ -89,7 +89,8 @@ GitHub: `PopovDmitryA/saturday-runs-next`, branch `main`.
 | `nginx` | React `frontend/dist` + proxy `/api` |
 | `redis` | Sessions, Celery, locks, cooldown — **не публиковать :6379** |
 | `beat` | Celery Beat (Europe/Moscow) |
-| `worker-five-verst` | `-Q five_verst_user,five_verst --concurrency=1` |
+| `worker-five-verst` | `-Q five_verst --concurrency=1` (батчи) |
+| `worker-five-verst-user` | `-Q five_verst_user --concurrency=1` (синки по кнопке) |
 | `worker-s95` | `-Q s95_user,s95 --concurrency=1` |
 | `worker-parkrun` | `-Q parkrun` |
 | `bot` | Telegram long poll (вход + admin: /stats /status /sweep /sync) |
@@ -106,6 +107,12 @@ Git-based (не rsync, см. scripts/remote_deploy.sh): прод перевод�
 затем `npm ci && npm run build` в Docker node, alembic upgrade, rebuild workers + api + bot + nginx.
 
 **Если фронт не обновился** — remote build мог не выполниться; см. PROJECT_HANDOFF.local.md §1.
+
+**Версия релиза.** Каждый деплой получает версию X.Y.Z (или X.Y.Z-fixN) по
+протоколу docs/release_management.md: ПЕРЕД деплоем согласовать номер с
+Дмитрием (`scripts/add_release.py --suggest` печатает кандидатов), ПОСЛЕ —
+внести скрытую запись релиза на проде (`scripts/add_release.py`). Публикация
+и правки — в админке `/admin/releases`.
 
 **Фронт локально:**
 
@@ -156,7 +163,7 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 
 | Очередь | Worker | Задачи |
 |---------|--------|--------|
-| `five_verst_user` | worker-five-verst | user profile sync (приоритетная) |
+| `five_verst_user` | worker-five-verst-user | user profile sync (приоритетная) |
 | `five_verst` | worker-five-verst | registry, latest, rotation, reconcile |
 | `s95_user` | worker-s95 | user profile sync (приоритетная) |
 | `s95` | worker-s95 | batch S95 + athletes_registry |
@@ -170,16 +177,30 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 
 Код: `coordinator.py`, `rate_limit.py`, `s95_athletes_registry.py`, `workers/s95_batch_yield.py`.
 
+### 5 вёрст user priority (пауза батча)
+
+Два воркера: батчи и пользовательские синки. Пока идёт синк по кнопке (или его
+задача ждёт в `five_verst_user`), батч **замирает между фетчами** и продолжает
+с того же места — прогресс не теряется, в отличие от прерывания у S95. К
+5verst.ru по-прежнему ходит один запрос за раз: общий Redis-лок
+`five_verst:fetch:global_lock` и общий rate limit соблюдают оба воркера.
+
+Отметка `five_verst:user_sync:active` живёт по TTL, а пауза имеет потолок
+(`five_verst_user_sync_pause_max_seconds`) — умерший user-воркер или копящаяся
+очередь не заморозят батч навсегда.
+
+Код: `app/five_verst/fetch/priority.py`, `coordinator.py`, `workers/tasks/user_sync.py`.
+
 ### Beat schedule (MSK)
 
-**5 verst** — `:00`:
+**5 verst**:
 
 | Task | Расписание |
 |------|------------|
-| registry | 20:00 daily |
-| latest | пн–пт 0,5,10,15,20; сб/вс hourly |
-| rotation | каждые 4 ч |
-| reconcile | каждые 3 ч |
+| registry | 20:50 daily |
+| latest | пн–пт 0,5,10,15,20 (`:00`); сб/вс hourly |
+| rotation | `:30` каждые 4 ч |
+| reconcile | `:10` каждые 3 ч, **только пн–пт**; 200 протоколов цепочкой 2×100 |
 
 **S95** — **+30 мин** к 5verst:
 
@@ -190,6 +211,7 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 | rotation | :30 каждые 4 ч |
 | reconcile | :30 каждые 3 ч |
 | athletes_registry | :30 каждые 2 ч, batch 50 |
+| location_descriptions | :50 каждые 4 ч, batch 5 |
 
 ---
 
@@ -292,6 +314,25 @@ Fallback на ВК (`VK_BOT_GROUP_TOKEN`, `VK_ADMIN_USER_ID`) — только �
 Scheduled sync → лог в `scheduled_run_logs` через `run_reported_sync()` + dedup
 `scheduled_sync_guard.py`; суточная сводка (`admin_digest.daily_sync_summary`) уходит
 в Telegram.
+
+Все уведомления админу идут через `services/admin_notify.py` — прямых вызовов
+`send_vk_admin_message()` в фичах не осталось (03.08.2026), ВК живёт только внутри
+фолбэка `send_admin_report()`:
+
+- `notify_admin(text) -> bool` — в один конец: карточки/голоса/комментарии бэклога,
+  алерты синков (дубль локации 5 вёрст, смена slug клуба). Возвращает признак
+  доставки: алерты помечают заявку отправленной только после успеха.
+- `notify_admin_dialog(text, reply_to_message_id=None) -> (chat_id, message_id)` —
+  для диалогов Reply (заявки на координаты новых локаций, `location_coordinate_service`).
+  Только Telegram, без фолбэка: ответы разбирает бот через
+  `/internal/bot/coordinate-message`, а слушателя ВК нет с перевода бота на Telegram —
+  до 03.08.2026 запрос уходил в ВК, и ответить на него было некому.
+
+На прогоне тестов admin-уведомления не уходят никуда: `core/runtime_env.is_test_run()`
+глушит их в `notify_admin()`, `notify_admin_dialog()` и в самом `send_vk_admin_message()`.
+Локальный pytest работает с боевым `.env`, и до 03.08.2026 каждый прогон тестов бэклога
+прилетал админу в ВК живыми сообщениями («Новая карточка бэклога: [фича] «Идея»»,
+«Комментарий … Первый»).
 
 Команды (bot_app, admin-only): `/stats`, `/status`, `/sweep`, `/sync registry|latest|…`,
 `/sync s95-latest|…`.
@@ -405,6 +446,7 @@ Prod API **не** fetch'ит parkrun.org.uk. Очередь `profile_fetch_pendi
 | `scripts/check_failed_sync_jobs.py` | failed sync_jobs за 7 дней |
 | `scripts/recalculate_personal_records.py` | backfill PR |
 | `scripts/import_location_catalog.py` | catalog → DB |
+| `scripts/backfill_location_descriptions.py` | первый сбор описаний площадок (5 вёрст, S95) |
 | `scripts/deploy_prod.sh` | rsync + prod deploy |
 | `scripts/dev_prod_db.sh` | локальный сайт на prod DB (read-only tunnel) |
 | `make parkrun` | Mac parkrun fetch daemon |

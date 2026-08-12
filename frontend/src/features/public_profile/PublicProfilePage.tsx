@@ -3,6 +3,7 @@ import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { ImageLightbox } from "../../components/ImageLightbox";
+import { PortalFooter } from "../portal/PortalFooter";
 import { PortalHeader } from "../portal/PortalHeader";
 import { CABINET_TAB_SEGMENTS, profileTabHref } from "../../lib/portalRoutes";
 import { SiteSidebar, type SidebarExtraGroup } from "../portal/SiteSidebar";
@@ -16,6 +17,8 @@ import { RunsContent } from "../runs/RunsPage";
 import { VolunteeringContent } from "../volunteering/VolunteeringPage";
 import { HistoryContent } from "../history/HistoryPage";
 import { CoRunnersContent } from "../co_runners/CoRunnersPage";
+import { PlatformBadge } from "../../components/PlatformBadge";
+import { platformProfileUrl } from "../../lib/platformProfileUrl";
 import {
   ApiError,
   getCurrentUser,
@@ -29,10 +32,11 @@ import {
   getCatalogLocationsMap,
   resolveProfileHandle,
   type AchievementsResponse,
+  type AdminPlatformLinkBrief,
   type AdminUserPreviewDashboard,
   type User,
 } from "../../lib/api";
-import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
+import { platformCodeLabel, runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 
 type ProfileTab = "dashboard" | "runs" | "volunteering" | "map" | "achievements" | "history" | "meetings";
 
@@ -49,11 +53,35 @@ function profileDisplayName(user: AdminUserPreviewDashboard["user"]): string {
   return `Участник ${user.id.slice(0, 8)}`;
 }
 
+// Порядок платформ в шапке — как везде на сайте (кабинет, админка).
+const PLATFORM_ORDER: Record<string, number> = { five_verst: 0, s95: 1, parkrun: 2, runpark: 3 };
+
+/** Привязанные системы участника: бейдж — ссылка в его профиль на самой системе. */
+function ProfilePlatformLinks({ links }: { links: AdminPlatformLinkBrief[] }) {
+  const sorted = [...links].sort(
+    (a, b) => (PLATFORM_ORDER[a.platform_code] ?? 99) - (PLATFORM_ORDER[b.platform_code] ?? 99),
+  );
+  if (!sorted.length) return null;
+  return (
+    <div className="public-profile-platforms">
+      {sorted.map((link) => (
+        <PlatformBadge
+          key={link.platform_code}
+          code={link.platform_code}
+          href={platformProfileUrl(link)}
+          title={`Открыть профиль на ${platformCodeLabel(link.platform_code)}`}
+        />
+      ))}
+    </div>
+  );
+}
+
 function ProfileShell({
   children,
   profileName,
   profileAvatarUrl,
   profileAvatarFullUrl,
+  platformLinks,
   tabsGroup,
 }: {
   children: React.ReactNode;
@@ -62,6 +90,8 @@ function ProfileShell({
   profileAvatarUrl?: string | null;
   /** Оригинал аватарки участника — раскрывается по клику на неё. */
   profileAvatarFullUrl?: string | null;
+  /** Привязанные системы — бейджи-ссылки под именем участника. */
+  platformLinks?: AdminPlatformLinkBrief[];
   /** Вкладки профиля для единого сайдбара (группа с именем участника). */
   tabsGroup?: SidebarExtraGroup;
 }) {
@@ -83,13 +113,17 @@ function ProfileShell({
                     name={profileName}
                   />
                 )}
-                <h1 className="public-profile-name">{profileName}</h1>
+                <div className="public-profile-head-main">
+                  <h1 className="public-profile-name">{profileName}</h1>
+                  {platformLinks && <ProfilePlatformLinks links={platformLinks} />}
+                </div>
               </div>
             )}
             {children}
           </div>
         </main>
       </div>
+      <PortalFooter />
       {/* На телефоне сайдбар скрыт, и профиль оставался вообще без навигации
           сайта: уйти отсюда было не по чему. Панель та же, что у Локаций и
           Рейтингов, плюс страницы этого участника в шторке «Ещё». */}
@@ -260,6 +294,9 @@ function PublicProfileContent({
   // — уйти с открытой вкладки было некуда, кроме как через адресную строку.
   const tabsGroup: SidebarExtraGroup = {
     title: profileName ?? "Профиль участника",
+    // Имя участника — это «шапка» его раздела, поэтому ведёт на главную
+    // профиля: раньше клик по нему не делал ничего.
+    onTitleClick: () => setTab("dashboard"),
     items: TAB_LABELS.map((item) => ({
       key: item.key,
       label: item.label,
@@ -300,6 +337,7 @@ function PublicProfileContent({
       profileName={profileName}
       profileAvatarUrl={dashboard?.user.avatar_url}
       profileAvatarFullUrl={dashboard?.user.avatar_full_url}
+      platformLinks={dashboard?.platform_links}
       tabsGroup={tabsGroup}
     >
 

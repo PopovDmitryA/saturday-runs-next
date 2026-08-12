@@ -14,6 +14,8 @@ import { PersonalRecordsModal } from "./PersonalRecordsModal";
 import { StatHintTooltip } from "./StatHintTooltip";
 import { TopLocationValue } from "./TopLocationValue";
 import { VolunteerRolesModal } from "./VolunteerRolesModal";
+import { HomeDistanceModal } from "./HomeDistanceModal";
+import { PORTAL_CABINET_SETTINGS_HREF } from "../lib/portalRoutes";
 import { UniqueLocationsModal } from "./UniqueLocationsModal";
 import { WinsModal } from "./WinsModal";
 import { RegionsCitiesModal, type GroupBy } from "./RegionsCitiesModal";
@@ -25,6 +27,7 @@ import {
   formatMonthYear,
   formatPace,
   daysCapLabel,
+  formatKm,
   kilometersLabel,
   citiesWithRunsLabel,
   citiesWithVolunteeringLabel,
@@ -35,6 +38,7 @@ import {
   pluralizeRu,
   prRunsLabel,
   runsCapLabel,
+  runsFormLabel,
   saturdaysLabel,
   timesLabel,
   volunteerRolesLabel,
@@ -46,6 +50,12 @@ type DashboardAnalyticsProps = {
   analytics: DashboardAnalyticsData | undefined;
   totalRuns: number;
   totalVolunteering: number;
+  /**
+   * Показывать ли красную подсказку «проверьте домашнюю локацию». Только в
+   * своём кабинете: в чужом публичном профиле это совет, который гость всё
+   * равно не может выполнить, — настройки чужого профиля ему недоступны.
+   */
+  showHomeLocationWarning?: boolean;
 };
 
 type AnalyticsCardCategory = "runs" | "volunteering" | "wins";
@@ -68,6 +78,7 @@ type AnalyticsCard = {
     | "unique_cities"
     | "location_records"
     | "age_group_records"
+    | "home_distance"
     | "wins";
   modalActivity?: "all" | "runs" | "volunteering";
   firstVisitSince?: string;
@@ -92,6 +103,18 @@ const SATURDAY_CONSISTENCY_TOOLTIP = (
     <span>Доля суббот за последние 52 недели, когда была пробежка или волонтёрство.</span>
     <span className="stat-hint-tooltip-note">
       Считаются только прошедшие субботы — будущие не учитываются.
+    </span>
+  </>
+);
+
+const HOME_DISTANCE_TOOLTIP = (
+  <>
+    <span>
+      Сумма расстояний по прямой от домашней локации до каждой площадки, где вы бежали.
+    </span>
+    <span className="stat-hint-tooltip-note">
+      Каждая площадка засчитывается один раз, сколько бы раз вы туда ни ездили. Домашняя
+      локация меняется в настройках.
     </span>
   </>
 );
@@ -281,6 +304,22 @@ function buildAnalyticsCards(
       value: String(analytics.volunteering_current_year),
       label: `${volunteeringCapLabel(analytics.volunteering_current_year ?? 0)} в этом году`,
       category: "volunteering",
+    });
+  }
+
+  // Дальность от дома: сумма расстояний до уникальных площадок. Самый дальний
+  // старт в подписи не называем (решение Дмитрия 03.08.2026 — перегружало
+  // плитку), его видно первой строкой в модалке: она отсортирована по убыванию.
+  const homeDistance = analytics.home_distance;
+  if (homeDistance?.home && homeDistance.total_distance_km > 0) {
+    cards.push({
+      key: "home_distance",
+      value: formatKm(homeDistance.total_distance_km),
+      label: "бегового туризма",
+      category: "runs",
+      clickable: true,
+      modalTarget: "home_distance",
+      tooltipContent: HOME_DISTANCE_TOOLTIP,
     });
   }
 
@@ -483,6 +522,7 @@ function ActivityMonthChart({ data }: { data: DashboardAnalyticsData["activity_b
     <div className="analytics-chart">
       <div
         className="analytics-chart-bars analytics-chart-bars-month"
+        style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
         role="img"
         aria-label="Активность по месяцам"
       >
@@ -512,12 +552,24 @@ function ActivityMonthChart({ data }: { data: DashboardAnalyticsData["activity_b
                   )}
                 </div>
               </ChartColumnTooltip>
-              <span className="analytics-chart-label analytics-chart-label-month">
-                {formatMonthShort(item.month)}
-              </span>
             </div>
           );
         })}
+      </div>
+      {/* Подписи вынесены из колонок в отдельный ряд: на телефоне они
+          вертикальные и разной длины («нояб.» против «дек.»), а внутри колонки
+          съедали её высоту неодинаково — столбцы стояли на разных уровнях и
+          график «плясал». Своя сетка с теми же колонками держит их под баром. */}
+      <div
+        className="analytics-chart-month-labels"
+        style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
+        aria-hidden="true"
+      >
+        {data.map((item) => (
+          <span key={item.month} className="analytics-chart-label analytics-chart-label-month">
+            {formatMonthShort(item.month)}
+          </span>
+        ))}
       </div>
       <div className="analytics-chart-legend">
         <span className="analytics-legend-item">
@@ -672,6 +724,7 @@ export function DashboardAnalytics({
   analytics,
   totalRuns,
   totalVolunteering,
+  showHomeLocationWarning = false,
 }: DashboardAnalyticsProps) {
   const [uniqueLocationsOpen, setUniqueLocationsOpen] = useState(false);
   const [bestResultsOpen, setBestResultsOpen] = useState(false);
@@ -681,6 +734,7 @@ export function DashboardAnalytics({
   const [locationRecordsOpen, setLocationRecordsOpen] = useState(false);
   const [ageGroupRecordsOpen, setAgeGroupRecordsOpen] = useState(false);
   const [regionsCitiesOpen, setRegionsCitiesOpen] = useState(false);
+  const [homeDistanceOpen, setHomeDistanceOpen] = useState(false);
   const [regionsCitiesGroupBy, setRegionsCitiesGroupBy] = useState<GroupBy>("region");
   const [modalActivity, setModalActivity] = useState<"all" | "runs" | "volunteering">("all");
   const [uniqueLocationsFirstVisitSince, setUniqueLocationsFirstVisitSince] = useState<
@@ -721,6 +775,10 @@ export function DashboardAnalytics({
       setAgeGroupRecordsOpen(true);
       return;
     }
+    if (card.modalTarget === "home_distance") {
+      setHomeDistanceOpen(true);
+      return;
+    }
     if (card.modalTarget === "unique_regions") {
       setRegionsCitiesGroupBy("region");
       setModalActivity(card.modalActivity ?? "all");
@@ -739,6 +797,14 @@ export function DashboardAnalytics({
   if (!analytics) {
     return null;
   }
+
+  // Красным подсвечиваем только шаткий автовыбор (ничья по числу пробежек или
+  // вторая площадка почти вровень) — выбранное руками не трогаем, иначе баннер
+  // висел бы у всех, кто в настройки просто не заходил.
+  const homeAmbiguity =
+    showHomeLocationWarning && analytics.home_distance?.home?.ambiguity
+      ? analytics.home_distance.home
+      : null;
 
   const cards = sortByLayoutOrder(
     buildAnalyticsCards(analytics, totalRuns, totalVolunteering),
@@ -826,6 +892,11 @@ export function DashboardAnalytics({
             {analytics.platform_metrics.map((item) => (
               <li key={item.platform_code} className="platform-metrics-row">
                 <PlatformBadge code={item.platform_code} />
+                {(item.runs_count ?? 0) > 0 && (
+                  <span className="platform-metrics-count">
+                    <b>{item.runs_count}</b> {runsFormLabel(item.runs_count ?? 0)}
+                  </span>
+                )}
                 <div className="platform-metrics-values">
                   {item.avg_finish_time_sec != null && (
                     <span>{formatDuration(item.avg_finish_time_sec)}</span>
@@ -907,6 +978,19 @@ export function DashboardAnalytics({
 
   return (
     <section className="dashboard-analytics" aria-label="Дополнительная аналитика">
+      {homeAmbiguity && (
+        <p className="home-location-warning" role="status">
+          <b>Проверьте домашнюю локацию.</b> От неё считается дальность ваших стартов, а
+          выбралась она автоматически и неуверенно: сейчас это {homeAmbiguity.name}
+          {homeAmbiguity.runner_up_name && (
+            <>
+              , но почти столько же пробежек у вас на площадке «{homeAmbiguity.runner_up_name}»
+            </>
+          )}
+          . Укажите домашнюю локацию в{" "}
+          <a href={PORTAL_CABINET_SETTINGS_HREF}>настройках</a>.
+        </p>
+      )}
       {gridCards.length > 0 && (
         <div className="stats-grid stats-grid-secondary">{gridCards.map((card) => renderCard(card))}</div>
       )}
@@ -945,6 +1029,8 @@ export function DashboardAnalytics({
       />
 
       <VolunteerRolesModal open={volunteerRolesOpen} onClose={() => setVolunteerRolesOpen(false)} />
+
+      <HomeDistanceModal open={homeDistanceOpen} onClose={() => setHomeDistanceOpen(false)} />
 
       <LocationRecordsModal
         open={locationRecordsOpen}

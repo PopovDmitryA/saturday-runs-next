@@ -365,10 +365,15 @@ def test_describe_processed_profile_returns_url_and_name(db_session: Session) ->
     )
     db_session.commit()
 
-    # Формат «успех: Имя → ссылка» уходит в статусную строку демона
-    # (parkrun_queue_daemon.session.show_status), см. 140b06f.
+    # Формат «успех: Имя — N заб., M волонт. → ссылка» уходит в статусную
+    # строку демона (parkrun_queue_daemon.session.show_status). Объём профиля
+    # добавлен в 62b386c: по нему видно, почему долгожитель обрабатывался
+    # дольше новичка. У свежесозданного участника обе цифры нулевые.
     description = describe_processed_profile(db_session, "parkrun", "5003845")
-    assert description == "успех: Иван ИВАНОВ → https://www.parkrun.org.uk/parkrunner/5003845/"
+    assert description == (
+        "успех: Иван ИВАНОВ — 0 заб., 0 волонт. "
+        "→ https://www.parkrun.org.uk/parkrunner/5003845/"
+    )
 
 
 def test_describe_processed_profile_none_for_unknown_or_missing_id(

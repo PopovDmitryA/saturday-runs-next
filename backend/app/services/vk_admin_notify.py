@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from app.config import get_settings
+from app.core.runtime_env import is_test_run
 from app.services.vk_client import VK_MESSAGE_LIMIT, send_vk_message
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,12 @@ def vk_admin_configured() -> bool:
 
 
 def send_vk_admin_message(text: str, *, reply_to: int | None = None) -> int | None:
+    # Тесты гоняются на стеке с боевым .env, поэтому глушим отправку здесь, а не
+    # надеемся на моки в каждом тесте: иначе прогон уходит сообщениями админу.
+    if is_test_run():
+        logger.info("VK admin notify skipped: test run (%s)", text[:80])
+        return None
+
     settings = get_settings()
     if not settings.vk_bot_group_token or not settings.vk_admin_user_id:
         logger.info("VK admin notify skipped: token or admin user id not configured")

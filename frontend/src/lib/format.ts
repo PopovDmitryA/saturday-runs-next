@@ -236,6 +236,11 @@ export function runsCapLabel(count: number): string {
   return pluralFormRu(count, RUN_CAP_FORMS);
 }
 
+/** Только слово, без числа: «пробежка / пробежки / пробежек». */
+export function runsFormLabel(count: number): string {
+  return pluralFormRu(count, RUN_FORMS);
+}
+
 export function volunteeringCapLabel(count: number): string {
   return pluralFormRu(count, VOLUNTEERING_CAP_FORMS);
 }
@@ -273,6 +278,25 @@ const CLUB_FORMS = ["клуб", "клуба", "клубов"] as const;
 
 export function kilometersLabel(count: number): string {
   return pluralizeRu(count, KM_FORMS);
+}
+
+/**
+ * Целое число с разбивкой по разрядам: 123456 → «123 456».
+ *
+ * Общий помощник, потому что без него большие цифры печатались как есть и
+ * читались сплошняком — «дальность от дома» в рейтинге доходит до сотен тысяч
+ * километров. Разделитель у ru-RU — неразрывный пробел, число не переносится.
+ */
+export function formatInt(value: number): string {
+  return Math.round(value).toLocaleString("ru-RU");
+}
+
+/** «6 141 км», близкие расстояния — с десятыми: «0,8 км» честнее, чем «1 км». */
+export function formatKm(value: number): string {
+  if (value < 10 && !Number.isInteger(value)) {
+    return `${value.toFixed(1).replace(".", ",")} км`;
+  }
+  return `${Math.round(value).toLocaleString("ru-RU")} км`;
 }
 
 export function runClubsLabel(count: number): string {

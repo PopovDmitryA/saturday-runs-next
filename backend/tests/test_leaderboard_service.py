@@ -13,8 +13,14 @@ from app.models import (
     RunResult,
 )
 from app.services.leaderboard_service import (
+    _WEEK_LOCATIONS_PIDS_ALIAS,
+    _WEEK_LOCATIONS_SQL_BY_METRIC,
+    _WEEK_RUN_LOCATIONS_SQL,
+    _WEEK_VOLUNTEER_LOCATIONS_SQL,
+    COUNT_BY_METRICS,
+    COUNT_BY_VALUES,
     GENDERED_METRICS,
-    GENDERED_PLATFORM_COLUMNS,
+    LEADERBOARD_GENDERS,
     LEADERBOARD_METRICS,
     MAX_MIN_VISITS,
     METRIC_META,
@@ -24,15 +30,20 @@ from app.services.leaderboard_service import (
     PLATFORM_FILTER_METRICS,
     PLATFORM_FILTER_VALUES,
     VOLUNTEER_LOCATION_PLATFORM_COLUMNS,
+    WEEK_LOCATIONS_METRICS,
     WIN_EXTRAS_METRICS,
     _add_role_row,
     _apply_last_win,
     _cache_key,
     _dominant_gender,
     _Entity,
+    _geo_keys,
+    _latest_week_location,
     _LocationVisits,
     _merge_visit_row,
+    _my_gendered_win_values,
     _my_win_values,
+    _normalize_count_by,
     _normalize_gender,
     _normalize_min_visits,
     _normalize_platform_filter,
@@ -42,8 +53,13 @@ from app.services.leaderboard_service import (
     _ranked,
     _RoleUsage,
     _summarize_roles,
+    _unit_counts,
+    _unit_key_getters,
     _week_start,
+    count_by_values,
     metric_description,
+    metric_title,
+    metric_unit,
     platform_columns_for,
     platform_filter_values,
 )
@@ -170,22 +186,31 @@ def test_dominant_gender_by_majority() -> None:
 
 
 def test_metric_description_follows_gender() -> None:
-    # В гендерных зачётах описание говорит про мужчин/женщин, не про абсолют.
+    # В женском зачёте описание говорит про женщин, не про абсолют.
     assert "абсолютном зачёте" in metric_description("wins", "all")
-    assert "среди мужчин" in metric_description("wins", "male")
     assert "среди женщин" in metric_description("wins", "female")
-    assert "среди мужчин" in metric_description("win_locations", "male")
+    assert "среди женщин" in metric_description("win_locations", "female")
     # У метрик без разреза по полу описание всегда базовое.
-    assert metric_description("runs", "male") == METRIC_META["runs"]["description"]
+    assert metric_description("runs", "female") == METRIC_META["runs"]["description"]
 
 
 def test_normalize_gender_only_for_win_metrics() -> None:
     # Пол применяется только к победным метрикам; у остальных всегда «all».
     assert set(GENDERED_METRICS) == {"wins", "win_locations"}
-    assert _normalize_gender("wins", "male") == "male"
     assert _normalize_gender("win_locations", "female") == "female"
-    assert _normalize_gender("runs", "male") == "all"
+    assert _normalize_gender("runs", "female") == "all"
     assert _normalize_gender("wins", "нечто") == "all"
+
+
+def test_male_gender_scope_is_gone() -> None:
+    # Мужского зачёта нет: первые места среди мужчин завышены на стартах, где
+    # у части финишёров протокол не даёт пола (нет возрастной категории).
+    assert set(LEADERBOARD_GENDERS) == {"all", "female"}
+    # Старые ссылки с ?gender=male не 404-ят и не считают мужской зачёт —
+    # молча открывают абсолют.
+    assert _normalize_gender("wins", "male") == "all"
+    assert _normalize_gender("win_locations", "male") == "all"
+    assert "мужчин" not in metric_description("wins", "male")
 
 
 def test_normalize_min_visits_only_for_tourism_metrics() -> None:
@@ -251,11 +276,207 @@ def test_merge_visit_row_tracks_per_platform_visits() -> None:
     assert merged.platform_counts("five_verst", 2)
 
 
+def test_geo_keys_russia_uses_region_and_city() -> None:
+    geo = _geo_keys("Россия", "Московская область", "Балашиха")
+    assert geo.region == "московская область"
+    # Город ключуется парой «регион + город»: одноимённые города разных регионов
+    # (Троицк в Москве и в Челябинской области) — это два разных города.
+    assert geo.city == "московская область|балашиха"
+    other = _geo_keys("Россия", "Челябинская область", "Троицк")
+    moscow = _geo_keys("Россия", "Москва", "Троицк")
+    assert other.city != moscow.city
+
+
+def test_geo_keys_foreign_country_is_one_region() -> None:
+    # «1 страна = 1 регион» (решение Дмитрия 02.08.2026): все британские
+    # parkrun-площадки дают ровно один регион, сколько бы их ни было.
+    london = _geo_keys("Великобритания", None, None)
+    bushy = _geo_keys("Великобритания", None, None)
+    assert london.region == bushy.region == "country:великобритания"
+    # Города за границей почти всегда неизвестны — тогда страна идёт и за город,
+    # чтобы столбец не обнулялся на зарубежных поездках.
+    assert london.city == "country:великобритания"
+    # А если город всё-таки известен — считаем именно его.
+    tbilisi = _geo_keys("Грузия", None, "Тбилиси")
+    assert tbilisi.city == "грузия|тбилиси"
+    assert tbilisi.region == "country:грузия"
+
+
+def test_geo_keys_fold_country_spellings() -> None:
+    # На проде британские parkrun-площадки записаны двумя способами
+    # («Великобритания» и «United Kingdom») — это одна страна и один регион,
+    # иначе турист по паркранам Британии получал бы два региона вместо одного.
+    assert _geo_keys("United Kingdom", None, None).region == _geo_keys(
+        "Великобритания", None, None
+    ).region
+
+
+def test_geo_keys_without_data_drop_out_of_geo_ratings() -> None:
+    # Ни страны, ни региона, ни города — площадка не идёт ни в зачёт городов,
+    # ни в зачёт регионов (бакет «неизвестно» был бы враньём).
+    empty = _geo_keys(None, None, None)
+    assert empty.city is None and empty.region is None
+    # Русская площадка без региона всё же даёт город — по имени города.
+    assert _geo_keys("Россия", None, "Курск").city == "|курск"
+
+
+def _visits(*, visits: int, week_visits: int, code: str = "five_verst") -> _LocationVisits:
+    row = _LocationVisits(
+        first_date=date(2026, 1, 3), codes={code}, visits=visits, week_visits=week_visits
+    )
+    row.by_platform[code] = [visits, week_visits]
+    return row
+
+
+def test_unit_counts_locations_counts_every_venue() -> None:
+    # Единица «площадки» — это ровно прежний построчный подсчёт.
+    counted = {
+        "loc:1": _visits(visits=2, week_visits=0),
+        "loc:2": _visits(visits=1, week_visits=1),
+    }
+    tally = _unit_counts(counted, lambda identity: identity, 1)
+    assert tally.total == 2
+    assert tally.week == 1
+    assert tally.values["five_verst"] == [2, 1]
+
+
+def test_unit_counts_collapses_venues_of_one_city() -> None:
+    # Два парка одного города дают ОДИН город, а не два.
+    counted = {
+        "loc:1": _visits(visits=3, week_visits=0),
+        "loc:2": _visits(visits=1, week_visits=1),
+        "loc:3": _visits(visits=1, week_visits=1),
+    }
+    geo = {
+        "loc:1": _geo_keys("Россия", "Москва", "Москва"),
+        "loc:2": _geo_keys("Россия", "Москва", "Москва"),
+        "loc:3": _geo_keys("Россия", "Курская область", "Курск"),
+    }
+    cities = _unit_counts(counted, _unit_key_getters(geo)["cities"], 1)
+    assert cities.total == 2
+    # Москва не «прибавилась»: один из её парков был освоен ещё до недели.
+    # Курск — целиком новый город.
+    assert cities.week == 1
+    regions = _unit_counts(counted, _unit_key_getters(geo)["regions"], 1)
+    assert regions.total == 2
+
+
+def test_unit_counts_skips_venues_without_geo() -> None:
+    # Площадка без города в зачёт городов не идёт, но в зачёте площадок остаётся.
+    counted = {"loc:1": _visits(visits=1, week_visits=0)}
+    geo = {"loc:1": _geo_keys(None, None, None)}
+    assert _unit_counts(counted, _unit_key_getters(geo)["cities"], 1).total == 0
+    assert _unit_counts(counted, lambda identity: identity, 1).total == 1
+
+
+def test_normalize_count_by_only_for_tourism_metrics() -> None:
+    assert _normalize_count_by("locations", "cities") == "cities"
+    assert _normalize_count_by("volunteer_locations", "regions") == "regions"
+    # У остальных рейтингов гео-зачёта нет — молча откатываем к площадкам.
+    assert _normalize_count_by("runs", "cities") == "locations"
+    assert _normalize_count_by("win_locations", "regions") == "locations"
+    assert _normalize_count_by("locations", "мусор") == "locations"
+
+
+def test_count_by_options_offered_only_where_supported() -> None:
+    for metric in LEADERBOARD_METRICS:
+        options = count_by_values(metric)
+        if metric in COUNT_BY_METRICS:
+            assert options == COUNT_BY_VALUES
+        else:
+            assert options == ()
+    # Гео-зачёт живёт ровно там же, где порог визитов, — у туризма.
+    assert COUNT_BY_METRICS == MIN_VISITS_METRICS
+
+
+def test_metric_title_and_unit_follow_count_by() -> None:
+    assert "города" in metric_title("locations", "cities")
+    assert "регионы" in metric_title("volunteer_locations", "regions")
+    assert metric_title("locations", "locations") == METRIC_META["locations"]["title"]
+    assert metric_unit("locations", "cities") == "городов"
+    assert metric_unit("locations", "regions") == "регионов"
+    assert metric_unit("runs", "cities") == METRIC_META["runs"]["unit"]
+
+
+def test_metric_description_mentions_count_by() -> None:
+    cities = metric_description("locations", "all", 1, "all", "cities")
+    assert "ГОРОДА" in cities
+    assert "Зарубежные старты считаются по стране" in cities
+    # Гео-зачёт комбинируется с порогом визитов, не вытесняя его.
+    combined = metric_description("locations", "all", 3, "all", "regions")
+    assert "РЕГИОНЫ" in combined and "минимум 3 раза" in combined
+
+
+def test_cache_key_versions_count_by() -> None:
+    # Базовый вариант (площадки) сохраняет прежний ключ.
+    assert _cache_key("locations") == _cache_key("locations", "all", 1, "all", "locations")
+    assert _cache_key("locations", "all", 1, "all", "cities").endswith(":locations:ccities")
+    # Единица зачёта комбинируется с порогом визитов и системой.
+    assert _cache_key("locations", "all", 3, "s95", "regions").endswith(
+        ":locations:v3:ps95:cregions"
+    )
+
+
+def test_week_locations_metrics_registered() -> None:
+    # Колонка «Последняя неделя» — у пробежек, волонтёрств, обоих туристических
+    # рейтингов и дальности от дома; у победных её место занимает «Последняя
+    # победа».
+    assert set(WEEK_LOCATIONS_METRICS) == {
+        "runs",
+        "volunteering",
+        "locations",
+        "volunteer_locations",
+        "home_distance",
+    }
+    assert set(WEEK_LOCATIONS_METRICS) <= set(LEADERBOARD_METRICS)
+    assert set(WEEK_LOCATIONS_METRICS) & set(WIN_EXTRAS_METRICS) == set()
+    assert "volunteer_roles" not in WEEK_LOCATIONS_METRICS
+
+
+def test_week_locations_read_the_metrics_own_protocols() -> None:
+    # Беговые рейтинги берут окно из протоколов забегов, волонтёрские — из
+    # волонтёрских смен: иначе в «Последней неделе» туризма оказались бы смены,
+    # а в волонтёрском туризме — пробежки.
+    assert _WEEK_LOCATIONS_SQL_BY_METRIC["locations"] is _WEEK_RUN_LOCATIONS_SQL
+    assert _WEEK_LOCATIONS_SQL_BY_METRIC["runs"] is _WEEK_RUN_LOCATIONS_SQL
+    assert _WEEK_LOCATIONS_SQL_BY_METRIC["home_distance"] is _WEEK_RUN_LOCATIONS_SQL
+    assert (
+        _WEEK_LOCATIONS_SQL_BY_METRIC["volunteer_locations"]
+        is _WEEK_VOLUNTEER_LOCATIONS_SQL
+    )
+    assert _WEEK_LOCATIONS_SQL_BY_METRIC["volunteering"] is _WEEK_VOLUNTEER_LOCATIONS_SQL
+    # Фильтр участников «моей» строки должен ссылаться на таблицу этой выборки.
+    for metric, alias in _WEEK_LOCATIONS_PIDS_ALIAS.items():
+        assert f"{alias}.participant_id IS NOT NULL" in _WEEK_LOCATIONS_SQL_BY_METRIC[metric]
+
+
+def test_latest_week_location_takes_the_freshest_start() -> None:
+    """В ячейке всегда одна площадка — самый поздний старт окна."""
+    names = {f"loc:{i}": f"Площадка {i}" for i in range(1, 8)}
+    slugs = {"loc:1": "park-one", "loc:5": "park-five"}
+    dates = {
+        "loc:3": date(2026, 7, 19),
+        "loc:5": date(2026, 7, 26),
+        "loc:7": date(2026, 7, 22),
+    }
+    latest = _latest_week_location(dates, names, slugs)
+    assert latest == {"name": "Площадка 5", "slug": "park-five", "date": "2026-07-26"}
+
+    # При равной дате выбор детерминирован по названию, слаг подставляется.
+    same_day = _latest_week_location(
+        {"loc:2": date(2026, 7, 25), "loc:1": date(2026, 7, 25)}, names, slugs
+    )
+    assert same_day == {"name": "Площадка 1", "slug": "park-one", "date": "2026-07-25"}
+
+    # Не был нигде — ячейка пустая.
+    assert _latest_week_location({}, names, slugs) is None
+
+
 def test_cache_key_versions_min_visits() -> None:
     # Базовый вариант сохраняет прежний ключ, пороги — отдельными снапшотами.
     assert _cache_key("locations") == _cache_key("locations", "all", 1)
     assert _cache_key("locations", "all", 3).endswith(":locations:v3")
-    assert _cache_key("wins", "male", 1).endswith(":wins:male")
+    assert _cache_key("wins", "female", 1).endswith(":wins:female")
 
 
 def test_metric_description_mentions_min_visits() -> None:
@@ -274,16 +495,15 @@ def test_platform_filter_is_standard_for_every_metric() -> None:
     assert set(PLATFORM_FILTER_VALUES) == {"all", *PLATFORM_COLUMNS}
 
 
-def test_platform_filter_values_follow_metric_and_gender() -> None:
-    # parkrun есть в абсолюте, но не в гендерном зачёте и не в волонтёрском туризме.
-    assert "parkrun" in platform_filter_values("wins", "all")
-    assert "parkrun" not in platform_filter_values("wins", "male")
+def test_platform_filter_values_follow_metric() -> None:
+    # parkrun есть везде, кроме волонтёрского туризма, — в том числе в гендерном
+    # зачёте побед (до 02.08.2026 он оттуда вырезался).
+    assert "parkrun" in platform_filter_values("wins")
     assert "parkrun" not in platform_filter_values("volunteer_locations")
     assert platform_columns_for("volunteer_locations") == VOLUNTEER_LOCATION_PLATFORM_COLUMNS
-    assert platform_columns_for("win_locations", "female") == GENDERED_PLATFORM_COLUMNS
+    assert platform_columns_for("win_locations") == PLATFORM_COLUMNS
     # Систему, которой в этом рейтинге нет, фильтр не принимает — молча «все».
-    assert _normalize_platform_filter("wins", "parkrun", "male") == "all"
-    assert _normalize_platform_filter("wins", "parkrun", "all") == "parkrun"
+    assert _normalize_platform_filter("wins", "parkrun") == "parkrun"
     assert _normalize_platform_filter("volunteer_locations", "parkrun") == "all"
     assert _normalize_platform_filter("volunteer_locations", "s95") == "s95"
 
@@ -424,13 +644,20 @@ def test_add_role_row_skips_only_parkrun_summary_total() -> None:
     assert labels["other"] == "Разное"
 
 
-def _seed_parkrun_wins_for_rating(db_session: Session, *, catalogued: list[bool]) -> UUID:
+def _seed_parkrun_wins_for_rating(
+    db_session: Session, *, catalogued: list[bool], gender: str | None = None
+) -> UUID:
     """Один parkrun-участник с первым местом на каждой из площадок.
 
     catalogued задаёт по площадке: True — русская (есть связка с каталогом
     локаций), False — зарубежная. Половина русских стартов заодно делает
     участника «допущенным» до рейтингов (см. _PARKRUN_ELIGIBLE_CTE), поэтому
     зарубежная строка отсеивается именно правилом площадки, а не допуском.
+
+    gender (если задан) проставляет participants.gender — источник пола для
+    parkrun — и gender_position = 1 на ВСЕХ строках, включая зарубежные: так
+    гендерный зачёт проверяется на явный фильтр площадки, а не на то, что у
+    зарубежных стартов gender_position и так обычно NULL.
     """
     suffix = str(uuid4().int % 1_000_000)
     platform = db_session.query(Platform).filter(Platform.code == "parkrun").one_or_none()
@@ -444,6 +671,7 @@ def _seed_parkrun_wins_for_rating(db_session: Session, *, catalogued: list[bool]
         external_user_id=f"parkrun-rating-user-{suffix}",
         display_name="Rating Tester",
         profile_url=f"https://www.parkrun.com/parkrunner/{suffix}/",
+        gender=gender,
     )
     db_session.add(participant)
     db_session.flush()
@@ -493,6 +721,7 @@ def _seed_parkrun_wins_for_rating(db_session: Session, *, catalogued: list[bool]
                 participant_id=participant.id,
                 external_result_key=f"parkrun-rating-result-{suffix}-{index}",
                 position=1,
+                gender_position=1 if gender else None,
                 finish_time_sec=22 * 60,
                 finish_time_display="00:22:00",
                 status="finished",
@@ -514,3 +743,40 @@ def test_win_rating_skips_parkrun_without_russian_starts(db_session: Session) ->
     participant_id = _seed_parkrun_wins_for_rating(db_session, catalogued=[False, False])
     values, _home, _last = _my_win_values(db_session, [participant_id], date(2026, 7, 27))
     assert values == {}
+
+
+def test_gendered_win_rating_includes_parkrun(db_session: Session) -> None:
+    """С 02.08.2026 parkrun входит в разбивку по полу: пол берётся из
+    participants.gender (в run_results.age_category у parkrun лежит age-grade %)."""
+    participant_id = _seed_parkrun_wins_for_rating(
+        db_session, catalogued=[True, False], gender="female"
+    )
+    values, total, _week, _home, _last = _my_gendered_win_values(
+        db_session, [participant_id], date(2026, 7, 27), "female", as_locations=False
+    )
+    # Зачтена только русская площадка — зарубежная отсечена, хотя gender_position там тоже 1.
+    assert values["parkrun"][0] == 1
+    assert total == 1
+
+
+def test_gendered_win_rating_skips_foreign_parkrun(db_session: Session) -> None:
+    participant_id = _seed_parkrun_wins_for_rating(
+        db_session, catalogued=[False, False], gender="female"
+    )
+    values, total, _week, _home, _last = _my_gendered_win_values(
+        db_session, [participant_id], date(2026, 7, 27), "female", as_locations=False
+    )
+    assert values == {}
+    assert total == 0
+
+
+def test_gendered_win_rating_excludes_other_gender(db_session: Session) -> None:
+    # Мужчина в женском зачёте не появляется, даже с первыми местами среди мужчин.
+    participant_id = _seed_parkrun_wins_for_rating(
+        db_session, catalogued=[True, True], gender="male"
+    )
+    values, total, _week, _home, _last = _my_gendered_win_values(
+        db_session, [participant_id], date(2026, 7, 27), "female", as_locations=False
+    )
+    assert values == {}
+    assert total == 0

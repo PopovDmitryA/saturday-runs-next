@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.five_verst.errors import FiveVerstBanDetected
 from app.five_verst.fetch.protocol_pause import wait_between_protocols
 from app.models import Event, EventSummary, Location, Platform, ProtocolSyncState, RunResult, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalEventSummary
+from app.platform_adapters.five_verst.http import NotFoundError
 from app.services.sync_report_labels import protocol_detail_label
 from app.sync import upsert
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol, mark_protocol_check
-from app.sync.iteration_commit import commit_step, persist_step_error, rollback_step
+from app.sync.iteration_commit import commit_step, mark_event_summary_error, persist_step_error, rollback_step
 
 PLATFORM_CODE = "five_verst"
 
@@ -51,6 +53,10 @@ class ReconcileProtocolsResult:
     planned: list[str] = field(default_factory=list)
     fetched_protocols: list[str] = field(default_factory=list)
     changed_protocols: list[str] = field(default_factory=list)
+    # Протоколы, чьи страницы удалены с сайта (404). Это не сбой запуска:
+    # они помечаются в event_summaries и уходят в конец очереди проверок,
+    # а не валят прогон в статус error каждым циклом.
+    pages_missing: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
 
@@ -129,7 +135,6 @@ def plan_stale_protocol_reconcile(
     min_check_interval_days: int = 0,
     location_slug: str | None = None,
 ) -> list[ReconcileCandidate]:
-    del min_check_interval_days
     platform = upsert.get_platform(db, PLATFORM_CODE)
     run_counts = (
         db.query(RunResult.event_id, func.count(RunResult.id).label("run_count"))
@@ -149,6 +154,18 @@ def plan_stale_protocol_reconcile(
     )
     if location_slug:
         query = query.filter(Location.external_key == location_slug)
+    if min_check_interval_days > 0:
+        # Протокол, проверенный недавно, не перечитываем: без этого фильтра
+        # reconcile гонял всю историю (~2900 протоколов) по кругу каждые
+        # ~4 дня — час работы воркера и ~100 страниц 5verst.ru каждые 3 часа
+        # ради заведомо неизменных страниц.
+        cutoff = datetime.now(timezone.utc) - timedelta(days=min_check_interval_days)
+        query = query.filter(
+            or_(
+                ProtocolSyncState.last_protocol_check_at.is_(None),
+                ProtocolSyncState.last_protocol_check_at < cutoff,
+            )
+        )
 
     rows = query.order_by(ProtocolSyncState.last_protocol_check_at.asc().nullsfirst()).limit(limit).all()
     candidates: list[ReconcileCandidate] = []
@@ -233,6 +250,38 @@ def reconcile_stale_protocols(
                 if index + 1 < len(candidates):
                     wait_between_protocols(reason="reconcile")
                 commit_step(db)
+            except FiveVerstBanDetected as exc:
+                # Кулдаун общий на все фетчи: остаток пачки гарантированно
+                # упадёт с тем же «in cooldown». Раньше цикл шёл дальше и
+                # печатал по 40-80 таких ошибок за прогон, а mark_protocol_check
+                # помечал непроверенные протоколы проверенными.
+                rollback_step(db)
+                result.errors.append(f"{candidate.external_event_key}: {exc}; остаток пачки отложен")
+                break
+            except NotFoundError as exc:
+                # Страница протокола удалена с сайта — известный факт, а не сбой:
+                # раньше такие 404 (в пачках старых дат — до 88 за прогон)
+                # засоряли errors и красили запуск в error. Помечаем summary,
+                # двигаем отметку проверки — вернёмся к ним со следующим кругом
+                # очереди, а не в каждом запуске.
+                result.pages_missing.append(f"{candidate.external_event_key}: {exc}")
+
+                def _apply_missing(
+                    session: Session,
+                    eid=event_id,
+                    key=candidate.external_event_key,
+                    message=str(exc),
+                ) -> None:
+                    if eid is not None:
+                        mark_protocol_check(session, eid)
+                    mark_event_summary_error(
+                        session,
+                        platform_id=platform.id,
+                        external_event_key=key,
+                        message=message,
+                    )
+
+                persist_step_error(db, apply=_apply_missing)
             except Exception as exc:
                 result.errors.append(f"{candidate.external_event_key}: {exc}")
                 if event_id is not None:
@@ -255,7 +304,8 @@ def reconcile_stale_protocols(
         return result
     except Exception as exc:
         db.rollback()
-        failed = _start_sync_run(db, platform)
-        _finish_sync_run(db, failed, success=False, fetched=0, upserted=0, error=str(exc))
+        # sync_run закоммичен ещё до цикла — закрываем его же, а не плодим
+        # второй failed-ран, оставляя первый висеть в running навсегда.
+        _finish_sync_run(db, sync_run, success=False, fetched=0, upserted=0, error=str(exc))
         db.commit()
         raise

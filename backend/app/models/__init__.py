@@ -172,6 +172,9 @@ class Location(Base):
     coordinate_requests: Mapped[list["LocationCoordinateRequest"]] = relationship(back_populates="location")
     catalog_links: Mapped[list["LocationCatalogLink"]] = relationship(back_populates="location")
     contacts: Mapped[list["LocationContact"]] = relationship(back_populates="location")
+    description: Mapped["LocationDescription | None"] = relationship(
+        back_populates="location", uselist=False, cascade="all, delete-orphan"
+    )
     announce_settings: Mapped["LocationAnnounceSettings | None"] = relationship(
         back_populates="location", uselist=False
     )
@@ -241,6 +244,56 @@ class LocationContact(Base):
     )
 
     location: Mapped["Location"] = relationship(back_populates="contacts")
+
+
+class LocationDescription(Base):
+    """Описание площадки с сайта системы: когда старт, что за трасса, как доехать.
+
+    Одна строка на локацию платформы (у идентичности их может быть несколько —
+    5 вёрст и S95 пишут о своей площадке по-своему). Тексты чужие, поэтому
+    source_url обязателен: на странице локации мы ставим ссылку на источник.
+
+    Три отметки времени отвечают на разные вопросы, и путать их нельзя:
+    `fetched_at` — когда мы последний раз СМОТРЕЛИ страницу (ставится всегда,
+    даже если текст тот же и даже если страница оказалась пустой);
+    `content_updated_at` — когда текст последний раз РЕАЛЬНО менялся;
+    `revision` — сколько раз он менялся с момента первого сбора (0 — с тех пор
+    не менялся ни разу). Так по строке видно «проверяли час назад, а менялось
+    в марте», а не только «что-то происходило».
+
+    content_hash — хеш собранного текста, а не HTML страницы: вёрстка на
+    5verst.ru меняется от релиза к релизу, а описание парка — раз в год.
+    Хеш по тексту даёт content_updated_at, которому можно верить.
+    """
+
+    __tablename__ = "location_descriptions"
+    __table_args__ = (UniqueConstraint("location_id", name="uq_location_descriptions_location_id"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
+    # «Где и когда?»: адрес старта и время (бывает сезонным).
+    schedule_text: Mapped[str | None] = mapped_column(Text)
+    # «О трассе»: маршрут, покрытие, круги, место сбора.
+    course_text: Mapped[str | None] = mapped_column(Text)
+    # Вводная строка «как добраться»: адрес (5 вёрст) или место проведения (S95).
+    travel_text: Mapped[str | None] = mapped_column(Text)
+    # [{"title": "Общественным транспортом", "text": "…"}, …]
+    travel_sections: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    # [{"title": "Карта и схема проезда", "url": "https://…"}, …]
+    links: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    source_url: Mapped[str | None] = mapped_column(String(1024))
+    content_hash: Mapped[str | None] = mapped_column(String(64))
+    # Когда последний раз смотрели страницу — независимо от того, менялся текст или нет.
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Когда текст последний раз менялся, и сколько раз он менялся всего.
+    content_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    location: Mapped["Location"] = relationship(back_populates="description")
 
 
 class LocationAnnounceSettings(Base):
@@ -783,6 +836,11 @@ class User(Base):
     news_subscribed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     profile_private: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     home_location_key: Mapped[str | None] = mapped_column(String(255))
+    # Когда человек в последний раз менял домашнюю локацию руками (в т.ч.
+    # сбрасывал на авто). NULL — не менял никогда. Нужно рейтингу дальности: его
+    # таблица кэшируется на несколько часов, и без этой отметки нельзя отличить
+    # «в таблице ещё старые километры» от «рейтинг посчитан неправильно».
+    home_location_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Уникальная НЕцифровая ссылка на публичный профиль (/users/{public_slug});
     # хранится в нижнем регистре, уникальность регистронезависима. NULL — не задана.
     public_slug: Mapped[str | None] = mapped_column(String(64), unique=True)
@@ -1291,6 +1349,31 @@ class BlogPost(Base):
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     clicks_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class SiteRelease(Base):
+    """Релиз сайта — блок на публичной странице «Обновления» (/updates).
+
+    Версия X.Y.Z (опционально с суффиксом -fixN) присваивается при деплое по
+    протоколу из docs/release_management.md. Запись создаётся скрытой
+    (is_published=false): администратор правит текст и сам открывает релиз
+    на сайте. Скрытые и удалённые релизы оставляют пропуски в опубликованных
+    номерах — это допустимо.
+    """
+
+    __tablename__ = "site_releases"
+    __table_args__ = (Index("ix_site_releases_released_at", "released_at"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    version: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    released_at: Mapped[date] = mapped_column(Date, nullable=False)
+    is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

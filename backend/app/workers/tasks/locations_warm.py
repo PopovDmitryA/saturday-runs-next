@@ -5,6 +5,7 @@ from typing import Any, cast
 
 from app.db.session import get_session_factory
 from app.services.location_page_service import (
+    build_last_results,
     build_location_events,
     build_location_leaders,
     build_location_page,
@@ -30,18 +31,21 @@ def warm_locations_cache() -> dict[str, object]:
     warmed = 0
     failed = 0
     try:
-        # use_cache=False — считаем заново и перезаписываем; иначе прогрев
-        # прочитал бы ещё живой кэш и ничего не обновил.
-        index = build_locations_index(db, use_cache=False)
+        # refresh=True — считаем заново и перезаписываем; иначе прогрев прочитал
+        # бы ещё живой кэш и ничего не обновил. Раньше здесь стоял
+        # use_cache=False, но это «не читать И не писать»: прогрев считал всё
+        # впустую, кэш наполняли сами посетители ценой холодного расчёта.
+        index = build_locations_index(db, refresh=True)
+        build_last_results(db, refresh=True)
         items = cast(list[dict[str, Any]], index.get("items") or [])
         for item in items:
             slug = item.get("slug")
             if not slug:
                 continue
             try:
-                build_location_page(db, str(slug), use_cache=False)
-                build_location_events(db, str(slug), use_cache=False)
-                build_location_leaders(db, str(slug), use_cache=False)
+                build_location_page(db, str(slug), refresh=True)
+                build_location_events(db, str(slug), refresh=True)
+                build_location_leaders(db, str(slug), refresh=True)
                 warmed += 1
             except Exception:
                 logger.exception("locations warm failed for slug %s", slug)

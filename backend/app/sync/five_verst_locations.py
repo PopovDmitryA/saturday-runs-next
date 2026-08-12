@@ -16,8 +16,8 @@ from app.platform_adapters.five_verst.bulk_parser import (
     registry_entry_is_paused,
 )
 from app.platform_adapters.five_verst.http import NotFoundError
+from app.services.admin_notify import notify_admin
 from app.services.location_geo_service import apply_reverse_geocode_to_location
-from app.services.vk_admin_notify import send_vk_admin_message, vk_admin_configured
 from app.sync import upsert
 from app.sync.iteration_commit import commit_step, rollback_step
 from app.sync.location_registry_status import apply_location_registry_flags
@@ -114,6 +114,7 @@ def _enrich_location_geo(location: CanonicalLocation) -> CanonicalLocation:
         source_url=location.source_url,
         course_source_url=location.course_source_url,
         map_url=location.map_url,
+        description=location.description,
     )
 
 
@@ -238,10 +239,6 @@ def _create_merge_request_if_needed(
 
 
 def _notify_merge_request(request: LocationMergeRequest) -> bool:
-    if not vk_admin_configured():
-        logger.info("VK admin notify not configured, skip merge notification for %s", request.candidate_slug)
-        return False
-
     sample_dates = ", ".join(request.overlap_event_dates[:5])
     if len(request.overlap_event_dates) > 5:
         sample_dates += ", …"
@@ -256,7 +253,7 @@ def _notify_merge_request(request: LocationMergeRequest) -> bool:
         f"Примеры дат: {sample_dates}\n\n"
         "Проверьте вручную: возможно, локация сменила URL/имя."
     )
-    return send_vk_admin_message(text) is not None
+    return notify_admin(text)
 
 
 def _friendly_fetch_error(exc: Exception) -> str:
@@ -325,6 +322,8 @@ def _process_registry_entry(
                         source_hash=bulk_parser.source_hash(location_html),
                     )
                     updated_row.is_official_map = True
+                    if location_data.description is not None:
+                        upsert.upsert_location_description(db, updated_row, location_data.description)
                     result.coords_fetched += 1
                     _record_location(result, "coords_fetched_locations", entry.slug, entry.name)
                     meta_changed, pause_changed, cancel_changed = _apply_registry_meta(db, updated_row, entry)
@@ -376,6 +375,7 @@ def _process_registry_entry(
         source_url=entry.source_url,
         course_source_url=location_data.course_source_url,
         map_url=location_data.map_url,
+        description=location_data.description,
     )
     new_row, _ = upsert.upsert_location(
         db,
@@ -384,6 +384,8 @@ def _process_registry_entry(
         source_hash=bulk_parser.source_hash(location_html),
     )
     new_row.is_official_map = True
+    if location_data.description is not None:
+        upsert.upsert_location_description(db, new_row, location_data.description)
     _, pause_changed, cancel_changed = _apply_registry_meta(db, new_row, entry)
     if pause_changed:
         result.pause_status_changed += 1
@@ -463,7 +465,8 @@ def sync_locations_registry(
         return result
     except Exception as exc:
         db.rollback()
-        failed_run = _start_sync_run(db, platform)
-        _finish_sync_run(db, failed_run, success=False, fetched=0, upserted=0, unchanged=0, error=str(exc))
+        # Закрываем исходный (закоммиченный) ран, а не плодим второй failed,
+        # оставляя первый висеть в running навсегда.
+        _finish_sync_run(db, sync_run, success=False, fetched=0, upserted=0, unchanged=0, error=str(exc))
         db.commit()
         raise

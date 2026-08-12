@@ -42,7 +42,9 @@ def _validate_metric(metric: str) -> LeaderboardMetric:
 
 def _validate_gender(gender: str) -> str:
     # Незнакомый пол молча трактуем как «all» — сервис сам игнорирует разрез у
-    # метрик без М/Ж (см. _normalize_gender), так что 400 тут был бы избыточен.
+    # метрик без женского зачёта (см. _normalize_gender), так что 400 тут был бы
+    # избыточен. Сюда же попадает gender=male из старых ссылок: мужского зачёта
+    # больше нет, и старая ссылка открывает абсолют, а не ошибку.
     return gender if gender in LEADERBOARD_GENDERS else "all"
 
 
@@ -88,9 +90,13 @@ def leaderboard(
     # _normalize_min_visits / _normalize_platform_filter), 400 тут был бы избыточен.
     min_visits: Annotated[int, Query(ge=1, le=MAX_MIN_VISITS)] = 1,
     platform: str = "all",
+    # Единица зачёта туристических рейтингов: площадки / города / регионы.
+    count_by: str = "locations",
     # Какие волонтёрские роли считать. Пустой список = все роли; неизвестные
     # ключи и неприменимые метрики сервис отбрасывает сам.
     roles: Annotated[list[str] | None, Query()] = None,
+    # Спрятать участников с неочевидной домашней локацией (только у дальности).
+    hide_ambiguous_home: bool = False,
 ) -> LeaderboardResponse:
     payload = get_leaderboard(
         db,
@@ -99,7 +105,9 @@ def leaderboard(
         limit=limit,
         min_visits=min_visits,
         platform=platform,
+        count_by=count_by,
         roles=roles,
+        hide_ambiguous_home=hide_ambiguous_home,
     )
     return LeaderboardResponse.model_validate(payload)
 
@@ -113,6 +121,7 @@ def my_leaderboard_row(
     gender: str = "all",
     min_visits: Annotated[int, Query(ge=1, le=MAX_MIN_VISITS)] = 1,
     platform: str = "all",
+    count_by: str = "locations",
 ) -> MyLeaderboardRowResponse:
     payload = get_my_leaderboard_row(
         db,
@@ -121,5 +130,6 @@ def my_leaderboard_row(
         _validate_gender(gender),
         min_visits,
         platform,
+        count_by,
     )
     return MyLeaderboardRowResponse.model_validate(payload)

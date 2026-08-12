@@ -80,6 +80,8 @@ class MyRatingsResponse(BaseModel):
 
 class AdminRatingRow(BaseModel):
     id: UUID
+    # Фото, приложенные к отзыву: админка показывает их прямо в списке.
+    photos: list[PhotoResponse] = Field(default_factory=list)
     user_id: UUID
     user_display: str
     user_serial: int | None = None

@@ -161,6 +161,23 @@ def test_comments_create_list_and_anonymity(db_session: Session) -> None:
     assert refreshed.comment_count == 2
 
 
+def test_card_and_comment_notify_admin_channel(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Бэклог уведомляет через общий admin-канал (Telegram), а не напрямую в ВК."""
+    from app.services import backlog_service
+
+    sent: list[str] = []
+    monkeypatch.setattr(backlog_service, "notify_admin", sent.append)
+
+    author = _make_user(db_session)
+    card = _make_card(db_session, author.id, title="Идея с уведомлением")
+    create_comment(db_session, card.id, author_id=author.id, body="Первый", is_anonymous=False)
+
+    assert any("Новая карточка бэклога" in text for text in sent)
+    assert any("Комментарий к «Идея с уведомлением»" in text for text in sent)
+
+
 def test_admin_sees_real_author_even_when_anonymous(db_session: Session) -> None:
     author = _make_user(db_session, name="Скрытый автор")
     _make_card(db_session, author.id, title="Анонимная карточка", is_anonymous=True)

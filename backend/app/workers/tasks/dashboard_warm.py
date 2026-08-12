@@ -5,12 +5,17 @@
 профиль — вплоть до таймаута фронта. Теперь синк говорит «вот с какого момента
 я трогал данные», а эта задача сама решает, кого это касается, сносит кэш
 только им и тут же пересчитывает в воркере.
+
+Момент старта синка — это floor, а не источник истины: докуда данные уже
+разобраны, помнит водяной знак (см. `_covered_through`). Без него окно прогрева
+было равно времени работы самого синка, и всё записанное между двумя синками
+не попадало ни в одно окно — см. комментарий у `_load_watermark`.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from app.db.session import get_session_factory
 from app.services.dashboard_service import (
@@ -32,6 +37,66 @@ logger = logging.getLogger(__name__)
 # прогрессии площадок к тому моменту уже в общем кэше).
 MAX_USERS_PER_RUN = 200
 
+# Докуда прогрев уже разобрал run_results.fetched_at. Redis, а не БД: значение
+# чисто операционное, и его потеря не ломает данные — следующий прогон просто
+# возьмёт окно пошире (dashboard_warm_max_lookback_hours).
+WATERMARK_KEY = "dashboard:warm:covered_through"
+
+
+def schedule_dashboard_warm(started_at: datetime) -> None:
+    """Отдать прогрев дашбордов в фоновую задачу.
+
+    Зовётся из каждого батч-синка, который пишет результаты, — а не только из
+    5 вёрст, как было до 08.08.2026. Тогда S95/RunPark прогрев не планировали
+    вовсе, и их забеги попадали в чужое окно только по случайности.
+    """
+    warm_dashboards_after_sync.delay(started_at.isoformat())
+
+
+def _load_watermark(fallback: datetime) -> datetime:
+    """Момент, с которого читать run_results.fetched_at.
+
+    Водяной знак делает окна прогрева непрерывными. Раньше `since` был моментом
+    старта синка, то есть окно = «пока синк работал», а промежутки между синками
+    не покрывал никто: результат, записанный в такой промежуток (а результаты
+    S95/RunPark пишутся именно там — своим расписанием), не сбрасывал кэш уже
+    никогда. 08.08.2026 строку у 27 человек так и потеряли — ближайшее окно
+    начиналось на 37 секунд позже её fetched_at.
+    """
+    from app.config import get_settings
+
+    floor = fallback - timedelta(hours=get_settings().dashboard_warm_max_lookback_hours)
+    try:
+        from app.core.redis_client import get_redis_client
+
+        raw = get_redis_client().get(WATERMARK_KEY)
+    except Exception:
+        logger.exception("dashboard warm: watermark read failed, falling back to sync start")
+        return fallback
+    if not raw:
+        return fallback
+    try:
+        stored = datetime.fromisoformat(raw)
+    except ValueError:
+        logger.warning("dashboard warm: broken watermark %r, falling back to sync start", raw)
+        return fallback
+    if stored.tzinfo is None:
+        stored = stored.replace(tzinfo=timezone.utc)
+    # Знак может отставать надолго (воркер стоял) — не даём ему развернуть скан
+    # на всю историю. Хвост подберёт ленивый пересчёт по возрасту кэша.
+    return max(stored, floor)
+
+
+def _save_watermark(covered_through: datetime) -> None:
+    try:
+        from app.core.redis_client import get_redis_client
+
+        get_redis_client().set(WATERMARK_KEY, covered_through.isoformat())
+    except Exception:
+        # Не откатываем прогон: кэш уже снесён и пересчитан. Следующий прогон
+        # просто возьмёт окно от старта своего синка, как до водяного знака.
+        logger.exception("dashboard warm: watermark write failed")
+
 
 @celery_app.task(name="dashboard_warm.after_sync")
 def warm_dashboards_after_sync(since_iso: str) -> dict[str, object]:
@@ -41,7 +106,10 @@ def warm_dashboards_after_sync(since_iso: str) -> dict[str, object]:
     сеть, и не должна вставать в хвост за фетчами в five_verst — там
     concurrency=1 и приоритет у пользовательских синков.
     """
-    since = datetime.fromisoformat(since_iso)
+    since = _load_watermark(datetime.fromisoformat(since_iso))
+    # Курсор снимаем ДО запросов: строки, записанные пока мы считаем, получат
+    # fetched_at >= cursor и достанутся следующему прогону, а не потеряются.
+    cursor = datetime.now(timezone.utc)
     db = get_session_factory()()
     warmed = 0
     failed = 0
@@ -61,6 +129,9 @@ def warm_dashboards_after_sync(since_iso: str) -> dict[str, object]:
 
         invalidate_dashboard_cache_for_users(db, user_ids)
         db.commit()
+        # Двигаем знак только после успешного сброса кэша: пересчёт ниже — это
+        # уже оптимизация, его падение чинится ленивым пересчётом при заходе.
+        _save_watermark(cursor)
 
         ordered = order_users_by_recent_login(db, user_ids)
         skipped = max(0, len(ordered) - MAX_USERS_PER_RUN)
@@ -83,6 +154,7 @@ def warm_dashboards_after_sync(since_iso: str) -> dict[str, object]:
         db.close()
 
     result: dict[str, object] = {
+        "since": since.isoformat(),
         "locations": len(locations),
         "scopes_computed": scopes,
         "users": len(user_ids),

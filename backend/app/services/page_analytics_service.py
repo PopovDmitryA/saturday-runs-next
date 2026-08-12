@@ -53,6 +53,7 @@ _STATIC_PAGE_TYPES = {
     "/": "portal_home",
     "/about": "portal_about",
     "/blog": "portal_blog",
+    "/updates": "updates",
     "/login": "portal_login",
     "/new/map-lab": "portal_map_lab",
     "/dashboard": "dashboard",
@@ -63,6 +64,7 @@ _STATIC_PAGE_TYPES = {
     "/volunteering": "volunteering",
     "/maps": "maps",
     "/locations": "locations_index",
+    "/results": "last_results",
     "/history": "history",
     "/ratings": "ratings_hub",
     "/ratings/runs": "ratings_runs",
@@ -72,6 +74,7 @@ _STATIC_PAGE_TYPES = {
     "/ratings/volunteer-locations": "ratings_volunteer_locations",
     "/ratings/wins": "ratings_wins",
     "/ratings/win-locations": "ratings_win_locations",
+    "/ratings/home-distance": "ratings_home_distance",
     "/backlog": "backlog",
     # Превью кабинета на демо-данных — витрина дизайна, а не раздел сайта.
     "/new/cabinet-preview": "cabinet_preview",

@@ -18,7 +18,7 @@ export function EmptyActivityState({ activityLabel, hasProfileLink }: EmptyActiv
   return (
     <div className="card">
       <p>{activityLabel} не найдены в базе.</p>
-      <p className="muted">Профиль привязан — попробуйте обновить данные в разделе «Главная».</p>
+      <p className="muted">Профиль привязан — попробуйте обновить данные на вкладке «Обзор».</p>
       <a className="btn primary" href="/dashboard#profiles">
         Обновить данные
       </a>

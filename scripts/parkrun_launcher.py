@@ -39,9 +39,12 @@ def task_site() -> None:
         env["SOLVE_CAPTCHA"] = "1"
         env["FAST_DELAY"] = ask("Задержка между запросами, сек", "3")
         print("  httpx качает профили; при капче браузер решит её сам (CLIP).")
-    limit = ask("Лимит профилей за прогон (пусто = штатно)", "")
+    limit = ask("Лимит профилей за прогон (0 = вся очередь, пусто = штатно 50)", "")
     if limit:
         env["LIMIT"] = limit
+        if limit.strip() in ("0", "-1"):
+            print("  Берём ВСЮ очередь. Личные рекорды пересчитаются одним "
+                  "проходом в конце прогона.")
     if ask_yn("Тихий режим (меньше шума в терминале)?", default=True):
         env["QUIET"] = "1"
     if ask_yn("Только очередь, без плановых синков?", default=False):
@@ -130,6 +133,40 @@ def task_event_pages() -> None:
                {**os.environ, "PYTHONPATH": pm})
 
 
+def task_recalc_prs() -> None:
+    print("\n— Пересчёт личных рекордов —")
+    print("  Демон очереди с недавних пор считает рекорды одним проходом в конце")
+    print("  прогона. Этот пункт — для ручного пересчёта: после массового импорта,")
+    print("  бэкфилла или если прогон прервали на середине.")
+    print("\n  1) parkrun (быстрее, только эта платформа)")
+    print("  2) все платформы (5 вёрст, S95, parkrun, RunPark)")
+    which = ask("Что пересчитываем", "1")
+    platform = "parkrun" if which != "2" else "all"
+    cross = ask_yn("Плюс кросс-платформенные рекорды (глобальные и по локациям)?",
+                   default=True)
+    py = os.path.join(ROOT, ".conda-parkrun", "bin", "python")
+    if not os.path.exists(py):
+        py = sys.executable
+    env = {**os.environ, "PYTHONPATH": os.path.join(ROOT, "backend")}
+    base = os.path.join(ROOT, "backend", "scripts")
+    print(f"\nПересчитываю личные рекорды ({platform})…\n")
+    rc = subprocess.call(
+        [py, os.path.join(base, "recalculate_personal_records.py"), "--platform", platform],
+        env=env,
+    )
+    if rc != 0:
+        sys.exit(f"пересчёт личных рекордов упал (код {rc})")
+    if cross:
+        print("\nПересчитываю кросс-платформенные рекорды…\n")
+        rc = subprocess.call(
+            [py, os.path.join(base, "recalculate_cross_platform_personal_records.py")],
+            env=env,
+        )
+        if rc != 0:
+            sys.exit(f"пересчёт кросс-платформенных рекордов упал (код {rc})")
+    print("\nГотово.")
+
+
 def main() -> None:
     print("═" * 56)
     print(" parkrun — что запускаем?")
@@ -139,6 +176,7 @@ def main() -> None:
     print("  3) Обработать собранное сырьё в БД      (офлайн-парсер)")
     print("  4) Обход через выход + решатель капчи   (httpx + CLIP)")
     print("  5) Описания событий: главная + трасса   (httpx + CLIP)")
+    print("  6) Пересчитать личные рекорды           (после массового импорта)")
     choice = ask("Выбор", "1")
     if choice == "2":
         task_sweep()
@@ -148,6 +186,8 @@ def main() -> None:
         task_waf()
     elif choice == "5":
         task_event_pages()
+    elif choice == "6":
+        task_recalc_prs()
     else:
         task_site()
 

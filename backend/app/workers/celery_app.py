@@ -41,9 +41,15 @@ celery_app.conf.update(
         "runpark_sync.*": {"queue": "runpark"},
     },
     beat_schedule={
+        # Очередь five_verst обслуживает один воркер с concurrency=1, поэтому
+        # задачи разведены по минутам: старт в одну и ту же минуту не даёт
+        # параллельности, а только выстраивает пачку в хвост (до 08.2026 в 20:00
+        # будней стартовали разом latest + реестр + ротация). Приоритет минуты
+        # :00 — у latest: это свежие субботние протоколы.
         "five-verst-registry-daily": {
             "task": "five_verst_sync.sync_locations_registry",
-            "schedule": crontab(hour=20, minute=0),
+            # 20:50 — после latest 20:00; до сводки 21:50 успевает (~1.5 мин).
+            "schedule": crontab(hour=20, minute=50),
             "options": {"queue": "five_verst"},
         },
         "five-verst-latest-weekday": {
@@ -63,12 +69,17 @@ celery_app.conf.update(
         },
         "five-verst-location-rotation": {
             "task": "five_verst_sync.sync_location_rotation",
-            "schedule": crontab(minute=0, hour="*/4"),
+            "schedule": crontab(minute=30, hour="*/4"),
             "options": {"queue": "five_verst"},
         },
-        "five-verst-reconcile-protocols": {
+        # Сверка истории протоколов — только по будням: прогон занимает пару
+        # часов (200 протоколов через паузы между фетчами), и в выходные он
+        # задерживал часовой latest, из-за чего свежие субботние протоколы
+        # опаздывали (скипы duplicate_hour_slot на проде). В будни новых
+        # результатов нет — латентность latest там не важна.
+        "five-verst-reconcile-protocols-weekday": {
             "task": "five_verst_sync.reconcile_stale_protocols",
-            "schedule": crontab(minute=0, hour="*/3"),
+            "schedule": crontab(minute=10, hour="*/3", day_of_week="1-5"),
             "options": {"queue": "five_verst"},
         },
         # Clubs list (/clubs/) — twice a week; changed rows are queued for detail re-sync.
@@ -87,6 +98,15 @@ celery_app.conf.update(
         "s95-registry-3days": {
             "task": "s95_sync.sync_locations_registry",
             "schedule": crontab(hour=20, minute=30, day_of_month="*/3"),
+            "options": {"queue": "s95"},
+        },
+        # Описания площадок S95 (HTML /events/{slug}) — каждые 4 часа по 5 самых
+        # давно не обновлявшихся. Локаций у S95 ~35, полный круг ≈ сутки.
+        # :50 — подальше от реестра (:30) и от протоколов (:00), чтобы не
+        # толкаться за общий лок загрузок S95.
+        "s95-location-descriptions": {
+            "task": "s95_sync.sync_location_descriptions",
+            "schedule": crontab(minute=50, hour="*/4"),
             "options": {"queue": "s95"},
         },
         # New protocols scan (JSON API, updated_at-aware) — Sat & Sun at 11:00 / 17:00 / 23:00 MSK.

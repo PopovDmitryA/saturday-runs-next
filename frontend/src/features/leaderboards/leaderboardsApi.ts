@@ -8,17 +8,59 @@ export type LeaderboardMetric =
   | "locations"
   | "volunteer_locations"
   | "wins"
-  | "win_locations";
+  | "win_locations"
+  | "home_distance";
 
-export type LeaderboardGender = "all" | "male" | "female";
+// Мужского зачёта нет — только абсолют и женский. Пол мы знаем лишь по
+// возрастной категории протокола, а у финишёров без аккаунта её нет: такой
+// человек выпадает из строя мужчин, и следующий за ним получает «первое место
+// среди мужчин», стоя в протоколе вторым (см. LEADERBOARD_GENDERS на бэкенде).
+export type LeaderboardGender = "all" | "female";
 
-// Разрез М/Ж есть только у победных рейтингов (parkrun в него не идёт).
+/**
+ * Единица измерения значения рейтинга — мелким шрифтом сразу за числом.
+ * Живёт здесь, а не на странице рейтинга: то же число показывает хаб, и без
+ * общей константы «км» там терялось (репорт Дмитрия 04.08.2026).
+ */
+export const METRIC_VALUE_UNIT: Partial<Record<LeaderboardMetric, string>> = {
+  home_distance: "км",
+};
+
+// Женский зачёт есть только у победных рейтингов (parkrun в него не идёт).
 export const GENDERED_METRICS: LeaderboardMetric[] = ["wins", "win_locations"];
 
 // Фильтр «локация засчитывается от N визитов» — у туристических рейтингов
 // (перенос фильтра из старого дашборда Grafana): бегового и волонтёрского.
 export const MIN_VISITS_METRICS: LeaderboardMetric[] = ["locations", "volunteer_locations"];
 export const MIN_VISITS_OPTIONS = [1, 2, 3, 4, 5] as const;
+
+// Единица зачёта туристических рейтингов: считать площадки, города или регионы.
+// Колонки видны все три всегда, фильтр решает, что попадает в «Всего» и по чему
+// строится место. Набор кнопок приходит с бэкенда (count_by_options).
+export type CountBy = "locations" | "cities" | "regions";
+export const COUNT_BY_LABELS: Record<CountBy, string> = {
+  locations: "Локаций",
+  cities: "Городов",
+  regions: "Регионов",
+};
+
+// Подпись «Всего» в туристических рейтингах называет единицу зачёта: рядом
+// стоят столбцы «Городов» и «Регионов», и голое «Всего» среди них не читалось.
+export const COUNT_BY_TOTAL_LABELS: Record<CountBy, string> = {
+  locations: "Всего локаций",
+  cities: "Всего городов",
+  regions: "Всего регионов",
+};
+
+// Колонка «Последняя неделя»: последний старт участника за окно дельты —
+// площадка и дата, тем же видом, что «Последняя победа» в победных рейтингах.
+// Всегда ровно одна площадка: если стартов было несколько, бэкенд отдаёт
+// самый поздний.
+export type WeekLocation = {
+  name: string;
+  slug: string | null;
+  date: string | null;
+};
 
 // Фильтр «смотреть по одной системе» есть у каждого рейтинга: объединённый
 // зачёт — норма, но результат внутри одной системы всегда можно посмотреть
@@ -92,7 +134,11 @@ export type LeaderboardRow = {
   total_delta: number;
   // Только у метрики wins: «топ-локация побед» — локация с максимумом побед.
   home_location?: string | null;
+  home_location_slug?: string | null;
   home_location_wins?: number | null;
+  // Только у home_distance: "ambiguous" — автовыбор дома шаткий,
+  // "manual_off_top" — человек выбрал руками площадку вне своей тройки.
+  home_location_note?: "ambiguous" | "manual_off_top" | null;
   // Только у победных рейтингов: глобальный рекорд участника и последняя победа
   // (у win_locations — последняя НОВАЯ локация с победой, дата — первой победы там).
   best_time_sec?: number | null;
@@ -105,6 +151,13 @@ export type LeaderboardRow = {
   top_role?: string | null;
   top_role_count?: number | null;
   role_details?: VolunteerRoleDetail[];
+  // Только у туристических рейтингов: площадки / города / регионы. Одно из трёх
+  // совпадает с total — какое, решает фильтр count_by.
+  locations_total?: number | null;
+  cities_total?: number | null;
+  regions_total?: number | null;
+  // Колонка «Последняя неделя»: где участник был за окно дельты.
+  week_location?: WeekLocation | null;
 };
 
 export type LeaderboardResponse = {
@@ -112,6 +165,13 @@ export type LeaderboardResponse = {
   gender?: LeaderboardGender;
   min_visits?: number;
   platform?: PlatformFilter;
+  count_by?: CountBy;
+  // Кнопки фильтра «единица зачёта»; пусто — у рейтинга такого фильтра нет.
+  count_by_options?: CountBy[];
+  has_week_locations?: boolean;
+  /** Фильтр «только очевидный дом»: есть ли он у рейтинга и включён ли. */
+  has_home_filter?: boolean;
+  hide_ambiguous_home?: boolean;
   title: string;
   description: string;
   unit: string;
@@ -125,12 +185,19 @@ export type LeaderboardResponse = {
   latest_event_date: string | null;
   week_start: string | null;
   built_at: string | null;
+  /** Через сколько часов после built_at таблица пересчитается (TTL снапшота). */
+  refresh_hours?: number;
 };
 
 export type MyLeaderboardRow = {
   metric: string;
   min_visits?: number;
   platform?: PlatformFilter;
+  count_by?: CountBy;
+  locations_total?: number | null;
+  cities_total?: number | null;
+  regions_total?: number | null;
+  week_location?: WeekLocation | null;
   display_name: string | null;
   site_serial_id: number;
   platforms: Record<string, LeaderboardCell>;
@@ -144,7 +211,17 @@ export type MyLeaderboardRow = {
   // определённо не совпадает с выбранным — порог показывать не нужно.
   gender_mismatch?: boolean;
   home_location?: string | null;
+  home_location_slug?: string | null;
   home_location_wins?: number | null;
+  // Только у home_distance: "ambiguous" — автовыбор дома шаткий,
+  // "manual_off_top" — человек выбрал руками площадку вне своей тройки.
+  home_location_note?: "ambiguous" | "manual_off_top" | null;
+  /**
+   * Только у home_distance: когда участник менял домашнюю локацию в настройках.
+   * Своя строка считается вживую, а таблица приходит из снапшота — если отметка
+   * свежее built_at таблицы, в её строках ещё километры от прежнего дома.
+   */
+  home_location_changed_at?: string | null;
   best_time_sec?: number | null;
   best_time_display?: string | null;
   last_win_location?: string | null;
@@ -175,9 +252,14 @@ export function getLeaderboard(
   gender: LeaderboardGender = "all",
   minVisits = 1,
   platform: PlatformFilter = "all",
+  countBy: CountBy = "locations",
   roles: string[] | null = null,
+  hideAmbiguousHome = false,
 ) {
   const params = new URLSearchParams({ limit: String(limit) });
+  if (hideAmbiguousHome) {
+    params.set("hide_ambiguous_home", "true");
+  }
   if (gender !== "all") {
     params.set("gender", gender);
   }
@@ -186,6 +268,9 @@ export function getLeaderboard(
   }
   if (platform !== "all") {
     params.set("platform", platform);
+  }
+  if (countBy !== "locations") {
+    params.set("count_by", countBy);
   }
   for (const role of roles ?? []) {
     params.append("roles", role);
@@ -198,6 +283,7 @@ export function getMyLeaderboardRow(
   gender: LeaderboardGender = "all",
   minVisits = 1,
   platform: PlatformFilter = "all",
+  countBy: CountBy = "locations",
   roles: string[] | null = null,
 ) {
   const params = new URLSearchParams();
@@ -209,6 +295,9 @@ export function getMyLeaderboardRow(
   }
   if (platform !== "all") {
     params.set("platform", platform);
+  }
+  if (countBy !== "locations") {
+    params.set("count_by", countBy);
   }
   for (const role of roles ?? []) {
     params.append("roles", role);

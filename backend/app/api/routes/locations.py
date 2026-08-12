@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_optional_user
 from app.db.session import get_db
 from app.models import User
+from app.schemas.dashboard import HomeDistanceDetailResponse
 from app.schemas.locations import (
     CatalogLocationsTableResponse,
+    LastResultsResponse,
     LocationEventsResponse,
     LocationLeadersResponse,
     LocationPageResponse,
@@ -18,9 +20,11 @@ from app.schemas.locations import (
     MapLocationsResponse,
     UniqueLocationsDetailResponse,
 )
+from app.services.home_distance_service import build_home_distance_detail
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_catalog_map_locations, list_user_visited_map_locations
 from app.services.location_page_service import (
+    build_last_results,
     build_location_events,
     build_location_leaders,
     build_location_page,
@@ -43,6 +47,15 @@ def locations_index(
     """Каталог локаций — входная точка раздела «Локации»."""
     payload = build_locations_index(db)
     return LocationsIndexResponse.model_validate(payload)
+
+
+@router.get("/last-results", response_model=LastResultsResponse)
+def locations_last_results(
+    db: Annotated[Session, Depends(get_db)],
+) -> LastResultsResponse:
+    """«Результаты последней субботы»: последний старт каждой локации по всем системам."""
+    payload = build_last_results(db)
+    return LastResultsResponse.model_validate(payload)
 
 
 @router.get("/page/{slug}", response_model=LocationPageResponse)
@@ -88,10 +101,22 @@ def location_personal_stats(
     user: Annotated[User, Depends(get_current_user)],
 ) -> LocationPersonalStatsResponse:
     """Личная статистика на локации — блок «Вы на этой локации» (только свои данные)."""
-    payload = build_location_personal_stats(db, user.id, slug)
+    payload = build_location_personal_stats(db, user, slug)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
     return LocationPersonalStatsResponse.model_validate(payload)
+
+
+@router.get("/visited/home-distance", response_model=HomeDistanceDetailResponse)
+def visited_home_distance(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    include_test: Annotated[bool, Query()] = False,
+) -> HomeDistanceDetailResponse:
+    """Детали плитки «Дальность от дома»: посещённые площадки с их вкладом в
+    зачёт и действующие площадки, где человек ещё не был."""
+    payload = build_home_distance_detail(db, user, include_test_events=include_test)
+    return HomeDistanceDetailResponse.model_validate(payload)
 
 
 @router.get("/visited/map", response_model=MapLocationsResponse)

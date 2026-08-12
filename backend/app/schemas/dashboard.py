@@ -15,6 +15,51 @@ class TopLocationResponse(BaseModel):
     tied_count: int = 1
 
 
+class HomeDistanceLocationResponse(BaseModel):
+    catalog_identity_key: str
+    location_slug: str | None = None
+    name: str
+    city: str | None = None
+    region: str | None = None
+    # None — координат площадки нет (закрытые зарубежные parkrun), в зачёт не идёт.
+    distance_km: float | None = None
+    run_count: int = 0
+    last_visit_date: date | None = None
+    is_home: bool = False
+    is_paused: bool = False
+    # Системы площадки — плашками рядом с названием в модалке.
+    platform_codes: list[str] = Field(default_factory=list)
+
+
+class HomeLocationSummaryResponse(BaseModel):
+    catalog_identity_key: str
+    location_slug: str | None = None
+    name: str
+    city: str | None = None
+    region: str | None = None
+    run_count: int = 0
+    is_auto: bool = True
+    # "tie" — ничья по числу пробежек, "close" — вторая площадка рядом по числу
+    # пробежек. Ровно эти два случая подсвечиваем на главной красным.
+    ambiguity: str | None = None
+    runner_up_name: str | None = None
+    has_coordinates: bool = False
+
+
+class HomeDistanceResponse(BaseModel):
+    home: HomeLocationSummaryResponse | None = None
+    total_distance_km: float = 0
+    farthest: HomeDistanceLocationResponse | None = None
+    visited_count: int = 0
+    counted_count: int = 0
+    unknown_count: int = 0
+
+
+class HomeDistanceDetailResponse(HomeDistanceResponse):
+    visited: list[HomeDistanceLocationResponse] = Field(default_factory=list)
+    unvisited: list[HomeDistanceLocationResponse] = Field(default_factory=list)
+
+
 class TopVolunteerRoleResponse(BaseModel):
     role: str
     count: int
@@ -22,6 +67,7 @@ class TopVolunteerRoleResponse(BaseModel):
 
 class PlatformRunMetricsResponse(BaseModel):
     platform_code: str
+    runs_count: int = 0
     avg_finish_time_sec: int | None = None
     avg_pace_sec_per_km: int | None = None
 
@@ -146,6 +192,7 @@ class DashboardAnalyticsResponse(BaseModel):
     pace_trend_yearly: list[YearlyPaceResponse] = Field(default_factory=list)
     location_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
     age_group_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
+    home_distance: HomeDistanceResponse | None = None
 
 
 class OnThisDayRunResponse(BaseModel):

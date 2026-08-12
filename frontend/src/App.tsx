@@ -17,7 +17,9 @@ import { PortalBlogPage } from "./features/portal/PortalBlogPage";
 import { PortalHomePage } from "./features/portal/PortalHomePage";
 import { PortalLoginPage } from "./features/portal/PortalLoginPage";
 import { PortalMapLab } from "./features/portal/PortalMapLab";
+import { PortalUpdatesPage } from "./features/portal/PortalUpdatesPage";
 import { AdminBlogPage } from "./features/admin/AdminBlogPage";
+import { AdminReleasesPage } from "./features/admin/AdminReleasesPage";
 import { AdminBacklogPage } from "./features/admin/AdminBacklogPage";
 import { BacklogPage } from "./features/backlog/BacklogPage";
 import {
@@ -37,6 +39,7 @@ import {
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
+  PORTAL_UPDATES_HREF,
 } from "./lib/portalRoutes";
 import { PortalCabinetPreviewPage } from "./features/portal/cabinet/PortalCabinetPreviewPage";
 import {
@@ -45,6 +48,7 @@ import {
 } from "./features/portal/cabinet/PortalCabinetPages";
 import { LocationEventsPage } from "./features/locations/LocationEventsPage";
 import { LocationPage } from "./features/locations/LocationPage";
+import { LastResultsPage } from "./features/locations/LastResultsPage";
 import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
 import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
 import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
@@ -57,6 +61,8 @@ import { reportAbLoginOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
 import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
+import { applyPageMeta, isLocationEntityPath, resolvePageMeta } from "./lib/pageMeta";
+import { deferMetrikaHit, reportMetrikaHit } from "./lib/metrika";
 import { isLegacyGrafanaPath, legacyGrafanaHref } from "./lib/siteBrand";
 import { buildVisitorKey } from "./lib/siteVisitor";
 
@@ -81,6 +87,25 @@ function useSitePageviewTracking(path: string) {
       cancelled = true;
       cleanup?.();
     };
+  }, [path]);
+}
+
+/**
+ * Заголовок вкладки и мета-теги по адресу. Страницы с сущностью (локация)
+ * уточняют их у себя, когда данные загрузятся, — здесь ставится родовой
+ * вариант, чтобы вкладка не оставалась с заголовком предыдущей страницы.
+ */
+function usePageMeta(path: string) {
+  useEffect(() => {
+    applyPageMeta(resolvePageMeta(path));
+    // Метрика в SPA сама переходы не видит — репортим здесь же, где меняется
+    // заголовок вкладки. Страницы-сущности досылают хит сами после данных,
+    // чтобы в отчёт ушло «5 вёрст Бутово…», а не родовое «Локация».
+    if (isLocationEntityPath(path)) {
+      deferMetrikaHit(path);
+    } else {
+      reportMetrikaHit(path);
+    }
   }, [path]);
 }
 
@@ -115,7 +140,9 @@ function CabinetLegacyRedirect({ tab }: { tab: CabinetTabSegmentKey }) {
     const target = profileBaseHref(user) ? cabinetTabHref(user, tab) : null;
     // Без хендла (профиль ещё не получил номер) оставляем старый экран.
     if (target) {
-      window.location.replace(target);
+      // Якорь переезжает вместе с адресом: ссылки вида /dashboard#profiles
+      // должны докручивать до секции и после редиректа.
+      window.location.replace(target + window.location.hash);
     }
   }, [user, tab]);
   return (
@@ -148,6 +175,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   [PORTAL_ABOUT_HREF]: () => <PortalAboutPage />,
   [PORTAL_LOGIN_HREF]: () => <PortalLoginPage />,
   [PORTAL_BLOG_HREF]: () => <PortalBlogPage />,
+  // История релизов сайта — публичная, ссылки в футере (раздел + номер версии).
+  [PORTAL_UPDATES_HREF]: () => <PortalUpdatesPage />,
   "/new/map-lab": () => <PortalMapLab />,
   // Личный кабинет в портальном дизайне — тёмный запуск под /new/*, рядом со
   // старым кабинетом на канонических адресах. Превью на демо-данных (без
@@ -178,6 +207,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/maps": () => <CabinetLegacyRedirect tab="map" />,
   // Локации открыты без логина (25.07.2026) — публичная витрина.
   "/locations": () => <LocationsIndexPage />,
+  // Посадочная под «5 вёрст результаты»: последний старт каждой площадки.
+  "/results": () => <LastResultsPage />,
   "/history": () => <CabinetLegacyRedirect tab="history" />,
   // Рейтинги открыты без логина (решение 25.07.2026): аноним видит таблицы,
   // а свою строку и позицию — только залогиненный (баннер-призыв на страницах).
@@ -189,6 +220,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/volunteer-locations": () => <LeaderboardPage metric="volunteer_locations" />,
   "/ratings/wins": () => <LeaderboardPage metric="wins" />,
   "/ratings/win-locations": () => <LeaderboardPage metric="win_locations" />,
+  "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,
@@ -208,6 +240,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/records-digest": () => <AdminRecordsDigestPage />,
   "/admin/location-contacts": () => <AdminLocationContactsPage />,
   "/admin/blog": () => <AdminBlogPage />,
+  "/admin/releases": () => <AdminReleasesPage />,
   "/admin/backlog": () => <AdminBacklogPage />,
 
 };
@@ -283,5 +316,6 @@ function renderRoute(path: string): ReactElement {
 export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
+  usePageMeta(path);
   return renderRoute(path);
 }

@@ -4,6 +4,7 @@ import hashlib
 from functools import lru_cache
 
 import cloudscraper
+import requests
 
 from app.core.request_cancel import check_cancelled, interruptible_sleep
 
@@ -38,7 +39,14 @@ def _fetch_html_raw(url: str, *, retries: int = 5, retry_delay_sec: float = 3.0)
         if attempt > 0:
             interruptible_sleep(retry_delay_sec * attempt)
         check_cancelled()
-        response = scraper.get(url, timeout=30)
+        try:
+            response = scraper.get(url, timeout=30)
+        except requests.RequestException as exc:
+            # Read timeout / обрыв соединения — самая частая ошибка планировщика
+            # (5verst.ru регулярно думает дольше 30 секунд). Раньше исключение
+            # вылетало мимо цикла, и retries=5 на таймауты не распространялся.
+            last_error = exc
+            continue
         if response.status_code == 404:
             raise NotFoundError(f"Страница не найдена: {url}")
         if response.status_code == 429:

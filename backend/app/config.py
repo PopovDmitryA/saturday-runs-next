@@ -90,6 +90,15 @@ class Settings(BaseSettings):
     sync_refresh_rate_limit_per_user: int = 1
     sync_refresh_rate_limit_window_seconds: int = 1800
 
+    # Прогрев дашбордов идёт от водяного знака «докуда уже разобрано». Если знак
+    # потерян (Redis перезапустили) — не сканируем всю историю, а откатываемся на
+    # это окно: дальше в прошлое кэш всё равно чинит dashboard_cache_max_age_hours.
+    dashboard_warm_max_lookback_hours: int = 168
+    # Страховка на чтении: кэш старше этого срока пересчитывается при заходе,
+    # даже если прогрев его почему-то не тронул. Без неё промах прогрева жил вечно
+    # (08.08.2026: у 27 человек на «Обзоре» не хватало забегов S95).
+    dashboard_cache_max_age_hours: int = 24
+
     # Сырые события page_view_events живут столько дней; вечная история — в page_stats_daily.
     page_events_retention_days: int = 90
     # Журнал входов держим дольше сырых просмотров: его ценность как раз в
@@ -135,11 +144,22 @@ class Settings(BaseSettings):
     five_verst_protocol_max_interval_seconds: float = 40.0
     five_verst_fetch_lock_timeout_seconds: int = 120
     five_verst_fetch_lock_blocking_seconds: int = 600
+    # Приоритет пользовательских синков: батч замирает между фетчами, пока
+    # пользователь качается (см. app/five_verst/fetch/priority.py).
+    # TTL отметки — страховка от умершего воркера: батч разморозится сам.
+    five_verst_user_sync_active_ttl_seconds: int = 180
+    # Потолок паузы батча. Если воркер пользовательской очереди не поднят,
+    # очередь копится и разбирать её некому — батч не должен вставать навсегда.
+    five_verst_user_sync_pause_max_seconds: int = 300
     five_verst_ban_cooldown_seconds: int = 600
     five_verst_sync_protocol_limit: int | None = None
     five_verst_sync_latest_update_limit: int | None = None
     five_verst_fetch_all_protocols_on_change: bool = True
     five_verst_location_batch_summaries_limit: int = 20
+    # Как часто ротация всё же перечитывает саму страницу локации и /course/
+    # (имя, координаты), а не только таблицу результатов. Между этими проходами
+    # хватает ежедневного реестра /events/, который следит за именем и статусом.
+    five_verst_location_refresh_interval_days: int = 7
     s95_sync_protocol_limit: int = 3
     s95_sync_latest_update_limit: int = 20
     s95_fetch_all_protocols_on_change: bool = True
@@ -147,8 +167,18 @@ class Settings(BaseSettings):
     s95_reconcile_min_check_interval_days: int = 7
     s95_location_batch_summaries_limit: int = 20
     s95_athlete_mismatch_check_runs: int = 10
+    # Протоколов за один заход воркера. Общая норма прогона — 200 (см.
+    # five_verst_reconcile_chunks_per_run): пачка режется пополам, чтобы
+    # пользовательский синк не ждал два часа за спиной батча.
     five_verst_reconcile_batch_limit: int = 100
-    five_verst_reconcile_min_check_interval_days: int = 0
+    # Сколько заходов подряд делает один запуск по расписанию. Каждый заход —
+    # отдельная celery-задача, и между ними воркер успевает взять задачу из
+    # приоритетной очереди five_verst_user.
+    five_verst_reconcile_chunks_per_run: int = 2
+    # 0 = перечитывать по кругу без пауз (как было до 08.2026). При пуле в 31 тыс.
+    # протоколов полный круг и так занимает недели — это страховка от повторных
+    # проверок, если поднять лимит пачки или частоту.
+    five_verst_reconcile_min_check_interval_days: int = 7
     five_verst_clubs_batch_limit: int = 20
 
     # Fallback-канал для admin-уведомлений (см. app/services/admin_telegram_notify.py) —

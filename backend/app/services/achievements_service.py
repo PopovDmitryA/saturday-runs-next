@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -44,8 +44,8 @@ from app.models import (
     UserGoal,
     VolunteerResult,
 )
-from app.services.location_catalog_service import LocationCatalogIndex
-from app.services.location_map_service import RU_COUNTRY_NAMES
+from app.services.location_catalog_service import LocationCatalogIndex, russian_parkrun_location_ids
+from app.services.location_map_service import MAP_HISTORIC_PLATFORM
 from app.services.user_location_stats import _canonical_region, _normalize_geo_value
 from app.time_format import normalize_finish_time_display
 from app.volunteering_occasions import count_volunteering_for_platform, is_inventory_day, volunteer_occasion_dates
@@ -572,10 +572,15 @@ def _predict_upcoming_starts(
     системы (five_verst/s95/parkrun/runpark) — каждая платформа нумерует события
     независимо.
 
-    Только Россия: из 2859 активных локаций 2437 — зарубежные (почти все
-    parkrun из мирового каталога), и подсказка «Скоро: Westpark ≈ 01.08»
-    предлагала номер, который человек закрыть не может. Пустая страна означает
-    «не заполнили», и такие строки у нас российские — их оставляем.
+    Отсекаем только зарубежный parkrun: из 2859 активных локаций 2437 — его
+    мировой каталог, и подсказка «Скоро: Westpark ≈ 01.08» предлагала номер,
+    который человек закрыть не может (у нас от такой площадки лежат лишь строки
+    наших же участников из их профилей — см. russian_parkrun_location_ids).
+
+    Действующие системы берём целиком, независимо от страны: у 5 вёрст, s95 и
+    RunPark есть площадки в Беларуси, Сербии, Грузии и далее, и для тамошних
+    участников это домашние старты. Раньше фильтр шёл по стране, и вместе с
+    мировым parkrun выкидывал Гомель с Нови-Садом.
 
     Окно недели считаем от сегодня (`week_index`), а не по счётчику цикла: у
     локаций разные даты последнего старта, и «+1 неделя» для отставшей локации
@@ -607,12 +612,14 @@ def _predict_upcoming_starts(
             Event.event_number.isnot(None),
             Location.is_cancelled.is_(False),
             Location.is_paused.is_(False),
-            or_(Location.country.is_(None), Location.country.in_(RU_COUNTRY_NAMES)),
         )
     )
     catalog_index = LocationCatalogIndex(db)
+    russian_parkrun = russian_parkrun_location_ids(db, catalog_index)
     predictions: list[PredictedStart] = []
     for event_number, event_date, location, platform_code in query.all():
+        if platform_code == MAP_HISTORIC_PLATFORM and location.id not in russian_parkrun:
+            continue
         display_name = catalog_index.display_name(location, platform_code)
         for week in range(1, weeks + 1):
             predicted_number = event_number + week

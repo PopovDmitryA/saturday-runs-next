@@ -4,12 +4,14 @@ import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
   getLeaderboard,
   getMyLeaderboardRow,
+  METRIC_VALUE_UNIT,
   PLATFORM_LABELS,
   type LeaderboardMetric,
   type LeaderboardResponse,
   type MyLeaderboardRow,
   type PlatformFilter,
 } from "./leaderboardsApi";
+import { formatInt } from "../../lib/format";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import "./leaderboards.css";
@@ -45,18 +47,18 @@ type LiveCard = {
   title: string;
 };
 
-type SoonCard = {
-  title: string;
-  description: string;
-};
-
 type HubSection = {
   emoji: string;
   title: string;
   live: LiveCard[];
-  soon: SoonCard[];
 };
 
+// Только готовые рейтинги. Карточек-анонсов «скоро» здесь нет намеренно
+// (решение Дмитрия 09.08.2026): раздел показывает то, что уже работает, а
+// планы живут в бэклоге «Рейтинги» — новый рейтинг появляется на хабе в тот
+// же момент, когда становится доступен всем. Секция «Локации» (Р18/Р19) по
+// этой же причине пока отсутствует целиком — в ней нет ни одного живого
+// рейтинга.
 const SECTIONS: HubSection[] = [
   {
     emoji: "🏃",
@@ -64,10 +66,6 @@ const SECTIONS: HubSection[] = [
     live: [
       { metric: "runs", href: "/ratings/runs", title: "Количество пробежек" },
       { metric: "wins", href: "/ratings/wins", title: "Количество первых мест" },
-    ],
-    soon: [
-      { title: "Самые быстрые", description: "Лучшие результаты и бегуны М/Ж за всю историю." },
-      { title: "Серии суббот", description: "Самые длинные серии подряд — текущие и исторические." },
     ],
   },
   {
@@ -86,12 +84,6 @@ const SECTIONS: HubSection[] = [
         title: "Мультиволонтёр — разнообразие ролей",
       },
     ],
-    soon: [
-      {
-        title: "Дуализм",
-        description: "Кто одинаково силён и как бегун, и как волонтёр.",
-      },
-    ],
   },
   {
     emoji: "🧭",
@@ -99,19 +91,7 @@ const SECTIONS: HubSection[] = [
     live: [
       { metric: "locations", href: "/ratings/locations", title: "Уникальные локации" },
       { metric: "win_locations", href: "/ratings/win-locations", title: "Локации с первым местом" },
-    ],
-    soon: [
-      { title: "Дальность от дома", description: "Кто уезжает бегать дальше всех от домашней локации." },
-      { title: "Гео-коллекционер", description: "Уникальные регионы и города." },
-    ],
-  },
-  {
-    emoji: "📍",
-    title: "Локации",
-    live: [],
-    soon: [
-      { title: "Посещаемость локаций", description: "Самые массовые и быстрорастущие площадки." },
-      { title: "Быстрые трассы", description: "Где бегут быстрее всего." },
+      { metric: "home_distance", href: "/ratings/home-distance", title: "Дальность от дома" },
     ],
   },
 ];
@@ -155,6 +135,7 @@ function LiveRatingCard({ card, platform }: { card: LiveCard; platform: Platform
   }, [card.metric, platform]);
 
   const { board, me, loading, error } = state;
+  const valueUnit = METRIC_VALUE_UNIT[card.metric];
   // Бэкенд молча откатывает фильтр на общий зачёт, если система не участвует
   // в этом рейтинге (напр. parkrun у волонтёрского туризма) — сверяем с тем,
   // что реально пришло, а не с тем, что выбрано глобально на хабе.
@@ -184,7 +165,8 @@ function LiveRatingCard({ card, platform }: { card: LiveCard; platform: Platform
               </span>
               <span className="lb-hub-rank-name">{row.display_name?.trim() || "Участник"}</span>
               <span className="lb-hub-rank-value">
-                {row.total}
+                {formatInt(row.total)}
+                {valueUnit && <span className="lb-unit">{valueUnit}</span>}
                 <DeltaSlot delta={row.total_delta} />
               </span>
             </div>
@@ -199,14 +181,15 @@ function LiveRatingCard({ card, platform }: { card: LiveCard; platform: Platform
               <span className="lb-hub-rank-chip lb-hub-rank-me">{me.rank}</span>
               <span className="lb-hub-rank-name">Вы</span>
               <span className="lb-hub-rank-value">
-                {me.total}
+                {formatInt(me.total)}
+                {valueUnit && <span className="lb-unit">{valueUnit}</span>}
                 <DeltaSlot delta={me.total_delta} />
               </span>
             </div>
           ) : (
             <p className="lb-hub-me-threshold">
               Вы появитесь после {me.threshold} {unitLabel(card.metric, me.threshold)} — сейчас у вас{" "}
-              {me.total}.
+              {formatInt(me.total)}{valueUnit ? ` ${valueUnit}` : ""}.
             </p>
           )}
         </div>
@@ -214,17 +197,6 @@ function LiveRatingCard({ card, platform }: { card: LiveCard; platform: Platform
 
       <span className="lb-hub-see-all">Смотреть топ →</span>
     </a>
-  );
-}
-
-function SoonRatingCard({ card }: { card: SoonCard }) {
-  return (
-    <div className="lb-hub-card lb-hub-card-soon">
-      <span className="lb-hub-card-title">
-        {card.title} <span className="lb-soon">скоро</span>
-      </span>
-      <span className="lb-hub-card-text">{card.description}</span>
-    </div>
   );
 }
 
@@ -273,9 +245,6 @@ export function LeaderboardsHubPage() {
             <div className="lb-hub-cards">
               {section.live.map((card) => (
                 <LiveRatingCard key={card.metric} card={card} platform={platform} />
-              ))}
-              {section.soon.map((card) => (
-                <SoonRatingCard key={card.title} card={card} />
               ))}
             </div>
           </section>

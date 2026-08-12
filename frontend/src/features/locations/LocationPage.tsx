@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState, type ReactNode } from "reac
 import { LocationStatusLabel } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
+import { TableWrap } from "../../components/tableUx/TableWrap";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 import {
   ApiError,
@@ -11,12 +12,17 @@ import {
   type LocationAgeGroupRecord,
   type LocationAgeGroupStanding,
   type LocationCourseRecord,
+  type LocationDescription,
+  type LocationHomeDistance,
   type LocationLastEvent,
   type LocationLeaders,
   type LocationPage as LocationPageData,
   type LocationPersonalStats,
 } from "../../lib/api";
-import { formatDate, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
+import { applyPageMeta, locationLeadSentences, locationPageMeta } from "../../lib/pageMeta";
+import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
+import { flushMetrikaHit } from "../../lib/metrika";
+import { formatDate, formatKm, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { cabinetTabHref } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
@@ -81,6 +87,41 @@ function StatTile({
           {link.label}
         </a>
       )}
+    </div>
+  );
+}
+
+/**
+ * Плитка «сколько отсюда до дома». Зелёная — здесь уже бегали, серая — ещё нет:
+ * по цвету видно, добавит эта площадка километров в зачёт или уже добавила.
+ */
+function HomeDistanceTile({ home }: { home: LocationHomeDistance }) {
+  if (home.is_home) {
+    return (
+      <div className="stat-card loc-stat-card loc-stat-home loc-stat-home-visited">
+        <span className="stat-value loc-stat-value">дом</span>
+        <span className="stat-label">ваша домашняя локация</span>
+        <span className="loc-stat-sub">от неё считается дальность ваших стартов</span>
+      </div>
+    );
+  }
+  const visitedClass = home.visited ? " loc-stat-home-visited" : " loc-stat-home-unvisited";
+  return (
+    <div className={`stat-card loc-stat-card loc-stat-home${visitedClass}`}>
+      <span className="stat-value loc-stat-value">
+        {home.distance_km == null ? "—" : formatKm(home.distance_km)}
+        <StatHintTooltip
+          text={`Расстояние по прямой от вашей домашней локации («${home.home_name}») до этой площадки. Домашняя локация меняется в настройках.`}
+        >
+          <span className="loc-stat-info" aria-label="Как считается">
+            i
+          </span>
+        </StatHintTooltip>
+      </span>
+      <span className="stat-label">от дома</span>
+      <span className="loc-stat-sub">
+        {home.visited ? "вы здесь уже бегали" : "вы здесь ещё не были"}
+      </span>
     </div>
   );
 }
@@ -244,102 +285,106 @@ function AgeGroupRecordsTable({
   onToggle: (key: string) => void;
 }) {
   return (
-    <table className="data-table loc-age-records-table">
-      <colgroup>
-        <col className="loc-age-records-col-group" />
-        <col className="loc-age-records-col-time" />
-        <col />
-        <col className="loc-age-records-col-date" />
-      </colgroup>
-      <thead>
-        <tr>
-          <th>Группа</th>
-          <th>Время</th>
-          <th>Рекордсмен</th>
-          <th>Дата</th>
-        </tr>
-      </thead>
-      <tbody>
-        {records.map((record) => {
-          const open = openKey === record.key;
-          return (
-            <Fragment key={record.key}>
-              {/* id на строке — якорь для плитки «место в группе» из блока «Вы на этой локации». */}
-              <tr id={record.key} className={open ? "loc-age-records-row-open" : undefined}>
-                <td>
-                  {record.top.length > 0 ? (
-                    <button
-                      type="button"
-                      className="loc-age-records-toggle"
-                      aria-expanded={open}
-                      onClick={() => onToggle(record.key)}
-                      title={open ? "Скрыть топ-5 группы" : "Показать топ-5 группы"}
-                    >
-                      <span className="loc-age-records-caret" aria-hidden="true">
-                        {open ? "▾" : "▸"}
-                      </span>
-                      {record.age_group}
-                    </button>
-                  ) : (
-                    record.age_group
-                  )}
-                </td>
-                <td className="loc-age-records-time">
-                  {stripLeadingHours(record.finish_time_display)}
-                </td>
-                <td>
-                  <RunnerName name={record.runner_name} handle={record.runner_handle} />
-                </td>
-                <td>{record.event_date ? formatDate(record.event_date) : "—"}</td>
-              </tr>
-              {open && (
-                <tr className="loc-age-records-top-row">
-                  <td colSpan={4}>
-                    <div className="loc-age-top">
-                      <div className="loc-age-top-head">
-                        Топ-{record.top.length} группы {record.age_group}
-                        <span className="loc-age-top-hint">
-                          лучшее время каждого участника
-                          {/* Размер группы: без него непонятно, топ-5 из скольких. */}
-                          {record.runners_total > 0 && (
-                            <>
-                              {" · всего "}
-                              {pluralizeRu(record.runners_total, ["участник", "участника", "участников"])}
-                              {record.finishes_total > 0 &&
-                                ` и ${pluralizeRu(record.finishes_total, ["финиш", "финиша", "финишей"])}`}
-                            </>
-                          )}
+    <TableWrap className="loc-age-records-wrap">
+      <table className="data-table loc-age-records-table">
+        <colgroup>
+          <col className="loc-age-records-col-group" />
+          <col className="loc-age-records-col-time" />
+          <col />
+          <col className="loc-age-records-col-date" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Группа</th>
+            <th>Время</th>
+            <th>Рекордсмен</th>
+            <th>Дата</th>
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((record) => {
+            const open = openKey === record.key;
+            return (
+              <Fragment key={record.key}>
+                {/* id на строке — якорь для плитки «место в группе» из блока «Вы на этой локации». */}
+                <tr id={record.key} className={open ? "loc-age-records-row-open" : undefined}>
+                  <td className="loc-age-records-group">
+                    {record.top.length > 0 ? (
+                      <button
+                        type="button"
+                        className="loc-age-records-toggle"
+                        aria-expanded={open}
+                        onClick={() => onToggle(record.key)}
+                        title={open ? "Скрыть топ-5 группы" : "Показать топ-5 группы"}
+                      >
+                        <span className="loc-age-records-caret" aria-hidden="true">
+                          {open ? "▾" : "▸"}
                         </span>
-                      </div>
-                      <ol className="loc-age-top-list">
-                        {record.top.map((row) => (
-                          <li key={`${record.key}-${row.place}-${row.name}`} className="loc-age-top-item">
-                            <span className="loc-age-top-place">{row.place}</span>
-                            <span className="loc-age-top-name">
-                              <RunnerName name={row.name} handle={row.handle} />
-                            </span>
-                            {/* Полоса длиной от лучшего времени в группе: видно отрыв. */}
-                            <span className="loc-age-top-bar" aria-hidden="true">
-                              <span
-                                className="loc-age-top-bar-fill"
-                                style={{ width: `${topBarWidth(row.best_time_sec, record.top)}%` }}
-                              />
-                            </span>
-                            <span className="loc-age-top-time">
-                              {stripLeadingHours(row.best_time_display)}
-                            </span>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
+                        {record.age_group}
+                      </button>
+                    ) : (
+                      record.age_group
+                    )}
+                  </td>
+                  <td className="loc-age-records-time">
+                    {stripLeadingHours(record.finish_time_display)}
+                  </td>
+                  <td>
+                    <RunnerName name={record.runner_name} handle={record.runner_handle} />
+                  </td>
+                  <td className="loc-age-records-date">
+                    {record.event_date ? formatDate(record.event_date) : "—"}
                   </td>
                 </tr>
-              )}
-            </Fragment>
-          );
-        })}
-      </tbody>
-    </table>
+                {open && (
+                  <tr className="loc-age-records-top-row">
+                    <td colSpan={4}>
+                      <div className="loc-age-top">
+                        <div className="loc-age-top-head">
+                          Топ-{record.top.length} группы {record.age_group}
+                          <span className="loc-age-top-hint">
+                            лучшее время каждого участника
+                            {/* Размер группы: без него непонятно, топ-5 из скольких. */}
+                            {record.runners_total > 0 && (
+                              <>
+                                {" · всего "}
+                                {pluralizeRu(record.runners_total, ["участник", "участника", "участников"])}
+                                {record.finishes_total > 0 &&
+                                  ` и ${pluralizeRu(record.finishes_total, ["финиш", "финиша", "финишей"])}`}
+                              </>
+                            )}
+                          </span>
+                        </div>
+                        <ol className="loc-age-top-list">
+                          {record.top.map((row) => (
+                            <li key={`${record.key}-${row.place}-${row.name}`} className="loc-age-top-item">
+                              <span className="loc-age-top-place">{row.place}</span>
+                              <span className="loc-age-top-name">
+                                <RunnerName name={row.name} handle={row.handle} />
+                              </span>
+                              {/* Полоса длиной от лучшего времени в группе: видно отрыв. */}
+                              <span className="loc-age-top-bar" aria-hidden="true">
+                                <span
+                                  className="loc-age-top-bar-fill"
+                                  style={{ width: `${topBarWidth(row.best_time_sec, record.top)}%` }}
+                                />
+                              </span>
+                              <span className="loc-age-top-time">
+                                {stripLeadingHours(row.best_time_display)}
+                              </span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </TableWrap>
   );
 }
 
@@ -555,6 +600,137 @@ function stripLeadingHours(display: string | null): string {
   return display.replace(/^00:/, "");
 }
 
+function paragraphsOf(text: string): string[] {
+  return text
+    .split("\n\n")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function TextBlock({ text }: { text: string }) {
+  return (
+    <div className="loc-about-text">
+      {paragraphsOf(text).map((part, index) => (
+        <p key={index}>{part}</p>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Подблок с текстом, взятым со страницы системы.
+ *
+ * Вынесен в отдельную рамку с шапкой «Описание с сайта …» намеренно: это
+ * цитата с чужого сайта, а не наши данные, и читатель должен видеть границу.
+ * Раньше приписка про источник стояла в конце длинного текста — к тому моменту
+ * уже не было понятно, к чему она относится.
+ *
+ * Тот же текст серверный пререндер отдаёт роботу
+ * (seo_service._location_description_rows): расхождение человека и робота
+ * поисковик считает подменой.
+ */
+function LocationDescriptionQuote({ description }: { description: LocationDescription }) {
+  const schedule = (description.schedule_text ?? "").trim();
+  const course = (description.course_text ?? "").trim();
+  const travelText = (description.travel_text ?? "").trim();
+  const sections = (description.travel_sections ?? []).filter((section) => section.text.trim());
+  const links = (description.links ?? []).filter((link) => link.url);
+  if (!schedule && !course && !travelText && sections.length === 0) {
+    return null;
+  }
+
+  const platform = platformCodeLabel(description.platform_code);
+  return (
+    <div className="loc-about-quote">
+      <div className="loc-about-quote-head">
+        <h3 className="loc-about-subtitle">
+          Описание с официального сайта{" "}
+          {description.source_url ? (
+            <a href={description.source_url} target="_blank" rel="noreferrer nofollow">
+              {platform}
+            </a>
+          ) : (
+            platform
+          )}
+        </h3>
+        {description.updated_at && (
+          <span className="muted loc-about-source">обновлено {formatDate(description.updated_at)}</span>
+        )}
+      </div>
+
+      {schedule && (
+        <>
+          <h4 className="loc-about-quote-title">Где и когда</h4>
+          <TextBlock text={schedule} />
+        </>
+      )}
+
+      {course && (
+        <>
+          <h4 className="loc-about-quote-title">Трасса</h4>
+          <TextBlock text={course} />
+        </>
+      )}
+
+      {(travelText || sections.length > 0) && (
+        <>
+          <h4 className="loc-about-quote-title">Как добраться</h4>
+          {travelText && <TextBlock text={travelText} />}
+          {sections.length > 0 && (
+            <div className="loc-about-ways">
+              {sections.map((section, index) => (
+                <div className="loc-about-way" key={`${section.title ?? "way"}-${index}`}>
+                  {section.title && <h5>{section.title}</h5>}
+                  <TextBlock text={section.text} />
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {links.length > 0 && (
+        <ul className="loc-about-links">
+          {links.map((link) => (
+            <li key={link.url}>
+              <a href={link.url} target="_blank" rel="noreferrer nofollow">
+                {link.title || "Ссылка"}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Нижний блок страницы — всё про саму площадку.
+ *
+ * Порядок: сначала наше (карта, адрес, ссылки, история систем), потом отдельным
+ * подблоком описание с сайта системы. Своё и чужое не перемешано, поэтому видно,
+ * где кончаются наши данные и начинается цитата.
+ */
+function LocationAboutSection({ page }: { page: LocationPageData }) {
+  return (
+    <section className="card loc-section loc-about">
+      <h2 className="section-title">О площадке</h2>
+
+      <div className="loc-about-top">
+        <div className="loc-about-place">
+          <LocationInfoCard page={page} />
+        </div>
+        <div className="loc-about-history">
+          <h3 className="loc-about-subtitle">История систем</h3>
+          <PlatformTimeline page={page} />
+        </div>
+      </div>
+
+      {page.description && <LocationDescriptionQuote description={page.description} />}
+    </section>
+  );
+}
+
 function LocationInfoCard({ page }: { page: LocationPageData }) {
   const placeParts = [page.city, page.region, page.country].filter(
     (part, index, all) => part && all.indexOf(part) === index,
@@ -578,34 +754,7 @@ function LocationInfoCard({ page }: { page: LocationPageData }) {
             </a>
           </li>
         )}
-        {page.map_url && (
-          <li>
-            <span className="loc-info-label">Схема маршрута:</span>{" "}
-            <a href={page.map_url} target="_blank" rel="noreferrer">
-              посмотреть
-            </a>
-          </li>
-        )}
-        {(() => {
-          // Официальную страницу даём только в актуальной системе — старые
-          // (parkrun-эра и т.п.) часто мертвы или неинформативны.
-          const current = page.platforms.find((platform) => platform.is_active === true && platform.url);
-          if (!current) {
-            return null;
-          }
-          return (
-            <li>
-              <span className="loc-info-label">Официальная страница:</span>{" "}
-              <a href={current.url ?? "#"} target="_blank" rel="noreferrer">
-                {platformCodeLabel(current.platform_code)}
-              </a>
-            </li>
-          );
-        })()}
       </ul>
-      <p className="muted loc-info-note">
-        Старты проходят по субботам утром. Расписание и переносы уточняйте на официальной странице локации.
-      </p>
     </div>
   );
 }
@@ -719,6 +868,11 @@ function LocationPersonalSection({
             К настройкам
           </a>
         )}
+        {stats.home_distance && (
+          <div className="loc-stats-grid loc-stats-grid-single">
+            <HomeDistanceTile home={stats.home_distance} />
+          </div>
+        )}
       </section>
     );
   }
@@ -774,6 +928,7 @@ function LocationPersonalSection({
         {stats.last_run_date && stats.last_run_date !== stats.first_run_date && (
           <StatTile value={formatDate(stats.last_run_date)} label="последний старт" />
         )}
+        {stats.home_distance && <HomeDistanceTile home={stats.home_distance} />}
         {(stats.age_groups ?? []).map((group) => (
           <AgeGroupPlaceTile key={group.key} group={group} onOpen={onOpenAgeGroup} />
         ))}
@@ -785,6 +940,19 @@ function LocationPersonalSection({
               "волонтёрства",
               "волонтёрств",
             ])}
+            sub="здесь"
+          />
+        )}
+        {stats.top_volunteer_role && (
+          <StatTile
+            value={stats.top_volunteer_role.role}
+            label="любимая роль здесь"
+            sub={`${stats.top_volunteer_role.count} ${pluralFormRu(stats.top_volunteer_role.count, [
+              "раз",
+              "раза",
+              "раз",
+            ])}`}
+            hint="Роль, в которой вы выходили на этой локации чаще всего. Ярлыки разных систем считаются одной ролью."
           />
         )}
       </div>
@@ -832,6 +1000,11 @@ function LocationPageContent({ slug }: { slug: string }) {
           return;
         }
         setPage(data);
+        rememberLocationHint({ slug: data.slug, name: data.name });
+        // Родовой заголовок «Локация — run5k.run» из App.tsx уточняем именем
+        // и цифрами, как только данные приехали.
+        applyPageMeta(locationPageMeta(data));
+        flushMetrikaHit();
         // Канонический URL страницы — slug основной системы локации.
         if (data.slug && data.slug !== slug) {
           window.history.replaceState(null, "", `/locations/${data.slug}`);
@@ -846,15 +1019,21 @@ function LocationPageContent({ slug }: { slug: string }) {
         } else {
           setError(err instanceof Error ? err.message : "Не удалось загрузить локацию");
         }
+        // Просмотр был, пусть и неудачный — досылаем с родовым заголовком.
+        flushMetrikaHit();
       });
     return () => {
       cancelled = true;
     };
   }, [slug]);
 
+  // Имя из подсказки, пока грузятся данные: иначе подпункт сайдбара с
+  // названием площадки мигает при переходах внутри локации.
+  const sidebarLocation = page ? { slug: page.slug, name: page.name } : locationHintFor(slug);
+
   if (notFound) {
     return (
-      <PortalSectionShell sidebar={{ active: "locations" }}>
+      <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
         <div className="card">
           <p className="muted">Локация не найдена.</p>
           <p>
@@ -867,7 +1046,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   if (error) {
     return (
-      <PortalSectionShell sidebar={{ active: "locations" }}>
+      <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
         <div className="card error">
           <p>{error}</p>
         </div>
@@ -877,7 +1056,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   if (!page) {
     return (
-      <PortalSectionShell sidebar={{ active: "locations" }}>
+      <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
         <p className="muted">Загрузка…</p>
       </PortalSectionShell>
     );
@@ -887,7 +1066,7 @@ function LocationPageContent({ slug }: { slug: string }) {
   const records = stats.course_records;
 
   return (
-    <PortalSectionShell sidebar={{ active: "locations", location: { slug: page.slug, name: page.name } }}>
+    <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
       <header className="loc-header loc-wide-page">
         <p className="muted loc-header-breadcrumb">
           <a href="/locations">← Все локации</a> / {page.name}
@@ -906,6 +1085,11 @@ function LocationPageContent({ slug }: { slug: string }) {
             <PlatformBadge key={platform.platform_code} code={platform.platform_code} />
           ))}
         </div>
+        {/* Тот же текст, что серверный пререндер отдаёт роботу: если человек и
+            робот видят разные страницы, поисковик считает это подменой. Плюс
+            связная фраза полезнее плашек тому, кто попал сюда из поиска и
+            ещё не понял, что за место. */}
+        <p className="loc-header-lead">{locationLeadSentences(page).join(" ")}</p>
       </header>
 
       <LocationRatingPrompt identityKey={page.identity_key} />
@@ -998,17 +1182,33 @@ function LocationPageContent({ slug }: { slug: string }) {
 
       <LocationLeadersSection slug={page.slug} />
 
-      <div className="loc-columns">
-        <section className="card loc-section">
-          <h2 className="section-title">История систем</h2>
-          <PlatformTimeline page={page} />
-        </section>
+      {/* Карта, адрес, описание и история систем — одним блоком в самом низу:
+          это справка о месте, а не статистика, ради которой страницу открывают. */}
+      <LocationAboutSection page={page} />
 
+      {/* Кластер города: запрос «5 вёрст [город]» — не про одну площадку,
+          человеку (и поисковику) нужен весь город. Тот же список уходит
+          роботу в пререндере — контент обязан совпадать. */}
+      {page.city && (page.city_locations?.length ?? 0) > 0 && (
         <section className="card loc-section">
-          <h2 className="section-title">Как добраться</h2>
-          <LocationInfoCard page={page} />
+          <h2 className="section-title">{page.city}: другие площадки</h2>
+          {/* Чипы, а не колонки текста: ссылки в несколько колонок сливались
+              в сплошные строки (репорт Дмитрия 06.08.2026) — рамка вокруг
+              каждой площадки делает границы элементов видимыми. */}
+          <ul className="loc-city-neighbors">
+            {(page.city_locations ?? []).map((item) => (
+              <li key={item.slug}>
+                <a className="loc-city-neighbor" href={`/locations/${item.slug}`}>
+                  {item.name}
+                  <span className="loc-city-neighbor-count">
+                    {item.events_count} {pluralFormRu(item.events_count, ["старт", "старта", "стартов"])}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
         </section>
-      </div>
+      )}
 
       <LocationRecordsModal
         slug={page.slug}

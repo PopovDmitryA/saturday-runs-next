@@ -9,7 +9,7 @@ const REFRESH_MS = 120_000;
 
 type WorldData = {
   progress: {
-    done: number;
+    checked: number;
     total: number;
     remaining: number;
     pct: number;
@@ -19,8 +19,16 @@ type WorldData = {
   rate_1h: number;
   rate_24h: number;
   forecast: { days: number | null; date: string | null };
-  hours: { hour: string; collected: number }[];
 };
+
+type RateHour = { hour: string; collected: number };
+
+const PERIODS: { label: string; hours: number }[] = [
+  { label: "24 часа", hours: 24 },
+  { label: "48 часов", hours: 48 },
+  { label: "7 дней", hours: 24 * 7 },
+  { label: "весь период", hours: 0 },
+];
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
 
@@ -33,24 +41,23 @@ function fmtDate(iso: string | null): string {
   });
 }
 
-function fmtHour(iso: string): string {
+function fmtHour(iso: string, withDay: boolean): string {
   return new Date(iso).toLocaleString("ru-RU", {
     timeZone: "Europe/Moscow",
-    day: "2-digit",
-    month: "2-digit",
+    ...(withDay ? { day: "2-digit", month: "2-digit" } : {}),
     hour: "2-digit",
     minute: "2-digit",
   });
 }
 
-function RateChart({ points }: { points: WorldData["hours"] }) {
+function RateChart({ points, withDay }: { points: RateHour[]; withDay: boolean }) {
   const [hover, setHover] = useState<number | null>(null);
   const width = 760;
   const height = 200;
   const plot = { left: 48, right: 748, top: 14, bottom: 168 };
 
   if (points.length < 2) {
-    return <p className="world-muted">Данных для графика пока мало.</p>;
+    return <p className="world-muted world-chart__empty">Данных за этот период пока мало.</p>;
   }
 
   const max = Math.max(1, ...points.map((p) => p.collected));
@@ -80,7 +87,7 @@ function RateChart({ points }: { points: WorldData["hours"] }) {
       <div className="world-chart__tip">
         {hp ? (
           <>
-            {fmtHour(hp.hour)} — <b>{fmt(hp.collected)}</b> профилей
+            {fmtHour(hp.hour, withDay)} — <b>{fmt(hp.collected)}</b> ID
           </>
         ) : (
           "Наведите на график, чтобы увидеть конкретный час"
@@ -89,7 +96,7 @@ function RateChart({ points }: { points: WorldData["hours"] }) {
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label="Скорость сбора по часам за последние двое суток"
+        aria-label="Динамика темпа сбора данных"
         onMouseMove={move}
         onMouseLeave={() => setHover(null)}
       >
@@ -113,12 +120,61 @@ function RateChart({ points }: { points: WorldData["hours"] }) {
           (p, i) =>
             (i % labelEvery === 0 || i === last) && (
               <text key={p.hour} x={x(i)} y={height - 4} textAnchor="middle">
-                {fmtHour(p.hour)}
+                {fmtHour(p.hour, withDay)}
               </text>
             ),
         )}
       </svg>
     </div>
+  );
+}
+
+function RateSection() {
+  const [hours, setHours] = useState(48);
+  const [points, setPoints] = useState<RateHour[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setPoints(null);
+    setFailed(false);
+    fetch(`/api/sweep-hq/public/rate-history?hours=${hours}`, { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: { hours: RateHour[] }) => {
+        if (!alive) return;
+        // Текущий (незакрытый) час всегда занижен — на графике это выглядит как
+        // обвал темпа в начале каждого часа. Отбрасываем его.
+        const curHourStart = Math.floor(Date.now() / 3_600_000) * 3_600_000;
+        setPoints(d.hours.filter((p) => new Date(p.hour).getTime() < curHourStart));
+      })
+      .catch(() => {
+        if (alive) setFailed(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [hours]);
+
+  return (
+    <section className="world-block">
+      <div className="world-block__head">
+        <h2>Динамика темпа сбора данных</h2>
+        <div className="world-periods">
+          {PERIODS.map((p) => (
+            <button
+              key={p.hours}
+              className={hours === p.hours ? "world-period world-period--on" : "world-period"}
+              onClick={() => setHours(p.hours)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {failed && <p className="world-muted world-chart__empty">Не удалось загрузить график.</p>}
+      {!failed && !points && <p className="world-muted world-chart__empty">Загружаем…</p>}
+      {!failed && points && <RateChart points={points} withDay={hours === 0 || hours > 48} />}
+    </section>
   );
 }
 
@@ -171,11 +227,14 @@ export function SweepWorldPage() {
       <div className="world-inner">
         <header className="world-hero">
           <p className="world-eyebrow">Открытый проект · run5k.run</p>
-          <h1>Перепись parkrun-бегунов мира</h1>
+          <h1>Возвращаем историю parkrun в России</h1>
           <p className="world-lede">
-            Я собираю статистику по всем участникам parkrun на планете, чтобы построить
-            честную картину движения: сколько людей бегает, где и как это менялось
-            за двадцать лет. Это табло показывает, как идёт сбор — прямо сейчас.
+            parkrun в России закрылся в 2022 году, но результаты тысяч бегунов никуда
+            не делись — они лежат на страницах участников по всему миру. Наша цель —
+            восстановить все российские пробежки parkrun. Для этого мы берём диапазон
+            от самого первого до самого последнего участника российских стартов и
+            проходим по страницам всех бегунов внутри него. Это{" "}
+            <b>{fmt(p.total)}</b> страниц.
           </p>
 
           <div className="world-progress">
@@ -187,7 +246,7 @@ export function SweepWorldPage() {
             </div>
             <div className="world-progress__legend">
               <span>
-                <b>{fmt(p.done)}</b> из {fmt(p.total)} профилей
+                <b>{fmt(p.checked)}</b> из {fmt(p.total)} страниц проверено
               </span>
               <span className="world-progress__pct">{p.pct.toFixed(2)}%</span>
             </div>
@@ -197,19 +256,19 @@ export function SweepWorldPage() {
         <section className="world-stats">
           <div className="world-stat">
             <b>{fmt(p.profiles)}</b>
-            <span>бегунов найдено</span>
+            <span>живых профилей найдено</span>
           </div>
           <div className="world-stat">
             <b>{fmt(p.runs)}</b>
-            <span>их забегов в базе</span>
+            <span>их забегов собрано</span>
           </div>
           <div className="world-stat">
             <b>{fmt(data.rate_1h)}</b>
-            <span>профилей за час</span>
+            <span>страниц за час</span>
           </div>
           <div className="world-stat">
             <b>{fmt(data.rate_24h)}</b>
-            <span>профилей за сутки</span>
+            <span>страниц за сутки</span>
           </div>
           <div className="world-stat world-stat--soft">
             <b>
@@ -225,33 +284,7 @@ export function SweepWorldPage() {
           </div>
         </section>
 
-        <section className="world-block">
-          <h2>Как шёл сбор последние двое суток</h2>
-          <RateChart points={data.hours} />
-        </section>
-
-        <section className="world-block world-about">
-          <h2>Что здесь происходит</h2>
-          <p>
-            У parkrun больше двадцати лет истории и тысячи площадок в двадцати странах.
-            Общей открытой статистики по участникам не существует — есть только
-            отдельные страницы каждого бегуна.
-          </p>
-          <p>
-            Я обхожу их по порядку и собираю обезличенные цифры: сколько у человека
-            забегов, в каких странах он бегал, как часто волонтёрил. Имён и личных
-            данных на этом табло нет и не будет — здесь только общий прогресс.
-          </p>
-          <p>
-            Когда сбор закончится, из этого получатся открытые исследования о
-            движении: как оно росло, где держится крепче всего и что общего у людей,
-            которые бегают по субботам десятилетиями.
-          </p>
-          <p className="world-muted world-about__foot">
-            Табло обновляется каждые пару минут. Проект некоммерческий, его веду я
-            один — <a href="/">run5k.run</a>.
-          </p>
-        </section>
+        <RateSection />
       </div>
     </div>
   );

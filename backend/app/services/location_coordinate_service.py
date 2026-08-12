@@ -1,16 +1,23 @@
+"""Заявки на координаты новых локаций: диалог с админом Reply-сообщениями.
+
+Канал — Telegram (`admin_notify.notify_admin_dialog`). Пока admin-бот жил в ВК,
+запросы уходили туда; после перевода бота на Telegram ответы в ВК стало некому
+разбирать, и с 03.08.2026 диалог снова идёт там же, где бот.
+"""
+
 from __future__ import annotations
 
 import logging
 import re
 from datetime import datetime, timezone
 
-import httpx
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import get_settings
+from app.core.admin import is_admin_telegram_id
 from app.geo.reverse_geocode import lookup_region
 from app.models import Location, LocationCoordinateRequest, Platform
-from app.services.vk_admin_notify import send_vk_admin_message, vk_admin_configured
+from app.services.admin_notify import admin_dialog_chat_id, notify_admin_dialog
 
 logger = logging.getLogger(__name__)
 
@@ -41,74 +48,17 @@ def parse_coordinate_pair(text: str) -> tuple[float, float] | None:
     return first, second
 
 
-async def send_telegram_message(
-    chat_id: int,
-    text: str,
-    *,
-    reply_to_message_id: int | None = None,
-) -> int | None:
-    settings = get_settings()
-    if not settings.telegram_bot_token or not chat_id:
-        logger.warning("Telegram not configured, skip message: %s", text[:80])
-        return None
-    payload: dict[str, object] = {
-        "chat_id": chat_id,
-        "text": text,
-        "disable_web_page_preview": False,
-    }
-    if reply_to_message_id is not None:
-        payload["reply_to_message_id"] = reply_to_message_id
-
-    url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        return int(data["result"]["message_id"])
-
-
-def send_telegram_message_sync(
-    chat_id: int,
-    text: str,
-    *,
-    reply_to_message_id: int | None = None,
-) -> int | None:
-    import asyncio
-
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            future = asyncio.run_coroutine_threadsafe(
-                send_telegram_message(chat_id, text, reply_to_message_id=reply_to_message_id),
-                loop,
-            )
-            return future.result(timeout=20)
-    except RuntimeError:
-        pass
-    return asyncio.run(send_telegram_message(chat_id, text, reply_to_message_id=reply_to_message_id))
-
-
 def send_admin_message_sync(
     text: str,
     *,
     reply_to_message_id: int | None = None,
 ) -> tuple[int, int] | None:
-    """Send admin notification via VK."""
-    settings = get_settings()
-    if not vk_admin_configured():
-        logger.warning("VK admin notify not configured, skip message: %s", text[:80])
-        return None
-    message_id = send_vk_admin_message(text, reply_to=reply_to_message_id)
-    if message_id is not None:
-        return settings.vk_admin_user_id, message_id
-    return None
+    """Сообщение админу в Telegram; возвращает (chat_id, message_id) для Reply-связки."""
+    return notify_admin_dialog(text, reply_to_message_id=reply_to_message_id)
 
 
 def _admin_peer_id() -> int | None:
-    settings = get_settings()
-    if vk_admin_configured():
-        return settings.vk_admin_user_id
-    return None
+    return admin_dialog_chat_id()
 
 
 def find_request_by_reply_message(
@@ -265,9 +215,9 @@ def handle_admin_coordinate_message(
     messenger: str = "telegram",
 ) -> str | None:
     settings = get_settings()
-    if messenger != "vk":
+    if messenger != "telegram":
         return None
-    if settings.vk_admin_user_id and chat_id != settings.vk_admin_user_id:
+    if not is_admin_telegram_id(chat_id, settings):
         return None
 
     if reply_to_message_id is None:
@@ -277,10 +227,15 @@ def handle_admin_coordinate_message(
 
     request = find_request_by_reply_message(db, chat_id, reply_to_message_id)
     if request is None:
-        return (
-            "Не найдена заявка по этому сообщению.\n"
-            "Ответьте Reply именно на сообщение бота о локации или на проверку карты."
-        )
+        # В админском чате бот ведёт и другие диалоги, поэтому чужой Reply отдаём
+        # дальше по цепочке обработчиков и подсказываем, только если админ явно
+        # прислал координаты или «ок» — но не тому сообщению.
+        if parse_coordinate_pair(text) or OK_RE.match(text.strip()):
+            return (
+                "Не найдена заявка по этому сообщению.\n"
+                "Ответьте Reply именно на сообщение бота о локации или на проверку карты."
+            )
+        return None
 
     is_verify_reply = request.verify_telegram_message_id == reply_to_message_id
     is_request_reply = request.request_telegram_message_id == reply_to_message_id

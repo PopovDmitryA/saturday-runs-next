@@ -4,6 +4,7 @@ import { PROJECT_MISSION } from "../../lib/projectMission";
 import { cabinetTabHref, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { LEGACY_SITE_HREF, LEGACY_SITE_LABEL } from "../../lib/siteBrand";
+import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
 import "./portal.css";
 
@@ -381,6 +382,7 @@ export function PortalAboutPage() {
           </div>
         </section>
       </main>
+      <PortalFooter />
     </>
   );
 }

@@ -17,6 +17,16 @@ class VolunteerRoleDetailResponse(BaseModel):
     platforms: dict[str, int]
 
 
+class WeekLocationResponse(BaseModel):
+    """Последний старт участника за неделю: площадка и дата — тем же видом, что
+    «Последняя победа» в победных рейтингах. Всегда ровно одна площадка: если
+    стартов было несколько, берётся самый поздний."""
+
+    name: str
+    slug: str | None = None
+    date: str | None = None
+
+
 class LeaderboardRowResponse(BaseModel):
     rank: int
     rank_delta: int
@@ -26,8 +36,13 @@ class LeaderboardRowResponse(BaseModel):
     total: int
     total_delta: int
     # Только у метрики wins: «топ-локация побед» — локация с максимумом побед.
+    # У home_distance в этой же колонке домашняя локация, а вместо числа побед —
+    # пометка о том, что выбор дома под вопросом (см. home_location_note).
     home_location: str | None = None
+    home_location_slug: str | None = None
     home_location_wins: int | None = None
+    # "ambiguous" — автовыбор шаткий, "manual_off_top" — выбрано руками вне тройки.
+    home_location_note: str | None = None
     # Только у победных рейтингов: глобальный рекорд участника и последняя
     # победа (у win_locations — последняя НОВАЯ локация с победой).
     best_time_sec: int | None = None
@@ -40,6 +55,13 @@ class LeaderboardRowResponse(BaseModel):
     top_role: str | None = None
     top_role_count: int | None = None
     role_details: list[VolunteerRoleDetailResponse] = []
+    # Только у туристических рейтингов: площадки / города / регионы. Одно из
+    # трёх совпадает с total — какое, решает фильтр count_by.
+    locations_total: int | None = None
+    cities_total: int | None = None
+    regions_total: int | None = None
+    # Колонка «Последняя неделя» (см. WEEK_LOCATIONS_METRICS).
+    week_location: WeekLocationResponse | None = None
 
 
 class LeaderboardResponse(BaseModel):
@@ -49,6 +71,15 @@ class LeaderboardResponse(BaseModel):
     min_visits: int = 1
     # Фильтр «по одной системе»: "all" или код платформы.
     platform: str = "all"
+    # Единица зачёта туристических рейтингов: locations / cities / regions.
+    count_by: str = "locations"
+    # Кнопки фильтра «единица зачёта» (пусто — у рейтинга такого фильтра нет).
+    count_by_options: list[str] = []
+    # Есть ли у рейтинга колонка «Последняя неделя».
+    has_week_locations: bool = False
+    # Фильтр «только очевидный дом» (есть у дальности от дома) и его состояние.
+    has_home_filter: bool = False
+    hide_ambiguous_home: bool = False
     title: str
     description: str
     unit: str
@@ -62,12 +93,19 @@ class LeaderboardResponse(BaseModel):
     latest_event_date: str | None
     week_start: str | None
     built_at: str | None
+    # Через сколько часов после built_at таблица пересчитается (TTL снапшота).
+    refresh_hours: int = 6
 
 
 class MyLeaderboardRowResponse(BaseModel):
     metric: str
     min_visits: int = 1
     platform: str = "all"
+    count_by: str = "locations"
+    locations_total: int | None = None
+    cities_total: int | None = None
+    regions_total: int | None = None
+    week_location: WeekLocationResponse | None = None
     display_name: str | None
     site_serial_id: int
     platforms: dict[str, LeaderboardCellResponse]
@@ -81,7 +119,12 @@ class MyLeaderboardRowResponse(BaseModel):
     # определённо не совпадает с выбранным — «появитесь после N» не показываем.
     gender_mismatch: bool = False
     home_location: str | None = None
+    home_location_slug: str | None = None
     home_location_wins: int | None = None
+    home_location_note: str | None = None
+    # Только у home_distance: когда участник менял домашнюю локацию руками.
+    # Свежее built_at таблицы — значит в таблице ещё километры от прежнего дома.
+    home_location_changed_at: str | None = None
     best_time_sec: int | None = None
     best_time_display: str | None = None
     last_win_location: str | None = None

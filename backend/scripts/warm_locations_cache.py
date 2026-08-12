@@ -44,9 +44,10 @@ def main() -> int:
     db = get_session_factory()()
     try:
         started = time.monotonic()
-        # use_cache=False — считаем заново и перезаписываем, иначе прогрев
-        # просто прочитал бы ещё живой кэш и ничего не обновил.
-        index = build_locations_index(db, use_cache=False)
+        # refresh=True — считаем заново и перезаписываем, иначе прогрев просто
+        # прочитал бы ещё живой кэш и ничего не обновил (а use_cache=False,
+        # который стоял тут раньше, вообще ничего не клал в Redis).
+        index = build_locations_index(db, refresh=True)
         items = list(index.get("items") or [])
         print(f"index: {len(items)} локаций за {time.monotonic() - started:.1f}s", flush=True)
 
@@ -60,9 +61,9 @@ def main() -> int:
         failed = 0
         for number, slug in enumerate(slugs, start=1):
             try:
-                build_location_page(db, slug, use_cache=False)
-                build_location_events(db, slug, use_cache=False)
-                build_location_leaders(db, slug, use_cache=False)
+                build_location_page(db, slug, refresh=True)
+                build_location_events(db, slug, refresh=True)
+                build_location_leaders(db, slug, refresh=True)
             except Exception as exc:  # noqa: BLE001 — одна битая локация не должна ронять прогрев
                 failed += 1
                 print(f"  ! {slug}: {exc}", flush=True)

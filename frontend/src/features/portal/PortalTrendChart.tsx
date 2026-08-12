@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { formatInt } from "../../lib/format";
 
 export const PLATFORM_CHART_META: Record<string, { title: string; cssVar: string }> = {
   five_verst: { title: "5 вёрст", cssVar: "var(--accent-green-text)" },
@@ -18,10 +19,6 @@ type HoverState = {
   index: number;
   anchorX: number;
 };
-
-function formatInt(value: number): string {
-  return value.toLocaleString("ru-RU");
-}
 
 function formatPct(delta: number): string {
   const rounded = Math.round(delta);

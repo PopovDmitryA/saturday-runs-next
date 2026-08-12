@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DashboardAnalytics } from "../../../components/DashboardAnalytics";
 import { MyHistoryTeaser } from "../../../components/MyHistoryTeaser";
 import { OnThisDayCard } from "../../../components/OnThisDayCard";
+import { PlatformBadge } from "../../../components/PlatformBadge";
 import { ProfileLinkSection } from "../../../components/ProfileLinkSection";
 import { RecentRunsRating } from "../../../components/RecentRunsRating";
 import { RequireAuth } from "../../../components/RequireAuth";
@@ -28,6 +29,15 @@ import { PortalCabinetShell, userLabel } from "./PortalCabinetShell";
 // «00:23:12» → «23:12»: в герое часы почти всегда нулевые, укорачиваем.
 export function formatHeroFinishTime(totalSec: number): string {
   return formatDuration(totalSec).replace(/^00:/, "");
+}
+
+// Порядок бейджей систем в герое — тот же, что в секции «Профили беговых
+// систем» внизу страницы, чтобы клик по бейджу приводил к предсказуемой карточке.
+const PLATFORM_ORDER = ["five_verst", "s95", "parkrun", "runpark"] as const;
+
+/** Прокрутка к секции привязок внизу «Обзора» — цель бейджей систем в герое. */
+function scrollToProfiles(): void {
+  document.getElementById("profiles")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 const RUN_FORMS = ["пробежка", "пробежки", "пробежек"] as const;
@@ -107,6 +117,30 @@ function buildHeroStats(data: Pick<DashboardResponse, "stats">): HeroStat[] {
   ];
 }
 
+/**
+ * Бейджи привязанных систем — как на странице локации. Клик уводит к секции
+ * «Профили беговых систем» внизу страницы: там привязка, отвязка и кнопка
+ * обновления данных.
+ */
+function HeroPlatforms({ byPlatform }: { byPlatform: Record<string, unknown> }) {
+  const codes = PLATFORM_ORDER.filter((code) => code in byPlatform);
+  if (codes.length === 0) {
+    return null;
+  }
+  return (
+    <div className="portal-cab-hero-platforms">
+      {codes.map((code) => (
+        <PlatformBadge
+          key={code}
+          code={code}
+          onClick={scrollToProfiles}
+          title="Перейти к профилям беговых систем"
+        />
+      ))}
+    </div>
+  );
+}
+
 function HeroStatsGrid({ items }: { items: HeroStat[] }) {
   return (
     <div className="portal-cab-hero-stats">
@@ -165,6 +199,7 @@ export function DashboardHero({
             </p>
           </div>
         </div>
+        <HeroPlatforms byPlatform={data.stats.by_platform} />
         <HeroStatsGrid items={items} />
       </section>
     );
@@ -197,6 +232,7 @@ export function DashboardHero({
     <section className="portal-cab-hero">
       <h1 className="portal-cab-hero-title">{heroGreeting()}!</h1>
       <p className="portal-cab-hero-sub">{streakLine}</p>
+      <HeroPlatforms byPlatform={data.stats.by_platform} />
       <HeroStatsGrid items={items} />
     </section>
   );
@@ -256,9 +292,14 @@ function PortalDashboardContent({ user }: { user: User }) {
 
           <RecentRunsRating />
 
-          <MyHistoryTeaser load={getMyHistory} href={PORTAL_CABINET_HISTORY_HREF} />
+          <MyHistoryTeaser
+            load={getMyHistory}
+            href={PORTAL_CABINET_HISTORY_HREF}
+            shareBase={PORTAL_CABINET_SHARE_HREF}
+          />
 
           <DashboardAnalytics
+            showHomeLocationWarning
             analytics={stats?.analytics}
             totalRuns={stats?.total_runs ?? 0}
             totalVolunteering={stats?.total_volunteering ?? 0}

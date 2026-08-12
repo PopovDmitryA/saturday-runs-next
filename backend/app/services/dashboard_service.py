@@ -28,6 +28,7 @@ from app.models import (
     VolunteerResult,
 )
 from app.parkrun.volunteer_credits import count_parkrun_volunteering
+from app.services.home_distance_service import build_home_distance_overview
 from app.services.location_catalog_service import (
     PARKRUN_PLATFORM_CODE,
     LocationCatalogIndex,
@@ -66,7 +67,9 @@ class SyncRefreshRateLimitedError(Exception):
 # 33: зарубежный parkrun выброшен из побед (протокола нет — «первое место»
 # по одинокой строке из профиля не победа), заодно ушло фиктивное
 # gender_position=1 из среднего места по полу.
-ANALYTICS_VERSION = 33
+# 34: плитка «Дальность от дома» — сумма км до уникальных посещённых площадок,
+# самый дальний старт и признак неоднозначной домашней локации.
+ANALYTICS_VERSION = 34
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 
@@ -698,6 +701,7 @@ def _compute_dashboard_analytics(
     platform_metric_rows = (
         runs_query.with_entities(
             Platform.code,
+            func.count(RunResult.id),
             func.avg(RunResult.finish_time_sec),
             func.avg(RunResult.pace_sec_per_km),
         )
@@ -706,12 +710,13 @@ def _compute_dashboard_analytics(
         .all()
     )
     platform_metrics = []
-    for platform_code, platform_avg_finish, platform_avg_pace in platform_metric_rows:
+    for platform_code, platform_runs, platform_avg_finish, platform_avg_pace in platform_metric_rows:
         if platform_avg_finish is None and platform_avg_pace is None:
             continue
         platform_metrics.append(
             {
                 "platform_code": platform_code,
+                "runs_count": int(platform_runs or 0),
                 "avg_finish_time_sec": _to_int(platform_avg_finish),
                 "avg_pace_sec_per_km": _to_int(platform_avg_pace),
             }
@@ -857,6 +862,20 @@ def _compute_dashboard_analytics(
     # перезаписывает redis-кэш, которым дальше пользуется «Моя история».
     location_records = get_user_location_records(db, user_id, force_refresh=True)
 
+    # Дальность от дома: детализацию локаций строим один раз и переиспользуем
+    # уже построенный catalog_index — иначе связки каталога грузились бы дважды.
+    dashboard_user = db.get(User, user_id)
+    home_distance = (
+        build_home_distance_overview(
+            db,
+            dashboard_user,
+            include_test_events=include_test_events,
+            catalog_index=catalog_index,
+        ).as_dict()
+        if dashboard_user is not None
+        else None
+    )
+
     return {
         "analytics_version": ANALYTICS_VERSION,
         "unique_locations": all_unique_counts.unique_total,
@@ -916,6 +935,7 @@ def _compute_dashboard_analytics(
         "runs_with_field_avg_count": runs_with_field_avg_count,
         "location_records": location_records["course"],
         "age_group_records": location_records["age_group"],
+        "home_distance": home_distance,
     }
 
 
@@ -1712,9 +1732,31 @@ def get_sync_status_payload(db: Session, user_id: UUID) -> dict[str, object]:
     }
 
 
+def _dashboard_cache_is_stale(cache: DashboardCache) -> bool:
+    """Кэш просрочен по возрасту.
+
+    Страховка от промаха прогрева: до 08.08.2026 кэш жил вечно, пока не менялся
+    ANALYTICS_VERSION, и пропущенное окно прогрева означало «плитки Обзора не
+    обновятся никогда» — так у 27 человек неделями не хватало забегов S95.
+    """
+    from app.config import get_settings
+
+    max_age = timedelta(hours=get_settings().dashboard_cache_max_age_hours)
+    computed_at = cache.computed_at
+    if computed_at is None:
+        return True
+    if computed_at.tzinfo is None:
+        computed_at = computed_at.replace(tzinfo=timezone.utc)
+    return _utcnow() - computed_at > max_age
+
+
 def get_dashboard_payload(db: Session, user: User) -> dict[str, object]:
     cache = db.query(DashboardCache).filter(DashboardCache.user_id == user.id).one_or_none()
-    if cache is None or (cache.stats or {}).get("analytics", {}).get("analytics_version") != ANALYTICS_VERSION:
+    if (
+        cache is None
+        or (cache.stats or {}).get("analytics", {}).get("analytics_version") != ANALYTICS_VERSION
+        or _dashboard_cache_is_stale(cache)
+    ):
         cache = recompute_dashboard_cache(db, user.id)
         db.commit()
         db.refresh(cache)

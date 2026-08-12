@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -204,6 +204,39 @@ class LocationAgeGroupRecordResponse(BaseModel):
     finishes_total: int = 0
 
 
+class LocationCityNeighborResponse(BaseModel):
+    """Площадка того же города в блоке «Другие площадки в …»."""
+
+    slug: str
+    name: str
+    events_count: int = 0
+
+
+class LocationDescriptionSectionResponse(BaseModel):
+    """«Общественным транспортом», «Пешком», «На автомобиле» — по одной секции."""
+
+    title: str | None = None
+    text: str
+
+
+class LocationDescriptionLinkResponse(BaseModel):
+    title: str
+    url: str
+
+
+class LocationDescriptionResponse(BaseModel):
+    """Описание площадки с сайта системы. Текст чужой — source_url обязателен."""
+
+    platform_code: str
+    schedule_text: str | None = None
+    course_text: str | None = None
+    travel_text: str | None = None
+    travel_sections: list[LocationDescriptionSectionResponse] = Field(default_factory=list)
+    links: list[LocationDescriptionLinkResponse] = Field(default_factory=list)
+    source_url: str | None = None
+    updated_at: datetime | None = None
+
+
 class LocationPageResponse(BaseModel):
     slug: str
     identity_key: str
@@ -218,9 +251,11 @@ class LocationPageResponse(BaseModel):
     map_url: str | None = None
     start_point_url: str | None = None
     platforms: list[LocationPagePlatformResponse] = Field(default_factory=list)
+    description: LocationDescriptionResponse | None = None
     stats: LocationPageStatsResponse = Field(default_factory=LocationPageStatsResponse)
     histogram: LocationHistogramResponse = Field(default_factory=lambda: LocationHistogramResponse(bin_size_sec=10))
     age_group_records: list[LocationAgeGroupRecordResponse] = Field(default_factory=list)
+    city_locations: list[LocationCityNeighborResponse] = Field(default_factory=list)
 
 
 class LocationEventRowResponse(BaseModel):
@@ -308,6 +343,40 @@ class LocationsIndexResponse(BaseModel):
     total: int = 0
 
 
+class LastResultsItemResponse(BaseModel):
+    slug: str
+    identity_key: str
+    name: str
+    city: str | None = None
+    region: str | None = None
+    country: str | None = None
+    platform_codes: list[str] = Field(default_factory=list)
+    is_paused: bool = False
+    is_cancelled: bool = False
+    event_date: date
+    event_platform_codes: list[str] = Field(default_factory=list)
+    event_number: int | None = None
+    is_last_saturday: bool = False
+    finishers: int | None = None
+    volunteers: int | None = None
+    debutants: int | None = None
+    prs: int | None = None
+    best_male_time_sec: int | None = None
+    best_male_time_display: str | None = None
+    best_female_time_sec: int | None = None
+    best_female_time_display: str | None = None
+    avg_time_sec: int | None = None
+    avg_time_display: str | None = None
+    has_protocol: bool = False
+    protocol_url: str | None = None
+
+
+class LastResultsResponse(BaseModel):
+    saturday_date: date | None = None
+    items: list[LastResultsItemResponse] = Field(default_factory=list)
+    total: int = 0
+
+
 class CatalogLocationTableRowResponse(BaseModel):
     row_key: str
     catalog_identity_key: str
@@ -358,6 +427,25 @@ class LocationAgeGroupStandingResponse(BaseModel):
     total: int = 0
 
 
+class LocationTopRoleResponse(BaseModel):
+    role: str
+    count: int
+
+
+class LocationHomeDistanceResponse(BaseModel):
+    """Плитка «сколько отсюда до дома» на странице локации."""
+
+    # None — координат площадки или домашней локации нет; расстояние неизвестно.
+    distance_km: float | None = None
+    is_home: bool = False
+    # Зелёная маркировка плитки — «здесь уже бегал», серая — «ещё не был».
+    visited: bool = False
+    run_count: int = 0
+    home_name: str
+    home_slug: str | None = None
+    home_is_auto: bool = True
+
+
 class LocationPersonalStatsResponse(BaseModel):
     """Личная статистика пользователя на локации (блок «Вы на этой локации»)."""
 
@@ -374,6 +462,9 @@ class LocationPersonalStatsResponse(BaseModel):
     first_run_date: date | None = None
     last_run_date: date | None = None
     volunteering_count: int = 0
+    # Любимая роль на этой локации: чаще всего выходил (ярлыки систем схлопнуты
+    # в канон, см. volunteer_role_taxonomy).
+    top_volunteer_role: LocationTopRoleResponse | None = None
     # Место в топе локации по числу пробежек (та же группировка, что у лидеров).
     # Место в топе по пробежкам — внутри своего пола (пол материализован в
     # participants.gender). Общего места нет: см. build_location_personal_stats.
@@ -382,3 +473,6 @@ class LocationPersonalStatsResponse(BaseModel):
     runners_total_gender: int | None = None
     # Возрастные группы 5 вёрст, в которых пользователь здесь бегал.
     age_groups: list[LocationAgeGroupStandingResponse] = Field(default_factory=list)
+    # Расстояние от домашней локации. None — дом не определился (нет пробежек),
+    # плитку на странице тогда не показываем.
+    home_distance: LocationHomeDistanceResponse | None = None

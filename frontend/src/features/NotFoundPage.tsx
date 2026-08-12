@@ -1,4 +1,5 @@
 import { SiteHeader } from "../components/SiteHeader";
+import { PortalFooter } from "./portal/PortalFooter";
 import { isLegacyGrafanaPath, LEGACY_SITE_HREF, LEGACY_SITE_LABEL, legacyGrafanaHref, SITE_PUBLIC_HOME_HREF } from "../lib/siteBrand";
 import { PUBLIC_NAV_ITEMS } from "../lib/siteNav";
 
@@ -45,6 +46,7 @@ export function NotFoundPage() {
           )}
         </section>
       </main>
+      <PortalFooter />
     </>
   );
 }

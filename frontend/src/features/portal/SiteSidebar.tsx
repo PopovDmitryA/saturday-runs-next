@@ -5,8 +5,10 @@
  *
  * - группа «Личный кабинет» раскрывается по клику и автоматически при
  *   переходе в любой его раздел; анониму — задизейблена, не скрыта;
- * - «Локации» — один пункт; на странице конкретной локации под ним
- *   появляются подпункты (сама локация и её журнал протоколов);
+ * - «Локации» — один пункт с постоянными подпунктами «Последние пробежки» и
+ *   «Журнал протоколов» (второй активен только внутри локации, иначе
+ *   задизейблен с тултипом); на странице локации между ними появляется сама
+ *   площадка;
  * - «Рейтинги» — один пункт без перечня лидербордов (их будут десятки);
  * - служебный блок (Настройки/Бэклог/Админка/Выйти) виден на всех страницах;
  * - сворачивание в рельс-иконки работает везде (общий localStorage-ключ).
@@ -46,7 +48,7 @@ export type CabinetTabKey =
   | "settings";
 
 /** Что подсвечивать: вкладка ЛК, раздел сайта или ничего. */
-export type SiteSidebarActive = CabinetTabKey | "locations" | "ratings" | "backlog" | null;
+export type SiteSidebarActive = CabinetTabKey | "locations" | "last-results" | "ratings" | "backlog" | null;
 
 type CabinetNavItem = {
   key: CabinetTabKey;
@@ -161,6 +163,15 @@ const PROTOCOL_ICON = icon(
     <path d="M6 3.5h9L19 7.5V20a.5.5 0 0 1-.5.5h-12A.5.5 0 0 1 6 20V4a.5.5 0 0 1 .5-.5Z" />
     <path d="M14.5 3.5V8H19" />
     <path d="M9 12.5h6M9 16h4" />
+  </>,
+);
+
+// «Результаты последней субботы»: секундомер — свежие результаты стартов.
+const LAST_RESULTS_ICON = icon(
+  <>
+    <circle cx="12" cy="13" r="7" />
+    <path d="M12 9.5V13l2.5 2" />
+    <path d="M10 3h4M12 3v3" />
   </>,
 );
 
@@ -394,6 +405,12 @@ export function isCabinetTab(active: SiteSidebarActive): active is CabinetTabKey
 export type SidebarExtraGroup = {
   /** Заголовок группы (например, имя участника на публичном профиле). */
   title: string;
+  /**
+   * Клик по заголовку. Задан — заголовок становится кнопкой: на публичном
+   * профиле имя участника ведёт на его главную, как ожидается от «шапки»
+   * раздела (репорт Дмитрия 04.08.2026 — раньше клик не делал ничего).
+   */
+  onTitleClick?: () => void;
   items: { key: string; label: string; active: boolean; onClick: () => void }[];
 };
 
@@ -578,30 +595,51 @@ export function SiteSidebar({
           <span className="portal-cab-nav-icon">{LOCATIONS_ICON}</span>
           <span className="portal-cab-nav-label">Локации</span>
         </a>
+        {/* Постоянный подпункт раздела: последние результаты всех площадок. */}
+        <a
+          href="/results"
+          className={`portal-cab-nav-item portal-cab-nav-subitem${
+            active === "last-results" ? " active" : ""
+          }`}
+          aria-current={active === "last-results" ? "page" : undefined}
+          title={collapsed ? "Последние пробежки" : undefined}
+        >
+          <span className="portal-cab-nav-icon">{LAST_RESULTS_ICON}</span>
+          <span className="portal-cab-nav-label">Последние пробежки</span>
+        </a>
         {location && (
-          <>
-            <a
-              href={`/locations/${location.slug}`}
-              className={`portal-cab-nav-item portal-cab-nav-subitem${
-                pathname === `/locations/${location.slug}` ? " active" : ""
-              }`}
-              title={collapsed ? location.name : undefined}
-            >
-              <span className="portal-cab-nav-icon">{LOCATION_PIN_ICON}</span>
-              <span className="portal-cab-nav-label">{location.name}</span>
-            </a>
-            <a
-              href={`/locations/${location.slug}/events`}
-              className={`portal-cab-nav-item portal-cab-nav-subitem${
-                pathname.endsWith("/events") ? " active" : ""
-              }`}
-              title={collapsed ? "Журнал протоколов" : undefined}
-            >
-              <span className="portal-cab-nav-icon">{PROTOCOL_ICON}</span>
-              <span className="portal-cab-nav-label">Журнал протоколов</span>
-            </a>
-          </>
+          <a
+            href={`/locations/${location.slug}`}
+            className={`portal-cab-nav-item portal-cab-nav-subitem${
+              pathname === `/locations/${location.slug}` ? " active" : ""
+            }`}
+            title={collapsed ? location.name : undefined}
+          >
+            <span className="portal-cab-nav-icon">{LOCATION_PIN_ICON}</span>
+            <span className="portal-cab-nav-label">{location.name}</span>
+          </a>
         )}
+        {/* Журнал протоколов виден всегда (просьба Дмитрия 11.08.2026): вне
+            локации он задизейблен и объясняет тултипом, что сначала нужно
+            открыть площадку — раньше пункт просто исчезал, и было непонятно,
+            где вообще искать протоколы. */}
+        <a
+          href={location ? `/locations/${location.slug}/events` : undefined}
+          className={`portal-cab-nav-item portal-cab-nav-subitem${
+            location && pathname.endsWith("/events") ? " active" : ""
+          }${location ? "" : " portal-cab-nav-item-disabled"}`}
+          aria-disabled={location ? undefined : true}
+          title={
+            location
+              ? collapsed
+                ? "Журнал протоколов"
+                : undefined
+              : "Сначала откройте локацию — журнал протоколов у каждой площадки свой"
+          }
+        >
+          <span className="portal-cab-nav-icon">{PROTOCOL_ICON}</span>
+          <span className="portal-cab-nav-label">Журнал протоколов</span>
+        </a>
 
         <a
           href="/ratings"
@@ -620,13 +658,25 @@ export function SiteSidebar({
             {/* Линия-разделитель: пункты чужого профиля временные, их надо
                 визуально отделить от постоянной навигации сайта. */}
             <div className="portal-cab-nav-sep" aria-hidden="true" />
-            <div
-              className="portal-cab-nav-item portal-cab-group-head portal-cab-group-head-static"
-              title={collapsed ? extraGroup.title : undefined}
-            >
-              <span className="portal-cab-nav-icon">{PROFILE_ICON}</span>
-              <span className="portal-cab-nav-label">{extraGroup.title}</span>
-            </div>
+            {extraGroup.onTitleClick ? (
+              <button
+                type="button"
+                onClick={extraGroup.onTitleClick}
+                className="portal-cab-nav-item portal-cab-group-head portal-cab-nav-textitem"
+                title={collapsed ? extraGroup.title : undefined}
+              >
+                <span className="portal-cab-nav-icon">{PROFILE_ICON}</span>
+                <span className="portal-cab-nav-label">{extraGroup.title}</span>
+              </button>
+            ) : (
+              <div
+                className="portal-cab-nav-item portal-cab-group-head portal-cab-group-head-static"
+                title={collapsed ? extraGroup.title : undefined}
+              >
+                <span className="portal-cab-nav-icon">{PROFILE_ICON}</span>
+                <span className="portal-cab-nav-label">{extraGroup.title}</span>
+              </div>
+            )}
             {extraGroup.items.map((item) => (
               <button
                 key={item.key}
