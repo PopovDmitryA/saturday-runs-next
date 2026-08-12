@@ -1911,6 +1911,13 @@ export function getHomeDistanceDetail(includeTest = false) {
   return apiFetch<HomeDistanceDetail>(`/locations/visited/home-distance${query}`);
 }
 
+export function getPublicProfileHomeDistanceDetail(serialId: number, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<HomeDistanceDetail>(
+    `/users/${serialId}/profile/locations/visited/home-distance${query}`,
+  );
+}
+
 export function getCatalogLocationsMap() {
   return apiFetch<MapLocationsResponse>("/locations/catalog/map");
 }

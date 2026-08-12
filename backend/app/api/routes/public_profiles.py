@@ -16,11 +16,16 @@ from app.schemas.admin import AdminUserPreviewDashboardResponse
 from app.schemas.dashboard import (
     CoRunnerMeetingResponse,
     CoRunnerResponse,
+    HomeDistanceDetailResponse,
     MyHistoryResponse,
     RunItemResponse,
     VolunteeringItemResponse,
 )
-from app.schemas.locations import CatalogLocationsTableResponse, MapLocationsResponse, UniqueLocationsDetailResponse
+from app.schemas.locations import (
+    CatalogLocationsTableResponse,
+    MapLocationsResponse,
+    UniqueLocationsDetailResponse,
+)
 from app.services.achievements_service import compute_challenges
 from app.services.admin_users_service import (
     get_admin_user_preview_best_results,
@@ -31,6 +36,7 @@ from app.services.admin_users_service import (
 )
 from app.services.co_runners_service import list_co_runner_meetings, list_co_runners
 from app.services.dashboard_service import list_user_runs, list_user_volunteering
+from app.services.home_distance_service import build_home_distance_detail
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_user_visited_map_locations
 from app.services.my_history_service import get_my_history
@@ -85,10 +91,14 @@ def _check_access(target: User, requester: User | None, settings: Settings) -> N
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Профиль скрыт пользователем")
 
 
-def _get_user_uuid(serial_id: int, db: Session, requester: User | None, settings: Settings) -> UUID:
+def _get_user(serial_id: int, db: Session, requester: User | None, settings: Settings) -> User:
     target = _resolve_user(serial_id, db)
     _check_access(target, requester, settings)
-    return target.id
+    return target
+
+
+def _get_user_uuid(serial_id: int, db: Session, requester: User | None, settings: Settings) -> UUID:
+    return _get_user(serial_id, db, requester, settings).id
 
 
 @router.get("/{serial_id}/profile/dashboard", response_model=AdminUserPreviewDashboardResponse)
@@ -217,6 +227,24 @@ def public_profile_visited_detail(
     user_id = _get_user_uuid(serial_id, db, requester, settings)
     payload = build_user_unique_location_details(db, user_id, include_test_events=include_test)
     return UniqueLocationsDetailResponse.model_validate(payload)
+
+
+@router.get(
+    "/{serial_id}/profile/locations/visited/home-distance",
+    response_model=HomeDistanceDetailResponse,
+)
+def public_profile_home_distance(
+    serial_id: int,
+    include_test: bool = False,
+    db: Session = Depends(get_db),
+    requester: User | None = Depends(get_optional_user),
+    settings: Settings = Depends(get_settings),
+) -> HomeDistanceDetailResponse:
+    """Модалка «Дальность от дома» в чужом профиле — считается по владельцу
+    профиля, а не по тому, кто смотрит."""
+    target = _get_user(serial_id, db, requester, settings)
+    payload = build_home_distance_detail(db, target, include_test_events=include_test)
+    return HomeDistanceDetailResponse.model_validate(payload)
 
 
 @router.get("/{serial_id}/profile/locations/catalog/table", response_model=CatalogLocationsTableResponse)

@@ -1,13 +1,20 @@
 import { useEffect, useState } from "react";
 import { DetailModal } from "./DetailModal";
 import { PlatformBadge } from "./PlatformBadge";
-import { getHomeDistanceDetail, type HomeDistanceDetail, type HomeDistanceLocation } from "../lib/api";
+import { type HomeDistanceDetail, type HomeDistanceLocation } from "../lib/api";
+import { useAppDataSource } from "../lib/appDataSource";
 import { formatKm } from "../lib/format";
 
 const HINT =
   "Расстояние по прямой от домашней локации до площадки. Каждая площадка даёт свои " +
   "километры один раз, сколько бы раз вы туда ни ездили. Домашняя локация меняется " +
   "в настройках.";
+
+// В чужом профиле те же цифры, но про другого человека: «вы» и совет заглянуть
+// в настройки там не к месту.
+const PUBLIC_HINT =
+  "Расстояние по прямой от домашней локации участника до площадки. Каждая площадка " +
+  "даёт свои километры один раз, сколько бы раз он туда ни ездил.";
 
 /** Город, а регион — только если он не повторяет город (у Москвы и Питера они совпадают). */
 function placeSubtitle(row: HomeDistanceLocation): string {
@@ -54,6 +61,10 @@ function DistanceCell({ row }: { row: HomeDistanceLocation }) {
 }
 
 export function HomeDistanceModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  // В чужом профиле источник подменён на публичный эндпоинт владельца профиля:
+  // раньше модалка звала личный и показывала километры смотрящего.
+  const { getHomeDistanceDetail, mode } = useAppDataSource();
+  const isPublicProfile = mode === "public-profile";
   const [data, setData] = useState<HomeDistanceDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,7 +89,7 @@ export function HomeDistanceModal({ open, onClose }: { open: boolean; onClose: (
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, getHomeDistanceDetail]);
 
   return (
     <DetailModal open={open} title="Дальность от дома" onClose={onClose}>
@@ -86,7 +97,7 @@ export function HomeDistanceModal({ open, onClose }: { open: boolean; onClose: (
       {!error && !data && <p className="muted">Загрузка…</p>}
       {!error && data && (
         <>
-          <p className="muted personal-records-hint">{HINT}</p>
+          <p className="muted personal-records-hint">{isPublicProfile ? PUBLIC_HINT : HINT}</p>
           {data.home && (
             <p className="home-distance-summary">
               Дом — <b>{data.home.name}</b>. В зачёте {formatKm(data.total_distance_km)} по{" "}
@@ -95,7 +106,9 @@ export function HomeDistanceModal({ open, onClose }: { open: boolean; onClose: (
             </p>
           )}
 
-          <h3 className="home-distance-table-title">Где вы были</h3>
+          <h3 className="home-distance-table-title">
+            {isPublicProfile ? "Где участник был" : "Где вы были"}
+          </h3>
           <div className="unique-locations-table-wrap">
             <table className="data-table unique-locations-table home-distance-table">
               <thead>
@@ -128,7 +141,9 @@ export function HomeDistanceModal({ open, onClose }: { open: boolean; onClose: (
             </table>
           </div>
 
-          <h3 className="home-distance-table-title">Где вы ещё не были</h3>
+          <h3 className="home-distance-table-title">
+            {isPublicProfile ? "Где участник ещё не был" : "Где вы ещё не были"}
+          </h3>
           <p className="muted home-distance-table-note">
             Действующие площадки, до которых вы пока не доехали, — от ближней к дальней.
           </p>
