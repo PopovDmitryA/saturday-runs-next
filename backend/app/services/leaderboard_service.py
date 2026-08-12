@@ -3079,7 +3079,12 @@ def _my_numeric_values_all(
         {"pids": participant_ids},
     ).all()
     occasion_rows_by_platform: dict[str, list[tuple[date, str]]] = {}
-    for _pid, platform_code, event_date, location_key in occasion_raw:
+    # Разбираем по индексам, а не распаковкой: в этот же запрос добавляли
+    # колонку роли (для фильтра ролей в таблице), и распаковка «в четыре» тут
+    # начала падать — своя строка в рейтинге волонтёрств пропадала целиком
+    # (репорт Дмитрия 12.08.2026).
+    for row in occasion_raw:
+        platform_code, event_date, location_key = row[1], row[2], row[3]
         occasion_rows_by_platform.setdefault(platform_code, []).append(
             (event_date, location_key or "unknown")
         )
@@ -3319,7 +3324,13 @@ def _my_location_values(
 ) -> _MyLocationRow:
     if not participant_ids:
         return _MyLocationRow(values={}, total=0, week=0)
-    sql = sql_template.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
+    # Беговые шаблоны считают по run_results rr, волонтёрский — по
+    # volunteer_results vr. Фильтр по своим participant_id должен ссылаться на
+    # алиас ИЗ шаблона: с зашитым «rr» волонтёрская своя строка падала на
+    # «missing FROM-clause entry for table rr», и витрина молча оставалась без
+    # строки участника (репорт Дмитрия 12.08.2026).
+    pid_alias = "vr" if "FROM volunteer_results vr" in sql_template else "rr"
+    sql = sql_template.replace("/*PIDS_FILTER*/", f"AND {pid_alias}.participant_id = ANY(:pids)")
     rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     getters = _unit_key_getters(_location_geo_map(db) if with_geo else {})
