@@ -202,21 +202,31 @@ def test_scope_by_platform_filters_rows_vol_rows_and_upcoming() -> None:
     )
 
 
+def _tier(challenge: dict, tier_key: str) -> dict:
+    return next(t for t in challenge["tiers"] if t["tier"] == tier_key)
+
+
 def test_inspector_counts_every_rating() -> None:
     rows = [_rating_row(rated_on=date(2026, 1, 4) + timedelta(days=i)) for i in range(25)]
     challenge = _inspector_challenge(rows)
     assert challenge["code"] == "inspector"
     assert challenge["current"] == 25
-    # Бронза — на 25-й оценке, то есть в день последней из них.
-    assert challenge["level"] == "bronze"
-    assert challenge["level_dates"]["bronze"] == (date(2026, 1, 4) + timedelta(days=24)).isoformat()  # type: ignore[index]
+    # easy (1/5/10) закрыт целиком, medium (20/40/70) — только бронза (20-я
+    # оценка) — "лучшее" достижение вычисляется по самому сложному тиру,
+    # где взят хоть один уровень.
+    assert _tier(challenge, "easy")["level"] == "gold"
+    assert challenge["best_tier"] == "medium"
+    assert challenge["best_level"] == "bronze"
+    assert _tier(challenge, "medium")["level_dates"]["bronze"] == (
+        date(2026, 1, 4) + timedelta(days=19)
+    ).isoformat()
 
 
 def test_inspector_empty_has_no_level() -> None:
     challenge = _inspector_challenge([])
     assert challenge["current"] == 0
-    assert challenge["level"] is None
-    assert challenge["level_dates"] == {"bronze": None, "silver": None, "gold": None}
+    assert challenge["best_level"] is None
+    assert _tier(challenge, "easy")["level_dates"] == {"bronze": None, "silver": None, "gold": None}
 
 
 def test_reviewer_counts_only_reviews() -> None:
@@ -226,9 +236,11 @@ def test_reviewer_counts_only_reviews() -> None:
     ]
     challenge = _reviewer_challenge(rows)
     assert challenge["code"] == "reviewer"
-    # Голые звёзды в рецензии не идут — только 10 развёрнутых.
+    # Голые звёзды в рецензии не идут — только 10 развёрнутых, что закрывает
+    # easy-тир (1/3/7) целиком до золота.
     assert challenge["current"] == 10
-    assert challenge["level"] == "bronze"
+    assert challenge["best_tier"] == "easy"
+    assert challenge["best_level"] == "gold"
 
 
 def test_reviewer_and_inspector_count_same_rating_once_each() -> None:
@@ -300,9 +312,8 @@ def test_start_numbers_range_counts_any_platform() -> None:
         _row(event_number=52, platform_code="five_verst"),
         _row(event_number=60, platform_code="s95"),
     ]
-    levels = {"bronze": 2, "silver": 3, "gold": 200}
     result = _start_numbers_range_challenge(
-        rows, {}, code="start_numbers", title="Нумератор", description="", low=1, high=200, levels=levels
+        rows, {}, code="start_numbers", title="Нумератор", description="", low=1, high=200
     )
     assert result["current"] == 4
     assert result["detail"]["cells"][49]["done"] is True  # type: ignore[index]
@@ -313,9 +324,8 @@ def test_start_numbers_range_counts_any_platform() -> None:
 
 def test_start_numbers_pro_range() -> None:
     rows = [_row(event_number=250, platform_code="s95"), _row(event_number=399, platform_code="s95")]
-    levels = {"bronze": 50, "silver": 100, "gold": 200}
     pro = _start_numbers_range_challenge(
-        rows, {}, code="start_numbers_pro", title="Нумератор ПРО", description="", low=201, high=400, levels=levels
+        rows, {}, code="start_numbers_pro", title="Нумератор ПРО", description="", low=201, high=400
     )
     assert pro["current"] == 2
     assert pro["detail"]["cells"][250 - 201]["done"] is True  # type: ignore[index]
