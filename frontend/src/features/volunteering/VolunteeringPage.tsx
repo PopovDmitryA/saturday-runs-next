@@ -216,7 +216,13 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
             <p className="muted">В демо-профиле нет записей о волонтёрстве.</p>
           </div>
         ) : (
-          <EmptyActivityState activityLabel="Записей о волонтёрстве" hasProfileLink={hasProfileLink} />
+          <EmptyActivityState
+            activityLabel="Волонтёрств"
+            ownerHint="Попробуйте себя волонтёром на ближайшем старте — и записи появятся здесь."
+            publicHint="Как только появится первое волонтёрство, оно окажется здесь."
+            hasProfileLink={hasProfileLink}
+            isPublicProfile={mode === "public-profile"}
+          />
         ))}
 
       {!loading && !error && items.length > 0 && (

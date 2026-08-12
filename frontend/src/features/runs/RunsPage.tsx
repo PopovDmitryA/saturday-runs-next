@@ -234,7 +234,13 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
             <p className="muted">В демо-профиле нет пробежек для отображения.</p>
           </div>
         ) : (
-          <EmptyActivityState activityLabel="Пробежек" hasProfileLink={hasProfileLink} />
+          <EmptyActivityState
+            activityLabel="Пробежек"
+            ownerHint="Придите на ближайший субботний старт — и он появится здесь."
+            publicHint="Как только появится первая пробежка, она окажется здесь."
+            hasProfileLink={hasProfileLink}
+            isPublicProfile={mode === "public-profile"}
+          />
         ))}
 
       {!loading && !error && runs.length > 0 && (
