@@ -112,6 +112,9 @@ class MyLeaderboardRowResponse(BaseModel):
     total: int
     total_delta: int
     rank: int | None
+    # Место среди всех с ненулевой метрикой — приходит и до порога рейтинга,
+    # в отличие от rank (тот только у прошедших порог).
+    rank_overall: int | None = None
     rank_delta: int | None
     included: bool
     threshold: int

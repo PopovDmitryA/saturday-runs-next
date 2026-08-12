@@ -3640,6 +3640,10 @@ def get_my_leaderboard_row(
         "total": total,
         "total_delta": week,
         "rank": rank if included else None,
+        # Место среди всех, у кого метрика вообще ненулевая, — считается и до
+        # порога рейтинга. «rank» остаётся местом В рейтинге (только для тех,
+        # кто порог прошёл), а это — ответ на «а где я сейчас вообще стою».
+        "rank_overall": rank,
         "rank_delta": (prev_rank - rank) if included and rank is not None and prev_rank is not None else None,
         "included": included,
         "threshold": threshold,

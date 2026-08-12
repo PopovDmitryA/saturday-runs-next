@@ -1024,6 +1024,15 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       ? formatPercentile(me.rank, entrants)
       : null;
 
+  // Тем, кто порог рейтинга ещё не прошёл, место в таблице не полагается — но
+  // само место известно, и без него строка «появитесь после N» звучит как
+  // «вас тут нет вовсе».
+  const overallRank = me?.included === false ? me.rank_overall ?? null : null;
+  const overallRankText =
+    overallRank != null && overallRank > 0 && entrants > 1
+      ? `Пока это ${formatInt(overallRank)}-е место из ${formatInt(entrants)}.`
+      : null;
+
   // «Я в рейтинге, но себя в таблице не вижу»: порог рейтинга человек прошёл,
   // а в таблицу влезает только топ-1000 — при 48 тысячах участников это два
   // разных числа, и без объяснения выглядит как «меня нет в рейтинге»
@@ -1400,11 +1409,19 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                     )}
                   </div>
                 ) : (
-                  <p className="lb-me-threshold">
-                    Вы появитесь в рейтинге после достижения {me.threshold}{" "}
-                    {unitLabel(metric, me.threshold, effectiveCountBy)} — сейчас у вас{" "}
-                    {formatInt(me.total)}{valueUnit ? ` ${valueUnit}` : ""}.
-                  </p>
+                  <>
+                    <p className="lb-me-threshold">
+                      Вы появитесь в рейтинге после достижения {me.threshold}{" "}
+                      {unitLabel(metric, me.threshold, effectiveCountBy)} — сейчас у вас{" "}
+                      {formatInt(me.total)}{valueUnit ? ` ${valueUnit}` : ""}.
+                    </p>
+                    {/* Место считается и до порога: «до рейтинга не дотянул» и
+                        «непонятно, где я вообще» — разные вещи, и второе
+                        обиднее. Знаменатель — все, у кого метрика ненулевая. */}
+                    {overallRankText != null && (
+                      <p className="lb-me-percentile muted">{overallRankText}</p>
+                    )}
+                  </>
                 )}
               </section>
             )}

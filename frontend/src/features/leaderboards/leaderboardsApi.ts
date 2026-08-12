@@ -204,6 +204,9 @@ export type MyLeaderboardRow = {
   total: number;
   total_delta: number;
   rank: number | null;
+  // Место среди всех с ненулевой метрикой — есть и у тех, кто порог рейтинга
+  // ещё не прошёл (в отличие от rank).
+  rank_overall?: number | null;
   rank_delta: number | null;
   included: boolean;
   threshold: number;
