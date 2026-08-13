@@ -18,6 +18,7 @@ from app.services.seo_service import (
     _location_body,
     build_location_meta,
     build_robots_txt,
+    is_known_path,
     location_lead_sentences,
     normalize_path,
     resolve_page_meta,
@@ -404,6 +405,41 @@ def test_catalog_body_lists_locations_with_links() -> None:
     # Отменённые площадки в каталоге робота не участвуют.
     assert "Закрытая" not in body
     assert "5 вёрст — 1 площадка" in body
+
+
+@pytest.mark.parametrize(
+    ("path", "known"),
+    [
+        ("/", True),
+        ("/locations", True),
+        ("/ratings/wins", True),
+        ("/locations/kuzminki", True),
+        ("/locations/kuzminki/events", True),
+        ("/users/ivan", True),
+        ("/admin/users", True),
+        ("/world", True),
+        # Мусор обязан быть неизвестен: SPA отвечал 200 на что угодно, и Яндекс
+        # отметил это диагностикой «некорректно настроен возврат 404».
+        ("/something-strange", False),
+        ("/locations/kuzminki/events/extra", False),
+        ("/ratings/fake-metric", False),
+        ("/wp-admin", False),
+    ],
+)
+def test_is_known_path(path: str, known: bool) -> None:
+    assert is_known_path(path) is known
+
+
+def test_robots_closes_user_pages_from_crawl() -> None:
+    """Страницы участников не должны жечь краулинговый бюджет.
+
+    Они и так noindex, но робот их скачивал сотнями — особенно после
+    включения обхода по счётчикам Метрики.
+    """
+    robots = build_robots_txt()
+    assert "Disallow: /users/" in robots
+    # /world закрывать не за что: он один, а noindex в странице сохраняет вес.
+    assert "Disallow: /world" not in robots
 
 
 def test_robots_lists_sitemap_and_closes_service_paths() -> None:

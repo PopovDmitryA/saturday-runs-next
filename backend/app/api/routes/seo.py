@@ -49,11 +49,14 @@ def prerender(full_path: str, db: Annotated[Session, Depends(get_db)]) -> Respon
     """HTML для робота по адресу страницы.
 
     Адрес приходит от nginx как остаток пути: /__prerender/locations/kuzminki.
-    Отдаём всегда 200 — даже для несуществующего адреса: робот пришёл по ссылке,
-    и пустая болванка SPA его устроила бы хуже, чем страница с мета-тегами.
+    Несуществующий адрес отдаёт настоящий 404: SPA-сайт по умолчанию отвечает
+    200 на любой мусор, и Яндекс отметил это диагностикой (11.08.2026).
     """
+    html, status = render_prerendered_page(db, f"/{full_path}")
     return Response(
-        content=render_prerendered_page(db, f"/{full_path}"),
+        content=html,
+        status_code=status,
         media_type="text/html; charset=utf-8",
-        headers={"Cache-Control": "public, max-age=600"},
+        # 404 не кэшируем: страница может появиться (новая локация в каталоге).
+        headers={"Cache-Control": "public, max-age=600" if status == 200 else "no-store"},
     )

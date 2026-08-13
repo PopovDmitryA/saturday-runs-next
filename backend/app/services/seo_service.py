@@ -589,9 +589,15 @@ def build_sitemap(db: Session) -> str:
 def build_robots_txt() -> str:
     """robots.txt: закрываем служебное и личное, показываем sitemap.
 
-    /users/ и /world не в sitemap, но и Disallow им не ставим: пусть робот
-    ходит по ссылкам и видит `noindex` в самой странице — так вес ссылок не
-    теряется, а в индекс они не попадают.
+    /users/ закрыт от обхода (13.08.2026): страницы участников и так noindex,
+    но робот их всё равно скачивал — в «Статистике обхода» это сотни адресов
+    вида /users/149, /users/768/maps, и каждый съедал краулинговый бюджет,
+    которого не хватает страницам локаций. Приток усилился после включения
+    «обхода по счётчикам» Метрики: люди ходят в свои кабинеты, робот идёт
+    следом. В индексе их нет, терять нечего.
+
+    /world остаётся открытым для обхода: он один, бюджета не жжёт, а noindex
+    в самой странице сохраняет вес исходящих ссылок.
     """
     base = site_base_url()
     lines = [
@@ -602,6 +608,7 @@ def build_robots_txt() -> str:
         "Disallow: /new/",
         "Disallow: /settings",
         "Disallow: /share",
+        "Disallow: /users/",
         # /login сознательно НЕ закрыт: «5 верст личный кабинет» — 2472
         # запроса/мес, и страница входа — наша посадочная под них.
         "Disallow: /oauth/",
@@ -889,12 +896,36 @@ def _catalog_body(items: list[dict[str, Any]]) -> str:
     return "\n".join(rows)
 
 
-def render_prerendered_page(db: Session, raw_path: str) -> str:
-    """HTML для робота: мета-теги плюс настоящий текст страницы.
+def is_known_path(raw_path: str) -> bool:
+    """Существует ли такой адрес на сайте (без похода в БД).
+
+    Нужно для честного 404: SPA-сайт по умолчанию отдаёт 200 на любой мусор,
+    и Яндекс справедливо ругается «некорректно настроен возврат 404» — из-за
+    этого несуществующие адреса лезут в индекс и жгут краулинговый бюджет.
+    Здесь только форма адреса; существование конкретной локации проверяется
+    отдельно, по БД.
+    """
+    path = normalize_path(raw_path)
+    if path in STATIC_PAGE_META:
+        return True
+    if path.startswith("/admin/") or path == "/world":
+        return True
+    for pattern in (_PROFILE_RE, _LOCATION_EVENTS_RE, _LOCATION_RE, _SWEEP_HQ_RE):
+        if pattern.match(path):
+            return True
+    return False
+
+
+def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
+    """(HTML, HTTP-код) для робота: мета-теги плюс настоящий текст страницы.
 
     Человек сюда не попадает — ветка по User-Agent живёт в nginx. Ошибку БД
     наверх не пускаем: лучше отдать роботу страницу с одними мета-тегами, чем
     500 (иначе неудачный запрос читается как «сайт сломан»).
+
+    Несуществующий адрес и несуществующая локация отдают 404 — раньше здесь
+    было безусловное 200, и Яндекс отметил это диагностикой «некорректно
+    настроен возврат 404» (11.08.2026).
     """
     path = normalize_path(raw_path)
     canonical = site_base_url() + ("" if path == "/" else path)
@@ -909,11 +940,17 @@ def render_prerendered_page(db: Session, raw_path: str) -> str:
             payload = None
         if payload is not None:
             meta = build_location_meta(payload, events_log=bool(events_match))
-            return _render_html(
-                meta=meta,
-                canonical=canonical,
-                body_html=_location_body(payload, events_log=bool(events_match)),
+            return (
+                _render_html(
+                    meta=meta,
+                    canonical=canonical,
+                    body_html=_location_body(payload, events_log=bool(events_match)),
+                ),
+                200,
             )
+        # Слаг не резолвится — такой локации нет. Именно этот случай Яндекс и
+        # ловил: /locations/что-угодно отвечал 200 с пустой карточкой.
+        return _not_found_page(canonical), 404
 
     meta = resolve_page_meta(path)
 
@@ -925,8 +962,27 @@ def render_prerendered_page(db: Session, raw_path: str) -> str:
         except Exception:  # noqa: BLE001 — робот получит родовую страницу, не 500
             items = []
         if items:
-            return _render_html(
-                meta=meta, canonical=canonical, body_html=_catalog_body(items)
+            return (
+                _render_html(meta=meta, canonical=canonical, body_html=_catalog_body(items)),
+                200,
             )
 
-    return _render_html(meta=meta, canonical=canonical, body_html=_generic_body(meta))
+    if not is_known_path(path):
+        return _not_found_page(canonical), 404
+
+    return _render_html(meta=meta, canonical=canonical, body_html=_generic_body(meta)), 200
+
+
+def _not_found_page(canonical: str) -> str:
+    """Страница 404 для робота: noindex и ссылка обратно в каталог."""
+    meta = _meta(
+        "Страница не найдена — run5k.run",
+        "Такой страницы на run5k.run нет. Загляните в каталог площадок "
+        "субботних пробежек или на главную.",
+    )
+    body = (
+        "    <h1>Страница не найдена</h1>\n"
+        "    <p>Такой страницы на run5k.run нет.</p>\n"
+        '    <p><a href="/locations">Каталог локаций</a> · <a href="/">Главная</a></p>'
+    )
+    return _render_html(meta=meta, canonical=canonical, body_html=body)
