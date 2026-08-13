@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -18,7 +19,9 @@ from app.services.seo_service import (
     _location_body,
     build_location_meta,
     build_robots_txt,
+    catalog_json_ld,
     is_known_path,
+    location_json_ld,
     location_lead_sentences,
     normalize_path,
     resolve_page_meta,
@@ -440,6 +443,89 @@ def test_robots_closes_user_pages_from_crawl() -> None:
     assert "Disallow: /users/" in robots
     # /world закрывать не за что: он один, а noindex в странице сохраняет вес.
     assert "Disallow: /world" not in robots
+
+
+def test_last_event_block_reaches_the_robot() -> None:
+    """«5 вёрст X результаты» — самый частый интент, робот обязан их видеть."""
+    payload = _location_payload()
+    stats = cast("dict[str, object]", payload["stats"])
+    stats["last_event"] = {
+        "event_date": "2026-08-08",
+        "platform_code": "five_verst",
+        "finishers": 62,
+        "volunteers": 20,
+        "best_male_time_display": "00:18:09",
+        "best_female_time_display": "00:19:08",
+        "avg_time_display": "00:27:28",
+        "debutants": 2,
+        "first_at_location": 2,
+        "prs": 2,
+    }
+    body = _location_body(payload, events_log=False)
+    assert "Последний старт: 2026-08-08 (5 вёрст)" in body
+    assert "Финишировали: 62" in body
+    # Часы отрезаются здесь так же, как везде: «18:09», а не «00:18:09».
+    assert "Лучшее время, мужчины: 18:09" in body
+    assert "Впервые здесь: 4" in body
+
+
+def test_location_json_ld_describes_place_and_event() -> None:
+    payload = _location_payload(
+        latitude=55.667123,
+        longitude=37.404714,
+        region="Московская",
+        country="Россия",
+        platforms=[
+            {
+                "platform_code": "five_verst",
+                "is_active": True,
+                "events_count": 271,
+                "url": "https://5verst.ru/kuzminki/",
+            }
+        ],
+    )
+    stats = cast("dict[str, object]", payload["stats"])
+    stats["last_event"] = {"event_date": "2026-08-08", "finishers": 62}
+
+    objects = location_json_ld(payload)
+    types = [o["@type"] for o in objects]
+    assert types == ["SportsActivityLocation", "SportsEvent", "BreadcrumbList"]
+
+    place = objects[0]
+    assert place["name"] == "5 вёрст Кузьминки"
+    assert place["address"]["addressLocality"] == "Москва"
+    assert place["geo"]["latitude"] == 55.667123
+    # sameAs связывает нас с первоисточником, а не выдаёт за него.
+    assert place["sameAs"] == ["https://5verst.ru/kuzminki/"]
+
+    event = objects[1]
+    assert event["startDate"] == "2026-08-08"
+    # Финишёры — в description: maximumAttendeeCapacity означает вместимость.
+    assert "62" in event["description"]
+    assert "maximumAttendeeCapacity" not in event
+
+    crumbs = objects[2]["itemListElement"]
+    assert [c["name"] for c in crumbs] == ["Главная", "Локации", "Кузьминки"]
+
+
+def test_location_json_ld_skips_event_without_date() -> None:
+    """Нет данных о старте — нет и SportsEvent: разметка не выдумывает."""
+    objects = location_json_ld(_location_payload())
+    assert [o["@type"] for o in objects] == ["SportsActivityLocation", "BreadcrumbList"]
+
+
+def test_catalog_json_ld_lists_live_locations() -> None:
+    objects = catalog_json_ld(
+        [
+            {"slug": "b", "name": "Бутово", "city": "Москва"},
+            {"slug": "a", "name": "Алёшкинский", "city": "Москва"},
+            {"slug": "x", "name": "Закрытая", "is_cancelled": True},
+        ]
+    )
+    listing = objects[0]
+    assert listing["numberOfItems"] == 2
+    # По алфавиту, как и на самой странице.
+    assert [i["name"] for i in listing["itemListElement"]] == ["Алёшкинский", "Бутово"]
 
 
 def test_robots_lists_sitemap_and_closes_service_paths() -> None:

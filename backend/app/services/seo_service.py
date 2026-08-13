@@ -20,6 +20,7 @@ index.html, содержимое дорисовывает JavaScript уже в �
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -641,11 +642,187 @@ def _og_image_tags() -> list[str]:
     return []
 
 
+def _last_event_block(last_event: dict[str, Any]) -> str:
+    """«Последний старт: дата, финишёры, лучшие времена дня» — списком."""
+    when = escape(str(last_event.get("event_date") or ""))
+    platform = PLATFORM_LABELS.get(str(last_event.get("platform_code") or ""), "")
+    title = f"Последний старт: {when}"
+    if platform:
+        title += f" ({escape(platform)})"
+
+    facts: list[tuple[str, str]] = []
+    finishers = last_event.get("finishers")
+    if finishers:
+        facts.append(("Финишировали", str(finishers)))
+    volunteers = last_event.get("volunteers")
+    if volunteers:
+        facts.append(("Волонтёров", str(volunteers)))
+    for key, label in (
+        ("best_male_time_display", "Лучшее время, мужчины"),
+        ("best_female_time_display", "Лучшее время, женщины"),
+        ("avg_time_display", "Среднее время"),
+    ):
+        value = _strip_leading_hours(last_event.get(key))
+        if value:
+            facts.append((label, value))
+    newcomers = (last_event.get("debutants") or 0) + (last_event.get("first_at_location") or 0)
+    if newcomers:
+        facts.append(("Впервые здесь", str(newcomers)))
+    prs = last_event.get("prs")
+    if prs:
+        facts.append(("Личных рекордов", str(prs)))
+
+    items = "".join(f"      <li>{escape(k)}: {escape(v)}</li>\n" for k, v in facts)
+    return f"    <h2>{title}</h2>\n    <ul>\n{items}    </ul>"
+
+
+def _breadcrumbs(*crumbs: tuple[str, str]) -> dict[str, Any]:
+    """Хлебные крошки для поисковика: «Главная › Локации › Бутово»."""
+    base = site_base_url()
+    return {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": i, "name": name, "item": base + path}
+            for i, (name, path) in enumerate(crumbs, start=1)
+        ],
+    }
+
+
+def location_json_ld(payload: dict[str, Any], *, events_log: bool = False) -> list[dict[str, Any]]:
+    """Разметка страницы локации: площадка + последний старт + крошки.
+
+    SportsActivityLocation — площадка (адрес, координаты, ссылка на страницу
+    системы). SportsEvent добавляем только если последний старт действительно
+    известен: разметка обязана описывать то, что есть на странице.
+    """
+    base = site_base_url()
+    slug = str(payload.get("slug") or "")
+    name = str(payload.get("name") or "Локация")
+    platform = _active_platform_label(payload)
+    city = str(payload.get("city") or "").strip()
+    display_name = f"{platform} {name}" if platform else name
+
+    place: dict[str, Any] = {
+        "@context": "https://schema.org",
+        "@type": "SportsActivityLocation",
+        "name": display_name,
+        "url": f"{base}/locations/{slug}",
+        "sport": "Running",
+    }
+    address: dict[str, Any] = {"@type": "PostalAddress"}
+    if city:
+        address["addressLocality"] = city
+    region = str(payload.get("region") or "").strip()
+    if region:
+        address["addressRegion"] = region
+    country = str(payload.get("country") or "").strip()
+    if country:
+        address["addressCountry"] = country
+    if len(address) > 1:
+        place["address"] = address
+    latitude, longitude = payload.get("latitude"), payload.get("longitude")
+    if latitude is not None and longitude is not None:
+        place["geo"] = {
+            "@type": "GeoCoordinates",
+            "latitude": latitude,
+            "longitude": longitude,
+        }
+    # Ссылка на официальную страницу системы: sameAs связывает нашу страницу
+    # с первоисточником, а не выдаёт её за него.
+    official = [
+        str(item.get("url"))
+        for item in payload.get("platforms") or []
+        if item.get("is_active") and item.get("url")
+    ]
+    if official:
+        place["sameAs"] = official
+
+    objects: list[dict[str, Any]] = [place]
+
+    last_event = (payload.get("stats") or {}).get("last_event") or {}
+    when = last_event.get("event_date")
+    if when:
+        event: dict[str, Any] = {
+            "@context": "https://schema.org",
+            "@type": "SportsEvent",
+            "name": f"{display_name}: старт {when}",
+            "startDate": str(when),
+            "eventStatus": "https://schema.org/EventScheduled",
+            "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+            "location": {"@type": "Place", "name": display_name, **(
+                {"address": place["address"]} if "address" in place else {}
+            )},
+            "url": f"{base}/locations/{slug}",
+        }
+        # Числа старта кладём в description, а не в maximumAttendeeCapacity:
+        # то поле означает вместимость площадки, а у нас фактические финишёры.
+        # Разметка, выдающая одно за другое, — прямой путь под фильтр.
+        finishers = last_event.get("finishers")
+        if finishers:
+            summary = f"Финишировали: {finishers}"
+            best = _strip_leading_hours(last_event.get("best_male_time_display"))
+            if best:
+                summary += f". Лучшее время дня: {best}"
+            event["description"] = summary + "."
+        objects.append(event)
+
+    crumbs = [("Главная", "/"), ("Локации", "/locations"), (name, f"/locations/{slug}")]
+    if events_log:
+        crumbs.append(("Журнал протоколов", f"/locations/{slug}/events"))
+    objects.append(_breadcrumbs(*crumbs))
+    return objects
+
+
+def catalog_json_ld(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Разметка каталога: список площадок + крошки."""
+    base = site_base_url()
+    live = [i for i in items if not i.get("is_cancelled")]
+    listing = {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "name": "Локации субботних пробежек",
+        "numberOfItems": len(live),
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": position,
+                "name": str(item.get("name") or ""),
+                "url": f"{base}/locations/{item.get('slug')}",
+            }
+            for position, item in enumerate(
+                sorted(live, key=lambda i: str(i.get("name") or "").casefold()), start=1
+            )
+        ],
+    }
+    return [listing, _breadcrumbs(("Главная", "/"), ("Локации", "/locations"))]
+
+
+def _json_ld_scripts(objects: list[dict[str, Any]]) -> list[str]:
+    """Микроразметка Schema.org отдельными <script> на каждый объект.
+
+    Зачем: до 13.08.2026 разметки не было вовсе — Яндекс разбирал страницу
+    локации как обычный текст и не знал, что перед ним спортивная площадка с
+    адресом, координатами и регулярными стартами. Разметка описывает ровно то,
+    что есть на странице: выдумывать данные ради красивого сниппета нельзя —
+    за расхождение разметки и содержимого поисковики наказывают.
+
+    ensure_ascii=False — кириллица остаётся читаемой; </ экранируем, иначе
+    строка внутри JSON может закрыть сам тег script.
+    """
+    scripts = []
+    for obj in objects:
+        payload = json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
+        scripts.append(f'<script type="application/ld+json">{payload}</script>')
+    return scripts
+
+
 def _render_html(
     *,
     meta: PageMeta,
     canonical: str,
     body_html: str,
+    json_ld: list[dict[str, Any]] | None = None,
 ) -> str:
     robots = "index,follow" if meta.indexable else "noindex,follow"
     head = [
@@ -661,6 +838,7 @@ def _render_html(
         f'<meta property="og:url" content="{escape(canonical, quote=True)}">',
         '<meta name="twitter:card" content="summary">',
         *_og_image_tags(),
+        *_json_ld_scripts(json_ld or []),
     ]
     head_html = "\n    ".join(head)
     return (
@@ -797,6 +975,13 @@ def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
             f"      <li>{escape(label)}: {escape(value)}</li>\n" for label, value in facts
         )
         rows.append("    <ul>\n" + items + "    </ul>")
+
+    # Результаты последнего старта — то, ради чего чаще всего и приходят
+    # («5 вёрст мещерский результаты»). Раньше робот их не видел вовсе:
+    # данные были только в API, в HTML уходили одни агрегаты за всю историю.
+    last_event = stats.get("last_event") or {}
+    if last_event.get("event_date"):
+        rows.append(_last_event_block(last_event))
 
     platforms = payload.get("platforms") or []
     if platforms:
@@ -945,6 +1130,7 @@ def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
                     meta=meta,
                     canonical=canonical,
                     body_html=_location_body(payload, events_log=bool(events_match)),
+                    json_ld=location_json_ld(payload, events_log=bool(events_match)),
                 ),
                 200,
             )
@@ -963,7 +1149,12 @@ def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
             items = []
         if items:
             return (
-                _render_html(meta=meta, canonical=canonical, body_html=_catalog_body(items)),
+                _render_html(
+                    meta=meta,
+                    canonical=canonical,
+                    body_html=_catalog_body(items),
+                    json_ld=catalog_json_ld(items),
+                ),
                 200,
             )
 
