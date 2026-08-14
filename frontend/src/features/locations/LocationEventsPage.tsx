@@ -15,8 +15,9 @@ import { flushMetrikaHit } from "../../lib/metrika";
 import { formatInt, platformCodeLabel } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { TableWrap } from "../../components/tableUx/TableWrap";
-import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
-import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
+import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
+import { useTableColumns } from "../../components/tableUx/useTableColumns";
+import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
 
@@ -75,11 +76,10 @@ function LocationEventsContent({ slug }: { slug: string }) {
   const [sort, setSort] = useState<SortState>({ key: "date", asc: false });
   // Копия шапки встаёт под липкую полосу «Кратко | Полно», а не под шапку сайта.
   const attachFloatingHead = useFloatingTableHead(".tview-bar");
-  const [tableView, setTableView] = useTableView("locationEvents");
   // Краткий вид набирает колонки под ширину: минимум — номер, дата и финишёры.
-  const adaptive = useAdaptiveColumns(EVENTS_COLUMNS);
-  const showFull = tableView === "full";
-  const show = (key: string) => showFull || adaptive.isVisible(key);
+  const tableColumns = useTableColumns(EVENTS_COLUMNS);
+  const showFull = tableColumns.showFull;
+  const show = tableColumns.show;
 
   useEffect(() => {
     let cancelled = false;
@@ -236,10 +236,10 @@ function LocationEventsContent({ slug }: { slug: string }) {
       )}
 
       <section className="loc-section">
-        <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
+        <TableViewToggle columns={tableColumns} />
         <TableWrap
           innerRef={attachFloatingHead}
-          outerRef={adaptive.measureRef}
+          outerRef={tableColumns.measureRef}
           className="loc-events-wrap"
           stickyFirstCol={showFull}
         >
@@ -247,7 +247,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
             className={`data-table data-table-layout-fixed loc-events-table${
               showFull ? "" : " data-table-short"
             }`}
-            style={showFull ? undefined : { minWidth: adaptive.minWidth }}
+            style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
           >
             <colgroup>
               <col className="col-number" />

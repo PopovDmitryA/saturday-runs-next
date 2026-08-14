@@ -37,8 +37,9 @@ import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import { VolunteerRolesModal } from "./VolunteerRolesModal";
 import { TableWrap } from "../../components/tableUx/TableWrap";
-import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
-import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
+import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
+import { useTableColumns } from "../../components/tableUx/useTableColumns";
+import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { PinnedMeBar } from "../../components/tableUx/PinnedMeBar";
 import "./leaderboards.css";
 
@@ -741,7 +742,6 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
   const attachFloatingHead = useFloatingTableHead(".tview-bar");
-  const [tableView, setTableView] = useTableView("leaderboard");
 
   useEffect(() => {
     const handleScroll = () => {
@@ -953,9 +953,9 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     metric,
   ]);
 
-  const adaptive = useAdaptiveColumns(lbColumns);
-  const showFull = tableView === "full";
-  const show = (key: string) => showFull || adaptive.isVisible(key);
+  const tableColumns = useTableColumns(lbColumns);
+  const showFull = tableColumns.showFull;
+  const show = tableColumns.show;
   const showPlatforms = show("platforms");
   // Жёсткая раскладка нужна только полному набору: там колонки-названия
   // (локации, роли) иначе раздувают таблицу по самому длинному слову. В кратком
@@ -1479,13 +1479,15 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
               </section>
             )}
 
-            {/* На компьютере переключатель тоже нужен: в кратком виде уходят
-                колонки систем, из-за которых таблица перегружена. */}
-            <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
+            {/* Сегмент появляется, только пока краткий вид что-то прячет
+                (обычно колонки систем — самая тяжёлая часть таблицы). */}
+            <TableViewToggle columns={tableColumns} />
             <TableWrap
               innerRef={attachFloatingHead}
-              className={`lb-table-wrap${fixedLayout ? " lb-table-wrap-wide" : ""}`}
-              outerRef={adaptive.measureRef}
+              className={`lb-table-wrap${fixedLayout ? " lb-table-wrap-wide" : ""}${
+                tableColumns.hasToggle ? "" : " lb-table-wrap-flat"
+              }`}
+              outerRef={tableColumns.measureRef}
             >
               <table
                 ref={tableRef}
@@ -1494,7 +1496,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                 }${showFull ? " lb-table-full" : ""}${
                   isHomeDistance ? " lb-table-wide-values" : ""
                 }`}
-                style={showFull ? undefined : { minWidth: adaptive.minWidth }}
+                style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
               >
                 <thead>
                   <tr>

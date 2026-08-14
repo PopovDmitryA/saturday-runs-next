@@ -7,8 +7,9 @@ import {
 } from "../../lib/api";
 import { formatDate, formatDuration, platformCodeLabel, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
-import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
-import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
+import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
+import { useTableColumns } from "../../components/tableUx/useTableColumns";
+import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 
 function SiteProfileIcon() {
@@ -222,10 +223,9 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // «Кратко» набирает колонки по ширине блока, «Полно» — весь набор со скроллом.
-  const [tableView, setTableView] = useTableView("coRunners");
-  const adaptive = useAdaptiveColumns(CO_RUNNERS_COLUMNS);
-  const showFull = tableView === "full";
-  const show = (key: string) => showFull || adaptive.isVisible(key);
+  const tableColumns = useTableColumns(CO_RUNNERS_COLUMNS);
+  const showFull = tableColumns.showFull;
+  const show = tableColumns.show;
   const [query, setQuery] = useState("");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [meetingsByKey, setMeetingsByKey] = useState<Record<string, CoRunnerMeetingItem[]>>({});
@@ -311,11 +311,11 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
-            <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
-            <TableWrap stickyFirstCol={showFull} outerRef={adaptive.measureRef}>
+            <TableViewToggle columns={tableColumns} />
+            <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
               <table
                 className="data-table co-runners-table"
-                style={showFull ? undefined : { minWidth: adaptive.minWidth }}
+                style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
               >
                 <thead>
                   <tr>

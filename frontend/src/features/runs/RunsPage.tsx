@@ -30,8 +30,9 @@ import { formatFinishTimeValue, formatInt, platformCodeLabel } from "../../lib/f
 import { ShareRowButton } from "../sharing/ShareRowButton";
 import { runSubject } from "../sharing/subjects";
 import { TableWrap } from "../../components/tableUx/TableWrap";
-import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
-import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
+import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
+import { useTableColumns } from "../../components/tableUx/useTableColumns";
+import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 
 // bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
 // оборачивает контент в собственный каркас с сайдбаром.
@@ -73,12 +74,11 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const allPlatforms = useMemo(() => uniquePlatforms(runs), [runs]);
 
   const filters = useActivityFilters(runs);
-  const [tableView, setTableView] = useTableView("runs");
   // Краткий вид набирает колонки под ширину блока (единый механизм со всеми
   // таблицами сайта), «Полно» — весь набор с горизонтальным скроллом.
-  const adaptive = useAdaptiveColumns(RUNS_COLUMNS);
-  const showFull = tableView === "full";
-  const show = (key: string) => showFull || adaptive.isVisible(key);
+  const tableColumns = useTableColumns(RUNS_COLUMNS);
+  const showFull = tableColumns.showFull;
+  const show = tableColumns.show;
   // «★» рисуется, только если оценки вообще доступны, — иначе колонка пустая.
   const visibleColumnCount = RUNS_COLUMNS.filter(
     (column) => show(column.key) && (column.key !== "rating" || showRating),
@@ -274,13 +274,13 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
             ))}
           </div>
 
-          <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
-          <TableWrap stickyFirstCol={showFull} outerRef={adaptive.measureRef}>
+          <TableViewToggle columns={tableColumns} />
+          <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
             <table
               className={`data-table data-table-filterable data-table-layout-fixed runs-table${
                 showFull ? "" : " data-table-short"
               }`}
-              style={showFull ? undefined : { minWidth: adaptive.minWidth }}
+              style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
             >
               <colgroup>
                 <col className="col-date" />

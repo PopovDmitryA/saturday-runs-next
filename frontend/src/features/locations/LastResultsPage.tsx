@@ -7,8 +7,9 @@ import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { getLastResults, type LastResultsItem } from "../../lib/api";
 import { formatDate, formatFinishTimeValue, formatInt, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
-import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
-import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
+import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
+import { useTableColumns } from "../../components/tableUx/useTableColumns";
+import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 
 const PLATFORM_FILTERS = ["five_verst", "s95", "runpark"] as const;
 
@@ -82,12 +83,11 @@ const LAST_RESULTS_COLUMNS: AdaptiveColumn[] = [
 
 function LastResultsTable({ items }: { items: LastResultsItem[] }) {
   const [sort, setSort] = useState<SortState>({ key: "event_date", asc: false });
-  const [tableView, setTableView] = useTableView("lastResults");
   // Краткий вид набирает колонки по ширине экрана: минимум — локация, дата и
   // финишёры, дальше город, система, волонтёры и так до полного набора.
-  const adaptive = useAdaptiveColumns(LAST_RESULTS_COLUMNS);
-  const showFull = tableView === "full";
-  const show = (key: string) => showFull || adaptive.isVisible(key);
+  const tableColumns = useTableColumns(LAST_RESULTS_COLUMNS);
+  const showFull = tableColumns.showFull;
+  const show = tableColumns.show;
 
   const sorted = useMemo(() => {
     const copy = [...items];
@@ -135,13 +135,13 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
 
   return (
     <>
-      <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
-      <TableWrap stickyFirstCol={showFull} outerRef={adaptive.measureRef}>
+      <TableViewToggle columns={tableColumns} />
+      <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
         <table
           className={`data-table data-table-layout-fixed loc-index-table${
             showFull ? "" : " data-table-short"
           }`}
-          style={showFull ? undefined : { minWidth: adaptive.minWidth }}
+          style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
         >
           <colgroup>
             <col />
