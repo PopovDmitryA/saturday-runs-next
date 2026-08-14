@@ -229,8 +229,22 @@ function lastSaturdays(count: number): string[] {
  * «Сводка», но имя приходит строкой (серверный рендер работает без сессии,
  * объекта User там нет), формат — широкий, как разворачивают ссылки чаты.
  */
+// Что показываем на превью ссылки и в каком порядке. Километры сознательно
+// не берём: у пятикилометровых стартов это просто пробежки × 5, цифра ничего
+// не добавляет — куда интереснее личный рекорд.
+const PROFILE_CARD_METRICS = ["runs", "volunteering", "locations", "best_time"] as const;
+
 export function profileCardSubject(stats: DashboardStats, name: string): ShareSubject {
   const summary = summarySubject(stats, null, "all", []);
+  const byId = new Map(summary.data.metrics.map((metric) => [metric.id, metric]));
+  const preferred = PROFILE_CARD_METRICS.map((id) => byId.get(id)).filter(
+    (metric): metric is ShareMetric => Boolean(metric),
+  );
+  // Хвост (регионы, победы, серия…) остаётся кандидатом в «Настроить».
+  const rest = summary.data.metrics.filter(
+    (metric) => !PROFILE_CARD_METRICS.includes(metric.id as (typeof PROFILE_CARD_METRICS)[number]),
+  );
+
   return {
     ...summary,
     kind: "summary",
@@ -239,6 +253,7 @@ export function profileCardSubject(stats: DashboardStats, name: string): ShareSu
       title: name,
       subtitle: "субботние пробежки",
       plate: "УЧАСТНИК",
+      metrics: [...preferred, ...rest],
       // Мини-календарь в широком формате только съедает место под цифры.
       heat: undefined,
     },
