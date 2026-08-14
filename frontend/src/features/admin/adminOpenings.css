@@ -1,0 +1,106 @@
+/* Разметка открытий локаций. Таблица широкая (четыре колонки, в одной из них
+   форма), поэтому у неё свои ширины: без них колонка «Первые старты»
+   растягивается по самой длинной строке и выдавливает форму за экран. */
+
+.admin-openings-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-openings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.admin-openings-search {
+  flex: 1 1 18rem;
+  min-width: 12rem;
+}
+
+.admin-openings-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  white-space: nowrap;
+}
+
+.admin-openings-table td {
+  vertical-align: top;
+}
+
+.admin-openings-name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 10rem;
+}
+
+.admin-openings-current {
+  display: block;
+  white-space: nowrap;
+}
+
+.admin-openings-source {
+  display: inline-block;
+  margin-top: 0.25rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.admin-openings-source-manual {
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+}
+
+.admin-openings-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.admin-openings-event {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  padding: 0.1rem 0.35rem;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.admin-openings-event:hover {
+  border-color: var(--border);
+}
+
+.admin-openings-event.is-opening {
+  border-color: var(--accent-indigo);
+  font-weight: 600;
+}
+
+.admin-openings-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 14rem;
+}
+
+.admin-openings-number {
+  max-width: 6rem;
+}
+
+.admin-openings-meta {
+  font-size: 0.75rem;
+}

@@ -52,11 +52,12 @@
   border-radius: 14px;
 }
 
+/* Без капса: сортируемые заголовки — <button>, а браузер сбрасывает у кнопок
+   text-transform, поэтому капсом отображались только несортируемые колонки —
+   в одной шапке половина слов КАПСОМ, половина нет (репорт Дмитрия 11.08.2026). */
 .portal-section .data-table thead th {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: var(--text-muted);
 }
 

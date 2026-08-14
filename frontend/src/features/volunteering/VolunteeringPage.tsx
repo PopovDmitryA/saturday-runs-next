@@ -25,7 +25,7 @@ import {
 import { useAppDataSource } from "../../lib/appDataSource";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { createFullSelection, sortVolunteering, toggleDateSort, uniquePlatforms } from "../../lib/activityList";
-import { platformCodeLabel } from "../../lib/format";
+import { formatInt, platformCodeLabel } from "../../lib/format";
 import { ShareRowButton } from "../sharing/ShareRowButton";
 import { volunteeringSubject } from "../sharing/subjects";
 
@@ -220,7 +220,13 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
             <p className="muted">В демо-профиле нет записей о волонтёрстве.</p>
           </div>
         ) : (
-          <EmptyActivityState activityLabel="Записей о волонтёрстве" hasProfileLink={hasProfileLink} />
+          <EmptyActivityState
+            activityLabel="Волонтёрств"
+            ownerHint="Попробуйте себя волонтёром на ближайшем старте — и записи появятся здесь."
+            publicHint="Как только появится первое волонтёрство, оно окажется здесь."
+            hasProfileLink={hasProfileLink}
+            isPublicProfile={mode === "public-profile"}
+          />
         ))}
 
       {!loading && !error && items.length > 0 && (
@@ -233,7 +239,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
               className={activePlatformFilter === "all" ? "map-mode-tab active" : "map-mode-tab"}
               onClick={() => filters.setSelectedPlatforms(createFullSelection(allPlatforms))}
             >
-              Все ({visibleVolCount})
+              Все ({formatInt(visibleVolCount)})
             </button>
             {platformCounts.map(({ code, count }) => (
               <button
@@ -244,7 +250,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                 className={activePlatformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
                 onClick={() => filters.setSelectedPlatforms(new Set([code]))}
               >
-                {platformCodeLabel(code)} ({count})
+                {platformCodeLabel(code)} ({formatInt(count)})
               </button>
             ))}
             {parkrunCount > 0 && (
@@ -256,7 +262,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                 disabled
                 title="Волонтёрства parkrun учтены в общей статистике, но не отображаются в таблице"
               >
-                parkrun ({parkrunCount})
+                parkrun ({formatInt(parkrunCount)})
               </button>
             )}
           </div>
@@ -594,7 +600,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
 
           <p className="table-foot muted">
             <span>
-              Показано: {displayedItems.length} из {visibleVolCount}
+              Показано: {formatInt(displayedItems.length)} из {formatInt(visibleVolCount)}
             </span>
             {filters.hasActiveFilters && (
               <button type="button" className="btn btn-ghost btn-sm" onClick={filters.resetAll}>

@@ -118,6 +118,34 @@ def s95_enqueue_locations_registry() -> dict[str, object]:
     return {"enqueued": 1}
 
 
+@celery_app.task(name="s95_sync.sync_location_descriptions", queue="s95")
+def s95_sync_location_descriptions_task(limit: int | None = None, *, force: bool = False) -> dict[str, object]:
+    """Описания площадок S95: пачка самых «протухших» страниц `/events/{slug}` за запуск."""
+
+    from app.sync.s95_location_descriptions import DEFAULT_BATCH_SIZE, sync_s95_location_descriptions
+
+    batch = limit or DEFAULT_BATCH_SIZE
+
+    def _run() -> dict[str, object]:
+        db = get_session_factory()()
+        try:
+            return asdict(sync_s95_location_descriptions(db, limit=batch))
+        finally:
+            db.close()
+
+    return run_s95_batch_reported_sync(
+        "s95 location descriptions",
+        _run,
+        details=f"до {batch} локаций",
+        hour_slot_key="s95:descriptions",
+        force=force,
+        reenqueue=lambda: s95_sync_location_descriptions_task.apply_async(
+            kwargs={"limit": limit, "force": force},
+            queue="s95",
+        ),
+    )
+
+
 @celery_app.task(name="s95_sync.api_new_protocols", queue="s95")
 def s95_api_new_protocols_task() -> dict[str, object]:
     """Import new protocols and refresh changed ones (via JSON API updated_at). Weekend scan —

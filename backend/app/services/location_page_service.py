@@ -30,6 +30,7 @@ from app.models import (
     EventSummary,
     Location,
     LocationCatalog,
+    LocationDescription,
     Participant,
     Platform,
     PlatformLink,
@@ -67,8 +68,13 @@ LOCATION_PAGE_CACHE_TTL_SECONDS = 3 * 60 * 60
 # несуществующие ключи, и страница жила до истечения TTL.
 
 
+# «Как добраться?» с любым хвостом пунктуации — так эту врезку называет S95.
+_TRAVEL_HEADING_RE = re.compile(r"\s*как\s+добраться\s*[?:.]*\s*", re.I)
+
+
 def location_page_cache_key(slug: str) -> str:
-    return f"locations:page:v9:{slug.strip().lower()}"
+    # v11 — в ответ добавлено описание площадки (расписание, трасса, как добраться).
+    return f"locations:page:v11:{slug.strip().lower()}"
 
 
 def location_events_cache_key(slug: str) -> str:
@@ -1049,6 +1055,65 @@ def _same_city_locations(
     ]
 
 
+def _travel_section_title(raw: object) -> str | None:
+    """Заголовок способа добраться — или None, если он повторяет заголовок блока.
+
+    У 5 вёрст секции названы способами («Пешком», «На автомобиле»), а у S95 вся
+    врезка называется «Как добраться» — ровно так же, как наш подзаголовок над
+    ней. Без этой отсечки на странице выходило «Как добраться» два раза подряд.
+    """
+
+    title = str(raw or "").strip()
+    if not title or _TRAVEL_HEADING_RE.fullmatch(title):
+        return None
+    return title
+
+
+def _description_payload(
+    db: Session,
+    ordered_platforms: Sequence[tuple[Location, str]],
+) -> dict[str, object] | None:
+    """Описание площадки первой системы, у которой оно есть.
+
+    Порядок тот же, что у таймлайна платформ: сначала действующая система,
+    потом исторические. Два описания одной площадки рядом (5 вёрст и S95 пишут
+    об одном парке каждый своё) читателю не помогают, а поиску выглядят как
+    дубль текста, поэтому берём одно.
+    """
+
+    location_ids = [location.id for location, _code in ordered_platforms]
+    if not location_ids:
+        return None
+
+    rows = {
+        row.location_id: row
+        for row in db.query(LocationDescription).filter(LocationDescription.location_id.in_(location_ids)).all()
+    }
+    for location, platform_code in ordered_platforms:
+        row = rows.get(location.id)
+        if row is None or not (row.schedule_text or row.course_text or row.travel_text or row.travel_sections):
+            continue
+        return {
+            "platform_code": platform_code,
+            "schedule_text": row.schedule_text,
+            "course_text": row.course_text,
+            "travel_text": row.travel_text,
+            "travel_sections": [
+                {"title": _travel_section_title(section.get("title")), "text": section.get("text")}
+                for section in (row.travel_sections or [])
+                if section.get("text")
+            ],
+            "links": [
+                {"title": link.get("title"), "url": link.get("url")}
+                for link in (row.links or [])
+                if link.get("url")
+            ],
+            "source_url": row.source_url,
+            "updated_at": row.content_updated_at.isoformat() if row.content_updated_at else None,
+        }
+    return None
+
+
 def build_location_page(
     db: Session, slug: str, *, use_cache: bool = True, refresh: bool = False
 ) -> dict[str, object] | None:
@@ -1285,6 +1350,7 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
         "map_url": _first_by_platform_order(identity.locations, lambda loc: loc.map_url),
         "start_point_url": _start_point_url(latitude, longitude),
         "platforms": platforms_payload,
+        "description": _description_payload(db, ordered_platforms),
         "stats": {
             "events_count": len(events),
             "finishers_total": finishers_total,

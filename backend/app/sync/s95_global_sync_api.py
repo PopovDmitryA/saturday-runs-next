@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app.migration.helpers import s95_country_from_url
 from app.models import Event, Location, Participant, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalLocation
 from app.s95.api_client import S95ApiActivityRef, S95ApiLocation, fetch_all_locations, fetch_event_activities
@@ -89,13 +90,15 @@ def _ensure_location(db: Session, platform: Platform, api_loc: S95ApiLocation) -
     )
     if row is not None:
         return row
+    source_url = f"{api_loc.domain}/events/{api_loc.slug}"
     canonical = CanonicalLocation(
         external_key=api_loc.slug,
         name=api_loc.name,
+        country=s95_country_from_url(source_url),
         city=api_loc.town or None,
         latitude=api_loc.latitude,
         longitude=api_loc.longitude,
-        source_url=f"{api_loc.domain}/events/{api_loc.slug}",
+        source_url=source_url,
     )
     row, _ = upsert.upsert_location(db, platform, canonical)
     # Координаты пришли из того же реестра s95, что и у синка локаций, — значит

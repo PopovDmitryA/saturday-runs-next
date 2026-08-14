@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityTableCols } from "../../components/activityTable/ActivityTableCols";
 import { CheckboxListFilter } from "../../components/activityTable/CheckboxListFilter";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
@@ -27,15 +26,29 @@ import {
 import { useAppDataSource } from "../../lib/appDataSource";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { createFullSelection, sortRuns, toggleDateSort, toggleFinishSort, togglePaceSort, togglePositionSort, uniquePlatforms } from "../../lib/activityList";
-import { formatFinishTimeValue, platformCodeLabel } from "../../lib/format";
+import { formatFinishTimeValue, formatInt, platformCodeLabel } from "../../lib/format";
 import { ShareRowButton } from "../sharing/ShareRowButton";
 import { runSubject } from "../sharing/subjects";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
-import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
+import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 
 // bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
 // оборачивает контент в собственный каркас с сайдбаром.
+// Колонки «Пробежек» в порядке важности: дата, локация и время — всегда,
+// дальше добавляем по мере ширины. Ширины совпадают с CSS (.runs-table).
+const RUNS_COLUMNS: AdaptiveColumn[] = [
+  { key: "date", width: 160, required: true },
+  { key: "location", width: 200, required: true },
+  { key: "time", width: 112, required: true },
+  { key: "position", width: 104 },
+  { key: "platform", width: 112 },
+  { key: "pace", width: 120 },
+  { key: "gender_position", width: 136 },
+  // 68px: в ячейке две иконки — оценка старта и «Поделиться» (см. .col-rating).
+  { key: "rating", width: 68 },
+];
+
 function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const { listRuns, mode } = useAppDataSource();
   const isDemo = mode === "demo";
@@ -60,10 +73,16 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const allPlatforms = useMemo(() => uniquePlatforms(runs), [runs]);
 
   const filters = useActivityFilters(runs);
-  // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
   const [tableView, setTableView] = useTableView("runs");
-  const narrowViewport = useNarrowViewport();
-  const showFull = !narrowViewport || tableView === "full";
+  // Краткий вид набирает колонки под ширину блока (единый механизм со всеми
+  // таблицами сайта), «Полно» — весь набор с горизонтальным скроллом.
+  const adaptive = useAdaptiveColumns(RUNS_COLUMNS);
+  const showFull = tableView === "full";
+  const show = (key: string) => showFull || adaptive.isVisible(key);
+  // «★» рисуется, только если оценки вообще доступны, — иначе колонка пустая.
+  const visibleColumnCount = RUNS_COLUMNS.filter(
+    (column) => show(column.key) && (column.key !== "rating" || showRating),
+  ).length;
 
   const displayedRuns = useMemo(
     () =>
@@ -220,7 +239,13 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
             <p className="muted">В демо-профиле нет пробежек для отображения.</p>
           </div>
         ) : (
-          <EmptyActivityState activityLabel="Пробежек" hasProfileLink={hasProfileLink} />
+          <EmptyActivityState
+            activityLabel="Пробежек"
+            ownerHint="Придите на ближайший субботний старт — и он появится здесь."
+            publicHint="Как только появится первая пробежка, она окажется здесь."
+            hasProfileLink={hasProfileLink}
+            isPublicProfile={mode === "public-profile"}
+          />
         ))}
 
       {!loading && !error && runs.length > 0 && (
@@ -233,7 +258,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
               className={activePlatformFilter === "all" ? "map-mode-tab active" : "map-mode-tab"}
               onClick={() => filters.setSelectedPlatforms(createFullSelection(allPlatforms))}
             >
-              Все ({visibleRunCount})
+              Все ({formatInt(visibleRunCount)})
             </button>
             {platformRunCounts.map(({ code, count }) => (
               <button
@@ -244,20 +269,29 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                 className={activePlatformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
                 onClick={() => filters.setSelectedPlatforms(new Set([code]))}
               >
-                {platformCodeLabel(code)} ({count})
+                {platformCodeLabel(code)} ({formatInt(count)})
               </button>
             ))}
           </div>
 
-
-          <TableViewToggle value={tableView} onChange={setTableView} />
-          <TableWrap stickyFirstCol={showFull}>
+          <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
+          <TableWrap stickyFirstCol={showFull} outerRef={adaptive.measureRef}>
             <table
-              className={`data-table data-table-filterable data-table-layout-fixed${
+              className={`data-table data-table-filterable data-table-layout-fixed runs-table${
                 showFull ? "" : " data-table-short"
               }`}
+              style={showFull ? undefined : { minWidth: adaptive.minWidth }}
             >
-              <ActivityTableCols variant="runs" withRating={showFull && showRating} short={!showFull} />
+              <colgroup>
+                <col className="col-date" />
+                {show("platform") && <col className="col-platform" />}
+                <col className="col-location" />
+                {show("position") && <col className="col-compact" />}
+                {show("gender_position") && <col className="col-gender" />}
+                <col className="col-time" />
+                {show("pace") && <col className="col-pace" />}
+                {show("rating") && showRating && <col className="col-rating" />}
+              </colgroup>
               <thead>
                 <tr>
                   <ColumnHeader
@@ -304,10 +338,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       ) : undefined
                     }
                   />
-                  <ColumnHeader
-                    label="Система"
-                    filterable={false}
-                  />
+                  {show("platform") && <ColumnHeader label="Система" filterable={false} />}
                   <ColumnHeader
                     label="Локация"
                     filterActive={filters.locationFilterActive}
@@ -321,18 +352,20 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       />
                     }
                   />
-                  <ColumnHeader
-                    label="Место"
-                    filterable={false}
-                    sortActive={positionSortActive}
-                    sortAsc={filters.sort === "position_asc"}
-                    onSort={() => filters.setSort((current) => togglePositionSort(current))}
-                  />
-                  {showFull && (
+                  {show("position") && (
                     <ColumnHeader
-                      label={narrowViewport ? "Пол" : "Место (пол)"}
+                      label="Место"
                       filterable={false}
-                      hint={narrowViewport ? "Место среди своего пола" : undefined}
+                      sortActive={positionSortActive}
+                      sortAsc={filters.sort === "position_asc"}
+                      onSort={() => filters.setSort((current) => togglePositionSort(current))}
+                    />
+                  )}
+                  {show("gender_position") && (
+                    <ColumnHeader
+                      label="Место (пол)"
+                      filterable={false}
+                      hint="Место среди своего пола"
                     />
                   )}
                   <ColumnHeader
@@ -342,7 +375,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                     sortAsc={filters.sort === "finish_asc"}
                     onSort={() => filters.setSort((current) => toggleFinishSort(current))}
                   />
-                  {showFull && (
+                  {show("pace") && (
                     <ColumnHeader
                       label="Темп"
                       filterable={false}
@@ -351,7 +384,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       onSort={() => filters.setSort((current) => togglePaceSort(current))}
                     />
                   )}
-                  {showFull && showRating && (
+                  {show("rating") && showRating && (
                     <ColumnHeader
                       label="★"
                       filterable={false}
@@ -363,7 +396,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
               <tbody>
                 {displayedRuns.length === 0 ? (
                   <tr>
-                    <td colSpan={showFull ? (showRating ? 8 : 7) : 5} className="table-empty-cell">
+                    <td colSpan={visibleColumnCount} className="table-empty-cell">
                       <span className="muted">Нет строк по фильтрам</span>
                       {filters.hasActiveFilters && (
                         <button
@@ -401,27 +434,31 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                           }
                         />
                       </td>
-                      <td className="td-platform">
-                        <PlatformBadge code={run.platform_code} />
-                      </td>
+                      {show("platform") && (
+                        <td className="td-platform">
+                          <PlatformBadge code={run.platform_code} />
+                        </td>
+                      )}
                       <td className="td-location">
                         <LocationPrLocationName isLocationPr={run.is_location_pr}>
                           <LocationNameLink name={run.location_name} slug={run.location_slug} />
                         </LocationPrLocationName>
                       </td>
-                      <td className="td-compact">{run.position ?? "—"}</td>
-                      {showFull && <td className="td-compact">{run.gender_position ?? "—"}</td>}
+                      {show("position") && <td className="td-compact">{run.position ?? "—"}</td>}
+                      {show("gender_position") && (
+                        <td className="td-compact">{run.gender_position ?? "—"}</td>
+                      )}
                       <td className="td-time">
                         <GlobalPrFinishTime isGlobalPr={run.is_global_pr}>
                           {formatFinishTimeValue(run.finish_time_display, run.finish_time_sec)}
                         </GlobalPrFinishTime>
                       </td>
-                      {showFull && (
+                      {show("pace") && (
                         <td className="td-pace">
                           {run.pace_display ? `${run.pace_display} /км` : "—"}
                         </td>
                       )}
-                      {showFull &&
+                      {show("rating") &&
                         showRating &&
                         (() => {
                           const rating = run.run_result_id
@@ -455,7 +492,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
 
           <p className="table-foot muted">
             <span>
-              Показано: {displayedRuns.length} из {visibleRunCount}
+              Показано: {formatInt(displayedRuns.length)} из {formatInt(visibleRunCount)}
             </span>
             {filters.hasActiveFilters && (
               <button type="button" className="btn btn-ghost btn-sm" onClick={filters.resetAll}>

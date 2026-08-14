@@ -44,7 +44,9 @@ class LeaderboardRowResponse(BaseModel):
     # "ambiguous" — автовыбор шаткий, "manual_off_top" — выбрано руками вне тройки.
     home_location_note: str | None = None
     # Только у победных рейтингов: глобальный рекорд участника и последняя
-    # победа (у win_locations — последняя НОВАЯ локация с победой).
+    # победа (у win_locations — последняя НОВАЯ локация с победой). Тот же слот
+    # «площадка + дата» занимает «Последнее открытие» у рейтинга открытий —
+    # колонка одна и та же, подпись зависит от метрики.
     best_time_sec: int | None = None
     best_time_display: str | None = None
     last_win_location: str | None = None
@@ -112,6 +114,9 @@ class MyLeaderboardRowResponse(BaseModel):
     total: int
     total_delta: int
     rank: int | None
+    # Место среди всех с ненулевой метрикой — приходит и до порога рейтинга,
+    # в отличие от rank (тот только у прошедших порог).
+    rank_overall: int | None = None
     rank_delta: int | None
     included: bool
     threshold: int

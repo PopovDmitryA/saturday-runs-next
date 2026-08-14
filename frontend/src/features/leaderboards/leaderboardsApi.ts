@@ -7,6 +7,7 @@ export type LeaderboardMetric =
   | "volunteer_roles"
   | "locations"
   | "volunteer_locations"
+  | "openings"
   | "wins"
   | "win_locations"
   | "home_distance";
@@ -25,6 +26,16 @@ export type LeaderboardGender = "all" | "female";
 export const METRIC_VALUE_UNIT: Partial<Record<LeaderboardMetric, string>> = {
   home_distance: "км",
 };
+
+/**
+ * Рейтинги, ещё закрытые от публики: карточки нет в хабе, страница отдаёт 404,
+ * API отвечает «неизвестный рейтинг» всем, кроме админа. «Открытия» ждут ручной
+ * разметки С95 (решение Дмитрия 14.08.2026: сначала заполнить и перепроверить).
+ *
+ * Зеркало ADMIN_ONLY_METRICS на бэкенде — открывать рейтинг надо в обоих местах
+ * (плюс indexable в pageMeta.ts и seo_service.py).
+ */
+export const ADMIN_ONLY_METRICS: LeaderboardMetric[] = ["openings"];
 
 // Женский зачёт есть только у победных рейтингов (parkrun в него не идёт).
 export const GENDERED_METRICS: LeaderboardMetric[] = ["wins", "win_locations"];
@@ -204,6 +215,9 @@ export type MyLeaderboardRow = {
   total: number;
   total_delta: number;
   rank: number | null;
+  // Место среди всех с ненулевой метрикой — есть и у тех, кто порог рейтинга
+  // ещё не прошёл (в отличие от rank).
+  rank_overall?: number | null;
   rank_delta: number | null;
   included: boolean;
   threshold: number;

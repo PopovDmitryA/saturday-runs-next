@@ -42,6 +42,10 @@ from app.services.location_catalog_service import (
     is_foreign_location,
     russian_parkrun_location_ids,
 )
+from app.services.location_openings_service import (
+    OPENING_EVENT_CONDITION,
+    OPENING_EVENT_JOIN,
+)
 from app.time_format import format_finish_time_display
 from app.volunteer_role_taxonomy import (
     CANONICAL_ROLE_LABELS,
@@ -57,6 +61,7 @@ LeaderboardMetric = Literal[
     "volunteer_roles",
     "locations",
     "volunteer_locations",
+    "openings",
     "wins",
     "win_locations",
     "home_distance",
@@ -68,6 +73,7 @@ LEADERBOARD_METRICS: tuple[LeaderboardMetric, ...] = (
     "volunteer_roles",
     "locations",
     "volunteer_locations",
+    "openings",
     "wins",
     "win_locations",
     "home_distance",
@@ -140,6 +146,17 @@ ROLE_FILTER_METRICS: tuple[LeaderboardMetric, ...] = ("volunteering", "volunteer
 AMBIGUOUS_HOME_METRICS: tuple[LeaderboardMetric, ...] = ("home_distance",)
 
 
+# Рейтинги, ещё закрытые от публики: их видит только админ, пока данные не
+# выверены. «Открытия» ждут ручной разметки С95 (решение Дмитрия 14.08.2026:
+# сначала заполнить и перепроверить, открыть отдельным шагом).
+#
+# ОТКРЫТЬ РЕЙТИНГ = убрать метрику отсюда и сделать три парные правки:
+#   1) frontend/src/features/leaderboards/leaderboardsApi.ts — ADMIN_ONLY_METRICS;
+#   2) app/services/seo_service.py — indexable=True и адрес в _SITEMAP_STATIC;
+#   3) frontend/src/lib/pageMeta.ts — indexable: true (зеркало серверной меты).
+ADMIN_ONLY_METRICS: frozenset[str] = frozenset({"openings"})
+
+
 def _normalize_hide_ambiguous_home(metric: str, value: bool) -> bool:
     return bool(value) and metric in AMBIGUOUS_HOME_METRICS
 PLATFORM_FILTER_VALUES: tuple[str, ...] = ("all", *PLATFORM_COLUMNS)
@@ -197,6 +214,11 @@ METRIC_THRESHOLD_PERCENTILE: dict[str, float] = {
     # Волонтёрский туризм — та же форма распределения, что у бегового (подавляющее
     # большинство волонтёров знает ровно одну площадку), поэтому и перцентиль тот же.
     "volunteer_locations": 95,
+    # Открытия: на прод-данных у 82% побывавших хоть на одном открытии оно ровно
+    # одно (15 970 человек из 18 400) — форма распределения та же, что у туризма,
+    # и порог тот же. Ниже p95 таблица превратилась бы в список всех, кто
+    # однажды случайно попал на первый старт своей площадки.
+    "openings": 95,
     "wins": 0,
     "win_locations": 0,
     # Дальность от дома: у 89% участников ровно одна площадка, и сумма у них
@@ -246,6 +268,18 @@ METRIC_META: dict[str, dict[str, str]] = {
             "в разных системах считается одной. «Всего» — уникальные локации "
             "по всем системам (не сумма колонок). parkrun не участвует: его "
             "волонтёрства приходят сводкой ролей, без локации и даты."
+        ),
+    },
+    "openings": {
+        "title": "Рейтинг открытий — первопроходцы",
+        "unit": "открытий",
+        "description": (
+            "Сколько раз участник бежал на САМОМ ПЕРВОМ старте площадки. "
+            "Открытие считается по каждой системе отдельно: площадка, "
+            "открывшаяся сначала в parkrun, а потом в 5 вёрст, открывалась "
+            "дважды. Один и тот же старт, попавший в протоколы двух систем, "
+            "остаётся одним открытием. У С95 открытие размечено вручную — "
+            "номера забегов эта система не публикует."
         ),
     },
     "wins": {
@@ -631,6 +665,50 @@ GROUP BY rr.participant_id, p.code, e.location_id
 
 _LOCATION_VISITS_SQL = _location_visits_sql(only_wins=False)
 _WIN_LOCATION_VISITS_SQL = _location_visits_sql(only_wins=True)
+
+# Открытия площадок: по строке на каждый первый старт, где участник бежал.
+# Что считается открытием, решает app.services.location_openings_service —
+# здесь только его условие, чтобы правило жило в одном месте (у С95 номер
+# проставляется руками, у остальных систем это событие №1).
+#
+# Строки НЕ схлопываются по канонической площадке: открытие в parkrun и
+# открытие в 5 вёрст на той же физической точке — два разных события, и оба
+# идут в зачёт (решение Дмитрия 14.08.2026). А вот один и тот же старт,
+# попавший в протоколы двух систем, схлопывается как везде — вторичное событие
+# кросслинка отбрасывается (иначе открытие площадки, которую RunPark
+# зеркалит за 5 вёрст, дало бы +2 за одну и ту же пробежку).
+_OPENING_ROWS_SQL = (
+    _PARKRUN_ELIGIBLE_CTE
+    + f"""
+SELECT DISTINCT
+    rr.participant_id AS participant_id,
+    p.code AS platform_code,
+    e.location_id AS location_id,
+    e.event_date AS event_date
+FROM run_results rr
+JOIN events e ON e.id = rr.event_id
+JOIN platforms p ON p.id = e.platform_id
+LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
+{OPENING_EVENT_JOIN}
+WHERE e.is_test_event = false
+  AND rr.participant_id IS NOT NULL
+  AND ec.secondary_event_id IS NULL
+  AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
+  AND {OPENING_EVENT_CONDITION}
+  -- Открытие у площадки одно. Номер забега — не первичный ключ: у С95 мы
+  -- считаем его сами (ранг в хронологии), и на неполной истории один номер
+  -- висит сразу на нескольких датах. Без этой оговорки такая площадка
+  -- раздавала бы по открытию за каждую из них; берём самый ранний старт.
+  AND NOT EXISTS (
+    SELECT 1 FROM events e_prev
+    WHERE e_prev.location_id = e.location_id
+      AND e_prev.event_number = e.event_number
+      AND e_prev.is_test_event = false
+      AND (e_prev.event_date, e_prev.id) < (e.event_date, e.id)
+  )
+  /*PIDS_FILTER*/
+"""
+)
 
 # Волонтёрские визиты по локациям — та же форма строк, что у беговых, так что
 # рейтинг волонтёрского туризма считается тем же кодом (_collect_location_entities).
@@ -1158,6 +1236,9 @@ _RUSSIA_COUNTRY_NAMES = frozenset({"россия", "russia", "russian federation
 # и ещё 274 — «United Kingdom» (проверено 02.08.2026). Без склейки турист по
 # британским паркранам получал бы два региона вместо одного. Список дополнять
 # по мере появления новых написаний: SELECT DISTINCT country FROM locations.
+# С 10.08.2026 английские написания в БД не пишутся вовсе (normalize_country_name
+# в upsert_location), а накопленное разбирает scripts/backfill_location_country.py —
+# склейка осталась страховкой на случай новой заглушки от внешней системы.
 _COUNTRY_ALIASES: dict[str, str] = {
     "united kingdom": "великобритания",
     "great britain": "великобритания",
@@ -1609,6 +1690,59 @@ def _collect_numeric_entities(
             bucket[1] += week
             entity.total += total
             entity.week += week
+    return entities
+
+
+def _collect_opening_entities(
+    source: _MetricSource, platform: str = "all"
+) -> dict[str, _Entity]:
+    """Открытия площадок: счёт первых стартов, где участник бежал.
+
+    Считаем СОБЫТИЯ, а не площадки: открытие в parkrun и открытие в 5 вёрст на
+    одной физической точке — два разных события (в отличие от туристических
+    рейтингов, где такая площадка схлопывается в одну). Поэтому строки не идут
+    через _collect_location_entities, хотя выборка похожа.
+
+    Заодно заполняется «Последнее открытие» — площадка и дата самого свежего
+    первого старта участника (тот же слот строки, что «Последняя победа»).
+    """
+    links = source.links()
+    identity_by_location, identity_names, identity_slugs = source.identity_maps()
+    names = source.names()
+
+    entities: dict[str, _Entity] = {}
+    last_dates: dict[str, dict[str, date]] = {}
+    meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
+    per_entity: dict[str, dict[str, list[int]]] = {}
+
+    for pid, code, location_id, event_date in source.rows(_OPENING_ROWS_SQL):
+        if platform != "all" and code != platform:
+            continue
+        link = links.get(pid)
+        key = _entity_key(pid, link)
+        meta.setdefault(key, (pid, link))
+        bucket = per_entity.setdefault(key, {}).setdefault(code, [0, 0])
+        bucket[0] += 1
+        if event_date >= source.week_start:
+            bucket[1] += 1
+        identity = identity_by_location.get(location_id, str(location_id))
+        by_identity = last_dates.setdefault(key, {})
+        known = by_identity.get(identity)
+        by_identity[identity] = max(known, event_date) if known is not None else event_date
+
+    for key, (pid, link) in meta.items():
+        entity = _Entity(key=key)
+        if link is not None and not link.private:
+            entity.site_serial_id = link.serial_id
+            entity.display_name = link.display_name or names.get(pid)
+        else:
+            entity.display_name = names.get(pid)
+        for code, cell in per_entity.get(key, {}).items():
+            entity.values[code] = [cell[0], cell[1]]
+            entity.total += cell[0]
+            entity.week += cell[1]
+        _apply_last_win(entity, last_dates.get(key, {}), identity_names, identity_slugs)
+        entities[key] = entity
     return entities
 
 
@@ -2624,6 +2758,8 @@ def _build_snapshot(
             with_geo=True,
             role_filter=role_filter,
         )
+    elif metric == "openings":
+        entities = _collect_opening_entities(src, platform=platform)
     elif metric == "win_locations":
         if gender == "all":
             entities = _collect_location_entities(
@@ -2822,6 +2958,24 @@ def _write_cache(
         )
     except Exception:
         return
+
+
+def drop_metric_cache(metric: str) -> int:
+    """Выбросить все снапшоты одного рейтинга (по всей сетке фильтров).
+
+    Нужно там, где данные рейтинга меняются не протоколом, а руками: разметка
+    открытий в админке иначе доехала бы до таблицы только через TTL (6 часов),
+    и админ не увидел бы результата своей же правки. Ключи снимаем сканом —
+    FLUSHDB на этом Redis запрещён (в нём же сессии и очереди).
+    """
+    try:
+        client = get_redis_client()
+        keys = list(client.scan_iter(match=f"{CACHE_KEY_PREFIX}:{metric}*"))
+        if not keys:
+            return 0
+        return int(cast(int, client.delete(*keys)))
+    except Exception:
+        return 0
 
 
 _USED_ROLES_CACHE_KEY = f"{CACHE_KEY_PREFIX}:used_roles"
@@ -3076,7 +3230,12 @@ def _my_numeric_values_all(
         {"pids": participant_ids},
     ).all()
     occasion_rows_by_platform: dict[str, list[tuple[date, str]]] = {}
-    for _pid, platform_code, event_date, location_key in occasion_raw:
+    # Разбираем по индексам, а не распаковкой: в этот же запрос добавляли
+    # колонку роли (для фильтра ролей в таблице), и распаковка «в четыре» тут
+    # начала падать — своя строка в рейтинге волонтёрств пропадала целиком
+    # (репорт Дмитрия 12.08.2026).
+    for row in occasion_raw:
+        platform_code, event_date, location_key = row[1], row[2], row[3]
         occasion_rows_by_platform.setdefault(platform_code, []).append(
             (event_date, location_key or "unknown")
         )
@@ -3207,6 +3366,36 @@ def _my_win_values(
     return values, None, last_win
 
 
+def _my_opening_values(
+    db: Session, participant_ids: list[UUID], week_start: date, platform: str = "all"
+) -> tuple[dict[str, list[int]], int, int, _LastWin | None]:
+    """Открытия залогиненного: значения по системам, «всего» и последнее открытие."""
+    if not participant_ids:
+        return {}, 0, 0, None
+    sql = _OPENING_ROWS_SQL.replace(
+        "/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)"
+    )
+    rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
+    if not rows:
+        return {}, 0, 0, None
+    identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
+    values: dict[str, list[int]] = {}
+    last_dates: dict[str, date] = {}
+    for _pid, code, location_id, event_date in rows:
+        if platform != "all" and code != platform:
+            continue
+        bucket = values.setdefault(code, [0, 0])
+        bucket[0] += 1
+        if event_date >= week_start:
+            bucket[1] += 1
+        identity = identity_by_location.get(location_id, str(location_id))
+        known = last_dates.get(identity)
+        last_dates[identity] = max(known, event_date) if known is not None else event_date
+    total = sum(cell[0] for cell in values.values())
+    week = sum(cell[1] for cell in values.values())
+    return values, total, week, _resolve_last_win(last_dates, identity_names, identity_slugs)
+
+
 def _my_gendered_win_values(
     db: Session,
     participant_ids: list[UUID],
@@ -3316,7 +3505,13 @@ def _my_location_values(
 ) -> _MyLocationRow:
     if not participant_ids:
         return _MyLocationRow(values={}, total=0, week=0)
-    sql = sql_template.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
+    # Беговые шаблоны считают по run_results rr, волонтёрский — по
+    # volunteer_results vr. Фильтр по своим participant_id должен ссылаться на
+    # алиас ИЗ шаблона: с зашитым «rr» волонтёрская своя строка падала на
+    # «missing FROM-clause entry for table rr», и витрина молча оставалась без
+    # строки участника (репорт Дмитрия 12.08.2026).
+    pid_alias = "vr" if "FROM volunteer_results vr" in sql_template else "rr"
+    sql = sql_template.replace("/*PIDS_FILTER*/", f"AND {pid_alias}.participant_id = ANY(:pids)")
     rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     getters = _unit_key_getters(_location_geo_map(db) if with_geo else {})
@@ -3545,6 +3740,10 @@ def get_my_leaderboard_row(
             with_geo=True,
         )
         values, total, week = my_geo.values, my_geo.total, my_geo.week
+    elif metric == "openings":
+        values, total, week, my_last_win = _my_opening_values(
+            db, participant_ids, week_start, platform_resolved
+        )
     elif metric == "win_locations":
         if resolved == "all":
             my_row = _my_location_values(
@@ -3637,6 +3836,10 @@ def get_my_leaderboard_row(
         "total": total,
         "total_delta": week,
         "rank": rank if included else None,
+        # Место среди всех, у кого метрика вообще ненулевая, — считается и до
+        # порога рейтинга. «rank» остаётся местом В рейтинге (только для тех,
+        # кто порог прошёл), а это — ответ на «а где я сейчас вообще стою».
+        "rank_overall": rank,
         "rank_delta": (prev_rank - rank) if included and rank is not None and prev_rank is not None else None,
         "included": included,
         "threshold": threshold,

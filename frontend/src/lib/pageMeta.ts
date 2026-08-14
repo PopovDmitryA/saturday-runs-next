@@ -107,6 +107,14 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
     description: "Кто волонтёрил на наибольшем числе разных площадок субботних пробежек.",
     indexable: true,
   },
+  // Пока рейтинг открыт только админу (ADMIN_ONLY_METRICS в leaderboardsApi):
+  // indexable включаем вместе с публикацией, как и на бэкенде.
+  "/ratings/openings": {
+    title: "Рейтинг открытий локаций — run5k.run",
+    description:
+      "Первопроходцы субботних пробежек: кто чаще всех бежал на самом первом старте " +
+      "новой площадки 5 вёрст, С95, parkrun и RunPark.",
+  },
   "/ratings/wins": {
     title: "Рейтинг побед — run5k.run",
     description: "Кто чаще всех финишировал первым на субботних стартах, с разбивкой по полу.",
@@ -257,6 +265,15 @@ export function resolvePageMeta(rawPath: string): PageMeta {
   return STATIC_PAGE_META[path] ?? { title: DEFAULT_TITLE, description: DEFAULT_DESCRIPTION };
 }
 
+/**
+ * Разбивка по разрядам неразрывным пробелом: 21581 → «21 581».
+ * Зеркало _num из seo_service.py — тексты страницы и пререндера обязаны
+ * совпадать символ в символ.
+ */
+function num(value: number): string {
+  return value.toLocaleString("ru-RU");
+}
+
 function plural(count: number, one: string, few: string, many: string): string {
   const tail100 = count % 100;
   if (tail100 >= 11 && tail100 <= 14) {
@@ -326,10 +343,10 @@ export function locationPageMeta(
   const events = stats.events_count ?? 0;
   const finishers = stats.finishers_total ?? 0;
   if (events) {
-    parts.push(`${events} ${plural(events, "старт", "старта", "стартов")}`);
+    parts.push(`${num(events)} ${plural(events, "старт", "старта", "стартов")}`);
   }
   if (finishers) {
-    parts.push(`${finishers} ${plural(finishers, "финиш", "финиша", "финишей")}`);
+    parts.push(`${num(finishers)} ${plural(finishers, "финиш", "финиша", "финишей")}`);
   }
   const male = stripLeadingHours(stats.course_records?.male?.finish_time_display ?? null);
   const female = stripLeadingHours(stats.course_records?.female?.finish_time_display ?? null);
@@ -456,8 +473,8 @@ export function locationLeadSentences(payload: LocationMetaSource): string[] {
   const finishers = stats.finishers_total ?? 0;
   if (events && finishers) {
     sentences.push(
-      `Здесь прошло ${events} ${plural(events, "старт", "старта", "стартов")}, ` +
-        `финишировали ${finishers} ${plural(finishers, "участник", "участника", "участников")}.`,
+      `Здесь прошло ${num(events)} ${plural(events, "старт", "старта", "стартов")}, ` +
+        `финишировали ${num(finishers)} ${plural(finishers, "участник", "участника", "участников")}.`,
     );
   }
 

@@ -5,9 +5,10 @@ import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { getLocationsIndex, type LocationIndexItem } from "../../lib/api";
-import { formatDate, formatFinishTimeValue, pluralizeRu } from "../../lib/format";
+import { formatDate, formatFinishTimeValue, formatInt, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
+import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 
 const PLATFORM_FILTERS = ["five_verst", "s95", "runpark"] as const;
 
@@ -50,7 +51,7 @@ function formatAvgFinishers(item: LocationIndexItem): string {
   }
   // Меньше десяти человек — один знак после запятой: разница 4,2 и 4,8
   // для маленькой площадки существенна, для сотенной — шум.
-  return value < 10 ? value.toFixed(1).replace(".", ",") : String(Math.round(value));
+  return value < 10 ? value.toFixed(1).replace(".", ",") : formatInt(value);
 }
 
 function matchesQuery(item: LocationIndexItem, query: string): boolean {
@@ -84,14 +85,32 @@ function sortValue(item: LocationIndexItem, key: SortKey): number | string | nul
   }
 }
 
+// Краткий вид: колонки в порядке важности, а не в порядке вывода. Обязательный
+// минимум — название, система и «Стартов»; дальше добавляем по мере ширины.
+// Ширины совпадают с CSS (.loc-index-table): col-city 10rem, col-platform
+// 6.5rem, col-metric 9.25rem, col-metric-wide 11.5rem, col-date 10rem.
+const LOCATIONS_COLUMNS: AdaptiveColumn[] = [
+  { key: "name", width: 170, required: true },
+  { key: "platform", width: 104, required: true },
+  { key: "events_count", width: 148, required: true },
+  { key: "city", width: 160 },
+  { key: "finishers_total", width: 148 },
+  { key: "first_event_date", width: 160 },
+  { key: "avg_finishers", width: 148 },
+  { key: "attendance_record", width: 148 },
+  { key: "best_male", width: 184 },
+  { key: "best_female", width: 184 },
+];
+
 function LocationsTable({ items }: { items: LocationIndexItem[] }) {
   const [sort, setSort] = useState<SortState>({ key: "events_count", asc: false });
-  // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
   const [tableView, setTableView] = useTableView("locationsIndex");
-  // Краткий вид доступен и на компьютере (решение Дмитрия 04.08.2026): в полном
-  // наборе колонок названиям локаций достаётся слишком мало места и они режутся
-  // многоточием, а лишние столбцы нужны не всегда.
+  // «Полно» — весь набор с горизонтальным скроллом. «Кратко» — столько колонок,
+  // сколько влезает в ширину блока: на телефоне это три, на широком мониторе —
+  // почти всё (решение Дмитрия 11.08.2026, вместо порога 820px).
+  const adaptive = useAdaptiveColumns(LOCATIONS_COLUMNS);
   const showFull = tableView === "full";
+  const show = (key: string) => showFull || adaptive.isVisible(key);
 
   const sorted = useMemo(() => {
     const copy = [...items];
@@ -131,81 +150,76 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
     onSort: () => toggleSort(key),
   });
 
+  const visibleCount = LOCATIONS_COLUMNS.filter((column) => show(column.key)).length;
+
   return (
     <>
-      <TableViewToggle
-          value={tableView}
-          onChange={setTableView}
-          className="tview-toggle-always"
-        />
-      <TableWrap stickyFirstCol={showFull}>
+      <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
+      <TableWrap stickyFirstCol={showFull} outerRef={adaptive.measureRef}>
         <table
           className={`data-table data-table-layout-fixed loc-index-table${
             showFull ? "" : " data-table-short"
           }`}
+          style={showFull ? undefined : { minWidth: adaptive.minWidth }}
         >
         <colgroup>
           <col />
-          {showFull && <col className="col-city" />}
+          {show("city") && <col className="col-city" />}
           <col className="col-platform" />
           <col className="col-metric" />
-          {showFull && (
-            <>
-              <col className="col-metric" />
-              <col className="col-metric-wide" />
-              <col className="col-metric-wide" />
-              <col className="col-metric" />
-              <col className="col-metric" />
-              <col className="col-date" />
-            </>
-          )}
+          {show("finishers_total") && <col className="col-metric" />}
+          {show("avg_finishers") && <col className="col-metric" />}
+          {show("attendance_record") && <col className="col-metric" />}
+          {show("best_male") && <col className="col-metric-wide" />}
+          {show("best_female") && <col className="col-metric-wide" />}
+          {show("first_event_date") && <col className="col-date" />}
         </colgroup>
         <thead>
           <tr>
             <ColumnHeader label="Локация" {...sortProps("name")} />
-            {showFull && <ColumnHeader label="Город" {...sortProps("city")} />}
-            <ColumnHeader label="Системы" filterable={false} />
+            {show("city") && <ColumnHeader label="Город" {...sortProps("city")} />}
+            <ColumnHeader label="Система" filterable={false} />
             <ColumnHeader
               label="Стартов"
               hint="Мероприятий проведено за всё время"
               {...sortProps("events_count")}
             />
-            {showFull && (
+            {show("finishers_total") && (
               <ColumnHeader
                 label="Финишей"
                 hint="Финишей за всё время"
                 {...sortProps("finishers_total")}
               />
             )}
-            {showFull && (
+            {show("avg_finishers") && (
               <ColumnHeader
                 label="В среднем"
                 hint="Средняя явка: финишей за всё время ÷ число стартов"
                 {...sortProps("avg_finishers")}
               />
             )}
-            {showFull && (
+            {show("attendance_record") && (
               <ColumnHeader
                 label="Рекорд явки"
                 hint="Максимум финишей за один старт (в подсказке — дата)"
                 {...sortProps("attendance_record")}
               />
             )}
-            {showFull && (
+            {show("best_male") && (
               <ColumnHeader
-                label="Луч. М"
+                label="Лучшее время (М)"
                 hint="Рекорд локации (LR): лучшее время мужчины здесь за всю историю"
                 {...sortProps("best_male")}
               />
             )}
-            {showFull && (
+            {show("best_female") && (
               <ColumnHeader
-                label="Луч. Ж"
+                label="Лучшее время (Ж)"
                 hint="Рекорд локации (LR): лучшее время женщины здесь за всю историю"
                 {...sortProps("best_female")}
               />
             )}
-            {showFull && (
+            {show("first_event_date") && (
               <ColumnHeader
                 label="Первый старт"
                 {...sortProps("first_event_date")}
@@ -216,7 +230,7 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
         <tbody>
           {sorted.length === 0 ? (
             <tr>
-              <td colSpan={showFull ? 10 : 3} className="table-empty-cell">
+              <td colSpan={visibleCount} className="table-empty-cell">
                 <span className="muted">Нет локаций по фильтрам</span>
               </td>
             </tr>
@@ -227,7 +241,7 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                   <a href={`/locations/${item.slug}`}>{item.name}</a>
                   <LocationStatusBadge isPaused={item.is_paused} isCancelled={item.is_cancelled} />
                 </td>
-                {showFull && (
+                {show("city") && (
                   <td className="muted">
                     {item.city ?? "—"}
                     {item.country && item.country !== "Россия" ? ` · ${item.country}` : ""}
@@ -240,10 +254,12 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                     ))}
                   </span>
                 </td>
-                <td className="td-compact">{item.events_count || "—"}</td>
-                {showFull && <td className="td-compact">{item.finishers_total || "—"}</td>}
-                {showFull && <td className="td-compact">{formatAvgFinishers(item)}</td>}
-                {showFull && (
+                <td className="td-compact">{item.events_count ? formatInt(item.events_count) : "—"}</td>
+                {show("finishers_total") && (
+                  <td className="td-compact">{item.finishers_total ? formatInt(item.finishers_total) : "—"}</td>
+                )}
+                {show("avg_finishers") && <td className="td-compact">{formatAvgFinishers(item)}</td>}
+                {show("attendance_record") && (
                   <td
                     className="td-compact"
                     title={
@@ -252,20 +268,22 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                         : undefined
                     }
                   >
-                    {item.attendance_record_finishers ?? "—"}
+                    {item.attendance_record_finishers != null ? formatInt(item.attendance_record_finishers) : "—"}
                   </td>
                 )}
-                {showFull && (
+                {show("best_male") && (
                   <td className="td-compact">
                     {formatRecord(item.best_male_time_display, item.best_male_time_sec)}
                   </td>
                 )}
-                {showFull && (
+                {show("best_female") && (
                   <td className="td-compact">
                     {formatRecord(item.best_female_time_display, item.best_female_time_sec)}
                   </td>
                 )}
-                {showFull && <td>{item.first_event_date ? formatDate(item.first_event_date) : "—"}</td>}
+                {show("first_event_date") && (
+                  <td>{item.first_event_date ? formatDate(item.first_event_date) : "—"}</td>
+                )}
               </tr>
             ))
           )}

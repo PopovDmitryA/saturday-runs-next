@@ -17,6 +17,23 @@ class ChallengeLevelDatesResponse(BaseModel):
     gold: str | None = None
 
 
+class ChallengeTierResponse(BaseModel):
+    # easy | medium | hard | solo (один тир на весь челлендж — фронт не рисует вкладки)
+    tier: str
+    # Человекочитаемая подпись вкладки (Лёгкий/Средний/Сложный); None для "solo"
+    label: str | None = None
+    levels: ChallengeLevelsResponse
+    target: int
+    # bronze | silver | gold | None (не достигнут)
+    level: str | None = None
+    next_level: str | None = None
+    to_next_level: int | None = None
+    # Человекочитаемое «сколько осталось» (p-индекс: «ещё 2 пробежки»)
+    to_next_label: str | None = None
+    pct: float = 0.0
+    level_dates: ChallengeLevelDatesResponse
+
+
 class ChallengeResponse(BaseModel):
     code: str
     title: str
@@ -25,19 +42,16 @@ class ChallengeResponse(BaseModel):
     # collection | coincidence | scale | community
     category: str
     current: int
-    target: int
-    levels: ChallengeLevelsResponse
-    # bronze | silver | gold | None (не достигнут)
-    level: str | None = None
-    next_level: str | None = None
-    to_next_level: int | None = None
-    # Человекочитаемое «сколько осталось» (p-индекс: «ещё 2 пробежки»)
-    to_next_label: str | None = None
-    pct: float = 0.0
     unit: str | None = None
     # Челлендж-специфичные детали: cells/letters/days/items — рисуются на фронте
     detail: dict[str, object] = Field(default_factory=dict)
-    level_dates: ChallengeLevelDatesResponse
+    # Уровни сложности — обычно [easy, medium, hard], у «Семи дней» один "solo"
+    tiers: list[ChallengeTierResponse]
+    # Самый сложный тир, где взят хоть один уровень — им подписывается карточка
+    best_tier: str | None = None
+    best_level: str | None = None
+    # Вкладка, открытая по умолчанию: первый ещё не пройденный до золота тир
+    default_tier: str
     # Насколько последняя пробежка продвинула счётчик (0 — не продвинула)
     recent_delta: int = 0
 
@@ -47,6 +61,8 @@ class BadgeResponse(BaseModel):
     title: str
     icon: str
     level: str
+    tier: str | None = None
+    tier_label: str | None = None
     # Дата, когда был получен именно этот уровень
     achieved_at: str | None = None
 

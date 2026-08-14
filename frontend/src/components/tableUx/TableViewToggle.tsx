@@ -17,41 +17,46 @@ type TableViewToggleProps = {
   /** Подпись полного режима — по умолчанию «Полно». */
   fullLabel?: string;
   /**
-   * Дополнительный класс. `tview-toggle-always` показывает сегмент и на
-   * компьютере: так сделано в рейтингах, где краткий вид убирает тяжёлые
-   * колонки систем. По умолчанию сегмент виден только на узких экранах.
+   * Показывать сегмент и на компьютере: так сделано там, где краткий вид
+   * убирает колонки на любой ширине (рейтинги, локации, журнал протоколов).
+   * По умолчанию сегмент виден только на узких экранах.
    */
-  className?: string;
+  alwaysVisible?: boolean;
 };
 
+/**
+ * Сегмент «Кратко | Полно» в собственной липкой полосе (`.tview-bar`): полоса
+ * прилипает под шапкой сайта, чтобы сменить набор колонок можно было из любого
+ * места длинной таблицы, а не отматывая страницу назад (просьба Дмитрия
+ * 11.08.2026). Полоса прячется вместе с сегментом, иначе на компьютере от неё
+ * оставалась бы пустая строка.
+ */
 export function TableViewToggle({
   value,
   onChange,
   fullLabel = "Полно",
-  className = "",
+  alwaysVisible = false,
 }: TableViewToggleProps) {
   return (
-    <div
-      className={`tview-toggle${className ? ` ${className}` : ""}`}
-      role="group"
-      aria-label="Набор колонок таблицы"
-    >
-      <button
-        type="button"
-        aria-pressed={value === "short"}
-        className={`tview-tab${value === "short" ? " tview-tab-active" : ""}`}
-        onClick={() => onChange("short")}
-      >
-        Кратко
-      </button>
-      <button
-        type="button"
-        aria-pressed={value === "full"}
-        className={`tview-tab${value === "full" ? " tview-tab-active" : ""}`}
-        onClick={() => onChange("full")}
-      >
-        {fullLabel}
-      </button>
+    <div className={`tview-bar${alwaysVisible ? " tview-bar-always" : ""}`}>
+      <div className="tview-toggle" role="group" aria-label="Набор колонок таблицы">
+        <button
+          type="button"
+          aria-pressed={value === "short"}
+          className={`tview-tab${value === "short" ? " tview-tab-active" : ""}`}
+          onClick={() => onChange("short")}
+        >
+          Кратко
+        </button>
+        <button
+          type="button"
+          aria-pressed={value === "full"}
+          className={`tview-tab${value === "full" ? " tview-tab-active" : ""}`}
+          onClick={() => onChange("full")}
+        >
+          {fullLabel}
+        </button>
+      </div>
     </div>
   );
 }

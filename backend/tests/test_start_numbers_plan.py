@@ -247,28 +247,34 @@ def test_plan_scopes_to_platform_filter(db_session) -> None:
     assert {row["number"] for row in only_s95["rows"] if row["done"]} == set()
 
 
-def test_plan_keeps_russia_only(db_session) -> None:
-    """Зарубежные локации в прогноз не идут.
+def test_plan_keeps_foreign_live_platforms(db_session) -> None:
+    """Зарубежные площадки действующих систем прогноз показывает.
 
-    Из активных локаций подавляющее большинство — parkrun из мирового каталога,
-    и подсказка вида «Скоро: Westpark ≈ 01.08» предлагала номер, который человек
-    закрыть не может. Пустая страна означает «не заполнили» — такие строки у нас
-    российские, и их прогноз обязан сохранить.
+    У 5 вёрст, s95 и RunPark есть точки в Беларуси, Сербии, Грузии — для тамошних
+    участников это домашние старты, и подсказка им нужна ровно так же. Отсекается
+    только мировой parkrun: от зарубежной его площадки в БД лежат лишь строки
+    наших же участников из их профилей, закрыть по ней номер нельзя.
     """
     try:
         five_verst = _platform(db_session, "five_verst")
+        s95 = _platform(db_session, "s95")
+        runpark = _platform(db_session, "runpark")
+        parkrun = _platform(db_session, "parkrun")
     except Exception:
         pytest.skip("Database not available")
 
-    _location_with_last_event(db_session, five_verst, "Наша", date(2026, 7, 25), 100, country="Россия")
     _location_with_last_event(db_session, five_verst, "БезСтраны", date(2026, 7, 25), 120, country=None)
-    _location_with_last_event(db_session, five_verst, "Заграничная", date(2026, 7, 25), 140, country="United Kingdom")
+    _location_with_last_event(db_session, s95, "Белград", date(2026, 7, 25), 140, country="Сербия")
+    _location_with_last_event(db_session, runpark, "Тбилиси", date(2026, 7, 25), 180, country="Грузия")
+    _location_with_last_event(db_session, parkrun, "Westpark", date(2026, 7, 25), 150, country="United Kingdom")
     user = _user_with_run(db_session, five_verst, _location_with_last_event(
         db_session, five_verst, "Домашняя", date(2026, 7, 25), 160, country="Россия"
     ), event_number=7)
 
     plan = build_start_numbers_plan(db_session, user.id, code="start_numbers", today=TODAY)
 
-    assert _entries(plan, 101)[0] == ["Наша"]
-    assert _entries(plan, 121)[0] == ["БезСтраны"]
-    assert _entries(plan, 141) == [[], [], []]
+    assert "БезСтраны" in _entries(plan, 121)[0]
+    assert "Белград" in _entries(plan, 141)[0]
+    assert "Тбилиси" in _entries(plan, 181)[0]
+    # Мировой parkrun по-прежнему за бортом.
+    assert all("Westpark" not in week for week in _entries(plan, 151))

@@ -13,10 +13,15 @@ from app.platform_adapters.canonical import (
     CanonicalEvent,
     CanonicalEventSummary,
     CanonicalLocation,
+    CanonicalLocationDescription,
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
 from app.platform_adapters.five_verst.http import BASE_URL, NotFoundError, fetch_html, source_hash  # noqa: F401
+from app.platform_adapters.five_verst.location_description import (
+    parse_course_description,
+    parse_schedule_text,
+)
 
 DATE_IN_URL_RE = re.compile(r"/results/(\d{2}\.\d{2}\.\d{4})/")
 USERSTATS_ID_RE = re.compile(r"/userstats/(\d+)")
@@ -292,8 +297,21 @@ def parse_location_home_html(
 
     latitude: float | None = None
     longitude: float | None = None
+    description: CanonicalLocationDescription | None = None
+    course_url = course_source_url or _course_url(slug)
     if course_html:
         latitude, longitude = parse_course_coordinates(course_html)
+        parsed_description = parse_course_description(course_html, course_url, home_html=html)
+        description = None if parsed_description.is_empty() else parsed_description
+    else:
+        # Страница «О трассе» бывает недоступна (404 на площадках «скоро»), но
+        # «Где и когда?» с главной при этом есть — она сама по себе полезна.
+        schedule_text = parse_schedule_text(html)
+        if schedule_text:
+            description = CanonicalLocationDescription(
+                schedule_text=schedule_text,
+                source_url=source_url,
+            )
 
     return CanonicalLocation(
         external_key=slug,
@@ -303,7 +321,8 @@ def parse_location_home_html(
         latitude=latitude,
         longitude=longitude,
         source_url=source_url,
-        course_source_url=course_source_url or _course_url(slug),
+        course_source_url=course_url,
+        description=description,
     )
 
 

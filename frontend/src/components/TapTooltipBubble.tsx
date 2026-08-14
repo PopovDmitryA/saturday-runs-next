@@ -1,0 +1,76 @@
+import { useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+const VIEWPORT_GUTTER = 8;
+/** Отступ подсказки от элемента — столько же, сколько у StatHintTooltip. */
+const ANCHOR_GAP = 8;
+/** Если сверху меньше — показываем подсказку под элементом. */
+const FLIP_THRESHOLD = 96;
+
+type Position = { x: number; y: number; below: boolean };
+
+/**
+ * Всплывающая подсказка тач-режима: рисуется порталом в body и вжимается в
+ * экран. Порталом — потому что в графиках и сетках челленджей ячейка узкая и
+ * зажата в скроллящемся контейнере: подсказка внутри неё обрезалась бы краем
+ * контейнера, а у крайних столбцов уезжала бы за границу экрана.
+ */
+export function TapTooltipBubble({
+  anchor,
+  title,
+  lines,
+}: {
+  anchor: HTMLElement | null;
+  title?: string;
+  lines: string[];
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<Position | null>(null);
+  const contentKey = `${title ?? ""}\n${lines.join("\n")}`;
+
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!anchor || !node) {
+      setPosition(null);
+      return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    // Ширина у подсказки content-based (width: max-content), поэтому её можно
+    // померить до того, как она встала на место.
+    const half = node.offsetWidth / 2;
+    const min = VIEWPORT_GUTTER + half;
+    const max = window.innerWidth - VIEWPORT_GUTTER - half;
+    const centre = rect.left + rect.width / 2;
+    const below = rect.top < FLIP_THRESHOLD;
+    setPosition({
+      x: Math.min(Math.max(centre, min), Math.max(min, max)),
+      y: below ? rect.bottom + ANCHOR_GAP : rect.top - ANCHOR_GAP,
+      below,
+    });
+  }, [anchor, contentKey]);
+
+  if (!anchor) {
+    return null;
+  }
+
+  return createPortal(
+    <div
+      ref={ref}
+      role="tooltip"
+      className={`unique-locations-count-tooltip tap-tooltip${position?.below ? " tap-tooltip-below" : ""}`}
+      style={
+        position
+          ? { left: position.x, top: position.y }
+          : { left: 0, top: 0, visibility: "hidden" }
+      }
+    >
+      {title && <span className="tap-tooltip-title">{title}</span>}
+      {lines.map((line, index) => (
+        <span key={`${index}-${line}`} className="unique-locations-count-tooltip-line">
+          {line}
+        </span>
+      ))}
+    </div>,
+    document.body,
+  );
+}

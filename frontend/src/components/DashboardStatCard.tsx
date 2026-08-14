@@ -1,4 +1,5 @@
 import { useState, type MouseEvent } from "react";
+import { formatInt } from "../lib/format";
 
 type DashboardStatCardProps = {
   href?: string;
@@ -14,7 +15,7 @@ export function DashboardStatCard({ href, value, label, variant }: DashboardStat
   if (!href) {
     return (
       <div className={className}>
-        <span className="stat-value">{value}</span>
+        <span className="stat-value">{formatInt(value)}</span>
         <span className="stat-label">{label}</span>
       </div>
     );

@@ -872,6 +872,8 @@ export type ChallengeDetailItem = {
 export type ChallengeDetail = {
   cells?: ChallengeCell[];
   letters?: ChallengeLetter[];
+  /** Сколько букв вообще доступно в текущем скоупе систем («Алфавит»). */
+  available?: number;
   days?: ChallengeDay[];
   items?: ChallengeDetailItem[];
   example?: { value: string; location: string; note: string };
@@ -883,6 +885,22 @@ export type ChallengeLevelDates = {
   gold: string | null;
 };
 
+// easy | medium | hard | solo (один тир на весь челлендж — вкладки не рисуются)
+export type ChallengeTierKey = string;
+
+export type ChallengeTier = {
+  tier: ChallengeTierKey;
+  label: string | null;
+  levels: { bronze: number; silver: number; gold: number };
+  target: number;
+  level: ChallengeLevel | null;
+  next_level: ChallengeLevel | null;
+  to_next_level: number | null;
+  to_next_label: string | null;
+  pct: number;
+  level_dates: ChallengeLevelDates;
+};
+
 export type Challenge = {
   code: string;
   title: string;
@@ -890,16 +908,15 @@ export type Challenge = {
   description: string;
   category: "collection" | "coincidence" | "scale" | "community";
   current: number;
-  target: number;
-  levels: { bronze: number; silver: number; gold: number };
-  level: ChallengeLevel | null;
-  next_level: ChallengeLevel | null;
-  to_next_level: number | null;
-  to_next_label: string | null;
-  pct: number;
   unit: string | null;
   detail: ChallengeDetail;
-  level_dates: ChallengeLevelDates;
+  // [easy, medium, hard] почти везде; у «Семи дней» один элемент "solo"
+  tiers: ChallengeTier[];
+  // Самый сложный тир, где взят хоть один уровень — им подписывается карточка
+  best_tier: ChallengeTierKey | null;
+  best_level: ChallengeLevel | null;
+  // Вкладка, открытая по умолчанию: первый ещё не пройденный до золота тир
+  default_tier: ChallengeTierKey;
   // Насколько последняя пробежка продвинула счётчик (0 — не продвинула)
   recent_delta: number;
 };
@@ -932,6 +949,8 @@ export type AchievementBadge = {
   title: string;
   icon: string;
   level: ChallengeLevel;
+  tier: ChallengeTierKey | null;
+  tier_label: string | null;
   achieved_at: string | null;
 };
 
@@ -1290,6 +1309,87 @@ export function getAdminRecordsDigest(eventDate: string) {
     undefined,
     { timeoutMs: 120_000 },
   );
+}
+
+// Разметка открытий локаций: какой старт площадки считается первым. У 5 вёрст,
+// parkrun и RunPark это событие №1 из протокола, у С95 номер проставляется
+// руками — эта система номера забегов не публикует.
+export type LocationOpeningEvent = {
+  event_id: string;
+  event_number: number | null;
+  event_date: string;
+  title: string | null;
+  source_url: string | null;
+  finishers: number | null;
+  is_opening: boolean;
+};
+
+export type LocationOpeningItem = {
+  location_id: string;
+  location_name: string;
+  location_city: string | null;
+  external_key: string;
+  source_url: string | null;
+  platform_code: string;
+  opening_event_number: number | null;
+  // manual — задано руками, auto — событие №1, none — открытия у площадки нет.
+  opening_source: "manual" | "auto" | "none";
+  opening_event: LocationOpeningEvent | null;
+  opening_event_missing: boolean;
+  note: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+  first_events: LocationOpeningEvent[];
+};
+
+export type LocationOpeningList = {
+  platform: string;
+  items: LocationOpeningItem[];
+  total: number;
+  with_opening: number;
+  manual_total: number;
+  needs_manual: boolean;
+};
+
+export type LocationOpeningSaved = {
+  location_id: string;
+  location_name: string;
+  platform_code: string;
+  opening_event_number: number | null;
+  opening_source: "manual" | "auto" | "none";
+  opening_event: LocationOpeningEvent | null;
+  opening_event_missing: boolean;
+  note: string | null;
+  updated_at: string | null;
+};
+
+export function getAdminLocationOpenings(params: {
+  platform: string;
+  q?: string;
+  onlyMissing?: boolean;
+}) {
+  const search = new URLSearchParams({ platform: params.platform });
+  if (params.q) search.set("q", params.q);
+  if (params.onlyMissing) search.set("only_missing", "true");
+  return apiFetch<LocationOpeningList>(`/admin/location-openings?${search}`, undefined, {
+    timeoutMs: 60_000,
+  });
+}
+
+export function setAdminLocationOpening(
+  locationId: string,
+  body: { opening_event_number: number | null; note: string | null },
+) {
+  return apiFetch<LocationOpeningSaved>(`/admin/location-openings/${locationId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function clearAdminLocationOpening(locationId: string) {
+  return apiFetch<LocationOpeningSaved>(`/admin/location-openings/${locationId}`, {
+    method: "DELETE",
+  });
 }
 
 export type LocationContactPlatform = {
@@ -1894,6 +1994,13 @@ export function getHomeDistanceDetail(includeTest = false) {
   return apiFetch<HomeDistanceDetail>(`/locations/visited/home-distance${query}`);
 }
 
+export function getPublicProfileHomeDistanceDetail(serialId: number, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<HomeDistanceDetail>(
+    `/users/${serialId}/profile/locations/visited/home-distance${query}`,
+  );
+}
+
 export function getCatalogLocationsMap() {
   return apiFetch<MapLocationsResponse>("/locations/catalog/map");
 }
@@ -2029,6 +2136,28 @@ export type LocationCityNeighbor = {
   events_count: number;
 };
 
+export type LocationDescriptionSection = {
+  title: string | null;
+  text: string;
+};
+
+export type LocationDescriptionLink = {
+  title: string;
+  url: string;
+};
+
+/** Описание площадки с сайта системы: когда старт, трасса, как добраться. Текст чужой — source_url обязателен к показу. */
+export type LocationDescription = {
+  platform_code: string;
+  schedule_text: string | null;
+  course_text: string | null;
+  travel_text: string | null;
+  travel_sections: LocationDescriptionSection[];
+  links: LocationDescriptionLink[];
+  source_url: string | null;
+  updated_at: string | null;
+};
+
 export type LocationPage = {
   slug: string;
   identity_key: string;
@@ -2047,6 +2176,7 @@ export type LocationPage = {
   histogram: { bin_size_sec: number; rows: LocationHistogramRow[] };
   age_group_records: LocationAgeGroupRecord[];
   city_locations?: LocationCityNeighbor[];
+  description?: LocationDescription | null;
 };
 
 export type LocationIndexItem = {

@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { MapLocationPoint } from "../lib/api";
-import { formatDate, platformCodeLabel } from "../lib/format";
+import { formatDate, formatInt, platformCodeLabel } from "../lib/format";
 import type { MapViewportRef } from "../lib/mapViewport";
 import { addZoomControl } from "../lib/mapZoomControl";
 import { MapFullscreenButton } from "./MapFullscreenButton";
@@ -238,7 +238,7 @@ function popupHtml(
 
   if (variant === "visited" || visitedInfo) {
     lines.push(
-      `<div class="map-popup-line">Пробежек: ${stats.run_count}, волонтёрств: ${stats.volunteer_count}</div>`,
+      `<div class="map-popup-line">Пробежек: ${formatInt(stats.run_count)}, волонтёрств: ${formatInt(stats.volunteer_count)}</div>`,
     );
     if (stats.last_visit_date) {
       lines.push(

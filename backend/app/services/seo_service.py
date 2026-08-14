@@ -20,6 +20,7 @@ index.html, содержимое дорисовывает JavaScript уже в �
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -148,6 +149,15 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "Кто волонтёрил на наибольшем числе разных площадок субботних пробежек.",
         indexable=True,
     ),
+    # Пока рейтинг открыт только админу (ADMIN_ONLY_METRICS в
+    # leaderboard_service): роботу там показывать нечего — он получит 404 от
+    # API и пустую таблицу. Открывать вместе с рейтингом: indexable=True и
+    # адрес в _SITEMAP_STATIC.
+    "/ratings/openings": _meta(
+        "Рейтинг открытий локаций — run5k.run",
+        "Первопроходцы субботних пробежек: кто чаще всех бежал на самом первом "
+        "старте новой площадки 5 вёрст, С95, parkrun и RunPark.",
+    ),
     "/ratings/wins": _meta(
         "Рейтинг побед — run5k.run",
         "Кто чаще всех финишировал первым на субботних стартах, с разбивкой по полу.",
@@ -271,6 +281,16 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
     return STATIC_PAGE_META.get(path, _meta(DEFAULT_TITLE, DEFAULT_DESCRIPTION))
 
 
+def _num(value: int) -> str:
+    """21581 → «21 581» неразрывным пробелом.
+
+    Сплошная цифра в описании читается как одно длинное число и на странице,
+    и в выдаче поисковика. Разделитель неразрывный, чтобы разряды не
+    разъезжались по строкам. Зеркало num из frontend/src/lib/pageMeta.ts.
+    """
+    return f"{value:,}".replace(",", " ")
+
+
 def _plural(count: int, one: str, few: str, many: str) -> str:
     tail_100 = count % 100
     if 11 <= tail_100 <= 14:
@@ -357,11 +377,11 @@ def build_location_meta(payload: dict[str, Any], *, events_log: bool = False) ->
     parts: list[str] = []
     if events_count:
         parts.append(
-            f"{events_count} {_plural(events_count, 'старт', 'старта', 'стартов')}"
+            f"{_num(events_count)} {_plural(events_count, 'старт', 'старта', 'стартов')}"
         )
     if finishers_total:
         parts.append(
-            f"{finishers_total} {_plural(finishers_total, 'финиш', 'финиша', 'финишей')}"
+            f"{_num(finishers_total)} {_plural(finishers_total, 'финиш', 'финиша', 'финишей')}"
         )
 
     records = stats.get("course_records") or {}
@@ -480,9 +500,9 @@ def location_lead_sentences(payload: dict[str, Any]) -> list[str]:
     finishers_total = int(stats.get("finishers_total") or 0)
     if events_count and finishers_total:
         sentences.append(
-            f"Здесь прошло {events_count} "
+            f"Здесь прошло {_num(events_count)} "
             f"{_plural(events_count, 'старт', 'старта', 'стартов')}, "
-            f"финишировали {finishers_total} "
+            f"финишировали {_num(finishers_total)} "
             f"{_plural(finishers_total, 'участник', 'участника', 'участников')}."
         )
 
@@ -567,6 +587,7 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/ratings/volunteer-roles", "0.6"),
     ("/ratings/locations", "0.7"),
     ("/ratings/volunteer-locations", "0.6"),
+    # /ratings/openings появится здесь, когда рейтинг откроют всем.
     ("/ratings/wins", "0.7"),
     ("/ratings/win-locations", "0.6"),
     ("/ratings/home-distance", "0.6"),
@@ -632,9 +653,15 @@ def build_sitemap(db: Session) -> str:
 def build_robots_txt() -> str:
     """robots.txt: закрываем служебное и личное, показываем sitemap.
 
-    /users/ и /world не в sitemap, но и Disallow им не ставим: пусть робот
-    ходит по ссылкам и видит `noindex` в самой странице — так вес ссылок не
-    теряется, а в индекс они не попадают.
+    /users/ закрыт от обхода (13.08.2026): страницы участников и так noindex,
+    но робот их всё равно скачивал — в «Статистике обхода» это сотни адресов
+    вида /users/149, /users/768/maps, и каждый съедал краулинговый бюджет,
+    которого не хватает страницам локаций. Приток усилился после включения
+    «обхода по счётчикам» Метрики: люди ходят в свои кабинеты, робот идёт
+    следом. В индексе их нет, терять нечего.
+
+    /world остаётся открытым для обхода: он один, бюджета не жжёт, а noindex
+    в самой странице сохраняет вес исходящих ссылок.
     """
     base = site_base_url()
     lines = [
@@ -645,6 +672,7 @@ def build_robots_txt() -> str:
         "Disallow: /new/",
         "Disallow: /settings",
         "Disallow: /share",
+        "Disallow: /users/",
         # /login сознательно НЕ закрыт: «5 верст личный кабинет» — 2472
         # запроса/мес, и страница входа — наша посадочная под них.
         "Disallow: /oauth/",
@@ -741,12 +769,188 @@ def _og_image_tags(og_image_url: str | None) -> list[str]:
     ]
 
 
+def _last_event_block(last_event: dict[str, Any]) -> str:
+    """«Последний старт: дата, финишёры, лучшие времена дня» — списком."""
+    when = escape(str(last_event.get("event_date") or ""))
+    platform = PLATFORM_LABELS.get(str(last_event.get("platform_code") or ""), "")
+    title = f"Последний старт: {when}"
+    if platform:
+        title += f" ({escape(platform)})"
+
+    facts: list[tuple[str, str]] = []
+    finishers = last_event.get("finishers")
+    if finishers:
+        facts.append(("Финишировали", _num(int(finishers))))
+    volunteers = last_event.get("volunteers")
+    if volunteers:
+        facts.append(("Волонтёров", _num(int(volunteers))))
+    for key, label in (
+        ("best_male_time_display", "Лучшее время, мужчины"),
+        ("best_female_time_display", "Лучшее время, женщины"),
+        ("avg_time_display", "Среднее время"),
+    ):
+        value = _strip_leading_hours(last_event.get(key))
+        if value:
+            facts.append((label, value))
+    newcomers = (last_event.get("debutants") or 0) + (last_event.get("first_at_location") or 0)
+    if newcomers:
+        facts.append(("Впервые здесь", _num(int(newcomers))))
+    prs = last_event.get("prs")
+    if prs:
+        facts.append(("Личных рекордов", _num(int(prs))))
+
+    items = "".join(f"      <li>{escape(k)}: {escape(v)}</li>\n" for k, v in facts)
+    return f"    <h2>{title}</h2>\n    <ul>\n{items}    </ul>"
+
+
+def _breadcrumbs(*crumbs: tuple[str, str]) -> dict[str, Any]:
+    """Хлебные крошки для поисковика: «Главная › Локации › Бутово»."""
+    base = site_base_url()
+    return {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": i, "name": name, "item": base + path}
+            for i, (name, path) in enumerate(crumbs, start=1)
+        ],
+    }
+
+
+def location_json_ld(payload: dict[str, Any], *, events_log: bool = False) -> list[dict[str, Any]]:
+    """Разметка страницы локации: площадка + последний старт + крошки.
+
+    SportsActivityLocation — площадка (адрес, координаты, ссылка на страницу
+    системы). SportsEvent добавляем только если последний старт действительно
+    известен: разметка обязана описывать то, что есть на странице.
+    """
+    base = site_base_url()
+    slug = str(payload.get("slug") or "")
+    name = str(payload.get("name") or "Локация")
+    platform = _active_platform_label(payload)
+    city = str(payload.get("city") or "").strip()
+    display_name = f"{platform} {name}" if platform else name
+
+    place: dict[str, Any] = {
+        "@context": "https://schema.org",
+        "@type": "SportsActivityLocation",
+        "name": display_name,
+        "url": f"{base}/locations/{slug}",
+        "sport": "Running",
+    }
+    address: dict[str, Any] = {"@type": "PostalAddress"}
+    if city:
+        address["addressLocality"] = city
+    region = str(payload.get("region") or "").strip()
+    if region:
+        address["addressRegion"] = region
+    country = str(payload.get("country") or "").strip()
+    if country:
+        address["addressCountry"] = country
+    if len(address) > 1:
+        place["address"] = address
+    latitude, longitude = payload.get("latitude"), payload.get("longitude")
+    if latitude is not None and longitude is not None:
+        place["geo"] = {
+            "@type": "GeoCoordinates",
+            "latitude": latitude,
+            "longitude": longitude,
+        }
+    # Ссылка на официальную страницу системы: sameAs связывает нашу страницу
+    # с первоисточником, а не выдаёт её за него.
+    official = [
+        str(item.get("url"))
+        for item in payload.get("platforms") or []
+        if item.get("is_active") and item.get("url")
+    ]
+    if official:
+        place["sameAs"] = official
+
+    objects: list[dict[str, Any]] = [place]
+
+    last_event = (payload.get("stats") or {}).get("last_event") or {}
+    when = last_event.get("event_date")
+    if when:
+        event: dict[str, Any] = {
+            "@context": "https://schema.org",
+            "@type": "SportsEvent",
+            "name": f"{display_name}: старт {when}",
+            "startDate": str(when),
+            "eventStatus": "https://schema.org/EventScheduled",
+            "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+            "location": {"@type": "Place", "name": display_name, **(
+                {"address": place["address"]} if "address" in place else {}
+            )},
+            "url": f"{base}/locations/{slug}",
+        }
+        # Числа старта кладём в description, а не в maximumAttendeeCapacity:
+        # то поле означает вместимость площадки, а у нас фактические финишёры.
+        # Разметка, выдающая одно за другое, — прямой путь под фильтр.
+        finishers = last_event.get("finishers")
+        if finishers:
+            summary = f"Финишировали: {finishers}"
+            best = _strip_leading_hours(last_event.get("best_male_time_display"))
+            if best:
+                summary += f". Лучшее время дня: {best}"
+            event["description"] = summary + "."
+        objects.append(event)
+
+    crumbs = [("Главная", "/"), ("Локации", "/locations"), (name, f"/locations/{slug}")]
+    if events_log:
+        crumbs.append(("Журнал протоколов", f"/locations/{slug}/events"))
+    objects.append(_breadcrumbs(*crumbs))
+    return objects
+
+
+def catalog_json_ld(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Разметка каталога: список площадок + крошки."""
+    base = site_base_url()
+    live = [i for i in items if not i.get("is_cancelled")]
+    listing = {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "name": "Локации субботних пробежек",
+        "numberOfItems": len(live),
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": position,
+                "name": str(item.get("name") or ""),
+                "url": f"{base}/locations/{item.get('slug')}",
+            }
+            for position, item in enumerate(
+                sorted(live, key=lambda i: str(i.get("name") or "").casefold()), start=1
+            )
+        ],
+    }
+    return [listing, _breadcrumbs(("Главная", "/"), ("Локации", "/locations"))]
+
+
+def _json_ld_scripts(objects: list[dict[str, Any]]) -> list[str]:
+    """Микроразметка Schema.org отдельными <script> на каждый объект.
+
+    Зачем: до 13.08.2026 разметки не было вовсе — Яндекс разбирал страницу
+    локации как обычный текст и не знал, что перед ним спортивная площадка с
+    адресом, координатами и регулярными стартами. Разметка описывает ровно то,
+    что есть на странице: выдумывать данные ради красивого сниппета нельзя —
+    за расхождение разметки и содержимого поисковики наказывают.
+
+    ensure_ascii=False — кириллица остаётся читаемой; </ экранируем, иначе
+    строка внутри JSON может закрыть сам тег script.
+    """
+    scripts = []
+    for obj in objects:
+        payload = json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
+        scripts.append(f'<script type="application/ld+json">{payload}</script>')
+    return scripts
+
+
 def _render_html(
     *,
     meta: PageMeta,
     canonical: str,
     body_html: str,
     og_image_url: str | None = None,
+    json_ld: list[dict[str, Any]] | None = None,
 ) -> str:
     robots = "index,follow" if meta.indexable else "noindex,follow"
     head = [
@@ -761,6 +965,7 @@ def _render_html(
         f'<meta property="og:description" content="{escape(meta.description, quote=True)}">',
         f'<meta property="og:url" content="{escape(canonical, quote=True)}">',
         *_og_image_tags(og_image_url),
+        *_json_ld_scripts(json_ld or []),
     ]
     head_html = "\n    ".join(head)
     return (
@@ -774,6 +979,75 @@ def _render_html(
         "  </body>\n"
         "</html>\n"
     )
+
+
+def _paragraph_rows(text: str, indent: str = "    ") -> list[str]:
+    return [f"{indent}<p>{escape(part.strip())}</p>" for part in text.split("\n\n") if part.strip()]
+
+
+def _location_description_rows(payload: dict[str, Any]) -> list[str]:
+    """Описание площадки — цитата с сайта системы: где и когда, трасса, дорога.
+
+    Зеркало подблока LocationDescriptionQuote в LocationPage.tsx: заголовок сразу
+    называет источник, дальше те же подзаголовки в том же порядке. Текст не наш,
+    и подписать его — и честно, и полезно (внешняя ссылка на первоисточник
+    роботу тоже понятна).
+    """
+
+    description = payload.get("description") or {}
+    if not description:
+        return []
+
+    schedule_text = str(description.get("schedule_text") or "").strip()
+    course_text = str(description.get("course_text") or "").strip()
+    travel_text = str(description.get("travel_text") or "").strip()
+    travel_sections = [
+        section for section in (description.get("travel_sections") or []) if str(section.get("text") or "").strip()
+    ]
+    if not (schedule_text or course_text or travel_text or travel_sections):
+        return []
+
+    platform = PLATFORM_LABELS.get(str(description.get("platform_code") or ""))
+    source_url = str(description.get("source_url") or "").strip()
+    heading = f"Описание с официального сайта {platform}" if platform else "Описание с официального сайта системы"
+    if source_url:
+        heading_html = (
+            f'{escape(heading)} — <a href="{escape(source_url)}" rel="nofollow noopener">{escape(source_url)}</a>'
+        )
+    else:
+        heading_html = escape(heading)
+    rows: list[str] = [f"    <h2>{heading_html}</h2>"]
+
+    if schedule_text:
+        rows.append("    <h3>Где и когда</h3>")
+        rows.extend(_paragraph_rows(schedule_text))
+    if course_text:
+        rows.append("    <h3>Трасса</h3>")
+        rows.extend(_paragraph_rows(course_text))
+
+    if travel_text or travel_sections:
+        rows.append("    <h3>Как добраться</h3>")
+        if travel_text:
+            rows.extend(_paragraph_rows(travel_text))
+        for section in travel_sections:
+            title = str(section.get("title") or "").strip()
+            if title:
+                rows.append(f"    <h4>{escape(title)}</h4>")
+            rows.extend(_paragraph_rows(str(section.get("text") or "").strip()))
+
+    links = description.get("links") or []
+    if links:
+        items = "".join(
+            '      <li><a href="{url}" rel="nofollow noopener">{title}</a></li>\n'.format(
+                url=escape(str(link.get("url") or "")),
+                title=escape(str(link.get("title") or "Ссылка")),
+            )
+            for link in links
+            if link.get("url")
+        )
+        rows.append("    <ul>\n" + items + "    </ul>")
+
+    return rows
 
 
 def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
@@ -791,13 +1065,13 @@ def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
 
     facts: list[tuple[str, str]] = []
     if stats.get("events_count"):
-        facts.append(("Стартов", str(stats["events_count"])))
+        facts.append(("Стартов", _num(int(stats["events_count"]))))
     if stats.get("finishers_total"):
-        facts.append(("Финишей", str(stats["finishers_total"])))
+        facts.append(("Финишей", _num(int(stats["finishers_total"]))))
     if stats.get("unique_participants"):
-        facts.append(("Уникальных участников", str(stats["unique_participants"])))
+        facts.append(("Уникальных участников", _num(int(stats["unique_participants"]))))
     if stats.get("unique_volunteers"):
-        facts.append(("Уникальных волонтёров", str(stats["unique_volunteers"])))
+        facts.append(("Уникальных волонтёров", _num(int(stats["unique_volunteers"]))))
     avg_display = _strip_leading_hours(stats.get("avg_finish_time_display"))
     if avg_display:
         facts.append(("Среднее время", avg_display))
@@ -807,7 +1081,7 @@ def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
 
     attendance = stats.get("attendance_record") or {}
     if attendance.get("finishers"):
-        value = str(attendance["finishers"])
+        value = _num(int(attendance["finishers"]))
         when = attendance.get("event_date")
         if when:
             value = f"{value} ({when})"
@@ -829,6 +1103,13 @@ def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
         )
         rows.append("    <ul>\n" + items + "    </ul>")
 
+    # Результаты последнего старта — то, ради чего чаще всего и приходят
+    # («5 вёрст мещерский результаты»). Раньше робот их не видел вовсе:
+    # данные были только в API, в HTML уходили одни агрегаты за всю историю.
+    last_event = stats.get("last_event") or {}
+    if last_event.get("event_date"):
+        rows.append(_last_event_block(last_event))
+
     platforms = payload.get("platforms") or []
     if platforms:
         eras = "".join(
@@ -836,11 +1117,21 @@ def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
                 code=escape(str(p.get("platform_code") or "")),
                 first=escape(str(p.get("first_event_date") or "")),
                 last=escape(str(p.get("last_event_date") or "")),
-                count=escape(str(p.get("events_count") or 0)),
+                count=escape(_num(int(p.get("events_count") or 0))),
             )
             for p in platforms
         )
         rows.append("    <h2>История систем</h2>\n    <ul>\n" + eras + "    </ul>")
+
+    # Описание трассы и дорога до старта — единственный на странице текст,
+    # который человек ищет словами, а не цифрами («как добраться до 5 вёрст
+    # <парк>»). Стоит после истории систем — там же, где его видит человек:
+    # на странице это отдельный подблок-цитата в самом низу карточки
+    # «О площадке» (LocationPage.tsx, LocationDescriptionQuote). В журнале
+    # протоколов его нет намеренно: один и тот же текст на двух адресах —
+    # дубль, а не польза.
+    if not events_log:
+        rows.extend(_location_description_rows(payload))
 
     # Кластер города: те же ссылки, что человек видит в блоке «Другие
     # площадки в …» — под запросы вида «5 вёрст тюмень».
@@ -893,11 +1184,11 @@ def _catalog_body(items: list[dict[str, Any]]) -> str:
     rows = [
         "    <h1>Локации 5 вёрст, С95, parkrun и RunPark</h1>",
         "    <p>Каталог площадок субботних пробежек: "
-        f"{len(live)} {_plural(len(live), 'локация', 'локации', 'локаций')} в "
-        f"{len(cities)} {_plural(len(cities), 'городе', 'городах', 'городах')}.</p>",
+        f"{_num(len(live))} {_plural(len(live), 'локация', 'локации', 'локаций')} в "
+        f"{_num(len(cities))} {_plural(len(cities), 'городе', 'городах', 'городах')}.</p>",
     ]
     platform_bits = [
-        f"{PLATFORM_LABELS[code]} — {count} "
+        f"{PLATFORM_LABELS[code]} — {_num(count)} "
         f"{_plural(count, 'площадка', 'площадки', 'площадок')}"
         for code, count in sorted(by_platform.items(), key=lambda kv: -kv[1])
         if code in PLATFORM_LABELS
@@ -1014,12 +1305,36 @@ def _enqueue_profile_image(user: Any) -> None:
         logger.debug("og_render: не удалось поставить задачу для профиля %s", serial_id)
 
 
-def render_prerendered_page(db: Session, raw_path: str) -> str:
-    """HTML для робота: мета-теги плюс настоящий текст страницы.
+def is_known_path(raw_path: str) -> bool:
+    """Существует ли такой адрес на сайте (без похода в БД).
+
+    Нужно для честного 404: SPA-сайт по умолчанию отдаёт 200 на любой мусор,
+    и Яндекс справедливо ругается «некорректно настроен возврат 404» — из-за
+    этого несуществующие адреса лезут в индекс и жгут краулинговый бюджет.
+    Здесь только форма адреса; существование конкретной локации проверяется
+    отдельно, по БД.
+    """
+    path = normalize_path(raw_path)
+    if path in STATIC_PAGE_META:
+        return True
+    if path.startswith("/admin/") or path == "/world":
+        return True
+    for pattern in (_PROFILE_RE, _LOCATION_EVENTS_RE, _LOCATION_RE, _SWEEP_HQ_RE):
+        if pattern.match(path):
+            return True
+    return False
+
+
+def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
+    """(HTML, HTTP-код) для робота: мета-теги плюс настоящий текст страницы.
 
     Человек сюда не попадает — ветка по User-Agent живёт в nginx. Ошибку БД
     наверх не пускаем: лучше отдать роботу страницу с одними мета-тегами, чем
     500 (иначе неудачный запрос читается как «сайт сломан»).
+
+    Несуществующий адрес и несуществующая локация отдают 404 — раньше здесь
+    было безусловное 200, и Яндекс отметил это диагностикой «некорректно
+    настроен возврат 404» (11.08.2026).
     """
     path = normalize_path(raw_path)
     canonical = site_base_url() + ("" if path == "/" else path)
@@ -1028,7 +1343,7 @@ def render_prerendered_page(db: Session, raw_path: str) -> str:
     if profile_match:
         html = _render_profile(db, handle=profile_match.group(1), canonical=canonical)
         if html is not None:
-            return html
+            return html, 200
 
     events_match = _LOCATION_EVENTS_RE.match(path)
     location_match = _LOCATION_RE.match(path)
@@ -1040,12 +1355,19 @@ def render_prerendered_page(db: Session, raw_path: str) -> str:
             payload = None
         if payload is not None:
             meta = build_location_meta(payload, events_log=bool(events_match))
-            return _render_html(
-                meta=meta,
-                canonical=canonical,
-                body_html=_location_body(payload, events_log=bool(events_match)),
-                og_image_url=location_og_image_url(payload),
+            return (
+                _render_html(
+                    meta=meta,
+                    canonical=canonical,
+                    body_html=_location_body(payload, events_log=bool(events_match)),
+                    og_image_url=location_og_image_url(payload),
+                    json_ld=location_json_ld(payload, events_log=bool(events_match)),
+                ),
+                200,
             )
+        # Слаг не резолвится — такой локации нет. Именно этот случай Яндекс и
+        # ловил: /locations/что-угодно отвечал 200 с пустой карточкой.
+        return _not_found_page(canonical), 404
 
     meta = resolve_page_meta(path)
 
@@ -1057,8 +1379,32 @@ def render_prerendered_page(db: Session, raw_path: str) -> str:
         except Exception:  # noqa: BLE001 — робот получит родовую страницу, не 500
             items = []
         if items:
-            return _render_html(
-                meta=meta, canonical=canonical, body_html=_catalog_body(items)
+            return (
+                _render_html(
+                    meta=meta,
+                    canonical=canonical,
+                    body_html=_catalog_body(items),
+                    json_ld=catalog_json_ld(items),
+                ),
+                200,
             )
 
-    return _render_html(meta=meta, canonical=canonical, body_html=_generic_body(meta))
+    if not is_known_path(path):
+        return _not_found_page(canonical), 404
+
+    return _render_html(meta=meta, canonical=canonical, body_html=_generic_body(meta)), 200
+
+
+def _not_found_page(canonical: str) -> str:
+    """Страница 404 для робота: noindex и ссылка обратно в каталог."""
+    meta = _meta(
+        "Страница не найдена — run5k.run",
+        "Такой страницы на run5k.run нет. Загляните в каталог площадок "
+        "субботних пробежек или на главную.",
+    )
+    body = (
+        "    <h1>Страница не найдена</h1>\n"
+        "    <p>Такой страницы на run5k.run нет.</p>\n"
+        '    <p><a href="/locations">Каталог локаций</a> · <a href="/">Главная</a></p>'
+    )
+    return _render_html(meta=meta, canonical=canonical, body_html=body)

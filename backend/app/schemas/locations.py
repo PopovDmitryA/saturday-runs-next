@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -212,6 +212,31 @@ class LocationCityNeighborResponse(BaseModel):
     events_count: int = 0
 
 
+class LocationDescriptionSectionResponse(BaseModel):
+    """«Общественным транспортом», «Пешком», «На автомобиле» — по одной секции."""
+
+    title: str | None = None
+    text: str
+
+
+class LocationDescriptionLinkResponse(BaseModel):
+    title: str
+    url: str
+
+
+class LocationDescriptionResponse(BaseModel):
+    """Описание площадки с сайта системы. Текст чужой — source_url обязателен."""
+
+    platform_code: str
+    schedule_text: str | None = None
+    course_text: str | None = None
+    travel_text: str | None = None
+    travel_sections: list[LocationDescriptionSectionResponse] = Field(default_factory=list)
+    links: list[LocationDescriptionLinkResponse] = Field(default_factory=list)
+    source_url: str | None = None
+    updated_at: datetime | None = None
+
+
 class LocationPageResponse(BaseModel):
     slug: str
     identity_key: str
@@ -226,6 +251,7 @@ class LocationPageResponse(BaseModel):
     map_url: str | None = None
     start_point_url: str | None = None
     platforms: list[LocationPagePlatformResponse] = Field(default_factory=list)
+    description: LocationDescriptionResponse | None = None
     stats: LocationPageStatsResponse = Field(default_factory=LocationPageStatsResponse)
     histogram: LocationHistogramResponse = Field(default_factory=lambda: LocationHistogramResponse(bin_size_sec=10))
     age_group_records: list[LocationAgeGroupRecordResponse] = Field(default_factory=list)

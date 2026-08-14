@@ -5,9 +5,10 @@ import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { getLastResults, type LastResultsItem } from "../../lib/api";
-import { formatDate, formatFinishTimeValue, pluralizeRu } from "../../lib/format";
+import { formatDate, formatFinishTimeValue, formatInt, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
+import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 
 const PLATFORM_FILTERS = ["five_verst", "s95", "runpark"] as const;
 
@@ -65,10 +66,28 @@ function sortValue(item: LastResultsItem, key: SortKey): number | string | null 
   }
 }
 
+// Колонки краткого вида в порядке важности (ширины — как в CSS .loc-index-table).
+const LAST_RESULTS_COLUMNS: AdaptiveColumn[] = [
+  { key: "name", width: 170, required: true },
+  { key: "event_date", width: 160, required: true },
+  { key: "finishers", width: 148, required: true },
+  { key: "city", width: 160 },
+  { key: "platform", width: 104 },
+  { key: "volunteers", width: 148 },
+  { key: "debutants", width: 148 },
+  { key: "best_male", width: 184 },
+  { key: "best_female", width: 184 },
+  { key: "prs", width: 184 },
+];
+
 function LastResultsTable({ items }: { items: LastResultsItem[] }) {
   const [sort, setSort] = useState<SortState>({ key: "event_date", asc: false });
   const [tableView, setTableView] = useTableView("lastResults");
+  // Краткий вид набирает колонки по ширине экрана: минимум — локация, дата и
+  // финишёры, дальше город, система, волонтёры и так до полного набора.
+  const adaptive = useAdaptiveColumns(LAST_RESULTS_COLUMNS);
   const showFull = tableView === "full";
+  const show = (key: string) => showFull || adaptive.isVisible(key);
 
   const sorted = useMemo(() => {
     const copy = [...items];
@@ -112,81 +131,76 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
     onSort: () => toggleSort(key),
   });
 
+  const visibleCount = LAST_RESULTS_COLUMNS.filter((column) => show(column.key)).length;
+
   return (
     <>
-      <TableViewToggle
-        value={tableView}
-        onChange={setTableView}
-        className="tview-toggle-always"
-      />
-      <TableWrap stickyFirstCol={showFull}>
+      <TableViewToggle value={tableView} onChange={setTableView} alwaysVisible />
+      <TableWrap stickyFirstCol={showFull} outerRef={adaptive.measureRef}>
         <table
           className={`data-table data-table-layout-fixed loc-index-table${
             showFull ? "" : " data-table-short"
           }`}
+          style={showFull ? undefined : { minWidth: adaptive.minWidth }}
         >
           <colgroup>
             <col />
-            {showFull && <col className="col-city" />}
-            {showFull && <col className="col-platform" />}
+            {show("city") && <col className="col-city" />}
+            {show("platform") && <col className="col-platform" />}
             <col className="col-date" />
             <col className="col-metric" />
-            {showFull && (
-              <>
-                <col className="col-metric" />
-                <col className="col-metric" />
-                <col className="col-metric" />
-                <col className="col-metric" />
-                <col className="col-metric" />
-              </>
-            )}
+            {show("volunteers") && <col className="col-metric" />}
+            {show("debutants") && <col className="col-metric" />}
+            {show("prs") && <col className="col-metric-wide" />}
+            {show("best_male") && <col className="col-metric-wide" />}
+            {show("best_female") && <col className="col-metric-wide" />}
           </colgroup>
           <thead>
             <tr>
               <ColumnHeader label="Локация" {...sortProps("name")} />
-              {showFull && <ColumnHeader label="Город" {...sortProps("city")} />}
-              {showFull && <ColumnHeader label="Система" filterable={false} />}
+              {show("city") && <ColumnHeader label="Город" {...sortProps("city")} />}
+              {show("platform") && <ColumnHeader label="Система" filterable={false} />}
               <ColumnHeader
                 label="Дата"
                 hint="Дата последнего старта локации (клик по дате — протокол)"
                 {...sortProps("event_date")}
               />
               <ColumnHeader
-                label="Фин."
+                label="Финишёров"
                 hint="Финишёров на последнем старте"
                 {...sortProps("finishers")}
               />
-              {showFull && (
+              {show("volunteers") && (
                 <ColumnHeader
-                  label="Вол."
+                  label="Волонтёров"
                   hint="Волонтёров на последнем старте"
                   {...sortProps("volunteers")}
                 />
               )}
-              {showFull && (
+              {show("debutants") && (
                 <ColumnHeader
-                  label="Нов."
+                  label="Дебютантов"
                   hint="Дебютантов: впервые вышли на субботний старт"
                   {...sortProps("debutants")}
                 />
               )}
-              {showFull && (
+              {show("prs") && (
                 <ColumnHeader
-                  label="PR"
+                  label="Личных рекордов"
                   hint="Личных рекордов на этом старте"
                   {...sortProps("prs")}
                 />
               )}
-              {showFull && (
+              {show("best_male") && (
                 <ColumnHeader
-                  label="Луч. М"
+                  label="Лучшее время (М)"
                   hint="Лучшее мужское время последнего старта"
                   {...sortProps("best_male")}
                 />
               )}
-              {showFull && (
+              {show("best_female") && (
                 <ColumnHeader
-                  label="Луч. Ж"
+                  label="Лучшее время (Ж)"
                   hint="Лучшее женское время последнего старта"
                   {...sortProps("best_female")}
                 />
@@ -196,7 +210,7 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={showFull ? 10 : 3} className="table-empty-cell">
+                <td colSpan={visibleCount} className="table-empty-cell">
                   <span className="muted">Нет локаций по фильтрам</span>
                 </td>
               </tr>
@@ -207,13 +221,13 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
                     <a href={`/locations/${item.slug}`}>{item.name}</a>
                     <LocationStatusBadge isPaused={item.is_paused} isCancelled={item.is_cancelled} />
                   </td>
-                  {showFull && (
+                  {show("city") && (
                     <td className="muted">
                       {item.city ?? "—"}
                       {item.country && item.country !== "Россия" ? ` · ${item.country}` : ""}
                     </td>
                   )}
-                  {showFull && (
+                  {show("platform") && (
                     <td>
                       <span className="loc-index-platforms">
                         {item.event_platform_codes.map((code) => (
@@ -231,16 +245,16 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
                       formatDate(item.event_date)
                     )}
                   </td>
-                  <td className="td-compact">{item.finishers ?? "—"}</td>
-                  {showFull && <td className="td-compact">{item.volunteers ?? "—"}</td>}
-                  {showFull && <td className="td-compact">{item.debutants ?? "—"}</td>}
-                  {showFull && <td className="td-compact">{item.prs ?? "—"}</td>}
-                  {showFull && (
+                  <td className="td-compact">{item.finishers != null ? formatInt(item.finishers) : "—"}</td>
+                  {show("volunteers") && <td className="td-compact">{item.volunteers != null ? formatInt(item.volunteers) : "—"}</td>}
+                  {show("debutants") && <td className="td-compact">{item.debutants != null ? formatInt(item.debutants) : "—"}</td>}
+                  {show("prs") && <td className="td-compact">{item.prs != null ? formatInt(item.prs) : "—"}</td>}
+                  {show("best_male") && (
                     <td className="td-compact">
                       {formatTime(item.best_male_time_display, item.best_male_time_sec)}
                     </td>
                   )}
-                  {showFull && (
+                  {show("best_female") && (
                     <td className="td-compact">
                       {formatTime(item.best_female_time_display, item.best_female_time_sec)}
                     </td>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -15,8 +16,12 @@ from app.services.seo_service import (
     TITLE_BUDGET,
     PageMeta,
     _catalog_body,
+    _location_body,
     build_location_meta,
     build_robots_txt,
+    catalog_json_ld,
+    is_known_path,
+    location_json_ld,
     location_lead_sentences,
     normalize_path,
     resolve_page_meta,
@@ -223,7 +228,8 @@ def test_location_meta_uses_name_and_numbers() -> None:
     # «кузьминки 5 вёрст», и первые слова заголовка весят больше.
     assert meta.title.startswith("5 вёрст Кузьминки, Москва")
     assert "271 старт" in meta.description
-    assert "40123 финиша" in meta.description
+    # Разряды в тысячах разделены неразрывным пробелом: «40123» читается сплошняком.
+    assert "40\u00a0123 финиша" in meta.description
     assert "15:42 / 18:03" in meta.description
     assert len(meta.description) <= DESCRIPTION_BUDGET
     assert meta.indexable is True
@@ -289,6 +295,9 @@ def test_location_lead_reads_as_sentences() -> None:
     sentences = location_lead_sentences(_location_payload())
     assert sentences[0] == "«Кузьминки» (Москва) — площадка субботних пробежек 5 вёрст."
     assert "271 старт" in sentences[1]
+    # Число финишёров во вводном абзаце — с разбивкой по разрядам: репорт
+    # Дмитрия 14.08.2026, «21581 участник» на странице читался сплошняком.
+    assert "финишировали 40 123 участника" in sentences[1]
     # Прошлых систем нет — третьего предложения быть не должно.
     assert len(sentences) == 2
 
@@ -337,6 +346,58 @@ def test_location_meta_pluralizes_starts(count: int, expected: str) -> None:
     assert expected in meta.description
 
 
+_DESCRIPTION_PAYLOAD = {
+    "platform_code": "five_verst",
+    "schedule_text": "Старт проходит по адресу: Москва, Сокольнический Вал, 1с1. Каждую субботу с 9:00.",
+    "course_text": "Маршрут проходит по дорожкам парка.\n\nСтарт у центрального входа.",
+    "travel_text": "Москва, Сокольнический Вал, 1с1",
+    "travel_sections": [
+        {"title": "Общественным транспортом", "text": "Ближайшая станция метро — Сокольники."},
+        {"title": "На автомобиле", "text": "Парковка в 200 метрах от старта."},
+        # У S95 врезка называется как наш заголовок — сервис отдаёт её без title.
+        {"title": None, "text": "Ориентир — беседка-купол у катка."},
+    ],
+    "links": [{"title": "Карта и схема проезда", "url": "https://yandex.ru/maps/-/CDHUrYj8"}],
+    "source_url": "https://5verst.ru/sokolniki/course/",
+}
+
+
+def test_location_body_shows_course_and_travel_text() -> None:
+    """Робот получает то же описание трассы, что человек видит на странице."""
+    body = _location_body(_location_payload(description=_DESCRIPTION_PAYLOAD), events_log=False)
+
+    # Заголовок блока сразу называет источник — так же, как подблок-цитата на
+    # самой странице; чужой текст обязан быть подписан ссылкой.
+    assert "Описание с официального сайта 5 вёрст" in body
+    assert 'href="https://5verst.ru/sokolniki/course/"' in body
+
+    assert "<h3>Где и когда</h3>" in body
+    assert "Каждую субботу с 9:00" in body
+    assert "<h3>Трасса</h3>" in body
+    assert "<p>Маршрут проходит по дорожкам парка.</p>" in body
+    assert "<p>Старт у центрального входа.</p>" in body
+    assert "<h3>Как добраться</h3>" in body
+    assert "<h4>Общественным транспортом</h4>" in body
+    assert "Парковка в 200 метрах" in body
+    # Секция без заголовка выводится просто абзацем, без пустого <h4>.
+    assert "Ориентир — беседка-купол у катка." in body
+    assert body.count("Как добраться") == 1
+
+    # Порядок как на странице: сначала наши данные, потом цитата с чужого сайта.
+    assert body.index("<h2>История систем</h2>") < body.index("Описание с официального сайта")
+
+
+def test_location_body_without_description() -> None:
+    body = _location_body(_location_payload(), events_log=False)
+    assert "Описание с официального сайта" not in body
+
+
+def test_events_log_body_does_not_repeat_description() -> None:
+    """Журнал протоколов — отдельный адрес; тот же текст там был бы дублем."""
+    body = _location_body(_location_payload(description=_DESCRIPTION_PAYLOAD), events_log=True)
+    assert "Маршрут проходит по дорожкам парка" not in body
+
+
 def test_catalog_body_lists_locations_with_links() -> None:
     """Робот на /locations получает список площадок, а не два служебных предложения."""
     items = [
@@ -351,6 +412,124 @@ def test_catalog_body_lists_locations_with_links() -> None:
     # Отменённые площадки в каталоге робота не участвуют.
     assert "Закрытая" not in body
     assert "5 вёрст — 1 площадка" in body
+
+
+@pytest.mark.parametrize(
+    ("path", "known"),
+    [
+        ("/", True),
+        ("/locations", True),
+        ("/ratings/wins", True),
+        ("/locations/kuzminki", True),
+        ("/locations/kuzminki/events", True),
+        ("/users/ivan", True),
+        ("/admin/users", True),
+        ("/world", True),
+        # Мусор обязан быть неизвестен: SPA отвечал 200 на что угодно, и Яндекс
+        # отметил это диагностикой «некорректно настроен возврат 404».
+        ("/something-strange", False),
+        ("/locations/kuzminki/events/extra", False),
+        ("/ratings/fake-metric", False),
+        ("/wp-admin", False),
+    ],
+)
+def test_is_known_path(path: str, known: bool) -> None:
+    assert is_known_path(path) is known
+
+
+def test_robots_closes_user_pages_from_crawl() -> None:
+    """Страницы участников не должны жечь краулинговый бюджет.
+
+    Они и так noindex, но робот их скачивал сотнями — особенно после
+    включения обхода по счётчикам Метрики.
+    """
+    robots = build_robots_txt()
+    assert "Disallow: /users/" in robots
+    # /world закрывать не за что: он один, а noindex в странице сохраняет вес.
+    assert "Disallow: /world" not in robots
+
+
+def test_last_event_block_reaches_the_robot() -> None:
+    """«5 вёрст X результаты» — самый частый интент, робот обязан их видеть."""
+    payload = _location_payload()
+    stats = cast("dict[str, object]", payload["stats"])
+    stats["last_event"] = {
+        "event_date": "2026-08-08",
+        "platform_code": "five_verst",
+        "finishers": 62,
+        "volunteers": 20,
+        "best_male_time_display": "00:18:09",
+        "best_female_time_display": "00:19:08",
+        "avg_time_display": "00:27:28",
+        "debutants": 2,
+        "first_at_location": 2,
+        "prs": 2,
+    }
+    body = _location_body(payload, events_log=False)
+    assert "Последний старт: 2026-08-08 (5 вёрст)" in body
+    assert "Финишировали: 62" in body
+    # Часы отрезаются здесь так же, как везде: «18:09», а не «00:18:09».
+    assert "Лучшее время, мужчины: 18:09" in body
+    assert "Впервые здесь: 4" in body
+
+
+def test_location_json_ld_describes_place_and_event() -> None:
+    payload = _location_payload(
+        latitude=55.667123,
+        longitude=37.404714,
+        region="Московская",
+        country="Россия",
+        platforms=[
+            {
+                "platform_code": "five_verst",
+                "is_active": True,
+                "events_count": 271,
+                "url": "https://5verst.ru/kuzminki/",
+            }
+        ],
+    )
+    stats = cast("dict[str, object]", payload["stats"])
+    stats["last_event"] = {"event_date": "2026-08-08", "finishers": 62}
+
+    objects = location_json_ld(payload)
+    types = [o["@type"] for o in objects]
+    assert types == ["SportsActivityLocation", "SportsEvent", "BreadcrumbList"]
+
+    place = objects[0]
+    assert place["name"] == "5 вёрст Кузьминки"
+    assert place["address"]["addressLocality"] == "Москва"
+    assert place["geo"]["latitude"] == 55.667123
+    # sameAs связывает нас с первоисточником, а не выдаёт за него.
+    assert place["sameAs"] == ["https://5verst.ru/kuzminki/"]
+
+    event = objects[1]
+    assert event["startDate"] == "2026-08-08"
+    # Финишёры — в description: maximumAttendeeCapacity означает вместимость.
+    assert "62" in event["description"]
+    assert "maximumAttendeeCapacity" not in event
+
+    crumbs = objects[2]["itemListElement"]
+    assert [c["name"] for c in crumbs] == ["Главная", "Локации", "Кузьминки"]
+
+
+def test_location_json_ld_skips_event_without_date() -> None:
+    """Нет данных о старте — нет и SportsEvent: разметка не выдумывает."""
+    objects = location_json_ld(_location_payload())
+    assert [o["@type"] for o in objects] == ["SportsActivityLocation", "BreadcrumbList"]
+
+
+def test_catalog_json_ld_lists_live_locations() -> None:
+    objects = catalog_json_ld(
+        [
+            {"slug": "b", "name": "Бутово", "city": "Москва"},
+            {"slug": "a", "name": "Алёшкинский", "city": "Москва"},
+            {"slug": "x", "name": "Закрытая", "is_cancelled": True},
+        ]
+    )
+    listing = objects[0]
+    assert listing["numberOfItems"] == 2
+    # По алфавиту, как и на самой странице.
+    assert [i["name"] for i in listing["itemListElement"]] == ["Алёшкинский", "Бутово"]
 
 
 def test_robots_lists_sitemap_and_closes_service_paths() -> None:

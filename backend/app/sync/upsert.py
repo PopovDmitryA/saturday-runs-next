@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
 from collections import defaultdict
@@ -11,10 +13,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.activity_url import prefer_event_source_url
+from app.geo.country_names import normalize_country_name
 from app.models import (
     Event,
     EventSummary,
     Location,
+    LocationDescription,
     Participant,
     Platform,
     RunResult,
@@ -25,6 +29,7 @@ from app.pace import resolve_run_pace
 from app.platform_adapters.canonical import (
     CanonicalEventSummary,
     CanonicalLocation,
+    CanonicalLocationDescription,
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
@@ -51,8 +56,11 @@ def _resolve_geo(
 
     Один запрос вместо прежнего запроса-на-регион: у Nominatim в ответе и так
     все три поля. Если всё уже известно — в сеть не ходим совсем.
+
+    Страну прогоняем через normalize_country_name: в БД она хранится по-русски,
+    одно название на одну страну (см. app/geo/country_names.py).
     """
-    country = location.country or (row.country if row else None)
+    country = normalize_country_name(location.country) or (row.country if row else None)
     region = location.region or (row.region if row else None)
     city = location.city or (row.city if row else None)
     if country and region and city:
@@ -67,7 +75,7 @@ def _resolve_geo(
         logger.warning("geocode failed for %s", location.external_key, exc_info=True)
         return country, region, city
     return (
-        country or address.get("country"),
+        country or normalize_country_name(address.get("country")),
         region or address.get("region"),
         city or address.get("city"),
     )
@@ -189,6 +197,101 @@ def upsert_location(
     logger.info("DB flush location %s", location.external_key)
     db.flush()
     return row, changed
+
+
+def _description_payload(description: CanonicalLocationDescription) -> dict[str, object]:
+    return {
+        "schedule_text": description.schedule_text,
+        "course_text": description.course_text,
+        "travel_text": description.travel_text,
+        "travel_sections": [
+            {"title": section.title, "text": section.text} for section in description.travel_sections
+        ],
+        "links": [{"title": link.title, "url": link.url} for link in description.links],
+    }
+
+
+def _description_hash(payload: dict[str, object]) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
+def upsert_location_description(
+    db: Session,
+    location: Location,
+    description: CanonicalLocationDescription,
+) -> tuple[LocationDescription, bool]:
+    """Сохраняет описание площадки. Пустое описание не затирает уже собранное.
+
+    Пустым оно приходит штатно: страница «О трассе» у площадок «на паузе»
+    подменяется приглашением стать организатором, и разбор оттуда ничего не
+    достаёт. Терять из-за этого нормальный текст, собранный месяц назад, — хуже,
+    чем показать слегка устаревший.
+
+    Но отметку fetched_at ставим даже на пустое: обход S95 берёт локации по
+    давности загрузки, и локация, с которой текст не снимается никогда, иначе
+    навсегда осталась бы первой в очереди и заслоняла все остальные.
+    """
+
+    payload = _description_payload(description)
+    content_hash = _description_hash(payload)
+    now = datetime.now(timezone.utc)
+    empty = description.is_empty()
+
+    row = db.query(LocationDescription).filter(LocationDescription.location_id == location.id).one_or_none()
+    if row is not None and empty:
+        row.fetched_at = now
+        db.flush()
+        return row, False
+
+    if row is None and empty:
+        row = LocationDescription(
+            location_id=location.id,
+            source_url=description.source_url or None,
+            fetched_at=now,
+        )
+        db.add(row)
+        db.flush()
+        return row, False
+
+    if row is None:
+        row = LocationDescription(
+            location_id=location.id,
+            schedule_text=description.schedule_text,
+            course_text=description.course_text,
+            travel_text=description.travel_text,
+            travel_sections=payload["travel_sections"],
+            links=payload["links"],
+            source_url=description.source_url or None,
+            content_hash=content_hash,
+            fetched_at=now,
+            content_updated_at=now,
+            # Первый сбор — не «изменение»: revision считает, сколько раз текст
+            # поменялся ПОСЛЕ того, как мы его впервые увидели.
+            revision=0,
+        )
+        db.add(row)
+        db.flush()
+        return row, True
+
+    row.fetched_at = now
+    if row.content_hash == content_hash:
+        db.flush()
+        return row, False
+
+    row.schedule_text = description.schedule_text
+    row.course_text = description.course_text
+    row.travel_text = description.travel_text
+    row.travel_sections = payload["travel_sections"]
+    row.links = payload["links"]
+    row.source_url = description.source_url or row.source_url
+    row.content_hash = content_hash
+    row.content_updated_at = now
+    row.revision = (row.revision or 0) + 1
+    logger.info("DB flush location description %s", location.external_key)
+    db.flush()
+    return row, True
 
 
 def upsert_event_summary(
@@ -1072,7 +1175,11 @@ def import_profile_run_results(
             location_source_url = (
                 f"https://www.parkrun.org.uk/{slug}/" if slug != "unknown" else None
             )
-            country = "United Kingdom"
+            # Профиль не говорит, где площадка: parkrun.org.uk — общий вход в
+            # мировой каталог, а не признак Британии. Прежняя заглушка «United
+            # Kingdom» помечала ею Якутск и Йошкар-Олу. Пусто честнее — страну
+            # добирает бэкфилл по координатам (scripts/backfill_location_country.py).
+            country = None
         else:
             location_source_url = f"https://5verst.ru/{slug}/" if slug != "unknown" else None
             country = "Россия"
@@ -1327,7 +1434,9 @@ def import_profile_volunteer_results(
         slug = _normalize_location_slug(item.location_external_key, item.location_name)
         display_name = item.location_name or slug
         if platform.code == "parkrun":
-            country = "United Kingdom"
+            # См. import_profile_run_results: домен parkrun.org.uk не означает
+            # Британию, поэтому страну отсюда не выдумываем.
+            country = None
             default_source = f"https://www.parkrun.org.uk/{slug}/" if slug != "unknown" else ""
         elif platform.code == "s95":
             country = "Россия"

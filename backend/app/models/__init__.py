@@ -172,6 +172,12 @@ class Location(Base):
     coordinate_requests: Mapped[list["LocationCoordinateRequest"]] = relationship(back_populates="location")
     catalog_links: Mapped[list["LocationCatalogLink"]] = relationship(back_populates="location")
     contacts: Mapped[list["LocationContact"]] = relationship(back_populates="location")
+    description: Mapped["LocationDescription | None"] = relationship(
+        back_populates="location", uselist=False, cascade="all, delete-orphan"
+    )
+    opening: Mapped["LocationOpening | None"] = relationship(
+        back_populates="location", uselist=False, cascade="all, delete-orphan"
+    )
     announce_settings: Mapped["LocationAnnounceSettings | None"] = relationship(
         back_populates="location", uselist=False
     )
@@ -243,6 +249,56 @@ class LocationContact(Base):
     location: Mapped["Location"] = relationship(back_populates="contacts")
 
 
+class LocationDescription(Base):
+    """Описание площадки с сайта системы: когда старт, что за трасса, как доехать.
+
+    Одна строка на локацию платформы (у идентичности их может быть несколько —
+    5 вёрст и S95 пишут о своей площадке по-своему). Тексты чужие, поэтому
+    source_url обязателен: на странице локации мы ставим ссылку на источник.
+
+    Три отметки времени отвечают на разные вопросы, и путать их нельзя:
+    `fetched_at` — когда мы последний раз СМОТРЕЛИ страницу (ставится всегда,
+    даже если текст тот же и даже если страница оказалась пустой);
+    `content_updated_at` — когда текст последний раз РЕАЛЬНО менялся;
+    `revision` — сколько раз он менялся с момента первого сбора (0 — с тех пор
+    не менялся ни разу). Так по строке видно «проверяли час назад, а менялось
+    в марте», а не только «что-то происходило».
+
+    content_hash — хеш собранного текста, а не HTML страницы: вёрстка на
+    5verst.ru меняется от релиза к релизу, а описание парка — раз в год.
+    Хеш по тексту даёт content_updated_at, которому можно верить.
+    """
+
+    __tablename__ = "location_descriptions"
+    __table_args__ = (UniqueConstraint("location_id", name="uq_location_descriptions_location_id"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
+    # «Где и когда?»: адрес старта и время (бывает сезонным).
+    schedule_text: Mapped[str | None] = mapped_column(Text)
+    # «О трассе»: маршрут, покрытие, круги, место сбора.
+    course_text: Mapped[str | None] = mapped_column(Text)
+    # Вводная строка «как добраться»: адрес (5 вёрст) или место проведения (S95).
+    travel_text: Mapped[str | None] = mapped_column(Text)
+    # [{"title": "Общественным транспортом", "text": "…"}, …]
+    travel_sections: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    # [{"title": "Карта и схема проезда", "url": "https://…"}, …]
+    links: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    source_url: Mapped[str | None] = mapped_column(String(1024))
+    content_hash: Mapped[str | None] = mapped_column(String(64))
+    # Когда последний раз смотрели страницу — независимо от того, менялся текст или нет.
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Когда текст последний раз менялся, и сколько раз он менялся всего.
+    content_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    location: Mapped["Location"] = relationship(back_populates="description")
+
+
 class LocationAnnounceSettings(Base):
     """Правила анонсов локации — одна строка на локацию (в легаси — contacts_location.not_report)."""
 
@@ -261,6 +317,39 @@ class LocationAnnounceSettings(Base):
     )
 
     location: Mapped["Location"] = relationship(back_populates="announce_settings")
+
+
+class LocationOpening(Base):
+    """Какой старт площадки считать открытием — ручная разметка поверх номеров.
+
+    У 5 вёрст, parkrun и RunPark открытие видно из протокола (событие №1), у С95
+    номера забегов мы считаем сами (ранг в хронологии), и с «торжественным
+    открытием» они не обязаны совпадать — там номер проставляется руками.
+
+    Строка на локацию платформы, а не на физическую точку: одна и та же площадка
+    открывалась в parkrun и в 5 вёрст по-разному, и это два разных открытия.
+
+    `opening_event_number IS NULL` при существующей строке означает не «не
+    знаем», а «открытия у этой площадки нет»: так гасится ложное открытие там,
+    где система начала вести протоколы позже самой площадки.
+    """
+
+    __tablename__ = "location_openings"
+    __table_args__ = (UniqueConstraint("location_id", name="uq_location_openings_location_id"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
+    opening_event_number: Mapped[int | None] = mapped_column(Integer)
+    note: Mapped[str | None] = mapped_column(Text)
+    updated_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    location: Mapped["Location"] = relationship(back_populates="opening")
 
 
 class LocationCatalog(Base):

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DashboardAnalytics } from "../../../components/DashboardAnalytics";
 import { MyHistoryTeaser } from "../../../components/MyHistoryTeaser";
 import { OnThisDayCard } from "../../../components/OnThisDayCard";
+import { PlatformBadge } from "../../../components/PlatformBadge";
 import { ProfileLinkSection } from "../../../components/ProfileLinkSection";
 import { RecentRunsRating } from "../../../components/RecentRunsRating";
 import { RequireAuth } from "../../../components/RequireAuth";
@@ -14,7 +15,7 @@ import {
   type DashboardResponse,
   type User,
 } from "../../../lib/api";
-import { formatDuration, pluralFormRu } from "../../../lib/format";
+import { formatDuration, formatStatValue, pluralFormRu } from "../../../lib/format";
 import {
   PORTAL_CABINET_HISTORY_HREF,
   PORTAL_CABINET_MAP_HREF,
@@ -28,6 +29,15 @@ import { PortalCabinetShell, userLabel } from "./PortalCabinetShell";
 // «00:23:12» → «23:12»: в герое часы почти всегда нулевые, укорачиваем.
 export function formatHeroFinishTime(totalSec: number): string {
   return formatDuration(totalSec).replace(/^00:/, "");
+}
+
+// Порядок бейджей систем в герое — тот же, что в секции «Профили беговых
+// систем» внизу страницы, чтобы клик по бейджу приводил к предсказуемой карточке.
+const PLATFORM_ORDER = ["five_verst", "s95", "parkrun", "runpark"] as const;
+
+/** Прокрутка к секции привязок внизу «Обзора» — цель бейджей систем в герое. */
+function scrollToProfiles(): void {
+  document.getElementById("profiles")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 const RUN_FORMS = ["пробежка", "пробежки", "пробежек"] as const;
@@ -107,18 +117,42 @@ function buildHeroStats(data: Pick<DashboardResponse, "stats">): HeroStat[] {
   ];
 }
 
+/**
+ * Бейджи привязанных систем — как на странице локации. Клик уводит к секции
+ * «Профили беговых систем» внизу страницы: там привязка, отвязка и кнопка
+ * обновления данных.
+ */
+function HeroPlatforms({ byPlatform }: { byPlatform: Record<string, unknown> }) {
+  const codes = PLATFORM_ORDER.filter((code) => code in byPlatform);
+  if (codes.length === 0) {
+    return null;
+  }
+  return (
+    <div className="portal-cab-hero-platforms">
+      {codes.map((code) => (
+        <PlatformBadge
+          key={code}
+          code={code}
+          onClick={scrollToProfiles}
+          title="Перейти к профилям беговых систем"
+        />
+      ))}
+    </div>
+  );
+}
+
 function HeroStatsGrid({ items }: { items: HeroStat[] }) {
   return (
     <div className="portal-cab-hero-stats">
       {items.map((item) =>
         item.href ? (
           <a key={item.key} className={`portal-cab-hero-stat ${item.className}`} href={item.href}>
-            <div className="portal-cab-hero-stat-value">{item.value}</div>
+            <div className="portal-cab-hero-stat-value">{formatStatValue(item.value)}</div>
             <div className="portal-cab-hero-stat-label">{item.label}</div>
           </a>
         ) : (
           <div key={item.key} className={`portal-cab-hero-stat ${item.className}`}>
-            <div className="portal-cab-hero-stat-value">{item.value}</div>
+            <div className="portal-cab-hero-stat-value">{formatStatValue(item.value)}</div>
             <div className="portal-cab-hero-stat-label">{item.label}</div>
           </div>
         ),
@@ -145,7 +179,7 @@ export function DashboardHero({
   const streak = analytics.saturday_streak_current ?? analytics.saturday_streak;
   const streakLine =
     streak > 0
-      ? `Текущая серия — ${streak} ${pluralFormRu(streak, SATURDAY_FORMS)} подряд. Так держать!`
+      ? `Текущая серия — ${formatStatValue(streak)} ${pluralFormRu(streak, SATURDAY_FORMS)} подряд. Так держать!`
       : "Ваша сводная статистика по всем беговым системам.";
   const items = buildHeroStats(data).map((item) =>
     item.href && hrefForStat ? { ...item, href: hrefForStat(item.key, item.href) } : item,
@@ -165,6 +199,7 @@ export function DashboardHero({
             </p>
           </div>
         </div>
+        <HeroPlatforms byPlatform={data.stats.by_platform} />
         <HeroStatsGrid items={items} />
       </section>
     );
@@ -178,12 +213,12 @@ export function DashboardHero({
           {items.map((item) =>
             item.href ? (
               <a key={item.key} className={`portal-cab-hero-stat ${item.className}`} href={item.href}>
-                <span className="portal-cab-hero-stat-value">{item.value}</span>
+                <span className="portal-cab-hero-stat-value">{formatStatValue(item.value)}</span>
                 <span className="portal-cab-hero-stat-label">{item.label}</span>
               </a>
             ) : (
               <div key={item.key} className={`portal-cab-hero-stat ${item.className}`}>
-                <span className="portal-cab-hero-stat-value">{item.value}</span>
+                <span className="portal-cab-hero-stat-value">{formatStatValue(item.value)}</span>
                 <span className="portal-cab-hero-stat-label">{item.label}</span>
               </div>
             ),
@@ -197,6 +232,7 @@ export function DashboardHero({
     <section className="portal-cab-hero">
       <h1 className="portal-cab-hero-title">{heroGreeting()}!</h1>
       <p className="portal-cab-hero-sub">{streakLine}</p>
+      <HeroPlatforms byPlatform={data.stats.by_platform} />
       <HeroStatsGrid items={items} />
     </section>
   );

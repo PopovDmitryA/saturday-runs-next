@@ -10,7 +10,7 @@ import {
   type AdminRatings,
   type AdminRatingsStatGroup,
 } from "../../lib/api";
-import { formatDate, formatDateTime, platformCodeLabel } from "../../lib/format";
+import { formatDate, formatDateTime, formatStatValue, platformCodeLabel } from "../../lib/format";
 import { AdminSubnav } from "./AdminSubnav";
 
 function num(value: number | null): string {
@@ -34,7 +34,7 @@ function StatGroup({ title, hint, group }: { title: string; hint: string; group:
       <div className="admin-ratings-stats">
         {STAT_ITEMS.map((item) => (
           <div className="admin-ratings-stat" key={item.key}>
-            <span className="admin-ratings-stat-value">{group[item.key]}</span>
+            <span className="admin-ratings-stat-value">{formatStatValue(group[item.key])}</span>
             <span className="admin-ratings-stat-label">{item.label}</span>
           </div>
         ))}

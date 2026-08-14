@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
+  ADMIN_ONLY_METRICS,
   getLeaderboard,
   getMyLeaderboardRow,
   METRIC_VALUE_UNIT,
@@ -12,6 +13,7 @@ import {
   type PlatformFilter,
 } from "./leaderboardsApi";
 import { formatInt } from "../../lib/format";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import "./leaderboards.css";
@@ -47,18 +49,18 @@ type LiveCard = {
   title: string;
 };
 
-type SoonCard = {
-  title: string;
-  description: string;
-};
-
 type HubSection = {
   emoji: string;
   title: string;
   live: LiveCard[];
-  soon: SoonCard[];
 };
 
+// Только готовые рейтинги. Карточек-анонсов «скоро» здесь нет намеренно
+// (решение Дмитрия 09.08.2026): раздел показывает то, что уже работает, а
+// планы живут в бэклоге «Рейтинги» — новый рейтинг появляется на хабе в тот
+// же момент, когда становится доступен всем. Секция «Локации» (Р18/Р19) по
+// этой же причине пока отсутствует целиком — в ней нет ни одного живого
+// рейтинга.
 const SECTIONS: HubSection[] = [
   {
     emoji: "🏃",
@@ -66,10 +68,6 @@ const SECTIONS: HubSection[] = [
     live: [
       { metric: "runs", href: "/ratings/runs", title: "Количество пробежек" },
       { metric: "wins", href: "/ratings/wins", title: "Количество первых мест" },
-    ],
-    soon: [
-      { title: "Самые быстрые", description: "Лучшие результаты и бегуны М/Ж за всю историю." },
-      { title: "Серии суббот", description: "Самые длинные серии подряд — текущие и исторические." },
     ],
   },
   {
@@ -88,32 +86,15 @@ const SECTIONS: HubSection[] = [
         title: "Мультиволонтёр — разнообразие ролей",
       },
     ],
-    soon: [
-      {
-        title: "Дуализм",
-        description: "Кто одинаково силён и как бегун, и как волонтёр.",
-      },
-    ],
   },
   {
     emoji: "🧭",
     title: "Паркран-туристы",
     live: [
       { metric: "locations", href: "/ratings/locations", title: "Уникальные локации" },
+      { metric: "openings", href: "/ratings/openings", title: "Открытия локаций" },
       { metric: "win_locations", href: "/ratings/win-locations", title: "Локации с первым местом" },
       { metric: "home_distance", href: "/ratings/home-distance", title: "Дальность от дома" },
-    ],
-    // «Гео-коллекционер» (уникальные города и регионы) переехал внутрь рейтинга
-    // уникальных локаций фильтром «Считаем» — отдельной карточки ему не нужно.
-    soon: [],
-  },
-  {
-    emoji: "📍",
-    title: "Локации",
-    live: [],
-    soon: [
-      { title: "Посещаемость локаций", description: "Самые массовые и быстрорастущие площадки." },
-      { title: "Быстрые трассы", description: "Где бегут быстрее всего." },
     ],
   },
 ];
@@ -222,19 +203,21 @@ function LiveRatingCard({ card, platform }: { card: LiveCard; platform: Platform
   );
 }
 
-function SoonRatingCard({ card }: { card: SoonCard }) {
-  return (
-    <div className="lb-hub-card lb-hub-card-soon">
-      <span className="lb-hub-card-title">
-        {card.title} <span className="lb-soon">скоро</span>
-      </span>
-      <span className="lb-hub-card-text">{card.description}</span>
-    </div>
-  );
-}
-
 export function LeaderboardsHubPage() {
   const [platform, setPlatform] = useState<PlatformFilter>("all");
+  // Закрытые рейтинги показываем только админу: карточка тянет данные, а API
+  // отдаёт их лишь ему — остальным она молча висела бы «Считаем…».
+  const viewer = useOptionalUser();
+  const sections = useMemo(
+    () =>
+      SECTIONS.map((section) => ({
+        ...section,
+        live: section.live.filter(
+          (card) => viewer?.is_admin || !ADMIN_ONLY_METRICS.includes(card.metric),
+        ),
+      })).filter((section) => section.live.length > 0),
+    [viewer],
+  );
 
   return (
     <PortalSectionShell sidebar={{ active: "ratings" }}>
@@ -270,7 +253,7 @@ export function LeaderboardsHubPage() {
           </div>
         </div>
 
-        {SECTIONS.map((section) => (
+        {sections.map((section) => (
           <section key={section.title} className="lb-hub-section">
             <h2>
               <span aria-hidden>{section.emoji}</span> {section.title}
@@ -278,9 +261,6 @@ export function LeaderboardsHubPage() {
             <div className="lb-hub-cards">
               {section.live.map((card) => (
                 <LiveRatingCard key={card.metric} card={card} platform={platform} />
-              ))}
-              {section.soon.map((card) => (
-                <SoonRatingCard key={card.title} card={card} />
               ))}
             </div>
           </section>
