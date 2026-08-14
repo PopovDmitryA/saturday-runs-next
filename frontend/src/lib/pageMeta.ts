@@ -236,11 +236,17 @@ export function resolvePageMeta(rawPath: string): PageMeta {
     };
   }
   if (PROFILE_RE.test(path)) {
+    // indexable с 15.08.2026: под noindex ВКонтакте и Telegram показывают
+    // превью ссылки без картинки. Точные имя и цифры подставляет пререндер
+    // (build_profile_meta), здесь — родовой вариант до загрузки данных.
+    const [, , tab] = PROFILE_RE.exec(path) ?? [];
     return {
       title: "Участник — run5k.run",
       description:
         "Страница участника субботних пробежек: пробежки, волонтёрство, " +
         "достижения и посещённые локации.",
+      // Вкладки профиля в индекс не идут — это срезы той же страницы.
+      indexable: tab === undefined,
     };
   }
   if (LOCATION_EVENTS_RE.test(path)) {

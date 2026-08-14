@@ -257,11 +257,15 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
             "Мировой parkrun — run5k.run",
             "Сколько площадок parkrun в мире и как идёт их обход.",
         )
-    if _PROFILE_RE.match(path):
+    profile = _PROFILE_RE.match(path)
+    if profile:
         return _meta(
             "Участник — run5k.run",
             "Страница участника субботних пробежек: пробежки, волонтёрство, "
             "достижения и посещённые локации.",
+            # Карточка участника индексируется с 15.08.2026 (иначе ВК и Telegram
+            # показывают превью без картинки); вкладки — срезы той же страницы.
+            indexable=profile.group(2) is None,
         )
     if _LOCATION_EVENTS_RE.match(path):
         return _meta(
@@ -456,7 +460,12 @@ def build_profile_meta(user: Any, payload: dict[str, Any] | None) -> PageMeta:
         ". Пробежки, волонтёрство, личные рекорды и карта посещённых локаций.",
         ". Пробежки, волонтёрство и личные рекорды.",
     )
-    return _meta(title, description)
+    # indexable=True с 15.08.2026 (решение Дмитрия): под noindex ВКонтакте и
+    # Telegram строят урезанную карточку — заголовок и описание, но БЕЗ
+    # картинки (проверено на живых ссылках: локация с index показывает постер,
+    # профиль с noindex — нет). Превью профиля важнее экономии бюджета обхода;
+    # сам обход вкладок по-прежнему закрыт в robots.txt.
+    return _meta(title, description, indexable=True)
 
 
 def _describe(lead: str, numbers: str, *tails: str) -> str:
@@ -653,12 +662,15 @@ def build_sitemap(db: Session) -> str:
 def build_robots_txt() -> str:
     """robots.txt: закрываем служебное и личное, показываем sitemap.
 
-    /users/ закрыт от обхода (13.08.2026): страницы участников и так noindex,
-    но робот их всё равно скачивал — в «Статистике обхода» это сотни адресов
-    вида /users/149, /users/768/maps, и каждый съедал краулинговый бюджет,
+    Вкладки профиля закрыты от обхода (13.08.2026): робот скачивал сотни
+    адресов вида /users/768/maps, и каждый съедал краулинговый бюджет,
     которого не хватает страницам локаций. Приток усилился после включения
     «обхода по счётчикам» Метрики: люди ходят в свои кабинеты, робот идёт
-    следом. В индексе их нет, терять нечего.
+    следом.
+
+    Сами карточки участников (/users/12) с 15.08.2026 открыты: под запретом
+    обхода ВКонтакте и Telegram показывают превью без картинки, а живое
+    превью со статистикой — то, ради чего профилями делятся.
 
     /world остаётся открытым для обхода: он один, бюджета не жжёт, а noindex
     в самой странице сохраняет вес исходящих ссылок.
@@ -672,7 +684,11 @@ def build_robots_txt() -> str:
         "Disallow: /new/",
         "Disallow: /settings",
         "Disallow: /share",
-        "Disallow: /users/",
+        # Вкладки профиля (/users/12/runs, /maps, …) — сотни адресов на
+        # участника, они и жгли бюджет обхода. Сама карточка /users/12
+        # открыта с 15.08.2026: под запретом обхода превью-краулеры ВК и
+        # Telegram картинку не показывают.
+        "Disallow: /users/*/",
         # /login сознательно НЕ закрыт: «5 верст личный кабинет» — 2472
         # запроса/мес, и страница входа — наша посадочная под них.
         "Disallow: /oauth/",
@@ -1251,8 +1267,8 @@ def _strip_leading_hours_sec(seconds: Any) -> str | None:
 def _render_profile(db: Session, *, handle: str, canonical: str) -> str | None:
     """HTML профиля для робота: имя и цифры участника.
 
-    None — профиль не найден или скрыт владельцем: тогда вызывающий отдаёт
-    родовую страницу без единой цифры (приватность важнее красивого превью).
+    None — такого участника нет; вызывающий отдаст общий ответ. Скрытый
+    владельцем профиль рендерится здесь же, но без цифр и с noindex.
     """
     from app.services.profile_slug_service import resolve_profile_handle
 
@@ -1260,8 +1276,16 @@ def _render_profile(db: Session, *, handle: str, canonical: str) -> str | None:
         user = resolve_profile_handle(db, handle)
     except Exception:  # noqa: BLE001 — робот получит родовую страницу, не 500
         return None
-    if user is None or getattr(user, "profile_private", False):
+    if user is None:
         return None
+    if getattr(user, "profile_private", False):
+        # Скрытый профиль: ни цифр, ни своей картинки — и явный noindex, чтобы
+        # индексируемость публичных карточек его не зацепила.
+        hidden = _meta(
+            "Участник — run5k.run",
+            "Участник субботних пробежек скрыл свою страницу.",
+        )
+        return _render_html(meta=hidden, canonical=canonical, body_html=_generic_body(hidden))
 
     try:
         from app.services.admin_users_service import get_admin_user_preview_dashboard
