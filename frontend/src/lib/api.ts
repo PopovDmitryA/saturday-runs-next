@@ -1311,6 +1311,87 @@ export function getAdminRecordsDigest(eventDate: string) {
   );
 }
 
+// Разметка открытий локаций: какой старт площадки считается первым. У 5 вёрст,
+// parkrun и RunPark это событие №1 из протокола, у С95 номер проставляется
+// руками — эта система номера забегов не публикует.
+export type LocationOpeningEvent = {
+  event_id: string;
+  event_number: number | null;
+  event_date: string;
+  title: string | null;
+  source_url: string | null;
+  finishers: number | null;
+  is_opening: boolean;
+};
+
+export type LocationOpeningItem = {
+  location_id: string;
+  location_name: string;
+  location_city: string | null;
+  external_key: string;
+  source_url: string | null;
+  platform_code: string;
+  opening_event_number: number | null;
+  // manual — задано руками, auto — событие №1, none — открытия у площадки нет.
+  opening_source: "manual" | "auto" | "none";
+  opening_event: LocationOpeningEvent | null;
+  opening_event_missing: boolean;
+  note: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+  first_events: LocationOpeningEvent[];
+};
+
+export type LocationOpeningList = {
+  platform: string;
+  items: LocationOpeningItem[];
+  total: number;
+  with_opening: number;
+  manual_total: number;
+  needs_manual: boolean;
+};
+
+export type LocationOpeningSaved = {
+  location_id: string;
+  location_name: string;
+  platform_code: string;
+  opening_event_number: number | null;
+  opening_source: "manual" | "auto" | "none";
+  opening_event: LocationOpeningEvent | null;
+  opening_event_missing: boolean;
+  note: string | null;
+  updated_at: string | null;
+};
+
+export function getAdminLocationOpenings(params: {
+  platform: string;
+  q?: string;
+  onlyMissing?: boolean;
+}) {
+  const search = new URLSearchParams({ platform: params.platform });
+  if (params.q) search.set("q", params.q);
+  if (params.onlyMissing) search.set("only_missing", "true");
+  return apiFetch<LocationOpeningList>(`/admin/location-openings?${search}`, undefined, {
+    timeoutMs: 60_000,
+  });
+}
+
+export function setAdminLocationOpening(
+  locationId: string,
+  body: { opening_event_number: number | null; note: string | null },
+) {
+  return apiFetch<LocationOpeningSaved>(`/admin/location-openings/${locationId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function clearAdminLocationOpening(locationId: string) {
+  return apiFetch<LocationOpeningSaved>(`/admin/location-openings/${locationId}`, {
+    method: "DELETE",
+  });
+}
+
 export type LocationContactPlatform = {
   location_id: string;
   location_name: string;

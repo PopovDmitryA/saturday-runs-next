@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
+  ADMIN_ONLY_METRICS,
   getLeaderboard,
   getMyLeaderboardRow,
   METRIC_VALUE_UNIT,
@@ -12,6 +13,7 @@ import {
   type PlatformFilter,
 } from "./leaderboardsApi";
 import { formatInt } from "../../lib/format";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import "./leaderboards.css";
@@ -90,6 +92,7 @@ const SECTIONS: HubSection[] = [
     title: "Паркран-туристы",
     live: [
       { metric: "locations", href: "/ratings/locations", title: "Уникальные локации" },
+      { metric: "openings", href: "/ratings/openings", title: "Открытия локаций" },
       { metric: "win_locations", href: "/ratings/win-locations", title: "Локации с первым местом" },
       { metric: "home_distance", href: "/ratings/home-distance", title: "Дальность от дома" },
     ],
@@ -202,6 +205,19 @@ function LiveRatingCard({ card, platform }: { card: LiveCard; platform: Platform
 
 export function LeaderboardsHubPage() {
   const [platform, setPlatform] = useState<PlatformFilter>("all");
+  // Закрытые рейтинги показываем только админу: карточка тянет данные, а API
+  // отдаёт их лишь ему — остальным она молча висела бы «Считаем…».
+  const viewer = useOptionalUser();
+  const sections = useMemo(
+    () =>
+      SECTIONS.map((section) => ({
+        ...section,
+        live: section.live.filter(
+          (card) => viewer?.is_admin || !ADMIN_ONLY_METRICS.includes(card.metric),
+        ),
+      })).filter((section) => section.live.length > 0),
+    [viewer],
+  );
 
   return (
     <PortalSectionShell sidebar={{ active: "ratings" }}>
@@ -237,7 +253,7 @@ export function LeaderboardsHubPage() {
           </div>
         </div>
 
-        {SECTIONS.map((section) => (
+        {sections.map((section) => (
           <section key={section.title} className="lb-hub-section">
             <h2>
               <span aria-hidden>{section.emoji}</span> {section.title}

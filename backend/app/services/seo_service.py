@@ -145,6 +145,15 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "Кто волонтёрил на наибольшем числе разных площадок субботних пробежек.",
         indexable=True,
     ),
+    # Пока рейтинг открыт только админу (ADMIN_ONLY_METRICS в
+    # leaderboard_service): роботу там показывать нечего — он получит 404 от
+    # API и пустую таблицу. Открывать вместе с рейтингом: indexable=True и
+    # адрес в _SITEMAP_STATIC.
+    "/ratings/openings": _meta(
+        "Рейтинг открытий локаций — run5k.run",
+        "Первопроходцы субботних пробежек: кто чаще всех бежал на самом первом "
+        "старте новой площадки 5 вёрст, С95, parkrun и RunPark.",
+    ),
     "/ratings/wins": _meta(
         "Рейтинг побед — run5k.run",
         "Кто чаще всех финишировал первым на субботних стартах, с разбивкой по полу.",
@@ -535,6 +544,7 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/ratings/volunteer-roles", "0.6"),
     ("/ratings/locations", "0.7"),
     ("/ratings/volunteer-locations", "0.6"),
+    # /ratings/openings появится здесь, когда рейтинг откроют всем.
     ("/ratings/wins", "0.7"),
     ("/ratings/win-locations", "0.6"),
     ("/ratings/home-distance", "0.6"),

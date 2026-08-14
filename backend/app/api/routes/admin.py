@@ -54,6 +54,11 @@ from app.schemas.location_contacts import (
     LocationContactLinkUpdateRequest,
     LocationContactListResponse,
 )
+from app.schemas.location_openings import (
+    LocationOpeningListResponse,
+    LocationOpeningResponse,
+    LocationOpeningUpdateRequest,
+)
 from app.schemas.rating import (
     AdminLocationRatingsResponse,
     AdminRatingsResponse,
@@ -107,6 +112,7 @@ from app.services.blog_service import (
     list_all_posts,
     update_post,
 )
+from app.services.leaderboard_service import drop_metric_cache
 from app.services.location_contacts_service import (
     LocationContactError,
     create_location_contact_link,
@@ -114,6 +120,12 @@ from app.services.location_contacts_service import (
     list_location_contacts,
     update_location_announce_settings,
     update_location_contact_link,
+)
+from app.services.location_openings_service import (
+    LocationOpeningError,
+    clear_opening,
+    list_openings,
+    set_opening,
 )
 from app.services.login_journal_service import list_login_events, summarize_login_events
 from app.services.page_analytics_service import (
@@ -604,6 +616,63 @@ def admin_delete_location_contact_link(
     except LocationContactError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return AbuseMessageResponse(message="contact_link_deleted")
+
+
+# Разметка открытий: какой старт площадки считается первым. Нужна прежде всего
+# С95 (номера забегов эта система не публикует), но открывается и для остальных
+# систем — чтобы гасить ложное открытие там, где система начала вести протоколы
+# позже самой площадки.
+@router.get("/location-openings", response_model=LocationOpeningListResponse)
+def admin_location_openings(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    platform: Annotated[str, Query(max_length=32)] = "s95",
+    q: Annotated[str | None, Query(max_length=128)] = None,
+    only_missing: Annotated[bool, Query()] = False,
+) -> LocationOpeningListResponse:
+    try:
+        payload = list_openings(db, platform=platform, query=q, only_missing=only_missing)
+    except LocationOpeningError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return LocationOpeningListResponse.model_validate(payload)
+
+
+@router.put("/location-openings/{location_id}", response_model=LocationOpeningResponse)
+def admin_set_location_opening(
+    location_id: UUID,
+    body: LocationOpeningUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> LocationOpeningResponse:
+    try:
+        payload = set_opening(
+            db,
+            location_id,
+            opening_event_number=body.opening_event_number,
+            note=body.note,
+            admin=admin,
+        )
+    except LocationOpeningError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    # Рейтинг открытий считается по этой разметке: без сброса кэша правка
+    # доехала бы до таблицы только через TTL снапшота.
+    drop_metric_cache("openings")
+    return LocationOpeningResponse.model_validate(payload)
+
+
+@router.delete("/location-openings/{location_id}", response_model=LocationOpeningResponse)
+def admin_clear_location_opening(
+    location_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> LocationOpeningResponse:
+    """Снять ручную разметку — площадка возвращается к правилу своей системы."""
+    try:
+        payload = clear_opening(db, location_id)
+    except LocationOpeningError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    drop_metric_cache("openings")
+    return LocationOpeningResponse.model_validate(payload)
 
 
 

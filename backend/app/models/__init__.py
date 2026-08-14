@@ -175,6 +175,9 @@ class Location(Base):
     description: Mapped["LocationDescription | None"] = relationship(
         back_populates="location", uselist=False, cascade="all, delete-orphan"
     )
+    opening: Mapped["LocationOpening | None"] = relationship(
+        back_populates="location", uselist=False, cascade="all, delete-orphan"
+    )
     announce_settings: Mapped["LocationAnnounceSettings | None"] = relationship(
         back_populates="location", uselist=False
     )
@@ -314,6 +317,39 @@ class LocationAnnounceSettings(Base):
     )
 
     location: Mapped["Location"] = relationship(back_populates="announce_settings")
+
+
+class LocationOpening(Base):
+    """Какой старт площадки считать открытием — ручная разметка поверх номеров.
+
+    У 5 вёрст, parkrun и RunPark открытие видно из протокола (событие №1), у С95
+    номера забегов мы считаем сами (ранг в хронологии), и с «торжественным
+    открытием» они не обязаны совпадать — там номер проставляется руками.
+
+    Строка на локацию платформы, а не на физическую точку: одна и та же площадка
+    открывалась в parkrun и в 5 вёрст по-разному, и это два разных открытия.
+
+    `opening_event_number IS NULL` при существующей строке означает не «не
+    знаем», а «открытия у этой площадки нет»: так гасится ложное открытие там,
+    где система начала вести протоколы позже самой площадки.
+    """
+
+    __tablename__ = "location_openings"
+    __table_args__ = (UniqueConstraint("location_id", name="uq_location_openings_location_id"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
+    opening_event_number: Mapped[int | None] = mapped_column(Integer)
+    note: Mapped[str | None] = mapped_column(Text)
+    updated_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    location: Mapped["Location"] = relationship(back_populates="opening")
 
 
 class LocationCatalog(Base):

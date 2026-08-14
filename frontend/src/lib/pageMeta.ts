@@ -107,6 +107,14 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
     description: "Кто волонтёрил на наибольшем числе разных площадок субботних пробежек.",
     indexable: true,
   },
+  // Пока рейтинг открыт только админу (ADMIN_ONLY_METRICS в leaderboardsApi):
+  // indexable включаем вместе с публикацией, как и на бэкенде.
+  "/ratings/openings": {
+    title: "Рейтинг открытий локаций — run5k.run",
+    description:
+      "Первопроходцы субботних пробежек: кто чаще всех бежал на самом первом старте " +
+      "новой площадки 5 вёрст, С95, parkrun и RunPark.",
+  },
   "/ratings/wins": {
     title: "Рейтинг побед — run5k.run",
     description: "Кто чаще всех финишировал первым на субботних стартах, с разбивкой по полу.",

@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
+  ADMIN_ONLY_METRICS,
   COUNT_BY_LABELS,
   COUNT_BY_TOTAL_LABELS,
   GENDERED_METRICS,
@@ -27,6 +28,8 @@ import {
   type WeekLocation,
 } from "./leaderboardsApi";
 import { formatDateTime, formatInt, pluralizeRu } from "../../lib/format";
+import { useOptionalUser } from "../../lib/useOptionalUser";
+import { NotFoundPage } from "../NotFoundPage";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
@@ -62,6 +65,7 @@ const METRIC_CRUMBS: Record<LeaderboardMetric, { section: string; label: string 
   volunteer_roles: { section: "Волонтёры", label: "Мультиволонтёр" },
   locations: { section: "Паркран-туристы", label: "Уникальные локации" },
   volunteer_locations: { section: "Волонтёры", label: "Уникальные локации" },
+  openings: { section: "Паркран-туристы", label: "Открытия локаций" },
   wins: { section: "Бегуны", label: "Количество первых мест" },
   win_locations: { section: "Паркран-туристы", label: "Локации с первым местом" },
   home_distance: { section: "Паркран-туристы", label: "Дальность от дома" },
@@ -186,6 +190,12 @@ const LAST_WIN_META: Record<string, { label: string; hint: string }> = {
     hint:
       "Локация, которая последней пополнила коллекцию: дата — первая победа " +
       "именно на ней.",
+  },
+  // Та же колонка «площадка + дата» у рейтинга открытий: последний первый
+  // старт, на котором человек бежал.
+  openings: {
+    label: "Последнее открытие",
+    hint: "Площадка, чей первый старт участник посетил последним, и его дата.",
   },
 };
 
@@ -639,7 +649,25 @@ function readStoredRoleKeys(metric: LeaderboardMetric): string[] {
   }
 }
 
+/**
+ * Ещё не открытый рейтинг ведёт себя как несуществующий адрес: API отдаёт
+ * «неизвестный рейтинг» всем, кроме админа, и страница показывает то же самое.
+ * Пока сессия проверяется, не мигаем «404» перед админом.
+ */
 export function LeaderboardPage({ metric }: LeaderboardPageProps) {
+  const viewer = useOptionalUser();
+  if (ADMIN_ONLY_METRICS.includes(metric)) {
+    if (viewer === undefined) {
+      return null;
+    }
+    if (!viewer?.is_admin) {
+      return <NotFoundPage />;
+    }
+  }
+  return <LeaderboardBoard metric={metric} />;
+}
+
+function LeaderboardBoard({ metric }: LeaderboardPageProps) {
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [me, setMe] = useState<MyLeaderboardRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -868,8 +896,10 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     ? "lb-table-wins"
     : hasGeoColumns
       ? "lb-table-geo"
-      : hasWeekLocations
-        ? "lb-table-week"
+      : hasWeekLocations || lastWinMeta
+        ? // Открытия: колонок ровно столько же, что у «недели» (системы, «Всего»
+          // и одна колонка с названием площадки), поэтому и раскладка та же.
+          "lb-table-week"
         : "";
   const wideTable = wideTableKind !== "";
 
@@ -898,7 +928,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
     if (metric === "wins") {
       list.push({ key: "top_location", width: 168 });
     }
-    if (hasWinExtras && lastWinMeta) {
+    if (lastWinMeta) {
       list.push({ key: "last_win", width: 176 });
     }
     if (hasWeekLocations) {
@@ -1362,7 +1392,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                           <HomeLocationCell row={me} />
                         </span>
                       )}
-                      {hasWinExtras && lastWinMeta && me.last_win_location && (
+                      {lastWinMeta && me.last_win_location && (
                         <span className="lb-me-value">
                           <span className="lb-me-platform">
                             {lastWinMeta.label} <InfoHint text={lastWinMeta.hint} />
@@ -1497,7 +1527,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         Топ-локация <InfoHint text={TOP_LOCATION_HINT} />
                       </th>
                     )}
-                    {show("last_win") && hasWinExtras && lastWinMeta && (
+                    {show("last_win") && lastWinMeta && (
                       <th className="lb-col-last-win">
                         {lastWinMeta.label} <InfoHint text={lastWinMeta.hint} />
                       </th>
@@ -1607,7 +1637,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                             <TopWinLocation row={row} />
                           </td>
                         )}
-                        {show("last_win") && hasWinExtras && lastWinMeta && (
+                        {show("last_win") && lastWinMeta && (
                           <td className="lb-col-last-win">
                             <LastWinLocation row={row} />
                           </td>

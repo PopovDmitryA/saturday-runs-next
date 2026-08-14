@@ -5,7 +5,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_optional_user
+from app.config import Settings, get_settings
+from app.core.admin import is_admin_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas.leaderboards import (
@@ -15,6 +17,7 @@ from app.schemas.leaderboards import (
     VolunteerRoleItem,
 )
 from app.services.leaderboard_service import (
+    ADMIN_ONLY_METRICS,
     LEADERBOARD_GENDERS,
     LEADERBOARD_METRICS,
     MAX_MIN_VISITS,
@@ -34,8 +37,16 @@ from app.volunteer_role_taxonomy import (
 router = APIRouter(prefix="/leaderboards", tags=["leaderboards"])
 
 
-def _validate_metric(metric: str) -> LeaderboardMetric:
+def _validate_metric(
+    metric: str, viewer: User | None = None, settings: Settings | None = None
+) -> LeaderboardMetric:
     if metric not in LEADERBOARD_METRICS:
+        raise HTTPException(status_code=404, detail="Неизвестный рейтинг")
+    # Ещё не открытый рейтинг ведёт себя ровно как несуществующий: пока данные
+    # не выверены, о нём не должно быть видно даже того, что он есть.
+    if metric in ADMIN_ONLY_METRICS and not (
+        viewer is not None and settings is not None and is_admin_user(viewer, settings)
+    ):
         raise HTTPException(status_code=404, detail="Неизвестный рейтинг")
     return metric  # type: ignore[return-value]
 
@@ -82,6 +93,8 @@ def volunteer_role_catalog(
 def leaderboard(
     metric: str,
     db: Annotated[Session, Depends(get_db)],
+    viewer: Annotated[User | None, Depends(get_optional_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     gender: str = "all",
     # Порог визитов есть только у туристических рейтингов; фильтр «по одной
@@ -100,7 +113,7 @@ def leaderboard(
 ) -> LeaderboardResponse:
     payload = get_leaderboard(
         db,
-        _validate_metric(metric),
+        _validate_metric(metric, viewer, settings),
         _validate_gender(gender),
         limit=limit,
         min_visits=min_visits,
@@ -118,6 +131,7 @@ def my_leaderboard_row(
     metric: str,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
     gender: str = "all",
     min_visits: Annotated[int, Query(ge=1, le=MAX_MIN_VISITS)] = 1,
     platform: str = "all",
@@ -125,7 +139,7 @@ def my_leaderboard_row(
 ) -> MyLeaderboardRowResponse:
     payload = get_my_leaderboard_row(
         db,
-        _validate_metric(metric),
+        _validate_metric(metric, user, settings),
         user,
         _validate_gender(gender),
         min_visits,

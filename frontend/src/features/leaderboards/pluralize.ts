@@ -7,6 +7,7 @@ const UNIT_FORMS: Record<LeaderboardMetric, [string, string, string]> = {
   volunteer_roles: ["роль", "роли", "ролей"],
   locations: ["локация", "локации", "локаций"],
   volunteer_locations: ["локация", "локации", "локаций"],
+  openings: ["открытие", "открытия", "открытий"],
   wins: ["первое место", "первых места", "первых мест"],
   win_locations: [
     "локация с первым местом",

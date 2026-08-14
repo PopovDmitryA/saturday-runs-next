@@ -8,6 +8,7 @@ import { AdminPageAnalyticsPage } from "./features/admin/AdminPageAnalyticsPage"
 import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
 import { AdminEventReportPage } from "./features/admin/AdminEventReportPage";
 import { AdminLocationContactsPage } from "./features/admin/AdminLocationContactsPage";
+import { AdminLocationOpeningsPage } from "./features/admin/AdminLocationOpeningsPage";
 import { AdminRecordsDigestPage } from "./features/admin/AdminRecordsDigestPage";
 import { ProfileRoute } from "./features/profile/ProfileRoute";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
@@ -219,6 +220,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/volunteer-roles": () => <LeaderboardPage metric="volunteer_roles" />,
   "/ratings/locations": () => <LeaderboardPage metric="locations" />,
   "/ratings/volunteer-locations": () => <LeaderboardPage metric="volunteer_locations" />,
+  "/ratings/openings": () => <LeaderboardPage metric="openings" />,
   "/ratings/wins": () => <LeaderboardPage metric="wins" />,
   "/ratings/win-locations": () => <LeaderboardPage metric="win_locations" />,
   "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
@@ -240,6 +242,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/event-report": () => <AdminEventReportPage />,
   "/admin/records-digest": () => <AdminRecordsDigestPage />,
   "/admin/location-contacts": () => <AdminLocationContactsPage />,
+  "/admin/location-openings": () => <AdminLocationOpeningsPage />,
   "/admin/blog": () => <AdminBlogPage />,
   "/admin/releases": () => <AdminReleasesPage />,
   "/admin/backlog": () => <AdminBacklogPage />,
