@@ -17,7 +17,12 @@ from app.api.routes.seo import _messenger_bot_name
 from app.models import AbEvent
 from app.services.ab_service import record_ab_event
 from app.services.page_analytics_service import build_og_fetch_stats, build_share_stats
-from app.services.seo_service import _og_image_tags, location_og_image_url
+from app.services.seo_service import (
+    _og_image_tags,
+    build_profile_meta,
+    location_og_image_url,
+    profile_og_image_url,
+)
 
 
 def _clear_share_events(db: Session) -> None:
@@ -147,6 +152,59 @@ def test_location_og_image_url_requires_rendered_file(
     url = location_og_image_url(payload)
     assert url is not None
     assert url.endswith("/og/locations/kuzminki.png?v=2026-08-01")
+
+
+def test_profile_og_image_url_requires_rendered_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "og_image_dir", str(tmp_path))
+
+    class _User:
+        serial_id = 12
+        public_slug = "dmitry"
+        updated_at = datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)
+
+    user = _User()
+    # Картинки ещё нет — пререндер подставит дефолтную.
+    assert profile_og_image_url(user) is None
+
+    (tmp_path / "users").mkdir()
+    (tmp_path / "users" / "12.png").write_bytes(b"png")
+    url = profile_og_image_url(user)
+    assert url is not None
+    # Имя файла — по номеру участника: vanity-slug можно сменить, номер нет.
+    assert url.endswith("/og/users/12.png?v=2026-08-10")
+
+
+def test_build_profile_meta_uses_real_numbers() -> None:
+    class _User:
+        display_name = "Дмитрий Попов"
+
+    payload = {
+        "stats": {
+            "total_runs": 128,
+            "total_volunteering": 45,
+            "analytics": {"unique_locations": 90},
+        }
+    }
+    meta = build_profile_meta(_User(), payload)
+    assert "Дмитрий Попов" in meta.title
+    assert "128 пробежек" in meta.description
+    assert "45 волонтёрств" in meta.description
+    assert "90 локаций" in meta.description
+    # Личные страницы в поиске не нужны — только превью ссылки в чате.
+    assert meta.indexable is False
+
+
+def test_build_profile_meta_survives_empty_stats() -> None:
+    class _User:
+        display_name = None
+
+    meta = build_profile_meta(_User(), None)
+    assert "Участник" in meta.title
+    assert meta.description
 
 
 def test_og_image_tags_default_and_custom() -> None:

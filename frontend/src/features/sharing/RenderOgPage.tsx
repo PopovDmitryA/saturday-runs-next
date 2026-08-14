@@ -9,12 +9,17 @@
 // по нему Playwright понимает, что можно снимать.
 
 import { useEffect, useState } from "react";
-import { getLocationPage, type LocationPage } from "../../lib/api";
+import {
+  getLocationPage,
+  getPublicProfileDashboard,
+  resolveProfileHandle,
+  type LocationPage,
+} from "../../lib/api";
 import { ensureShareFontsLoaded, shareFontFromQuery } from "./fonts";
 import { LOCATION_LOOKS, RUNNER_LOOKS } from "./looks";
 import { ShareCardView } from "./ShareCardView";
-import { locationCardSubject } from "./subjects";
-import type { ShareCardData } from "./types";
+import { locationCardSubject, profileCardSubject } from "./subjects";
+import type { ShareCardData, ShareSubject } from "./types";
 import { shareFormat } from "./types";
 
 const WIDE = shareFormat("wide");
@@ -81,6 +86,61 @@ export function RenderOgLocationPage({ slug }: { slug: string }) {
         data={subject.data}
         format={WIDE}
         look={LOCATION_LOOKS[0]}
+        photo={null}
+        font={font}
+      />
+    </RenderStage>
+  );
+}
+
+/**
+ * Карточка публичного профиля для превью ссылки в чате. Приватный профиль
+ * бэкенд сюда не пускает (пререндер отдаёт дефолтную картинку), но если
+ * запрос всё же дошёл и API ответил 403 — рисуем маркер ошибки, а не
+ * пустую карточку с чужими цифрами.
+ */
+export function RenderOgUserPage({ handle }: { handle: string }) {
+  const font = shareFontFromQuery();
+  const [subject, setSubject] = useState<ShareSubject | null>(null);
+  const [failed, setFailed] = useState(false);
+  const ready = usePaintedAfter(subject !== null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([resolveProfileHandle(handle), ensureShareFontsLoaded(font)])
+      .then(([resolved]) => getPublicProfileDashboard(resolved.serial_id).then((data) => ({ resolved, data })))
+      .then(({ resolved, data }) => {
+        if (cancelled) {
+          return;
+        }
+        const name =
+          (data.user.display_name || "").trim() ||
+          (resolved.display_name || "").trim() ||
+          "Участник";
+        setSubject(profileCardSubject(data.stats, name));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFailed(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [handle, font]);
+
+  if (failed) {
+    return <div id="og-failed" />;
+  }
+  if (!subject) {
+    return null;
+  }
+  return (
+    <RenderStage ready={ready}>
+      <ShareCardView
+        data={subject.data}
+        format={WIDE}
+        look={RUNNER_LOOKS[0]}
         photo={null}
         font={font}
       />

@@ -57,7 +57,11 @@ import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { useAppPath } from "./hooks/useAppPath";
-import { RenderOgDefaultPage, RenderOgLocationPage } from "./features/sharing/RenderOgPage";
+import {
+  RenderOgDefaultPage,
+  RenderOgLocationPage,
+  RenderOgUserPage,
+} from "./features/sharing/RenderOgPage";
 import { ShareSheetProvider } from "./features/sharing/ShareSheetContext";
 import { reportAbLoginOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
@@ -316,6 +320,10 @@ function renderRoute(path: string): ReactElement {
   const renderOgLocationMatch = path.match(/^\/render\/og\/location\/([^/]+)$/);
   if (renderOgLocationMatch) {
     return <RenderOgLocationPage slug={decodeURIComponent(renderOgLocationMatch[1])} />;
+  }
+  const renderOgUserMatch = path.match(/^\/render\/og\/user\/([^/]+)$/);
+  if (renderOgUserMatch) {
+    return <RenderOgUserPage handle={decodeURIComponent(renderOgUserMatch[1])} />;
   }
   if (path === "/render/og/default") {
     return <RenderOgDefaultPage />;

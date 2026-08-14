@@ -42,22 +42,29 @@ def _location_slugs(db: Any) -> list[str]:
     ]
 
 
-@celery_app.task(name="og_render.render_location_images", queue="parkrun")
-def og_render_location_images_task(slugs: list[str] | None = None) -> dict[str, object]:
-    """Рендерит OG-картинки локаций; slugs=None — все локации каталога."""
+def _public_profile_keys(db: Any) -> list[str]:
+    """Номера участников с публичным профилем.
+
+    Скрытые профили (profile_private) не рендерим вовсе: превью такой ссылки
+    показывает дефолтную карточку сайта, без единой личной цифры.
+    """
+    from app.models import User
+
+    rows = (
+        db.query(User.serial_id)
+        .filter(User.serial_id.isnot(None))
+        .filter(User.profile_private.is_(False))
+        .all()
+    )
+    return [str(row[0]) for row in rows]
+
+
+def _render_batch(keys: list[str], *, kind: str, out_dir: Path) -> dict[str, object]:
+    """Снимает карточки по списку ключей: /render/og/{kind}/{key} → {key}.png."""
     from playwright.sync_api import sync_playwright
 
-    settings = get_settings()
-    out_dir = Path(settings.og_image_dir) / "locations"
+    base = get_settings().og_render_base_url.rstrip("/")
     out_dir.mkdir(parents=True, exist_ok=True)
-    base = settings.og_render_base_url.rstrip("/")
-
-    if slugs is None:
-        db = get_session_factory()()
-        try:
-            slugs = _location_slugs(db)
-        finally:
-            db.close()
 
     rendered = 0
     failed: list[str] = []
@@ -65,24 +72,56 @@ def og_render_location_images_task(slugs: list[str] | None = None) -> dict[str, 
         browser = playwright.chromium.launch(args=["--no-sandbox"])
         page = browser.new_page(viewport={"width": 1200, "height": 630})
         try:
-            for slug in slugs:
-                url = f"{base}/render/og/location/{slug}"
+            for key in keys:
+                url = f"{base}/render/og/{kind}/{key}"
                 try:
                     page.goto(url, wait_until="domcontentloaded", timeout=_READY_TIMEOUT_MS)
                     page.wait_for_selector("#og-ready", timeout=_READY_TIMEOUT_MS)
                     # Скриншот в байты: у screenshot(path=...) жёсткая проверка
                     # расширения, а нам нужен временный файл для атомарной подмены.
                     image = page.screenshot()
-                    tmp_path = out_dir / f"{slug}.png.tmp"
+                    tmp_path = out_dir / f"{key}.png.tmp"
                     tmp_path.write_bytes(image)
                     # Атомарная подмена: nginx не отдаст недописанный файл.
-                    os.replace(tmp_path, out_dir / f"{slug}.png")
+                    os.replace(tmp_path, out_dir / f"{key}.png")
                     rendered += 1
-                except Exception:  # noqa: BLE001 — одна битая локация не валит прогон
-                    logger.exception("og_render: не удалось отрендерить %s", slug)
-                    failed.append(slug)
+                except Exception:  # noqa: BLE001 — одна битая страница не валит прогон
+                    logger.exception("og_render: не удалось отрендерить %s/%s", kind, key)
+                    failed.append(key)
         finally:
             browser.close()
 
-    logger.info("og_render: готово %d, ошибок %d", rendered, len(failed))
-    return {"rendered": rendered, "failed": failed, "total": len(slugs)}
+    logger.info("og_render(%s): готово %d, ошибок %d", kind, rendered, len(failed))
+    return {"rendered": rendered, "failed": failed, "total": len(keys)}
+
+
+@celery_app.task(name="og_render.render_user_images", queue="parkrun")
+def og_render_user_images_task(handles: list[str] | None = None) -> dict[str, object]:
+    """Рендерит OG-картинки участников; handles=None — все публичные профили.
+
+    Ленивый догон: при промахе кэша пререндер ставит сюда одиночную задачу,
+    поэтому список и принимается параметром.
+    """
+    if handles is None:
+        db = get_session_factory()()
+        try:
+            handles = _public_profile_keys(db)
+        finally:
+            db.close()
+
+    return _render_batch(handles, kind="user", out_dir=Path(get_settings().og_image_dir) / "users")
+
+
+@celery_app.task(name="og_render.render_location_images", queue="parkrun")
+def og_render_location_images_task(slugs: list[str] | None = None) -> dict[str, object]:
+    """Рендерит OG-картинки локаций; slugs=None — все локации каталога."""
+    if slugs is None:
+        db = get_session_factory()()
+        try:
+            slugs = _location_slugs(db)
+        finally:
+            db.close()
+
+    return _render_batch(
+        slugs, kind="location", out_dir=Path(get_settings().og_image_dir) / "locations"
+    )

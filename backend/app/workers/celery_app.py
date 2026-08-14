@@ -57,6 +57,18 @@ celery_app.conf.update(
             "schedule": crontab(minute=30, hour=4, day_of_week=1),
             "options": {"queue": "parkrun"},
         },
+        # Карточки участников: после субботних синков (цифры за неделю уже
+        # приехали) и полным прогоном в понедельник ночью.
+        "og-render-users-weekend": {
+            "task": "og_render.render_user_images",
+            "schedule": crontab(minute=20, hour=22, day_of_week="6,0"),
+            "options": {"queue": "parkrun"},
+        },
+        "og-render-users-weekly": {
+            "task": "og_render.render_user_images",
+            "schedule": crontab(minute=50, hour=4, day_of_week=1),
+            "options": {"queue": "parkrun"},
+        },
         # Очередь five_verst обслуживает один воркер с concurrency=1, поэтому
         # задачи разведены по минутам: старт в одну и ту же минуту не даёт
         # параллельности, а только выстраивает пачку в хвост (до 08.2026 в 20:00

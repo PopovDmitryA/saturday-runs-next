@@ -224,6 +224,29 @@ function lastSaturdays(count: number): string[] {
   return days;
 }
 
+/**
+ * Карточка публичного профиля для OG-превью ссылки: тот же набор цифр, что и
+ * «Сводка», но имя приходит строкой (серверный рендер работает без сессии,
+ * объекта User там нет), формат — широкий, как разворачивают ссылки чаты.
+ */
+export function profileCardSubject(stats: DashboardStats, name: string): ShareSubject {
+  const summary = summarySubject(stats, null, "all", []);
+  return {
+    ...summary,
+    kind: "summary",
+    data: {
+      ...summary.data,
+      title: name,
+      subtitle: "субботние пробежки",
+      plate: "УЧАСТНИК",
+      // Мини-календарь в широком формате только съедает место под цифры.
+      heat: undefined,
+    },
+    fileName: `run5k-profile-${name}`,
+    defaultFormat: "wide",
+  };
+}
+
 export function summarySubject(
   stats: DashboardStats,
   user: User | null,
