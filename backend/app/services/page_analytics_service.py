@@ -160,6 +160,10 @@ def classify_page(path: str) -> tuple[str, str]:
 
     if normalized.startswith("/oauth/"):
         return "oauth_callback", ""
+    # Служебный рендер OG-картинок (Playwright): фронт такие просмотры не шлёт
+    # вовсе, ветка — страховка, чтобы случайный заход не падал в "other".
+    if normalized.startswith("/render/"):
+        return "og_render", ""
     # Демо и админка — одной строкой каждая (разбивка по подстраницам не нужна:
     # демо — витрина целиком, админка внутренняя). Подстраница едет в entity_key,
     # так что при желании разложить их можно и задним числом, без потери данных.
@@ -553,6 +557,178 @@ def build_home_link_clicks(
                 **label,
                 "clicks": int(row.clicks or 0),
                 "visitors": int(row.visitors or 0),
+            }
+        )
+    return result
+
+
+# Канал событий фичи «Поделиться» в ab_events (см. KNOWN_EXPERIMENTS в ab_service).
+SHARE_EXPERIMENT = "share"
+
+# Порядок ступеней воронки шаринга в отчёте.
+_SHARE_FUNNEL_ORDER = ("share_moment_shown", "share_open", "share_customize", "share_success")
+
+
+def build_share_stats(db: Session, *, start: date, end: date) -> dict[str, object]:
+    """Воронка и разрезы фичи «Поделиться».
+
+    Все события лежат в ab_events с experiment='share'; value кодируется
+    префиксами: "сюжет:вход" у показов/открытий, "канал:сюжет" у успехов,
+    "look:<id>"/"format:<id>" у переключений. Пишется с релиза «Поделиться
+    2.0» — за более ранние периоды отчёт пустой.
+    """
+    params = {
+        "experiment": SHARE_EXPERIMENT,
+        "start": start,
+        "end_exclusive": end + timedelta(days=1),
+    }
+    funnel_rows = db.execute(
+        text(
+            """
+            SELECT event_type,
+                   count(*) AS events,
+                   count(DISTINCT visitor_key) AS visitors
+            FROM ab_events
+            WHERE experiment = :experiment
+              AND event_type <> 'og_preview_fetch'
+              AND ts >= :start AND ts < :end_exclusive
+            GROUP BY event_type
+            """
+        ),
+        params,
+    ).all()
+    detail_rows = db.execute(
+        text(
+            """
+            SELECT event_type, value, count(*) AS events
+            FROM ab_events
+            WHERE experiment = :experiment
+              AND event_type <> 'og_preview_fetch'
+              AND ts >= :start AND ts < :end_exclusive
+            GROUP BY event_type, value
+            """
+        ),
+        params,
+    ).all()
+
+    by_type = {row.event_type: row for row in funnel_rows}
+    funnel = [
+        {
+            "event_type": event_type,
+            "events": int(by_type[event_type].events or 0),
+            "visitors": int(by_type[event_type].visitors or 0),
+        }
+        for event_type in _SHARE_FUNNEL_ORDER
+        if event_type in by_type
+    ]
+
+    # Пары «сюжет + вход»: главный разрез — ГДЕ именно люди жмут «Поделиться»
+    # (веха в истории, своя пробежка на локации, строка таблицы пробежек…).
+    pairs: dict[tuple[str, str], dict[str, int]] = {}
+    channels: dict[str, int] = {}
+    looks: dict[str, int] = {}
+    formats: dict[str, int] = {}
+    photo_added = 0
+
+    def pair_bucket(subject: str, entry: str) -> dict[str, int]:
+        return pairs.setdefault((subject, entry), {"shown": 0, "opens": 0})
+
+    for row in detail_rows:
+        value = row.value or ""
+        count = int(row.events or 0)
+        head, _, tail = value.partition(":")
+        if row.event_type == "share_moment_shown" and tail:
+            pair_bucket(head, tail)["shown"] += count
+        elif row.event_type == "share_open" and tail:
+            pair_bucket(head, tail)["opens"] += count
+        elif row.event_type == "share_success" and tail:
+            channels[head] = channels.get(head, 0) + count
+        elif row.event_type == "share_template_switch" and tail:
+            if head == "look":
+                looks[tail] = looks.get(tail, 0) + count
+            elif head == "format":
+                formats[tail] = formats.get(tail, 0) + count
+        elif row.event_type == "share_customize" and value == "photo":
+            photo_added += count
+
+    return {
+        "funnel": funnel,
+        "pairs": [
+            {"subject": subject, "entry": entry, **bucket}
+            for (subject, entry), bucket in sorted(pairs.items(), key=lambda kv: -kv[1]["opens"])
+        ],
+        "channels": [
+            {"channel": channel, "successes": count}
+            for channel, count in sorted(channels.items(), key=lambda kv: -kv[1])
+        ],
+        "looks": [
+            {"value": value, "count": count}
+            for value, count in sorted(looks.items(), key=lambda kv: -kv[1])
+        ],
+        "formats": [
+            {"value": value, "count": count}
+            for value, count in sorted(formats.items(), key=lambda kv: -kv[1])
+        ],
+        "photo_added": photo_added,
+    }
+
+
+def build_og_fetch_stats(
+    db: Session, *, start: date, end: date, limit: int = 20
+) -> list[dict[str, object]]:
+    """«Разворачивания ссылок»: сколько раз боты мессенджеров и поисковиков
+    запрашивали превью страниц (событие og_preview_fetch пишет сам бэкенд в
+    /__prerender). Прокси-метрика «ссылку кинули в чат», которой раньше не
+    было ни в каком виде."""
+    rows = db.execute(
+        text(
+            """
+            SELECT value,
+                   count(*) AS fetches,
+                   count(DISTINCT visitor_key) AS bots
+            FROM ab_events
+            WHERE experiment = :experiment
+              AND event_type = 'og_preview_fetch'
+              AND ts >= :start AND ts < :end_exclusive
+            GROUP BY value
+            ORDER BY fetches DESC, value
+            LIMIT :limit
+            """
+        ),
+        {
+            "experiment": SHARE_EXPERIMENT,
+            "start": start,
+            "end_exclusive": end + timedelta(days=1),
+            "limit": limit,
+        },
+    ).all()
+
+    parsed: list[tuple[str, str, object]] = []
+    for row in rows:
+        page_type, _, entity_key = (row.value or "").partition(":")
+        parsed.append((page_type or "other", entity_key, row))
+
+    location_keys = [
+        entity_key
+        for page_type, entity_key, _row in parsed
+        if entity_key and page_type in ("location", "location_events")
+    ]
+    location_labels = _location_labels(db, location_keys)
+
+    result: list[dict[str, object]] = []
+    for page_type, entity_key, row in parsed:
+        label: dict[str, object] = {"label": entity_key or page_type, "href": None}
+        if entity_key and page_type in ("location", "location_events"):
+            label = location_labels.get(
+                entity_key, {"label": entity_key, "href": f"/locations/{entity_key}"}
+            )
+        result.append(
+            {
+                "page_type": page_type,
+                "entity_key": entity_key,
+                **label,
+                "fetches": int(row.fetches or 0),
+                "bots": int(row.bots or 0),
             }
         )
     return result

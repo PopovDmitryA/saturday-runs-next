@@ -7,17 +7,34 @@ nginx/conf.d/default.conf.
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.services.ab_service import record_ab_event
+from app.services.page_analytics_service import SHARE_EXPERIMENT, classify_page
 from app.services.seo_service import (
     build_robots_txt,
     build_sitemap,
     render_prerendered_page,
 )
+
+# Разворачиватели ссылок в чатах — для метрики «ссылку кинули в чат»
+# (og_preview_fetch → «Разворачивания ссылок» в /admin/page-analytics).
+# Поисковых роботов сознательно не пишем: их обходы — SEO, а не шаринг.
+_MESSENGER_BOT_RE = re.compile(
+    r"telegrambot|vkshare|vkrobot|whatsapp|viber|facebookexternalhit|twitterbot"
+    r"|discordbot|slackbot|linkedinbot",
+    re.IGNORECASE,
+)
+
+
+def _messenger_bot_name(user_agent: str) -> str | None:
+    match = _MESSENGER_BOT_RE.search(user_agent)
+    return match.group(0).lower() if match else None
 
 router = APIRouter(tags=["seo"], include_in_schema=False)
 
@@ -45,14 +62,35 @@ def robots() -> Response:
 
 
 @router.get("/__prerender/{full_path:path}")
-def prerender(full_path: str, db: Annotated[Session, Depends(get_db)]) -> Response:
+def prerender(
+    full_path: str,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
     """HTML для робота по адресу страницы.
 
     Адрес приходит от nginx как остаток пути: /__prerender/locations/kuzminki.
     Несуществующий адрес отдаёт настоящий 404: SPA-сайт по умолчанию отвечает
     200 на любой мусор, и Яндекс отметил это диагностикой (11.08.2026).
     """
-    html, status = render_prerendered_page(db, f"/{full_path}")
+    path = f"/{full_path}"
+    bot = _messenger_bot_name(request.headers.get("user-agent", ""))
+    if bot is not None:
+        # Бот мессенджера разворачивает ссылку — значит, её кинули в чат.
+        try:
+            page_type, entity_key = classify_page(path)
+            record_ab_event(
+                db,
+                experiment=SHARE_EXPERIMENT,
+                variant="-",
+                visitor_key=f"bot:{bot}",
+                event_type="og_preview_fetch",
+                value=f"{page_type}:{entity_key or ''}",
+                path=path,
+            )
+        except Exception:  # noqa: BLE001 — аналитика не должна ломать пререндер
+            db.rollback()
+    html, status = render_prerendered_page(db, path)
     return Response(
         content=html,
         status_code=status,

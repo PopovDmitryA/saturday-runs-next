@@ -31,6 +31,8 @@ import { formatDateTime, formatInt, pluralizeRu } from "../../lib/format";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { NotFoundPage } from "../NotFoundPage";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
+import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
+import { ratingSubject } from "../sharing/subjects";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import { VolunteerRolesModal } from "./VolunteerRolesModal";
@@ -668,6 +670,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
 }
 
 function LeaderboardBoard({ metric }: LeaderboardPageProps) {
+  const shareSheet = useOptionalShareSheet();
+  const currentUser = useOptionalUser();
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [me, setMe] = useState<MyLeaderboardRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1413,7 +1417,10 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                     {/* Кнопка и перцентиль — одна связка: приписка встаёт справа
                         от кнопки и переносится вместе с ней, а не занимает
                         отдельную строку высотой в целый ряд. */}
-                    {(myIndex >= 0 || percentileText != null || belowTableCut) && (
+                    {(myIndex >= 0 ||
+                      percentileText != null ||
+                      belowTableCut ||
+                      shareSheet !== null) && (
                       <div className="lb-me-actions">
                         {myIndex >= 0 && (
                           <button
@@ -1422,6 +1429,20 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                             onClick={showMyRow}
                           >
                             Показать в таблице
+                          </button>
+                        )}
+                        {shareSheet !== null && data !== null && me.rank != null && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => {
+                              const subject = ratingSubject(data, me, currentUser ?? null);
+                              if (subject) {
+                                shareSheet.open({ subject, entry: "rating" });
+                              }
+                            }}
+                          >
+                            📤 Поделиться
                           </button>
                         )}
                         {percentileText != null && (

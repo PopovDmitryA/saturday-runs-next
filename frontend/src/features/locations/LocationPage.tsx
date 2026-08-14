@@ -35,6 +35,8 @@ import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { cabinetTabHref } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
+import { locationCardSubject, locationEventSubject, locationMeSubject } from "../sharing/subjects";
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { LocationMiniMap } from "./LocationMiniMap";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
@@ -183,7 +185,8 @@ function DeltaHint({ deltaSec }: { deltaSec: number | null }): ReactNode {
   );
 }
 
-function LastEventSection({ lastEvent }: { lastEvent: LocationLastEvent }) {
+function LastEventSection({ lastEvent, page }: { lastEvent: LocationLastEvent; page: LocationPageData }) {
+  const sheet = useOptionalShareSheet();
   const newcomers =
     lastEvent.debutants !== null || lastEvent.first_at_location !== null
       ? (lastEvent.debutants ?? 0) + (lastEvent.first_at_location ?? 0)
@@ -192,7 +195,23 @@ function LastEventSection({ lastEvent }: { lastEvent: LocationLastEvent }) {
     // Акцентная заливка — как у «Последней субботы» на главной: свежий старт
     // не должен теряться среди агрегатов за всю историю.
     <section className="card loc-section loc-section-accent">
-      <h2 className="section-title">Последний старт</h2>
+      <div className="loc-section-head">
+        <h2 className="section-title">Последний старт</h2>
+        {sheet !== null && (
+          <button
+            type="button"
+            className="s2-trigger"
+            onClick={() => {
+              const subject = locationEventSubject(page);
+              if (subject) {
+                sheet.open({ subject, entry: "location" });
+              }
+            }}
+          >
+            📤 Поделиться
+          </button>
+        )}
+      </div>
       <div className="loc-stats-grid">
         <StatTile value={formatDate(lastEvent.event_date)} label={platformCodeLabel(lastEvent.platform_code)} />
         {lastEvent.finishers !== null && <StatTile value={lastEvent.finishers} label="финишей" />}
@@ -821,6 +840,7 @@ function LocationPersonalSection({
   onOpenAgeGroup: (key: string) => void;
 }) {
   const user = useOptionalUser();
+  const personalSheet = useOptionalShareSheet();
   const [stats, setStats] = useState<LocationPersonalStats | null>(null);
 
   useEffect(() => {
@@ -891,7 +911,23 @@ function LocationPersonalSection({
   return (
     // Свой блок среди общих: выделяем, чтобы взгляд цеплялся за личные цифры.
     <section className="card loc-section loc-section-personal">
-      <h2 className="section-title">Вы на этой локации</h2>
+      <div className="loc-section-head">
+        <h2 className="section-title">Вы на этой локации</h2>
+        {personalSheet !== null && (
+          <button
+            type="button"
+            className="s2-trigger"
+            onClick={() => {
+              const subject = locationMeSubject(stats, user);
+              if (subject) {
+                personalSheet.open({ subject, entry: "location" });
+              }
+            }}
+          >
+            📤 Поделиться
+          </button>
+        )}
+      </div>
       <div className="loc-stats-grid">
         <StatTile
           value={stats.runs_count}
@@ -977,6 +1013,7 @@ function LocationPersonalSection({
 }
 
 function LocationPageContent({ slug }: { slug: string }) {
+  const shareSheet = useOptionalShareSheet();
   const [page, setPage] = useState<LocationPageData | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1082,6 +1119,17 @@ function LocationPageContent({ slug }: { slug: string }) {
         <div className="loc-header-title">
           <h1>{page.name}</h1>
           <LocationStatusLabel isPaused={page.is_paused} isCancelled={page.is_cancelled} />
+          {shareSheet !== null && (
+            <button
+              type="button"
+              className="s2-trigger loc-header-share"
+              onClick={() =>
+                shareSheet.open({ subject: locationCardSubject(page), entry: "location" })
+              }
+            >
+              📤 Поделиться
+            </button>
+          )}
         </div>
         <p className="muted loc-header-place">
           {[page.city, page.region, page.country]
@@ -1104,11 +1152,22 @@ function LocationPageContent({ slug }: { slug: string }) {
 
       <LocationPersonalSection slug={page.slug} onOpenAgeGroup={revealAgeGroup} />
 
-      {stats.last_event && <LastEventSection lastEvent={stats.last_event} />}
+      {stats.last_event && <LastEventSection lastEvent={stats.last_event} page={page} />}
 
       <section className="card loc-section">
         <div className="loc-section-head">
           <h2 className="section-title">Локация в цифрах</h2>
+          {shareSheet !== null && (
+            <button
+              type="button"
+              className="s2-trigger"
+              onClick={() =>
+                shareSheet.open({ subject: locationCardSubject(page), entry: "location" })
+              }
+            >
+              📤 Поделиться
+            </button>
+          )}
         </div>
         <div className="loc-stats-grid">
           <StatTile

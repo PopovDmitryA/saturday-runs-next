@@ -21,10 +21,12 @@ index.html, содержимое дорисовывает JavaScript уже в �
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import date
 from html import escape
+from pathlib import Path
 from typing import Any, cast
 from xml.sax.saxutils import escape as xml_escape
 
@@ -32,6 +34,8 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.services.location_page_service import build_location_page, build_locations_index
+
+logger = logging.getLogger(__name__)
 
 SITE_NAME = "run5k.run"
 
@@ -416,6 +420,45 @@ def build_location_meta(payload: dict[str, Any], *, events_log: bool = False) ->
     return _meta(title, description, indexable=True)
 
 
+def build_profile_meta(user: Any, payload: dict[str, Any] | None) -> PageMeta:
+    """Мета-теги публичного профиля участника — с его цифрами.
+
+    Приватный профиль сюда не попадает (см. render_prerendered_page): для него
+    остаётся родовая мета без единой цифры. Профиль всегда noindex — в поиске
+    личным страницам делать нечего (решение Дмитрия 02.08.2026), но
+    разворачивание ссылки в чате мета всё равно определяет.
+    """
+    name = (getattr(user, "display_name", None) or "").strip() or "Участник"
+    stats = (payload or {}).get("stats") or {}
+    analytics = stats.get("analytics") or {}
+
+    total_runs = int(stats.get("total_runs") or 0)
+    total_volunteering = int(stats.get("total_volunteering") or 0)
+    unique_locations = int(analytics.get("unique_locations") or 0)
+
+    parts: list[str] = []
+    if total_runs:
+        parts.append(f"{total_runs} {_plural(total_runs, 'пробежка', 'пробежки', 'пробежек')}")
+    if total_volunteering:
+        parts.append(
+            f"{total_volunteering} "
+            f"{_plural(total_volunteering, 'волонтёрство', 'волонтёрства', 'волонтёрств')}"
+        )
+    if unique_locations:
+        parts.append(f"{unique_locations} {_plural(unique_locations, 'локация', 'локации', 'локаций')}")
+
+    # head — само имя: его не режем никогда, хвост уходит первым при нехватке
+    # бюджета (у длинных имён останется «Имя — run5k.run»).
+    title = _fit_title(name, " — статистика субботних пробежек", " — статистика")
+    description = _describe(
+        name,
+        ", ".join(parts),
+        ". Пробежки, волонтёрство, личные рекорды и карта посещённых локаций.",
+        ". Пробежки, волонтёрство и личные рекорды.",
+    )
+    return _meta(title, description)
+
+
 def _describe(lead: str, numbers: str, *tails: str) -> str:
     """Описание под 160 символов: цифры важнее хвоста, хвост укорачиваем.
 
@@ -653,13 +696,77 @@ def build_robots_txt() -> str:
 # --------------------------------------------------------------------------
 
 
-def _og_image_tags() -> list[str]:
-    """Место под og:image.
+# Размер OG-картинок: стандарт превью Telegram/VK/Facebook.
+OG_IMAGE_WIDTH = 1200
+OG_IMAGE_HEIGHT = 630
 
-    Динамическая картинка-превью (Л19) делается в отдельной ветке; когда
-    появится эндпоинт, тег добавляется здесь и подхватится всеми страницами.
+# Дефолтная брендовая карточка: лежит в статике фронта (frontend/public/og/),
+# показывается для всех страниц без собственной картинки.
+DEFAULT_OG_IMAGE_PATH = "/og/default.png"
+
+
+def location_og_image_url(payload: dict[str, Any]) -> str | None:
+    """Адрес прегенерированной OG-картинки локации, если файл уже отрендерен.
+
+    Картинки складывает celery-задача og_render (очередь parkrun — только там
+    есть Chromium) в settings.og_image_dir; nginx раздаёт их как /og/locations/*.
+    Версия в query — дата последнего старта: Telegram кэширует превью надолго,
+    новый URL сбрасывает кэш после каждой субботы.
     """
-    return []
+    slug = str(payload.get("slug") or "")
+    if not slug:
+        return None
+    image_path = Path(get_settings().og_image_dir) / "locations" / f"{slug}.png"
+    if not image_path.is_file():
+        return None
+    stats = payload.get("stats") or {}
+    last_event = stats.get("last_event_date")
+    version = last_event.isoformat() if isinstance(last_event, date) else str(last_event or "")
+    suffix = f"?v={version}" if version else ""
+    return f"{site_base_url()}/og/locations/{slug}.png{suffix}"
+
+
+def profile_handle(user: Any) -> str:
+    """Хэндл для адресов профиля: vanity-slug, иначе номер участника."""
+    slug = (getattr(user, "public_slug", None) or "").strip()
+    return slug or str(getattr(user, "serial_id", "") or "")
+
+
+def profile_og_image_url(user: Any) -> str | None:
+    """Адрес прегенерированной OG-картинки участника, если файл отрендерен.
+
+    Файлы именуются по serial_id (vanity-slug можно сменить, номер — нет),
+    раздаются nginx как /og/users/*. Версия в query — дата последней
+    активности: после каждой субботы адрес меняется, и Telegram перезабирает
+    превью вместо показа прошлогодних цифр.
+    """
+    serial_id = getattr(user, "serial_id", None)
+    if serial_id is None:
+        return None
+    image_path = Path(get_settings().og_image_dir) / "users" / f"{serial_id}.png"
+    if not image_path.is_file():
+        return None
+    version = ""
+    updated = getattr(user, "updated_at", None)
+    if updated is not None:
+        version = updated.date().isoformat() if hasattr(updated, "date") else str(updated)
+    suffix = f"?v={version}" if version else ""
+    return f"{site_base_url()}/og/users/{serial_id}.png{suffix}"
+
+
+def _og_image_tags(og_image_url: str | None) -> list[str]:
+    """og:image страницы: своя картинка либо дефолтная брендовая.
+
+    twitter:card=summary_large_image — иначе Telegram/X показывают картинку
+    мелкой иконкой сбоку вместо полноwidth-превью.
+    """
+    url = og_image_url or f"{site_base_url()}{DEFAULT_OG_IMAGE_PATH}"
+    return [
+        f'<meta property="og:image" content="{escape(url, quote=True)}">',
+        f'<meta property="og:image:width" content="{OG_IMAGE_WIDTH}">',
+        f'<meta property="og:image:height" content="{OG_IMAGE_HEIGHT}">',
+        '<meta name="twitter:card" content="summary_large_image">',
+    ]
 
 
 def _last_event_block(last_event: dict[str, Any]) -> str:
@@ -842,6 +949,7 @@ def _render_html(
     meta: PageMeta,
     canonical: str,
     body_html: str,
+    og_image_url: str | None = None,
     json_ld: list[dict[str, Any]] | None = None,
 ) -> str:
     robots = "index,follow" if meta.indexable else "noindex,follow"
@@ -856,8 +964,7 @@ def _render_html(
         f'<meta property="og:title" content="{escape(meta.title, quote=True)}">',
         f'<meta property="og:description" content="{escape(meta.description, quote=True)}">',
         f'<meta property="og:url" content="{escape(canonical, quote=True)}">',
-        '<meta name="twitter:card" content="summary">',
-        *_og_image_tags(),
+        *_og_image_tags(og_image_url),
         *_json_ld_scripts(json_ld or []),
     ]
     head_html = "\n    ".join(head)
@@ -1101,6 +1208,103 @@ def _catalog_body(items: list[dict[str, Any]]) -> str:
     return "\n".join(rows)
 
 
+def _profile_body(name: str, payload: dict[str, Any]) -> str:
+    stats = payload.get("stats") or {}
+    analytics = stats.get("analytics") or {}
+    rows: list[str] = [f"    <h1>{escape(name)}</h1>"]
+
+    facts: list[tuple[str, str]] = []
+    if stats.get("total_runs"):
+        facts.append(("Пробежек", str(stats["total_runs"])))
+    if stats.get("total_volunteering"):
+        facts.append(("Волонтёрств", str(stats["total_volunteering"])))
+    if analytics.get("unique_locations"):
+        facts.append(("Уникальных локаций", str(analytics["unique_locations"])))
+    if analytics.get("unique_run_regions"):
+        facts.append(("Регионов", str(analytics["unique_run_regions"])))
+    best = _strip_leading_hours_sec(analytics.get("best_finish_time_sec"))
+    if best:
+        facts.append(("Лучшее время", best))
+    if analytics.get("saturday_streak"):
+        facts.append(("Суббот подряд", str(analytics["saturday_streak"])))
+
+    if facts:
+        items = "".join(
+            f"      <li>{escape(label)}: {escape(value)}</li>\n" for label, value in facts
+        )
+        rows.append("    <ul>\n" + items + "    </ul>")
+    return "\n".join(rows)
+
+
+def _strip_leading_hours_sec(seconds: Any) -> str | None:
+    """Секунды → «23:47» (часы у пятикилометровых времён почти всегда нули)."""
+    if not isinstance(seconds, (int, float)) or seconds <= 0:
+        return None
+    total = int(seconds)
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _render_profile(db: Session, *, handle: str, canonical: str) -> str | None:
+    """HTML профиля для робота: имя и цифры участника.
+
+    None — профиль не найден или скрыт владельцем: тогда вызывающий отдаёт
+    родовую страницу без единой цифры (приватность важнее красивого превью).
+    """
+    from app.services.profile_slug_service import resolve_profile_handle
+
+    try:
+        user = resolve_profile_handle(db, handle)
+    except Exception:  # noqa: BLE001 — робот получит родовую страницу, не 500
+        return None
+    if user is None or getattr(user, "profile_private", False):
+        return None
+
+    try:
+        from app.services.admin_users_service import get_admin_user_preview_dashboard
+
+        payload = get_admin_user_preview_dashboard(db, user.id)
+    except Exception:  # noqa: BLE001
+        payload = None
+    if payload is None:
+        return None
+
+    meta = build_profile_meta(user, payload)
+    name = (getattr(user, "display_name", None) or "").strip() or "Участник"
+    image_url = profile_og_image_url(user)
+    if image_url is None:
+        # Картинки ещё нет (новый участник, первый шеринг) — ставим рендер в
+        # очередь: сейчас превью будет с дефолтной карточкой, со следующего
+        # раза — со своими цифрами.
+        _enqueue_profile_image(user)
+    return _render_html(
+        meta=meta,
+        canonical=canonical,
+        body_html=_profile_body(name, payload),
+        og_image_url=image_url,
+    )
+
+
+def _enqueue_profile_image(user: Any) -> None:
+    """Ставит одиночный рендер карточки участника в очередь parkrun.
+
+    Молча проглатывает любые ошибки: недоступный брокер не должен ломать
+    выдачу страницы роботу.
+    """
+    serial_id = getattr(user, "serial_id", None)
+    if serial_id is None:
+        return
+    try:
+        from app.workers.tasks.og_render import og_render_user_images_task
+
+        og_render_user_images_task.delay([str(serial_id)])
+    except Exception:  # noqa: BLE001 — превью важнее фонового рендера
+        logger.debug("og_render: не удалось поставить задачу для профиля %s", serial_id)
+
+
 def is_known_path(raw_path: str) -> bool:
     """Существует ли такой адрес на сайте (без похода в БД).
 
@@ -1135,6 +1339,12 @@ def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
     path = normalize_path(raw_path)
     canonical = site_base_url() + ("" if path == "/" else path)
 
+    profile_match = _PROFILE_RE.match(path)
+    if profile_match:
+        html = _render_profile(db, handle=profile_match.group(1), canonical=canonical)
+        if html is not None:
+            return html, 200
+
     events_match = _LOCATION_EVENTS_RE.match(path)
     location_match = _LOCATION_RE.match(path)
     if events_match or location_match:
@@ -1150,6 +1360,7 @@ def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
                     meta=meta,
                     canonical=canonical,
                     body_html=_location_body(payload, events_log=bool(events_match)),
+                    og_image_url=location_og_image_url(payload),
                     json_ld=location_json_ld(payload, events_log=bool(events_match)),
                 ),
                 200,

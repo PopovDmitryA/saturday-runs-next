@@ -85,7 +85,7 @@ function PreviewDashboard() {
         hrefForStat={(key) => `${PREVIEW_PATH}?tab=${key === "vol" ? "volunteering" : key === "geo" ? "map" : key}`}
       />
 
-      <OnThisDayCard load={demoGetOnThisDay} shareBase="/share" />
+      <OnThisDayCard load={demoGetOnThisDay} />
 
       <MyHistoryTeaser load={demoGetMyHistory} href="#" />
 

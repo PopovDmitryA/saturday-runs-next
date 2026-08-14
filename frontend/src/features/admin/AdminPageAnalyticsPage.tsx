@@ -53,6 +53,7 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   backlog: "Бэклог",
   cabinet_preview: "Превью кабинета (демо)",
   sweep_hq: "Штаб обхода parkrun",
+  og_render: "Служебный рендер OG-картинок",
   redirect: "Редиректы и старые адреса кабинета",
   legacy_grafana: "Старые адреса Grafana",
   other: "Прочее (неизвестные адреса)",
@@ -61,6 +62,57 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
 function pageTypeLabel(pageType: string): string {
   return PAGE_TYPE_LABELS[pageType] ?? pageType;
 }
+
+// Ярлыки событий шаринга. Канон значений — frontend/src/features/sharing/.
+const SHARE_FUNNEL_LABELS: Record<string, string> = {
+  share_moment_shown: "Показы приглашений",
+  share_open: "Открытия шторки",
+  share_customize: "Заходы в «Настроить»",
+  share_success: "Отправленные постеры",
+};
+
+const SHARE_SUBJECT_LABELS: Record<string, string> = {
+  milestone: "Веха",
+  run: "Пробежка",
+  volunteering: "Волонтёрство",
+  summary: "Сводка",
+  location_event: "Локация: последний старт",
+  location_card: "Локация: визитка",
+  location_me: "Я на этой локации",
+  rating: "Позиция в рейтинге",
+};
+
+const SHARE_ENTRY_LABELS: Record<string, string> = {
+  dashboard: "дашборд",
+  runs: "строка пробежки",
+  volunteering: "строка волонтёрства",
+  history: "вехи",
+  on_this_day: "«В этот день»",
+  location: "страница локации",
+  rating: "рейтинги",
+  gallery: "страница /share",
+};
+
+const SHARE_CHANNEL_LABELS: Record<string, string> = {
+  system: "поделились (системный шит)",
+  download: "скачали PNG",
+  copy: "скопировали",
+};
+
+const SHARE_LOOK_LABELS: Record<string, string> = {
+  indigo: "Индиго",
+  night: "Ночь",
+  porcelain: "Светлый",
+  sunrise: "Рассвет",
+  forest: "Лес",
+  photo: "Своё фото",
+};
+
+const SHARE_FORMAT_LABELS: Record<string, string> = {
+  story: "Сториз 9:16",
+  square: "Квадрат 1:1",
+  wide: "Широкий",
+};
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null) {
@@ -321,6 +373,142 @@ function AdminPageAnalyticsContent() {
                         </td>
                         <td>{row.clicks}</td>
                         <td>{row.visitors}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          {data.share.funnel.length > 0 && (
+            <section className="card">
+              <h2 className="section-title">Шаринг</h2>
+              <p className="muted">
+                Фича «Поделиться»: воронка от показа приглашения до отправленного постера.
+                Пишется с релиза «Поделиться 2.0» — за более ранние периоды таблицы пустые.
+              </p>
+              <div className="table-scroll">
+                <table className="data-table page-analytics-table">
+                  <thead>
+                    <tr>
+                      <th>Шаг воронки</th>
+                      <th>Событий</th>
+                      <th>Посетителей</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.share.funnel.map((row) => (
+                      <tr key={row.event_type}>
+                        <td>{SHARE_FUNNEL_LABELS[row.event_type] ?? row.event_type}</td>
+                        <td>{row.events}</td>
+                        <td>{row.visitors}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {data.share.pairs.length > 0 && (
+                <div className="table-scroll">
+                  <table className="data-table page-analytics-table">
+                    <thead>
+                      <tr>
+                        <th>Где нажали</th>
+                        <th>Сюжет</th>
+                        <th>Показы</th>
+                        <th>Открытия</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.share.pairs.map((row) => (
+                        <tr key={`${row.subject}:${row.entry}`}>
+                          <td>{SHARE_ENTRY_LABELS[row.entry] ?? row.entry}</td>
+                          <td className="muted">
+                            {SHARE_SUBJECT_LABELS[row.subject] ?? row.subject}
+                          </td>
+                          <td>{row.shown > 0 ? row.shown : "—"}</td>
+                          <td>{row.opens}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {(data.share.channels.length > 0 ||
+                data.share.looks.length > 0 ||
+                data.share.formats.length > 0 ||
+                data.share.photo_added > 0) && (
+                <p className="muted">
+                  {data.share.channels.length > 0 && (
+                    <>
+                      Итоги:{" "}
+                      {data.share.channels
+                        .map(
+                          (row) =>
+                            `${SHARE_CHANNEL_LABELS[row.channel] ?? row.channel} — ${row.successes}`,
+                        )
+                        .join(" · ")}
+                      .{" "}
+                    </>
+                  )}
+                  {data.share.looks.length > 0 && (
+                    <>
+                      Фоны:{" "}
+                      {data.share.looks
+                        .map((row) => `${SHARE_LOOK_LABELS[row.value] ?? row.value} — ${row.count}`)
+                        .join(" · ")}
+                      .{" "}
+                    </>
+                  )}
+                  {data.share.formats.length > 0 && (
+                    <>
+                      Форматы:{" "}
+                      {data.share.formats
+                        .map(
+                          (row) => `${SHARE_FORMAT_LABELS[row.value] ?? row.value} — ${row.count}`,
+                        )
+                        .join(" · ")}
+                      .{" "}
+                    </>
+                  )}
+                  {data.share.photo_added > 0 && <>Своё фото добавили: {data.share.photo_added}.</>}
+                </p>
+              )}
+            </section>
+          )}
+
+          {data.og_fetches.length > 0 && (
+            <section className="card">
+              <h2 className="section-title">Разворачивания ссылок</h2>
+              <p className="muted">
+                Боты мессенджеров и поисковиков запрашивали превью страниц — прокси-метрика
+                «ссылку на сайт кинули в чат». Считается по заходам на пререндер.
+              </p>
+              <div className="table-scroll">
+                <table className="data-table page-analytics-table">
+                  <thead>
+                    <tr>
+                      <th>Страница</th>
+                      <th>Тип</th>
+                      <th>Запросов</th>
+                      <th>Ботов</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.og_fetches.map((row) => (
+                      <tr key={`${row.page_type}:${row.entity_key}`}>
+                        <td>
+                          {row.href ? (
+                            <a href={row.href} target="_blank" rel="noreferrer">
+                              {row.label}
+                            </a>
+                          ) : (
+                            row.label
+                          )}
+                        </td>
+                        <td className="muted">{pageTypeLabel(row.page_type)}</td>
+                        <td>{row.fetches}</td>
+                        <td>{row.bots}</td>
                       </tr>
                     ))}
                   </tbody>

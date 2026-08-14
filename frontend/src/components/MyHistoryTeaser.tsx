@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { milestoneTitle, milestoneVisual } from "../features/history/HistoryPage";
-import { storeMilestoneShare } from "../features/history/milestoneShare";
+import { useOptionalShareSheet } from "../features/sharing/ShareSheetContext";
+import { milestoneSubject } from "../features/sharing/subjects";
+import { useOptionalUser } from "../lib/useOptionalUser";
 import type { MyHistory, MyHistoryMilestone } from "../lib/api";
 import { formatDateLong, formatInt, parseIsoDate, pluralFormRu } from "../lib/format";
 
@@ -36,13 +38,15 @@ type MyHistoryTeaserProps = {
   load: () => Promise<MyHistory>;
   /** Ссылка на полный таймлайн: /history или /demo/history. */
   href: string;
-  /** Адрес мастера «Поделиться»; без него кнопки не рисуем (превью-режим). */
-  shareBase?: string;
 };
 
 // Тизер «Моей истории» на дашборде: вехи последнего дня + ссылка на таймлайн.
-export function MyHistoryTeaser({ load, href, shareBase }: MyHistoryTeaserProps) {
+export function MyHistoryTeaser({ load, href }: MyHistoryTeaserProps) {
   const [data, setData] = useState<MyHistory | null>(null);
+  // Кнопка открывает шторку «Поделиться» с этой вехой; вне провайдера
+  // (превью-режим) её просто нет.
+  const shareSheet = useOptionalShareSheet();
+  const currentUser = useOptionalUser();
 
   useEffect(() => {
     let cancelled = false;
@@ -101,17 +105,22 @@ export function MyHistoryTeaser({ load, href, shareBase }: MyHistoryTeaserProps)
           {sameDay.map((milestone, index) => (
             <li key={`${milestone.kind}-${milestone.number ?? index}`} className="history-teaser-item">
               <span className="history-teaser-last">{milestoneTitle(milestone)}</span>
-              {shareBase && (
-                <a
+              {shareSheet !== null && (
+                <button
+                  type="button"
                   className="history-share"
-                  href={`${shareBase}?story=milestone`}
                   title="Сделать картинку-сториз с этой вехой"
                   aria-label={`Поделиться: ${milestoneTitle(milestone)}`}
-                  onClick={() => storeMilestoneShare(milestone)}
+                  onClick={() =>
+                    shareSheet.open({
+                      subject: milestoneSubject(milestone, currentUser ?? null),
+                      entry: "dashboard",
+                    })
+                  }
                 >
                   <ShareIcon />
                   <span className="history-share-label">Поделиться</span>
-                </a>
+                </button>
               )}
             </li>
           ))}

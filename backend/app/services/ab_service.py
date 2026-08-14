@@ -22,7 +22,9 @@ from sqlalchemy.orm import Session
 from app.models import AbEvent, User
 
 # Известные эксперименты; чужие имена не пишем — мусор из ручных запросов.
-KNOWN_EXPERIMENTS = frozenset({"home_v1"})
+# "share" — не АБ-эксперимент, а нейтральный канал событий фичи «Поделиться»
+# (variant у них "-"): выборки шаринга не смешиваются с экспериментом главной.
+KNOWN_EXPERIMENTS = frozenset({"home_v1", "share"})
 
 # Белый список типов событий (защита от мусора в свободном поле).
 KNOWN_EVENT_TYPES = frozenset(
@@ -42,6 +44,13 @@ KNOWN_EVENT_TYPES = frozenset(
         "home_link_click",
         "teaser_preview",  # value: код системы (тизер Т10, на будущее)
         "login_complete",  # когорта считается на сервере
+        # ── Канал "share" (фича «Поделиться», сводка в /admin/page-analytics) ──
+        "share_moment_shown",  # value: "сюжет:вход" — показ области-приглашения
+        "share_open",  # value: "сюжет:вход" — открытие шторки
+        "share_template_switch",  # value: "look:<id>" | "format:<id>"
+        "share_customize",  # value: open | metrics | photo
+        "share_success",  # value: "канал:сюжет", канал system | download | copy
+        "og_preview_fetch",  # value: "тип:ключ" — бот развернул ссылку (пишет сервер)
     }
 )
 

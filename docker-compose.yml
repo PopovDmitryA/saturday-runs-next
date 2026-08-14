@@ -234,6 +234,9 @@ services:
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./frontend/dist:/usr/share/nginx/html:ro
+      # OG-картинки локаций: пишет celery-задача og_render (worker-parkrun),
+      # nginx раздаёт как /og/locations/* (location ^~ /og/locations/).
+      - ./data/og:/og-static/og:ro
     depends_on:
       - api
 

@@ -23,8 +23,11 @@ import {
   type VolunteeringItem,
 } from "../../lib/api";
 import { useAppDataSource } from "../../lib/appDataSource";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import { createFullSelection, sortVolunteering, toggleDateSort, uniquePlatforms } from "../../lib/activityList";
 import { formatInt, platformCodeLabel } from "../../lib/format";
+import { ShareRowButton } from "../sharing/ShareRowButton";
+import { volunteeringSubject } from "../sharing/subjects";
 
 // bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
 // оборачивает контент в собственный каркас с сайдбаром.
@@ -40,6 +43,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
 
   // Оценка стартов — только в своём разделе волонтёрств.
   const showRating = mode === "auth";
+  const currentUser = useOptionalUser();
   const [ratingsMap, setRatingsMap] = useState<Map<string, MyRating>>(new Map());
   const [canRate, setCanRate] = useState(false);
   // entry_id стартов, доступных к оценке прямо сейчас (правило считает бэк).
@@ -407,12 +411,18 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                           </td>
                           {showRating && (
                             <td className="td-rating">
-                              <RunRatingStar
-                                rating={rating}
-                                canCreate={canCreate}
-                                canRate={canRate}
-                                onOpen={() => setActiveRun(buildEligibleRun(item, rating))}
-                              />
+                              <span className="s2-row-actions">
+                                <RunRatingStar
+                                  rating={rating}
+                                  canCreate={canCreate}
+                                  canRate={canRate}
+                                  onOpen={() => setActiveRun(buildEligibleRun(item, rating))}
+                                />
+                                <ShareRowButton
+                                  subject={volunteeringSubject(item, currentUser ?? null)}
+                                  entry="volunteering"
+                                />
+                              </span>
                             </td>
                           )}
                         </tr>
@@ -565,12 +575,18 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                             isEligible(item.rating_entry_id);
                           return (
                             <td className="td-rating">
-                              <RunRatingStar
-                                rating={rating}
-                                canCreate={canCreate}
-                                canRate={canRate}
-                                onOpen={() => setActiveRun(buildEligibleRun(item, rating))}
-                              />
+                              <span className="s2-row-actions">
+                                <RunRatingStar
+                                  rating={rating}
+                                  canCreate={canCreate}
+                                  canRate={canRate}
+                                  onOpen={() => setActiveRun(buildEligibleRun(item, rating))}
+                                />
+                                <ShareRowButton
+                                  subject={volunteeringSubject(item, currentUser ?? null)}
+                                  entry="volunteering"
+                                />
+                              </span>
                             </td>
                           );
                         })()}

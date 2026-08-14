@@ -24,8 +24,11 @@ import {
   type RunItem,
 } from "../../lib/api";
 import { useAppDataSource } from "../../lib/appDataSource";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import { createFullSelection, sortRuns, toggleDateSort, toggleFinishSort, togglePaceSort, togglePositionSort, uniquePlatforms } from "../../lib/activityList";
 import { formatFinishTimeValue, formatInt, platformCodeLabel } from "../../lib/format";
+import { ShareRowButton } from "../sharing/ShareRowButton";
+import { runSubject } from "../sharing/subjects";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
 import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
@@ -42,7 +45,8 @@ const RUNS_COLUMNS: AdaptiveColumn[] = [
   { key: "platform", width: 112 },
   { key: "pace", width: 120 },
   { key: "gender_position", width: 136 },
-  { key: "rating", width: 36 },
+  // 68px: в ячейке две иконки — оценка старта и «Поделиться» (см. .col-rating).
+  { key: "rating", width: 68 },
 ];
 
 function RunsContent({ bare = false }: { bare?: boolean } = {}) {
@@ -64,6 +68,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const [ratingsVersion, setRatingsVersion] = useState(0);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
   const { snackbar, showSnackbar, dismissSnackbar } = useSnackbar();
+  const currentUser = useOptionalUser();
 
   const allPlatforms = useMemo(() => uniquePlatforms(runs), [runs]);
 
@@ -463,12 +468,18 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                             canRate && !rating && !!run.run_result_id && isEligible(run.run_result_id);
                           return (
                             <td className="td-rating">
-                              <RunRatingStar
-                                rating={rating}
-                                canCreate={canCreate}
-                                canRate={canRate}
-                                onOpen={() => setActiveRun(buildEligibleRun(run, rating))}
-                              />
+                              <span className="s2-row-actions">
+                                <RunRatingStar
+                                  rating={rating}
+                                  canCreate={canCreate}
+                                  canRate={canRate}
+                                  onOpen={() => setActiveRun(buildEligibleRun(run, rating))}
+                                />
+                                <ShareRowButton
+                                  subject={runSubject(run, currentUser ?? null)}
+                                  entry="runs"
+                                />
+                              </span>
                             </td>
                           );
                         })()}

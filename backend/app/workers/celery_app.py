@@ -30,6 +30,7 @@ celery_app.conf.update(
         "app.workers.tasks.dashboard_warm",
         "app.workers.tasks.page_stats",
         "app.workers.tasks.admin_digest",
+        "app.workers.tasks.og_render",
     ),
     task_routes={
         "five_verst_sync.*": {"queue": "five_verst"},
@@ -39,8 +40,48 @@ celery_app.conf.update(
         "s95_sync.*": {"queue": "s95"},
         "parkrun_sync.*": {"queue": "parkrun"},
         "runpark_sync.*": {"queue": "runpark"},
+        # OG-картинки рендерит Playwright — Chromium есть только в образе
+        # worker-parkrun (Dockerfile.parkrun), поэтому очередь parkrun.
+        "og_render.*": {"queue": "parkrun"},
     },
     beat_schedule={
+        # OG-картинки локаций (Л19): обновить после субботних/воскресных синков
+        # протоколов + полный прогон в понедельник ночью (часы — Europe/Moscow).
+        "og-render-weekend": {
+            "task": "og_render.render_location_images",
+            "schedule": crontab(minute=0, hour="14,22", day_of_week="6,0"),
+            "options": {"queue": "parkrun"},
+        },
+        "og-render-weekly": {
+            "task": "og_render.render_location_images",
+            "schedule": crontab(minute=30, hour=4, day_of_week=1),
+            "options": {"queue": "parkrun"},
+        },
+        # Карточки участников: после субботних синков (цифры за неделю уже
+        # приехали) и полным прогоном в понедельник ночью.
+        "og-render-users-weekend": {
+            "task": "og_render.render_user_images",
+            "schedule": crontab(minute=20, hour=22, day_of_week="6,0"),
+            "options": {"queue": "parkrun"},
+        },
+        "og-render-users-weekly": {
+            "task": "og_render.render_user_images",
+            "schedule": crontab(minute=50, hour=4, day_of_week=1),
+            "options": {"queue": "parkrun"},
+        },
+        # Страховочные вечерние прогоны в понедельник: если субботний или
+        # ночной прошли по неполным данным (синк опоздал, парк был под
+        # кулдауном), к началу недели картинки всё равно свежие.
+        "og-render-monday-evening": {
+            "task": "og_render.render_location_images",
+            "schedule": crontab(minute=0, hour=21, day_of_week=1),
+            "options": {"queue": "parkrun"},
+        },
+        "og-render-users-monday-evening": {
+            "task": "og_render.render_user_images",
+            "schedule": crontab(minute=20, hour=21, day_of_week=1),
+            "options": {"queue": "parkrun"},
+        },
         # Очередь five_verst обслуживает один воркер с concurrency=1, поэтому
         # задачи разведены по минутам: старт в одну и ту же минуту не даёт
         # параллельности, а только выстраивает пачку в хвост (до 08.2026 в 20:00
