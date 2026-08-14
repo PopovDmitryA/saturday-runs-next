@@ -326,12 +326,17 @@ def _challenge(
     unit: str | None = None,
     detail: dict[str, object] | None = None,
     to_next_label_fn: Callable[[dict[str, int], str], str | None] | None = None,
+    tier_thresholds: dict[str, tuple[int, int, int]] | None = None,
 ) -> dict[str, object]:
+    # tier_thresholds — пороги, посчитанные на лету вместо реестра: сегодня так
+    # делает только «Алфавит», у которого размер коллекции зависит от фильтра
+    # систем (см. _alphabet_tiers).
+    thresholds_by_tier = tier_thresholds or CHALLENGE_TIERS[code]
     tiers = [
         _tier_payload(
             tier_key, thresholds, current, level_dates_fn=level_dates_fn, to_next_label_fn=to_next_label_fn
         )
-        for tier_key, thresholds in CHALLENGE_TIERS[code].items()
+        for tier_key, thresholds in thresholds_by_tier.items()
     ]
     # "Лучшее" достижение — самый сложный тир, где взят хоть один уровень.
     # Пороги тиров заданы монотонно растущими (bronze medium > gold easy), так
@@ -546,16 +551,56 @@ def _alphabet_challenge(
         unit="букв",
         detail={"letters": letters, "available": len(letters)},
         level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+        tier_thresholds=_alphabet_tiers(len(letters)),
     )
 
 
+def _alphabet_tiers(available: int) -> dict[str, tuple[int, int, int]]:
+    """Пороги «Алфавита» под размер каталога букв.
+
+    Пороги в CHALLENGE_TIERS откалиброваны на полный каталог (28 букв). Под
+    фильтром систем букв меньше — у 5 вёрст их 26, у S95 17 — и прежняя шкала
+    обещала недостижимое: золото за 28 букв там нельзя взять физически.
+    Поэтому шкала линейно сжимается, а золото сложного тира приравнивается к
+    числу доступных букв: собрал весь алфавит своей системы — взял золото.
+
+    Порядок порогов остаётся строго возрастающим сквозь все тиры — на этом
+    держится выбор «лучшего» тира в _challenge(). Если букв меньше, чем самих
+    порогов, три тира в такой каталог не укладываются, и остаётся один тир
+    ("solo", как у «Семи дней» — фронт тогда не рисует вкладки сложности).
+    """
+    reference = CHALLENGE_TIERS["alphabet"]
+    full = reference["hard"][2]
+    if available >= full:
+        return reference
+
+    flat = [value for thresholds in reference.values() for value in thresholds]
+    if available >= len(flat):
+        scaled: list[int] = []
+        previous = 0
+        for value in flat:
+            scaled.append(max(1, round(value * available / full), previous + 1))
+            previous = scaled[-1]
+        # Золото сложного тира — ровно весь доступный алфавит, без округлений.
+        scaled[-1] = available
+        return {
+            tier_key: (scaled[index * 3], scaled[index * 3 + 1], scaled[index * 3 + 2])
+            for index, tier_key in enumerate(reference)
+        }
+
+    bronze = max(1, -(-available // 3))
+    silver = max(bronze, -(-available * 2 // 3))
+    return {"solo": (bronze, silver, max(silver, available))}
+
+
 def _alphabet_description(available: int, platform_code: str | None) -> str:
-    """Описание честно называет размер каталога: в скоупе одной системы букв
-    меньше, чем во всех сразу, и золото сложного уровня может быть недостижимо."""
+    """Описание называет размер каталога и цену золота: под фильтром систем
+    и букв меньше, и пороги другие (см. _alphabet_tiers)."""
     if platform_code is None:
         return (
             "Финишируй в локациях на каждую букву алфавита (считаются буквы, на которые есть "
-            f"хотя бы одна локация — сейчас их {available}; parkrun в этом челлендже не учитывается)."
+            f"хотя бы одна локация — сейчас их {available}; parkrun в этом челлендже не учитывается). "
+            f"Золото сложного уровня — все {available}."
         )
     title = PLATFORM_TITLES.get(platform_code, platform_code)
     if available == 0:
@@ -563,9 +608,11 @@ def _alphabet_description(available: int, platform_code: str | None) -> str:
             f"Финишируй в локациях на каждую букву алфавита. У системы «{title}» нет локаций "
             "с русскими названиями — закрывать нечего, снимите фильтр систем."
         )
+    letters = f"{available} {_plural_ru(available, ('букву', 'буквы', 'букв'))}"
     return (
         f"Финишируй в локациях на каждую букву алфавита. Выбрана система «{title}» — считаются "
-        f"только её локации, а они дают {available} {_plural_ru(available, ('букву', 'буквы', 'букв'))}."
+        f"только её локации, а они дают {letters}. Пороги уровней подстроены под этот каталог: "
+        f"золото даётся за все {available}."
     )
 
 

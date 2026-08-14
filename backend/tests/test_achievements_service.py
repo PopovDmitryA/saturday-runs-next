@@ -6,10 +6,12 @@ from datetime import date, timedelta
 
 from app.models import UserGoal
 from app.services.achievements_service import (
+    CHALLENGE_TIERS,
     REVIEW_MIN_COMMENT_LEN,
     RatingRow,
     RunRow,
     _alphabet_challenge,
+    _alphabet_tiers,
     _best_year_challenge,
     _best_year_level_dates,
     _calendar_days_challenge,
@@ -318,6 +320,40 @@ def test_alphabet_letters_limited_to_scope_catalog() -> None:
     assert [item["done"] for item in letters] == [False, True]
     assert challenge["current"] == 1
     assert challenge["detail"]["available"] == 2  # type: ignore[index]
+
+
+def test_alphabet_gold_equals_available_letters() -> None:
+    """Золото сложного тира — весь доступный алфавит: 28 сквозь все системы,
+    26 у 5 вёрст, 17 у S95. Иначе под фильтром обещали бы недостижимое."""
+    assert _alphabet_tiers(28) == CHALLENGE_TIERS["alphabet"]
+    assert _alphabet_tiers(26)["hard"][2] == 26
+    assert _alphabet_tiers(17)["hard"][2] == 17
+
+
+def test_alphabet_tiers_stay_strictly_increasing() -> None:
+    """На строгом росте порогов сквозь тиры держится выбор «лучшего» тира."""
+    for available in range(9, 29):
+        flat = [value for thresholds in _alphabet_tiers(available).values() for value in thresholds]
+        assert flat == sorted(set(flat)), f"пороги не растут строго при {available} буквах"
+        assert flat[0] >= 1
+        assert flat[-1] == available
+
+
+def test_alphabet_small_catalog_collapses_to_single_tier() -> None:
+    """Букв меньше, чем порогов: три тира не укладываются — остаётся один
+    (как у «Семи дней», фронт тогда не рисует вкладки сложности)."""
+    assert _alphabet_tiers(6) == {"solo": (2, 4, 6)}
+    # Пустой каталог: золото не должно доставаться само собой при нуле букв.
+    assert _alphabet_tiers(0)["solo"][2] >= 1
+
+
+def test_alphabet_challenge_uses_scoped_tiers() -> None:
+    names = _alphabet_names(*((letter, f"Локация {letter}") for letter in "АБВГДЕЖЗИКЛМНОПРСТУФХЧШЭЮЯ"))
+    challenge = _alphabet_challenge([], names, platform_code="five_verst")
+    hard = next(tier for tier in challenge["tiers"] if tier["tier"] == "hard")  # type: ignore[union-attr]
+    assert challenge["detail"]["available"] == 26  # type: ignore[index]
+    assert hard["target"] == 26
+    assert "золото даётся за все 26" in str(challenge["description"])
 
 
 def test_alphabet_description_names_the_scoped_platform() -> None:
