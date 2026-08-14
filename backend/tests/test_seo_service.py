@@ -228,7 +228,8 @@ def test_location_meta_uses_name_and_numbers() -> None:
     # «кузьминки 5 вёрст», и первые слова заголовка весят больше.
     assert meta.title.startswith("5 вёрст Кузьминки, Москва")
     assert "271 старт" in meta.description
-    assert "40123 финиша" in meta.description
+    # Разряды в тысячах разделены неразрывным пробелом: «40123» читается сплошняком.
+    assert "40\u00a0123 финиша" in meta.description
     assert "15:42 / 18:03" in meta.description
     assert len(meta.description) <= DESCRIPTION_BUDGET
     assert meta.indexable is True
@@ -294,6 +295,9 @@ def test_location_lead_reads_as_sentences() -> None:
     sentences = location_lead_sentences(_location_payload())
     assert sentences[0] == "«Кузьминки» (Москва) — площадка субботних пробежек 5 вёрст."
     assert "271 старт" in sentences[1]
+    # Число финишёров во вводном абзаце — с разбивкой по разрядам: репорт
+    # Дмитрия 14.08.2026, «21581 участник» на странице читался сплошняком.
+    assert "финишировали 40 123 участника" in sentences[1]
     # Прошлых систем нет — третьего предложения быть не должно.
     assert len(sentences) == 2
 

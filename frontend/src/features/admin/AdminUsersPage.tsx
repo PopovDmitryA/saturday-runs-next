@@ -12,7 +12,7 @@ import {
   type AdminUsersSort,
   type AdminUsersSortDirection,
 } from "../../lib/api";
-import { formatDateTime, platformCodeLabel } from "../../lib/format";
+import { formatDateTime, formatInt, platformCodeLabel } from "../../lib/format";
 import { platformProfileUrl } from "../../lib/platformProfileUrl";
 import { authLoginUrl, authProviderLabel, userLoginLines } from "./adminUserDisplay";
 
@@ -94,7 +94,7 @@ function platformCell(
     return <span className="muted">—</span>;
   }
   const counts = (
-    <span className="admin-platform-counts muted"> ({link.run_count}/{link.volunteer_count})</span>
+    <span className="admin-platform-counts muted"> ({formatInt(link.run_count)}/{formatInt(link.volunteer_count)})</span>
   );
   const label = link.display_name?.trim() || (code === "runpark" ? (link.barcode_id ?? link.external_user_id) : null);
   const url = platformProfileUrl(link);
@@ -260,7 +260,7 @@ function AdminUsersContent() {
           <span className="muted admin-users-count">
             {total === 0
               ? "Найдено: 0"
-              : `Показано ${offset + 1}–${offset + items.length} из ${total}`}
+              : `Показано ${formatInt(offset + 1)}–${formatInt(offset + items.length)} из ${formatInt(total)}`}
           </span>
         </div>
 
@@ -275,7 +275,7 @@ function AdminUsersContent() {
               Назад
             </button>
             <span className="muted admin-users-pagination-label">
-              Страница {page} из {totalPages}
+              Страница {formatInt(page)} из {formatInt(totalPages)}
             </span>
             <button
               type="button"

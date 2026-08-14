@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
 import type { LocationHistogramRow } from "../../lib/api";
-import { pluralizeRu } from "../../lib/format";
+import { formatInt, pluralizeRu } from "../../lib/format";
 
 type LocationFinishHistogramProps = {
   rows: LocationHistogramRow[];
@@ -185,8 +185,8 @@ export function LocationFinishHistogram({ rows, binSizeSec }: LocationFinishHist
                   title={`${formatMinSec(bin.startSec)}–${formatMinSec(bin.endSec - 1)}`}
                   lines={[
                     pluralizeRu(bin.total, ["финиш", "финиша", "финишей"]),
-                    `Мужчины: ${bin.male}`,
-                    `Женщины: ${bin.female}`,
+                    `Мужчины: ${formatInt(bin.male)}`,
+                    `Женщины: ${formatInt(bin.female)}`,
                     ...(bin.unknown > 0 ? [`Пол неизвестен: ${bin.unknown}`] : []),
                   ]}
                 >
@@ -216,11 +216,11 @@ export function LocationFinishHistogram({ rows, binSizeSec }: LocationFinishHist
           <div className="analytics-chart-legend finish-dist-summary">
             <span className="analytics-legend-item">
               <span className="analytics-legend-swatch loc-hist-swatch-male" />
-              Мужчины {totals.male}
+              Мужчины {formatInt(totals.male)}
             </span>
             <span className="analytics-legend-item">
               <span className="analytics-legend-swatch loc-hist-swatch-female" />
-              Женщины {totals.female}
+              Женщины {formatInt(totals.female)}
             </span>
             {totals.median !== null && (
               <span className="analytics-legend-item">Медиана ~{formatMinSec(totals.median)}</span>

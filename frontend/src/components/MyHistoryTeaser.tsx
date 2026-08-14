@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { milestoneTitle, milestoneVisual } from "../features/history/HistoryPage";
 import { storeMilestoneShare } from "../features/history/milestoneShare";
 import type { MyHistory, MyHistoryMilestone } from "../lib/api";
-import { formatDateLong, parseIsoDate, pluralFormRu } from "../lib/format";
+import { formatDateLong, formatInt, parseIsoDate, pluralFormRu } from "../lib/format";
 
 const MILESTONE_FORMS = ["веха", "вехи", "вех"] as const;
 
@@ -118,7 +118,7 @@ export function MyHistoryTeaser({ load, href, shareBase }: MyHistoryTeaserProps)
         </ul>
       </span>
       <a className="history-teaser-more" href={href}>
-        {count} {pluralFormRu(count, MILESTONE_FORMS)} →
+        {formatInt(count)} {pluralFormRu(count, MILESTONE_FORMS)} →
       </a>
     </section>
   );

@@ -12,7 +12,7 @@ import {
 } from "../../lib/api";
 import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
 import { flushMetrikaHit } from "../../lib/metrika";
-import { platformCodeLabel } from "../../lib/format";
+import { formatInt, platformCodeLabel } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
@@ -229,7 +229,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
               className={platformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
               onClick={() => setPlatformFilter(platformFilter === code ? null : code)}
             >
-              {platformCodeLabel(code)} ({count})
+              {platformCodeLabel(code)} ({formatInt(count)})
             </button>
           ))}
         </div>

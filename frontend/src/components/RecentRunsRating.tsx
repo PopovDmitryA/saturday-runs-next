@@ -5,7 +5,7 @@ import { RateRunModal } from "./RateRunModal";
 import { Snackbar } from "./Snackbar";
 import { useSnackbar } from "../hooks/useSnackbar";
 import { getEligibleRuns, type EligibleRun, type RatingEligibility, type RunRating } from "../lib/api";
-import { formatDateLong, pluralizeRu } from "../lib/format";
+import { formatDateLong, formatInt, pluralizeRu } from "../lib/format";
 import { loadDismissedRatings, saveDismissedRatings } from "../lib/ratingDismissals";
 
 export function RecentRunsRating() {
@@ -98,8 +98,8 @@ export function RecentRunsRating() {
 
       {!data.can_rate && (
         <p className="recent-ratings-gate">
-          Оценивать можно после {data.min_runs_required} пробежек в истории — у вас пока{" "}
-          {data.total_runs}. Пробегите ещё немного и возвращайтесь 🙂
+          Оценивать можно после {formatInt(data.min_runs_required)} пробежек в истории — у вас пока{" "}
+          {formatInt(data.total_runs)}. Пробегите ещё немного и возвращайтесь 🙂
         </p>
       )}
 

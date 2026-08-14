@@ -15,7 +15,7 @@ import {
   type DashboardResponse,
   type User,
 } from "../../../lib/api";
-import { formatDuration, pluralFormRu } from "../../../lib/format";
+import { formatDuration, formatStatValue, pluralFormRu } from "../../../lib/format";
 import {
   PORTAL_CABINET_HISTORY_HREF,
   PORTAL_CABINET_MAP_HREF,
@@ -147,12 +147,12 @@ function HeroStatsGrid({ items }: { items: HeroStat[] }) {
       {items.map((item) =>
         item.href ? (
           <a key={item.key} className={`portal-cab-hero-stat ${item.className}`} href={item.href}>
-            <div className="portal-cab-hero-stat-value">{item.value}</div>
+            <div className="portal-cab-hero-stat-value">{formatStatValue(item.value)}</div>
             <div className="portal-cab-hero-stat-label">{item.label}</div>
           </a>
         ) : (
           <div key={item.key} className={`portal-cab-hero-stat ${item.className}`}>
-            <div className="portal-cab-hero-stat-value">{item.value}</div>
+            <div className="portal-cab-hero-stat-value">{formatStatValue(item.value)}</div>
             <div className="portal-cab-hero-stat-label">{item.label}</div>
           </div>
         ),
@@ -179,7 +179,7 @@ export function DashboardHero({
   const streak = analytics.saturday_streak_current ?? analytics.saturday_streak;
   const streakLine =
     streak > 0
-      ? `Текущая серия — ${streak} ${pluralFormRu(streak, SATURDAY_FORMS)} подряд. Так держать!`
+      ? `Текущая серия — ${formatStatValue(streak)} ${pluralFormRu(streak, SATURDAY_FORMS)} подряд. Так держать!`
       : "Ваша сводная статистика по всем беговым системам.";
   const items = buildHeroStats(data).map((item) =>
     item.href && hrefForStat ? { ...item, href: hrefForStat(item.key, item.href) } : item,
@@ -213,12 +213,12 @@ export function DashboardHero({
           {items.map((item) =>
             item.href ? (
               <a key={item.key} className={`portal-cab-hero-stat ${item.className}`} href={item.href}>
-                <span className="portal-cab-hero-stat-value">{item.value}</span>
+                <span className="portal-cab-hero-stat-value">{formatStatValue(item.value)}</span>
                 <span className="portal-cab-hero-stat-label">{item.label}</span>
               </a>
             ) : (
               <div key={item.key} className={`portal-cab-hero-stat ${item.className}`}>
-                <span className="portal-cab-hero-stat-value">{item.value}</span>
+                <span className="portal-cab-hero-stat-value">{formatStatValue(item.value)}</span>
                 <span className="portal-cab-hero-stat-label">{item.label}</span>
               </div>
             ),

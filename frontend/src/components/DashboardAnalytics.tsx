@@ -28,6 +28,8 @@ import {
   formatPace,
   daysCapLabel,
   formatKm,
+  formatNumber,
+  formatStatValue,
   kilometersLabel,
   citiesWithRunsLabel,
   citiesWithVolunteeringLabel,
@@ -154,7 +156,7 @@ function buildAnalyticsCards(
   if (analytics.unique_run_locations > 0) {
     cards.push({
       key: "unique_run_locations",
-      value: String(analytics.unique_run_locations),
+      value: formatNumber(analytics.unique_run_locations),
       label: locationsWithRunsLabel(analytics.unique_run_locations),
       category: "runs",
       clickable: true,
@@ -166,7 +168,7 @@ function buildAnalyticsCards(
   if ((analytics.unique_run_regions ?? 0) > 0) {
     cards.push({
       key: "unique_run_regions",
-      value: String(analytics.unique_run_regions),
+      value: formatNumber(analytics.unique_run_regions),
       label: regionsWithRunsLabel(analytics.unique_run_regions ?? 0),
       category: "runs",
       clickable: true,
@@ -178,7 +180,7 @@ function buildAnalyticsCards(
   if ((analytics.unique_run_cities ?? 0) > 0) {
     cards.push({
       key: "unique_run_cities",
-      value: String(analytics.unique_run_cities),
+      value: formatNumber(analytics.unique_run_cities),
       label: citiesWithRunsLabel(analytics.unique_run_cities ?? 0),
       category: "runs",
       clickable: true,
@@ -190,7 +192,7 @@ function buildAnalyticsCards(
   if (analytics.unique_volunteer_locations > 0) {
     cards.push({
       key: "unique_volunteer_locations",
-      value: String(analytics.unique_volunteer_locations),
+      value: formatNumber(analytics.unique_volunteer_locations),
       label: locationsWithVolunteeringLabel(analytics.unique_volunteer_locations),
       category: "volunteering",
       clickable: true,
@@ -202,7 +204,7 @@ function buildAnalyticsCards(
   if ((analytics.unique_volunteer_regions ?? 0) > 0) {
     cards.push({
       key: "unique_volunteer_regions",
-      value: String(analytics.unique_volunteer_regions),
+      value: formatNumber(analytics.unique_volunteer_regions),
       label: regionsWithVolunteeringLabel(analytics.unique_volunteer_regions ?? 0),
       category: "volunteering",
       clickable: true,
@@ -214,7 +216,7 @@ function buildAnalyticsCards(
   if ((analytics.unique_volunteer_cities ?? 0) > 0) {
     cards.push({
       key: "unique_volunteer_cities",
-      value: String(analytics.unique_volunteer_cities),
+      value: formatNumber(analytics.unique_volunteer_cities),
       label: citiesWithVolunteeringLabel(analytics.unique_volunteer_cities ?? 0),
       category: "volunteering",
       clickable: true,
@@ -226,7 +228,7 @@ function buildAnalyticsCards(
   if (totalRuns > 0 && analytics.avg_position != null) {
     cards.push({
       key: "avg_position",
-      value: String(analytics.avg_position),
+      value: formatNumber(analytics.avg_position),
       label: "Среднее место в протоколе",
       category: "runs",
     });
@@ -235,7 +237,7 @@ function buildAnalyticsCards(
   if (totalRuns > 0 && analytics.avg_gender_position != null) {
     cards.push({
       key: "avg_gender_position",
-      value: String(analytics.avg_gender_position),
+      value: formatNumber(analytics.avg_gender_position),
       label: "Среднее место по полу",
       category: "runs",
     });
@@ -283,7 +285,7 @@ function buildAnalyticsCards(
   if (analytics.runs_current_year > 0) {
     cards.push({
       key: "runs_year",
-      value: String(analytics.runs_current_year),
+      value: formatNumber(analytics.runs_current_year),
       label: `${runsCapLabel(analytics.runs_current_year)} в этом году`,
       category: "runs",
     });
@@ -301,7 +303,7 @@ function buildAnalyticsCards(
   if ((analytics.volunteering_current_year ?? 0) > 0) {
     cards.push({
       key: "volunteering_year",
-      value: String(analytics.volunteering_current_year),
+      value: formatNumber(analytics.volunteering_current_year),
       label: `${volunteeringCapLabel(analytics.volunteering_current_year ?? 0)} в этом году`,
       category: "volunteering",
     });
@@ -326,7 +328,7 @@ function buildAnalyticsCards(
   if (totalRuns > 0 && (analytics.total_distance_km ?? 0) > 0) {
     cards.push({
       key: "total_distance",
-      value: String(analytics.total_distance_km),
+      value: formatNumber(analytics.total_distance_km),
       label: kilometersLabel(analytics.total_distance_km ?? 0),
       category: "runs",
       tooltipContent: TOTAL_DISTANCE_TOOLTIP,
@@ -336,8 +338,8 @@ function buildAnalyticsCards(
   if (analytics.next_milestone_runs != null && analytics.runs_to_next_milestone != null && totalRuns > 0) {
     cards.push({
       key: "next_milestone",
-      value: String(analytics.runs_to_next_milestone),
-      label: `До ${analytics.next_milestone_runs} ${runsCapLabel(analytics.next_milestone_runs).toLowerCase()}`,
+      value: formatNumber(analytics.runs_to_next_milestone),
+      label: `До ${formatNumber(analytics.next_milestone_runs)} ${runsCapLabel(analytics.next_milestone_runs).toLowerCase()}`,
       category: "runs",
     });
   }
@@ -349,7 +351,7 @@ function buildAnalyticsCards(
     cards.push({
       key: "saturday_consistency",
       value: `${analytics.saturday_consistency_pct}%`,
-      label: `${saturdaysLabel(analytics.saturday_consistency_active)} из ${analytics.saturday_consistency_total}`,
+      label: `${saturdaysLabel(analytics.saturday_consistency_active)} из ${formatNumber(analytics.saturday_consistency_total)}`,
       tooltipContent: SATURDAY_CONSISTENCY_TOOLTIP,
     });
   }
@@ -361,7 +363,7 @@ function buildAnalyticsCards(
   if (winsCount > 0) {
     cards.push({
       key: "wins",
-      value: String(winsCount),
+      value: formatNumber(winsCount),
       label:
         analytics.wins_scope === "female"
           ? `${winsCapLabel(winsCount)} среди женщин`
@@ -376,7 +378,7 @@ function buildAnalyticsCards(
   if (analytics.pr_count > 0) {
     cards.push({
       key: "pr_count",
-      value: String(analytics.pr_count),
+      value: formatNumber(analytics.pr_count),
       label: prRunsLabel(analytics.pr_count),
       category: "runs",
       clickable: true,
@@ -391,7 +393,7 @@ function buildAnalyticsCards(
   if (locationRecords && (locationRecords.current_count > 0 || locationRecords.lost_count > 0)) {
     cards.push({
       key: "location_records",
-      value: String(locationRecords.current_count),
+      value: formatNumber(locationRecords.current_count),
       label: locationRecords.current_count === 1 ? "Рекорд локации" : "Рекорды локаций",
       category: "runs",
       clickable: true,
@@ -403,7 +405,7 @@ function buildAnalyticsCards(
   if (ageGroupRecords && (ageGroupRecords.current_count > 0 || ageGroupRecords.lost_count > 0)) {
     cards.push({
       key: "age_group_records",
-      value: String(ageGroupRecords.current_count),
+      value: formatNumber(ageGroupRecords.current_count),
       label:
         ageGroupRecords.current_count === 1
           ? "Рекорд в возрастной группе"
@@ -448,7 +450,7 @@ function buildAnalyticsCards(
   if (analytics.saturday_streak > 0) {
     cards.push({
       key: "saturday_streak",
-      value: String(analytics.saturday_streak),
+      value: formatNumber(analytics.saturday_streak),
       label: `${saturdaysLabel(analytics.saturday_streak)} подряд`,
     });
   }
@@ -456,7 +458,7 @@ function buildAnalyticsCards(
   if (analytics.days_since_first_run != null && analytics.days_since_first_run >= 0) {
     cards.push({
       key: "days_since_first_run",
-      value: String(analytics.days_since_first_run),
+      value: formatNumber(analytics.days_since_first_run),
       label: `${daysCapLabel(analytics.days_since_first_run)} с первой пробежки`,
       category: "runs",
     });
@@ -482,7 +484,7 @@ function buildAnalyticsCards(
   if (totalVolunteering > 0 && analytics.unique_volunteer_roles > 0) {
     cards.push({
       key: "unique_roles",
-      value: String(analytics.unique_volunteer_roles),
+      value: formatNumber(analytics.unique_volunteer_roles),
       label: volunteerRolesLabel(analytics.unique_volunteer_roles),
       category: "volunteering",
       clickable: true,
@@ -494,7 +496,7 @@ function buildAnalyticsCards(
     cards.push({
       key: "top_role",
       value: analytics.top_volunteer_role.role,
-      label: `Частая роль · ${analytics.top_volunteer_role.count} ${timesLabel(analytics.top_volunteer_role.count)}`,
+      label: `Частая роль · ${formatNumber(analytics.top_volunteer_role.count)} ${timesLabel(analytics.top_volunteer_role.count)}`,
       category: "volunteering",
       half: true,
     });
@@ -504,7 +506,7 @@ function buildAnalyticsCards(
     cards.push({
       key: "top_location",
       value: <TopLocationValue topLocation={analytics.top_location} />,
-      label: `Самая частая локация · ${analytics.top_location.count} ${timesLabel(analytics.top_location.count)}`,
+      label: `Самая частая локация · ${formatNumber(analytics.top_location.count)} ${timesLabel(analytics.top_location.count)}`,
       half: true,
     });
   }
@@ -833,7 +835,7 @@ export function DashboardAnalytics({
 
   const renderCardBody = (card: AnalyticsCard) => (
     <>
-      <span className="stat-value stat-value-secondary">{card.value}</span>
+      <span className="stat-value stat-value-secondary">{formatStatValue(card.value)}</span>
       <span className={`stat-label${card.labelMultiline ? " stat-label-multiline" : ""}`}>
         {card.label}
       </span>
@@ -894,7 +896,7 @@ export function DashboardAnalytics({
                 <PlatformBadge code={item.platform_code} />
                 {(item.runs_count ?? 0) > 0 && (
                   <span className="platform-metrics-count">
-                    <b>{item.runs_count}</b> {runsFormLabel(item.runs_count ?? 0)}
+                    <b>{formatNumber(item.runs_count ?? 0)}</b> {runsFormLabel(item.runs_count ?? 0)}
                   </span>
                 )}
                 <div className="platform-metrics-values">

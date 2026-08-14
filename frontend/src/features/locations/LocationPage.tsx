@@ -22,7 +22,15 @@ import {
 import { applyPageMeta, locationLeadSentences, locationPageMeta } from "../../lib/pageMeta";
 import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
 import { flushMetrikaHit } from "../../lib/metrika";
-import { formatDate, formatKm, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
+import {
+  formatDate,
+  formatInt,
+  formatKm,
+  formatStatValue,
+  platformCodeLabel,
+  pluralFormRu,
+  pluralizeRu,
+} from "../../lib/format";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { cabinetTabHref } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
@@ -57,7 +65,7 @@ function StatTile({
   return (
     <div className="stat-card loc-stat-card">
       <span className="stat-value loc-stat-value">
-        {value}
+        {formatStatValue(value)}
         {/* Значок «i» сразу после цифры: подсказка относится к самому числу,
             а не к подписи под ним. */}
         {hint && (
@@ -524,7 +532,7 @@ function LocationLeadersSection({ slug }: { slug: string }) {
                     <td>
                       <RunnerName name={runner.name} handle={runner.handle} />
                     </td>
-                    <td>{runner.runs_count}</td>
+                    <td>{formatInt(runner.runs_count)}</td>
                     <td>{stripLeadingHours(runner.best_time_display)}</td>
                   </tr>
                 ))}
@@ -581,7 +589,7 @@ function LocationLeadersSection({ slug }: { slug: string }) {
                     <td>
                       <RunnerName name={volunteer.name} handle={volunteer.handle} />
                     </td>
-                    <td>{volunteer.count}</td>
+                    <td>{formatInt(volunteer.count)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -784,7 +792,7 @@ function AgeGroupPlaceTile({
             #{group.place}
             {/* Знаменатель мельче: место — главная цифра, размер группы лишь
                 придаёт ей смысл и не должен занимать столько же места. */}
-            <span className="loc-stat-value-denominator">из {group.total}</span>
+            <span className="loc-stat-value-denominator">из {formatInt(group.total)}</span>
           </>
         ) : (
           `#${group.place}`
@@ -914,7 +922,7 @@ function LocationPersonalSection({
             } за всю её историю — во всех системах сразу, включая parkrun-эпоху. Привязанные профили считаются одним человеком, неопознанные финишёры протокола в счёт не идут.`}
             sub={
               stats.runners_total_gender != null
-                ? `из ${stats.runners_total_gender} ${pluralFormRu(
+                ? `из ${formatInt(stats.runners_total_gender)} ${pluralFormRu(
                     stats.runners_total_gender,
                     ["бегуна", "бегунов", "бегунов"],
                   )}`
@@ -947,7 +955,7 @@ function LocationPersonalSection({
           <StatTile
             value={stats.top_volunteer_role.role}
             label="любимая роль здесь"
-            sub={`${stats.top_volunteer_role.count} ${pluralFormRu(stats.top_volunteer_role.count, [
+            sub={`${formatInt(stats.top_volunteer_role.count)} ${pluralFormRu(stats.top_volunteer_role.count, [
               "раз",
               "раза",
               "раз",
@@ -1116,7 +1124,7 @@ function LocationPageContent({ slug }: { slug: string }) {
           <StatTile
             value={stats.finishers_total}
             label="финишей"
-            sub={stats.avg_finishers ? `в среднем ${stats.avg_finishers} на старте` : undefined}
+            sub={stats.avg_finishers ? `в среднем ${formatInt(stats.avg_finishers)} на старте` : undefined}
           />
           <StatTile value={stats.unique_participants} label="уникальных участников" />
           <StatTile value={stats.volunteers_total} label="волонтёрств" />
@@ -1201,7 +1209,7 @@ function LocationPageContent({ slug }: { slug: string }) {
                 <a className="loc-city-neighbor" href={`/locations/${item.slug}`}>
                   {item.name}
                   <span className="loc-city-neighbor-count">
-                    {item.events_count} {pluralFormRu(item.events_count, ["старт", "старта", "стартов"])}
+                    {formatInt(item.events_count)} {pluralFormRu(item.events_count, ["старт", "старта", "стартов"])}
                   </span>
                 </a>
               </li>

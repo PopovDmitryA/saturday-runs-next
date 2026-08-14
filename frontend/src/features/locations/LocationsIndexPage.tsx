@@ -5,7 +5,7 @@ import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { getLocationsIndex, type LocationIndexItem } from "../../lib/api";
-import { formatDate, formatFinishTimeValue, pluralizeRu } from "../../lib/format";
+import { formatDate, formatFinishTimeValue, formatInt, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
 import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
@@ -51,7 +51,7 @@ function formatAvgFinishers(item: LocationIndexItem): string {
   }
   // Меньше десяти человек — один знак после запятой: разница 4,2 и 4,8
   // для маленькой площадки существенна, для сотенной — шум.
-  return value < 10 ? value.toFixed(1).replace(".", ",") : String(Math.round(value));
+  return value < 10 ? value.toFixed(1).replace(".", ",") : formatInt(value);
 }
 
 function matchesQuery(item: LocationIndexItem, query: string): boolean {
@@ -254,9 +254,9 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                     ))}
                   </span>
                 </td>
-                <td className="td-compact">{item.events_count || "—"}</td>
+                <td className="td-compact">{item.events_count ? formatInt(item.events_count) : "—"}</td>
                 {show("finishers_total") && (
-                  <td className="td-compact">{item.finishers_total || "—"}</td>
+                  <td className="td-compact">{item.finishers_total ? formatInt(item.finishers_total) : "—"}</td>
                 )}
                 {show("avg_finishers") && <td className="td-compact">{formatAvgFinishers(item)}</td>}
                 {show("attendance_record") && (
@@ -268,7 +268,7 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                         : undefined
                     }
                   >
-                    {item.attendance_record_finishers ?? "—"}
+                    {item.attendance_record_finishers != null ? formatInt(item.attendance_record_finishers) : "—"}
                   </td>
                 )}
                 {show("best_male") && (

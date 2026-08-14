@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { PlatformBadge } from "./PlatformBadge";
 import { DetailModal } from "./DetailModal";
 import type { OnThisDay, OnThisDayRun } from "../lib/api";
-import { formatDateLong, formatFinishTimeValue, pluralFormRu } from "../lib/format";
+import { formatDateLong, formatFinishTimeValue, formatInt, pluralFormRu } from "../lib/format";
 
 type OnThisDayCardProps = {
   load: () => Promise<OnThisDay>;
@@ -192,7 +192,7 @@ export function OnThisDayCard({ load, shareBase }: OnThisDayCardProps) {
           </p>
           {hasMore && (
             <span className="on-this-day-more">
-              И ещё {otherCount} {pluralFormRu(otherCount, RUN_FORMS)} в этот день — показать все
+              И ещё {formatInt(otherCount)} {pluralFormRu(otherCount, RUN_FORMS)} в этот день — показать все
             </span>
           )}
         </div>
