@@ -170,7 +170,7 @@ export function pluralFormRu(count: number, forms: readonly [string, string, str
 }
 
 export function pluralizeRu(count: number, forms: readonly [string, string, string]): string {
-  return `${count} ${pluralFormRu(count, forms)}`;
+  return `${formatInt(count)} ${pluralFormRu(count, forms)}`;
 }
 
 const LOCATION_CAP_FORMS = ["Локация", "Локации", "Локаций"] as const;
@@ -289,6 +289,22 @@ export function kilometersLabel(count: number): string {
  */
 export function formatInt(value: number): string {
   return Math.round(value).toLocaleString("ru-RU");
+}
+
+/**
+ * Разряды без округления: 2465.5 → «2 465,5». Замена для String(число) там,
+ * где дробная часть может быть осмысленной (километры, средние).
+ */
+export function formatNumber(value: number): string {
+  return value.toLocaleString("ru-RU");
+}
+
+/**
+ * То же самое, но для плиток и ячеек, куда прилетает уже готовый ReactNode:
+ * число разбиваем по разрядам, всё остальное отдаём как есть.
+ */
+export function formatStatValue<T>(value: T): T | string {
+  return typeof value === "number" && Number.isFinite(value) ? formatNumber(value) : value;
 }
 
 /** «6 141 км», близкие расстояния — с десятыми: «0,8 км» честнее, чем «1 км». */

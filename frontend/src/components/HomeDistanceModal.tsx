@@ -3,7 +3,7 @@ import { DetailModal } from "./DetailModal";
 import { PlatformBadge } from "./PlatformBadge";
 import { type HomeDistanceDetail, type HomeDistanceLocation } from "../lib/api";
 import { useAppDataSource } from "../lib/appDataSource";
-import { formatKm } from "../lib/format";
+import { formatInt, formatKm } from "../lib/format";
 
 const HINT =
   "Расстояние по прямой от домашней локации до площадки. Каждая площадка даёт свои " +
@@ -101,8 +101,8 @@ export function HomeDistanceModal({ open, onClose }: { open: boolean; onClose: (
           {data.home && (
             <p className="home-distance-summary">
               Дом — <b>{data.home.name}</b>. В зачёте {formatKm(data.total_distance_km)} по{" "}
-              {data.counted_count} площадкам
-              {data.unknown_count > 0 && ` (ещё ${data.unknown_count} без координат)`}.
+              {formatInt(data.counted_count)} площадкам
+              {data.unknown_count > 0 && ` (ещё ${formatInt(data.unknown_count)} без координат)`}.
             </p>
           )}
 
@@ -127,7 +127,7 @@ export function HomeDistanceModal({ open, onClose }: { open: boolean; onClose: (
                     <td className="col-num">
                       <DistanceCell row={row} />
                     </td>
-                    <td className="col-num num">{row.run_count}</td>
+                    <td className="col-num num">{formatInt(row.run_count)}</td>
                   </tr>
                 ))}
                 {data.visited.length === 0 && (

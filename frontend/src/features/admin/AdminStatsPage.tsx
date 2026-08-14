@@ -4,7 +4,14 @@ import { RequireAdmin } from "../../components/RequireAdmin";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
 import { getAdminSiteStats, type AdminSiteStatsResponse } from "../../lib/api";
-import { formatChartDay, formatDate, formatDateTime, platformCodeLabel } from "../../lib/format";
+import {
+  formatChartDay,
+  formatDate,
+  formatDateTime,
+  formatInt,
+  formatStatValue,
+  platformCodeLabel,
+} from "../../lib/format";
 import { AdminSubnav } from "./AdminSubnav";
 
 const PERIODS = [
@@ -50,7 +57,7 @@ function DailyBarChart({
 }) {
   const peak = maxValue(data);
   const periodTotal = sumValues(data);
-  const formatValue = valueLabel ?? ((value: number) => String(value));
+  const formatValue = valueLabel ?? ((value: number) => formatInt(value));
   const showBarValues = data.length <= 14;
 
   if (peak === 0) {
@@ -137,8 +144,8 @@ function PageviewsChart({
     <section className="card admin-stats-chart-card admin-stats-pageviews-card" key={chartKey}>
       <h3 className="admin-stats-chart-title">Просмотры страниц</h3>
       <p className="admin-stats-chart-summary muted">
-        За период: {periodTotal} просмотров, {periodUnique} уникальных по дням (ЛК {periodApp}, демо{" "}
-        {periodDemo})
+        За период: {formatInt(periodTotal)} просмотров, {formatInt(periodUnique)} уникальных по дням (ЛК{" "}
+        {formatInt(periodApp)}, демо {formatInt(periodDemo)})
       </p>
       <div className="analytics-chart">
         <div
@@ -155,17 +162,17 @@ function PageviewsChart({
                 : 0;
             const dateLabel = formatDate(row.date);
             const tooltipLines = [
-              `Просмотров: ${row.total}`,
-              `Уникальных: ${row.unique_visitors}`,
-              `ЛК: ${row.app}`,
-              `Демо: ${row.demo}`,
+              `Просмотров: ${formatInt(row.total)}`,
+              `Уникальных: ${formatInt(row.unique_visitors)}`,
+              `ЛК: ${formatInt(row.app)}`,
+              `Демо: ${formatInt(row.demo)}`,
             ];
             return (
               <div key={row.date} className="analytics-chart-bar-wrap admin-stats-dual-bar-wrap">
                 <ChartColumnTooltip title={dateLabel} lines={tooltipLines}>
                   <div className="admin-stats-dual-bars" style={{ height: `${CHART_BAR_AREA_PX}px` }}>
                     {showBarValues && row.total > 0 && (
-                      <span className="analytics-chart-bar-value">{row.total}</span>
+                      <span className="analytics-chart-bar-value">{formatInt(row.total)}</span>
                     )}
                     <span
                       className="analytics-chart-bar analytics-chart-bar-run"
@@ -205,7 +212,7 @@ function PageviewsChart({
 function StatCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
     <article className="card admin-stats-card">
-      <p className="admin-stats-card-value">{value}</p>
+      <p className="admin-stats-card-value">{formatStatValue(value)}</p>
       <p className="admin-stats-card-label">{label}</p>
       {hint && <p className="muted admin-stats-card-hint">{hint}</p>}
     </article>
@@ -320,7 +327,7 @@ function AdminStatsContent() {
                 <li key={code}>
                   <PlatformBadge code={code} />
                   <span>
-                    {platformCodeLabel(code)}: <strong>{count}</strong>
+                    {platformCodeLabel(code)}: <strong>{formatInt(count)}</strong>
                   </span>
                 </li>
               ))}

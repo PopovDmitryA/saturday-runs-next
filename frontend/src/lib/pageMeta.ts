@@ -257,6 +257,15 @@ export function resolvePageMeta(rawPath: string): PageMeta {
   return STATIC_PAGE_META[path] ?? { title: DEFAULT_TITLE, description: DEFAULT_DESCRIPTION };
 }
 
+/**
+ * Разбивка по разрядам неразрывным пробелом: 21581 → «21 581».
+ * Зеркало _num из seo_service.py — тексты страницы и пререндера обязаны
+ * совпадать символ в символ.
+ */
+function num(value: number): string {
+  return value.toLocaleString("ru-RU");
+}
+
 function plural(count: number, one: string, few: string, many: string): string {
   const tail100 = count % 100;
   if (tail100 >= 11 && tail100 <= 14) {
@@ -326,10 +335,10 @@ export function locationPageMeta(
   const events = stats.events_count ?? 0;
   const finishers = stats.finishers_total ?? 0;
   if (events) {
-    parts.push(`${events} ${plural(events, "старт", "старта", "стартов")}`);
+    parts.push(`${num(events)} ${plural(events, "старт", "старта", "стартов")}`);
   }
   if (finishers) {
-    parts.push(`${finishers} ${plural(finishers, "финиш", "финиша", "финишей")}`);
+    parts.push(`${num(finishers)} ${plural(finishers, "финиш", "финиша", "финишей")}`);
   }
   const male = stripLeadingHours(stats.course_records?.male?.finish_time_display ?? null);
   const female = stripLeadingHours(stats.course_records?.female?.finish_time_display ?? null);
@@ -456,8 +465,8 @@ export function locationLeadSentences(payload: LocationMetaSource): string[] {
   const finishers = stats.finishers_total ?? 0;
   if (events && finishers) {
     sentences.push(
-      `Здесь прошло ${events} ${plural(events, "старт", "старта", "стартов")}, ` +
-        `финишировали ${finishers} ${plural(finishers, "участник", "участника", "участников")}.`,
+      `Здесь прошло ${num(events)} ${plural(events, "старт", "старта", "стартов")}, ` +
+        `финишировали ${num(finishers)} ${plural(finishers, "участник", "участника", "участников")}.`,
     );
   }
 

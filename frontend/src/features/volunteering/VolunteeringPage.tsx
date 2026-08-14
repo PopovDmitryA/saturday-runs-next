@@ -24,7 +24,7 @@ import {
 } from "../../lib/api";
 import { useAppDataSource } from "../../lib/appDataSource";
 import { createFullSelection, sortVolunteering, toggleDateSort, uniquePlatforms } from "../../lib/activityList";
-import { platformCodeLabel } from "../../lib/format";
+import { formatInt, platformCodeLabel } from "../../lib/format";
 
 // bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
 // оборачивает контент в собственный каркас с сайдбаром.
@@ -235,7 +235,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
               className={activePlatformFilter === "all" ? "map-mode-tab active" : "map-mode-tab"}
               onClick={() => filters.setSelectedPlatforms(createFullSelection(allPlatforms))}
             >
-              Все ({visibleVolCount})
+              Все ({formatInt(visibleVolCount)})
             </button>
             {platformCounts.map(({ code, count }) => (
               <button
@@ -246,7 +246,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                 className={activePlatformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
                 onClick={() => filters.setSelectedPlatforms(new Set([code]))}
               >
-                {platformCodeLabel(code)} ({count})
+                {platformCodeLabel(code)} ({formatInt(count)})
               </button>
             ))}
             {parkrunCount > 0 && (
@@ -258,7 +258,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                 disabled
                 title="Волонтёрства parkrun учтены в общей статистике, но не отображаются в таблице"
               >
-                parkrun ({parkrunCount})
+                parkrun ({formatInt(parkrunCount)})
               </button>
             )}
           </div>
@@ -584,7 +584,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
 
           <p className="table-foot muted">
             <span>
-              Показано: {displayedItems.length} из {visibleVolCount}
+              Показано: {formatInt(displayedItems.length)} из {formatInt(visibleVolCount)}
             </span>
             {filters.hasActiveFilters && (
               <button type="button" className="btn btn-ghost btn-sm" onClick={filters.resetAll}>

@@ -5,7 +5,7 @@ import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { getLastResults, type LastResultsItem } from "../../lib/api";
-import { formatDate, formatFinishTimeValue, pluralizeRu } from "../../lib/format";
+import { formatDate, formatFinishTimeValue, formatInt, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
 import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
@@ -245,10 +245,10 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
                       formatDate(item.event_date)
                     )}
                   </td>
-                  <td className="td-compact">{item.finishers ?? "—"}</td>
-                  {show("volunteers") && <td className="td-compact">{item.volunteers ?? "—"}</td>}
-                  {show("debutants") && <td className="td-compact">{item.debutants ?? "—"}</td>}
-                  {show("prs") && <td className="td-compact">{item.prs ?? "—"}</td>}
+                  <td className="td-compact">{item.finishers != null ? formatInt(item.finishers) : "—"}</td>
+                  {show("volunteers") && <td className="td-compact">{item.volunteers != null ? formatInt(item.volunteers) : "—"}</td>}
+                  {show("debutants") && <td className="td-compact">{item.debutants != null ? formatInt(item.debutants) : "—"}</td>}
+                  {show("prs") && <td className="td-compact">{item.prs != null ? formatInt(item.prs) : "—"}</td>}
                   {show("best_male") && (
                     <td className="td-compact">
                       {formatTime(item.best_male_time_display, item.best_male_time_sec)}

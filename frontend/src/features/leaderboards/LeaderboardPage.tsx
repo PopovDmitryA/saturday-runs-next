@@ -410,13 +410,13 @@ function RoleBreakdown({
             {columns.map((code) => (
               <td key={code} className="lb-col-num">
                 {detail.platforms[code] ? (
-                  detail.platforms[code]
+                  formatInt(detail.platforms[code])
                 ) : (
                   <span className="lb-zero">—</span>
                 )}
               </td>
             ))}
-            <td className="lb-col-num lb-col-total">{detail.total}</td>
+            <td className="lb-col-num lb-col-total">{formatInt(detail.total)}</td>
           </tr>
         ))}
       </tbody>
@@ -1293,7 +1293,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 {me.included ? (
                   <div className="lb-me-row">
                     <span className="lb-me-rank">
-                      {me.rank}
+                      {me.rank != null ? formatInt(me.rank) : "—"}
                       <RankDelta delta={me.rank_delta} />
                     </span>
                     <span className="lb-me-name">{me.display_name ?? "Вы"}</span>
@@ -1411,7 +1411,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                 ) : (
                   <>
                     <p className="lb-me-threshold">
-                      Вы появитесь в рейтинге после достижения {me.threshold}{" "}
+                      Вы появитесь в рейтинге после достижения {formatInt(me.threshold)}{" "}
                       {unitLabel(metric, me.threshold, effectiveCountBy)} — сейчас у вас{" "}
                       {formatInt(me.total)}{valueUnit ? ` ${valueUnit}` : ""}.
                     </p>
@@ -1547,7 +1547,7 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                                 <span aria-hidden>{expanded ? "▾" : "▸"}</span>
                               </button>
                             )}
-                            {row.rank}
+                            {formatInt(row.rank)}
                             <RankDelta delta={row.rank_delta} />
                           </span>
                         </td>

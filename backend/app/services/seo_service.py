@@ -268,6 +268,16 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
     return STATIC_PAGE_META.get(path, _meta(DEFAULT_TITLE, DEFAULT_DESCRIPTION))
 
 
+def _num(value: int) -> str:
+    """21581 → «21 581» неразрывным пробелом.
+
+    Сплошная цифра в описании читается как одно длинное число и на странице,
+    и в выдаче поисковика. Разделитель неразрывный, чтобы разряды не
+    разъезжались по строкам. Зеркало num из frontend/src/lib/pageMeta.ts.
+    """
+    return f"{value:,}".replace(",", " ")
+
+
 def _plural(count: int, one: str, few: str, many: str) -> str:
     tail_100 = count % 100
     if 11 <= tail_100 <= 14:
@@ -354,11 +364,11 @@ def build_location_meta(payload: dict[str, Any], *, events_log: bool = False) ->
     parts: list[str] = []
     if events_count:
         parts.append(
-            f"{events_count} {_plural(events_count, 'старт', 'старта', 'стартов')}"
+            f"{_num(events_count)} {_plural(events_count, 'старт', 'старта', 'стартов')}"
         )
     if finishers_total:
         parts.append(
-            f"{finishers_total} {_plural(finishers_total, 'финиш', 'финиша', 'финишей')}"
+            f"{_num(finishers_total)} {_plural(finishers_total, 'финиш', 'финиша', 'финишей')}"
         )
 
     records = stats.get("course_records") or {}
@@ -438,9 +448,9 @@ def location_lead_sentences(payload: dict[str, Any]) -> list[str]:
     finishers_total = int(stats.get("finishers_total") or 0)
     if events_count and finishers_total:
         sentences.append(
-            f"Здесь прошло {events_count} "
+            f"Здесь прошло {_num(events_count)} "
             f"{_plural(events_count, 'старт', 'старта', 'стартов')}, "
-            f"финишировали {finishers_total} "
+            f"финишировали {_num(finishers_total)} "
             f"{_plural(finishers_total, 'участник', 'участника', 'участников')}."
         )
 
@@ -653,10 +663,10 @@ def _last_event_block(last_event: dict[str, Any]) -> str:
     facts: list[tuple[str, str]] = []
     finishers = last_event.get("finishers")
     if finishers:
-        facts.append(("Финишировали", str(finishers)))
+        facts.append(("Финишировали", _num(int(finishers))))
     volunteers = last_event.get("volunteers")
     if volunteers:
-        facts.append(("Волонтёров", str(volunteers)))
+        facts.append(("Волонтёров", _num(int(volunteers))))
     for key, label in (
         ("best_male_time_display", "Лучшее время, мужчины"),
         ("best_female_time_display", "Лучшее время, женщины"),
@@ -667,10 +677,10 @@ def _last_event_block(last_event: dict[str, Any]) -> str:
             facts.append((label, value))
     newcomers = (last_event.get("debutants") or 0) + (last_event.get("first_at_location") or 0)
     if newcomers:
-        facts.append(("Впервые здесь", str(newcomers)))
+        facts.append(("Впервые здесь", _num(int(newcomers))))
     prs = last_event.get("prs")
     if prs:
-        facts.append(("Личных рекордов", str(prs)))
+        facts.append(("Личных рекордов", _num(int(prs))))
 
     items = "".join(f"      <li>{escape(k)}: {escape(v)}</li>\n" for k, v in facts)
     return f"    <h2>{title}</h2>\n    <ul>\n{items}    </ul>"
@@ -938,13 +948,13 @@ def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
 
     facts: list[tuple[str, str]] = []
     if stats.get("events_count"):
-        facts.append(("Стартов", str(stats["events_count"])))
+        facts.append(("Стартов", _num(int(stats["events_count"]))))
     if stats.get("finishers_total"):
-        facts.append(("Финишей", str(stats["finishers_total"])))
+        facts.append(("Финишей", _num(int(stats["finishers_total"]))))
     if stats.get("unique_participants"):
-        facts.append(("Уникальных участников", str(stats["unique_participants"])))
+        facts.append(("Уникальных участников", _num(int(stats["unique_participants"]))))
     if stats.get("unique_volunteers"):
-        facts.append(("Уникальных волонтёров", str(stats["unique_volunteers"])))
+        facts.append(("Уникальных волонтёров", _num(int(stats["unique_volunteers"]))))
     avg_display = _strip_leading_hours(stats.get("avg_finish_time_display"))
     if avg_display:
         facts.append(("Среднее время", avg_display))
@@ -954,7 +964,7 @@ def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
 
     attendance = stats.get("attendance_record") or {}
     if attendance.get("finishers"):
-        value = str(attendance["finishers"])
+        value = _num(int(attendance["finishers"]))
         when = attendance.get("event_date")
         if when:
             value = f"{value} ({when})"
@@ -990,7 +1000,7 @@ def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
                 code=escape(str(p.get("platform_code") or "")),
                 first=escape(str(p.get("first_event_date") or "")),
                 last=escape(str(p.get("last_event_date") or "")),
-                count=escape(str(p.get("events_count") or 0)),
+                count=escape(_num(int(p.get("events_count") or 0))),
             )
             for p in platforms
         )
@@ -1057,11 +1067,11 @@ def _catalog_body(items: list[dict[str, Any]]) -> str:
     rows = [
         "    <h1>Локации 5 вёрст, С95, parkrun и RunPark</h1>",
         "    <p>Каталог площадок субботних пробежек: "
-        f"{len(live)} {_plural(len(live), 'локация', 'локации', 'локаций')} в "
-        f"{len(cities)} {_plural(len(cities), 'городе', 'городах', 'городах')}.</p>",
+        f"{_num(len(live))} {_plural(len(live), 'локация', 'локации', 'локаций')} в "
+        f"{_num(len(cities))} {_plural(len(cities), 'городе', 'городах', 'городах')}.</p>",
     ]
     platform_bits = [
-        f"{PLATFORM_LABELS[code]} — {count} "
+        f"{PLATFORM_LABELS[code]} — {_num(count)} "
         f"{_plural(count, 'площадка', 'площадки', 'площадок')}"
         for code, count in sorted(by_platform.items(), key=lambda kv: -kv[1])
         if code in PLATFORM_LABELS

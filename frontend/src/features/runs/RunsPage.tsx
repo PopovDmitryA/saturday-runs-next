@@ -25,7 +25,7 @@ import {
 } from "../../lib/api";
 import { useAppDataSource } from "../../lib/appDataSource";
 import { createFullSelection, sortRuns, toggleDateSort, toggleFinishSort, togglePaceSort, togglePositionSort, uniquePlatforms } from "../../lib/activityList";
-import { formatFinishTimeValue, platformCodeLabel } from "../../lib/format";
+import { formatFinishTimeValue, formatInt, platformCodeLabel } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
 import { useAdaptiveColumns, type AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
@@ -253,7 +253,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
               className={activePlatformFilter === "all" ? "map-mode-tab active" : "map-mode-tab"}
               onClick={() => filters.setSelectedPlatforms(createFullSelection(allPlatforms))}
             >
-              Все ({visibleRunCount})
+              Все ({formatInt(visibleRunCount)})
             </button>
             {platformRunCounts.map(({ code, count }) => (
               <button
@@ -264,7 +264,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                 className={activePlatformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
                 onClick={() => filters.setSelectedPlatforms(new Set([code]))}
               >
-                {platformCodeLabel(code)} ({count})
+                {platformCodeLabel(code)} ({formatInt(count)})
               </button>
             ))}
           </div>
@@ -481,7 +481,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
 
           <p className="table-foot muted">
             <span>
-              Показано: {displayedRuns.length} из {visibleRunCount}
+              Показано: {formatInt(displayedRuns.length)} из {formatInt(visibleRunCount)}
             </span>
             {filters.hasActiveFilters && (
               <button type="button" className="btn btn-ghost btn-sm" onClick={filters.resetAll}>
