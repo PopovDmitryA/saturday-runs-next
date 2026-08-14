@@ -438,14 +438,14 @@ def build_profile_meta(user: Any, payload: dict[str, Any] | None) -> PageMeta:
 
     parts: list[str] = []
     if total_runs:
-        parts.append(f"{total_runs} {_plural(total_runs, 'пробежка', 'пробежки', 'пробежек')}")
+        parts.append(f"{_num(total_runs)} {_plural(total_runs, 'пробежка', 'пробежки', 'пробежек')}")
     if total_volunteering:
         parts.append(
-            f"{total_volunteering} "
+            f"{_num(total_volunteering)} "
             f"{_plural(total_volunteering, 'волонтёрство', 'волонтёрства', 'волонтёрств')}"
         )
     if unique_locations:
-        parts.append(f"{unique_locations} {_plural(unique_locations, 'локация', 'локации', 'локаций')}")
+        parts.append(f"{_num(unique_locations)} {_plural(unique_locations, 'локация', 'локации', 'локаций')}")
 
     # head — само имя: его не режем никогда, хвост уходит первым при нехватке
     # бюджета (у длинных имён останется «Имя — run5k.run»).
@@ -1215,18 +1215,18 @@ def _profile_body(name: str, payload: dict[str, Any]) -> str:
 
     facts: list[tuple[str, str]] = []
     if stats.get("total_runs"):
-        facts.append(("Пробежек", str(stats["total_runs"])))
+        facts.append(("Пробежек", _num(int(stats["total_runs"]))))
     if stats.get("total_volunteering"):
-        facts.append(("Волонтёрств", str(stats["total_volunteering"])))
+        facts.append(("Волонтёрств", _num(int(stats["total_volunteering"]))))
     if analytics.get("unique_locations"):
-        facts.append(("Уникальных локаций", str(analytics["unique_locations"])))
+        facts.append(("Уникальных локаций", _num(int(analytics["unique_locations"]))))
     if analytics.get("unique_run_regions"):
-        facts.append(("Регионов", str(analytics["unique_run_regions"])))
+        facts.append(("Регионов", _num(int(analytics["unique_run_regions"]))))
     best = _strip_leading_hours_sec(analytics.get("best_finish_time_sec"))
     if best:
         facts.append(("Лучшее время", best))
     if analytics.get("saturday_streak"):
-        facts.append(("Суббот подряд", str(analytics["saturday_streak"])))
+        facts.append(("Суббот подряд", _num(int(analytics["saturday_streak"]))))
 
     if facts:
         items = "".join(
