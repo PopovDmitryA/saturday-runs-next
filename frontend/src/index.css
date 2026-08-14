@@ -4398,6 +4398,30 @@ button.badge-platform-btn:hover {
   display: block;
 }
 
+/* Подсказка тач-режима: тап по элементу с title (буквы «Алфавита», дни
+   календаря, клетки графиков). Геометрию и цвета берёт у
+   .unique-locations-count-tooltip, здесь — только заголовок и разворот вниз
+   для элементов у верхней кромки экрана. */
+.tap-tooltip {
+  max-width: min(20rem, calc(100vw - 1rem));
+}
+
+.tap-tooltip-title {
+  display: block;
+  font-weight: 600;
+}
+
+.tap-tooltip-below {
+  transform: translate(-50%, 0);
+}
+
+.tap-tooltip-below::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: var(--tooltip-bg);
+}
+
 .unique-locations-groups {
   display: grid;
   gap: 1.1rem;

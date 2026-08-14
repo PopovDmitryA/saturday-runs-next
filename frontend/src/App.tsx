@@ -56,6 +56,7 @@ import { QueuePage } from "./features/queue/QueuePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
 import { NotFoundPage } from "./features/NotFoundPage";
+import { TapTooltipLayer } from "./components/TapTooltipLayer";
 import { useAppPath } from "./hooks/useAppPath";
 import { reportAbLoginOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
@@ -317,5 +318,11 @@ export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
   usePageMeta(path);
-  return renderRoute(path);
+  return (
+    <>
+      {renderRoute(path)}
+      {/* Тап-подсказки на телефоне — один слой на весь сайт (см. TapTooltipLayer). */}
+      <TapTooltipLayer />
+    </>
+  );
 }

@@ -336,6 +336,9 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
                         key={item.participant_key}
                         className={`co-runners-row${expanded ? " co-runners-row-expanded" : ""}`}
                         onClick={() => toggleRow(item.participant_key)}
+                        // Тап по строке разворачивает детали — подсказки по title
+                        // внутри неё в тач-режиме не показываем.
+                        data-tap-tooltip="off"
                       >
                         <td className="td-num muted">{index + 1}</td>
                         <td className="co-runners-name-cell">

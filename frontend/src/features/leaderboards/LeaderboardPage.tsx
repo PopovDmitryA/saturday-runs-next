@@ -1066,6 +1066,8 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       className={`${className} lb-sortable${sortKey === key ? " lb-sorted" : ""}`}
       onClick={() => setSortKey(key)}
       title="Сортировать по этому столбцу"
+      // Тап по заголовку сортирует — подсказку тач-режима здесь не показываем.
+      data-tap-tooltip="off"
     >
       {label}
       {hint && <InfoHint text={hint} />}
@@ -1528,6 +1530,9 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
                         // Клик по строке разворачивает детализацию; клик по имени
                         // остаётся переходом в профиль (ссылка гасит всплытие).
                         onClick={isRoles ? () => toggleRow(rowKey) : undefined}
+                        // Раз тап уже разворачивает строку — подсказки по title
+                        // внутри неё в тач-режиме не всплывают.
+                        data-tap-tooltip={isRoles ? "off" : undefined}
                       >
                         <td className="lb-col-rank">
                           <span className="lb-rank">
