@@ -872,6 +872,8 @@ export type ChallengeDetailItem = {
 export type ChallengeDetail = {
   cells?: ChallengeCell[];
   letters?: ChallengeLetter[];
+  /** Сколько букв вообще доступно в текущем скоупе систем («Алфавит»). */
+  available?: number;
   days?: ChallengeDay[];
   items?: ChallengeDetailItem[];
   example?: { value: string; location: string; note: string };

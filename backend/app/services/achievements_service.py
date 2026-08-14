@@ -46,6 +46,7 @@ from app.models import (
 )
 from app.services.location_catalog_service import LocationCatalogIndex, russian_parkrun_location_ids
 from app.services.location_map_service import MAP_HISTORIC_PLATFORM
+from app.services.platform_titles import PLATFORM_TITLES
 from app.services.user_location_stats import _canonical_region, _normalize_geo_value
 from app.time_format import normalize_finish_time_display
 from app.volunteering_occasions import count_volunteering_for_platform, is_inventory_day, volunteer_occasion_dates
@@ -472,17 +473,47 @@ def _positions_challenge(rows: list[RunRow]) -> dict[str, object]:
     )
 
 
-def _alphabet_challenge(db: Session, rows: list[RunRow]) -> dict[str, object]:
-    """Parkrun-локации не считаются: у parkrun имена латиницей/местные, они
-    искажали бы букву старта — challenge остаётся про русский алфавит."""
+def _alphabet_available_names(db: Session, platform_code: str | None) -> dict[str, set[str]]:
+    """Буква -> названия локаций, которыми её можно закрыть.
+
+    Каталог букв зависит от выбранной системы: в 5 вёрстах нет ни одной
+    локации на «Ц», в S95 нет «Д» — показывать в фильтре по системе буквы,
+    которые в ней физически не закрыть, значит врать о цели.
+    """
+    query = (
+        db.query(Location.name)
+        .join(Platform, Location.platform_id == Platform.id)
+        .filter(Location.name.isnot(None))
+    )
+    if platform_code is None:
+        # Сквозной вид: parkrun не считается (см. _alphabet_challenge), значит
+        # и буквы его локаций в каталог не попадают.
+        query = query.filter(Platform.code != MAP_HISTORIC_PLATFORM)
+    else:
+        query = query.filter(Platform.code == platform_code)
     available_names: dict[str, set[str]] = {}
-    for (name,) in db.query(Location.name).filter(Location.name.isnot(None)).all():
+    for (name,) in query.all():
         letter = _first_letter(name or "")
         if letter is not None and letter in _RU_ALPHABET:
             available_names.setdefault(letter, set()).add((name or "").strip())
+    return available_names
+
+
+def _alphabet_challenge(
+    rows: list[RunRow],
+    available_names: dict[str, set[str]],
+    *,
+    platform_code: str | None = None,
+) -> dict[str, object]:
+    """Parkrun-локации не считаются: у parkrun имена латиницей/местные, они
+    искажали бы букву старта — challenge остаётся про русский алфавит.
+    Исключение — фильтр по самому parkrun: там весь скоуп и есть parkrun, и
+    буквы берутся с его же русскоязычных локаций.
+    """
+    skip_parkrun = platform_code is None
     first_by_letter: dict[str, RunRow] = {}
     for row in rows:
-        if row.platform_code == "parkrun":
+        if skip_parkrun and row.platform_code == MAP_HISTORIC_PLATFORM:
             continue
         letter = _first_letter(row.location_name)
         if letter is not None and letter in available_names:
@@ -509,12 +540,32 @@ def _alphabet_challenge(db: Session, rows: list[RunRow]) -> dict[str, object]:
         code="alphabet",
         title="Алфавит",
         icon="🔤",
-        description="Финишируй в локациях на каждую букву алфавита (считаются буквы, на которые есть хотя бы одна локация; parkrun в этом челлендже не учитывается).",
+        description=_alphabet_description(len(letters), platform_code),
         category="collection",
         current=len(first_by_letter),
         unit="букв",
-        detail={"letters": letters},
+        detail={"letters": letters, "available": len(letters)},
         level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
+
+
+def _alphabet_description(available: int, platform_code: str | None) -> str:
+    """Описание честно называет размер каталога: в скоупе одной системы букв
+    меньше, чем во всех сразу, и золото сложного уровня может быть недостижимо."""
+    if platform_code is None:
+        return (
+            "Финишируй в локациях на каждую букву алфавита (считаются буквы, на которые есть "
+            f"хотя бы одна локация — сейчас их {available}; parkrun в этом челлендже не учитывается)."
+        )
+    title = PLATFORM_TITLES.get(platform_code, platform_code)
+    if available == 0:
+        return (
+            f"Финишируй в локациях на каждую букву алфавита. У системы «{title}» нет локаций "
+            "с русскими названиями — закрывать нечего, снимите фильтр систем."
+        )
+    return (
+        f"Финишируй в локациях на каждую букву алфавита. Выбрана система «{title}» — считаются "
+        f"только её локации, а они дают {available} {_plural_ru(available, ('букву', 'буквы', 'букв'))}."
     )
 
 
@@ -1162,16 +1213,18 @@ def _compute_clubs(
 
 
 def _build_challenge_list(
-    db: Session,
     rows: list[RunRow],
     vol_rows: dict[str, list[tuple[date, str]]],
     upcoming: dict[tuple[str, int], list[tuple[date, str]]],
     rating_rows: list[RatingRow],
+    *,
+    alphabet_names: dict[str, set[str]],
+    platform_code: str | None,
 ) -> list[dict[str, object]]:
     return [
         _seconds_challenge(rows),
         _positions_challenge(rows),
-        _alphabet_challenge(db, rows),
+        _alphabet_challenge(rows, alphabet_names, platform_code=platform_code),
         _calendar_days_challenge(rows),
         _start_numbers_range_challenge(
             rows,
@@ -1329,8 +1382,17 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
         rows, vol_rows, upcoming, rating_rows, platform_code
     )
 
+    # Каталог букв «Алфавита» зависит от того же фильтра систем — читаем его
+    # один раз на оба прогона списка челленджей (второй считает recent_delta).
+    alphabet_names = _alphabet_available_names(db, platform_code)
+
     challenges = _build_challenge_list(
-        db, scoped_rows, scoped_vol_rows, scoped_upcoming, scoped_rating_rows
+        scoped_rows,
+        scoped_vol_rows,
+        scoped_upcoming,
+        scoped_rating_rows,
+        alphabet_names=alphabet_names,
+        platform_code=platform_code,
     )
 
     rows_before = _rows_before_last_activity(scoped_rows)
@@ -1338,7 +1400,12 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
         previous: dict[str, int] = {
             str(c["code"]): int(c["current"])  # type: ignore[call-overload]
             for c in _build_challenge_list(
-                db, rows_before, scoped_vol_rows, scoped_upcoming, scoped_rating_rows
+                rows_before,
+                scoped_vol_rows,
+                scoped_upcoming,
+                scoped_rating_rows,
+                alphabet_names=alphabet_names,
+                platform_code=platform_code,
             )
         }
         for challenge in challenges:

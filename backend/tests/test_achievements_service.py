@@ -9,6 +9,7 @@ from app.services.achievements_service import (
     REVIEW_MIN_COMMENT_LEN,
     RatingRow,
     RunRow,
+    _alphabet_challenge,
     _best_year_challenge,
     _best_year_level_dates,
     _calendar_days_challenge,
@@ -294,6 +295,52 @@ def test_first_letter_rules() -> None:
     assert _first_letter("Ёлочки") == "Е"
     assert _first_letter(" зелёный парк") == "З"
     assert _first_letter("5-й километр") is None
+
+
+def _alphabet_names(*pairs: tuple[str, str]) -> dict[str, set[str]]:
+    """Каталог «буква -> названия локаций» в том виде, в каком его отдаёт БД."""
+    names: dict[str, set[str]] = {}
+    for letter, name in pairs:
+        names.setdefault(letter, set()).add(name)
+    return names
+
+
+def test_alphabet_letters_limited_to_scope_catalog() -> None:
+    """Буквы приходят из каталога локаций: нет локации на «Ц» — нет и клетки."""
+    names = _alphabet_names(("К", "Кузьминки"), ("Б", "Битца"))
+    challenge = _alphabet_challenge(
+        [_row(location_name="Кузьминки", location_key="kuzminki")],
+        names,
+        platform_code="five_verst",
+    )
+    letters = challenge["detail"]["letters"]  # type: ignore[index]
+    assert [item["letter"] for item in letters] == ["Б", "К"]
+    assert [item["done"] for item in letters] == [False, True]
+    assert challenge["current"] == 1
+    assert challenge["detail"]["available"] == 2  # type: ignore[index]
+
+
+def test_alphabet_description_names_the_scoped_platform() -> None:
+    names = _alphabet_names(("К", "Кузьминки"), ("Б", "Битца"))
+    scoped = _alphabet_challenge([], names, platform_code="five_verst")
+    assert "5 вёрст" in str(scoped["description"])
+    assert "2 буквы" in str(scoped["description"])
+    overall = _alphabet_challenge([], names, platform_code=None)
+    assert "parkrun" in str(overall["description"])
+
+
+def test_alphabet_skips_parkrun_only_in_cross_platform_scope() -> None:
+    """Сквозной вид parkrun не считает, а в скоупе самого parkrun — считает:
+    иначе буквы его русскоязычных локаций были бы недостижимы."""
+    names = _alphabet_names(("Т", "Тропарёво"))
+    rows = [_row(location_name="Тропарёво", location_key="troparevo", platform_code="parkrun")]
+
+    overall = _alphabet_challenge(rows, names, platform_code=None)
+    assert overall["current"] == 0
+
+    scoped = _alphabet_challenge(rows, names, platform_code="parkrun")
+    assert scoped["current"] == 1
+    assert scoped["detail"]["letters"][0]["done"] is True  # type: ignore[index]
 
 
 def test_saturdays_left_end_of_year() -> None:

@@ -36,6 +36,7 @@ from app.models import (
 )
 from app.schemas.portal import PortalHomeResponse
 from app.services.location_catalog_service import LocationCatalogIndex
+from app.services.platform_titles import PLATFORM_TITLES
 
 logger = logging.getLogger(__name__)
 
@@ -57,12 +58,8 @@ WEEK_RECORDS_LIMIT = 12
 # такие события не относятся к реальной хронологии.
 MIN_SANE_EVENT_DATE = date(2004, 1, 1)
 
-PLATFORM_TITLES = {
-    "five_verst": "5 вёрст",
-    "s95": "S95",
-    "parkrun": "parkrun",
-    "runpark": "RunPark",
-}
+# Названия систем — из app.services.platform_titles (импорт выше): их берут и
+# другие сервисы, тянуть ради словаря весь портал незачем.
 PLATFORM_ORDER = ["five_verst", "s95", "runpark", "parkrun"]
 # На главной «активна» = система реально проводит старты сейчас;
 # platforms.is_active в БД отражает работоспособность синка, не это.
