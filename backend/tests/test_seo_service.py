@@ -167,9 +167,9 @@ def test_normalize_path(raw: str, expected: str) -> None:
         ("/locations/kuzminki", True),
         ("/locations/kuzminki/events", True),
         ("/ratings/wins", True),
-        # Личные страницы участников и мировой обход в индекс не идут —
-        # решение Дмитрия 02.08.2026.
-        ("/users/ivan", False),
+        # Карточка участника индексируется с 15.08.2026: под noindex ВК и
+        # Telegram строят превью без картинки. Вкладки — по-прежнему нет.
+        ("/users/ivan", True),
         ("/users/ivan/runs", False),
         ("/world", False),
         ("/hq/hq-2kl5kfrlzmnvn8sc", False),
@@ -444,7 +444,9 @@ def test_robots_closes_user_pages_from_crawl() -> None:
     включения обхода по счётчикам Метрики.
     """
     robots = build_robots_txt()
-    assert "Disallow: /users/" in robots
+    # Закрыты вкладки (/users/12/maps), сама карточка участника открыта —
+    # иначе превью ссылки в ВК и Telegram остаётся без картинки.
+    assert "Disallow: /users/*/" in robots
     # /world закрывать не за что: он один, а noindex в странице сохраняет вес.
     assert "Disallow: /world" not in robots
 

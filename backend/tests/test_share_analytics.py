@@ -194,8 +194,19 @@ def test_build_profile_meta_uses_real_numbers() -> None:
     assert "128 пробежек" in meta.description
     assert "45 волонтёрств" in meta.description
     assert "90 локаций" in meta.description
-    # Личные страницы в поиске не нужны — только превью ссылки в чате.
-    assert meta.indexable is False
+    # С 15.08.2026 карточка индексируется — см. test_profile_meta_is_indexable.
+    assert meta.indexable is True
+
+
+def test_profile_meta_is_indexable() -> None:
+    """Карточка участника индексируется — иначе ВК и Telegram показывают
+    превью ссылки без картинки (проверено на живых ссылках 15.08.2026)."""
+
+    class _User:
+        display_name = "Дмитрий Попов"
+
+    meta = build_profile_meta(_User(), {"stats": {"total_runs": 128}})
+    assert meta.indexable is True
 
 
 def test_build_profile_meta_survives_empty_stats() -> None:
