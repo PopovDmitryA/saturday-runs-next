@@ -1,8 +1,11 @@
 """Закрытые рейтинги: до открытия их видит только админ.
 
-«Открытия» ждут ручной разметки С95 (решение Дмитрия 14.08.2026), поэтому
-метрика ведёт себя для публики как несуществующая — не 403, а 404: о ещё не
-опубликованном рейтинге не должно быть видно даже того, что он есть.
+Закрытая метрика ведёт себя для публики как несуществующая — не 403, а 404:
+о ещё не опубликованном рейтинге не должно быть видно даже того, что он есть.
+
+Сейчас закрытых рейтингов нет («Открытия» открыты всем 15.08.2026), поэтому
+проверки поведения скипаются — но остаются рабочими: закроют следующий
+рейтинг, добавят его в ADMIN_ONLY_METRICS, и тесты снова начнут стеречь.
 """
 
 from __future__ import annotations
@@ -19,8 +22,14 @@ from app.db.session import get_db
 from app.main import app
 from app.services.leaderboard_service import ADMIN_ONLY_METRICS, LEADERBOARD_METRICS
 
-CLOSED_METRIC = "openings"
+# Первая закрытая метрика, если такие есть; иначе проверки поведения скипаются.
+CLOSED_METRIC = next(iter(sorted(ADMIN_ONLY_METRICS)), None)
 OPEN_METRIC = "runs"
+
+requires_closed_metric = pytest.mark.skipif(
+    CLOSED_METRIC is None,
+    reason="закрытых рейтингов сейчас нет — стеречь нечего",
+)
 
 
 @pytest.fixture
@@ -77,17 +86,19 @@ def _login(client: TestClient, telegram_id: int) -> None:
     assert callback.status_code == 302
 
 
-def test_closed_metric_is_registered_but_hidden() -> None:
-    assert CLOSED_METRIC in LEADERBOARD_METRICS
+def test_closed_metrics_are_registered() -> None:
+    """Закрыть можно только существующий рейтинг — иначе это опечатка."""
     assert set(ADMIN_ONLY_METRICS) <= set(LEADERBOARD_METRICS)
 
 
+@requires_closed_metric
 def test_closed_metric_hidden_from_anonymous(client: TestClient) -> None:
     assert client.get(f"/api/leaderboards/{CLOSED_METRIC}?limit=1").status_code == 404
     # Открытый рейтинг анониму по-прежнему доступен — витрина публичная.
     assert client.get(f"/api/leaderboards/{OPEN_METRIC}?limit=1").status_code == 200
 
 
+@requires_closed_metric
 def test_closed_metric_hidden_from_ordinary_user(client: TestClient) -> None:
     _login(client, telegram_id=4242)
     assert client.get(f"/api/leaderboards/{CLOSED_METRIC}?limit=1").status_code == 404
@@ -95,6 +106,7 @@ def test_closed_metric_hidden_from_ordinary_user(client: TestClient) -> None:
     assert client.get(f"/api/leaderboards/{CLOSED_METRIC}/me").status_code == 404
 
 
+@requires_closed_metric
 def test_closed_metric_visible_to_admin(client: TestClient) -> None:
     _login(client, telegram_id=9001)
     response = client.get(f"/api/leaderboards/{CLOSED_METRIC}?limit=1")

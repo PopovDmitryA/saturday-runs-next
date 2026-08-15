@@ -147,14 +147,14 @@ AMBIGUOUS_HOME_METRICS: tuple[LeaderboardMetric, ...] = ("home_distance",)
 
 
 # Рейтинги, ещё закрытые от публики: их видит только админ, пока данные не
-# выверены. «Открытия» ждут ручной разметки С95 (решение Дмитрия 14.08.2026:
-# сначала заполнить и перепроверить, открыть отдельным шагом).
+# выверены. Сейчас таких нет — «Открытия» открыты всем 15.08.2026, после того
+# как Дмитрий закончил ручную разметку С95.
 #
-# ОТКРЫТЬ РЕЙТИНГ = убрать метрику отсюда и сделать три парные правки:
+# ЗАКРЫТЬ/ОТКРЫТЬ РЕЙТИНГ = поправить этот набор и три парных места:
 #   1) frontend/src/features/leaderboards/leaderboardsApi.ts — ADMIN_ONLY_METRICS;
-#   2) app/services/seo_service.py — indexable=True и адрес в _SITEMAP_STATIC;
-#   3) frontend/src/lib/pageMeta.ts — indexable: true (зеркало серверной меты).
-ADMIN_ONLY_METRICS: frozenset[str] = frozenset({"openings"})
+#   2) app/services/seo_service.py — indexable и адрес в _SITEMAP_STATIC;
+#   3) frontend/src/lib/pageMeta.ts — indexable (зеркало серверной меты).
+ADMIN_ONLY_METRICS: frozenset[str] = frozenset()
 
 
 def _normalize_hide_ambiguous_home(metric: str, value: bool) -> bool:

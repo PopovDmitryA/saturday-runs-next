@@ -29,13 +29,13 @@ export const METRIC_VALUE_UNIT: Partial<Record<LeaderboardMetric, string>> = {
 
 /**
  * Рейтинги, ещё закрытые от публики: карточки нет в хабе, страница отдаёт 404,
- * API отвечает «неизвестный рейтинг» всем, кроме админа. «Открытия» ждут ручной
- * разметки С95 (решение Дмитрия 14.08.2026: сначала заполнить и перепроверить).
+ * API отвечает «неизвестный рейтинг» всем, кроме админа. Сейчас таких нет —
+ * «Открытия» открыты всем 15.08.2026 после ручной разметки С95.
  *
- * Зеркало ADMIN_ONLY_METRICS на бэкенде — открывать рейтинг надо в обоих местах
- * (плюс indexable в pageMeta.ts и seo_service.py).
+ * Зеркало ADMIN_ONLY_METRICS на бэкенде — закрывать/открывать рейтинг надо в
+ * обоих местах (плюс indexable в pageMeta.ts и seo_service.py).
  */
-export const ADMIN_ONLY_METRICS: LeaderboardMetric[] = ["openings"];
+export const ADMIN_ONLY_METRICS: LeaderboardMetric[] = [];
 
 // Женский зачёт есть только у победных рейтингов (parkrun в него не идёт).
 export const GENDERED_METRICS: LeaderboardMetric[] = ["wins", "win_locations"];
