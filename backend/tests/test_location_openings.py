@@ -141,7 +141,7 @@ def test_openings_count_first_event_of_five_verst(db_session: Session) -> None:
 
 
 def test_openings_skip_s95_until_marked_by_hand(db_session: Session) -> None:
-    """С95 без разметки открытий не даёт: её номера забегов считаем мы сами."""
+    """С95 без разметки открытий не даёт: по номерам её забегов открытие не опознать."""
     participant_id, location_id, _events = _seed_location_with_runs(
         db_session, platform_code="s95", numbers=[1, 2, 3]
     )

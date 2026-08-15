@@ -99,19 +99,19 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
   },
   "/ratings/locations": {
     title: "Рейтинг по числу локаций — run5k.run",
-    description: "Беговой туризм в цифрах: кто пробежал на наибольшем числе разных площадок.",
+    description: "Беговой туризм в цифрах: кто пробежал на наибольшем числе разных локаций.",
     indexable: true,
   },
   "/ratings/volunteer-locations": {
     title: "Рейтинг волонтёрского туризма — run5k.run",
-    description: "Кто волонтёрил на наибольшем числе разных площадок субботних пробежек.",
+    description: "Кто волонтёрил на наибольшем числе разных локаций субботних пробежек.",
     indexable: true,
   },
   "/ratings/openings": {
     title: "Рейтинг открытий локаций — run5k.run",
     description:
-      "Первопроходцы субботних пробежек: кто чаще всех бежал на самом первом старте " +
-      "новой площадки 5 вёрст, С95, parkrun и RunPark.",
+      "Первопроходцы субботних пробежек: кто чаще всех бывал на торжественном открытии " +
+      "новых локаций 5 вёрст, С95, parkrun и RunPark.",
     indexable: true,
   },
   "/ratings/wins": {
@@ -123,12 +123,12 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
     title: "Рейтинг дальности от дома — run5k.run",
     description:
       "Кто уезжает бегать дальше всех от своей домашней локации: сумма километров " +
-      "по уникальным площадкам.",
+      "по уникальным локациям.",
     indexable: true,
   },
   "/ratings/win-locations": {
     title: "Рейтинг побед по локациям — run5k.run",
-    description: "На скольких разных площадках участники успевали финишировать первыми.",
+    description: "На скольких разных локациях участники успевали финишировать первыми.",
     indexable: true,
   },
   "/backlog": {

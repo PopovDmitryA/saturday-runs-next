@@ -634,7 +634,7 @@ export function SiteSidebar({
               ? collapsed
                 ? "Журнал протоколов"
                 : undefined
-              : "Сначала откройте локацию — журнал протоколов у каждой площадки свой"
+              : "Сначала откройте локацию — журнал протоколов у каждой локации свой"
           }
         >
           <span className="portal-cab-nav-icon">{PROTOCOL_ICON}</span>
