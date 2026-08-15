@@ -240,6 +240,44 @@
   padding: 44px 8px 6px;
 }
 
+/* Оглавление главной: ряд чипов под героем. Липким не делаем — на странице
+   уже два sticky-блока (период и последняя неделя), третий забил бы верх
+   экрана на мобильном. */
+.portal-anchors {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 8px 4px;
+}
+
+.portal-anchor {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.portal-anchor:hover,
+.portal-anchor:focus-visible {
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+}
+
+/* Якорные секции: липкая шапка не должна накрывать заголовок блока. */
+#week,
+#systems,
+#geo,
+#fastest,
+#blog {
+  scroll-margin-top: calc(var(--portal-header-h) + 12px);
+}
+
 .portal-eyebrow {
   font-size: 12px;
   font-weight: 700;

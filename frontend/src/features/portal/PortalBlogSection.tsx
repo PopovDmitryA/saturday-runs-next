@@ -8,7 +8,12 @@ import { fetchBlogHome, type BlogPost } from "./blogTypes";
  * остальных (порядок отдаёт бэкенд). Стрелки листают по ширине карточки,
  * дорожка скроллится и пальцем — на мобильных стрелки не обязательны.
  */
-export function PortalBlogSection() {
+export function PortalBlogSection({
+  onPostsLoaded,
+}: {
+  /** Есть ли что показывать — оглавлению главной, чтобы не вести в пустоту. */
+  onPostsLoaded?: (hasPosts: boolean) => void;
+} = {}) {
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [canPrev, setCanPrev] = useState(false);
@@ -19,6 +24,10 @@ export function PortalBlogSection() {
       .then(setPosts)
       .catch(() => setPosts([]));
   }, []);
+
+  useEffect(() => {
+    onPostsLoaded?.(posts.length > 0);
+  }, [posts.length, onPostsLoaded]);
 
   const updateArrows = useCallback(() => {
     const track = trackRef.current;
@@ -50,7 +59,7 @@ export function PortalBlogSection() {
   }
 
   return (
-    <section className="portal-panel portal-blog" aria-label="Блог">
+    <section id="blog" className="portal-panel portal-blog" aria-label="Блог">
       <div className="portal-panel-head">
         <div>
           <h2>Блог</h2>
