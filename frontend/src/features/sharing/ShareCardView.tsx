@@ -36,7 +36,16 @@ export function metricLimit(format: ShareFormat, data: ShareCardData): number {
   return 4;
 }
 
-function photoStyle(photo: SharePhoto, format: ShareFormat): CSSProperties {
+/**
+ * Куда и в каком размере ложится своё фото внутри карточки. Одна и та же
+ * геометрия нужна дважды: превью рисует фото тегом <img>, экспорт подкладывает
+ * его под карточку на canvas (см. exportCard.ts) — считаем в одном месте,
+ * чтобы картинки не разъехались.
+ */
+export function photoGeometry(
+  photo: SharePhoto,
+  format: ShareFormat,
+): { left: number; top: number; width: number; height: number } {
   const transform = photo.transforms[format.id] ?? DEFAULT_PHOTO_TRANSFORM;
   const cover = Math.max(format.width / photo.width, format.height / photo.height);
   const width = photo.width * cover * transform.scale;
@@ -48,6 +57,9 @@ function photoStyle(photo: SharePhoto, format: ShareFormat): CSSProperties {
     top: format.height / 2 - height / 2 + transform.offsetY * format.height,
   };
 }
+
+/** Фон карточки под своим фото: видно там, где фото сдвинули с края. */
+export const PHOTO_BACKDROP_COLOR = "#0f172a";
 
 function MetricTiles({ metrics, limit }: { metrics: ShareMetric[]; limit: number }) {
   const visible = metrics.slice(0, limit);
@@ -75,6 +87,7 @@ export function ShareCardView({
   photo,
   font,
   visibleMetricIds,
+  photoDrawnByExporter = false,
 }: {
   data: ShareCardData;
   format: ShareFormat;
@@ -83,6 +96,12 @@ export function ShareCardView({
   font: ShareFontId;
   /** Настроенный пользователем набор метрик; по умолчанию — приоритет данных. */
   visibleMetricIds?: string[];
+  /**
+   * Экспортный режим: фото подложит canvas, а карточка рисуется поверх него на
+   * прозрачном фоне. Так своё фото вообще не попадает в SVG-снимок — обход
+   * бага WebKit, из-за которого первый экспорт на айфоне выходил без фото.
+   */
+  photoDrawnByExporter?: boolean;
 }) {
   const tone = photo ? "dark" : look.tone;
   const metrics = visibleMetricIds
@@ -96,7 +115,11 @@ export function ShareCardView({
     height: format.height,
     fontSize: BASE_FONT_PX,
     fontFamily: shareFontFamily(font),
-    background: photo ? "#0f172a" : look.background,
+    background: photo
+      ? photoDrawnByExporter
+        ? "transparent"
+        : PHOTO_BACKDROP_COLOR
+      : look.background,
     "--s2-tile-bg": photo ? "rgba(15, 23, 42, 0.45)" : look.tileBackground,
     "--s2-accent": look.accent,
     "--s2-accent-text": look.accentText,
@@ -106,7 +129,9 @@ export function ShareCardView({
     <div className={`s2-card s2-card--${format.id} s2-tone-${tone}`} style={rootStyle}>
       {photo ? (
         <>
-          <img className="s2-photo" src={photo.objectUrl} alt="" style={photoStyle(photo, format)} />
+          {photoDrawnByExporter ? null : (
+            <img className="s2-photo" src={photo.objectUrl} alt="" style={photoGeometry(photo, format)} />
+          )}
           <div className="s2-photo-overlay" />
         </>
       ) : null}

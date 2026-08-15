@@ -34,7 +34,7 @@ import {
   type SharePhoto,
 } from "./looks";
 import { canShareFiles, downloadBlob, shareOrDownload } from "./shareOut";
-import { ShareCardView, metricLimit } from "./ShareCardView";
+import { ShareCardView, metricLimit, photoGeometry } from "./ShareCardView";
 import type { ShareFormatId, ShareSubject } from "./types";
 import { SHARE_FORMATS, shareFormat } from "./types";
 
@@ -129,14 +129,21 @@ export function ShareSheet({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, zoomed]);
 
-  // Освобождаем objectUrl фото при закрытии шторки.
+  // Освобождаем objectUrl фото при закрытии шторки — и только при закрытии.
+  // Зависимость от photo здесь была бы ловушкой: перетаскивание фото меняет
+  // объект состояния, не адрес, и уборка отзывала бы живой blob — превью
+  // держится на уже загруженной картинке, а экспорт получал пустоту.
+  const photoUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    photoUrlRef.current = photo?.objectUrl ?? null;
+  }, [photo]);
   useEffect(
     () => () => {
-      if (photo) {
-        URL.revokeObjectURL(photo.objectUrl);
+      if (photoUrlRef.current) {
+        URL.revokeObjectURL(photoUrlRef.current);
       }
     },
-    [photo],
+    [],
   );
 
   // Масштаб превью: карточка нативного размера ужимается transform-ом.
@@ -292,14 +299,18 @@ export function ShareSheet({
     }));
   };
 
+  const exportPhoto = photoActive ? photo : null;
   const exportPng = useCallback(async (): Promise<Blob> => {
     const [, fontCss] = await Promise.all([ensureShareFontsLoaded(font), shareFontEmbedCss(font)]);
     const node = exportRef.current;
     if (!node) {
       throw new Error("Экспортный узел не смонтирован");
     }
-    return exportCardToPng(node, format.width, format.height, fontCss);
-  }, [font, format.width, format.height]);
+    const backdrop = exportPhoto
+      ? { objectUrl: exportPhoto.objectUrl, ...photoGeometry(exportPhoto, format) }
+      : undefined;
+    return exportCardToPng(node, format.width, format.height, fontCss, backdrop);
+  }, [font, format, exportPhoto]);
 
   const systemShare = canShareFiles();
 
@@ -542,9 +553,12 @@ export function ShareSheet({
         </div>
       ) : null}
 
-      {/* Экспортная сцена: карточка в нативном размере, за пределами экрана. */}
+      {/* Экспортная сцена: карточка в нативном размере, за пределами экрана.
+          Своё фото сюда не рисуем — его подложит canvas в exportCard.ts. */}
       <div className="s2-export-stage" aria-hidden="true">
-        <div ref={exportRef}>{fontsReady ? <ShareCardView {...cardProps} /> : null}</div>
+        <div ref={exportRef}>
+          {fontsReady ? <ShareCardView {...cardProps} photoDrawnByExporter /> : null}
+        </div>
       </div>
     </div>
   );
