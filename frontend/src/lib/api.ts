@@ -258,6 +258,17 @@ export type DashboardAnalytics = {
   age_group_records?: LocationRecordsBlock;
   home_distance?: HomeDistance | null;
   last_saturday?: LastSaturday | null;
+  milestone_progress?: MilestoneProgress[];
+};
+
+/** Прогресс к ближайшей невзятой ступени клуба. */
+export type MilestoneProgress = {
+  kind: "runs" | "volunteering" | "locations";
+  current: number;
+  target: number;
+  previous: number;
+  remaining: number;
+  percent: number;
 };
 
 /** Свежайший результат участника — герой дашборда «последняя суббота». */
@@ -276,6 +287,8 @@ export type LastSaturday = {
   /** Разница с прошлым визитом на эту площадку: минус — быстрее. */
   delta_vs_prev_sec: number | null;
   prev_date: string | null;
+  /** Чем примечательна эта пробежка — готовые фразы, не больше двух. */
+  notables: string[];
 };
 
 export type DashboardStats = {

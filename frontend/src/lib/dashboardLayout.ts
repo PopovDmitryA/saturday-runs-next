@@ -20,12 +20,19 @@ export type DashboardAnalyticsGroup = {
   panels: readonly string[];
 };
 
+/**
+ * Карточки, которые в сетке аналитики не рисуются: то же самое лучше
+ * показывает отдельный блок. «До N пробежек» живёт в панели «Ближайшие
+ * цели» — там у цели есть прогресс-бар, а не только остаток.
+ */
+export const DASHBOARD_ANALYTICS_HIDDEN_CARDS: readonly string[] = ["next_milestone"];
+
 export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
   {
     key: "regularity",
     title: "Регулярность",
-    headline: ["saturday_streak", "saturday_consistency", "runs_year", "next_milestone"],
-    rest: ["runs_12m", "days_since_first_run"],
+    headline: ["saturday_streak", "saturday_consistency", "runs_year", "runs_12m"],
+    rest: ["days_since_first_run"],
     panels: ["activity_calendar", "activity_chart"],
   },
   {

@@ -150,6 +150,19 @@ class LastSaturdayResponse(BaseModel):
     # отрицательная — быстрее, положительная — медленнее.
     delta_vs_prev_sec: int | None = None
     prev_date: date | None = None
+    # Чем примечательна эта пробежка — готовые фразы, не больше двух.
+    notables: list[str] = Field(default_factory=list)
+
+
+class MilestoneProgressResponse(BaseModel):
+    """Прогресс к ближайшей невзятой ступени: «до клуба 50 осталось 3»."""
+
+    kind: str
+    current: int
+    target: int
+    previous: int
+    remaining: int
+    percent: float = 0.0
 
 
 class DashboardAnalyticsResponse(BaseModel):
@@ -214,6 +227,7 @@ class DashboardAnalyticsResponse(BaseModel):
     age_group_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
     home_distance: HomeDistanceResponse | None = None
     last_saturday: LastSaturdayResponse | None = None
+    milestone_progress: list[MilestoneProgressResponse] = Field(default_factory=list)
 
 
 class OnThisDayRunResponse(BaseModel):

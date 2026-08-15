@@ -1187,6 +1187,82 @@ a.last-saturday-location:hover {
   color: var(--accent-amber-text);
 }
 
+/* Авто-инсайты «чем примечательна эта пробежка» — фразы, а не цифры. */
+.last-saturday-notables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.last-saturday-notables li {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: var(--tint-indigo-bg);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 0.82rem;
+}
+
+/* «Ближайшие цели»: у каждой ступени виден пройденный путь, а не только
+   остаток — цель мотивирует сильнее, чем факт. */
+.milestone-panel {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.milestone-list {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.milestone-row {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.milestone-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.milestone-goal {
+  font-weight: 650;
+}
+
+.milestone-remaining {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.milestone-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.milestone-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent-indigo);
+}
+
+.milestone-scale {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Тематическая группа аналитики: заголовок + витрина карточек + свои панели.
    Первая группа не отбивается — заголовок сам задаёт ритм. */
 .analytics-group {

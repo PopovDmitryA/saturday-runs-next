@@ -54,6 +54,13 @@ export function LastSaturdayCard({ data, own = false }: { data: LastSaturday; ow
         )}
       </div>
       {deltaChip}
+      {data.notables.length > 0 && (
+        <ul className="last-saturday-notables">
+          {data.notables.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
