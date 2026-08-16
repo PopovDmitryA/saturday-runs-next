@@ -2880,10 +2880,15 @@ export type AdminSiteStatsPageviewsDay = {
   anonymous: number;
 };
 
+// Точный набор привязанных систем: человек попадает ровно в одну строку.
+export type AdminLinkCombinationRow = { codes: string[]; users: number };
+
 export type AdminSiteStatsResponse = {
   period_days: number;
   generated_at: string;
   overview: AdminSiteStatsOverview;
+  link_combinations: AdminLinkCombinationRow[];
+  users_without_links: number;
   users_new_by_day: AdminSiteStatsDayPoint[];
   links_new_by_day: AdminSiteStatsDayPoint[];
   logins_by_day: AdminSiteStatsDayPoint[];

@@ -6,6 +6,7 @@ import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
 import {
   getAdminSiteStats,
   getAdminUsersGeography,
+  type AdminLinkCombinationRow,
   type AdminSiteStatsResponse,
   type AdminUsersGeographyResponse,
 } from "../../lib/api";
@@ -221,6 +222,75 @@ function StatCard({ label, value, hint }: { label: string; value: string | numbe
       <p className="admin-stats-card-label">{label}</p>
       {hint && <p className="muted admin-stats-card-hint">{hint}</p>}
     </article>
+  );
+}
+
+// Наборы привязок: человек попадает ровно в одну строку, поэтому суммы по
+// строкам сходятся с числом учётных записей — это и позволяет сравнивать
+// «только 5 вёрст» с «5 вёрст + parkrun» напрямую.
+function LinkCombinations({
+  rows,
+  withoutLinks,
+  usersTotal,
+}: {
+  rows: AdminLinkCombinationRow[];
+  withoutLinks: number;
+  usersTotal: number;
+}) {
+  const [showEmpty, setShowEmpty] = useState(false);
+  const emptyRows = rows.filter((row) => row.users === 0).length;
+  const visible = showEmpty ? rows : rows.filter((row) => row.users > 0);
+  const share = (users: number) =>
+    usersTotal > 0 ? `${((users / usersTotal) * 100).toFixed(1)}%` : "—";
+
+  return (
+    <div className="admin-stats-combos">
+      <div className="admin-stats-combos-head">
+        <h3 className="admin-stats-chart-title">Наборы привязок</h3>
+        {emptyRows > 0 && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowEmpty((v) => !v)}>
+            {showEmpty ? "Скрыть пустые" : `Показать пустые (${formatInt(emptyRows)})`}
+          </button>
+        )}
+      </div>
+      <p className="muted admin-stats-combos-lead">
+        Набор точный: человек с 5 вёрстами и S95 считается только в строке «5 вёрст + с95».
+      </p>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Систем</th>
+              <th>Набор</th>
+              <th>Пользователей</th>
+              <th>Доля</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((row) => (
+              <tr key={row.codes.join("+")} className={row.users === 0 ? "muted" : undefined}>
+                <td>{row.codes.length}</td>
+                <td>
+                  <span className="admin-stats-combo-codes">
+                    {row.codes.map((code) => (
+                      <PlatformBadge code={code} key={code} />
+                    ))}
+                  </span>
+                </td>
+                <td>{formatInt(row.users)}</td>
+                <td className="muted">{share(row.users)}</td>
+              </tr>
+            ))}
+            <tr>
+              <td>0</td>
+              <td className="muted">без привязок</td>
+              <td>{formatInt(withoutLinks)}</td>
+              <td className="muted">{share(withoutLinks)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -557,6 +627,12 @@ function AdminStatsContent() {
                 </li>
               ))}
             </ul>
+
+            <LinkCombinations
+              rows={data.link_combinations}
+              withoutLinks={data.users_without_links}
+              usersTotal={overview.users_total}
+            />
           </section>
 
           <GeographySection periodDays={periodDays} />

@@ -50,10 +50,19 @@ class AdminSiteStatsPageviewsDay(BaseModel):
     anonymous: int = 0
 
 
+class AdminLinkCombinationRow(BaseModel):
+    """Точный набор привязанных систем и сколько людей ровно на нём."""
+
+    codes: list[str]
+    users: int = 0
+
+
 class AdminSiteStatsResponse(BaseModel):
     period_days: int
     generated_at: datetime
     overview: AdminSiteStatsOverview
+    link_combinations: list[AdminLinkCombinationRow] = Field(default_factory=list)
+    users_without_links: int = 0
     users_new_by_day: list[AdminSiteStatsDayPoint]
     links_new_by_day: list[AdminSiteStatsDayPoint]
     logins_by_day: list[AdminSiteStatsDayPoint]
