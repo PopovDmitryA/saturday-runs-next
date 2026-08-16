@@ -30,6 +30,7 @@ from sqlalchemy import func, text, tuple_
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, LocationOpening, Platform, RunResult, User
+from app.services.location_catalog_service import LocationCatalogIndex
 
 # Системы, где открытие видно из протокола: событие №1 и есть первый старт.
 AUTO_OPENING_PLATFORMS: tuple[str, ...] = ("five_verst", "parkrun", "runpark")
@@ -150,6 +151,60 @@ def _opening_events(
     return {(event.location_id, int(event.event_number or 0)): event for event in events}
 
 
+_EARLIER_OPENINGS_SQL = f"""
+SELECT e.id AS event_id, e.location_id, e.event_date, p.code AS platform_code, l.name AS location_name
+FROM events e
+JOIN platforms p ON p.id = e.platform_id
+JOIN locations l ON l.id = e.location_id
+LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
+{OPENING_EVENT_JOIN}
+WHERE e.is_test_event = false
+  AND ec.secondary_event_id IS NULL
+  AND {OPENING_EVENT_CONDITION}
+  AND NOT EXISTS (
+    SELECT 1 FROM events e_prev
+    WHERE e_prev.location_id = e.location_id
+      AND e_prev.event_number = e.event_number
+      AND e_prev.is_test_event = false
+      AND (e_prev.event_date, e_prev.id) < (e.event_date, e.id)
+  )
+"""
+
+
+def _first_opening_by_identity(db: Session) -> dict[str, dict[str, Any]]:
+    """Самое раннее открытие каждой ФИЗИЧЕСКОЙ локации (ключ каталога).
+
+    Рейтинг засчитывает у локации ровно одно открытие — самое раннее из её
+    систем (решение Дмитрия 16.08.2026). Админке это нужно, чтобы честно
+    сказать: «здесь размечать нечего, парк уже открывали в parkrun» — иначе
+    номер проставляется впустую.
+    """
+    index = LocationCatalogIndex(db)
+    rows = db.execute(text(_EARLIER_OPENINGS_SQL)).all()
+    locations = {
+        location.id: location
+        for location in db.query(Location)
+        .filter(Location.id.in_([row[1] for row in rows]))
+        .all()
+    }
+    first: dict[str, dict[str, Any]] = {}
+    for event_id, location_id, event_date, platform_code, location_name in rows:
+        location = locations.get(location_id)
+        if location is None:
+            continue
+        identity = index.canonical_identity_key(location, platform_code)
+        current = first.get(identity)
+        if current is None or (event_date, event_id) < (current["event_date"], current["event_id"]):
+            first[identity] = {
+                "event_id": event_id,
+                "location_id": location_id,
+                "event_date": event_date,
+                "platform_code": platform_code,
+                "location_name": location_name,
+            }
+    return first
+
+
 def list_openings(
     db: Session,
     *,
@@ -201,6 +256,12 @@ def list_openings(
     opening_ids = [event.id for event in opening_events.values()]
     finishers = _finishers_by_event(db, list({*preview_ids, *opening_ids}))
 
+    # Кто в этой физической локации «застолбил» открытие: если самое раннее
+    # открытие площадки принадлежит другой системе, наша разметка в рейтинг не
+    # пойдёт, и админка обязана это показать.
+    catalog_index = LocationCatalogIndex(db)
+    first_by_identity = _first_opening_by_identity(db)
+
     admins = {
         user.id: user.display_name
         for user in db.query(User)
@@ -217,6 +278,15 @@ def list_openings(
         number = resolved_numbers[location.id]
         opening = opening_events.get((location.id, number)) if number is not None else None
         preview = previews.get(location.id, [])
+        identity = catalog_index.canonical_identity_key(location, platform)
+        first_opening = first_by_identity.get(identity)
+        # Открытие этой физической локации уже засчитано другой системе —
+        # разметка здесь на рейтинг не повлияет.
+        earlier = (
+            first_opening
+            if first_opening is not None and first_opening["location_id"] != location.id
+            else None
+        )
         items.append(
             {
                 "location_id": location.id,
@@ -240,6 +310,18 @@ def list_openings(
                 # рейтинге такая площадка молча не даёт открытия, поэтому
                 # админка обязана показать это явно.
                 "opening_event_missing": number is not None and opening is None,
+                # Открытие этой локации уже засчитано другой системе (парк
+                # открывали раньше): здесь размечать нечего, в рейтинг пойдёт то,
+                # раннее открытие.
+                "earlier_opening": (
+                    {
+                        "platform_code": earlier["platform_code"],
+                        "event_date": earlier["event_date"],
+                        "location_name": earlier["location_name"],
+                    }
+                    if earlier is not None
+                    else None
+                ),
                 "note": override.note if override is not None else None,
                 "updated_at": override.updated_at if override is not None else None,
                 "updated_by": (

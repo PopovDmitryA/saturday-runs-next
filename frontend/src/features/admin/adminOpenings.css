@@ -60,6 +60,16 @@
   color: var(--accent-indigo-text);
 }
 
+/* «В зачёте раньше»: открытие этой физической локации уже за другой системой,
+   и разметка здесь на рейтинг не влияет. */
+.admin-openings-earlier {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .admin-openings-events {
   list-style: none;
   margin: 0;

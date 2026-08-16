@@ -276,10 +276,10 @@ METRIC_META: dict[str, dict[str, str]] = {
         "description": (
             "Кто чаще всех бывал на ТОРЖЕСТВЕННОМ ОТКРЫТИИ локации. У 5 вёрст, "
             "parkrun и RunPark открытие — это забег №1, у С95 оно размечено "
-            "вручную: по номерам забегов там открытие не опознать. Одна и та же "
-            "локация могла открываться дважды — сначала в одной системе, потом "
-            "в другой; это два разных открытия. А один и тот же старт, попавший "
-            "в протоколы двух систем, остаётся одним открытием."
+            "вручную: по номерам забегов там открытие не опознать. У локации "
+            "открытие одно: парк открывается один раз, и если он открывался "
+            "ещё во времена parkrun, то это оно и есть — первый старт следующей "
+            "системы на той же локации открытием уже не считается."
         ),
     },
     "wins": {
@@ -684,7 +684,8 @@ SELECT DISTINCT
     rr.participant_id AS participant_id,
     p.code AS platform_code,
     e.location_id AS location_id,
-    e.event_date AS event_date
+    e.event_date AS event_date,
+    e.id AS event_id
 FROM run_results rr
 JOIN events e ON e.id = rr.event_id
 JOIN platforms p ON p.id = e.platform_id
@@ -709,6 +710,33 @@ WHERE e.is_test_event = false
   /*PIDS_FILTER*/
 """
 )
+
+# Все события-открытия — без привязки к участникам. Нужны, чтобы выбрать ОДНО
+# открытие на физическую локацию: у площадки, побывавшей и parkrun'ом, и
+# «5 вёрст», открытие всё равно одно — самое раннее (решение Дмитрия
+# 16.08.2026). Считать минимум по строкам участников нельзя: на открытии могли
+# бежать только те, кого рейтинг не допускает (иностранцы parkrun), и тогда
+# «самым ранним» ошибочно стало бы открытие следующей системы.
+_OPENING_EVENTS_SQL = f"""
+SELECT
+    e.id AS event_id,
+    e.location_id AS location_id,
+    e.event_date AS event_date
+FROM events e
+JOIN platforms p ON p.id = e.platform_id
+LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
+{OPENING_EVENT_JOIN}
+WHERE e.is_test_event = false
+  AND ec.secondary_event_id IS NULL
+  AND {OPENING_EVENT_CONDITION}
+  AND NOT EXISTS (
+    SELECT 1 FROM events e_prev
+    WHERE e_prev.location_id = e.location_id
+      AND e_prev.event_number = e.event_number
+      AND e_prev.is_test_event = false
+      AND (e_prev.event_date, e_prev.id) < (e.event_date, e.id)
+  )
+"""
 
 # Волонтёрские визиты по локациям — та же форма строк, что у беговых, так что
 # рейтинг волонтёрского туризма считается тем же кодом (_collect_location_entities).
@@ -1393,6 +1421,26 @@ def _manual_home_identity_keys(db: Session) -> dict[UUID, str]:
     return {user_id: str(key) for user_id, key in rows if key}
 
 
+def _opening_event_ids(
+    db: Session, identity_by_location: dict[UUID, str]
+) -> set[UUID]:
+    """События-открытия, по одному на физическую локацию.
+
+    Локация открывается один раз: если площадка успела побывать parkrun'ом, а
+    потом стала «5 вёрст», открытие у неё всё равно одно — самое раннее
+    (решение Дмитрия 16.08.2026). Из нескольких открытий одной канонической
+    площадки оставляем первое по дате; ничью разводит id события, чтобы выбор
+    не «дышал» между пересчётами.
+    """
+    first: dict[str, tuple[date, UUID]] = {}
+    for event_id, location_id, event_date in db.execute(text(_OPENING_EVENTS_SQL)).all():
+        identity = identity_by_location.get(location_id, str(location_id))
+        current = first.get(identity)
+        if current is None or (event_date, event_id) < current:
+            first[identity] = (event_date, event_id)
+    return {event_id for _date, event_id in first.values()}
+
+
 def _row_params(db: Session, week_start: date, **extra: object) -> dict[str, object]:
     """Общие параметры сырых выборок рейтингов.
 
@@ -1433,6 +1481,9 @@ class _MetricSource:
         self._manual_homes: dict[UUID, str] | None = None
         self._home_eligible: set[str] | None = None
         self._names: dict[UUID, str | None] | None = None
+        # Открытия физических локаций (по одному на площадку) — общий справочник
+        # рейтинга открытий, не зависящий от фильтров.
+        self._opening_events: set[UUID] | None = None
         self._rows: dict[str, Sequence[Row[Any]]] = {}
         # Волонтёрские выборки зависят от фильтра ролей, поэтому кэшируются
         # по нему: базовый вариант (None) и каждый набор ролей — своя запись.
@@ -1472,6 +1523,20 @@ class _MetricSource:
         if self._home_eligible is None:
             self._home_eligible = _home_eligible_identities(self.db)
         return self._home_eligible
+
+    def opening_event_ids(self) -> set[UUID]:
+        """События, которые считаются открытием СВОЕЙ физической локации.
+
+        У локации открытие одно, даже если систем на ней было несколько: парк
+        открывается один раз, а смена системы — это не новое открытие (решение
+        Дмитрия 16.08.2026). Из нескольких открытий одной канонической площадки
+        оставляем самое раннее; ничью по дате разводит id, чтобы выбор не
+        «дышал» между пересчётами.
+        """
+        if self._opening_events is None:
+            identity_by_location, _names, _slugs = self.identity_maps()
+            self._opening_events = _opening_event_ids(self.db, identity_by_location)
+        return self._opening_events
 
     def names(self) -> dict[UUID, str | None]:
         """Имена всех участников: справочник целиком дешевле, чем гигантский IN
@@ -1513,6 +1578,7 @@ class _MetricSource:
         привязок — их переиспользует следующий рейтинг."""
         self._rows.clear()
         self._names = None
+        self._opening_events = None
         self._occasion_rows.clear()
         self._parkrun_volunteering.clear()
 
@@ -1696,31 +1762,42 @@ def _collect_numeric_entities(
 def _collect_opening_entities(
     source: _MetricSource, platform: str = "all"
 ) -> dict[str, _Entity]:
-    """Открытия площадок: счёт первых стартов, где участник бежал.
+    """Открытия локаций: счёт торжественных открытий, где участник бежал.
 
-    Считаем СОБЫТИЯ, а не площадки: открытие в parkrun и открытие в 5 вёрст на
-    одной физической точке — два разных события (в отличие от туристических
-    рейтингов, где такая площадка схлопывается в одну). Поэтому строки не идут
-    через _collect_location_entities, хотя выборка похожа.
+    Одна локация — максимум одно открытие (решение Дмитрия 16.08.2026): парк
+    открывается один раз, и если он открывался ещё во времена parkrun, то
+    открытие именно то, а первый старт следующей системы на той же площадке
+    открытием не считается. Какие события прошли этот отбор — знает
+    source.opening_event_ids().
 
-    Заодно заполняется «Последнее открытие» — площадка и дата самого свежего
-    первого старта участника (тот же слот строки, что «Последняя победа»).
+    Заодно заполняется «Последнее открытие» — локация и дата самого свежего
+    открытия участника (тот же слот строки, что «Последняя победа»).
     """
     links = source.links()
     identity_by_location, identity_names, identity_slugs = source.identity_maps()
     names = source.names()
+    opening_events = source.opening_event_ids()
 
     entities: dict[str, _Entity] = {}
     last_dates: dict[str, dict[str, date]] = {}
     meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
     per_entity: dict[str, dict[str, list[int]]] = {}
+    # Учтённые пары «строка рейтинга × открытие»: у зарегистрированного строка
+    # склеена из нескольких участников, и на одном открытии могли бежать двое
+    # его профилей (кросслинк такую пару не всегда ловит). Балл всё равно один.
+    counted: set[tuple[str, UUID]] = set()
 
-    for pid, code, location_id, event_date in source.rows(_OPENING_ROWS_SQL):
+    for pid, code, location_id, event_date, event_id in source.rows(_OPENING_ROWS_SQL):
         if platform != "all" and code != platform:
+            continue
+        if event_id not in opening_events:
             continue
         link = links.get(pid)
         key = _entity_key(pid, link)
         meta.setdefault(key, (pid, link))
+        if (key, event_id) in counted:
+            continue
+        counted.add((key, event_id))
         bucket = per_entity.setdefault(key, {}).setdefault(code, [0, 0])
         bucket[0] += 1
         if event_date >= source.week_start:
@@ -3369,7 +3446,11 @@ def _my_win_values(
 def _my_opening_values(
     db: Session, participant_ids: list[UUID], week_start: date, platform: str = "all"
 ) -> tuple[dict[str, list[int]], int, int, _LastWin | None]:
-    """Открытия залогиненного: значения по системам, «всего» и последнее открытие."""
+    """Открытия залогиненного: значения по системам, «всего» и последнее открытие.
+
+    Правило то же, что в таблице: одна локация — максимум одно открытие, и это
+    самое раннее из её систем (см. _opening_event_ids).
+    """
     if not participant_ids:
         return {}, 0, 0, None
     sql = _OPENING_ROWS_SQL.replace(
@@ -3379,11 +3460,16 @@ def _my_opening_values(
     if not rows:
         return {}, 0, 0, None
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
+    opening_events = _opening_event_ids(db, identity_by_location)
     values: dict[str, list[int]] = {}
     last_dates: dict[str, date] = {}
-    for _pid, code, location_id, event_date in rows:
+    counted: set[UUID] = set()
+    for _pid, code, location_id, event_date, event_id in rows:
         if platform != "all" and code != platform:
             continue
+        if event_id not in opening_events or event_id in counted:
+            continue
+        counted.add(event_id)
         bucket = values.setdefault(code, [0, 0])
         bucket[0] += 1
         if event_date >= week_start:

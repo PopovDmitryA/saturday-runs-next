@@ -19,6 +19,18 @@ class LocationOpeningEvent(BaseModel):
     is_opening: bool = False
 
 
+class EarlierOpening(BaseModel):
+    """Открытие той же физической локации, случившееся раньше в другой системе.
+
+    У локации открытие одно — самое раннее; если оно за другой системой, наша
+    разметка в рейтинг не пойдёт.
+    """
+
+    platform_code: str
+    event_date: date
+    location_name: str
+
+
 class LocationOpeningItem(BaseModel):
     location_id: UUID
     location_name: str
@@ -33,6 +45,8 @@ class LocationOpeningItem(BaseModel):
     opening_event: LocationOpeningEvent | None = None
     # Номер задан, а события с таким номером у площадки нет (опечатка в разметке).
     opening_event_missing: bool = False
+    # Открытие этой локации уже засчитано другой системе — размечать нечего.
+    earlier_opening: EarlierOpening | None = None
     note: str | None = None
     updated_at: datetime | None = None
     updated_by: str | None = None

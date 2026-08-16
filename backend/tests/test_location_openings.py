@@ -11,6 +11,8 @@ from app.models import (
     Event,
     EventCrosslink,
     Location,
+    LocationCatalog,
+    LocationCatalogLink,
     LocationOpening,
     Participant,
     Platform,
@@ -72,6 +74,7 @@ def _seed_location_with_runs(
     platform_code: str,
     numbers: list[int],
     participant_id: UUID | None = None,
+    start_date: date = date(2024, 1, 6),
 ) -> tuple[UUID, UUID, dict[int, UUID]]:
     """Площадка с несколькими стартами, участник бежал на каждом из numbers."""
     suffix = str(uuid4().int % 1_000_000)
@@ -105,7 +108,7 @@ def _seed_location_with_runs(
             platform_id=platform.id,
             location_id=location.id,
             external_event_key=f"openings-event-{suffix}-{index}",
-            event_date=date(2024, 1, 6) + timedelta(days=index),
+            event_date=start_date + timedelta(days=index),
             event_number=number,
             title="Openings Event",
         )
@@ -193,8 +196,79 @@ def test_openings_count_once_when_number_repeats(db_session: Session) -> None:
     assert last is not None and last.on_date == date(2024, 1, 6)
 
 
+def _link_locations_as_one_place(db_session: Session, location_ids: list[UUID]) -> None:
+    """Связать локации разных систем в одну физическую точку каталога."""
+    catalog = LocationCatalog(
+        canonical_name=f"Openings Park {uuid4().int % 1_000_000}",
+        active_platform="five_verst",
+        is_closed=False,
+    )
+    db_session.add(catalog)
+    db_session.flush()
+    for location_id in location_ids:
+        location = db_session.query(Location).filter(Location.id == location_id).one()
+        db_session.add(
+            LocationCatalogLink(
+                catalog_id=catalog.id,
+                platform_id=location.platform_id,
+                external_key=location.external_key,
+                location_id=location.id,
+            )
+        )
+    db_session.flush()
+
+
+def test_one_place_gives_one_opening_even_in_two_systems(db_session: Session) -> None:
+    """Локация открывается один раз: parkrun-эра и «5 вёрст» — одно открытие.
+
+    Решение Дмитрия 16.08.2026: парк открывали при parkrun — значит открытие
+    именно то, а первый старт следующей системы им уже не считается.
+    """
+    # parkrun-эра раньше «5 вёрст» — она и должна дать открытие.
+    participant_id, parkrun_loc, _events = _seed_location_with_runs(
+        db_session, platform_code="parkrun", numbers=[1], start_date=date(2018, 5, 12)
+    )
+    _same, five_verst_loc, _events2 = _seed_location_with_runs(
+        db_session,
+        platform_code="five_verst",
+        numbers=[1],
+        participant_id=participant_id,
+        start_date=date(2022, 4, 2),
+    )
+    _link_locations_as_one_place(db_session, [parkrun_loc, five_verst_loc])
+
+    values, total, _week, _last = _my_opening_values(
+        db_session, [participant_id], date(2026, 8, 8)
+    )
+    assert total == 1
+    # В зачёт идёт самое раннее открытие — parkrun (его старт засеян первым).
+    assert values["parkrun"][0] == 1
+    assert "five_verst" not in values
+
+
+def test_later_system_opening_does_not_count(db_session: Session) -> None:
+    """Пришёл только на первый старт следующей системы — открытия не засчитано."""
+    other_runner, parkrun_loc, _events = _seed_location_with_runs(
+        db_session, platform_code="parkrun", numbers=[1], start_date=date(2018, 5, 12)
+    )
+    latecomer, five_verst_loc, _events2 = _seed_location_with_runs(
+        db_session, platform_code="five_verst", numbers=[1], start_date=date(2022, 4, 2)
+    )
+    _link_locations_as_one_place(db_session, [parkrun_loc, five_verst_loc])
+
+    _values, total, _week, _last = _my_opening_values(
+        db_session, [latecomer], date(2026, 8, 8)
+    )
+    assert total == 0
+    # А тому, кто был на самом открытии, оно засчитано.
+    _values, total, _week, _last = _my_opening_values(
+        db_session, [other_runner], date(2026, 8, 8)
+    )
+    assert total == 1
+
+
 def test_openings_count_each_system_separately(db_session: Session) -> None:
-    """Площадка, открывшаяся в двух системах, даёт два открытия."""
+    """Разные физические локации дают по открытию каждая — их не схлопывает."""
     participant_id, _loc, _events = _seed_location_with_runs(
         db_session, platform_code="five_verst", numbers=[1]
     )

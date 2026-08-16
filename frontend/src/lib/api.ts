@@ -1324,6 +1324,15 @@ export type LocationOpeningEvent = {
   is_opening: boolean;
 };
 
+// Открытие той же физической локации, случившееся раньше в другой системе:
+// у локации открытие одно (самое раннее), и тогда разметка здесь ни на что
+// не влияет.
+export type EarlierOpening = {
+  platform_code: string;
+  event_date: string;
+  location_name: string;
+};
+
 export type LocationOpeningItem = {
   location_id: string;
   location_name: string;
@@ -1336,6 +1345,7 @@ export type LocationOpeningItem = {
   opening_source: "manual" | "auto" | "none";
   opening_event: LocationOpeningEvent | null;
   opening_event_missing: boolean;
+  earlier_opening: EarlierOpening | null;
   note: string | null;
   updated_at: string | null;
   updated_by: string | null;
