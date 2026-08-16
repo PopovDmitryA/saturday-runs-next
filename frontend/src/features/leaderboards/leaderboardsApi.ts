@@ -196,7 +196,10 @@ export type LeaderboardResponse = {
   latest_event_date: string | null;
   week_start: string | null;
   built_at: string | null;
-  /** Через сколько часов после built_at таблица пересчитается (TTL снапшота). */
+  /**
+   * Как часто таблица пересчитывается по расписанию. Новый протокол доезжает
+   * быстрее: его пересчёт будит сам синк, это число — верхняя граница.
+   */
   refresh_hours?: number;
 };
 

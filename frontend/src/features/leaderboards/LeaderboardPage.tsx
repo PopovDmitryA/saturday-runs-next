@@ -1085,9 +1085,10 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     me?.included === true && tableCutTotal != null && me.total < tableCutTotal;
   const missingToTable = belowTableCut && me ? tableCutTotal - me.total + 1 : 0;
 
-  // Окно пересчёта таблицы (TTL снапшота) приходит с бэкенда: витрина обещает
-  // участнику срок и не должна хранить собственную копию этого числа.
-  const refreshHours = data?.refresh_hours ?? 6;
+  // Как часто таблица пересчитывается по расписанию — приходит с бэкенда:
+  // витрина обещает участнику срок и не должна хранить собственную копию этого
+  // числа. Свежий протокол доезжает быстрее — его пересчёт будит сам синк.
+  const refreshHours = data?.refresh_hours ?? 2;
   // Смена дома, до которой снапшот ещё не доехал: строки таблицы посчитаны
   // раньше, чем человек переехал, — значит километры в них от прежнего дома.
   const homeChangedAt = isHomeDistance ? (me?.home_location_changed_at ?? null) : null;
@@ -1154,7 +1155,8 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                   честнее сказать заранее, а не оставлять человека гадать. */}
               {isHomeDistance && (
                 <p className="lb-meta muted">
-                  Таблица пересчитывается раз в{" "}
+                  Таблица пересчитывается сразу после того, как в систему приезжает
+                  новый протокол, и в любом случае раз в{" "}
                   {pluralizeRu(refreshHours, ["час", "часа", "часов"])}: если сменить
                   домашнюю локацию в настройках, километры в рейтинге обновятся в
                   пределах этого срока.

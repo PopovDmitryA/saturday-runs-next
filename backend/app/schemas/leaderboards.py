@@ -95,8 +95,9 @@ class LeaderboardResponse(BaseModel):
     latest_event_date: str | None
     week_start: str | None
     built_at: str | None
-    # Через сколько часов после built_at таблица пересчитается (TTL снапшота).
-    refresh_hours: int = 6
+    # Как часто таблица пересчитывается по расписанию (страховка сверх
+    # событийного прогрева от синка — см. REFRESH_INTERVAL_HOURS).
+    refresh_hours: int = 2
 
 
 class MyLeaderboardRowResponse(BaseModel):

@@ -176,7 +176,11 @@ celery_app.conf.update(
             "options": {"queue": "runpark"},
         },
         # Прогрев кэша рейтингов (TTL 6ч): каждые 2 часа, со сдвигом от :00,
-        # чтобы не толкаться с runpark-latest на том же воркере.
+        # чтобы не толкаться с runpark-latest на том же воркере. Это страховка и
+        # обещанный витриной срок пересчёта (REFRESH_INTERVAL_HOURS в
+        # app/services/leaderboard_service.py — парное место, менять вместе);
+        # свежие протоколы доезжают быстрее: каждый синк, записавший результаты,
+        # будит тот же прогрев сам (schedule_leaderboards_warm).
         "leaderboards-warm-cache": {
             "task": "leaderboards.warm_cache",
             "schedule": crontab(minute=20, hour="*/2"),

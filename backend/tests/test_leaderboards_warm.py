@@ -92,6 +92,62 @@ def test_warm_survives_failing_variant(
     assert journal[-1] == "close"
 
 
+def test_sync_schedules_warm_once_per_debounce_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Серия синков подряд ставит один пересчёт, а не очередь из полных прогонов.
+
+    В субботу протоколы приезжают ежечасно и сразу тремя системами (5 вёрст,
+    S95, RunPark) — без склейки каждый синк уводил бы воркер на полную сетку.
+    """
+    sent: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        leaderboards_warm.warm_leaderboards_cache,
+        "apply_async",
+        lambda **kwargs: sent.append(kwargs),
+    )
+
+    assert leaderboards_warm.schedule_leaderboards_warm() is True
+    assert leaderboards_warm.schedule_leaderboards_warm() is False
+
+    assert len(sent) == 1
+    assert sent[0]["queue"] == "runpark"
+    # Пауза перед стартом — чтобы протоколы соседних систем попали в тот же прогон.
+    assert sent[0]["countdown"] > 0
+
+
+def test_warm_skips_when_another_run_holds_lock(
+    journal: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Прогон от синка и прогон по расписанию не считают одну сетку вдвоём."""
+    monkeypatch.setattr(
+        leaderboards_warm,
+        "refresh_leaderboard_cache",
+        lambda *_args, **_kwargs: {"entrants": 1},
+    )
+    assert leaderboards_warm._acquire_running_lock() is True
+
+    results = leaderboards_warm.warm_leaderboards_cache()
+
+    assert results == {"skipped": "already_running"}
+    assert journal == [], "занятый замок не должен пускать прогон к базе"
+
+
+def test_warm_releases_lock_for_the_next_run(
+    journal: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Замок снимается по окончании — иначе следующий прогрев молчал бы до TTL."""
+    monkeypatch.setattr(
+        leaderboards_warm,
+        "refresh_leaderboard_cache",
+        lambda *_args, **_kwargs: {"entrants": 1},
+    )
+
+    leaderboards_warm.warm_leaderboards_cache()
+
+    assert leaderboards_warm._acquire_running_lock() is True
+
+
 def test_warm_survives_broken_session_close(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ошибка на close() не отменяет уже разложенный по Redis прогрев.
 

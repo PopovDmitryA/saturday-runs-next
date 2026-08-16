@@ -29,8 +29,10 @@ def runpark_sync_latest() -> dict[str, object]:
             if result.run_results_upserted > 0:
                 db.commit()
                 from app.workers.tasks.dashboard_warm import schedule_dashboard_warm
+                from app.workers.tasks.leaderboards_warm import schedule_leaderboards_warm
 
                 schedule_dashboard_warm(started_at)
+                schedule_leaderboards_warm()
             return {
                 "since": since.isoformat(),
                 "events_total": result.events_total,

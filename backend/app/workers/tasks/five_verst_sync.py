@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 def _schedule_dashboard_warm(started_at: datetime) -> None:
-    """Отдать прогрев дашбордов в фоновую задачу.
+    """Отдать прогрев дашбордов и рейтингов в фоновые задачи.
 
     Синк знает только момент своего старта; кого именно затронули новые
     протоколы — разбирается dashboard_warm по run_results.fetched_at. Раньше
@@ -36,8 +36,10 @@ def _schedule_dashboard_warm(started_at: datetime) -> None:
     первому зашедшему в профиль.
     """
     from app.workers.tasks.dashboard_warm import schedule_dashboard_warm
+    from app.workers.tasks.leaderboards_warm import schedule_leaderboards_warm
 
     schedule_dashboard_warm(started_at)
+    schedule_leaderboards_warm()
 
 
 def _protocol_limit(settings) -> int | None:
