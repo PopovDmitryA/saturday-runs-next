@@ -12291,15 +12291,21 @@ button.badge-platform-btn:hover {
 .s2-overlay {
   position: fixed;
   inset: 0;
+  /* iOS Safari отсчитывает fixed от «большого» вьюпорта — с inset: 0 низ
+     шторки уезжал под нижнюю панель браузера и до него было не доскроллить.
+     dvh следит за реально видимой высотой. */
+  height: 100dvh;
   z-index: 320;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   background: rgba(15, 23, 42, 0.45);
   backdrop-filter: blur(3px);
   animation: modal-fade-in 0.18s ease;
-  padding-left: var(--modal-center-offset-left, 0);
-  padding-right: var(--modal-center-offset-right, 0);
+  padding: max(0.8rem, env(safe-area-inset-top, 0px)) 0.8rem
+    max(0.8rem, env(safe-area-inset-bottom, 0px));
+  padding-left: calc(0.8rem + min(var(--modal-center-offset-left, 0px), 22vw));
+  padding-right: calc(0.8rem + min(var(--modal-center-offset-right, 0px), 22vw));
 }
 
 .s2-sheet {
@@ -12307,33 +12313,35 @@ button.badge-platform-btn:hover {
   color: var(--text);
   width: 100%;
   max-width: 30rem;
-  max-height: 94dvh;
-  border-radius: 20px 20px 0 0;
-  padding: 0.9rem 1.1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  max-height: 100%;
+  border-radius: 20px;
+  padding: 0.9rem 1.1rem 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
   overflow-y: auto;
+  overscroll-behavior: contain;
   animation: modal-slide-in 0.22s ease;
 }
 
-@media (min-width: 700px) {
-  .s2-overlay {
-    align-items: center;
-    padding-top: 2vh;
-    padding-bottom: 2vh;
-  }
-
-  .s2-sheet {
-    border-radius: 20px;
-    max-height: 96vh;
-  }
+/* Содержимое шторки не сжимается: без этого flex-контейнер вместо прокрутки
+   плющил блоки — кругляши оформления становились овалами, а подсказка
+   заезжала под них, стоило раскрыть «Настроить». */
+.s2-sheet > * {
+  flex: none;
 }
 
 .s2-sheet-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* Шапка с крестиком остаётся на виду при прокрутке длинного содержимого. */
+  position: sticky;
+  top: -0.9rem;
+  z-index: 2;
+  margin: -0.9rem -1.1rem 0;
+  padding: 0.9rem 1.1rem 0.4rem;
+  background: var(--surface);
 }
 
 .s2-sheet-title {
@@ -12388,6 +12396,7 @@ button.badge-platform-btn:hover {
 
 .s2-looks {
   display: flex;
+  align-items: center;
   gap: 0.55rem;
   overflow-x: auto;
   padding: 0.15rem 0.1rem;
@@ -12413,6 +12422,7 @@ button.badge-platform-btn:hover {
 }
 
 .s2-look-swatch {
+  flex: none;
   width: 2.6rem;
   height: 2.6rem;
   border-radius: 50%;
