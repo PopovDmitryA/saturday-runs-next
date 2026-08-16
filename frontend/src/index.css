@@ -1345,7 +1345,16 @@ a.on-this-day-location {
   color: var(--neutral-soft);
 }
 
-.analytics-chart-tooltip-wrap:hover .analytics-chart-tooltip,
+/* Только там, где мышь есть. На телефоне :hover прилипает после тапа, и рядом
+   с портальной подсказкой тач-режима (TapTooltipBubble) открывалась вторая,
+   та же самая — вжатая в свою клетку и обрезанная краем экрана. */
+@media (hover: hover) {
+  .analytics-chart-tooltip-wrap:hover .analytics-chart-tooltip {
+    display: flex;
+    opacity: 1;
+  }
+}
+
 .analytics-chart-tooltip-wrap:focus-within .analytics-chart-tooltip {
   display: flex;
   opacity: 1;
@@ -4404,6 +4413,13 @@ button.badge-platform-btn:hover {
    для элементов у верхней кромки экрана. */
 .tap-tooltip {
   max-width: min(20rem, calc(100vw - 1rem));
+}
+
+/* Хвостик — не по центру плашки, а под элементом, который её открыл: у краёв
+   экрана подсказка вжимается в экран, и центр плашки от элемента уезжает.
+   Смещение считает TapTooltipBubble, здесь только точка приложения. */
+.tap-tooltip::after {
+  left: var(--tap-tooltip-arrow, 50%);
 }
 
 .tap-tooltip-title {
