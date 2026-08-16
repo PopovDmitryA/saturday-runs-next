@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+from itertools import combinations
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -17,6 +18,7 @@ from app.models import (
     VolunteerResult,
 )
 from app.services.admin_home_location_service import resolve_admin_home_locations
+from app.services.admin_site_stats_service import _combo_sort_key, _link_combinations
 from app.services.admin_users_geo_stats_service import get_admin_users_geography
 from app.services.location_catalog_service import LocationCatalogIndex
 
@@ -245,3 +247,32 @@ def test_geography_groups_registrations_by_city(db_session: Session) -> None:
     locations = {str(row["name"]): row for row in payload["locations"]}  # type: ignore[union-attr]
     assert locations["Городская"]["users"] == 3
     assert locations["Городская"]["users_new_period"] == 2
+
+
+def test_link_combinations_cover_every_platform_set(db_session: Session) -> None:
+    """Считаем ВСЕ сочетания систем, а не только те, где есть 5 вёрст.
+
+    Человек с С95 и parkrun должен попасть в свою строку — и ровно в одну:
+    наборы точные, иначе суммы по строкам разъехались бы с числом людей.
+    """
+    user = _user(db_session)
+    for platform_code in ("s95", "parkrun"):
+        _participant(db_session, user, platform_code)
+    db_session.flush()
+
+    rows = _link_combinations(db_session)
+    by_codes = {tuple(row["codes"]): int(row["users"]) for row in rows}  # type: ignore[arg-type]
+
+    # Все 15 непустых сочетаний четырёх систем присутствуют, даже нулевые.
+    known = ("five_verst", "s95", "parkrun", "runpark")
+    for size in range(1, len(known) + 1):
+        for combo in combinations(known, size):
+            assert tuple(sorted(combo, key=_combo_sort_key)) in by_codes
+
+    assert by_codes[("s95", "parkrun")] >= 1
+    # Тот же человек не должен посчитаться ещё и в односистемных строках —
+    # проверяем через сумму: она равна числу людей с привязками.
+    linked_users = (
+        db_session.query(PlatformLink.user_id).filter(PlatformLink.user_id.isnot(None)).distinct().count()
+    )
+    assert sum(by_codes.values()) == linked_users

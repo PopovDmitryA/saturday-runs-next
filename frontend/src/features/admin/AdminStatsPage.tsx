@@ -237,9 +237,11 @@ function LinkCombinations({
   withoutLinks: number;
   usersTotal: number;
 }) {
-  const [showEmpty, setShowEmpty] = useState(false);
+  // По умолчанию видно ВСЕ сочетания, включая нулевые: «с95 + parkrun = 0» —
+  // такой же ответ, как непустая строка. Прятать нули можно кнопкой.
+  const [hideEmpty, setHideEmpty] = useState(false);
   const emptyRows = rows.filter((row) => row.users === 0).length;
-  const visible = showEmpty ? rows : rows.filter((row) => row.users > 0);
+  const visible = hideEmpty ? rows.filter((row) => row.users > 0) : rows;
   const share = (users: number) =>
     usersTotal > 0 ? `${((users / usersTotal) * 100).toFixed(1)}%` : "—";
 
@@ -248,13 +250,14 @@ function LinkCombinations({
       <div className="admin-stats-combos-head">
         <h3 className="admin-stats-chart-title">Наборы привязок</h3>
         {emptyRows > 0 && (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowEmpty((v) => !v)}>
-            {showEmpty ? "Скрыть пустые" : `Показать пустые (${formatInt(emptyRows)})`}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setHideEmpty((v) => !v)}>
+            {hideEmpty ? `Показать пустые (${formatInt(emptyRows)})` : "Скрыть пустые"}
           </button>
         )}
       </div>
       <p className="muted admin-stats-combos-lead">
-        Набор точный: человек с 5 вёрстами и S95 считается только в строке «5 вёрст + с95».
+        Все сочетания систем. Набор точный: человек с 5 вёрстами и С95 считается только в строке
+        «5 вёрст + С95», поэтому строки в сумме дают все учётные записи.
       </p>
       <div className="table-scroll">
         <table className="data-table">
