@@ -7,6 +7,16 @@ import { PlatformBadge } from "./PlatformBadge";
  * время, темп, место и дельта к прошлому визиту на ту же площадку.
  * Карточка события: тот же формат в будущем станет единицей ленты.
  */
+/** Разница во времени: до минуты — в секундах, дальше — «м:сс», иначе
+ *  крупная дельта («926 сек») читается как техническая величина. */
+function formatDeltaValue(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds} сек`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 export function LastSaturdayCard({ data, own = false }: { data: LastSaturday; own?: boolean }) {
   const deltaSec = data.delta_vs_prev_sec;
   const deltaChip =
@@ -14,7 +24,7 @@ export function LastSaturdayCard({ data, own = false }: { data: LastSaturday; ow
       <span
         className={`last-saturday-delta ${deltaSec < 0 ? "last-saturday-delta-faster" : "last-saturday-delta-slower"}`}
       >
-        {deltaSec < 0 ? "↓" : "↑"} {Math.abs(deltaSec)} сек{" "}
+        {deltaSec < 0 ? "↓" : "↑"} {formatDeltaValue(Math.abs(deltaSec))}{" "}
         {deltaSec < 0 ? "быстрее" : "медленнее"}, чем здесь в прошлый раз
       </span>
     ) : deltaSec === 0 ? (
