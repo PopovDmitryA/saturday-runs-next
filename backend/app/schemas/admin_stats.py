@@ -61,6 +61,46 @@ class AdminSiteStatsResponse(BaseModel):
     pageviews_by_day: list[AdminSiteStatsPageviewsDay]
 
 
+class AdminGeographyCityRow(BaseModel):
+    city: str
+    region: str | None = None
+    users: int = 0
+    users_new_period: int = 0
+    # Сколько разных площадок города стали кому-то домашними.
+    locations: int = 0
+
+
+class AdminGeographyLocationRow(BaseModel):
+    identity_key: str
+    name: str
+    slug: str | None = None
+    city: str | None = None
+    region: str | None = None
+    users: int = 0
+    users_new_period: int = 0
+
+
+class AdminUsersGeographyResponse(BaseModel):
+    """Регистрации в разрезе городов и площадок — «где работает сарафанка».
+
+    Город и площадка берутся из домашней локации пользователя; у кого пробежек
+    в базе нет, дома нет тоже — такие идут в users_without_home.
+    """
+
+    generated_at: datetime
+    period_days: int
+    users_total: int
+    users_new_period: int = 0
+    users_with_home: int = 0
+    users_new_with_home: int = 0
+    users_without_home: int = 0
+    users_without_links: int = 0
+    cities_total: int = 0
+    locations_total: int = 0
+    cities: list[AdminGeographyCityRow] = Field(default_factory=list)
+    locations: list[AdminGeographyLocationRow] = Field(default_factory=list)
+
+
 class PageviewRecordRequest(BaseModel):
     path: str = Field(min_length=1, max_length=256)
     authenticated: bool = False

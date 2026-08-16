@@ -2515,6 +2515,31 @@ export type AdminUserAuthBrief = {
   external_id: string;
 };
 
+export type AdminUserHomeLocationCandidate = {
+  identity_key: string;
+  name: string;
+  city: string | null;
+  slug: string | null;
+  run_days: number;
+  volunteer_days: number;
+};
+
+export type AdminUserHomeLocation = {
+  identity_key: string;
+  name: string;
+  slug: string | null;
+  city: string | null;
+  region: string | null;
+  run_days: number;
+  volunteer_days: number;
+  // Дом выбран руками в настройках, иначе определён автоматически.
+  is_manual: boolean;
+  // Правило отбора исчерпано: площадки поделили первое место, все они в tied.
+  is_tie: boolean;
+  tied: AdminUserHomeLocationCandidate[];
+  locations_total: number;
+};
+
 export type AdminUserListItem = {
   id: string;
   serial_id: number | null;
@@ -2531,6 +2556,7 @@ export type AdminUserListItem = {
   total_runs: number | null;
   total_volunteering: number | null;
   platform_links: AdminPlatformLinkBrief[];
+  home_location: AdminUserHomeLocation | null;
 };
 
 export type AdminUserListResponse = {
@@ -2867,6 +2893,47 @@ export type AdminSiteStatsResponse = {
 
 export function getAdminSiteStats(periodDays = 30) {
   return apiFetch<AdminSiteStatsResponse>(`/admin/stats?period_days=${periodDays}`);
+}
+
+export type AdminGeographyCityRow = {
+  city: string;
+  region: string | null;
+  users: number;
+  users_new_period: number;
+  locations: number;
+};
+
+export type AdminGeographyLocationRow = {
+  identity_key: string;
+  name: string;
+  slug: string | null;
+  city: string | null;
+  region: string | null;
+  users: number;
+  users_new_period: number;
+};
+
+export type AdminUsersGeographyResponse = {
+  generated_at: string;
+  period_days: number;
+  users_total: number;
+  users_new_period: number;
+  users_with_home: number;
+  users_new_with_home: number;
+  users_without_home: number;
+  users_without_links: number;
+  cities_total: number;
+  locations_total: number;
+  cities: AdminGeographyCityRow[];
+  locations: AdminGeographyLocationRow[];
+};
+
+// Отдельный запрос от /admin/stats: срез считается по протоколам и заметно
+// дольше остальных чисел страницы — грузим его независимо.
+export function getAdminUsersGeography(periodDays = 30) {
+  return apiFetch<AdminUsersGeographyResponse>(
+    `/admin/stats/geography?period_days=${periodDays}`,
+  );
 }
 
 export function recordSitePageview(

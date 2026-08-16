@@ -6106,6 +6106,39 @@ button.badge-platform-btn:hover {
   font-size: 0.82rem;
 }
 
+/* Колонка «Дом»: название площадки, город и пометки о происхождении выбора. */
+.admin-users-home {
+  display: inline-block;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  min-width: 9rem;
+}
+
+.admin-users-home-city {
+  white-space: nowrap;
+}
+
+.admin-users-home-badge {
+  margin-left: 0.35rem;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.admin-users-home-badge-warn {
+  color: var(--danger, #c0392b);
+  border-color: currentColor;
+}
+
+/* Ничья: список претендентов — первые пять, остальные под кнопкой «ещё». */
+.admin-users-home-tie {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
 .admin-platform-link {
   font-size: 0.92rem;
   line-height: 1.35;
@@ -6259,8 +6292,49 @@ button.badge-platform-btn:hover {
 }
 
 .admin-stats-platform-links,
-.admin-stats-data-core {
+.admin-stats-data-core,
+.admin-stats-geo {
   margin-bottom: 1rem;
+}
+
+.admin-stats-geo-lead {
+  margin: 0 0 0.85rem;
+  font-size: 0.9rem;
+}
+
+.admin-stats-geo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1rem 0 0.75rem;
+}
+
+.admin-stats-geo-search {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+}
+
+.admin-stats-geo-sort {
+  display: flex;
+  gap: 0.35rem;
+}
+
+/* Города и площадки — две колонки на широком экране, стопкой на телефоне. */
+.admin-stats-geo-tables {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 960px) {
+  .admin-stats-geo-tables {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.admin-stats-geo-table .table-scroll {
+  max-height: 26rem;
+  overflow: auto;
 }
 
 .admin-stats-platform-list {
@@ -7607,6 +7681,32 @@ button.badge-platform-btn:hover {
 }
 .admin-ratings-count {
   font-size: 0.92rem;
+}
+.admin-ratings-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.admin-ratings-pagination-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.admin-ratings-pagination-label {
+  font-size: 0.92rem;
+}
+/* .input тянется на всю ширину — в строке пагинации селектор должен остаться
+   по содержимому, иначе он разъезжается на весь блок. */
+.admin-ratings-page-size {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 6rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.9rem;
 }
 .admin-ratings-raw-table td,
 .admin-ratings-raw-table th {

@@ -8,6 +8,7 @@ import {
   listAdminUsers,
   triggerAdminUserSyncPlatform,
   type AdminLoginEventsResponse,
+  type AdminUserHomeLocation,
   type AdminUserListItem,
   type AdminUsersSort,
   type AdminUsersSortDirection,
@@ -124,6 +125,90 @@ function platformCell(
       >
         {isSyncing ? "…" : "↻"}
       </button>
+    </span>
+  );
+}
+
+// Сколько претендентов показываем до нажатия «ещё»: у отдельных туристов
+// первое место делят десятки площадок, разворачивать их сразу нельзя.
+const HOME_TIE_PREVIEW = 5;
+
+function LocationLink({ name, slug }: { name: string; slug: string | null }) {
+  if (!slug) {
+    return <span>{name}</span>;
+  }
+  return (
+    <a href={`/locations/${slug}`} target="_blank" rel="noreferrer" className="admin-platform-link">
+      {name}
+    </a>
+  );
+}
+
+// Предполагаемый «дом» — та же площадка, что человек видит у себя в кабинете
+// и в рейтинге дальности: больше пробежек → больше волонтёрств → раньше начал.
+// Ручной выбор в настройках побеждает автоматику. Если правило исчерпано и
+// площадки поделили первое место, показываем всех претендентов.
+function HomeLocationCell({ home }: { home: AdminUserHomeLocation | null }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!home) {
+    return <span className="muted" title="Нет ни одной пробежки в базе — считать дом не из чего">—</span>;
+  }
+
+  const hint = [
+    `пробежек здесь: ${formatInt(home.run_days)}`,
+    `волонтёрств: ${formatInt(home.volunteer_days)}`,
+    `всего площадок: ${formatInt(home.locations_total)}`,
+  ].join(" · ");
+
+  if (home.is_tie) {
+    const shown = expanded ? home.tied : home.tied.slice(0, HOME_TIE_PREVIEW);
+    const hidden = home.tied.length - shown.length;
+    return (
+      <span className="admin-users-home">
+        <span
+          className="badge admin-users-home-badge admin-users-home-badge-warn"
+          title="Пробежки, волонтёрства и дата первой пробежки совпали — правило выбора дом не определило"
+        >
+          не определён
+        </span>
+        <ul className="admin-users-home-tie">
+          {shown.map((item) => (
+            <li key={item.identity_key} title={`пробежек: ${formatInt(item.run_days)}`}>
+              <LocationLink name={item.name} slug={item.slug} />
+              {item.city && <span className="muted"> · {item.city}</span>}
+            </li>
+          ))}
+          {!expanded && hidden > 0 && <li className="muted">…</li>}
+        </ul>
+        {hidden > 0 && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setExpanded(true)}>
+            ещё {formatInt(hidden)}
+          </button>
+        )}
+        {expanded && home.tied.length > HOME_TIE_PREVIEW && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setExpanded(false)}>
+            свернуть
+          </button>
+        )}
+      </span>
+    );
+  }
+
+  return (
+    <span className="admin-users-home" title={hint}>
+      <LocationLink name={home.name} slug={home.slug} />
+      {home.city && <span className="muted admin-users-home-city"> · {home.city}</span>}
+      <span
+        className="badge admin-users-home-badge"
+        title={
+          home.is_manual
+            ? "Участник выбрал дом сам в настройках профиля"
+            : "Определено автоматически: больше пробежек → больше волонтёрств → раньше начал"
+        }
+      >
+        {home.is_manual ? "вручную" : "авто"}
+      </span>
     </span>
   );
 }
@@ -305,6 +390,9 @@ function AdminUsersContent() {
                   <th>{platformCodeLabel("s95")}</th>
                   <th>{platformCodeLabel("parkrun")}</th>
                   <th>{platformCodeLabel("runpark")}</th>
+                  <th title="Площадка, которую человек считает домашней: ручной выбор из настроек или автовыбор по пробежкам">
+                    Дом
+                  </th>
                   <th>
                     <button
                       type="button"
@@ -349,7 +437,7 @@ function AdminUsersContent() {
               <tbody>
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="muted">
+                    <td colSpan={12} className="muted">
                       Пользователи не найдены
                     </td>
                   </tr>
@@ -392,6 +480,7 @@ function AdminUsersContent() {
                         {platformCell(user, "parkrun", syncingKey === `${user.id}:parkrun`, handleSync)}
                       </td>
                       <td>{platformCell(user, "runpark", false, handleSync)}</td>
+                      <td><HomeLocationCell home={user.home_location} /></td>
                       <td>{user.total_runs ?? "—"}</td>
                       <td>{user.total_volunteering ?? "—"}</td>
                       <td title={formatDateTime(user.created_at)}>
@@ -431,7 +520,7 @@ function AdminUsersContent() {
                     </tr>
                     {journalUserId === user.id && (
                       <tr className="admin-login-journal-row">
-                        <td colSpan={11}>
+                        <td colSpan={12}>
                           {journalLoading && <p className="muted">Загружаем журнал входов…</p>}
                           {journalError && <p className="form-error">{journalError}</p>}
                           {!journalLoading && !journalError && journal && <LoginJournal data={journal} />}

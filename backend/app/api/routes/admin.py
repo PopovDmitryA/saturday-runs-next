@@ -25,7 +25,11 @@ from app.schemas.admin_event_report import (
     EventReportLocationsResponse,
     EventReportResponse,
 )
-from app.schemas.admin_stats import AdminSiteStatsResponse, PageAnalyticsResponse
+from app.schemas.admin_stats import (
+    AdminSiteStatsResponse,
+    AdminUsersGeographyResponse,
+    PageAnalyticsResponse,
+)
 from app.schemas.admin_sync_runs import AdminSyncRunsResponse
 from app.schemas.backlog import (
     BacklogCardAdminListResponse,
@@ -85,6 +89,7 @@ from app.services.admin_event_report_service import (
     list_report_locations,
 )
 from app.services.admin_site_stats_service import get_admin_site_stats
+from app.services.admin_users_geo_stats_service import get_admin_users_geography
 from app.services.admin_users_service import get_admin_user, search_admin_users
 from app.services.backlog_service import (
     BacklogError,
@@ -404,6 +409,18 @@ def admin_site_stats(
 ) -> AdminSiteStatsResponse:
     payload = get_admin_site_stats(db, period_days=period_days)
     return AdminSiteStatsResponse.model_validate(payload)
+
+
+@router.get("/stats/geography", response_model=AdminUsersGeographyResponse)
+def admin_users_geography(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    period_days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> AdminUsersGeographyResponse:
+    """Регистрации по городам и площадкам. Отдельным запросом от /stats:
+    считается по протоколам и заметно дольше остальных чисел страницы."""
+    payload = get_admin_users_geography(db, period_days=period_days)
+    return AdminUsersGeographyResponse.model_validate(payload)
 
 
 @router.get("/page-analytics", response_model=PageAnalyticsResponse)
