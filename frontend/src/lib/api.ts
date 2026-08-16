@@ -919,6 +919,11 @@ export type Challenge = {
   default_tier: ChallengeTierKey;
   // Насколько последняя пробежка продвинула счётчик (0 — не продвинула)
   recent_delta: number;
+  /**
+   * Дата последнего дня активности, по которой посчитан recent_delta. «Детали»
+   * подсвечивают ею клетки, закрытые именно этой пробежкой.
+   */
+  recent_date: string | null;
 };
 
 export type ClubEntry = {

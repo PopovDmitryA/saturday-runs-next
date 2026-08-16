@@ -8973,6 +8973,53 @@ button.badge-platform-btn:hover {
   color: var(--tint-orange-text);
 }
 
+.challenge-fresh-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--accent-amber-text);
+}
+
+/* Клетка, закрытая последней пробежкой (той самой, за которую на карточке стоит
+   «↑ +1»). Цвет заливки уже занят системой — все четыре (зелёный / синий /
+   фиолетовый / оранжевый) заняты, поэтому свежесть показываем янтарным кольцом
+   и точкой в углу: они читаются поверх любой системы и поверх «не закрыто». */
+.challenge-cell-fresh {
+  position: relative;
+  outline: 2px solid var(--accent-amber-text);
+  outline-offset: 1px;
+}
+
+.challenge-cell-fresh::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-amber-text);
+  border: 1px solid var(--surface);
+}
+
+/* День календаря «Круглого года» — 0.55rem, точка в него не влезает: там
+   кольцо и есть вся индикация. */
+.challenge-year-day-fresh {
+  outline: 2px solid var(--accent-amber-text);
+  outline-offset: 1px;
+}
+
+/* Строка списка находок (палиндромы, дежавю, юбилеи), появившаяся с последней
+   пробежкой, и отдельное совпадение внутри неё. */
+.challenge-item-fresh {
+  box-shadow: inset 2px 0 0 var(--accent-amber-text);
+  padding-left: 0.5rem;
+}
+
+.challenge-occurrence-fresh {
+  color: var(--accent-amber-text);
+  font-weight: 600;
+}
+
 /* Легенда цветов систем над коллекционными челленджами */
 .platform-color-legend {
   display: flex;
