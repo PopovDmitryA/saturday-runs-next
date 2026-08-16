@@ -912,10 +912,15 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
   // последними: это самая тяжёлая часть таблицы (четыре числовых столбца), и
   // именно её раньше прятал краткий вид на любой ширине.
   const lbColumns = useMemo<AdaptiveColumn[]>(() => {
+    // Дальность меряется в километрах: в ячейке «365 821 км» с дельтой, и
+    // числовые колонки там заметно шире обычных (см. .lb-table-wide-values).
+    // Оценка ширины обязана совпадать с вёрсткой, иначе краткий вид считает,
+    // что полный набор влезает, а тот уезжает в горизонтальный скролл.
+    const numWidth = isHomeDistance ? 140 : 76;
     const list: AdaptiveColumn[] = [
       { key: "rank", width: 88, required: true },
       { key: "name", width: 200, required: true },
-      { key: "total", width: 112, required: true },
+      { key: "total", width: isHomeDistance ? 144 : 112, required: true },
     ];
     if (hasWinExtras) {
       list.push({ key: "best_time", width: 112 });
@@ -939,7 +944,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
       list.push({ key: "week", width: 176 });
     }
     if (columns.length > 0) {
-      list.push({ key: "platforms", width: columns.length * 76 });
+      list.push({ key: "platforms", width: columns.length * numWidth });
     }
     return list;
   }, [
