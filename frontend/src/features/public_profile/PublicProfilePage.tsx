@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { LastSaturdayCard } from "../../components/LastSaturdayCard";
-import { MilestoneProgressPanel } from "../../components/MilestoneProgressPanel";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { ImageLightbox } from "../../components/ImageLightbox";
@@ -365,7 +364,6 @@ function PublicProfileContent({
             {stats.analytics?.last_saturday && (
               <LastSaturdayCard data={stats.analytics.last_saturday} />
             )}
-            <MilestoneProgressPanel items={stats.analytics?.milestone_progress ?? []} />
             <DashboardAnalytics
               analytics={stats.analytics}
               totalRuns={stats.total_runs ?? 0}

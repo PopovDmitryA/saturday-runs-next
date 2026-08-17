@@ -20,27 +20,23 @@ export type DashboardAnalyticsGroup = {
   panels: readonly string[];
 };
 
-/**
- * Карточки, которые в сетке аналитики не рисуются: то же самое лучше
- * показывает отдельный блок. «До N пробежек» живёт в панели «Ближайшие
- * цели» — там у цели есть прогресс-бар, а не только остаток.
- */
-export const DASHBOARD_ANALYTICS_HIDDEN_CARDS: readonly string[] = ["next_milestone"];
-
 export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
   {
     key: "regularity",
     title: "Регулярность",
-    headline: ["saturday_streak", "saturday_consistency", "runs_year", "runs_12m"],
-    rest: ["days_since_first_run"],
+    headline: ["saturday_streak", "saturday_consistency", "runs_year", "next_milestone"],
+    // Суммарный километраж — про объём набеганного, а не про поездки:
+    // место ему здесь, а не в туризме (решение Дмитрия, 09.08.2026).
+    rest: ["runs_12m", "total_distance", "days_since_first_run"],
     panels: ["activity_calendar", "activity_chart"],
   },
   {
     key: "speed",
     title: "Скорость и рекорды",
-    headline: ["best_finish", "avg_pace", "pr_count", "wins"],
+    // Среднее время финиша — базовая цифра «как я обычно бегу», её прячать
+    // за «Ещё N» нельзя: решение Дмитрия (09.08.2026).
+    headline: ["best_finish", "avg_finish", "avg_pace", "pr_count", "wins"],
     rest: [
-      "avg_finish",
       "avg_position",
       "avg_gender_position",
       "last_global_pr_date",
@@ -53,7 +49,7 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
     key: "tourism",
     title: "Беговой туризм",
     headline: ["unique_run_locations", "unique_run_cities", "new_locations_12m", "home_distance"],
-    rest: ["unique_run_regions", "total_distance"],
+    rest: ["unique_run_regions"],
     panels: [],
   },
   {

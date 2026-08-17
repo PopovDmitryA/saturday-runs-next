@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DashboardAnalytics } from "../../../components/DashboardAnalytics";
 import { MyHistoryTeaser } from "../../../components/MyHistoryTeaser";
 import { LastSaturdayCard } from "../../../components/LastSaturdayCard";
-import { MilestoneProgressPanel } from "../../../components/MilestoneProgressPanel";
 import { OnThisDayCard } from "../../../components/OnThisDayCard";
 import { ProfileLinkSection } from "../../../components/ProfileLinkSection";
 import { RecentRunsRating } from "../../../components/RecentRunsRating";
@@ -255,8 +254,6 @@ function PortalDashboardContent({ user }: { user: User }) {
           {stats?.analytics?.last_saturday && (
             <LastSaturdayCard data={stats.analytics.last_saturday} own />
           )}
-
-          <MilestoneProgressPanel items={stats?.analytics?.milestone_progress ?? []} />
 
           <OnThisDayCard load={getOnThisDay} shareBase={PORTAL_CABINET_SHARE_HREF} />
 

@@ -71,8 +71,7 @@ class SyncRefreshRateLimitedError(Exception):
 # самый дальний старт и признак неоднозначной домашней локации.
 # 35: блок last_saturday — герой дашборда «последняя суббота» с дельтой
 # к прошлому визиту на ту же площадку.
-# 36: notables последней субботы (чем примечательна — словами) и
-# milestone_progress — прогресс к ближайшим клубам вместо голого «осталось N».
+# 36: notables последней субботы — чем она примечательна, словами.
 ANALYTICS_VERSION = 36
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
@@ -84,13 +83,6 @@ WIN_SCOPE_ABSOLUTE = "absolute"
 WIN_SCOPE_FEMALE = "female"
 RUN_CLUBS = (50, 100, 250, 500, 1000)
 DISTANCE_KM_PER_RUN = 5
-
-# Лестницы для блока «Ближайшие цели» на дашборде. Пробежки и волонтёрства —
-# те же клубные номера, что и в вехах «Моей истории» (app.services
-# .my_history_service), чтобы взятая ступень и полученная веха совпадали.
-# Туризм своей клубной линейки не имеет — берём круглые числа площадок.
-VOLUNTEER_CLUB_LADDER = (10, 25, 50, 100, 250)
-TOURISM_LADDER = (5, 10, 25, 50, 100, 250)
 
 
 def _month_start(value: date) -> date:
@@ -197,33 +189,6 @@ def _saturday_consistency(activity_dates: set[date], today: date) -> tuple[float
     active = sum(1 for value in saturdays if value in active_weeks)
     pct = round(active / len(saturdays) * 100, 1)
     return pct, active, len(saturdays)
-
-
-def _milestone_progress(
-    kind: str,
-    current: int,
-    ladder: tuple[int, ...],
-) -> dict[str, object] | None:
-    """Прогресс к ближайшей невзятой ступени: от предыдущей ступени до цели.
-
-    Показываем не только «осталось N», но и насколько путь пройден — цель
-    работает сильнее, чем факт (паттерн Smashrun/parkrun app). Все ступени
-    взяты — цели нет, блок не рисуется.
-    """
-    target = next((step for step in ladder if current < step), None)
-    if target is None:
-        return None
-    previous = max((step for step in ladder if step <= current), default=0)
-    span = target - previous
-    done = current - previous
-    return {
-        "kind": kind,
-        "current": current,
-        "target": target,
-        "previous": previous,
-        "remaining": target - current,
-        "percent": round(done / span * 100, 1) if span > 0 else 0.0,
-    }
 
 
 def _last_saturday_notables(
@@ -952,18 +917,6 @@ def _compute_dashboard_analytics(
         else None
     )
 
-    # Ближайшие цели: прогресс к следующим клубам пробежек, волонтёрств и
-    # к круглому числу площадок. Пустые (все ступени взяты) отсеиваются.
-    milestone_progress = [
-        item
-        for item in (
-            _milestone_progress("runs", total_runs, RUN_MILESTONES),
-            _milestone_progress("volunteering", total_volunteering, VOLUNTEER_CLUB_LADDER),
-            _milestone_progress("locations", run_unique_counts.unique_total, TOURISM_LADDER),
-        )
-        if item is not None
-    ]
-
     # «Последняя суббота» — герой дашборда: свежайший результат с дельтой
     # к прошлому визиту на ту же площадку. Считается из уже отфильтрованного
     # runs_query (без тестовых стартов и кросслинк-дублей).
@@ -1075,7 +1028,6 @@ def _compute_dashboard_analytics(
         "age_group_records": location_records["age_group"],
         "home_distance": home_distance,
         "last_saturday": last_saturday,
-        "milestone_progress": milestone_progress,
     }
 
 

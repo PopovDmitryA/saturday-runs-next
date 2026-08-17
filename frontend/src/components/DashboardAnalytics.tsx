@@ -5,7 +5,6 @@ import { FinishTimeDistribution } from "./FinishTimeDistribution";
 import type { DashboardAnalytics as DashboardAnalyticsData } from "../lib/api";
 import {
   DASHBOARD_ANALYTICS_GROUPS,
-  DASHBOARD_ANALYTICS_HIDDEN_CARDS,
   type DashboardAnalyticsGroup,
 } from "../lib/dashboardLayout";
 import { PlatformBadge } from "./PlatformBadge";
@@ -829,9 +828,7 @@ export function DashboardAnalytics({
       ? analytics.home_distance.home
       : null;
 
-  const cards = buildAnalyticsCards(analytics, totalRuns, totalVolunteering).filter(
-    (card) => !DASHBOARD_ANALYTICS_HIDDEN_CARDS.includes(card.key),
-  );
+  const cards = buildAnalyticsCards(analytics, totalRuns, totalVolunteering);
   const hasActivityChart = analytics.activity_by_month.some(
     (item) => item.runs > 0 || item.volunteering > 0,
   );
