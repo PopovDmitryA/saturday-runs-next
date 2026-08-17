@@ -13,6 +13,7 @@ from app.models import User
 from app.schemas.leaderboards import (
     LeaderboardResponse,
     MyLeaderboardRowResponse,
+    TouristMapResponse,
     VolunteerRoleCatalogResponse,
     VolunteerRoleItem,
 )
@@ -22,9 +23,11 @@ from app.services.leaderboard_service import (
     LEADERBOARD_METRICS,
     MAX_MIN_VISITS,
     ROLE_FILTER_METRICS,
+    TOURIST_MAP_METRICS,
     LeaderboardMetric,
     get_leaderboard,
     get_my_leaderboard_row,
+    get_tourist_map,
     used_role_keys,
 )
 from app.volunteer_role_taxonomy import (
@@ -123,6 +126,36 @@ def leaderboard(
         hide_ambiguous_home=hide_ambiguous_home,
     )
     return LeaderboardResponse.model_validate(payload)
+
+
+# Карта туристов — спойлер туристических рейтингов: числа у точек карты и
+# светофоры «был / не был» в таблице. Публичная, как и сама таблица.
+@router.get("/{metric}/tourist-map", response_model=TouristMapResponse)
+def tourist_map(
+    metric: str,
+    db: Annotated[Session, Depends(get_db)],
+    min_visits: Annotated[int, Query(ge=1, le=MAX_MIN_VISITS)] = 1,
+    platform: str = "all",
+    count_by: str = "locations",
+    roles: Annotated[list[str] | None, Query()] = None,
+    # Ключ площадки (тот же catalog_identity_key, что у точек карты): с ним
+    # ответ несёт ещё и визиты этой площадки по строкам таблицы. Без него —
+    # только числа у точек: матрица целиком по проводу не ездит.
+    location_key: str | None = None,
+) -> TouristMapResponse:
+    validated = _validate_metric(metric)
+    if validated not in TOURIST_MAP_METRICS:
+        raise HTTPException(status_code=404, detail="У этого рейтинга нет карты туристов")
+    payload = get_tourist_map(
+        db,
+        validated,
+        min_visits=min_visits,
+        platform=platform,
+        count_by=count_by,
+        roles=roles,
+        location_key=location_key,
+    )
+    return TouristMapResponse.model_validate(payload)
 
 
 # Строка «Вы» — только своя, поэтому логин обязателен и здесь.

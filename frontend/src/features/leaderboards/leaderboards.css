@@ -271,6 +271,18 @@
   }
 }
 
+/* Столбцы карты туристов набираются кликами, и их бывает полтора десятка — на
+   любой ширине экрана. Ширину рамки фиксируем по контейнеру, а таблицу листаем
+   внутри неё: иначе она уезжает за правый край страницы (репорт Дмитрия
+   16.08.2026). Условия те же, что у мобильной ветки выше: обёртка становится
+   скролл-контейнером, поэтому шапка липнет к её верху (ноль), а видимой при
+   листании страницы её делает плавающая копия из useFloatingTableHead. */
+.table-wrap.lb-table-wrap-lights {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  --table-head-top: 0px;
+}
+
 .lb-table thead th {
   background: var(--surface);
   top: var(--table-head-top, 0);
@@ -1556,5 +1568,316 @@ body.has-pinned-me .lb-scroll-top {
 }
 
 .vrm-bulk-btn:hover {
+  text-decoration: underline;
+}
+
+/* ─── Карта туристов ─────────────────────────────────────────────────────── */
+/* Спойлер над таблицей: карта локаций с числом «сколько человек из топ-100 тут
+   было» и светофоры «был / не был» в самой таблице. */
+
+.lb-tourist {
+  margin: 14px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.lb-tourist-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lb-tourist-toggle:hover {
+  background: var(--surface-muted, rgba(148, 163, 184, 0.12));
+}
+
+.lb-tourist-toggle-text {
+  flex: 1 1 auto;
+}
+
+/* Свёрнутый спойлер помнит выбранную площадку — иначе столбец в таблице
+   выглядит взявшимся ниоткуда. */
+.lb-tourist-toggle-chip {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
+}
+
+.lb-tourist-map {
+  padding: 0 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lb-tourist-caption {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.lb-tourist-selected {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--tint-amber-bg);
+  border: 1px solid var(--tint-amber-border);
+  font-size: 0.86rem;
+}
+
+.lb-tourist-selected-name {
+  font-weight: 700;
+}
+
+.lb-tourist-selected-link {
+  color: var(--link);
+}
+
+.lb-tourist-summary {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.lb-tourist-legend {
+  align-items: center;
+}
+
+.lb-tourist-legend-badge {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* Кружок кластера в легенде — тем же видом, что на карте. */
+.lb-tourist-legend-cluster {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 2px solid var(--accent-indigo);
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Столбец светофоров: заголовок называет площадку и умеет её убрать.
+   Селектор с тегом — иначе общий `.data-table th, td { text-align: left }`
+   специфичнее и светофор липнет к левому краю ячейки. */
+.lb-table th.lb-col-light,
+.lb-table td.lb-col-light {
+  width: 108px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.lb-col-light-head {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.15;
+  cursor: pointer;
+  user-select: none;
+}
+
+.lb-col-light-head:hover {
+  color: var(--accent-indigo-text);
+}
+
+.lb-col-light-name {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Кнопки столбца: фильтр и «убрать». Стоят в строку под названием — в 108 px
+   ширины они рядом с текстом уже не помещаются. */
+.lb-col-light-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.lb-col-light-clear {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.lb-col-light-clear:hover {
+  color: var(--accent-red-text);
+}
+
+/* Состояние фильтра читается цветом кружка: серый — все, зелёный — только
+   побывавшие, красный — только те, кто не был. */
+.lb-col-light-filter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.lb-col-light-filter span {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 2px solid var(--text-muted);
+}
+
+.lb-col-light-filter:hover span {
+  border-color: var(--accent-indigo-text);
+}
+
+.lb-col-light-filter-yes span {
+  background: var(--accent-green-text);
+  border-color: var(--accent-green-text);
+}
+
+.lb-col-light-filter-no span {
+  background: var(--accent-red-text);
+  border-color: var(--accent-red-text);
+}
+
+.lb-light-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+}
+
+.lb-light {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+}
+
+.lb-light-yes {
+  background: var(--accent-green-text);
+}
+
+.lb-light-no {
+  background: var(--accent-red-text);
+  opacity: 0.55;
+}
+
+.lb-light-loading {
+  background: var(--border);
+}
+
+.lb-light-unknown {
+  width: auto;
+  height: auto;
+  border: 0;
+  color: var(--text-muted);
+}
+
+.lb-light-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+/* Выбранные площадки: чипы над картой, каждый = столбец светофоров. */
+.lb-tourist-selected-label {
+  font-size: 0.82rem;
+}
+
+.lb-tourist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--tint-amber-border-strong);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lb-tourist-chip:hover {
+  border-color: var(--accent-red-text);
+}
+
+.lb-tourist-chip-count {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.lb-tourist-chip-remove {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.lb-tourist-chip:hover .lb-tourist-chip-remove {
+  color: var(--accent-red-text);
+}
+
+.lb-tourist-limit {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+/* Кнопка «Посмотреть людей в таблице» в попапе карты — выглядит ссылкой. */
+.map-popup-details {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--link);
+  cursor: pointer;
+}
+
+.map-popup-details:hover {
   text-decoration: underline;
 }

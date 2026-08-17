@@ -17,6 +17,7 @@ import {
   MIN_VISITS_METRICS,
   MIN_VISITS_OPTIONS,
   PLATFORM_LABELS,
+  TOURIST_MAP_METRICS,
   type CountBy,
   type LeaderboardGender,
   type LeaderboardMetric,
@@ -24,10 +25,11 @@ import {
   type LeaderboardRow,
   type MyLeaderboardRow,
   type PlatformFilter,
+  type TouristMapVisit,
   type VolunteerRoleDetail,
   type WeekLocation,
 } from "./leaderboardsApi";
-import { formatDateTime, formatInt, pluralizeRu } from "../../lib/format";
+import { formatDateTime, formatInt, pluralFormRu, pluralizeRu } from "../../lib/format";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { NotFoundPage } from "../NotFoundPage";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
@@ -35,6 +37,8 @@ import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
 import { ratingSubject } from "../sharing/subjects";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
+import { TouristMapPanel } from "./TouristMapPanel";
+import { useTouristMap } from "./useTouristMap";
 import { VolunteerRolesModal } from "./VolunteerRolesModal";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
@@ -60,7 +64,15 @@ type LeaderboardPageProps = {
 // Колонки-системы больше не сортируются: чтобы посмотреть зачёт одной системы,
 // есть фильтр «Система» — он пересчитывает и место, и «Всего», а не просто
 // переставляет строки по одному столбцу (решение Дмитрия 01.08.2026).
-type SortKey = "rank" | "total" | "best_time";
+type SortKey = "rank" | "total" | "best_time" | `light:${string}`;
+
+/** Фильтр столбца светофоров: показать только побывавших или только тех, кто нет. */
+type LightFilter = "yes" | "no";
+
+/** Ключ площадки из ключа сортировки «light:...» (null — сортировка обычная). */
+function sortedLightKey(key: SortKey): string | null {
+  return key.startsWith("light:") ? key.slice("light:".length) : null;
+}
 
 const METRIC_CRUMBS: Record<LeaderboardMetric, { section: string; label: string }> = {
   runs: { section: "Бегуны", label: "Количество пробежек" },
@@ -174,6 +186,10 @@ const WEEK_LOCATIONS_HINT: Record<string, string> = {
     "Последний старт участника за неделю. Знакомая локация километров не " +
     "добавляет — её зачёт уже учтён, — но в колонке видна.",
 };
+
+const VISIT_LIGHT_HINT =
+  "Светофор по выбранной на карте локации: зелёный — был, красный — не был. " +
+  "Наведите (или коснитесь) — покажем системы и даты.";
 
 const BEST_TIME_HINT =
   "Глобальный рекорд участника: лучшее время по всем системам и локациям — " +
@@ -517,6 +533,71 @@ function formatDate(value: string | null): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("ru-RU");
 }
 
+/**
+ * Светофор «был здесь»: зелёный — был, красный — не был (решение Дмитрия
+ * 15.08.2026: порог визитов рейтинга сюда не примешиваем — был значит был).
+ * Подсказка (и по наведению, и по тапу) называет системы и даты — иначе
+ * зелёная точка ничего не рассказывает.
+ */
+function VisitLight({
+  visit,
+  covered,
+  locationName,
+  limit,
+}: {
+  visit?: TouristMapVisit;
+  covered: boolean;
+  locationName: string;
+  limit: number;
+}) {
+  if (!covered) {
+    // Строка вне расчёта — это дописанная в конец «моя» строка из-за топ-1000
+    // таблицы: у неё нет якоря в снапшоте, и визитов мы не знаем.
+    return (
+      <StatHintTooltip
+        text={`Светофоры считаем по строкам таблицы (топ-${limit}) — эта строка дописана сверх неё.`}
+        className="lb-light-wrap"
+      >
+        <span className="lb-light lb-light-unknown" aria-label="Нет данных">
+          —
+        </span>
+      </StatHintTooltip>
+    );
+  }
+  if (!visit) {
+    return (
+      <StatHintTooltip text={`Не был: ${locationName}`} className="lb-light-wrap">
+        <span className="lb-light lb-light-no" role="img" aria-label={`Не был: ${locationName}`} />
+      </StatHintTooltip>
+    );
+  }
+  const content = (
+    <span className="lb-light-hint">
+      <b>{locationName}</b>
+      {visit.platforms.map((platform) => (
+        <span key={platform.code}>
+          {PLATFORM_LABELS[platform.code] ?? platform.code}:{" "}
+          {formatInt(platform.visits)}{" "}
+          {pluralFormRu(platform.visits, ["визит", "визита", "визитов"])} —{" "}
+          {formatDate(platform.first_date)}
+          {platform.last_date && platform.last_date !== platform.first_date
+            ? ` … ${formatDate(platform.last_date)}`
+            : ""}
+        </span>
+      ))}
+    </span>
+  );
+  return (
+    <StatHintTooltip content={content} className="lb-light-wrap">
+      <span
+        className="lb-light lb-light-yes"
+        role="img"
+        aria-label={`Был: ${locationName}`}
+      />
+    </StatHintTooltip>
+  );
+}
+
 function DeltaSlot({ delta }: { delta: number }) {
   // Слот фиксированной ширины: дельта не сдвигает цифры в колонке.
   return <span className="lb-delta">{delta > 0 ? `+${formatInt(delta)}` : ""}</span>;
@@ -736,6 +817,11 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     }
   }, [hasRoleFilter, roleCatalog, rolePreset, roleKeys.length]);
   const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
+  // Спойлер «Карта туристов» — только у туристических рейтингов и только по
+  // раскрытию: карта тянет каталог локаций и свою матрицу, грузить их всем
+  // подряд ради блока, который открывают не всегда, незачем.
+  const hasTouristMap = TOURIST_MAP_METRICS.includes(metric);
+  const [mapOpen, setMapOpen] = useState(false);
   // Развёрнутые строки мультиволонтёра (детализация «роль × система»).
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -768,6 +854,85 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
   const valueUnit = METRIC_VALUE_UNIT[metric];
   // Гео-зачёт есть ровно там же, где порог визитов, — у туристических рейтингов.
   const effectiveCountBy = hasMinVisits ? countBy : "locations";
+
+  // Карта туристов живёт под теми же фильтрами, что таблица: числа у точек и
+  // светофоры обязаны считаться так же, как места в рейтинге.
+  const touristMap = useTouristMap({
+    metric,
+    enabled: hasTouristMap && mapOpen,
+    minVisits: effectiveMinVisits,
+    platform,
+    countBy: effectiveCountBy,
+    roles: effectiveRoles,
+  });
+  const lightColumns = hasTouristMap ? touristMap.selected : [];
+  const showLights = lightColumns.length > 0;
+  // Фильтр по столбцу светофоров: ключ площадки -> «только был» / «только не был».
+  // Отсутствие ключа означает «показывать всех».
+  const [lightFilters, setLightFilters] = useState<Record<string, LightFilter>>({});
+  // Направление сортировки по столбцу карты. Повторный клик по заголовку
+  // переворачивает: сначала побывавшие — сначала те, кто не был.
+  const [lightSortMissingFirst, setLightSortMissingFirst] = useState(false);
+  const lightColumnsKey = lightColumns.map(({ location }) => location.key).join("|");
+
+  // Обновления состояний идут рядом, а не вложенно: updater у setState в
+  // StrictMode вызывается дважды, и переключатель направления внутри него
+  // срабатывал бы два раза — порядок возвращался к исходному.
+  const sortByLightColumn = useCallback(
+    (columnKey: SortKey) => {
+      if (sortKey === columnKey) {
+        setLightSortMissingFirst((value) => !value);
+        return;
+      }
+      setSortKey(columnKey);
+      setLightSortMissingFirst(false);
+    },
+    [sortKey],
+  );
+
+  const cycleLightFilter = useCallback((key: string) => {
+    // Все → только был → только не был → снова все.
+    setLightFilters((current) => {
+      const next = { ...current };
+      if (!next[key]) {
+        next[key] = "yes";
+      } else if (next[key] === "yes") {
+        next[key] = "no";
+      } else {
+        delete next[key];
+      }
+      return next;
+    });
+  }, []);
+
+  // Столбец убрали — забываем его фильтр и снимаем сортировку по нему, иначе
+  // таблица осталась бы отфильтрованной по невидимой площадке.
+  useEffect(() => {
+    const alive = new Set(lightColumnsKey ? lightColumnsKey.split("|") : []);
+    setLightFilters((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([key]) => alive.has(key)),
+      );
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+    setSortKey((current) => {
+      const sorted = sortedLightKey(current);
+      return sorted && !alive.has(sorted) ? "rank" : current;
+    });
+  }, [lightColumnsKey]);
+
+  // «Посмотреть людей в таблице» из попапа карты: столбец уже добавлен, дело за
+  // прокруткой. Шапка таблицы липкая, поэтому целимся чуть выше её верха.
+  const scrollToTable = useCallback(() => {
+    window.setTimeout(() => {
+      const table = tableRef.current;
+      if (!table) {
+        return;
+      }
+      const top = table.getBoundingClientRect().top + window.scrollY - 120;
+      window.scrollTo({ top, behavior: "smooth" });
+    }, 60);
+  }, []);
 
   useEffect(() => {
     if (!hasRoleFilter || roleCatalog.length > 0) {
@@ -866,6 +1031,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     platform,
     effectiveCountBy,
     roleFilterKey,
+    lightFilters,
   ]);
 
   const toggleRow = useCallback((key: string) => {
@@ -922,6 +1088,11 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
       { key: "name", width: 200, required: true },
       { key: "total", width: isHomeDistance ? 144 : 112, required: true },
     ];
+    // Светофоры выбранных площадок — ради них на карту и нажимали, поэтому
+    // краткий вид их не прячет.
+    for (const { location } of lightColumns) {
+      list.push({ key: `light:${location.key}`, width: 108, required: true });
+    }
     if (hasWinExtras) {
       list.push({ key: "best_time", width: 112 });
     }
@@ -956,6 +1127,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     isRoles,
     lastWinMeta,
     metric,
+    lightColumns,
   ]);
 
   const tableColumns = useTableColumns(lbColumns);
@@ -1009,7 +1181,33 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
   }, [data, me]);
 
   const rows = useMemo<LeaderboardRow[]>(() => {
-    let result = allRows.slice().sort((a, b) => sortValue(b, sortKey) - sortValue(a, sortKey));
+    let result = allRows.slice();
+    // Сортировка по столбцу карты: сначала побывавшие, потом остальные. Внутри
+    // групп порядок рейтинга сохраняется — sort в JS стабильная.
+    const sortedLocation = sortedLightKey(sortKey);
+    const sortedColumn = sortedLocation
+      ? lightColumns.find(({ location }) => location.key === sortedLocation)
+      : undefined;
+    if (sortedColumn) {
+      const wasHere = (row: LeaderboardRow) =>
+        (row.row_key && sortedColumn.visits.has(row.row_key) ? 1 : 0) *
+        (lightSortMissingFirst ? -1 : 1);
+      result.sort((a, b) => wasHere(b) - wasHere(a));
+    } else {
+      result.sort((a, b) => sortValue(b, sortKey) - sortValue(a, sortKey));
+    }
+    // Фильтры столбцов комбинируются по И: так спрашивают «был в этом парке,
+    // но не был в соседнем».
+    for (const { location, visits } of lightColumns) {
+      const mode = lightFilters[location.key];
+      if (!mode) {
+        continue;
+      }
+      result = result.filter((row) => {
+        const wasHere = Boolean(row.row_key && visits.has(row.row_key));
+        return mode === "yes" ? wasHere : !wasHere;
+      });
+    }
     const normalized = query.trim().toLowerCase();
     if (normalized) {
       result = result.filter((row) =>
@@ -1017,7 +1215,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
       );
     }
     return result;
-  }, [allRows, sortKey, query]);
+  }, [allRows, sortKey, query, lightColumns, lightFilters, lightSortMissingFirst]);
 
   const myIndex = useMemo(() => {
     if (!me) {
@@ -1486,6 +1684,39 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
               </section>
             )}
 
+            {/* Карта туристов — спойлером: на основной карте таких чисел нет
+                (решение Дмитрия 15.08.2026), а тут они по делу. Свёрнута по
+                умолчанию — рейтинг остаётся про таблицу. */}
+            {hasTouristMap && (
+              <section className="lb-tourist" aria-label="Карта туристов">
+                <button
+                  type="button"
+                  className="lb-tourist-toggle"
+                  aria-expanded={mapOpen}
+                  onClick={() => setMapOpen((open) => !open)}
+                >
+                  <span aria-hidden>{mapOpen ? "▾" : "▸"}</span>
+                  <span className="lb-tourist-toggle-text">
+                    Карта туристов: сколько человек из таблицы было на каждой локации
+                  </span>
+                  {!mapOpen && showLights && (
+                    <span className="lb-tourist-toggle-chip">
+                      {lightColumns.length === 1
+                        ? lightColumns[0].location.name
+                        : `${lightColumns.length} ${pluralFormRu(lightColumns.length, ["локация", "локации", "локаций"])} в таблице`}
+                    </span>
+                  )}
+                </button>
+                {mapOpen && (
+                  <TouristMapPanel
+                    state={touristMap}
+                    verb={metric === "volunteer_locations" ? "волонтёрили" : "бегали"}
+                    onShowTable={scrollToTable}
+                  />
+                )}
+              </section>
+            )}
+
             {/* Сегмент появляется, только пока краткий вид что-то прячет
                 (обычно колонки систем — самая тяжёлая часть таблицы). */}
             <TableViewToggle columns={tableColumns} />
@@ -1493,7 +1724,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
               innerRef={attachFloatingHead}
               className={`lb-table-wrap${fixedLayout ? " lb-table-wrap-wide" : ""}${
                 tableColumns.hasToggle ? "" : " lb-table-wrap-flat"
-              }`}
+              }${showLights ? " lb-table-wrap-lights" : ""}`}
               outerRef={tableColumns.measureRef}
             >
               <table
@@ -1509,6 +1740,81 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                   <tr>
                     {headerCell("rank", "Место", "lb-col-rank")}
                     <th className="lb-col-name">Участник</th>
+                    {lightColumns.map(({ location }, index) => {
+                      const columnKey: SortKey = `light:${location.key}`;
+                      const sorted = sortKey === columnKey;
+                      const filter = lightFilters[location.key];
+                      return (
+                        <th
+                          key={location.key}
+                          className={`lb-col-light${sorted ? " lb-sorted" : ""}`}
+                        >
+                          <span
+                            className="lb-col-light-head lb-sortable"
+                            role="button"
+                            tabIndex={0}
+                            title={
+                              sorted
+                                ? "Нажмите, чтобы перевернуть порядок"
+                                : "Сортировать: сначала те, кто здесь был"
+                            }
+                            onClick={() => sortByLightColumn(columnKey)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                sortByLightColumn(columnKey);
+                              }
+                            }}
+                          >
+                            <span className="lb-col-light-title">
+                              Был здесь
+                              {/* Пояснение вешаем на первый столбец: у пятнадцати
+                                  одинаковых значков «i» смысла нет. */}
+                              {index === 0 && <InfoHint text={VISIT_LIGHT_HINT} />}
+                              {sorted && (
+                                <span className="lb-sort-mark" aria-hidden>
+                                  {lightSortMissingFirst ? "▴" : "▾"}
+                                </span>
+                              )}
+                            </span>
+                            <span className="lb-col-light-name" title={location.name}>
+                              {location.name}
+                            </span>
+                          </span>
+                          <span className="lb-col-light-actions">
+                            {/* Фильтр по кругу: все → только был → только не был.
+                                Комбинируется с такими же фильтрами соседних
+                                столбцов — так спрашивают «был тут, но не был там». */}
+                            <button
+                              type="button"
+                              className={`lb-col-light-filter${
+                                filter ? ` lb-col-light-filter-${filter}` : ""
+                              }`}
+                              aria-label={`Фильтр по «${location.name}»`}
+                              title={
+                                filter === "yes"
+                                  ? "Показаны только те, кто здесь был. Нажмите — только те, кто не был"
+                                  : filter === "no"
+                                    ? "Показаны только те, кто здесь не был. Нажмите — снять фильтр"
+                                    : "Показать только тех, кто здесь был"
+                              }
+                              onClick={() => cycleLightFilter(location.key)}
+                            >
+                              <span aria-hidden />
+                            </button>
+                            <button
+                              type="button"
+                              className="lb-col-light-clear"
+                              aria-label={`Убрать столбец «${location.name}»`}
+                              title="Убрать столбец локации"
+                              onClick={() => touristMap.toggle(location.key)}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        </th>
+                      );
+                    })}
                     {show("best_time") &&
                       hasWinExtras &&
                       headerCell("best_time", "Лучшее время", "lb-col-time", BEST_TIME_HINT)}
@@ -1619,6 +1925,23 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         <td className="lb-col-name">
                           <ParticipantName row={row} />
                         </td>
+                        {lightColumns.map(({ location, visits, loading: visitsLoading }) => (
+                          <td key={location.key} className="lb-col-light">
+                            {visitsLoading ? (
+                              <span className="lb-light lb-light-loading" aria-label="Считаем" />
+                            ) : (
+                              <VisitLight
+                                visit={row.row_key ? visits.get(row.row_key) : undefined}
+                                covered={
+                                  row.row_key != null &&
+                                  touristMap.coveredRows.has(row.row_key)
+                                }
+                                locationName={location.name}
+                                limit={touristMap.map?.limit ?? 100}
+                              />
+                            )}
+                          </td>
+                        ))}
                         {show("best_time") && hasWinExtras && (
                           <td className="lb-col-time">
                             <BestTime row={row} />

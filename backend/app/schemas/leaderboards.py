@@ -30,6 +30,10 @@ class WeekLocationResponse(BaseModel):
 class LeaderboardRowResponse(BaseModel):
     rank: int
     rank_delta: int
+    # Стабильный якорь строки: по нему карта туристов сопоставляет светофоры со
+    # строками таблицы. Место дублируется при равных значениях, а site_serial_id
+    # есть только у зарегистрированных — ни то, ни другое строку не опознаёт.
+    row_key: str = ""
     display_name: str | None
     site_serial_id: int | None
     platforms: dict[str, LeaderboardCellResponse]
@@ -156,3 +160,51 @@ class VolunteerRoleCatalogResponse(BaseModel):
     # Рейтинги, где фильтр ролей вообще применяется.
     metrics: list[str]
     roles: list[VolunteerRoleItem]
+
+
+class TouristMapLocationResponse(BaseModel):
+    """Одна площадка на карте туристов."""
+
+    # Тот же ключ идентичности площадки, что у точек карты локаций
+    # (catalog_identity_key) — по нему витрина сводит число с точкой на карте.
+    key: str
+    name: str
+    slug: str | None = None
+    # Сколько человек из верхушки рейтинга здесь были — это и есть число у точки.
+    visitors: int
+    # Сколько всего визитов они сюда сделали.
+    visits: int
+
+
+class TouristMapPlatformVisitResponse(BaseModel):
+    """Визиты одного участника на выбранную площадку в одной системе."""
+
+    code: str
+    visits: int
+    first_date: str | None = None
+    last_date: str | None = None
+
+
+class TouristMapVisitResponse(BaseModel):
+    """Светофор одной строки таблицы на выбранной площадке."""
+
+    row_key: str
+    visits: int
+    first_date: str | None = None
+    last_date: str | None = None
+    platforms: list[TouristMapPlatformVisitResponse] = []
+
+
+class TouristMapResponse(BaseModel):
+    metric: str
+    min_visits: int = 1
+    platform: str = "all"
+    # По скольким верхним строкам рейтинга посчитаны числа.
+    limit: int
+    built_at: str | None = None
+    # Строки рейтинга, попавшие в расчёт: у остальных светофор не горит вовсе.
+    row_keys: list[str] = []
+    locations: list[TouristMapLocationResponse] = []
+    # Заполнены только при запросе конкретной площадки (location_key).
+    location: TouristMapLocationResponse | None = None
+    visits: list[TouristMapVisitResponse] = []

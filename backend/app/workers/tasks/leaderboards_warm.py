@@ -9,11 +9,13 @@ from app.services.leaderboard_service import (
     LEADERBOARD_METRICS,
     MAX_MIN_VISITS,
     MIN_VISITS_METRICS,
+    TOURIST_MAP_METRICS,
     LeaderboardMetric,
     count_by_values,
     make_snapshot_source,
     platform_filter_values,
     refresh_leaderboard_cache,
+    refresh_tourist_map_cache,
 )
 from app.workers.celery_app import celery_app
 
@@ -171,6 +173,24 @@ def warm_leaderboards_cache() -> dict[str, object]:
                     hide_ambiguous_home=hide_home,
                 )
                 results[key] = snapshot.get("entrants", 0)
+                # Карта туристов живёт при снапшоте и обесценивается вместе с
+                # ним — прогреваем её базовый вариант тем же проходом. Своим
+                # try: карта — приятное дополнение к таблице, и её неудача не
+                # повод помечать ошибкой прогрев самого рейтинга.
+                if (
+                    metric in TOURIST_MAP_METRICS
+                    and min_visits == 1
+                    and platform == "all"
+                    and count_by == "locations"
+                ):
+                    try:
+                        results[f"{key}:tmap"] = refresh_tourist_map_cache(
+                            db, metric, snapshot
+                        )
+                    except Exception:
+                        logger.warning(
+                            "tourist map warm failed for %s", key, exc_info=True
+                        )
                 # Закрываем транзакцию сразу после варианта. Сетка одного
                 # рейтинга (до нескольких десятков сочетаний фильтров) считается
                 # в Python над уже прочитанными строками — база в это время не

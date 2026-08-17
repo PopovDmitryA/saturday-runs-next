@@ -4176,11 +4176,112 @@ button.badge-platform-btn:hover {
   box-shadow: 0 0 0 2px #16a34a;
 }
 
+/* Карта туристов: к обычной точке приписано число — сколько человек из
+   верхушки рейтинга здесь было. Сама точка везде в полную силу: площадка, куда
+   из сотни не доехал никто, — такая же площадка, и её ноль тоже ответ. Тише
+   звучит только подпись. */
+.map-marker-counted {
+  cursor: pointer;
+}
+
+.map-marker-count {
+  position: absolute;
+  left: calc(100% + 3px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+}
+
+/* Ноль — без плашки и бледнее: не спорит с числами, но площадку не прячет. */
+.map-marker-count-zero {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.map-marker-counted-selected span {
+  box-shadow: 0 0 0 3px var(--accent-amber-text);
+}
+
+.map-marker-counted-selected .map-marker-count {
+  background: var(--accent-amber-text);
+  border-color: var(--accent-amber-text);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+  color: #fff;
+  opacity: 1;
+}
+
+/* Кластер карты туристов: гроздь точек, чьи подписи налезли бы друг на друга,
+   схлопнута в кружок с числом ПЛОЩАДОК. Число туристов — только у одиночных
+   точек (решение Дмитрия 15.08.2026). */
+.map-cluster {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+/* Гроздь не должна читаться как точка с числом туристов (репорт Дмитрия
+   15.08.2026: «75» над Москвой выглядело как 75 туристов на одной площадке).
+   Отличаем тремя вещами сразу: круг залит цветом, а не светлый; вокруг — мягкое
+   гало, какого у точек нет; под числом подпись «локаций». */
+.map-cluster span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 25%, #7c8cf8, #4f46e5 70%);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow:
+    0 0 0 5px rgba(79, 70, 229, 0.25),
+    0 2px 6px rgba(15, 23, 42, 0.4);
+}
+
+/* Подпись мельче числа и без разрядки: «локации» — семь букв, и на прежнем
+   размере слово вылезало за края кружка (репорт Дмитрия 16.08.2026). */
+.map-cluster b {
+  font-size: 0.38rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.map-cluster:hover span {
+  background: radial-gradient(circle at 30% 25%, #94a2ff, #4338ca 70%);
+  box-shadow:
+    0 0 0 7px rgba(79, 70, 229, 0.3),
+    0 2px 8px rgba(15, 23, 42, 0.45);
+}
+
 .map-marker-tooltip {
   font-size: 0.78rem;
   font-weight: 600;
   padding: 0.2rem 0.45rem;
   border-radius: 6px;
+}
+
+.map-popup-tourists {
+  font-weight: 600;
 }
 
 .map-popup-paused {
@@ -13069,4 +13170,13 @@ a.admin-system-chip:hover {
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
+}
+
+/* Кластер, внутри которого выбрана площадка: иначе выбор в московской грозди
+   на карте никак не отражался бы. */
+.map-cluster-selected span {
+  border-color: var(--accent-amber-text);
+  box-shadow:
+    0 0 0 5px rgba(217, 119, 6, 0.35),
+    0 2px 6px rgba(15, 23, 42, 0.4);
 }

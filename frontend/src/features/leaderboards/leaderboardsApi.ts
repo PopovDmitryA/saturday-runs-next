@@ -138,6 +138,12 @@ export type LeaderboardCell = {
 export type LeaderboardRow = {
   rank: number;
   rank_delta: number;
+  /**
+   * Стабильный якорь строки: по нему карта туристов сопоставляет светофоры со
+   * строками таблицы. Место дублируется при равных значениях, а site_serial_id
+   * есть только у зарегистрированных — ни то, ни другое строку не опознаёт.
+   */
+  row_key?: string;
   display_name: string | null;
   site_serial_id: number | null;
   platforms: Record<string, LeaderboardCell>;
@@ -322,6 +328,95 @@ export function getMyLeaderboardRow(
   const query = params.toString();
   return leaderboardsFetch<MyLeaderboardRow>(
     `/leaderboards/${metric}/me${query ? `?${query}` : ""}`,
+  );
+}
+
+// ─── Карта туристов ──────────────────────────────────────────────────────────
+// Спойлер туристических рейтингов: та же карта локаций, что в разделе «Карта»,
+// но рядом с каждой точкой стоит число — сколько человек из верхушки рейтинга
+// там было. Клик по точке зажигает в таблице светофоры «был / не был».
+export const TOURIST_MAP_METRICS: LeaderboardMetric[] = ["locations", "volunteer_locations"];
+
+export type TouristMapLocation = {
+  /** Тот же ключ идентичности, что catalog_identity_key у точек карты. */
+  key: string;
+  name: string;
+  slug: string | null;
+  /** Сколько человек из верхушки рейтинга здесь были — число у точки. */
+  visitors: number;
+  visits: number;
+};
+
+export type TouristMapPlatformVisit = {
+  code: string;
+  visits: number;
+  first_date: string | null;
+  last_date: string | null;
+};
+
+export type TouristMapVisit = {
+  row_key: string;
+  visits: number;
+  first_date: string | null;
+  last_date: string | null;
+  platforms: TouristMapPlatformVisit[];
+};
+
+export type TouristMapResponse = {
+  metric: string;
+  min_visits: number;
+  platform: PlatformFilter;
+  /** По скольким верхним строкам рейтинга посчитаны числа. */
+  limit: number;
+  built_at: string | null;
+  /** Строки, попавшие в расчёт: у остальных светофор не горит вовсе. */
+  row_keys: string[];
+  locations: TouristMapLocation[];
+  /** Заполнены только в ответе на запрос конкретной площадки. */
+  location: TouristMapLocation | null;
+  visits: TouristMapVisit[];
+};
+
+/**
+ * Карта туристов под теми же фильтрами, что таблица. Без locationKey приходят
+ * только числа по площадкам; с ним — ещё и визиты выбранной площадки по
+ * строкам таблицы (матрица целиком по проводу не ездит — это сотни килобайт).
+ */
+export function getTouristMap(
+  metric: LeaderboardMetric,
+  {
+    minVisits = 1,
+    platform = "all",
+    countBy = "locations",
+    roles = null,
+    locationKey = null,
+  }: {
+    minVisits?: number;
+    platform?: PlatformFilter;
+    countBy?: CountBy;
+    roles?: string[] | null;
+    locationKey?: string | null;
+  } = {},
+) {
+  const params = new URLSearchParams();
+  if (minVisits > 1) {
+    params.set("min_visits", String(minVisits));
+  }
+  if (platform !== "all") {
+    params.set("platform", platform);
+  }
+  if (countBy !== "locations") {
+    params.set("count_by", countBy);
+  }
+  for (const role of roles ?? []) {
+    params.append("roles", role);
+  }
+  if (locationKey) {
+    params.set("location_key", locationKey);
+  }
+  const query = params.toString();
+  return leaderboardsFetch<TouristMapResponse>(
+    `/leaderboards/${metric}/tourist-map${query ? `?${query}` : ""}`,
   );
 }
 

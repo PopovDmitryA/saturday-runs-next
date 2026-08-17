@@ -1,6 +1,7 @@
 from datetime import date
 from uuid import UUID, uuid4
 
+import pytest
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -13,7 +14,13 @@ from app.models import (
     RunResult,
 )
 from app.services.leaderboard_service import (
-    _WEEK_LOCATIONS_PIDS_ALIAS,
+    _LOCATION_VISITS_SQL,
+    _METRIC_PIDS_ALIAS,
+    _TOURIST_MAP_SQL,
+    _TOURIST_RUN_VISITS_SQL,
+    _TOURIST_VOLUNTEER_VISITS_SQL,
+    _VOLUNTEER_LOCATION_ROLE_ROWS_SQL,
+    _VOLUNTEER_LOCATION_VISITS_SQL,
     _WEEK_LOCATIONS_SQL_BY_METRIC,
     _WEEK_RUN_LOCATIONS_SQL,
     _WEEK_VOLUNTEER_LOCATIONS_SQL,
@@ -29,6 +36,9 @@ from app.services.leaderboard_service import (
     PLATFORM_COLUMNS,
     PLATFORM_FILTER_METRICS,
     PLATFORM_FILTER_VALUES,
+    TOP_LIMIT,
+    TOURIST_MAP_LIMIT,
+    TOURIST_MAP_METRICS,
     VOLUNTEER_LOCATION_PLATFORM_COLUMNS,
     WEEK_LOCATIONS_METRICS,
     WIN_EXTRAS_METRICS,
@@ -37,6 +47,7 @@ from app.services.leaderboard_service import (
     _cache_key,
     _dominant_gender,
     _Entity,
+    _entity_key,
     _geo_keys,
     _latest_week_location,
     _LocationVisits,
@@ -52,7 +63,13 @@ from app.services.leaderboard_service import (
     _pick_last,
     _ranked,
     _RoleUsage,
+    _row_key,
+    _SiteLink,
     _summarize_roles,
+    _tourist_pids_filter,
+    _tourist_row_participants,
+    _tourist_visit_payload,
+    _TouristPlatformVisit,
     _unit_counts,
     _unit_key_getters,
     _week_start,
@@ -446,7 +463,7 @@ def test_week_locations_read_the_metrics_own_protocols() -> None:
     )
     assert _WEEK_LOCATIONS_SQL_BY_METRIC["volunteering"] is _WEEK_VOLUNTEER_LOCATIONS_SQL
     # Фильтр участников «моей» строки должен ссылаться на таблицу этой выборки.
-    for metric, alias in _WEEK_LOCATIONS_PIDS_ALIAS.items():
+    for metric, alias in _METRIC_PIDS_ALIAS.items():
         assert f"{alias}.participant_id IS NOT NULL" in _WEEK_LOCATIONS_SQL_BY_METRIC[metric]
 
 
@@ -780,3 +797,101 @@ def test_gendered_win_rating_excludes_other_gender(db_session: Session) -> None:
     )
     assert values == {}
     assert total == 0
+
+
+# ─── Карта туристов ──────────────────────────────────────────────────────────
+
+
+def test_row_key_is_stable_and_hides_identifiers() -> None:
+    """Якорь строки стабилен между пересчётами и не выдаёт внутренний ключ."""
+    user_id = uuid4()
+    key = _entity_key(user_id, _SiteLink(user_id=user_id, serial_id=7, display_name=None, private=False))
+    assert _row_key(key) == _row_key(key)
+    assert _row_key(key) != _row_key(f"p:{user_id}")
+    assert str(user_id) not in _row_key(key)
+
+
+def test_tourist_map_queries_keep_the_pids_placeholder() -> None:
+    """Точечные выборки карты обязаны уметь фильтр по участникам.
+
+    Без плейсхолдера replace() тихо ничего не заменит, и вместо сотни строк
+    рейтинга запрос уйдёт сканировать протоколы целиком.
+    """
+    for metric, sql in _TOURIST_MAP_SQL.items():
+        assert "/*PIDS_FILTER*/" in sql
+        assert _tourist_pids_filter(metric) in sql.replace(
+            "/*PIDS_FILTER*/", _tourist_pids_filter(metric)
+        )
+    assert "/*PIDS_FILTER*/" in _VOLUNTEER_LOCATION_ROLE_ROWS_SQL
+    assert _tourist_pids_filter("locations") == "AND rr.participant_id = ANY(:pids)"
+    assert _tourist_pids_filter("volunteer_locations") == "AND vr.participant_id = ANY(:pids)"
+
+
+def test_tourist_map_sql_adds_last_date_without_touching_the_rating() -> None:
+    """Дата последнего визита — только у выборок карты: рейтинг распаковывает
+    шесть полей, и седьмое в его выборке сломало бы все распаковки."""
+    assert "MAX(e.event_date) AS last_date" in _TOURIST_RUN_VISITS_SQL
+    assert "MAX(e.event_date) AS last_date" in _TOURIST_VOLUNTEER_VISITS_SQL
+    assert "last_date" not in _LOCATION_VISITS_SQL
+    assert "last_date" not in _VOLUNTEER_LOCATION_VISITS_SQL
+
+
+def test_tourist_visit_payload_merges_systems() -> None:
+    """Светофор — про физическую площадку: визиты систем складываются, а даты
+    берутся крайние по всем системам сразу."""
+    platforms = {
+        "parkrun": _TouristPlatformVisit(
+            visits=2, first_date=date(2017, 4, 22), last_date=date(2017, 9, 9)
+        ),
+        "five_verst": _TouristPlatformVisit(
+            visits=5, first_date=date(2023, 1, 21), last_date=date(2026, 7, 25)
+        ),
+    }
+    payload = _tourist_visit_payload("abc123", platforms)
+    assert payload["visits"] == 7
+    assert payload["first_date"] == "2017-04-22"
+    assert payload["last_date"] == "2026-07-25"
+    # Порядок систем — как в колонках рейтинга: активные, затем архивный parkrun.
+    assert [item["code"] for item in payload["platforms"]] == ["five_verst", "parkrun"]
+
+
+def test_tourist_visit_payload_ignores_the_visits_threshold() -> None:
+    """Светофор отвечает «был или не был», а не «засчитано ли» (решение Дмитрия
+    15.08.2026): единственный визит — такой же зелёный, как двадцатый, и порог
+    рейтинга на него не влияет. Сколько раз человек там был, видно в подсказке."""
+    platforms = {
+        "five_verst": _TouristPlatformVisit(
+            visits=1, first_date=date(2026, 1, 10), last_date=date(2026, 1, 10)
+        )
+    }
+    payload = _tourist_visit_payload("abc123", platforms)
+    assert payload["visits"] == 1
+    assert "counted" not in payload
+
+
+def test_tourist_row_participants_expands_site_accounts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Строка зарегистрированного собрана из всех его платформ — карта должна
+    перечитать протоколы каждой, иначе половина визитов пропадёт."""
+    user_id = uuid4()
+    first, second, lone = uuid4(), uuid4(), uuid4()
+    link = _SiteLink(user_id=user_id, serial_id=42, display_name="Бегун", private=False)
+    monkeypatch.setattr(
+        "app.services.leaderboard_service._site_links",
+        lambda _db: {first: link, second: link},
+    )
+    mapping = _tourist_row_participants(None, [f"u:{user_id}", f"p:{lone}", "мусор"])
+    assert mapping == {
+        first: _row_key(f"u:{user_id}"),
+        second: _row_key(f"u:{user_id}"),
+        lone: _row_key(f"p:{lone}"),
+    }
+
+
+def test_tourist_map_covers_every_visible_row() -> None:
+    """Глубина карты равна глубине таблицы (решение Дмитрия 15.08.2026).
+
+    Иначе у строк ниже расчёта стоял бы прочерк, который пришлось бы объяснять
+    подсказкой: светофор должен быть у каждой строки, которую видно.
+    """
+    assert TOURIST_MAP_LIMIT == TOP_LIMIT
+    assert set(TOURIST_MAP_METRICS) == set(MIN_VISITS_METRICS)
