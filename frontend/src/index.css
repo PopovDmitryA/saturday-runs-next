@@ -12160,15 +12160,14 @@ button.badge-platform-btn:hover {
   margin: 0.1em 0;
 }
 
+/* Кегль героя задаётся инлайном: его подбирает fitText.ts под ширину колонки
+   формата (лесенка HERO_BOXES в ShareCardView). Здесь — только начертание и
+   страховка на случай слова, которое не влезает даже мелким кеглем. */
 .s2-hero-value {
-  font-size: 3.6em;
   font-weight: 800;
   line-height: 1;
   letter-spacing: -0.03em;
-}
-
-.s2-hero-value--long {
-  font-size: 2.4em;
+  overflow-wrap: anywhere;
 }
 
 .s2-hero-caption {
@@ -12395,14 +12394,6 @@ button.badge-platform-btn:hover {
   font-size: 0.5em;
 }
 
-.s2-card--story .s2-hero-value {
-  font-size: 4.2em;
-}
-
-.s2-card--story .s2-hero-value--long {
-  font-size: 2.6em;
-}
-
 .s2-card--story .s2-fact {
   font-size: 0.56em;
 }
@@ -12468,17 +12459,9 @@ button.badge-platform-btn:hover {
   justify-self: stretch;
 }
 
-.s2-card--wide .s2-hero-value {
-  font-size: 2.9em;
-}
-
 /* Квадрат: чуть плотнее вертикаль. */
 .s2-card--square .s2-content {
   padding: 1.3em 1.4em 1.1em;
-}
-
-.s2-card--square .s2-hero-value {
-  font-size: 3em;
 }
 
 /* ── Шторка ── */
