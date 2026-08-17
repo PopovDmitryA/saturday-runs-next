@@ -6077,6 +6077,26 @@ button.badge-platform-btn:hover {
   font-weight: 600;
 }
 
+.admin-organizer-access p {
+  margin: 0 0 0.5rem;
+}
+
+.admin-organizer-access-form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  max-width: 42rem;
+}
+
+.admin-organizer-access-form select {
+  max-width: 20rem;
+}
+
+.admin-organizer-access-form input {
+  max-width: 14rem;
+}
+
 /* Журнал может быть длинным — прокручиваем его, а не страницу. */
 .admin-login-journal-table {
   display: block;

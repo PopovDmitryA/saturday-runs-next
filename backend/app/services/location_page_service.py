@@ -2398,6 +2398,8 @@ def build_location_personal_stats(db: Session, user: User, slug: str) -> dict[st
     payload: dict[str, object] = {
         "slug": identity.slug,
         "name": identity.name,
+        # Канонический ключ идентичности — нужен роуту для проверки оргдоступа.
+        "identity_key": identity.identity_key,
         "runs_count": 0,
         "total_runs": 0,
         "best_time_sec": None,

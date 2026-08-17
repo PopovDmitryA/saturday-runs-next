@@ -94,9 +94,17 @@ export function PortalSectionBottomNav({
                 <div className="portal-cab-more-sep" />
               </>
             )}
+            {/* Кабинет организатора: в сайдбаре он подпункт «Локаций», а на
+                телефоне сайдбара нет — иначе в раздел вообще не попасть. */}
+            {(user?.is_organizer || user?.is_admin) && (
+              <a href="/organizer" className="portal-cab-more-item">
+                Кабинет организатора
+              </a>
+            )}
             {SECONDARY_NAV.filter(
               (item) =>
-                (!item.adminOnly || user?.is_admin) && (!item.authOnly || user != null),
+                (!item.adminOnly || user?.is_admin) &&
+                (!item.authOnly || user != null),
             ).map((item) => (
               <a
                 key={item.href}

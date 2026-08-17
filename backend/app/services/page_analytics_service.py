@@ -77,6 +77,7 @@ _STATIC_PAGE_TYPES = {
     "/ratings/win-locations": "ratings_win_locations",
     "/ratings/home-distance": "ratings_home_distance",
     "/backlog": "backlog",
+    "/organizer": "organizer_index",
     # Превью кабинета на демо-данных — витрина дизайна, а не раздел сайта.
     "/new/cabinet-preview": "cabinet_preview",
     "/share": "share",
@@ -171,6 +172,10 @@ def classify_page(path: str) -> tuple[str, str]:
         return "demo", normalized[len("/demo") :].lstrip("/")[:128]
     if normalized.startswith("/admin/"):
         return "admin", normalized[len("/admin/") :][:128]
+    # Кабинет организатора: одна строка на семейство /organizer/{slug}[/report|/absence],
+    # слаг (и подстраница) — в entity_key.
+    if normalized.startswith("/organizer/"):
+        return "organizer_location", normalized[len("/organizer/") :][:128]
     return "other", normalized[:128]
 
 

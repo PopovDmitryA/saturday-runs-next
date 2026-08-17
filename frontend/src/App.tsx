@@ -53,6 +53,10 @@ import { LastResultsPage } from "./features/locations/LastResultsPage";
 import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
 import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
 import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
+import { OrganizerAbsencePage } from "./features/organizer/OrganizerAbsencePage";
+import { OrganizerIndexPage } from "./features/organizer/OrganizerIndexPage";
+import { OrganizerLocationHubPage } from "./features/organizer/OrganizerLocationHubPage";
+import { OrganizerLocationPage } from "./features/organizer/OrganizerLocationPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
@@ -238,6 +242,9 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,
+  // Кабинет организатора: список доступных локаций; сами кабинеты — по
+  // /organizer/{slug} (regex-ветки в renderRoute). Доступ проверяет бэкенд.
+  "/organizer": () => <OrganizerIndexPage />,
 
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
@@ -312,6 +319,19 @@ function renderRoute(path: string): ReactElement {
         segment={profileMatch[2] ? decodeURIComponent(profileMatch[2]) : undefined}
       />
     );
+  }
+  const organizerAbsenceMatch = path.match(/^\/organizer\/([^/]+)\/absence$/);
+  if (organizerAbsenceMatch) {
+    return <OrganizerAbsencePage slug={decodeURIComponent(organizerAbsenceMatch[1])} />;
+  }
+  const organizerReportMatch = path.match(/^\/organizer\/([^/]+)\/report$/);
+  if (organizerReportMatch) {
+    return <OrganizerLocationPage slug={decodeURIComponent(organizerReportMatch[1])} />;
+  }
+  // Вход в кабинет локации — хаб с выбором инструмента, а не сразу таблица.
+  const organizerLocationMatch = path.match(/^\/organizer\/([^/]+)$/);
+  if (organizerLocationMatch) {
+    return <OrganizerLocationHubPage slug={decodeURIComponent(organizerLocationMatch[1])} />;
   }
   const locationEventsMatch = path.match(/^\/locations\/([^/]+)\/events$/);
   if (locationEventsMatch) {

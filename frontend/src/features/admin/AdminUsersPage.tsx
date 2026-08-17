@@ -4,13 +4,19 @@ import { RequireAdmin } from "../../components/RequireAdmin";
 import { Snackbar } from "../../components/Snackbar";
 import { AdminSubnav } from "./AdminSubnav";
 import {
+  createAdminOrganizerGrant,
+  deleteAdminOrganizerGrant,
   getAdminUserLoginEvents,
+  getAdminUserOrganizerAccess,
+  getLocationsIndex,
   listAdminUsers,
   triggerAdminUserSyncPlatform,
   type AdminLoginEventsResponse,
+  type AdminOrganizerAccessResponse,
   type AdminUserListItem,
   type AdminUsersSort,
   type AdminUsersSortDirection,
+  type LocationIndexItem,
 } from "../../lib/api";
 import { formatDateTime, formatInt, platformCodeLabel } from "../../lib/format";
 import { platformProfileUrl } from "../../lib/platformProfileUrl";
@@ -83,6 +89,149 @@ function LoginJournal({ data }: { data: AdminLoginEventsResponse }) {
   );
 }
 
+// Инлайн-панель «Оргдоступ»: автодоступ по волонтёрствам (read-only) + ручные
+// гранты с добавлением/удалением. Селект локации — публичный индекс каталога.
+function OrganizerAccessPanel({
+  userId,
+  data,
+  locations,
+  onChanged,
+  onError,
+}: {
+  userId: string;
+  data: AdminOrganizerAccessResponse;
+  locations: LocationIndexItem[];
+  onChanged: (next: AdminOrganizerAccessResponse) => void;
+  onError: (message: string) => void;
+}) {
+  const [selectedKey, setSelectedKey] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const manualKeys = useMemo(
+    () => new Set(data.manual.map((item) => item.location_key)),
+    [data.manual],
+  );
+
+  const handleAdd = async () => {
+    if (!selectedKey) {
+      return;
+    }
+    setBusy(true);
+    try {
+      onChanged(await createAdminOrganizerGrant(userId, selectedKey, note.trim() || undefined));
+      setSelectedKey("");
+      setNote("");
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Не удалось выдать доступ");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async (grantId: string) => {
+    setBusy(true);
+    try {
+      onChanged(await deleteAdminOrganizerGrant(userId, grantId));
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Не удалось отозвать доступ");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="admin-organizer-access">
+      <p className="admin-organizer-access-title">
+        <strong>Кабинет организатора</strong> — доступ к расширенным данным локаций.
+      </p>
+      <p>
+        Автодоступ (был организатором):{" "}
+        {data.derived.length === 0 ? (
+          <span className="muted">нет</span>
+        ) : (
+          data.derived.map((item, index) => (
+            <Fragment key={item.location_key}>
+              {index > 0 && ", "}
+              {item.location_slug ? (
+                <a href={`/organizer/${item.location_slug}`} target="_blank" rel="noreferrer">
+                  {item.location_name ?? item.location_key}
+                </a>
+              ) : (
+                <span>{item.location_name ?? item.location_key}</span>
+              )}
+            </Fragment>
+          ))
+        )}
+      </p>
+      <p>
+        Выдано вручную:{" "}
+        {data.manual.length === 0 ? (
+          <span className="muted">нет</span>
+        ) : (
+          data.manual.map((item, index) => (
+            <Fragment key={item.id}>
+              {index > 0 && ", "}
+              <span title={item.note ?? undefined}>
+                {item.location_slug ? (
+                  <a href={`/organizer/${item.location_slug}`} target="_blank" rel="noreferrer">
+                    {item.location_name ?? item.location_key}
+                  </a>
+                ) : (
+                  item.location_name ?? item.location_key
+                )}{" "}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={busy}
+                  title="Отозвать доступ"
+                  onClick={() => void handleDelete(item.id)}
+                >
+                  ✕
+                </button>
+              </span>
+            </Fragment>
+          ))
+        )}
+      </p>
+      <div className="admin-organizer-access-form">
+        <select
+          className="input"
+          value={selectedKey}
+          onChange={(event) => setSelectedKey(event.target.value)}
+        >
+          <option value="">Локация для выдачи доступа…</option>
+          {locations.map((location) => (
+            <option
+              key={location.identity_key}
+              value={location.identity_key}
+              disabled={manualKeys.has(location.identity_key)}
+            >
+              {location.name}
+              {location.city ? ` — ${location.city}` : ""}
+            </option>
+          ))}
+        </select>
+        <input
+          className="input"
+          type="text"
+          placeholder="Заметка (необязательно)"
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+        />
+        <button
+          type="button"
+          className="btn secondary btn-sm"
+          disabled={busy || !selectedKey}
+          onClick={() => void handleAdd()}
+        >
+          Выдать доступ
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function platformCell(
   user: AdminUserListItem,
   code: string,
@@ -145,6 +294,12 @@ function AdminUsersContent() {
   const [journal, setJournal] = useState<AdminLoginEventsResponse | null>(null);
   const [journalLoading, setJournalLoading] = useState(false);
   const [journalError, setJournalError] = useState<string | null>(null);
+  const [accessUserId, setAccessUserId] = useState<string | null>(null);
+  const [access, setAccess] = useState<AdminOrganizerAccessResponse | null>(null);
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  // Индекс локаций для селекта выдачи — грузим один раз при первом открытии панели.
+  const [accessLocations, setAccessLocations] = useState<LocationIndexItem[] | null>(null);
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     title: string;
@@ -191,6 +346,34 @@ function AdminUsersContent() {
       }
     },
     [journalUserId],
+  );
+
+  const handleToggleAccess = useCallback(
+    async (userId: string) => {
+      if (accessUserId === userId) {
+        setAccessUserId(null);
+        return;
+      }
+      setAccessUserId(userId);
+      setAccess(null);
+      setAccessError(null);
+      setAccessLoading(true);
+      try {
+        const [payload, locationsPayload] = await Promise.all([
+          getAdminUserOrganizerAccess(userId),
+          accessLocations ? Promise.resolve(null) : getLocationsIndex(),
+        ]);
+        setAccess(payload);
+        if (locationsPayload) {
+          setAccessLocations(locationsPayload.items);
+        }
+      } catch (err) {
+        setAccessError(err instanceof Error ? err.message : "Не удалось загрузить оргдоступ");
+      } finally {
+        setAccessLoading(false);
+      }
+    },
+    [accessUserId, accessLocations],
   );
 
   const handleSort = (key: AdminUsersSort) => {
@@ -426,6 +609,13 @@ function AdminUsersContent() {
                           >
                             {journalUserId === user.id ? "Скрыть входы" : "Входы"}
                           </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => void handleToggleAccess(user.id)}
+                          >
+                            {accessUserId === user.id ? "Скрыть оргдоступ" : "Оргдоступ"}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -435,6 +625,30 @@ function AdminUsersContent() {
                           {journalLoading && <p className="muted">Загружаем журнал входов…</p>}
                           {journalError && <p className="form-error">{journalError}</p>}
                           {!journalLoading && !journalError && journal && <LoginJournal data={journal} />}
+                        </td>
+                      </tr>
+                    )}
+                    {accessUserId === user.id && (
+                      <tr className="admin-login-journal-row">
+                        <td colSpan={11}>
+                          {accessLoading && <p className="muted">Загружаем оргдоступ…</p>}
+                          {accessError && <p className="form-error">{accessError}</p>}
+                          {!accessLoading && !accessError && access && (
+                            <OrganizerAccessPanel
+                              userId={user.id}
+                              data={access}
+                              locations={accessLocations ?? []}
+                              onChanged={setAccess}
+                              onError={(message) =>
+                                setSnackbar({
+                                  open: true,
+                                  title: "Оргдоступ",
+                                  message,
+                                  variant: "error",
+                                })
+                              }
+                            />
+                          )}
                         </td>
                       </tr>
                     )}

@@ -896,6 +896,11 @@ function LocationPersonalSection({
             К настройкам
           </a>
         )}
+        {stats.organizer_access && (
+          <a className="btn secondary" href={`/organizer/${stats.slug}`}>
+            Кабинет организатора →
+          </a>
+        )}
         {stats.home_distance && (
           <div className="loc-stats-grid loc-stats-grid-single">
             <HomeDistanceTile home={stats.home_distance} />
@@ -1000,12 +1005,19 @@ function LocationPersonalSection({
           />
         )}
       </div>
-      {stats.runs_count > 0 && (
+      {(stats.runs_count > 0 || stats.organizer_access) && (
         <div className="loc-personal-actions">
           {/* Открывает «Пробежки» кабинета сразу с фильтром по этой локации. */}
-          <a className="btn secondary btn-sm" href={runsAtLocationHref(user, stats.name)}>
-            Мои пробежки здесь →
-          </a>
+          {stats.runs_count > 0 && (
+            <a className="btn secondary btn-sm" href={runsAtLocationHref(user, stats.name)}>
+              Мои пробежки здесь →
+            </a>
+          )}
+          {stats.organizer_access && (
+            <a className="btn secondary btn-sm" href={`/organizer/${stats.slug}`}>
+              Кабинет организатора →
+            </a>
+          )}
         </div>
       )}
     </section>

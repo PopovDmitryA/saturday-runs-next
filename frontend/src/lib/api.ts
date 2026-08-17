@@ -20,6 +20,9 @@ export type User = {
   display_name_customized: boolean;
   consent_accepted: boolean;
   is_admin: boolean;
+  // Есть доступ хоть к одной локации кабинета организатора (автодоступ по
+  // волонтёрствам организатором или ручной грант из админки).
+  is_organizer: boolean;
   avatar_url: string | null;
   // Оригинал аватарки без пережатия — раскрывается по клику. null у аватарок,
   // загруженных до переезда на S3.
@@ -2318,6 +2321,8 @@ export type LocationPersonalStats = {
   first_run_date: string | null;
   last_run_date: string | null;
   volunteering_count: number;
+  /** Доступ к кабинету организатора этой локации (организатор или админ). */
+  organizer_access: boolean;
   /** Любимая роль на этой локации: чаще всего выходил. */
   top_volunteer_role: { role: string; count: number } | null;
   // Место в топе по пробежкам — только внутри своего пола
@@ -2606,6 +2611,185 @@ export function triggerAdminUserSyncPlatform(userId: string, platformCode: strin
   return apiFetch<SyncRefreshResponse>(`/admin/users/${userId}/sync/${platformCode}`, {
     method: "POST",
   });
+}
+
+// ===== Оргдоступ: гранты кабинета организатора (админка) =====
+
+export type AdminOrganizerGrantItem = {
+  id: string;
+  location_key: string;
+  location_name: string | null;
+  location_slug: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+export type AdminOrganizerDerivedItem = {
+  location_key: string;
+  location_name: string | null;
+  location_slug: string | null;
+};
+
+export type AdminOrganizerAccessResponse = {
+  manual: AdminOrganizerGrantItem[];
+  derived: AdminOrganizerDerivedItem[];
+};
+
+export function getAdminUserOrganizerAccess(userId: string) {
+  return apiFetch<AdminOrganizerAccessResponse>(`/admin/users/${userId}/organizer-access`);
+}
+
+export function createAdminOrganizerGrant(userId: string, locationKey: string, note?: string) {
+  return apiFetch<AdminOrganizerAccessResponse>(`/admin/users/${userId}/organizer-access`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ location_key: locationKey, note: note || null }),
+  });
+}
+
+export function deleteAdminOrganizerGrant(userId: string, grantId: string) {
+  return apiFetch<AdminOrganizerAccessResponse>(
+    `/admin/users/${userId}/organizer-access/${grantId}`,
+    { method: "DELETE" },
+  );
+}
+
+// ===== Кабинет организатора =====
+
+export type OrganizerLocationItem = {
+  location_key: string;
+  slug: string;
+  name: string;
+  city: string | null;
+  platform_codes: string[];
+  is_paused: boolean;
+  access_source: "volunteering" | "manual" | "both";
+};
+
+export type OrganizerLocationsResponse = {
+  items: OrganizerLocationItem[];
+  total: number;
+};
+
+export function getOrganizerLocations() {
+  return apiFetch<OrganizerLocationsResponse>(`/organizer/locations`);
+}
+
+export type OrganizerAbsenceItem = {
+  name: string | null;
+  handle: string | null;
+  last_date: string;
+  last_date_display: string;
+  runs_here: number;
+  runs_total: number;
+  missed_events: number;
+};
+
+export type OrganizerAbsenceResponse = {
+  location: { slug: string; name: string };
+  min_runs: number;
+  min_missed: number;
+  events_total: number;
+  items: OrganizerAbsenceItem[];
+  total: number;
+};
+
+export function getOrganizerAbsence(slug: string, minRuns: number, minMissed: number) {
+  const params = new URLSearchParams();
+  params.set("min_runs", String(minRuns));
+  params.set("min_missed", String(minMissed));
+  return apiFetch<OrganizerAbsenceResponse>(
+    `/organizer/${encodeURIComponent(slug)}/absence?${params.toString()}`,
+  );
+}
+
+export type OrganizerEventDateItem = {
+  event_id: string;
+  event_date: string;
+  event_number: number | null;
+  platform_code: string;
+  finishers_count: number;
+};
+
+export type OrganizerEventDatesResponse = {
+  location: { slug: string; name: string };
+  items: OrganizerEventDateItem[];
+};
+
+export function getOrganizerEventDates(slug: string) {
+  return apiFetch<OrganizerEventDatesResponse>(
+    `/organizer/${encodeURIComponent(slug)}/event-dates`,
+  );
+}
+
+export type SvodRunnerRow = {
+  position: number | null;
+  participant_id: string | null;
+  name: string | null;
+  profile_url: string | null;
+  finish_time_sec: number | null;
+  finish_time_display: string;
+  first_in_system: boolean;
+  first_at_location: boolean;
+  is_pb: boolean;
+  is_location_pb: boolean;
+  comeback: boolean;
+  location_runs_count: number;
+  platform_runs_count: number;
+  location_milestone: number | null;
+  location_next_milestone: number | null;
+  platform_milestone: number | null;
+  platform_next_milestone: number | null;
+};
+
+export type SvodVolunteerRole = {
+  label: string;
+  count: number;
+  milestone: number | null;
+};
+
+export type SvodVolunteerRow = {
+  participant_id: string | null;
+  name: string | null;
+  profile_url: string | null;
+  roles: SvodVolunteerRole[];
+  new_roles: string[];
+  first_volunteering: boolean;
+  first_at_location: boolean;
+  location_vol_count: number;
+  platform_vol_count: number;
+  location_milestone: number | null;
+  location_next_milestone: number | null;
+  platform_milestone: number | null;
+  platform_next_milestone: number | null;
+};
+
+export type SvodResponse = {
+  event: {
+    event_id: string;
+    event_date: string;
+    event_number: number | null;
+    location_id: string;
+    location_name: string;
+    platform_code: string;
+    platform_name: string;
+    source_url: string | null;
+    finishers_count: number;
+    volunteers_count: number;
+  };
+  runners: SvodRunnerRow[];
+  volunteers: SvodVolunteerRow[];
+};
+
+export function getOrganizerEventReport(slug: string, eventId: string) {
+  return apiFetch<SvodResponse>(
+    `/organizer/${encodeURIComponent(slug)}/event-report?event_id=${encodeURIComponent(eventId)}`,
+  );
+}
+
+// Скачивание .xlsx идёт обычной ссылкой (кука same-origin), без apiFetch.
+export function organizerEventReportXlsxUrl(slug: string, eventId: string) {
+  return `${API_BASE}/organizer/${encodeURIComponent(slug)}/event-report.xlsx?event_id=${encodeURIComponent(eventId)}`;
 }
 
 const ADMIN_PREVIEW_PAGE_SIZE = 200;

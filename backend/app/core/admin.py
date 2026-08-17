@@ -89,7 +89,13 @@ def find_admin_user(db: Session, settings: Settings) -> User | None:
     return None
 
 
-def user_response(user: User, settings: Settings, db_identities: list | None = None) -> UserResponse:
+def user_response(
+    user: User,
+    settings: Settings,
+    db_identities: list | None = None,
+    *,
+    db: Session | None = None,
+) -> UserResponse:
     identities = db_identities or list(user.auth_identities)
     identity_responses = [
         AuthIdentityResponse.model_validate(identity_response_payload(item)) for item in identities
@@ -97,10 +103,16 @@ def user_response(user: User, settings: Settings, db_identities: list | None = N
     scalar_fields = {
         name: getattr(user, name)
         for name in UserResponse.model_fields
-        if name not in {"is_admin", "auth_identities"}
+        if name not in {"is_admin", "is_organizer", "auth_identities"}
     }
+    is_organizer = False
+    if db is not None:
+        from app.services.organizer_access_service import user_is_organizer
+
+        is_organizer = user_is_organizer(db, user)
     return UserResponse(
         **scalar_fields,
         is_admin=is_admin_user(user, settings),
+        is_organizer=is_organizer,
         auth_identities=identity_responses,
     )

@@ -17,6 +17,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Event, LocationCatalogLink
+from app.volunteer_role_taxonomy import canonical_volunteer_role
 
 # Глобальные клубные уровни (пробежки и волонтёрства в системе платформы).
 CLUB_LEVELS = (10, 25, 50, 100, 250)
@@ -190,7 +191,132 @@ def _query(db: Session, sql: str, params: dict[str, Any], expanding: tuple[str, 
     return [dict(row) for row in db.execute(stmt, params).mappings()]
 
 
-def build_event_report(db: Session, event_id: UUID) -> dict[str, Any] | None:
+def _runner_stat_rows(db: Session, params: dict[str, Any]) -> list[dict[str, Any]]:
+    """Построчная статистика бегунов события: флаги «впервые/ЛР» + счётчики.
+
+    Общая для отчёта админки и свода кабинета организатора — чтобы цифры
+    в посте и в таблице свода не разъезжались.
+    """
+    return _query(
+        db,
+        f"""
+        -- Только строки со временем финиша: записи без него — это «НЕИЗВЕСТНЫЙ»
+        -- (неопознанные участники протокола 5 вёрст, status='unknown'). Легаси
+        -- отсекал их фильтром status_runner='active_runner'; иначе каждый такой
+        -- ряд считался бы новичком системы.
+        WITH today AS (
+            SELECT rr.participant_id,
+                   min(rr.finish_time_sec) AS finish_time_sec,
+                   min(rr.position) AS position
+            FROM run_results rr
+            WHERE rr.event_id = :event_id
+              AND rr.participant_id IS NOT NULL
+              AND rr.finish_time_sec IS NOT NULL
+            GROUP BY rr.participant_id
+        ),
+        prev AS (
+            SELECT rr.participant_id,
+                   min(rr.finish_time_sec) AS best_platform_sec,
+                   min(rr.finish_time_sec) FILTER (WHERE e.location_id IN :loc_ids) AS best_location_sec,
+                   count(*) FILTER (WHERE e.location_id IN :loc_ids) AS location_runs,
+                   count(*) AS platform_runs,
+                   max(e.event_date) AS last_run_date
+            FROM run_results rr
+            JOIN events e ON e.id = rr.event_id
+            WHERE rr.participant_id IN (SELECT participant_id FROM today)
+              AND e.event_date < :event_date
+              AND NOT e.is_test_event
+              AND rr.finish_time_sec IS NOT NULL
+              AND e.{NOT_SECONDARY_SQL}
+            GROUP BY rr.participant_id
+        )
+        SELECT t.participant_id, p.display_name, p.profile_url, t.finish_time_sec, t.position,
+               (prev.participant_id IS NULL) AS first_in_system,
+               (coalesce(prev.location_runs, 0) = 0) AS first_at_location,
+               (t.finish_time_sec IS NOT NULL AND prev.best_platform_sec IS NOT NULL
+                AND t.finish_time_sec < prev.best_platform_sec) AS is_pb,
+               (t.finish_time_sec IS NOT NULL AND prev.best_location_sec IS NOT NULL
+                AND t.finish_time_sec < prev.best_location_sec) AS is_location_pb,
+               coalesce(prev.location_runs, 0) + 1 AS location_runs_count,
+               coalesce(prev.platform_runs, 0) + 1 AS platform_runs_count,
+               prev.last_run_date
+        FROM today t
+        LEFT JOIN prev ON prev.participant_id = t.participant_id
+        LEFT JOIN participants p ON p.id = t.participant_id
+        """,
+        params,
+        expanding=("loc_ids",),
+    )
+
+
+def _volunteer_stat_rows(db: Session, params: dict[str, Any]) -> list[dict[str, Any]]:
+    """Построчная статистика волонтёров события — общая для отчёта и свода."""
+    return _query(
+        db,
+        f"""
+        WITH today AS (
+            SELECT vr.participant_id, array_agg(DISTINCT vr.role) AS roles
+            FROM volunteer_results vr
+            WHERE vr.event_id = :event_id AND vr.participant_id IS NOT NULL
+            GROUP BY vr.participant_id
+        ),
+        prev AS (
+            SELECT vr.participant_id,
+                   count(DISTINCT vr.event_id) AS vol_events,
+                   count(DISTINCT vr.event_id) FILTER (WHERE e.location_id IN :loc_ids) AS loc_vol_events,
+                   array_agg(DISTINCT vr.role) AS prev_roles
+            FROM volunteer_results vr
+            JOIN events e ON e.id = vr.event_id
+            WHERE vr.participant_id IN (SELECT participant_id FROM today)
+              AND e.event_date < :event_date
+              AND NOT e.is_test_event
+              AND e.{NOT_SECONDARY_SQL}
+            GROUP BY vr.participant_id
+        )
+        SELECT t.participant_id, p.display_name, p.profile_url, t.roles,
+               (prev.participant_id IS NULL) AS first_volunteering,
+               (coalesce(prev.loc_vol_events, 0) = 0) AS first_volunteering_at_location,
+               coalesce(prev.loc_vol_events, 0) + 1 AS location_vol_count,
+               coalesce(prev.vol_events, 0) + 1 AS platform_vol_count,
+               prev.prev_roles
+        FROM today t
+        LEFT JOIN prev ON prev.participant_id = t.participant_id
+        LEFT JOIN participants p ON p.id = t.participant_id
+        """,
+        params,
+        expanding=("loc_ids",),
+    )
+
+
+def _new_canonical_roles(
+    roles: list[str] | None, prev_roles: list[str] | None
+) -> list[str]:
+    """Ярлыки сегодняшних ролей, которых не было в истории волонтёра.
+
+    Сравнение по каноническим ключам таксономии, а не по сырым строкам:
+    parkrun приклеивает к роли счётчик кредитов («Marshal (12×)»), и сырое
+    сравнение считало бы каждую субботу «новой ролью».
+    """
+    prev_keys = set()
+    for role in prev_roles or []:
+        canonical = canonical_volunteer_role(role)
+        if canonical is not None:
+            prev_keys.add(canonical.key)
+    new_labels: list[str] = []
+    seen: set[str] = set()
+    for role in roles or []:
+        canonical = canonical_volunteer_role(role)
+        if canonical is None or canonical.key in prev_keys or canonical.key in seen:
+            continue
+        seen.add(canonical.key)
+        new_labels.append(canonical.label)
+    return new_labels
+
+
+def _event_context(
+    db: Session, event_id: UUID
+) -> tuple[Event, dict[str, Any], str | None] | None:
+    """Событие + параметры исторических запросов (общие для отчёта и свода)."""
     event = (
         db.query(Event)
         .options(joinedload(Event.location), joinedload(Event.platform), joinedload(Event.summary))
@@ -207,6 +333,14 @@ def build_event_report(db: Session, event_id: UUID) -> dict[str, Any] | None:
         "loc_ids": [str(x) for x in loc_ids],
         "all_loc_ids": [str(x) for x in all_loc_ids],
     }
+    return event, params, canonical_name
+
+
+def build_event_report(db: Session, event_id: UUID) -> dict[str, Any] | None:
+    context = _event_context(db, event_id)
+    if context is None:
+        return None
+    event, params, canonical_name = context
     gender_expr = gender_sql("rr.age_category")
 
     # --- Шапка: сегодняшние агрегаты ---
@@ -281,51 +415,7 @@ def build_event_report(db: Session, event_id: UUID) -> dict[str, Any] | None:
         top_finishes.append({**row, "gender_qual": gender_qual, "age_qual": age_qual})
 
     # --- Статистика мероприятия: бегуны ---
-    runner_rows = _query(
-        db,
-        f"""
-        -- Только строки со временем финиша: записи без него — это «НЕИЗВЕСТНЫЙ»
-        -- (неопознанные участники протокола 5 вёрст, status='unknown'). Легаси
-        -- отсекал их фильтром status_runner='active_runner'; иначе каждый такой
-        -- ряд считался бы новичком системы.
-        WITH today AS (
-            SELECT rr.participant_id, min(rr.finish_time_sec) AS finish_time_sec
-            FROM run_results rr
-            WHERE rr.event_id = :event_id
-              AND rr.participant_id IS NOT NULL
-              AND rr.finish_time_sec IS NOT NULL
-            GROUP BY rr.participant_id
-        ),
-        prev AS (
-            SELECT rr.participant_id,
-                   min(rr.finish_time_sec) AS best_platform_sec,
-                   min(rr.finish_time_sec) FILTER (WHERE e.location_id IN :loc_ids) AS best_location_sec,
-                   count(*) FILTER (WHERE e.location_id IN :loc_ids) AS location_runs,
-                   max(e.event_date) AS last_run_date
-            FROM run_results rr
-            JOIN events e ON e.id = rr.event_id
-            WHERE rr.participant_id IN (SELECT participant_id FROM today)
-              AND e.event_date < :event_date
-              AND NOT e.is_test_event
-              AND rr.finish_time_sec IS NOT NULL
-              AND e.{NOT_SECONDARY_SQL}
-            GROUP BY rr.participant_id
-        )
-        SELECT t.participant_id, p.display_name, p.profile_url, t.finish_time_sec,
-               (prev.participant_id IS NULL) AS first_in_system,
-               (coalesce(prev.location_runs, 0) = 0) AS first_at_location,
-               (t.finish_time_sec IS NOT NULL AND prev.best_platform_sec IS NOT NULL
-                AND t.finish_time_sec < prev.best_platform_sec) AS is_pb,
-               (t.finish_time_sec IS NOT NULL AND prev.best_location_sec IS NOT NULL
-                AND t.finish_time_sec < prev.best_location_sec) AS is_location_pb,
-               prev.last_run_date
-        FROM today t
-        LEFT JOIN prev ON prev.participant_id = t.participant_id
-        LEFT JOIN participants p ON p.id = t.participant_id
-        """,
-        params,
-        expanding=("loc_ids",),
-    )
+    runner_rows = _runner_stat_rows(db, params)
     comeback_threshold = event.event_date - timedelta(days=365)
 
     def _people(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -355,39 +445,7 @@ def build_event_report(db: Session, event_id: UUID) -> dict[str, Any] | None:
     )
 
     # --- Статистика мероприятия: волонтёры ---
-    volunteer_rows = _query(
-        db,
-        f"""
-        WITH today AS (
-            SELECT vr.participant_id, array_agg(DISTINCT vr.role) AS roles
-            FROM volunteer_results vr
-            WHERE vr.event_id = :event_id AND vr.participant_id IS NOT NULL
-            GROUP BY vr.participant_id
-        ),
-        prev AS (
-            SELECT vr.participant_id,
-                   count(DISTINCT vr.event_id) AS vol_events,
-                   count(DISTINCT vr.event_id) FILTER (WHERE e.location_id IN :loc_ids) AS loc_vol_events,
-                   array_agg(DISTINCT vr.role) AS prev_roles
-            FROM volunteer_results vr
-            JOIN events e ON e.id = vr.event_id
-            WHERE vr.participant_id IN (SELECT participant_id FROM today)
-              AND e.event_date < :event_date
-              AND NOT e.is_test_event
-              AND e.{NOT_SECONDARY_SQL}
-            GROUP BY vr.participant_id
-        )
-        SELECT t.participant_id, p.display_name, p.profile_url, t.roles,
-               (prev.participant_id IS NULL) AS first_volunteering,
-               (coalesce(prev.loc_vol_events, 0) = 0) AS first_volunteering_at_location,
-               prev.prev_roles
-        FROM today t
-        LEFT JOIN prev ON prev.participant_id = t.participant_id
-        LEFT JOIN participants p ON p.id = t.participant_id
-        """,
-        params,
-        expanding=("loc_ids",),
-    )
+    volunteer_rows = _volunteer_stat_rows(db, params)
     first_volunteers = _people([r for r in volunteer_rows if r["first_volunteering"]])
     first_volunteers_at_location = _people(
         [
@@ -401,10 +459,7 @@ def build_event_report(db: Session, event_id: UUID) -> dict[str, Any] | None:
             r
             for r in volunteer_rows
             if not r["first_volunteering"]
-            and any(
-                role is not None and role not in (r["prev_roles"] or [])
-                for role in (r["roles"] or [])
-            )
+            and _new_canonical_roles(r["roles"], r["prev_roles"])
         ]
     )
 
@@ -859,3 +914,172 @@ def _build_post_text(report: dict[str, Any], location_title: str) -> str:
         POST_SIGNATURE,
     ]
     return "\n\n".join(block for block in blocks if block)
+
+
+# ===== Свод по пробежке для кабинета организатора =====
+
+# Юбилейные уровни сайта: 10, дальше кратные 25 — как в отчёте админки
+# (легаси-Grafana считала кратные 5, но на сайте юбилеи уже переосмыслены).
+
+
+def _milestone_value(total: int) -> int | None:
+    """total, если это юбилейное число, иначе None."""
+    if total == 10 or (total >= 25 and total % 25 == 0):
+        return total
+    return None
+
+
+def _volunteer_role_counts(db: Session, params: dict[str, Any]) -> dict[str, dict[str, int]]:
+    """Счётчики волонтёрств по каноническим ролям (включая сегодняшнее событие).
+
+    participant_id (строкой) → {канонический ключ роли: число событий}.
+    Канонизация в Python: сырые ярлыки несут счётчики parkrun («Marshal (12×)»)
+    и разные написания по системам.
+    """
+    rows = _query(
+        db,
+        f"""
+        SELECT vr.participant_id, vr.role, vr.event_id
+        FROM volunteer_results vr
+        JOIN events e ON e.id = vr.event_id
+        WHERE vr.participant_id IN (
+                SELECT DISTINCT participant_id FROM volunteer_results
+                WHERE event_id = :event_id AND participant_id IS NOT NULL
+              )
+          AND e.event_date <= :event_date
+          AND NOT e.is_test_event
+          AND e.{NOT_SECONDARY_SQL}
+          AND vr.role IS NOT NULL
+        """,
+        params,
+    )
+    events_by_role: dict[str, dict[str, set[str]]] = {}
+    for row in rows:
+        canonical = canonical_volunteer_role(row["role"])
+        if canonical is None:
+            continue
+        participant_key = str(row["participant_id"])
+        events_by_role.setdefault(participant_key, {}).setdefault(canonical.key, set()).add(
+            str(row["event_id"])
+        )
+    return {
+        participant_key: {role_key: len(event_ids) for role_key, event_ids in roles.items()}
+        for participant_key, roles in events_by_role.items()
+    }
+
+
+def build_event_svod(db: Session, event_id: UUID) -> dict[str, Any] | None:
+    """Свод по пробежке для отчёта оргкоманды: построчные таблицы бегунов и волонтёров.
+
+    Перенос Grafana-дашборда «Свод по пробежке для отчетов» на данные сайта.
+    Флаги считаются теми же запросами, что и отчёт админки (_runner_stat_rows /
+    _volunteer_stat_rows), чтобы цифры поста и свода совпадали.
+    """
+    context = _event_context(db, event_id)
+    if context is None:
+        return None
+    event, params, canonical_name = context
+
+    runner_rows = _runner_stat_rows(db, params)
+    volunteer_rows = _volunteer_stat_rows(db, params)
+    role_counts = _volunteer_role_counts(db, params)
+    comeback_threshold = event.event_date - timedelta(days=365)
+
+    finishers_total = _query(
+        db,
+        "SELECT count(*) AS cnt FROM run_results WHERE event_id = :event_id",
+        params,
+    )[0]["cnt"]
+    volunteers_total = _query(
+        db,
+        "SELECT count(*) AS cnt FROM volunteer_results WHERE event_id = :event_id",
+        params,
+    )[0]["cnt"]
+
+    runners: list[dict[str, Any]] = []
+    for row in sorted(
+        runner_rows, key=lambda r: (r["position"] is None, r["position"] or 0)
+    ):
+        location_runs = int(row["location_runs_count"])
+        platform_runs = int(row["platform_runs_count"])
+        runners.append(
+            {
+                "position": row["position"],
+                "participant_id": row["participant_id"],
+                "name": row["display_name"],
+                "profile_url": row["profile_url"],
+                "finish_time_sec": row["finish_time_sec"],
+                "finish_time_display": fmt_time(row["finish_time_sec"]),
+                "first_in_system": bool(row["first_in_system"]),
+                "first_at_location": bool(row["first_at_location"]),
+                "is_pb": bool(row["is_pb"]),
+                "is_location_pb": bool(row["is_location_pb"]),
+                "comeback": (
+                    row["last_run_date"] is not None
+                    and row["last_run_date"] <= comeback_threshold
+                ),
+                "location_runs_count": location_runs,
+                "platform_runs_count": platform_runs,
+                "location_milestone": _milestone_value(location_runs),
+                "location_next_milestone": _milestone_value(location_runs + 1),
+                "platform_milestone": _milestone_value(platform_runs),
+                "platform_next_milestone": _milestone_value(platform_runs + 1),
+            }
+        )
+
+    volunteers: list[dict[str, Any]] = []
+    for row in sorted(volunteer_rows, key=lambda r: (r["display_name"] or "")):
+        location_vols = int(row["location_vol_count"])
+        platform_vols = int(row["platform_vol_count"])
+        participant_key = str(row["participant_id"])
+        roles_detail: list[dict[str, Any]] = []
+        seen_role_keys: set[str] = set()
+        for role in row["roles"] or []:
+            canonical = canonical_volunteer_role(role)
+            if canonical is None or canonical.key in seen_role_keys:
+                continue
+            seen_role_keys.add(canonical.key)
+            role_total = role_counts.get(participant_key, {}).get(canonical.key, 1)
+            roles_detail.append(
+                {
+                    "label": canonical.label,
+                    "count": role_total,
+                    "milestone": _milestone_value(role_total),
+                }
+            )
+        volunteers.append(
+            {
+                "participant_id": row["participant_id"],
+                "name": row["display_name"],
+                "profile_url": row["profile_url"],
+                "roles": roles_detail,
+                "new_roles": _new_canonical_roles(row["roles"], row["prev_roles"])
+                if not row["first_volunteering"]
+                else [],
+                "first_volunteering": bool(row["first_volunteering"]),
+                "first_at_location": bool(row["first_volunteering_at_location"]),
+                "location_vol_count": location_vols,
+                "platform_vol_count": platform_vols,
+                "location_milestone": _milestone_value(location_vols),
+                "location_next_milestone": _milestone_value(location_vols + 1),
+                "platform_milestone": _milestone_value(platform_vols),
+                "platform_next_milestone": _milestone_value(platform_vols + 1),
+            }
+        )
+
+    return {
+        "event": {
+            "event_id": event.id,
+            "event_date": event.event_date,
+            "event_number": event.event_number,
+            "location_id": event.location_id,
+            "location_name": canonical_name or event.location.name,
+            "platform_code": event.platform.code,
+            "platform_name": event.platform.name,
+            "source_url": event.source_url,
+            "finishers_count": finishers_total,
+            "volunteers_count": volunteers_total,
+        },
+        "runners": runners,
+        "volunteers": volunteers,
+    }

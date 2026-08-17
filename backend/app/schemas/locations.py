@@ -462,6 +462,9 @@ class LocationPersonalStatsResponse(BaseModel):
     first_run_date: date | None = None
     last_run_date: date | None = None
     volunteering_count: int = 0
+    # Есть ли у пользователя доступ к кабинету организатора этой локации —
+    # кнопка на странице локации (админ проходит всегда).
+    organizer_access: bool = False
     # Любимая роль на этой локации: чаще всего выходил (ярлыки систем схлопнуты
     # в канон, см. volunteer_role_taxonomy).
     top_volunteer_role: LocationTopRoleResponse | None = None

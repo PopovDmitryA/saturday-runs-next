@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_optional_user
+from app.config import Settings, get_settings
+from app.core.admin import is_admin_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas.dashboard import HomeDistanceDetailResponse
@@ -31,6 +33,7 @@ from app.services.location_page_service import (
     build_location_personal_stats,
     build_locations_index,
 )
+from app.services.organizer_access_service import has_organizer_access
 from app.services.user_unique_locations_detail import build_user_unique_location_details
 
 router = APIRouter(prefix="/locations", tags=["locations"])
@@ -99,11 +102,17 @@ def location_personal_stats(
     slug: str,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> LocationPersonalStatsResponse:
     """Личная статистика на локации — блок «Вы на этой локации» (только свои данные)."""
     payload = build_location_personal_stats(db, user, slug)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
+    # Кнопка «Кабинет организатора» на странице локации: у админа — всегда,
+    # у остальных — по автодоступу/гранту (см. organizer_access_service).
+    payload["organizer_access"] = is_admin_user(user, settings) or has_organizer_access(
+        db, user, str(payload.get("identity_key") or "")
+    )
     return LocationPersonalStatsResponse.model_validate(payload)
 
 

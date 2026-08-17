@@ -132,7 +132,7 @@ def _log_login(
 
 def _user_payload(db: Session, user: User, settings: Settings) -> UserResponse:
     identities = list_user_identities(db, user.id)
-    return user_response(user, settings, identities)
+    return user_response(user, settings, identities, db=db)
 
 
 def _parse_vk_callback_params(

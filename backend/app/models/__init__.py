@@ -351,6 +351,38 @@ class LocationOpening(Base):
     location: Mapped["Location"] = relationship(back_populates="opening")
 
 
+class LocationOrganizerAccess(Base):
+    """Ручной грант доступа к кабинету организатора локации.
+
+    Автодоступ по волонтёрствам в роли организатора вычисляется на лету
+    (organizer_access_service) и здесь не материализуется — в таблице только
+    гранты, выданные админом руками.
+
+    Локация задаётся каноническим identity key каталога (как в
+    users.home_location_key), а не location_id: грант покрывает все платформы
+    одной физической точки сразу.
+    """
+
+    __tablename__ = "location_organizer_access"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "location_key", name="uq_location_organizer_access_user_location"
+        ),
+        Index("ix_location_organizer_access_user_id", "user_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    location_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    granted_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+
+
 class LocationCatalog(Base):
     """Canonical location identity for cross-platform display (parkrun → 5verst/s95)."""
 

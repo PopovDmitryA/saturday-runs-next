@@ -40,6 +40,7 @@ const PREVIEW_USER: User = {
   display_name_customized: true,
   consent_accepted: true,
   is_admin: false,
+  is_organizer: false,
   avatar_url: null,
   avatar_full_url: null,
   serial_id: null,

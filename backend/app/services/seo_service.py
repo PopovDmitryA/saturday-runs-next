@@ -177,6 +177,11 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "Бэклог — run5k.run",
         "Что участники предлагают добавить на сайт и за что голосуют.",
     ),
+    # Кабинет организатора — закрытый раздел оргкоманд, в поиске не нужен.
+    "/organizer": _meta(
+        "Кабинет организатора — run5k.run",
+        "Расширенные данные локаций для оргкоманд: свод по пробежке и долгая пауза.",
+    ),
     # Лаборатория карты — витрина дизайна, наружу не публикуется.
     "/new/map-lab": _meta("Карта (лаборатория) — run5k.run", "Экспериментальная карта локаций."),
     "/new/cabinet-preview": _meta(
@@ -245,6 +250,13 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
 
     if path.startswith("/admin/"):
         return _ADMIN_META
+    # Семейство /organizer/{slug}[/report|/absence] — родовой заголовок, имя локации
+    # подставляет клиент после загрузки данных.
+    if path.startswith("/organizer/"):
+        return _meta(
+            "Кабинет организатора локации — run5k.run",
+            "Свод по пробежке для отчёта оргкоманды и участники на долгой паузе.",
+        )
     if _SWEEP_HQ_RE.match(path):
         return _meta("Обход parkrun — run5k.run", "Служебная витрина мирового обхода parkrun.")
     if path == "/world":

@@ -5,10 +5,10 @@
  *
  * - группа «Личный кабинет» раскрывается по клику и автоматически при
  *   переходе в любой его раздел; анониму — задизейблена, не скрыта;
- * - «Локации» — один пункт с постоянными подпунктами «Последние пробежки» и
- *   «Журнал протоколов» (второй активен только внутри локации, иначе
- *   задизейблен с тултипом); на странице локации между ними появляется сама
- *   площадка;
+ * - «Локации» — один пункт с постоянными подпунктами «Последние пробежки»,
+ *   «Журнал протоколов» (активен только внутри локации, иначе задизейблен с
+ *   тултипом) и «Кабинет организатора» (только для оргкоманд и админа); на
+ *   странице локации между ними появляется сама площадка;
  * - «Рейтинги» — один пункт без перечня лидербордов (их будут десятки);
  * - служебный блок (Настройки/Бэклог/Админка/Выйти) виден на всех страницах;
  * - сворачивание в рельс-иконки работает везде (общий localStorage-ключ).
@@ -48,7 +48,14 @@ export type CabinetTabKey =
   | "settings";
 
 /** Что подсвечивать: вкладка ЛК, раздел сайта или ничего. */
-export type SiteSidebarActive = CabinetTabKey | "locations" | "last-results" | "ratings" | "backlog" | null;
+export type SiteSidebarActive =
+  | CabinetTabKey
+  | "locations"
+  | "last-results"
+  | "organizer"
+  | "ratings"
+  | "backlog"
+  | null;
 
 type CabinetNavItem = {
   key: CabinetTabKey;
@@ -155,6 +162,14 @@ const LOCATION_PIN_ICON = icon(
   <>
     <circle cx="12" cy="12" r="3.2" />
     <path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21" />
+  </>,
+);
+
+// Кабинет организатора — планшет оргкоманды.
+const ORGANIZER_ICON = icon(
+  <>
+    <path d="M9 4.5h6M8 6.5h8a1 1 0 0 1 1 1V20a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 7 20V7.5a1 1 0 0 1 1-1Z" />
+    <path d="M10 11h4M10 14.5h4" />
   </>,
 );
 
@@ -447,6 +462,9 @@ export function SiteSidebar({
   const user = userProp !== undefined ? userProp : detectedUser;
   const authed = user != null;
   const anon = user === null;
+  // Пункт «Кабинет организатора» показываем только оргкомандам (и админу):
+  // остальным он вёл бы в пустой раздел.
+  const organizer = user != null && (user.is_organizer || user.is_admin);
 
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -640,6 +658,23 @@ export function SiteSidebar({
           <span className="portal-cab-nav-icon">{PROTOCOL_ICON}</span>
           <span className="portal-cab-nav-label">Журнал протоколов</span>
         </a>
+        {/* Кабинет организатора — постоянный подпункт, как «Последние
+            пробежки»: без него в раздел можно было попасть только со страницы
+            своей локации. Ведёт в кабинет открытой площадки, а вне локации —
+            к списку доступных. */}
+        {organizer && (
+          <a
+            href={location ? `/organizer/${location.slug}` : "/organizer"}
+            className={`portal-cab-nav-item portal-cab-nav-subitem${
+              active === "organizer" ? " active" : ""
+            }`}
+            aria-current={active === "organizer" ? "page" : undefined}
+            title={collapsed ? "Кабинет организатора" : undefined}
+          >
+            <span className="portal-cab-nav-icon">{ORGANIZER_ICON}</span>
+            <span className="portal-cab-nav-label">Кабинет организатора</span>
+          </a>
+        )}
 
         <a
           href="/ratings"

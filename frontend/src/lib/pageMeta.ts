@@ -135,6 +135,11 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
     title: "Бэклог — run5k.run",
     description: "Что участники предлагают добавить на сайт и за что голосуют.",
   },
+  // Кабинет организатора — закрытый раздел оргкоманд, в поиске не нужен.
+  "/organizer": {
+    title: "Кабинет организатора — run5k.run",
+    description: "Расширенные данные локаций для оргкоманд: свод по пробежке и долгая пауза.",
+  },
   "/new/map-lab": {
     title: "Карта (лаборатория) — run5k.run",
     description: "Экспериментальная карта локаций.",
@@ -221,6 +226,14 @@ export function resolvePageMeta(rawPath: string): PageMeta {
 
   if (path.startsWith("/admin/")) {
     return ADMIN_META;
+  }
+  // Семейство /organizer/{slug}[/absence] — родовой заголовок, имя локации
+  // подставит сама страница после загрузки данных.
+  if (path.startsWith("/organizer/")) {
+    return {
+      title: "Кабинет организатора локации — run5k.run",
+      description: "Свод по пробежке для отчёта оргкоманды и участники на долгой паузе.",
+    };
   }
   if (SWEEP_HQ_RE.test(path)) {
     return {

@@ -56,6 +56,9 @@ class UserResponse(BaseModel):
     display_name_customized: bool = False
     consent_accepted: bool = False
     is_admin: bool = False
+    # Есть ли доступ хоть к одной локации кабинета организатора (автодоступ по
+    # волонтёрствам в роли организатора или ручной грант) — для пункта меню.
+    is_organizer: bool = False
     avatar_url: str | None = None
     # Оригинал аватарки без пережатия — открывается по клику на аватарку.
     # NULL у аватарок, загруженных до появления оригиналов.
