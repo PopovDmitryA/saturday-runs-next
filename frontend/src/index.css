@@ -6155,6 +6155,43 @@ button.badge-platform-btn:hover {
   gap: 0.15rem;
 }
 
+/* Сегмент «Кратко | Полно» для колонок систем — в панели над таблицей,
+   рядом с поиском (сама полоса .tview-bar тут не нужна: таблица админки
+   и так живёт в карточке со своим скроллом). */
+.admin-users-view {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.admin-users-view-label {
+  font-size: 0.92rem;
+}
+
+/* Свёрнутая колонка «Системы»: чипы привязок, подробности — в подсказке. */
+.admin-users-systems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  min-width: 7rem;
+  max-width: 12rem;
+}
+
+.admin-system-chip {
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  background: var(--chip-bg);
+  color: var(--text-2);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+a.admin-system-chip:hover {
+  color: var(--link);
+}
+
 .admin-platform-link {
   font-size: 0.92rem;
   line-height: 1.35;

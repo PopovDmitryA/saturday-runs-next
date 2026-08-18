@@ -8,6 +8,7 @@ import {
   listAdminUsers,
   triggerAdminUserSyncPlatform,
   type AdminLoginEventsResponse,
+  type AdminPlatformLinkBrief,
   type AdminUserHomeLocation,
   type AdminUserListItem,
   type AdminUsersSort,
@@ -129,6 +130,67 @@ function platformCell(
   );
 }
 
+// Порядок систем — тот же, что у колонок: от самой массовой к самой редкой.
+const PLATFORM_CODES = ["five_verst", "s95", "parkrun", "runpark"] as const;
+
+// Свёрнутый вид: четыре колонки систем схлопнуты в одну ячейку с чипами
+// привязок. Имя в системе, счётчики и кнопка синка остаются в развёрнутом
+// виде — в свёрнутом важно только «какие системы привязаны».
+function PlatformsSummaryCell({ user }: { user: AdminUserListItem }) {
+  const links = PLATFORM_CODES.map((code) =>
+    user.platform_links.find((item) => item.platform_code === code),
+  ).filter((link): link is AdminPlatformLinkBrief => Boolean(link));
+
+  if (links.length === 0) {
+    return <span className="muted">—</span>;
+  }
+
+  return (
+    <span className="admin-users-systems">
+      {links.map((link) => {
+        const label = platformCodeLabel(link.platform_code);
+        const hint = [
+          link.display_name?.trim() || link.barcode_id || link.external_user_id || label,
+          `пробежек: ${formatInt(link.run_count)}`,
+          `волонтёрств: ${formatInt(link.volunteer_count)}`,
+        ].join(" · ");
+        const url = platformProfileUrl(link);
+        if (!url) {
+          return (
+            <span key={link.platform_code} className="admin-system-chip" title={hint}>
+              {label}
+            </span>
+          );
+        }
+        return (
+          <a
+            key={link.platform_code}
+            className="admin-system-chip"
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            title={hint}
+          >
+            {label}
+          </a>
+        );
+      })}
+    </span>
+  );
+}
+
+// Вид колонок систем переживает перезагрузку: админ листает пользователей
+// пачками и не должен каждый раз схлопывать таблицу заново.
+const PLATFORMS_VIEW_STORAGE_KEY = "admin-users-platforms-view";
+
+function readPlatformsView(): "short" | "full" {
+  try {
+    return window.localStorage.getItem(PLATFORMS_VIEW_STORAGE_KEY) === "full" ? "full" : "short";
+  } catch {
+    return "short";
+  }
+}
+
 // Сколько претендентов показываем до нажатия «ещё»: у отдельных туристов
 // первое место делят десятки площадок, разворачивать их сразу нельзя.
 const HOME_TIE_PREVIEW = 5;
@@ -226,6 +288,7 @@ function AdminUsersContent() {
   const [sort, setSort] = useState<AdminUsersSort>("created");
   const [direction, setDirection] = useState<AdminUsersSortDirection>("desc");
   const [syncingKey, setSyncingKey] = useState<string | null>(null);
+  const [platformsView, setPlatformsView] = useState<"short" | "full">(readPlatformsView);
   const [journalUserId, setJournalUserId] = useState<string | null>(null);
   const [journal, setJournal] = useState<AdminLoginEventsResponse | null>(null);
   const [journalLoading, setJournalLoading] = useState(false);
@@ -236,6 +299,19 @@ function AdminUsersContent() {
     message: string;
     variant: "default" | "error";
   }>({ open: false, title: "", message: "", variant: "default" });
+
+  const platformsFull = platformsView === "full";
+  // Колонок в строке: восемь постоянных плюс одна свёрнутая или четыре системы.
+  const columnCount = 8 + (platformsFull ? PLATFORM_CODES.length : 1);
+
+  const changePlatformsView = useCallback((view: "short" | "full") => {
+    setPlatformsView(view);
+    try {
+      window.localStorage.setItem(PLATFORMS_VIEW_STORAGE_KEY, view);
+    } catch {
+      // приватный режим браузера — вид просто не запомнится
+    }
+  }, []);
 
   const offset = (page - 1) * USERS_PAGE_SIZE;
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / USERS_PAGE_SIZE)), [total]);
@@ -342,6 +418,29 @@ function AdminUsersContent() {
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
           />
+          <div className="admin-users-view" role="group" aria-label="Колонки систем">
+            <span className="muted admin-users-view-label">Системы</span>
+            <div className="tview-toggle">
+              <button
+                type="button"
+                aria-pressed={!platformsFull}
+                className={`tview-tab${platformsFull ? "" : " tview-tab-active"}`}
+                title="Одна колонка: только какие системы привязаны"
+                onClick={() => changePlatformsView("short")}
+              >
+                Кратко
+              </button>
+              <button
+                type="button"
+                aria-pressed={platformsFull}
+                className={`tview-tab${platformsFull ? " tview-tab-active" : ""}`}
+                title="Колонка на каждую систему: имя, пробежки/волонтёрства, кнопка обновления"
+                onClick={() => changePlatformsView("full")}
+              >
+                Полно
+              </button>
+            </div>
+          </div>
           <span className="muted admin-users-count">
             {total === 0
               ? "Найдено: 0"
@@ -386,10 +485,13 @@ function AdminUsersContent() {
               <thead>
                 <tr>
                   <th>Сервисы входа</th>
-                  <th>{platformCodeLabel("five_verst")}</th>
-                  <th>{platformCodeLabel("s95")}</th>
-                  <th>{platformCodeLabel("parkrun")}</th>
-                  <th>{platformCodeLabel("runpark")}</th>
+                  {platformsFull ? (
+                    PLATFORM_CODES.map((code) => <th key={code}>{platformCodeLabel(code)}</th>)
+                  ) : (
+                    <th title="5 вёрст, С95, parkrun, RunPark — нажмите «Полно», чтобы увидеть имена и счётчики">
+                      Системы
+                    </th>
+                  )}
                   <th title="Площадка, которую человек считает домашней: ручной выбор из настроек или автовыбор по пробежкам">
                     Дом
                   </th>
@@ -437,7 +539,7 @@ function AdminUsersContent() {
               <tbody>
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={12} className="muted">
+                    <td colSpan={columnCount} className="muted">
                       Пользователи не найдены
                     </td>
                   </tr>
@@ -472,14 +574,17 @@ function AdminUsersContent() {
                           )}
                         </ul>
                       </td>
-                      <td>
-                        {platformCell(user, "five_verst", syncingKey === `${user.id}:five_verst`, handleSync)}
-                      </td>
-                      <td>{platformCell(user, "s95", syncingKey === `${user.id}:s95`, handleSync)}</td>
-                      <td>
-                        {platformCell(user, "parkrun", syncingKey === `${user.id}:parkrun`, handleSync)}
-                      </td>
-                      <td>{platformCell(user, "runpark", false, handleSync)}</td>
+                      {platformsFull ? (
+                        PLATFORM_CODES.map((code) => (
+                          <td key={code}>
+                            {platformCell(user, code, syncingKey === `${user.id}:${code}`, handleSync)}
+                          </td>
+                        ))
+                      ) : (
+                        <td>
+                          <PlatformsSummaryCell user={user} />
+                        </td>
+                      )}
                       <td><HomeLocationCell home={user.home_location} /></td>
                       <td>{user.total_runs ?? "—"}</td>
                       <td>{user.total_volunteering ?? "—"}</td>
@@ -520,7 +625,7 @@ function AdminUsersContent() {
                     </tr>
                     {journalUserId === user.id && (
                       <tr className="admin-login-journal-row">
-                        <td colSpan={12}>
+                        <td colSpan={columnCount}>
                           {journalLoading && <p className="muted">Загружаем журнал входов…</p>}
                           {journalError && <p className="form-error">{journalError}</p>}
                           {!journalLoading && !journalError && journal && <LoginJournal data={journal} />}
