@@ -767,19 +767,31 @@ def profile_og_image_url(user: Any) -> str | None:
     return f"{site_base_url()}/og/users/{serial_id}.png{suffix}"
 
 
-def _og_image_tags(og_image_url: str | None) -> list[str]:
+def _og_image_tags(og_image_url: str | None, *, alt: str | None = None) -> list[str]:
     """og:image страницы: своя картинка либо дефолтная брендовая.
 
     twitter:card=summary_large_image — иначе Telegram/X показывают картинку
-    мелкой иконкой сбоку вместо полноwidth-превью.
+    мелкой иконкой сбоку вместо полноширинного превью.
+
+    Полный набор подтегов (19.08.2026, ВК показывал миниатюру вместо большой
+    картинки): og:image:secure_url — часть парсеров ищет именно его и без
+    него считает картинку небезопасной; og:image:type — снимает необходимость
+    угадывать формат по ответу; og:image:alt — подпись, её же некоторые
+    площадки используют как заголовок карточки. Формат сниппета в итоге
+    выбирает сам ВК, но эти теги убирают все поводы показать миниатюру.
     """
     url = og_image_url or f"{site_base_url()}{DEFAULT_OG_IMAGE_PATH}"
-    return [
+    tags = [
         f'<meta property="og:image" content="{escape(url, quote=True)}">',
+        f'<meta property="og:image:secure_url" content="{escape(url, quote=True)}">',
+        '<meta property="og:image:type" content="image/png">',
         f'<meta property="og:image:width" content="{OG_IMAGE_WIDTH}">',
         f'<meta property="og:image:height" content="{OG_IMAGE_HEIGHT}">',
         '<meta name="twitter:card" content="summary_large_image">',
     ]
+    if alt:
+        tags.insert(5, f'<meta property="og:image:alt" content="{escape(alt, quote=True)}">')
+    return tags
 
 
 def _last_event_block(last_event: dict[str, Any]) -> str:
@@ -977,7 +989,9 @@ def _render_html(
         f'<meta property="og:title" content="{escape(meta.title, quote=True)}">',
         f'<meta property="og:description" content="{escape(meta.description, quote=True)}">',
         f'<meta property="og:url" content="{escape(canonical, quote=True)}">',
-        *_og_image_tags(og_image_url),
+        # alt описывает картинку, а не сайт, поэтому бренд из хвоста убираем:
+        # «5 вёрст Мещерский, Одинцово — результаты и статистика».
+        *_og_image_tags(og_image_url, alt=meta.title.removesuffix(f" — {SITE_NAME}")),
         *_json_ld_scripts(json_ld or []),
     ]
     head_html = "\n    ".join(head)

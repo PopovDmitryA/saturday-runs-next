@@ -17,6 +17,7 @@ from app.services.seo_service import (
     PageMeta,
     _catalog_body,
     _location_body,
+    _og_image_tags,
     build_location_meta,
     build_robots_txt,
     catalog_json_ld,
@@ -532,6 +533,34 @@ def test_catalog_json_ld_lists_live_locations() -> None:
     assert listing["numberOfItems"] == 2
     # По алфавиту, как и на самой странице.
     assert [i["name"] for i in listing["itemListElement"]] == ["Алёшкинский", "Бутово"]
+
+
+def test_og_image_tags_are_complete_for_previews() -> None:
+    """Полный набор подтегов og:image — иначе ВК показывает миниатюру.
+
+    secure_url ищут отдельные парсеры, type снимает угадывание формата,
+    alt часть площадок берёт подписью к карточке.
+    """
+    tags = _og_image_tags("https://run5k.run/og/locations/butovo.png", alt="5 вёрст Бутово")
+    joined = "\n".join(tags)
+    for needed in (
+        'property="og:image"',
+        'property="og:image:secure_url"',
+        'property="og:image:type" content="image/png"',
+        'property="og:image:width" content="1200"',
+        'property="og:image:height" content="630"',
+        'property="og:image:alt" content="5 вёрст Бутово"',
+        'name="twitter:card" content="summary_large_image"',
+    ):
+        assert needed in joined, needed
+
+
+def test_og_image_falls_back_to_default_without_alt() -> None:
+    tags = _og_image_tags(None)
+    joined = "\n".join(tags)
+    assert "/og/default.png" in joined
+    # Без подписи тега alt быть не должно: пустой alt хуже отсутствующего.
+    assert "og:image:alt" not in joined
 
 
 def test_robots_lists_sitemap_and_closes_service_paths() -> None:
