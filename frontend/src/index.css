@@ -12276,6 +12276,12 @@ a.admin-system-chip:hover {
   overflow: hidden;
 }
 
+/* Подписи с именами — обычным регистром (см. keepLabelCase в ShareMetric). */
+.s2-tile-label--as-is {
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+
 .s2-timeline {
   display: flex;
   flex-direction: column;
@@ -12448,7 +12454,8 @@ a.admin-system-chip:hover {
 
 .s2-card--wide .s2-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  /* Правой колонке отдано больше: в ней шесть плиток в три столбца. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
   column-gap: 1.1em;
   row-gap: 0.6em;
   /* safe: если рядов больше, чем помещается, грид растёт вниз, а не наезжает
@@ -12467,28 +12474,33 @@ a.admin-system-chip:hover {
   /* Заведомо больше числа элементов левой колонки: пустые ряды схлопываются. */
   grid-row: 1 / span 8;
   justify-self: stretch;
-  grid-template-columns: 1fr 1fr;
+  /* Три колонки на два ряда: шесть цифр вместо четырёх. По высоте третий ряд
+     наехал бы на бренд-футер, а по ширине третий столбец помещается. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.4em;
   align-content: safe center;
 }
 
-/* Плитки в широком формате компактнее: три ряда должны уместиться по высоте
-   и не наехать на бренд-футер. */
+/* Плитки в широком формате компактнее: два ряда по три столбца должны
+   уместиться и не наехать на бренд-футер. */
 .s2-card--wide .s2-tile {
-  padding: 0.38em 0.5em;
+  padding: 0.38em 0.45em;
 }
 
 .s2-card--wide .s2-tile-value {
-  font-size: 0.92em;
+  font-size: 0.82em;
 }
 
 .s2-card--wide .s2-tile-value--long {
-  font-size: 0.72em;
+  font-size: 0.62em;
 }
 
 .s2-card--wide .s2-tile-label {
   font-size: 0.4em;
   margin-top: 0.3em;
+  /* Подписи с именем рекордсмена и датой длиннее обычных — в узкой колонке
+     им нужна третья строка, иначе хвост обрезается. */
+  -webkit-line-clamp: 3;
 }
 
 .s2-card--wide .s2-body > .s2-heat-wrap {

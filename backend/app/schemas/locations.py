@@ -121,8 +121,23 @@ class LocationCourseRecordsResponse(BaseModel):
     female: LocationCourseRecordResponse | None = None
 
 
+class LocationMilestoneResponse(BaseModel):
+    """Участник, закрывший клубный порог на этом старте («25-й финиш»)."""
+
+    name: str
+    count: int
+
+
+class LocationOneStepResponse(BaseModel):
+    """Кому до клубного порога остался один финиш — жанр «в шаге до клуба»."""
+
+    name: str
+    next: int
+
+
 class LocationLastEventResponse(BaseModel):
     event_date: date
+    event_number: int | None = None
     platform_code: str
     finishers: int | None = None
     volunteers: int | None = None
@@ -136,6 +151,12 @@ class LocationLastEventResponse(BaseModel):
     debutants: int | None = None
     first_at_location: int | None = None
     prs: int | None = None
+    male_finishers: int | None = None
+    female_finishers: int | None = None
+    best_male_name: str | None = None
+    best_female_name: str | None = None
+    milestones: list[LocationMilestoneResponse] = []
+    one_step: list[LocationOneStepResponse] = []
 
 
 class LocationPageStatsResponse(BaseModel):

@@ -18,7 +18,7 @@ from typing import Any, cast
 from uuid import UUID
 
 import redis
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import and_, bindparam, case, func, or_, text
 from sqlalchemy.orm import Session
 
 from app.activity_url import resolve_activity_url
@@ -73,8 +73,9 @@ _TRAVEL_HEADING_RE = re.compile(r"\s*как\s+добраться\s*[?:.]*\s*", r
 
 
 def location_page_cache_key(slug: str) -> str:
-    # v11 — в ответ добавлено описание площадки (расписание, трасса, как добраться).
-    return f"locations:page:v11:{slug.strip().lower()}"
+    # v12 — в last_event добавлены номер старта, победители поимённо, разбивка
+    # по полу и клубные юбиляры (см. [[location-channels-content-analysis]]).
+    return f"locations:page:v12:{slug.strip().lower()}"
 
 
 def location_events_cache_key(slug: str) -> str:
@@ -543,6 +544,95 @@ def _first_by_platform_order(
     return None
 
 
+# Клубные пороги 5 вёрст/parkrun (футболки за 10/25/50/100/250 финишей) плюс
+# «круглые» юбилеи кратно 25 — те самые, которые локации поздравляют в чатах.
+_CLUB_LEVELS = (10, 25, 50, 100, 250)
+# Секундомер secondary-событий кросслинков не должен удваивать счёт финишей.
+_NOT_SECONDARY_SQL = "id NOT IN (SELECT secondary_event_id FROM event_crosslinks)"
+
+
+def _last_event_winners(db: Session, event_id: UUID) -> dict[str, str | None]:
+    """Имена самого быстрого мужчины и самой быстрой женщины на старте.
+
+    Локации в постах всегда называют победителей поимённо («18:07 — Алексей
+    САЙФУЛИН»), поэтому имя нужно рядом со временем.
+    """
+    gender_expr = _gender_expression(
+        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+    )
+    winners: dict[str, str | None] = {"male": None, "female": None}
+    for gender in ("male", "female"):
+        row = (
+            db.query(Participant.display_name)
+            .select_from(RunResult)
+            .join(Event, RunResult.event_id == Event.id)
+            .join(Platform, Event.platform_id == Platform.id)
+            .outerjoin(Participant, RunResult.participant_id == Participant.id)
+            .filter(
+                RunResult.event_id == event_id,
+                RunResult.finish_time_sec.isnot(None),
+                RunResult.finish_time_sec > 0,
+                gender_expr == gender,
+            )
+            .order_by(RunResult.finish_time_sec.asc())
+            .first()
+        )
+        if row is not None and row[0]:
+            winners[gender] = str(row[0])
+    return winners
+
+
+def _last_event_milestones(
+    db: Session, event_id: UUID, event_date: date
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Кто на этом старте закрыл клубный порог и кому остался один финиш.
+
+    Счёт ведётся внутри платформы: participants привязаны к платформе, поэтому
+    «клуб 25 финишей» у 5 вёрст не смешивается с parkrun. Логика порогов — та
+    же, что в админском «Своде по пробежке» (admin_event_report_service).
+    """
+    rows = db.execute(
+        text(
+            f"""
+            WITH today AS (
+                SELECT DISTINCT participant_id FROM run_results
+                WHERE event_id = :event_id AND participant_id IS NOT NULL
+            ),
+            counts AS (
+                SELECT r.participant_id, count(DISTINCT r.event_id) AS total
+                FROM run_results r
+                JOIN events e ON e.id = r.event_id
+                WHERE r.participant_id IN (SELECT participant_id FROM today)
+                  AND NOT e.is_test_event
+                  AND e.event_date <= :event_date
+                  AND e.{_NOT_SECONDARY_SQL}
+                GROUP BY r.participant_id
+            )
+            SELECT c.total, p.display_name
+            FROM counts c
+            JOIN participants p ON p.id = c.participant_id
+            WHERE c.total IN :levels
+               OR (c.total >= 25 AND c.total % 25 = 0)
+               OR (c.total + 1) IN :levels
+            ORDER BY c.total DESC
+            """
+        ).bindparams(bindparam("levels", expanding=True)),
+        {"event_id": str(event_id), "event_date": event_date, "levels": list(_CLUB_LEVELS)},
+    ).all()
+
+    milestones: list[dict[str, object]] = []
+    one_step: list[dict[str, object]] = []
+    for total, name in rows:
+        total = int(total)
+        if not name:
+            continue
+        if total in _CLUB_LEVELS or (total >= 25 and total % 25 == 0):
+            milestones.append({"name": str(name), "count": total})
+        elif (total + 1) in _CLUB_LEVELS:
+            one_step.append({"name": str(name), "next": total + 1})
+    return milestones[:5], one_step[:5]
+
+
 def _last_event_stats(
     db: Session,
     events: Sequence[Any],
@@ -560,7 +650,7 @@ def _last_event_stats(
     if not events:
         return None, None, None
 
-    last_event_id, last_event_date, _last_event_number, last_finishers_count, last_platform_code = max(
+    last_event_id, last_event_date, last_event_number, last_finishers_count, last_platform_code = max(
         events, key=lambda row: row[1]
     )
 
@@ -579,6 +669,10 @@ def _last_event_stats(
             func.sum(case((RunResult.is_first_run.is_(True), 1), else_=0)).label("debutants"),
             func.sum(case((RunResult.is_first_run_at_location.is_(True), 1), else_=0)).label("first_here"),
             func.sum(case((RunResult.is_pr.is_(True), 1), else_=0)).label("prs"),
+            # Разбивка по полу: локации пишут её в постах «в цифрах»
+            # («57 мужчин, 33 девушки, 4 неизвестных»).
+            func.sum(case((gender_expr == "male", 1), else_=0)).label("male_count"),
+            func.sum(case((gender_expr == "female", 1), else_=0)).label("female_count"),
         )
         .select_from(RunResult)
         .join(Event, RunResult.event_id == Event.id)
@@ -600,9 +694,23 @@ def _last_event_stats(
         .scalar()
     )
 
+    winners = _last_event_winners(db, last_event_id)
+    milestones, one_step = _last_event_milestones(db, last_event_id, last_event_date)
+    male_count = int(row.male_count or 0) if row is not None else 0
+    female_count = int(row.female_count or 0) if row is not None else 0
+
     last_event_payload = {
         "event_date": last_event_date,
+        "event_number": int(last_event_number) if last_event_number is not None else None,
         "platform_code": last_platform_code,
+        "male_finishers": male_count or None,
+        "female_finishers": female_count or None,
+        "best_male_name": winners.get("male"),
+        "best_female_name": winners.get("female"),
+        # Юбиляры клубных порогов на этом старте и те, кому до клуба остался
+        # один финиш, — самый частый жанр в каналах локаций.
+        "milestones": milestones,
+        "one_step": one_step,
         "finishers": event_finishers(last_event_id, last_finishers_count),
         "volunteers": int(last_volunteers) if last_volunteers else None,
         "avg_time_sec": last_avg_time,

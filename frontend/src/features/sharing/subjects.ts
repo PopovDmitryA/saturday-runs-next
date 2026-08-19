@@ -17,6 +17,7 @@ import {
   formatDate,
   formatDuration,
   formatInt,
+  formatNumber,
   platformCodeLabel,
   pluralFormRu,
   pluralizeRu,
@@ -44,9 +45,73 @@ function stripLeadingHours(display: string | null | undefined): string | null {
   return display.replace(/^00:/, "");
 }
 
-function pushMetric(metrics: ShareMetric[], id: string, value: string | null | undefined, label: string): void {
+/**
+ * Насколько цифра отличается от обычной для этой локации: «+81%», «−12%».
+ * Мелкие отклонения не метрика, а шум, — до 5% отдаём null и плитки не будет.
+ */
+function deltaPercent(value: number | null | undefined, baseline: number | null | undefined): string | null {
+  if (value == null || baseline == null || baseline <= 0) {
+    return null;
+  }
+  const pct = Math.round(((value - baseline) / baseline) * 100);
+  if (Math.abs(pct) < 5) {
+    return null;
+  }
+  return `${pct > 0 ? "+" : "−"}${Math.abs(pct)}%`;
+}
+
+/** Разрыв во времени без знака: «2:23». Знак уезжает в подпись плитки. */
+function formatGap(seconds: number): string {
+  const abs = Math.round(Math.abs(seconds));
+  return `${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, "0")}`;
+}
+
+/** Сколько полных лет прошло с даты. Для «рекорд держится 5 лет». */
+function fullYearsSince(date: string | null | undefined): number | null {
+  if (!date) {
+    return null;
+  }
+  const then = Date.parse(date);
+  if (Number.isNaN(then)) {
+    return null;
+  }
+  const years = Math.floor((Date.now() - then) / (365.2425 * 24 * 3600 * 1000));
+  return years >= 0 ? years : null;
+}
+
+/**
+ * Протоколы приходят с фамилией капсом («Алексей РЕУНКОВ»). На постере это
+ * выглядит как крик, поэтому приводим к обычному виду, сохраняя дефисы.
+ */
+function humanizeName(name: string | null | undefined): string | null {
+  const trimmed = name?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed
+    .split(/\s+/)
+    .map((word) =>
+      word
+        .split("-")
+        .map((part) =>
+          part.length > 1 && part === part.toUpperCase()
+            ? part[0] + part.slice(1).toLowerCase()
+            : part,
+        )
+        .join("-"),
+    )
+    .join(" ");
+}
+
+function pushMetric(
+  metrics: ShareMetric[],
+  id: string,
+  value: string | null | undefined,
+  label: string,
+  options?: { keepLabelCase?: boolean },
+): void {
   if (value != null && value !== "" && value !== "—") {
-    metrics.push({ id, value, label });
+    metrics.push({ id, value, label, keepLabelCase: options?.keepLabelCase });
   }
 }
 
@@ -446,10 +511,94 @@ export function locationEventSubject(page: LocationPage): ShareSubject | null {
   }
   const stats = page.stats;
   const metrics: ShareMetric[] = [];
+  // Порядок = приоритет: первые шесть попадают на широкую карточку. Сверху
+  // идёт то, что нельзя узнать из одного протокола, — сравнение с обычной
+  // субботой на этой же локации.
+  const maleWinner = humanizeName(last.best_male_name);
+  const femaleWinner = humanizeName(last.best_female_name);
+  const topMilestone = last.milestones?.[0];
+  const milestoneName = humanizeName(topMilestone?.name);
+  const nextUp = last.one_step?.[0];
+  const nextUpName = humanizeName(nextUp?.name);
+
+  // Порядок = приоритет: первые шесть попадают на широкую карточку. Сверху то,
+  // чем локации делятся в своих каналах, — сравнение с обычной субботой и люди
+  // поимённо (разбор каналов: [[location-channels-content-analysis]]).
+  pushMetric(metrics, "attendance_delta", deltaPercent(last.finishers, stats.avg_finishers), "к обычному старту");
+  // Победители и юбиляры идут двумя вариантами — с именем и сухим. На карточку
+  // по умолчанию встаёт именной, сухой доступен в «Настроить».
+  if (maleWinner) {
+    pushMetric(metrics, "best_male_named", stripLeadingHours(last.best_male_time_display), `Лучший · ${maleWinner}`, {
+      keepLabelCase: true,
+    });
+  }
+  if (femaleWinner) {
+    pushMetric(
+      metrics,
+      "best_female_named",
+      stripLeadingHours(last.best_female_time_display),
+      `Лучшая · ${femaleWinner}`,
+      { keepLabelCase: true },
+    );
+  }
+  pushMetric(metrics, "prs", last.prs ? formatInt(last.prs) : null, "личных рекордов");
+  if (topMilestone && milestoneName) {
+    pushMetric(metrics, "milestone_named", `${formatInt(topMilestone.count)}-й финиш`, milestoneName, {
+      keepLabelCase: true,
+    });
+  }
   pushMetric(metrics, "volunteers", last.volunteers ? formatInt(last.volunteers) : null, "волонтёров");
-  pushMetric(metrics, "avg_time", stripLeadingHours(last.avg_time_display), "среднее время");
+
+  // Дальше — запас для «Настроить».
+  // «В шаге до клуба» — единственный сюжет каналов, который смотрит вперёд.
+  if (nextUp && nextUpName) {
+    pushMetric(metrics, "one_step_named", `${formatInt(nextUp.next)}-й`, `следующий финиш · ${nextUpName}`, {
+      keepLabelCase: true,
+    });
+  }
+  if (last.male_finishers != null && last.female_finishers != null) {
+    pushMetric(
+      metrics,
+      "gender_split",
+      `${formatInt(last.male_finishers)} / ${formatInt(last.female_finishers)}`,
+      "мужчин / женщин",
+    );
+  }
+  // Большое поле бежит медленнее обычного, маленькое — быстрее: разрыв со
+  // средним временем локации объясняет цифры этой субботы.
+  if (last.avg_time_sec != null && stats.avg_finish_time_sec != null) {
+    const gap = last.avg_time_sec - stats.avg_finish_time_sec;
+    if (Math.abs(gap) >= 15) {
+      pushMetric(
+        metrics,
+        "pace_delta",
+        formatGap(gap),
+        gap > 0 ? "медленнее обычного" : "быстрее обычного",
+      );
+    }
+  }
+  if (last.milestones && last.milestones.length > 0) {
+    pushMetric(
+      metrics,
+      "milestones_count",
+      formatInt(last.milestones.length),
+      `${pluralFormRu(last.milestones.length, ["юбилей", "юбилея", "юбилеев"])} на старте`,
+    );
+  }
   pushMetric(metrics, "best_male", stripLeadingHours(last.best_male_time_display), "лучшее · М");
   pushMetric(metrics, "best_female", stripLeadingHours(last.best_female_time_display), "лучшее · Ж");
+  if (last.volunteers && last.finishers) {
+    const perVolunteer = Math.round(last.finishers / last.volunteers);
+    if (perVolunteer >= 1) {
+      pushMetric(
+        metrics,
+        "runners_per_volunteer",
+        formatInt(perVolunteer),
+        `${pluralFormRu(perVolunteer, ["бегун", "бегуна", "бегунов"])} на волонтёра`,
+      );
+    }
+  }
+  pushMetric(metrics, "avg_time", stripLeadingHours(last.avg_time_display), "среднее время");
   pushMetric(metrics, "debutants", last.debutants ? formatInt(last.debutants) : null, "новичков");
   pushMetric(
     metrics,
@@ -457,7 +606,6 @@ export function locationEventSubject(page: LocationPage): ShareSubject | null {
     last.first_at_location ? formatInt(last.first_at_location) : null,
     "впервые здесь",
   );
-  pushMetric(metrics, "prs", last.prs ? formatInt(last.prs) : null, "личных рекордов");
   pushMetric(metrics, "date", formatDate(last.event_date), "дата старта");
   pushMetric(metrics, "platform", platformCodeLabel(last.platform_code), "система");
   // Контекст площадки: с чем сравнивать цифры этой субботы.
@@ -481,7 +629,15 @@ export function locationEventSubject(page: LocationPage): ShareSubject | null {
   const data: ShareCardData = {
     audience: "location",
     title: locationTitle(page),
-    subtitle: `${formatDate(last.event_date)} · ${platformCodeLabel(last.platform_code)}`,
+    // Номер старта локации называют все каналы без исключения — ему место
+    // в подзаголовке карточки, рядом с датой (плиткой Дмитрий не захотел).
+    subtitle: [
+      last.event_number != null ? `Старт №${formatInt(last.event_number)}` : null,
+      formatDate(last.event_date),
+      platformCodeLabel(last.platform_code),
+    ]
+      .filter(Boolean)
+      .join(" · "),
     plate: "ПОСЛЕДНИЙ СТАРТ",
     hero:
       last.finishers != null
@@ -501,6 +657,39 @@ export function locationEventSubject(page: LocationPage): ShareSubject | null {
 export function locationCardSubject(page: LocationPage): ShareSubject {
   const stats = page.stats;
   const metrics: ShareMetric[] = [];
+  const male = stats.course_records?.male;
+  const female = stats.course_records?.female;
+  const maleName = humanizeName(male?.runner_name);
+  const femaleName = humanizeName(female?.runner_name);
+
+  // Доля быстрых финишей — из гистограммы страницы, отдельного запроса не надо.
+  const fastShare = (() => {
+    const rows = page.histogram?.rows ?? [];
+    let total = 0;
+    let fast = 0;
+    for (const row of rows) {
+      total += row.count;
+      if (row.start_sec < 1500) {
+        fast += row.count;
+      }
+    }
+    // На молодой локации доля скачет от старта к старту — не показываем.
+    if (total < 300) {
+      return null;
+    }
+    const pct = Math.round((fast / total) * 100);
+    return pct > 0 ? `${pct}%` : null;
+  })();
+
+  const ageYears = fullYearsSince(stats.first_event_date);
+  const perPerson =
+    stats.unique_participants > 0 ? stats.finishers_total / stats.unique_participants : null;
+  const volunteersPerEvent =
+    stats.events_count > 0 ? Math.round(stats.volunteers_total / stats.events_count) : null;
+  const attendanceDate = stats.attendance_record?.event_date;
+
+  // Порядок = приоритет: первые шесть попадают на широкую карточку. Имя
+  // рекордсмена в подписи — то, ради чего карточку пересылают в чат локации.
   pushMetric(metrics, "events", stats.events_count ? formatInt(stats.events_count) : null, "стартов");
   pushMetric(
     metrics,
@@ -510,19 +699,67 @@ export function locationCardSubject(page: LocationPage): ShareSubject {
   );
   pushMetric(
     metrics,
-    "finishers",
-    stats.finishers_total ? formatInt(stats.finishers_total) : null,
-    "финишей",
+    "record_male",
+    stripLeadingHours(male?.finish_time_display),
+    maleName ? `рекорд М · ${maleName}` : "рекорд · М",
+    { keepLabelCase: maleName != null },
   );
-  const male = stats.course_records?.male;
-  const female = stats.course_records?.female;
-  pushMetric(metrics, "record_male", stripLeadingHours(male?.finish_time_display), "рекорд · М");
-  pushMetric(metrics, "record_female", stripLeadingHours(female?.finish_time_display), "рекорд · Ж");
+  pushMetric(
+    metrics,
+    "record_female",
+    stripLeadingHours(female?.finish_time_display),
+    femaleName ? `рекорд Ж · ${femaleName}` : "рекорд · Ж",
+    { keepLabelCase: femaleName != null },
+  );
   pushMetric(
     metrics,
     "attendance",
     stats.attendance_record ? formatInt(stats.attendance_record.finishers) : null,
-    "рекорд посещаемости",
+    attendanceDate ? `рекорд посещаемости · ${formatDate(attendanceDate)}` : "рекорд посещаемости",
+  );
+  pushMetric(
+    metrics,
+    "runs_per_person",
+    perPerson != null && perPerson >= 1.5 ? formatNumber(Math.round(perPerson * 10) / 10) : null,
+    "пробежек на участника",
+  );
+  pushMetric(
+    metrics,
+    "finishers",
+    stats.finishers_total ? formatInt(stats.finishers_total) : null,
+    "финишей",
+  );
+  pushMetric(
+    metrics,
+    "age",
+    ageYears != null && ageYears >= 1 ? pluralizeRu(ageYears, ["год", "года", "лет"]) : null,
+    "истории локации",
+  );
+  pushMetric(metrics, "fast_share", fastShare, "быстрее 25 минут");
+  pushMetric(
+    metrics,
+    "volunteers_per_event",
+    volunteersPerEvent != null && volunteersPerEvent >= 1 ? formatInt(volunteersPerEvent) : null,
+    "волонтёров на старте",
+  );
+  // «Рекорд держится N лет» — только у старых рекордов, иначе это не факт.
+  const femaleRecordYears = fullYearsSince(female?.event_date);
+  pushMetric(
+    metrics,
+    "record_female_age",
+    femaleRecordYears != null && femaleRecordYears >= 2
+      ? pluralizeRu(femaleRecordYears, ["год", "года", "лет"])
+      : null,
+    "держится рекорд Ж",
+  );
+  const maleRecordYears = fullYearsSince(male?.event_date);
+  pushMetric(
+    metrics,
+    "record_male_age",
+    maleRecordYears != null && maleRecordYears >= 2
+      ? pluralizeRu(maleRecordYears, ["год", "года", "лет"])
+      : null,
+    "держится рекорд М",
   );
   pushMetric(
     metrics,

@@ -54,9 +54,9 @@ export function metricLimit(format: ShareFormat, data: ShareCardData): number {
   if (format.id === "square") {
     return hasHero ? 4 : 6;
   }
-  // Широкий (1200×630): по высоте помещается ровно два ряда плиток — третий
-  // наезжает на бренд-футер. Кому нужно больше цифр — сториз и квадрат.
-  return 4;
+  // Широкий (1200×630): два ряда по три плитки. Ряд третьим не делаем — он
+  // наезжает на бренд-футер, а вот третья колонка по ширине помещается.
+  return 6;
 }
 
 /**
@@ -106,7 +106,9 @@ function MetricTiles({ metrics, limit }: { metrics: ShareMetric[]; limit: number
           <div className={`s2-tile-value ${metric.value.length > 4 ? "s2-tile-value--long" : ""}`}>
             {metric.value}
           </div>
-          <div className="s2-tile-label">{metric.label}</div>
+          <div className={`s2-tile-label ${metric.keepLabelCase ? "s2-tile-label--as-is" : ""}`}>
+            {metric.label}
+          </div>
         </div>
       ))}
     </div>

@@ -2078,8 +2078,15 @@ export type LocationAttendanceRecord = {
   platform_code: string | null;
 };
 
+/** Юбиляр клубного порога на старте: «Елена Филиппова — 25-й финиш». */
+export type LocationMilestone = { name: string; count: number };
+
+/** Кому до клубного порога остался один финиш. */
+export type LocationOneStep = { name: string; next: number };
+
 export type LocationLastEvent = {
   event_date: string;
+  event_number: number | null;
   platform_code: string;
   finishers: number | null;
   volunteers: number | null;
@@ -2092,6 +2099,12 @@ export type LocationLastEvent = {
   debutants: number | null;
   first_at_location: number | null;
   prs: number | null;
+  male_finishers: number | null;
+  female_finishers: number | null;
+  best_male_name: string | null;
+  best_female_name: string | null;
+  milestones: LocationMilestone[];
+  one_step: LocationOneStep[];
 };
 
 export type LocationPageStats = {
