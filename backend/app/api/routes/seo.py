@@ -43,7 +43,7 @@ router = APIRouter(tags=["seo"], include_in_schema=False)
 _SITEMAP_CACHE_CONTROL = "public, max-age=3600"
 
 
-@router.get("/sitemap.xml")
+@router.api_route("/sitemap.xml", methods=["GET", "HEAD"])
 def sitemap(db: Annotated[Session, Depends(get_db)]) -> Response:
     return Response(
         content=build_sitemap(db),
@@ -52,7 +52,7 @@ def sitemap(db: Annotated[Session, Depends(get_db)]) -> Response:
     )
 
 
-@router.get("/robots.txt")
+@router.api_route("/robots.txt", methods=["GET", "HEAD"])
 def robots() -> Response:
     return Response(
         content=build_robots_txt(),
@@ -61,7 +61,7 @@ def robots() -> Response:
     )
 
 
-@router.get("/__prerender/{full_path:path}")
+@router.api_route("/__prerender/{full_path:path}", methods=["GET", "HEAD"])
 def prerender(
     full_path: str,
     request: Request,
@@ -72,6 +72,12 @@ def prerender(
     Адрес приходит от nginx как остаток пути: /__prerender/locations/kuzminki.
     Несуществующий адрес отдаёт настоящий 404: SPA-сайт по умолчанию отвечает
     200 на любой мусор, и Яндекс отметил это диагностикой (11.08.2026).
+
+    HEAD обслуживается наравне с GET (19.08.2026). FastAPI сам его не
+    подхватывает, и роут отвечал 405 — а краулеры превью часто пробуют HEAD
+    первым, чтобы узнать тип и размер. Человека это не задевало: он идёт в
+    статику nginx, которая HEAD умеет, поэтому дефект был виден только ботам.
+    Тело на HEAD Starlette отбросит сам, заголовки останутся.
     """
     path = f"/{full_path}"
     bot = _messenger_bot_name(request.headers.get("user-agent", ""))
