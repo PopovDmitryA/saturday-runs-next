@@ -55,12 +55,6 @@ type DashboardAnalyticsProps = {
    * равно не может выполнить, — настройки чужого профиля ему недоступны.
    */
   showHomeLocationWarning?: boolean;
-  /**
-   * Не рисовать панели-графики: в bento-дашборде календарь, темп и
-   * распределение живут отдельными плитками сетки, и в блоке «Вся
-   * статистика» они были бы вторым экземпляром того же графика.
-   */
-  hidePanels?: boolean;
 };
 
 type AnalyticsCardCategory = "runs" | "volunteering" | "wins";
@@ -598,7 +592,7 @@ type PacePoint = {
   avgFinishTimeSec: number | null;
 };
 
-export function PaceTrendChart({
+function PaceTrendChart({
   monthly,
   yearly,
 }: {
@@ -730,7 +724,6 @@ export function DashboardAnalytics({
   totalRuns,
   totalVolunteering,
   showHomeLocationWarning = false,
-  hidePanels = false,
 }: DashboardAnalyticsProps) {
   const [uniqueLocationsOpen, setUniqueLocationsOpen] = useState(false);
   const [bestResultsOpen, setBestResultsOpen] = useState(false);
@@ -998,9 +991,7 @@ export function DashboardAnalytics({
   }
 
   const cardByKey = new Map(cards.map((card) => [card.key, card]));
-  const panelByKey = hidePanels
-    ? new Map<string, ReactNode>()
-    : new Map(panels.map((panel) => [panel.key, panel.node]));
+  const panelByKey = new Map(panels.map((panel) => [panel.key, panel.node]));
   const groupedKeys = new Set<string>();
   for (const group of DASHBOARD_ANALYTICS_GROUPS) {
     for (const key of [...group.headline, ...group.rest, ...group.panels]) {
