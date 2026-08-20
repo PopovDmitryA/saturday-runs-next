@@ -209,10 +209,13 @@ def registry_entry_is_cancelled(status: LocationRegistryStatus) -> bool:
 
 
 def registry_entry_is_paused(status: LocationRegistryStatus) -> bool:
-    return status in {
-        LocationRegistryStatus.paused,
-        LocationRegistryStatus.preparing,
-    }
+    # «Скоро» больше не паузa: у новой площадки старты ещё не начинались, а у
+    # паузы — уже кончились (решение Дмитрия 20.08.2026).
+    return status == LocationRegistryStatus.paused
+
+
+def registry_entry_is_upcoming(status: LocationRegistryStatus) -> bool:
+    return status == LocationRegistryStatus.preparing
 
 
 def list_location_slugs(limit: int | None = None) -> list[str]:

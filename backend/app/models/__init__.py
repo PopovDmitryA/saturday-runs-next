@@ -153,6 +153,9 @@ class Location(Base):
     longitude: Mapped[float | None] = mapped_column()
     is_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Площадка объявлена, но ещё не стартовала. Отдельно от is_paused: там
+    # старты кончились, здесь их ещё не было (см. миграцию 064).
+    is_upcoming: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_official_map: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     map_url: Mapped[str | None] = mapped_column(String(1024))
     source_url: Mapped[str | None] = mapped_column(String(1024))

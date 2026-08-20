@@ -12,14 +12,20 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.db.session import get_session_factory
+from app.services.location_activity_status import INACTIVE_AFTER_DAYS
 from app.sync.mark_inactive_locations_paused import mark_inactive_locations_paused
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Mark locations paused when no events for N weeks (skips cancelled locations)",
+        description="Проставить «не действует» площадкам, молчащим дольше порога (и снять статус с вернувшихся)",
     )
-    parser.add_argument("--weeks", type=int, default=5, help="Inactivity threshold in weeks (default: 5)")
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=INACTIVE_AFTER_DAYS,
+        help=f"Порог молчания в днях (по умолчанию {INACTIVE_AFTER_DAYS})",
+    )
     parser.add_argument(
         "--platform",
         action="append",
@@ -33,7 +39,7 @@ def main() -> int:
     db = get_session_factory()()
     try:
         platform_codes = tuple(args.platforms) if args.platforms else None
-        result = mark_inactive_locations_paused(db, inactive_weeks=args.weeks, platform_codes=platform_codes)
+        result = mark_inactive_locations_paused(db, inactive_days=args.days, platform_codes=platform_codes)
         if args.commit:
             db.commit()
         else:

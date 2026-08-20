@@ -1949,6 +1949,8 @@ export type MapLocationPoint = {
   location_url?: string | null;
   is_paused?: boolean;
   is_cancelled?: boolean;
+  /** Площадка объявлена, но ещё не стартовала. */
+  is_upcoming?: boolean;
   run_count: number;
   volunteer_count: number;
   visit_count: number;

@@ -41,4 +41,7 @@ def test_registry_entry_is_paused() -> None:
     assert bulk_parser.registry_entry_is_paused(LocationRegistryStatus.active) is False
     assert bulk_parser.registry_entry_is_paused(LocationRegistryStatus.paused) is True
     assert bulk_parser.registry_entry_is_paused(LocationRegistryStatus.cancelled) is False
-    assert bulk_parser.registry_entry_is_paused(LocationRegistryStatus.preparing) is True
+    # «Скоро» — не пауза: у площадки старты ещё не начинались, а у паузы уже
+    # кончились (решение Дмитрия 20.08.2026).
+    assert bulk_parser.registry_entry_is_paused(LocationRegistryStatus.preparing) is False
+    assert bulk_parser.registry_entry_is_upcoming(LocationRegistryStatus.preparing) is True

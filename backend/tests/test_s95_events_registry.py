@@ -39,8 +39,17 @@ def test_s95_registry_status_helpers() -> None:
     assert registry_entry_is_paused(S95LocationRegistryStatus.cancelled) is False
 
 
-def test_five_verst_registry_cancelled_is_separate_from_paused() -> None:
+def test_five_verst_registry_splits_three_statuses() -> None:
+    """Три состояния реестра расходятся по трём признакам (решение Дмитрия
+    20.08.2026): «(отмена)» — временная отмена ближайшего старта, «(на паузе)» —
+    площадка не действует, «(скоро)» — ещё не открылась. До этого «скоро» шло
+    в паузу, и новая площадка выглядела как закрытая навсегда."""
     assert bulk_parser.registry_entry_is_cancelled(LocationRegistryStatus.cancelled) is True
     assert bulk_parser.registry_entry_is_paused(LocationRegistryStatus.cancelled) is False
+    assert bulk_parser.registry_entry_is_upcoming(LocationRegistryStatus.cancelled) is False
+
     assert bulk_parser.registry_entry_is_paused(LocationRegistryStatus.paused) is True
-    assert bulk_parser.registry_entry_is_paused(LocationRegistryStatus.preparing) is True
+    assert bulk_parser.registry_entry_is_upcoming(LocationRegistryStatus.paused) is False
+
+    assert bulk_parser.registry_entry_is_upcoming(LocationRegistryStatus.preparing) is True
+    assert bulk_parser.registry_entry_is_paused(LocationRegistryStatus.preparing) is False

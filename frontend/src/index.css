@@ -5098,6 +5098,25 @@ button.badge-platform-btn:hover {
   color: var(--tint-green-text);
 }
 
+/* «Скоро»: площадка объявлена, но ещё не стартовала — не ошибка и не потеря,
+   поэтому янтарный, а не красный. */
+.location-status-badge.location-status-upcoming,
+.location-status-label.location-status-upcoming {
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-text);
+}
+
+/* Точка «скоро» на карте: контур вместо заливки — площадка ещё не работает. */
+.map-marker-upcoming span {
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--accent-amber-text);
+}
+
+.map-popup-upcoming {
+  color: var(--tint-amber-text);
+  font-weight: 600;
+}
+
 .map-locations-table-row-paused td {
   color: inherit;
 }

@@ -321,10 +321,14 @@ function popupHtml(
     lines.push(`<div class="map-popup-line">${escapeHtml(point.region)}</div>`);
   }
 
-  if (point.is_cancelled || stats.is_cancelled) {
-    lines.push(`<div class="map-popup-line map-popup-cancelled">Отменена</div>`);
-  } else if (point.is_paused || stats.is_paused) {
+  // «Не действует» сильнее отмены: у неработающей площадки сообщать про
+  // отменённую субботу нечего.
+  if (point.is_paused || stats.is_paused) {
     lines.push(`<div class="map-popup-line map-popup-paused">Не действует</div>`);
+  } else if (point.is_cancelled || stats.is_cancelled) {
+    lines.push(`<div class="map-popup-line map-popup-cancelled">Отмена ближайшего старта</div>`);
+  } else if (point.is_upcoming || stats.is_upcoming) {
+    lines.push(`<div class="map-popup-line map-popup-upcoming">Скоро откроется</div>`);
   }
 
   if (variant === "visited" || visitedInfo) {
@@ -491,6 +495,7 @@ export function LocationMap({
           : undefined;
       const isCancelled = Boolean(point.is_cancelled || visitedInfo?.is_cancelled);
       const isPaused = Boolean(point.is_paused || visitedInfo?.is_paused);
+      const isUpcoming = Boolean(point.is_upcoming || visitedInfo?.is_upcoming);
       const identity = point.catalog_identity_key ?? null;
       const count = countsByIdentity && identity ? countsByIdentity.get(identity) ?? 0 : null;
       const baseIcon = markerIconForPoint(point, variant, visitedByIdentity);
@@ -525,14 +530,20 @@ export function LocationMap({
           opacity: 0.92,
           className: "map-marker-tooltip",
         });
-      } else if (isCancelled) {
-        marker.bindTooltip("Отменена", {
+      } else if (isPaused) {
+        marker.bindTooltip("Не действует", {
           direction: "top",
           opacity: 0.92,
           className: "map-marker-tooltip",
         });
-      } else if (isPaused) {
-        marker.bindTooltip("Не действует", {
+      } else if (isCancelled) {
+        marker.bindTooltip("Отмена ближайшего старта", {
+          direction: "top",
+          opacity: 0.92,
+          className: "map-marker-tooltip",
+        });
+      } else if (isUpcoming) {
+        marker.bindTooltip("Скоро откроется", {
           direction: "top",
           opacity: 0.92,
           className: "map-marker-tooltip",

@@ -29,8 +29,12 @@ class MapLocationPointResponse(BaseModel):
     platform_codes: list[str] = Field(default_factory=list)
     active_platform: str | None = None
     location_url: str | None = None
+    # «Не действует»: стартов нет дольше порога либо так сказал реестр системы.
     is_paused: bool = False
+    # Отмена ближайшего старта — временно, площадка работает.
     is_cancelled: bool = False
+    # Площадка объявлена, но ещё не стартовала.
+    is_upcoming: bool = False
     run_count: int = 0
     volunteer_count: int = 0
     visit_count: int = 0

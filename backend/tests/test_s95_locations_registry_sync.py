@@ -39,7 +39,15 @@ def s95_platform(db_session: Session) -> Platform:
     return row
 
 
-def test_s95_sync_registry_sets_cancelled_when_inactive(db_session: Session, s95_platform: Platform) -> None:
+def test_s95_sync_registry_marks_inactive_location_not_working(
+    db_session: Session, s95_platform: Platform
+) -> None:
+    """Закрытая карточка s95 — это «не действует», а не отмена ближайшего старта.
+
+    Недельных отмен реестр s95 не публикует (проверено 19.08.2026), поэтому
+    is_cancelled там остаётся свободным под будущий парсер отмен, а закрытая
+    площадка уходит в is_paused (решение Дмитрия 20.08.2026).
+    """
     slug = f"registry-{uuid4().hex[:8]}"
     location = Location(
         platform_id=s95_platform.id,
@@ -66,8 +74,8 @@ def test_s95_sync_registry_sets_cancelled_when_inactive(db_session: Session, s95
     assert result.entries_total == 1
     assert result.cancel_status_changed == 1
     assert location.name == "Новое имя"
-    assert location.is_cancelled is True
-    assert location.is_paused is False
+    assert location.is_paused is True
+    assert location.is_cancelled is False
 
 
 def test_s95_sync_registry_creates_new_location(db_session: Session, s95_platform: Platform) -> None:

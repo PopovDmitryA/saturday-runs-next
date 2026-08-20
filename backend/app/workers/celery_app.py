@@ -26,6 +26,7 @@ celery_app.conf.update(
         "app.workers.tasks.runpark_sync",
         "app.workers.tasks.leaderboards_warm",
         "app.workers.tasks.portal_cache",
+        "app.workers.tasks.locations_status",
         "app.workers.tasks.locations_warm",
         "app.workers.tasks.dashboard_warm",
         "app.workers.tasks.page_stats",
@@ -87,6 +88,13 @@ celery_app.conf.update(
         # параллельности, а только выстраивает пачку в хвост (до 08.2026 в 20:00
         # будней стартовали разом latest + реестр + ротация). Приоритет минуты
         # :00 — у latest: это свежие субботние протоколы.
+        # Правило молчания: после реестра 5 вёрст, чтобы догадка по датам
+        # ложилась поверх свежих заявлений систем, а не спорила с ними.
+        "locations-activity-status": {
+            "task": "locations.refresh_activity_status",
+            "schedule": crontab(hour=21, minute=10),
+            "options": {"queue": "default"},
+        },
         "five-verst-registry-daily": {
             "task": "five_verst_sync.sync_locations_registry",
             # 20:50 — после latest 20:00; до сводки 21:50 успевает (~1.5 мин).

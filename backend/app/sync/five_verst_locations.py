@@ -14,9 +14,11 @@ from app.platform_adapters.five_verst.bulk_parser import (
     ParsedRegistryEntry,
     registry_entry_is_cancelled,
     registry_entry_is_paused,
+    registry_entry_is_upcoming,
 )
 from app.platform_adapters.five_verst.http import NotFoundError
 from app.services.admin_notify import notify_admin
+from app.services.location_catalog_cache import flush_location_catalog_caches
 from app.services.location_geo_service import apply_reverse_geocode_to_location
 from app.sync import upsert
 from app.sync.iteration_commit import commit_step, rollback_step
@@ -130,6 +132,7 @@ def _apply_registry_meta(db: Session, row: Location, entry: ParsedRegistryEntry)
         row,
         is_paused=registry_entry_is_paused(entry.status),
         is_cancelled=registry_entry_is_cancelled(entry.status),
+        is_upcoming=registry_entry_is_upcoming(entry.status),
     )
     if row.name != entry.name:
         row.name = entry.name
@@ -462,6 +465,10 @@ def sync_locations_registry(
             error="; ".join(result.errors) or None,
         )
         db.commit()
+        # Витрины каталога держат снимок в Redis на часы: без сброса отмена
+        # ближайшего старта доедет до карты только к протуханию кэша.
+        if result.locations_created or result.locations_updated:
+            flush_location_catalog_caches("синк реестра 5 вёрст")
         return result
     except Exception as exc:
         db.rollback()
