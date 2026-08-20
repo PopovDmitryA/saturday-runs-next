@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { LocationMap } from "../../components/LocationMap";
 import { getCatalogLocationsMap, type MapLocationPoint } from "../../lib/api";
 import { formatInt, pluralFormRu } from "../../lib/format";
@@ -25,6 +25,8 @@ export function TouristMapPanel({ state, verb, onShowTable }: TouristMapPanelPro
   const [points, setPoints] = useState<MapLocationPoint[] | null>(null);
   const [pointsError, setPointsError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Показывать ли недействующие площадки: «Не действует» (пауза) и закрытые.
+  const [withInactive, setWithInactive] = useState(true);
   const {
     countsByIdentity,
     selectedKeys,
@@ -69,6 +71,15 @@ export function TouristMapPanel({ state, verb, onShowTable }: TouristMapPanelPro
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [isFullscreen]);
+
+  // «Только действующие» убирает с карты закрытые площадки и те, что не
+  // действуют: их числа — история, а не ответ на вопрос «куда ездят сейчас».
+  const visiblePoints = useMemo(() => {
+    if (!points || withInactive) {
+      return points;
+    }
+    return points.filter((point) => !point.is_paused && !point.is_cancelled);
+  }, [points, withInactive]);
 
   // Подпись в попапе точки: на тачскринах всплывающей подсказки нет, и попап —
   // единственное место, где число можно прочитать словами.
@@ -115,7 +126,7 @@ export function TouristMapPanel({ state, verb, onShowTable }: TouristMapPanelPro
       {/* Ступень влияет только на числа у точек: «сколько человек из топ-50
           сюда доехало» — вопрос про элиту туризма, а не про всю тысячу. */}
       <div className="lb-tourist-top">
-        <span className="lb-tourist-top-label muted">Считать по</span>
+        <span className="lb-tourist-top-label muted">Показывать по</span>
         <div className="lb-gender-tabs" role="group" aria-label="Какой топ считать на карте">
           {topSteps.map((step) => (
             <button
@@ -128,6 +139,27 @@ export function TouristMapPanel({ state, verb, onShowTable }: TouristMapPanelPro
               топ-{step}
             </button>
           ))}
+        </div>
+        {/* Недействующие площадки (пауза и закрытые) на карте нужны не всегда:
+            их числа — история, а не «куда ездят сейчас». */}
+        <span className="lb-tourist-top-label muted">Локации</span>
+        <div className="lb-gender-tabs" role="group" aria-label="Какие локации показывать">
+          <button
+            type="button"
+            aria-pressed={withInactive}
+            className={`lb-gender-tab${withInactive ? " lb-gender-tab-active" : ""}`}
+            onClick={() => setWithInactive(true)}
+          >
+            Все
+          </button>
+          <button
+            type="button"
+            aria-pressed={!withInactive}
+            className={`lb-gender-tab${!withInactive ? " lb-gender-tab-active" : ""}`}
+            onClick={() => setWithInactive(false)}
+          >
+            Только действующие
+          </button>
         </div>
       </div>
 
@@ -182,10 +214,10 @@ export function TouristMapPanel({ state, verb, onShowTable }: TouristMapPanelPro
         </p>
       )}
 
-      {points && map && (
+      {visiblePoints && map && (
         <div className={isFullscreen ? "map-panel-fullscreen" : undefined}>
           <LocationMap
-            points={points}
+            points={visiblePoints}
             variant="catalog"
             emptyMessage="Локации не найдены"
             legend={legend}

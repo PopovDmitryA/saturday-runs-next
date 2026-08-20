@@ -8,7 +8,7 @@ export function LocationStatusBadge({ isPaused, isCancelled }: LocationStatusBad
     return <span className="location-status-badge location-status-cancelled">отменена</span>;
   }
   if (isPaused) {
-    return <span className="location-status-badge location-status-paused">на паузе</span>;
+    return <span className="location-status-badge location-status-paused">не действует</span>;
   }
   return null;
 }
@@ -18,7 +18,7 @@ export function LocationStatusLabel({ isPaused, isCancelled }: LocationStatusBad
     return <span className="location-status-label location-status-cancelled">Отменена</span>;
   }
   if (isPaused) {
-    return <span className="location-status-label location-status-paused">На паузе</span>;
+    return <span className="location-status-label location-status-paused">Не действует</span>;
   }
   return <span className="location-status-label location-status-active">Активна</span>;
 }

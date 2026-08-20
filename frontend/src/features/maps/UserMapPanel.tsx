@@ -190,7 +190,7 @@ export function UserMapPanel({
       )}
       <span className="map-legend-item">
         <span className="map-legend-dot map-legend-dot-paused" aria-hidden />
-        На паузе
+        Не действует
       </span>
       <span className="map-legend-item">
         <span className="map-legend-dot map-legend-dot-cancelled" aria-hidden />

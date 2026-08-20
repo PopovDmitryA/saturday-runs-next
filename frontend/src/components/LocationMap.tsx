@@ -324,7 +324,7 @@ function popupHtml(
   if (point.is_cancelled || stats.is_cancelled) {
     lines.push(`<div class="map-popup-line map-popup-cancelled">Отменена</div>`);
   } else if (point.is_paused || stats.is_paused) {
-    lines.push(`<div class="map-popup-line map-popup-paused">На паузе</div>`);
+    lines.push(`<div class="map-popup-line map-popup-paused">Не действует</div>`);
   }
 
   if (variant === "visited" || visitedInfo) {
@@ -532,7 +532,7 @@ export function LocationMap({
           className: "map-marker-tooltip",
         });
       } else if (isPaused) {
-        marker.bindTooltip("На паузе", {
+        marker.bindTooltip("Не действует", {
           direction: "top",
           opacity: 0.92,
           className: "map-marker-tooltip",
