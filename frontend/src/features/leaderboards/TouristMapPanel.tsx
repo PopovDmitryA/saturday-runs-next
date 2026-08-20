@@ -25,9 +25,23 @@ export function TouristMapPanel({ state, verb, onShowTable }: TouristMapPanelPro
   const [points, setPoints] = useState<MapLocationPoint[] | null>(null);
   const [pointsError, setPointsError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const { countsByIdentity, selectedKeys, selected, toggle, clear, atLimit, map, loading, error } =
-    state;
-  const limit = map?.limit ?? 100;
+  const {
+    countsByIdentity,
+    selectedKeys,
+    selected,
+    toggle,
+    clear,
+    atLimit,
+    map,
+    loading,
+    error,
+    topSteps,
+    topLimit,
+    setTopLimit,
+  } = state;
+  // Глубина светофоров в таблице — всегда вся таблица; фильтр ниже меняет
+  // только числа у точек.
+  const tableLimit = map?.limit ?? 1000;
 
   useEffect(() => {
     let cancelled = false;
@@ -61,9 +75,9 @@ export function TouristMapPanel({ state, verb, onShowTable }: TouristMapPanelPro
   const countLabel = useCallback(
     (count: number) =>
       count > 0
-        ? `Здесь ${verb} ${visitorsLabel(count)} из топ-${limit}`
-        : `Из топ-${limit} здесь не был никто`,
-    [limit, verb],
+        ? `Здесь ${verb} ${visitorsLabel(count)} из топ-${topLimit}`
+        : `Из топ-${topLimit} здесь не был никто`,
+    [topLimit, verb],
   );
 
   // Кнопка в попапе: площадку клик уже выбрал, остаётся довезти человека до
@@ -76,8 +90,10 @@ export function TouristMapPanel({ state, verb, onShowTable }: TouristMapPanelPro
   const legend = (
     <div className="map-legend lb-tourist-legend">
       <span className="map-legend-item">
-        <span className="lb-tourist-legend-badge">12</span>
-        человек из топ-{limit} были здесь
+        {/* Образец не должен противоречить ступени: при «топ-10» число 12
+            в легенде читалось как ошибка. */}
+        <span className="lb-tourist-legend-badge">{Math.min(12, topLimit)}</span>
+        человек из топ-{topLimit} были здесь
       </span>
       <span className="map-legend-item">
         <span className="lb-tourist-legend-cluster">7</span>
@@ -90,10 +106,30 @@ export function TouristMapPanel({ state, verb, onShowTable }: TouristMapPanelPro
   return (
     <div className="lb-tourist-map">
       <p className="lb-tourist-caption muted">
-        Число у точки — сколько человек из таблицы рейтинга (топ-{limit}) здесь {verb}.
-        Нажимайте на точки: каждая добавит в таблицу свой столбец «Был здесь» — зелёный,
-        если был, красный, если нет.
+        Число у точки — сколько человек из топ-{topLimit} рейтинга здесь {verb}. Нажимайте
+        на точки: каждая добавит в таблицу свой столбец «Был здесь» — зелёный, если был,
+        красный, если нет. Светофоры в столбцах считаются по всей таблице (топ-
+        {tableLimit}), какую бы ступень вы ни выбрали.
       </p>
+
+      {/* Ступень влияет только на числа у точек: «сколько человек из топ-50
+          сюда доехало» — вопрос про элиту туризма, а не про всю тысячу. */}
+      <div className="lb-tourist-top">
+        <span className="lb-tourist-top-label muted">Считать по</span>
+        <div className="lb-gender-tabs" role="group" aria-label="Какой топ считать на карте">
+          {topSteps.map((step) => (
+            <button
+              key={step}
+              type="button"
+              aria-pressed={topLimit === step}
+              className={`lb-gender-tab${topLimit === step ? " lb-gender-tab-active" : ""}`}
+              onClick={() => setTopLimit(step)}
+            >
+              топ-{step}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {(loading || !points) && !error && !pointsError && (
         <p className="muted">Считаем карту туристов…</p>

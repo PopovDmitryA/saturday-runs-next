@@ -1881,3 +1881,15 @@ body.has-pinned-me .lb-scroll-top {
 .map-popup-details:hover {
   text-decoration: underline;
 }
+
+/* Ступень «какой топ считать» — влияет только на числа у точек карты. */
+.lb-tourist-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.lb-tourist-top-label {
+  font-size: 0.82rem;
+}

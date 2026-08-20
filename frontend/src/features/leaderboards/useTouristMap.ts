@@ -16,6 +16,12 @@ import {
  */
 export const MAX_SELECTED_LOCATIONS = 15;
 
+/**
+ * Ступени фильтра «какой топ считать на карте», пока не приехал ответ с их
+ * набором (его задаёт бэкенд — см. top_steps).
+ */
+export const DEFAULT_TOP_STEPS = [10, 30, 50, 100, 300, 500, 1000];
+
 type Options = {
   metric: LeaderboardMetric;
   /** Спойлер раскрыт — до этого момента карту не грузим вовсе. */
@@ -50,6 +56,14 @@ export type TouristMapState = {
   /** Строки, попавшие в расчёт: у остальных светофор не горит вовсе. */
   coveredRows: Set<string>;
   countsByIdentity: Map<string, number>;
+  /**
+   * Ступени фильтра «какой топ считать» и выбранная. Фильтр меняет ТОЛЬКО числа
+   * у точек: светофоры в таблице всегда считаются по всем строкам рейтинга
+   * (решение Дмитрия 19.08.2026).
+   */
+  topSteps: number[];
+  topLimit: number;
+  setTopLimit: (value: number) => void;
 };
 
 /**
@@ -78,6 +92,9 @@ export function useTouristMap({
   const [details, setDetails] = useState<Record<string, TouristMapResponse>>({});
   const [pending, setPending] = useState<string[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
+  // null — «вся таблица»: пока карта не приехала, глубину её ступеней мы не
+  // знаем, а по умолчанию показываем числа по всем строкам.
+  const [topLimit, setTopLimit] = useState<number | null>(null);
   // Гонки при быстрых кликах: ответ по площадке, которую уже сняли, игнорируем.
   const requestedRef = useRef(new Set<string>());
 
@@ -179,15 +196,31 @@ export function useTouristMap({
     setDetails({});
     requestedRef.current.clear();
     setMap(null);
+    setTopLimit(null);
   }, [metric]);
+
+  const topSteps = useMemo(
+    () => (map?.top_steps?.length ? map.top_steps : DEFAULT_TOP_STEPS),
+    [map],
+  );
+  // По умолчанию — самая широкая ступень: карта открывается такой же, какой
+  // была до появления фильтра.
+  const effectiveTop = topLimit ?? topSteps[topSteps.length - 1];
 
   const countsByIdentity = useMemo(() => {
     const counts = new Map<string, number>();
+    const widest = topSteps[topSteps.length - 1];
     for (const location of map?.locations ?? []) {
-      counts.set(location.key, location.visitors);
+      // visitors_by_top приходит по всем ступеням разом; visitors — запасной
+      // вариант для самой широкой ступени и для старых ответов без разбивки.
+      const byTop = location.visitors_by_top?.[String(effectiveTop)];
+      counts.set(
+        location.key,
+        byTop ?? (effectiveTop >= widest ? location.visitors : 0),
+      );
     }
     return counts;
-  }, [map]);
+  }, [map, effectiveTop, topSteps]);
 
   const coveredRows = useMemo(() => new Set(map?.row_keys ?? []), [map]);
 
@@ -246,5 +279,8 @@ export function useTouristMap({
     atLimit: selectedKeys.length >= MAX_SELECTED_LOCATIONS,
     coveredRows,
     countsByIdentity,
+    topSteps,
+    topLimit: effectiveTop,
+    setTopLimit,
   };
 }

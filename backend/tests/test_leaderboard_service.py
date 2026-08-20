@@ -39,6 +39,7 @@ from app.services.leaderboard_service import (
     TOP_LIMIT,
     TOURIST_MAP_LIMIT,
     TOURIST_MAP_METRICS,
+    TOURIST_MAP_TOP_STEPS,
     VOLUNTEER_LOCATION_PLATFORM_COLUMNS,
     WEEK_LOCATIONS_METRICS,
     WIN_EXTRAS_METRICS,
@@ -895,3 +896,16 @@ def test_tourist_map_covers_every_visible_row() -> None:
     """
     assert TOURIST_MAP_LIMIT == TOP_LIMIT
     assert set(TOURIST_MAP_METRICS) == set(MIN_VISITS_METRICS)
+
+
+def test_tourist_map_top_steps_end_at_table_depth() -> None:
+    """Ступени фильтра карты идут по возрастанию и упираются в глубину таблицы.
+
+    Самая широкая ступень обязана совпадать с TOURIST_MAP_LIMIT: витрина берёт
+    её как значение по умолчанию, и карта открывается такой же, какой была до
+    появления фильтра. Ступень шире расчёта нарисовала бы числа, которых нет.
+    """
+    assert list(TOURIST_MAP_TOP_STEPS) == sorted(TOURIST_MAP_TOP_STEPS)
+    assert len(set(TOURIST_MAP_TOP_STEPS)) == len(TOURIST_MAP_TOP_STEPS)
+    assert TOURIST_MAP_TOP_STEPS[0] > 0
+    assert TOURIST_MAP_TOP_STEPS[-1] == TOURIST_MAP_LIMIT

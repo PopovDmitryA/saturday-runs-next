@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from bisect import bisect_right
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -196,6 +197,14 @@ TOP_LIMIT = 1000
 # объяснять подсказкой. Выборка точечная (по участникам верхушки) и кэшируется,
 # а ответ уходит под gzip — на проде он жмёт JSON рейтингов в 16 раз.
 TOURIST_MAP_LIMIT = TOP_LIMIT
+
+# Ступени фильтра «какой топ считать на карте» (просьба Дмитрия 19.08.2026).
+# Фильтр меняет ТОЛЬКО числа у точек: «сколько человек из топ-50 сюда доехало»
+# — вопрос про элиту туризма, а не про всю тысячу. Светофоры в таблице он не
+# трогает, они всегда по всем строкам. Числа для всех ступеней считаются разом
+# и едут в одном ответе (это ~15 КБ на полтысячи площадок), поэтому переключение
+# ступени мгновенное и в базу не ходит.
+TOURIST_MAP_TOP_STEPS: tuple[int, ...] = (10, 30, 50, 100, 300, 500, TOURIST_MAP_LIMIT)
 
 CACHE_TTL_SECONDS = 6 * 3600
 # Как часто таблицы пересчитываются по расписанию — этим числом витрина
@@ -3526,6 +3535,10 @@ def _build_tourist_map(
         cell = matrix.setdefault(identity, {}).setdefault(row_key, {})
         cell.setdefault(code, _TouristPlatformVisit()).add(visits, first_date, last_date)
 
+    # Место строки в рейтинге — по нему считается, в какие ступени фильтра
+    # («топ-10», «топ-50», …) попадает побывавший здесь участник.
+    place_by_row = {_row_key(key): index for index, key in enumerate(entity_keys)}
+
     locations: list[dict[str, object]] = []
     visits_by_location: dict[str, list[dict[str, object]]] = {}
     for identity, by_row in matrix.items():
@@ -3535,6 +3548,11 @@ def _build_tourist_map(
         ]
         cells.sort(key=lambda cell: (-int(cast("int", cell["visits"])), str(cell["row_key"])))
         visits_by_location[identity] = cells
+        places = sorted(
+            place_by_row[key]
+            for key in by_row
+            if key in place_by_row
+        )
         locations.append(
             {
                 "key": identity,
@@ -3542,6 +3560,13 @@ def _build_tourist_map(
                 "slug": identity_slugs.get(identity),
                 "visitors": len(cells),
                 "visits": sum(int(cast("int", cell["visits"])) for cell in cells),
+                # Сколько побывавших попадает в каждую ступень фильтра. Места
+                # отсортированы, поэтому bisect отвечает за один шаг вместо
+                # прохода по всем ячейкам на каждую ступень.
+                "visitors_by_top": {
+                    str(step): bisect_right(places, step - 1)
+                    for step in TOURIST_MAP_TOP_STEPS
+                },
             }
         )
     locations.sort(key=lambda item: (-int(cast("int", item["visitors"])), str(item["name"])))
@@ -3560,7 +3585,9 @@ def _tourist_map_cache_key(
     """Ключ матрицы карты — те же суффиксы фильтров, что у снапшота рейтинга,
     только своей веткой: срок жизни общий, а содержимое разное."""
     key = _cache_key(metric, "all", min_visits, platform, count_by, roles_key)
-    return key.replace(f"{CACHE_KEY_PREFIX}:", f"{CACHE_KEY_PREFIX}:tmap:", 1)
+    # tmap2 — в матрице появились числа по ступеням фильтра (19.08.2026): в
+    # payload'ах прежней версии их нет, и ждать их протухания по TTL незачем.
+    return key.replace(f"{CACHE_KEY_PREFIX}:", f"{CACHE_KEY_PREFIX}:tmap2:", 1)
 
 
 def refresh_tourist_map_cache(
@@ -3649,6 +3676,7 @@ def get_tourist_map(
         "min_visits": payload.get("min_visits", visits),
         "platform": payload.get("platform", platform_resolved),
         "limit": payload.get("limit", TOURIST_MAP_LIMIT),
+        "top_steps": list(TOURIST_MAP_TOP_STEPS),
         "built_at": payload.get("built_at"),
         "row_keys": payload.get("row_keys") or [],
         # Список площадок витрина получила при открытии спойлера — при клике по

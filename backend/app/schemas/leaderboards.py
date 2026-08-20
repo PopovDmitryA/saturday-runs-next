@@ -174,6 +174,9 @@ class TouristMapLocationResponse(BaseModel):
     visitors: int
     # Сколько всего визитов они сюда сделали.
     visits: int
+    # То же число по ступеням фильтра «какой топ считать»: "10" -> 3, "50" -> 12.
+    # Приходят все ступени разом, чтобы переключение не ходило на сервер.
+    visitors_by_top: dict[str, int] = {}
 
 
 class TouristMapPlatformVisitResponse(BaseModel):
@@ -199,8 +202,11 @@ class TouristMapResponse(BaseModel):
     metric: str
     min_visits: int = 1
     platform: str = "all"
-    # По скольким верхним строкам рейтинга посчитаны числа.
+    # По скольким верхним строкам рейтинга посчитаны светофоры в таблице.
     limit: int
+    # Ступени фильтра «какой топ считать на карте» — их набор задаёт бэкенд,
+    # витрина не держит свою копию.
+    top_steps: list[int] = []
     built_at: str | None = None
     # Строки рейтинга, попавшие в расчёт: у остальных светофор не горит вовсе.
     row_keys: list[str] = []

@@ -345,6 +345,11 @@ export type TouristMapLocation = {
   /** Сколько человек из верхушки рейтинга здесь были — число у точки. */
   visitors: number;
   visits: number;
+  /**
+   * То же число по ступеням фильтра «какой топ считать»: "10" → 3, "50" → 12.
+   * Все ступени приходят разом, поэтому переключение не ходит на сервер.
+   */
+  visitors_by_top?: Record<string, number>;
 };
 
 export type TouristMapPlatformVisit = {
@@ -366,8 +371,10 @@ export type TouristMapResponse = {
   metric: string;
   min_visits: number;
   platform: PlatformFilter;
-  /** По скольким верхним строкам рейтинга посчитаны числа. */
+  /** По скольким верхним строкам рейтинга посчитаны светофоры в таблице. */
   limit: number;
+  /** Ступени фильтра «какой топ считать на карте» — набор задаёт бэкенд. */
+  top_steps?: number[];
   built_at: string | null;
   /** Строки, попавшие в расчёт: у остальных светофор не горит вовсе. */
   row_keys: string[];
