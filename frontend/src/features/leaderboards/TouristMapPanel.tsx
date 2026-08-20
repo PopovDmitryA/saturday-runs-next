@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { LocationMap } from "../../components/LocationMap";
 import { getCatalogLocationsMap, type MapLocationPoint } from "../../lib/api";
 import { formatInt, pluralFormRu } from "../../lib/format";
+import { PLATFORM_LABELS } from "./leaderboardsApi";
 import { MAX_SELECTED_LOCATIONS, type TouristMapState } from "./useTouristMap";
 
 type TouristMapPanelProps = {
@@ -44,6 +45,13 @@ export function TouristMapPanel({ state, verb, onShowTable }: TouristMapPanelPro
   // Глубина светофоров в таблице — всегда вся таблица; фильтр ниже меняет
   // только числа у точек.
   const tableLimit = map?.limit ?? 1000;
+  // Система из фильтра рейтинга: бэкенд возвращает её уже нормализованной
+  // (неприменимую к рейтингу молча заменяет на «все»).
+  const platform = map?.platform ?? "all";
+  // Приписка «в 5 вёрстах» к числам: под фильтром системы это уже не «сколько
+  // человек тут было вообще», и без уточнения число вводит в заблуждение.
+  const platformNote =
+    platform === "all" ? "" : ` в системе «${PLATFORM_LABELS[platform] ?? platform}»`;
 
   useEffect(() => {
     let cancelled = false;
@@ -74,21 +82,33 @@ export function TouristMapPanel({ state, verb, onShowTable }: TouristMapPanelPro
 
   // «Только действующие» убирает с карты закрытые площадки и те, что не
   // действуют: их числа — история, а не ответ на вопрос «куда ездят сейчас».
+  // Фильтр «Система» из рейтинга действует и на карту: если таблица считает
+  // только 5 вёрст, то и точки нужны только те, где эта система есть. Иначе
+  // площадки чужих систем стояли бы с нулём и читались как «сюда никто не
+  // ездит», хотя там просто другая система (репорт Дмитрия 21.08.2026).
+  // Числа у точек бэкенд уже считает по выбранной системе.
   const visiblePoints = useMemo(() => {
-    if (!points || withInactive) {
+    if (!points) {
       return points;
     }
-    return points.filter((point) => !point.is_paused && !point.is_cancelled);
-  }, [points, withInactive]);
+    let list = points;
+    if (platform !== "all") {
+      list = list.filter((point) => point.platform_codes.includes(platform));
+    }
+    if (!withInactive) {
+      list = list.filter((point) => !point.is_paused && !point.is_cancelled);
+    }
+    return list;
+  }, [points, platform, withInactive]);
 
   // Подпись в попапе точки: на тачскринах всплывающей подсказки нет, и попап —
   // единственное место, где число можно прочитать словами.
   const countLabel = useCallback(
     (count: number) =>
       count > 0
-        ? `Здесь ${verb} ${visitorsLabel(count)} из топ-${topLimit}`
-        : `Из топ-${topLimit} здесь не был никто`,
-    [topLimit, verb],
+        ? `Здесь ${verb} ${visitorsLabel(count)} из топ-${topLimit}${platformNote}`
+        : `Из топ-${topLimit} здесь не был никто${platformNote}`,
+    [topLimit, verb, platformNote],
   );
 
   // Кнопка в попапе: площадку клик уже выбрал, остаётся довезти человека до
@@ -117,7 +137,8 @@ export function TouristMapPanel({ state, verb, onShowTable }: TouristMapPanelPro
   return (
     <div className="lb-tourist-map">
       <p className="lb-tourist-caption muted">
-        Число у точки — сколько человек из топ-{topLimit} рейтинга здесь {verb}. Нажимайте
+        Число у точки — сколько человек из топ-{topLimit} рейтинга здесь {verb}
+        {platformNote}. Нажимайте
         на точки: каждая добавит в таблицу свой столбец «Был здесь» — зелёный, если был,
         красный, если нет. Светофоры в столбцах считаются по всей таблице (топ-
         {tableLimit}), какую бы ступень вы ни выбрали.
