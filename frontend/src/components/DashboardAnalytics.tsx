@@ -20,7 +20,6 @@ import { WinsModal } from "./WinsModal";
 import { RegionsCitiesModal, type GroupBy } from "./RegionsCitiesModal";
 import { LocationRecordsModal } from "./LocationRecordsModal";
 import {
-  formatDate,
   formatDuration,
   formatMonthShort,
   formatMonthYear,
@@ -415,17 +414,8 @@ function buildAnalyticsCards(
   }
 
   // Плашка «Последний PR» временно скрыта (02.07.2026) — вернём, если попросят пользователи.
-
-  if (analytics.last_global_pr_date) {
-    cards.push({
-      key: "last_global_pr_date",
-      value: formatDate(analytics.last_global_pr_date),
-      label: "Последний глобальный PR",
-      category: "runs",
-      clickable: true,
-      modalTarget: "personal_records",
-    });
-  }
+  // Плитка «Последний глобальный PR» убрана (09.08.2026): дата последнего
+  // рекорда уже видна в модалке личных рекордов, куда ведёт плитка «PR-пробежки».
 
   if ((analytics.new_locations_last_12_months ?? 0) > 0) {
     cards.push({
@@ -911,11 +901,15 @@ export function DashboardAnalytics({
             {analytics.platform_metrics.map((item) => (
               <li key={item.platform_code} className="platform-metrics-row">
                 <PlatformBadge code={item.platform_code} />
-                {(item.runs_count ?? 0) > 0 && (
-                  <span className="platform-metrics-count">
-                    <b>{item.runs_count}</b> {runsFormLabel(item.runs_count ?? 0)}
-                  </span>
-                )}
+                {/* Ячейка рендерится всегда, даже пустая: список — общая
+                    сетка, и пропуск сдвинул бы колонки этой строки. */}
+                <span className="platform-metrics-count">
+                  {(item.runs_count ?? 0) > 0 && (
+                    <>
+                      <b>{item.runs_count}</b> {runsFormLabel(item.runs_count ?? 0)}
+                    </>
+                  )}
+                </span>
                 <div className="platform-metrics-values">
                   {item.avg_finish_time_sec != null && (
                     <span>{formatDuration(item.avg_finish_time_sec)}</span>

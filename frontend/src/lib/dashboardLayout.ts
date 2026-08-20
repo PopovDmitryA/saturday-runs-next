@@ -39,7 +39,6 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
     rest: [
       "avg_position",
       "avg_gender_position",
-      "last_global_pr_date",
       "location_records",
       "age_group_records",
     ],

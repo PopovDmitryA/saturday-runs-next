@@ -1371,19 +1371,21 @@ a.last-saturday-location:hover {
   border-color: var(--tint-blue-border);
 }
 
+/* Общая сетка на весь список: пока каждая строка была своим гридом,
+   колонки подгонялись под её содержимое и счётчики не совпадали по
+   вертикали. Строки отдают ячейки наверх через display: contents. */
 .platform-metrics-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.65rem;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.65rem 0.75rem;
 }
 
 .platform-metrics-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  display: contents;
 }
 
 /* Между бейджем системы и средними — сколько пробежек в неё набежало.
@@ -1392,6 +1394,8 @@ a.last-saturday-location:hover {
   font-size: 0.88rem;
   color: var(--text-muted);
   white-space: nowrap;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .platform-metrics-count b {
@@ -1405,6 +1409,7 @@ a.last-saturday-location:hover {
   gap: 0.5rem;
   justify-content: flex-end;
   font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .analytics-chart {
@@ -8523,6 +8528,11 @@ tr.run-crosslinked td {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  /* Заголовок, бейдж дельты и проценты переносятся на вторую строку,
+     когда в одну не помещаются, — иначе бейдж выталкивал проценты
+     за пределы карточки. */
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .goal-icon {
@@ -8541,6 +8551,7 @@ tr.run-crosslinked td {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text-3);
+  margin-left: auto;
 }
 
 /* Зелёная стрелка-дельта: сколько прогресса дала последняя пробежка —
@@ -9486,6 +9497,14 @@ tr.run-crosslinked td {
   background: var(--bg-muted);
   padding: 0.7rem 0.8rem;
   gap: 0.4rem;
+  /* Без этого ячейка грида не сжимается ниже своего содержимого, и
+     длинная подпись («Лучшее в этом году: 21:52 · цель 21:00») вылезала
+     за правый край плитки. */
+  min-width: 0;
+}
+
+.goals-teaser-grid .goal-progress-label {
+  overflow-wrap: anywhere;
 }
 
 .goals-teaser-empty .btn {

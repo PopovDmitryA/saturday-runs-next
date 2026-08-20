@@ -72,7 +72,9 @@ class SyncRefreshRateLimitedError(Exception):
 # 35: блок last_saturday — герой дашборда «последняя суббота» с дельтой
 # к прошлому визиту на ту же площадку.
 # 36: notables последней субботы — чем она примечательна, словами.
-ANALYTICS_VERSION = 36
+# 37: среднее место по полу считается только женщинам — у мужчин женский
+# зачёт совпадает с абсолютом, и плитка дублировала «Среднее место».
+ANALYTICS_VERSION = 37
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 
@@ -592,10 +594,18 @@ def _compute_dashboard_analytics(
     best_results_platform_count = timed_runs.with_entities(Platform.code).distinct().count()
     avg_pace = paced_runs.with_entities(func.avg(RunResult.pace_sec_per_km)).scalar()
     avg_position = positioned_runs.with_entities(func.avg(RunResult.position)).scalar()
+    # Среднее место по полу показываем только женщинам: у мужчин женский
+    # зачёт совпадает с абсолютом и плитка дублирует «Среднее место в
+    # протоколе» (решение Дмитрия, 09.08.2026 — как и с зачётом побед ниже).
+    gender = user_gender(db, user_id)
     avg_gender_position = (
-        runs_query.filter(RunResult.gender_position.isnot(None))
-        .with_entities(func.avg(RunResult.gender_position))
-        .scalar()
+        (
+            runs_query.filter(RunResult.gender_position.isnot(None))
+            .with_entities(func.avg(RunResult.gender_position))
+            .scalar()
+        )
+        if gender == "female"
+        else None
     )
     # Победы: у женщин — среди женщин (gender_position), у мужчин — в абсолюте
     # (position). Счётчик и список в модалке считаются одним фильтром
@@ -603,7 +613,7 @@ def _compute_dashboard_analytics(
     # кросслинк-дубли уже отсечены выше, поэтому цифра плитки и число строк
     # детализации совпадают по построению. Зарубежный parkrun отсекается тем же
     # фильтром в обоих местах (foreign_parkrun_exclusion_filter).
-    wins_scope = win_scope_for_gender(user_gender(db, user_id))
+    wins_scope = win_scope_for_gender(gender)
     wins_count = (
         runs_query.filter(
             run_win_sql_filter(wins_scope),
