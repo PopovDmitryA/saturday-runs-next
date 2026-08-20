@@ -12081,3 +12081,278 @@ tr.run-crosslinked td {
   line-height: 1;
   cursor: pointer;
 }
+
+/* ============================================================
+   Кабинет V2: профиль человека + bento-сетка
+   Размер плитки = важность. Свежее событие занимает целый блок,
+   ключевые цифры — маленькие ячейки, графики стоят в сетке
+   наравне с числами, а не сваливаются в подвал страницы.
+   ============================================================ */
+
+.cab-profile {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.cab-profile-avatar {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--accent-indigo);
+  color: #fff;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.cab-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cab-profile-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.cab-profile-name {
+  margin: 0;
+  font-size: 1.6rem;
+  line-height: 1.15;
+}
+
+.cab-profile-since {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.cab-profile-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cab-profile-chips li {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--tint-indigo-bg);
+  color: var(--text-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.cab-profile-share {
+  flex: 0 0 auto;
+}
+
+.cab-bento {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.cab-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+/* Прозрачная ячейка: внутри живёт готовый блок со своей карточкой. */
+.cab-tile-plain {
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 0;
+}
+
+/* Блок внутри может ничего не отрисовать (нет свежей вехи, нечего
+   оценивать) — пустая ячейка не должна занимать место в сетке. */
+.cab-tile-plain:empty {
+  display: none;
+}
+
+.cab-tile-sm {
+  grid-column: span 1;
+}
+
+.cab-tile-md {
+  grid-column: span 2;
+}
+
+.cab-tile-lg {
+  grid-column: span 4;
+}
+
+.cab-tile-link {
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.cab-tile-link:hover {
+  border-color: var(--border-heavy);
+  transform: translateY(-1px);
+}
+
+.cab-tile-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.cab-tile-value {
+  font-size: 2rem;
+  font-weight: 750;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.cab-tile-label {
+  font-size: 0.9rem;
+  color: var(--text-2);
+}
+
+.cab-tile-note {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* Цветная левая грань — язык категорий, уже принятый в плитках кабинета. */
+.cab-tile-runs {
+  border-left: 3px solid var(--accent-green-text);
+}
+
+.cab-tile-volunteering {
+  border-left: 3px solid var(--accent-indigo);
+}
+
+.cab-tile-speed {
+  border-left: 3px solid var(--accent-amber-text);
+}
+
+.cab-tile-places {
+  border-left: 3px solid var(--tint-sky-text);
+}
+
+/* Событие недели — единственная акцентная плитка сетки. */
+.cab-tile-event {
+  background: var(--tint-indigo-bg);
+  border-color: var(--tint-blue-border);
+}
+
+.last-saturday-bare {
+  border: none;
+  background: none;
+  padding: 0;
+  box-shadow: none;
+}
+
+.cab-allstats {
+  margin-top: 0.35rem;
+}
+
+.cab-allstats-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: inherit;
+  font-size: 1rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.cab-allstats-toggle:hover {
+  border-color: var(--border-heavy);
+}
+
+.cab-allstats-chevron {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.cab-allstats-body {
+  margin-top: 0.85rem;
+}
+
+@media (max-width: 900px) {
+  .cab-bento {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cab-tile-md,
+  .cab-tile-lg {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 560px) {
+  /* Мелкие плитки остаются по две в ряд: четыре цифры в одну колонку —
+     это четыре экрана скролла там, где хватает одного. */
+  .cab-bento {
+    gap: 0.6rem;
+  }
+
+  .cab-tile {
+    padding: 0.8rem 0.9rem;
+  }
+
+  .cab-tile-value {
+    font-size: 1.7rem;
+  }
+
+  .cab-tile-md,
+  .cab-tile-lg {
+    grid-column: span 2;
+  }
+
+  .cab-profile {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+  }
+
+  .cab-profile-avatar {
+    width: 48px;
+    height: 48px;
+    font-size: 1.05rem;
+  }
+
+  .cab-profile-name {
+    font-size: 1.25rem;
+  }
+
+  /* Кнопка уходит под имя и аватар, а не жмёт их в узкую колонку. */
+  .cab-profile-share {
+    order: 3;
+    width: 100%;
+    text-align: center;
+  }
+}

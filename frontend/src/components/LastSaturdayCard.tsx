@@ -17,7 +17,16 @@ function formatDeltaValue(seconds: number): string {
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export function LastSaturdayCard({ data, own = false }: { data: LastSaturday; own?: boolean }) {
+export function LastSaturdayCard({
+  data,
+  own = false,
+  bare = false,
+}: {
+  data: LastSaturday;
+  own?: boolean;
+  /** Внутри плитки bento своя рамка не нужна — карточка отдаёт только содержимое. */
+  bare?: boolean;
+}) {
   const deltaSec = data.delta_vs_prev_sec;
   const deltaChip =
     deltaSec != null && deltaSec !== 0 ? (
@@ -32,7 +41,7 @@ export function LastSaturdayCard({ data, own = false }: { data: LastSaturday; ow
     ) : null;
 
   return (
-    <div className="card last-saturday-card">
+    <div className={bare ? "last-saturday-card last-saturday-bare" : "card last-saturday-card"}>
       <p className="last-saturday-kicker">
         {own ? "Твоя последняя суббота" : "Последняя суббота"} · {formatDate(data.event_date)}
       </p>

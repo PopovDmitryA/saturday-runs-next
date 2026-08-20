@@ -134,10 +134,13 @@ export function PortalCabinetShell({
           {/* Телефон: сайдбар скрыт, вместе с ним пропадала и карточка
               участника — карандаш правки имени был доступен только с
               компьютера. Здесь та же карточка, видна только на узких
-              экранах (см. .portal-cab-user-mobile). */}
-          <div className="portal-cab-user-mobile">
-            <CabinetUserCard initialUser={user} />
-          </div>
+              экранах (см. .portal-cab-user-mobile). На «Обзоре» её нет:
+              там имя и аватар уже показывает шапка профиля. */}
+          {active !== "dashboard" && (
+            <div className="portal-cab-user-mobile">
+              <CabinetUserCard initialUser={user} />
+            </div>
+          )}
           {title && (
             <div className="portal-cab-pagehead">
               <h1>{title}</h1>
