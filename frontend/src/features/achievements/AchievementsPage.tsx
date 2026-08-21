@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AppShell } from "../../components/AppShell";
 import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
+import { TitleTooltipZone } from "../../components/TitleTooltipZone";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import {
   getAchievements,
@@ -267,7 +268,8 @@ function ChallengeLetters({ challenge }: { challenge: Challenge }) {
   const letters = challenge.detail.letters ?? [];
   const recentDate = challenge.recent_date;
   return (
-    <div className="challenge-cells">
+    // Тёмная плашка вместо нативной подсказки браузера — как в «Коллекциях».
+    <TitleTooltipZone className="challenge-cells">
       {letters.map((item) => {
         const fresh = isFreshlyClosed(item.date, recentDate);
         const title = item.done
@@ -289,7 +291,7 @@ function ChallengeLetters({ challenge }: { challenge: Challenge }) {
           </span>
         );
       })}
-    </div>
+    </TitleTooltipZone>
   );
 }
 
@@ -300,7 +302,7 @@ function ChallengeDays({ challenge }: { challenge: Challenge }) {
   const days = challenge.detail.days ?? [];
   const byKey = useMemo(() => new Map(days.map((day) => [day.key, day])), [days]);
   return (
-    <div className="challenge-year-scroll">
+    <TitleTooltipZone className="challenge-year-scroll">
       <div className="challenge-year">
         {MONTH_SHORT.map((monthLabel, monthIndex) => {
           const daysInMonth = MONTH_DAYS[monthIndex];
@@ -341,7 +343,7 @@ function ChallengeDays({ challenge }: { challenge: Challenge }) {
           );
         })}
       </div>
-    </div>
+    </TitleTooltipZone>
   );
 }
 
@@ -444,7 +446,7 @@ function ChallengeItems({ challenge }: { challenge: Challenge }) {
   );
 }
 
-function ChallengeDetailContent({ challenge }: { challenge: Challenge }) {
+function ChallengeDetailBlock({ challenge }: { challenge: Challenge }) {
   const detail = challenge.detail;
   if (detail.letters) {
     return <ChallengeLetters challenge={challenge} />;
@@ -456,22 +458,6 @@ function ChallengeDetailContent({ challenge }: { challenge: Challenge }) {
     return <ChallengeDays challenge={challenge} />;
   }
   return <ChallengeItems challenge={challenge} />;
-}
-
-function ChallengeDetailBlock({ challenge }: { challenge: Challenge }) {
-  // Подпись к янтарной обводке: без неё непонятно, чем отмечены клетки, а
-  // «↑ +1» на карточке остаётся числом без адреса — какую именно клетку он
-  // закрыл, приходилось вспоминать самому.
-  const freshNote =
-    challenge.recent_delta > 0 && challenge.recent_date
-      ? `Янтарным отмечено то, что добавила пробежка ${formatDate(challenge.recent_date)}`
-      : null;
-  return (
-    <>
-      {freshNote && <p className="challenge-fresh-note">🆕 {freshNote}</p>}
-      <ChallengeDetailContent challenge={challenge} />
-    </>
-  );
 }
 
 function hasDetail(challenge: Challenge): boolean {

@@ -131,9 +131,7 @@ export function runSubject(run: RunItem, user: User | null, options?: { yearsAgo
     "место по полу",
   );
   pushMetric(metrics, "age_category", run.age_category, "возрастная группа");
-  pushMetric(metrics, "location", run.location_name, "локация");
   pushMetric(metrics, "event_number", run.event_number != null ? `#${run.event_number}` : null, "номер старта");
-  pushMetric(metrics, "platform", platformCodeLabel(run.platform_code), "система");
   pushMetric(metrics, "date", formatDate(run.event_date), "дата");
   pushMetric(metrics, "city", run.location_city, "город");
   pushMetric(metrics, "country", run.location_country, "страна");
@@ -233,7 +231,6 @@ export function milestoneSubject(milestone: MyHistoryMilestone, user: User | nul
   pushMetric(metrics, "age_group", milestone.age_group, "возрастная группа");
   pushMetric(metrics, "role", milestone.role, "роль волонтёра");
   pushMetric(metrics, "date", formatDate(milestone.event_date), "дата");
-  pushMetric(metrics, "platform", platformCodeLabel(milestone.platform_code), "система");
   pushMetric(metrics, "city", milestone.location_city, "город");
   pushMetric(metrics, "region", milestone.region, "регион");
   pushMetric(metrics, "country", milestone.country, "страна");
@@ -501,8 +498,31 @@ export function summarySubject(
 
 // ── Локация: последний старт и визитка ─────────────────────────────────────
 
+// Во многих названиях город уже стоит словом («Ставрополь Комсомольский
+// пруд»), и приписка через точку читалась опиской: «Ставрополь Комсомольский
+// пруд · Ставрополь». Сверяем по целым словам, поэтому «Ставропольский» за
+// «Ставрополь» не считается — там город допишется как раньше.
+function normalizeForCityMatch(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^0-9a-zа-я]+/g, " ")
+    .trim();
+}
+
+function nameContainsCity(name: string, city: string): boolean {
+  const needle = normalizeForCityMatch(city);
+  if (!needle) {
+    return false;
+  }
+  return ` ${normalizeForCityMatch(name)} `.includes(` ${needle} `);
+}
+
 function locationTitle(page: LocationPage): string {
-  return page.city ? `${page.name} · ${page.city}` : page.name;
+  if (!page.city || nameContainsCity(page.name, page.city)) {
+    return page.name;
+  }
+  return `${page.name} · ${page.city}`;
 }
 
 export function locationEventSubject(page: LocationPage): ShareSubject | null {
@@ -608,7 +628,6 @@ export function locationEventSubject(page: LocationPage): ShareSubject | null {
     "впервые здесь",
   );
   pushMetric(metrics, "date", formatDate(last.event_date), "дата старта");
-  pushMetric(metrics, "platform", platformCodeLabel(last.platform_code), "система");
   // Контекст площадки: с чем сравнивать цифры этой субботы.
   pushMetric(
     metrics,
@@ -622,7 +641,6 @@ export function locationEventSubject(page: LocationPage): ShareSubject | null {
     stats.attendance_record ? formatInt(stats.attendance_record.finishers) : null,
     "рекорд посещаемости",
   );
-  pushMetric(metrics, "location_name", page.name, "локация");
 
   const attendance = page.stats.attendance_record;
   const isAttendanceRecord = attendance != null && attendance.event_date === last.event_date;
@@ -979,9 +997,7 @@ export function ratingSubject(
 
 export function volunteeringSubject(item: VolunteeringItem, user: User | null): ShareSubject {
   const metrics: ShareMetric[] = [];
-  pushMetric(metrics, "location", item.location_name, "локация");
   pushMetric(metrics, "date", formatDate(item.event_date), "дата");
-  pushMetric(metrics, "platform", platformCodeLabel(item.platform_code), "система");
   pushMetric(metrics, "city", item.location_city, "город");
   pushMetric(metrics, "country", item.location_country, "страна");
   pushMetric(
@@ -1000,7 +1016,9 @@ export function volunteeringSubject(item: VolunteeringItem, user: User | null): 
   const data: ShareCardData = {
     audience: "runner",
     title: displayName(user),
-    subtitle: `${item.location_name} · ${formatDate(item.event_date)}`,
+    subtitle: [item.location_name, platformCodeLabel(item.platform_code), formatDate(item.event_date)]
+      .filter(Boolean)
+      .join(" · "),
     plate: "ВОЛОНТЁРСТВО",
     hero: item.role
       ? { value: item.role, caption: "роль на старте" }
@@ -1022,9 +1040,6 @@ export function locationMeSubject(stats: LocationPersonalStats, user: User | nul
     return null;
   }
   const metrics: ShareMetric[] = [];
-  // Локация — первой плиткой: мелкий подзаголовок над карточкой не читался,
-  // а именно площадка тут главный смысл.
-  pushMetric(metrics, "location", stats.name, "локация");
   pushMetric(
     metrics,
     "runs",
@@ -1096,7 +1111,7 @@ export function locationMeSubject(stats: LocationPersonalStats, user: User | nul
       stats.runs_count > 0
         ? { value: formatInt(stats.runs_count), caption: pluralFormRu(stats.runs_count, ["пробежка", "пробежки", "пробежек"]) }
         : undefined,
-    // Число пробежек уже в герое — плитку-дубль убираем, локация остаётся.
+    // Число пробежек уже в герое — плитку-дубль убираем.
     metrics: stats.runs_count > 0 ? metrics.filter((metric) => metric.id !== "runs") : metrics,
     fact:
       stats.total_runs > 0 && stats.runs_count > 0
