@@ -8,6 +8,8 @@
  * при добавлении роута не выйдет.
  */
 
+import { formatDate } from "./format";
+
 export const SITE_NAME = "run5k.run";
 
 export const DEFAULT_TITLE = "run5k.run — статистика субботних пробежек";
@@ -192,6 +194,7 @@ const ADMIN_META: PageMeta = {
 
 const PROFILE_RE = /^\/users\/([^/]+)(?:\/([^/]+))?$/;
 const LOCATION_EVENTS_RE = /^\/locations\/([^/]+)\/events$/;
+const LOCATION_PROTOCOL_RE = /^\/locations\/([^/]+)\/protocol\/([^/]+)\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_RE = /^\/locations\/([^/]+)$/;
 const SWEEP_HQ_RE = /^\/hq\/.+$/;
 
@@ -246,6 +249,15 @@ export function resolvePageMeta(rawPath: string): PageMeta {
         "достижения и посещённые локации.",
       // Вкладки профиля в индекс не идут — это срезы той же страницы.
       indexable: tab === undefined,
+    };
+  }
+  if (LOCATION_PROTOCOL_RE.test(path)) {
+    return {
+      title: "Протокол старта — run5k.run",
+      description:
+        "Полный протокол старта: места по полу и возрастным группам, личные " +
+        "рекорды, дебютанты и волонтёры дня.",
+      indexable: true,
     };
   }
   if (LOCATION_EVENTS_RE.test(path)) {
@@ -390,6 +402,42 @@ export function locationPageMeta(
       numbers,
       ". Результаты субботних забегов, посещаемость и рейтинги участников.",
       ". Результаты забегов и рейтинги участников.",
+    ),
+    indexable: true,
+  };
+}
+
+/** Заголовок протокола: имя, дата и номер уже известны из ответа API. */
+export function locationProtocolMeta(payload: {
+  name: string;
+  city: string | null;
+  platform_code: string;
+  event_date: string;
+  event_number: number | null;
+  summary: { finishers: number; volunteers: number; best_time_display: string | null };
+}): PageMeta {
+  const name = payload.name || "Локация";
+  const platform = PLATFORM_LABELS[payload.platform_code] ?? payload.platform_code;
+  const day = formatDate(payload.event_date);
+  const numberPart = payload.event_number ? ` №${payload.event_number}` : "";
+  const parts: string[] = [];
+  if (payload.summary.finishers) {
+    parts.push(
+      `${num(payload.summary.finishers)} ${plural(payload.summary.finishers, "финишёр", "финишёра", "финишёров")}`,
+    );
+  }
+  if (payload.summary.volunteers) {
+    parts.push(
+      `${num(payload.summary.volunteers)} ${plural(payload.summary.volunteers, "волонтёр", "волонтёра", "волонтёров")}`,
+    );
+  }
+  return {
+    title: fitTitle(`${name}${numberPart} — протокол ${day}`),
+    description: describe(
+      `Протокол старта ${platform} «${name}» ${day}`,
+      parts.join(", "),
+      ". Места по полу и возрастным группам, личные рекорды и дебютанты.",
+      ". Места, рекорды и дебютанты дня.",
     ),
     indexable: true,
   };

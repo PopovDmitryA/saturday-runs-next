@@ -2079,7 +2079,9 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
 # Посадочная «Результаты последней субботы»: последний старт каждой локации по
 # всем системам разом. Тот же режим обновления, что у каталога: данные меняются
 # раз в неделю после субботнего синка, точечная инвалидация не окупается.
-LAST_RESULTS_CACHE_KEY = "locations:last-results:v1"
+# v2 — в строку добавлена система первичного протокола (event_platform_code):
+# без бампа кэшированный payload отдавал бы поле как None до истечения TTL.
+LAST_RESULTS_CACHE_KEY = "locations:last-results:v2"
 
 
 def invalidate_last_results_cache() -> None:
@@ -2282,6 +2284,9 @@ def _compute_last_results(db: Session) -> dict[str, object]:
                     {code for _event, code in events_for_key}, key=_platform_order_index
                 ),
                 "event_number": primary_event.event_number,
+                # Система первичного протокола — из неё складывается адрес
+                # нашей страницы протокола (/locations/{slug}/protocol/...).
+                "event_platform_code": primary_event_code,
                 "is_last_saturday": saturday_date is not None and primary_event.event_date == saturday_date,
                 "finishers": finishers,
                 "volunteers": volunteers,

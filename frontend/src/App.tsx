@@ -48,6 +48,7 @@ import {
   PortalCabinetSharePage,
 } from "./features/portal/cabinet/PortalCabinetPages";
 import { LocationEventsPage } from "./features/locations/LocationEventsPage";
+import { LocationProtocolPage } from "./features/locations/LocationProtocolPage";
 import { LocationPage } from "./features/locations/LocationPage";
 import { LastResultsPage } from "./features/locations/LastResultsPage";
 import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
@@ -310,6 +311,19 @@ function renderRoute(path: string): ReactElement {
       <ProfileRoute
         handle={decodeURIComponent(profileMatch[1])}
         segment={profileMatch[2] ? decodeURIComponent(profileMatch[2]) : undefined}
+      />
+    );
+  }
+  // Протокол одного старта: /locations/{slug}/protocol/{система}/{дата}.
+  const locationProtocolMatch = path.match(
+    /^\/locations\/([^/]+)\/protocol\/([^/]+)\/(\d{4}-\d{2}-\d{2})$/,
+  );
+  if (locationProtocolMatch) {
+    return (
+      <LocationProtocolPage
+        slug={decodeURIComponent(locationProtocolMatch[1])}
+        platformCode={decodeURIComponent(locationProtocolMatch[2])}
+        eventDate={locationProtocolMatch[3]}
       />
     );
   }

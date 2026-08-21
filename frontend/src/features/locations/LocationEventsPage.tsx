@@ -12,7 +12,7 @@ import {
 } from "../../lib/api";
 import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
 import { flushMetrikaHit } from "../../lib/metrika";
-import { formatInt, platformCodeLabel } from "../../lib/format";
+import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
@@ -345,7 +345,19 @@ function LocationEventsContent({ slug }: { slug: string }) {
                       </span>
                     </td>
                     <td className="td-date">
-                      <ActivityDateLink date={row.event_date} url={row.protocol_url} />
+                      {/* Есть полный протокол — дата ведёт на НАШ протокол;
+                          внешняя ссылка платформы остаётся на его странице. */}
+                      {row.has_protocol ? (
+                        <a
+                          className="activity-date-link"
+                          href={`/locations/${encodeURIComponent(data.slug)}/protocol/${row.platform_code}/${row.event_date}`}
+                          title="Открыть протокол старта"
+                        >
+                          {formatDate(row.event_date)}
+                        </a>
+                      ) : (
+                        <ActivityDateLink date={row.event_date} url={row.protocol_url} />
+                      )}
                     </td>
                     {show("platform") && (
                       <td className="td-platform">

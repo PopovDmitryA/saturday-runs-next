@@ -380,6 +380,8 @@ class LastResultsItemResponse(BaseModel):
     is_cancelled: bool = False
     event_date: date
     event_platform_codes: list[str] = Field(default_factory=list)
+    # Система первичного протокола — для адреса нашей страницы протокола.
+    event_platform_code: str | None = None
     event_number: int | None = None
     is_last_saturday: bool = False
     finishers: int | None = None
@@ -501,3 +503,116 @@ class LocationPersonalStatsResponse(BaseModel):
     # Расстояние от домашней локации. None — дом не определился (нет пробежек),
     # плитку на странице тогда не показываем.
     home_distance: LocationHomeDistanceResponse | None = None
+
+
+class ProtocolNeighbourResponse(BaseModel):
+    """Соседний старт локации в сквозной хронологии (для стрелок «‹ ›»)."""
+
+    platform_code: str
+    event_date: date
+    event_number: int | None = None
+    overall_number: int | None = None
+
+
+class ProtocolClubResponse(BaseModel):
+    name: str
+    count: int
+
+
+class ProtocolAgeGroupResponse(BaseModel):
+    age_group: str
+    male: int = 0
+    female: int = 0
+    unknown: int = 0
+    total: int = 0
+
+
+class ProtocolSummaryResponse(BaseModel):
+    finishers: int = 0
+    volunteers: int = 0
+    male: int = 0
+    female: int = 0
+    unknown_gender: int = 0
+    avg_time_sec: int | None = None
+    avg_time_display: str | None = None
+    median_time_sec: int | None = None
+    median_time_display: str | None = None
+    best_time_sec: int | None = None
+    best_time_display: str | None = None
+    last_time_sec: int | None = None
+    last_time_display: str | None = None
+    best_male_time_display: str | None = None
+    best_male_runner_name: str | None = None
+    best_female_time_display: str | None = None
+    best_female_runner_name: str | None = None
+    debutants: int = 0
+    first_at_location: int = 0
+    prs: int = 0
+    location_prs: int = 0
+    clubs_count: int = 0
+    top_clubs: list[ProtocolClubResponse] = Field(default_factory=list)
+    is_attendance_record: bool = False
+    is_course_record_male: bool = False
+    is_course_record_female: bool = False
+
+
+class ProtocolResultResponse(BaseModel):
+    position: int | None = None
+    name: str | None = None
+    external_user_id: str | None = None
+    profile_url: str | None = None
+    serial_id: int | None = None
+    gender: str | None = None
+    gender_position: int | None = None
+    gender_total: int | None = None
+    age_category: str | None = None
+    age_group: str | None = None
+    age_group_position: int | None = None
+    age_group_total: int | None = None
+    age_grade: float | None = None
+    finish_time_sec: int | None = None
+    finish_time_display: str | None = None
+    pace_display: str | None = None
+    club_name: str | None = None
+    status: str | None = None
+    is_pr: bool = False
+    is_global_pr: bool = False
+    is_location_pr: bool = False
+    is_first_run: bool = False
+    is_first_run_at_location: bool = False
+    achievement_labels: list[str] = Field(default_factory=list)
+    history_rank: int | None = None
+    history_total: int | None = None
+    is_me: bool = False
+
+
+class ProtocolVolunteerResponse(BaseModel):
+    name: str | None = None
+    external_user_id: str | None = None
+    profile_url: str | None = None
+    serial_id: int | None = None
+    roles: list[str] = Field(default_factory=list)
+    is_me: bool = False
+
+
+class LocationProtocolResponse(BaseModel):
+    slug: str
+    name: str
+    city: str | None = None
+    platform_code: str
+    event_date: date
+    event_number: int | None = None
+    overall_number: int | None = None
+    title: str | None = None
+    source_url: str | None = None
+    has_protocol: bool = False
+    # Строк меньше, чем позиций или заявленных финишёров: так помечены
+    # зарубежные parkrun-старты, где у нас только строки своих участников.
+    is_partial: bool = False
+    declared_finishers: int | None = None
+    previous: ProtocolNeighbourResponse | None = None
+    next: ProtocolNeighbourResponse | None = None
+    summary: ProtocolSummaryResponse = Field(default_factory=ProtocolSummaryResponse)
+    age_groups: list[ProtocolAgeGroupResponse] = Field(default_factory=list)
+    results: list[ProtocolResultResponse] = Field(default_factory=list)
+    volunteers: list[ProtocolVolunteerResponse] = Field(default_factory=list)

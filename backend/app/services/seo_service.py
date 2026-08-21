@@ -220,6 +220,7 @@ _ADMIN_META = _meta("Админка — run5k.run", "Служебный разд
 
 _PROFILE_RE = re.compile(r"^/users/([^/]+)(?:/([^/]+))?$")
 _LOCATION_EVENTS_RE = re.compile(r"^/locations/([^/]+)/events$")
+_LOCATION_PROTOCOL_RE = re.compile(r"^/locations/([^/]+)/protocol/([^/]+)/\d{4}-\d{2}-\d{2}$")
 _LOCATION_RE = re.compile(r"^/locations/([^/]+)$")
 _SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
 
@@ -263,6 +264,13 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
             # Карточка участника индексируется с 15.08.2026 (иначе ВК и Telegram
             # показывают превью без картинки); вкладки — срезы той же страницы.
             indexable=profile.group(2) is None,
+        )
+    if _LOCATION_PROTOCOL_RE.match(path):
+        return _meta(
+            "Протокол старта — run5k.run",
+            "Полный протокол старта: места по полу и возрастным группам, "
+            "личные рекорды, дебютанты и волонтёры дня.",
+            indexable=True,
         )
     if _LOCATION_EVENTS_RE.match(path):
         return _meta(

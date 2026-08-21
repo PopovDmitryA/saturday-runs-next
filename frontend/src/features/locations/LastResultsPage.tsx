@@ -237,7 +237,16 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
                     </td>
                   )}
                   <td className={item.is_last_saturday ? undefined : "muted"}>
-                    {item.protocol_url ? (
+                    {/* Полный протокол есть у нас — дата ведёт на нашу страницу
+                        протокола; иначе остаётся внешняя ссылка платформы. */}
+                    {item.has_protocol && item.event_platform_code ? (
+                      <a
+                        href={`/locations/${encodeURIComponent(item.slug)}/protocol/${item.event_platform_code}/${item.event_date}`}
+                        title="Открыть протокол старта"
+                      >
+                        {formatDate(item.event_date)}
+                      </a>
+                    ) : item.protocol_url ? (
                       <a href={item.protocol_url} target="_blank" rel="noreferrer" title="Открыть протокол">
                         {formatDate(item.event_date)}
                       </a>

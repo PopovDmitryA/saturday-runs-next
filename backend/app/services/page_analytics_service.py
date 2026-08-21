@@ -42,6 +42,9 @@ _PROFILE_TAB_RE = re.compile(r"^/users/([^/]+)/[^/]+$")
 # не кладём — он одноразовый и в отчёте бесполезен.
 _SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
 _LOCATION_EVENTS_RE = re.compile(r"^/locations/([^/]+)/events$")
+# Протокол старта: /locations/{slug}/protocol/{система}/{дата}. В entity_key
+# едет slug — просмотры протоколов копятся к локации, как у журнала.
+_LOCATION_PROTOCOL_RE = re.compile(r"^/locations/([^/]+)/protocol/[^/]+/\d{4}-\d{2}-\d{2}$")
 _LOCATION_RE = re.compile(r"^/locations/([^/]+)$")
 
 # Одна страница приложения = один page_type. Ключ — нормализованный путь;
@@ -149,6 +152,10 @@ def classify_page(path: str) -> tuple[str, str]:
 
     if _SWEEP_HQ_RE.match(normalized):
         return "sweep_hq", ""
+
+    location_protocol = _LOCATION_PROTOCOL_RE.match(normalized)
+    if location_protocol:
+        return "location_protocol", location_protocol.group(1)[:128]
 
     location_events = _LOCATION_EVENTS_RE.match(normalized)
     if location_events:

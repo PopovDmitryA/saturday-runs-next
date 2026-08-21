@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -16,6 +17,7 @@ from app.schemas.locations import (
     LocationLeadersResponse,
     LocationPageResponse,
     LocationPersonalStatsResponse,
+    LocationProtocolResponse,
     LocationsIndexResponse,
     MapLocationsResponse,
     UniqueLocationsDetailResponse,
@@ -31,6 +33,7 @@ from app.services.location_page_service import (
     build_location_personal_stats,
     build_locations_index,
 )
+from app.services.location_protocol_service import build_location_protocol
 from app.services.user_unique_locations_detail import build_user_unique_location_details
 
 router = APIRouter(prefix="/locations", tags=["locations"])
@@ -92,6 +95,25 @@ def location_events(
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
     return LocationEventsResponse.model_validate(payload)
+
+
+@router.get("/page/{slug}/protocol/{platform_code}/{event_date}", response_model=LocationProtocolResponse)
+def location_protocol(
+    slug: str,
+    platform_code: str,
+    event_date: date,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_optional_user)],
+) -> LocationProtocolResponse:
+    """Протокол одного старта: состав забега, места по полу и возрастной группе, волонтёры.
+
+    Открыт без логина, как и вся витрина локаций. Логин добавляет ровно одно —
+    подсветку своей строки в протоколе.
+    """
+    payload = build_location_protocol(db, slug, platform_code, event_date, viewer=user)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Протокол не найден")
+    return LocationProtocolResponse.model_validate(payload)
 
 
 @router.get("/page/{slug}/me", response_model=LocationPersonalStatsResponse)

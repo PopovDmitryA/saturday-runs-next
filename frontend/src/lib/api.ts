@@ -2306,6 +2306,122 @@ export function getLocationLeaders(slug: string) {
   return apiFetch<LocationLeaders>(`/locations/page/${encodeURIComponent(slug)}/leaders`);
 }
 
+/** Соседний старт локации в сквозной хронологии — стрелки «‹ ›» над протоколом. */
+export type ProtocolNeighbour = {
+  platform_code: string;
+  event_date: string;
+  event_number: number | null;
+  overall_number: number | null;
+};
+
+export type ProtocolClub = {
+  name: string;
+  count: number;
+};
+
+export type ProtocolAgeGroup = {
+  age_group: string;
+  male: number;
+  female: number;
+  unknown: number;
+  total: number;
+};
+
+export type ProtocolSummary = {
+  finishers: number;
+  volunteers: number;
+  male: number;
+  female: number;
+  unknown_gender: number;
+  avg_time_sec: number | null;
+  avg_time_display: string | null;
+  median_time_sec: number | null;
+  median_time_display: string | null;
+  best_time_sec: number | null;
+  best_time_display: string | null;
+  last_time_sec: number | null;
+  last_time_display: string | null;
+  best_male_time_display: string | null;
+  best_male_runner_name: string | null;
+  best_female_time_display: string | null;
+  best_female_runner_name: string | null;
+  debutants: number;
+  first_at_location: number;
+  prs: number;
+  location_prs: number;
+  clubs_count: number;
+  top_clubs: ProtocolClub[];
+  is_attendance_record: boolean;
+  is_course_record_male: boolean;
+  is_course_record_female: boolean;
+};
+
+export type ProtocolResult = {
+  position: number | null;
+  name: string | null;
+  external_user_id: string | null;
+  profile_url: string | null;
+  serial_id: number | null;
+  gender: "male" | "female" | null;
+  gender_position: number | null;
+  gender_total: number | null;
+  age_category: string | null;
+  age_group: string | null;
+  age_group_position: number | null;
+  age_group_total: number | null;
+  age_grade: number | null;
+  finish_time_sec: number | null;
+  finish_time_display: string | null;
+  pace_display: string | null;
+  club_name: string | null;
+  status: string | null;
+  is_pr: boolean;
+  is_global_pr: boolean;
+  is_location_pr: boolean;
+  is_first_run: boolean;
+  is_first_run_at_location: boolean;
+  achievement_labels: string[];
+  history_rank: number | null;
+  history_total: number | null;
+  is_me: boolean;
+};
+
+export type ProtocolVolunteer = {
+  name: string | null;
+  external_user_id: string | null;
+  profile_url: string | null;
+  serial_id: number | null;
+  roles: string[];
+  is_me: boolean;
+};
+
+export type LocationProtocol = {
+  slug: string;
+  name: string;
+  city: string | null;
+  platform_code: string;
+  event_date: string;
+  event_number: number | null;
+  overall_number: number | null;
+  title: string | null;
+  source_url: string | null;
+  has_protocol: boolean;
+  is_partial: boolean;
+  declared_finishers: number | null;
+  previous: ProtocolNeighbour | null;
+  next: ProtocolNeighbour | null;
+  summary: ProtocolSummary;
+  age_groups: ProtocolAgeGroup[];
+  results: ProtocolResult[];
+  volunteers: ProtocolVolunteer[];
+};
+
+export function getLocationProtocol(slug: string, platformCode: string, eventDate: string) {
+  return apiFetch<LocationProtocol>(
+    `/locations/page/${encodeURIComponent(slug)}/protocol/${encodeURIComponent(platformCode)}/${encodeURIComponent(eventDate)}`,
+  );
+}
+
 /** Место участника в топе локации по одной его возрастной группе. */
 export type LocationAgeGroupStanding = {
   // Тот же ключ, что у строки в age_group_records: по нему плитка раскрывает топ-5.
@@ -2379,6 +2495,8 @@ export type LastResultsItem = {
   is_cancelled: boolean;
   event_date: string;
   event_platform_codes: string[];
+  // Система первичного протокола — для адреса нашей страницы протокола.
+  event_platform_code: string | null;
   event_number: number | null;
   is_last_saturday: boolean;
   finishers: number | null;

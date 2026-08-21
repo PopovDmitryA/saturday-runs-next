@@ -32,6 +32,7 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   last_results: "Результаты последней субботы",
   location: "Локация (карточка)",
   location_events: "Локация (забеги)",
+  location_protocol: "Локация (протокол)",
   ratings_hub: "Рейтинги (хаб)",
   ratings_runs: "Рейтинг: пробежки",
   ratings_volunteering: "Рейтинг: волонтёрство",

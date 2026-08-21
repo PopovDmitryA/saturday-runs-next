@@ -13199,3 +13199,159 @@ a.admin-system-chip:hover {
     0 0 0 5px rgba(217, 119, 6, 0.35),
     0 2px 6px rgba(15, 23, 42, 0.4);
 }
+
+/* ===== Протокол старта (/locations/{slug}/protocol/{система}/{дата}) ===== */
+
+.protocol-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.35rem 0 0;
+  color: var(--text-2);
+}
+
+/* Стрелки «предыдущий / журнал / следующий» под заголовком */
+.protocol-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+  font-size: 0.9rem;
+}
+
+.protocol-partial-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+}
+
+/* Возрастные группы: подпись — двухцветная полоса М/Ж — количество */
+.protocol-age-groups {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 40rem;
+}
+
+.protocol-age-row {
+  display: grid;
+  grid-template-columns: 4.2rem 1fr max-content;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.protocol-age-label {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.protocol-age-bar-track {
+  display: flex;
+  gap: 2px;
+  height: 0.85rem;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-muted);
+}
+
+.protocol-age-bar {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  min-width: 0;
+}
+
+.protocol-age-bar-male {
+  background: #3b82f6;
+}
+
+.protocol-age-bar-female {
+  background: #ec4899;
+}
+
+.protocol-age-count {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Фильтры над таблицей: пол — поиск — группа */
+.protocol-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+.protocol-age-select,
+.protocol-name-filter {
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.protocol-name-filter {
+  min-width: 11rem;
+}
+
+.protocol-table:not(.data-table-short) {
+  min-width: 64rem;
+}
+
+.protocol-runner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+/* Значки строки: дебют / впервые здесь / ЛР */
+.protocol-row-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--text-3);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.protocol-badge-me {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+:root[data-theme="dark"] .protocol-badge-me {
+  background: #1e3a8a;
+  color: #bfdbfe;
+}
+
+/* Своя строка в протоколе */
+.protocol-row-me td {
+  background: var(--bg-muted);
+}
+
+.protocol-time {
+  cursor: default;
+}
+
+.protocol-volunteers {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.protocol-source-link {
+  margin-top: 1rem;
+}
