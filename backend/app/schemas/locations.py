@@ -575,6 +575,8 @@ class ProtocolResultResponse(BaseModel):
     pace_display: str | None = None
     club_name: str | None = None
     status: str | None = None
+    # Финишёр без штрихкода («НЕИЗВЕСТНЫЙ») — витрина приглушает строку.
+    is_unknown: bool = False
     is_pr: bool = False
     is_global_pr: bool = False
     is_location_pr: bool = False

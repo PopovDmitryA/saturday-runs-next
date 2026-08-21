@@ -13300,8 +13300,45 @@ a.admin-system-chip:hover {
   min-width: 11rem;
 }
 
+.protocol-table .col-number {
+  width: 3.6rem;
+}
+
+/* Ширины под полные подписи шапки («Время ↕», «М/Ж ?», «Возр. группа ?»,
+   «Age grade ?») — как у остальных таблиц сайта, подписи не режем.
+   «Участник» без width: забирает остаток ширины таблицы. */
+.protocol-table .col-time {
+  width: 7rem;
+}
+
+.protocol-table .col-gender {
+  width: 7rem;
+}
+
+.protocol-table .col-age {
+  width: 9.5rem;
+}
+
+.protocol-table .col-grade {
+  width: 7.5rem;
+}
+
+.protocol-table .col-pace {
+  width: 5.5rem;
+}
+
+.protocol-table .col-club {
+  width: 11rem;
+}
+
 .protocol-table:not(.data-table-short) {
-  min-width: 64rem;
+  min-width: 54rem;
+}
+
+/* Строки «НЕИЗВЕСТНЫЙ» (бегун без штрихкода): приглушаем, чтобы не сливались
+   с настоящими участниками. */
+.protocol-row-unknown td {
+  color: var(--text-faint);
 }
 
 .protocol-runner {

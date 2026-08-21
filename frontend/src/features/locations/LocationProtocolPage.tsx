@@ -104,15 +104,16 @@ function RowBadge({ text, title }: { text: string; title: string }) {
 }
 
 // Колонки протокола в порядке важности; место и участник с временем — минимум.
+// Ширины — зеркало CSS-классов .protocol-table .col-* (1rem = 16px).
 const PROTOCOL_COLUMNS: AdaptiveColumn[] = [
-  { key: "position", width: 72, required: true },
-  { key: "runner", width: 240, required: true },
-  { key: "time", width: 110, required: true },
-  { key: "gender_place", width: 120 },
-  { key: "age_category", width: 150 },
-  { key: "age_grade", width: 110 },
-  { key: "pace", width: 96 },
-  { key: "club", width: 170 },
+  { key: "position", width: 58, required: true },
+  { key: "runner", width: 220, required: true },
+  { key: "time", width: 112, required: true },
+  { key: "gender_place", width: 112 },
+  { key: "age_category", width: 152 },
+  { key: "age_grade", width: 120 },
+  { key: "pace", width: 88 },
+  { key: "club", width: 176 },
 ];
 
 function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProtocolParams) {
@@ -520,12 +521,12 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
             <colgroup>
               <col className="col-number" />
               <col />
-              <col className="col-compact" />
-              {show("gender_place") && <col className="col-compact" />}
-              {show("age_category") && <col className="col-compact-wide" />}
-              {hasAgeGrade && show("age_grade") && <col className="col-compact" />}
-              {hasPace && show("pace") && <col className="col-compact" />}
-              {hasClubs && show("club") && <col className="col-compact-wide" />}
+              <col className="col-time" />
+              {show("gender_place") && <col className="col-gender" />}
+              {show("age_category") && <col className="col-age" />}
+              {hasAgeGrade && show("age_grade") && <col className="col-grade" />}
+              {hasPace && show("pace") && <col className="col-pace" />}
+              {hasClubs && show("club") && <col className="col-club" />}
             </colgroup>
             <thead>
               <tr>
@@ -572,7 +573,13 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                 rows.map((row) => (
                   <tr
                     key={`${row.position ?? "x"}-${row.external_user_id ?? row.name ?? ""}`}
-                    className={row.is_me ? "protocol-row-me" : undefined}
+                    className={
+                      row.is_me
+                        ? "protocol-row-me"
+                        : row.is_unknown
+                          ? "protocol-row-unknown"
+                          : undefined
+                    }
                   >
                     <td className="td-compact">{row.position ?? "—"}</td>
                     <td>

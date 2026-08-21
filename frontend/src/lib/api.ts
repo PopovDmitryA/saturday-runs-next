@@ -2375,6 +2375,8 @@ export type ProtocolResult = {
   pace_display: string | null;
   club_name: string | null;
   status: string | null;
+  // Финишёр без штрихкода («НЕИЗВЕСТНЫЙ») — строка приглушается.
+  is_unknown: boolean;
   is_pr: boolean;
   is_global_pr: boolean;
   is_location_pr: boolean;

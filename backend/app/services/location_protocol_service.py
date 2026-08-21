@@ -84,7 +84,7 @@ CLUBS_TOP_LIMIT = 5
 
 
 def location_protocol_cache_key(slug: str, platform_code: str, event_date: date) -> str:
-    return f"locations:protocol:v1:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
+    return f"locations:protocol:v2:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
 
 
 def invalidate_location_protocol_cache(slug: str, platform_code: str, event_date: date) -> None:
@@ -430,6 +430,14 @@ def _build_results(
         seen.add(result.id)
 
         raw_category = (result.age_category or "").strip() or None
+        # «НЕИЗВЕСТНЫЙ» — финишёр без штрихкода: 5 вёрст помечает статусом
+        # unknown, s95 — unknown_runner, у части систем остаётся только имя.
+        display_name = (row.display_name or "").strip()
+        is_unknown = (
+            result.participant_id is None
+            or (result.status or "").strip().lower() in ("unknown", "unknown_runner")
+            or display_name.lower() in ("неизвестный", "unknown")
+        )
         age_group = normalize_age_group(raw_category)
         gender = _row_gender(platform_code, raw_category, row.gender, row.participant_age_category)
         club = (result.club_name or row.participant_club or "").strip() or None
@@ -464,6 +472,7 @@ def _build_results(
                 "pace_display": result.pace_display,
                 "club_name": club,
                 "status": result.status,
+                "is_unknown": is_unknown,
                 "is_pr": bool(result.is_pr),
                 "is_global_pr": bool(result.is_global_pr),
                 "is_location_pr": bool(result.is_location_pr),

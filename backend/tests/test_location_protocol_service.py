@@ -286,6 +286,22 @@ def test_viewer_row_marked_after_cache(db_session: Session) -> None:
     assert own["results"][0]["is_me"] is True
 
 
+def test_unknown_runner_marked(db_session: Session) -> None:
+    """Финишёр без штрихкода приглушается витриной — и по статусу, и по имени."""
+    five_verst = _platform(db_session, "five_verst", "5 вёрст")
+    location = _location(db_session, five_verst, "unk", "Парк с неизвестными")
+    event = _event(db_session, five_verst, location, date(2026, 8, 15))
+    runner = _participant(db_session, five_verst, "known", "Известный БЕГУН")
+    _result(db_session, event, runner, position=1, finish_time_sec=1200, age_category="М30-34")
+    nobody = _participant(db_session, five_verst, "nobody", "НЕИЗВЕСТНЫЙ")
+    _result(db_session, event, nobody, position=2, finish_time_sec=None)
+
+    payload = _build(db_session, "proto-unk", "five_verst", date(2026, 8, 15))
+    rows = {row["name"]: row for row in payload["results"]}
+    assert rows["Известный БЕГУН"]["is_unknown"] is False
+    assert rows["НЕИЗВЕСТНЫЙ"]["is_unknown"] is True
+
+
 def test_age_grade_parsing() -> None:
     assert _age_grade("70.13%") == 70.13
     assert _age_grade("54,38%") == 54.38
