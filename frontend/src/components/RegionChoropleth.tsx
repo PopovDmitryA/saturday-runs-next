@@ -157,7 +157,7 @@ function tooltipHtml(featureName: string, coverage: Coverage | undefined, mode: 
   const activityWord = mode === "runs" ? "пробежки" : "волонтёрство";
   const lines = [
     title,
-    `<div class="map-popup-line">Закрыто <strong>${coverage.pct}%</strong> локаций</div>`,
+    `<div class="map-popup-line">Посещено <strong>${coverage.pct}%</strong> локаций</div>`,
     `<div class="map-popup-line muted">${coverage.visited} из ${pluralizeRu(coverage.available, ["локации", "локаций", "локаций"])} · ${activityWord}</div>`,
   ];
   return `<div class="map-popup">${lines.join("")}</div>`;
