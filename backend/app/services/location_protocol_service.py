@@ -82,12 +82,9 @@ PROTOCOL_CACHE_TTL_SECONDS = 3 * 60 * 60
 # гипотетического монстра на 300 тыс. строк ради одной колонки не стоит.
 HISTORY_RANK_MAX_RESULTS = 150_000
 
-# Сколько клубов показываем в сводке.
-CLUBS_TOP_LIMIT = 10
-
 
 def location_protocol_cache_key(slug: str, platform_code: str, event_date: date) -> str:
-    return f"locations:protocol:v4:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
+    return f"locations:protocol:v5:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
 
 
 def invalidate_location_protocol_cache(slug: str, platform_code: str, event_date: date) -> None:
@@ -300,11 +297,10 @@ def _compute_location_protocol(
             "prs": sum(1 for row in results if row["is_pr"]),
             "location_prs": sum(1 for row in results if row["is_location_pr"]),
             "clubs_count": len(club_counts),
+            # Полный список: блок «Клубы на старте» скроллится, резать незачем.
             "top_clubs": [
                 {"name": name, "count": count}
-                for name, count in sorted(club_counts.items(), key=lambda pair: (-pair[1], pair[0]))[
-                    :CLUBS_TOP_LIMIT
-                ]
+                for name, count in sorted(club_counts.items(), key=lambda pair: (-pair[1], pair[0]))
             ],
             "is_attendance_record": bool(journal_row.get("is_attendance_record")),
             "is_course_record_male": bool(journal_row.get("is_course_record_male")),
@@ -329,6 +325,11 @@ def _neighbour(item: dict[str, Any] | None) -> dict[str, Any] | None:
         "finishers": item.get("finishers"),
         "volunteers": item.get("volunteers"),
         "avg_time_sec": item.get("avg_time_sec"),
+        "best_male_time_sec": item.get("best_male_time_sec"),
+        "best_female_time_sec": item.get("best_female_time_sec"),
+        "debutants": item.get("debutants"),
+        "first_at_location": item.get("first_at_location"),
+        "prs": item.get("prs"),
     }
 
 
@@ -493,6 +494,8 @@ def _build_results(
                 "history_total": None,
                 "run_number": None,
                 "is_age_group_record": False,
+                "age_group_history_rank": None,
+                "age_group_history_total": None,
             }
         )
 
@@ -707,7 +710,11 @@ def _attach_history_ranks(
         Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
     )
     history_query = (
-        db.query(gender_expr.label("gender"), RunResult.finish_time_sec)
+        db.query(
+            gender_expr.label("gender"),
+            RunResult.age_category,
+            RunResult.finish_time_sec,
+        )
         .join(Event, RunResult.event_id == Event.id)
         .join(Platform, Event.platform_id == Platform.id)
         .outerjoin(Participant, RunResult.participant_id == Participant.id)
@@ -723,10 +730,20 @@ def _attach_history_ranks(
         return
 
     times_by_gender: dict[str, list[int]] = defaultdict(list)
-    for gender, finish_time_sec in history_query.all():
-        if gender in (GENDER_MALE, GENDER_FEMALE):
-            times_by_gender[gender].append(int(finish_time_sec))
+    # Тот же проход даёт и историю возрастных групп: ключ — (пол, группа) по
+    # категории протокола, поэтому у parkrun (age grade вместо категории)
+    # группового места не будет — как и группы в его протоколе.
+    times_by_group: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for gender, age_category, finish_time_sec in history_query.all():
+        if gender not in (GENDER_MALE, GENDER_FEMALE):
+            continue
+        times_by_gender[gender].append(int(finish_time_sec))
+        group = normalize_age_group(age_category)
+        if group:
+            times_by_group[(gender, group)].append(int(finish_time_sec))
     for times in times_by_gender.values():
+        times.sort()
+    for times in times_by_group.values():
         times.sort()
 
     for row in results:
@@ -735,10 +752,14 @@ def _attach_history_ranks(
         if not gender or not finish_time_sec:
             continue
         times = times_by_gender.get(gender)
-        if not times:
-            continue
-        row["history_rank"] = bisect_left(times, finish_time_sec) + 1
-        row["history_total"] = len(times)
+        if times:
+            row["history_rank"] = bisect_left(times, finish_time_sec) + 1
+            row["history_total"] = len(times)
+        if row["age_group"]:
+            group_times = times_by_group.get((gender, row["age_group"]))
+            if group_times:
+                row["age_group_history_rank"] = bisect_left(group_times, finish_time_sec) + 1
+                row["age_group_history_total"] = len(group_times)
 
 
 def _attach_run_numbers(db: Session, event: Event, results: list[dict[str, Any]]) -> None:

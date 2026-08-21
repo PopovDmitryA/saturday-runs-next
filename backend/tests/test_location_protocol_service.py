@@ -232,6 +232,9 @@ def test_history_rank_spans_platforms(db_session: Session) -> None:
     row = payload["results"][0]
     assert row["history_rank"] == 2
     assert row["history_total"] == 2
+    # Обе пробежки — в одной группе М30-34: место и в истории группы.
+    assert row["age_group_history_rank"] == 2
+    assert row["age_group_history_total"] == 2
     # Вторая пробежка бегуна? Нет — первая: неделей раньше бежала легенда.
     assert row["run_number"] == 1
     # Рекорд группы устоял: 1050 медленнее прежних 1000 в М30-34.

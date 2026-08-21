@@ -2316,6 +2316,11 @@ export type ProtocolNeighbour = {
   finishers: number | null;
   volunteers: number | null;
   avg_time_sec: number | null;
+  best_male_time_sec: number | null;
+  best_female_time_sec: number | null;
+  debutants: number | null;
+  first_at_location: number | null;
+  prs: number | null;
 };
 
 export type ProtocolClub = {
@@ -2391,6 +2396,9 @@ export type ProtocolResult = {
   history_total: number | null;
   // Какая это пробежка по счёту у участника в своей системе.
   run_number: number | null;
+  // Место времени в истории своей возрастной группы на площадке.
+  age_group_history_rank: number | null;
+  age_group_history_total: number | null;
   // Результат обновил рекорд своей возрастной группы на площадке (только 5в).
   is_age_group_record: boolean;
   is_me: boolean;

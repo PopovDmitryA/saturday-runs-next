@@ -13347,7 +13347,7 @@ a.admin-system-chip:hover {
 }
 
 .protocol-table .col-run-number {
-  width: 6.5rem;
+  width: 7rem;
 }
 
 .protocol-table .col-grade {
@@ -13363,7 +13363,7 @@ a.admin-system-chip:hover {
 }
 
 .protocol-table:not(.data-table-short) {
-  min-width: 68rem;
+  min-width: 76rem;
 }
 
 /* Строки «НЕИЗВЕСТНЫЙ» (бегун без штрихкода): приглушаем, чтобы не сливались
@@ -13420,7 +13420,9 @@ a.admin-system-chip:hover {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(15rem, 22rem);
   gap: 0 2rem;
-  align-items: start;
+  /* stretch: высота строки = возрастные группы, рамка клубов растягивается
+     на неё (сама она в расчёте не участвует — absolute). */
+  align-items: stretch;
 }
 
 @media (max-width: 860px) {
@@ -13435,9 +13437,62 @@ a.admin-system-chip:hover {
   font-variant-numeric: tabular-nums;
 }
 
-.protocol-clubs-more {
-  margin-top: 0.5rem;
-  font-size: 0.82rem;
+/* Высоту правой колонки задают возрастные группы: рамка клубов растянута на
+   их высоту (absolute не участвует в расчёте строки грида), список внутри
+   скроллится. На узком экране колонки складываются — там рамка обычная. */
+.protocol-clubs {
+  position: relative;
+  min-height: 14rem;
+}
+
+.protocol-clubs-frame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.protocol-clubs-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+}
+
+.protocol-clubs-scroll thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+@media (max-width: 860px) {
+  .protocol-clubs {
+    position: static;
+    min-height: 0;
+  }
+
+  .protocol-clubs-frame {
+    position: static;
+  }
+
+  .protocol-clubs-scroll {
+    max-height: 18rem;
+  }
+}
+
+/* Исторические колонки («В истории», «В истории группы») — сравнение со всей
+   историей площадки, а не с этим стартом: прижаты к правому краю, фон слегка
+   подкрашен, первая отделена линией. */
+.protocol-table .protocol-cell-history,
+.protocol-table th.protocol-cell-history {
+  background: var(--bg-muted);
+}
+
+.protocol-table td.protocol-cell-history:first-of-type,
+.protocol-table th.protocol-cell-history:first-of-type {
+  border-left: 2px solid var(--border-strong);
 }
 
 /* Топ-10 в истории площадки — жирным с медалькой, виден без наведения */

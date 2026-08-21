@@ -21,6 +21,8 @@ import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
+import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
+import { locationProtocolSubject } from "../sharing/subjects";
 
 type GenderFilter = "all" | "male" | "female";
 
@@ -36,6 +38,18 @@ export type LocationProtocolParams = {
 
 function protocolHref(slug: string, platformCode: string, eventDate: string): string {
   return `/locations/${encodeURIComponent(slug)}/protocol/${encodeURIComponent(platformCode)}/${eventDate}`;
+}
+
+/** «00:21:07» → секунды; null, если времени нет. */
+function timeToSec(display: string | null): number | null {
+  if (!display) {
+    return null;
+  }
+  const parts = display.split(":").map(Number);
+  if (parts.some(Number.isNaN)) {
+    return null;
+  }
+  return parts.reduce((acc, part) => acc * 60 + part, 0);
 }
 
 /** «00:18:08» → «18:08» (часовые времена на 5 км не встречаются). */
@@ -66,6 +80,8 @@ function StatTile({
   hint,
   badge,
   delta,
+  deltaKind = "count",
+  deltaHint,
 }: {
   value: string | number | null;
   label: string;
@@ -74,19 +90,31 @@ function StatTile({
   badge?: string;
   // Разница с прошлым стартом: +37 зелёным, −12 красным, 0 не показываем.
   delta?: number | null;
+  // «seconds» — дельта времени (±м:сс), меньше = лучше = зелёное.
+  deltaKind?: "count" | "seconds";
+  deltaHint?: string;
 }) {
+  const deltaShown = delta !== undefined && delta !== null && delta !== 0;
+  const deltaGood = deltaShown && (deltaKind === "seconds" ? delta < 0 : delta > 0);
+  const deltaText = !deltaShown
+    ? ""
+    : deltaKind === "seconds"
+      ? `${delta > 0 ? "+" : "−"}${Math.floor(Math.abs(delta) / 60)}:${String(Math.abs(delta) % 60).padStart(2, "0")}`
+      : delta > 0
+        ? `+${formatInt(delta)}`
+        : `−${formatInt(Math.abs(delta))}`;
   return (
     <div className="stat-card loc-stat-card">
       <span className="stat-value loc-stat-value">
         {value ?? "—"}
-        {delta !== undefined && delta !== null && delta !== 0 && (
-          <StatHintTooltip text="Разница с предыдущим стартом площадки">
+        {deltaShown && (
+          <StatHintTooltip text={deltaHint ?? "Разница с предыдущим стартом площадки"}>
             <span
               className={
-                delta > 0 ? "protocol-delta protocol-delta-up" : "protocol-delta protocol-delta-down"
+                deltaGood ? "protocol-delta protocol-delta-up" : "protocol-delta protocol-delta-down"
               }
             >
-              {delta > 0 ? `+${formatInt(delta)}` : `−${formatInt(Math.abs(delta))}`}
+              {deltaText}
             </span>
           </StatHintTooltip>
         )}
@@ -129,17 +157,21 @@ function RowBadge({ text, title }: { text: string; title: string }) {
 
 // Колонки протокола в порядке важности; место и участник с временем — минимум.
 // Ширины — зеркало CSS-классов .protocol-table .col-* (1rem = 16px).
+// Исторические колонки («В истории», «В истории группы») стоят в самом
+// правом краю с подкрашенным фоном: они сравнивают результат со всей
+// историей площадки, а не с этим стартом.
 const PROTOCOL_COLUMNS: AdaptiveColumn[] = [
   { key: "position", width: 58, required: true },
   { key: "runner", width: 220, required: true },
   { key: "time", width: 112, required: true },
   { key: "gender_place", width: 112 },
   { key: "age_category", width: 152 },
-  { key: "history", width: 136 },
-  { key: "run_number", width: 104 },
+  { key: "run_number", width: 112 },
   { key: "age_grade", width: 120 },
   { key: "pace", width: 88 },
   { key: "club", width: 176 },
+  { key: "history", width: 136 },
+  { key: "history_group", width: 136 },
 ];
 
 function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProtocolParams) {
@@ -152,6 +184,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
   const [roleFilter, setRoleFilter] = useState<string | null>(null);
   const [sort, setSort] = useState<SortState>({ key: "position", asc: true });
   const attachFloatingHead = useFloatingTableHead(".tview-bar");
+  const sheet = useOptionalShareSheet();
   const tableColumns = useTableColumns(PROTOCOL_COLUMNS);
   const show = tableColumns.show;
   const showFull = tableColumns.showFull;
@@ -202,6 +235,10 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
     return [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0], "ru"));
   }, [data]);
 
+  const hasAgeCategories = useMemo(
+    () => (data?.results ?? []).some((row) => row.age_category),
+    [data],
+  );
   const hasAgeGrade = useMemo(
     () => (data?.results ?? []).some((row) => row.age_grade !== null),
     [data],
@@ -346,6 +383,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
     (show("gender_place") ? 1 : 0) +
     (show("age_category") ? 1 : 0) +
     (show("history") ? 1 : 0) +
+    (hasAgeCategories && show("history_group") ? 1 : 0) +
     (show("run_number") ? 1 : 0) +
     (hasAgeGrade && show("age_grade") ? 1 : 0) +
     (hasPace && show("pace") ? 1 : 0) +
@@ -361,6 +399,9 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
     summary.is_course_record_female && summary.best_female_runner_name
       ? summary.best_female_runner_name
       : null;
+  // Лучшие времена этого старта в секундах — для дельт со вчерашними лучшими.
+  const bestMaleSec = timeToSec(summary.best_male_time_display);
+  const bestFemaleSec = timeToSec(summary.best_female_time_display);
   const knownTotal = Math.max(
     data.declared_finishers ?? 0,
     ...data.results.map((row) => row.position ?? 0),
@@ -379,6 +420,15 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           <h1>
             {data.name} — протокол {data.event_number ? `№${data.event_number}` : "старта"}
           </h1>
+          {sheet !== null && data.summary.finishers > 0 && (
+            <button
+              type="button"
+              className="s2-trigger"
+              onClick={() => sheet.open({ subject: locationProtocolSubject(data), entry: "location" })}
+            >
+              📤 Поделиться
+            </button>
+          )}
         </div>
         <p className="protocol-subtitle">
           <PlatformBadge code={data.platform_code} />{" "}
@@ -439,6 +489,16 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           value={stripHours(summary.best_male_time_display)}
           label="лучшее время (М)"
           sub={summary.best_male_runner_name}
+          delta={
+            summary.best_time_sec !== null &&
+            summary.best_male_time_display !== null &&
+            data.previous?.best_male_time_sec != null &&
+            bestMaleSec !== null
+              ? bestMaleSec - data.previous.best_male_time_sec
+              : null
+          }
+          deltaKind="seconds"
+          deltaHint="Разница с лучшим мужским временем предыдущего старта"
           badge={
             summary.is_course_record_male
               ? "Новый рекорд трассы среди мужчин на момент этого старта"
@@ -449,6 +509,13 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           value={stripHours(summary.best_female_time_display)}
           label="лучшее время (Ж)"
           sub={summary.best_female_runner_name}
+          delta={
+            data.previous?.best_female_time_sec != null && bestFemaleSec !== null
+              ? bestFemaleSec - data.previous.best_female_time_sec
+              : null
+          }
+          deltaKind="seconds"
+          deltaHint="Разница с лучшим женским временем предыдущего старта"
           badge={
             summary.is_course_record_female
               ? "Новый рекорд трассы среди женщин на момент этого старта"
@@ -459,11 +526,24 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           value={stripHours(summary.median_time_display)}
           label="медианное время"
           sub={summary.avg_time_display ? `среднее ${stripHours(summary.avg_time_display)}` : null}
+          delta={
+            data.previous?.avg_time_sec != null && summary.avg_time_sec !== null
+              ? summary.avg_time_sec - data.previous.avg_time_sec
+              : null
+          }
+          deltaKind="seconds"
+          deltaHint="Среднее время против предыдущего старта"
           hint="Медиана: половина участников финишировала быстрее этого времени, половина — медленнее"
         />
         <StatTile
           value={newcomers ? formatInt(newcomers) : summary.finishers ? "0" : null}
           label="новичков"
+          delta={
+            data.previous?.debutants != null || data.previous?.first_at_location != null
+              ? newcomers -
+                ((data.previous?.debutants ?? 0) + (data.previous?.first_at_location ?? 0))
+              : null
+          }
           sub={
             newcomers
               ? `${formatInt(summary.debutants)} дебют · ${formatInt(summary.first_at_location)} впервые здесь`
@@ -474,6 +554,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
         <StatTile
           value={summary.prs ? formatInt(summary.prs) : summary.finishers ? "0" : null}
           label="личных рекордов"
+          delta={data.previous?.prs != null ? summary.prs - data.previous.prs : null}
           hint="Сколько участников улучшили в этот день своё лучшее время в системе"
         />
         <StatTile
@@ -541,32 +622,42 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           )}
           {summary.top_clubs.length > 0 && (
             <section className="loc-section protocol-column protocol-clubs">
-              <h2>Клубы на старте</h2>
-              <table className="data-table protocol-clubs-table">
-                <thead>
-                  <tr>
-                    <th>Клуб</th>
-                    <th className="protocol-clubs-count">Финишёров</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.top_clubs.map((club) => (
-                    <tr key={club.name}>
-                      <td>{club.name}</td>
-                      <td className="protocol-clubs-count">{formatInt(club.count)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {summary.clubs_count > summary.top_clubs.length && (
-                <p className="muted protocol-clubs-more">
-                  и ещё {formatInt(summary.clubs_count - summary.top_clubs.length)} клубов —
-                  полный список в колонке «Клуб» протокола
-                </p>
-              )}
+              {/* Блок держит высоту соседних возрастных групп, список клубов
+                  скроллится внутри. */}
+              <div className="protocol-clubs-frame">
+                <h2>Клубы на старте ({formatInt(summary.clubs_count)})</h2>
+                <div className="protocol-clubs-scroll">
+                  <table className="data-table protocol-clubs-table">
+                    <thead>
+                      <tr>
+                        <th>Клуб</th>
+                        <th className="protocol-clubs-count">Финишёров</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary.top_clubs.map((club) => (
+                        <tr key={club.name}>
+                          <td>{club.name}</td>
+                          <td className="protocol-clubs-count">{formatInt(club.count)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </section>
           )}
         </div>
+      )}
+
+      {histogramRows.length > 0 && summary.finishers >= 10 && (
+        <section className="loc-section">
+          <h2>Распределение времён</h2>
+          <p className="muted protocol-histogram-note">
+            Финишные времена этого старта. Тап по столбику — детали, растянуть — приблизить.
+          </p>
+          <LocationFinishHistogram rows={histogramRows} binSizeSec={10} />
+        </section>
       )}
 
       <section className="loc-section">
@@ -637,11 +728,14 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
               <col className="col-time" />
               {show("gender_place") && <col className="col-gender" />}
               {show("age_category") && <col className="col-age" />}
-              {show("history") && <col className="col-history" />}
               {show("run_number") && <col className="col-run-number" />}
               {hasAgeGrade && show("age_grade") && <col className="col-grade" />}
               {hasPace && show("pace") && <col className="col-pace" />}
               {hasClubs && show("club") && <col className="col-club" />}
+              {show("history") && <col className="col-history protocol-col-history" />}
+              {hasAgeCategories && show("history_group") && (
+                <col className="col-history protocol-col-history" />
+              )}
             </colgroup>
             <thead>
               <tr>
@@ -662,16 +756,9 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                     filterable={false}
                   />
                 )}
-                {show("history") && (
-                  <ColumnHeader
-                    label="В истории"
-                    hint="Место результата среди всех времён своего пола за историю площадки, по всем системам"
-                    {...sortProps("history")}
-                  />
-                )}
                 {show("run_number") && (
                   <ColumnHeader
-                    label="По счёту"
+                    label="Пробежка"
                     hint="Какая это пробежка по счёту у участника в этой системе"
                     filterable={false}
                   />
@@ -685,6 +772,22 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                 )}
                 {hasPace && show("pace") && <ColumnHeader label="Темп" filterable={false} />}
                 {hasClubs && show("club") && <ColumnHeader label="Клуб" filterable={false} />}
+                {show("history") && (
+                  <ColumnHeader
+                    className="protocol-cell-history"
+                    label="В истории"
+                    hint="Место результата среди всех времён своего пола за историю площадки, по всем системам"
+                    {...sortProps("history")}
+                  />
+                )}
+                {hasAgeCategories && show("history_group") && (
+                  <ColumnHeader
+                    className="protocol-cell-history"
+                    label="В истории группы"
+                    hint="Место результата среди всех времён своей возрастной группы за историю площадки"
+                    filterable={false}
+                  />
+                )}
               </tr>
             </thead>
             <tbody>
@@ -776,8 +879,24 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                         )}
                       </td>
                     )}
-                    {show("history") && (
+                    {show("run_number") && (
                       <td className="td-compact">
+                        {row.run_number !== null ? `${formatInt(row.run_number)}-я` : "—"}
+                      </td>
+                    )}
+                    {hasAgeGrade && show("age_grade") && (
+                      <td className="td-compact">
+                        {row.age_grade !== null ? `${row.age_grade.toFixed(2)}%` : "—"}
+                      </td>
+                    )}
+                    {hasPace && show("pace") && (
+                      <td className="td-compact">{row.pace_display ?? "—"}</td>
+                    )}
+                    {hasClubs && show("club") && (
+                      <td className="td-compact">{row.club_name ?? "—"}</td>
+                    )}
+                    {show("history") && (
+                      <td className="td-compact protocol-cell-history">
                         {row.history_rank !== null ? (
                           <StatHintTooltip
                             text={`${formatInt(row.history_rank)}-е время среди ${
@@ -801,21 +920,33 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                         )}
                       </td>
                     )}
-                    {show("run_number") && (
-                      <td className="td-compact">
-                        {row.run_number !== null ? `${formatInt(row.run_number)}-я` : "—"}
+                    {hasAgeCategories && show("history_group") && (
+                      <td className="td-compact protocol-cell-history">
+                        {row.age_group_history_rank !== null ? (
+                          <StatHintTooltip
+                            text={`${formatInt(row.age_group_history_rank)}-е время в группе ${
+                              row.age_category ?? row.age_group ?? ""
+                            } за всю историю площадки (из ${formatInt(row.age_group_history_total ?? 0)})`}
+                          >
+                            <span
+                              className={
+                                row.age_group_history_rank <= 10
+                                  ? "protocol-place protocol-history-top"
+                                  : "protocol-place"
+                              }
+                            >
+                              {row.age_group_history_rank <= 10 ? "🏅" : ""}
+                              {formatInt(row.age_group_history_rank)}
+                              <span className="muted">
+                                {" "}
+                                / {formatInt(row.age_group_history_total ?? 0)}
+                              </span>
+                            </span>
+                          </StatHintTooltip>
+                        ) : (
+                          "—"
+                        )}
                       </td>
-                    )}
-                    {hasAgeGrade && show("age_grade") && (
-                      <td className="td-compact">
-                        {row.age_grade !== null ? `${row.age_grade.toFixed(2)}%` : "—"}
-                      </td>
-                    )}
-                    {hasPace && show("pace") && (
-                      <td className="td-compact">{row.pace_display ?? "—"}</td>
-                    )}
-                    {hasClubs && show("club") && (
-                      <td className="td-compact">{row.club_name ?? "—"}</td>
                     )}
                   </tr>
                 ))
@@ -824,16 +955,6 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           </table>
         </TableWrap>
       </section>
-
-      {histogramRows.length > 0 && summary.finishers >= 10 && (
-        <section className="loc-section">
-          <h2>Распределение времён</h2>
-          <p className="muted protocol-histogram-note">
-            Финишные времена этого старта. Тап по столбику — детали, растянуть — приблизить.
-          </p>
-          <LocationFinishHistogram rows={histogramRows} binSizeSec={10} />
-        </section>
-      )}
 
       {data.volunteers.length > 0 && (
         <section className="loc-section">

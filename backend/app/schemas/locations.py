@@ -516,6 +516,11 @@ class ProtocolNeighbourResponse(BaseModel):
     finishers: int | None = None
     volunteers: int | None = None
     avg_time_sec: int | None = None
+    best_male_time_sec: int | None = None
+    best_female_time_sec: int | None = None
+    debutants: int | None = None
+    first_at_location: int | None = None
+    prs: int | None = None
 
 
 class ProtocolClubResponse(BaseModel):
@@ -591,6 +596,9 @@ class ProtocolResultResponse(BaseModel):
     history_total: int | None = None
     # Какая это пробежка по счёту у участника в своей системе.
     run_number: int | None = None
+    # Место времени в истории своей возрастной группы на площадке.
+    age_group_history_rank: int | None = None
+    age_group_history_total: int | None = None
     # Результат обновил рекорд своей возрастной группы на площадке (только 5в).
     is_age_group_record: bool = False
     is_me: bool = False

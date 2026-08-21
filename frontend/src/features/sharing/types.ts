@@ -88,6 +88,7 @@ export type ShareSubjectKind =
   | "volunteering"
   | "summary"
   | "location_event"
+  | "location_protocol"
   | "location_card"
   | "location_me"
   | "rating";

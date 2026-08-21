@@ -6,6 +6,7 @@
 import type {
   DashboardStats,
   LocationPage,
+  LocationProtocol,
   LocationPersonalStats,
   MyHistoryMilestone,
   OnThisDayRun,
@@ -651,6 +652,103 @@ export function locationEventSubject(page: LocationPage): ShareSubject | null {
     data,
     fileName: `run5k-${page.slug}-last-event`,
     defaultFormat: "wide",
+  };
+}
+
+/** Протокол старта: постер «как прошла суббота» с этой страницы протокола. */
+export function locationProtocolSubject(protocol: LocationProtocol): ShareSubject {
+  const summary = protocol.summary;
+  const metrics: ShareMetric[] = [];
+  const maleWinner = humanizeName(summary.best_male_runner_name);
+  const femaleWinner = humanizeName(summary.best_female_runner_name);
+
+  // Порядок = приоритет (первые попадают на карточку): победители поимённо,
+  // дельта к прошлому старту, рекорды и новички — то, чем делятся каналы.
+  if (protocol.previous?.finishers != null && summary.finishers) {
+    const delta = summary.finishers - protocol.previous.finishers;
+    if (delta !== 0) {
+      pushMetric(
+        metrics,
+        "finishers_delta",
+        delta > 0 ? `+${formatInt(delta)}` : `−${formatInt(Math.abs(delta))}`,
+        "к прошлому старту",
+      );
+    }
+  }
+  if (maleWinner) {
+    pushMetric(metrics, "best_male_named", stripLeadingHours(summary.best_male_time_display), `Лучший · ${maleWinner}`, {
+      keepLabelCase: true,
+    });
+  }
+  if (femaleWinner) {
+    pushMetric(
+      metrics,
+      "best_female_named",
+      stripLeadingHours(summary.best_female_time_display),
+      `Лучшая · ${femaleWinner}`,
+      { keepLabelCase: true },
+    );
+  }
+  pushMetric(metrics, "prs", summary.prs ? formatInt(summary.prs) : null, "личных рекордов");
+  const newcomers = summary.debutants + summary.first_at_location;
+  pushMetric(metrics, "newcomers", newcomers ? formatInt(newcomers) : null, "новичков");
+  pushMetric(metrics, "volunteers", summary.volunteers ? formatInt(summary.volunteers) : null, "волонтёров");
+  // Запас для «Настроить».
+  if (summary.male && summary.female) {
+    pushMetric(
+      metrics,
+      "gender_split",
+      `${formatInt(summary.male)} / ${formatInt(summary.female)}`,
+      "мужчин / женщин",
+    );
+  }
+  pushMetric(metrics, "median_time", stripLeadingHours(summary.median_time_display), "медианное время");
+  pushMetric(metrics, "avg_time", stripLeadingHours(summary.avg_time_display), "среднее время");
+  const groupRecords = protocol.results.filter((row) => row.is_age_group_record).length;
+  pushMetric(
+    metrics,
+    "age_group_records",
+    groupRecords ? formatInt(groupRecords) : null,
+    groupRecords ? pluralFormRu(groupRecords, ["рекорд группы", "рекорда групп", "рекордов групп"]) : "",
+  );
+  pushMetric(
+    metrics,
+    "clubs",
+    summary.clubs_count ? formatInt(summary.clubs_count) : null,
+    "клубов на старте",
+  );
+  pushMetric(metrics, "date", formatDate(protocol.event_date), "дата старта");
+  pushMetric(metrics, "platform", platformCodeLabel(protocol.platform_code), "система");
+
+  const chip = summary.is_attendance_record
+    ? "Рекорд посещаемости!"
+    : summary.is_course_record_male || summary.is_course_record_female
+      ? "Новый рекорд трассы!"
+      : undefined;
+
+  const data: ShareCardData = {
+    audience: "location",
+    title: protocol.city ? `${protocol.name} · ${protocol.city}` : protocol.name,
+    subtitle: [
+      protocol.event_number != null ? `Старт №${formatInt(protocol.event_number)}` : null,
+      formatDate(protocol.event_date),
+      platformCodeLabel(protocol.platform_code),
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    plate: "ПРОТОКОЛ",
+    hero:
+      summary.finishers > 0
+        ? { value: formatInt(summary.finishers), caption: "финишёров" }
+        : undefined,
+    chip,
+    metrics,
+  };
+  return {
+    kind: "location_protocol",
+    data,
+    fileName: `run5k-${protocol.slug}-protocol-${protocol.event_date}`,
+    defaultFormat: "story",
   };
 }
 
