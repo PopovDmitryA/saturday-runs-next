@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
@@ -166,12 +166,12 @@ const PROTOCOL_COLUMNS: AdaptiveColumn[] = [
   { key: "time", width: 112, required: true },
   { key: "gender_place", width: 112 },
   { key: "age_category", width: 152 },
-  { key: "run_number", width: 112 },
+  { key: "run_number", width: 128 },
   { key: "age_grade", width: 120 },
   { key: "pace", width: 88 },
   { key: "club", width: 176 },
-  { key: "history", width: 136 },
-  { key: "history_group", width: 136 },
+  { key: "history", width: 168 },
+  { key: "history_group", width: 176 },
 ];
 
 function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProtocolParams) {
@@ -182,6 +182,10 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
   const [ageFilter, setAgeFilter] = useState<string | null>(null);
   const [nameFilter, setNameFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState<string | null>(null);
+  const [clubFilter, setClubFilter] = useState<string | null>(null);
+  // Клик по клубу листает страницу к протоколу — иначе отфильтрованная
+  // таблица остаётся за экраном и кажется, что ничего не произошло.
+  const protocolSectionRef = useRef<HTMLElement | null>(null);
   const [sort, setSort] = useState<SortState>({ key: "position", asc: true });
   const attachFloatingHead = useFloatingTableHead(".tview-bar");
   const sheet = useOptionalShareSheet();
@@ -198,6 +202,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
     setAgeFilter(null);
     setNameFilter("");
     setRoleFilter(null);
+    setClubFilter(null);
     setSort({ key: "position", asc: true });
     getLocationProtocol(slug, platformCode, eventDate)
       .then((payload) => {
@@ -307,6 +312,9 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
       if (needle && !(row.name ?? "").toLowerCase().includes(needle)) {
         return false;
       }
+      if (clubFilter && row.club_name !== clubFilter) {
+        return false;
+      }
       return true;
     });
     filtered.sort((a, b) => {
@@ -326,7 +334,12 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
       return sort.asc ? compare : -compare;
     });
     return filtered;
-  }, [data, genderFilter, ageFilter, nameFilter, sort]);
+  }, [data, genderFilter, ageFilter, nameFilter, clubFilter, sort]);
+
+  const toggleClubFilter = (club: string) => {
+    setClubFilter((current) => (current === club ? null : club));
+    protocolSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const toggleSort = (key: SortKey) => {
     setSort((current) =>
@@ -582,6 +595,16 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
         </p>
       )}
 
+      {histogramRows.length > 0 && summary.finishers >= 10 && (
+        <section className="loc-section">
+          <h2>Распределение времён</h2>
+          <p className="muted protocol-histogram-note">
+            Финишные времена этого старта. Тап по столбику — детали, растянуть — приблизить.
+          </p>
+          <LocationFinishHistogram rows={histogramRows} binSizeSec={10} />
+        </section>
+      )}
+
       {(data.age_groups.length > 0 || summary.top_clubs.length > 0) && (
         <div
           className={
@@ -636,8 +659,26 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                     </thead>
                     <tbody>
                       {summary.top_clubs.map((club) => (
-                        <tr key={club.name}>
-                          <td>{club.name}</td>
+                        <tr
+                          key={club.name}
+                          className={
+                            clubFilter === club.name
+                              ? "protocol-club-row protocol-club-row-active"
+                              : "protocol-club-row"
+                          }
+                        >
+                          <td>
+                            {/* Клик по клубу оставляет в протоколе только его
+                                бегунов; повторный — снимает фильтр. */}
+                            <button
+                              type="button"
+                              className="protocol-club-button"
+                              onClick={() => toggleClubFilter(club.name)}
+                              aria-pressed={clubFilter === club.name}
+                            >
+                              {club.name}
+                            </button>
+                          </td>
                           <td className="protocol-clubs-count">{formatInt(club.count)}</td>
                         </tr>
                       ))}
@@ -650,17 +691,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
         </div>
       )}
 
-      {histogramRows.length > 0 && summary.finishers >= 10 && (
-        <section className="loc-section">
-          <h2>Распределение времён</h2>
-          <p className="muted protocol-histogram-note">
-            Финишные времена этого старта. Тап по столбику — детали, растянуть — приблизить.
-          </p>
-          <LocationFinishHistogram rows={histogramRows} binSizeSec={10} />
-        </section>
-      )}
-
-      <section className="loc-section">
+      <section className="loc-section" ref={protocolSectionRef}>
         <h2>Протокол</h2>
         <div className="protocol-filters">
           <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по полу">
@@ -707,6 +738,16 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
             onChange={(event) => setNameFilter(event.target.value)}
             aria-label="Поиск по имени"
           />
+          {clubFilter && (
+            <button
+              type="button"
+              className="protocol-club-chip"
+              onClick={() => setClubFilter(null)}
+              title="Снять фильтр по клубу"
+            >
+              Клуб: {clubFilter} ✕
+            </button>
+          )}
         </div>
 
         <TableViewToggle columns={tableColumns} />
@@ -734,7 +775,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
               {hasClubs && show("club") && <col className="col-club" />}
               {show("history") && <col className="col-history protocol-col-history" />}
               {hasAgeCategories && show("history_group") && (
-                <col className="col-history protocol-col-history" />
+                <col className="col-history-group protocol-col-history" />
               )}
             </colgroup>
             <thead>
@@ -759,7 +800,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                 {show("run_number") && (
                   <ColumnHeader
                     label="Пробежка"
-                    hint="Какая это пробежка по счёту у участника в этой системе"
+                    hint="Какая это пробежка по счёту у участника: у зарегистрированных на сайте — сквозь все системы, у остальных — в своей"
                     filterable={false}
                   />
                 )}
@@ -775,7 +816,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                 {show("history") && (
                   <ColumnHeader
                     className="protocol-cell-history"
-                    label="В истории"
+                    label="В истории М/Ж"
                     hint="Место результата среди всех времён своего пола за историю площадки, по всем системам"
                     {...sortProps("history")}
                   />
@@ -881,7 +922,19 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                     )}
                     {show("run_number") && (
                       <td className="td-compact">
-                        {row.run_number !== null ? `${formatInt(row.run_number)}-я` : "—"}
+                        {row.run_number !== null ? (
+                          <StatHintTooltip
+                            text={
+                              row.run_number_all_systems
+                                ? `${formatInt(row.run_number)}-я пробежка по всем системам участника`
+                                : `${formatInt(row.run_number)}-я пробежка в системе ${platformCodeLabel(data.platform_code)}`
+                            }
+                          >
+                            <span className="protocol-place">{formatInt(row.run_number)}-я</span>
+                          </StatHintTooltip>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                     )}
                     {hasAgeGrade && show("age_grade") && (
@@ -893,7 +946,20 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                       <td className="td-compact">{row.pace_display ?? "—"}</td>
                     )}
                     {hasClubs && show("club") && (
-                      <td className="td-compact">{row.club_name ?? "—"}</td>
+                      <td className="td-compact">
+                        {row.club_name ? (
+                          <button
+                            type="button"
+                            className="protocol-club-button"
+                            onClick={() => toggleClubFilter(row.club_name as string)}
+                            aria-pressed={clubFilter === row.club_name}
+                          >
+                            {row.club_name}
+                          </button>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                     )}
                     {show("history") && (
                       <td className="td-compact protocol-cell-history">
@@ -988,7 +1054,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                   <ColumnHeader label="Волонтёр" filterable={false} />
                   <ColumnHeader label="Роли на этом старте" filterable={false} />
                   <ColumnHeader
-                    label="По счёту"
+                    label="Волонтёрство"
                     hint="Какое это волонтёрство по счёту у человека в этой системе"
                     filterable={false}
                   />

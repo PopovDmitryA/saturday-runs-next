@@ -84,7 +84,7 @@ HISTORY_RANK_MAX_RESULTS = 150_000
 
 
 def location_protocol_cache_key(slug: str, platform_code: str, event_date: date) -> str:
-    return f"locations:protocol:v5:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
+    return f"locations:protocol:v6:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
 
 
 def invalidate_location_protocol_cache(slug: str, platform_code: str, event_date: date) -> None:
@@ -493,6 +493,7 @@ def _build_results(
                 "history_rank": None,
                 "history_total": None,
                 "run_number": None,
+                "run_number_all_systems": False,
                 "is_age_group_record": False,
                 "age_group_history_rank": None,
                 "age_group_history_total": None,
@@ -762,30 +763,78 @@ def _attach_history_ranks(
                 row["age_group_history_total"] = len(group_times)
 
 
-def _attach_run_numbers(db: Session, event: Event, results: list[dict[str, Any]]) -> None:
-    """Какая это пробежка по счёту у участника — в своей системе.
+def _user_participant_groups(
+    db: Session, participant_ids: list[UUID]
+) -> tuple[dict[UUID, UUID], dict[UUID, list[UUID]]]:
+    """(участник → пользователь сайта, пользователь → все его участники).
 
-    Идентичность участника платформенная (Participant), поэтому счёт идёт по
-    всем стартам системы, не только по этой площадке. Тестовые события
-    исключены, как во всей витрине.
+    Сквозной счёт пробежек возможен только там, где системы связаны аккаунтом
+    сайта: сама по себе identity участника платформенная.
+    """
+    if not participant_ids:
+        return {}, {}
+    own_links = (
+        db.query(PlatformLink.user_id, Participant.id)
+        .join(Participant, _platform_link_join())
+        .filter(Participant.id.in_(participant_ids), PlatformLink.user_id.isnot(None))
+        .all()
+    )
+    user_by_participant = {participant_id: user_id for user_id, participant_id in own_links}
+    if not user_by_participant:
+        return {}, {}
+
+    group_participants: dict[UUID, list[UUID]] = defaultdict(list)
+    all_links = (
+        db.query(PlatformLink.user_id, Participant.id)
+        .join(Participant, _platform_link_join())
+        .filter(PlatformLink.user_id.in_(set(user_by_participant.values())))
+        .all()
+    )
+    for user_id, participant_id in all_links:
+        group_participants[user_id].append(participant_id)
+    return user_by_participant, dict(group_participants)
+
+
+def _attach_run_numbers(db: Session, event: Event, results: list[dict[str, Any]]) -> None:
+    """Какая это пробежка по счёту у участника.
+
+    У зарегистрированных на сайте счёт сквозной — по всем системам, связанным
+    с аккаунтом, ровно как счётчик в личном кабинете. У остальных сквозного
+    счёта взяться неоткуда: identity участника платформенная, и цифра
+    считается по своей системе. Тестовые события и вторичные события
+    кросслинков исключены — иначе один старт RunPark считался бы дважды.
     """
     participant_ids = [row["participant_id"] for row in results if row["participant_id"]]
     if not participant_ids:
         return
+
+    user_by_participant, group_participants = _user_participant_groups(db, participant_ids)
+    countable_ids = set(participant_ids)
+    for group in group_participants.values():
+        countable_ids.update(group)
+
     prior = dict(
         db.query(RunResult.participant_id, func.count())
         .join(Event, RunResult.event_id == Event.id)
         .filter(
-            RunResult.participant_id.in_(participant_ids),
+            RunResult.participant_id.in_(countable_ids),
             Event.event_date < event.event_date,
             Event.is_test_event.is_(False),
+            Event.id.notin_(db.query(EventCrosslink.secondary_event_id)),
         )
         .group_by(RunResult.participant_id)
         .all()
     )
     for row in results:
-        if row["participant_id"]:
-            row["run_number"] = prior.get(row["participant_id"], 0) + 1
+        participant_id = row["participant_id"]
+        if not participant_id:
+            continue
+        user_id = user_by_participant.get(participant_id)
+        group = group_participants.get(user_id, [participant_id]) if user_id else [participant_id]
+        row["run_number"] = sum(prior.get(member, 0) for member in group) + 1
+        # Сквозной счёт получился только у связанных аккаунтов — витрина
+        # объясняет разницу в подсказке строки.
+        row["run_number_all_systems"] = user_id is not None and len(group) > 1
 
 
 def _attach_age_group_records(

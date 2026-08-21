@@ -594,8 +594,10 @@ class ProtocolResultResponse(BaseModel):
     achievement_labels: list[str] = Field(default_factory=list)
     history_rank: int | None = None
     history_total: int | None = None
-    # Какая это пробежка по счёту у участника в своей системе.
+    # Какая это пробежка по счёту у участника: сквозная у связанных аккаунтов,
+    # иначе в своей системе (см. run_number_all_systems).
     run_number: int | None = None
+    run_number_all_systems: bool = False
     # Место времени в истории своей возрастной группы на площадке.
     age_group_history_rank: int | None = None
     age_group_history_total: int | None = None

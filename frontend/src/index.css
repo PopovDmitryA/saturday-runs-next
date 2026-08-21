@@ -13343,11 +13343,15 @@ a.admin-system-chip:hover {
 }
 
 .protocol-table .col-history {
-  width: 8.5rem;
+  width: 10.5rem;
+}
+
+.protocol-table .col-history-group {
+  width: 11rem;
 }
 
 .protocol-table .col-run-number {
-  width: 7rem;
+  width: 8rem;
 }
 
 .protocol-table .col-grade {
@@ -13363,7 +13367,7 @@ a.admin-system-chip:hover {
 }
 
 .protocol-table:not(.data-table-short) {
-  min-width: 76rem;
+  min-width: 82rem;
 }
 
 /* Строки «НЕИЗВЕСТНЫЙ» (бегун без штрихкода): приглушаем, чтобы не сливались
@@ -13482,7 +13486,75 @@ a.admin-system-chip:hover {
   }
 }
 
-/* Исторические колонки («В истории», «В истории группы») — сравнение со всей
+/* Липнут ДВЕ первые колонки: «№» без имени бесполезен, при горизонтальной
+   прокрутке уезжало именно ФИО. Смещение второй = ширина .col-number. */
+.table-sticky-first .protocol-table th:nth-child(2),
+.table-sticky-first .protocol-table td:nth-child(2) {
+  position: sticky;
+  left: 3.6rem;
+  background: var(--surface);
+  z-index: 2;
+}
+
+.table-sticky-first .protocol-table thead th:nth-child(2) {
+  z-index: 4;
+  background: var(--bg-muted);
+}
+
+.tshadow-left .table-sticky-first .protocol-table th:nth-child(2),
+.tshadow-left .table-sticky-first .protocol-table td:nth-child(2) {
+  box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+}
+
+/* Тень висит на второй колонке — на первой она рисовалась бы под второй. */
+.tshadow-left .table-sticky-first .protocol-table th:first-child,
+.tshadow-left .table-sticky-first .protocol-table td:first-child {
+  box-shadow: none;
+}
+
+/* Свою подсветку строки «вы»/«неизвестный» липкие ячейки обязаны повторить —
+   иначе на прокрутке они выпадают из строки белым прямоугольником. */
+.table-sticky-first .protocol-table .protocol-row-me td:first-child,
+.table-sticky-first .protocol-table .protocol-row-me td:nth-child(2) {
+  background: var(--bg-muted);
+}
+
+/* Клуб — кнопка-фильтр: выглядит ссылкой, ведёт себя как тумблер. */
+.protocol-club-button {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--link);
+  text-align: left;
+  cursor: pointer;
+}
+
+.protocol-club-button:hover {
+  text-decoration: underline;
+}
+
+.protocol-club-row-active {
+  background: var(--bg-muted);
+}
+
+.protocol-club-row-active .protocol-club-button {
+  font-weight: 700;
+}
+
+/* Чип активного фильтра по клубу в ряду фильтров протокола */
+.protocol-club-chip {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid #2563eb;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font: inherit;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+/* Исторические колонки («В истории М/Ж», «В истории группы») — сравнение со всей
    историей площадки, а не с этим стартом: прижаты к правому краю, фон слегка
    подкрашен, первая отделена линией. */
 .protocol-table .protocol-cell-history,

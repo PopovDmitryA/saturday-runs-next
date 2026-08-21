@@ -272,6 +272,62 @@ def test_run_number_and_age_group_record(db_session: Session) -> None:
     assert rows["Тоже БЫСТРЫЙ"]["is_age_group_record"] is False
 
 
+def test_run_number_counts_all_linked_systems(db_session: Session) -> None:
+    """У зарегистрированного на сайте счёт пробежек сквозной по всем системам."""
+    five_verst = _platform(db_session, "five_verst", "5 вёрст")
+    s95 = _platform(db_session, "s95", "С95")
+    location = _location(db_session, five_verst, "cross", "Кроссистемный")
+    s95_location = _location(db_session, s95, "cross-s95", "Другая система")
+
+    runner = _participant(db_session, five_verst, "cross-5v", "Кросс БЕГУН")
+    twin = _participant(db_session, s95, "cross-s95", "Кросс БЕГУН", gender="male")
+    user = User(telegram_id=int(uuid4().int % 1_000_000_000), display_name="Кросс")
+    db_session.add(user)
+    db_session.flush()
+    for platform, participant in ((five_verst, runner), (s95, twin)):
+        db_session.add(
+            PlatformLink(
+                user_id=user.id,
+                platform_id=platform.id,
+                participant_id=participant.id,
+                external_user_id=participant.external_user_id,
+                external_url="https://example.com",
+            )
+        )
+    db_session.flush()
+
+    # По одной прошлой пробежке в каждой системе.
+    _result(
+        db_session,
+        _event(db_session, five_verst, location, date(2026, 8, 1)),
+        runner,
+        position=1,
+        finish_time_sec=1300,
+        age_category="М30-34",
+    )
+    _result(
+        db_session,
+        _event(db_session, s95, s95_location, date(2026, 8, 8)),
+        twin,
+        position=1,
+        finish_time_sec=1310,
+    )
+
+    event = _event(db_session, five_verst, location, date(2026, 8, 15))
+    _result(db_session, event, runner, position=1, finish_time_sec=1290, age_category="М30-34")
+    stranger = _participant(db_session, five_verst, "cross-solo", "Один В СИСТЕМЕ")
+    _result(db_session, event, stranger, position=2, finish_time_sec=1400, age_category="М30-34")
+
+    payload = _build(db_session, "proto-cross", "five_verst", date(2026, 8, 15))
+    rows = {row["name"]: row for row in payload["results"]}
+    # Две прошлые пробежки в разных системах + эта.
+    assert rows["Кросс БЕГУН"]["run_number"] == 3
+    assert rows["Кросс БЕГУН"]["run_number_all_systems"] is True
+    # Без аккаунта сквозного счёта взяться неоткуда.
+    assert rows["Один В СИСТЕМЕ"]["run_number"] == 1
+    assert rows["Один В СИСТЕМЕ"]["run_number_all_systems"] is False
+
+
 def test_volunteers_grouped_by_person(db_session: Session) -> None:
     five_verst = _platform(db_session, "five_verst", "5 вёрст")
     location = _location(db_session, five_verst, "vol", "Волонтёрский")

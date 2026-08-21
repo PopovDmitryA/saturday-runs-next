@@ -2394,8 +2394,10 @@ export type ProtocolResult = {
   achievement_labels: string[];
   history_rank: number | null;
   history_total: number | null;
-  // Какая это пробежка по счёту у участника в своей системе.
+  // Какая это пробежка по счёту у участника: сквозная у связанных аккаунтов,
+  // иначе в своей системе.
   run_number: number | null;
+  run_number_all_systems: boolean;
   // Место времени в истории своей возрастной группы на площадке.
   age_group_history_rank: number | null;
   age_group_history_total: number | null;
