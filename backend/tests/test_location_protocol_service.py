@@ -242,8 +242,12 @@ def test_history_rank_spans_platforms(db_session: Session) -> None:
 def test_volunteers_grouped_by_person(db_session: Session) -> None:
     five_verst = _platform(db_session, "five_verst", "5 вёрст")
     location = _location(db_session, five_verst, "vol", "Волонтёрский")
+    past = _event(db_session, five_verst, location, date(2026, 8, 8))
     event = _event(db_session, five_verst, location, date(2026, 8, 15))
     busy = _participant(db_session, five_verst, "busy", "Занятой ВОЛОНТЁР")
+    # Неделей раньше уже секундомерил здесь — на этом старте Маршал для него
+    # новая роль, а волонтёрство второе по счёту.
+    _volunteer(db_session, past, busy, "Секундомер")
     _volunteer(db_session, event, busy, "Секундомер")
     _volunteer(db_session, event, busy, "Маршал")
     runner = _participant(db_session, five_verst, "also-runs", "Бегущий ВОЛОНТЁР")
@@ -252,8 +256,17 @@ def test_volunteers_grouped_by_person(db_session: Session) -> None:
 
     payload = _build(db_session, "proto-vol", "five_verst", date(2026, 8, 15))
     volunteers = {person["name"]: person for person in payload["volunteers"]}
-    assert volunteers["Занятой ВОЛОНТЁР"]["roles"] == ["Маршал", "Секундомер"]
-    assert volunteers["Бегущий ВОЛОНТЁР"]["roles"] == ["Фотограф"]
+    busy_row = volunteers["Занятой ВОЛОНТЁР"]
+    assert busy_row["roles"] == ["Маршал", "Секундомер"]
+    assert busy_row["new_roles"] == ["Маршал"]
+    assert busy_row["volunteer_number"] == 2
+    assert busy_row["is_first_volunteering"] is False
+    assert busy_row["is_first_here"] is False
+    debutant = volunteers["Бегущий ВОЛОНТЁР"]
+    assert debutant["roles"] == ["Фотограф"]
+    assert debutant["new_roles"] == ["Фотограф"]
+    assert debutant["volunteer_number"] == 1
+    assert debutant["is_first_volunteering"] is True
     assert payload["summary"]["volunteers"] == 2
 
 

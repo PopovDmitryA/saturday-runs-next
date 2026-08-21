@@ -2394,6 +2394,12 @@ export type ProtocolVolunteer = {
   profile_url: string | null;
   serial_id: number | null;
   roles: string[];
+  // Роли, которые человек исполняет впервые в карьере.
+  new_roles: string[];
+  // Какое это волонтёрство по счёту в карьере (в своей системе).
+  volunteer_number: number | null;
+  is_first_volunteering: boolean;
+  is_first_here: boolean;
   is_me: boolean;
 };
 

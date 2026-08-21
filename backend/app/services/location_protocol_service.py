@@ -80,11 +80,11 @@ PROTOCOL_CACHE_TTL_SECONDS = 3 * 60 * 60
 HISTORY_RANK_MAX_RESULTS = 150_000
 
 # Сколько клубов показываем в сводке.
-CLUBS_TOP_LIMIT = 5
+CLUBS_TOP_LIMIT = 10
 
 
 def location_protocol_cache_key(slug: str, platform_code: str, event_date: date) -> str:
-    return f"locations:protocol:v2:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
+    return f"locations:protocol:v3:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
 
 
 def invalidate_location_protocol_cache(slug: str, platform_code: str, event_date: date) -> None:
@@ -231,7 +231,7 @@ def _compute_location_protocol(
 
     results, gender_counts, club_counts = _build_results(db, event, event_platform_code)
     _attach_history_ranks(db, location_ids, results)
-    volunteers = _build_volunteers(db, event.id)
+    volunteers = _build_volunteers(db, event, location_ids)
 
     summary_row = (
         db.query(EventSummary)
@@ -570,7 +570,43 @@ def _age_group_breakdown(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def _build_volunteers(db: Session, event_id: UUID) -> list[dict[str, Any]]:
+def _volunteer_history(
+    db: Session, event: Event, location_ids: list[UUID], participant_ids: list[UUID]
+) -> tuple[dict[UUID, int], dict[UUID, int], dict[UUID, set[str]]]:
+    """История волонтёрств ДО этого старта: сколько всего, сколько здесь, какие роли.
+
+    Ровно панель «Детали по волонтёрам» дашборда Grafana: по ней видно, у кого
+    это первое волонтёрство, кто впервые волонтёрит на этой площадке и кто
+    осваивает новую роль. Тестовые старты исключены, как во всей витрине.
+    """
+    if not participant_ids:
+        return {}, {}, {}
+
+    base = (
+        db.query(VolunteerResult.participant_id, Event.location_id, VolunteerResult.role)
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .filter(
+            VolunteerResult.participant_id.in_(participant_ids),
+            Event.event_date < event.event_date,
+            Event.is_test_event.is_(False),
+        )
+        .all()
+    )
+    career: dict[UUID, int] = defaultdict(int)
+    here: dict[UUID, int] = defaultdict(int)
+    prior_roles: dict[UUID, set[str]] = defaultdict(set)
+    location_set = set(location_ids)
+    for participant_id, location_id, raw_role in base:
+        career[participant_id] += 1
+        if location_id in location_set:
+            here[participant_id] += 1
+        role = canonical_volunteer_role(raw_role)
+        if role is not None:
+            prior_roles[participant_id].add(role.key)
+    return dict(career), dict(here), dict(prior_roles)
+
+
+def _build_volunteers(db: Session, event: Event, location_ids: list[UUID]) -> list[dict[str, Any]]:
     """Волонтёры старта: один человек — одна строка, роли собраны в список."""
     rows = (
         db.query(
@@ -586,14 +622,22 @@ def _build_volunteers(db: Session, event_id: UUID) -> list[dict[str, Any]]:
         .outerjoin(Participant, VolunteerResult.participant_id == Participant.id)
         .outerjoin(PlatformLink, _platform_link_join())
         .outerjoin(User, PlatformLink.user_id == User.id)
-        .filter(VolunteerResult.event_id == event_id)
+        .filter(VolunteerResult.event_id == event.id)
         .all()
+    )
+
+    career, here, prior_roles = _volunteer_history(
+        db,
+        event,
+        location_ids,
+        [row.participant_id for row in rows if row.participant_id is not None],
     )
 
     people: dict[str, dict[str, Any]] = {}
     seen_role_keys: set[tuple[str, str]] = set()
     for row in rows:
         key = str(row.participant_id or row.external_result_key)
+        career_before = career.get(row.participant_id, 0) if row.participant_id else 0
         person = people.setdefault(
             key,
             {
@@ -602,6 +646,12 @@ def _build_volunteers(db: Session, event_id: UUID) -> list[dict[str, Any]]:
                 "profile_url": row.profile_url,
                 "serial_id": row.serial_id if row.profile_private is False else None,
                 "roles": [],
+                "new_roles": [],
+                # Какое это волонтёрство по счёту в карьере человека (в системе).
+                "volunteer_number": career_before + 1 if row.participant_id else None,
+                "is_first_volunteering": row.participant_id is not None and career_before == 0,
+                "is_first_here": row.participant_id is not None
+                and here.get(row.participant_id, 0) == 0,
             },
         )
         role = canonical_volunteer_role(row.role)
@@ -612,9 +662,14 @@ def _build_volunteers(db: Session, event_id: UUID) -> list[dict[str, Any]]:
             continue
         seen_role_keys.add((key, role.key))
         person["roles"].append(role.label)
+        if row.participant_id is not None and role.key not in prior_roles.get(
+            row.participant_id, set()
+        ):
+            person["new_roles"].append(role.label)
 
     for person in people.values():
         person["roles"].sort()
+        person["new_roles"].sort()
     # Без ролей человек в списке не нужен: у parkrun такую строку даёт служебная
     # сводка «Total Credits (N×)», ролью не являющаяся.
     return sorted(

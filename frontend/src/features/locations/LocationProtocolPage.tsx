@@ -95,6 +95,14 @@ function StatTile({
   );
 }
 
+/** 🥇🥈🥉 для первых трёх мест — видно сразу, без наведения. */
+function medal(place: number | null): string | null {
+  if (place === 1) return "🥇";
+  if (place === 2) return "🥈";
+  if (place === 3) return "🥉";
+  return null;
+}
+
 function RowBadge({ text, title }: { text: string; title: string }) {
   return (
     <StatHintTooltip text={title}>
@@ -282,6 +290,15 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
     (hasClubs && show("club") ? 1 : 0);
   const genderKnown = summary.male + summary.female > 0;
   const newcomers = summary.debutants + summary.first_at_location;
+  // Обладатели рекорда трассы этого дня — бейдж прямо в строке.
+  const courseRecordMale =
+    summary.is_course_record_male && summary.best_male_runner_name
+      ? summary.best_male_runner_name
+      : null;
+  const courseRecordFemale =
+    summary.is_course_record_female && summary.best_female_runner_name
+      ? summary.best_female_runner_name
+      : null;
   const knownTotal = Math.max(
     data.declared_finishers ?? 0,
     ...data.results.map((row) => row.position ?? 0),
@@ -336,7 +353,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
         </nav>
       </header>
 
-      <div className="loc-stats-grid">
+      <div className="loc-stats-grid protocol-stats-grid">
         <StatTile
           value={formatInt(summary.finishers)}
           label="финишёров"
@@ -395,16 +412,6 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           hint="Сколько участников улучшили в этот день своё лучшее время в системе"
         />
         <StatTile value={formatInt(summary.volunteers)} label="волонтёров" />
-        {summary.clubs_count > 0 && (
-          <StatTile
-            value={formatInt(summary.clubs_count)}
-            label="клубов на старте"
-            sub={summary.top_clubs
-              .slice(0, 3)
-              .map((club) => `${club.name} (${club.count})`)
-              .join(" · ")}
-          />
-        )}
       </div>
 
       {data.is_partial && (
@@ -423,37 +430,72 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
         </p>
       )}
 
-      {data.age_groups.length > 0 && (
-        <section className="loc-section">
-          <h2>Возрастные группы</h2>
-          <div className="protocol-age-groups">
-            {data.age_groups.map((group) => {
-              const max = Math.max(...data.age_groups.map((item) => item.total), 1);
-              return (
-                <div className="protocol-age-row" key={group.age_group}>
-                  <span className="protocol-age-label">{group.age_group}</span>
-                  <span className="protocol-age-bar-track">
-                    <span
-                      className="protocol-age-bar protocol-age-bar-male"
-                      style={{ width: `${(group.male / max) * 100}%` }}
-                    />
-                    <span
-                      className="protocol-age-bar protocol-age-bar-female"
-                      style={{ width: `${(group.female / max) * 100}%` }}
-                    />
-                  </span>
-                  <span className="protocol-age-count">
-                    {formatInt(group.total)}
-                    <span className="muted">
-                      {" "}
-                      ({formatInt(group.male)} М · {formatInt(group.female)} Ж)
-                    </span>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+      {(data.age_groups.length > 0 || summary.top_clubs.length > 0) && (
+        <div
+          className={
+            data.age_groups.length > 0 && summary.top_clubs.length > 0
+              ? "protocol-columns"
+              : undefined
+          }
+        >
+          {data.age_groups.length > 0 && (
+            <section className="loc-section protocol-column">
+              <h2>Возрастные группы</h2>
+              <div className="protocol-age-groups">
+                {data.age_groups.map((group) => {
+                  const max = Math.max(...data.age_groups.map((item) => item.total), 1);
+                  return (
+                    <div className="protocol-age-row" key={group.age_group}>
+                      <span className="protocol-age-label">{group.age_group}</span>
+                      <span className="protocol-age-bar-track">
+                        <span
+                          className="protocol-age-bar protocol-age-bar-male"
+                          style={{ width: `${(group.male / max) * 100}%` }}
+                        />
+                        <span
+                          className="protocol-age-bar protocol-age-bar-female"
+                          style={{ width: `${(group.female / max) * 100}%` }}
+                        />
+                      </span>
+                      {/* Числа колонками с выравниванием по правому краю —
+                          «66 М» под «55 М», а не пляшущие скобки. */}
+                      <span className="protocol-age-total">{formatInt(group.total)}</span>
+                      <span className="protocol-age-gender muted">{formatInt(group.male)} М</span>
+                      <span className="protocol-age-gender muted">{formatInt(group.female)} Ж</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+          {summary.top_clubs.length > 0 && (
+            <section className="loc-section protocol-column protocol-clubs">
+              <h2>Клубы на старте</h2>
+              <table className="data-table protocol-clubs-table">
+                <thead>
+                  <tr>
+                    <th>Клуб</th>
+                    <th className="protocol-clubs-count">Финишёров</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.top_clubs.map((club) => (
+                    <tr key={club.name}>
+                      <td>{club.name}</td>
+                      <td className="protocol-clubs-count">{formatInt(club.count)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {summary.clubs_count > summary.top_clubs.length && (
+                <p className="muted protocol-clubs-more">
+                  и ещё {formatInt(summary.clubs_count - summary.top_clubs.length)} клубов —
+                  полный список в колонке «Клуб» протокола
+                </p>
+              )}
+            </section>
+          )}
+        </div>
       )}
 
       <section className="loc-section">
@@ -597,6 +639,13 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                         {row.is_pr && (
                           <RowBadge text="ЛР" title="Личный рекорд в системе на этом старте" />
                         )}
+                        {((row.gender === "male" && row.name === courseRecordMale) ||
+                          (row.gender === "female" && row.name === courseRecordFemale)) && (
+                          <RowBadge
+                            text="🏆 рекорд трассы"
+                            title="Новый рекорд трассы на момент этого старта"
+                          />
+                        )}
                       </span>
                     </td>
                     <td className="td-time">
@@ -606,7 +655,15 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                             row.gender === "female" ? "женщин" : "мужчин"
                           } (из ${formatInt(row.history_total)})`}
                         >
-                          <span className="protocol-time">{stripHours(row.finish_time_display)}</span>
+                          <span className="protocol-time">
+                            {stripHours(row.finish_time_display)}
+                            {/* Топ-10 за всю историю площадки — виден сразу. */}
+                            {row.history_rank <= 10 && (
+                              <span className="protocol-history-badge">
+                                #{row.history_rank} в истории
+                              </span>
+                            )}
+                          </span>
                         </StatHintTooltip>
                       ) : (
                         stripHours(row.finish_time_display)
@@ -614,20 +671,29 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                     </td>
                     {show("gender_place") && (
                       <td className="td-compact">
-                        {row.gender_position !== null
-                          ? `${row.gender_position}${row.gender_total ? ` / ${row.gender_total}` : ""}`
-                          : "—"}
+                        {row.gender_position !== null ? (
+                          <span className="protocol-place">
+                            {medal(row.gender_position)}
+                            {row.gender_position}
+                            {row.gender_total ? ` / ${row.gender_total}` : ""}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                     )}
                     {show("age_category") && (
                       <td className="td-compact">
                         {row.age_category ? (
-                          <span>
+                          <span className="protocol-place">
                             {row.age_category}
                             {row.age_group_position !== null && (
                               <span className="muted">
                                 {" "}
-                                · {row.age_group_position}
+                                {/* Медаль — только победителю группы: три медали на
+                                    каждую из ~30 групп превращали колонку в шум. */}
+                                · {row.age_group_position === 1 ? "🥇" : ""}
+                                {row.age_group_position}
                                 {row.age_group_total ? `/${row.age_group_total}` : ""}
                               </span>
                             )}
@@ -659,19 +725,81 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
       {data.volunteers.length > 0 && (
         <section className="loc-section">
           <h2>Волонтёры ({data.volunteers.length})</h2>
-          <ul className="protocol-volunteers">
-            {data.volunteers.map((person, index) => (
-              <li key={`${person.external_user_id ?? index}`}>
-                {person.serial_id !== null ? (
-                  <a href={`/users/${person.serial_id}`}>{person.name ?? "—"}</a>
-                ) : (
-                  <span>{person.name ?? "—"}</span>
-                )}
-                {person.is_me && <span className="protocol-row-badge protocol-badge-me">вы</span>}
-                <span className="muted"> — {person.roles.join(", ")}</span>
-              </li>
-            ))}
-          </ul>
+          <TableWrap className="protocol-volunteers-wrap">
+            <table className="data-table data-table-layout-fixed protocol-volunteers-table">
+              <colgroup>
+                <col className="col-vol-name" />
+                <col />
+                <col className="col-vol-number" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <ColumnHeader label="Волонтёр" filterable={false} />
+                  <ColumnHeader label="Роли на этом старте" filterable={false} />
+                  <ColumnHeader
+                    label="По счёту"
+                    hint="Какое это волонтёрство по счёту у человека в этой системе"
+                    filterable={false}
+                  />
+                </tr>
+              </thead>
+              <tbody>
+                {data.volunteers.map((person, index) => (
+                  <tr key={`${person.external_user_id ?? index}`}>
+                    <td>
+                      <span className="protocol-runner">
+                        {person.serial_id !== null ? (
+                          <a href={`/users/${person.serial_id}`}>{person.name ?? "—"}</a>
+                        ) : (
+                          <span>{person.name ?? "—"}</span>
+                        )}
+                        {person.is_me && (
+                          <span className="protocol-row-badge protocol-badge-me">вы</span>
+                        )}
+                        {person.is_first_volunteering ? (
+                          <RowBadge text="дебют" title="Первое волонтёрство в системе" />
+                        ) : (
+                          person.is_first_here && (
+                            <RowBadge
+                              text="впервые здесь"
+                              title="Первое волонтёрство на этой локации"
+                            />
+                          )
+                        )}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="protocol-roles">
+                        {person.roles.map((role) => (
+                          <span
+                            key={role}
+                            className={
+                              person.new_roles.includes(role)
+                                ? "protocol-role-chip protocol-role-chip-new"
+                                : "protocol-role-chip"
+                            }
+                            title={
+                              person.new_roles.includes(role)
+                                ? "Впервые в этой роли"
+                                : undefined
+                            }
+                          >
+                            {role}
+                            {person.new_roles.includes(role) && " ✦"}
+                          </span>
+                        ))}
+                      </span>
+                    </td>
+                    <td className="td-compact">
+                      {person.volunteer_number !== null
+                        ? `${formatInt(person.volunteer_number)}-е`
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableWrap>
         </section>
       )}
 

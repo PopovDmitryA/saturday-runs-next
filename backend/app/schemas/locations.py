@@ -594,6 +594,12 @@ class ProtocolVolunteerResponse(BaseModel):
     profile_url: str | None = None
     serial_id: int | None = None
     roles: list[str] = Field(default_factory=list)
+    # Роли, которые человек исполняет впервые в карьере.
+    new_roles: list[str] = Field(default_factory=list)
+    # Какое это волонтёрство по счёту в карьере (в своей системе).
+    volunteer_number: int | None = None
+    is_first_volunteering: bool = False
+    is_first_here: bool = False
     is_me: bool = False
 
 

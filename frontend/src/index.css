@@ -13202,6 +13202,12 @@ a.admin-system-chip:hover {
 
 /* ===== Протокол старта (/locations/{slug}/protocol/{система}/{дата}) ===== */
 
+/* auto-fit вместо auto-fill: 7 плиток растягиваются на всю ширину одной
+   строкой, а не оставляют пустой хвост под восьмую. */
+.protocol-stats-grid {
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
 .protocol-subtitle {
   display: flex;
   align-items: center;
@@ -13230,14 +13236,30 @@ a.admin-system-chip:hover {
 .protocol-age-groups {
   display: grid;
   gap: 0.35rem;
-  max-width: 40rem;
 }
 
+/* Числа тремя колонками с выравниванием по правому краю: итог, «N М», «N Ж» —
+   значения стоят друг под другом, а не пляшут за скобками. */
 .protocol-age-row {
   display: grid;
-  grid-template-columns: 4.2rem 1fr max-content;
+  grid-template-columns: 3.4rem minmax(0, 1fr) 2.6rem 3.6rem 3.4rem;
   align-items: center;
   gap: 0.6rem;
+}
+
+.protocol-age-total {
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.protocol-age-gender {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .protocol-age-label {
@@ -13271,12 +13293,6 @@ a.admin-system-chip:hover {
   background: #ec4899;
 }
 
-.protocol-age-count {
-  font-size: 0.85rem;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
 /* Фильтры над таблицей: пол — поиск — группа */
 .protocol-filters {
   display: flex;
@@ -13286,14 +13302,21 @@ a.admin-system-chip:hover {
   margin-bottom: 0.6rem;
 }
 
+/* Таблетки пола, селект и поиск стоят в одном ряду — у .map-mode-tabs есть
+   свой нижний отступ, здесь он ломал выравнивание по одной линии. */
+.protocol-filters .map-mode-tabs {
+  margin-bottom: 0;
+}
+
 .protocol-age-select,
 .protocol-name-filter {
-  padding: 0.35rem 0.6rem;
+  padding: 0.45rem 0.75rem;
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--surface);
   color: var(--text);
-  font-size: 0.85rem;
+  font: inherit;
+  font-size: 0.92rem;
 }
 
 .protocol-name-filter {
@@ -13382,11 +13405,91 @@ a.admin-system-chip:hover {
   cursor: default;
 }
 
-.protocol-volunteers {
-  margin: 0;
-  padding-left: 1.1rem;
+/* «Возрастные группы» + «Клубы на старте» бок о бок: группы тянутся, клубы
+   занимают правую колонку — пустоты справа больше нет. На узком экране
+   колонки складываются в столбик. */
+.protocol-columns {
   display: grid;
-  gap: 0.25rem;
+  grid-template-columns: minmax(0, 1fr) minmax(15rem, 22rem);
+  gap: 0 2rem;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .protocol-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.protocol-clubs-table .protocol-clubs-count {
+  width: 7rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.protocol-clubs-more {
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+}
+
+/* Топ-10 в истории площадки — виден без наведения */
+.protocol-history-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.62rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.protocol-place {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Волонтёры */
+.protocol-volunteers-table .col-vol-name {
+  width: 18rem;
+}
+
+.protocol-volunteers-table .col-vol-number {
+  width: 7rem;
+}
+
+.protocol-volunteers-table:not(.data-table-short) {
+  min-width: 40rem;
+}
+
+.protocol-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.protocol-role-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--text-2);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+/* Роль, которую человек исполняет впервые в карьере */
+.protocol-role-chip-new {
+  background: #dcfce7;
+  color: #166534;
+}
+
+:root[data-theme="dark"] .protocol-role-chip-new {
+  background: #14532d;
+  color: #bbf7d0;
 }
 
 .protocol-source-link {
