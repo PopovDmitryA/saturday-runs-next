@@ -518,11 +518,15 @@ function nameContainsCity(name: string, city: string): boolean {
   return ` ${normalizeForCityMatch(name)} `.includes(` ${needle} `);
 }
 
-function locationTitle(page: LocationPage): string {
-  if (!page.city || nameContainsCity(page.name, page.city)) {
-    return page.name;
+function locationTitleOf(name: string, city: string | null): string {
+  if (!city || nameContainsCity(name, city)) {
+    return name;
   }
-  return `${page.name} · ${page.city}`;
+  return `${name} · ${city}`;
+}
+
+function locationTitle(page: LocationPage): string {
+  return locationTitleOf(page.name, page.city);
 }
 
 export function locationEventSubject(page: LocationPage): ShareSubject | null {
@@ -735,8 +739,8 @@ export function locationProtocolSubject(protocol: LocationProtocol): ShareSubjec
     summary.clubs_count ? formatInt(summary.clubs_count) : null,
     "клубов на старте",
   );
-  pushMetric(metrics, "date", formatDate(protocol.event_date), "дата старта");
-  pushMetric(metrics, "platform", platformCodeLabel(protocol.platform_code), "система");
+  // Дату и систему карточка уже пишет в подзаголовке — плитками не дублируем
+  // (то же решение, что в 9d7d345 для остальных сюжетов).
 
   const chip = summary.is_attendance_record
     ? "Рекорд посещаемости!"
@@ -746,7 +750,7 @@ export function locationProtocolSubject(protocol: LocationProtocol): ShareSubjec
 
   const data: ShareCardData = {
     audience: "location",
-    title: protocol.city ? `${protocol.name} · ${protocol.city}` : protocol.name,
+    title: locationTitleOf(protocol.name, protocol.city),
     subtitle: [
       protocol.event_number != null ? `Старт №${formatInt(protocol.event_number)}` : null,
       formatDate(protocol.event_date),
