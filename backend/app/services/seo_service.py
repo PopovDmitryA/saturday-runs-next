@@ -220,7 +220,7 @@ _ADMIN_META = _meta("Админка — run5k.run", "Служебный разд
 
 _PROFILE_RE = re.compile(r"^/users/([^/]+)(?:/([^/]+))?$")
 _LOCATION_EVENTS_RE = re.compile(r"^/locations/([^/]+)/events$")
-_LOCATION_PROTOCOL_RE = re.compile(r"^/locations/([^/]+)/protocol/([^/]+)/\d{4}-\d{2}-\d{2}$")
+_LOCATION_PROTOCOL_RE = re.compile(r"^/locations/([^/]+)/protocol/([^/]+)/(\d{4}-\d{2}-\d{2})$")
 _LOCATION_RE = re.compile(r"^/locations/([^/]+)$")
 _SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
 
@@ -1368,6 +1368,58 @@ def is_known_path(raw_path: str) -> bool:
     return False
 
 
+def build_protocol_meta(payload: dict[str, Any]) -> PageMeta:
+    """Мета протокола: имя, номер и дата уже в payload.
+
+    Зеркало locationProtocolMeta в frontend/src/lib/pageMeta.ts — превью в
+    чате и заголовок вкладки обязаны совпадать.
+    """
+    name = str(payload.get("name") or "Локация")
+    number = payload.get("event_number")
+    event_date = payload.get("event_date")
+    day = ""
+    if event_date:
+        parsed = date.fromisoformat(str(event_date)) if not isinstance(event_date, date) else event_date
+        day = parsed.strftime("%d.%m.%Y")
+    platform = PLATFORM_LABELS.get(str(payload.get("platform_code") or ""), "")
+    summary = cast("dict[str, Any]", payload.get("summary") or {})
+    parts: list[str] = []
+    finishers = int(summary.get("finishers") or 0)
+    volunteers = int(summary.get("volunteers") or 0)
+    if finishers:
+        parts.append(f"{_num(finishers)} {_plural(finishers, 'финишёр', 'финишёра', 'финишёров')}")
+    if volunteers:
+        parts.append(f"{_num(volunteers)} {_plural(volunteers, 'волонтёр', 'волонтёра', 'волонтёров')}")
+    numbers = ", ".join(parts)
+    title_head = f"{name}{f' №{number}' if number else ''} — протокол {day}".strip()
+    description = f"Протокол старта {platform} «{name}» {day}".strip()
+    if numbers:
+        description += f": {numbers}"
+    description += ". Места по полу и возрастным группам, личные рекорды и дебютанты."
+    return _meta(f"{title_head} — {SITE_NAME}", description, indexable=True)
+
+
+def _protocol_body(payload: dict[str, Any]) -> str:
+    """Текст протокола для робота: заголовок и первая десятка финишёров."""
+    name = str(payload.get("name") or "")
+    number = payload.get("event_number")
+    lines = [f"    <h1>{escape(name)}{f' — протокол №{number}' if number else ' — протокол'}</h1>"]
+    rows = cast("list[dict[str, Any]]", payload.get("results") or [])
+    if rows:
+        lines.append("    <ol>")
+        for row in rows[:10]:
+            runner = escape(str(row.get("name") or "—"))
+            time_display = str(row.get("finish_time_display") or "")
+            lines.append(f"      <li>{runner} {escape(time_display)}</li>")
+        lines.append("    </ol>")
+    slug = str(payload.get("slug") or "")
+    lines.append(
+        f'    <p><a href="/locations/{escape(slug, quote=True)}/events">Журнал протоколов</a> · '
+        f'<a href="/locations/{escape(slug, quote=True)}">Страница локации</a></p>'
+    )
+    return "\n".join(lines)
+
+
 def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
     """(HTML, HTTP-код) для робота: мета-теги плюс настоящий текст страницы.
 
@@ -1387,6 +1439,40 @@ def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
         html = _render_profile(db, handle=profile_match.group(1), canonical=canonical)
         if html is not None:
             return html, 200
+
+    protocol_match = _LOCATION_PROTOCOL_RE.match(path)
+    if protocol_match:
+        from app.services.location_protocol_service import build_location_protocol
+
+        try:
+            protocol = build_location_protocol(
+                db,
+                protocol_match.group(1),
+                protocol_match.group(2),
+                date.fromisoformat(protocol_match.group(3)),
+            )
+        except Exception:  # noqa: BLE001 — робот получит 404, не 500
+            protocol = None
+        if protocol is not None:
+            # Своей OG-картинки у протокола нет — берём картинку локации:
+            # превью в чате с видом площадки лучше пустого.
+            return (
+                _render_html(
+                    meta=build_protocol_meta(protocol),
+                    canonical=canonical,
+                    body_html=_protocol_body(protocol),
+                    og_image_url=location_og_image_url(
+                        {
+                            "slug": protocol.get("slug"),
+                            # Версия превью — дата старта: кэш Telegram не
+                            # перепутает протоколы разных суббот.
+                            "stats": {"last_event_date": protocol.get("event_date")},
+                        }
+                    ),
+                ),
+                200,
+            )
+        return _not_found_page(canonical), 404
 
     events_match = _LOCATION_EVENTS_RE.match(path)
     location_match = _LOCATION_RE.match(path)

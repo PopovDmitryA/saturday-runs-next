@@ -232,11 +232,41 @@ def test_history_rank_spans_platforms(db_session: Session) -> None:
     row = payload["results"][0]
     assert row["history_rank"] == 2
     assert row["history_total"] == 2
+    # Вторая пробежка бегуна? Нет — первая: неделей раньше бежала легенда.
+    assert row["run_number"] == 1
+    # Рекорд группы устоял: 1050 медленнее прежних 1000 в М30-34.
+    assert row["is_age_group_record"] is False
 
-    # Соседние старты: у второго события предыдущее — первое.
+    # Соседние старты: у второго события предыдущее — первое, с его цифрами
+    # для дельт на плитках.
     assert payload["previous"] is not None
     assert payload["previous"]["event_number"] == 1
+    assert payload["previous"]["finishers"] == 1
     assert payload["next"] is None
+
+
+def test_run_number_and_age_group_record(db_session: Session) -> None:
+    """Номер пробежки в системе и отметка нового рекорда возрастной группы."""
+    five_verst = _platform(db_session, "five_verst", "5 вёрст")
+    location = _location(db_session, five_verst, "rec", "Рекордный")
+
+    old_event = _event(db_session, five_verst, location, date(2026, 8, 8), number=1)
+    veteran = _participant(db_session, five_verst, "vet", "Ветеран ГРУППЫ")
+    _result(db_session, old_event, veteran, position=1, finish_time_sec=1200, age_category="М40-44")
+
+    event = _event(db_session, five_verst, location, date(2026, 8, 15), number=2)
+    _result(db_session, event, veteran, position=1, finish_time_sec=1100, age_category="М40-44")
+    slower = _participant(db_session, five_verst, "slow", "Тоже БЫСТРЫЙ")
+    # Тоже быстрее прежнего рекорда 1200, но медленнее лучшего дня — рекорд
+    # достаётся только лучшему в группе.
+    _result(db_session, event, slower, position=2, finish_time_sec=1150, age_category="М40-44")
+
+    payload = _build(db_session, "proto-rec", "five_verst", date(2026, 8, 15))
+    rows = {row["name"]: row for row in payload["results"]}
+    assert rows["Ветеран ГРУППЫ"]["run_number"] == 2
+    assert rows["Ветеран ГРУППЫ"]["is_age_group_record"] is True
+    assert rows["Тоже БЫСТРЫЙ"]["run_number"] == 1
+    assert rows["Тоже БЫСТРЫЙ"]["is_age_group_record"] is False
 
 
 def test_volunteers_grouped_by_person(db_session: Session) -> None:

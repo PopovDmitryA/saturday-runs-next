@@ -512,6 +512,10 @@ class ProtocolNeighbourResponse(BaseModel):
     event_date: date
     event_number: int | None = None
     overall_number: int | None = None
+    # Цифры соседнего старта — для дельт «+37 к прошлому» на плитках.
+    finishers: int | None = None
+    volunteers: int | None = None
+    avg_time_sec: int | None = None
 
 
 class ProtocolClubResponse(BaseModel):
@@ -585,6 +589,10 @@ class ProtocolResultResponse(BaseModel):
     achievement_labels: list[str] = Field(default_factory=list)
     history_rank: int | None = None
     history_total: int | None = None
+    # Какая это пробежка по счёту у участника в своей системе.
+    run_number: int | None = None
+    # Результат обновил рекорд своей возрастной группы на площадке (только 5в).
+    is_age_group_record: bool = False
     is_me: bool = False
 
 

@@ -2312,6 +2312,10 @@ export type ProtocolNeighbour = {
   event_date: string;
   event_number: number | null;
   overall_number: number | null;
+  // Цифры соседнего старта — для дельт «+37 к прошлому» на плитках.
+  finishers: number | null;
+  volunteers: number | null;
+  avg_time_sec: number | null;
 };
 
 export type ProtocolClub = {
@@ -2385,6 +2389,10 @@ export type ProtocolResult = {
   achievement_labels: string[];
   history_rank: number | null;
   history_total: number | null;
+  // Какая это пробежка по счёту у участника в своей системе.
+  run_number: number | null;
+  // Результат обновил рекорд своей возрастной группы на площадке (только 5в).
+  is_age_group_record: boolean;
   is_me: boolean;
 };
 

@@ -213,7 +213,20 @@ function LastEventSection({ lastEvent, page }: { lastEvent: LocationLastEvent; p
         )}
       </div>
       <div className="loc-stats-grid">
-        <StatTile value={formatDate(lastEvent.event_date)} label={platformCodeLabel(lastEvent.platform_code)} />
+        <StatTile
+          value={formatDate(lastEvent.event_date)}
+          label={platformCodeLabel(lastEvent.platform_code)}
+          link={
+            // Финишёры посчитаны из строк протокола — значит, протокол у нас
+            // есть и на него можно провалиться.
+            lastEvent.finishers !== null
+              ? {
+                  href: `/locations/${encodeURIComponent(page.slug)}/protocol/${lastEvent.platform_code}/${lastEvent.event_date}`,
+                  label: "протокол →",
+                }
+              : undefined
+          }
+        />
         {lastEvent.finishers !== null && <StatTile value={lastEvent.finishers} label="финишей" />}
         {lastEvent.volunteers !== null && <StatTile value={lastEvent.volunteers} label="волонтёров" />}
         {newcomers !== null && (

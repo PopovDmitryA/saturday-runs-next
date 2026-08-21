@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+import re
 from bisect import bisect_left
 from collections import defaultdict
 from datetime import date
@@ -33,6 +34,7 @@ from typing import Any
 from uuid import UUID
 
 import redis
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.activity_url import resolve_activity_url
@@ -55,6 +57,7 @@ from app.services.gender_position_service import (
     gender_from_age_category,
 )
 from app.services.location_page_service import (
+    FIVE_VERST_PLATFORM_CODE,
     _age_group_sort_key,
     _dedupe_crosslinked_events,
     _gender_expression,
@@ -84,7 +87,7 @@ CLUBS_TOP_LIMIT = 10
 
 
 def location_protocol_cache_key(slug: str, platform_code: str, event_date: date) -> str:
-    return f"locations:protocol:v3:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
+    return f"locations:protocol:v4:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
 
 
 def invalidate_location_protocol_cache(slug: str, platform_code: str, event_date: date) -> None:
@@ -231,6 +234,8 @@ def _compute_location_protocol(
 
     results, gender_counts, club_counts = _build_results(db, event, event_platform_code)
     _attach_history_ranks(db, location_ids, results)
+    _attach_run_numbers(db, event, results)
+    _attach_age_group_records(db, event, event_platform_code, location_ids, results)
     volunteers = _build_volunteers(db, event, location_ids)
 
     summary_row = (
@@ -320,6 +325,10 @@ def _neighbour(item: dict[str, Any] | None) -> dict[str, Any] | None:
         "event_date": item.get("event_date"),
         "event_number": item.get("event_number"),
         "overall_number": item.get("overall_number"),
+        # Цифры соседнего старта — для дельт «+37 к прошлому» на плитках.
+        "finishers": item.get("finishers"),
+        "volunteers": item.get("volunteers"),
+        "avg_time_sec": item.get("avg_time_sec"),
     }
 
 
@@ -450,6 +459,7 @@ def _build_results(
         results.append(
             {
                 "position": result.position,
+                "participant_id": result.participant_id,
                 "name": row.display_name,
                 "external_user_id": row.external_user_id,
                 "profile_url": row.profile_url,
@@ -481,6 +491,8 @@ def _build_results(
                 "achievement_labels": list(result.achievement_labels or []),
                 "history_rank": None,
                 "history_total": None,
+                "run_number": None,
+                "is_age_group_record": False,
             }
         )
 
@@ -727,3 +739,99 @@ def _attach_history_ranks(
             continue
         row["history_rank"] = bisect_left(times, finish_time_sec) + 1
         row["history_total"] = len(times)
+
+
+def _attach_run_numbers(db: Session, event: Event, results: list[dict[str, Any]]) -> None:
+    """Какая это пробежка по счёту у участника — в своей системе.
+
+    Идентичность участника платформенная (Participant), поэтому счёт идёт по
+    всем стартам системы, не только по этой площадке. Тестовые события
+    исключены, как во всей витрине.
+    """
+    participant_ids = [row["participant_id"] for row in results if row["participant_id"]]
+    if not participant_ids:
+        return
+    prior = dict(
+        db.query(RunResult.participant_id, func.count())
+        .join(Event, RunResult.event_id == Event.id)
+        .filter(
+            RunResult.participant_id.in_(participant_ids),
+            Event.event_date < event.event_date,
+            Event.is_test_event.is_(False),
+        )
+        .group_by(RunResult.participant_id)
+        .all()
+    )
+    for row in results:
+        if row["participant_id"]:
+            row["run_number"] = prior.get(row["participant_id"], 0) + 1
+
+
+def _attach_age_group_records(
+    db: Session,
+    event: Event,
+    platform_code: str,
+    location_ids: list[UUID],
+    results: list[dict[str, Any]],
+) -> None:
+    """Отметить результаты, обновившие рекорд своей возрастной группы на площадке.
+
+    Только 5 вёрст — единственная система с возрастной категорией в протоколе
+    (то же ограничение, что у «Рекордов по возрастным группам» страницы
+    локации). Рекорд сравнивается с минимумом группы за всю историю площадки
+    ДО этого старта; из нескольких улучшивших в один день отмечается только
+    лучший — именно его время становится новым рекордом.
+    """
+    if platform_code != FIVE_VERST_PLATFORM_CODE:
+        return
+    candidates = [
+        row
+        for row in results
+        if row["age_category"] and row["finish_time_sec"] and row["gender"]
+    ]
+    if not candidates:
+        return
+
+    time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
+    prior_rows = (
+        db.query(RunResult.age_category, func.min(RunResult.finish_time_sec))
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .filter(
+            Event.location_id.in_(location_ids),
+            Event.event_date < event.event_date,
+            Event.is_test_event.is_(False),
+            Platform.code == FIVE_VERST_PLATFORM_CODE,
+            RunResult.age_category.isnot(None),
+            time_ok,
+        )
+        .group_by(RunResult.age_category)
+        .all()
+    )
+    # Сырые категории сводим к (пол, группа): «М40-44» и историческое «М40—44»
+    # должны попасть в один рекорд.
+    prior_min: dict[tuple[str, str], int] = {}
+    for raw_category, min_time in prior_rows:
+        group = normalize_age_group(raw_category)
+        gender = gender_from_age_category(FIVE_VERST_PLATFORM_CODE, raw_category)
+        if group and gender and min_time:
+            key = (gender, group)
+            if key not in prior_min or min_time < prior_min[key]:
+                prior_min[key] = int(min_time)
+
+    best_today: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in candidates:
+        # «М120»/«Ж110-114» — пометка участника без даты рождения, а не
+        # возрастная группа: показывать её показываем, но «рекордом группы»
+        # такой результат не считаем.
+        if any(int(number) >= 100 for number in re.findall(r"\d+", row["age_group"])):
+            continue
+        key = (row["gender"], row["age_group"])
+        current = best_today.get(key)
+        if current is None or row["finish_time_sec"] < current["finish_time_sec"]:
+            best_today[key] = row
+
+    for key, row in best_today.items():
+        prior = prior_min.get(key)
+        if prior is None or row["finish_time_sec"] < prior:
+            row["is_age_group_record"] = True

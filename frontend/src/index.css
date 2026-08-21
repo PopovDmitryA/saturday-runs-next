@@ -13342,6 +13342,14 @@ a.admin-system-chip:hover {
   width: 9.5rem;
 }
 
+.protocol-table .col-history {
+  width: 8.5rem;
+}
+
+.protocol-table .col-run-number {
+  width: 6.5rem;
+}
+
 .protocol-table .col-grade {
   width: 7.5rem;
 }
@@ -13355,7 +13363,7 @@ a.admin-system-chip:hover {
 }
 
 .protocol-table:not(.data-table-short) {
-  min-width: 54rem;
+  min-width: 68rem;
 }
 
 /* Строки «НЕИЗВЕСТНЫЙ» (бегун без штрихкода): приглушаем, чтобы не сливались
@@ -13432,18 +13440,32 @@ a.admin-system-chip:hover {
   font-size: 0.82rem;
 }
 
-/* Топ-10 в истории площадки — виден без наведения */
-.protocol-history-badge {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 0.4rem;
-  padding: 0.05rem 0.4rem;
-  border-radius: 999px;
-  background: #fef3c7;
-  color: #92400e;
-  font-size: 0.62rem;
+/* Топ-10 в истории площадки — жирным с медалькой, виден без наведения */
+.protocol-history-top {
   font-weight: 700;
-  white-space: nowrap;
+  color: var(--accent-amber-text, #d97706);
+}
+
+/* Дельта к прошлому старту на плитке: «+37» / «−12» */
+.protocol-delta {
+  margin-left: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  vertical-align: middle;
+  cursor: default;
+}
+
+.protocol-delta-up {
+  color: #16a34a;
+}
+
+.protocol-delta-down {
+  color: #dc2626;
+}
+
+.protocol-histogram-note {
+  margin: -0.25rem 0 0.6rem;
+  font-size: 0.85rem;
 }
 
 .protocol-place {
