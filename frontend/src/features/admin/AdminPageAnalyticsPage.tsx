@@ -312,10 +312,10 @@ function AdminPageAnalyticsContent() {
         <>
           {data.home_ab.length > 0 && (
             <section className="card">
-              <h2 className="section-title">Показы вариантов главной</h2>
+              <h2 className="section-title">Показы вариантов главной (архив АБ-теста)</h2>
               <p className="muted">
-                Сколько раз открылась главная каждого варианта АБ-теста и скольким посетителям.
-                Пишется с 27.07.2026 — за более ранние периоды будут нули.
+                Тест шёл 27.07–22.08.2026 и завершён: вариант B победил по конверсии в
+                регистрацию и стал единственной главной. За периоды вне теста блок пустой.
               </p>
               <div className="table-scroll">
                 <table className="data-table page-analytics-table">

@@ -1,49 +1,42 @@
-"""АБ-эксперименты: приём сырых событий с вариантом.
+"""Сырые продуктовые события в ab_events: приём и белые списки.
 
 Дополняет событийную аналитику страниц (page_analytics_service): та отвечает
-на «сколько смотрят страницы», эта — на «какой вариант страницы работает
-лучше». События пишутся в ab_events и анализируются SQL-запросами вручную
-(объём маленький, агрегатов и админки пока нет).
+на «сколько смотрят страницы», эта — на отдельные продуктовые вопросы, которые
+не сводятся к просмотрам. Сводки — в /admin/page-analytics.
 
-Ключевые договорённости:
-- visitor_key всегда анонимный ("a:<id>") и не меняется после логина — по нему
-  события одной воронки сшиваются сквозь VK-редирект (см. модель AbEvent);
-- login_complete классифицируется в когорты по возрасту аккаунта: свежий
-  аккаунт — «new» (регистрация, конверсия эксперимента), старый — «returning»
-  (вернувшийся разлогиненный участник, в конверсию НЕ входит).
+Таблица названа по своему первому жильцу — АБ-тесту главной (эксперимент
+home_v1, 27.07–22.08.2026). Тест завершён, вариант B принят как единственная
+главная, инструментовка эксперимента снята; сырые события остались в таблице,
+у новых событий главной variant = "-". Живых каналов сейчас два:
+- "home_v1" → home_link_click: куда главная уводит людей вглубь сайта;
+- "share" → воронка фичи «Поделиться» (variant у них тоже "-").
+
+visitor_key всегда анонимный ("a:<id>") и не меняется после логина — по нему
+действия одного человека сшиваются сквозь VK-редирект (см. модель AbEvent).
 """
 
 from __future__ import annotations
-
-from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
 from app.models import AbEvent, User
 
-# Известные эксперименты; чужие имена не пишем — мусор из ручных запросов.
-# "share" — не АБ-эксперимент, а нейтральный канал событий фичи «Поделиться»
-# (variant у них "-"): выборки шаринга не смешиваются с экспериментом главной.
+# Известные каналы; чужие имена не пишем — мусор из ручных запросов.
 KNOWN_EXPERIMENTS = frozenset({"home_v1", "share"})
 
 # Белый список типов событий (защита от мусора в свободном поле).
+#
+# Событий завершённого АБ-теста главной (variant_view, scroll_depth, cta_view,
+# cta_click, period, chart_tab, teaser_preview, login_complete) здесь больше
+# нет: фронт их не шлёт, а те, что ещё прилетят из давно открытых вкладок со
+# старым бандлом, должны молча отброситься, а не дописываться в закрытую
+# выборку.
 KNOWN_EVENT_TYPES = frozenset(
     {
-        # Показ варианта — один раз за просмотр главной. Знаменатель всего
-        # эксперимента: без него есть абсолютные числа кликов и логинов, но
-        # не конверсия, а сравнивать A и B можно только по ней.
-        "variant_view",
-        "scroll_depth",  # value: "25" | "50" | "75" | "100"
-        "chart_tab",  # value: ключ вкладки графика
-        "period",  # value: "all" | "year"
-        "cta_view",  # value: размещение CTA ("bottom", позже "hero", "week")
-        "cta_click",  # value: размещение CTA
         # Переход по внутренней ссылке главной: value — "location:<slug>" или
-        # "runner:<хендл>". Кроме самого эксперимента отвечает на вопрос
-        # «уводит ли главная людей вглубь сайта» (сводка в /admin/page-analytics).
+        # "runner:<хендл>". Отвечает на вопрос «уводит ли главная людей вглубь
+        # сайта» (сводка в /admin/page-analytics).
         "home_link_click",
-        "teaser_preview",  # value: код системы (тизер Т10, на будущее)
-        "login_complete",  # когорта считается на сервере
         # ── Канал "share" (фича «Поделиться», сводка в /admin/page-analytics) ──
         "share_moment_shown",  # value: "сюжет:вход" — показ области-приглашения
         "share_open",  # value: "сюжет:вход" — открытие шторки
@@ -53,19 +46,6 @@ KNOWN_EVENT_TYPES = frozenset(
         "og_preview_fetch",  # value: "тип:ключ" — бот развернул ссылку (пишет сервер)
     }
 )
-
-# Аккаунт моложе этого порога на момент login_complete = «логин создал
-# аккаунт», то есть регистрация. Старше — вернувшийся участник.
-NEW_USER_WINDOW = timedelta(hours=1)
-
-
-def classify_login_cohort(user: User, now: datetime | None = None) -> str:
-    moment = now or datetime.now(timezone.utc)
-    created = user.created_at
-    if created.tzinfo is None:
-        created = created.replace(tzinfo=timezone.utc)
-    return "new" if moment - created <= NEW_USER_WINDOW else "returning"
-
 
 def record_ab_event(
     db: Session,
@@ -78,19 +58,12 @@ def record_ab_event(
     path: str = "",
     viewer: User | None = None,
 ) -> AbEvent | None:
-    """Пишет событие эксперимента; неизвестное молча отбрасывает.
+    """Пишет событие; неизвестный канал или тип молча отбрасывает.
 
-    Возвращает записанное событие или None (отброшено). login_complete без
-    авторизованного пользователя не имеет смысла — тоже отбрасывается.
+    Возвращает записанное событие или None (отброшено).
     """
     if experiment not in KNOWN_EXPERIMENTS or event_type not in KNOWN_EVENT_TYPES:
         return None
-
-    cohort = ""
-    if event_type == "login_complete":
-        if viewer is None:
-            return None
-        cohort = classify_login_cohort(viewer)
 
     event = AbEvent(
         experiment=experiment,
@@ -99,7 +72,7 @@ def record_ab_event(
         event_type=event_type,
         value=value[:128],
         path=path[:256],
-        cohort=cohort,
+        cohort="",
         viewer_user_id=viewer.id if viewer is not None else None,
     )
     db.add(event)

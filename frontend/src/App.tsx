@@ -66,7 +66,6 @@ import {
   RenderOgUserPage,
 } from "./features/sharing/RenderOgPage";
 import { ShareSheetProvider } from "./features/sharing/ShareSheetContext";
-import { reportAbLoginOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
 import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
@@ -90,12 +89,7 @@ function useSitePageviewTracking(path: string) {
       }
     };
     getCurrentUser()
-      .then((user) => {
-        begin(true, user.id);
-        // АБ-воронка: первый авторизованный визит в этом браузере — событие
-        // login_complete (когорту new/returning определяет сервер).
-        reportAbLoginOnce(user.id);
-      })
+      .then((user) => begin(true, user.id))
       .catch(() => begin(false, undefined));
     return () => {
       cancelled = true;

@@ -1,11 +1,10 @@
 import { useState } from "react";
-import { trackAbEvent } from "../../lib/abTest";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { fetchPortalTeaser, PortalHomeError, type PortalTeaser } from "./portalTypes";
 import { formatInt } from "../../lib/format";
 
 /**
- * Тизер Т10 (вариант B): посетитель выбирает свою систему, вводит ID — и
+ * Тизер главной: посетитель выбирает свою систему, вводит ID — и
  * видит предпросмотр СВОЕЙ карточки на реальных данных из нашей БД. Полная
  * статистика — за регистрацией; тизер намеренно показывает только затравку.
  */
@@ -39,7 +38,6 @@ export function PortalTeaserCard() {
     }
     setLoading(true);
     setError(null);
-    trackAbEvent("teaser_preview", platform.code);
     fetchPortalTeaser(platform.code, cleaned)
       .then((result) => setTeaser(result))
       .catch((err) => {
@@ -124,11 +122,7 @@ export function PortalTeaserCard() {
             А ещё — рекорды по годам, серии суббот, карта визитов, встречи и вехи. Всё это уже
             посчитано и ждёт в кабинете.
           </p>
-          <a
-            className="btn primary"
-            href={PORTAL_LOGIN_HREF}
-            onClick={() => trackAbEvent("cta_click", "teaser")}
-          >
+          <a className="btn primary" href={PORTAL_LOGIN_HREF}>
             Увидеть свою полную статистику
           </a>
         </div>

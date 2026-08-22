@@ -1,13 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import {
-  getHomeVariant,
-  trackAbEvent,
-  trackHomeLinkClick,
-  useAbCtaView,
-  useAbScrollDepth,
-  useAbVariantView,
-} from "../../lib/abTest";
+import { trackHomeLinkClick } from "../../lib/abTest";
 import { cabinetTabHref, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { CountUpNumber } from "./CountUpNumber";
@@ -277,9 +270,6 @@ function GenderSplitPanel({ data }: { data: import("./portalTypes").PortalGender
 type ChartTabKey = "finishes" | "newcomers" | "records" | "locations";
 
 export function PortalHomePage() {
-  // Вариант АБ-эксперимента home_v1: B — новая главная (Т1–Т10), A — как было.
-  const isB = getHomeVariant() === "B";
-
   // CTA «Найти себя в статистике» раньше вёл на /login безусловно: залогиненный
   // на секунду видел вход, пока тот сам проверял сессию и уводил в кабинет.
   // Кэшированная (см. useOptionalUser) сессия сразу даёт правильный адрес.
@@ -289,34 +279,10 @@ export function PortalHomePage() {
 
   const [data, setData] = useState<PortalHomeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Т2 (вариант B): по умолчанию «Последний год» — его цифры можно примерить
-  // на себя, вечные итоги — абстракция.
-  const [period, setPeriod] = useState<"all" | "year">(isB ? "year" : "all");
+  // По умолчанию «Последний год» — его цифры можно примерить на себя,
+  // вечные итоги — абстракция.
+  const [period, setPeriod] = useState<"all" | "year">("year");
   const [chartTab, setChartTab] = useState<ChartTabKey>("finishes");
-
-  // АБ-аналитика главной: глубина скролла и видимость CTA (нижней и hero).
-  const ctaRef = useRef<HTMLElement | null>(null);
-  const heroCtaRef = useRef<HTMLDivElement | null>(null);
-  // Показ варианта — до загрузки данных: считаем всех, кто открыл страницу,
-  // а не только тех, у кого она успела дорисоваться.
-  useAbVariantView();
-  useAbScrollDepth(data !== null);
-  useAbCtaView(ctaRef, "bottom", data !== null);
-  useAbCtaView(heroCtaRef, "hero", isB && data !== null);
-
-  const selectPeriod = (next: "all" | "year") => {
-    if (next !== period) {
-      trackAbEvent("period", next);
-    }
-    setPeriod(next);
-  };
-
-  const selectChartTab = (next: ChartTabKey) => {
-    if (next !== chartTab) {
-      trackAbEvent("chart_tab", next);
-    }
-    setChartTab(next);
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -529,14 +495,14 @@ export function PortalHomePage() {
               <button
                 type="button"
                 className={period === "all" ? "active" : ""}
-                onClick={() => selectPeriod("all")}
+                onClick={() => setPeriod("all")}
               >
                 За всё время
               </button>
               <button
                 type="button"
                 className={period === "year" ? "active" : ""}
-                onClick={() => selectPeriod("year")}
+                onClick={() => setPeriod("year")}
               >
                 Последний год
               </button>
@@ -547,25 +513,25 @@ export function PortalHomePage() {
               <section className="portal-counts" aria-label="Итоги периода">
                 <div className="portal-count">
                   <b className="num">
-                    <CountUpNumber value={hero.finishes_total} format={formatInt} enabled={isB} />
+                    <CountUpNumber value={hero.finishes_total} format={formatInt} />
                   </b>
                   <span>финишей</span>
                 </div>
                 <div className="portal-count">
                   <b className="num">
-                    <CountUpNumber value={hero.participants_total} format={formatInt} enabled={isB} />
+                    <CountUpNumber value={hero.participants_total} format={formatInt} />
                   </b>
                   <span>участников</span>
                 </div>
                 <div className="portal-count">
                   <b className="num">
-                    <CountUpNumber value={hero.locations_total} format={formatInt} enabled={isB} />
+                    <CountUpNumber value={hero.locations_total} format={formatInt} />
                   </b>
                   <span>локаций</span>
                 </div>
                 <div className="portal-count">
                   <b className="num">
-                    <CountUpNumber value={hero.starts_total} format={formatInt} enabled={isB} />
+                    <CountUpNumber value={hero.starts_total} format={formatInt} />
                   </b>
                   <span>стартов</span>
                 </div>
@@ -592,7 +558,7 @@ export function PortalHomePage() {
                       role="tab"
                       aria-selected={tab.key === activeChart.key}
                       className={tab.key === activeChart.key ? "active" : ""}
-                      onClick={() => selectChartTab(tab.key)}
+                      onClick={() => setChartTab(tab.key)}
                     >
                       {tab.label}
                     </button>
@@ -625,31 +591,31 @@ export function PortalHomePage() {
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
-                      <CountUpNumber value={data.pulse.starts} format={formatInt} enabled={isB} />
+                      <CountUpNumber value={data.pulse.starts} format={formatInt} />
                     </b>{" "}
                     стартов
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
-                      <CountUpNumber value={data.pulse.finishes} format={formatInt} enabled={isB} />
+                      <CountUpNumber value={data.pulse.finishes} format={formatInt} />
                     </b>{" "}
                     финишей
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
-                      <CountUpNumber value={data.pulse.newcomers} format={formatInt} enabled={isB} />
+                      <CountUpNumber value={data.pulse.newcomers} format={formatInt} />
                     </b>{" "}
                     новичков
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
-                      <CountUpNumber value={data.pulse.volunteers} format={formatInt} enabled={isB} />
+                      <CountUpNumber value={data.pulse.volunteers} format={formatInt} />
                     </b>{" "}
                     волонтёров
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
-                      <CountUpNumber value={data.pulse.personal_records} format={formatInt} enabled={isB} />
+                      <CountUpNumber value={data.pulse.personal_records} format={formatInt} />
                     </b>{" "}
                     личных рекордов
                   </span>
@@ -850,45 +816,29 @@ export function PortalHomePage() {
           <>
             <section className="portal-hero">
               <p className="portal-eyebrow">Суббота · утро · парк · 5 км</p>
-              {isB ? (
-                <>
-                  {/* Т8: заголовок про посетителя, а не про сайт. */}
-                  <h1>Вся ваша беговая история — от первого старта до прошлой субботы</h1>
-                  <p className="portal-hero-lead">
-                    5 вёрст, S95, parkrun и RunPark: рекорды, серии суббот, карта визитов и
-                    встречи — уже посчитаны и ждут вас.
-                  </p>
-                  {/* Т6+Т7: CTA в верхней трети, текст про ценность; Т9: соц-доказательство. */}
-                  <div className="portal-hero-cta" ref={heroCtaRef}>
-                    <a
-                      className="btn primary"
-                      href={ctaHref}
-                      onClick={() => trackAbEvent("cta_click", "hero")}
-                    >
-                      {optionalUser != null ? "Открыть кабинет" : "Найти себя в статистике"}
-                    </a>
-                    {data.registered_parks > 0 && (
-                      <span className="portal-hero-proof">
-                        Участники из {formatInt(data.registered_parks)}{" "}
-                        {plural(data.registered_parks, "парка", "парков", "парков")} уже нашли здесь
-                        свою статистику
-                      </span>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <h1>Все парковые беговые системы — в цифрах</h1>
-                  <p className="portal-hero-lead">
-                    5 вёрст, S95, parkrun и RunPark: вся история — от первого старта до прошлой
-                    субботы, в одном месте.
-                  </p>
-                </>
-              )}
+              {/* Заголовок про посетителя, а не про сайт. */}
+              <h1>Вся ваша беговая история — от первого старта до прошлой субботы</h1>
+              <p className="portal-hero-lead">
+                5 вёрст, S95, parkrun и RunPark: рекорды, серии суббот, карта визитов и встречи —
+                уже посчитаны и ждут вас.
+              </p>
+              {/* CTA в верхней трети: главный источник регистраций по итогам АБ-теста. */}
+              <div className="portal-hero-cta">
+                <a className="btn primary" href={ctaHref}>
+                  {optionalUser != null ? "Открыть кабинет" : "Найти себя в статистике"}
+                </a>
+                {data.registered_parks > 0 && (
+                  <span className="portal-hero-proof">
+                    Участники из {formatInt(data.registered_parks)}{" "}
+                    {plural(data.registered_parks, "парка", "парков", "парков")} уже нашли здесь
+                    свою статистику
+                  </span>
+                )}
+              </div>
             </section>
 
-            {isB ? weekSection : scopeSection}
-            {isB ? scopeSection : weekSection}
+            {weekSection}
+            {scopeSection}
 
             <section className="portal-panel" aria-label="Рекорды посещаемости">
               <div className="portal-panel-head">
@@ -1066,174 +1016,23 @@ export function PortalHomePage() {
               )}
             </section>
 
-            <section className="portal-cta portal-cta-split" ref={ctaRef}>
+            <section className="portal-cta portal-cta-split">
               <div className="portal-cta-copy">
                 <h2>А теперь найдите здесь себя</h2>
-                {isB ? (
-                  <p>
-                    Выберите свою систему и введите ID — покажем предпросмотр вашей карточки
-                    прямо сейчас, без регистрации. Полная версия — рекорды, серии суббот, карта
-                    визитов и встречи — откроется после входа.
-                  </p>
-                ) : (
-                  <p>
-                    Привяжите профили беговых систем — и получите личную статистику по всем
-                    платформам: рекорды, серии суббот, карту визитов, встречи и вехи вашей беговой
-                    истории.
-                  </p>
-                )}
+                <p>
+                  Выберите свою систему и введите ID — покажем предпросмотр вашей карточки прямо
+                  сейчас, без регистрации. Полная версия — рекорды, серии суббот, карта визитов и
+                  встречи — откроется после входа.
+                </p>
                 <div className="portal-cta-actions">
-                  <a
-                    className="btn primary"
-                    href={ctaHref}
-                    onClick={() => trackAbEvent("cta_click", "bottom")}
-                  >
-                    {optionalUser != null
-                      ? "Открыть кабинет"
-                      : isB
-                        ? "Найти себя в статистике"
-                        : "Создать кабинет"}
+                  <a className="btn primary" href={ctaHref}>
+                    {optionalUser != null ? "Открыть кабинет" : "Найти себя в статистике"}
                   </a>
                 </div>
               </div>
 
-              {/* Т10 (вариант B): вместо примера карточки — живой предпросмотр по ID. */}
-              {isB ? (
-                <PortalTeaserCard />
-              ) : (
-              <div className="portal-poster" aria-hidden="true">
-                <div className="portal-poster-badge">пример вашей карточки</div>
-                <div className="portal-poster-head">
-                  <span className="portal-poster-avatar" />
-                  <div>
-                    <b>Ваше имя</b>
-                    <span>run5k.run · с апреля 2022</span>
-                  </div>
-                </div>
-
-                <div className="portal-poster-grid6">
-                  <div className="portal-poster-tile">
-                    <b className="num">312</b>
-                    <span>пробежек</span>
-                  </div>
-                  <div className="portal-poster-tile">
-                    <b className="num">21:47</b>
-                    <span>рекорд</span>
-                  </div>
-                  <div className="portal-poster-tile">
-                    <b className="num">18</b>
-                    <span>суббот подряд</span>
-                  </div>
-                  <div className="portal-poster-tile">
-                    <b className="num">46</b>
-                    <span>локаций</span>
-                  </div>
-                  <div className="portal-poster-tile">
-                    <b className="num">5:22</b>
-                    <span>темп/км</span>
-                  </div>
-                  <div className="portal-poster-tile">
-                    <b className="num">34</b>
-                    <span>волонтёрств</span>
-                  </div>
-                </div>
-
-                <div className="portal-poster-systems">
-                  <div className="portal-poster-sys-row">
-                    <b style={{ color: "var(--accent-green-text)" }}>5 вёрст</b>
-                    <span className="portal-poster-sys-track">
-                      <span
-                        className="portal-poster-sys-fill"
-                        style={{ width: "82%", background: "var(--accent-green-text)" }}
-                      />
-                    </span>
-                    <span className="num">228</span>
-                  </div>
-                  <div className="portal-poster-sys-row">
-                    <b style={{ color: "var(--link)" }}>S95</b>
-                    <span className="portal-poster-sys-track">
-                      <span
-                        className="portal-poster-sys-fill"
-                        style={{ width: "34%", background: "var(--link)" }}
-                      />
-                    </span>
-                    <span className="num">61</span>
-                  </div>
-                  <div className="portal-poster-sys-row">
-                    <b style={{ color: "var(--tint-violet-text)" }}>parkrun</b>
-                    <span className="portal-poster-sys-track">
-                      <span
-                        className="portal-poster-sys-fill"
-                        style={{ width: "14%", background: "var(--tint-violet-text)" }}
-                      />
-                    </span>
-                    <span className="num">23</span>
-                  </div>
-                </div>
-
-                <div className="portal-poster-row2">
-                  <div className="portal-poster-panel">
-                    <p className="portal-poster-panel-label">Финиши по годам</p>
-                    <svg
-                      className="portal-poster-spark"
-                      viewBox="0 0 220 44"
-                      preserveAspectRatio="none"
-                      aria-hidden="true"
-                    >
-                      <polyline
-                        points="0,38 25,32 50,28 75,16 100,20 125,10 150,4 175,8 200,2 220,6"
-                        fill="none"
-                        stroke="var(--accent-indigo)"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-                  <div className="portal-poster-panel">
-                    <p className="portal-poster-panel-label">Активность</p>
-                    <div className="portal-poster-heat">
-                      {Array.from({ length: 36 }).map((_, index) => (
-                        <i
-                          key={index}
-                          className={
-                            [1, 2, 5, 6, 8, 11, 12, 15, 18, 19, 22, 25, 28, 31, 33].includes(index)
-                              ? "on"
-                              : [3, 9, 16, 23, 30].includes(index)
-                                ? "vol"
-                                : ""
-                          }
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="portal-poster-panel">
-                  <p className="portal-poster-panel-label">Карта визитов · 12 регионов</p>
-                  <div className="portal-poster-map">
-                    <svg viewBox="0 0 460 96" aria-hidden="true">
-                      <circle cx="40" cy="62" r="5" fill="var(--accent-green-text)" />
-                      <circle cx="85" cy="34" r="4" fill="var(--accent-green-text)" />
-                      <circle cx="135" cy="54" r="6" fill="var(--accent-indigo)" />
-                      <circle cx="175" cy="26" r="4" fill="var(--link)" />
-                      <circle cx="215" cy="70" r="4" fill="var(--accent-green-text)" />
-                      <circle cx="260" cy="40" r="5" fill="var(--tint-violet-text)" />
-                      <circle cx="300" cy="58" r="4" fill="var(--accent-green-text)" />
-                      <circle cx="335" cy="30" r="4" fill="var(--accent-green-text)" />
-                      <circle cx="375" cy="54" r="3.5" fill="var(--link)" />
-                      <circle cx="415" cy="34" r="4" fill="var(--accent-green-text)" />
-                    </svg>
-                  </div>
-                </div>
-
-                <div className="portal-poster-foot">
-                  <span className="portal-poster-chip">🏅 Клуб 250</span>
-                  <span className="portal-poster-chip">🗺️ 12 регионов</span>
-                  <span className="portal-poster-chip">⚡ 8 PR</span>
-                </div>
-              </div>
-              )}
+              {/* Живой предпросмотр карточки по ID вместо статичного примера. */}
+              <PortalTeaserCard />
             </section>
           </>
         )}
