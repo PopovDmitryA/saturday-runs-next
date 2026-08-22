@@ -21,10 +21,12 @@ import {
   type ProfilePreview,
 } from "../lib/api";
 import {
+  COUNT_FORMS,
   formatDate,
   formatDateTime,
   platformCodeLabel,
   platformScanCode,
+  pluralizeRu,
   profileDataFreshnessLines,
 } from "../lib/format";
 import { platformProfileUrl } from "../lib/platformProfileUrl";
@@ -235,7 +237,7 @@ function PlatformCard({
           <p className="profile-platform-card-name">{linked.display_name ?? linked.external_user_id}</p>
           {stats && (
             <p className="profile-platform-card-stats muted">
-              {stats.runs} пробежек · {stats.volunteering} волонтёрств
+              {pluralizeRu(stats.runs, COUNT_FORMS.runs)} · {pluralizeRu(stats.volunteering, COUNT_FORMS.volunteering)}
             </p>
           )}
           {config.participantId && (() => {

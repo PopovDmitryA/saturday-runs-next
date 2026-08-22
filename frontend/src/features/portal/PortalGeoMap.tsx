@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { trackHomeLinkClick } from "../../lib/abTest";
+import { COUNT_FORMS, pluralizeRu } from "../../lib/format";
 import { addZoomControl } from "../../lib/mapZoomControl";
 import { PLATFORM_CHART_META } from "./PortalTrendChart";
 import type { PortalGeoPoint } from "./portalTypes";
@@ -107,7 +108,7 @@ export function PortalGeoMap({ points }: { points: PortalGeoPoint[] }) {
         fillOpacity: 0.5,
       })
         .bindPopup(
-          `${popupTitle(point)}<br>${point.starts.toLocaleString("ru-RU")} стартов`,
+          `${popupTitle(point)}<br>${pluralizeRu(point.starts, COUNT_FORMS.events)}`,
         )
         .addTo(map);
     }

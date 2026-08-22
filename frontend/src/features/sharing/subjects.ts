@@ -15,6 +15,7 @@ import type {
   VolunteeringItem,
 } from "../../lib/api";
 import {
+  COUNT_FORMS,
   formatDate,
   formatDuration,
   formatInt,
@@ -116,28 +117,25 @@ function pushMetric(
   }
 }
 
-// Подписи плиток и подписи под героем согласуются с числом над ними: «33
-// финишёра», а не «33 финишёров» (репорт Дмитрия 22.08.2026). Здесь только
-// те подписи, которые считают штуки; «всего волонтёрств parkrun» и подобные
-// заголовки — родительный падеж по смыслу, их число не склоняет.
-const FINISHER_FORMS = ["финишёр", "финишёра", "финишёров"] as const;
-const FINISH_FORMS = ["финиш", "финиша", "финишей"] as const;
-const RUN_FORMS = ["пробежка", "пробежки", "пробежек"] as const;
-const KM_FORMS = ["километр", "километра", "километров"] as const;
-const LOCATION_FORMS = ["локация", "локации", "локаций"] as const;
-const REGION_FORMS = ["регион", "региона", "регионов"] as const;
-const CITY_FORMS = ["город", "города", "городов"] as const;
-const EVENT_FORMS = ["старт", "старта", "стартов"] as const;
-const PARTICIPANT_FORMS = ["участник", "участника", "участников"] as const;
-const VOLUNTEER_FORMS = ["волонтёр", "волонтёра", "волонтёров"] as const;
-const VOLUNTEERING_FORMS = ["волонтёрство", "волонтёрства", "волонтёрств"] as const;
-const VOLUNTEER_ROLE_FORMS = ["роль волонтёра", "роли волонтёра", "ролей волонтёра"] as const;
-const PR_FORMS = ["личный рекорд", "личных рекорда", "личных рекордов"] as const;
-const NEWCOMER_FORMS = ["новичок", "новичка", "новичков"] as const;
-const SATURDAY_FORMS = ["суббота", "субботы", "суббот"] as const;
-const WIN_FORMS = ["победа", "победы", "побед"] as const;
-const FIRST_PLACE_FORMS = ["первое место", "первых места", "первых мест"] as const;
-const CLUB_FORMS = ["клуб", "клуба", "клубов"] as const;
+// Короткие имена для форм из общего словаря — чтобы вызовы читались.
+const FINISHER_FORMS = COUNT_FORMS.finishers;
+const FINISH_FORMS = COUNT_FORMS.finishes;
+const RUN_FORMS = COUNT_FORMS.runs;
+const KM_FORMS = COUNT_FORMS.kilometers;
+const LOCATION_FORMS = COUNT_FORMS.locations;
+const REGION_FORMS = COUNT_FORMS.regions;
+const CITY_FORMS = COUNT_FORMS.cities;
+const EVENT_FORMS = COUNT_FORMS.events;
+const PARTICIPANT_FORMS = COUNT_FORMS.participants;
+const VOLUNTEER_FORMS = COUNT_FORMS.volunteers;
+const VOLUNTEERING_FORMS = COUNT_FORMS.volunteering;
+const VOLUNTEER_ROLE_FORMS = COUNT_FORMS.volunteerRoles;
+const PR_FORMS = COUNT_FORMS.prs;
+const NEWCOMER_FORMS = COUNT_FORMS.newcomers;
+const SATURDAY_FORMS = COUNT_FORMS.saturdays;
+const WIN_FORMS = COUNT_FORMS.wins;
+const FIRST_PLACE_FORMS = COUNT_FORMS.firstPlaces;
+const CLUB_FORMS = COUNT_FORMS.clubs;
 
 /**
  * «Единица» рейтинга приходит из API родительным падежом — она же стоит
@@ -148,9 +146,9 @@ const CLUB_FORMS = ["клуб", "клуба", "клубов"] as const;
 const RATING_UNIT_FORMS: Record<string, readonly [string, string, string]> = {
   пробежек: RUN_FORMS,
   волонтёрств: VOLUNTEERING_FORMS,
-  ролей: ["роль", "роли", "ролей"],
+  ролей: COUNT_FORMS.roles,
   локаций: LOCATION_FORMS,
-  открытий: ["открытие", "открытия", "открытий"],
+  открытий: COUNT_FORMS.openings,
   городов: CITY_FORMS,
   регионов: REGION_FORMS,
   "первых мест": FIRST_PLACE_FORMS,
