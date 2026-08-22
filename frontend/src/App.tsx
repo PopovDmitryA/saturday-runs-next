@@ -66,6 +66,8 @@ import {
   RenderOgUserPage,
 } from "./features/sharing/RenderOgPage";
 import { ShareSheetProvider } from "./features/sharing/ShareSheetContext";
+import { TeaserClaimRunner } from "./features/portal/teaserClaim";
+import { reportAuthDoneOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
 import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
@@ -89,7 +91,12 @@ function useSitePageviewTracking(path: string) {
       }
     };
     getCurrentUser()
-      .then((user) => begin(true, user.id))
+      .then((user) => {
+        begin(true, user.id);
+        // Ступень воронки: вход завершён. Раз на пару (браузер, пользователь) —
+        // когорту new/returning ставит сервер по возрасту аккаунта.
+        reportAuthDoneOnce(user.id);
+      })
       .catch(() => begin(false, undefined));
     return () => {
       cancelled = true;
@@ -353,10 +360,14 @@ export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
   usePageMeta(path);
+  // Отложенная привязка из тизера главной: сработает на любой странице, куда
+  // провайдер вернул человека после входа, поэтому живёт на уровне App.
+  const viewer = useOptionalUser();
   // Шторка «Поделиться» доступна из любого раздела — провайдер на всё дерево.
   return (
     <ShareSheetProvider>
       {renderRoute(path)}
+      <TeaserClaimRunner userId={viewer?.id ?? null} />
       {/* Тап-подсказки на телефоне — один слой на весь сайт (см. TapTooltipLayer). */}
       <TapTooltipLayer />
     </ShareSheetProvider>

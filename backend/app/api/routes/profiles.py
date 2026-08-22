@@ -14,6 +14,8 @@ from app.models import User
 from app.platform_adapters.canonical import ProfilePreview
 from app.schemas.profiles import (
     PlatformLinkResponse,
+    ProfileClaimRequest,
+    ProfileClaimResponse,
     ProfileLinkConfirmResponse,
     ProfilePreviewResponse,
     ProfileUnlinkResponse,
@@ -24,6 +26,7 @@ from app.schemas.profiles import (
 )
 from app.services.profile_linking_service import (
     ProfileLinkingError,
+    claim_profile_by_athlete_id,
     confirm_profile_link,
     confirm_s95_profile_link,
     list_user_profile_links,
@@ -309,3 +312,46 @@ def unlink_profile(
     except ProfileLinkingError as exc:
         raise _handle_linking_error(exc) from exc
     return ProfileUnlinkResponse.model_validate(payload)
+
+
+@router.post("/claim", response_model=ProfileClaimResponse)
+async def claim_profile(
+    request: Request,
+    body: ProfileClaimRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ProfileClaimResponse | Response:
+    """Досылка привязки после входа: человек ввёл ID в тизере ДО регистрации.
+
+    Один вызов вместо пары «предпросмотр → подтверждение»: своё имя и свои
+    цифры человек уже видел в тизере на главной, повторно подтверждать нечего.
+    Внутри всё те же проверки, что и в ручной привязке, включая «этот профиль
+    уже привязан к другому аккаунту».
+    """
+    try:
+        outcome = await _run_with_cancel(
+            request,
+            claim_profile_by_athlete_id,
+            db,
+            user,
+            body.platform_code,
+            body.athlete_id,
+        )
+    except ProfileLinkingError as exc:
+        raise _handle_linking_error(exc) from exc
+
+    if outcome is None:
+        # Клиент отвалился на середине внешнего фетча — как в остальных ручках.
+        return Response(status_code=499)
+
+    status, link = outcome
+    if link is None:
+        return ProfileClaimResponse(status=status, platform_code=body.platform_code)
+
+    links = list_user_profile_links(db, user)
+    link_data = next(item for item in links if item["id"] == link.id)
+    return ProfileClaimResponse(
+        status=status,
+        platform_code=body.platform_code,
+        link=PlatformLinkResponse.model_validate(link_data),
+    )

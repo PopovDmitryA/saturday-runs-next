@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { trackHomeLinkClick } from "../../lib/abTest";
+import { trackCtaClick, trackHomeLinkClick, useFunnelHomeView } from "../../lib/abTest";
 import { cabinetTabHref, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { CountUpNumber } from "./CountUpNumber";
@@ -276,6 +276,9 @@ export function PortalHomePage() {
   const optionalUser = useOptionalUser();
   const ctaHref =
     optionalUser != null ? cabinetTabHref(optionalUser, "dashboard") : PORTAL_LOGIN_HREF;
+
+  // Знаменатель воронки регистрации — до загрузки данных, см. useFunnelHomeView.
+  useFunnelHomeView();
 
   const [data, setData] = useState<PortalHomeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -824,7 +827,11 @@ export function PortalHomePage() {
               </p>
               {/* CTA в верхней трети: главный источник регистраций по итогам АБ-теста. */}
               <div className="portal-hero-cta">
-                <a className="btn primary" href={ctaHref}>
+                <a
+                  className="btn primary"
+                  href={ctaHref}
+                  onClick={() => trackCtaClick("hero")}
+                >
                   {optionalUser != null ? "Открыть кабинет" : "Найти себя в статистике"}
                 </a>
                 {data.registered_parks > 0 && (
@@ -1025,7 +1032,11 @@ export function PortalHomePage() {
                   встречи — откроется после входа.
                 </p>
                 <div className="portal-cta-actions">
-                  <a className="btn primary" href={ctaHref}>
+                  <a
+                    className="btn primary"
+                    href={ctaHref}
+                    onClick={() => trackCtaClick("bottom")}
+                  >
                     {optionalUser != null ? "Открыть кабинет" : "Найти себя в статистике"}
                   </a>
                 </div>

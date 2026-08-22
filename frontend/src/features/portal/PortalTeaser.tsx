@@ -1,12 +1,19 @@
 import { useState } from "react";
+import { trackCtaClick } from "../../lib/abTest";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { fetchPortalTeaser, PortalHomeError, type PortalTeaser } from "./portalTypes";
 import { formatInt } from "../../lib/format";
+import { rememberTeaserClaim } from "./teaserClaim";
 
 /**
  * Тизер главной: посетитель выбирает свою систему, вводит ID — и
  * видит предпросмотр СВОЕЙ карточки на реальных данных из нашей БД. Полная
  * статистика — за регистрацией; тизер намеренно показывает только затравку.
+ *
+ * Кнопка под предпросмотром не просто ведёт на вход: введённый ID переживает
+ * редирект к провайдеру и после регистрации сам превращается в привязку
+ * профиля (см. teaserClaim). Иначе человек, только что посмотревший на свои
+ * цифры, попадал бы в пустой кабинет и вводил тот же ID заново.
  */
 
 const TEASER_PLATFORMS: { code: string; title: string; hint: string }[] = [
@@ -122,9 +129,19 @@ export function PortalTeaserCard() {
             А ещё — рекорды по годам, серии суббот, карта визитов, встречи и вехи. Всё это уже
             посчитано и ждёт в кабинете.
           </p>
-          <a className="btn primary" href={PORTAL_LOGIN_HREF}>
-            Увидеть свою полную статистику
+          <a
+            className="btn primary"
+            href={PORTAL_LOGIN_HREF}
+            onClick={() => {
+              rememberTeaserClaim(platform.code, athleteId.trim(), platform.title);
+              trackCtaClick("teaser");
+            }}
+          >
+            Сохранить в кабинет
           </a>
+          <p className="portal-teaser-note">
+            Войдите — и профиль {platform.title} привяжется сам, вводить ID заново не придётся.
+          </p>
         </div>
       )}
     </div>

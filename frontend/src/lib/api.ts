@@ -741,6 +741,23 @@ export function confirmFiveVerstProfile(profileUrl: string) {
   });
 }
 
+export type ProfileClaimResult = {
+  status: "linked" | "already_linked";
+  platform_code: string;
+  link: PlatformLink | null;
+};
+
+/**
+ * Досылка привязки по ID, введённому в тизере главной до регистрации:
+ * предпросмотр и подтверждение делает сервер одним вызовом (см. Т1).
+ */
+export function claimProfileByAthleteId(platformCode: string, athleteId: string) {
+  return apiFetch<ProfileClaimResult>("/profiles/claim", {
+    method: "POST",
+    body: JSON.stringify({ platform_code: platformCode, athlete_id: athleteId }),
+  });
+}
+
 export function previewS95Profile(profileUrl: string, signal?: AbortSignal) {
   return apiFetch<ProfilePreview>("/profiles/s95/preview", {
     method: "POST",
@@ -3185,10 +3202,18 @@ export type OgFetchRow = {
   bots: number;
 };
 
+export type FunnelStepStats = {
+  step: string;
+  visitors: number;
+  pct_of_start: number | null;
+  pct_of_prev: number | null;
+};
+
 export type PageAnalyticsResponse = {
   date_from: string;
   date_to: string;
   generated_at: string;
+  funnel: FunnelStepStats[];
   home_ab: HomeAbVariantStats[];
   home_links: HomeLinkClickStats[];
   share: ShareStats;

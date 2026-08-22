@@ -2930,6 +2930,15 @@
   font-size: 13.5px;
 }
 
+/* Обещание под кнопкой: что именно случится после входа. Мельче подводки —
+   это сноска к действию, а не второй абзац текста. */
+.portal-teaser-note {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 @media (max-width: 560px) {
   .portal-teaser-grid {
     grid-template-columns: 1fr;

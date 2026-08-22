@@ -219,6 +219,13 @@ class OgFetchRow(BaseModel):
     bots: int
 
 
+class FunnelStepStats(BaseModel):
+    step: str
+    visitors: int
+    pct_of_start: float | None = None
+    pct_of_prev: float | None = None
+
+
 class PageAnalyticsResponse(BaseModel):
     # Границы включительно; сервер отдаёт их разрешёнными (в т.ч. когда клиент
     # прислал period_days), чтобы UI показывал ровно то, что посчитано.
@@ -226,6 +233,7 @@ class PageAnalyticsResponse(BaseModel):
     date_to: date
     generated_at: datetime
     sections: list[PageAnalyticsSection]
+    funnel: list[FunnelStepStats] = Field(default_factory=list)
     home_ab: list[HomeAbVariantStats] = Field(default_factory=list)
     home_links: list[HomeLinkClickStats] = Field(default_factory=list)
     share: ShareStats = Field(default_factory=ShareStats)

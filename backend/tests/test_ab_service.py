@@ -81,10 +81,12 @@ def test_record_ab_event_rejects_unknown_experiment_and_type(db_session: Session
     ["variant_view", "scroll_depth", "cta_view", "cta_click", "period", "chart_tab", "login_complete"],
 )
 def test_finished_experiment_events_are_rejected(db_session: Session, event_type: str) -> None:
-    """АБ-тест главной завершён: его события больше не принимаем.
+    """АБ-тест главной завершён: его события больше не принимаем в канал home_v1.
 
     Вкладки со старым бандлом могут слать их ещё долго — такие запросы должны
-    молча отбрасываться, а не дописываться в закрытую выборку теста.
+    молча отбрасываться, а не дописываться в закрытую выборку теста. Отдельно
+    важен cta_click: имя переиспользовано счётчиком воронки, и без разбора по
+    каналам он бы приземлился в home_v1.
     """
     before = db_session.query(AbEvent).count()
     assert (
