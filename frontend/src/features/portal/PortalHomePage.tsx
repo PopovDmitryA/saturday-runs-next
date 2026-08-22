@@ -1031,8 +1031,142 @@ export function PortalHomePage() {
                 </div>
               </div>
 
-              {/* Живой предпросмотр карточки по ID вместо статичного примера. */}
+              {/* Живой предпросмотр по ID: затравка на реальных данных. */}
               <PortalTeaserCard />
+
+              {/* А это уже макет самого кабинета — что откроется после входа. */}
+              <div className="portal-poster" aria-hidden="true">
+                <div className="portal-poster-badge">так выглядит кабинет</div>
+                <div className="portal-poster-head">
+                  <span className="portal-poster-avatar" />
+                  <div>
+                    <b>Ваше имя</b>
+                    <span>run5k.run · с апреля 2022</span>
+                  </div>
+                </div>
+
+                <div className="portal-poster-grid6">
+                  <div className="portal-poster-tile">
+                    <b className="num">312</b>
+                    <span>пробежек</span>
+                  </div>
+                  <div className="portal-poster-tile">
+                    <b className="num">21:47</b>
+                    <span>рекорд</span>
+                  </div>
+                  <div className="portal-poster-tile">
+                    <b className="num">18</b>
+                    <span>суббот подряд</span>
+                  </div>
+                  <div className="portal-poster-tile">
+                    <b className="num">46</b>
+                    <span>локаций</span>
+                  </div>
+                  <div className="portal-poster-tile">
+                    <b className="num">5:22</b>
+                    <span>темп/км</span>
+                  </div>
+                  <div className="portal-poster-tile">
+                    <b className="num">34</b>
+                    <span>волонтёрств</span>
+                  </div>
+                </div>
+
+                <div className="portal-poster-systems">
+                  <div className="portal-poster-sys-row">
+                    <b style={{ color: "var(--accent-green-text)" }}>5 вёрст</b>
+                    <span className="portal-poster-sys-track">
+                      <span
+                        className="portal-poster-sys-fill"
+                        style={{ width: "82%", background: "var(--accent-green-text)" }}
+                      />
+                    </span>
+                    <span className="num">228</span>
+                  </div>
+                  <div className="portal-poster-sys-row">
+                    <b style={{ color: "var(--link)" }}>S95</b>
+                    <span className="portal-poster-sys-track">
+                      <span
+                        className="portal-poster-sys-fill"
+                        style={{ width: "34%", background: "var(--link)" }}
+                      />
+                    </span>
+                    <span className="num">61</span>
+                  </div>
+                  <div className="portal-poster-sys-row">
+                    <b style={{ color: "var(--tint-violet-text)" }}>parkrun</b>
+                    <span className="portal-poster-sys-track">
+                      <span
+                        className="portal-poster-sys-fill"
+                        style={{ width: "14%", background: "var(--tint-violet-text)" }}
+                      />
+                    </span>
+                    <span className="num">23</span>
+                  </div>
+                </div>
+
+                <div className="portal-poster-row2">
+                  <div className="portal-poster-panel">
+                    <p className="portal-poster-panel-label">Финиши по годам</p>
+                    <svg
+                      className="portal-poster-spark"
+                      viewBox="0 0 220 44"
+                      preserveAspectRatio="none"
+                      aria-hidden="true"
+                    >
+                      <polyline
+                        points="0,38 25,32 50,28 75,16 100,20 125,10 150,4 175,8 200,2 220,6"
+                        fill="none"
+                        stroke="var(--accent-indigo)"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
+                  <div className="portal-poster-panel">
+                    <p className="portal-poster-panel-label">Активность</p>
+                    <div className="portal-poster-heat">
+                      {Array.from({ length: 36 }).map((_, index) => (
+                        <i
+                          key={index}
+                          className={
+                            [1, 2, 5, 6, 8, 11, 12, 15, 18, 19, 22, 25, 28, 31, 33].includes(index)
+                              ? "on"
+                              : [3, 9, 16, 23, 30].includes(index)
+                                ? "vol"
+                                : ""
+                          }
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="portal-poster-panel">
+                  <p className="portal-poster-panel-label">Карта визитов · 12 регионов</p>
+                  <div className="portal-poster-map">
+                    <svg viewBox="0 0 460 96" aria-hidden="true">
+                      <circle cx="40" cy="62" r="5" fill="var(--accent-green-text)" />
+                      <circle cx="85" cy="34" r="4" fill="var(--accent-green-text)" />
+                      <circle cx="135" cy="54" r="6" fill="var(--accent-indigo)" />
+                      <circle cx="175" cy="26" r="4" fill="var(--link)" />
+                      <circle cx="215" cy="70" r="4" fill="var(--accent-green-text)" />
+                      <circle cx="260" cy="40" r="5" fill="var(--tint-violet-text)" />
+                      <circle cx="300" cy="58" r="4" fill="var(--accent-green-text)" />
+                      <circle cx="335" cy="30" r="4" fill="var(--accent-green-text)" />
+                      <circle cx="375" cy="54" r="3.5" fill="var(--link)" />
+                      <circle cx="415" cy="34" r="4" fill="var(--accent-green-text)" />
+                    </svg>
+                  </div>
+                </div>
+
+                <div className="portal-poster-foot">
+                  <span className="portal-poster-chip">🏅 Клуб 250</span>
+                  <span className="portal-poster-chip">🗺️ 12 регионов</span>
+                  <span className="portal-poster-chip">⚡ 8 PR</span>
+                </div>
+              </div>
             </section>
           </>
         )}
