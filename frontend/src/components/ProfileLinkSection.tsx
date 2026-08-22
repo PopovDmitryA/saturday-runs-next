@@ -3,7 +3,6 @@ import { ConfirmModal } from "./ConfirmModal";
 import { PlatformBadge } from "./PlatformBadge";
 import { QrCodeModal } from "./QrCodeModal";
 import { Snackbar } from "./Snackbar";
-import { useOptionalUser } from "../lib/useOptionalUser";
 import {
   ApiError,
   confirmFiveVerstProfile,
@@ -182,7 +181,6 @@ type PlatformSpoilerProps = {
   onUnlink: () => void;
   onSyncRequest: () => void;
   onShowQr: () => void;
-  canShowQr: boolean;
   previewBlockRef?: (el: HTMLDivElement | null) => void;
 };
 
@@ -201,15 +199,14 @@ function PlatformCard({
   onUnlink,
   onSyncRequest,
   onShowQr,
-  canShowQr,
   previewBlockRef,
 }: PlatformSpoilerProps) {
   // Форма привязки раскрывается по кнопке внутри карточки (вместо спойлера).
   const [expanded, setExpanded] = useState(false);
   const skipParkrunLookup = config.code === "s95" && parkrunLinked;
-  // Фича на обкатке — до проверки на реальных стартах видна только админу
-  // (см. feedback пользователя). Штрихкод как текст уже виден всем ниже.
-  const scanCode = linked && canShowQr
+  // Код берётся из привязки: штрихкод системы, а для 5 вёрст — «A» + номер
+  // участника. Кнопки нет, пока привязки нет или код из неё не собирается.
+  const scanCode = linked
     ? platformScanCode(config.code, linked.barcode_id, linked.external_user_id)
     : null;
 
@@ -498,10 +495,6 @@ type ProfileLinkSectionProps = {
 };
 
 export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLinkSectionProps) {
-  // QR-коды систем — на обкатке, до проверки на реальных стартах видны
-  // только админу (см. platformScanCode/canShowQr в PlatformCard).
-  const currentUser = useOptionalUser();
-  const canShowQr = currentUser?.is_admin === true;
   const [links, setLinks] = useState<PlatformLink[]>([]);
   const [loadingLinks, setLoadingLinks] = useState(true);
   const [forms, setForms] = useState<Record<string, PlatformFormState>>(() =>
@@ -832,9 +825,8 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLi
                 onProfileUrlChange={(value) =>
                   updateForm(config.code, { profileUrl: value, formError: null })
                 }
-                canShowQr={canShowQr}
                 onShowQr={() => {
-                  const code = linked && canShowQr
+                  const code = linked
                     ? platformScanCode(config.code, linked.barcode_id, linked.external_user_id)
                     : null;
                   if (code) {
