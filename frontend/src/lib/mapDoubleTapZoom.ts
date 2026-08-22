@@ -14,7 +14,50 @@ import L from "leaflet";
  * Пока жест идёт, `zoomSnap` временно ставим в 0: иначе Leaflet округляет зум
  * до целого, и вместо плавного приближения выходят рывки через уровень. После
  * жеста снап возвращается — кнопки «+/−» снова ходят по целым уровням.
+ *
+ * Двигаем карту тем же способом, что и штатный щипок Leaflet: `_move` с флагом
+ * `pinch`. Флаг доходит до слоя тайлов, и тот НЕ пересобирает сетку — только
+ * пересчитывает CSS-трансформ уже загруженных тайлов. Картинка плавно тянется,
+ * новые тайлы приезжают один раз, когда палец отпущен.
+ *
+ * Раньше на каждом кадре звался `setZoomAround`, а он гонит полный `_resetView`:
+ * тайлы выбрасывались и запрашивались заново по нескольку раз за жест, и в
+ * прорехах мигала подложка карты (репорт Дмитрия 22.08.2026).
  */
+
+/**
+ * Внутренности Leaflet, которых нет в его тайпингах. Это ровно те же вызовы, из
+ * которых собран его собственный обработчик щипка (`Map.TouchZoom`), — публичного
+ * способа «подвигать карту без перезагрузки тайлов» в API нет.
+ */
+type LeafletMapInternals = {
+  _moveStart(zoomChanged: boolean, noMoveStart: boolean): unknown;
+  _move(
+    center: L.LatLng,
+    zoom: number,
+    data?: { pinch?: boolean; round?: boolean },
+    suppressEvent?: boolean,
+  ): unknown;
+  _limitZoom(zoom: number): number;
+  _animateZoom(center: L.LatLng, zoom: number, startAnim: boolean, noUpdate?: unknown): void;
+  _resetView(center: L.LatLng, zoom: number): void;
+};
+
+function internals(map: L.Map): LeafletMapInternals {
+  return map as unknown as L.Map & LeafletMapInternals;
+}
+
+/**
+ * Центр, при котором точка `anchor` останется под пальцем на новом зуме, — та
+ * же арифметика, что внутри `Map.setZoomAround`.
+ */
+function centerKeepingAnchor(map: L.Map, anchor: L.LatLng, zoom: number): L.LatLng {
+  const scale = map.getZoomScale(zoom);
+  const viewHalf = map.getSize().divideBy(2);
+  const anchorPoint = map.latLngToContainerPoint(anchor);
+  const offset = anchorPoint.subtract(viewHalf).multiplyBy(1 - 1 / scale);
+  return map.containerPointToLatLng(viewHalf.add(offset));
+}
 
 /** Второй тап должен начаться не позже этого срока после первого. */
 const DOUBLE_TAP_MS = 320;
@@ -44,6 +87,11 @@ export function addDoubleTapDragZoom(map: L.Map): () => void {
   let startZoom = 0;
   let anchor: L.LatLng | null = null;
   let lastMoveAt = 0;
+  // Карту начали двигать (был хотя бы один кадр жеста) — значит, в конце её
+  // нужно «посадить»: подгрузить тайлы под итоговый масштаб.
+  let moved = false;
+  let lastCenter: L.LatLng | null = null;
+  let lastZoom = 0;
   let snapBeforeGesture = map.options.zoomSnap;
   let dragWasEnabled = false;
   let doubleClickWasEnabled = false;
@@ -54,6 +102,20 @@ export function addDoubleTapDragZoom(map: L.Map): () => void {
     }
     active = false;
     anchor = null;
+    // Садимся на итоговый масштаб ДО возврата снапа: с zoomSnap = 0 Leaflet
+    // оставит дробный зум, на котором жест и закончился, и не дёрнет карту на
+    // целый уровень. Дальше тайлы догружаются один раз — это и есть та самая
+    // единственная перерисовка за весь жест.
+    if (moved && lastCenter !== null) {
+      const settleZoom = internals(map)._limitZoom(lastZoom);
+      if (map.options.zoomAnimation) {
+        internals(map)._animateZoom(lastCenter, settleZoom, true, map.options.zoomSnap);
+      } else {
+        internals(map)._resetView(lastCenter, settleZoom);
+      }
+    }
+    moved = false;
+    lastCenter = null;
     map.options.zoomSnap = snapBeforeGesture;
     if (dragWasEnabled) {
       map.dragging.enable();
@@ -107,6 +169,9 @@ export function addDoubleTapDragZoom(map: L.Map): () => void {
     map.dragging.disable();
     map.doubleClickZoom.disable();
     lastMoveAt = 0;
+    moved = false;
+    lastCenter = null;
+    lastZoom = startZoom;
     event.preventDefault();
   };
 
@@ -135,7 +200,14 @@ export function addDoubleTapDragZoom(map: L.Map): () => void {
     if (Math.abs(zoom - map.getZoom()) < 0.01) {
       return;
     }
-    map.setZoomAround(anchor, zoom, { animate: false });
+    const center = centerKeepingAnchor(map, anchor, zoom);
+    if (!moved) {
+      internals(map)._moveStart(true, false);
+      moved = true;
+    }
+    lastCenter = center;
+    lastZoom = zoom;
+    internals(map)._move(center, zoom, { pinch: true, round: false });
   };
 
   const onTouchEnd = () => {
