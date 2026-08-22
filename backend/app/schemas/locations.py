@@ -473,6 +473,44 @@ class LocationHomeDistanceResponse(BaseModel):
     home_is_auto: bool = True
 
 
+class MapPointNextStartResponse(BaseModel):
+    """Прогноз ближайшего старта площадки в одной системе — для попапа карты."""
+
+    platform_code: str
+    number: int
+    date: date
+    # Сколько недель откручено от последнего известного старта: 1 — площадка
+    # идёт вровень, больше — она пропускала субботы, и прогноз тем шатче.
+    weeks_ahead: int = 1
+    # Какой «Нумератор» закрывает этот номер. None — номер вне обоих диапазонов.
+    challenge_code: str | None = None
+    challenge_title: str | None = None
+    # Даст ли старт +1: в сквозном зачёте челленджа и внутри своей системы.
+    # None — аноним либо номер вне диапазонов: считать нечего.
+    plus_one_overall: bool | None = None
+    plus_one_platform: bool | None = None
+
+
+class MapPointContextResponse(BaseModel):
+    """Личный контекст точки карты: он грузится по клику, а не пачкой со всей
+    картой, — на карте каталога три тысячи точек."""
+
+    identity_key: str
+    authenticated: bool = False
+    next_starts: list[MapPointNextStartResponse] = Field(default_factory=list)
+    home_distance: LocationHomeDistanceResponse | None = None
+
+
+class MapGeoPingRequest(BaseModel):
+    """Огрублённая отметка положения с карты. Координаты фронт присылает уже
+    округлёнными до двух знаков — сервер округляет их ещё раз."""
+
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    # Погрешность определения в метрах, как её отдал браузер.
+    accuracy_m: float | None = Field(default=None, ge=0)
+
+
 class LocationPersonalStatsResponse(BaseModel):
     """Личная статистика пользователя на локации (блок «Вы на этой локации»)."""
 

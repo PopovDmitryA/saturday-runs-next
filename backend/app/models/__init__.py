@@ -1282,6 +1282,43 @@ class PageViewEvent(Base):
     duration_sec: Mapped[int | None] = mapped_column(Integer)
 
 
+class UserGeoPing(Base):
+    """Огрублённая отметка «где был участник, когда открывал карту».
+
+    Пишется, только если человек сам разрешил браузеру определять положение
+    (карта показывает ему точку «вы здесь»), и не чаще одной строки в сутки —
+    это держит уникальная пара user_id + observed_on.
+
+    Точные координаты сюда не попадают: широта и долгота приходят с фронта уже
+    округлёнными до двух знаков и округляются ещё раз на сервере — клетка
+    примерно километр на километр. На таком масштабе видно город и район, но не
+    дом и не работу, а нужны отметки ровно для двух вопросов: где есть участники
+    без площадки поблизости и верно ли сайт угадывает домашнюю локацию.
+    """
+
+    __tablename__ = "user_geo_pings"
+    __table_args__ = (
+        UniqueConstraint("user_id", "observed_on", name="uq_user_geo_pings_user_day"),
+        Index("ix_user_geo_pings_observed_on", "observed_on"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    observed_on: Mapped[date] = mapped_column(Date, nullable=False)
+    latitude: Mapped[float] = mapped_column(nullable=False)
+    longitude: Mapped[float] = mapped_column(nullable=False)
+    # Погрешность определения в метрах: у вышек и Wi-Fi она в километрах, и при
+    # разборе такие отметки стоит отличать от честного GPS.
+    accuracy_m: Mapped[int | None] = mapped_column(Integer)
+    nearest_identity_key: Mapped[str | None] = mapped_column(String(128))
+    nearest_distance_km: Mapped[float | None] = mapped_column()
+    # Домашняя локация на момент отметки — она может смениться, поэтому храним,
+    # а не вычисляем задним числом.
+    home_identity_key: Mapped[str | None] = mapped_column(String(128))
+    home_distance_km: Mapped[float | None] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class LoginEvent(Base):
     """Журнал входов и выходов: по строке на каждый логин и на каждый разлогин.
 

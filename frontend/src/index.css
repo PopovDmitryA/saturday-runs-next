@@ -4096,16 +4096,97 @@ button.badge-platform-btn:hover {
   transition: background 0.15s, color 0.15s;
 }
 
-/* Зум-кнопки живут в правом верхнем углу (см. lib/mapZoomControl.ts), там же —
-   кнопка фуллскрина. Где она есть, сдвигаем зум левее неё: 0.6rem отступ +
-   2rem кнопка + зазор. Высоту не трогаем — обе группы кнопок в одном ряду. */
-.location-map-shell:has(.location-map-fullscreen-btn) .leaflet-top.leaflet-right .leaflet-control-zoom {
-  margin-right: 2.9rem;
+/* Зум-кнопки — по правой кромке, но ниже середины карты: телефон держат правой
+   рукой, и на этой высоте «+/−» попадают под большой палец, не перехватывая
+   аппарат (просьба Дмитрия 22.08.2026). Кнопка фуллскрина остаётся в углу, зум
+   висит под ней — по одной вертикали, поэтому и разъезжаться им незачем.
+
+   Двигаем сам угловой контейнер Leaflet (`top: auto; bottom: …`), а не поля
+   контрола: у контейнера высота по содержимому, и проценты внутри него не от
+   чего считать, а вот у карты высота задана — и `bottom` от неё честный. */
+.location-map-shell .leaflet-top.leaflet-right:has(.map-zoom-thumb) {
+  top: auto;
+  bottom: 24%;
+}
+
+.location-map-shell .leaflet-top.leaflet-right .map-zoom-thumb {
+  /* По правой кромке ровно под кнопкой фуллскрина — у той тот же отступ. */
+  margin-right: 0.6rem;
 }
 
 .location-map-fullscreen-btn:hover {
   background: var(--bg-muted);
   color: var(--text);
+}
+
+/* «Где я» — под кнопкой фуллскрина, в том же правом верхнем углу. Зум живёт
+   ниже по той же кромке (см. .map-zoom-thumb), так что дороги не пересекаются. */
+.location-map-locate-btn {
+  position: absolute;
+  top: 3.1rem;
+  right: 0.6rem;
+  z-index: 1001;
+  width: 2rem;
+  height: 2rem;
+  padding: 0.3rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  transition: background 0.15s, color 0.15s;
+}
+
+.location-map-locate-btn:hover:not(:disabled) {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.location-map-locate-btn svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Положение найдено — кнопка подсвечена: по ней видно, что синяя точка на карте
+   это вы, а не очередная площадка. */
+.location-map-locate-btn-active {
+  color: var(--tint-teal-text);
+  border-color: var(--tint-teal-text);
+}
+
+.location-map-locate-btn-loading {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* Точка «вы здесь»: синий кружок в белом кольце — узнаваемая метка карт, её не
+   спутать с цветными точками площадок. */
+.map-my-position {
+  background: transparent;
+  border: none;
+}
+
+.map-my-position span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: #2563eb;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.55), 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* Круг погрешности — только у грубого определения (по вышкам и Wi-Fi). */
+.map-my-position-accuracy {
+  fill: #2563eb;
+  fill-opacity: 0.10;
+  stroke: #2563eb;
+  stroke-opacity: 0.35;
+  stroke-width: 1;
 }
 
 .location-map-fullscreen-btn svg {
@@ -4394,6 +4475,91 @@ button.badge-platform-btn:hover {
 
 .map-popup-link:hover {
   color: var(--tint-teal-text);
+}
+
+/* Личный контекст точки (номер ближайшего старта, «+1 в Нумераторе», дальность
+   от дома) приезжает отдельным запросом уже после открытия попапа — отделяем
+   его чертой, чтобы догрузившиеся строки не читались как продолжение адреса. */
+.map-popup-context {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0.15rem 0;
+  padding: 0.35rem 0;
+  /* Рамка с обеих сторон: блок стоит посреди попапа, между адресом и историей
+     визитов, и без нижней черты «от дома» слипалось со строкой «Пробежек: …». */
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* Пустой контекст (аноним без прогноза, сеть отвалилась) не должен оставлять
+   висящую в воздухе черту. */
+.map-popup-context:empty {
+  display: none;
+}
+
+.map-popup-context-loading {
+  font-size: 0.82rem;
+}
+
+.map-popup-next {
+  color: var(--text);
+}
+
+/* Оба зачёта «Нумератора» одной строкой; цветом выделены только сами ответы —
+   зелёное «да» и приглушённое «нет». */
+.map-popup-plus-line {
+  color: var(--text-2);
+  cursor: help;
+}
+
+.map-popup-plus-line b {
+  font-weight: 700;
+}
+
+.map-popup-plus-yes {
+  color: var(--tint-green-text);
+}
+
+.map-popup-plus-no {
+  color: var(--text-muted);
+}
+
+/* Плашки систем рядом с названием — цвета те же, что у точек на карте и у
+   кнопок фильтра, поэтому отдельной строки «Система: …» в попапе больше нет. */
+.map-popup-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.35rem;
+}
+
+.map-popup-system {
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.map-popup-system-five_verst {
+  background: #2c326d;
+}
+
+.map-popup-system-s95 {
+  background: #c74389;
+}
+
+.map-popup-system-runpark {
+  background: #ea580c;
+}
+
+.map-popup-system-parkrun {
+  background: #94a3b8;
+}
+
+.map-popup-home {
+  color: var(--text-2);
 }
 
 .modal-panel-wide {

@@ -20,7 +20,7 @@ import {
   type PortalMe,
 } from "./portalTypes";
 import "./portal.css";
-import { formatInt } from "../../lib/format";
+import { COUNT_FORMS, formatInt, pluralFormRu, pluralizeRu } from "../../lib/format";
 
 const EARTH_EQUATOR_KM = 40_075;
 const SECONDS_PER_YEAR = 365 * 24 * 3600;
@@ -545,25 +545,25 @@ export function PortalHomePage() {
                   <b className="num">
                     <CountUpNumber value={hero.finishes_total} format={formatInt} />
                   </b>
-                  <span>финишей</span>
+                  <span>{pluralFormRu(hero.finishes_total, COUNT_FORMS.finishes)}</span>
                 </div>
                 <div className="portal-count">
                   <b className="num">
                     <CountUpNumber value={hero.participants_total} format={formatInt} />
                   </b>
-                  <span>участников</span>
+                  <span>{pluralFormRu(hero.participants_total, COUNT_FORMS.participants)}</span>
                 </div>
                 <div className="portal-count">
                   <b className="num">
                     <CountUpNumber value={hero.locations_total} format={formatInt} />
                   </b>
-                  <span>локаций</span>
+                  <span>{pluralFormRu(hero.locations_total, COUNT_FORMS.locations)}</span>
                 </div>
                 <div className="portal-count">
                   <b className="num">
                     <CountUpNumber value={hero.starts_total} format={formatInt} />
                   </b>
-                  <span>стартов</span>
+                  <span>{pluralFormRu(hero.starts_total, COUNT_FORMS.events)}</span>
                 </div>
               </section>
             )}
@@ -623,31 +623,31 @@ export function PortalHomePage() {
                     <b className="num">
                       <CountUpNumber value={data.pulse.starts} format={formatInt} />
                     </b>{" "}
-                    стартов
+                    {pluralFormRu(data.pulse.starts, COUNT_FORMS.events)}
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
                       <CountUpNumber value={data.pulse.finishes} format={formatInt} />
                     </b>{" "}
-                    финишей
+                    {pluralFormRu(data.pulse.finishes, COUNT_FORMS.finishes)}
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
                       <CountUpNumber value={data.pulse.newcomers} format={formatInt} />
                     </b>{" "}
-                    новичков
+                    {pluralFormRu(data.pulse.newcomers, COUNT_FORMS.newcomers)}
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
                       <CountUpNumber value={data.pulse.volunteers} format={formatInt} />
                     </b>{" "}
-                    волонтёров
+                    {pluralFormRu(data.pulse.volunteers, COUNT_FORMS.volunteers)}
                   </span>
                   <span className="portal-pulse-metric">
                     <b className="num">
                       <CountUpNumber value={data.pulse.personal_records} format={formatInt} />
                     </b>{" "}
-                    личных рекордов
+                    {pluralFormRu(data.pulse.personal_records, COUNT_FORMS.prs)}
                   </span>
                 </section>
               </div>
@@ -1033,7 +1033,7 @@ export function PortalHomePage() {
                       </div>
                       <div className="portal-fastest-row">
                         <span className="portal-fastest-main">
-                          <b className="num">{formatInt(row.finishers)} финишей</b>
+                          <b className="num">{pluralizeRu(row.finishers, COUNT_FORMS.finishes)}</b>
                           <span>{formatDateCompact(row.event_date)}</span>
                         </span>
                       </div>
@@ -1158,7 +1158,7 @@ export function PortalHomePage() {
                   </div>
                   <div className="portal-poster-tile">
                     <b className="num">34</b>
-                    <span>волонтёрств</span>
+                    <span>волонтёрства</span>
                   </div>
                 </div>
 

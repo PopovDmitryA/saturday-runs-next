@@ -13,7 +13,14 @@ import {
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { applyPageMeta, locationProtocolMeta } from "../../lib/pageMeta";
 import { flushMetrikaHit } from "../../lib/metrika";
-import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
+import {
+  COUNT_FORMS,
+  formatDate,
+  formatInt,
+  platformCodeLabel,
+  pluralFormRu,
+  pluralizeRu,
+} from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
@@ -481,7 +488,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
       <div className="loc-stats-grid protocol-stats-grid">
         <StatTile
           value={formatInt(summary.finishers)}
-          label="финишёров"
+          label={pluralFormRu(summary.finishers, COUNT_FORMS.finishers)}
           delta={
             data.previous?.finishers != null ? summary.finishers - data.previous.finishers : null
           }
@@ -550,7 +557,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
         />
         <StatTile
           value={newcomers ? formatInt(newcomers) : summary.finishers ? "0" : null}
-          label="новичков"
+          label={pluralFormRu(newcomers, COUNT_FORMS.newcomers)}
           delta={
             data.previous?.debutants != null || data.previous?.first_at_location != null
               ? newcomers -
@@ -559,20 +566,20 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           }
           sub={
             newcomers
-              ? `${formatInt(summary.debutants)} дебют · ${formatInt(summary.first_at_location)} впервые здесь`
+              ? `${pluralizeRu(summary.debutants, COUNT_FORMS.debuts)} · ${formatInt(summary.first_at_location)} впервые здесь`
               : null
           }
           hint="Дебютанты движения + участники, впервые пришедшие на эту локацию"
         />
         <StatTile
           value={summary.prs ? formatInt(summary.prs) : summary.finishers ? "0" : null}
-          label="личных рекордов"
+          label={pluralFormRu(summary.prs, COUNT_FORMS.prs)}
           delta={data.previous?.prs != null ? summary.prs - data.previous.prs : null}
           hint="Сколько участников улучшили в этот день своё лучшее время в системе"
         />
         <StatTile
           value={formatInt(summary.volunteers)}
-          label="волонтёров"
+          label={pluralFormRu(summary.volunteers, COUNT_FORMS.volunteers)}
           delta={
             data.previous?.volunteers != null ? summary.volunteers - data.previous.volunteers : null
           }
@@ -583,7 +590,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
         <p className="protocol-partial-note muted">
           Протокол неполный: в нашей базе {formatInt(data.results.length)}{" "}
           {data.declared_finishers
-            ? `из ${formatInt(data.declared_finishers)} финишёров`
+            ? `из ${pluralizeRu(data.declared_finishers, COUNT_FORMS.finishers)}`
             : "строк, часть позиций отсутствует"}
           {/* Дыра в половину протокола и больше — зарубежный parkrun, где мы
               собираем только своих; пара потерянных строк у русского

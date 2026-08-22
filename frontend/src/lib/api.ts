@@ -2039,6 +2039,47 @@ export function getCatalogLocationsMap() {
   return apiFetch<MapLocationsResponse>("/locations/catalog/map");
 }
 
+export type MapPointNextStart = {
+  platform_code: string;
+  number: number;
+  date: string;
+  /** Сколько недель откручено от последнего старта: >1 — площадка пропускала субботы. */
+  weeks_ahead: number;
+  challenge_code: string | null;
+  challenge_title: string | null;
+  /** null — аноним либо номер вне диапазонов «Нумератора»: считать нечего. */
+  plus_one_overall: boolean | null;
+  plus_one_platform: boolean | null;
+};
+
+export type MapPointContext = {
+  identity_key: string;
+  authenticated: boolean;
+  next_starts: MapPointNextStart[];
+  home_distance: LocationHomeDistance | null;
+};
+
+/**
+ * Огрублённая отметка положения. Координаты округляет вызывающий код — точные
+ * значения из браузера наружу не уходят (см. lib/mapGeolocation.ts).
+ */
+export function sendMapGeoPing(body: {
+  latitude: number;
+  longitude: number;
+  accuracy_m: number | null;
+}) {
+  return apiFetch<void>("/locations/map/geo-ping", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Подробности одной точки карты — грузятся по клику, а не со всей картой. */
+export function getMapPointContext(identityKey: string) {
+  const query = new URLSearchParams({ identity_key: identityKey });
+  return apiFetch<MapPointContext>(`/locations/map/point-context?${query.toString()}`);
+}
+
 export type CatalogLocationTableRow = {
   row_key: string;
   catalog_identity_key: string;

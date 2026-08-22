@@ -15,6 +15,7 @@ import type {
   VolunteeringItem,
 } from "../../lib/api";
 import {
+  COUNT_FORMS,
   formatDate,
   formatDuration,
   formatInt,
@@ -114,6 +115,82 @@ function pushMetric(
   if (value != null && value !== "" && value !== "—") {
     metrics.push({ id, value, label, keepLabelCase: options?.keepLabelCase });
   }
+}
+
+// Короткие имена для форм из общего словаря — чтобы вызовы читались.
+const FINISHER_FORMS = COUNT_FORMS.finishers;
+const FINISH_FORMS = COUNT_FORMS.finishes;
+const RUN_FORMS = COUNT_FORMS.runs;
+const KM_FORMS = COUNT_FORMS.kilometers;
+const LOCATION_FORMS = COUNT_FORMS.locations;
+const REGION_FORMS = COUNT_FORMS.regions;
+const CITY_FORMS = COUNT_FORMS.cities;
+const EVENT_FORMS = COUNT_FORMS.events;
+const PARTICIPANT_FORMS = COUNT_FORMS.participants;
+const VOLUNTEER_FORMS = COUNT_FORMS.volunteers;
+const VOLUNTEERING_FORMS = COUNT_FORMS.volunteering;
+const VOLUNTEER_ROLE_FORMS = COUNT_FORMS.volunteerRoles;
+const PR_FORMS = COUNT_FORMS.prs;
+const NEWCOMER_FORMS = COUNT_FORMS.newcomers;
+const SATURDAY_FORMS = COUNT_FORMS.saturdays;
+const WIN_FORMS = COUNT_FORMS.wins;
+const FIRST_PLACE_FORMS = COUNT_FORMS.firstPlaces;
+const CLUB_FORMS = COUNT_FORMS.clubs;
+
+/**
+ * «Единица» рейтинга приходит из API родительным падежом — она же стоит
+ * заголовком колонки в таблице («Пробежек»). На карточке она оказывается
+ * подписью под конкретным числом, поэтому здесь склоняем; незнакомую единицу
+ * (например «км от дома») оставляем как есть.
+ */
+const RATING_UNIT_FORMS: Record<string, readonly [string, string, string]> = {
+  пробежек: RUN_FORMS,
+  волонтёрств: VOLUNTEERING_FORMS,
+  ролей: COUNT_FORMS.roles,
+  локаций: LOCATION_FORMS,
+  открытий: COUNT_FORMS.openings,
+  городов: CITY_FORMS,
+  регионов: REGION_FORMS,
+  "первых мест": FIRST_PLACE_FORMS,
+  "локаций с первым местом": [
+    "локация с первым местом",
+    "локации с первым местом",
+    "локаций с первым местом",
+  ],
+};
+
+function ratingUnitLabel(count: number, unit: string): string {
+  const forms = RATING_UNIT_FORMS[unit];
+  return forms ? pluralFormRu(count, forms) : unit;
+}
+
+/**
+ * Дробное число требует родительного единственного: «3,7 пробежки», а не
+ * «3,7 пробежек».
+ */
+function pluralFormForValue(count: number, forms: readonly [string, string, string]): string {
+  return Number.isInteger(count) ? pluralFormRu(count, forms) : forms[1];
+}
+
+/**
+ * Плитка со счётом: число сверху, согласованная подпись снизу. `suffix` —
+ * хвост, который не склоняется («волонтёра НА СТАРТЕ»).
+ *
+ * Ноль плитку не создаёт — как и раньше у большинства метрик; там, где ноль
+ * показывать надо (в сводке «0 пробежек» — часть картины), зовут с keepZero.
+ */
+function pushCountMetric(
+  metrics: ShareMetric[],
+  id: string,
+  count: number | null | undefined,
+  forms: readonly [string, string, string],
+  options?: { suffix?: string; keepZero?: boolean },
+): void {
+  if (count == null || (count === 0 && !options?.keepZero)) {
+    return;
+  }
+  const noun = pluralFormForValue(count, forms);
+  pushMetric(metrics, id, formatInt(count), options?.suffix ? `${noun} ${options.suffix}` : noun);
 }
 
 // ── Пробежка (последняя, любая, «В этот день») ─────────────────────────────
@@ -338,37 +415,24 @@ export function summarySubject(
   const metrics: ShareMetric[] = [];
 
   if (period === "year") {
-    pushMetric(metrics, "runs", formatInt(yearRuns.length), pluralFormRu(yearRuns.length, ["пробежка", "пробежки", "пробежек"]));
-    pushMetric(
-      metrics,
-      "volunteering",
-      analytics.volunteering_current_year != null ? formatInt(analytics.volunteering_current_year) : null,
-      "волонтёрств",
-    );
+    pushCountMetric(metrics, "runs", yearRuns.length, RUN_FORMS, { keepZero: true });
+    pushCountMetric(metrics, "volunteering", analytics.volunteering_current_year, VOLUNTEERING_FORMS, {
+      keepZero: true,
+    });
     const uniqueLocations = new Set(yearRuns.map((run) => `${run.platform_code}:${run.location_name}`)).size;
-    pushMetric(metrics, "locations", uniqueLocations > 0 ? formatInt(uniqueLocations) : null, "локаций");
-    pushMetric(metrics, "distance", formatInt(yearRuns.length * 5), "километров");
+    pushCountMetric(metrics, "locations", uniqueLocations, LOCATION_FORMS);
+    pushCountMetric(metrics, "distance", yearRuns.length * 5, KM_FORMS, { keepZero: true });
     const prCount = yearRuns.filter((run) => run.is_pr).length;
-    pushMetric(metrics, "prs", prCount > 0 ? formatInt(prCount) : null, "личных рекордов");
+    pushCountMetric(metrics, "prs", prCount, PR_FORMS);
   } else {
-    pushMetric(metrics, "runs", formatInt(stats.total_runs ?? 0), "пробежек");
-    pushMetric(
-      metrics,
-      "volunteering",
-      stats.total_volunteering ? formatInt(stats.total_volunteering) : null,
-      "волонтёрств",
-    );
-    pushMetric(
-      metrics,
-      "locations",
-      analytics.unique_locations ? formatInt(analytics.unique_locations) : null,
-      "локаций",
-    );
-    pushMetric(
+    pushCountMetric(metrics, "runs", stats.total_runs ?? 0, RUN_FORMS, { keepZero: true });
+    pushCountMetric(metrics, "volunteering", stats.total_volunteering, VOLUNTEERING_FORMS);
+    pushCountMetric(metrics, "locations", analytics.unique_locations, LOCATION_FORMS);
+    pushCountMetric(
       metrics,
       "distance",
-      analytics.total_distance_km ? formatInt(Math.round(analytics.total_distance_km)) : null,
-      "километров",
+      analytics.total_distance_km ? Math.round(analytics.total_distance_km) : null,
+      KM_FORMS,
     );
     pushMetric(
       metrics,
@@ -377,12 +441,7 @@ export function summarySubject(
       "лучшее время",
     );
   }
-  pushMetric(
-    metrics,
-    "streak",
-    analytics.saturday_streak ? formatInt(analytics.saturday_streak) : null,
-    "суббот подряд",
-  );
+  pushCountMetric(metrics, "streak", analytics.saturday_streak, SATURDAY_FORMS, { suffix: "подряд" });
   const consistency = analytics.saturday_consistency_pct;
   pushMetric(
     metrics,
@@ -393,30 +452,16 @@ export function summarySubject(
 
   // Дальше — общий «хвост» кандидатов: на карточку по умолчанию не попадают,
   // но их можно выбрать в «Настроить».
-  pushMetric(
+  pushCountMetric(
     metrics,
     "wins",
-    analytics.wins_count ? formatInt(analytics.wins_count) : null,
-    analytics.wins_scope === "female" ? "побед среди женщин" : "первых мест",
+    analytics.wins_count,
+    analytics.wins_scope === "female" ? WIN_FORMS : FIRST_PLACE_FORMS,
+    analytics.wins_scope === "female" ? { suffix: "среди женщин" } : undefined,
   );
-  pushMetric(
-    metrics,
-    "prs_total",
-    analytics.pr_count ? formatInt(analytics.pr_count) : null,
-    "личных рекордов",
-  );
-  pushMetric(
-    metrics,
-    "regions",
-    analytics.unique_run_regions ? formatInt(analytics.unique_run_regions) : null,
-    "регионов",
-  );
-  pushMetric(
-    metrics,
-    "cities",
-    analytics.unique_run_cities ? formatInt(analytics.unique_run_cities) : null,
-    "городов",
-  );
+  pushCountMetric(metrics, "prs_total", analytics.pr_count, PR_FORMS);
+  pushCountMetric(metrics, "regions", analytics.unique_run_regions, REGION_FORMS);
+  pushCountMetric(metrics, "cities", analytics.unique_run_cities, CITY_FORMS);
   pushMetric(
     metrics,
     "avg_time",
@@ -460,12 +505,7 @@ export function summarySubject(
   );
   pushMetric(metrics, "top_location", analytics.top_location?.name, "любимая локация");
   pushMetric(metrics, "top_role", analytics.top_volunteer_role?.role, "частая роль");
-  pushMetric(
-    metrics,
-    "volunteer_roles",
-    analytics.unique_volunteer_roles ? formatInt(analytics.unique_volunteer_roles) : null,
-    "ролей волонтёра",
-  );
+  pushCountMetric(metrics, "volunteer_roles", analytics.unique_volunteer_roles, VOLUNTEER_ROLE_FORMS);
   pushMetric(
     metrics,
     "club",
@@ -566,13 +606,13 @@ export function locationEventSubject(page: LocationPage): ShareSubject | null {
       { keepLabelCase: true },
     );
   }
-  pushMetric(metrics, "prs", last.prs ? formatInt(last.prs) : null, "личных рекордов");
+  pushCountMetric(metrics, "prs", last.prs, PR_FORMS);
   if (topMilestone && milestoneName) {
     pushMetric(metrics, "milestone_named", `${formatInt(topMilestone.count)}-й финиш`, milestoneName, {
       keepLabelCase: true,
     });
   }
-  pushMetric(metrics, "volunteers", last.volunteers ? formatInt(last.volunteers) : null, "волонтёров");
+  pushCountMetric(metrics, "volunteers", last.volunteers, VOLUNTEER_FORMS);
 
   // Дальше — запас для «Настроить».
   // «В шаге до клуба» — единственный сюжет каналов, который смотрит вперёд.
@@ -624,7 +664,7 @@ export function locationEventSubject(page: LocationPage): ShareSubject | null {
     }
   }
   pushMetric(metrics, "avg_time", stripLeadingHours(last.avg_time_display), "среднее время");
-  pushMetric(metrics, "debutants", last.debutants ? formatInt(last.debutants) : null, "новичков");
+  pushCountMetric(metrics, "debutants", last.debutants, NEWCOMER_FORMS);
   pushMetric(
     metrics,
     "first_at_location",
@@ -664,7 +704,7 @@ export function locationEventSubject(page: LocationPage): ShareSubject | null {
     plate: "ПОСЛЕДНИЙ СТАРТ",
     hero:
       last.finishers != null
-        ? { value: formatInt(last.finishers), caption: "финишёров" }
+        ? { value: formatInt(last.finishers), caption: pluralFormRu(last.finishers, FINISHER_FORMS) }
         : undefined,
     chip: isAttendanceRecord ? "Рекорд посещаемости!" : undefined,
     metrics,
@@ -711,10 +751,10 @@ export function locationProtocolSubject(protocol: LocationProtocol): ShareSubjec
       { keepLabelCase: true },
     );
   }
-  pushMetric(metrics, "prs", summary.prs ? formatInt(summary.prs) : null, "личных рекордов");
+  pushCountMetric(metrics, "prs", summary.prs, PR_FORMS);
   const newcomers = summary.debutants + summary.first_at_location;
-  pushMetric(metrics, "newcomers", newcomers ? formatInt(newcomers) : null, "новичков");
-  pushMetric(metrics, "volunteers", summary.volunteers ? formatInt(summary.volunteers) : null, "волонтёров");
+  pushCountMetric(metrics, "newcomers", newcomers, NEWCOMER_FORMS);
+  pushCountMetric(metrics, "volunteers", summary.volunteers, VOLUNTEER_FORMS);
   // Запас для «Настроить».
   if (summary.male && summary.female) {
     pushMetric(
@@ -733,12 +773,7 @@ export function locationProtocolSubject(protocol: LocationProtocol): ShareSubjec
     groupRecords ? formatInt(groupRecords) : null,
     groupRecords ? pluralFormRu(groupRecords, ["рекорд группы", "рекорда групп", "рекордов групп"]) : "",
   );
-  pushMetric(
-    metrics,
-    "clubs",
-    summary.clubs_count ? formatInt(summary.clubs_count) : null,
-    "клубов на старте",
-  );
+  pushCountMetric(metrics, "clubs", summary.clubs_count, CLUB_FORMS, { suffix: "на старте" });
   // Дату и систему карточка уже пишет в подзаголовке — плитками не дублируем
   // (то же решение, что в 9d7d345 для остальных сюжетов).
 
@@ -761,7 +796,7 @@ export function locationProtocolSubject(protocol: LocationProtocol): ShareSubjec
     plate: "ПРОТОКОЛ",
     hero:
       summary.finishers > 0
-        ? { value: formatInt(summary.finishers), caption: "финишёров" }
+        ? { value: formatInt(summary.finishers), caption: pluralFormRu(summary.finishers, FINISHER_FORMS) }
         : undefined,
     chip,
     metrics,
@@ -804,19 +839,17 @@ export function locationCardSubject(page: LocationPage): ShareSubject {
   const ageYears = fullYearsSince(stats.first_event_date);
   const perPerson =
     stats.unique_participants > 0 ? stats.finishers_total / stats.unique_participants : null;
+  // Плитку показываем только там, где среднее заметно больше единицы: «1,1
+  // пробежки на участника» — шум, а не факт.
+  const perPersonRounded = perPerson != null && perPerson >= 1.5 ? Math.round(perPerson * 10) / 10 : null;
   const volunteersPerEvent =
     stats.events_count > 0 ? Math.round(stats.volunteers_total / stats.events_count) : null;
   const attendanceDate = stats.attendance_record?.event_date;
 
   // Порядок = приоритет: первые шесть попадают на широкую карточку. Имя
   // рекордсмена в подписи — то, ради чего карточку пересылают в чат локации.
-  pushMetric(metrics, "events", stats.events_count ? formatInt(stats.events_count) : null, "стартов");
-  pushMetric(
-    metrics,
-    "participants",
-    stats.unique_participants ? formatInt(stats.unique_participants) : null,
-    "участников",
-  );
+  pushCountMetric(metrics, "events", stats.events_count, EVENT_FORMS);
+  pushCountMetric(metrics, "participants", stats.unique_participants, PARTICIPANT_FORMS);
   pushMetric(
     metrics,
     "record_male",
@@ -840,15 +873,10 @@ export function locationCardSubject(page: LocationPage): ShareSubject {
   pushMetric(
     metrics,
     "runs_per_person",
-    perPerson != null && perPerson >= 1.5 ? formatNumber(Math.round(perPerson * 10) / 10) : null,
-    "пробежек на участника",
+    perPersonRounded != null ? formatNumber(perPersonRounded) : null,
+    `${pluralFormForValue(perPersonRounded ?? 0, RUN_FORMS)} на участника`,
   );
-  pushMetric(
-    metrics,
-    "finishers",
-    stats.finishers_total ? formatInt(stats.finishers_total) : null,
-    "финишей",
-  );
+  pushCountMetric(metrics, "finishers", stats.finishers_total, FINISH_FORMS);
   pushMetric(
     metrics,
     "age",
@@ -856,11 +884,12 @@ export function locationCardSubject(page: LocationPage): ShareSubject {
     "истории локации",
   );
   pushMetric(metrics, "fast_share", fastShare, "быстрее 25 минут");
-  pushMetric(
+  pushCountMetric(
     metrics,
     "volunteers_per_event",
-    volunteersPerEvent != null && volunteersPerEvent >= 1 ? formatInt(volunteersPerEvent) : null,
-    "волонтёров на старте",
+    volunteersPerEvent != null && volunteersPerEvent >= 1 ? volunteersPerEvent : null,
+    VOLUNTEER_FORMS,
+    { suffix: "на старте" },
   );
   // «Рекорд держится N лет» — только у старых рекордов, иначе это не факт.
   const femaleRecordYears = fullYearsSince(female?.event_date);
@@ -881,12 +910,7 @@ export function locationCardSubject(page: LocationPage): ShareSubject {
       : null,
     "держится рекорд М",
   );
-  pushMetric(
-    metrics,
-    "volunteers",
-    stats.unique_volunteers ? formatInt(stats.unique_volunteers) : null,
-    "волонтёров",
-  );
+  pushCountMetric(metrics, "volunteers", stats.unique_volunteers, VOLUNTEER_FORMS);
   pushMetric(
     metrics,
     "avg_finishers",
@@ -939,7 +963,7 @@ export function ratingSubject(
     return null;
   }
   const metrics: ShareMetric[] = [];
-  pushMetric(metrics, "total", formatInt(me.total), board.unit);
+  pushMetric(metrics, "total", formatInt(me.total), ratingUnitLabel(me.total, board.unit));
   // Разбивка по системам — каждая отдельной плиткой (на выбор в «Настроить»).
   const platformEntries = Object.entries(me.platforms ?? {}).filter(([, cell]) => cell && cell.value > 0);
   for (const [code, cell] of platformEntries.sort((a, b) => b[1].value - a[1].value)) {
@@ -951,18 +975,8 @@ export function ratingSubject(
     stripLeadingHours(me.best_time_display),
     "лучшее время",
   );
-  pushMetric(
-    metrics,
-    "cities_total",
-    me.cities_total != null ? formatInt(me.cities_total) : null,
-    "городов",
-  );
-  pushMetric(
-    metrics,
-    "regions_total",
-    me.regions_total != null ? formatInt(me.regions_total) : null,
-    "регионов",
-  );
+  pushCountMetric(metrics, "cities_total", me.cities_total, CITY_FORMS, { keepZero: true });
+  pushCountMetric(metrics, "regions_total", me.regions_total, REGION_FORMS, { keepZero: true });
   pushMetric(metrics, "top_role", me.top_role, "любимая роль");
   pushMetric(
     metrics,
@@ -985,7 +999,7 @@ export function ratingSubject(
     plate: board.title,
     hero: {
       value: `№${formatInt(me.rank)}`,
-      caption: board.entrants ? `из ${formatInt(board.entrants)} участников` : undefined,
+      caption: board.entrants ? `из ${pluralizeRu(board.entrants, PARTICIPANT_FORMS)}` : undefined,
     },
     metrics,
   };
@@ -1044,20 +1058,10 @@ export function locationMeSubject(stats: LocationPersonalStats, user: User | nul
     return null;
   }
   const metrics: ShareMetric[] = [];
-  pushMetric(
-    metrics,
-    "runs",
-    stats.runs_count > 0 ? formatInt(stats.runs_count) : null,
-    "пробежек здесь",
-  );
+  pushCountMetric(metrics, "runs", stats.runs_count, RUN_FORMS, { suffix: "здесь" });
   pushMetric(metrics, "best_time", stripLeadingHours(stats.best_time_display), "лучшее время");
   pushMetric(metrics, "avg_time", stripLeadingHours(stats.avg_time_display), "среднее время");
-  pushMetric(
-    metrics,
-    "volunteering",
-    stats.volunteering_count > 0 ? formatInt(stats.volunteering_count) : null,
-    "волонтёрств",
-  );
+  pushCountMetric(metrics, "volunteering", stats.volunteering_count, VOLUNTEERING_FORMS);
   if (stats.rank_by_runs_gender != null) {
     const scope = stats.gender === "female" ? "среди женщин" : stats.gender === "male" ? "среди мужчин" : "в топе";
     pushMetric(metrics, "rank", `№${formatInt(stats.rank_by_runs_gender)}`, `${scope} площадки`);
@@ -1113,7 +1117,7 @@ export function locationMeSubject(stats: LocationPersonalStats, user: User | nul
     plate: "Я НА ЭТОЙ ЛОКАЦИИ",
     hero:
       stats.runs_count > 0
-        ? { value: formatInt(stats.runs_count), caption: pluralFormRu(stats.runs_count, ["пробежка", "пробежки", "пробежек"]) }
+        ? { value: formatInt(stats.runs_count), caption: pluralFormRu(stats.runs_count, RUN_FORMS) }
         : undefined,
     // Число пробежек уже в герое — плитку-дубль убираем.
     metrics: stats.runs_count > 0 ? metrics.filter((metric) => metric.id !== "runs") : metrics,

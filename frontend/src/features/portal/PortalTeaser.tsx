@@ -2,7 +2,7 @@ import { useState } from "react";
 import { trackCtaClick } from "../../lib/abTest";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { fetchPortalTeaser, PortalHomeError, type PortalTeaser } from "./portalTypes";
-import { formatInt } from "../../lib/format";
+import { COUNT_FORMS, formatInt, pluralFormRu } from "../../lib/format";
 import { rememberTeaserClaim } from "./teaserClaim";
 
 /**
@@ -112,7 +112,7 @@ export function PortalTeaserCard() {
           <div className="portal-teaser-grid">
             <div className="portal-teaser-tile">
               <b className="num">{formatInt(teaser.finishes)}</b>
-              <span>финишей</span>
+              <span>{pluralFormRu(teaser.finishes, COUNT_FORMS.finishes)}</span>
             </div>
             {teaser.best_time_display && (
               <div className="portal-teaser-tile">
@@ -122,7 +122,7 @@ export function PortalTeaserCard() {
             )}
             <div className="portal-teaser-tile">
               <b className="num">{formatInt(teaser.locations)}</b>
-              <span>{teaser.locations === 1 ? "локация" : "локаций"}</span>
+              <span>{pluralFormRu(teaser.locations, COUNT_FORMS.locations)}</span>
             </div>
           </div>
           <p className="portal-teaser-more">
