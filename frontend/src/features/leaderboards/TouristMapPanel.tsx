@@ -249,6 +249,7 @@ export function TouristMapPanel({ state, verb, onShowTable }: TouristMapPanelPro
             countLabel={countLabel}
             isFullscreen={isFullscreen}
             onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+            myLocation
           />
         </div>
       )}
