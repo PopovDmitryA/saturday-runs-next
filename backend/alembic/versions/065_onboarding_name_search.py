@@ -1,7 +1,7 @@
 """Онбординг: поиск участников по ФИО (pg_trgm) + отметка прохождения онбординга
 
-Revision ID: 052_onboarding_name_search
-Revises: 051_blog_posts
+Revision ID: 065_onboarding_name_search
+Revises: 064_location_upcoming
 Create Date: 2026-08-22
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "052_onboarding_name_search"
-down_revision = "051_blog_posts"
+revision = "065_onboarding_name_search"
+down_revision = "064_location_upcoming"
 branch_labels = None
 depends_on = None
 

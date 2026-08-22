@@ -75,7 +75,8 @@ def test_bot_confirm_and_callback_flow(client: TestClient, fake_redis: fakeredis
     token = magic_link.split("token=")[1]
     callback_response = client.get("/api/auth/callback", params={"token": token}, follow_redirects=False)
     assert callback_response.status_code == 302
-    assert callback_response.headers["location"] == "http://testserver/dashboard"
+    # Новый пользователь без привязок — на онбординг (поиск себя по ФИО).
+    assert callback_response.headers["location"] == "http://testserver/welcome"
     assert "sr_session" in callback_response.cookies
 
     session_cookie = callback_response.cookies["sr_session"]

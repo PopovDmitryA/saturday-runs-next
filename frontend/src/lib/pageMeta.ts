@@ -153,6 +153,10 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
     title: "Настройки — run5k.run",
     description: "Настройки профиля и привязанных аккаунтов.",
   },
+  "/welcome": {
+    title: "Добро пожаловать — run5k.run",
+    description: "Найдите себя по имени во всех системах пробежек и привяжите профили.",
+  },
   "/oauth/yandex/callback": { title: "Вход — run5k.run", description: "Завершаем вход через Яндекс." },
   "/oauth/vk/callback": { title: "Вход — run5k.run", description: "Завершаем вход через VK." },
 };
