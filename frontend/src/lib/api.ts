@@ -20,6 +20,13 @@ export type User = {
   display_name_customized: boolean;
   consent_accepted: boolean;
   is_admin: boolean;
+  avatar_url: string | null;
+  // Оригинал аватарки без пережатия — раскрывается по клику. null у аватарок,
+  // загруженных до переезда на S3.
+  avatar_full_url: string | null;
+  // Публичный адрес участника: /users/{public_slug ?? serial_id}.
+  serial_id: number | null;
+  public_slug: string | null;
   auth_identities: AuthIdentity[];
 };
 
@@ -93,6 +100,77 @@ export type PlatformLink = {
   data_through_date?: string | null;
 };
 
+export type LocationRecordEntry = {
+  location_name: string;
+  location_slug: string | null;
+  location_city: string | null;
+  // Уровень рекорда: "global" | код системы — только для площадок, живших в
+  // нескольких системах; у монолокаций null.
+  level: string | null;
+  platform_code: string;
+  // Возрастная группа («30–34») — только у рекордов по возрастным группам.
+  age_group: string | null;
+  finish_time_sec: number;
+  finish_time_display: string;
+  event_date: string;
+  is_current: boolean;
+  beaten_date: string | null;
+  beaten_by: string | null;
+  beaten_time_sec: number | null;
+  beaten_time_display: string | null;
+};
+
+export type LocationRecordsBlock = {
+  current_count: number;
+  lost_count: number;
+  entries: LocationRecordEntry[];
+};
+
+/** Строка таблиц «Дальности от дома»: посещённая или ещё не посещённая площадка. */
+export type HomeDistanceLocation = {
+  catalog_identity_key: string;
+  location_slug: string | null;
+  name: string;
+  city: string | null;
+  region: string | null;
+  /** null — координат площадки нет, в зачёт километров она не идёт. */
+  distance_km: number | null;
+  run_count: number;
+  last_visit_date: string | null;
+  is_home: boolean;
+  is_paused: boolean;
+  /** Системы площадки — плашками рядом с названием. */
+  platform_codes: string[];
+};
+
+export type HomeLocationSummary = {
+  catalog_identity_key: string;
+  location_slug: string | null;
+  name: string;
+  city: string | null;
+  region: string | null;
+  run_count: number;
+  is_auto: boolean;
+  /** "tie" — ничья по числу пробежек, "close" — вторая площадка рядом. */
+  ambiguity: "tie" | "close" | null;
+  runner_up_name: string | null;
+  has_coordinates: boolean;
+};
+
+export type HomeDistance = {
+  home: HomeLocationSummary | null;
+  total_distance_km: number;
+  farthest: HomeDistanceLocation | null;
+  visited_count: number;
+  counted_count: number;
+  unknown_count: number;
+};
+
+export type HomeDistanceDetail = HomeDistance & {
+  visited: HomeDistanceLocation[];
+  unvisited: HomeDistanceLocation[];
+};
+
 export type DashboardAnalytics = {
   analytics_version?: number;
   unique_locations: number;
@@ -109,12 +187,21 @@ export type DashboardAnalytics = {
   avg_position: number | null;
   avg_gender_position?: number | null;
   pr_count: number;
+  /** Победы: у женщин — среди женщин, у мужчин — в абсолюте (см. wins_scope). */
+  wins_count?: number;
+  wins_scope?: WinScope;
   unique_volunteer_roles: number;
   first_activity_date: string | null;
   last_activity_date: string | null;
   first_run_date: string | null;
   days_since_first_run: number | null;
-  top_location: { name: string; platform_codes: string[]; count: number; tied_count: number } | null;
+  top_location: {
+    name: string;
+    slug?: string | null;
+    platform_codes: string[];
+    count: number;
+    tied_count: number;
+  } | null;
   top_volunteer_role: { role: string; count: number } | null;
   runs_last_12_months: number;
   runs_current_year: number;
@@ -152,11 +239,24 @@ export type DashboardAnalytics = {
   runs_with_field_avg_count: number;
   platform_metrics: Array<{
     platform_code: string;
+    runs_count?: number;
     avg_finish_time_sec: number | null;
     avg_pace_sec_per_km: number | null;
   }>;
   activity_by_month: Array<{ month: string; runs: number; volunteering: number }>;
-  pace_trend: Array<{ month: string; avg_pace_sec_per_km: number | null }>;
+  pace_trend: Array<{
+    month: string;
+    avg_pace_sec_per_km: number | null;
+    avg_finish_time_sec?: number | null;
+  }>;
+  pace_trend_yearly?: Array<{
+    year: string;
+    avg_pace_sec_per_km: number | null;
+    avg_finish_time_sec?: number | null;
+  }>;
+  location_records?: LocationRecordsBlock;
+  age_group_records?: LocationRecordsBlock;
+  home_distance?: HomeDistance | null;
 };
 
 export type DashboardStats = {
@@ -235,6 +335,24 @@ export type PersonalRecordItem = {
   event_url?: string | null;
 };
 
+export type WinScope = "absolute" | "female";
+
+export type WinItem = {
+  platform_code: string;
+  event_date: string;
+  event_number: number | null;
+  location_name: string;
+  location_city: string | null;
+  finish_time_display: string | null;
+  finish_time_sec: number | null;
+  position: number | null;
+  gender_position: number | null;
+  /** Сколько всего было финишёров в этом зачёте — знаменатель «1 из N». */
+  field_size: number | null;
+  scope: WinScope;
+  event_url?: string | null;
+};
+
 export type VolunteerRoleStatItem = {
   platform_code: string;
   role: string;
@@ -256,6 +374,7 @@ export type VolunteeringItem = {
   rating_entry_id?: string | null;
   is_crosslinked: boolean;
   is_test_event: boolean;
+  parkrun_total_credits?: number | null;
   event_url?: string | null;
 };
 
@@ -375,6 +494,19 @@ function extractApiErrorDetail(body: unknown, status: number, rawText: string): 
     return sanitizeApiErrorMessage(trimmed);
   }
   return `Не удалось выполнить запрос (HTTP ${status})`;
+}
+
+// Тот же разбор detail, что у apiFetch, но для «сырых» fetch-запросов
+// (загрузка файлов идёт мимо apiFetch из-за multipart).
+async function readErrorDetail(response: Response): Promise<string> {
+  const rawText = await response.text().catch(() => "");
+  let body: unknown = null;
+  try {
+    body = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    body = null;
+  }
+  return extractApiErrorDetail(body, response.status, rawText);
 }
 
 function sanitizeApiErrorMessage(message: string): string {
@@ -510,8 +642,61 @@ export function getLoginRequestStatus(requestToken: string) {
   return apiFetch<LoginRequestStatus>(`/auth/login-request/${requestToken}/status`);
 }
 
+// На каждой странице /auth/me независимо запрашивают сразу несколько
+// компонентов (App, PortalHeader, RequireAuth, сама страница) — получалось по
+// 2-3 одинаковых запроса на переход, каждый по 150-700 мс. Склеиваем только
+// одновременные вызовы: как только запрос завершился, кэш сбрасывается, поэтому
+// после логина/логаута следующий вызов снова идёт на сервер.
+let currentUserInFlight: Promise<User> | null = null;
+
 export function getCurrentUser() {
-  return apiFetch<User>("/auth/me");
+  if (currentUserInFlight) {
+    return currentUserInFlight;
+  }
+  const request = apiFetch<User>("/auth/me").finally(() => {
+    if (currentUserInFlight === request) {
+      currentUserInFlight = null;
+    }
+  });
+  currentUserInFlight = request;
+  return request;
+}
+
+/** Результат проверки сессии: «гость» и «не смогли проверить» — разные вещи. */
+export type SessionProbe =
+  | { state: "authenticated"; user: User }
+  | { state: "guest" }
+  | { state: "unknown" };
+
+/** Сервер прямо сказал, что сессии нет. Всё остальное — не приговор. */
+export function isSessionMissingError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
+const SESSION_RETRY_DELAY_MS = 1500;
+
+/**
+ * Проверить сессию, не путая «пользователь не залогинен» с «сервер не ответил».
+ *
+ * Раньше любая ошибка /auth/me трактовалась как разлогин, и живая сессия
+ * выглядела разлогиненной при 429 (общий лимит на IP — а мобильные операторы
+ * NAT-ят много людей за один адрес), 5xx или таймауте. Транзиентную ошибку
+ * пробуем повторить один раз, и только явный 401 считаем гостем.
+ */
+export async function probeCurrentUser(): Promise<SessionProbe> {
+  try {
+    return { state: "authenticated", user: await getCurrentUser() };
+  } catch (error) {
+    if (isSessionMissingError(error)) {
+      return { state: "guest" };
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, SESSION_RETRY_DELAY_MS));
+    try {
+      return { state: "authenticated", user: await getCurrentUser() };
+    } catch (retryError) {
+      return isSessionMissingError(retryError) ? { state: "guest" } : { state: "unknown" };
+    }
+  }
 }
 
 export function updateDisplayName(displayName: string) {
@@ -519,6 +704,22 @@ export function updateDisplayName(displayName: string) {
     method: "PATCH",
     body: JSON.stringify({ display_name: displayName.trim() }),
   });
+}
+
+export function uploadAvatar(file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  // headers: {} затирает дефолтный Content-Type: application/json — браузер
+  // сам проставит multipart/form-data с boundary.
+  return apiFetch<User>(
+    "/users/me/avatar",
+    { method: "POST", body: form, headers: {} },
+    { timeoutMs: 60_000 },
+  );
+}
+
+export function deleteAvatar() {
+  return apiFetch<User>("/users/me/avatar", { method: "DELETE" });
 }
 
 export function logout() {
@@ -710,6 +911,8 @@ export type ChallengeDetailItem = {
 export type ChallengeDetail = {
   cells?: ChallengeCell[];
   letters?: ChallengeLetter[];
+  /** Сколько букв вообще доступно в текущем скоупе систем («Алфавит»). */
+  available?: number;
   days?: ChallengeDay[];
   items?: ChallengeDetailItem[];
   example?: { value: string; location: string; note: string };
@@ -721,6 +924,22 @@ export type ChallengeLevelDates = {
   gold: string | null;
 };
 
+// easy | medium | hard | solo (один тир на весь челлендж — вкладки не рисуются)
+export type ChallengeTierKey = string;
+
+export type ChallengeTier = {
+  tier: ChallengeTierKey;
+  label: string | null;
+  levels: { bronze: number; silver: number; gold: number };
+  target: number;
+  level: ChallengeLevel | null;
+  next_level: ChallengeLevel | null;
+  to_next_level: number | null;
+  to_next_label: string | null;
+  pct: number;
+  level_dates: ChallengeLevelDates;
+};
+
 export type Challenge = {
   code: string;
   title: string;
@@ -728,18 +947,22 @@ export type Challenge = {
   description: string;
   category: "collection" | "coincidence" | "scale" | "community";
   current: number;
-  target: number;
-  levels: { bronze: number; silver: number; gold: number };
-  level: ChallengeLevel | null;
-  next_level: ChallengeLevel | null;
-  to_next_level: number | null;
-  to_next_label: string | null;
-  pct: number;
   unit: string | null;
   detail: ChallengeDetail;
-  level_dates: ChallengeLevelDates;
+  // [easy, medium, hard] почти везде; у «Семи дней» один элемент "solo"
+  tiers: ChallengeTier[];
+  // Самый сложный тир, где взят хоть один уровень — им подписывается карточка
+  best_tier: ChallengeTierKey | null;
+  best_level: ChallengeLevel | null;
+  // Вкладка, открытая по умолчанию: первый ещё не пройденный до золота тир
+  default_tier: ChallengeTierKey;
   // Насколько последняя пробежка продвинула счётчик (0 — не продвинула)
   recent_delta: number;
+  /**
+   * Дата последнего дня активности, по которой посчитан recent_delta. «Детали»
+   * подсвечивают ею клетки, закрытые именно этой пробежкой.
+   */
+  recent_date: string | null;
 };
 
 export type ClubEntry = {
@@ -770,6 +993,8 @@ export type AchievementBadge = {
   title: string;
   icon: string;
   level: ChallengeLevel;
+  tier: ChallengeTierKey | null;
+  tier_label: string | null;
   achieved_at: string | null;
 };
 
@@ -783,6 +1008,40 @@ export type AchievementsResponse = {
 export function getAchievements(platform?: string) {
   const query = platform ? `?platform=${encodeURIComponent(platform)}` : "";
   return apiFetch<AchievementsResponse>(`/achievements${query}`);
+}
+
+export type StartNumberPlanEntry = {
+  location: string;
+  location_slug: string;
+  platform_code: string;
+  date: string;
+};
+
+export type StartNumberPlanRow = {
+  number: number;
+  done: boolean;
+  // По одному списку на колонку, длиной week_count: [E, E+1, E+2]
+  weeks: StartNumberPlanEntry[][];
+};
+
+export type StartNumberPlan = {
+  code: string;
+  // Система, к которой сужен план; null — все
+  platform_code: string | null;
+  low: number;
+  high: number;
+  generated_for: string;
+  // Сколько колонок в строке; подписи строит фронт
+  week_count: number;
+  rows: StartNumberPlanRow[];
+};
+
+export function getStartNumbersPlan(code: string, platform?: string | null) {
+  const query = new URLSearchParams({ code });
+  if (platform) {
+    query.set("platform", platform);
+  }
+  return apiFetch<StartNumberPlan>(`/achievements/start-numbers-plan?${query.toString()}`);
 }
 
 export type GoalPreset = {
@@ -852,6 +1111,8 @@ export type MyHistoryMilestoneKind =
   | "global_pr"
   | "pr"
   | "location_pr"
+  | "location_course_record"
+  | "location_age_group_record"
   | "first_foreign_parkrun"
   | "first_foreign_run"
   | "new_region"
@@ -886,6 +1147,11 @@ export type MyHistoryMilestone = {
   country: string | null;
   role: string | null;
   event_url: string | null;
+  // Охват рекорда локации: "global" | код системы (мультисистемные площадки),
+  // null — монолокация (kind=location_course_record).
+  record_scope?: string | null;
+  // Возрастная группа («30–34») — kind=location_age_group_record.
+  age_group?: string | null;
 };
 
 export type MyHistory = {
@@ -1089,6 +1355,97 @@ export function getAdminRecordsDigest(eventDate: string) {
   );
 }
 
+// Разметка открытий локаций: какой старт считается торжественным открытием.
+// У 5 вёрст, parkrun и RunPark это событие №1 из протокола, у С95 номер
+// проставляется руками — по номерам её забегов открытие не опознать.
+export type LocationOpeningEvent = {
+  event_id: string;
+  event_number: number | null;
+  event_date: string;
+  title: string | null;
+  source_url: string | null;
+  finishers: number | null;
+  is_opening: boolean;
+};
+
+// Открытие той же физической локации, случившееся раньше в другой системе:
+// у локации открытие одно (самое раннее), и тогда разметка здесь ни на что
+// не влияет.
+export type EarlierOpening = {
+  platform_code: string;
+  event_date: string;
+  location_name: string;
+};
+
+export type LocationOpeningItem = {
+  location_id: string;
+  location_name: string;
+  location_city: string | null;
+  external_key: string;
+  source_url: string | null;
+  platform_code: string;
+  opening_event_number: number | null;
+  // manual — задано руками, auto — событие №1, none — открытия у площадки нет.
+  opening_source: "manual" | "auto" | "none";
+  opening_event: LocationOpeningEvent | null;
+  opening_event_missing: boolean;
+  earlier_opening: EarlierOpening | null;
+  note: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+  first_events: LocationOpeningEvent[];
+};
+
+export type LocationOpeningList = {
+  platform: string;
+  items: LocationOpeningItem[];
+  total: number;
+  with_opening: number;
+  manual_total: number;
+  needs_manual: boolean;
+};
+
+export type LocationOpeningSaved = {
+  location_id: string;
+  location_name: string;
+  platform_code: string;
+  opening_event_number: number | null;
+  opening_source: "manual" | "auto" | "none";
+  opening_event: LocationOpeningEvent | null;
+  opening_event_missing: boolean;
+  note: string | null;
+  updated_at: string | null;
+};
+
+export function getAdminLocationOpenings(params: {
+  platform: string;
+  q?: string;
+  onlyMissing?: boolean;
+}) {
+  const search = new URLSearchParams({ platform: params.platform });
+  if (params.q) search.set("q", params.q);
+  if (params.onlyMissing) search.set("only_missing", "true");
+  return apiFetch<LocationOpeningList>(`/admin/location-openings?${search}`, undefined, {
+    timeoutMs: 60_000,
+  });
+}
+
+export function setAdminLocationOpening(
+  locationId: string,
+  body: { opening_event_number: number | null; note: string | null },
+) {
+  return apiFetch<LocationOpeningSaved>(`/admin/location-openings/${locationId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function clearAdminLocationOpening(locationId: string) {
+  return apiFetch<LocationOpeningSaved>(`/admin/location-openings/${locationId}`, {
+    method: "DELETE",
+  });
+}
+
 export type LocationContactPlatform = {
   location_id: string;
   location_name: string;
@@ -1216,6 +1573,58 @@ export function deleteAdminBlogPost(postId: string) {
   return apiFetch<{ message: string }>(`/admin/blog/posts/${postId}`, { method: "DELETE" });
 }
 
+export type ReleaseAdmin = {
+  id: string;
+  version: string;
+  title: string;
+  body: string;
+  released_at: string;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReleaseAdminPayload = {
+  version: string;
+  title: string;
+  body: string;
+  released_at: string | null;
+  is_published: boolean;
+};
+
+/** Кандидаты следующей версии от последнего релиза в таблице (включая скрытые). */
+export type ReleaseNextVersions = {
+  current: string;
+  major: string;
+  minor: string;
+  patch: string;
+  fix: string;
+};
+
+export function listAdminReleases() {
+  return apiFetch<{ items: ReleaseAdmin[]; total: number; next_versions: ReleaseNextVersions }>(
+    "/admin/releases",
+  );
+}
+
+export function createAdminRelease(body: ReleaseAdminPayload) {
+  return apiFetch<ReleaseAdmin>("/admin/releases", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateAdminRelease(releaseId: string, body: ReleaseAdminPayload) {
+  return apiFetch<ReleaseAdmin>(`/admin/releases/${releaseId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteAdminRelease(releaseId: string) {
+  return apiFetch<{ message: string }>(`/admin/releases/${releaseId}`, { method: "DELETE" });
+}
+
 export function getAdminEventReport(eventId: string) {
   return apiFetch<EventReport>(
     `/admin/event-report?event_id=${encodeURIComponent(eventId)}`,
@@ -1246,7 +1655,18 @@ export function setHistoryMilestoneEnabled(kind: string, enabled: boolean) {
 
 export type ParticipationType = "run" | "volunteer";
 
+// Загруженное фото: ссылку собирает бэкенд (публичный S3 на проде,
+// /api/media в локальной разработке) — фронт её только показывает.
+export type Photo = {
+  id: string;
+  url: string;
+  width: number;
+  height: number;
+};
+
 export type RunRating = {
+  id: string;
+  photos: Photo[];
   // Опаковый id старта: 'run:<uuid>' (бегун) / 'vol:<uuid>' (волонтёр).
   entry_id: string;
   participation_type: ParticipationType;
@@ -1308,6 +1728,8 @@ export type AdminRatingRow = {
   editable: boolean;
   participation_type: ParticipationType;
   created_at: string;
+  /** Фото, приложенные к отзыву. */
+  photos: { id: string; url: string; width: number; height: number }[];
 };
 
 export type AdminRatingsStatGroup = {
@@ -1413,6 +1835,34 @@ export function deleteRunRating(entryId: string) {
   });
 }
 
+// Фото в отзыве: до 5 штук, сжатие до 2K делает сервер. Отдельный upload —
+// apiFetch всегда ставит Content-Type: application/json, а multipart нужен
+// со своим boundary, который проставляет сам браузер.
+export const MAX_RATING_PHOTOS = 5;
+
+export async function uploadRatingPhoto(entryId: string, file: File): Promise<Photo> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(
+    `${API_BASE}/ratings/entry/${encodeURIComponent(entryId)}/photos`,
+    { method: "POST", credentials: "include", body: form },
+  );
+  if (!response.ok) {
+    throw new ApiError(await readErrorDetail(response), response.status);
+  }
+  return (await response.json()) as Photo;
+}
+
+export async function deleteRatingPhoto(photoId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/ratings/photos/${photoId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new ApiError(await readErrorDetail(response), response.status);
+  }
+}
+
 export type CoRunnerItem = {
   participant_key: string;
   display_name: string | null;
@@ -1472,6 +1922,15 @@ export function getPersonalRecords(includeTest = false) {
   return apiFetch<PersonalRecordItem[]>(`/runs/personal-records${query ? `?${query}` : ""}`);
 }
 
+export function getWins(includeTest = false) {
+  const params = new URLSearchParams();
+  if (includeTest) {
+    params.set("include_test", "true");
+  }
+  const query = params.toString();
+  return apiFetch<WinItem[]>(`/runs/wins${query ? `?${query}` : ""}`);
+}
+
 export function listVolunteering(includeTest = false, limit = 200, offset = 0) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (includeTest) {
@@ -1529,6 +1988,8 @@ export type MapLocationPoint = {
   location_url?: string | null;
   is_paused?: boolean;
   is_cancelled?: boolean;
+  /** Площадка объявлена, но ещё не стартовала. */
+  is_upcoming?: boolean;
   run_count: number;
   volunteer_count: number;
   visit_count: number;
@@ -1584,6 +2045,18 @@ export function getUniqueLocationsDetail(includeTest = false) {
   return apiFetch<UniqueLocationsDetailResponse>(`/locations/visited/detail${query}`);
 }
 
+export function getHomeDistanceDetail(includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<HomeDistanceDetail>(`/locations/visited/home-distance${query}`);
+}
+
+export function getPublicProfileHomeDistanceDetail(serialId: number, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<HomeDistanceDetail>(
+    `/users/${serialId}/profile/locations/visited/home-distance${query}`,
+  );
+}
+
 export function getCatalogLocationsMap() {
   return apiFetch<MapLocationsResponse>("/locations/catalog/map");
 }
@@ -1604,6 +2077,10 @@ export type CatalogLocationTableRow = {
   location_url: string | null;
   visited: boolean;
   first_visit_date: string | null;
+  // Система самого раннего визита — может отличаться от platform_code строки
+  first_visit_platform: string | null;
+  // {система: дата первого визита} — отметка пересчитывается под фильтр систем
+  visits_by_platform: Record<string, string>;
 };
 
 export type CatalogLocationsTableResponse = {
@@ -1642,8 +2119,15 @@ export type LocationAttendanceRecord = {
   platform_code: string | null;
 };
 
+/** Юбиляр клубного порога на старте: «Елена Филиппова — 25-й финиш». */
+export type LocationMilestone = { name: string; count: number };
+
+/** Кому до клубного порога остался один финиш. */
+export type LocationOneStep = { name: string; next: number };
+
 export type LocationLastEvent = {
   event_date: string;
+  event_number: number | null;
   platform_code: string;
   finishers: number | null;
   volunteers: number | null;
@@ -1653,6 +2137,15 @@ export type LocationLastEvent = {
   best_male_time_display: string | null;
   best_female_time_sec: number | null;
   best_female_time_display: string | null;
+  debutants: number | null;
+  first_at_location: number | null;
+  prs: number | null;
+  male_finishers: number | null;
+  female_finishers: number | null;
+  best_male_name: string | null;
+  best_female_name: string | null;
+  milestones: LocationMilestone[];
+  one_step: LocationOneStep[];
 };
 
 export type LocationPageStats = {
@@ -1682,6 +2175,58 @@ export type LocationHistogramRow = {
   count: number;
 };
 
+export type LocationAgeGroupTopRow = {
+  place: number;
+  name: string | null;
+  handle?: string | null;
+  best_time_sec: number;
+  best_time_display: string;
+};
+
+export type LocationAgeGroupRecord = {
+  key: string;
+  runner_handle?: string | null;
+  gender: "male" | "female";
+  age_group: string;
+  finish_time_sec: number;
+  finish_time_display: string | null;
+  runner_name: string | null;
+  event_date: string | null;
+  platform_code: string | null;
+  top: LocationAgeGroupTopRow[];
+  // Размер группы: участников и финишей всего на локации
+  runners_total: number;
+  finishes_total: number;
+};
+
+export type LocationCityNeighbor = {
+  slug: string;
+  name: string;
+  events_count: number;
+};
+
+export type LocationDescriptionSection = {
+  title: string | null;
+  text: string;
+};
+
+export type LocationDescriptionLink = {
+  title: string;
+  url: string;
+};
+
+/** Описание площадки с сайта системы: когда старт, трасса, как добраться. Текст чужой — source_url обязателен к показу. */
+export type LocationDescription = {
+  platform_code: string;
+  schedule_text: string | null;
+  course_text: string | null;
+  travel_text: string | null;
+  travel_sections: LocationDescriptionSection[];
+  links: LocationDescriptionLink[];
+  source_url: string | null;
+  updated_at: string | null;
+};
+
 export type LocationPage = {
   slug: string;
   identity_key: string;
@@ -1698,6 +2243,9 @@ export type LocationPage = {
   platforms: LocationPagePlatform[];
   stats: LocationPageStats;
   histogram: { bin_size_sec: number; rows: LocationHistogramRow[] };
+  age_group_records: LocationAgeGroupRecord[];
+  city_locations?: LocationCityNeighbor[];
+  description?: LocationDescription | null;
 };
 
 export type LocationIndexItem = {
@@ -1774,6 +2322,7 @@ export function getLocationEvents(slug: string) {
 
 export type LocationLeaderRunner = {
   name: string | null;
+  handle?: string | null;
   runs_count: number;
   best_time_sec: number | null;
   best_time_display: string | null;
@@ -1781,6 +2330,7 @@ export type LocationLeaderRunner = {
 
 export type LocationLeaderVolunteer = {
   name: string | null;
+  handle?: string | null;
   count: number;
 };
 
@@ -1795,8 +2345,247 @@ export function getLocationLeaders(slug: string) {
   return apiFetch<LocationLeaders>(`/locations/page/${encodeURIComponent(slug)}/leaders`);
 }
 
+/** Соседний старт локации в сквозной хронологии — стрелки «‹ ›» над протоколом. */
+export type ProtocolNeighbour = {
+  platform_code: string;
+  event_date: string;
+  event_number: number | null;
+  overall_number: number | null;
+  // Цифры соседнего старта — для дельт «+37 к прошлому» на плитках.
+  finishers: number | null;
+  volunteers: number | null;
+  avg_time_sec: number | null;
+  best_male_time_sec: number | null;
+  best_female_time_sec: number | null;
+  debutants: number | null;
+  first_at_location: number | null;
+  prs: number | null;
+};
+
+export type ProtocolClub = {
+  name: string;
+  count: number;
+};
+
+export type ProtocolAgeGroup = {
+  age_group: string;
+  male: number;
+  female: number;
+  unknown: number;
+  total: number;
+};
+
+export type ProtocolSummary = {
+  finishers: number;
+  volunteers: number;
+  male: number;
+  female: number;
+  unknown_gender: number;
+  avg_time_sec: number | null;
+  avg_time_display: string | null;
+  median_time_sec: number | null;
+  median_time_display: string | null;
+  best_time_sec: number | null;
+  best_time_display: string | null;
+  last_time_sec: number | null;
+  last_time_display: string | null;
+  best_male_time_display: string | null;
+  best_male_runner_name: string | null;
+  best_female_time_display: string | null;
+  best_female_runner_name: string | null;
+  debutants: number;
+  first_at_location: number;
+  prs: number;
+  location_prs: number;
+  clubs_count: number;
+  top_clubs: ProtocolClub[];
+  is_attendance_record: boolean;
+  is_course_record_male: boolean;
+  is_course_record_female: boolean;
+};
+
+export type ProtocolResult = {
+  position: number | null;
+  name: string | null;
+  external_user_id: string | null;
+  profile_url: string | null;
+  serial_id: number | null;
+  gender: "male" | "female" | null;
+  gender_position: number | null;
+  gender_total: number | null;
+  age_category: string | null;
+  age_group: string | null;
+  age_group_position: number | null;
+  age_group_total: number | null;
+  age_grade: number | null;
+  finish_time_sec: number | null;
+  finish_time_display: string | null;
+  pace_display: string | null;
+  club_name: string | null;
+  status: string | null;
+  // Финишёр без штрихкода («НЕИЗВЕСТНЫЙ») — строка приглушается.
+  is_unknown: boolean;
+  is_pr: boolean;
+  is_global_pr: boolean;
+  is_location_pr: boolean;
+  is_first_run: boolean;
+  is_first_run_at_location: boolean;
+  achievement_labels: string[];
+  history_rank: number | null;
+  history_total: number | null;
+  // Какая это пробежка по счёту у участника: сквозная у связанных аккаунтов,
+  // иначе в своей системе.
+  run_number: number | null;
+  run_number_all_systems: boolean;
+  // Место времени в истории своей возрастной группы на площадке.
+  age_group_history_rank: number | null;
+  age_group_history_total: number | null;
+  // Результат обновил рекорд своей возрастной группы на площадке (только 5в).
+  is_age_group_record: boolean;
+  is_me: boolean;
+};
+
+export type ProtocolVolunteer = {
+  name: string | null;
+  external_user_id: string | null;
+  profile_url: string | null;
+  serial_id: number | null;
+  roles: string[];
+  // Роли, которые человек исполняет впервые в карьере.
+  new_roles: string[];
+  // Какое это волонтёрство по счёту в карьере (в своей системе).
+  volunteer_number: number | null;
+  is_first_volunteering: boolean;
+  is_first_here: boolean;
+  is_me: boolean;
+};
+
+export type LocationProtocol = {
+  slug: string;
+  name: string;
+  city: string | null;
+  platform_code: string;
+  event_date: string;
+  event_number: number | null;
+  overall_number: number | null;
+  title: string | null;
+  source_url: string | null;
+  has_protocol: boolean;
+  is_partial: boolean;
+  declared_finishers: number | null;
+  previous: ProtocolNeighbour | null;
+  next: ProtocolNeighbour | null;
+  summary: ProtocolSummary;
+  age_groups: ProtocolAgeGroup[];
+  results: ProtocolResult[];
+  volunteers: ProtocolVolunteer[];
+};
+
+export function getLocationProtocol(slug: string, platformCode: string, eventDate: string) {
+  return apiFetch<LocationProtocol>(
+    `/locations/page/${encodeURIComponent(slug)}/protocol/${encodeURIComponent(platformCode)}/${encodeURIComponent(eventDate)}`,
+  );
+}
+
+/** Место участника в топе локации по одной его возрастной группе. */
+export type LocationAgeGroupStanding = {
+  // Тот же ключ, что у строки в age_group_records: по нему плитка раскрывает топ-5.
+  key: string;
+  gender: "male" | "female";
+  age_group: string;
+  label: string;
+  runs_count: number;
+  best_time_sec: number;
+  best_time_display: string;
+  best_time_date: string | null;
+  last_run_date: string | null;
+  place: number | null;
+  total: number;
+};
+
+/** Плитка «сколько отсюда до дома» на странице локации. */
+export type LocationHomeDistance = {
+  /** null — координат площадки или домашней локации нет. */
+  distance_km: number | null;
+  is_home: boolean;
+  /** Зелёная маркировка плитки — «здесь уже бегал», серая — «ещё не был». */
+  visited: boolean;
+  run_count: number;
+  home_name: string;
+  home_slug: string | null;
+  home_is_auto: boolean;
+};
+
+export type LocationPersonalStats = {
+  slug: string;
+  name: string;
+  runs_count: number;
+  total_runs: number;
+  best_time_sec: number | null;
+  best_time_display: string | null;
+  best_time_date: string | null;
+  avg_time_sec: number | null;
+  avg_time_display: string | null;
+  first_run_date: string | null;
+  last_run_date: string | null;
+  volunteering_count: number;
+  /** Любимая роль на этой локации: чаще всего выходил. */
+  top_volunteer_role: { role: string; count: number } | null;
+  // Место в топе по пробежкам — только внутри своего пола
+  gender: string | null;
+  rank_by_runs_gender: number | null;
+  runners_total_gender: number | null;
+  age_groups: LocationAgeGroupStanding[];
+  /** null — домашняя локация не определилась (у пользователя нет пробежек). */
+  home_distance: LocationHomeDistance | null;
+};
+
+export function getLocationPersonalStats(slug: string) {
+  return apiFetch<LocationPersonalStats>(`/locations/page/${encodeURIComponent(slug)}/me`);
+}
+
 export function getLocationsIndex() {
   return apiFetch<LocationsIndexResponse>("/locations/index");
+}
+
+export type LastResultsItem = {
+  slug: string;
+  identity_key: string;
+  name: string;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  platform_codes: string[];
+  is_paused: boolean;
+  is_cancelled: boolean;
+  event_date: string;
+  event_platform_codes: string[];
+  // Система первичного протокола — для адреса нашей страницы протокола.
+  event_platform_code: string | null;
+  event_number: number | null;
+  is_last_saturday: boolean;
+  finishers: number | null;
+  volunteers: number | null;
+  debutants: number | null;
+  prs: number | null;
+  best_male_time_sec: number | null;
+  best_male_time_display: string | null;
+  best_female_time_sec: number | null;
+  best_female_time_display: string | null;
+  avg_time_sec: number | null;
+  avg_time_display: string | null;
+  has_protocol: boolean;
+  protocol_url: string | null;
+};
+
+export type LastResultsResponse = {
+  saturday_date: string | null;
+  items: LastResultsItem[];
+  total: number;
+};
+
+export function getLastResults() {
+  return apiFetch<LastResultsResponse>("/locations/last-results");
 }
 
 export type AutoSyncPlatformPreference = {
@@ -1908,6 +2697,7 @@ export function updateProfileSlug(slug: string | null) {
 export type ProfileHandleResolve = {
   serial_id: number;
   display_name: string | null;
+  public_slug: string | null;
 };
 
 export function resolveProfileHandle(handle: string) {
@@ -1938,6 +2728,31 @@ export type AdminUserAuthBrief = {
   external_id: string;
 };
 
+export type AdminUserHomeLocationCandidate = {
+  identity_key: string;
+  name: string;
+  city: string | null;
+  slug: string | null;
+  run_days: number;
+  volunteer_days: number;
+};
+
+export type AdminUserHomeLocation = {
+  identity_key: string;
+  name: string;
+  slug: string | null;
+  city: string | null;
+  region: string | null;
+  run_days: number;
+  volunteer_days: number;
+  // Дом выбран руками в настройках, иначе определён автоматически.
+  is_manual: boolean;
+  // Правило отбора исчерпано: площадки поделили первое место, все они в tied.
+  is_tie: boolean;
+  tied: AdminUserHomeLocationCandidate[];
+  locations_total: number;
+};
+
 export type AdminUserListItem = {
   id: string;
   serial_id: number | null;
@@ -1954,6 +2769,7 @@ export type AdminUserListItem = {
   total_runs: number | null;
   total_volunteering: number | null;
   platform_links: AdminPlatformLinkBrief[];
+  home_location: AdminUserHomeLocation | null;
 };
 
 export type AdminUserListResponse = {
@@ -1971,12 +2787,38 @@ export type AdminUserPreviewDashboard = {
     telegram_username: string | null;
     display_name: string | null;
     news_subscribed: boolean;
+    avatar_url: string | null;
+    avatar_full_url: string | null;
     auth_logins: AdminUserAuthBrief[];
   };
   stats: DashboardStats;
   computed_at: string | null;
   platform_links: AdminPlatformLinkBrief[];
 };
+
+export type AdminLoginEventItem = {
+  ts: string;
+  event_type: string;
+  provider: string;
+  ip: string;
+  user_agent: string;
+  device_ref: string;
+  session_ref: string;
+};
+
+export type AdminLoginEventsResponse = {
+  items: AdminLoginEventItem[];
+  logins: number;
+  logouts: number;
+  devices: number;
+  unexpected_relogins: number;
+};
+
+export function getAdminUserLoginEvents(userId: string, limit = 100) {
+  return apiFetch<AdminLoginEventsResponse>(
+    `/admin/users/${userId}/login-events?limit=${limit}`,
+  );
+}
 
 export type AdminUsersSort = "created" | "runs" | "volunteering" | "profile";
 export type AdminUsersSortDirection = "asc" | "desc";
@@ -2105,6 +2947,11 @@ export function getPublicProfileBestResults(serialId: number, includeTest = fals
 export function getPublicProfilePersonalRecords(serialId: number, includeTest = false) {
   const query = includeTest ? "?include_test=true" : "";
   return apiFetch<PersonalRecordItem[]>(`/users/${serialId}/profile/runs/personal-records${query}`);
+}
+
+export function getPublicProfileWins(serialId: number, includeTest = false) {
+  const query = includeTest ? "?include_test=true" : "";
+  return apiFetch<WinItem[]>(`/users/${serialId}/profile/runs/wins${query}`);
 }
 
 export function getPublicProfileVolunteerRoleStats(serialId: number, includeTest = false) {
@@ -2246,10 +3093,15 @@ export type AdminSiteStatsPageviewsDay = {
   anonymous: number;
 };
 
+// Точный набор привязанных систем: человек попадает ровно в одну строку.
+export type AdminLinkCombinationRow = { codes: string[]; users: number };
+
 export type AdminSiteStatsResponse = {
   period_days: number;
   generated_at: string;
   overview: AdminSiteStatsOverview;
+  link_combinations: AdminLinkCombinationRow[];
+  users_without_links: number;
   users_new_by_day: AdminSiteStatsDayPoint[];
   links_new_by_day: AdminSiteStatsDayPoint[];
   logins_by_day: AdminSiteStatsDayPoint[];
@@ -2259,6 +3111,47 @@ export type AdminSiteStatsResponse = {
 
 export function getAdminSiteStats(periodDays = 30) {
   return apiFetch<AdminSiteStatsResponse>(`/admin/stats?period_days=${periodDays}`);
+}
+
+export type AdminGeographyCityRow = {
+  city: string;
+  region: string | null;
+  users: number;
+  users_new_period: number;
+  locations: number;
+};
+
+export type AdminGeographyLocationRow = {
+  identity_key: string;
+  name: string;
+  slug: string | null;
+  city: string | null;
+  region: string | null;
+  users: number;
+  users_new_period: number;
+};
+
+export type AdminUsersGeographyResponse = {
+  generated_at: string;
+  period_days: number;
+  users_total: number;
+  users_new_period: number;
+  users_with_home: number;
+  users_new_with_home: number;
+  users_without_home: number;
+  users_without_links: number;
+  cities_total: number;
+  locations_total: number;
+  cities: AdminGeographyCityRow[];
+  locations: AdminGeographyLocationRow[];
+};
+
+// Отдельный запрос от /admin/stats: срез считается по протоколам и заметно
+// дольше остальных чисел страницы — грузим его независимо.
+export function getAdminUsersGeography(periodDays = 30) {
+  return apiFetch<AdminUsersGeographyResponse>(
+    `/admin/stats/geography?period_days=${periodDays}`,
+  );
 }
 
 export function recordSitePageview(
@@ -2290,10 +3183,55 @@ export type PageAnalyticsEntity = PageAnalyticsRowStats & {
   href: string | null;
 };
 
+export type HomeAbVariantStats = {
+  variant: string;
+  views: number;
+  viewers: number;
+};
+
+/** Переход по ссылке с главной: локация или профиль участника. */
+export type HomeLinkClickStats = {
+  kind: string;
+  entity_key: string;
+  label: string;
+  href: string | null;
+  clicks: number;
+  visitors: number;
+};
+
+export type ShareFunnelRow = { event_type: string; events: number; visitors: number };
+export type SharePairRow = { subject: string; entry: string; shown: number; opens: number };
+export type ShareChannelRow = { channel: string; successes: number };
+export type ShareCountRow = { value: string; count: number };
+
+/** Воронка и разрезы фичи «Поделиться» (канал experiment="share"). */
+export type ShareStats = {
+  funnel: ShareFunnelRow[];
+  pairs: SharePairRow[];
+  channels: ShareChannelRow[];
+  looks: ShareCountRow[];
+  formats: ShareCountRow[];
+  photo_added: number;
+};
+
+/** Разворачивание ссылки ботом мессенджера/поисковика (превью в чате). */
+export type OgFetchRow = {
+  page_type: string;
+  entity_key: string;
+  label: string;
+  href: string | null;
+  fetches: number;
+  bots: number;
+};
+
 export type PageAnalyticsResponse = {
   date_from: string;
   date_to: string;
   generated_at: string;
+  home_ab: HomeAbVariantStats[];
+  home_links: HomeLinkClickStats[];
+  share: ShareStats;
+  og_fetches: OgFetchRow[];
   sections: PageAnalyticsSection[];
   top_profiles: PageAnalyticsEntity[];
   top_locations: PageAnalyticsEntity[];
@@ -2436,6 +3374,10 @@ export function demoGetBestResults() {
 
 export function demoGetPersonalRecords() {
   return apiFetch<PersonalRecordItem[]>("/demo/runs/personal-records");
+}
+
+export function demoGetWins() {
+  return apiFetch<WinItem[]>("/demo/runs/wins");
 }
 
 export function demoGetVolunteerRoleStats() {

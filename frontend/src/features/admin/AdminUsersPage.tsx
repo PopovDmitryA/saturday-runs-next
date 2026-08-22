@@ -1,20 +1,89 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { AdminShell } from "./AdminShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { Snackbar } from "../../components/Snackbar";
 import { AdminSubnav } from "./AdminSubnav";
 import {
+  getAdminUserLoginEvents,
   listAdminUsers,
   triggerAdminUserSyncPlatform,
+  type AdminLoginEventsResponse,
+  type AdminPlatformLinkBrief,
+  type AdminUserHomeLocation,
   type AdminUserListItem,
   type AdminUsersSort,
   type AdminUsersSortDirection,
 } from "../../lib/api";
-import { formatDateTime, platformCodeLabel } from "../../lib/format";
+import { formatDateTime, formatInt, platformCodeLabel } from "../../lib/format";
+import { platformProfileUrl } from "../../lib/platformProfileUrl";
 import { authLoginUrl, authProviderLabel, userLoginLines } from "./adminUserDisplay";
 
 // Платформы, для которых бэкенд поддерживает ручной запуск синка (см. ADMIN_SUPPORTED_SYNC_PLATFORMS).
 const SYNCABLE_PLATFORMS = new Set(["five_verst", "s95", "parkrun"]);
+
+const LOGIN_PROVIDER_LABELS: Record<string, string> = {
+  magic_link: "ссылка",
+  merge: "объединение",
+};
+
+function loginProviderLabel(provider: string) {
+  if (!provider) {
+    return "";
+  }
+  return LOGIN_PROVIDER_LABELS[provider] ?? authProviderLabel(provider);
+}
+
+// Короткая подпись устройства: из UA достаточно понять «тот же браузер или нет».
+function shortUserAgent(userAgent: string) {
+  if (!userAgent) {
+    return "—";
+  }
+  return userAgent.length > 48 ? `${userAgent.slice(0, 48)}…` : userAgent;
+}
+
+function LoginJournal({ data }: { data: AdminLoginEventsResponse }) {
+  if (data.items.length === 0) {
+    return <p className="muted">Журнал пуст — с момента включения журнала пользователь не входил.</p>;
+  }
+  return (
+    <div className="admin-login-journal">
+      <p className="admin-login-journal-summary">
+        Входов: <strong>{data.logins}</strong> · выходов: <strong>{data.logouts}</strong> · устройств:{" "}
+        <strong>{data.devices}</strong> ·{" "}
+        <span className={data.unexpected_relogins > 0 ? "admin-login-journal-alert" : undefined}>
+          входов без разлогина: <strong>{data.unexpected_relogins}</strong>
+        </span>
+      </p>
+      {data.unexpected_relogins > 0 && (
+        <p className="admin-login-journal-alert">
+          Пользователь заходил заново с устройства, с которого не выходил — сессия слетала сама.
+        </p>
+      )}
+      <table className="admin-table admin-login-journal-table">
+        <thead>
+          <tr>
+            <th>Когда</th>
+            <th>Событие</th>
+            <th>Способ</th>
+            <th>IP</th>
+            <th>Устройство</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.items.map((event, index) => (
+            <tr key={`${event.ts}-${index}`}>
+              <td>{formatDateTime(event.ts)}</td>
+              <td>{event.event_type === "logout" ? "выход" : "вход"}</td>
+              <td>{loginProviderLabel(event.provider) || "—"}</td>
+              <td>{event.ip || "—"}</td>
+              <td title={event.user_agent}>{shortUserAgent(event.user_agent)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function platformCell(
   user: AdminUserListItem,
@@ -27,12 +96,10 @@ function platformCell(
     return <span className="muted">—</span>;
   }
   const counts = (
-    <span className="admin-platform-counts muted"> ({link.run_count}/{link.volunteer_count})</span>
+    <span className="admin-platform-counts muted"> ({formatInt(link.run_count)}/{formatInt(link.volunteer_count)})</span>
   );
   const label = link.display_name?.trim() || (code === "runpark" ? (link.barcode_id ?? link.external_user_id) : null);
-  const url = code === "runpark"
-    ? `https://runpark.ru/Account/Karmas/${link.external_user_id}`
-    : link.external_url || null;
+  const url = platformProfileUrl(link);
   const content = !url ? (
     <span className="admin-platform-link">
       {label ?? <span className="muted">Профиль</span>}
@@ -63,6 +130,151 @@ function platformCell(
   );
 }
 
+// Порядок систем — тот же, что у колонок: от самой массовой к самой редкой.
+const PLATFORM_CODES = ["five_verst", "s95", "parkrun", "runpark"] as const;
+
+// Свёрнутый вид: четыре колонки систем схлопнуты в одну ячейку с чипами
+// привязок. Имя в системе, счётчики и кнопка синка остаются в развёрнутом
+// виде — в свёрнутом важно только «какие системы привязаны».
+function PlatformsSummaryCell({ user }: { user: AdminUserListItem }) {
+  const links = PLATFORM_CODES.map((code) =>
+    user.platform_links.find((item) => item.platform_code === code),
+  ).filter((link): link is AdminPlatformLinkBrief => Boolean(link));
+
+  if (links.length === 0) {
+    return <span className="muted">—</span>;
+  }
+
+  return (
+    <span className="admin-users-systems">
+      {links.map((link) => {
+        const label = platformCodeLabel(link.platform_code);
+        const hint = [
+          link.display_name?.trim() || link.barcode_id || link.external_user_id || label,
+          `пробежек: ${formatInt(link.run_count)}`,
+          `волонтёрств: ${formatInt(link.volunteer_count)}`,
+        ].join(" · ");
+        const url = platformProfileUrl(link);
+        if (!url) {
+          return (
+            <span key={link.platform_code} className="admin-system-chip" title={hint}>
+              {label}
+            </span>
+          );
+        }
+        return (
+          <a
+            key={link.platform_code}
+            className="admin-system-chip"
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            title={hint}
+          >
+            {label}
+          </a>
+        );
+      })}
+    </span>
+  );
+}
+
+// Вид колонок систем переживает перезагрузку: админ листает пользователей
+// пачками и не должен каждый раз схлопывать таблицу заново.
+const PLATFORMS_VIEW_STORAGE_KEY = "admin-users-platforms-view";
+
+function readPlatformsView(): "short" | "full" {
+  try {
+    return window.localStorage.getItem(PLATFORMS_VIEW_STORAGE_KEY) === "full" ? "full" : "short";
+  } catch {
+    return "short";
+  }
+}
+
+// Сколько претендентов показываем до нажатия «ещё»: у отдельных туристов
+// первое место делят десятки площадок, разворачивать их сразу нельзя.
+const HOME_TIE_PREVIEW = 5;
+
+function LocationLink({ name, slug }: { name: string; slug: string | null }) {
+  if (!slug) {
+    return <span>{name}</span>;
+  }
+  return (
+    <a href={`/locations/${slug}`} target="_blank" rel="noreferrer" className="admin-platform-link">
+      {name}
+    </a>
+  );
+}
+
+// Предполагаемый «дом» — та же площадка, что человек видит у себя в кабинете
+// и в рейтинге дальности: больше пробежек → больше волонтёрств → раньше начал.
+// Ручной выбор в настройках побеждает автоматику. Если правило исчерпано и
+// площадки поделили первое место, показываем всех претендентов.
+function HomeLocationCell({ home }: { home: AdminUserHomeLocation | null }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!home) {
+    return <span className="muted" title="Нет ни одной пробежки в базе — считать дом не из чего">—</span>;
+  }
+
+  const hint = [
+    `пробежек здесь: ${formatInt(home.run_days)}`,
+    `волонтёрств: ${formatInt(home.volunteer_days)}`,
+    `всего площадок: ${formatInt(home.locations_total)}`,
+  ].join(" · ");
+
+  if (home.is_tie) {
+    const shown = expanded ? home.tied : home.tied.slice(0, HOME_TIE_PREVIEW);
+    const hidden = home.tied.length - shown.length;
+    return (
+      <span className="admin-users-home">
+        <span
+          className="badge admin-users-home-badge admin-users-home-badge-warn"
+          title="Пробежки, волонтёрства и дата первой пробежки совпали — правило выбора дом не определило"
+        >
+          не определён
+        </span>
+        <ul className="admin-users-home-tie">
+          {shown.map((item) => (
+            <li key={item.identity_key} title={`пробежек: ${formatInt(item.run_days)}`}>
+              <LocationLink name={item.name} slug={item.slug} />
+              {item.city && <span className="muted"> · {item.city}</span>}
+            </li>
+          ))}
+          {!expanded && hidden > 0 && <li className="muted">…</li>}
+        </ul>
+        {hidden > 0 && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setExpanded(true)}>
+            ещё {formatInt(hidden)}
+          </button>
+        )}
+        {expanded && home.tied.length > HOME_TIE_PREVIEW && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setExpanded(false)}>
+            свернуть
+          </button>
+        )}
+      </span>
+    );
+  }
+
+  return (
+    <span className="admin-users-home" title={hint}>
+      <LocationLink name={home.name} slug={home.slug} />
+      {home.city && <span className="muted admin-users-home-city"> · {home.city}</span>}
+      <span
+        className="badge admin-users-home-badge"
+        title={
+          home.is_manual
+            ? "Участник выбрал дом сам в настройках профиля"
+            : "Определено автоматически: больше пробежек → больше волонтёрств → раньше начал"
+        }
+      >
+        {home.is_manual ? "вручную" : "авто"}
+      </span>
+    </span>
+  );
+}
+
 const USERS_PAGE_SIZE = 100;
 
 function AdminUsersContent() {
@@ -76,12 +288,30 @@ function AdminUsersContent() {
   const [sort, setSort] = useState<AdminUsersSort>("created");
   const [direction, setDirection] = useState<AdminUsersSortDirection>("desc");
   const [syncingKey, setSyncingKey] = useState<string | null>(null);
+  const [platformsView, setPlatformsView] = useState<"short" | "full">(readPlatformsView);
+  const [journalUserId, setJournalUserId] = useState<string | null>(null);
+  const [journal, setJournal] = useState<AdminLoginEventsResponse | null>(null);
+  const [journalLoading, setJournalLoading] = useState(false);
+  const [journalError, setJournalError] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     title: string;
     message: string;
     variant: "default" | "error";
   }>({ open: false, title: "", message: "", variant: "default" });
+
+  const platformsFull = platformsView === "full";
+  // Колонок в строке: восемь постоянных плюс одна свёрнутая или четыре системы.
+  const columnCount = 8 + (platformsFull ? PLATFORM_CODES.length : 1);
+
+  const changePlatformsView = useCallback((view: "short" | "full") => {
+    setPlatformsView(view);
+    try {
+      window.localStorage.setItem(PLATFORMS_VIEW_STORAGE_KEY, view);
+    } catch {
+      // приватный режим браузера — вид просто не запомнится
+    }
+  }, []);
 
   const offset = (page - 1) * USERS_PAGE_SIZE;
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / USERS_PAGE_SIZE)), [total]);
@@ -101,6 +331,27 @@ function AdminUsersContent() {
       }
     },
     [],
+  );
+
+  const handleToggleJournal = useCallback(
+    async (userId: string) => {
+      if (journalUserId === userId) {
+        setJournalUserId(null);
+        return;
+      }
+      setJournalUserId(userId);
+      setJournal(null);
+      setJournalError(null);
+      setJournalLoading(true);
+      try {
+        setJournal(await getAdminUserLoginEvents(userId));
+      } catch (err) {
+        setJournalError(err instanceof Error ? err.message : "Не удалось загрузить журнал входов");
+      } finally {
+        setJournalLoading(false);
+      }
+    },
+    [journalUserId],
   );
 
   const handleSort = (key: AdminUsersSort) => {
@@ -154,7 +405,7 @@ function AdminUsersContent() {
   }, []);
 
   return (
-    <AppShell title="Пользователи" activePath="/admin">
+    <AdminShell title="Пользователи">
       <div className="admin-users-page">
       <AdminSubnav activePath="/admin/users" />
 
@@ -167,10 +418,33 @@ function AdminUsersContent() {
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
           />
+          <div className="admin-users-view" role="group" aria-label="Колонки систем">
+            <span className="muted admin-users-view-label">Системы</span>
+            <div className="tview-toggle">
+              <button
+                type="button"
+                aria-pressed={!platformsFull}
+                className={`tview-tab${platformsFull ? "" : " tview-tab-active"}`}
+                title="Одна колонка: только какие системы привязаны"
+                onClick={() => changePlatformsView("short")}
+              >
+                Кратко
+              </button>
+              <button
+                type="button"
+                aria-pressed={platformsFull}
+                className={`tview-tab${platformsFull ? " tview-tab-active" : ""}`}
+                title="Колонка на каждую систему: имя, пробежки/волонтёрства, кнопка обновления"
+                onClick={() => changePlatformsView("full")}
+              >
+                Полно
+              </button>
+            </div>
+          </div>
           <span className="muted admin-users-count">
             {total === 0
               ? "Найдено: 0"
-              : `Показано ${offset + 1}–${offset + items.length} из ${total}`}
+              : `Показано ${formatInt(offset + 1)}–${formatInt(offset + items.length)} из ${formatInt(total)}`}
           </span>
         </div>
 
@@ -185,7 +459,7 @@ function AdminUsersContent() {
               Назад
             </button>
             <span className="muted admin-users-pagination-label">
-              Страница {page} из {totalPages}
+              Страница {formatInt(page)} из {formatInt(totalPages)}
             </span>
             <button
               type="button"
@@ -211,10 +485,16 @@ function AdminUsersContent() {
               <thead>
                 <tr>
                   <th>Сервисы входа</th>
-                  <th>{platformCodeLabel("five_verst")}</th>
-                  <th>{platformCodeLabel("s95")}</th>
-                  <th>{platformCodeLabel("parkrun")}</th>
-                  <th>{platformCodeLabel("runpark")}</th>
+                  {platformsFull ? (
+                    PLATFORM_CODES.map((code) => <th key={code}>{platformCodeLabel(code)}</th>)
+                  ) : (
+                    <th title="5 вёрст, С95, parkrun, RunPark — нажмите «Полно», чтобы увидеть имена и счётчики">
+                      Системы
+                    </th>
+                  )}
+                  <th title="Площадка, которую человек считает домашней: ручной выбор из настроек или автовыбор по пробежкам">
+                    Дом
+                  </th>
                   <th>
                     <button
                       type="button"
@@ -259,7 +539,7 @@ function AdminUsersContent() {
               <tbody>
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="muted">
+                    <td colSpan={columnCount} className="muted">
                       Пользователи не найдены
                     </td>
                   </tr>
@@ -267,7 +547,8 @@ function AdminUsersContent() {
                 {items.map((user) => {
                   const logins = userLoginLines(user);
                   return (
-                    <tr key={user.id}>
+                    <Fragment key={user.id}>
+                    <tr>
                       <td className="admin-users-telegram">
                         <ul className="admin-users-login-list">
                           {logins.length === 0 ? (
@@ -293,14 +574,18 @@ function AdminUsersContent() {
                           )}
                         </ul>
                       </td>
-                      <td>
-                        {platformCell(user, "five_verst", syncingKey === `${user.id}:five_verst`, handleSync)}
-                      </td>
-                      <td>{platformCell(user, "s95", syncingKey === `${user.id}:s95`, handleSync)}</td>
-                      <td>
-                        {platformCell(user, "parkrun", syncingKey === `${user.id}:parkrun`, handleSync)}
-                      </td>
-                      <td>{platformCell(user, "runpark", false, handleSync)}</td>
+                      {platformsFull ? (
+                        PLATFORM_CODES.map((code) => (
+                          <td key={code}>
+                            {platformCell(user, code, syncingKey === `${user.id}:${code}`, handleSync)}
+                          </td>
+                        ))
+                      ) : (
+                        <td>
+                          <PlatformsSummaryCell user={user} />
+                        </td>
+                      )}
+                      <td><HomeLocationCell home={user.home_location} /></td>
                       <td>{user.total_runs ?? "—"}</td>
                       <td>{user.total_volunteering ?? "—"}</td>
                       <td title={formatDateTime(user.created_at)}>
@@ -328,9 +613,26 @@ function AdminUsersContent() {
                               Профиль
                             </a>
                           )}
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => void handleToggleJournal(user.id)}
+                          >
+                            {journalUserId === user.id ? "Скрыть входы" : "Входы"}
+                          </button>
                         </div>
                       </td>
                     </tr>
+                    {journalUserId === user.id && (
+                      <tr className="admin-login-journal-row">
+                        <td colSpan={columnCount}>
+                          {journalLoading && <p className="muted">Загружаем журнал входов…</p>}
+                          {journalError && <p className="form-error">{journalError}</p>}
+                          {!journalLoading && !journalError && journal && <LoginJournal data={journal} />}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -347,7 +649,7 @@ function AdminUsersContent() {
       >
         {snackbar.message}
       </Snackbar>
-    </AppShell>
+    </AdminShell>
   );
 }
 

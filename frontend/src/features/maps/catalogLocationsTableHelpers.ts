@@ -1,6 +1,6 @@
 import type { CatalogLocationTableRow } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
-import type { MapPlatformCode, PlatformFilters } from "./mapFilters";
+import { resolveVisit, type MapPlatformCode, type PlatformFilters } from "./mapFilters";
 
 export type CatalogTableSortKey =
   | "name"
@@ -27,7 +27,7 @@ export type CatalogTableFilters = {
 
 export const LOCATION_STATUS_OPTIONS: Array<{ value: LocationRegistryStatus; label: string }> = [
   { value: "active", label: "Активна" },
-  { value: "paused", label: "На паузе" },
+  { value: "paused", label: "Не действует" },
   { value: "cancelled", label: "Отменена" },
 ];
 
@@ -82,6 +82,9 @@ export function filterCatalogTableRows(
     if (platformCode === null || !platformFilters[platformCode]) {
       return false;
     }
+    // «Посещал» зависит от фильтра систем: сузили до 5 вёрст — визит
+    // parkrun-эпохи не в счёт, локация снова непосещённая.
+    const visited = resolveVisit(row.visits_by_platform, platformFilters) !== null;
     if (tableFilters.platforms.size > 0 && !tableFilters.platforms.has(row.platform_code)) {
       return false;
     }
@@ -97,16 +100,16 @@ export function filterCatalogTableRows(
     ) {
       return false;
     }
-    if (mapMode === "visited" && !row.visited) {
+    if (mapMode === "visited" && !visited) {
       return false;
     }
-    if (mapMode === "unvisited" && row.visited) {
+    if (mapMode === "unvisited" && visited) {
       return false;
     }
-    if (tableFilters.visited === "visited" && !row.visited) {
+    if (tableFilters.visited === "visited" && !visited) {
       return false;
     }
-    if (tableFilters.visited === "not_visited" && row.visited) {
+    if (tableFilters.visited === "not_visited" && visited) {
       return false;
     }
     if (tableFilters.cities.size > 0) {

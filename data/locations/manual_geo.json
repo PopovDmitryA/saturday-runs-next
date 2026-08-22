@@ -1,0 +1,83 @@
+{
+  "_note": [
+    "Координаты, проставленные руками: для локаций, которым их неоткуда взять.",
+    "Автогеокодер (backfill_location_geo) их не находит, а у parkrun-площадок",
+    "без преемника в действующих системах нет и связки, от которой унаследовать.",
+    "Слаг пишем в любом виде — импортёр сравнивает нормализованно, поэтому",
+    "накрывает оба написания площадки (shuvalovsky-park и shuvalovskypark).",
+    "Поле name необязательное: если задано, заодно чинит английское название.",
+    "Применять: python backend/scripts/import_manual_location_geo.py --apply"
+  ],
+  "locations": [
+    {
+      "platform": "parkrun",
+      "slug": "shuvalovskypark",
+      "name": "Шуваловский парк",
+      "city": "Санкт-Петербург",
+      "latitude": 60.078591,
+      "longitude": 30.300642
+    },
+    {
+      "platform": "parkrun",
+      "slug": "ekaterinburgzelenayaroscha",
+      "name": "Зелёная роща",
+      "city": "Екатеринбург",
+      "latitude": 56.823649,
+      "longitude": 60.595640
+    },
+    {
+      "platform": "parkrun",
+      "slug": "severnyrechnoyvokzal",
+      "name": "Северный речной вокзал",
+      "city": "Москва",
+      "latitude": 55.851869,
+      "longitude": 37.469313
+    },
+    {
+      "platform": "parkrun",
+      "slug": "ulitsagolubaya",
+      "name": "Улица Голубая",
+      "city": "Сочи",
+      "latitude": 43.408577,
+      "longitude": 39.938242
+    },
+    {
+      "platform": "parkrun",
+      "slug": "parkguskova",
+      "name": "Парк Гуськова",
+      "city": "Оренбург",
+      "latitude": 51.805244,
+      "longitude": 55.141219
+    },
+    {
+      "platform": "parkrun",
+      "slug": "staryesady",
+      "name": "Старые сады",
+      "city": "Владимир",
+      "latitude": 56.134949,
+      "longitude": 40.384735
+    },
+    {
+      "platform": "parkrun",
+      "slug": "memorialnypark",
+      "name": "Мемориальный парк",
+      "city": "Орёл",
+      "latitude": 52.966157,
+      "longitude": 36.044661
+    },
+    {
+      "platform": "parkrun",
+      "slug": "ryazanoreshek",
+      "city": "Рязань",
+      "latitude": 54.636822,
+      "longitude": 39.765103
+    },
+    {
+      "platform": "parkrun",
+      "slug": "ryazancentral",
+      "city": "Рязань",
+      "latitude": 54.612741,
+      "longitude": 39.735395
+    }
+  ]
+}

@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { RegionChoropleth } from "../../components/RegionChoropleth";
-import { RequireAuth } from "../../components/RequireAuth";
-import { AppDataSourceProvider, demoDataSource, useAppDataSource } from "../../lib/appDataSource";
+import { useAppDataSource } from "../../lib/appDataSource";
 import type { CatalogLocationsTableResponse, UniqueLocationsDetailResponse } from "../../lib/api";
 import type { MapViewport, MapViewportRef } from "../../lib/mapViewport";
-import { DemoShell } from "../demo/DemoShell";
 import { UserMapPanel } from "./UserMapPanel";
 import { MapFilterBar, togglePlatform } from "./MapFilterBar";
 import {
@@ -84,10 +82,11 @@ function RegionsPanel({
   );
 }
 
-function MapsContent() {
-  const { getVisitedLocationsMap, getCatalogLocationsMap, getCatalogLocationsTable, mode } =
+// bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
+// оборачивает контент в собственный каркас с сайдбаром.
+function MapsContent({ bare = false }: { bare?: boolean } = {}) {
+  const { getVisitedLocationsMap, getCatalogLocationsMap, getCatalogLocationsTable } =
     useAppDataSource();
-  const isDemo = mode === "demo";
   const [view, setView] = useState<MapView>("locations");
   // Общий фильтр для обеих карт: активность + режим + системы.
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>("runs");
@@ -165,21 +164,12 @@ function MapsContent() {
     </div>
   );
 
-  if (isDemo) {
-    return <DemoShell title="Карта">{body}</DemoShell>;
+  if (bare) {
+    return body;
   }
 
   return <AppShell title="Карта">{body}</AppShell>;
 }
 
-export function MapsPage() {
-  return <RequireAuth>{() => <MapsContent />}</RequireAuth>;
-}
+export { MapsContent };
 
-export function DemoMapsPage() {
-  return (
-    <AppDataSourceProvider source={demoDataSource}>
-      <MapsContent />
-    </AppDataSourceProvider>
-  );
-}

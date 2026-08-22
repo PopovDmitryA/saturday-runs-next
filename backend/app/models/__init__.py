@@ -98,6 +98,18 @@ class ProfileFetchPendingStatus(str, enum.Enum):
     failed = "failed"
 
 
+class BacklogCardType(str, enum.Enum):
+    bug = "bug"
+    feature = "feature"
+
+
+class BacklogCardStatus(str, enum.Enum):
+    pending = "pending"
+    in_progress = "in_progress"
+    rejected = "rejected"
+    done = "done"
+
+
 class ProfileFetchPendingReason(str, enum.Enum):
     cooldown = "cooldown"
     ban = "ban"
@@ -141,6 +153,9 @@ class Location(Base):
     longitude: Mapped[float | None] = mapped_column()
     is_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Площадка объявлена, но ещё не стартовала. Отдельно от is_paused: там
+    # старты кончились, здесь их ещё не было (см. миграцию 064).
+    is_upcoming: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_official_map: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     map_url: Mapped[str | None] = mapped_column(String(1024))
     source_url: Mapped[str | None] = mapped_column(String(1024))
@@ -160,6 +175,12 @@ class Location(Base):
     coordinate_requests: Mapped[list["LocationCoordinateRequest"]] = relationship(back_populates="location")
     catalog_links: Mapped[list["LocationCatalogLink"]] = relationship(back_populates="location")
     contacts: Mapped[list["LocationContact"]] = relationship(back_populates="location")
+    description: Mapped["LocationDescription | None"] = relationship(
+        back_populates="location", uselist=False, cascade="all, delete-orphan"
+    )
+    opening: Mapped["LocationOpening | None"] = relationship(
+        back_populates="location", uselist=False, cascade="all, delete-orphan"
+    )
     announce_settings: Mapped["LocationAnnounceSettings | None"] = relationship(
         back_populates="location", uselist=False
     )
@@ -231,6 +252,56 @@ class LocationContact(Base):
     location: Mapped["Location"] = relationship(back_populates="contacts")
 
 
+class LocationDescription(Base):
+    """Описание площадки с сайта системы: когда старт, что за трасса, как доехать.
+
+    Одна строка на локацию платформы (у идентичности их может быть несколько —
+    5 вёрст и S95 пишут о своей площадке по-своему). Тексты чужие, поэтому
+    source_url обязателен: на странице локации мы ставим ссылку на источник.
+
+    Три отметки времени отвечают на разные вопросы, и путать их нельзя:
+    `fetched_at` — когда мы последний раз СМОТРЕЛИ страницу (ставится всегда,
+    даже если текст тот же и даже если страница оказалась пустой);
+    `content_updated_at` — когда текст последний раз РЕАЛЬНО менялся;
+    `revision` — сколько раз он менялся с момента первого сбора (0 — с тех пор
+    не менялся ни разу). Так по строке видно «проверяли час назад, а менялось
+    в марте», а не только «что-то происходило».
+
+    content_hash — хеш собранного текста, а не HTML страницы: вёрстка на
+    5verst.ru меняется от релиза к релизу, а описание парка — раз в год.
+    Хеш по тексту даёт content_updated_at, которому можно верить.
+    """
+
+    __tablename__ = "location_descriptions"
+    __table_args__ = (UniqueConstraint("location_id", name="uq_location_descriptions_location_id"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
+    # «Где и когда?»: адрес старта и время (бывает сезонным).
+    schedule_text: Mapped[str | None] = mapped_column(Text)
+    # «О трассе»: маршрут, покрытие, круги, место сбора.
+    course_text: Mapped[str | None] = mapped_column(Text)
+    # Вводная строка «как добраться»: адрес (5 вёрст) или место проведения (S95).
+    travel_text: Mapped[str | None] = mapped_column(Text)
+    # [{"title": "Общественным транспортом", "text": "…"}, …]
+    travel_sections: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    # [{"title": "Карта и схема проезда", "url": "https://…"}, …]
+    links: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    source_url: Mapped[str | None] = mapped_column(String(1024))
+    content_hash: Mapped[str | None] = mapped_column(String(64))
+    # Когда последний раз смотрели страницу — независимо от того, менялся текст или нет.
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Когда текст последний раз менялся, и сколько раз он менялся всего.
+    content_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    location: Mapped["Location"] = relationship(back_populates="description")
+
+
 class LocationAnnounceSettings(Base):
     """Правила анонсов локации — одна строка на локацию (в легаси — contacts_location.not_report)."""
 
@@ -249,6 +320,40 @@ class LocationAnnounceSettings(Base):
     )
 
     location: Mapped["Location"] = relationship(back_populates="announce_settings")
+
+
+class LocationOpening(Base):
+    """Какой старт считать торжественным открытием — ручная разметка.
+
+    У 5 вёрст, parkrun и RunPark открытие видно из протокола (событие №1), у С95
+    по номерам забегов его не опознать — там номер проставляется руками.
+
+    Строка на локацию платформы, а не на физическую точку: одна и та же локация
+    открывалась в parkrun и в 5 вёрст по своим номерам, и размечать их надо
+    отдельно. В зачёт рейтинга при этом идёт только самое раннее из них: парк
+    открывается один раз (см. _opening_event_ids в leaderboard_service).
+
+    `opening_event_number IS NULL` при существующей строке означает не «не
+    знаем», а «открытия у этой локации нет»: так гасится ложное открытие там,
+    где система начала вести протоколы позже самой локации.
+    """
+
+    __tablename__ = "location_openings"
+    __table_args__ = (UniqueConstraint("location_id", name="uq_location_openings_location_id"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
+    opening_event_number: Mapped[int | None] = mapped_column(Integer)
+    note: Mapped[str | None] = mapped_column(Text)
+    updated_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    location: Mapped["Location"] = relationship(back_populates="opening")
 
 
 class LocationCatalog(Base):
@@ -649,6 +754,10 @@ class Participant(Base):
     display_name: Mapped[str | None] = mapped_column(String(256))
     profile_url: Mapped[str | None] = mapped_column(String(1024))
     age_category: Mapped[str | None] = mapped_column(String(64))
+    # «male» / «female» / NULL. Материализация того, что раньше считалось из
+    # age_category (или profile_extra у s95) при каждом чтении — см.
+    # gender_position_service.resolve_participant_gender.
+    gender: Mapped[str | None] = mapped_column(String(8))
     club_name: Mapped[str | None] = mapped_column(String(256))
     barcode_id: Mapped[str | None] = mapped_column(String(16))
     planning_location: Mapped[str | None] = mapped_column(String(256))
@@ -735,6 +844,22 @@ class VolunteerResult(Base):
     participant: Mapped["Participant | None"] = relationship(back_populates="volunteer_results")
 
 
+def _media_url(key: str | None) -> str | None:
+    """Ссылка на картинку в хранилище.
+
+    Ключ с "/" — новый формат (media-хранилище: публичный S3 на проде,
+    /api/media локально). Значение без "/" — аватарка, загруженная до переезда
+    на S3: это имя файла на диске, которое ещё отдаёт роут /api/avatars.
+    """
+    if not key:
+        return None
+    if "/" not in key:
+        return f"/api/avatars/{key}"
+    from app.core.media_storage import get_media_storage
+
+    return get_media_storage().public_url(key)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -751,9 +876,21 @@ class User(Base):
     news_subscribed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     profile_private: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     home_location_key: Mapped[str | None] = mapped_column(String(255))
+    # Когда человек в последний раз менял домашнюю локацию руками (в т.ч.
+    # сбрасывал на авто). NULL — не менял никогда. Нужно рейтингу дальности: его
+    # таблица кэшируется на несколько часов, и без этой отметки нельзя отличить
+    # «в таблице ещё старые километры» от «рейтинг посчитан неправильно».
+    home_location_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Уникальная НЕцифровая ссылка на публичный профиль (/users/{public_slug});
     # хранится в нижнем регистре, уникальность регистронезависима. NULL — не задана.
     public_slug: Mapped[str | None] = mapped_column(String(64), unique=True)
+    # Имя файла аватарки в settings.avatars_dir ("{user_id}-{token}.jpg").
+    # NULL — аватарки нет. Сам файл живёт на диске, при замене старый удаляется.
+    avatar_path: Mapped[str | None] = mapped_column(String(512))
+    # Оригинал без пережатия — открывается по клику на аватарку (решение
+    # Дмитрия 28.07.2026: «не будем их сжимать, а по клику раскрывать»).
+    # NULL — аватарка загружена до появления оригиналов либо её нет.
+    avatar_full_path: Mapped[str | None] = mapped_column(String(512))
     serial_id: Mapped[int] = mapped_column(
         BigInteger,
         nullable=False,
@@ -788,6 +925,18 @@ class User(Base):
     dashboard_cache: Mapped["DashboardCache | None"] = relationship(back_populates="user", uselist=False)
     sync_jobs: Mapped[list["SyncJob"]] = relationship(back_populates="user")
     auth_identities: Mapped[list["AuthIdentity"]] = relationship(back_populates="user")
+
+    @property
+    def avatar_url(self) -> str | None:
+        """Публичный адрес аватарки; UserResponse (from_attributes) подхватывает
+        это свойство, поэтому avatar_url есть везде, где отдаётся пользователь."""
+        return _media_url(self.avatar_path)
+
+    @property
+    def avatar_full_url(self) -> str | None:
+        """Оригинал аватарки — им открывается просмотр по клику. Если оригинала
+        нет (аватарка старая), фронт показывает превью."""
+        return _media_url(self.avatar_full_path)
 
 
 class BlockedProfileSlug(Base):
@@ -1136,6 +1285,68 @@ class PageViewEvent(Base):
     duration_sec: Mapped[int | None] = mapped_column(Integer)
 
 
+class LoginEvent(Base):
+    """Журнал входов и выходов: по строке на каждый логин и на каждый разлогин.
+
+    Нужен, чтобы отличать «сессия слетела сама» от «зашёл с другого устройства»
+    и «вышел сам». Диагностика читается так: логин без предшествующего logout
+    с тем же device_ref — сессия оборвалась не по воле пользователя.
+
+    session_ref — префикс sha256 от session_id (сам id не храним, он равносилен
+    паролю); связывает login и logout одной сессии. device_ref — хэш от
+    user_agent + ip, грубый отпечаток устройства.
+    """
+
+    __tablename__ = "login_events"
+    __table_args__ = (
+        Index("ix_login_events_user_ts", "user_id", "ts"),
+        Index("ix_login_events_ts", "ts"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # login | logout
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    # yandex | vk | telegram | magic_link | merge | "" (для logout)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False, server_default="")
+    session_ref: Mapped[str] = mapped_column(String(32), nullable=False, server_default="")
+    ip: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
+    user_agent: Mapped[str] = mapped_column(String(256), nullable=False, server_default="")
+    device_ref: Mapped[str] = mapped_column(String(32), nullable=False, server_default="")
+
+
+class AbEvent(Base):
+    """Сырое событие АБ-эксперимента (скролл, клики, конверсия) с вариантом.
+
+    Пишется эндпоинтом POST /stats/event. visitor_key здесь ВСЕГДА анонимный
+    ("a:<id браузера>") — в отличие от page_view_events, где после логина ключ
+    меняется на "u:<user_id>". Так события до и после VK-редиректа сшиваются
+    в одну воронку; пользователь при этом виден в viewer_user_id.
+
+    cohort заполняется только для event_type=login_complete: "new" — логин
+    создал аккаунт (регистрация), "returning" — вошёл ранее зарегистрированный
+    (разлогиненный) участник; в конверсию эксперимента идут только "new".
+    """
+
+    __tablename__ = "ab_events"
+    __table_args__ = (
+        Index("ix_ab_events_experiment_ts", "experiment", "ts"),
+        Index("ix_ab_events_visitor", "visitor_key"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    experiment: Mapped[str] = mapped_column(String(32), nullable=False)
+    variant: Mapped[str] = mapped_column(String(8), nullable=False)
+    visitor_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    value: Mapped[str] = mapped_column(String(128), nullable=False, server_default="")
+    path: Mapped[str] = mapped_column(String(256), nullable=False, server_default="")
+    cohort: Mapped[str] = mapped_column(String(16), nullable=False, server_default="")
+    viewer_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
 class PageStatsDaily(Base):
     """Дневной агрегат просмотров по (день МСК, раздел, сущность).
 
@@ -1187,6 +1398,31 @@ class BlogPost(Base):
     )
 
 
+class SiteRelease(Base):
+    """Релиз сайта — блок на публичной странице «Обновления» (/updates).
+
+    Версия X.Y.Z (опционально с суффиксом -fixN) присваивается при деплое по
+    протоколу из docs/release_management.md. Запись создаётся скрытой
+    (is_published=false): администратор правит текст и сам открывает релиз
+    на сайте. Скрытые и удалённые релизы оставляют пропуски в опубликованных
+    номерах — это допустимо.
+    """
+
+    __tablename__ = "site_releases"
+    __table_args__ = (Index("ix_site_releases_released_at", "released_at"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    version: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    released_at: Mapped[date] = mapped_column(Date, nullable=False)
+    is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class HistoryMilestoneSetting(Base):
     """Вкл/выкл конкретного вида вехи «Моя история» (админ-переключатель).
 
@@ -1202,3 +1438,102 @@ class HistoryMilestoneSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class BacklogCard(Base):
+    """Карточка бэклога — идея/баг, предложенные пользователем сайта.
+
+    score = upvotes - downvotes, денормализован для сортировки ленты по
+    голосам без пересчёта join'ом на каждый запрос. category — свободная
+    строка, валидируется по app.backlog_categories.CATEGORIES (без DB-enum,
+    чтобы список можно было расширять без миграции).
+    """
+
+    __tablename__ = "backlog_cards"
+    __table_args__ = (Index("ix_backlog_cards_status_score", "status", "score"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    type: Mapped[BacklogCardType] = mapped_column(Enum(BacklogCardType, name="backlog_card_type_enum"), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False, server_default="other")
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[BacklogCardStatus] = mapped_column(
+        Enum(BacklogCardStatus, name="backlog_card_status_enum"), nullable=False, server_default="pending"
+    )
+    is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    author_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    upvotes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    downvotes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    score: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # Когда карточку перевели в «реализовано» (последний перевод). NULL — ещё нет.
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    author: Mapped["User"] = relationship()
+
+
+class BacklogVote(Base):
+    __tablename__ = "backlog_votes"
+
+    card_id: Mapped[UUID] = mapped_column(ForeignKey("backlog_cards.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    value: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user: Mapped["User"] = relationship()
+
+
+class BacklogComment(Base):
+    __tablename__ = "backlog_comments"
+    __table_args__ = (Index("ix_backlog_comments_card_created_at", "card_id", "created_at"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    card_id: Mapped[UUID] = mapped_column(ForeignKey("backlog_cards.id", ondelete="CASCADE"), nullable=False)
+    author_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    author: Mapped["User"] = relationship()
+
+
+class LocationRatingPhoto(Base):
+    """Фото, приложенное к отзыву на локацию (до 5 на отзыв).
+
+    storage_key — ключ объекта в публичном бакете (или относительный путь в
+    локальном media_dir, см. core/media_storage.py); сам URL не храним, чтобы
+    смена домена/бакета не требовала переписывания строк в БД.
+    """
+
+    __tablename__ = "location_rating_photos"
+    __table_args__ = (Index("ix_location_rating_photos_rating", "rating_id", "sort_order"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    rating_id: Mapped[UUID] = mapped_column(
+        ForeignKey("location_ratings.id", ondelete="CASCADE"), nullable=False
+    )
+    storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    sort_order: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class BacklogCardPhoto(Base):
+    """Фото, приложенное к карточке бэклога (до 3 на карточку)."""
+
+    __tablename__ = "backlog_card_photos"
+    __table_args__ = (Index("ix_backlog_card_photos_card", "card_id", "sort_order"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    card_id: Mapped[UUID] = mapped_column(ForeignKey("backlog_cards.id", ondelete="CASCADE"), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    sort_order: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

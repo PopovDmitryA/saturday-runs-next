@@ -13,6 +13,7 @@ from app.models import (
     EventCrosslink,
     Location,
     LocationRating,
+    LocationRatingPhoto,
     Participant,
     Platform,
     PlatformLink,
@@ -21,6 +22,7 @@ from app.models import (
     VolunteerResult,
 )
 from app.services.location_catalog_service import LocationCatalogIndex
+from app.services.photo_service import PhotoPayload, delete_rating_photo, list_rating_photos
 from app.time_format import normalize_finish_time_display
 
 # Право оценивать: минимум столько пробежек в истории (по всем системам).
@@ -107,9 +109,19 @@ def _is_editable(
     return False
 
 
-def _rating_to_dict(rating: LocationRating, *, today: date | None = None) -> dict[str, object]:
+def _rating_to_dict(
+    rating: LocationRating,
+    *,
+    today: date | None = None,
+    photos: list[PhotoPayload] | None = None,
+) -> dict[str, object]:
     source_id = rating.run_result_id or rating.volunteer_result_id
     return {
+        "id": rating.id,
+        "photos": [
+            {"id": photo.id, "url": photo.url, "width": photo.width, "height": photo.height}
+            for photo in (photos or [])
+        ],
         "entry_id": _entry_id(rating.participation_type, cast(UUID, source_id)),
         "participation_type": rating.participation_type,
         "run_result_id": rating.run_result_id,
@@ -316,13 +328,19 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
             source_id = rating.run_result_id or rating.volunteer_result_id
             ratings_by_entry[_entry_id(rating.participation_type, cast(UUID, source_id))] = rating
 
+    photos_by_rating = list_rating_photos(db, [r.id for r in ratings_by_entry.values()])
+
     for entry in entries:
         entry.pop("_platform_order", None)
         # Канонический ключ площадки отдаём наружу: по нему страница локации
         # понимает, что этот старт — про неё (slug у разных платформ свой).
         entry["location_identity_key"] = entry.pop("_identity", None)
         existing_rating = ratings_by_entry.get(cast(str, entry["entry_id"]))
-        entry["my_rating"] = _rating_to_dict(existing_rating) if existing_rating else None
+        entry["my_rating"] = (
+            _rating_to_dict(existing_rating, photos=photos_by_rating.get(existing_rating.id))
+            if existing_rating
+            else None
+        )
 
     total_runs = count_user_total_runs(db, user_id)
     return {
@@ -475,7 +493,27 @@ def upsert_rating(
 
     db.flush()
     db.refresh(rating)
-    return _rating_to_dict(rating)
+    return _rating_to_dict(rating, photos=list_rating_photos(db, [rating.id]).get(rating.id))
+
+
+def load_editable_rating(db: Session, user_id: UUID, entry_id: str) -> LocationRating:
+    """Своя оценка, которую ещё можно менять — общая проверка для фото-роутов."""
+    participation, source_id = _parse_entry_id(entry_id)
+    filter_col = (
+        LocationRating.volunteer_result_id
+        if participation == PARTICIPATION_VOLUNTEER
+        else LocationRating.run_result_id
+    )
+    rating = (
+        db.query(LocationRating)
+        .filter(LocationRating.user_id == user_id, filter_col == source_id)
+        .one_or_none()
+    )
+    if rating is None:
+        raise RatingError("Сначала сохраните оценку, потом добавляйте фото")
+    if not _is_editable(rating.event_date, None, rating.created_at):
+        raise RatingError("Оценка зафиксирована: прошло больше 3 месяцев, изменить нельзя")
+    return rating
 
 
 def delete_rating(db: Session, user_id: UUID, entry_id: str) -> bool:
@@ -496,6 +534,10 @@ def delete_rating(db: Session, user_id: UUID, entry_id: str) -> bool:
         raise RatingError(
             "Оценка зафиксирована: прошло больше 3 месяцев, удалить нельзя"
         )
+    # Строки фото унесёт FK ON DELETE CASCADE, а файлы в хранилище — нет:
+    # снимаем их явно, иначе бакет копит сирот после каждого удалённого отзыва.
+    for photo in db.query(LocationRatingPhoto).filter(LocationRatingPhoto.rating_id == rating.id).all():
+        delete_rating_photo(db, photo)
     db.delete(rating)
     db.flush()
     return True
@@ -513,8 +555,9 @@ def _my_rating_entry(
     position: int | None,
     is_pr: bool,
     today: date,
+    photos: list[PhotoPayload] | None = None,
 ) -> dict[str, object]:
-    entry = _rating_to_dict(rating, today=today)
+    entry = _rating_to_dict(rating, today=today, photos=photos)
     entry.update(
         {
             "event_date": event.event_date,
@@ -553,6 +596,7 @@ def list_my_ratings(db: Session, user_id: UUID) -> dict[str, object]:
         .filter(LocationRating.user_id == user_id)
         .all()
     )
+    run_photos = list_rating_photos(db, [row[0].id for row in run_rows])
     for rating, run, event, location, platform_code, participant in run_rows:
         ratings.append(
             _my_rating_entry(
@@ -568,6 +612,7 @@ def list_my_ratings(db: Session, user_id: UUID) -> dict[str, object]:
                 position=run.position,
                 is_pr=bool(run.is_pr),
                 today=today,
+                photos=run_photos.get(rating.id),
             )
         )
 
@@ -581,6 +626,7 @@ def list_my_ratings(db: Session, user_id: UUID) -> dict[str, object]:
         .filter(LocationRating.user_id == user_id)
         .all()
     )
+    vol_photos = list_rating_photos(db, [row[0].id for row in vol_rows])
     for rating, event, location, platform_code, participant in vol_rows:
         ratings.append(
             _my_rating_entry(
@@ -594,6 +640,7 @@ def list_my_ratings(db: Session, user_id: UUID) -> dict[str, object]:
                 position=None,
                 is_pr=False,
                 today=today,
+                photos=vol_photos.get(rating.id),
             )
         )
 
@@ -629,11 +676,18 @@ def list_all_ratings(db: Session) -> list[dict[str, object]]:
     )
     today = date.today()
     catalog_index = LocationCatalogIndex(db)
+    # Фото одной пачкой на все отзывы: админке нужно видеть, что приложено, и
+    # открыть картинку не выходя со страницы.
+    photos_by_rating = list_rating_photos(db, [rating.id for rating, _user, _loc in rows])
     result: list[dict[str, object]] = []
     for rating, user, location in rows:
         result.append(
             {
                 "id": rating.id,
+                "photos": [
+                    {"id": photo.id, "url": photo.url, "width": photo.width, "height": photo.height}
+                    for photo in photos_by_rating.get(rating.id, [])
+                ],
                 "user_id": rating.user_id,
                 "user_display": _user_display(user),
                 "user_serial": user.serial_id,

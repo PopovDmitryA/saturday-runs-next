@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "./AdminShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import {
   getAdminLocationRatings,
   getAdminRatings,
+  type AdminLocationRatingRow,
   type AdminLocationRatings,
   type AdminRatingRow,
   type AdminRatings,
   type AdminRatingsStatGroup,
 } from "../../lib/api";
-import { formatDate, formatDateTime, platformCodeLabel } from "../../lib/format";
+import { formatDate, formatDateTime, formatInt, formatStatValue, platformCodeLabel } from "../../lib/format";
 import { AdminSubnav } from "./AdminSubnav";
 
 function num(value: number | null): string {
@@ -34,13 +35,116 @@ function StatGroup({ title, hint, group }: { title: string; hint: string; group:
       <div className="admin-ratings-stats">
         {STAT_ITEMS.map((item) => (
           <div className="admin-ratings-stat" key={item.key}>
-            <span className="admin-ratings-stat-value">{group[item.key]}</span>
+            <span className="admin-ratings-stat-value">{formatStatValue(group[item.key])}</span>
             <span className="admin-ratings-stat-label">{item.label}</span>
           </div>
         ))}
       </div>
     </div>
   );
+}
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 250] as const;
+const DEFAULT_PAGE_SIZE = 50;
+
+// Оба блока страницы приходят целиком одним запросом и режутся на страницы уже
+// здесь: строк на сотни, а фильтровать и сортировать их удобнее по всему
+// набору, а не по видимой странице.
+function Pagination({
+  page,
+  pageCount,
+  pageSize,
+  total,
+  shownFrom,
+  shownTo,
+  onPage,
+  onPageSize,
+}: {
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  total: number;
+  shownFrom: number;
+  shownTo: number;
+  onPage: (value: number) => void;
+  onPageSize: (value: number) => void;
+}) {
+  return (
+    <div className="admin-ratings-pagination">
+      <span className="muted admin-ratings-pagination-label">
+        {total === 0
+          ? "Найдено: 0"
+          : `Показано ${formatInt(shownFrom)}–${formatInt(shownTo)} из ${formatInt(total)}`}
+      </span>
+      <div className="admin-ratings-pagination-controls">
+        <button
+          type="button"
+          className="btn secondary btn-sm"
+          disabled={page <= 1}
+          onClick={() => onPage(Math.max(1, page - 1))}
+        >
+          Назад
+        </button>
+        <span className="muted admin-ratings-pagination-label">
+          Страница {formatInt(page)} из {formatInt(pageCount)}
+        </span>
+        <button
+          type="button"
+          className="btn secondary btn-sm"
+          disabled={page >= pageCount}
+          onClick={() => onPage(Math.min(pageCount, page + 1))}
+        >
+          Вперёд
+        </button>
+        <select
+          className="input admin-ratings-page-size"
+          value={pageSize}
+          onChange={(event) => onPageSize(Number(event.target.value))}
+          aria-label="Строк на странице"
+        >
+          {PAGE_SIZE_OPTIONS.map((size) => (
+            <option key={size} value={size}>
+              по {size}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+type LocationSortKey =
+  | "location"
+  | "ratings"
+  | "voters"
+  | "overall"
+  | "organization"
+  | "route"
+  | "community";
+
+function compareLocations(
+  a: AdminLocationRatingRow,
+  b: AdminLocationRatingRow,
+  key: LocationSortKey,
+): number {
+  switch (key) {
+    case "location":
+      return a.location_name.localeCompare(b.location_name, "ru");
+    case "ratings":
+      return a.ratings - b.ratings;
+    case "voters":
+      return a.voters - b.voters;
+    case "overall":
+      return cmpNullableScore(a.avg_overall, b.avg_overall);
+    case "organization":
+      return cmpNullableScore(a.avg_organization, b.avg_organization);
+    case "route":
+      return cmpNullableScore(a.avg_route, b.avg_route);
+    case "community":
+      return cmpNullableScore(a.avg_community, b.avg_community);
+    default:
+      return 0;
+  }
 }
 
 type RawSortKey =
@@ -103,6 +207,9 @@ function compareRows(a: AdminRatingRow, b: AdminRatingRow, key: RawSortKey): num
 
 function AdminRatingsContent() {
   const [raw, setRaw] = useState<AdminRatings | null>(null);
+  // Фото открывается прямо на странице: уходить в бакет за картинкой, чтобы
+  // понять, что приложил участник, — лишний шаг.
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [locations, setLocations] = useState<AdminLocationRatings | null>(null);
   const [excludeLocals, setExcludeLocals] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,6 +218,16 @@ function AdminRatingsContent() {
   const [platform, setPlatform] = useState("all");
   const [sort, setSort] = useState<RawSortKey>("created_at");
   const [direction, setDirection] = useState<SortDir>("desc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+
+  // Рейтинг локаций: свои фильтр, сортировка и страница — блоки живут независимо.
+  const [locationSearch, setLocationSearch] = useState("");
+  const [onlyThreshold, setOnlyThreshold] = useState(false);
+  const [locationSort, setLocationSort] = useState<LocationSortKey>("ratings");
+  const [locationDirection, setLocationDirection] = useState<SortDir>("desc");
+  const [locationPage, setLocationPage] = useState(1);
+  const [locationPageSize, setLocationPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
 
   const loadRaw = useCallback(() => {
     getAdminRatings()
@@ -147,6 +264,18 @@ function AdminRatingsContent() {
       ];
       setDirection(numericDesc.includes(key) ? "desc" : "asc");
     }
+    setPage(1);
+  };
+
+  const handleLocationSort = (key: LocationSortKey) => {
+    if (locationSort === key) {
+      setLocationDirection((current) => (current === "desc" ? "asc" : "desc"));
+    } else {
+      setLocationSort(key);
+      // Числовые столбцы интереснее сверху вниз, название — по алфавиту.
+      setLocationDirection(key === "location" ? "asc" : "desc");
+    }
+    setLocationPage(1);
   };
 
   const platformCodes = useMemo(() => {
@@ -172,8 +301,49 @@ function AdminRatingsContent() {
     return sorted;
   }, [raw, search, platform, sort, direction]);
 
+  const visibleLocations = useMemo(() => {
+    if (!locations) return [];
+    const needle = locationSearch.trim().toLowerCase();
+    const filtered = locations.locations.filter((loc) => {
+      if (onlyThreshold && !loc.meets_threshold) return false;
+      if (!needle) return true;
+      return loc.location_name.toLowerCase().includes(needle);
+    });
+    const sorted = [...filtered].sort((a, b) => compareLocations(a, b, locationSort));
+    if (locationDirection === "desc") sorted.reverse();
+    return sorted;
+  }, [locations, locationSearch, onlyThreshold, locationSort, locationDirection]);
+
+  // Страница могла «уехать» за конец после смены фильтра — возвращаемся к последней.
+  const pageCount = Math.max(1, Math.ceil(visibleRatings.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pagedRatings = visibleRatings.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const locationPageCount = Math.max(1, Math.ceil(visibleLocations.length / locationPageSize));
+  const currentLocationPage = Math.min(locationPage, locationPageCount);
+  const pagedLocations = visibleLocations.slice(
+    (currentLocationPage - 1) * locationPageSize,
+    currentLocationPage * locationPageSize,
+  );
+
   const sortArrow = (key: RawSortKey) =>
     sort === key ? (direction === "asc" ? " ▲" : " ▼") : "";
+
+  const locationSortArrow = (key: LocationSortKey) =>
+    locationSort === key ? (locationDirection === "asc" ? " ▲" : " ▼") : "";
+
+  const LocationSortTh = ({ label, sortKey }: { label: string; sortKey: LocationSortKey }) => (
+    <th>
+      <button
+        type="button"
+        className={`admin-sort-th${locationSort === sortKey ? " active" : ""}`}
+        onClick={() => handleLocationSort(sortKey)}
+      >
+        {label}
+        {locationSortArrow(sortKey)}
+      </button>
+    </th>
+  );
 
   const SortTh = ({
     label,
@@ -198,7 +368,7 @@ function AdminRatingsContent() {
   );
 
   return (
-    <AppShell title="Рейтинг" activePath="/admin">
+    <AdminShell title="Рейтинг">
       <div className="admin-ratings-page">
         <AdminSubnav activePath="/admin/ratings" />
 
@@ -238,28 +408,67 @@ function AdminRatingsContent() {
           </div>
           <p className="muted admin-ratings-lead">
             Среднее по критериям (1–5). «Оценивших» — число разных пользователей; на прод рейтинг
-            планируется показывать с {locations?.min_voters ?? 10} разными оценившими.
+            планируется показывать с {locations?.min_voters ?? 10} разными оценившими. Клик по
+            заголовку столбца — сортировка.
           </p>
+          <div className="admin-ratings-toolbar">
+            <input
+              className="input admin-ratings-search"
+              type="search"
+              placeholder="Поиск по названию локации…"
+              value={locationSearch}
+              onChange={(e) => {
+                setLocationSearch(e.target.value);
+                setLocationPage(1);
+              }}
+            />
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={onlyThreshold}
+                onChange={(e) => {
+                  setOnlyThreshold(e.target.checked);
+                  setLocationPage(1);
+                }}
+              />
+              Только прошедшие порог
+            </label>
+          </div>
+          <Pagination
+            page={currentLocationPage}
+            pageCount={locationPageCount}
+            pageSize={locationPageSize}
+            total={visibleLocations.length}
+            shownFrom={(currentLocationPage - 1) * locationPageSize + 1}
+            shownTo={(currentLocationPage - 1) * locationPageSize + pagedLocations.length}
+            onPage={setLocationPage}
+            onPageSize={(value) => {
+              setLocationPageSize(value);
+              setLocationPage(1);
+            }}
+          />
           <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Локация</th>
-                  <th>Оценок</th>
-                  <th>Оценивших</th>
-                  <th>Общая</th>
-                  <th>Организация</th>
-                  <th>Трасса</th>
-                  <th>Сообщество</th>
+                  <LocationSortTh label="Локация" sortKey="location" />
+                  <LocationSortTh label="Оценок" sortKey="ratings" />
+                  <LocationSortTh label="Оценивших" sortKey="voters" />
+                  <LocationSortTh label="Общая" sortKey="overall" />
+                  <LocationSortTh label="Организация" sortKey="organization" />
+                  <LocationSortTh label="Трасса" sortKey="route" />
+                  <LocationSortTh label="Сообщество" sortKey="community" />
                 </tr>
               </thead>
               <tbody>
-                {locations && locations.locations.length === 0 && (
+                {locations && visibleLocations.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="muted">Пока нет оценок</td>
+                    <td colSpan={7} className="muted">
+                      {locations.locations.length === 0 ? "Пока нет оценок" : "Ничего не найдено"}
+                    </td>
                   </tr>
                 )}
-                {locations?.locations.map((loc) => (
+                {pagedLocations.map((loc) => (
                   <tr key={loc.location_key}>
                     <td>
                       {loc.location_name}
@@ -294,12 +503,18 @@ function AdminRatingsContent() {
               type="search"
               placeholder="Поиск: пользователь, локация, город, комментарий…"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
             />
             <select
               className="input admin-ratings-platform"
               value={platform}
-              onChange={(e) => setPlatform(e.target.value)}
+              onChange={(e) => {
+                setPlatform(e.target.value);
+                setPage(1);
+              }}
             >
               <option value="all">Все системы</option>
               {platformCodes.map((code) => (
@@ -309,10 +524,25 @@ function AdminRatingsContent() {
               ))}
             </select>
             <span className="muted admin-ratings-count">
-              Показано: {visibleRatings.length}
-              {raw && visibleRatings.length !== raw.ratings.length ? ` из ${raw.ratings.length}` : ""}
+              Отобрано: {formatInt(visibleRatings.length)}
+              {raw && visibleRatings.length !== raw.ratings.length
+                ? ` из ${formatInt(raw.ratings.length)}`
+                : ""}
             </span>
           </div>
+          <Pagination
+            page={currentPage}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            total={visibleRatings.length}
+            shownFrom={(currentPage - 1) * pageSize + 1}
+            shownTo={(currentPage - 1) * pageSize + pagedRatings.length}
+            onPage={setPage}
+            onPageSize={(value) => {
+              setPageSize(value);
+              setPage(1);
+            }}
+          />
           <div className="table-scroll">
             <table className="data-table admin-ratings-raw-table">
               <thead>
@@ -338,17 +568,18 @@ function AdminRatingsContent() {
                     sortKey="comment"
                     title="Сортировка: сначала строки с комментарием (▲)"
                   />
+                  <th>Фото</th>
                 </tr>
               </thead>
               <tbody>
                 {raw && visibleRatings.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="muted">
+                    <td colSpan={14} className="muted">
                       {raw.ratings.length === 0 ? "Пока нет оценок" : "Ничего не найдено"}
                     </td>
                   </tr>
                 )}
-                {visibleRatings.map((r) => (
+                {pagedRatings.map((r) => (
                   <tr key={r.id}>
                     <td className="admin-ratings-nowrap" title={formatDateTime(r.created_at)}>
                       {formatDateTime(r.created_at)}
@@ -387,6 +618,23 @@ function AdminRatingsContent() {
                         "—"
                       )}
                     </td>
+                    <td className="admin-ratings-photos">
+                      {r.photos.length > 0 ? (
+                        r.photos.map((photo, index) => (
+                          <button
+                            key={photo.id}
+                            type="button"
+                            className="admin-ratings-photo-thumb"
+                            onClick={() => setPhotoPreview(photo.url)}
+                            title={`Фото ${index + 1} из ${r.photos.length} — открыть`}
+                          >
+                            <img src={photo.url} alt="" loading="lazy" />
+                          </button>
+                        ))
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -394,7 +642,21 @@ function AdminRatingsContent() {
           </div>
         </section>
       </div>
-    </AppShell>
+
+      {photoPreview && (
+        <div
+          className="admin-photo-overlay"
+          role="dialog"
+          aria-label="Фото отзыва"
+          onClick={() => setPhotoPreview(null)}
+        >
+          <img src={photoPreview} alt="Фото отзыва" />
+          <button type="button" className="admin-photo-close" aria-label="Закрыть">
+            ×
+          </button>
+        </div>
+      )}
+    </AdminShell>
   );
 }
 

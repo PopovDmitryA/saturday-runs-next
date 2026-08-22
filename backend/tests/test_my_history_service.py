@@ -418,13 +418,13 @@ def _add_volunteering(db_session, platform, location, participant, suffix, index
 
 def test_run_streak_record_collapses_to_one_milestone_per_record(db_session: Session) -> None:
     """Пока серия идёт, веха остаётся ОДНОЙ и растёт в значении — отдельной
-    записи на каждую субботу не появляется. Дата — суббота, в которую был
-    превзойдён прошлый рекорд, значение — итоговая длина серии."""
+    записи на каждую субботу не появляется. Дата — последняя суббота серии,
+    когда её рекордная длина реально набралась; значение — итоговая длина."""
     user, participant, location, platform, suffix = _streak_fixture(db_session)
 
-    # Серия 1: субботы 0..5 (6 подряд) — первый рекорд.
+    # Серия 1: субботы 0..5 (6 подряд) — первый рекорд, набран на субботе 5.
     # Пропуск на субботе 6.
-    # Серия 2: субботы 7..14 (8 подряд) — рекорд побит на 7-й её субботе.
+    # Серия 2: субботы 7..14 (8 подряд) — рекорд набран на её последней, 14-й.
     counter = 0
     for index in list(range(0, 6)) + list(range(7, 15)):
         _add_run(db_session, platform, location, participant, suffix, index, counter)
@@ -436,10 +436,10 @@ def test_run_streak_record_collapses_to_one_milestone_per_record(db_session: Ses
     streaks.sort(key=lambda m: m["event_date"])
 
     assert [m["number"] for m in streaks] == [6, 8]
-    # Первый рекорд: старого рекорда не было — дата первой субботы серии.
-    assert streaks[0]["event_date"] == _saturday(0)
-    # Второй: серия началась на 7, прошлый рекорд 6 побит на её 7-й субботе.
-    assert streaks[1]["event_date"] == _saturday(13)
+    # Первый рекорд длины 6 набран на 6-й субботе серии (индекс 5).
+    assert streaks[0]["event_date"] == _saturday(5)
+    # Второй: серия 7..14, длина 8 достигнута на её последней субботе (индекс 14).
+    assert streaks[1]["event_date"] == _saturday(14)
 
     # Общая серия совпадает с беговой один в один — дублирующую веху подавляем.
     assert [m for m in history["milestones"] if m["kind"] == "saturday_streak"] == []
@@ -462,7 +462,8 @@ def test_combined_streak_survives_only_when_longer_than_specialized(db_session: 
     combined = [m for m in history["milestones"] if m["kind"] == "saturday_streak"]
 
     assert [m["number"] for m in combined] == [6]
-    assert combined[0]["event_date"] == _saturday(0)
+    # Рекорд длины 6 набран на последней, 6-й субботе серии (индекс 5).
+    assert combined[0]["event_date"] == _saturday(5)
     # Ни беговой, ни волонтёрской серии тут нет — подряд ни разу не набралось.
     assert [m for m in history["milestones"] if m["kind"] == "saturday_run_streak"] == []
     assert [m for m in history["milestones"] if m["kind"] == "saturday_volunteer_streak"] == []

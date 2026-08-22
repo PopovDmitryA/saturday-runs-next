@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { type VolunteerRoleStatItem } from "../lib/api";
 import { useAppDataSource } from "../lib/appDataSource";
+import { formatInt } from "../lib/format";
 import { PlatformBadge } from "./PlatformBadge";
 import { DetailModal } from "./DetailModal";
 
@@ -68,7 +69,7 @@ export function VolunteerRolesModal({ open, onClose, includeTest = false }: Volu
                   <td className="col-platform">
                     <PlatformBadge code={item.platform_code} />
                   </td>
-                  <td className="col-count">{item.count}</td>
+                  <td className="col-count">{formatInt(item.count)}</td>
                 </tr>
               ))}
             </tbody>

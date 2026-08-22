@@ -13,10 +13,15 @@ from app.platform_adapters.canonical import (
     CanonicalEvent,
     CanonicalEventSummary,
     CanonicalLocation,
+    CanonicalLocationDescription,
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
 from app.platform_adapters.five_verst.http import BASE_URL, NotFoundError, fetch_html, source_hash  # noqa: F401
+from app.platform_adapters.five_verst.location_description import (
+    parse_course_description,
+    parse_schedule_text,
+)
 
 DATE_IN_URL_RE = re.compile(r"/results/(\d{2}\.\d{2}\.\d{4})/")
 USERSTATS_ID_RE = re.compile(r"/userstats/(\d+)")
@@ -26,7 +31,13 @@ EVENTS_PAGE_URL = f"{BASE_URL}/events/"
 LATEST_RESULTS_URL = f"{BASE_URL}/results/latest/"
 TIME_RE = re.compile(r"\b(\d{1,2}):(\d{2}):(\d{2})\b")
 # group(1) — чистая категория («М40-44»); хвост «(2)» — место в группе на этом забеге, не часть категории.
-AGE_CATEGORY_RE = re.compile(r"([MVЖМ]\d{1,2}(?:-\d{1,2})?)(?:\s*\(\d+\))?")
+#
+# Трёхзначные границы обязательны, хотя нормальные группы двузначные: у
+# участников с незаполненной датой рождения 5 вёрст считает абсурдный возраст и
+# пишет «М110-114». Со старым \d{1,2} регулярка откусывала от такой строки
+# «М11» и молча создавала несуществующую категорию — 114 строк на проде.
+# (?!\d) не даёт обрезать число и на более длинных хвостах.
+AGE_CATEGORY_RE = re.compile(r"([MVЖМ]\d{1,3}(?:-\d{1,3})?)(?!\d)(?:\s*\(\d+\))?")
 CLUB_HREF_RE = re.compile(r"/clubs/([^/?#]+)")
 YANDEX_PT_RE = re.compile(r"yandex\.ru/maps/\?pt=\s*([0-9.]+),([0-9.]+)", re.I)
 LOCATION_RESULTS_ALL_RE = re.compile(r"/([a-z0-9]+)/results/all/?", re.I)
@@ -198,10 +209,13 @@ def registry_entry_is_cancelled(status: LocationRegistryStatus) -> bool:
 
 
 def registry_entry_is_paused(status: LocationRegistryStatus) -> bool:
-    return status in {
-        LocationRegistryStatus.paused,
-        LocationRegistryStatus.preparing,
-    }
+    # «Скоро» больше не паузa: у новой площадки старты ещё не начинались, а у
+    # паузы — уже кончились (решение Дмитрия 20.08.2026).
+    return status == LocationRegistryStatus.paused
+
+
+def registry_entry_is_upcoming(status: LocationRegistryStatus) -> bool:
+    return status == LocationRegistryStatus.preparing
 
 
 def list_location_slugs(limit: int | None = None) -> list[str]:
@@ -286,8 +300,21 @@ def parse_location_home_html(
 
     latitude: float | None = None
     longitude: float | None = None
+    description: CanonicalLocationDescription | None = None
+    course_url = course_source_url or _course_url(slug)
     if course_html:
         latitude, longitude = parse_course_coordinates(course_html)
+        parsed_description = parse_course_description(course_html, course_url, home_html=html)
+        description = None if parsed_description.is_empty() else parsed_description
+    else:
+        # Страница «О трассе» бывает недоступна (404 на площадках «скоро»), но
+        # «Где и когда?» с главной при этом есть — она сама по себе полезна.
+        schedule_text = parse_schedule_text(html)
+        if schedule_text:
+            description = CanonicalLocationDescription(
+                schedule_text=schedule_text,
+                source_url=source_url,
+            )
 
     return CanonicalLocation(
         external_key=slug,
@@ -297,7 +324,8 @@ def parse_location_home_html(
         latitude=latitude,
         longitude=longitude,
         source_url=source_url,
-        course_source_url=course_source_url or _course_url(slug),
+        course_source_url=course_url,
+        description=description,
     )
 
 
@@ -608,9 +636,16 @@ def parse_run_protocol_html(
 
         external_user_id = _extract_user_id_from_row(row)
         participant_name = _extract_participant_name_from_row(row)
-        is_unknown = external_user_id is None and participant_name is not None and "неизвест" in participant_name.lower()
-        if external_user_id is None and not is_unknown:
-            continue
+        # Строка протокола без ссылки на профиль — это финишировавший бегун без
+        # аккаунта. 5 вёрст печатает их двумя способами: «НЕИЗВЕСТНЫЙ» (не
+        # опознан вовсе) и «Имя Фамилия (Нужна регистрация)» (штрихкод считан,
+        # профиля нет). В численность старта площадка засчитывает обоих.
+        #
+        # Раньше сохранялись только первые, а вторые молча выпадали: у Дружбы
+        # 29.11.2025 так потерялись позиции 67 и 118, и рекорд посещаемости
+        # показывался как 193 вместо 195. По всей базе 5 вёрст не хватало 4473
+        # строк в 2972 протоколах.
+        is_unknown = external_user_id is None
         if is_unknown:
             external_user_id = f"unknown:{slug}:{event_date.isoformat()}:{position}"
             participant_name = participant_name or "НЕИЗВЕСТНЫЙ"

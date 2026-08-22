@@ -101,7 +101,7 @@ def test_profile_preview_and_confirm_flow(authenticated_client: TestClient, db_s
     )
 
     with patch(
-        "app.platform_adapters.five_verst.adapter.FiveVerstAdapter.fetch_profile_preview",
+        "app.services.profile_linking_service.persist_live_profile_preview",
         return_value=preview,
     ):
         preview_response = authenticated_client.post(
@@ -143,7 +143,7 @@ def test_profile_confirm_rejects_duplicate_link(authenticated_client: TestClient
     )
 
     with patch(
-        "app.platform_adapters.five_verst.adapter.FiveVerstAdapter.fetch_profile_preview",
+        "app.services.profile_linking_service.persist_live_profile_preview",
         return_value=preview,
     ):
         preview_response = authenticated_client.post(

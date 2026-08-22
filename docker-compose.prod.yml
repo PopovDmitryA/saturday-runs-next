@@ -29,12 +29,9 @@ services:
   bot:
     profiles: ["telegram"]
 
-  vk-bot:
-    volumes:
-      - ./.env:/app/.env:ro
-
   # Дефолтная очередь "celery": прогрев главной портала, агрегаты популярности
-  # страниц, суточная сводка автообновления в ВК. Раньше сервис был выключен
+  # страниц, суточная сводка автообновления в Telegram (см. admin_telegram_notify.py).
+  # Раньше сервис был выключен
   # профилем "dev-default-worker" — эти задачи beat исправно ставил в очередь,
   # но разбирать её на проде было некому: остальные воркеры слушают только свои
   # -Q. Итог: главная портала считалась холодной (~2 мин) прямо в запросе
@@ -64,6 +61,20 @@ services:
         condition: service_healthy
 
   worker-five-verst:
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./.env:/app/.env:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !reset
+      redis:
+        condition: service_healthy
+
+  # Пользовательские синки 5 вёрст — отдельный воркер, чтобы «обновить» в ЛК
+  # не ждало окончания батча (батч уходит на паузу, см. fetch/priority.py).
+  worker-five-verst-user:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://redis:6379/0

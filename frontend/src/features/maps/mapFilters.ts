@@ -1,6 +1,8 @@
 import type { MapLocationPoint } from "../../lib/api";
 
-export type MapPlatformCode = "five_verst" | "s95" | "runpark";
+// parkrun ушёл из России в 2022. Его локации показываем как историю: строки в
+// каталоге со статусом «отменена» и точки там, где известны координаты.
+export type MapPlatformCode = "five_verst" | "s95" | "runpark" | "parkrun";
 
 export type PlatformFilters = Record<MapPlatformCode, boolean>;
 
@@ -8,9 +10,13 @@ export const DEFAULT_PLATFORM_FILTERS: PlatformFilters = {
   five_verst: true,
   s95: true,
   runpark: true,
+  // По умолчанию выключен: parkrun закрыт с 2022 года, и по умолчанию карта
+  // должна показывать, где можно бегать сейчас. Включается вручную, когда
+  // нужна история.
+  parkrun: false,
 };
 
-const MAP_PLATFORM_CODES: MapPlatformCode[] = ["five_verst", "s95", "runpark"];
+const MAP_PLATFORM_CODES: MapPlatformCode[] = ["five_verst", "s95", "runpark", "parkrun"];
 
 export function coordKey(point: MapLocationPoint): string {
   return `${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}`;
@@ -18,8 +24,8 @@ export function coordKey(point: MapLocationPoint): string {
 
 export function pointPlatformCode(point: MapLocationPoint): MapPlatformCode | null {
   const code = point.active_platform ?? point.platform_codes[0];
-  if (code === "five_verst" || code === "s95" || code === "runpark") {
-    return code;
+  if (MAP_PLATFORM_CODES.includes(code as MapPlatformCode)) {
+    return code as MapPlatformCode;
   }
   return null;
 }
@@ -72,7 +78,27 @@ export function buildVisitedByCoord(
 }
 
 export function hasActivePlatformFilter(filters: PlatformFilters): boolean {
-  return filters.five_verst || filters.s95 || filters.runpark;
+  return MAP_PLATFORM_CODES.some((code) => filters[code]);
+}
+
+/** Первое посещение локации среди включённых в фильтре систем. */
+export function resolveVisit(
+  visitsByPlatform: Record<string, string> | null | undefined,
+  filters: PlatformFilters,
+): { date: string; platform: string } | null {
+  if (!visitsByPlatform) {
+    return null;
+  }
+  let best: { date: string; platform: string } | null = null;
+  for (const [platform, visitDate] of Object.entries(visitsByPlatform)) {
+    if (!filters[platform as MapPlatformCode]) {
+      continue;
+    }
+    if (best === null || visitDate < best.date) {
+      best = { date: visitDate, platform };
+    }
+  }
+  return best;
 }
 
 export type ActivityFilter = "runs" | "volunteering";

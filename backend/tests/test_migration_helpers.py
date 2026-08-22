@@ -8,6 +8,7 @@ from app.migration.helpers import (
     five_verst_volunteer_key,
     legacy_time_to_seconds,
     legacy_timestamp_to_date,
+    s95_country_from_url,
     s95_run_key,
     s95_volunteer_key,
     slug_from_5verst_url,
@@ -25,6 +26,19 @@ def test_slug_from_s95_url() -> None:
     assert slug_from_s95_url("https://s95.ru/events/izmailovo") == "izmailovo"
     assert slug_from_s95_url("https://s95.by/events/parkzhrun/") == "parkzhrun"
     assert slug_from_s95_url("https://s95.rs/events/belgrade") == "belgrade"
+
+
+def test_s95_country_from_url() -> None:
+    assert s95_country_from_url("https://s95.rs/events/belgrade") == "Сербия"
+    assert s95_country_from_url("https://s95.by/events/grodno") == "Беларусь"
+    assert s95_country_from_url("https://s95.ru/events/izmailovo") == "Россия"
+    # Голый домен без пути — именно он приходит из реестра как entry.domain.
+    assert s95_country_from_url("https://s95.rs") == "Сербия"
+    assert s95_country_from_url("s95.by") == "Беларусь"
+    assert s95_country_from_url("https://www.s95.rs/events/novisad") == "Сербия"
+    # Неизвестный или пустой источник — Россия как было, s95 родом оттуда.
+    assert s95_country_from_url(None) == "Россия"
+    assert s95_country_from_url("https://example.com/events/x") == "Россия"
 
 
 def test_is_five_verst_unknown_runner() -> None:
@@ -77,7 +91,8 @@ def test_s95_keys() -> None:
     event_date = date(2024, 5, 18)
     user_id = "12345"
     assert s95_run_key(slug, event_date, user_id, 7) == "izmailovo:2024-05-18:12345:7"
+    # Канонические русские роли живут в ключе как есть — «Сканер», не «сканер».
     assert (
         s95_volunteer_key(slug, event_date, user_id, "Сканер")
-        == "vol:izmailovo:2024-05-18:12345:сканер"
+        == "vol:izmailovo:2024-05-18:12345:Сканер"
     )

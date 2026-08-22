@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
+from itertools import combinations
+from uuid import UUID
 
 from sqlalchemy import Date, cast, distinct, func
 from sqlalchemy.orm import Session
@@ -20,6 +23,52 @@ from app.models import (
 )
 
 PLATFORM_CODES = ("five_verst", "s95", "parkrun")
+
+# Порядок систем в подписи набора: как на сайте, чтобы «5 вёрст + parkrun» не
+# оказывался то так, то наоборот.
+COMBO_PLATFORM_ORDER = ("five_verst", "s95", "parkrun", "runpark")
+
+
+def _combo_sort_key(code: str) -> tuple[int, str]:
+    try:
+        return (COMBO_PLATFORM_ORDER.index(code), code)
+    except ValueError:
+        return (len(COMBO_PLATFORM_ORDER), code)
+
+
+def _link_combinations(db: Session) -> list[dict[str, object]]:
+    """Наборы привязанных систем: сколько людей на каждом сочетании.
+
+    Набор ТОЧНЫЙ: человек с 5 вёрстами и S95 попадает в строку «5 вёрст + S95»
+    и никуда больше — иначе суммы по строкам не сходились бы с числом людей.
+    Показываем все сочетания, включая пустые: нулевая строка «5 вёрст + parkrun»
+    — тоже ответ на вопрос, какие пары в жизни не встречаются.
+    """
+    rows = (
+        db.query(PlatformLink.user_id, Platform.code)
+        .join(Platform, PlatformLink.platform_id == Platform.id)
+        .all()
+    )
+    codes_by_user: dict[UUID, set[str]] = defaultdict(set)
+    for user_id, code in rows:
+        codes_by_user[user_id].add(code)
+
+    tally: Counter[tuple[str, ...]] = Counter(
+        tuple(sorted(codes, key=_combo_sort_key)) for codes in codes_by_user.values()
+    )
+
+    known = [code for (code,) in db.query(Platform.code).all()]
+    known.sort(key=_combo_sort_key)
+    # Сочетания, которых в базе нет вовсе, тоже нужны в таблице — добираем их
+    # из списка систем, а неизвестные наборы из данных (новая система) остаются.
+    all_combos: set[tuple[str, ...]] = set(tally)
+    for size in range(1, len(known) + 1):
+        all_combos.update(combinations(known, size))
+
+    return [
+        {"codes": list(codes), "users": tally.get(codes, 0)}
+        for codes in sorted(all_combos, key=lambda item: (len(item), -tally.get(item, 0), item))
+    ]
 
 
 def _utcnow() -> datetime:
@@ -137,6 +186,10 @@ def get_admin_site_stats(db: Session, *, period_days: int = 30) -> dict[str, obj
         "period_days": period_days,
         "generated_at": _utcnow(),
         "overview": overview,
+        "link_combinations": _link_combinations(db),
+        # Строка «ни одной привязки» в таблицу наборов не влезает по смыслу
+        # (набор пустой), но без неё сумма по строкам не сходится с числом людей.
+        "users_without_links": users_total - users_with_any_link,
         "users_new_by_day": users_new_by_day,
         "links_new_by_day": links_new_by_day,
         "logins_by_day": logins_by_day,

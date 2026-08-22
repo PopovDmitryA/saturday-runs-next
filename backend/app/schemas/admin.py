@@ -22,6 +22,36 @@ class AdminUserAuthBrief(BaseModel):
     external_id: str
 
 
+class AdminUserHomeLocationCandidate(BaseModel):
+    identity_key: str
+    name: str
+    city: str | None = None
+    slug: str | None = None
+    run_days: int = 0
+    volunteer_days: int = 0
+
+
+class AdminUserHomeLocation(BaseModel):
+    """Предполагаемый «дом» участника — та же площадка, что видит он сам.
+
+    is_manual — выбрал руками в настройках, иначе определено автоматически.
+    is_tie — правило отбора исчерпано и площадки поделили первое место: тогда
+    в tied лежат все претенденты.
+    """
+
+    identity_key: str
+    name: str
+    slug: str | None = None
+    city: str | None = None
+    region: str | None = None
+    run_days: int = 0
+    volunteer_days: int = 0
+    is_manual: bool = False
+    is_tie: bool = False
+    tied: list[AdminUserHomeLocationCandidate] = Field(default_factory=list)
+    locations_total: int = 0
+
+
 class AdminUserListItem(BaseModel):
     id: str
     serial_id: int | None = None
@@ -38,6 +68,7 @@ class AdminUserListItem(BaseModel):
     total_runs: int | None = None
     total_volunteering: int | None = None
     platform_links: list[AdminPlatformLinkBrief] = Field(default_factory=list)
+    home_location: AdminUserHomeLocation | None = None
 
 
 class AdminUserListResponse(BaseModel):
@@ -48,6 +79,30 @@ class AdminUserListResponse(BaseModel):
     query: str | None = None
 
 
+class AdminLoginEventItem(BaseModel):
+    ts: datetime
+    event_type: str
+    provider: str = ""
+    ip: str = ""
+    user_agent: str = ""
+    device_ref: str = ""
+    session_ref: str = ""
+
+
+class AdminLoginEventsResponse(BaseModel):
+    """Журнал входов одного пользователя + сводка «рвутся ли сессии сами».
+
+    unexpected_relogins — входы с устройства, с которого не выходили:
+    признак того, что авторизация слетела без участия пользователя.
+    """
+
+    items: list[AdminLoginEventItem]
+    logins: int
+    logouts: int
+    devices: int
+    unexpected_relogins: int
+
+
 class AdminUserPreviewUser(BaseModel):
     id: str
     telegram_id: int | None = None
@@ -55,6 +110,10 @@ class AdminUserPreviewUser(BaseModel):
     auth_logins: list[AdminUserAuthBrief] = Field(default_factory=list)
     display_name: str | None = None
     news_subscribed: bool = False
+    # Аватар участника — виден и гостю на публичном профиле (26.07.2026).
+    avatar_url: str | None = None
+    # Оригинал аватарки — раскрывается по клику на неё (29.07.2026).
+    avatar_full_url: str | None = None
 
 
 class AdminUserPreviewDashboardResponse(BaseModel):

@@ -66,6 +66,7 @@ class ParkrunDaemonSession:
         captcha_poll_seconds: float = 5.0,
         use_httpx: bool = False,
         fast_delay_seconds: float | None = None,
+        solve_captcha: bool = False,
     ) -> None:
         settings = get_settings()
         self._use_cdp = (
@@ -88,6 +89,12 @@ class ParkrunDaemonSession:
         self.fast_delay_seconds = fast_delay_seconds
         self.httpx_aborted = False
         self._httpx_client: httpx_module.Client | None = None
+        # httpx + решатель капчи (CLIP): при WAF поднимаем headless-браузер,
+        # решаем капчу, снимаем aws-waf-token и продолжаем httpx с ним. Так
+        # очередь идёт на скорости httpx, но без ручного прохождения капчи.
+        self.solve_captcha = solve_captcha
+        self._waf_token: str | None = None
+        self._solver = None  # WafTokenHarvester, лениво при первой капче
 
     def __enter__(self) -> ParkrunDaemonSession:
         if self.use_httpx:
@@ -101,11 +108,29 @@ class ParkrunDaemonSession:
 
         from app.parkrun.fetch.browser import PARKRUN_USER_AGENT
 
-        cline(
-            "Режим --no-browser: обычный httpx вместо Chromium, без прогрева "
-            "сессии/капчи. Первый же признак защиты WAF останавливает всю "
-            "оставшуюся пачку — это эксперимент, не постоянный режим."
-        )
+        if self.solve_captcha:
+            from app.parkrun.fetch.captcha_solver import WafTokenHarvester
+
+            if not WafTokenHarvester.available():
+                cline(
+                    "ВНИМАНИЕ: решатель капчи недоступен (нет parkrun-monitoring) "
+                    "— работаю как обычный --no-browser: первая же защита WAF "
+                    "остановит пачку."
+                )
+                self.solve_captcha = False
+            else:
+                self._solver = WafTokenHarvester(PARKRUN_USER_AGENT)
+                cline(
+                    "Быстрый режим: httpx + решатель капчи (CLIP). Страницы качает "
+                    "httpx; при капче браузер поднимается в фоне, решает её сам и "
+                    "отдаёт токен — очередь идёт дальше без ручного ввода."
+                )
+        if not self.solve_captcha:
+            cline(
+                "Режим --no-browser: обычный httpx вместо Chromium, без прогрева "
+                "сессии/капчи. Первый же признак защиты WAF останавливает всю "
+                "оставшуюся пачку — это эксперимент, не постоянный режим."
+            )
         self._httpx_client = httpx.Client(
             headers={"User-Agent": PARKRUN_USER_AGENT},
             timeout=20.0,
@@ -142,6 +167,9 @@ class ParkrunDaemonSession:
         self.close()
 
     def close(self) -> None:
+        if self._solver is not None:
+            self._solver.close()
+            self._solver = None
         if self._httpx_client is not None:
             self._httpx_client.close()
             self._httpx_client = None
@@ -329,25 +357,57 @@ class ParkrunDaemonSession:
 
     def _fetch_httpx(self, url: str) -> str:
         assert self._httpx_client is not None
-        wait_for_turn(reason="daemon-httpx")
-        response = self._httpx_client.get(url)
-        html = response.text
-        inspection = inspect_html_response(html, url=url)
-        if inspection.is_protection:
-            set_captcha_pending(f"httpx:{inspection.summary}")
-            escalate_ban_cooldown()
-            self.httpx_aborted = True
-            logger.warning(
-                "parkrun httpx experiment: protection detected on %s (%s) — aborting batch",
-                url,
-                inspection.summary,
+        # Темп быстрого режима задаём сами: дефолтные 25–55 с — ритм браузерного
+        # режима, и на двухстраничный профиль они давали ~1.5 минуты чистого сна.
+        if self.fast_delay_seconds is not None:
+            wait_for_turn(
+                reason="daemon-httpx",
+                min_interval=self.fast_delay_seconds * 0.7,
+                max_interval=self.fast_delay_seconds * 1.3,
             )
-            raise ParkrunBanDetected(
-                f"Ban/protection loading {url} via httpx ({inspection.summary}). "
-                "Эксперимент остановлен, обычный кулдаун-механизм включён."
-            )
-        mark_fetch_completed()
-        return html
+        else:
+            wait_for_turn(reason="daemon-httpx")
+        # attempt 1 — с текущим токеном (или без него); если прилетела защита и
+        # включён решатель, добываем свежий токен браузером и пробуем ещё раз.
+        for attempt in (1, 2):
+            cookies = {"aws-waf-token": self._waf_token} if self._waf_token else None
+            response = self._httpx_client.get(url, cookies=cookies)
+            html = response.text
+            inspection = inspect_html_response(html, url=url)
+            if not inspection.is_protection:
+                mark_fetch_completed()
+                clear_captcha_pending()
+                return html
+            if self._solver is not None and attempt == 1:
+                self.show_status("Капча/WAF — решаю в фоне (CLIP), это ~25 с…")
+                token, cleared = self._solver.harvest(url)
+                if token:
+                    self._waf_token = token
+                if token or cleared:
+                    # cleared без токена — WAF пустил браузер без челленджа:
+                    # защита снялась, повторяем httpx даже без свежей куки.
+                    clear_captcha_pending()
+                    clear_platform_cooldown("parkrun")
+                    self.show_status(
+                        "Токен получен, продолжаю…" if token
+                        else "Защита снялась (без токена), продолжаю…"
+                    )
+                    continue
+            break
+        # решателя нет или он не справился — ведём себя как прежний --no-browser
+        set_captcha_pending(f"httpx:{inspection.summary}")
+        escalate_ban_cooldown()
+        self.httpx_aborted = True
+        logger.warning(
+            "parkrun httpx: protection on %s (%s) — %s",
+            url,
+            inspection.summary,
+            "solver failed, aborting batch" if self._solver else "aborting batch",
+        )
+        raise ParkrunBanDetected(
+            f"Ban/protection loading {url} via httpx ({inspection.summary}). "
+            "Пачка остановлена, обычный кулдаун-механизм включён."
+        )
 
     def _fetch_playwright(self, url: str, *, extra_wait_ms: int | None) -> str:
         from app.parkrun.fetch.browser import fetch_html_on_page, save_browser_session

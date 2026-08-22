@@ -19,6 +19,9 @@ type Bot = {
   delay_sec: number;
   ban_level: number;
   last_ok_at: string | null;
+  captcha_total?: number;
+  captcha_solved?: number;
+  last_captcha_at?: string | null;
 };
 
 type SweepData = {
@@ -28,10 +31,13 @@ type SweepData = {
     remaining: number;
     pct: number;
     collected: number;
+    in_processing: number;
     runs: number;
   };
   rate_24h: number;
   rate_1h: number;
+  parse_rate_24h: number;
+  parse_rate_1h: number;
   forecast: { days: number | null; date: string | null };
   vpn: Bot[];
   free: {
@@ -173,13 +179,15 @@ function BotTable({
   bots,
   showUptime,
   showFlag,
+  showCaptcha = false,
   prevMap,
 }: {
   title: string;
-  subtitle: string;
+  subtitle: React.ReactNode;
   bots: Bot[];
   showUptime: boolean;
   showFlag: boolean;
+  showCaptcha?: boolean;
   prevMap: Map<string, number>;
 }) {
   const [workingOnly, setWorkingOnly] = useState(false);
@@ -205,6 +213,7 @@ function BotTable({
               </th>
               <th className="hq-num">Задержка</th>
               {showUptime && <th className="hq-num">В работе</th>}
+              {showCaptcha && <th className="hq-num">Капчи</th>}
               <th className="hq-num">Атлетов</th>
             </tr>
           </thead>
@@ -228,6 +237,20 @@ function BotTable({
                   </td>
                   <td className="hq-num hq-muted">{bot.delay_sec}с</td>
                   {showUptime && <td className="hq-num">{fmtDuration(bot.active_seconds ?? 0)}</td>}
+                  {showCaptcha && (
+                    <td className="hq-num">
+                      {bot.captcha_total ? (
+                        <span
+                          className="hq-hint hq-captcha"
+                          data-hint={`Решено ${bot.captcha_solved ?? 0} из ${bot.captcha_total}. Последняя: ${fmtMoscowDateTime(bot.last_captcha_at ?? null)}`}
+                        >
+                          {bot.captcha_solved ?? 0}/{bot.captcha_total}
+                        </span>
+                      ) : (
+                        <span className="hq-muted">—</span>
+                      )}
+                    </td>
+                  )}
                   <td className="hq-num hq-collected">
                     {fmt(bot.collected_total)}
                     <Delta value={bot.collected_total - (prevMap.get(id) ?? bot.collected_total)} />
@@ -237,7 +260,7 @@ function BotTable({
             })}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={showUptime ? 6 : 5} className="hq-empty">
+                <td colSpan={(showUptime ? 6 : 5) + (showCaptcha ? 1 : 0)} className="hq-empty">
                   {workingOnly ? "сейчас никто не работает" : "пока пусто — прогрев"}
                 </td>
               </tr>
@@ -377,9 +400,151 @@ function AthletesTab({ token }: { token: string }) {
   );
 }
 
+type RateHour = { hour: string; collected: number };
+
+function fmtHourLabel(iso: string): string {
+  return new Date(iso).toLocaleString("ru-RU", {
+    timeZone: "Europe/Moscow",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function RateChart({ points }: { points: RateHour[] }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const width = 720;
+  const height = 220;
+  const plot = { left: 46, right: 712, top: 12, bottom: 190 };
+
+  if (points.length < 2) {
+    return <p className="hq-muted hq-pad">Пока недостаточно данных для графика.</p>;
+  }
+
+  const maxValue = Math.max(1, ...points.map((p) => p.collected));
+  const lastIndex = points.length - 1;
+  const stepX = (plot.right - plot.left) / lastIndex;
+  const xFor = (i: number) => plot.left + i * stepX;
+  const yFor = (v: number) => plot.bottom - (v / maxValue) * (plot.bottom - plot.top);
+  const gridValues = [0.25, 0.5, 0.75, 1].map((s) => Math.round(maxValue * s));
+  const labelEvery = Math.max(1, Math.ceil(points.length / 8));
+  const line = points.map((p, i) => `${xFor(i).toFixed(1)},${yFor(p.collected).toFixed(1)}`).join(" ");
+
+  const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (width / rect.width);
+    setHoverIdx(Math.min(lastIndex, Math.max(0, Math.round((px - plot.left) / stepX))));
+  };
+
+  const hp = hoverIdx != null ? points[hoverIdx] : null;
+
+  return (
+    <div className="hq-ratechart">
+      <div className="hq-ratechart__tip">
+        {hp ? (
+          <>
+            {fmtHourLabel(hp.hour)} · <b>{fmt(hp.collected)}</b> атлетов
+          </>
+        ) : (
+          " "
+        )}
+      </div>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label="Скорость сбора по часам"
+        onMouseMove={handleMove}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
+        {gridValues.map((v) => (
+          <g key={v}>
+            <line x1={plot.left} x2={plot.right} y1={yFor(v)} y2={yFor(v)} stroke="rgba(94, 128, 190, 0.18)" />
+            <text x={plot.left - 6} y={yFor(v) + 3} textAnchor="end">
+              {fmt(v)}
+            </text>
+          </g>
+        ))}
+        <line x1={plot.left} x2={plot.right} y1={plot.bottom} y2={plot.bottom} stroke="rgba(94, 128, 190, 0.3)" />
+        <polyline points={line} fill="none" stroke="#38bdf8" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {points.map((p, i) => (
+          <circle key={p.hour} cx={xFor(i)} cy={yFor(p.collected)} r={hoverIdx === i ? 4 : 2} fill="#38bdf8" />
+        ))}
+        {hoverIdx != null && (
+          <line x1={xFor(hoverIdx)} x2={xFor(hoverIdx)} y1={plot.top} y2={plot.bottom} stroke="rgba(230, 237, 247, 0.35)" strokeDasharray="3 3" />
+        )}
+        {points.map(
+          (p, i) =>
+            (i % labelEvery === 0 || i === lastIndex) && (
+              <text key={p.hour} x={xFor(i)} y={height - 4} textAnchor="middle">
+                {fmtHourLabel(p.hour)}
+              </text>
+            ),
+        )}
+      </svg>
+    </div>
+  );
+}
+
+function RateHistoryTab({ token }: { token: string }) {
+  const [rows, setRows] = useState<RateHour[] | null>(null);
+  const [error, setError] = useState(false);
+  const [hours, setHours] = useState(48);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/sweep-hq/rate-history?token=${encodeURIComponent(token)}&hours=${hours}`, {
+      credentials: "same-origin",
+    })
+      .then((res) => {
+        if (!alive) return;
+        if (!res.ok) {
+          setError(true);
+          return;
+        }
+        setError(false);
+        return res.json();
+      })
+      .then((d: { hours: RateHour[] } | undefined) => {
+        if (!alive || !d) return;
+        // Текущий час ещё не закончился — его столбец всегда занижен (частичные
+        // данные), на графике это выглядит как обвал темпа. Прячем его целиком.
+        const curHourStart = Math.floor(Date.now() / 3_600_000) * 3_600_000;
+        setRows(d.hours.filter((p) => new Date(p.hour).getTime() < curHourStart));
+      })
+      .catch(() => {
+        if (alive) setError(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [token, hours]);
+
+  return (
+    <section className="hq-card">
+      <header className="hq-card__head">
+        <h2>📈 Динамика скорости сбора</h2>
+        <div className="hq-calc__unit">
+          {[24, 48, 24 * 7, 0].map((h) => (
+            <button
+              key={h}
+              className={hours === h ? "hq-ubtn hq-ubtn--on" : "hq-ubtn"}
+              onClick={() => setHours(h)}
+            >
+              {h === 0 ? "весь период" : h < 24 * 7 ? `${h}ч` : "7д"}
+            </button>
+          ))}
+        </div>
+      </header>
+      {error && <p className="hq-muted hq-pad">Не удалось загрузить.</p>}
+      {!error && !rows && <p className="hq-muted hq-pad">Загрузка…</p>}
+      {!error && rows && <RateChart points={rows} />}
+    </section>
+  );
+}
+
 function Calculator({ remaining }: { remaining: number }) {
   const [rate, setRate] = useState<string>("10000");
-  const [unit, setUnit] = useState<"hour" | "day">("day");
+  const [unit, setUnit] = useState<"hour" | "day">("hour");
   const result = useMemo(() => {
     const r = Number(rate.replace(/\s/g, ""));
     if (!r || r <= 0) return null;
@@ -434,7 +599,7 @@ export function SweepHqPage({ token }: { token: string }) {
   const [prev, setPrev] = useState<SweepData | null>(() => loadSnap(token));
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [error, setError] = useState<number | null>(null);
-  const [tab, setTab] = useState<"fleet" | "athletes">("fleet");
+  const [tab, setTab] = useState<"fleet" | "athletes" | "rate">("fleet");
   const [now, setNow] = useState<number>(() => Date.now());
   const curRef = useRef<SweepData | null>(loadSnap(token));
 
@@ -519,9 +684,17 @@ export function SweepHqPage({ token }: { token: string }) {
   const vpnWorking = data.vpn.filter((b) => b.status === "working").length;
   const prevVpnMap = collectedMap(prev?.vpn);
   const prevFreeMap = collectedMap(prev?.free.top);
+  // Сумма собранного флотом целиком + дельта за интервал опроса — виден вклад
+  // платных/бесплатных за последние 3 минуты, не только общий счётчик.
+  const vpnCollectedSum = data.vpn.reduce((s, b) => s + b.collected_total, 0);
+  const prevVpnCollectedSum = prev ? prev.vpn.reduce((s, b) => s + b.collected_total, 0) : null;
+  const vpnCollectedDelta = prevVpnCollectedSum != null ? vpnCollectedSum - prevVpnCollectedSum : 0;
+  const prevFreeCollected = prev ? prev.free.summary.collected : null;
+  const freeCollectedDelta = prevFreeCollected != null ? freeSum.collected - prevFreeCollected : 0;
   const collectedDelta = prev ? p.collected - prev.progress.collected : 0;
   const rate1hDelta = prev ? data.rate_1h - prev.rate_1h : 0;
   const rate24hDelta = prev ? data.rate_24h - prev.rate_24h : 0;
+  const parseRate1hDelta = prev ? data.parse_rate_1h - prev.parse_rate_1h : 0;
   const runsDelta = prev ? p.runs - prev.progress.runs : 0;
   // Отсчёт до следующей 3-минутной границы стенных часов — не зависит от момента
   // загрузки страницы, поэтому перезагрузка его не сбрасывает.
@@ -556,7 +729,10 @@ export function SweepHqPage({ token }: { token: string }) {
             </div>
           </div>
 
-          <div className="hq-progress">
+          <div
+            className="hq-progress hq-hint"
+            data-hint="Обработано + собрано ÷ всего ID в очереди (диапазон 751355…7 500 000). «Обработано» = страница уже прошла через любой из статусов результата, «собрано» входит сюда же."
+          >
             <div className="hq-progress__bar">
               <div className="hq-progress__fill" style={{ width: `${Math.max(0.4, p.pct)}%` }} />
               <span className="hq-progress__label">
@@ -569,26 +745,54 @@ export function SweepHqPage({ token }: { token: string }) {
           </div>
 
           <div className="hq-stats">
-            <div className="hq-stat">
+            <div
+              className="hq-stat hq-hint"
+              data-hint="Страницы, которые мы уже скачали: распарсенные в БД плюс лежащие в папке файлы, ждущие обработки. «N в обработке» — скачаны в папку (статус collected), но ещё не распарсены."
+            >
               <span className="hq-stat__num">{fmt(p.collected)}</span>
-              <span className="hq-stat__cap">атлетов собрано</span>
+              <span className="hq-stat__cap">
+                атлетов собрано
+                {p.in_processing > 0 && (
+                  <span className="hq-inproc"> ({fmt(p.in_processing)} в обработке)</span>
+                )}
+              </span>
             </div>
-            <div className="hq-stat">
+            <div
+              className="hq-stat hq-hint"
+              data-hint="Сумма всех строк в таблице runs — только из уже распарсенных атлетов. Файлы, ждущие обработки, сюда пока не входят: появятся после парсинга."
+            >
               <span className="hq-stat__num">{fmt(p.runs)}</span>
               <span className="hq-stat__cap">забегов</span>
               <RateDelta value={runsDelta} />
             </div>
-            <div className="hq-stat hq-stat--accent">
+            <div
+              className="hq-stat hq-stat--accent hq-hint"
+              data-hint="Сколько страниц скачано за последний час (по времени фетча, fetched_at). Считает оба движка — бесплатные прокси (только качают в папку) и приватные VPN (качают и парсят на лету)."
+            >
               <span className="hq-stat__num">{fmt(data.rate_1h)}</span>
-              <span className="hq-stat__cap">за час</span>
+              <span className="hq-stat__cap">сбор / час</span>
               <RateDelta value={rate1hDelta} />
             </div>
-            <div className="hq-stat hq-stat--accent">
+            <div
+              className="hq-stat hq-stat--accent hq-hint"
+              data-hint="То же самое, что «сбор / час», но за последние 24 часа. Именно этот темп используется для прогноза срока до финиша."
+            >
               <span className="hq-stat__num">{fmt(data.rate_24h)}</span>
-              <span className="hq-stat__cap">за сутки</span>
+              <span className="hq-stat__cap">сбор / сутки</span>
               <RateDelta value={rate24hDelta} />
             </div>
-            <div className="hq-stat">
+            <div
+              className="hq-stat hq-hint"
+              data-hint="Сколько атлетов распарсено в БД за последний час (по parsed_at). Её кормит VPN-движок (парсит на лету) и офлайн-парсер, когда он запущен. Растёт, пока идёт парсинг, — а не падает."
+            >
+              <span className="hq-stat__num">{fmt(data.parse_rate_1h)}</span>
+              <span className="hq-stat__cap">обработка / час</span>
+              <RateDelta value={parseRate1hDelta} />
+            </div>
+            <div
+              className="hq-stat hq-hint"
+              data-hint="Осталось в очереди ÷ темп сбора за сутки. Грубая оценка при текущей скорости; растёт число VPN/прокси — срок падает."
+            >
               <span className="hq-stat__num">
                 {data.forecast.days != null
                   ? `${Math.ceil(data.forecast.days).toLocaleString("ru-RU")} дн`
@@ -605,7 +809,10 @@ export function SweepHqPage({ token }: { token: string }) {
                 </span>
               )}
             </div>
-            <div className="hq-stat hq-stat--date">
+            <div
+              className="hq-stat hq-stat--date hq-hint"
+              data-hint="Сегодняшняя дата + число дней «до финиша». Календарная проекция того же прогноза."
+            >
               <span className="hq-stat__num">{fmtDate(data.forecast.date)}</span>
               <span className="hq-stat__cap">прогноз финиша</span>
             </div>
@@ -627,25 +834,43 @@ export function SweepHqPage({ token }: { token: string }) {
           >
             🏃 Атлеты
           </button>
+          <button
+            className={tab === "rate" ? "hq-tab hq-tab--on" : "hq-tab"}
+            onClick={() => setTab("rate")}
+          >
+            📈 Динамика
+          </button>
         </nav>
 
         {tab === "athletes" ? (
           <AthletesTab token={token} />
+        ) : tab === "rate" ? (
+          <RateHistoryTab token={token} />
         ) : (
           <div className="hq-fleet">
             <BotTable
               title="🛡️ Приватные VPN"
-            subtitle={`${vpnWorking} в работе · ${data.vpn.length} всего`}
+            subtitle={
+              <>
+                {vpnWorking} в работе · {data.vpn.length} всего · собрали {fmt(vpnCollectedSum)}
+                <RateDelta value={vpnCollectedDelta} />
+              </>
+            }
             bots={data.vpn}
             showUptime
             showFlag
+            showCaptcha
             prevMap={prevVpnMap}
           />
           <BotTable
             title="🌐 Бесплатные прокси"
-            subtitle={`${freeSum.active} живых · ${freeSum.cooldown} в отлёжке · собрали ${fmt(
-              freeSum.collected,
-            )}`}
+            subtitle={
+              <>
+                {freeSum.active} живых · {freeSum.cooldown} в отлёжке · собрали{" "}
+                {fmt(freeSum.collected)}
+                <RateDelta value={freeCollectedDelta} />
+              </>
+            }
             bots={data.free.top}
             showUptime
             showFlag={false}

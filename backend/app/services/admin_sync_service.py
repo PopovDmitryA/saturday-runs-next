@@ -2,7 +2,7 @@
 
 Живёт на стороне backend (а не в процессе бота), чтобы бот не тянул граф
 Celery-задач. Бот обращается сюда через internal API
-(`/api/internal/vk-bot/sync-pipelines`, `/sync-enqueue`).
+(`/api/internal/bot/admin/sync-pipelines`, `/sync-enqueue`).
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from app.workers.tasks.five_verst_sync import (
 from app.workers.tasks.s95_sync import (
     s95_api_full_backfill_task,
     s95_api_sync_updated_task,
+    s95_sync_location_descriptions_task,
     s95_sync_locations_registry_task,
 )
 
@@ -29,6 +30,7 @@ PIPELINES: dict[str, tuple[str, object, str]] = {
     "rotation": ("5v location rotation", sync_location_rotation_task, "five_verst"),
     "reconcile": ("5v reconcile protocols", reconcile_stale_protocols_task, "five_verst"),
     "s95-registry": ("s95 registry /activities", s95_sync_locations_registry_task, "s95"),
+    "s95-descriptions": ("s95 location descriptions", s95_sync_location_descriptions_task, "s95"),
     "s95-sync-updated": ("s95 API: обновлённые протоколы", s95_api_sync_updated_task, "s95"),
     "s95-full-backfill": ("s95 API: полный backfill", s95_api_full_backfill_task, "s95"),
 }

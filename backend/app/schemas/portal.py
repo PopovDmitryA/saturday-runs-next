@@ -23,23 +23,36 @@ class PortalPulseResponse(BaseModel):
 
 class PortalAttendanceRecordResponse(BaseModel):
     location_name: str
+    # Слаг страницы локации: имя на главной становится ссылкой /locations/{slug}.
+    # None у старого кэша главной (ключ бампается, но перестраховка дешевле).
+    location_slug: str | None = None
+    # Город рядом с названием: пусто, если он неизвестен или уже есть в имени.
+    location_city: str | None = None
     platform_code: str
     event_date: date
     finishers: int
     previous_record: int
     previous_record_date: date | None = None
+    # открытие площадки: рекорд «с нуля», прежнего максимума не было
+    is_debut: bool = False
 
 
 class PortalCourseRecordResponse(BaseModel):
     location_name: str
+    location_slug: str | None = None
     platform_code: str
     event_date: date
     gender: str
     time_display: str
     runner_name: str | None = None
+    # Хендл профиля на сайте (/users/{handle}), если рекордсмен привязал систему
+    # и не скрыл профиль; иначе имя остаётся текстом.
+    runner_handle: str | None = None
     previous_display: str | None = None
     previous_record_date: date | None = None
     delta_sec: int | None = None
+    # первый рекорд трассы: прежнего минимума не было (см. is_debut в посещаемости)
+    is_debut: bool = False
 
 
 class PortalWeekRecordsResponse(BaseModel):
@@ -51,6 +64,7 @@ class PortalWeekRecordsResponse(BaseModel):
 
 class PortalTopSaturdayRowResponse(BaseModel):
     location_name: str
+    location_slug: str | None = None
     platform_code: str
     finishers: int
 
@@ -86,6 +100,8 @@ class PortalLocationsWeekPointResponse(BaseModel):
 
 class PortalAttendanceTopRowResponse(BaseModel):
     location_name: str
+    location_slug: str | None = None
+    location_city: str | None = None
     platform_code: str
     event_date: date
     finishers: int
@@ -107,6 +123,7 @@ class PortalGeoPointResponse(BaseModel):
     longitude: float
     starts: int
     location_name: str
+    location_slug: str | None = None
     platform_code: str
     region: str | None = None
 
@@ -140,7 +157,9 @@ class PortalFastestRowResponse(BaseModel):
     gender: str
     value_display: str
     runner_name: str | None = None
+    runner_handle: str | None = None
     location_name: str
+    location_slug: str | None = None
     event_date: date
     delta_sec: int | None = None
 
@@ -197,4 +216,19 @@ class PortalHomeResponse(BaseModel):
     systems: list[PortalSystemCardResponse]
     geo: PortalGeoResponse
     fun_facts: PortalFunFactsResponse
+    # Т9: соц-доказательство у CTA варианта B. Дефолт 0 — старый кэш без ключа
+    # валиден, фронт при нуле строку просто не показывает.
+    registered_parks: int = 0
     gender_split: PortalGenderSplitResponse | None = None
+
+
+class PortalTeaserResponse(BaseModel):
+    """Предпросмотр карточки участника для тизера на главной (Т10)."""
+
+    platform_code: str
+    display_name: str | None = None
+    finishes: int
+    best_time_display: str | None = None
+    locations: int
+    first_event_date: date | None = None
+    last_event_date: date | None = None

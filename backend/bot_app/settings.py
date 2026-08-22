@@ -17,6 +17,7 @@ class BotSettings(BaseSettings):
     app_base_url: str = "http://localhost:8080"
     admin_telegram_id: int = 0
     telegram_admin_chat_id: int = 0
+    telegram_proxy_url: str = ""
 
 
 def bot_headers(settings: BotSettings) -> dict[str, str]:

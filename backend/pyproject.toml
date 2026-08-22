@@ -13,17 +13,24 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "redis>=5.2.0",
     "aiogram>=3.15.0",
-    "httpx>=0.28.0",
+    # aiogram строит прокси-коннектор только через aiohttp-socks — нужен даже для
+    # http-прокси, иначе AiohttpSession(proxy=...) падает с RuntimeError.
+    "aiohttp-socks>=0.9.0",
+    "httpx[socks]>=0.28.0",
     "beautifulsoup4>=4.12.0",
     "cloudscraper>=1.2.71",
     "celery[redis]>=5.4.0",
     "playwright>=1.49.0",
     "pymssql>=2.3.0",
+    "pillow>=11.0.0",
+    "python-multipart>=0.0.18",
+    "boto3>=1.35.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0",
+    "pytest-timeout>=2.3.0",
     "httpx>=0.28.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
@@ -32,7 +39,6 @@ dev = [
 
 [project.scripts]
 saturday-runs-bot = "bot_app.main:run"
-saturday-runs-vk-bot = "vk_bot.main:run"
 
 [build-system]
 requires = ["setuptools>=61"]
@@ -40,7 +46,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*", "bot_app*", "vk_bot*"]
+include = ["app*", "bot_app*"]
 
 [tool.ruff]
 target-version = "py312"
@@ -66,3 +72,10 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# Предохранитель: ни один тест не имеет права висеть на сети/локе дольше 2 минут.
+timeout = 120
+markers = [
+    "network: ходит в живую сеть; по умолчанию не запускается (pytest -m network)",
+]
+# Сетевые тесты выключены по умолчанию — иначе CI зависит от доступности 5vesrt.ru.
+addopts = "-m 'not network'"

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "./AdminShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { copyToClipboard } from "../../lib/clipboard";
 import {
@@ -342,7 +342,7 @@ function AdminRecordsDigestContent() {
     : 0;
 
   return (
-    <AppShell title="Рекорды локаций" activePath="/admin">
+    <AdminShell title="Рекорды локаций">
       <AdminSubnav activePath="/admin/records-digest" />
 
       <section className="card">
@@ -457,7 +457,7 @@ function AdminRecordsDigestContent() {
           )}
         </>
       )}
-    </AppShell>
+    </AdminShell>
   );
 }
 

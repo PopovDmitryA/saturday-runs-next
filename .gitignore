@@ -58,6 +58,9 @@ docs/release_posts_style.md
 data/parkrun_playwright_state.json
 data/grafana/dashboards/
 data/*.log
+# Локальный режим media-хранилища (на проде картинки живут в S3).
+data/media/
+data/avatars/
 
 # Local club-stats outputs (not for repo)
 .club_members.json
@@ -65,3 +68,8 @@ psb_sport_club_stats.csv
 
 # Временный файл заглушки деплоя (кладёт/убирает remote_deploy.sh на проде)
 deploy/nginx/maintenance_current.html
+
+# Реальный конфиг xray-клиента (admin-уведомления в Telegram через прокси) —
+# содержит приватный VLESS-профиль (UUID, reality public key). Шаблон см. config.example.json.
+deploy/tg-proxy/config.json
+data/og/

@@ -62,6 +62,28 @@ class _CoRunnerStats:
     meetings_by_event: dict[UUID, _MeetingRow] = field(default_factory=dict)
 
 
+def _user_platform_codes(db: Session, user_id: UUID) -> set[str]:
+    """Системы, которые пользователь ПРИВЯЗАЛ к своему аккаунту.
+
+    Встреча возможна только на привязанной системе. Если человек не привязал,
+    например, RunPark (как Андрей Кошкин), значит физически он там как участник
+    RunPark не бегал — а RunPark-строки в его событиях это кросслинкнутые дубли
+    его же забегов из привязанных систем (локации публикуют один протокол сразу
+    в обе системы). Дедупликация ниже переносит такой дубль на ОСНОВНОГО
+    участника, но собственный непривязанный RunPark-профиль пользователя в
+    other_rows не попадает (это он сам), поэтому переноситься некуда — и без
+    этого фильтра забег засчитывался бы как «встреча с самим собой».
+    """
+    rows = (
+        db.query(Platform.code)
+        .join(PlatformLink, PlatformLink.platform_id == Platform.id)
+        .filter(PlatformLink.user_id == user_id)
+        .distinct()
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
 def _canonical_event_map(db: Session, event_ids: set[UUID]) -> dict[UUID, UUID]:
     """Map event ids to a canonical id so a crosslinked pair counts as one event."""
     if not event_ids:
@@ -156,6 +178,7 @@ def list_co_runners(
     if not user_results:
         return []
 
+    user_platforms = _user_platform_codes(db, user_id)
     user_event_ids = set(user_results.keys()) | set(canonical_map.keys())
     other_rows = (
         db.query(
@@ -175,6 +198,7 @@ def list_co_runners(
         .filter(
             RunResult.event_id.in_(user_event_ids),
             RunResult.participant_id.notin_(user_participant_ids),
+            Platform.code.in_(user_platforms),
         )
         .all()
     )
@@ -330,8 +354,11 @@ def list_co_runner_meetings(
     )
     if not user_results:
         return []
+    user_platforms = _user_platform_codes(db, user_id)
     user_event_ids = set(user_results.keys()) | set(canonical_map.keys())
 
+    # Встречи только на привязанных системах — см. _user_platform_codes: иначе
+    # непривязанный RunPark-дубль забега давал бы «встречу с самим собой».
     their_rows = (
         db.query(RunResult, Event, Location, Platform.code)
         .join(Event, RunResult.event_id == Event.id)
@@ -340,6 +367,7 @@ def list_co_runner_meetings(
         .filter(
             RunResult.participant_id.in_(participant_ids),
             RunResult.event_id.in_(user_event_ids),
+            Platform.code.in_(user_platforms),
         )
         .all()
     )

@@ -26,6 +26,7 @@ from app.schemas.settings import (
     ProfileSlugResponse,
     ProfileSlugUpdateRequest,
 )
+from app.services.dashboard_service import invalidate_dashboard_cache_for_users
 from app.services.home_location_service import (
     UnknownHomeLocationError,
     list_home_location_candidates,
@@ -183,6 +184,10 @@ def update_home_location(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Локация не найдена среди ваших посещённых",
         ) from err
+    # От домашней локации считается вся «дальность стартов», а она лежит в
+    # кэше аналитики дашборда: без сброса плитка на главной ещё сутки
+    # показывала бы километры от старого дома.
+    invalidate_dashboard_cache_for_users(db, {user.id})
     db.commit()
     db.refresh(user)
     return get_home_location(db, user)

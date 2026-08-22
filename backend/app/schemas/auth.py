@@ -56,6 +56,14 @@ class UserResponse(BaseModel):
     display_name_customized: bool = False
     consent_accepted: bool = False
     is_admin: bool = False
+    avatar_url: str | None = None
+    # Оригинал аватарки без пережатия — открывается по клику на аватарку.
+    # NULL у аватарок, загруженных до появления оригиналов.
+    avatar_full_url: str | None = None
+    # Публичный адрес участника: /users/{public_slug или serial_id}. Нужен
+    # фронту, чтобы кабинет жил на собственном публичном URL (26.07.2026).
+    serial_id: int | None = None
+    public_slug: str | None = None
     auth_identities: list[AuthIdentityResponse] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

@@ -12,12 +12,13 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
 import redis
-from sqlalchemy import String, case, cast, func, select
+from sqlalchemy import String, and_, case, cast, exists, func, select
 from sqlalchemy.orm import Session
 
 from app.core.redis_client import get_redis_client
@@ -30,14 +31,16 @@ from app.models import (
     Platform,
     PlatformLink,
     RunResult,
+    User,
     VolunteerResult,
 )
 from app.schemas.portal import PortalHomeResponse
 from app.services.location_catalog_service import LocationCatalogIndex
+from app.services.platform_titles import PLATFORM_TITLES
 
 logger = logging.getLogger(__name__)
 
-PORTAL_HOME_CACHE_KEY = "portal:home:v17"
+PORTAL_HOME_CACHE_KEY = "portal:home:v21"
 # TTL сильно больше периода прогрева (раз в час): пересчёт занимает ~2 мин и идёт
 # синхронно в запросе пользователя, поэтому пустой кэш — это минута ожидания на
 # главной. Запас в 24 часа переживает и пропущенные прогревы, и рестарт воркера:
@@ -55,12 +58,8 @@ WEEK_RECORDS_LIMIT = 12
 # такие события не относятся к реальной хронологии.
 MIN_SANE_EVENT_DATE = date(2004, 1, 1)
 
-PLATFORM_TITLES = {
-    "five_verst": "5 вёрст",
-    "s95": "S95",
-    "parkrun": "parkrun",
-    "runpark": "RunPark",
-}
+# Названия систем — из app.services.platform_titles (импорт выше): их берут и
+# другие сервисы, тянуть ради словаря весь портал незачем.
 PLATFORM_ORDER = ["five_verst", "s95", "runpark", "parkrun"]
 # На главной «активна» = система реально проводит старты сейчас;
 # platforms.is_active в БД отражает работоспособность синка, не это.
@@ -70,34 +69,32 @@ ACTIVE_PLATFORM_CODES = {"five_verst", "s95", "runpark"}
 
 
 def _not_crosslink_secondary(query: Any) -> Any:
-    """Исключить события-дубли (вторичная сторона кросслинка)."""
-    return query.outerjoin(
-        EventCrosslink, EventCrosslink.secondary_event_id == Event.id
-    ).filter(EventCrosslink.id.is_(None))
+    """Исключить события-дубли (вторичная сторона кросслинка).
+
+    NOT EXISTS, а не LEFT JOIN + `IS NULL`: планировщик распознаёт эту форму как
+    антиджойн и строит Hash Anti Join. С прежним LEFT JOIN он оценивал результат
+    в ОДНУ строку вместо двух миллионов (условие `IS NULL` шло по ec.id, а не по
+    ключу соединения) и на этой оценке выбирал Nested Loop — 2 млн итераций и
+    14.5 млн обращений к буферам. Замер на проде 26.07.2026: самый тяжёлый
+    агрегат главной 17.4 с → 5.0 с только от этой замены.
+
+    Функция стоит в 19 запросах главной, поэтому правка одна, а эффект общий.
+    """
+    return query.filter(
+        ~exists().where(EventCrosslink.secondary_event_id == Event.id)
+    )
 
 
 def _gender_expr() -> Any:
-    """Пол бегуна: 5 вёрст/RunPark из age_category, S95 из profile_extra."""
-    return case(
-        (
-            Platform.code == "five_verst",
-            case(
-                (func.substr(Participant.age_category, 1, 1) == "М", "male"),
-                (func.substr(Participant.age_category, 1, 1) == "Ж", "female"),
-            ),
-        ),
-        (
-            Platform.code.in_(["runpark", "parkrun"]),
-            case(
-                (func.substr(Participant.age_category, 2, 1) == "M", "male"),
-                (func.substr(Participant.age_category, 2, 1) == "W", "female"),
-            ),
-        ),
-        (
-            Platform.code == "s95",
-            Participant.profile_extra["platform_codes"]["gender"].astext,
-        ),
-    )
+    """Пол бегуна — готовое поле participants.gender (миграция 052).
+
+    Раньше считалось здесь же через substr(age_category) / JSONB-путь у s95.
+    Выражение неиндексируемое, а вызывается оно в пяти агрегатах главной, так
+    что каждый прогрев кэша разбирал строку категории по всем 2.2 млн строк
+    джойна и ронял сортировки на диск. Пол теперь пишется при апсерте
+    участника — см. gender_position_service.resolve_participant_gender.
+    """
+    return Participant.gender
 
 
 def clean_time_display(display: str | None, seconds: int | None) -> str:
@@ -118,7 +115,15 @@ def format_finish_time(seconds: int) -> str:
 
 
 class _EventRow:
-    __slots__ = ("event_id", "location_id", "platform_code", "event_date", "finishers")
+    __slots__ = (
+        "event_id",
+        "location_id",
+        "platform_code",
+        "event_date",
+        "finishers",
+        "event_number",
+        "is_test_event",
+    )
 
     def __init__(
         self,
@@ -127,12 +132,16 @@ class _EventRow:
         platform_code: str,
         event_date: date,
         finishers: int,
+        event_number: int | None = None,
+        is_test_event: bool = False,
     ) -> None:
         self.event_id = event_id
         self.location_id = location_id
         self.platform_code = platform_code
         self.event_date = event_date
         self.finishers = finishers
+        self.event_number = event_number
+        self.is_test_event = is_test_event
 
 
 def _load_events(db: Session) -> list[_EventRow]:
@@ -156,15 +165,36 @@ def _load_events(db: Session) -> list[_EventRow]:
                 Event.event_date,
                 Event.finishers_count,
                 EventSummary.finishers_count,
+                Event.event_number,
+                Event.is_test_event,
             )
             .join(Platform, Platform.id == Event.platform_id)
             .outerjoin(EventSummary, EventSummary.event_id == Event.id)
         )
     ).filter(Event.event_date >= MIN_SANE_EVENT_DATE).all()
     events: list[_EventRow] = []
-    for event_id, location_id, platform_code, event_date, event_cnt, summary_cnt in rows:
+    for (
+        event_id,
+        location_id,
+        platform_code,
+        event_date,
+        event_cnt,
+        summary_cnt,
+        event_number,
+        is_test_event,
+    ) in rows:
         finishers = protocol_counts.get(event_id) or event_cnt or summary_cnt or 0
-        events.append(_EventRow(event_id, location_id, platform_code, event_date, finishers))
+        events.append(
+            _EventRow(
+                event_id,
+                location_id,
+                platform_code,
+                event_date,
+                finishers,
+                event_number,
+                bool(is_test_event),
+            )
+        )
     return events
 
 
@@ -263,6 +293,24 @@ def _course_minima_before(db: Session, week_start: date) -> list[Any]:
 
     Дата достаётся лексикографическим минимумом строки
     «зеропаддед-секунды|дата» — одним проходом, без второго запроса.
+
+    JOIN platforms здесь больше не нужен: платформа не участвует ни в выборке,
+    ни в фильтре с тех пор, как пол стал колонкой participants.gender (раньше
+    её требовал CASE по platforms.code внутри _gender_expr).
+
+    gender IS NOT NULL — вызывающий код всё равно берёт только male/female,
+    но раньше строки со скрытым полом доезжали до Python отдельной группой
+    (163 группы на проде).
+
+    is_test_event исключён: пробный прогон не должен становиться «прежним
+    рекордом», который потом «побивает» настоящий первый старт (баг на
+    Мирном, 02.08.2026).
+
+    Замеры на проде 26.07.2026 (та же выборка, 5422 строки результата):
+    было 17.4 с → 2.0 с. Основной вклад — NOT EXISTS в _not_crosslink_secondary,
+    остальное дают снятый JOIN и отсечение пустого пола. Вариант с DISTINCT ON
+    вместо min(concat) проверялся и оказался МЕДЛЕННЕЕ (25.3 с): он требует
+    полной сортировки 2 млн строк, тогда как GROUP BY укладывается в хеш.
     """
     gender = _gender_expr()
     packed = func.min(
@@ -277,13 +325,14 @@ def _course_minima_before(db: Session, week_start: date) -> list[Any]:
             db.query(Event.location_id, gender, packed)
             .select_from(RunResult)
             .join(Event, Event.id == RunResult.event_id)
-            .join(Platform, Platform.id == Event.platform_id)
             .join(Participant, Participant.id == RunResult.participant_id)
         )
         .filter(
             Event.event_date < week_start,
+            Event.is_test_event.is_(False),
             RunResult.finish_time_sec.isnot(None),
             RunResult.finish_time_sec >= MIN_SANE_FINISH_SEC,
+            gender.isnot(None),
         )
         .group_by(Event.location_id, gender)
         .all()
@@ -298,6 +347,47 @@ def _unpack_min(packed: str | None) -> tuple[int, date] | None:
         return int(sec_raw), date.fromisoformat(date_raw)
     except ValueError:
         return None
+
+
+def _runner_handles(db: Session, participant_ids: list[UUID]) -> dict[UUID, str]:
+    """Хендл профиля на сайте для участников из витрин рекордов главной.
+
+    Нужен, чтобы имя рекордсмена было ссылкой на /users/{хендл}. Ключ связи
+    participants → users — (platform_id, external_user_id) в platform_links, а
+    не platform_links.participant_id (он проставлен не всегда) — тот же приём,
+    что в location_page_service._platform_link_join.
+
+    Скрытые профили (profile_private) хендл не получают: страница участника
+    отдала бы анониму 403, а ответ главной кэшируется один на всех, так что
+    «показать ссылку только своим» здесь всё равно невозможно.
+
+    Вызывается на горсти строк (рекорды недели и рекорды систем), поэтому
+    один запрос по списку id, а не join в тяжёлых агрегатах выше.
+    """
+    if not participant_ids:
+        return {}
+    rows = (
+        db.query(Participant.id, User.public_slug, User.serial_id)
+        .join(
+            PlatformLink,
+            and_(
+                PlatformLink.platform_id == Participant.platform_id,
+                PlatformLink.external_user_id == Participant.external_user_id,
+            ),
+        )
+        .join(User, User.id == PlatformLink.user_id)
+        .filter(
+            Participant.id.in_(set(participant_ids)),
+            User.profile_private.is_(False),
+        )
+        .all()
+    )
+    handles: dict[UUID, str] = {}
+    for participant_id, public_slug, serial_id in rows:
+        handle = (public_slug or "").strip() or (str(serial_id) if serial_id else "")
+        if handle:
+            handles[participant_id] = handle
+    return handles
 
 
 def _week_results(
@@ -316,6 +406,8 @@ def _week_results(
                 RunResult.finish_time_sec,
                 RunResult.finish_time_display,
                 Participant.display_name,
+                Participant.id,
+                Event.event_number,
             )
             .select_from(RunResult)
             .join(Event, Event.id == RunResult.event_id)
@@ -325,6 +417,7 @@ def _week_results(
         .filter(
             Event.event_date >= week_start,
             Event.event_date <= week_end,
+            Event.is_test_event.is_(False),
             RunResult.finish_time_sec.isnot(None),
             RunResult.finish_time_sec >= MIN_SANE_FINISH_SEC,
         ),
@@ -375,6 +468,7 @@ def _fastest_by_platform(
                 Participant.display_name,
                 Event.event_date,
                 Event.location_id,
+                Participant.id,
             )
             .select_from(RunResult)
             .join(Event, Event.id == RunResult.event_id)
@@ -384,7 +478,7 @@ def _fastest_by_platform(
         excluded_location_ids,
     ).all()
     picked: dict[tuple[str, str], dict[str, Any]] = {}
-    for code, g, sec, display, runner, event_date, location_id in rows:
+    for code, g, sec, display, runner, event_date, location_id, participant_id in rows:
         key = (code, g or "")
         if wanted.get(key) != sec or key in picked:
             continue
@@ -395,6 +489,7 @@ def _fastest_by_platform(
             "runner_name": runner,
             "event_date": event_date,
             "_location_id": location_id,
+            "_participant_id": participant_id,
         }
     ordered: list[dict[str, Any]] = []
     for code in PLATFORM_ORDER:
@@ -412,6 +507,9 @@ def _fastest_by_platform(
                 if previous_sec is not None:
                     item["delta_sec"] = previous_sec - current_sec
             ordered.append(item)
+    handles = _runner_handles(db, [item["_participant_id"] for item in ordered])
+    for item in ordered:
+        item["runner_handle"] = handles.get(item.pop("_participant_id"))
     return ordered
 
 
@@ -610,6 +708,36 @@ def _personal_records_by_date(
     return {(event_date, code): int(count) for event_date, code, count in rows}
 
 
+def _registered_parks(db: Session) -> int:
+    """Число разных «домашних» парков зарегистрированных пользователей (Т9).
+
+    Домашний парк пользователя — локация, где у его привязанных участников
+    больше всего финишей (при равенстве — стабильный детерминированный выбор).
+    Соц-доказательство «участники из N парков уже нашли свою статистику»:
+    парков заметно больше, чем самих пользователей на старте проекта.
+    """
+    per_loc = (
+        db.query(
+            PlatformLink.user_id.label("user_id"),
+            Event.location_id.label("location_id"),
+            func.row_number()
+            .over(
+                partition_by=PlatformLink.user_id,
+                order_by=(func.count().desc(), Event.location_id),
+            )
+            .label("rn"),
+        )
+        .join(RunResult, RunResult.participant_id == PlatformLink.participant_id)
+        .join(Event, Event.id == RunResult.event_id)
+        .filter(PlatformLink.participant_id.isnot(None))
+        .group_by(PlatformLink.user_id, Event.location_id)
+        .subquery()
+    )
+    return int(
+        db.query(func.count(func.distinct(per_loc.c.location_id))).filter(per_loc.c.rn == 1).scalar() or 0
+    )
+
+
 def _total_time_sec(db: Session, excluded_location_ids: list[UUID]) -> int:
     return int(
         _exclude_locations(
@@ -699,6 +827,101 @@ def _total_time_sec_in_range(
     )
 
 
+def _city_label(city: str | None, location_name: str) -> str | None:
+    """Город для подписи рядом с названием локации.
+
+    Возвращает None, если города нет или он уже звучит в самом названии:
+    «Тюмень Парк Гагарина · Тюмень» читается как ошибка вёрстки, а не как
+    уточнение географии.
+    """
+    if not city:
+        return None
+    return None if city.casefold() in location_name.casefold() else city
+
+
+def _week_attendance_records(
+    events: list[_EventRow],
+    week_start: date,
+    week_end: date,
+    identity_of: Callable[[UUID], str],
+    display_of: Callable[[UUID], str],
+    slug_of: Callable[[UUID], str] | None = None,
+    city_of: Callable[[UUID], str | None] | None = None,
+) -> list[dict[str, Any]]:
+    """Рекорды посещаемости недели: побитые максимумы и открытия площадок.
+
+    Открытие — тоже рекорд, причём часто самый долгоживущий: на первый старт
+    приезжает толпа, и планка держится год и дольше. Такие строки помечаются
+    `is_debut`, прежний рекорд у них нулевой.
+
+    Открытием считается локация, у которой до недели нет ни одного события
+    (ни по одной системе — ключ сквозной, identity каталога). Дополнительная
+    страховка от «открытий» задним числом: если у события есть номер, он
+    должен быть первым — иначе это только что подключённая к сайту площадка
+    с ещё не залитой историей, а не новая точка на карте (так на неделе
+    25.07.2026 отсеялся RunPark «Парк Ангарские Пруды» со стартом №231).
+
+    Тестовые забеги 5 вёрст (пробный прогон за неделю-другую до запуска,
+    `is_test_event`) в этом блоке не участвуют вовсе: сами открытием не
+    считаются и не мешают засчитать открытием настоящий первый старт.
+    """
+    # исторический максимум по физической локации до недели
+    best_before: dict[str, tuple[int, date]] = {}
+    seen_before: set[str] = set()
+    for row in events:
+        if row.event_date >= week_start or row.is_test_event:
+            continue
+        key = identity_of(row.location_id)
+        seen_before.add(key)
+        if row.finishers <= 0:
+            continue
+        known = best_before.get(key)
+        if known is None or row.finishers > known[0]:
+            best_before[key] = (row.finishers, row.event_date)
+
+    week_rows: list[tuple[str, _EventRow]] = [
+        (identity_of(row.location_id), row)
+        for row in events
+        if week_start <= row.event_date <= week_end
+        and row.finishers > 0
+        and not row.is_test_event
+    ]
+    debut_keys = {
+        key
+        for key, row in week_rows
+        if key not in seen_before and row.event_number in (None, 1)
+    }
+
+    records: dict[str, dict[str, Any]] = {}
+    for key, row in week_rows:
+        known = best_before.get(key)
+        is_debut = key in debut_keys
+        if not is_debut and (known is None or row.finishers <= known[0]):
+            continue
+        existing = records.get(key)
+        if existing is not None and existing["finishers"] >= row.finishers:
+            continue
+        records[key] = {
+            "location_name": display_of(row.location_id),
+            "location_slug": slug_of(row.location_id) if slug_of is not None else None,
+            "location_city": city_of(row.location_id) if city_of is not None else None,
+            "platform_code": row.platform_code,
+            "event_date": row.event_date,
+            "finishers": row.finishers,
+            "previous_record": known[0] if known is not None and not is_debut else 0,
+            "previous_record_date": known[1] if known is not None and not is_debut else None,
+            "is_debut": is_debut,
+        }
+    return sorted(
+        records.values(),
+        key=lambda item: (
+            item["finishers"] - item["previous_record"],
+            item["finishers"],
+        ),
+        reverse=True,
+    )[:WEEK_RECORDS_LIMIT]
+
+
 def _compute_portal_home(db: Session) -> dict[str, Any]:
     resolver = LocationCatalogIndex(db)
     locations = {loc.id: loc for loc in db.query(Location).all()}
@@ -718,6 +941,30 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
     def display_of(location_id: UUID) -> str:
         location = locations[location_id]
         return resolver.display_name(location, platform_code_by_location[location_id])
+
+    def slug_of(location_id: UUID) -> str:
+        """Слаг страницы локации — external_key самой строки.
+
+        Страница /locations/{slug} резолвит слаг любой из платформ в одну
+        физическую локацию (resolve_location_identity) и сама переписывает
+        адрес на канонический, поэтому строить его здесь не нужно.
+        """
+        return locations[location_id].external_key.strip().lower()
+
+    # Город физической локации. Поле заполнено не у всех строк (у parkrun его
+    # на странице просто нет), но у соседа по каталогу тот же город обычно
+    # известен — сводим по сквозной identity и берём первый непустой.
+    city_by_identity: dict[str, str] = {}
+    for location_id_with_city, location_with_city in locations.items():
+        city_value = (location_with_city.city or "").strip()
+        if not city_value:
+            continue
+        city_by_identity.setdefault(identity_of(location_id_with_city), city_value)
+
+    def city_of(location_id: UUID) -> str | None:
+        return _city_label(
+            city_by_identity.get(identity_of(location_id)), display_of(location_id)
+        )
 
     def is_foreign_parkrun(location_id: UUID) -> bool:
         """Зарубежные parkrun-площадки из синка профилей: финиши учитываем,
@@ -804,6 +1051,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         top_saturday = [
             {
                 "location_name": display_of(row.location_id),
+                "location_slug": slug_of(row.location_id),
                 "platform_code": row.platform_code,
                 "finishers": row.finishers,
             }
@@ -816,38 +1064,9 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         week_end = pulse_date
         week_start = week_end - timedelta(days=WEEK_RECORD_WINDOW_DAYS - 1)
 
-        # посещаемость: исторический максимум по физической локации до недели
-        attendance_before: dict[str, tuple[int, date]] = {}
-        for row in events:
-            if row.event_date < week_start and row.finishers > 0:
-                key = identity_of(row.location_id)
-                known = attendance_before.get(key)
-                if known is None or row.finishers > known[0]:
-                    attendance_before[key] = (row.finishers, row.event_date)
-        attendance_records: dict[str, dict[str, Any]] = {}
-        for row in events:
-            if not (week_start <= row.event_date <= week_end) or row.finishers <= 0:
-                continue
-            key = identity_of(row.location_id)
-            known = attendance_before.get(key)
-            if known is None or row.finishers <= known[0]:
-                continue
-            existing_attendance = attendance_records.get(key)
-            if existing_attendance is not None and existing_attendance["finishers"] >= row.finishers:
-                continue
-            attendance_records[key] = {
-                "location_name": display_of(row.location_id),
-                "platform_code": row.platform_code,
-                "event_date": row.event_date,
-                "finishers": row.finishers,
-                "previous_record": known[0],
-                "previous_record_date": known[1],
-            }
-        attendance_list = sorted(
-            attendance_records.values(),
-            key=lambda item: item["finishers"] - item["previous_record"],
-            reverse=True,
-        )[:WEEK_RECORDS_LIMIT]
+        attendance_list = _week_attendance_records(
+            events, week_start, week_end, identity_of, display_of, slug_of, city_of
+        )
 
         # рекорды трассы М/Ж: лучшее время недели против исторического
         # минимума физической локации
@@ -876,37 +1095,55 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
             finish_sec,
             finish_display,
             runner_name,
+            participant_id,
+            event_number,
         ) in _week_results(db, week_start, week_end, excluded_location_ids):
             if gender not in ("male", "female"):
                 continue
             course_key = (location_id, gender)
             previous_min = course_before.get(course_key)
-            if previous_min is None or finish_sec >= previous_min[0]:
+            # Рекорд трассы «с нуля» — как is_debut в посещаемости: страховка
+            # event_number in (None, 1) отсекает площадки, только что
+            # подключённые к сайту (история ещё не залита), от настоящих
+            # первых стартов.
+            is_debut = previous_min is None and event_number in (None, 1)
+            if not is_debut and (previous_min is None or finish_sec >= previous_min[0]):
                 continue
             existing_course = course_records.get(course_key)
             if existing_course is not None and existing_course["_finish_sec"] <= finish_sec:
                 continue
             course_records[course_key] = {
                 "_finish_sec": finish_sec,
+                "_participant_id": participant_id,
                 "location_name": display_of(location_id),
+                "location_slug": slug_of(location_id),
                 "platform_code": platform_code,
                 "event_date": event_date,
                 "gender": gender,
                 "time_display": clean_time_display(finish_display, finish_sec),
                 "runner_name": runner_name,
-                "previous_display": format_finish_time(previous_min[0]),
-                "previous_record_date": previous_min[1],
-                "delta_sec": previous_min[0] - finish_sec,
+                "previous_display": format_finish_time(previous_min[0]) if previous_min is not None else None,
+                "previous_record_date": previous_min[1] if previous_min is not None else None,
+                "delta_sec": previous_min[0] - finish_sec if previous_min is not None else None,
+                "is_debut": is_debut,
             }
+        course_top = sorted(
+            course_records.values(),
+            key=lambda item: (
+                str(item["location_name"]),
+                0 if item["gender"] == "male" else 1,
+            ),
+        )[:WEEK_RECORDS_LIMIT]
+        # Хендлы ищем только для попавших в выдачу строк — их не больше дюжины.
+        course_handles = _runner_handles(
+            db, [item["_participant_id"] for item in course_top]
+        )
         course_list = [
-            {key: value for key, value in item.items() if not key.startswith("_")}
-            for item in sorted(
-                course_records.values(),
-                key=lambda item: (
-                    str(item["location_name"]),
-                    0 if item["gender"] == "male" else 1,
-                ),
-            )[:WEEK_RECORDS_LIMIT]
+            {
+                **{key: value for key, value in item.items() if not key.startswith("_")},
+                "runner_handle": course_handles.get(item["_participant_id"]),
+            }
+            for item in course_top
         ]
         week_records = {
             "week_start": week_start,
@@ -1175,6 +1412,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
                 "longitude": longitude,
                 "starts": starts_by_identity[key],
                 "location_name": display_of(location_id),
+                "location_slug": slug_of(location_id),
                 "platform_code": platform_code_by_location[location_id],
                 "region": location.region,
             }
@@ -1204,6 +1442,8 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         return [
             {
                 "location_name": display_of(row.location_id),
+                "location_slug": slug_of(row.location_id),
+                "location_city": city_of(row.location_id),
                 "platform_code": row.platform_code,
                 "event_date": row.event_date,
                 "finishers": row.finishers,
@@ -1256,6 +1496,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
     for item in _fastest_by_platform(db, excluded_location_ids, fresh_since):
         location_id = item.pop("_location_id")
         item["location_name"] = display_of(location_id)
+        item["location_slug"] = slug_of(location_id)
         fastest.append(item)
 
     # --- недельные дельты для факт-плашек (Дмитрий, 13.07.2026) ---
@@ -1317,6 +1558,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         "systems": systems,
         "geo": geo,
         "fun_facts": fun_facts,
+        "registered_parks": _registered_parks(db),
         "gender_split": {
             "total": gender_total,
             "by_platform": [

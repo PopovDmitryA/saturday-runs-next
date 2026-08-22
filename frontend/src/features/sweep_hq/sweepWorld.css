@@ -1,0 +1,294 @@
+/* Публичное табло /world. Светлое и спокойное — в отличие от тёмного
+   «диспетчерского» /hq: сюда приходит случайный человек из соцсетей, а не
+   владелец флота. Токены локальные, чтобы страница не зависела от темы портала. */
+
+.world-root {
+  --w-bg: #fbfaf7;
+  --w-surface: #ffffff;
+  --w-ink: #1b1a17;
+  --w-muted: #6f6a60;
+  --w-line: #e6e2d9;
+  --w-accent: #1f6f5c;
+  --w-accent-soft: #e4efe9;
+  --w-clay: #a9622f;
+
+  min-height: 100vh;
+  background: var(--w-bg);
+  color: var(--w-ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.6;
+  padding: 0 20px 80px;
+  box-sizing: border-box;
+}
+
+@media (prefers-color-scheme: dark) {
+  .world-root {
+    --w-bg: #14150f;
+    --w-surface: #1c1e17;
+    --w-ink: #e8e7de;
+    --w-muted: #9c9a8c;
+    --w-line: #2e3128;
+    --w-accent: #79b799;
+    --w-accent-soft: #223028;
+    --w-clay: #d19365;
+  }
+}
+
+.world-root--center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.world-inner {
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+.world-muted {
+  color: var(--w-muted);
+}
+
+/* ---------- шапка ---------- */
+.world-hero {
+  padding: 64px 0 8px;
+}
+
+.world-eyebrow {
+  margin: 0 0 14px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-accent);
+  font-weight: 600;
+}
+
+.world-hero h1 {
+  margin: 0 0 16px;
+  font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  font-weight: 400;
+  font-size: clamp(30px, 5vw, 46px);
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.world-lede {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 17px;
+  color: var(--w-muted);
+}
+
+/* ---------- прогресс ---------- */
+.world-progress {
+  margin-top: 34px;
+}
+
+.world-progress__bar {
+  height: 14px;
+  border-radius: 999px;
+  background: var(--w-accent-soft);
+  overflow: hidden;
+}
+
+.world-progress__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--w-accent);
+  transition: width 0.8s ease;
+}
+
+.world-progress__legend {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 14.5px;
+  color: var(--w-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.world-progress__legend b {
+  color: var(--w-ink);
+}
+
+.world-progress__pct {
+  font-weight: 600;
+  color: var(--w-accent);
+}
+
+/* ---------- плитки ---------- */
+/* Ровно 3 колонки: плиток шесть, и любая «резиновая» сетка рвёт их на 5+1,
+   оставляя сироту во втором ряду. Две «мягкие» плитки прогноза при этом
+   всегда оказываются рядом во втором ряду — так и задумано. */
+.world-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  margin-top: 40px;
+  background: var(--w-line);
+  border: 1px solid var(--w-line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.world-stat {
+  background: var(--w-surface);
+  padding: 18px 16px;
+  text-align: center;
+}
+
+.world-stat--soft {
+  background: var(--w-accent-soft);
+}
+
+.world-stat b {
+  display: block;
+  font-size: clamp(19px, 2.2vw, 25px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.world-stat__date {
+  font-size: clamp(14px, 1.6vw, 17px);
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.world-stat span {
+  display: block;
+  margin-top: 5px;
+  font-size: 12.5px;
+  color: var(--w-muted);
+}
+
+/* ---------- блоки ---------- */
+.world-block {
+  margin-top: 52px;
+}
+
+.world-block h2 {
+  margin: 0;
+  font-family: Georgia, "Iowan Old Style", serif;
+  font-weight: 400;
+  font-size: 24px;
+  letter-spacing: -0.01em;
+}
+
+.world-block__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px 18px;
+  margin-bottom: 18px;
+}
+
+/* переключатель периода — как на главной, но в токенах этой страницы */
+.world-periods {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  background: var(--w-accent-soft);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.world-period {
+  background: transparent;
+  border: none;
+  color: var(--w-muted);
+  border-radius: 7px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.world-period:hover {
+  color: var(--w-ink);
+}
+
+.world-period--on {
+  background: var(--w-surface);
+  color: var(--w-accent);
+}
+
+.world-chart__empty {
+  padding: 40px 0;
+  text-align: center;
+}
+
+/* ---------- график ---------- */
+.world-chart {
+  background: var(--w-surface);
+  border: 1px solid var(--w-line);
+  border-radius: 14px;
+  padding: 18px 16px 8px;
+}
+
+.world-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.world-chart svg text {
+  font-size: 11px;
+  fill: var(--w-muted);
+}
+
+.world-chart__tip {
+  min-height: 20px;
+  margin-bottom: 6px;
+  font-size: 13.5px;
+  color: var(--w-muted);
+  text-align: center;
+}
+
+.world-chart__tip b {
+  color: var(--w-accent);
+}
+
+.world-grid {
+  stroke: var(--w-line);
+}
+
+.world-area {
+  fill: var(--w-accent);
+  opacity: 0.12;
+}
+
+.world-line {
+  fill: none;
+  stroke: var(--w-accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.world-cursor {
+  stroke: var(--w-muted);
+  stroke-dasharray: 3 3;
+}
+
+.world-dot {
+  fill: var(--w-accent);
+  stroke: var(--w-surface);
+  stroke-width: 2;
+}
+
+@media (max-width: 560px) {
+  .world-hero {
+    padding-top: 44px;
+  }
+  .world-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

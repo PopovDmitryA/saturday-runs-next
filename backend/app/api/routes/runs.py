@@ -16,6 +16,7 @@ from app.schemas.dashboard import (
     RunItemResponse,
     VolunteeringItemResponse,
     VolunteerRoleStatResponse,
+    WinResponse,
 )
 from app.services.co_runners_service import list_co_runner_meetings, list_co_runners
 from app.services.dashboard_service import (
@@ -24,6 +25,7 @@ from app.services.dashboard_service import (
     list_user_runs,
     list_user_volunteer_role_stats,
     list_user_volunteering,
+    list_user_wins,
 )
 
 router = APIRouter(tags=["runs"])
@@ -87,6 +89,16 @@ def list_personal_records(
 ) -> list[PersonalRecordResponse]:
     items = list_user_personal_records(db, user.id, include_test_events=include_test)
     return [PersonalRecordResponse.model_validate(item) for item in items]
+
+
+@router.get("/runs/wins", response_model=list[WinResponse])
+def list_wins(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    include_test: Annotated[bool, Query()] = False,
+) -> list[WinResponse]:
+    items = list_user_wins(db, user.id, include_test_events=include_test)
+    return [WinResponse.model_validate(item) for item in items]
 
 
 @router.get("/volunteering", response_model=list[VolunteeringItemResponse])

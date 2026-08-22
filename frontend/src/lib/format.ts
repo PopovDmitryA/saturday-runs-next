@@ -170,7 +170,7 @@ export function pluralFormRu(count: number, forms: readonly [string, string, str
 }
 
 export function pluralizeRu(count: number, forms: readonly [string, string, string]): string {
-  return `${count} ${pluralFormRu(count, forms)}`;
+  return `${formatInt(count)} ${pluralFormRu(count, forms)}`;
 }
 
 const LOCATION_CAP_FORMS = ["Локация", "Локации", "Локаций"] as const;
@@ -184,6 +184,7 @@ const ROLE_CAP_FORMS = ["Роль", "Роли", "Ролей"] as const;
 const TIME_FORMS = ["раз", "раза", "раз"] as const;
 const DAY_CAP_FORMS = ["День", "Дня", "Дней"] as const;
 const PR_RUN_FORMS = ["PR-пробежка", "PR-пробежки", "PR-пробежек"] as const;
+const WIN_CAP_FORMS = ["Победа", "Победы", "Побед"] as const;
 const SATURDAY_FORMS = ["суббота", "субботы", "суббот"] as const;
 const VISIT_FORMS = ["визит", "визита", "визитов"] as const;
 
@@ -235,6 +236,11 @@ export function runsCapLabel(count: number): string {
   return pluralFormRu(count, RUN_CAP_FORMS);
 }
 
+/** Только слово, без числа: «пробежка / пробежки / пробежек». */
+export function runsFormLabel(count: number): string {
+  return pluralFormRu(count, RUN_FORMS);
+}
+
 export function volunteeringCapLabel(count: number): string {
   return pluralFormRu(count, VOLUNTEERING_CAP_FORMS);
 }
@@ -255,6 +261,10 @@ export function prRunsLabel(count: number): string {
   return pluralFormRu(count, PR_RUN_FORMS);
 }
 
+export function winsCapLabel(count: number): string {
+  return pluralFormRu(count, WIN_CAP_FORMS);
+}
+
 export function saturdaysLabel(count: number): string {
   return pluralFormRu(count, SATURDAY_FORMS);
 }
@@ -268,6 +278,41 @@ const CLUB_FORMS = ["клуб", "клуба", "клубов"] as const;
 
 export function kilometersLabel(count: number): string {
   return pluralizeRu(count, KM_FORMS);
+}
+
+/**
+ * Целое число с разбивкой по разрядам: 123456 → «123 456».
+ *
+ * Общий помощник, потому что без него большие цифры печатались как есть и
+ * читались сплошняком — «дальность от дома» в рейтинге доходит до сотен тысяч
+ * километров. Разделитель у ru-RU — неразрывный пробел, число не переносится.
+ */
+export function formatInt(value: number): string {
+  return Math.round(value).toLocaleString("ru-RU");
+}
+
+/**
+ * Разряды без округления: 2465.5 → «2 465,5». Замена для String(число) там,
+ * где дробная часть может быть осмысленной (километры, средние).
+ */
+export function formatNumber(value: number): string {
+  return value.toLocaleString("ru-RU");
+}
+
+/**
+ * То же самое, но для плиток и ячеек, куда прилетает уже готовый ReactNode:
+ * число разбиваем по разрядам, всё остальное отдаём как есть.
+ */
+export function formatStatValue<T>(value: T): T | string {
+  return typeof value === "number" && Number.isFinite(value) ? formatNumber(value) : value;
+}
+
+/** «6 141 км», близкие расстояния — с десятыми: «0,8 км» честнее, чем «1 км». */
+export function formatKm(value: number): string {
+  if (value < 10 && !Number.isInteger(value)) {
+    return `${value.toFixed(1).replace(".", ",")} км`;
+  }
+  return `${Math.round(value).toLocaleString("ru-RU")} км`;
 }
 
 export function runClubsLabel(count: number): string {
@@ -298,6 +343,26 @@ export function platformCodeLabel(code: string): string {
     runpark: "RunPark",
   };
   return labels[code] ?? code;
+}
+
+/**
+ * Текст личного QR/штрихкода участника для платформы — то же значение,
+ * что показывают штатные приложения parkrun/S95/RunPark/5 вёрст на экране
+ * «мой QR-код». У 5 вёрст отдельного barcode_id в базе нет (см. url.py
+ * BARCODE_RE) — на сайте это буква A + номер участника (external_user_id).
+ */
+export function platformScanCode(
+  platformCode: string,
+  barcodeId: string | null | undefined,
+  externalUserId: string | null | undefined,
+): string | null {
+  if (barcodeId) {
+    return barcodeId.toUpperCase();
+  }
+  if (platformCode === "five_verst" && externalUserId) {
+    return `A${externalUserId}`;
+  }
+  return null;
 }
 
 type PlatformActivityStats = {
@@ -381,4 +446,37 @@ export function syncStatusLabel(status: string): string {
     partial: "Частично",
   };
   return labels[status] ?? status;
+}
+
+/**
+ * «3 дня назад», «1 час назад» — возраст события для лент, где точная дата
+ * второстепенна (бэклог). Точную дату показываем в подсказке рядом.
+ */
+export function formatRelativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) {
+    return "";
+  }
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (seconds < 60) {
+    return "только что";
+  }
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} ${pluralFormRu(minutes, ["минуту", "минуты", "минут"])} назад`;
+  }
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) {
+    return `${hours} ${pluralFormRu(hours, ["час", "часа", "часов"])} назад`;
+  }
+  const days = Math.round(hours / 24);
+  if (days < 31) {
+    return `${days} ${pluralFormRu(days, ["день", "дня", "дней"])} назад`;
+  }
+  const months = Math.round(days / 30.44);
+  if (months < 12) {
+    return `${months} ${pluralFormRu(months, ["месяц", "месяца", "месяцев"])} назад`;
+  }
+  const years = Math.round(months / 12);
+  return `${years} ${pluralFormRu(years, ["год", "года", "лет"])} назад`;
 }

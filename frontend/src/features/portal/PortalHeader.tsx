@@ -1,45 +1,59 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ThemeToggle } from "../../components/ThemeToggle";
-import { getCurrentUser, type User } from "../../lib/api";
 import {
+  cabinetTabHref,
   PORTAL_ABOUT_HREF,
-  PORTAL_BLOG_HREF,
   PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
 } from "../../lib/portalRoutes";
 import { userLabel } from "../../lib/userLabel";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 
 export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
-  const [user, setUser] = useState<User | null>(null);
-  // Пока авторизация не подтверждена, правый блок не рисуем вовсе: иначе
-  // залогиненный на долю секунды видит «Войти», которое сменяется ником.
-  const [authResolved, setAuthResolved] = useState(false);
+  // Кэшированная сессия (sessionStorage): между переходами по MPA-страницам
+  // ник не мигает кнопкой «Войти» — стартуем с последнего известного статуса.
+  const optionalUser = useOptionalUser();
+  const user = optionalUser ?? null;
+  const authResolved = optionalUser !== undefined;
   const [menuOpen, setMenuOpen] = useState(false);
 
-  useEffect(() => {
-    getCurrentUser()
-      .then((current) => setUser(current))
-      .catch(() => setUser(null))
-      .finally(() => setAuthResolved(true));
-  }, []);
-
   const authed = user !== null;
+  // Текущий раздел подсвечивается по адресу страницы: главная — точное
+  // совпадение "/", остальные — по префиксу (напр. /about#privacy тоже
+  // считается разделом «О проекте»). section — реальный раздел ссылки,
+  // даже если аноним уходит на /login.
+  const pathname = typeof window !== "undefined" ? window.location.pathname : "";
+  const isCurrent = (section: string) =>
+    section === PORTAL_HOME_HREF ? pathname === "/" : pathname.startsWith(section);
+  const navLink = (section: string, href: string, label: string) => {
+    const current = isCurrent(section);
+    return (
+      <a
+        href={href}
+        className={`portal-header-link${current ? " portal-header-link-current" : ""}`}
+        aria-current={current ? "page" : undefined}
+      >
+        {label}
+      </a>
+    );
+  };
   const navLinks = (
     <>
-      <a href={PORTAL_ABOUT_HREF} className="portal-header-link">
-        О проекте
-      </a>
-      <a href={PORTAL_BLOG_HREF} className="portal-header-link">
-        Блог
-      </a>
-      {/* Локации и Рейтинги под RequireAuth — анонима сразу ведём на вход,
-          чтобы он не упирался в гейт внутри раздела. */}
-      <a href={authed ? "/locations" : PORTAL_LOGIN_HREF} className="portal-header-link">
-        Локации
-      </a>
-      <a href={authed ? "/ratings" : PORTAL_LOGIN_HREF} className="portal-header-link">
-        Рейтинги
-      </a>
+      {navLink(PORTAL_HOME_HREF, PORTAL_HOME_HREF, "Главная")}
+      {/* «Личный кабинет» — всегда второй пункт, сразу после «Главной».
+          Аноним уходит на вход, залогиненный — в новый кабинет (тёмный запуск
+          /new/dashboard). Синяя кнопка «Войти» остаётся основным CTA. */}
+      {navLink(
+        "/dashboard",
+        authed ? cabinetTabHref(user, "dashboard") : PORTAL_LOGIN_HREF,
+        "Личный кабинет",
+      )}
+      {/* Локации и Рейтинги открыты без логина (25.07.2026) — аноним идёт
+          прямо в разделы, личные блоки внутри зовут его войти сами. */}
+      {navLink("/locations", "/locations", "Локации")}
+      {navLink("/ratings", "/ratings", "Рейтинги")}
+      {/* «О проекте» — последним пунктом; «Блог» из шапки убран по просьбе. */}
+      {navLink(PORTAL_ABOUT_HREF, PORTAL_ABOUT_HREF, "О проекте")}
     </>
   );
 
@@ -90,7 +104,14 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
           {!hideLogin &&
             authResolved &&
             (user ? (
-              <a className="portal-header-user" href="/dashboard" title="Личный кабинет">
+              <a
+                className="portal-header-user"
+                href={cabinetTabHref(user, "dashboard")}
+                title="Личный кабинет"
+              >
+                {user.avatar_url && (
+                  <img className="portal-header-user-avatar" src={user.avatar_url} alt="" />
+                )}
                 {userLabel(user)}
               </a>
             ) : (

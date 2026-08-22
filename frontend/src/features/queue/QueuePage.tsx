@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "../admin/AdminShell";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { RequireAdmin } from "../../components/RequireAdmin";
@@ -8,6 +8,7 @@ import { getSyncQueue, type SyncQueueJob, type SyncQueueJobUser, type SyncQueueP
 import {
   celeryStateLabel,
   formatDateTime,
+  formatInt,
   formatDurationShort,
   platformCodeLabel,
   syncStatusLabel,
@@ -126,23 +127,23 @@ function ParkrunQueuePanel({ stats }: { stats: SyncQueueParkrunQueue }) {
       </p>
       <div className="queue-parkrun-stats">
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.pending)}`}>
-          <span className="queue-parkrun-stat-value">{stats.pending}</span>
+          <span className="queue-parkrun-stat-value">{formatInt(stats.pending)}</span>
           <span className="queue-parkrun-stat-label">parkrun ожидают</span>
         </div>
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.failed)}`}>
-          <span className="queue-parkrun-stat-value">{stats.failed}</span>
+          <span className="queue-parkrun-stat-value">{formatInt(stats.failed)}</span>
           <span className="queue-parkrun-stat-label">parkrun ошибка</span>
         </div>
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.stuck_done)}`}>
-          <span className="queue-parkrun-stat-value">{stats.stuck_done}</span>
+          <span className="queue-parkrun-stat-value">{formatInt(stats.stuck_done)}</span>
           <span className="queue-parkrun-stat-label">parkrun застряли done</span>
         </div>
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.processing)}`}>
-          <span className="queue-parkrun-stat-value">{stats.processing}</span>
+          <span className="queue-parkrun-stat-value">{formatInt(stats.processing)}</span>
           <span className="queue-parkrun-stat-label">parkrun в обработке</span>
         </div>
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.celery_sync)}`}>
-          <span className="queue-parkrun-stat-value">{stats.celery_sync}</span>
+          <span className="queue-parkrun-stat-value">{formatInt(stats.celery_sync)}</span>
           <span className="queue-parkrun-stat-label">Celery sync</span>
         </div>
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.captcha_pending)}`}>
@@ -164,15 +165,15 @@ function ParkrunQueuePanel({ stats }: { stats: SyncQueueParkrunQueue }) {
           <span className="queue-parkrun-stat-label">Mac worker</span>
         </div>
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.s95_pending)}`}>
-          <span className="queue-parkrun-stat-value">{stats.s95_pending}</span>
+          <span className="queue-parkrun-stat-value">{formatInt(stats.s95_pending)}</span>
           <span className="queue-parkrun-stat-label">s95 ожидают</span>
         </div>
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.s95_failed)}`}>
-          <span className="queue-parkrun-stat-value">{stats.s95_failed}</span>
+          <span className="queue-parkrun-stat-value">{formatInt(stats.s95_failed)}</span>
           <span className="queue-parkrun-stat-label">s95 ошибка</span>
         </div>
         <div className={`queue-parkrun-stat ${parkrunStatClass(stats.s95_processing)}`}>
-          <span className="queue-parkrun-stat-value">{stats.s95_processing}</span>
+          <span className="queue-parkrun-stat-value">{formatInt(stats.s95_processing)}</span>
           <span className="queue-parkrun-stat-label">s95 в обработке</span>
         </div>
       </div>
@@ -243,7 +244,7 @@ function QueueContent() {
   }, [data, load]);
 
   return (
-    <AppShell title="Очередь задач" activePath="/admin">
+    <AdminShell title="Очередь задач">
       <AdminSubnav activePath="/admin/queue" />
 
       <p className="muted queue-intro">
@@ -321,7 +322,7 @@ function QueueContent() {
               </span>
             ))}
             {data.active_jobs_count > 0 && (
-              <span className="queue-summary-active"> · активных: {data.active_jobs_count}</span>
+              <span className="queue-summary-active"> · активных: {formatInt(data.active_jobs_count)}</span>
             )}
           </p>
         )}
@@ -362,7 +363,7 @@ function QueueContent() {
                     className={platformFilter === key ? "map-mode-tab active" : "map-mode-tab"}
                     onClick={() => setPlatformFilter(key)}
                   >
-                    {platformFilterLabel(key)} ({count})
+                    {platformFilterLabel(key)} ({formatInt(count)})
                   </button>
                 ))}
               </div>
@@ -443,7 +444,7 @@ function QueueContent() {
           )}
         </>
       )}
-    </AppShell>
+    </AdminShell>
   );
 }
 

@@ -11,7 +11,6 @@ from collections.abc import Generator
 
 import fakeredis
 import pytest
-from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from app.db.session import get_engine
@@ -38,18 +37,21 @@ def db_session() -> Generator[Session, None, None]:
         pytest.skip("Database not available")
 
     transaction = connection.begin()
-    session = Session(bind=connection, expire_on_commit=False)
-    session.begin_nested()
-
-    @event.listens_for(session, "after_transaction_end")
-    def _restart_savepoint(session: Session, transaction_obj) -> None:  # noqa: ARG001
-        if transaction_obj.nested and not transaction_obj._parent.nested:
-            session.begin_nested()
+    # join_transaction_mode="create_savepoint" — штатный механизм SQLAlchemy 2.0:
+    # сессия работает внутри SAVEPOINT, поэтому commit() в тестируемом коде
+    # (например, в sync_location) освобождает savepoint, но не пишет в реальную БД,
+    # и внешний rollback в finally по-прежнему откатывает всё.
+    # Прежний хак на after_transaction_end терял строки, созданные до commit()
+    # (SyncRun пропадал → ObjectDeletedError).
+    session = Session(
+        bind=connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
 
     try:
         yield session
     finally:
-        event.remove(session, "after_transaction_end", _restart_savepoint)
         session.close()
         transaction.rollback()
         connection.close()

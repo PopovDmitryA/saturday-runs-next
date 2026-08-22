@@ -11,6 +11,7 @@ type RecordRow = {
   key: string;
   event_date: string;
   value: string;
+  improvement: string | null;
   runnerName: string | null;
   runnerSerialId: number | null;
   platform_code: string;
@@ -93,16 +94,51 @@ function runnerSerialIdFor(item: LocationEventRow, type: RecordType): number | n
   return null;
 }
 
+/** Числовое значение рекорда — по нему считается, насколько его улучшили. */
+function numericValueFor(item: LocationEventRow, type: RecordType): number | null {
+  if (type === "attendance") return item.finishers;
+  if (type === "male") return item.best_male_time_sec;
+  return item.best_female_time_sec;
+}
+
+function formatSecondsGap(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return minutes > 0 ? `${minutes}:${String(rest).padStart(2, "0")}` : `${rest} с`;
+}
+
+/** Насколько строка улучшила предыдущий рекорд: время — «быстрее на», посещаемость — «больше на». */
+function formatImprovement(previous: number, current: number, type: RecordType): string | null {
+  const gap = type === "attendance" ? current - previous : previous - current;
+  if (gap <= 0) {
+    return null;
+  }
+  return type === "attendance" ? `+${gap}` : `−${formatSecondsGap(gap)}`;
+}
+
 function buildRows(items: LocationEventRow[], type: RecordType): RecordRow[] {
   const rows: RecordRow[] = [];
-  for (const item of items) {
+  // Бэкенд отдаёт старты от свежих к старым, а улучшение считается от
+  // предыдущего рекорда — идём по хронологии и разворачиваем в конце.
+  // Сравниваем внутри своей системы: строка попала в список именно потому,
+  // что побила рекорд своей платформы.
+  const previousByPlatform = new Map<string, number>();
+  for (const item of [...items].reverse()) {
     if (!isPlatformRecord(item, type)) {
       continue;
+    }
+    const current = numericValueFor(item, type);
+    const previous = previousByPlatform.get(item.platform_code);
+    const improvement =
+      previous != null && current != null ? formatImprovement(previous, current, type) : null;
+    if (current != null) {
+      previousByPlatform.set(item.platform_code, current);
     }
     rows.push({
       key: `${item.event_date}-${item.platform_code}`,
       event_date: item.event_date,
       value: valueFor(item, type),
+      improvement,
       runnerName: runnerNameFor(item, type),
       runnerSerialId: runnerSerialIdFor(item, type),
       platform_code: item.platform_code,
@@ -167,6 +203,7 @@ export function LocationRecordsModal({
                   <th>Дата</th>
                   {showRunnerColumn && <th>ФИО</th>}
                   <th>Значение</th>
+                  <th>Улучшение</th>
                   <th>Система</th>
                 </tr>
               </thead>
@@ -196,6 +233,13 @@ export function LocationRecordsModal({
                         </StatHintTooltip>
                       ) : (
                         row.value
+                      )}
+                    </td>
+                    <td className="col-record-gap">
+                      {row.improvement == null ? (
+                        <span className="muted">—</span>
+                      ) : (
+                        row.improvement
                       )}
                     </td>
                     <td className="col-platform">

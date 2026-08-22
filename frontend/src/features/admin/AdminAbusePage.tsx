@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "./AdminShell";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import {
@@ -139,7 +139,7 @@ function AdminAbuseContent() {
   };
 
   return (
-    <AppShell title="Блокировки" activePath="/admin">
+    <AdminShell title="Блокировки">
       <AdminSubnav activePath="/admin/abuse" />
 
       <section className="card admin-abuse-form">
@@ -345,7 +345,7 @@ function AdminAbuseContent() {
           ? `Разблокировать IP ${confirmUnban.value}?`
           : `Разблокировать Telegram ID ${confirmUnban?.value}?`}
       </ConfirmModal>
-    </AppShell>
+    </AdminShell>
   );
 }
 

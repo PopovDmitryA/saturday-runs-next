@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import Integer, and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.activity_date import has_real_activity_date
@@ -26,8 +27,15 @@ from app.models import (
     User,
     VolunteerResult,
 )
-from app.services.location_catalog_service import LocationCatalogIndex
+from app.parkrun.volunteer_credits import count_parkrun_volunteering
+from app.services.home_distance_service import build_home_distance_overview
+from app.services.location_catalog_service import (
+    PARKRUN_PLATFORM_CODE,
+    LocationCatalogIndex,
+    russian_parkrun_location_ids,
+)
 from app.services.location_map_service import _location_is_cancelled, _location_is_paused
+from app.services.location_records_service import get_user_location_records
 from app.services.sync_error_format import present_sync_error
 from app.services.user_location_stats import count_unique_geo_from_rows, count_unique_locations_from_rows
 from app.services.user_unique_locations_detail import _platform_sort_key
@@ -49,9 +57,27 @@ class SyncRefreshRateLimitedError(Exception):
 # списком PR-пробежек.
 # 27: тестовые события исключены из пересчёта is_pr/дебютов + бэкфилл на проде —
 # кэш должен пересчитать pr_count по обновлённым флагам.
-ANALYTICS_VERSION = 27
+# 29: плитки «Рекорды локаций» и «Рекорды в возрастных группах» — в аналитике
+# появились location_records / age_group_records (location_records_service).
+# 30: зарубежный parkrun выброшен из рекордов локаций — по нему нет протоколов,
+# и одинокий финиш туриста зачитывался как рекорд трассы.
+# 31: график темпа на главной — переключатель «весь период» (по годам) и
+# среднее время финиша в каждой точке графика.
+# 32: плитка «Победы» — в аналитике появились wins_count / wins_scope.
+# 33: зарубежный parkrun выброшен из побед (протокола нет — «первое место»
+# по одинокой строке из профиля не победа), заодно ушло фиктивное
+# gender_position=1 из среднего места по полу.
+# 34: плитка «Дальность от дома» — сумма км до уникальных посещённых площадок,
+# самый дальний старт и признак неоднозначной домашней локации.
+ANALYTICS_VERSION = 34
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
+
+# Разрез, в котором считается победа. Решение Дмитрия (01.08.2026): женщинам —
+# победы среди женщин, мужчинам — победы в абсолюте. Пол неизвестен — считаем
+# абсолют: это честная победа в любом разрезе.
+WIN_SCOPE_ABSOLUTE = "absolute"
+WIN_SCOPE_FEMALE = "female"
 RUN_CLUBS = (50, 100, 250, 500, 1000)
 DISTANCE_KM_PER_RUN = 5
 
@@ -530,6 +556,23 @@ def _compute_dashboard_analytics(
         .with_entities(func.avg(RunResult.gender_position))
         .scalar()
     )
+    # Победы: у женщин — среди женщин (gender_position), у мужчин — в абсолюте
+    # (position). Счётчик и список в модалке считаются одним фильтром
+    # (run_win_sql_filter) по одному и тому же runs_query — тестовые события и
+    # кросслинк-дубли уже отсечены выше, поэтому цифра плитки и число строк
+    # детализации совпадают по построению. Зарубежный parkrun отсекается тем же
+    # фильтром в обоих местах (foreign_parkrun_exclusion_filter).
+    wins_scope = win_scope_for_gender(user_gender(db, user_id))
+    wins_count = (
+        runs_query.filter(
+            run_win_sql_filter(wins_scope),
+            foreign_parkrun_exclusion_filter(db),
+        )
+        .with_entities(func.count(func.distinct(RunResult.id)))
+        .scalar()
+        or 0
+    )
+
     # Плашка «N личных рекордов» на главной открывает список PR-пробежек —
     # счётчик обязан совпадать с числом строк в этом списке (рекорды системы,
     # глобальные, рекорды локации и дебюты), иначе цифры расходятся (Дмитрий,
@@ -625,8 +668,12 @@ def _compute_dashboard_analytics(
             if catalog is not None and catalog.canonical_name
             else catalog_index.display_name(*top_location_sample[top_identity_key])
         )
+        sample_location, _sample_platform = top_location_sample[top_identity_key]
         top_location = {
             "name": display_name,
+            # Слаг для ссылки на страницу локации (/locations/{slug}); страница
+            # резолвит external_key любой из платформ через normalize.
+            "slug": sample_location.external_key.strip().lower(),
             "platform_codes": sorted(top_location_platform_codes[top_identity_key], key=_platform_sort_key),
             "count": max_count,
             "tied_count": tied_count,
@@ -654,6 +701,7 @@ def _compute_dashboard_analytics(
     platform_metric_rows = (
         runs_query.with_entities(
             Platform.code,
+            func.count(RunResult.id),
             func.avg(RunResult.finish_time_sec),
             func.avg(RunResult.pace_sec_per_km),
         )
@@ -662,12 +710,13 @@ def _compute_dashboard_analytics(
         .all()
     )
     platform_metrics = []
-    for platform_code, platform_avg_finish, platform_avg_pace in platform_metric_rows:
+    for platform_code, platform_runs, platform_avg_finish, platform_avg_pace in platform_metric_rows:
         if platform_avg_finish is None and platform_avg_pace is None:
             continue
         platform_metrics.append(
             {
                 "platform_code": platform_code,
+                "runs_count": int(platform_runs or 0),
                 "avg_finish_time_sec": _to_int(platform_avg_finish),
                 "avg_pace_sec_per_km": _to_int(platform_avg_pace),
             }
@@ -729,12 +778,21 @@ def _compute_dashboard_analytics(
         for value in sorted(set(runs_per_date) | set(vols_per_date))
     ]
 
-    run_month_rows = runs_query.with_entities(Event.event_date, RunResult.pace_sec_per_km).all()
+    run_month_rows = runs_query.with_entities(
+        Event.event_date, RunResult.pace_sec_per_km, RunResult.finish_time_sec
+    ).all()
     runs_by_month: Counter[str] = Counter(_month_key(row[0]) for row in run_month_rows)
     pace_by_month: dict[str, list[int]] = defaultdict(list)
-    for event_date, pace_sec in run_month_rows:
+    finish_by_month: dict[str, list[int]] = defaultdict(list)
+    pace_by_year: dict[str, list[int]] = defaultdict(list)
+    finish_by_year: dict[str, list[int]] = defaultdict(list)
+    for event_date, pace_sec, finish_sec in run_month_rows:
         if pace_sec is not None:
             pace_by_month[_month_key(event_date)].append(int(pace_sec))
+            pace_by_year[str(event_date.year)].append(int(pace_sec))
+        if finish_sec is not None:
+            finish_by_month[_month_key(event_date)].append(int(finish_sec))
+            finish_by_year[str(event_date.year)].append(int(finish_sec))
 
     month_keys = _last_n_month_keys(today)
     activity_by_month = [
@@ -750,10 +808,29 @@ def _compute_dashboard_analytics(
         pace_values = pace_by_month.get(month, [])
         if not pace_values:
             continue
+        finish_values = finish_by_month.get(month, [])
         pace_trend.append(
             {
                 "month": month,
                 "avg_pace_sec_per_km": round(sum(pace_values) / len(pace_values)),
+                "avg_finish_time_sec": round(sum(finish_values) / len(finish_values))
+                if finish_values
+                else None,
+            }
+        )
+    pace_trend_yearly = []
+    for year in sorted(pace_by_year):
+        pace_values = pace_by_year[year]
+        if not pace_values:
+            continue
+        finish_values = finish_by_year.get(year, [])
+        pace_trend_yearly.append(
+            {
+                "year": year,
+                "avg_pace_sec_per_km": round(sum(pace_values) / len(pace_values)),
+                "avg_finish_time_sec": round(sum(finish_values) / len(finish_values))
+                if finish_values
+                else None,
             }
         )
 
@@ -781,6 +858,24 @@ def _compute_dashboard_analytics(
     next_run_club = _next_run_club(total_runs)
     total_distance_km = total_runs * DISTANCE_KM_PER_RUN
 
+    # Пересчёт аналитики — момент освежить и рекорды локаций: force_refresh
+    # перезаписывает redis-кэш, которым дальше пользуется «Моя история».
+    location_records = get_user_location_records(db, user_id, force_refresh=True)
+
+    # Дальность от дома: детализацию локаций строим один раз и переиспользуем
+    # уже построенный catalog_index — иначе связки каталога грузились бы дважды.
+    dashboard_user = db.get(User, user_id)
+    home_distance = (
+        build_home_distance_overview(
+            db,
+            dashboard_user,
+            include_test_events=include_test_events,
+            catalog_index=catalog_index,
+        ).as_dict()
+        if dashboard_user is not None
+        else None
+    )
+
     return {
         "analytics_version": ANALYTICS_VERSION,
         "unique_locations": all_unique_counts.unique_total,
@@ -797,6 +892,8 @@ def _compute_dashboard_analytics(
         "avg_position": _to_float(avg_position),
         "avg_gender_position": _to_float(avg_gender_position),
         "pr_count": pr_count,
+        "wins_count": int(wins_count),
+        "wins_scope": wins_scope,
         "unique_volunteer_roles": unique_volunteer_roles,
         "first_activity_date": first_activity.isoformat() if first_activity else None,
         "last_activity_date": last_activity.isoformat() if last_activity else None,
@@ -819,6 +916,7 @@ def _compute_dashboard_analytics(
         "platform_metrics": platform_metrics,
         "activity_by_month": activity_by_month,
         "pace_trend": pace_trend,
+        "pace_trend_yearly": pace_trend_yearly,
         "volunteering_last_12_months": volunteering_last_12_months,
         "volunteering_current_year": volunteering_current_year,
         "total_distance_km": total_distance_km,
@@ -835,20 +933,158 @@ def _compute_dashboard_analytics(
         "next_run_club": next_run_club,
         "avg_vs_field_pct": avg_vs_field_pct,
         "runs_with_field_avg_count": runs_with_field_avg_count,
+        "location_records": location_records["course"],
+        "age_group_records": location_records["age_group"],
+        "home_distance": home_distance,
     }
 
 
-def invalidate_dashboard_cache_for_platform(db: Session, platform_code: str) -> int:
-    """Delete dashboard_cache for all users linked to the given platform.
+def _dashboard_platform_link_join() -> Any:
+    """Надёжный ключ между participants и platform_links — (platform_id,
+    external_user_id), а не platform_links.participant_id (не всегда
+    проставлен). Тот же принцип, что в location_page_service."""
+    return and_(
+        PlatformLink.platform_id == Participant.platform_id,
+        PlatformLink.external_user_id == Participant.external_user_id,
+    )
 
-    Called after bulk sync that upserted new run results so the cache is
-    lazily recomputed on the next profile page load.
+
+def user_gender(db: Session, user_id: UUID) -> str | None:
+    """Пол участника — готовое поле participants.gender (материализовано
+    миграцией 052, источники по платформам см. gender_position_service).
+
+    Аккаунтов у пользователя может быть несколько; берём первый заполненный —
+    пол один и тот же во всех системах.
     """
-    platform = db.query(Platform).filter(Platform.code == platform_code).one_or_none()
-    if platform is None:
+    return (
+        db.query(Participant.gender)
+        .join(PlatformLink, _dashboard_platform_link_join())
+        .filter(PlatformLink.user_id == user_id, Participant.gender.isnot(None))
+        .limit(1)
+        .scalar()
+    )
+
+
+def win_scope_for_gender(gender: str | None) -> str:
+    return WIN_SCOPE_FEMALE if gender == "female" else WIN_SCOPE_ABSOLUTE
+
+
+def run_win_sql_filter(scope: str) -> Any:
+    """Победа в своём разрезе: первое место среди женщин либо в абсолюте."""
+    if scope == WIN_SCOPE_FEMALE:
+        return RunResult.gender_position == 1
+    return RunResult.position == 1
+
+
+def foreign_parkrun_exclusion_filter(db: Session) -> Any:
+    """Отсечь строки зарубежного parkrun (запрос должен джойнить Event и Platform).
+
+    Протоколов зарубежных площадок у нас нет: в БД от них лежит только пробежка
+    самого участника, вытащенная из его профиля. Первое место по такой строке —
+    артефакт, а не победа, поэтому в зачёт побед зарубежный parkrun не идёт
+    вовсе (решение Дмитрия 01.08.2026). Русский parkrun собран протоколами
+    целиком и в зачёте остаётся.
+    """
+    return or_(
+        Platform.code != PARKRUN_PLATFORM_CODE,
+        Event.location_id.in_(russian_parkrun_location_ids(db)),
+    )
+
+
+def locations_touched_since(db: Session, since: datetime) -> set[UUID]:
+    """Локации, чьи результаты трогал синк.
+
+    `run_results.fetched_at` проставляется на каждой строке разобранного
+    протокола, поэтому «тронуто» = протокол этой локации перезабирали.
+    """
+    rows = (
+        db.query(Event.location_id)
+        .join(RunResult, RunResult.event_id == Event.id)
+        .filter(RunResult.fetched_at >= since, Event.location_id.isnot(None))
+        .distinct()
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def users_with_touched_results(db: Session, since: datetime) -> set[UUID]:
+    """Пользователи, чьи собственные результаты трогал синк.
+
+    Почти всё в дашборде считается по своим результатам — включая среднее
+    «быстрее поля», потому что чужие времена берутся из тех же протоколов,
+    где бежал сам пользователь.
+
+    Сужать по локациям бессмысленно: наши бегуны — «туристы», и любая
+    затронутая площадка задевает 80–90% пользователей (замерено на проде).
+    А вот своих тронутых результатов за час синка набирается ~9%.
+    """
+    rows = (
+        db.query(PlatformLink.user_id)
+        .select_from(RunResult)
+        .join(Participant, RunResult.participant_id == Participant.id)
+        .join(PlatformLink, _dashboard_platform_link_join())
+        .filter(RunResult.fetched_at >= since)
+        .distinct()
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def users_holding_location_records(db: Session) -> set[UUID]:
+    """Действующие держатели рекордов локаций и возрастных групп.
+
+    Единственные, чей дашборд может измениться без их участия: рекорд мог
+    перебить кто-то другой. Читаем из уже посчитанного кэша — таких единицы
+    (на проде 7 из 112), так что пересчитать их всех дешевле, чем вычислять,
+    какой именно рекорд пал.
+    """
+    current = DashboardCache.stats["analytics"]
+    rows = (
+        db.query(DashboardCache.user_id)
+        .filter(
+            or_(
+                current["location_records"]["current_count"].astext.cast(Integer) > 0,
+                current["age_group_records"]["current_count"].astext.cast(Integer) > 0,
+            )
+        )
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def order_users_by_recent_login(db: Session, user_ids: set[UUID]) -> list[UUID]:
+    """Отсортировать пользователей «кто заходил недавно — раньше».
+
+    Прогрев ограничен по времени, и если затронутых больше потолка, греть
+    осмысленно тех, кто скорее всего откроет профиль. Остальные пересчитаются
+    лениво при заходе.
+    """
+    if not user_ids:
+        return []
+    rows = (
+        db.query(User.id)
+        .filter(User.id.in_(user_ids))
+        .order_by(User.last_login_at.desc().nulls_last(), User.created_at.desc())
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
+def invalidate_dashboard_cache_for_users(db: Session, user_ids: set[UUID]) -> int:
+    """Снести dashboard_cache перечисленным пользователям.
+
+    Раньше сносили всем, кто привязан к платформе: любой упсерт 5 вёрст
+    обнулял кэш всем 500+ пользователям, и каждый следующий заход в профиль
+    платил полный пересчёт. Теперь список считает
+    users_with_results_at_locations по реально затронутым локациям.
+    """
+    if not user_ids:
         return 0
-    user_ids = db.query(PlatformLink.user_id).filter(PlatformLink.platform_id == platform.id).subquery()
-    deleted = db.query(DashboardCache).filter(DashboardCache.user_id.in_(user_ids)).delete(synchronize_session=False)
+    deleted = (
+        db.query(DashboardCache)
+        .filter(DashboardCache.user_id.in_(user_ids))
+        .delete(synchronize_session=False)
+    )
     db.flush()
     return deleted
 
@@ -1203,6 +1439,101 @@ def list_user_personal_records(
     ]
 
 
+def _win_field_sizes(db: Session, event_ids: list[UUID], scope: str) -> dict[UUID, int]:
+    """Размер поля на каждом из событий — знаменатель победы («1 из N»).
+
+    Абсолют — все финишёры протокола, женский зачёт — финишёрки с известным
+    полом. У parkrun/RunPark пол заполнен не у всех строк протокола, так что
+    женский знаменатель может быть занижен; сама победа от этого не зависит
+    (gender_position считается по тем же данным).
+    """
+    if not event_ids:
+        return {}
+    query = db.query(RunResult.event_id, func.count(func.distinct(RunResult.id))).filter(
+        RunResult.event_id.in_(event_ids),
+        RunResult.position.isnot(None),
+    )
+    if scope == WIN_SCOPE_FEMALE:
+        query = query.join(Participant, RunResult.participant_id == Participant.id).filter(
+            Participant.gender == "female"
+        )
+    return {row[0]: int(row[1]) for row in query.group_by(RunResult.event_id).all()}
+
+
+def list_user_wins(
+    db: Session,
+    user_id: UUID,
+    *,
+    include_test_events: bool = False,
+) -> list[dict[str, object]]:
+    """Победы участника — детализация плитки «Победы» на главной кабинета.
+
+    Разрез тот же, что у счётчика (см. win_scope_for_gender): женщинам —
+    первые места среди женщин, мужчинам — в абсолюте. Зарубежный parkrun не
+    в зачёте (см. foreign_parkrun_exclusion_filter).
+    """
+    from app.services.personal_record_service import user_secondary_crosslinked_run_ids
+
+    scope = win_scope_for_gender(user_gender(db, user_id))
+    query = (
+        db.query(RunResult, Event, Location, Platform, PlatformLink)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Location, Event.location_id == Location.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
+        .filter(
+            PlatformLink.user_id == user_id,
+            PlatformLink.platform_id == Platform.id,
+            run_win_sql_filter(scope),
+            foreign_parkrun_exclusion_filter(db),
+        )
+    )
+    if not include_test_events:
+        query = query.filter(Event.is_test_event.is_(False))
+
+    # Дубль «не в зачёте» (secondary crosslink) победой не считается — так же,
+    # как он не считается личным рекордом.
+    excluded_ids = user_secondary_crosslinked_run_ids(
+        db, user_id, include_test_events=include_test_events
+    )
+    if excluded_ids:
+        query = query.filter(RunResult.id.notin_(excluded_ids))
+
+    rows = query.order_by(Event.event_date.desc(), Platform.code.asc()).all()
+
+    field_sizes = _win_field_sizes(db, [event.id for _run, event, _loc, _plat, _link in rows], scope)
+    catalog_index = LocationCatalogIndex(db)
+    summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
+    return [
+        {
+            "platform_code": platform.code,
+            "event_date": event.event_date,
+            "event_number": event.event_number,
+            "location_name": catalog_index.display_name(location, platform.code),
+            "location_city": location.city,
+            "finish_time_display": normalize_finish_time_display(
+                run.finish_time_sec,
+                run.finish_time_display,
+            ),
+            "finish_time_sec": run.finish_time_sec,
+            "position": run.position,
+            "gender_position": run.gender_position,
+            "field_size": field_sizes.get(event.id),
+            "scope": scope,
+            "event_url": _activity_event_url(
+                platform_code=platform.code,
+                event=event,
+                location=location,
+                profile_url=platform_link.external_url,
+                summary_source_url=summary_urls.get(
+                    (event.platform_id, event.location_id, event.event_date)
+                ),
+            ),
+        }
+        for run, event, location, platform, platform_link in rows
+    ]
+
+
 def list_user_volunteering(
     db: Session,
     user_id: UUID,
@@ -1243,6 +1574,19 @@ def list_user_volunteering(
     catalog_index = LocationCatalogIndex(db)
     summary_urls = _event_summary_source_urls(db, [event for _vol, event, _loc, _plat, _link in rows])
 
+    # parkrun считает волонтёрства своим "Total Credits" (может отличаться от
+    # числа наших строк VolunteerResult — одна смена даёт несколько ролей).
+    # Кэш по participant_id, чтобы не пересчитывать на каждой строке.
+    parkrun_credits_cache: dict[UUID, int] = {}
+
+    def _parkrun_total_credits(participant_id: UUID, platform_id: UUID) -> int:
+        if participant_id not in parkrun_credits_cache:
+            participant = db.query(Participant).filter(Participant.id == participant_id).one_or_none()
+            parkrun_credits_cache[participant_id] = (
+                count_parkrun_volunteering(db, participant, platform_id) if participant else 0
+            )
+        return parkrun_credits_cache[participant_id]
+
     # Canonical volunteer_result_id для оценки одной физической площадки: min id
     # среди строк с одним (дата, каноническая локация) — так волонтёрство с
     # несколькими ролями (или кросслинк) оценивается один раз. Логика совпадает
@@ -1276,6 +1620,11 @@ def list_user_volunteering(
                 "rating_entry_id": f"vol:{canonical_vol_id}",
                 "is_crosslinked": event.id in crosslinked_event_ids,
                 "is_test_event": event.is_test_event,
+                "parkrun_total_credits": (
+                    _parkrun_total_credits(volunteer.participant_id, platform.id)
+                    if platform.code == "parkrun"
+                    else None
+                ),
                 "event_url": _activity_event_url(
                     platform_code=platform.code,
                     event=event,
@@ -1383,9 +1732,31 @@ def get_sync_status_payload(db: Session, user_id: UUID) -> dict[str, object]:
     }
 
 
+def _dashboard_cache_is_stale(cache: DashboardCache) -> bool:
+    """Кэш просрочен по возрасту.
+
+    Страховка от промаха прогрева: до 08.08.2026 кэш жил вечно, пока не менялся
+    ANALYTICS_VERSION, и пропущенное окно прогрева означало «плитки Обзора не
+    обновятся никогда» — так у 27 человек неделями не хватало забегов S95.
+    """
+    from app.config import get_settings
+
+    max_age = timedelta(hours=get_settings().dashboard_cache_max_age_hours)
+    computed_at = cache.computed_at
+    if computed_at is None:
+        return True
+    if computed_at.tzinfo is None:
+        computed_at = computed_at.replace(tzinfo=timezone.utc)
+    return _utcnow() - computed_at > max_age
+
+
 def get_dashboard_payload(db: Session, user: User) -> dict[str, object]:
     cache = db.query(DashboardCache).filter(DashboardCache.user_id == user.id).one_or_none()
-    if cache is None or (cache.stats or {}).get("analytics", {}).get("analytics_version") != ANALYTICS_VERSION:
+    if (
+        cache is None
+        or (cache.stats or {}).get("analytics", {}).get("analytics_version") != ANALYTICS_VERSION
+        or _dashboard_cache_is_stale(cache)
+    ):
         cache = recompute_dashboard_cache(db, user.id)
         db.commit()
         db.refresh(cache)

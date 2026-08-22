@@ -1,13 +1,57 @@
 from __future__ import annotations
 
+from datetime import date
+from uuid import UUID, uuid4
+
+from sqlalchemy.orm import Session
+
+from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User
 from app.services.portal_home_service import (
     PORTAL_HOME_CACHE_KEY,
+    _city_label,
+    _course_minima_before,
+    _EventRow,
     _read_portal_home_cache,
+    _runner_handles,
+    _week_attendance_records,
     _write_portal_home_cache,
     clean_time_display,
     format_finish_time,
     invalidate_portal_home_cache,
 )
+
+WEEK_START = date(2026, 7, 20)
+WEEK_END = date(2026, 7, 25)
+
+
+def _event(
+    location_id: UUID,
+    event_date: date,
+    finishers: int,
+    event_number: int | None = None,
+    is_test_event: bool = False,
+) -> _EventRow:
+    return _EventRow(
+        uuid4(),
+        location_id,
+        "five_verst",
+        event_date,
+        finishers,
+        event_number,
+        is_test_event,
+    )
+
+
+def _attendance(events: list[_EventRow], city: str | None = None) -> list[dict]:
+    return _week_attendance_records(
+        events,
+        WEEK_START,
+        WEEK_END,
+        lambda location_id: str(location_id),
+        lambda location_id: f"loc-{location_id}",
+        lambda location_id: f"slug-{location_id}",
+        lambda location_id: city,
+    )
 
 
 def test_format_finish_time_minutes() -> None:
@@ -36,9 +80,247 @@ def test_cache_round_trip() -> None:
     assert _read_portal_home_cache() == payload
 
 
+def test_attendance_record_beats_previous_max() -> None:
+    loc = uuid4()
+    rows = _attendance(
+        [
+            _event(loc, date(2026, 5, 2), 120),
+            _event(loc, date(2026, 6, 6), 150),
+            _event(loc, date(2026, 7, 25), 180),
+        ]
+    )
+    assert len(rows) == 1
+    assert rows[0]["finishers"] == 180
+    assert rows[0]["previous_record"] == 150
+    assert rows[0]["previous_record_date"] == date(2026, 6, 6)
+    assert rows[0]["is_debut"] is False
+
+
+def test_attendance_ignores_result_below_previous_max() -> None:
+    loc = uuid4()
+    assert (
+        _attendance(
+            [
+                _event(loc, date(2026, 6, 6), 150),
+                _event(loc, date(2026, 7, 25), 149),
+            ]
+        )
+        == []
+    )
+
+
+def test_debut_counts_as_record() -> None:
+    loc = uuid4()
+    rows = _attendance([_event(loc, date(2026, 7, 25), 427, 1)])
+    assert len(rows) == 1
+    assert rows[0]["is_debut"] is True
+    assert rows[0]["finishers"] == 427
+    assert rows[0]["previous_record"] == 0
+    assert rows[0]["previous_record_date"] is None
+
+
+def test_debut_without_event_number_still_counts() -> None:
+    """У RunPark и части архивов номера старта нет — опираемся на пустую историю."""
+    loc = uuid4()
+    rows = _attendance([_event(loc, date(2026, 7, 25), 54, None)])
+    assert [row["is_debut"] for row in rows] == [True]
+
+
+def test_newly_connected_location_is_not_a_debut() -> None:
+    """Площадка подключена к сайту сейчас, но бежит давно (старт №137) —
+    это не открытие, и рекордом такой старт не считаем."""
+    loc = uuid4()
+    assert _attendance([_event(loc, date(2026, 7, 25), 90, 137)]) == []
+
+
+def test_debut_ranked_by_finishers_against_improvements() -> None:
+    debut_big, debut_small, improved = uuid4(), uuid4(), uuid4()
+    rows = _attendance(
+        [
+            _event(improved, date(2026, 6, 6), 300),
+            _event(improved, date(2026, 7, 25), 400),  # +100
+            _event(debut_big, date(2026, 7, 25), 427, 1),
+            _event(debut_small, date(2026, 7, 25), 54, 1),
+        ]
+    )
+    assert [(row["finishers"], row["is_debut"]) for row in rows] == [
+        (427, True),
+        (400, False),
+        (54, True),
+    ]
+
+
+def test_test_run_is_not_a_debut() -> None:
+    """Пробный забег 5 вёрст («Мирный (тестовый)», №0) — ещё не открытие."""
+    loc = uuid4()
+    assert _attendance([_event(loc, date(2026, 7, 25), 17, 0, is_test_event=True)]) == []
+
+
+def test_test_run_does_not_block_the_real_opening() -> None:
+    loc = uuid4()
+    rows = _attendance(
+        [
+            _event(loc, date(2026, 7, 18), 17, 0, is_test_event=True),
+            _event(loc, date(2026, 7, 25), 120, 1),
+        ]
+    )
+    assert [(row["finishers"], row["is_debut"]) for row in rows] == [(120, True)]
+
+
+def test_prior_events_without_finishers_are_not_a_debut() -> None:
+    """Пустой протокол в истории — дыра в данных, а не отсутствие площадки."""
+    loc = uuid4()
+    assert (
+        _attendance(
+            [
+                _event(loc, date(2026, 6, 6), 0),
+                _event(loc, date(2026, 7, 25), 80, 1),
+            ]
+        )
+        == []
+    )
+
+
 def test_cache_invalidate(fake_redis) -> None:  # type: ignore[no-untyped-def]
     _write_portal_home_cache({"hero": {}})
     assert fake_redis.get(PORTAL_HOME_CACHE_KEY) is not None
     invalidate_portal_home_cache()
     assert fake_redis.get(PORTAL_HOME_CACHE_KEY) is None
     assert _read_portal_home_cache() is None
+
+
+def test_attendance_record_carries_location_slug() -> None:
+    """Слаг едет рядом с названием — из него на главной строится ссылка."""
+    loc = uuid4()
+    rows = _attendance([_event(loc, date(2026, 7, 25), 120, 1)])
+    assert rows[0]["location_slug"] == f"slug-{loc}"
+
+
+def test_attendance_record_carries_city() -> None:
+    """Город едет рядом с названием — на главной он стоит перед датой."""
+    loc = uuid4()
+    rows = _attendance([_event(loc, date(2026, 7, 25), 120, 1)], city="Ижевск")
+    assert rows[0]["location_city"] == "Ижевск"
+
+
+def test_city_label_hides_city_already_in_name() -> None:
+    """Город не дублируем: половина названий и так начинается с города."""
+    assert _city_label("Тюмень", "Тюмень Парк Гагарина") is None
+    assert _city_label("тюмень", "Тюмень Комарово") is None
+    assert _city_label("Москва", "Кусково") == "Москва"
+    assert _city_label(None, "Кусково") is None
+    assert _city_label("", "Кусково") is None
+
+
+def test_course_minima_before_ignores_test_events(db_session: Session) -> None:
+    """Пробный старт не должен становиться «прежним рекордом» трассы.
+
+    Баг на Мирном (02.08.2026): результат тестового прогона попадал в минимум
+    до недели, и первый настоящий рекорд трассы выглядел как «побитие»
+    рекорда, которого на самом деле не было.
+    """
+    suffix = uuid4().hex[:8]
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        platform = Platform(code="five_verst", name="5 вёрст")
+        db_session.add(platform)
+        db_session.flush()
+    location = Location(
+        platform_id=platform.id,
+        external_key=f"mirny-{suffix}",
+        name="Мирный",
+        city="Мирный",
+    )
+    db_session.add(location)
+    db_session.flush()
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=f"course-test-{suffix}",
+        display_name="Тестовый бегун",
+        gender="male",
+    )
+    db_session.add(participant)
+    db_session.flush()
+
+    test_event = Event(
+        platform_id=platform.id,
+        location_id=location.id,
+        external_event_key=f"course-test-event-{suffix}",
+        event_date=date(2026, 7, 4),
+        event_number=None,
+        is_test_event=True,
+        title=location.name,
+    )
+    db_session.add(test_event)
+    db_session.flush()
+    db_session.add(
+        RunResult(
+            event_id=test_event.id,
+            participant_id=participant.id,
+            external_result_key=f"{test_event.external_event_key}:{participant.external_user_id}",
+            finish_time_sec=900,
+            status="finished",
+        )
+    )
+    db_session.flush()
+
+    rows = _course_minima_before(db_session, WEEK_START)
+    assert [row for row in rows if row[0] == location.id] == []
+
+
+def _linked_participant(
+    db_session: Session, suffix: str, *, private: bool = False, slug: str | None = None
+) -> tuple[Participant, User]:
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        platform = Platform(code="five_verst", name="5 вёрст")
+        db_session.add(platform)
+        db_session.flush()
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=f"portal-link-{suffix}",
+        display_name="Рекордсмен",
+    )
+    db_session.add(participant)
+    user = User(display_name="Рекордсмен", public_slug=slug, profile_private=private)
+    db_session.add(user)
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=platform.id,
+            # participant_id намеренно пуст: связь ищется по
+            # (platform_id, external_user_id), как в проде.
+            external_user_id=participant.external_user_id,
+            external_url=f"https://example.test/{suffix}/",
+        )
+    )
+    db_session.flush()
+    return participant, user
+
+
+def test_runner_handle_prefers_public_slug(db_session: Session) -> None:
+    suffix = str(uuid4().int % 1_000_000)
+    participant, _user = _linked_participant(db_session, suffix, slug=f"runner-{suffix}")
+    assert _runner_handles(db_session, [participant.id]) == {
+        participant.id: f"runner-{suffix}"
+    }
+
+
+def test_runner_handle_falls_back_to_serial_id(db_session: Session) -> None:
+    suffix = str(uuid4().int % 1_000_000)
+    participant, user = _linked_participant(db_session, suffix)
+    assert _runner_handles(db_session, [participant.id]) == {
+        participant.id: str(user.serial_id)
+    }
+
+
+def test_runner_handle_skips_private_profile(db_session: Session) -> None:
+    """Скрытый профиль отдал бы анониму 403 — ссылку на него не ставим."""
+    suffix = str(uuid4().int % 1_000_000)
+    participant, _user = _linked_participant(db_session, suffix, private=True)
+    assert _runner_handles(db_session, [participant.id]) == {}
+
+
+def test_runner_handles_empty_input_makes_no_query() -> None:
+    assert _runner_handles(None, []) == {}  # type: ignore[arg-type]

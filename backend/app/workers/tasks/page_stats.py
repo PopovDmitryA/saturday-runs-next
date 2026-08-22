@@ -4,6 +4,7 @@ import logging
 
 from app.config import get_settings
 from app.db.session import get_session_factory
+from app.services.login_journal_service import purge_old_login_events
 from app.services.page_analytics_service import cleanup_old_events, rollup_recent_days
 from app.workers.celery_app import celery_app
 
@@ -22,6 +23,15 @@ def rollup_task() -> dict[str, object]:
         deleted = cleanup_old_events(db, retention_days=settings.page_events_retention_days)
         if deleted:
             logger.info("page_stats: удалено %s сырых событий старше %s дней", deleted, settings.page_events_retention_days)
-        return {"ok": True, "groups": groups, "deleted_events": deleted}
+        # Журнал входов чистим здесь же — отдельная beat-задача ради одного
+        # DELETE в год избыточна.
+        deleted_logins = purge_old_login_events(db, retention_days=settings.login_events_retention_days)
+        if deleted_logins:
+            logger.info(
+                "page_stats: удалено %s событий журнала входов старше %s дней",
+                deleted_logins,
+                settings.login_events_retention_days,
+            )
+        return {"ok": True, "groups": groups, "deleted_events": deleted, "deleted_login_events": deleted_logins}
     finally:
         db.close()

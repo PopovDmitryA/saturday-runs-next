@@ -16,23 +16,32 @@ export type PortalPulse = {
 
 export type PortalAttendanceRecord = {
   location_name: string;
+  /** Слаг страницы локации: имя рендерится ссылкой на /locations/{slug}. */
+  location_slug?: string | null;
+  /** Город локации; пусто, если он неизвестен или уже звучит в названии. */
+  location_city?: string | null;
   platform_code: string;
   event_date: string;
   finishers: number;
   previous_record: number;
   previous_record_date: string | null;
+  is_debut?: boolean;
 };
 
 export type PortalCourseRecord = {
   location_name: string;
+  location_slug?: string | null;
   platform_code: string;
   event_date: string;
   gender: "male" | "female";
   time_display: string;
   runner_name: string | null;
+  /** Хендл профиля на сайте, если рекордсмен привязал систему и профиль открыт. */
+  runner_handle?: string | null;
   previous_display: string | null;
   previous_record_date: string | null;
   delta_sec: number | null;
+  is_debut?: boolean;
 };
 
 export type PortalWeekRecords = {
@@ -44,6 +53,7 @@ export type PortalWeekRecords = {
 
 export type PortalTopSaturdayRow = {
   location_name: string;
+  location_slug?: string | null;
   platform_code: string;
   finishers: number;
 };
@@ -71,13 +81,18 @@ export type PortalFastestRow = {
   gender: "male" | "female";
   value_display: string;
   runner_name: string | null;
+  runner_handle?: string | null;
   location_name: string;
+  location_slug?: string | null;
   event_date: string;
   delta_sec: number | null;
 };
 
 export type PortalAttendanceTopRow = {
   location_name: string;
+  location_slug?: string | null;
+  /** Город локации; пусто, если он неизвестен или уже звучит в названии. */
+  location_city?: string | null;
   platform_code: string;
   event_date: string;
   finishers: number;
@@ -99,6 +114,7 @@ export type PortalGeoPoint = {
   longitude: number;
   starts: number;
   location_name: string;
+  location_slug?: string | null;
   platform_code: string;
   region: string | null;
 };
@@ -159,6 +175,18 @@ export type PortalHomeResponse = {
   geo: PortalGeo;
   fun_facts: PortalFunFacts;
   gender_split: PortalGenderSplit | null;
+  // Т9: сколько разных «домашних» парков у зарегистрированных пользователей.
+  registered_parks: number;
+};
+
+export type PortalTeaser = {
+  platform_code: string;
+  display_name: string | null;
+  finishes: number;
+  best_time_display: string | null;
+  locations: number;
+  first_event_date: string | null;
+  last_event_date: string | null;
 };
 
 /** Ошибка загрузки с HTTP-статусом: по нему страница отличает «стек
@@ -178,4 +206,14 @@ export async function fetchPortalHome(): Promise<PortalHomeResponse> {
     throw new PortalHomeError(response.status);
   }
   return (await response.json()) as PortalHomeResponse;
+}
+
+/** Тизер Т10: предпросмотр карточки по ID системы. 404 — не нашли. */
+export async function fetchPortalTeaser(platform: string, athleteId: string): Promise<PortalTeaser> {
+  const params = new URLSearchParams({ platform, athlete_id: athleteId });
+  const response = await fetch(`/api/portal/teaser?${params}`, { credentials: "same-origin" });
+  if (!response.ok) {
+    throw new PortalHomeError(response.status);
+  }
+  return (await response.json()) as PortalTeaser;
 }

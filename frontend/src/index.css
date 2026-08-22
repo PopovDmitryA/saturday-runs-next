@@ -1,6 +1,11 @@
 :root {
   --layout-max-width: 864px;
 
+  /* Высота липкой полосы с «Кратко | Полно» (.tview-bar). От неё же считается
+     верх шапки таблицы: шапка встаёт вплотную под полосу, иначе в щель между
+     ними просвечивали бы уезжающие строки. Меняете высоту — только здесь. */
+  --tview-bar-h: 46px;
+
   color-scheme: light;
 
   /* Палитра темы: светлые значения. Тёмные — в блоке ниже. */
@@ -131,89 +136,20 @@
   box-sizing: border-box;
 }
 
+/* Safari на iPhone сам раздувает шрифт в блоках, которые шире вьюпорта
+   («text autosizing»). Ловилось в модалке планирования Нумератора: таблица
+   широкая, и текст в ней внезапно становился крупнее остального интерфейса.
+   Размеры у нас заданы явно и адаптивно, доверять этой эвристике нечего. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
-}
-
-.legacy-site-banner {
-  border-bottom: 1px solid var(--tint-blue-border-strong);
-  background: linear-gradient(180deg, var(--tint-blue-bg) 0%, var(--tint-blue-bg-strong) 100%);
-}
-
-.legacy-site-banner-inner {
-  position: relative;
-  max-width: var(--layout-max-width);
-  margin: 0 auto;
-  padding: 0.7rem 2.75rem 0.7rem 1rem;
-}
-
-.legacy-site-banner-body {
-  text-align: center;
-}
-
-.legacy-site-banner-body p {
-  margin: 0 0 0.35rem;
-  font-size: 0.84rem;
-  line-height: 1.45;
-  color: var(--tint-blue-text);
-}
-
-.legacy-site-banner-body p:last-child {
-  margin-bottom: 0;
-}
-
-.legacy-site-banner-link {
-  color: var(--link-strong);
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 0.14em;
-}
-
-.legacy-site-banner-link:hover {
-  color: var(--tint-blue-text);
-}
-
-.legacy-site-banner-dismiss {
-  position: absolute;
-  top: 0.45rem;
-  right: 0.55rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--tint-blue-text);
-  font-size: 1.35rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.legacy-site-banner-dismiss:hover {
-  background: rgba(255, 255, 255, 0.55);
-  color: var(--tint-blue-text);
-}
-
-.legacy-site-banner-dismiss:focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
-}
-
-@media (max-width: 520px) {
-  .legacy-site-banner-inner {
-    padding: 0.6rem 2.35rem 0.6rem 0.75rem;
-  }
-
-  .legacy-site-banner-body p {
-    font-size: 0.8rem;
-    line-height: 1.4;
-  }
 }
 
 .page {
@@ -383,7 +319,8 @@ body {
 .scroll-top-btn {
   position: fixed;
   right: max(1.25rem, calc((100vw - var(--page-content-width)) / 2 + 1rem - 2.75rem - 0.75rem));
-  bottom: 1.25rem;
+  /* Над нижней навигацией телефона: иначе кнопка садится на «Ещё». */
+  bottom: calc(1.25rem + var(--portal-bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px));
   z-index: 400;
   display: flex;
   align-items: center;
@@ -680,6 +617,7 @@ body {
   color: var(--tint-blue-text);
 }
 
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -700,6 +638,22 @@ body {
 .btn.primary {
   background: #2563eb;
   color: #fff;
+}
+
+.btn-spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-right: 0.5rem;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: btn-spinner-spin 0.6s linear infinite;
+}
+
+@keyframes btn-spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .btn.secondary {
@@ -999,6 +953,26 @@ a.on-this-day-location {
   color: var(--stat-theme-label);
 }
 
+/* Победы — золотая плитка: награда, а не очередной счётчик. */
+.stat-card-wins {
+  --stat-theme-bg: #fdf3d8;
+  --stat-theme-border: #e8c977;
+  --stat-theme-value: #a16207;
+  --stat-theme-label: #86601a;
+  --stat-theme-border-hover: #d9b155;
+  --stat-theme-shadow: rgba(161, 98, 7, 0.14);
+  background: var(--stat-theme-bg);
+  border-color: var(--stat-theme-border);
+}
+
+.stat-card-wins .stat-value {
+  color: var(--stat-theme-value);
+}
+
+.stat-card-wins .stat-label {
+  color: var(--stat-theme-label);
+}
+
 .stat-card-volunteering {
   --stat-theme-bg: #e3eefb;
   --stat-theme-border: #9ec0e8;
@@ -1073,6 +1047,17 @@ a.on-this-day-location {
   transform: translateY(-1px);
 }
 
+.stat-card-clickable.stat-card-wins {
+  background: var(--stat-theme-bg);
+  border-color: var(--stat-theme-border);
+}
+
+.stat-card-clickable.stat-card-wins:hover {
+  border-color: var(--stat-theme-border-hover);
+  box-shadow: 0 8px 20px var(--stat-theme-shadow);
+  transform: translateY(-1px);
+}
+
 .stat-card-clickable.stat-card-volunteering {
   background: var(--stat-theme-bg);
   border-color: var(--stat-theme-border);
@@ -1091,9 +1076,14 @@ a.on-this-day-location {
 }
 
 .stat-card-runs .stat-card-hint,
-.stat-card-volunteering .stat-card-hint {
+.stat-card-volunteering .stat-card-hint,
+.stat-card-wins .stat-card-hint {
   color: inherit;
   opacity: 0.72;
+}
+
+.stat-card-wins .stat-card-hint {
+  color: var(--stat-theme-value);
 }
 
 .stat-card-runs .stat-card-hint {
@@ -1153,6 +1143,18 @@ a.on-this-day-location {
   gap: 0.4rem;
 }
 
+/* Название самой частой локации — ссылка на её страницу; наследует цвет
+   значения плитки, подчёркивание появляется на ховере. */
+.stat-value-location-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.stat-value-location-link:hover {
+  border-bottom-color: currentColor;
+}
+
 .top-location-tie-star {
   display: inline-flex;
   align-items: center;
@@ -1191,7 +1193,9 @@ a.on-this-day-location {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  max-width: 20rem;
+  /* На телефоне 20rem шире экрана — подсказка вылезала за правый край
+     (заметно на узких колонках вроде PR). Позицию дополнительно вжимает JS. */
+  max-width: min(20rem, calc(100vw - 1rem));
 }
 
 .stat-hint-tooltip-note {
@@ -1242,6 +1246,19 @@ a.on-this-day-location {
   gap: 0.75rem;
 }
 
+/* Между бейджем системы и средними — сколько пробежек в неё набежало.
+   nowrap: перенос «пробе-жек» посреди строки выглядит как опечатка. */
+.platform-metrics-count {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.platform-metrics-count b {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .platform-metrics-values {
   display: flex;
   flex-wrap: wrap;
@@ -1284,12 +1301,16 @@ a.on-this-day-location {
   min-height: 0;
 }
 
+/* display: none, а не только opacity: 0 — скрытый тултип у крайнего столбца
+   всё равно занимает место и тянет вправо scrollWidth страницы: на телефоне
+   от этого весь ЛК ездил вбок. Тот же приём был точечно применён в календаре
+   суббот, теперь он общий для графиков. */
 .analytics-chart-tooltip {
   position: absolute;
   bottom: calc(100% + 0.4rem);
   left: 50%;
   transform: translateX(-50%);
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 0.15rem;
   padding: 0.4rem 0.55rem;
@@ -1324,8 +1345,18 @@ a.on-this-day-location {
   color: var(--neutral-soft);
 }
 
-.analytics-chart-tooltip-wrap:hover .analytics-chart-tooltip,
+/* Только там, где мышь есть. На телефоне :hover прилипает после тапа, и рядом
+   с портальной подсказкой тач-режима (TapTooltipBubble) открывалась вторая,
+   та же самая — вжатая в свою клетку и обрезанная краем экрана. */
+@media (hover: hover) {
+  .analytics-chart-tooltip-wrap:hover .analytics-chart-tooltip {
+    display: flex;
+    opacity: 1;
+  }
+}
+
 .analytics-chart-tooltip-wrap:focus-within .analytics-chart-tooltip {
+  display: flex;
   opacity: 1;
 }
 
@@ -1371,6 +1402,24 @@ a.on-this-day-location {
   font-size: 0.65rem;
   color: var(--text-muted);
   text-transform: lowercase;
+}
+
+/* На узком экране в колонку месяца влезает ~4 символа, и «август»/«сентябрь»
+   наезжали на соседей. Разворачиваем подписи вертикально: ширина колонки
+   перестаёт их ограничивать. Ряд подписей отдельный (не внутри колонки бара),
+   поэтому их разная длина больше не двигает основание столбцов. */
+@media (max-width: 640px) {
+  .analytics-chart-label-month {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    margin-top: 0.3rem;
+    line-height: 1;
+  }
+
+  .analytics-chart-month-labels,
+  .analytics-chart-pace-labels {
+    justify-items: center;
+  }
 }
 
 .analytics-chart-legend {
@@ -1477,6 +1526,12 @@ a.on-this-day-location {
   border-bottom: 1px solid var(--border);
 }
 
+.analytics-chart-pace-toggle {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
 .analytics-chart-pace-line-wrap {
   position: relative;
 }
@@ -1535,11 +1590,13 @@ a.on-this-day-location {
   justify-content: stretch;
 }
 
+.analytics-chart-month-labels,
 .analytics-chart-pace-labels {
   display: grid;
   gap: 0.35rem;
   margin-top: 0.35rem;
   text-align: center;
+  align-items: start;
 }
 
 .analytics-chart-caption {
@@ -1567,6 +1624,15 @@ a.on-this-day-location {
   padding-top: 5.5rem;
   margin-top: -5.5rem;
   padding-bottom: 0.25rem;
+}
+
+/* Тени-подсказки скролла (.tshadow-host) обычно висят во всю высоту хоста, но
+   здесь сверху лежит 5.5rem запаса под всплывающие тултипы — без сдвига тень
+   торчала бы поперёк заголовка панели. Снизу отступаем на padding-bottom. */
+.tshadow-host.activity-cal-shadow::before,
+.tshadow-host.activity-cal-shadow::after {
+  top: 5.5rem;
+  bottom: 0.25rem;
 }
 
 .activity-cal-grid {
@@ -1606,18 +1672,6 @@ a.on-this-day-location {
 
 .activity-cal-cell-wrap .analytics-chart-tooltip-wrap {
   height: 100%;
-}
-
-/* Скрытые тултипы (opacity: 0) расширяли scrollWidth скролл-контейнера
-   и включали горизонтальный скроллбар даже там, где сетка помещается. */
-.activity-cal-cell-wrap .analytics-chart-tooltip {
-  display: none;
-}
-
-.activity-cal-cell-wrap .analytics-chart-tooltip-wrap:hover .analytics-chart-tooltip,
-.activity-cal-cell-wrap .analytics-chart-tooltip-wrap:focus-within .analytics-chart-tooltip {
-  display: flex;
-  opacity: 1;
 }
 
 /* У крайних колонок центрированный тултип выходит за границы скролл-контейнера
@@ -1958,7 +2012,7 @@ a.on-this-day-location {
 
 .data-table-layout-fixed {
   table-layout: fixed;
-  min-width: 43.2rem;
+  min-width: 44.2rem;
 }
 
 .data-table-layout-fixed .col-date {
@@ -1980,11 +2034,31 @@ a.on-this-day-location {
 }
 
 .data-table-layout-fixed .col-pace {
-  width: 5.25rem;
+  width: 6.25rem;
 }
 
 .data-table-layout-fixed .col-role {
   width: 9rem;
+}
+
+/* «Пробежки»: ширины под полные подписи шапки («Место», «Место (пол)», «Темп»).
+   Общие col-compact/col-time рассчитаны на «Фин.» и режут эти слова, а
+   сокращать подписи мы больше не сокращаем (решение Дмитрия 11.08.2026).
+   Числа здесь должны совпадать с RUNS_COLUMNS в RunsPage. */
+.runs-table .col-compact {
+  width: 6.5rem;
+}
+
+.runs-table .col-gender {
+  width: 8.5rem;
+}
+
+.runs-table .col-time {
+  width: 7rem;
+}
+
+.runs-table .col-pace {
+  width: 7.5rem;
 }
 
 .data-table-volunteering .col-role {
@@ -2024,7 +2098,10 @@ a.on-this-day-location {
 
 .data-table-layout-fixed .td-date,
 .data-table-layout-fixed .td-compact,
-.data-table-layout-fixed .td-time {
+.data-table-layout-fixed .td-time,
+/* «4:41 / км» — в одну строку: на телефоне колонка ужималась по остатку и
+   рвала темп на два этажа, из-за чего вся строка становилась двухэтажной. */
+.data-table-layout-fixed .td-pace {
   white-space: nowrap;
   vertical-align: middle;
 }
@@ -2045,9 +2122,32 @@ a.on-this-day-location {
 
 .data-table thead th {
   position: sticky;
-  top: 0;
+  /* По умолчанию 0 — для таблиц внутри своих скролл-боксов (модалки), где
+     липнуть надо к верху бокса. Страничные таблицы липнут к окну, и там ноль
+     означал бы «под шапкой сайта»: она непрозрачная и выше по z-index. */
+  top: var(--table-head-top, 0);
   z-index: 2;
   box-shadow: 0 1px 0 var(--border);
+}
+
+/* Плавающая копия шапки для узких экранов — её создаёт useFloatingTableHead,
+   когда обёртка таблицы стала скролл-контейнером и настоящий sticky бесполезен.
+   z-index ниже шапки сайта (40): полоса встаёт под неё, а не поверх. */
+.float-thead {
+  position: fixed;
+  z-index: 30;
+  overflow: hidden;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.float-thead[hidden] {
+  display: none;
+}
+
+/* Внутри копии липкость только мешает: полоса и так закреплена. */
+.float-thead thead th {
+  position: static;
 }
 
 .data-table-filterable thead th {
@@ -2361,6 +2461,35 @@ tr.run-crosslinked td {
 .badge-platform-default {
   background: var(--chip-bg);
   color: var(--text-3);
+}
+
+/* Бейдж-ссылка: тот же вид, при наведении — кольцо, как у бейджей во «Встречах». */
+a.badge-platform-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+a.badge-platform-link:hover {
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.badge-platform-link-arrow {
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+/* Бейдж-кнопка: переход внутри страницы (в герое кабинета — к секции профилей). */
+button.badge-platform-btn {
+  border: none;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.badge-platform-btn:hover {
+  box-shadow: 0 0 0 1px currentColor;
 }
 
 .badge-participation {
@@ -2790,6 +2919,17 @@ tr.run-crosslinked td {
   align-items: center;
   justify-content: center;
   padding: 1.25rem;
+  /* Личный кабинет (сайдбар) пишет сюда левый/правый края своей контентной
+     колонки (см. PortalCabinetShell.tsx) — модалка центрируется строго
+     между ними, а не по всему окну: иначе при сворачивании/разворачивании
+     сайдбара она «прыгает», а на широких мониторах (страница сама
+     центрируется с полями до max-width) вылезает за правый край карточки.
+     Везде, где переменные не выставлены, — 0px, старое поведение (центр по
+     всему viewport). */
+  /* Смещение ограничено: при неверно посчитанных офсетах (замер до раскладки,
+     устаревшее значение) модалка-таблица иначе сжимается в узкую полосу. */
+  padding-left: calc(1.25rem + min(var(--modal-center-offset-left, 0px), 22vw));
+  padding-right: calc(1.25rem + min(var(--modal-center-offset-right, 0px), 22vw));
   background: rgba(15, 23, 42, 0.4);
   backdrop-filter: blur(3px);
   animation: modal-fade-in 0.18s ease-out;
@@ -2861,6 +3001,83 @@ tr.run-crosslinked td {
   flex: 1;
   padding: 0.65rem 0.75rem;
   font-size: 0.9rem;
+}
+
+.qr-modal-panel {
+  position: relative;
+  width: min(100%, 22rem);
+  text-align: center;
+}
+
+.qr-modal-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+}
+
+.qr-modal-head {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.6rem;
+}
+
+.qr-modal-name {
+  margin: 0 0 0.15rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.qr-modal-code {
+  margin: 0 0 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-3);
+}
+
+.qr-modal-image-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.9rem;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.qr-modal-image {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  height: auto;
+}
+
+.qr-modal-image-placeholder {
+  width: 260px;
+  height: 260px;
+  max-width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--bg-muted),
+    var(--bg-muted) 10px,
+    var(--surface) 10px,
+    var(--surface) 20px
+  );
+}
+
+.qr-modal-hint {
+  margin: 0.85rem 0 0;
+  font-size: 0.8rem;
+}
+
+.qr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
 }
 
 .btn-danger-confirm {
@@ -3505,18 +3722,7 @@ tr.run-crosslinked td {
   gap: 0.5rem;
 }
 
-.profile-preview-recent-list li {
-  display: grid;
-  grid-template-columns: 6.5rem 5.5rem 1fr auto;
-  gap: 0.5rem 0.75rem;
-  align-items: baseline;
-  font-size: 0.9rem;
-}
 
-.profile-preview-recent-kind {
-  font-weight: 600;
-  color: var(--text-3);
-}
 
 .snackbar {
   position: fixed;
@@ -3614,14 +3820,7 @@ tr.run-crosslinked td {
 }
 
 @media (max-width: 520px) {
-  .profile-preview-recent-list li {
-    grid-template-columns: 1fr 1fr;
-    gap: 0.25rem 0.5rem;
-  }
 
-  .profile-preview-recent-kind {
-    grid-column: 1 / -1;
-  }
 
   .location-map-canvas {
     height: 24rem;
@@ -3781,6 +3980,17 @@ tr.run-crosslinked td {
   margin-top: 0.45rem;
 }
 
+/* Leaflet раскладывает свои слои и контролы с z-index 400–1000. Без
+   собственного контекста наложения они считаются от корня и всплывают над
+   липкой шапкой сайта (.portal-header, z-index 40) — карта заезжала на
+   верхний блок при прокрутке (репорт Дмитрия 12.08.2026). z-index: 0 на
+   контейнере запирает внутренние слои внутри него: сама карта остаётся под
+   шапкой, а полноэкранная панель поверх неё живёт своим z-index 1000. */
+.leaflet-container {
+  position: relative;
+  z-index: 0;
+}
+
 .location-map-shell {
   position: relative;
 }
@@ -3886,6 +4096,13 @@ tr.run-crosslinked td {
   transition: background 0.15s, color 0.15s;
 }
 
+/* Зум-кнопки живут в правом верхнем углу (см. lib/mapZoomControl.ts), там же —
+   кнопка фуллскрина. Где она есть, сдвигаем зум левее неё: 0.6rem отступ +
+   2rem кнопка + зазор. Высоту не трогаем — обе группы кнопок в одном ряду. */
+.location-map-shell:has(.location-map-fullscreen-btn) .leaflet-top.leaflet-right .leaflet-control-zoom {
+  margin-right: 2.9rem;
+}
+
 .location-map-fullscreen-btn:hover {
   background: var(--bg-muted);
   color: var(--text);
@@ -3959,11 +4176,112 @@ tr.run-crosslinked td {
   box-shadow: 0 0 0 2px #16a34a;
 }
 
+/* Карта туристов: к обычной точке приписано число — сколько человек из
+   верхушки рейтинга здесь было. Сама точка везде в полную силу: площадка, куда
+   из сотни не доехал никто, — такая же площадка, и её ноль тоже ответ. Тише
+   звучит только подпись. */
+.map-marker-counted {
+  cursor: pointer;
+}
+
+.map-marker-count {
+  position: absolute;
+  left: calc(100% + 3px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+}
+
+/* Ноль — без плашки и бледнее: не спорит с числами, но площадку не прячет. */
+.map-marker-count-zero {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.map-marker-counted-selected span {
+  box-shadow: 0 0 0 3px var(--accent-amber-text);
+}
+
+.map-marker-counted-selected .map-marker-count {
+  background: var(--accent-amber-text);
+  border-color: var(--accent-amber-text);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+  color: #fff;
+  opacity: 1;
+}
+
+/* Кластер карты туристов: гроздь точек, чьи подписи налезли бы друг на друга,
+   схлопнута в кружок с числом ПЛОЩАДОК. Число туристов — только у одиночных
+   точек (решение Дмитрия 15.08.2026). */
+.map-cluster {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+/* Гроздь не должна читаться как точка с числом туристов (репорт Дмитрия
+   15.08.2026: «75» над Москвой выглядело как 75 туристов на одной площадке).
+   Отличаем тремя вещами сразу: круг залит цветом, а не светлый; вокруг — мягкое
+   гало, какого у точек нет; под числом подпись «локаций». */
+.map-cluster span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 25%, #7c8cf8, #4f46e5 70%);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow:
+    0 0 0 5px rgba(79, 70, 229, 0.25),
+    0 2px 6px rgba(15, 23, 42, 0.4);
+}
+
+/* Подпись мельче числа и без разрядки: «локации» — семь букв, и на прежнем
+   размере слово вылезало за края кружка (репорт Дмитрия 16.08.2026). */
+.map-cluster b {
+  font-size: 0.38rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.map-cluster:hover span {
+  background: radial-gradient(circle at 30% 25%, #94a2ff, #4338ca 70%);
+  box-shadow:
+    0 0 0 7px rgba(79, 70, 229, 0.3),
+    0 2px 8px rgba(15, 23, 42, 0.45);
+}
+
 .map-marker-tooltip {
   font-size: 0.78rem;
   font-weight: 600;
   padding: 0.2rem 0.45rem;
   border-radius: 6px;
+}
+
+.map-popup-tourists {
+  font-weight: 600;
 }
 
 .map-popup-paused {
@@ -4025,6 +4343,11 @@ tr.run-crosslinked td {
   background: #ea580c;
 }
 
+/* parkrun — только исторические визиты, поэтому точка приглушённая */
+.map-legend-dot-parkrun {
+  background: #94a3b8;
+}
+
 .map-legend-dot-visited {
   background: #16a34a;
 }
@@ -4074,7 +4397,10 @@ tr.run-crosslinked td {
 }
 
 .modal-panel-wide {
-  width: min(100%, 52rem);
+  /* 68rem (1088px) — было 52rem: на выросшей до 1440px ширине сайта
+     прежние модалки-таблицы (списки локаций/рекордов/ролей) выглядели
+     игрушечно узкими на их фоне. */
+  width: min(100%, 68rem);
   max-height: min(88vh, 760px);
   display: flex;
   flex-direction: column;
@@ -4180,6 +4506,37 @@ tr.run-crosslinked td {
 
 .unique-locations-count-tooltip-line {
   display: block;
+}
+
+/* Подсказка тач-режима: тап по элементу с title (буквы «Алфавита», дни
+   календаря, клетки графиков). Геометрию и цвета берёт у
+   .unique-locations-count-tooltip, здесь — только заголовок и разворот вниз
+   для элементов у верхней кромки экрана. */
+.tap-tooltip {
+  max-width: min(20rem, calc(100vw - 1rem));
+}
+
+/* Хвостик — не по центру плашки, а под элементом, который её открыл: у краёв
+   экрана подсказка вжимается в экран, и центр плашки от элемента уезжает.
+   Смещение считает TapTooltipBubble, здесь только точка приложения. */
+.tap-tooltip::after {
+  left: var(--tap-tooltip-arrow, 50%);
+}
+
+.tap-tooltip-title {
+  display: block;
+  font-weight: 600;
+}
+
+.tap-tooltip-below {
+  transform: translate(-50%, 0);
+}
+
+.tap-tooltip-below::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: var(--tooltip-bg);
 }
 
 .unique-locations-groups {
@@ -4672,6 +5029,14 @@ tr.run-crosslinked td {
   white-space: nowrap;
 }
 
+/* «в parkrun» под датой первого визита, когда он был не в системе строки */
+.td-date-source {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .visit-status-yes {
   background: var(--tint-green-bg-strong);
   color: var(--tint-green-text);
@@ -4733,6 +5098,25 @@ tr.run-crosslinked td {
   color: var(--tint-green-text);
 }
 
+/* «Скоро»: площадка объявлена, но ещё не стартовала — не ошибка и не потеря,
+   поэтому янтарный, а не красный. */
+.location-status-badge.location-status-upcoming,
+.location-status-label.location-status-upcoming {
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-text);
+}
+
+/* Точка «скоро» на карте: контур вместо заливки — площадка ещё не работает. */
+.map-marker-upcoming span {
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--accent-amber-text);
+}
+
+.map-popup-upcoming {
+  color: var(--tint-amber-text);
+  font-weight: 600;
+}
+
 .map-locations-table-row-paused td {
   color: inherit;
 }
@@ -4759,6 +5143,14 @@ tr.run-crosslinked td {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   color: var(--text);
+}
+
+/* Насколько строка срезала предыдущий рекорд своей системы: вторичная
+   информация рядом с самим значением, поэтому приглушена и тоньше. */
+.best-results-table .col-record-gap {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
 }
 
 .best-results-table .col-runner {
@@ -4820,10 +5212,46 @@ tr.run-crosslinked td {
   font-size: 0.78rem;
 }
 
+.wins-modal-note {
+  margin: 0 0 1rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.wins-table .best-results-city {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+}
+
+.wins-table .wins-place {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .personal-records-hint {
   margin: 0 0 1rem;
   font-size: 0.88rem;
   line-height: 1.45;
+}
+
+/* Утерянный рекорд локации: строка приглушена, но остаётся читаемой —
+   участник пришёл сюда как раз посмотреть, что и когда у него перебили. */
+.location-records-table tr.location-record-lost td {
+  color: var(--text-muted);
+}
+
+.location-records-table tr.location-record-lost .unique-locations-name {
+  color: var(--text-muted);
+}
+
+.location-record-level {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.location-record-beaten-by {
+  font-size: 0.85rem;
 }
 
 .unique-locations-badge-muted {
@@ -5648,6 +6076,19 @@ tr.run-crosslinked td {
   font-weight: 600;
 }
 
+/* Внешние панели вебмастеров: пунктир вместо заливки — отличить от разделов
+   сайта на первый взгляд, до того как прочитан текст ссылки. */
+.admin-subnav-link-external {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-2);
+}
+
+.admin-subnav-link-external:hover {
+  border-color: var(--link);
+  color: var(--link);
+}
+
 .admin-tile-grid {
   display: grid;
   gap: 0.85rem;
@@ -5759,6 +6200,26 @@ tr.run-crosslinked td {
   font-weight: 600;
 }
 
+.admin-login-journal-row > td {
+  background: var(--surface-muted, rgba(127, 127, 127, 0.08));
+}
+
+.admin-login-journal-summary {
+  margin: 0 0 0.5rem;
+}
+
+.admin-login-journal-alert {
+  color: var(--danger, #c0392b);
+  font-weight: 600;
+}
+
+/* Журнал может быть длинным — прокручиваем его, а не страницу. */
+.admin-login-journal-table {
+  display: block;
+  max-height: 20rem;
+  overflow: auto;
+}
+
 .admin-users-login-list {
   list-style: none;
   margin: 0;
@@ -5779,6 +6240,76 @@ tr.run-crosslinked td {
 .admin-users-id {
   display: block;
   font-size: 0.82rem;
+}
+
+/* Колонка «Дом»: название площадки, город и пометки о происхождении выбора. */
+.admin-users-home {
+  display: inline-block;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  min-width: 9rem;
+}
+
+.admin-users-home-city {
+  white-space: nowrap;
+}
+
+.admin-users-home-badge {
+  margin-left: 0.35rem;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.admin-users-home-badge-warn {
+  color: var(--danger, #c0392b);
+  border-color: currentColor;
+}
+
+/* Ничья: список претендентов — первые пять, остальные под кнопкой «ещё». */
+.admin-users-home-tie {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* Сегмент «Кратко | Полно» для колонок систем — в панели над таблицей,
+   рядом с поиском (сама полоса .tview-bar тут не нужна: таблица админки
+   и так живёт в карточке со своим скроллом). */
+.admin-users-view {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.admin-users-view-label {
+  font-size: 0.92rem;
+}
+
+/* Свёрнутая колонка «Системы»: чипы привязок, подробности — в подсказке. */
+.admin-users-systems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  min-width: 7rem;
+  max-width: 12rem;
+}
+
+.admin-system-chip {
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  background: var(--chip-bg);
+  color: var(--text-2);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+a.admin-system-chip:hover {
+  color: var(--link);
 }
 
 .admin-platform-link {
@@ -5934,8 +6465,81 @@ tr.run-crosslinked td {
 }
 
 .admin-stats-platform-links,
-.admin-stats-data-core {
+.admin-stats-data-core,
+.admin-stats-geo {
   margin-bottom: 1rem;
+}
+
+/* Наборы привязок — таблица под списком систем в той же карточке. */
+.admin-stats-combos {
+  margin-top: 1.25rem;
+}
+
+.admin-stats-combos-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.admin-stats-combos-lead {
+  margin: 0.2rem 0 0.75rem;
+  font-size: 0.88rem;
+}
+
+.admin-stats-combo-codes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: center;
+}
+
+.admin-stats-combo-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+
+.admin-stats-geo-lead {
+  margin: 0 0 0.85rem;
+  font-size: 0.9rem;
+}
+
+.admin-stats-geo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1rem 0 0.75rem;
+}
+
+.admin-stats-geo-search {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+}
+
+.admin-stats-geo-sort {
+  display: flex;
+  gap: 0.35rem;
+}
+
+/* Города и площадки — две колонки на широком экране, стопкой на телефоне. */
+.admin-stats-geo-tables {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 960px) {
+  .admin-stats-geo-tables {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.admin-stats-geo-table .table-scroll {
+  max-height: 26rem;
+  overflow: auto;
 }
 
 .admin-stats-platform-list {
@@ -6361,570 +6965,6 @@ tr.run-crosslinked td {
   }
 }
 
-.share-lead {
-  margin: 0 0 1rem;
-  max-width: 42rem;
-}
-
-.share-steps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1rem;
-  margin-bottom: 1rem;
-  font-size: 0.85rem;
-  color: var(--text-faint);
-}
-
-.share-step {
-  padding: 0;
-  border: none;
-  background: none;
-  font: inherit;
-  color: inherit;
-  cursor: default;
-}
-
-.share-step.active {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.share-step.done {
-  color: var(--text-muted);
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-  cursor: pointer;
-}
-
-.share-step.done:hover {
-  color: var(--link);
-}
-
-.share-step:disabled:not(.active) {
-  opacity: 1;
-}
-
-.share-section {
-  display: grid;
-  gap: 1rem;
-}
-
-.share-section-lead {
-  margin: 0;
-}
-
-.share-option-grid {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.share-preset-grid {
-  grid-template-columns: 1fr;
-}
-
-.share-option-card {
-  display: grid;
-  gap: 0.35rem;
-  padding: 1rem 1.1rem;
-  border: 2px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.share-option-card:hover {
-  border-color: var(--tint-blue-border-strong);
-}
-
-.share-option-card.selected {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 1px #2563eb;
-}
-
-.share-option-card:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.share-option-card:disabled:hover {
-  border-color: var(--border);
-}
-
-.share-option-title {
-  font-weight: 600;
-  color: var(--text);
-}
-
-.share-option-hint,
-.share-option-meta {
-  font-size: 0.88rem;
-}
-
-.share-preset-fields {
-  font-size: 0.82rem;
-  line-height: 1.35;
-}
-
-.share-field-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.5rem;
-}
-
-.share-field-row {
-  display: flex;
-  gap: 0.75rem;
-  align-items: flex-start;
-  padding: 0.75rem 0.85rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  cursor: pointer;
-}
-
-.share-field-row.disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.share-field-label {
-  display: block;
-  font-weight: 500;
-}
-
-.share-field-hint {
-  display: block;
-  font-size: 0.85rem;
-}
-
-.share-text-color {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem 1rem;
-  margin-bottom: 1rem;
-}
-
-.share-text-color-label {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-2);
-}
-
-.share-text-color-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.share-text-color-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.45rem 0.85rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-2);
-  font: inherit;
-  font-size: 0.9rem;
-  cursor: pointer;
-}
-
-.share-text-color-btn:hover {
-  border-color: var(--border-heavy);
-}
-
-.share-text-color-btn.selected {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
-}
-
-.share-text-color-swatch {
-  width: 1rem;
-  height: 1rem;
-  border-radius: 50%;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  flex-shrink: 0;
-}
-
-.share-preview-wrap {
-  width: 100%;
-  max-width: min(100%, 420px);
-  margin: 0 auto;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--bg);
-}
-
-.share-preview-canvas {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-.share-export-canvas {
-  position: absolute;
-  left: -9999px;
-  width: 1px;
-  height: 1px;
-  pointer-events: none;
-}
-
-.share-footnote {
-  margin: 0;
-  font-size: 0.85rem;
-}
-
-.share-background-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-}
-
-.share-background-card {
-  display: block;
-  padding: 0.55rem;
-  border: 2px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-}
-
-.share-background-card-custom {
-  padding: 0;
-  overflow: hidden;
-}
-
-.share-background-card-custom.drag-over {
-  border-color: #2563eb;
-  background: var(--tint-blue-bg);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
-}
-
-.share-background-card:hover {
-  border-color: var(--tint-blue-border-strong);
-}
-
-.share-background-card.selected {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 1px #2563eb;
-}
-
-.share-background-thumb {
-  display: block;
-  width: 100%;
-  border-radius: 8px;
-  background-size: cover;
-  background-position: center;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.share-background-card-custom .share-background-thumb,
-.share-background-card-custom .share-background-thumb-photo {
-  border: none;
-  border-radius: 10px;
-}
-
-.share-background-thumb-photo {
-  object-fit: cover;
-  width: 100%;
-  display: block;
-}
-
-.share-background-thumb-custom {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(145deg, var(--tint-blue-bg), var(--chip-bg));
-  color: var(--link);
-  font-size: 2rem;
-  font-weight: 600;
-}
-
-.share-crop-panel {
-  display: grid;
-  gap: 1rem;
-  margin-top: 0.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-}
-
-.share-file-label {
-  width: fit-content;
-  cursor: pointer;
-}
-
-.share-file-input {
-  display: none;
-}
-
-.share-crop-preview-wrap {
-  position: relative;
-  width: 100%;
-  max-width: min(100%, 360px);
-  margin: 0 auto;
-  border-radius: 12px;
-  overflow: hidden;
-  border: 2px solid var(--border-strong);
-  cursor: grab;
-  touch-action: none;
-  background: var(--tooltip-bg);
-}
-
-.share-crop-preview-wrap.dragging {
-  cursor: grabbing;
-}
-
-.share-crop-preview-canvas {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-.share-crop-hint {
-  position: absolute;
-  left: 0.5rem;
-  bottom: 0.5rem;
-  padding: 0.2rem 0.45rem;
-  border-radius: 6px;
-  background: rgba(15, 23, 42, 0.65);
-  color: #f8fafc;
-  font-size: 0.75rem;
-}
-
-.share-crop-scale {
-  display: grid;
-  gap: 0.35rem;
-  max-width: 360px;
-  margin: 0 auto;
-  font-size: 0.88rem;
-}
-
-.share-crop-scale input[type="range"] {
-  width: 100%;
-}
-
-@media (min-width: 640px) {
-  .share-option-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .share-preset-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 960px) {
-  .share-preset-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .share-background-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-}
-
-.share-gallery {
-  display: grid;
-  gap: 1.25rem;
-}
-
-.share-gallery-profile-hint {
-  display: grid;
-  gap: 0.75rem;
-  margin-bottom: 0.25rem;
-}
-
-.share-gallery-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem 1.25rem;
-}
-
-.share-gallery-header-text {
-  display: grid;
-  gap: 0.35rem;
-  min-width: min(100%, 280px);
-  flex: 1 1 280px;
-}
-
-.share-gallery-title {
-  margin: 0;
-  font-size: clamp(1.35rem, 2.5vw, 1.65rem);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-.share-gallery-subtitle {
-  margin: 0;
-  font-size: 0.95rem;
-  max-width: 36rem;
-}
-
-.share-gallery-create {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.7rem 1.25rem;
-  border: none;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  color: #fff;
-  font: inherit;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.3);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.share-gallery-create:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.36);
-}
-
-.share-gallery-create:active {
-  transform: translateY(0);
-}
-
-.share-gallery-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.share-gallery-card {
-  display: grid;
-  gap: 0.35rem;
-  min-width: 0;
-}
-
-.share-gallery-preview-wrap {
-  position: relative;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  overflow: hidden;
-  background: var(--bg-muted);
-  outline: none;
-}
-
-.share-gallery-preview-wrap:focus-visible {
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.35);
-}
-
-.share-gallery-canvas {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-.share-gallery-overlay {
-  position: absolute;
-  inset: auto 0 0;
-  display: flex;
-  padding: 0.65rem 0.75rem 0.75rem;
-  background: linear-gradient(to top, rgba(15, 23, 42, 0.72) 0%, rgba(15, 23, 42, 0.35) 70%, transparent 100%);
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.share-gallery-download {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 2.75rem;
-  padding: 0.55rem 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  color: #fff;
-  font: inherit;
-  font-size: 0.92rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
-}
-
-.share-gallery-download:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.28);
-  border-color: rgba(255, 255, 255, 0.55);
-}
-
-.share-gallery-download:active:not(:disabled) {
-  transform: scale(0.98);
-}
-
-.share-gallery-download:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.share-gallery-download-error {
-  margin: 0;
-  font-size: 0.82rem;
-  text-align: center;
-}
-
-/* Desktop: кнопка появляется при наведении или фокусе */
-@media (hover: hover) and (pointer: fine) {
-  .share-gallery-overlay {
-    opacity: 0;
-    transform: translateY(0.35rem);
-    pointer-events: none;
-  }
-
-  .share-gallery-preview-wrap:hover .share-gallery-overlay,
-  .share-gallery-preview-wrap:focus-within .share-gallery-overlay {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
-  }
-}
-
-/* Телефон и планшет: полоска с кнопкой всегда видна — без hover */
-@media (hover: none), (pointer: coarse) {
-  .share-gallery-overlay {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
-    background: linear-gradient(to top, rgba(15, 23, 42, 0.78) 0%, rgba(15, 23, 42, 0.2) 85%, transparent 100%);
-  }
-}
-
-.share-wizard-toolbar {
-  margin-bottom: 0.75rem;
-}
-
-@media (max-width: 899px) {
-  .share-gallery-header {
-    align-items: stretch;
-  }
-
-  .share-gallery-create {
-    width: 100%;
-  }
-
-  .share-gallery-grid {
-    grid-template-columns: 1fr;
-    max-width: 320px;
-    margin: 0 auto;
-  }
-}
 
 /* ── Оценки стартов (рейтинг парков) ─────────────────────────────────────── */
 .star-rating {
@@ -7222,7 +7262,8 @@ tr.run-crosslinked td {
 }
 
 /* Звезда-оценка в таблице пробежек */
-.col-rating { width: 36px; }
+/* Ширина под две иконки: звезда оценки + «Поделиться». */
+.col-rating { width: 68px; }
 .td-rating { text-align: center; padding-left: 0; padding-right: 0; }
 
 /* На всю ширину ячейки + центрирование — чтобы звезда и «—» имели ОДИН центр
@@ -7578,6 +7619,44 @@ tr.run-crosslinked td {
   white-space: nowrap;
 }
 
+/* Вех за одну субботу бывает несколько — тизер показывает их списком, у каждой
+   своя кнопка «Поделиться» (просьба Дмитрия 11.08.2026). */
+.history-teaser-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.history-teaser-date {
+  font-size: 0.8rem;
+}
+
+.history-teaser-list {
+  list-style: none;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.history-teaser-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.history-teaser-title {
+  text-decoration: none;
+}
+
+.history-teaser-title:hover {
+  text-decoration: underline;
+}
+
 .history-teaser-more {
   flex: none;
   font-size: 0.85rem;
@@ -7808,6 +7887,32 @@ tr.run-crosslinked td {
 .admin-ratings-count {
   font-size: 0.92rem;
 }
+.admin-ratings-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.admin-ratings-pagination-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.admin-ratings-pagination-label {
+  font-size: 0.92rem;
+}
+/* .input тянется на всю ширину — в строке пагинации селектор должен остаться
+   по содержимому, иначе он разъезжается на весь блок. */
+.admin-ratings-page-size {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 6rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.9rem;
+}
 .admin-ratings-raw-table td,
 .admin-ratings-raw-table th {
   vertical-align: top;
@@ -7865,10 +7970,6 @@ tr.run-crosslinked td {
   background: rgba(15, 23, 42, 0.5);
 }
 
-:root[data-theme="dark"] .legacy-site-banner-dismiss:hover {
-  background: rgba(148, 163, 184, 0.18);
-}
-
 /* Стат-карточки: тёмные варианты тематических палитр */
 :root[data-theme="dark"] .stat-card-runs {
   --stat-theme-bg: #17291e;
@@ -7876,6 +7977,15 @@ tr.run-crosslinked td {
   --stat-theme-value: #7bdfa0;
   --stat-theme-label: #93c7a8;
   --stat-theme-border-hover: #3b7452;
+  --stat-theme-shadow: rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme="dark"] .stat-card-wins {
+  --stat-theme-bg: #2e2412;
+  --stat-theme-border: #6b5222;
+  --stat-theme-value: #f5c451;
+  --stat-theme-label: #d4b478;
+  --stat-theme-border-hover: #8a6a2c;
   --stat-theme-shadow: rgba(0, 0, 0, 0.35);
 }
 
@@ -8041,10 +8151,28 @@ tr.run-crosslinked td {
 /* Витрина достижений */
 .achv-showcase-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+/* Вкладки уровня и счётчик медалей — в одной строке с заголовком, справа */
+.achv-showcase-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+/* Плавный пересчёт при смене фильтра систем: блок гаснет на время запроса и
+   проявляется с новыми цифрами, вместо мгновенной подмены содержимого. */
+.achv-recalc {
+  transition: opacity 0.2s ease;
+}
+
+.achv-recalc.is-busy {
+  opacity: 0.45;
 }
 
 .achv-summary {
@@ -8281,8 +8409,44 @@ tr.run-crosslinked td {
 
 .challenge-card {
   gap: 0.6rem;
-  scroll-margin-top: 5rem;
   min-width: 0;
+}
+
+/* Обёртка-цель ссылок из витрины медалей (#challenge-<code>). Отступ обязан
+   висеть именно здесь, а не на .challenge-card: цель перехода — эта обёртка,
+   и без отступа верх карточки уезжал под липкие полосы.
+   Запас на .portal-header (61px) + липкий фильтр систем (~48px) + зазор.
+   Это страховка для нативных переходов по #hash; собственная прокрутка из
+   витрины считает высоты по факту — см. stickyOffsetTop(). */
+.challenge-anchor {
+  scroll-margin-top: 7.6rem;
+}
+
+/* Короткая подсветка карточки, на которую только что перешли: после плавной
+   прокрутки видно, куда именно приехали. */
+.challenge-anchor.is-jump-target .challenge-card {
+  animation: challenge-jump-flash 1.8s ease-out;
+}
+
+@keyframes challenge-jump-flash {
+  0% {
+    box-shadow: 0 0 0 2px var(--link);
+  }
+
+  60% {
+    box-shadow: 0 0 0 2px var(--link);
+  }
+
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .challenge-anchor.is-jump-target .challenge-card {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--link);
+  }
 }
 
 /* Ссылка «оценить старты» на карточках достижений за оценки — только у себя. */
@@ -8292,8 +8456,19 @@ tr.run-crosslinked td {
 }
 
 /* Переключатель «сквозной / по системам» над сеткой челленджей */
+/* Фильтр систем липнет под шапку: из любой карточки внизу списка видно, в каком
+   скоупе считаются достижения, и можно переключить его не уезжая наверх.
+   top = высота .portal-header (61px) — иначе фильтр прячется под ней. */
 .achv-platform-filters {
   margin-top: 0.75rem;
+  position: sticky;
+  top: 3.85rem;
+  z-index: 6;
+  /* Фон обязателен: под полосой проезжают карточки */
+  background: var(--bg);
+  padding: 0.5rem 0;
+  /* Тонкая черта отделяет липкую полосу от уезжающего под неё контента */
+  box-shadow: inset 0 -1px 0 var(--border-soft);
 }
 
 .achv-platform-filters.is-switching {
@@ -8360,35 +8535,213 @@ tr.run-crosslinked td {
   line-height: 1.35;
 }
 
-/* Мини-таймлайн: дата получения каждого из трёх уровней, всегда видима */
-.challenge-level-timeline {
-  display: flex;
-  gap: 0.6rem;
-  flex-wrap: wrap;
+/* Подписи уровней ПРЯМО НА прогресс-баре: медаль + порог, под ними дата
+   получения (для взятых) или «ещё N» (для оставшихся). Тултипов на мобильных
+   нет, поэтому всё, что нужно для понимания «сколько надо и когда взял»,
+   стоит на самой шкале. Риски остаются на честных позициях, подписи при
+   тесных порогах разводит spreadLabelPositions(). */
+.challenge-bar-wrap {
+  position: relative;
+  /* место под две строки подписей ниже шкалы */
+  padding-bottom: 2.5rem;
 }
 
-.challenge-level-timeline-item {
+/* Подпись двухстрочная: «🥉 40» над «18.05.24». Так она вдвое уже
+   однострочной и три подписи помещаются даже на 375px. */
+.challenge-bar-label {
+  position: absolute;
+  top: 0.75rem;
+  transform: translateX(-50%);
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.25rem;
-  font-size: 0.74rem;
+  gap: 0.05rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  /* Подписи переезжают плавно при смене вкладки сложности / фильтра систем */
+  transition: left 0.35s ease, color 0.2s ease;
 }
 
-.challenge-level-timeline-item.done {
+@media (prefers-reduced-motion: reduce) {
+  .challenge-bar-label {
+    transition: none;
+  }
+}
+
+/* У краёв шкалы центрирование обрезало бы подпись о край карточки */
+.challenge-bar-label.at-start {
+  transform: none;
+  align-items: flex-start;
+}
+
+.challenge-bar-label.at-end {
+  transform: none;
+  align-items: flex-end;
+}
+
+.challenge-bar-label.done {
   color: var(--text-2);
 }
 
-.challenge-level-timeline-icon {
-  font-size: 0.9rem;
-  filter: grayscale(1);
-  opacity: 0.5;
+.challenge-bar-label-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
 }
 
-.challenge-level-timeline-item.done .challenge-level-timeline-icon {
+.challenge-bar-label-medal {
+  font-size: 0.8rem;
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+
+.challenge-bar-label.done .challenge-bar-label-medal {
   filter: none;
   opacity: 1;
+}
+
+.challenge-bar-label-threshold {
+  font-weight: 700;
+  color: var(--text-3);
+}
+
+.challenge-bar-label.done .challenge-bar-label-threshold {
+  color: var(--text);
+}
+
+.challenge-bar-label-detail {
+  color: var(--text-faint);
+}
+
+.challenge-bar-label.done .challenge-bar-label-detail {
+  color: var(--text-muted);
+}
+
+/* Вкладки уровней сложности над прогресс-баром челленджа.
+   Тир кодируется ЦВЕТОМ (зелёный/синий/фиолетовый), а не капслочным словом —
+   иначе название тира визуально сливается с названием медали (бронза/серебро/
+   золото) в шапке карточки. Слово на вкладке — строчное и приглушённое. */
+:root {
+  --tier-easy: #16a34a;
+  --tier-medium: #2563eb;
+  --tier-hard: #7c3aed;
+}
+
+:root[data-theme="dark"] {
+  --tier-easy: #4ade80;
+  --tier-medium: #60a5fa;
+  --tier-hard: #a78bfa;
+}
+
+.tier-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  background: var(--bg-muted);
+  border-radius: 999px;
+}
+
+.tier-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  padding: 0.32rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tier-tab:hover {
+  color: var(--text-2);
+}
+
+.tier-tab.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+}
+
+/* Цветная точка тира на вкладке */
+.tier-tab-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  flex: none;
+}
+
+.tier-dot-easy { background: var(--tier-easy); }
+.tier-dot-medium { background: var(--tier-medium); }
+.tier-dot-hard { background: var(--tier-hard); }
+
+.tier-tab-medal {
+  font-size: 0.82rem;
+}
+
+.tier-tab-medal.empty {
+  filter: grayscale(1);
+  opacity: 0.35;
+}
+
+/* Кольцо цвета тира вокруг иконки достижения: показывает, в КАКОМ тире взята
+   медаль из чипа, не добавляя второго слова рядом с названием медали */
+.medal-tier-ring {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  border-radius: 50%;
+}
+
+.medal-tier-ring::before {
+  content: "";
+  position: absolute;
+  inset: -3.5px;
+  border-radius: 50%;
+  border: 2.5px solid var(--ring-color, transparent);
+  pointer-events: none;
+}
+
+.medal-ring-easy { --ring-color: var(--tier-easy); }
+.medal-ring-medium { --ring-color: var(--tier-medium); }
+.medal-ring-hard { --ring-color: var(--tier-hard); }
+
+/* Легенда цветов тиров — один раз над сеткой челленджей */
+.tier-legend {
+  display: flex;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.tier-legend-caption {
+  color: var(--text-faint);
+}
+
+.tier-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+/* Вкладки уровня в витрине медалей: там срез одного уровня сложности, а не
+   сумма по всем (золото лёгкого и золото сложного — разные достижения).
+   В шапке они компактные — не тянутся на всю ширину, как на карточках. */
+.achv-showcase-tabs .tier-tab {
+  flex: none;
+  font-size: 0.74rem;
+  padding: 0.28rem 0.6rem;
 }
 
 .challenge-bar {
@@ -8462,6 +8815,235 @@ tr.run-crosslinked td {
 .challenge-toggle:hover {
   color: var(--link-strong);
   text-decoration: underline;
+}
+
+/* Ссылка «Планирование» в карточке Нумератора — открывает таблицу
+   «номер старта → локации по неделям». */
+.challenge-plan-link {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--link);
+  align-self: flex-start;
+}
+
+.challenge-plan-link:hover {
+  color: var(--link-strong);
+  text-decoration: underline;
+}
+
+/* --- Модалка планирования --------------------------------------------- */
+.plan-intro {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+.plan-summary {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+}
+
+.plan-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
+.plan-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+/* Единственный скролл-контейнер таблицы: и по горизонтали (широкая), и по
+   вертикали (до 400 строк). Высоту задаём здесь, а не полагаемся на
+   .modal-body-scroll — иначе overflow-x делает обёртку скролл-контейнером,
+   а sticky-шапка остаётся привязанной к внешнему и уезжает вверх. */
+.plan-table-wrap {
+  overflow: auto;
+  max-height: 60vh;
+}
+
+.plan-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.plan-table th,
+.plan-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.plan-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  white-space: nowrap;
+}
+
+.plan-number-note {
+  display: none;
+}
+
+.plan-number {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* Незакрытые номера — то, ради чего таблицу и открывают, поэтому выделяем
+   именно их: заливка + акцентный номер + полоса слева. Закрытые приглушаем.
+   Полоса и галочка дублируют цвет, чтобы строка читалась и без него. */
+.plan-row-open > * {
+  background: var(--tint-blue-bg);
+}
+
+.plan-row-open .plan-number {
+  border-left: 3px solid var(--tint-blue-border-strong);
+  padding-left: 0.4rem;
+  color: var(--tint-blue-text);
+}
+
+.plan-row-done {
+  color: var(--text-muted);
+}
+
+.plan-row-done .plan-number {
+  border-left: 3px solid transparent;
+  padding-left: 0.4rem;
+  font-weight: 400;
+}
+
+.plan-number-state {
+  margin-left: 0.3rem;
+  color: #16a34a;
+}
+
+/* Одна локация — одна строка: название и «дата · система» в подбор. Раньше
+   мета уходила на вторую строку, и десяток локаций растягивал таблицу на
+   несколько экранов. */
+.plan-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.plan-entries li {
+  line-height: 1.35;
+}
+
+.plan-entry-meta {
+  margin-left: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.plan-empty {
+  color: var(--text-muted);
+}
+
+/* --- Планирование на телефоне ------------------------------------------
+   Четыре колонки в 375px не живут: разворачиваем каждую строку в карточку,
+   шапку прячем (её роль играют подписи из data-label), пустые ячейки убираем
+   совсем — у большинства номеров занята одна колонка из трёх. */
+@media (max-width: 640px) {
+  .plan-table-wrap {
+    overflow-x: hidden;
+    max-height: none;
+  }
+
+  .plan-table,
+  .plan-table tbody,
+  .plan-table tr,
+  .plan-table td,
+  .plan-table th {
+    display: block;
+  }
+
+  .plan-table thead {
+    display: none;
+  }
+
+  .plan-table tr {
+    margin-bottom: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .plan-table td,
+  .plan-table th {
+    border-bottom: none;
+    padding: 0.1rem 0;
+  }
+
+  .plan-row-open > * {
+    background: none;
+  }
+
+  .plan-row-open {
+    background: var(--tint-blue-bg);
+    border-color: var(--tint-blue-border-strong);
+  }
+
+  .plan-row-open .plan-number,
+  .plan-row-done .plan-number {
+    border-left: none;
+    padding-left: 0;
+  }
+
+  /* Пустые колонки на телефоне не показываем — вместо них у номера подпись
+     «нет стартов», иначе карточка состоит из трёх прочерков. Селектор с тегом:
+     иначе `.plan-table td { display: block }` выше перебивает по специфичности. */
+  .plan-table td.plan-cell-empty {
+    display: none;
+  }
+
+  .plan-number {
+    margin-bottom: 0.2rem;
+    font-size: 0.95rem;
+  }
+
+  .plan-number-note {
+    display: inline;
+    margin-left: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+
+  /* Подпись колонки перед списком локаций: «E», «E+1», «E+2». */
+  .plan-table td::before {
+    content: attr(data-label);
+    display: inline-block;
+    min-width: 2.4rem;
+    margin-right: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    vertical-align: top;
+  }
+
+  .plan-entries {
+    display: inline-block;
+    width: calc(100% - 3rem);
+    vertical-align: top;
+  }
 }
 
 /* Сетки коллекций (секунды/позиции/номера/буквы) */
@@ -8546,6 +9128,47 @@ tr.run-crosslinked td {
   background: var(--tint-orange-bg);
   border-color: var(--tint-orange-text);
   color: var(--tint-orange-text);
+}
+
+/* Клетка, закрытая последней пробежкой (той самой, за которую на карточке стоит
+   «↑ +1»). Цвет заливки уже занят системой — все четыре (зелёный / синий /
+   фиолетовый / оранжевый) заняты, поэтому свежесть показываем янтарным кольцом
+   и точкой в углу: они читаются поверх любой системы и поверх «не закрыто». */
+.challenge-cell-fresh {
+  position: relative;
+  outline: 2px solid var(--accent-amber-text);
+  outline-offset: 1px;
+}
+
+.challenge-cell-fresh::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-amber-text);
+  border: 1px solid var(--surface);
+}
+
+/* День календаря «Круглого года» — 0.55rem, точка в него не влезает: там
+   кольцо и есть вся индикация. */
+.challenge-year-day-fresh {
+  outline: 2px solid var(--accent-amber-text);
+  outline-offset: 1px;
+}
+
+/* Строка списка находок (палиндромы, дежавю, юбилеи), появившаяся с последней
+   пробежкой, и отдельное совпадение внутри неё. */
+.challenge-item-fresh {
+  box-shadow: inset 2px 0 0 var(--accent-amber-text);
+  padding-left: 0.5rem;
+}
+
+.challenge-occurrence-fresh {
+  color: var(--accent-amber-text);
+  font-weight: 600;
 }
 
 /* Легенда цветов систем над коллекционными челленджами */
@@ -9232,6 +9855,50 @@ tr.run-crosslinked td {
   flex-wrap: wrap;
 }
 
+/* Кластер города: каждая площадка — чип с рамкой. Колонки текста сливались
+   в сплошные строки, рамка делает границы элементов видимыми. */
+.loc-city-neighbors {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.loc-city-neighbor {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--link);
+  text-decoration: none;
+  max-width: 100%;
+}
+
+.loc-city-neighbor:hover {
+  border-color: var(--link);
+}
+
+.loc-city-neighbor-count {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+/* Вводная фраза о локации — тот же текст, что уходит роботу в пререндере.
+   Читается как подзаголовок, а не как основной контент: чуть приглушена,
+   ширина ограничена, иначе на десктопе строка растягивается на весь экран. */
+.loc-header-lead {
+  margin: 0.6rem 0 0;
+  max-width: 46rem;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
 .loc-header-breadcrumb {
   margin: 0 0 0.5rem;
   font-size: 0.82rem;
@@ -9326,6 +9993,46 @@ tr.run-crosslinked td {
   font-size: 0.78rem;
   color: #64748b;
   line-height: 1.3;
+}
+
+/* Знаменатель места («из 130») — мельче самой позиции. */
+.loc-stat-value-denominator {
+  margin-left: 0.28rem;
+  font-size: 0.72em;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Значок «i» сразу после числа: пояснение, как считается цифра. */
+.loc-stat-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  margin-left: 0.3rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  font-size: 0.62rem;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: help;
+  vertical-align: middle;
+}
+
+/* Последний старт — тем же акцентом, что «Последняя суббота» на главной:
+   свежая суббота не должна теряться среди агрегатов за всю историю. */
+.loc-section-accent {
+  background: var(--tint-indigo-bg);
+  border-color: var(--tint-blue-border);
+}
+
+/* Личный блок — своим тоном, чтобы отличался и от акцента, и от общих карточек. */
+.loc-section-personal {
+  background: var(--tint-green-bg);
+  border-color: var(--tint-green-border);
 }
 
 .loc-stat-details-link {
@@ -9442,10 +10149,52 @@ tr.run-crosslinked td {
   align-items: start;
 }
 
+/* Грид-колонка по умолчанию не уже min-content своего содержимого: широкая
+   таблица (рекорды по возрастным группам) распирала не свой скролл-контейнер,
+   а всю страницу. У документа появлялась горизонтальная прокрутка, а вместе с
+   ней разъезжался layout-вьюпорт — фиксированная нижняя навигация вставала по
+   его низу и на телефоне «отклеивалась» от нижней кромки экрана. */
+.loc-columns > * {
+  min-width: 0;
+}
+
 @media (max-width: 720px) {
   .loc-columns {
     grid-template-columns: 1fr;
   }
+}
+
+/* Рекорды локации по возрастным группам: две колонки-таблицы (М/Ж). */
+.loc-age-records-subtitle {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-3);
+}
+
+.loc-age-records-table .loc-age-records-col-group {
+  width: 5.5rem;
+}
+
+.loc-age-records-table .loc-age-records-col-time {
+  width: 5.25rem;
+}
+
+.loc-age-records-table .loc-age-records-col-date {
+  width: 7rem;
+}
+
+.loc-age-records-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* Группу и дату не рвём на два этажа: внутри скролл-контейнера таблица ужимается
+   до min-content, и «10–14» с «27.09.2025» разъезжались по строкам, задирая
+   высоту каждой строки. Переносится только ФИО рекордсмена. */
+.loc-age-records-group,
+.loc-age-records-date {
+  white-space: nowrap;
 }
 
 .loc-mini-map {
@@ -9470,9 +10219,116 @@ tr.run-crosslinked td {
   color: #64748b;
 }
 
-.loc-info-note {
-  margin: 0.7rem 0 0;
-  font-size: 0.82rem;
+/* Описание площадки: карта, трасса и как добраться (текст с сайта системы) */
+
+/* Карта слева, «где и когда» + «трасса» справа. minmax(0,·) — иначе длинное
+   слово в тексте распирает колонку и ломает страницу по ширине. */
+.loc-about-top {
+  display: grid;
+  grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
+  gap: 1.2rem;
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .loc-about-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.loc-about-intro > .loc-about-subtitle:first-child {
+  margin-top: 0;
+}
+
+.loc-about-text p {
+  margin: 0 0 0.7rem;
+  max-width: 46rem;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.loc-about-text p:last-child {
+  margin-bottom: 0;
+}
+
+.loc-about-subtitle {
+  margin: 1.2rem 0 0.6rem;
+  font-size: 1rem;
+}
+
+/* Три способа добраться рядом — как на сайте 5 вёрст: их сравнивают между
+   собой, а не читают подряд. На узком экране колонки схлопываются в столбик. */
+.loc-about-ways {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+
+.loc-about-way h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+.loc-about-links {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.loc-about-source {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.loc-about-history > .loc-about-subtitle:first-child {
+  margin-top: 0;
+}
+
+/* Цитата с сайта системы: рамка и подложка отделяют чужой текст от наших
+   данных выше. Шапка с ссылкой на источник — сверху, а не в конце простыни:
+   в конце уже непонятно, к чему относится приписка. */
+.loc-about-quote {
+  margin-top: 1.4rem;
+  padding: 1rem 1.1rem 1.1rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  /* Карточка страницы уже на --surface, поэтому цитата чуть глубже — так рамка
+     читается и в светлой, и в тёмной теме. */
+  background: var(--bg-muted);
+}
+
+.loc-about-quote-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.loc-about-quote-head > .loc-about-subtitle {
+  margin: 0;
+}
+
+.loc-about-quote-title {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+.loc-about-quote-title:first-of-type {
+  margin-top: 0.6rem;
+}
+
+.loc-about-way h5 {
+  margin: 0 0 0.4rem;
+  font-size: 0.88rem;
+  color: var(--text);
 }
 
 /* Гистограмма локации */
@@ -9616,20 +10472,54 @@ tr.run-crosslinked td {
   width: 6.5rem;
 }
 
+/* Ширины считаны по самой длинной подписи в капсе (заголовки колонок пишем
+   целиком, без «Фин.» и «Вол.» — решение Дмитрия 11.08.2026): ~9 знаков плюс
+   стрелка сортировки и «?». */
 .loc-index-table .col-metric {
-  width: 6.25rem;
+  width: 9.25rem;
 }
 
-/* «В среднем» и «Рекорд явки» — заголовки длиннее, чем влезает в col-metric. */
+/* «Лучшее время (М/Ж)» и «Личных рекордов» — подписи ещё длиннее. */
 .loc-index-table .col-metric-wide {
-  width: 8rem;
+  width: 11.5rem;
 }
 
 /* Колонок с фиксированной шириной много (метрики + рекорды + даты): без
    min-width колонка «Локация» схлопывается в ноль, вместо этого скроллим
    обёртку по горизонтали. */
 .loc-index-table {
-  min-width: 78rem;
+  min-width: 104rem;
+}
+
+/* В кратком виде колонки подбирает useAdaptiveColumns — ровно столько, сколько
+   влезает в ширину блока, — и он же проставляет таблице inline min-width по
+   сумме их ширин (inline перебивает min-width полного набора выше). Здесь
+   остаётся только снять принудительный минимум; раскладка так и остаётся
+   fixed, поэтому остаток ширины достаётся первой колонке — названию. */
+.loc-index-table.data-table-short,
+.loc-events-table.data-table-short {
+  min-width: 0;
+}
+
+/* В кратком виде колонки меряются по содержимому, и базовый word-break:
+   break-word (он же overflow-wrap: anywhere) позволял браузеру ужать колонку до
+   одной буквы: «Тюмень» разваливалась на «Тюмен / ь». Переносим только слова,
+   которые целиком не влезают, а тесноту решаем горизонтальным скроллом. */
+.loc-index-table.data-table-short td,
+.loc-events-table.data-table-short td {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+/* Подписи колонок не режем многоточием — ни в кратком виде, ни в полном:
+   лучше горизонтальный скролл, чем «Фин.» вместо «Финишёров». В полном виде
+   ширины колонок фиксированы (см. выше) и рассчитаны под полные подписи, в
+   кратком max-content заставляет колонку раздвинуться под заголовок. */
+.loc-index-table .th-col-text,
+.loc-events-table .th-col-text {
+  overflow: visible;
+  text-overflow: clip;
+  min-width: max-content;
 }
 
 /* Раздел локаций шире остальных страниц (--layout-max-width: 864px):
@@ -9756,29 +10646,20 @@ tr.run-crosslinked td {
   white-space: nowrap;
 }
 
-/* Шапка журнала должна липнуть к верху ОКНА. Базовый .table-wrap задаёт
-   overflow-x: auto, а по спеке overflow-x: auto + overflow-y: visible
-   форсит overflow-y в auto — обёртка становится скролл-контейнером, и
-   sticky-шапка липнет к её верхнему краю, то есть уезжает вместе с ней.
-   Составной селектор (специфичность выше одноклассового .table-wrap)
-   возвращает overflow-x: visible: прокручивается страница целиком. */
+/* Полные подписи колонок (11.08.2026) сделали журнал шире любого экрана:
+   раньше на широких мониторах обёртке возвращали overflow-x: visible, чтобы
+   sticky-шапка липла к окну, а не к боксу. Теперь таблица не помещается и
+   там, поэтому обёртка всегда скролл-контейнер: настоящая шапка липнет к её
+   верху (ноль), а видимой при листании страницы её делает плавающая копия из
+   useFloatingTableHead — она встаёт под липкую полосу «Кратко | Полно». */
 .table-wrap.loc-events-wrap {
-  overflow-x: visible;
-}
-
-@media (max-width: 1200px) {
-  /* Уже этой ширины 10 колонок журнала без горизонтального скролла не
-     помещаются — включаем его обратно (ценой sticky-шапки на узких экранах). */
-  .table-wrap.loc-events-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
+  --table-head-top: 0px;
 }
 
 /* Своя подложка вместо прозрачной: под шапкой при прокрутке проезжают строки. */
 .loc-events-table thead th {
   background: var(--surface);
-  top: 0;
+  top: var(--table-head-top, 0);
 }
 
 .loc-events-table .col-date {
@@ -9793,8 +10674,25 @@ tr.run-crosslinked td {
   width: 6.5rem;
 }
 
+/* Ширины под полные подписи колонок: «ФИНИШЁРОВ», «ВОЛОНТЁРОВ», «НОВИЧКОВ»
+   (col-compact), «ЛУЧШЕЕ ВРЕМЯ (М)», «СРЕДНЕЕ ВРЕМЯ», «ЛИЧНЫХ РЕКОРДОВ»
+   (col-time и col-compact-wide). Всё, что не влезло, — в скролл обёртки. */
+.loc-events-table .col-compact {
+  width: 9.25rem;
+}
+
+.loc-events-table .col-compact-wide {
+  width: 11.5rem;
+}
+
 .loc-events-table .col-time {
-  width: 6.5rem;
+  width: 11.5rem;
+}
+
+/* Полный набор — 10 колонок с фиксированными ширинами: без min-width
+   «Дата» и «Система» сжимались бы, вместо этого листаем таблицу вбок. */
+.loc-events-table:not(.data-table-short) {
+  min-width: 94rem;
 }
 
 /* inline-flex вместо текстового потока — иначе emoji-кубок со своими
@@ -10031,6 +10929,1259 @@ tr.run-crosslinked td {
   border: 1px solid var(--border-strong);
   background: var(--bg-muted);
   color: var(--text-3);
+
+/* Блок «Вы на этой локации»: CTA-вариант (аноним / без привязки / ещё не бегал). */
+.card.loc-personal-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.loc-personal-cta-text {
+  flex: 1 1 320px;
+}
+
+.loc-personal-cta-text p {
+  margin: 6px 0 0;
+}
+
+.loc-personal-cta .btn {
+  flex-shrink: 0;
+}
+
+/* Настройки → «Аватар» */
+.avatar-settings-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.avatar-settings-preview {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  object-fit: cover;
+}
+
+/* Обёртка нужна, чтобы плашка «Загрузка…» легла поверх самого превью. */
+.avatar-settings-preview-wrap {
+  position: relative;
+  flex: none;
+  line-height: 0;
+}
+
+.avatar-settings-preview-button {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+  overflow: hidden;
+  display: block;
+}
+
+.avatar-settings-preview-button img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatar-settings-busy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.62);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.avatar-settings-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent-indigo, #4f46e5), #7c3aed);
+}
+
+.avatar-settings-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.avatar-settings-controls p {
+  margin: 0;
+}
+
+.avatar-settings-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Продающая карточка «войдите» (PromoLoginCard) — главный CTA анонима на
+   публичных страницах: градиент, крупная иконка, водяной знак справа. */
+.promo-login-card {
+  margin-bottom: 1rem;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 22px 26px;
+  border-radius: 18px;
+  border: none;
+  background: linear-gradient(120deg, #4f46e5 0%, #6d28d9 55%, #9333ea 100%);
+  color: #fff;
+  box-shadow: 0 12px 32px rgba(79, 70, 229, 0.35);
+}
+
+.promo-login-card-glow {
+  position: absolute;
+  top: -60%;
+  left: -10%;
+  width: 55%;
+  height: 220%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.18), transparent);
+  pointer-events: none;
+}
+
+.promo-login-card-icon {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+.promo-login-card-text {
+  flex: 1 1 280px;
+  position: relative;
+}
+
+.promo-login-card-title {
+  display: block;
+  font-size: 16.5px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin-bottom: 4px;
+}
+
+.promo-login-card-text p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.promo-login-card-btn {
+  flex: none;
+  position: relative;
+  padding: 10px 22px;
+  border-radius: 11px;
+  background: #fff;
+  color: #4f46e5;
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.promo-login-card-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.24);
+  text-decoration: none;
+  color: #4338ca;
+}
+
+.promo-login-card-watermark {
+  position: absolute;
+  right: -6px;
+  bottom: -22px;
+  font-size: 92px;
+  opacity: 0.14;
+  transform: rotate(-12deg);
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (max-width: 640px) {
+  .promo-login-card {
+    flex-wrap: wrap;
+    padding: 18px 20px;
+  }
+  .promo-login-card-btn {
+    width: 100%;
+    text-align: center;
+  }
+  .promo-login-card-watermark {
+    display: none;
+  }
+}
+
+/* Модалка кадрирования аватара */
+.avatar-crop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 18, 32, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.avatar-crop-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+  max-width: 92vw;
+}
+
+.avatar-crop-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.avatar-crop-viewport {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #000;
+  cursor: grab;
+  touch-action: none;
+  max-width: 100%;
+}
+
+.avatar-crop-viewport:active {
+  cursor: grabbing;
+}
+
+.avatar-crop-viewport img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  will-change: transform;
+  user-select: none;
+}
+
+/* Рамка-подсказка границ кадра. */
+.avatar-crop-frame {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+
+.avatar-crop-zoom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.avatar-crop-zoom input[type="range"] {
+  flex: 1;
+}
+
+.avatar-crop-hint {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.avatar-crop-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+/* Имя участника на публичном профиле (портальный каркас). */
+.public-profile-name {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* ---------- Привязка профилей: сетка карточек платформ (редизайн 25.07.2026) ---------- */
+
+.profile-link-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.profile-link-count {
+  font-size: 13px;
+}
+
+.profile-platform-grid {
+  display: grid;
+  /* Ровно 2 карточки в строке (просьба Дмитрия): при auto-fill влезало 3,
+     вёрстка формы ужималась, а четвёртая карточка оставалась одна в ряду. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 720px) {
+  .profile-platform-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Предпросмотр внутри карточки уже, чем был спойлер на всю ширину: столбцы
+   «последних событий» складываем в 2×2 (тип+дата / локация+время), длинные
+   названия переносим — иначе время уезжало за край карточки. */
+.profile-platform-card .profile-preview-block {
+  min-width: 0;
+}
+
+.profile-platform-card .profile-preview-block p {
+  overflow-wrap: anywhere;
+}
+
+/* Раскладку строки события задаёт .profile-preview-event (одна строка:
+   точка · дата · локация · результат). Отдельное правило на li здесь больше
+   не нужно — оно перебивало новую сетку по специфичности. */
+
+.profile-platform-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-muted, var(--surface));
+}
+
+.profile-platform-card-unlinked {
+  border-style: dashed;
+  background: transparent;
+}
+
+.profile-platform-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.profile-platform-card-status {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.profile-platform-card-status-linked {
+  color: var(--tint-green-text, #15803d);
+}
+
+.profile-platform-card-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.profile-platform-card-stats,
+.profile-platform-card-id,
+.profile-platform-card-cta-hint {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.profile-platform-card-cta-hint {
+  flex: 1;
+}
+
+.profile-platform-card-sync {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* Пометка в карточке parkrun: у него нет автообновления, кнопка ↻ — единственный
+   путь. Единственная цветная вставка в сетке карточек — чтобы её заметили среди
+   одинаковых плиток систем, но без плашки на весь экран. */
+.profile-platform-card-manual-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--tint-amber-border-strong);
+  border-left-width: 3px;
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.profile-platform-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.profile-platform-card-syncing {
+  margin: 0;
+  font-size: 12px;
+}
+
+.profile-platform-card-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Компактная строка события в предпросмотре профиля: маркер типа + дата +
+   локация (обрезается) + результат справа. Прежняя раскладка в четыре
+   колонки рвалась в узкой карточке платформы. */
+.profile-preview-event {
+  display: grid;
+  /* max-content у точки и даты: колонки не растягиваются, дата стоит вплотную
+     к маркеру, а всё свободное место достаётся названию локации. */
+  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  align-items: baseline;
+  column-gap: 8px;
+  row-gap: 0;
+  padding: 6px 0;
+  font-size: 12.5px;
+}
+
+/* Между точкой и датой — минимальный зазор, дальше обычный. */
+.profile-preview-event-dot {
+  margin-right: -3px;
+}
+
+.profile-preview-event + .profile-preview-event {
+  border-top: 1px solid var(--border);
+}
+
+.profile-preview-event-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  align-self: center;
+}
+
+.profile-preview-event-dot-run {
+  background: var(--accent-green-text);
+}
+
+.profile-preview-event-dot-volunteer {
+  background: var(--accent-indigo);
+}
+
+.profile-preview-event-date {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.profile-preview-event-place {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-preview-event-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* Кнопки масштаба в кадрировании: раньше это был просто текст «−»/«+»,
+   по которому хотелось кликнуть (замечание Дмитрия 26.07.2026). */
+.avatar-crop-zoom-btn {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-2);
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.avatar-crop-zoom-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent-indigo);
+}
+
+.avatar-crop-zoom-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Кнопка «Мои пробежки здесь» под личной статистикой локации. */
+.loc-personal-actions {
+  margin-top: 12px;
+}
+
+/* Раскрывающийся топ-5 внутри «Рекордов по возрастным группам»: группа в
+   первой колонке становится кнопкой, под строкой рекорда выезжает пятёрка. */
+.loc-age-records-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--link);
+  cursor: pointer;
+}
+
+.loc-age-records-toggle:hover {
+  text-decoration: underline;
+}
+
+.loc-age-records-caret {
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.loc-age-records-row-open > td {
+  border-bottom: none;
+  font-weight: 600;
+}
+
+/* Подсветка группы, на которую увела плитка «место в группе». */
+.loc-age-records-row-open > td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent-indigo);
+}
+
+.loc-age-records-top-row > td {
+  padding: 0 0 0.55rem;
+}
+
+.loc-age-top {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.loc-age-top-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-3);
+}
+
+.loc-age-top-hint {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.loc-age-top-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.loc-age-top-item {
+  display: grid;
+  grid-template-columns: 1.35rem minmax(0, 1fr) 4.5rem auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+.loc-age-top-item + .loc-age-top-item {
+  border-top: 1px solid var(--border);
+}
+
+.loc-age-top-place {
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  text-align: right;
+}
+
+.loc-age-top-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Полоса отрыва: 100% у лидера группы, дальше короче. Чисто иллюстративная,
+   поэтому на узких экранах прячется, чтобы не отжимать имя и время. */
+.loc-age-top-bar {
+  display: block;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.loc-age-top-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent-indigo);
+  opacity: 0.55;
+}
+
+.loc-age-top-time {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .loc-age-top-item {
+    grid-template-columns: 1.35rem minmax(0, 1fr) auto;
+  }
+
+  .loc-age-top-bar {
+    display: none;
+  }
+
+  .loc-age-top-hint {
+    display: none;
+  }
+}
+
+/* Шапка публичного профиля: аватар рядом с именем участника. */
+.public-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.public-profile-head-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Привязанные системы под именем: бейджи-ссылки в профиль на самой системе. */
+.public-profile-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.public-profile-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  object-fit: cover;
+  flex: none;
+}
+
+/* Аватарка участника кликабельна — раскрывает оригинал. */
+.public-profile-avatar-button {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+  overflow: hidden;
+  display: block;
+}
+
+.public-profile-avatar-button img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Имя участника-ссылка в рекордах и топах локации. Вид тот же, что у ссылок
+   в таблицах рейтингов (.lb-name-link): цветом видно, у кого есть кабинет. */
+.loc-runner-link {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.loc-runner-link:hover {
+  text-decoration: underline;
+}
+
+/* === Мобильные таблицы: общий фундамент (кратко/полно, тени, sticky) === */
+
+/* Моноширинные цифры во всех таблицах: разряды стоят столбиком,
+   времена и счётчики сравниваются взглядом. */
+.data-table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Хост теней-подсказок горизонтального скролла. Сам скролл остаётся
+   у вложенного .table-wrap; тени лежат поверх его краёв и не ловят тапы.
+   min-width:0 обязателен: как flex/grid-ребёнок хост иначе не сжимается ниже
+   min-content широкой таблицы и распирает страницу вместо своего скролла. */
+.tshadow-host {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tshadow-host::before,
+.tshadow-host::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 22px;
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  border-radius: 12px;
+}
+
+.tshadow-host::before {
+  left: 0;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.16), transparent);
+}
+
+.tshadow-host::after {
+  right: 0;
+  background: linear-gradient(270deg, rgba(15, 23, 42, 0.16), transparent);
+}
+
+:root[data-theme="dark"] .tshadow-host::before {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.45), transparent);
+}
+
+:root[data-theme="dark"] .tshadow-host::after {
+  background: linear-gradient(270deg, rgba(0, 0, 0, 0.45), transparent);
+}
+
+.tshadow-host.tshadow-left::before {
+  opacity: 1;
+}
+
+.tshadow-host.tshadow-right::after {
+  opacity: 1;
+}
+
+/* Липкая первая колонка: идентификатор строки не уезжает при скролле вбок.
+   Фон обязателен — иначе контент просвечивает. Edge-тень отделяет колонку,
+   когда таблица прокручена. */
+.table-sticky-first th:first-child,
+.table-sticky-first td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 2;
+}
+
+.table-sticky-first thead th:first-child {
+  z-index: 4;
+  background: var(--bg-muted);
+}
+
+.tshadow-left .table-sticky-first th:first-child,
+.tshadow-left .table-sticky-first td:first-child {
+  box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+}
+
+/* Полоса с сегментом «Кратко | Полно»: липнет под шапкой сайта, чтобы сменить
+   набор колонок можно было из любого места длинной таблицы. Видимостью
+   управляет React (TableViewToggle): полосы нет там, где краткий вид и так
+   вместил все колонки — на широком мониторе переключать нечего.
+   z-index выше шапки таблицы (2) и её плавающей копии (30), но ниже шапки
+   сайта (40): полоса уходит под неё, а не наоборот. */
+.tview-bar {
+  display: flex;
+  position: sticky;
+  /* Фолбэк — страницы без портальной шапки: полоса липнет к верху окна. */
+  top: var(--portal-header-h, 0px);
+  z-index: 31;
+  height: var(--tview-bar-h);
+  align-items: center;
+  /* Под полосой проезжают строки таблицы — фон обязателен. Внутри карточки
+     фон карточки, вне её — фон страницы. */
+  background: var(--bg);
+}
+
+.card .tview-bar {
+  background: var(--surface);
+}
+
+.tview-toggle {
+  display: inline-flex;
+  /* Родители таблиц — flex-колонки: без align-self ребёнок растягивается
+     на всю ширину (stretch), и рамка сегмента уезжала бы через весь экран. */
+  align-self: flex-start;
+  width: fit-content;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.tview-tab {
+  border: 0;
+  background: var(--surface);
+  color: var(--text-2);
+  padding: 7px 16px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.tview-tab + .tview-tab {
+  border-left: 1px solid var(--border);
+}
+
+.tview-tab-active {
+  background: var(--link);
+  border-color: var(--link);
+  color: #fff;
+}
+
+.tview-tab:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: -2px;
+}
+
+/* «?» у сокращённого заголовка: тап/ховер — расшифровка (StatHintTooltip). */
+.th-hint {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  line-height: 14px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--chip-bg);
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-align: center;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: help;
+  vertical-align: 1px;
+}
+
+/* Строки-карточки: замена таблицы на мобильном там, где строку читают
+   целиком, а не сравнивают по колонкам. */
+.rowcards {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.rowcard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rowcard:last-child {
+  border-bottom: 0;
+}
+
+.rowcard-rank {
+  flex: 0 0 30px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowcard-mid {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rowcard-title {
+  font-weight: 600;
+}
+
+.rowcard-sub {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.rowcard-right {
+  flex: 0 0 auto;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowcard-value {
+  font-weight: 700;
+}
+
+.rowcard-me {
+  background: var(--tint-indigo-bg);
+  box-shadow: inset 3px 0 0 var(--accent-indigo);
+}
+
+/* Липкая «моя строка» внизу экрана: видна, пока настоящая строка вне вьюпорта. */
+.pinned-me-bar {
+  position: fixed;
+  left: 50%;
+  transform: translate(-50%, 0);
+  bottom: 12px;
+  /* Выше нижней навигации кабинета (.portal-cab-bottomnav, z-index 60),
+     иначе бар физически есть, но прячется под ней. */
+  z-index: 61;
+  width: min(560px, calc(100vw - 24px));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--tint-indigo-bg);
+  border: 1px solid var(--accent-indigo);
+  border-radius: 12px;
+  padding: 9px 12px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.22);
+  font-size: 0.88rem;
+  transition: transform 0.2s, opacity 0.2s;
+}
+
+.pinned-me-bar.pinned-me-hidden {
+  transform: translate(-50%, 90px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pinned-me-bar {
+    transition: none;
+  }
+}
+
+.pinned-me-rank {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pinned-me-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pinned-me-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* Краткий мобильный набор колонок: таблица помещается в экран,
+   принудительная минимальная ширина полного набора не нужна. */
+@media (max-width: 820px) {
+  .data-table-layout-fixed.data-table-short {
+    min-width: 0;
+  }
+}
+
+/* Чип-итог встречи в мобильных карточках «Соседей»: разница времён со знаком. */
+.co-runners-outcome {
+  flex: 0 0 auto;
+  min-width: 3.2rem;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px 7px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-muted);
+}
+
+.co-runners-outcome.co-runners-score-win {
+  background: var(--tint-green-bg-strong);
+  border-color: var(--tint-green-border);
+}
+
+.co-runners-outcome.co-runners-score-loss {
+  background: var(--tint-red-bg-strong);
+  border-color: var(--tint-red-border);
+}
+
+/* Волонтёрство «не в зачёте» в карточном виде — приглушено, как строка таблицы. */
+.rowcard-muted .rowcard-mid,
+.rowcard-muted .rowcard-right {
+  opacity: 0.5;
+}
+
+.rowcard-title .badge {
+  margin-left: 6px;
+}
+
+/* На узких экранах фиксированная раскладка колонок ужимает заголовки до
+   нечитаемых («Ф..», «Ста…»): отдаём ширины содержимому. Скролл при этом
+   сохраняется за счёт min-width полного набора. */
+@media (max-width: 820px) {
+  .data-table-layout-fixed {
+    table-layout: auto;
+  }
+
+  .data-table-layout-fixed th {
+    white-space: nowrap;
+  }
+}
+
+/* Поднимаем над нижней навигацией телефона (её высота — в той же переменной,
+   что используют плавающие кнопки), иначе бар физически есть, но под нею. */
+.pinned-me-bar {
+  bottom: calc(0.75rem + var(--portal-bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px));
+}
+
+.pinned-me-bar.pinned-me-hidden {
+  transform: translate(-50%, 140px);
+}
+
+/* Ячейка имени в «Соседях»: стрелка раскрытия и ФИО в одной строке.
+   Раньше caret (inline-block) переносил имя на следующую строку в узкой
+   колонке — теперь это флекс-ряд, переносится только сам текст имени. */
+.co-runners-name-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.co-runners-name-cell .co-runners-caret {
+  flex: 0 0 auto;
+  margin-top: 0.42em;
+}
+
+.co-runners-name-cell .co-runners-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* В полном виде колонка имени узкая и липкая — держим ФИО в одну строку,
+   иначе строка расходится на два этажа. Длинные имена обрезаем многоточием:
+   полное видно в раскрытой карточке встреч. В кратком виде колонка широкая,
+   перенос там не мешает и не добавляет лишнего скролла. */
+@media (max-width: 820px) {
+  .table-sticky-first .co-runners-name-cell {
+    align-items: center;
+  }
+
+  .table-sticky-first .co-runners-name-cell .co-runners-caret {
+    margin-top: 0;
+  }
+
+  .table-sticky-first .co-runners-name-cell .co-runners-name > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Полный вид на мобильном: # и Участник липнут слева, чтобы при скролле
+   вправо было видно, чья это строка. Ширины фиксируем — sticky-смещение
+   второй колонки нужно посчитать заранее. */
+@media (max-width: 820px) {
+  .co-runners-table th:first-child,
+  .co-runners-table td:first-child {
+    width: 2.6rem;
+    min-width: 2.6rem;
+    max-width: 2.6rem;
+  }
+
+  .table-sticky-first .co-runners-table th:nth-child(2),
+  .table-sticky-first .co-runners-table td:nth-child(2) {
+    position: sticky;
+    left: 2.6rem;
+    z-index: 2;
+    background: var(--surface);
+    /* Больше половины экрана под ФИО: почти все имена влезают целиком,
+       остальные обрезаются многоточием (полное — в title и в карточке встреч). */
+    min-width: 11.5rem;
+    max-width: 11.5rem;
+  }
+
+  .table-sticky-first .co-runners-table thead th:nth-child(2) {
+    z-index: 4;
+    background: var(--bg-muted);
+  }
+
+  .tshadow-left .table-sticky-first .co-runners-table th:nth-child(2),
+  .tshadow-left .table-sticky-first .co-runners-table td:nth-child(2) {
+    box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+  }
+
+  /* Раскрытая карточка встреч шириной со всю таблицу (в полном виде это шире
+     экрана), поэтому при скролле вбок она уезжала вместе с колонками. Липнем
+     к левому краю и ограничиваем шириной видимой области — карточка остаётся
+     на месте, вбок ездят только колонки таблицы. */
+  .co-runners-detail-row td {
+    position: static;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .co-runners-detail-row .co-runners-detail-card {
+    position: sticky;
+    left: 0;
+    width: calc(100vw - 2.5rem);
+    max-width: calc(100vw - 2.5rem);
+    box-sizing: border-box;
+  }
+}
+
+/* Волонтёрства на мобильном: Дата | Волонтёрство (роль + локация) | ★.
+   Дата отдельной колонкой — по ней сортировка и фильтр по периоду. */
+.data-table-vol-mobile {
+  table-layout: auto;
+  min-width: 0;
+}
+
+.data-table-vol-mobile .col-date {
+  width: 6.4rem;
+}
+
+.td-vol-role {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.td-vol-sub {
+  margin-top: 3px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+/* Две группы фильтров в одной шторке (роль и локация): каждая со своим
+   списком, поэтому ограничиваем их высоту — иначе попап не помещается. */
+.filter-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.filter-group-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.filter-groups .checkbox-filter-list {
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.filter-group + .filter-group {
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+}
+
+/* ── Дальность стартов от дома ───────────────────────────────────────────── */
+
+/* Замечание о домашней локации: красное — автовыбор шаткий (ничья или вторая
+   площадка вровень) либо выбор вне тройки самых частых; мягкое жёлтое — просто
+   «не самая частая». Цветом, а не текстом: от домашней локации считается вся
+   дальность, ошибка здесь ломает и плитку, и место в рейтинге. */
+.home-location-warning {
+  margin: 0.75rem 0 0;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--tint-red-border-strong);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: var(--tint-red-bg);
+  color: var(--tint-red-text);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.home-location-warning a {
+  color: inherit;
+  font-weight: 600;
+}
+
+.home-location-warning-soft {
+  border-color: var(--tint-amber-border-strong);
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-text);
+}
+
+/* Баннер на главной кабинета стоит над сеткой плиток — отбиваем его снизу. */
+.dashboard-analytics > .home-location-warning {
+  margin: 0 0 1rem;
+}
+
+.home-distance-summary {
+  margin: 0.35rem 0 1rem;
+  color: var(--text);
+}
+
+.home-distance-table-title {
+  margin: 1.35rem 0 0.35rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.home-distance-table-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+/* Название и город одной строкой: на компе места в модалке хватает, а две
+   строки на площадку растягивали таблицу вдвое (решение Дмитрия 03.08.2026). */
+.home-distance-place {
+  display: block;
+  min-width: 0;
+}
+
+.home-distance-place-sub {
   font-size: 0.85rem;
   white-space: nowrap;
 }
@@ -10076,6 +12227,534 @@ tr.run-crosslinked td {
 
 .onboarding-dashboard-banner-title {
   margin: 0;
+
+.home-distance-home-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--tint-indigo-bg);
+  color: var(--accent-indigo);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.home-distance-row-home {
+  background: var(--tint-indigo-bg);
+}
+
+/* Непосещённые площадки — приглушённый список целей, а не результат. */
+.home-distance-table-unvisited tbody {
+  color: var(--text-muted);
+}
+
+.home-distance-table-unvisited tbody tr {
+  background: var(--bg);
+}
+
+/* Плитка расстояния на странице локации: зелёная — здесь уже бегали, серая —
+   ещё нет. Цвет и есть маркер «в зачёте / ещё можно взять». */
+.loc-stat-card.loc-stat-home {
+  border-left: 4px solid var(--border-strong);
+}
+
+.loc-stat-card.loc-stat-home-visited {
+  border-left-color: var(--accent-green-text);
+  background: var(--tint-green-bg);
+}
+
+.loc-stat-card.loc-stat-home-unvisited {
+  border-left-color: var(--border-strong);
+  background: var(--bg);
+  color: var(--text-muted);
+}
+
+.loc-stat-card.loc-stat-home-unvisited .stat-value {
+  color: var(--text-muted);
+}
+
+/* Одинокая плитка в блоке-призыве: сетка на всю ширину растянула бы её. */
+.loc-stats-grid-single {
+  margin-top: 0.75rem;
+  max-width: 280px;
+}
+
+/* ── Поделиться 2.0: карточки-постеры и шторка ─────────────────────────────
+   Карточка верстается в НАТИВНОМ размере формата (1080×1920 и т.п.) с
+   корневым font-size 40px; вся типографика в em. Превью ужимается
+   transform-ом, экспорт снимает узел как есть (html-to-image).
+   Палитры постеров фиксированы (см. looks.ts) — постер уходит наружу и от
+   темы сайта не зависит. */
+
+.s2-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  color: #f8fafc;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.s2-card.s2-tone-light {
+  color: #0f172a;
+}
+
+.s2-photo {
+  position: absolute;
+  max-width: none;
+}
+
+.s2-photo-overlay {
+  position: absolute;
+  inset: 0;
+  /* Затемнение своего фото. Базовый слой — ровно 50%, как в первой версии
+     фичи: подобрано так, чтобы светлый текст читался на любом снимке (и на
+     снегу, и на небе). Сверху — градиенты у краёв под имя и бренд-футер,
+     там текста больше всего. */
+  background:
+    linear-gradient(
+      180deg,
+      rgba(2, 6, 23, 0.45) 0%,
+      rgba(2, 6, 23, 0) 20%,
+      rgba(2, 6, 23, 0) 78%,
+      rgba(2, 6, 23, 0.5) 100%
+    ),
+    rgba(2, 6, 23, 0.5);
+}
+
+.s2-content {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 1.6em 1.5em 1.3em;
+  min-height: 0;
+}
+
+.s2-head {
+  /* flex: none + z-index: шапку не должен подминать переполнившийся body. */
+  flex: none;
+  position: relative;
+  z-index: 1;
+  margin-bottom: 0.5em;
+}
+
+.s2-name {
+  font-size: 1.15em;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  opacity: 0.96;
+}
+
+.s2-sub {
+  font-size: 0.6em;
+  opacity: 0.72;
+  margin-top: 0.4em;
+  letter-spacing: 0.03em;
+}
+
+.s2-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  /* safe center: при нехватке высоты контент прижимается к верху, а не
+     разъезжается в обе стороны и не наезжает на шапку. */
+  justify-content: safe center;
+  gap: 0.55em;
+  min-height: 0;
+}
+
+.s2-plate {
+  align-self: flex-start;
+  font-size: 0.42em;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.45em 1.1em;
+  border-radius: 999em;
+  background: var(--s2-accent, #fbbf24);
+  color: var(--s2-accent-text, #451a03);
+}
+
+.s2-hero {
+  margin: 0.1em 0;
+}
+
+/* Кегль героя задаётся инлайном: его подбирает fitText.ts под ширину колонки
+   формата (лесенка HERO_BOXES в ShareCardView). Здесь — только начертание и
+   страховка на случай слова, которое не влезает даже мелким кеглем. */
+.s2-hero-value {
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+
+.s2-hero-caption {
+  font-size: 0.55em;
+  opacity: 0.75;
+  margin-top: 0.5em;
+}
+
+.s2-chip {
+  align-self: flex-start;
+  font-size: 0.5em;
+  font-weight: 700;
+  padding: 0.4em 1em;
+  border-radius: 999em;
+  background: rgba(251, 191, 36, 0.22);
+  color: #fbbf24;
+}
+
+.s2-tone-light .s2-chip {
+  background: rgba(217, 119, 6, 0.14);
+  color: #b45309;
+}
+
+.s2-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5em;
+}
+
+.s2-tile {
+  background: var(--s2-tile-bg, rgba(255, 255, 255, 0.1));
+  border-radius: 0.45em;
+  padding: 0.5em 0.55em;
+  min-width: 0;
+  /* Плитки в сетке тянутся по высоте — содержимое держим по центру,
+     иначе в высокой плитке текст прилипает к верхнему краю. */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.s2-tone-light .s2-tile {
+  border: 1px solid #e2e8f0;
+}
+
+.s2-tile-value {
+  font-size: 1.05em;
+  font-weight: 800;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+/* Длинные значения (времена, названия) — мельче, но целиком. */
+.s2-tile-value--long {
+  font-size: 0.78em;
+}
+
+.s2-tile-label {
+  font-size: 0.44em;
+  opacity: 0.72;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 0.4em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Подписи с именами — обычным регистром (см. keepLabelCase в ShareMetric). */
+.s2-tile-label--as-is {
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+
+.s2-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45em;
+}
+
+.s2-timeline-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+}
+
+.s2-timeline-dot {
+  width: 0.28em;
+  height: 0.28em;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+  flex: none;
+}
+
+.s2-tone-light .s2-timeline-dot {
+  background: #94a3b8;
+}
+
+.s2-timeline-dot--current {
+  background: var(--s2-accent, #14b8a6);
+}
+
+.s2-timeline-text {
+  font-size: 0.55em;
+  display: flex;
+  gap: 0.7em;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.s2-timeline-text b {
+  font-weight: 700;
+}
+
+.s2-timeline-text span {
+  opacity: 0.65;
+  font-size: 0.85em;
+}
+
+.s2-heat-wrap {
+  margin-top: 0.2em;
+}
+
+.s2-heat {
+  display: flex;
+  gap: 0.14em;
+}
+
+.s2-heat i {
+  flex: 1;
+  height: 0.3em;
+  border-radius: 0.08em;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.s2-tone-light .s2-heat i {
+  background: #c7d2fe;
+}
+
+.s2-heat i.s2-heat-on {
+  background: var(--s2-accent, #fbbf24);
+}
+
+.s2-heat-caption {
+  font-size: 0.38em;
+  opacity: 0.6;
+  margin-top: 0.5em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.s2-fact {
+  font-size: 0.5em;
+  opacity: 0.78;
+}
+
+.s2-brand {
+  margin-top: 0.9em;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6em;
+}
+
+.s2-brand-mark {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25em;
+}
+
+.s2-brand-logo {
+  font-size: 0.8em;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.s2-brand-tld {
+  color: var(--s2-accent, #fbbf24);
+}
+
+.s2-brand-pulse {
+  width: 0.85em;
+  height: 0.35em;
+  stroke: var(--s2-accent, #fbbf24);
+  align-self: center;
+}
+
+.s2-brand-pulse circle {
+  fill: var(--s2-accent, #fbbf24);
+  stroke: none;
+}
+
+.s2-brand-tag {
+  font-size: 0.46em;
+  opacity: 0.7;
+}
+
+/* Сториз: safe-зоны под интерфейс Instagram/Telegram — сверху таймлайн и
+   ник аккаунта (~250px), снизу поле ответа (~220px). Контент между ними
+   крупнее, чтобы не оставалось пустоты и читалось с телефона. */
+.s2-card--story .s2-content {
+  padding: 6em 1.6em 5em;
+}
+
+.s2-card--story .s2-body {
+  gap: 0.7em;
+}
+
+.s2-card--story .s2-metrics {
+  gap: 0.6em;
+}
+
+.s2-card--story .s2-tile {
+  padding: 0.75em 0.8em;
+  border-radius: 0.55em;
+}
+
+.s2-card--story .s2-tile-value {
+  font-size: 1.35em;
+}
+
+.s2-card--story .s2-tile-value--long {
+  font-size: 0.95em;
+}
+
+.s2-card--story .s2-tile-label {
+  font-size: 0.5em;
+}
+
+.s2-card--story .s2-fact {
+  font-size: 0.56em;
+}
+
+.s2-card--story .s2-heat i {
+  height: 0.4em;
+}
+
+/* Широкий формат: слева стопка «плашка → герой/таймлайн → факт», справа
+   сетка плиток на всю высоту. Грид, а не flex-строка: плитки получают
+   честную половину ширины и не сжимаются в столбик по буквам. */
+.s2-card--wide .s2-content {
+  padding: 1.2em 1.4em 1em;
+}
+
+.s2-card--wide .s2-body {
+  display: grid;
+  /* Правой колонке отдано больше: в ней шесть плиток в три столбца. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  column-gap: 1.1em;
+  row-gap: 0.6em;
+  /* safe: если рядов больше, чем помещается, грид растёт вниз, а не наезжает
+     на шапку (баг «плашка поверх подзаголовка»). */
+  align-content: safe center;
+  align-items: center;
+}
+
+.s2-card--wide .s2-body > * {
+  grid-column: 1;
+  justify-self: start;
+}
+
+.s2-card--wide .s2-body > .s2-metrics {
+  grid-column: 2;
+  /* Заведомо больше числа элементов левой колонки: пустые ряды схлопываются. */
+  grid-row: 1 / span 8;
+  justify-self: stretch;
+  /* Три колонки на два ряда: шесть цифр вместо четырёх. По высоте третий ряд
+     наехал бы на бренд-футер, а по ширине третий столбец помещается. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4em;
+  align-content: safe center;
+}
+
+/* Плитки в широком формате компактнее: два ряда по три столбца должны
+   уместиться и не наехать на бренд-футер. */
+.s2-card--wide .s2-tile {
+  padding: 0.38em 0.45em;
+}
+
+.s2-card--wide .s2-tile-value {
+  font-size: 0.82em;
+}
+
+.s2-card--wide .s2-tile-value--long {
+  font-size: 0.62em;
+}
+
+.s2-card--wide .s2-tile-label {
+  font-size: 0.4em;
+  margin-top: 0.3em;
+  /* Подписи с именем рекордсмена и датой длиннее обычных — в узкой колонке
+     им нужна третья строка, иначе хвост обрезается. */
+  -webkit-line-clamp: 3;
+}
+
+.s2-card--wide .s2-body > .s2-heat-wrap {
+  grid-column: 1 / -1;
+  justify-self: stretch;
+}
+
+/* Квадрат: чуть плотнее вертикаль. */
+.s2-card--square .s2-content {
+  padding: 1.3em 1.4em 1.1em;
+}
+
+/* ── Шторка ── */
+
+.s2-overlay {
+  position: fixed;
+  inset: 0;
+  /* iOS Safari отсчитывает fixed от «большого» вьюпорта — с inset: 0 низ
+     шторки уезжал под нижнюю панель браузера и до него было не доскроллить.
+     dvh следит за реально видимой высотой. */
+  height: 100dvh;
+  z-index: 320;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(3px);
+  animation: modal-fade-in 0.18s ease;
+  padding: max(0.8rem, env(safe-area-inset-top, 0px)) 0.8rem
+    max(0.8rem, env(safe-area-inset-bottom, 0px));
+  padding-left: calc(0.8rem + min(var(--modal-center-offset-left, 0px), 22vw));
+  padding-right: calc(0.8rem + min(var(--modal-center-offset-right, 0px), 22vw));
+}
+
+.s2-sheet {
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+  max-width: 30rem;
+  max-height: 100%;
+  border-radius: 20px;
+  padding: 0.9rem 1.1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: modal-slide-in 0.22s ease;
+}
+
+/* Содержимое шторки не сжимается: без этого flex-контейнер вместо прокрутки
+   плющил блоки — кругляши оформления становились овалами, а подсказка
+   заезжала под них, стоило раскрыть «Настроить». */
+.s2-sheet > * {
+  flex: none;
+}
+
+.s2-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* Шапка с крестиком остаётся на виду при прокрутке длинного содержимого. */
+  position: sticky;
+  top: -0.9rem;
+  z-index: 2;
+  margin: -0.9rem -1.1rem 0;
+  padding: 0.9rem 1.1rem 0.4rem;
+  background: var(--surface);
+}
+
+.s2-sheet-title {
   font-weight: 700;
   font-size: 1.05rem;
 }
@@ -10171,4 +12850,953 @@ tr.run-crosslinked td {
 .profile-name-search-title {
   margin: 0;
   font-weight: 700;
+}
+
+.s2-close {
+  border: none;
+  background: var(--bg-muted);
+  color: var(--text-2);
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.s2-preview-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 14rem;
+  height: 46dvh;
+  background: var(--bg-muted);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.s2-preview {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.28);
+}
+
+.s2-preview--pannable {
+  touch-action: none;
+  cursor: grab;
+}
+
+.s2-preview-scale {
+  transform-origin: top left;
+}
+
+.s2-hint {
+  margin: -0.3rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.s2-looks {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  overflow-x: auto;
+  padding: 0.15rem 0.1rem;
+  scrollbar-width: none;
+}
+
+.s2-looks::-webkit-scrollbar {
+  display: none;
+}
+
+.s2-look-chip {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: 0.72rem;
+  padding: 0.15rem;
+}
+
+.s2-look-swatch {
+  flex: none;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25);
+}
+
+.s2-look-swatch--photo {
+  background: var(--chip-bg);
+}
+
+.s2-look-chip--active {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.s2-look-chip--active .s2-look-swatch {
+  border-color: var(--accent-indigo);
+}
+
+.s2-formats {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.s2-format-tab {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  border-radius: 999px;
+  padding: 0.45rem 0.5rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.s2-format-tab--active {
+  background: var(--accent-indigo);
+  border-color: var(--accent-indigo);
+  color: #fff;
+  font-weight: 600;
+}
+
+.s2-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.s2-share-btn {
+  flex: 1;
+  border: none;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  background: var(--accent-indigo);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.s2-share-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.s2-secondary-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  border-radius: 12px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.s2-customize {
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.s2-customize-title {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.s2-metric-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.s2-metric-toggle {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-3);
+  border-radius: 10px;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  max-width: 10rem;
+}
+
+.s2-metric-toggle--active {
+  border-color: var(--accent-indigo);
+  background: var(--tint-indigo-bg);
+  color: var(--text);
+}
+
+.s2-metric-toggle-value {
+  font-weight: 700;
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.s2-metric-toggle-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.s2-customize-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.s2-export-stage {
+  position: fixed;
+  top: 0;
+  /* Абсолютные пиксели, не vw: карточка 1080–1200px шире узкого вьюпорта,
+     и -200vw на мобильном оставлял её край на экране. */
+  left: -4000px;
+  pointer-events: none;
+}
+
+/* ── Кнопки-моменты в разделах ── */
+
+.s2-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.s2-trigger:hover {
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+}
+
+.s2-moment-card {
+  border: 1px solid var(--tint-indigo-bg-strong);
+  background: linear-gradient(135deg, var(--tint-indigo-bg) 0%, var(--surface) 70%);
+  border-radius: 14px;
+  padding: 0.9rem 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.s2-moment-card-text {
+  flex: 1;
+  min-width: 12rem;
+}
+
+.s2-moment-card-title {
+  font-weight: 700;
+}
+
+.s2-moment-card-sub {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+.s2-moment-card .s2-share-btn {
+  flex: none;
+  padding: 0.55rem 1.1rem;
+}
+
+.s2-runs-share-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.loc-header-share {
+  margin-left: auto;
+}
+
+.s2-gallery-lead {
+  max-width: 46rem;
+}
+
+.s2-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 1rem;
+}
+
+.s2-gallery-item {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.s2-gallery-item:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-indigo);
+}
+
+.s2-gallery-preview {
+  overflow: hidden;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.18);
+  margin-bottom: 0.4rem;
+}
+
+.s2-gallery-item-title {
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.s2-gallery-item-sub {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* Кнопка «Поделиться» в строке таблицы — рядом со звездой оценки. */
+.s2-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.s2-row-share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  padding: 0.2rem;
+  border-radius: 6px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.s2-row-share:hover {
+  color: var(--accent-indigo-text);
+  background: var(--tint-indigo-bg);
+}
+
+/* Полноэкранный просмотр постера из шторки. */
+.s2-preview-box {
+  position: relative;
+}
+
+.s2-preview {
+  cursor: zoom-in;
+}
+
+.s2-preview--pannable {
+  cursor: grab;
+}
+
+.s2-zoom-btn {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 8px;
+  border: none;
+  background: rgba(15, 23, 42, 0.6);
+  color: #fff;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.s2-zoom-btn:hover {
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.s2-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 340;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 6, 23, 0.92);
+  cursor: zoom-out;
+  animation: modal-fade-in 0.15s ease;
+}
+
+.s2-zoom-card {
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+
+.s2-zoom-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+/* Плашки систем в таблицах «Дальности от дома»: идут за названием и городом,
+   поэтому нужен небольшой отступ и запрет переноса внутри группы. */
+.home-distance-place-badges {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Фото отзыва в админке: миниатюра в таблице и просмотр во весь экран по клику
+   — чтобы понять, что приложил участник, не уходя в бакет за ссылкой. */
+.admin-ratings-photos {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.admin-ratings-photo-thumb {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  cursor: zoom-in;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.admin-ratings-photo-thumb img {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  display: block;
+}
+
+.admin-photo-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.85);
+  cursor: zoom-out;
+}
+
+.admin-photo-overlay img {
+  max-width: min(100%, 1100px);
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
+.admin-photo-close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Кластер, внутри которого выбрана площадка: иначе выбор в московской грозди
+   на карте никак не отражался бы. */
+.map-cluster-selected span {
+  border-color: var(--accent-amber-text);
+  box-shadow:
+    0 0 0 5px rgba(217, 119, 6, 0.35),
+    0 2px 6px rgba(15, 23, 42, 0.4);
+}
+
+/* ===== Протокол старта (/locations/{slug}/protocol/{система}/{дата}) ===== */
+
+/* auto-fit вместо auto-fill: 7 плиток растягиваются на всю ширину одной
+   строкой, а не оставляют пустой хвост под восьмую. */
+.protocol-stats-grid {
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+.protocol-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.35rem 0 0;
+  color: var(--text-2);
+}
+
+/* Стрелки «предыдущий / журнал / следующий» под заголовком */
+.protocol-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+  font-size: 0.9rem;
+}
+
+.protocol-partial-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+}
+
+/* Возрастные группы: подпись — двухцветная полоса М/Ж — количество */
+.protocol-age-groups {
+  display: grid;
+  gap: 0.35rem;
+}
+
+/* Числа тремя колонками с выравниванием по правому краю: итог, «N М», «N Ж» —
+   значения стоят друг под другом, а не пляшут за скобками. */
+.protocol-age-row {
+  display: grid;
+  grid-template-columns: 3.4rem minmax(0, 1fr) 2.6rem 3.6rem 3.4rem;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.protocol-age-total {
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.protocol-age-gender {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.protocol-age-label {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.protocol-age-bar-track {
+  display: flex;
+  gap: 2px;
+  height: 0.85rem;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-muted);
+}
+
+.protocol-age-bar {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  min-width: 0;
+}
+
+.protocol-age-bar-male {
+  background: #3b82f6;
+}
+
+.protocol-age-bar-female {
+  background: #ec4899;
+}
+
+/* Фильтры над таблицей: пол — поиск — группа */
+.protocol-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+/* Таблетки пола, селект и поиск стоят в одном ряду — у .map-mode-tabs есть
+   свой нижний отступ, здесь он ломал выравнивание по одной линии. */
+.protocol-filters .map-mode-tabs {
+  margin-bottom: 0;
+}
+
+.protocol-age-select,
+.protocol-name-filter {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+}
+
+.protocol-name-filter {
+  min-width: 11rem;
+}
+
+.protocol-table .col-number {
+  width: 3.6rem;
+}
+
+/* Ширины под полные подписи шапки («Время ↕», «М/Ж ?», «Возр. группа ?»,
+   «Age grade ?») — как у остальных таблиц сайта, подписи не режем.
+   «Участник» без width: забирает остаток ширины таблицы. */
+.protocol-table .col-time {
+  width: 7rem;
+}
+
+.protocol-table .col-gender {
+  width: 7rem;
+}
+
+.protocol-table .col-age {
+  width: 9.5rem;
+}
+
+.protocol-table .col-history {
+  width: 10.5rem;
+}
+
+.protocol-table .col-history-group {
+  width: 11rem;
+}
+
+.protocol-table .col-run-number {
+  width: 8rem;
+}
+
+.protocol-table .col-grade {
+  width: 7.5rem;
+}
+
+.protocol-table .col-pace {
+  width: 5.5rem;
+}
+
+.protocol-table .col-club {
+  width: 11rem;
+}
+
+.protocol-table:not(.data-table-short) {
+  min-width: 82rem;
+}
+
+/* Строки «НЕИЗВЕСТНЫЙ» (бегун без штрихкода): приглушаем, чтобы не сливались
+   с настоящими участниками. */
+.protocol-row-unknown td {
+  color: var(--text-faint);
+}
+
+.protocol-runner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+/* Значки строки: дебют / впервые здесь / ЛР */
+.protocol-row-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--text-3);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.protocol-badge-me {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+:root[data-theme="dark"] .protocol-badge-me {
+  background: #1e3a8a;
+  color: #bfdbfe;
+}
+
+/* Своя строка в протоколе */
+.protocol-row-me td {
+  background: var(--bg-muted);
+}
+
+.protocol-time {
+  cursor: default;
+}
+
+/* «Возрастные группы» + «Клубы на старте» бок о бок: группы тянутся, клубы
+   занимают правую колонку — пустоты справа больше нет. На узком экране
+   колонки складываются в столбик. */
+.protocol-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(15rem, 22rem);
+  gap: 0 2rem;
+  /* stretch: высота строки = возрастные группы, рамка клубов растягивается
+     на неё (сама она в расчёте не участвует — absolute). */
+  align-items: stretch;
+}
+
+@media (max-width: 860px) {
+  .protocol-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.protocol-clubs-table .protocol-clubs-count {
+  width: 7rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Высоту правой колонки задают возрастные группы: рамка клубов растянута на
+   их высоту (absolute не участвует в расчёте строки грида), список внутри
+   скроллится. На узком экране колонки складываются — там рамка обычная. */
+.protocol-clubs {
+  position: relative;
+  min-height: 14rem;
+}
+
+.protocol-clubs-frame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.protocol-clubs-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+}
+
+.protocol-clubs-scroll thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+@media (max-width: 860px) {
+  .protocol-clubs {
+    position: static;
+    min-height: 0;
+  }
+
+  .protocol-clubs-frame {
+    position: static;
+  }
+
+  .protocol-clubs-scroll {
+    max-height: 18rem;
+  }
+}
+
+/* Липнут ДВЕ первые колонки: «№» без имени бесполезен, при горизонтальной
+   прокрутке уезжало именно ФИО. Смещение второй = ширина .col-number. */
+.table-sticky-first .protocol-table th:nth-child(2),
+.table-sticky-first .protocol-table td:nth-child(2) {
+  position: sticky;
+  left: 3.6rem;
+  background: var(--surface);
+  z-index: 2;
+}
+
+.table-sticky-first .protocol-table thead th:nth-child(2) {
+  z-index: 4;
+  background: var(--bg-muted);
+}
+
+.tshadow-left .table-sticky-first .protocol-table th:nth-child(2),
+.tshadow-left .table-sticky-first .protocol-table td:nth-child(2) {
+  box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+}
+
+/* Тень висит на второй колонке — на первой она рисовалась бы под второй. */
+.tshadow-left .table-sticky-first .protocol-table th:first-child,
+.tshadow-left .table-sticky-first .protocol-table td:first-child {
+  box-shadow: none;
+}
+
+/* Свою подсветку строки «вы»/«неизвестный» липкие ячейки обязаны повторить —
+   иначе на прокрутке они выпадают из строки белым прямоугольником. */
+.table-sticky-first .protocol-table .protocol-row-me td:first-child,
+.table-sticky-first .protocol-table .protocol-row-me td:nth-child(2) {
+  background: var(--bg-muted);
+}
+
+/* Клуб — кнопка-фильтр: выглядит ссылкой, ведёт себя как тумблер. */
+.protocol-club-button {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--link);
+  text-align: left;
+  cursor: pointer;
+}
+
+.protocol-club-button:hover {
+  text-decoration: underline;
+}
+
+.protocol-club-row-active {
+  background: var(--bg-muted);
+}
+
+.protocol-club-row-active .protocol-club-button {
+  font-weight: 700;
+}
+
+/* Чип активного фильтра по клубу в ряду фильтров протокола */
+.protocol-club-chip {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid #2563eb;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font: inherit;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+/* Исторические колонки («В истории М/Ж», «В истории группы») — сравнение со всей
+   историей площадки, а не с этим стартом: прижаты к правому краю, фон слегка
+   подкрашен, первая отделена линией. */
+.protocol-table .protocol-cell-history,
+.protocol-table th.protocol-cell-history {
+  background: var(--bg-muted);
+}
+
+.protocol-table td.protocol-cell-history:first-of-type,
+.protocol-table th.protocol-cell-history:first-of-type {
+  border-left: 2px solid var(--border-strong);
+}
+
+/* Топ-10 в истории площадки — жирным с медалькой, виден без наведения */
+.protocol-history-top {
+  font-weight: 700;
+  color: var(--accent-amber-text, #d97706);
+}
+
+/* Дельта к прошлому старту на плитке: «+37» / «−12» */
+.protocol-delta {
+  margin-left: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  vertical-align: middle;
+  cursor: default;
+}
+
+.protocol-delta-up {
+  color: #16a34a;
+}
+
+.protocol-delta-down {
+  color: #dc2626;
+}
+
+.protocol-histogram-note {
+  margin: -0.25rem 0 0.6rem;
+  font-size: 0.85rem;
+}
+
+.protocol-place {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Волонтёры */
+.protocol-volunteers-table .col-vol-name {
+  width: 18rem;
+}
+
+.protocol-volunteers-table .col-vol-number {
+  width: 7rem;
+}
+
+.protocol-volunteers-table:not(.data-table-short) {
+  min-width: 40rem;
+}
+
+.protocol-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.protocol-role-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--text-2);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+/* Роль, которую человек исполняет впервые в карьере */
+.protocol-role-chip-new {
+  background: #dcfce7;
+  color: #166534;
+}
+
+:root[data-theme="dark"] .protocol-role-chip-new {
+  background: #14532d;
+  color: #bbf7d0;
+}
+
+.protocol-source-link {
+  margin-top: 1rem;
 }

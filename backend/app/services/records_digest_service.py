@@ -200,8 +200,13 @@ def _attendance_records(db: Session, event_date: date) -> list[dict[str, Any]]:
         db,
         f"""
         WITH per_event AS (
+            -- Численность старта — все строки протокола, включая «неизвестных»
+            -- (status='unknown', время не распознано): они физически бежали.
+            -- Так же считают страница локации, журнал протоколов и отчёт по
+            -- событию; фильтр по finish_time_sec занижал рекорд и мог вовсе
+            -- не показать его — на крупных стартах неизвестных бывают сотни.
             SELECT e.location_id, e.event_date,
-                   count(rr.id) FILTER (WHERE rr.finish_time_sec IS NOT NULL) AS finishers
+                   count(rr.id) AS finishers
             FROM events e
             JOIN platforms p ON p.id = e.platform_id
             LEFT JOIN run_results rr ON rr.event_id = e.id

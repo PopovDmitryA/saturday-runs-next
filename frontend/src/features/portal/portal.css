@@ -1,13 +1,23 @@
 /* Публичная главная портала (тёмный запуск: /new).
    Все цвета — через переменные темы из index.css, обе темы бесплатно. */
 
+/* 1440px — общая ширина сайта, синхронизирована с .portal-cab-layout /
+   .portal-cab-topbar-inner в cabinet.css. Меняете одну — меняйте и другую,
+   иначе при переходе портал↔кабинет контент визуально «прыгает». */
 .portal-home {
-  max-width: 1064px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 0 20px 72px;
 }
 
 /* ---------- шапка портала ---------- */
+
+/* Высота липкой шапки: 60px содержимого + 1px границы (см. .portal-header-inner).
+   Ею пользуются sticky-шапки таблиц — без этого они липнут к верху окна, то
+   есть прячутся под шапкой сайта. Меняете высоту — меняйте и переменную. */
+:root {
+  --portal-header-h: 61px;
+}
 
 .portal-header {
   position: sticky;
@@ -18,7 +28,7 @@
 }
 
 .portal-header-inner {
-  max-width: 1064px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 0 20px;
   height: 60px;
@@ -69,6 +79,12 @@
   background: var(--bg-muted);
   color: var(--text);
   text-decoration: none;
+}
+
+/* текущий раздел (на главной — «Главная») */
+.portal-header-link-current {
+  background: var(--bg-muted);
+  color: var(--text);
 }
 
 .portal-header-actions {
@@ -273,7 +289,9 @@
   font-variant-numeric: tabular-nums;
 }
 
-.portal-count span {
+/* Только прямой ребёнок: внутри <b> живёт span компонента CountUpNumber,
+   подпись-стиль на него распространяться не должен. */
+.portal-count > span {
   font-size: 12.5px;
   color: var(--text-muted);
   font-weight: 600;
@@ -378,6 +396,68 @@
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+/* вкладки показателей внутри единой панели графика */
+.portal-chart-panel-head {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.portal-chart-tabs {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 3px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.portal-chart-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.portal-chart-tabs button {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 13px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.portal-chart-tabs button:hover {
+  color: var(--text);
+}
+
+.portal-chart-tabs button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+@media (max-width: 560px) {
+  /* четыре вкладки в строку на телефоне не помещаются и обрезались —
+     раскладываем 2×2, чтобы все ярлыки были видны целиком */
+  .portal-chart-tabs {
+    margin-left: 0;
+    width: 100%;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .portal-chart-tabs button {
+    flex: 1 1 calc(50% - 2px);
+    padding: 6px 10px;
+  }
 }
 
 .portal-chart-svg {
@@ -504,9 +584,39 @@
   background: var(--tint-amber-bg-strong);
 }
 
+/* открытие площадки — рекорд «с нуля», отличаем от побитого максимума */
+.portal-record-icon.is-debut {
+  background: var(--tint-violet-bg-strong);
+}
+
 .portal-record-main {
   min-width: 0;
   flex: 1;
+}
+
+.portal-record-main b .portal-record-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  vertical-align: 1px;
+  color: var(--tint-violet-text);
+  background: var(--tint-violet-bg);
+  border: 1px solid var(--tint-violet-border);
+}
+
+/* На узком экране колонка с названием сжимается сильнее плашки — ужимаем
+   её саму, иначе «ОТКРЫТИЕ» наезжает на бейдж системы и число финишёров. */
+@media (max-width: 640px) {
+  .portal-record-main b .portal-record-tag {
+    padding: 0 4px;
+    font-size: 9px;
+    letter-spacing: normal;
+  }
 }
 
 .portal-record-main b {
@@ -521,6 +631,21 @@
 .portal-record-value {
   text-align: right;
   flex: none;
+}
+
+/* Бейдж системы и число держим колонками. Иначе правый блок гуляет по ширине
+   («первый старт» против «было 50 · 20.06.2026») и тащит бейдж за собой на
+   45 пикселей от строки к строке. На узком экране ширину не фиксируем: там
+   строка и так переносится, а жёсткие колонки съели бы название локации. */
+@media (min-width: 641px) {
+  .portal-record-row .badge-platform {
+    min-width: 66px;
+    text-align: center;
+  }
+
+  .portal-record-value {
+    min-width: 142px;
+  }
 }
 
 .portal-record-value b {
@@ -636,11 +761,42 @@
   color: var(--amber-text, var(--tint-amber-text));
 }
 
+/* Ссылки внутри текстов главной: названия локаций и имена участников.
+   Цвет намеренно наследуется — синими их на странице набирается несколько
+   десятков, и вёрстка превращается в сплошную ссылку. Связь показывает
+   мягкое подчёркивание, полноценный цвет ссылки — на наведении. */
+.portal-inline-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--border);
+  text-underline-offset: 2px;
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+
+.portal-inline-link:hover,
+.portal-inline-link:focus-visible {
+  color: var(--link);
+  text-decoration-color: currentColor;
+}
+
 .portal-top-name {
   min-width: 0;
   flex: 1;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Город под названием локации: подпись, а не вторая равноправная строка —
+   отсюда мелкий кегль и приглушённый цвет. Своё ellipsis: у родителя
+   nowrap + overflow, но обрезаются строки независимо. */
+.portal-top-city {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1109,22 +1265,36 @@
   pointer-events: none;
 }
 
-/* группировочный бокс «последняя неделя» */
+/* группировочный бокс «последняя неделя»: синяя заливка вместо нейтральной —
+   чтобы сразу читалось, что это ДРУГОЙ срез (одна неделя), а не общий период */
 .portal-week-scope {
-  margin-top: 24px;
-  border: 1px solid var(--border);
+  margin-top: 28px;
+  border: 1px solid var(--tint-blue-border-strong);
   border-radius: 18px;
-  background: var(--bg-muted);
-  padding: 4px 14px 14px;
+  background: var(--tint-blue-bg-strong);
+  padding: 4px 14px 16px;
 }
 
 .portal-week-heading {
-  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15.5px;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  padding: 12px 4px 0;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--tint-blue-text);
+  padding: 16px 4px 2px;
+}
+
+.portal-week-heading::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--link);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--link) 22%, transparent);
 }
 
 .portal-week-scope .portal-panel,
@@ -1142,11 +1312,14 @@
   z-index: 25;
   padding: 14px 0 0;
   margin: 0 -14px;
-  background: linear-gradient(var(--bg-muted) 82%, transparent);
+  background: linear-gradient(var(--tint-blue-bg-strong) 82%, transparent);
 }
 
 .portal-week-sticky .portal-pulse {
   margin: 0 14px;
+  /* внутри синего бокса индиговая плашка сливалась бы с фоном — делаем её белой */
+  background: var(--surface);
+  border-color: var(--tint-blue-border-strong);
 }
 
 /* шапка панели с плашкой справа */
@@ -1213,9 +1386,12 @@
 }
 
 /* CTA с постером */
+/* minmax(0, 1fr), а не 1fr: иначе колонка не может стать уже min-content
+   своего содержимого, и полоса вкладок «5 вёрст / S95 / …» (она со своим
+   overflow-x) распирает блок за край экрана. */
 .portal-cta-split {
   display: grid;
-  grid-template-columns: 1fr minmax(320px, 460px);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 460px);
   gap: 28px;
   align-items: center;
 }
@@ -1428,7 +1604,7 @@
 
 @media (max-width: 760px) {
   .portal-cta-split {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .portal-panel-head-split {
     flex-wrap: wrap;
@@ -1673,17 +1849,14 @@
 /* ---------- страница «О проекте» ---------- */
 
 .portal-about .portal-hero {
-  text-align: left;
   padding: 40px 4px 4px;
 }
 
 .portal-about .portal-hero h1 {
-  margin-left: 0;
   max-width: 26ch;
 }
 
 .portal-about .portal-hero-lead {
-  margin-left: 0;
   max-width: 68ch;
 }
 
@@ -1985,176 +2158,8 @@
   color: var(--text-faint);
 }
 
-/* поддержать проект — тёплый акцент, чтобы блок выделялся среди остальных */
-.portal-panel-donate {
-  background: linear-gradient(135deg, var(--tint-amber-bg), var(--surface) 65%);
-  border-color: var(--tint-amber-border);
-}
-
-.portal-about-donate-icon {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--tint-amber-bg-strong);
-}
-
-.portal-about-donate-icon svg {
-  width: 17px;
-  height: 17px;
-  fill: var(--accent-amber-text);
-}
-
-.portal-about-donate {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 390px;
-  gap: 24px;
-  align-items: stretch;
-}
-
-.portal-about-donate-copy .portal-panel-head {
-  margin-bottom: 12px;
-}
-
-.portal-about-donate-copy p {
-  margin: 0 0 10px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--text-2);
-}
-
-.portal-about-donate-copy p:last-child {
-  margin-bottom: 0;
-}
-
-.portal-about-donate-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 18px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-muted);
-}
-
-.portal-about-donate-qr-block {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-.portal-about-donate-qr,
-.portal-about-donate-qr-empty {
-  width: 104px;
-  height: 104px;
-  border-radius: 8px;
-  flex: none;
-}
-
-.portal-about-donate-qr {
-  background: #fff;
-  padding: 4px;
-}
-
-.portal-about-donate-qr-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--border-heavy);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--text-faint);
-}
-
-.portal-about-donate-qr-caption {
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--text-faint);
-  text-align: center;
-  white-space: nowrap;
-}
-
-.portal-about-donate-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-}
-
-.portal-about-donate-card-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.portal-about-donate-mark {
-  flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.portal-about-donate-mark.sber {
-  background: #21a038;
-  color: #fff;
-}
-
-.portal-about-donate-mark.tbank {
-  background: #ffdd2d;
-  color: #101010;
-}
-
-.portal-about-donate-card-info {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.portal-about-donate-card-bank {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.2;
-}
-
-.portal-about-donate-card-number {
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  color: var(--text);
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-@media (max-width: 720px) {
-  .portal-about-donate {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 420px) {
-  .portal-about-donate-card {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .portal-about-donate-qr-block {
-    align-self: center;
-  }
-}
+/* Донат-блок вынесен в components/DonateBlock.tsx + DonateBlock.css —
+   .donate-block-panel даёт тёплый акцентный фон обёртке-секции. */
 
 .portal-about .portal-cta {
   display: block;
@@ -2321,6 +2326,51 @@
   margin-top: 12px;
 }
 
+.portal-login-scopes {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.portal-login-scopes-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3, var(--text-2));
+}
+
+.portal-login-scopes ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.portal-login-scopes li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.portal-login-scope-mark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.portal-login-scopes-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .portal-login-provider {
   display: flex;
   align-items: center;
@@ -2386,8 +2436,12 @@
 @media (max-width: 860px) {
   .portal-login-split {
     grid-template-columns: 1fr;
-    gap: 28px;
+    gap: 24px;
     min-height: 0;
+    /* на планшете одна колонка — держим её узкой и по центру, иначе карточка
+       и кнопки растягиваются на всю ширину и оставляют пустоту справа */
+    max-width: 480px;
+    margin: 0 auto;
   }
 
   .portal-login-welcome {
@@ -2396,6 +2450,46 @@
 
   .portal-login-single {
     padding-top: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  /* на телефоне ужимаем блок «что даёт кабинет», чтобы кнопки входа были
+     видны на первом экране без скролла */
+  .portal-login-split {
+    gap: 16px;
+  }
+
+  .portal-login-welcome h1 {
+    font-size: 23px;
+    margin-bottom: 6px;
+  }
+
+  .portal-login-welcome .portal-hero-lead {
+    font-size: 13.5px;
+    margin-bottom: 14px;
+  }
+
+  .portal-eyebrow {
+    margin-bottom: 8px;
+  }
+
+  .portal-login-points {
+    gap: 10px;
+  }
+
+  /* описания под пунктами прячем — заголовков со значками достаточно,
+     а высоту это экономит заметно */
+  .portal-login-point p {
+    display: none;
+  }
+
+  .portal-login-card {
+    padding: 20px;
+  }
+
+  .portal-login-card-sub {
+    margin-bottom: 14px;
   }
 }
 
@@ -2639,5 +2733,377 @@
 
   .portal-blog-arrow {
     display: none;
+  }
+}
+
+/* Мини-аватарка в чипе пользователя в шапке. */
+.portal-header-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.portal-header-user-avatar {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  object-fit: cover;
+}
+
+/* Что сайт НЕ берёт у пользователя — выделяем, это главное обещание страницы. */
+.portal-login-scopes-never {
+  color: var(--accent-red-text);
+  font-weight: 700;
+}
+
+/* Кнопка бэклога в правом столбце панели: не растягивается и не переносится. */
+.portal-about-backlog-cta {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Два столбца блока «Бэклог идей»: текст слева сжимается, кнопка справа.
+   Без ограничения левая колонка занимала всю ширину и кнопка уезжала вниз. */
+.portal-about-backlog-head > :first-child {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+/* ---------- вариант B: hero-CTA + тизер Т10 ---------- */
+
+.portal-hero-cta {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.portal-hero-proof {
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+.portal-teaser {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.portal-teaser-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 3px;
+  align-self: flex-start;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.portal-teaser-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.portal-teaser-tabs button {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 13px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.portal-teaser-tabs button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+.portal-teaser-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.portal-teaser-form input {
+  flex: 1;
+  min-width: 180px;
+  font: inherit;
+  padding: 9px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.portal-teaser-form input:focus {
+  outline: 2px solid var(--link);
+  outline-offset: -1px;
+}
+
+.portal-teaser-error {
+  color: var(--text-muted);
+  font-size: 13.5px;
+  margin: 0;
+}
+
+.portal-teaser-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 14px;
+}
+
+.portal-teaser-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.portal-teaser-name span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.portal-teaser-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.portal-teaser-tile {
+  background: var(--bg-muted);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.portal-teaser-tile b {
+  font-size: 20px;
+}
+
+.portal-teaser-tile span {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.portal-teaser-more {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+
+@media (max-width: 560px) {
+  .portal-teaser-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Подвал портала ─────────────────────────────────────────────────────── */
+
+/* Прижатие футера к низу: страница короче экрана (лоадер, пустые списки) —
+   футер всё равно у нижней кромки. #root — колонка на всю высоту, футер
+   уезжает вниз через margin-top:auto; шеллы с футером внутри (.portal-
+   section-page, .portal-cab) растягиваются и сами становятся колонками. */
+#root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Ширина детей у всех трёх колоночных флексов — обязательно 100%, не «сколько
+   попросят». В колоночном флексе ширина ребёнка считается как fit-content, а
+   он не бывает уже min-content содержимого. Из-за этого широкое содержимое
+   распирало не свой скролл-контейнер, а всю страницу: витрина блога раздувала
+   главную до max-width 1440px (Safari на телефоне ужимал масштабом всю
+   страницу под эту ширину), а таблица в режиме «Полно» — страницу раздела до
+   ширины таблицы вместо горизонтального скролла внутри .table-wrap.
+   С явными 100% широкие блоки снова скроллятся внутри себя, а max-width
+   страниц продолжает работать. */
+#root > *,
+.portal-section-page > *,
+.portal-cab > * {
+  width: 100%;
+}
+
+.portal-section-page,
+.portal-cab {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.portal-footer {
+  margin-top: auto;
+}
+
+.portal-footer {
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-muted);
+}
+
+.portal-footer-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 18px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  flex-wrap: wrap;
+}
+
+.portal-footer-brand {
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+
+.portal-footer-tld {
+  opacity: 0.7;
+}
+
+.portal-footer-nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.portal-footer-link {
+  color: var(--text-muted);
+  font-size: 13.5px;
+  text-decoration: none;
+}
+
+.portal-footer-link:hover {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.portal-footer-version {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 2px 10px;
+  text-decoration: none;
+}
+
+.portal-footer-version:hover {
+  color: var(--link);
+  border-color: var(--link);
+}
+
+@media (max-width: 560px) {
+  .portal-footer-inner {
+    padding: 16px 20px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ── Страница «Обновления» ──────────────────────────────────────────────── */
+
+.portal-updates-list {
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.portal-release {
+  padding: 14px 4px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.portal-release:first-child {
+  border-top: none;
+}
+
+.portal-release-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.portal-release-version {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--link);
+  font-variant-numeric: tabular-nums;
+  min-width: 74px;
+}
+
+.portal-release-title {
+  flex: 1;
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.35;
+}
+
+.portal-release-date {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.portal-release-body {
+  margin-left: 84px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.portal-release-body p {
+  margin: 6px 0 0;
+}
+
+.portal-release-body ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.portal-release-body li {
+  margin-top: 2px;
+}
+
+@media (max-width: 560px) {
+  .portal-release-head {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .portal-release-version {
+    min-width: 0;
+  }
+
+  .portal-release-title {
+    flex-basis: 100%;
+    order: 3;
+  }
+
+  .portal-release-date {
+    margin-left: auto;
+  }
+
+  .portal-release-body {
+    margin-left: 0;
   }
 }

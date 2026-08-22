@@ -16,6 +16,12 @@
 
 Бегуны без известного пола не участвуют в ранжировании (место считается
 только среди тех, чей пол известен).
+
+Отдельное правило для parkrun: место по полу считается ТОЛЬКО на русских
+площадках (~165 строк локаций, связанных с каталогом). Протоколы зарубежного
+parkrun мы не собираем — от такой площадки в БД есть лишь строки наших же
+участников из их профилей, и «первая среди женщин» получалась у каждой
+женщины на каждом зарубежном старте (см. is_foreign_parkrun_event).
 """
 
 from __future__ import annotations
@@ -24,7 +30,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.models import Participant, RunResult
+from app.models import Event, Participant, RunResult
+from app.services.location_catalog_service import russian_parkrun_location_ids
 
 GENDER_MALE = "male"
 GENDER_FEMALE = "female"
@@ -43,6 +50,27 @@ def gender_from_age_category(platform_code: str, age_category: str | None) -> st
             return _RUNPARK_LETTERS.get(age_category[1])
         return None
     return None
+
+
+def resolve_participant_gender(
+    platform_code: str,
+    age_category: str | None,
+    profile_extra: dict | None = None,
+) -> str | None:
+    """Пол участника из тех же источников, что и выше, но по данным одной строки.
+
+    Нужна на записи: с 24.07.2026 пол хранится в participants.gender, чтобы не
+    вычислять его из строки категории на каждом чтении (агрегаты главной гоняли
+    substr по 2.2 млн строк — выражение неиндексируемое, отсюда полный перебор
+    и спилл сортировок на диск).
+    """
+    if platform_code == "s95":
+        gender = ((profile_extra or {}).get("platform_codes") or {}).get("gender")
+        return gender if gender in (GENDER_MALE, GENDER_FEMALE) else None
+    if platform_code in ("runpark", "parkrun"):
+        # У обеих платформ формат один: «SM30-34» / «VW35-39» — пол во второй букве.
+        return gender_from_age_category("runpark", age_category)
+    return gender_from_age_category(platform_code, age_category)
 
 
 def _s95_participant_genders(db: Session, participant_ids: list[UUID]) -> dict[UUID, str]:
@@ -78,12 +106,43 @@ def _parkrun_participant_genders(db: Session, participant_ids: list[UUID]) -> di
     return result
 
 
+def is_foreign_parkrun_event(db: Session, event_id: UUID) -> bool:
+    """Событие зарубежного parkrun — того, чей протокол мы не видим.
+
+    От такой площадки в БД лежат только строки наших же участников, попавшие
+    туда из их профилей: место среди своего пола считать не по чему (в «поле» из
+    одной строки любой финишёр первый). Русские parkrun-площадки — те, что
+    связаны с каталогом локаций (см. russian_parkrun_location_ids).
+    """
+    location_id = (
+        db.query(Event.location_id).filter(Event.id == event_id).scalar()
+    )
+    if location_id is None:
+        return True
+    return location_id not in russian_parkrun_location_ids(db)
+
+
+def _clear_event_gender_positions(db: Session, rows: list[RunResult]) -> None:
+    changed = False
+    for row in rows:
+        if row.gender_position is not None:
+            row.gender_position = None
+            changed = True
+    if changed:
+        db.flush()
+
+
 def recalculate_event_gender_positions(db: Session, event_id: UUID, platform_code: str) -> None:
     """Пересчитать gender_position для всех результатов одного события."""
     if platform_code not in ("five_verst", "s95", "runpark", "parkrun"):
         return
     rows = db.query(RunResult).filter(RunResult.event_id == event_id).all()
     if not rows:
+        return
+
+    # Зарубежный parkrun: места по полу нет вовсе (решение Дмитрия 01.08.2026).
+    if platform_code == "parkrun" and is_foreign_parkrun_event(db, event_id):
+        _clear_event_gender_positions(db, rows)
         return
 
     genders: dict[UUID, str | None] = {}

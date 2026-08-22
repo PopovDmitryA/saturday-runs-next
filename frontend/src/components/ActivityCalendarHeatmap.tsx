@@ -1,5 +1,6 @@
 import { ChartColumnTooltip } from "./ChartColumnTooltip";
-import { formatDate, platformCodeLabel, pluralizeRu, saturdaysLabel } from "../lib/format";
+import { useScrollShadows } from "./tableUx/useScrollShadows";
+import { formatDate, formatInt, platformCodeLabel, pluralizeRu, saturdaysLabel } from "../lib/format";
 
 type CalendarItem = { platform_code: string; location: string };
 
@@ -125,14 +126,14 @@ function cellTooltipLines(aggregate: WeekAggregate | undefined): string[] {
 // активность, только пробежки, только волонтёрство), а не части одной общей
 // серии — поэтому runs и volunteering не обязаны суммироваться в total.
 function streakLine(label: string, streak: StreakBreakdown): string {
-  return `${label} (пробежки и/или волонтёрство) — ${streak.total} ${saturdaysLabel(streak.total)} подряд`;
+  return `${label} (пробежки и/или волонтёрство) — ${formatInt(streak.total)} ${saturdaysLabel(streak.total)} подряд`;
 }
 
 function streakBreakdownLine(label: string, streak: StreakBreakdown): string | null {
   if (streak.runs === 0 && streak.volunteering === 0) {
     return null;
   }
-  return `${label} только пробежки — ${streak.runs}, только волонтёрства — ${streak.volunteering}`;
+  return `${label} только пробежки — ${formatInt(streak.runs)}, только волонтёрства — ${formatInt(streak.volunteering)}`;
 }
 
 export function ActivityCalendarHeatmap({
@@ -141,6 +142,9 @@ export function ActivityCalendarHeatmap({
   bestStreak,
   currentStreak,
 }: ActivityCalendarHeatmapProps) {
+  // Сетка суббот шире телефона и листается вбок; тени у краёв — тот же намёк,
+  // что и в таблицах, иначе о скрытых справа годах никак не догадаться.
+  const { hostRef, scrollRef } = useScrollShadows<HTMLDivElement, HTMLDivElement>();
   const byWeekSaturday = new Map<string, WeekAggregate>();
   let firstActivity: Date | null = null;
 
@@ -174,8 +178,9 @@ export function ActivityCalendarHeatmap({
 
   return (
     <div className="activity-cal">
-      <div className="activity-cal-scroll">
-        <div className="activity-cal-grid">
+      <div ref={hostRef} className="tshadow-host activity-cal-shadow">
+        <div ref={scrollRef} className="activity-cal-scroll">
+          <div className="activity-cal-grid">
           {years.map((year) => {
             const saturdays = saturdaysOfYear(year);
             return (
@@ -223,6 +228,7 @@ export function ActivityCalendarHeatmap({
               </div>
             );
           })}
+          </div>
         </div>
       </div>
       <div className="analytics-chart-legend activity-cal-legend">

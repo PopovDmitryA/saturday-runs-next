@@ -1,22 +1,25 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { RequireAuth } from "../../components/RequireAuth";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
-import { SiteHeader } from "../../components/SiteHeader";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
   ApiError,
   getLocationEvents,
-  logout,
   type LocationEventRow,
   type LocationEvents,
-  type User,
 } from "../../lib/api";
-import { platformCodeLabel } from "../../lib/format";
-import { SITE_HOME_HREF } from "../../lib/siteBrand";
-import { APP_NAV_ITEMS } from "../../lib/siteNav";
+import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
+import { flushMetrikaHit } from "../../lib/metrika";
+import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
+import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
+import { TableWrap } from "../../components/tableUx/TableWrap";
+import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
+import { useTableColumns } from "../../components/tableUx/useTableColumns";
+import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
+import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
 
 type SortKey = "date" | "finishers" | "volunteers" | "best_male" | "best_female" | "avg" | "newcomers" | "prs";
 
@@ -50,38 +53,33 @@ function sortValue(row: LocationEventRow, key: SortKey): number | string | null 
   }
 }
 
-function EventsShell({ children, currentUser }: { children: ReactNode; currentUser: User }) {
-  const handleLogout = async () => {
-    await logout();
-    window.location.href = "/";
-  };
+// Колонки журнала в порядке важности; ширины — из CSS .loc-events-table
+// (col-compact 9.25rem, col-time 11.5rem, col-compact-wide 11.5rem).
+const EVENTS_COLUMNS: AdaptiveColumn[] = [
+  { key: "number", width: 104, required: true },
+  { key: "date", width: 112, required: true },
+  { key: "finishers", width: 148, required: true },
+  { key: "platform", width: 104 },
+  { key: "best_male", width: 184 },
+  { key: "best_female", width: 184 },
+  { key: "volunteers", width: 148 },
+  { key: "newcomers", width: 148 },
+  { key: "avg", width: 184 },
+  { key: "prs", width: 184 },
+];
 
-  return (
-    <div className="shell">
-      <SiteHeader
-        homeHref={SITE_HOME_HREF}
-        navItems={APP_NAV_ITEMS}
-        activePath="/locations"
-        showAdminNav={currentUser.is_admin}
-        actions={
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void handleLogout()}>
-            Выйти
-          </button>
-        }
-      />
-      <div className="shell-content">
-        <main className="shell-main">{children}</main>
-      </div>
-    </div>
-  );
-}
-
-function LocationEventsContent({ slug, currentUser }: { slug: string; currentUser: User }) {
+function LocationEventsContent({ slug }: { slug: string }) {
   const [data, setData] = useState<LocationEvents | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [platformFilter, setPlatformFilter] = useState<string | null>(null);
   const [sort, setSort] = useState<SortState>({ key: "date", asc: false });
+  // Копия шапки встаёт под липкую полосу «Кратко | Полно», а не под шапку сайта.
+  const attachFloatingHead = useFloatingTableHead(".tview-bar");
+  // Краткий вид набирает колонки под ширину: минимум — номер, дата и финишёры.
+  const tableColumns = useTableColumns(EVENTS_COLUMNS);
+  const showFull = tableColumns.showFull;
+  const show = tableColumns.show;
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +87,9 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
       .then((payload) => {
         if (!cancelled) {
           setData(payload);
+          rememberLocationHint({ slug: payload.slug, name: payload.name });
+          applyPageMeta(locationPageMeta(payload, { eventsLog: true }));
+          flushMetrikaHit();
         }
       })
       .catch((err) => {
@@ -100,6 +101,8 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
         } else {
           setError(err instanceof Error ? err.message : "Не удалось загрузить журнал");
         }
+        // Просмотр был, пусть и неудачный — досылаем с родовым заголовком.
+        flushMetrikaHit();
       });
     return () => {
       cancelled = true;
@@ -113,6 +116,12 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
     }
     return counts;
   }, [data]);
+
+  // Сквозной номер в скобках рассказывает ровно об одном: локация сменила
+  // систему и счёт стартов там пошёл заново. У площадки, прожившей всю
+  // историю в одной системе, он просто повторяет цифру слева (просьба
+  // Дмитрия 22.08.2026) — там колонка остаётся с одним номером.
+  const showOverallNumber = platformCounts.size > 1;
 
   const rows = useMemo(() => {
     if (!data) {
@@ -146,6 +155,14 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
     );
   };
 
+  const visibleCount = EVENTS_COLUMNS.filter((column) => show(column.key)).length;
+
+  // Пока данные едут, имя берём из подсказки — иначе подпункт сайдбара с
+  // названием площадки мигает при каждом переходе внутри локации.
+  const sidebarLocation = data
+    ? { slug: data.slug, name: data.name }
+    : locationHintFor(slug);
+
   const sortProps = (key: SortKey) => ({
     filterable: false,
     sortActive: sort.key === key,
@@ -155,37 +172,37 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
 
   if (notFound) {
     return (
-      <EventsShell currentUser={currentUser}>
+      <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
         <div className="card">
           <p className="muted">Локация не найдена.</p>
           <p>
             <a href="/locations">Все локации</a>
           </p>
         </div>
-      </EventsShell>
+      </PortalSectionShell>
     );
   }
 
   if (error) {
     return (
-      <EventsShell currentUser={currentUser}>
+      <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
         <div className="card error">
           <p>{error}</p>
         </div>
-      </EventsShell>
+      </PortalSectionShell>
     );
   }
 
   if (!data) {
     return (
-      <EventsShell currentUser={currentUser}>
+      <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
         <p className="muted">Загрузка…</p>
-      </EventsShell>
+      </PortalSectionShell>
     );
   }
 
   return (
-    <EventsShell currentUser={currentUser}>
+    <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
       <header className="loc-header loc-wide-page">
         <p className="muted loc-header-breadcrumb">
           <a href="/locations">← Все локации</a> /{" "}
@@ -196,95 +213,126 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
         </div>
       </header>
 
-      <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по системам">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={platformFilter === null}
-          className={platformFilter === null ? "map-mode-tab active" : "map-mode-tab"}
-          onClick={() => setPlatformFilter(null)}
-        >
-          Все ({data.items.length})
-        </button>
-        {[...platformCounts.entries()].map(([code, count]) => (
+      {/* У большинства локаций протоколы одной системы — фильтровать нечего,
+          и ряд из «Все (N)» и единственной кнопки только утяжеляет страницу. */}
+      {platformCounts.size > 1 && (
+        <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по системам">
           <button
-            key={code}
             type="button"
             role="tab"
-            aria-selected={platformFilter === code}
-            className={platformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
-            onClick={() => setPlatformFilter(platformFilter === code ? null : code)}
+            aria-selected={platformFilter === null}
+            className={platformFilter === null ? "map-mode-tab active" : "map-mode-tab"}
+            onClick={() => setPlatformFilter(null)}
           >
-            {platformCodeLabel(code)} ({count})
+            Все ({data.items.length})
           </button>
-        ))}
-      </div>
+          {[...platformCounts.entries()].map(([code, count]) => (
+            <button
+              key={code}
+              type="button"
+              role="tab"
+              aria-selected={platformFilter === code}
+              className={platformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
+              onClick={() => setPlatformFilter(platformFilter === code ? null : code)}
+            >
+              {platformCodeLabel(code)} ({formatInt(count)})
+            </button>
+          ))}
+        </div>
+      )}
 
       <section className="loc-section">
-        <div className="table-wrap loc-events-wrap">
-          <table className="data-table data-table-layout-fixed loc-events-table">
+        <TableViewToggle columns={tableColumns} />
+        <TableWrap
+          innerRef={attachFloatingHead}
+          outerRef={tableColumns.measureRef}
+          className="loc-events-wrap"
+          stickyFirstCol={showFull}
+        >
+          <table
+            className={`data-table data-table-layout-fixed loc-events-table${
+              showFull ? "" : " data-table-short"
+            }`}
+            style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
+          >
             <colgroup>
               <col className="col-number" />
               <col className="col-date" />
-              <col className="col-platform" />
+              {show("platform") && <col className="col-platform" />}
               <col className="col-compact" />
-              <col className="col-compact" />
-              <col className="col-compact" />
-              <col className="col-time" />
-              <col className="col-time" />
-              <col className="col-time" />
-              <col className="col-compact" />
+              {show("volunteers") && <col className="col-compact" />}
+              {show("newcomers") && <col className="col-compact" />}
+              {show("best_male") && <col className="col-time" />}
+              {show("best_female") && <col className="col-time" />}
+              {show("avg") && <col className="col-time" />}
+              {show("prs") && <col className="col-compact-wide" />}
             </colgroup>
             <thead>
               <tr>
                 <ColumnHeader
                   label="№"
-                  headerTitle="Номер события в системе; в скобках — сквозной номер сбора локации по всем системам"
+                  headerTitle={
+                    showOverallNumber
+                      ? "Номер события в системе; в скобках — сквозной номер сбора локации по всем системам"
+                      : "Номер события в системе"
+                  }
                   filterable={false}
                 />
                 <ColumnHeader label="Дата" {...sortProps("date")} />
-                <ColumnHeader label="Система" filterable={false} />
+                {show("platform") && <ColumnHeader label="Система" filterable={false} />}
                 <ColumnHeader
-                  label="Фин."
-                  headerTitle="Финишёров на старте"
+                  label="Финишёров"
+                  hint="Финишёров на старте"
                   {...sortProps("finishers")}
                 />
-                <ColumnHeader
-                  label="Вол."
-                  headerTitle="Волонтёров на старте"
-                  {...sortProps("volunteers")}
-                />
-                <ColumnHeader
-                  label="Нов."
-                  headerTitle="Новички: дебютанты движения + впервые на этой локации"
-                  {...sortProps("newcomers")}
-                />
-                <ColumnHeader
-                  label="Луч. М"
-                  headerTitle="Лучшее время дня среди мужчин"
-                  {...sortProps("best_male")}
-                />
-                <ColumnHeader
-                  label="Луч. Ж"
-                  headerTitle="Лучшее время дня среди женщин"
-                  {...sortProps("best_female")}
-                />
-                <ColumnHeader
-                  label="Средн."
-                  headerTitle="Среднее время финиша"
-                  {...sortProps("avg")}
-                />
-                <ColumnHeader
-                  label="PR"
-                  headerTitle="Личных рекордов установлено в этот день"
-                  {...sortProps("prs")}
-                />
+                {show("volunteers") && (
+                  <ColumnHeader
+                    label="Волонтёров"
+                    hint="Волонтёров на старте"
+                    {...sortProps("volunteers")}
+                  />
+                )}
+                {show("newcomers") && (
+                  <ColumnHeader
+                    label="Новичков"
+                    hint="Новички: дебютанты движения + впервые на этой локации"
+                    {...sortProps("newcomers")}
+                  />
+                )}
+                {show("best_male") && (
+                  <ColumnHeader
+                    label="Лучшее время (М)"
+                    hint="Лучшее время среди мужчин"
+                    {...sortProps("best_male")}
+                  />
+                )}
+                {show("best_female") && (
+                  <ColumnHeader
+                    label="Лучшее время (Ж)"
+                    hint="Лучшее время среди женщин"
+                    {...sortProps("best_female")}
+                  />
+                )}
+                {show("avg") && (
+                  <ColumnHeader
+                    label="Среднее время"
+                    hint="Среднее время финиша"
+                    {...sortProps("avg")}
+                  />
+                )}
+                {show("prs") && (
+                  <ColumnHeader
+                    label="Личных рекордов"
+                    hint="Личных рекордов установлено в этот день"
+                    {...sortProps("prs")}
+                  />
+                )}
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="table-empty-cell">
+                  <td colSpan={visibleCount} className="table-empty-cell">
                     <span className="muted">Нет стартов по выбранному фильтру</span>
                   </td>
                 </tr>
@@ -294,9 +342,11 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
                     <td className="td-compact">
                       <span className="loc-events-number">
                         {row.event_number ?? "—"}
-                        <StatHintTooltip text="Сквозной номер старта — какой это по счёту сбор локации за всю историю, по всем системам вместе">
-                          <span className="muted">({row.overall_number})</span>
-                        </StatHintTooltip>
+                        {showOverallNumber && (
+                          <StatHintTooltip text="Сквозной номер старта — какой это по счёту сбор локации за всю историю, по всем системам вместе">
+                            <span className="muted">({row.overall_number})</span>
+                          </StatHintTooltip>
+                        )}
                         {row.is_attendance_record && (
                           <RecordIcon
                             icon="🏆"
@@ -307,46 +357,64 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
                       </span>
                     </td>
                     <td className="td-date">
-                      <ActivityDateLink date={row.event_date} url={row.protocol_url} />
+                      {/* Есть полный протокол — дата ведёт на НАШ протокол;
+                          внешняя ссылка платформы остаётся на его странице. */}
+                      {row.has_protocol ? (
+                        <a
+                          className="activity-date-link"
+                          href={`/locations/${encodeURIComponent(data.slug)}/protocol/${row.platform_code}/${row.event_date}`}
+                          title="Открыть протокол старта"
+                        >
+                          {formatDate(row.event_date)}
+                        </a>
+                      ) : (
+                        <ActivityDateLink date={row.event_date} url={row.protocol_url} />
+                      )}
                     </td>
-                    <td className="td-platform">
-                      <PlatformBadge code={row.platform_code} />
-                    </td>
+                    {show("platform") && (
+                      <td className="td-platform">
+                        <PlatformBadge code={row.platform_code} />
+                      </td>
+                    )}
                     <td className="td-compact">{row.finishers ?? "—"}</td>
-                    <td className="td-compact">{row.volunteers ?? "—"}</td>
-                    <td className="td-compact">{rowNewcomers(row) ?? "—"}</td>
-                    <td className="td-time">
-                      <span className="loc-events-number">
-                        {stripHours(row.best_male_time_display)}
-                        {row.is_course_record_male && (
-                          <RecordIcon
-                            icon="🏆"
-                            ariaLabel="Рекорд трассы, мужчины"
-                            tooltip="Новый рекорд трассы среди мужчин на момент этого старта"
-                          />
-                        )}
-                      </span>
-                    </td>
-                    <td className="td-time">
-                      <span className="loc-events-number">
-                        {stripHours(row.best_female_time_display)}
-                        {row.is_course_record_female && (
-                          <RecordIcon
-                            icon="🏆"
-                            ariaLabel="Рекорд трассы, женщины"
-                            tooltip="Новый рекорд трассы среди женщин на момент этого старта"
-                          />
-                        )}
-                      </span>
-                    </td>
-                    <td className="td-time">{stripHours(row.avg_time_display)}</td>
-                    <td className="td-compact">{row.prs ?? "—"}</td>
+                    {show("volunteers") && <td className="td-compact">{row.volunteers ?? "—"}</td>}
+                    {show("newcomers") && <td className="td-compact">{rowNewcomers(row) ?? "—"}</td>}
+                    {show("best_male") && (
+                      <td className="td-time">
+                        <span className="loc-events-number">
+                          {stripHours(row.best_male_time_display)}
+                          {row.is_course_record_male && (
+                            <RecordIcon
+                              icon="🏆"
+                              ariaLabel="Рекорд трассы, мужчины"
+                              tooltip="Новый рекорд трассы среди мужчин на момент этого старта"
+                            />
+                          )}
+                        </span>
+                      </td>
+                    )}
+                    {show("best_female") && (
+                      <td className="td-time">
+                        <span className="loc-events-number">
+                          {stripHours(row.best_female_time_display)}
+                          {row.is_course_record_female && (
+                            <RecordIcon
+                              icon="🏆"
+                              ariaLabel="Рекорд трассы, женщины"
+                              tooltip="Новый рекорд трассы среди женщин на момент этого старта"
+                            />
+                          )}
+                        </span>
+                      </td>
+                    )}
+                    {show("avg") && <td className="td-time">{stripHours(row.avg_time_display)}</td>}
+                    {show("prs") && <td className="td-compact">{row.prs ?? "—"}</td>}
                   </tr>
                 ))
               )}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
         {rows.some((row) => !row.has_protocol) && (
           <p className="table-foot muted">
             У части стартов нет полного протокола — по ним показаны только сводные цифры (обычно это события
@@ -355,12 +423,13 @@ function LocationEventsContent({ slug, currentUser }: { slug: string; currentUse
         )}
       </section>
       <ScrollToTopButton />
-    </EventsShell>
+    </PortalSectionShell>
   );
 }
 
+// Журнал открыт без логина, как и страница локации.
 export function LocationEventsPage({ slug }: { slug: string }) {
-  return <RequireAuth>{(user) => <LocationEventsContent slug={slug} currentUser={user} />}</RequireAuth>;
+  return <LocationEventsContent slug={slug} />;
 }
 
 function RecordIcon({ icon, ariaLabel, tooltip }: { icon: string; ariaLabel: string; tooltip: string }) {

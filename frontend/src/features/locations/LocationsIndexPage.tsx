@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { RequireAuth } from "../../components/RequireAuth";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
-import { SiteHeader } from "../../components/SiteHeader";
-import { getLocationsIndex, logout, type LocationIndexItem, type User } from "../../lib/api";
-import { formatDate, formatFinishTimeValue, pluralizeRu } from "../../lib/format";
-import { SITE_HOME_HREF } from "../../lib/siteBrand";
-import { APP_NAV_ITEMS } from "../../lib/siteNav";
+import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { getLocationsIndex, type LocationIndexItem } from "../../lib/api";
+import { formatDate, formatFinishTimeValue, formatInt, pluralizeRu } from "../../lib/format";
+import { TableWrap } from "../../components/tableUx/TableWrap";
+import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
+import { useTableColumns } from "../../components/tableUx/useTableColumns";
+import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 
 const PLATFORM_FILTERS = ["five_verst", "s95", "runpark"] as const;
 
@@ -51,7 +52,7 @@ function formatAvgFinishers(item: LocationIndexItem): string {
   }
   // Меньше десяти человек — один знак после запятой: разница 4,2 и 4,8
   // для маленькой площадки существенна, для сотенной — шум.
-  return value < 10 ? value.toFixed(1).replace(".", ",") : String(Math.round(value));
+  return value < 10 ? value.toFixed(1).replace(".", ",") : formatInt(value);
 }
 
 function matchesQuery(item: LocationIndexItem, query: string): boolean {
@@ -85,34 +86,31 @@ function sortValue(item: LocationIndexItem, key: SortKey): number | string | nul
   }
 }
 
-function IndexShell({ children, currentUser }: { children: ReactNode; currentUser: User }) {
-  const handleLogout = async () => {
-    await logout();
-    window.location.href = "/";
-  };
-
-  return (
-    <div className="shell">
-      <SiteHeader
-        homeHref={SITE_HOME_HREF}
-        navItems={APP_NAV_ITEMS}
-        activePath="/locations"
-        showAdminNav={currentUser.is_admin}
-        actions={
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void handleLogout()}>
-            Выйти
-          </button>
-        }
-      />
-      <div className="shell-content">
-        <main className="shell-main">{children}</main>
-      </div>
-    </div>
-  );
-}
+// Краткий вид: колонки в порядке важности, а не в порядке вывода. Обязательный
+// минимум — название, система и «Стартов»; дальше добавляем по мере ширины.
+// Ширины совпадают с CSS (.loc-index-table): col-city 10rem, col-platform
+// 6.5rem, col-metric 9.25rem, col-metric-wide 11.5rem, col-date 10rem.
+const LOCATIONS_COLUMNS: AdaptiveColumn[] = [
+  { key: "name", width: 170, required: true },
+  { key: "platform", width: 104, required: true },
+  { key: "events_count", width: 148, required: true },
+  { key: "city", width: 160 },
+  { key: "finishers_total", width: 148 },
+  { key: "first_event_date", width: 160 },
+  { key: "avg_finishers", width: 148 },
+  { key: "attendance_record", width: 148 },
+  { key: "best_male", width: 184 },
+  { key: "best_female", width: 184 },
+];
 
 function LocationsTable({ items }: { items: LocationIndexItem[] }) {
   const [sort, setSort] = useState<SortState>({ key: "events_count", asc: false });
+  // «Полно» — весь набор с горизонтальным скроллом. «Кратко» — столько колонок,
+  // сколько влезает в ширину блока: на телефоне это три, на широком мониторе —
+  // почти всё (решение Дмитрия 11.08.2026, вместо порога 820px).
+  const tableColumns = useTableColumns(LOCATIONS_COLUMNS);
+  const showFull = tableColumns.showFull;
+  const show = tableColumns.show;
 
   const sorted = useMemo(() => {
     const copy = [...items];
@@ -152,66 +150,87 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
     onSort: () => toggleSort(key),
   });
 
+  const visibleCount = LOCATIONS_COLUMNS.filter((column) => show(column.key)).length;
+
   return (
-    <div className="table-wrap">
-      <table className="data-table data-table-layout-fixed loc-index-table">
+    <>
+      <TableViewToggle columns={tableColumns} />
+      <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
+        <table
+          className={`data-table data-table-layout-fixed loc-index-table${
+            showFull ? "" : " data-table-short"
+          }`}
+          style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
+        >
         <colgroup>
           <col />
-          <col className="col-city" />
+          {show("city") && <col className="col-city" />}
           <col className="col-platform" />
           <col className="col-metric" />
-          <col className="col-metric" />
-          <col className="col-metric-wide" />
-          <col className="col-metric-wide" />
-          <col className="col-metric" />
-          <col className="col-metric" />
-          <col className="col-date" />
+          {show("finishers_total") && <col className="col-metric" />}
+          {show("avg_finishers") && <col className="col-metric" />}
+          {show("attendance_record") && <col className="col-metric" />}
+          {show("best_male") && <col className="col-metric-wide" />}
+          {show("best_female") && <col className="col-metric-wide" />}
+          {show("first_event_date") && <col className="col-date" />}
         </colgroup>
         <thead>
           <tr>
             <ColumnHeader label="Локация" {...sortProps("name")} />
-            <ColumnHeader label="Город" {...sortProps("city")} />
-            <ColumnHeader label="Системы" filterable={false} />
+            {show("city") && <ColumnHeader label="Город" {...sortProps("city")} />}
+            <ColumnHeader label="Система" filterable={false} />
             <ColumnHeader
               label="Стартов"
-              headerTitle="Мероприятий проведено за всё время"
+              hint="Мероприятий проведено за всё время"
               {...sortProps("events_count")}
             />
-            <ColumnHeader
-              label="Финишей"
-              headerTitle="Финишей за всё время"
-              {...sortProps("finishers_total")}
-            />
-            <ColumnHeader
-              label="В среднем"
-              headerTitle="Средняя явка: финишей за всё время ÷ число стартов"
-              {...sortProps("avg_finishers")}
-            />
-            <ColumnHeader
-              label="Рекорд явки"
-              headerTitle="Максимум финишей за один старт (в подсказке — дата)"
-              {...sortProps("attendance_record")}
-            />
-            <ColumnHeader
-              label="Луч. М"
-              headerTitle="Рекорд локации (LR): лучшее время мужчины здесь за всю историю"
-              {...sortProps("best_male")}
-            />
-            <ColumnHeader
-              label="Луч. Ж"
-              headerTitle="Рекорд локации (LR): лучшее время женщины здесь за всю историю"
-              {...sortProps("best_female")}
-            />
-            <ColumnHeader
-              label="Первый старт"
-              {...sortProps("first_event_date")}
-            />
+            {show("finishers_total") && (
+              <ColumnHeader
+                label="Финишей"
+                hint="Финишей за всё время"
+                {...sortProps("finishers_total")}
+              />
+            )}
+            {show("avg_finishers") && (
+              <ColumnHeader
+                label="В среднем"
+                hint="Средняя явка: финишей за всё время ÷ число стартов"
+                {...sortProps("avg_finishers")}
+              />
+            )}
+            {show("attendance_record") && (
+              <ColumnHeader
+                label="Рекорд явки"
+                hint="Максимум финишей за один старт (в подсказке — дата)"
+                {...sortProps("attendance_record")}
+              />
+            )}
+            {show("best_male") && (
+              <ColumnHeader
+                label="Лучшее время (М)"
+                hint="Рекорд локации (LR): лучшее время мужчины здесь за всю историю"
+                {...sortProps("best_male")}
+              />
+            )}
+            {show("best_female") && (
+              <ColumnHeader
+                label="Лучшее время (Ж)"
+                hint="Рекорд локации (LR): лучшее время женщины здесь за всю историю"
+                {...sortProps("best_female")}
+              />
+            )}
+            {show("first_event_date") && (
+              <ColumnHeader
+                label="Первый старт"
+                {...sortProps("first_event_date")}
+              />
+            )}
           </tr>
         </thead>
         <tbody>
           {sorted.length === 0 ? (
             <tr>
-              <td colSpan={10} className="table-empty-cell">
+              <td colSpan={visibleCount} className="table-empty-cell">
                 <span className="muted">Нет локаций по фильтрам</span>
               </td>
             </tr>
@@ -222,10 +241,12 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                   <a href={`/locations/${item.slug}`}>{item.name}</a>
                   <LocationStatusBadge isPaused={item.is_paused} isCancelled={item.is_cancelled} />
                 </td>
-                <td className="muted">
-                  {item.city ?? "—"}
-                  {item.country && item.country !== "Россия" ? ` · ${item.country}` : ""}
-                </td>
+                {show("city") && (
+                  <td className="muted">
+                    {item.city ?? "—"}
+                    {item.country && item.country !== "Россия" ? ` · ${item.country}` : ""}
+                  </td>
+                )}
                 <td>
                   <span className="loc-index-platforms">
                     {item.platform_codes.map((code) => (
@@ -233,34 +254,47 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                     ))}
                   </span>
                 </td>
-                <td className="td-compact">{item.events_count || "—"}</td>
-                <td className="td-compact">{item.finishers_total || "—"}</td>
-                <td className="td-compact">{formatAvgFinishers(item)}</td>
-                <td
-                  className="td-compact"
-                  title={
-                    item.attendance_record_date
-                      ? `Рекорд явки: ${formatDate(item.attendance_record_date)}`
-                      : undefined
-                  }
-                >
-                  {item.attendance_record_finishers ?? "—"}
-                </td>
-                <td className="td-compact">{formatRecord(item.best_male_time_display, item.best_male_time_sec)}</td>
-                <td className="td-compact">
-                  {formatRecord(item.best_female_time_display, item.best_female_time_sec)}
-                </td>
-                <td>{item.first_event_date ? formatDate(item.first_event_date) : "—"}</td>
+                <td className="td-compact">{item.events_count ? formatInt(item.events_count) : "—"}</td>
+                {show("finishers_total") && (
+                  <td className="td-compact">{item.finishers_total ? formatInt(item.finishers_total) : "—"}</td>
+                )}
+                {show("avg_finishers") && <td className="td-compact">{formatAvgFinishers(item)}</td>}
+                {show("attendance_record") && (
+                  <td
+                    className="td-compact"
+                    title={
+                      item.attendance_record_date
+                        ? `Рекорд явки: ${formatDate(item.attendance_record_date)}`
+                        : undefined
+                    }
+                  >
+                    {item.attendance_record_finishers != null ? formatInt(item.attendance_record_finishers) : "—"}
+                  </td>
+                )}
+                {show("best_male") && (
+                  <td className="td-compact">
+                    {formatRecord(item.best_male_time_display, item.best_male_time_sec)}
+                  </td>
+                )}
+                {show("best_female") && (
+                  <td className="td-compact">
+                    {formatRecord(item.best_female_time_display, item.best_female_time_sec)}
+                  </td>
+                )}
+                {show("first_event_date") && (
+                  <td>{item.first_event_date ? formatDate(item.first_event_date) : "—"}</td>
+                )}
               </tr>
             ))
           )}
         </tbody>
       </table>
-    </div>
+      </TableWrap>
+    </>
   );
 }
 
-function LocationsIndexContent({ currentUser }: { currentUser: User }) {
+function LocationsIndexContent() {
   const [items, setItems] = useState<LocationIndexItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -293,13 +327,14 @@ function LocationsIndexContent({ currentUser }: { currentUser: User }) {
   }, [items, query, platformFilter, showPaused]);
 
   return (
-    <IndexShell currentUser={currentUser}>
+    <PortalSectionShell sidebar={{ active: "locations" }}>
       <header className="loc-header">
         <div className="loc-header-title">
           <h1>Локации</h1>
         </div>
         <p className="muted loc-header-place">
-          Все площадки субботних стартов: цифры, рекорды и история каждой локации.
+          Все площадки субботних стартов: цифры, рекорды и история каждой локации.{" "}
+          <a href="/results">Результаты последней субботы →</a>
         </p>
       </header>
 
@@ -347,10 +382,11 @@ function LocationsIndexContent({ currentUser }: { currentUser: User }) {
         )}
       </section>
       <ScrollToTopButton />
-    </IndexShell>
+    </PortalSectionShell>
   );
 }
 
+// Каталог открыт без логина: локации — публичная витрина сайта.
 export function LocationsIndexPage() {
-  return <RequireAuth>{(user) => <LocationsIndexContent currentUser={user} />}</RequireAuth>;
+  return <LocationsIndexContent />;
 }

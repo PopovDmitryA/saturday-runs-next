@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -10,6 +12,7 @@ from app.models import PageStatsDaily, PageViewEvent, User
 from app.services.page_analytics_service import (
     EARLIEST_STATS_DATE,
     STATS_TIMEZONE,
+    build_home_link_clicks,
     build_page_analytics,
     classify_page,
     cleanup_old_events,
@@ -27,6 +30,7 @@ from app.services.page_analytics_service import (
         ("/", ("portal_home", "")),
         ("/about", ("portal_about", "")),
         ("/blog", ("portal_blog", "")),
+        ("/updates", ("updates", "")),
         ("/login", ("portal_login", "")),
         ("/dashboard", ("dashboard", "")),
         ("/profiles", ("dashboard", "")),
@@ -39,7 +43,21 @@ from app.services.page_analytics_service import (
         ("/locations/kuzminki/events", ("location_events", "kuzminki")),
         ("/ratings", ("ratings_hub", "")),
         ("/ratings/runs", ("ratings_runs", "")),
-        # Адреса тёмного запуска портала удалены — теперь это "other".
+        ("/ratings/wins", ("ratings_wins", "")),
+        ("/ratings/win-locations", ("ratings_win_locations", "")),
+        ("/backlog", ("backlog", "")),
+        # Вкладка профиля — тот же просмотр профиля: в entity_key хендл, чтобы
+        # просмотр доресолвился до user_id и попал в «топ профилей».
+        ("/users/ivan/maps", ("profile", "ivan")),
+        ("/users/12345/achievements", ("profile", "12345")),
+        ("/users/ivan/co-runners", ("profile", "ivan")),
+        ("/hq/hq-2kl5kfrlzmnvn8sc", ("sweep_hq", "")),
+        ("/new/cabinet-preview", ("cabinet_preview", "")),
+        # Старые адреса кабинета сами ничего не показывают — это редиректы.
+        ("/new/dashboard", ("redirect", "/new/dashboard")),
+        ("/new/maps", ("redirect", "/new/maps")),
+        ("/dashboards", ("redirect", "/dashboards")),
+        # Несуществующие адреса по-прежнему попадают в «прочее» — бакет живой.
         ("/new", ("other", "/new")),
         ("/new/about", ("other", "/new/about")),
         ("/new/map-lab", ("portal_map_lab", "")),
@@ -76,54 +94,57 @@ def test_classify_legacy_grafana_paths(path: str) -> None:
 # Все маршруты приложения — копия STATIC_ROUTES + динамических веток renderRoute
 # из frontend/src/App.tsx. Страховка от «добавили раздел, забыли в аналитике»:
 # новый роут без записи в _STATIC_PAGE_TYPES свалится в "other" и уронит тест.
-APP_ROUTES = [
-    "/",
-    "/blog",
-    "/new/map-lab",
-    "/login",
-    "/oauth/yandex/callback",
-    "/oauth/vk/callback",
-    "/demo",
-    "/demo/runs",
-    "/demo/co-runners",
-    "/demo/volunteering",
-    "/demo/maps",
-    "/demo/history",
-    "/welcome",
-    "/dashboard",
-    "/profiles",
-    "/runs",
-    "/achievements",
-    "/co-runners",
-    "/volunteering",
-    "/maps",
-    "/locations",
-    "/history",
-    "/ratings",
-    "/ratings/runs",
-    "/ratings/volunteering",
-    "/ratings/locations",
-    "/share",
-    "/sync",
-    "/queue",
-    "/admin",
-    "/admin/queue",
-    "/admin/users",
-    "/admin/abuse",
-    "/admin/profile-slugs",
-    "/admin/stats",
-    "/admin/page-analytics",
-    "/admin/ratings",
-    "/admin/event-report",
-    "/admin/records-digest",
-    "/admin/location-contacts",
-    "/admin/blog",
-    "/settings",
-    "/about",
-    "/users/ivan",
-    "/locations/kuzminki",
-    "/locations/kuzminki/events",
-]
+# Роуты читаем из самого App.tsx, а не держим копию списка.
+#
+# Копия была, и она не сработала: добавить строку в APP_ROUTES забывали ровно
+# так же, как в классификатор, — тест зеленел, а раздел молча уезжал в «Прочее».
+# Так пропали /backlog и победные рейтинги (47 и 50 просмотров за 30 дней).
+# Теперь список берётся из исходника: забыть его обновить невозможно.
+# В контейнере фронт примонтирован в /frontend-src (см. docker-compose.yml),
+# при запуске из репозитория — лежит рядом. Проверяем оба места.
+_FRONTEND_SRC_CANDIDATES = (
+    Path("/frontend-src"),
+    Path(__file__).resolve().parents[2] / "frontend" / "src",
+)
+
+
+def _frontend_src() -> Path:
+    for candidate in _FRONTEND_SRC_CANDIDATES:
+        if (candidate / "App.tsx").exists():
+            return candidate
+    raise AssertionError(
+        "Не найден App.tsx — сторож роутов не может работать. "
+        f"Искали в: {', '.join(str(c) for c in _FRONTEND_SRC_CANDIDATES)}"
+    )
+
+
+def _static_routes_from_app() -> list[str]:
+    """Ключи STATIC_ROUTES: строковые литералы и константы из portalRoutes.ts."""
+    src = _frontend_src()
+    app_src = (src / "App.tsx").read_text(encoding="utf-8")
+    block_start = app_src.index("const STATIC_ROUTES")
+    block_end = app_src.index("\n};", block_start)
+    block = app_src[block_start:block_end]
+
+    consts = dict(
+        re.findall(
+            r'export const ([A-Z0-9_]+)\s*=\s*"([^"]+)"',
+            (src / "lib" / "portalRoutes.ts").read_text(encoding="utf-8"),
+        )
+    )
+
+    routes: list[str] = []
+    for literal in re.findall(r'^\s*"([^"]+)"\s*:', block, re.M):
+        routes.append(literal)
+    for name in re.findall(r"^\s*\[([A-Z0-9_]+)\]\s*:", block, re.M):
+        value = consts.get(name)
+        assert value is not None, f"Константа {name} не найдена в portalRoutes.ts"
+        routes.append(value)
+    assert len(routes) > 20, "Разбор STATIC_ROUTES сломался — роутов подозрительно мало"
+    return sorted(set(routes))
+
+
+APP_ROUTES = _static_routes_from_app()
 
 
 @pytest.mark.parametrize("path", APP_ROUTES)
@@ -138,17 +159,50 @@ def test_user_facing_pages_have_distinct_page_types() -> None:
     Исключения — маршруты, которым отдельная строка не нужна: /admin/* и
     /demo/* сведены в одну строку каждый (внутренняя админка и витрина целиком —
     решение Дмитрия 17.07.2026); /profiles рисует тот же компонент, что
-    /dashboard; /sync, /queue, /admin — заглушки-редиректы; оба
-    /oauth/*/callback — одна страница OAuthCallbackPage с разным провайдером.
+    /dashboard; заглушки-редиректы (/sync, /queue, /admin, старые адреса
+    кабинета /new/*) своей страницы не имеют; оба /oauth/*/callback — одна
+    страница OAuthCallbackPage с разным провайдером.
     """
-    not_own_page = {"/profiles", "/sync", "/queue", "/admin", "/oauth/yandex/callback"}
+    not_own_page = {"/profiles", "/oauth/yandex/callback"}
     user_facing = [
         p
         for p in APP_ROUTES
-        if not p.startswith(("/admin/", "/demo/")) and p not in not_own_page
+        if not p.startswith(("/admin/", "/demo/"))
+        and p not in not_own_page
+        # Заглушки-редиректы своей страницы не имеют по определению: /sync,
+        # /queue, /admin и старые адреса кабинета /new/* сразу уводят на другой
+        # адрес, поэтому делят один page_type законно.
+        and classify_page(p)[0] != "redirect"
     ]
     page_types = [classify_page(path)[0] for path in user_facing]
     assert len(page_types) == len(set(page_types)), "Разные страницы делят один page_type"
+
+
+def _hub_rating_links() -> list[str]:
+    """Адреса карточек из хаба рейтингов (/ratings)."""
+    src = _frontend_src()
+    hub = (src / "features" / "leaderboards" / "LeaderboardsHubPage.tsx").read_text(
+        encoding="utf-8"
+    )
+    links = sorted(set(re.findall(r'href:\s*"(/ratings/[^"]+)"', hub)))
+    assert len(links) > 4, "Разбор карточек хаба сломался — ссылок подозрительно мало"
+    return links
+
+
+@pytest.mark.parametrize("href", _hub_rating_links())
+def test_every_hub_link_has_route(href: str) -> None:
+    """Карточка хаба обязана вести на живой роут.
+
+    Обратная сторона сторожа выше: тот ловит «роут есть, но не заведён в
+    аналитике», а этот — «ссылка есть, а роут потерян». Так 01.08.2026 при
+    мерже табло /world из App.tsx пропала строка /ratings/volunteer-locations:
+    карточка «Волонтёрский туризм» осталась на месте, бэкенд-метрика работала,
+    а переход выдавал «Страница не найдена» — и ни один тест этого не заметил.
+    """
+    assert href in APP_ROUTES, (
+        f"Карточка хаба ведёт на {href}, но такого роута нет в App.tsx — "
+        "переход даст «Страница не найдена»"
+    )
 
 
 def test_resolve_period_defaults_to_last_n_days() -> None:
@@ -376,3 +430,49 @@ def test_cleanup_old_events(db_session: Session) -> None:
     assert deleted >= 1
     remaining = db_session.query(PageViewEvent).filter(PageViewEvent.view_id == fresh_id).count()
     assert remaining == 1
+
+
+def test_build_home_link_clicks_groups_and_labels(db_session: Session) -> None:
+    """Переходы с главной: локации и профили в одной таблице, имена подставлены."""
+    from app.services.ab_service import record_ab_event
+
+    slug = f"link-loc-{uuid4().int % 1_000_000}"
+    user = _make_user(db_session, slug=f"link-runner-{uuid4().int % 1_000_000}")
+    for _ in range(2):
+        record_ab_event(
+            db_session,
+            experiment="home_v1",
+            variant="A",
+            visitor_key="a:visitor-1",
+            event_type="home_link_click",
+            value=f"location:{slug}",
+            path="/",
+        )
+    record_ab_event(
+        db_session,
+        experiment="home_v1",
+        variant="B",
+        visitor_key="a:visitor-2",
+        event_type="home_link_click",
+        value=f"runner:{user.public_slug}",
+        path="/",
+    )
+
+    # Границы отчёта — календарные даты, ts события в UTC: под полночь по Москве
+    # «сегодня» разъезжается на день, поэтому берём окно ±сутки.
+    today = local_today()
+    rows = build_home_link_clicks(
+        db_session, start=today - timedelta(days=1), end=today + timedelta(days=1)
+    )
+    by_key = {row["entity_key"]: row for row in rows}
+
+    # Локации нет в БД — метка остаётся слагом, но ссылка всё равно рабочая.
+    assert by_key[slug]["kind"] == "location"
+    assert by_key[slug]["clicks"] == 2
+    assert by_key[slug]["visitors"] == 1
+    assert by_key[slug]["href"] == f"/locations/{slug}"
+
+    runner_row = by_key[user.public_slug]
+    assert runner_row["kind"] == "runner"
+    assert runner_row["label"] == "Тест"
+    assert runner_row["href"] == f"/users/{user.public_slug}"

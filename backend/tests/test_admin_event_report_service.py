@@ -116,7 +116,7 @@ def test_age_group_rank_ignores_place_suffix(db_session: Session) -> None:
     assert top[0]["finish_time_display"] == "16:40"
 
 
-def test_results_without_finish_time_are_not_finishers(db_session: Session) -> None:
+def test_unknown_runners_are_counted_as_finishers(db_session: Session) -> None:
     suffix = str(uuid4().int % 1_000_000)
     platform, location = _setup_location(db_session, suffix)
     event = _make_event(db_session, platform, location, suffix, date(2024, 6, 8), 1)
@@ -129,13 +129,15 @@ def test_results_without_finish_time_are_not_finishers(db_session: Session) -> N
 
     report = build_event_report(db_session, event.id)
     assert report is not None
-    assert report["header"]["finishers"] == 1
+    # «НЕИЗВЕСТНЫЙ» физически финишировал (строка есть в протоколе), просто без
+    # распознанного времени — в общий счётчик финишёров он попадает.
+    assert report["header"]["finishers"] == 2
 
     dates = list_report_event_dates(db_session, location.id)
-    assert [item["finishers_count"] for item in dates] == [1]
+    assert [item["finishers_count"] for item in dates] == [2]
 
-    # «НЕИЗВЕСТНЫЙ» без времени не должен попадать в новички системы —
-    # иначе каждая неопознанная строка протокола раздувает статистику.
+    # Но в новички системы не попадает — иначе каждая неопознанная строка
+    # протокола раздувала бы статистику дебютантов.
     assert [person["name"] for person in report["stats"]["newcomers"]] == ["Финишёр"]
 
 

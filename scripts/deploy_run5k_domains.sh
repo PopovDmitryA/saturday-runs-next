@@ -51,7 +51,7 @@ else
 fi
 
 echo "=== docker stack ==="
-$COMPOSE up -d --build redis api worker-s95 worker-five-verst worker-parkrun beat vk-bot
+$COMPOSE up -d --build redis api worker-s95 worker-five-verst worker-parkrun beat bot
 $COMPOSE up -d --force-recreate nginx
 
 echo "=== wait for api health ==="
@@ -65,7 +65,7 @@ done
 curl -s http://127.0.0.1:8080/health || true
 
 patch_env_base_url
-$COMPOSE up -d --force-recreate api vk-bot nginx
+$COMPOSE up -d --force-recreate api bot nginx
 
 ensure_websocket_map
 

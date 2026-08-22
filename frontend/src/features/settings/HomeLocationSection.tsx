@@ -9,6 +9,56 @@ import {
 } from "../../lib/api";
 import { pluralizeRu } from "../../lib/format";
 
+// Порядок «по числу пробежек» — тот же, по которому домашнюю локацию выбирает
+// сам сайт. Ничьи разводим по названию, чтобы место не «прыгало» между
+// перезагрузками.
+function byRunCount(candidates: HomeLocationCandidate[]): HomeLocationCandidate[] {
+  return [...candidates].sort(
+    (a, b) => b.run_count - a.run_count || a.name.localeCompare(b.name, "ru"),
+  );
+}
+
+type HomeLocationWarning = { level: "warn" | "danger"; text: string };
+
+/**
+ * Замечание к ручному выбору домашней локации: не самая частая площадка —
+ * жёлтое, вне тройки самых частых — красное. Автовыбор не комментируем: там и
+ * так берётся площадка с максимумом пробежек.
+ */
+function homeLocationWarning(
+  current: HomeLocationSettings | null,
+  candidates: HomeLocationCandidate[],
+): HomeLocationWarning | null {
+  if (!current || current.is_auto || !current.location) {
+    return null;
+  }
+  const ranked = byRunCount(candidates).filter((item) => item.run_count > 0);
+  const index = ranked.findIndex(
+    (item) => item.catalog_identity_key === current.location?.catalog_identity_key,
+  );
+  if (index <= 0) {
+    return null;
+  }
+  const top = ranked[0];
+  const picked = ranked[index];
+  const comparison =
+    `Больше всего пробежек у вас на площадке «${top.name}» — ${top.run_count}, ` +
+    `а на выбранной «${picked.name}» — ${picked.run_count}.`;
+  if (index >= 3) {
+    return {
+      level: "danger",
+      text:
+        `${comparison} Выбранная локация не входит в топ-3 по количеству пробежек на ней. ` +
+        `Убедитесь, что домашней считается именно она: от неё считается дальность ` +
+        `всех ваших стартов.`,
+    };
+  }
+  return {
+    level: "warn",
+    text: `${comparison} Убедитесь, что домашней считается именно выбранная площадка.`,
+  };
+}
+
 function locationSubtitle(candidate: HomeLocationCandidate): string {
   const parts = [
     candidate.city,
@@ -43,6 +93,8 @@ export function HomeLocationSection() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const warning = useMemo(() => homeLocationWarning(current, candidates), [current, candidates]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -119,6 +171,19 @@ export function HomeLocationSection() {
             )}
           </div>
         </div>
+      )}
+
+      {!loading && warning && (
+        <p
+          className={
+            warning.level === "danger"
+              ? "home-location-warning"
+              : "home-location-warning home-location-warning-soft"
+          }
+          role="status"
+        >
+          {warning.text}
+        </p>
       )}
 
       {!loading && pickerOpen && (

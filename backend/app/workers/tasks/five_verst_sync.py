@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
+from datetime import datetime, timezone
 from typing import Any
 
 from app.db.session import get_session_factory
-from app.services.dashboard_service import invalidate_dashboard_cache_for_platform
 from app.services.sync_run_params import (
     five_verst_clubs_details_details,
     five_verst_clubs_registry_details,
@@ -25,6 +25,21 @@ from app.workers.celery_app import celery_app
 from app.workers.tasks.sync_task_reporting import run_reported_sync
 
 logger = logging.getLogger(__name__)
+
+
+def _schedule_dashboard_warm(started_at: datetime) -> None:
+    """Отдать прогрев дашбордов и рейтингов в фоновые задачи.
+
+    Синк знает только момент своего старта; кого именно затронули новые
+    протоколы — разбирается dashboard_warm по run_results.fetched_at. Раньше
+    здесь сносился кэш всем пользователям платформы, и пересчёт доставался
+    первому зашедшему в профиль.
+    """
+    from app.workers.tasks.dashboard_warm import schedule_dashboard_warm
+    from app.workers.tasks.leaderboards_warm import schedule_leaderboards_warm
+
+    schedule_dashboard_warm(started_at)
+    schedule_leaderboards_warm()
 
 
 def _protocol_limit(settings) -> int | None:
@@ -60,6 +75,7 @@ def sync_location_task(
     def _run() -> dict[str, object]:
         db = get_session_factory()()
         try:
+            started_at = datetime.now(timezone.utc)
             result = sync_location(
                 db,
                 LocationSyncOptions(
@@ -70,8 +86,8 @@ def sync_location_task(
                 ),
             )
             if result.run_results_upserted > 0:
-                invalidate_dashboard_cache_for_platform(db, "five_verst")
                 db.commit()
+                _schedule_dashboard_warm(started_at)
             return {
                 "location_slug": result.location_slug,
                 "summaries_total": result.summaries_total,
@@ -178,6 +194,7 @@ def sync_latest_results_task(
     def _run() -> dict[str, object]:
         db = get_session_factory()()
         try:
+            started_at = datetime.now(timezone.utc)
             result = sync_latest_results(
                 db,
                 LatestResultsSyncOptions(
@@ -187,8 +204,8 @@ def sync_latest_results_task(
                 ),
             )
             if result.run_results_upserted > 0:
-                invalidate_dashboard_cache_for_platform(db, "five_verst")
                 db.commit()
+                _schedule_dashboard_warm(started_at)
             return {
                 "summaries_total": result.summaries_total,
                 "needs_update": result.needs_update,
@@ -230,10 +247,11 @@ def sync_location_rotation_task(*, force: bool = False) -> dict[str, object]:
     def _run() -> dict[str, object]:
         db = get_session_factory()()
         try:
+            started_at = datetime.now(timezone.utc)
             result = sync_next_location_batch(db)
             if result.sync is not None and result.sync.run_results_upserted > 0:
-                invalidate_dashboard_cache_for_platform(db, "five_verst")
                 db.commit()
+                _schedule_dashboard_warm(started_at)
             payload: dict[str, Any] = {
                 "location_slug": result.location_slug,
                 "rotation_index": result.rotation_index,
@@ -313,9 +331,19 @@ def reconcile_stale_protocols_task(
     limit: int | None = None,
     min_check_interval_days: int | None = None,
     location_slug: str | None = None,
+    chunks_left: int | None = None,
     *,
     force: bool = False,
 ) -> dict[str, object]:
+    """Сверка протоколов 5 вёрст пачками.
+
+    Норма прогона по расписанию — `batch_limit × chunks_per_run` протоколов, но
+    берутся они не одной задачей, а цепочкой: отработал свою пачку — поставил
+    следующую в очередь. Воркер `five_verst` один и с concurrency=1, прервать
+    задачу на середине нельзя, поэтому одна двухчасовая задача заставила бы
+    пользовательский синк ждать все два часа. Между звеньями цепочки воркер
+    успевает забрать задачу из приоритетной очереди five_verst_user.
+    """
     from app.config import get_settings
 
     settings = get_settings()
@@ -323,6 +351,8 @@ def reconcile_stale_protocols_task(
         limit = settings.five_verst_reconcile_batch_limit
     if min_check_interval_days is None:
         min_check_interval_days = settings.five_verst_reconcile_min_check_interval_days
+    if chunks_left is None:
+        chunks_left = settings.five_verst_reconcile_chunks_per_run
     name = "5v reconcile protocols"
     details = five_verst_reconcile_details(
         limit=limit,
@@ -333,6 +363,7 @@ def reconcile_stale_protocols_task(
     def _run() -> dict[str, object]:
         db = get_session_factory()()
         try:
+            started_at = datetime.now(timezone.utc)
             result = reconcile_stale_protocols(
                 db,
                 ReconcileProtocolsOptions(
@@ -341,11 +372,17 @@ def reconcile_stale_protocols_task(
                     location_slug=location_slug,
                 ),
             )
+            # Сверка переписывает уже существующие протоколы — позиции и метки
+            # рекордов после неё меняются ровно так же, как после нового
+            # протокола, поэтому дашборды тоже надо греть.
+            if result.run_results_upserted > 0:
+                db.commit()
+                _schedule_dashboard_warm(started_at)
             return asdict(result)
         finally:
             db.close()
 
-    return run_reported_sync(
+    payload = run_reported_sync(
         name,
         _run,
         details=details,
@@ -353,6 +390,28 @@ def reconcile_stale_protocols_task(
         force=force,
         batch_queue_name="five_verst",
     )
+
+    # Следующее звено ставим, только если пачка реально отработала и нашла
+    # полный батч кандидатов: на скипе (кулдаун, занятая очередь) или на
+    # недоборе продолжать нечего. force=True — часовой слот уже занят этим же
+    # прогоном, иначе звено отвалится как duplicate_hour_slot.
+    if (
+        chunks_left > 1
+        and not payload.get("skipped")
+        and int(payload.get("candidates_total") or 0) >= limit
+    ):
+        reconcile_stale_protocols_task.apply_async(
+            kwargs={
+                "limit": limit,
+                "min_check_interval_days": min_check_interval_days,
+                "location_slug": location_slug,
+                "chunks_left": chunks_left - 1,
+                "force": True,
+            },
+            queue="five_verst",
+        )
+        payload = {**payload, "next_chunk_enqueued": True}
+    return payload
 
 
 @celery_app.task(name="five_verst_sync.enqueue_reconcile_protocols", queue="five_verst")

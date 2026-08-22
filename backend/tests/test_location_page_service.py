@@ -11,16 +11,22 @@ from app.services import location_page_service
 from app.services.location_page_service import (
     LOCATIONS_INDEX_CACHE_KEY,
     LOCATIONS_INDEX_CACHE_TTL_SECONDS,
+    _age_group_sort_key,
     _read_locations_index_cache,
     _sort_identity_locations,
     _start_point_url,
     _write_locations_index_cache,
+    age_group_key,
+    build_location_age_group_standings,
     build_location_events,
     build_location_leaders,
     build_location_page,
     build_locations_index,
     invalidate_location_page_cache,
     invalidate_locations_index_cache,
+    location_events_cache_key,
+    location_leaders_cache_key,
+    location_page_cache_key,
     normalize_age_group,
 )
 
@@ -41,10 +47,58 @@ def test_normalize_age_group_parkrun_and_runpark() -> None:
     assert normalize_age_group("VM35-39") == "35–39"
 
 
+def test_normalize_age_group_under_ten() -> None:
+    """«М10» — строго «младше 10»: десятилетний бежит уже в «10-14»."""
+    assert normalize_age_group("М10") == "<10"
+    assert normalize_age_group("Ж10") == "<10"
+    assert normalize_age_group("JM10") == "<10"
+    assert normalize_age_group("М10-14") == "10–14"
+
+
+def test_normalize_age_group_keeps_absurd_bands() -> None:
+    """«М110-114» показываем как есть — это то, что стоит в протоколе.
+
+    Такую группу 5 вёрст печатает участникам без даты рождения. Прятать её
+    не надо (решение Дмитрия 27.07.2026), но и вытаскивать из неё «10–11»
+    поиском подстроки нельзя — отсюда якорь по всей строке.
+    """
+    assert normalize_age_group("М110-114") == "110–114"
+    assert normalize_age_group("Ж110-114") == "110–114"
+    assert normalize_age_group("М120-124") == "120–124"
+    # Тот же сорт данных одним числом.
+    assert normalize_age_group("М120") == "<120"
+
+
+def test_age_group_sort_key_puts_under_before_range() -> None:
+    """«<10» и «10–14» дают одно число — порядок между ними фиксирован."""
+    assert sorted(["35–39", "10–14", "<10", "75+", "110–114"], key=_age_group_sort_key) == [
+        "<10",
+        "10–14",
+        "35–39",
+        "75+",
+        "110–114",
+    ]
+
+
 def test_normalize_age_group_unknown() -> None:
     assert normalize_age_group(None) is None
     assert normalize_age_group("") is None
     assert normalize_age_group("хостел") is None
+    # Age grade parkrun — не возрастная группа, под правило «≤N» попасть не должен.
+    assert normalize_age_group("54.38%") is None
+
+
+def test_age_group_key_is_anchor_safe() -> None:
+    """Ключ группы уходит в id строки таблицы — спецсимволов там быть не должно."""
+    assert age_group_key("male", "30–34") == "male-30-34"
+    assert age_group_key("female", "75+") == "female-75plus"
+    assert age_group_key("male", "<10") == "male-under10"
+    assert age_group_key("male", "110–114") == "male-110-114"
+
+
+def test_build_location_age_group_standings_without_events() -> None:
+    """Локация без протоколов с возрастной категорией — плиток нет."""
+    assert build_location_age_group_standings(db=None, user_id=None, event_ids=[]) == []  # type: ignore[arg-type]
 
 
 def test_sort_identity_locations_prefers_catalog_active_platform() -> None:
@@ -134,6 +188,25 @@ def test_build_locations_index_bypasses_cache_when_disabled(monkeypatch: pytest.
     assert calls["count"] == 2
 
 
+def test_build_locations_index_refresh_rewrites_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Прогрев обязан класть свежий каталог в Redis, а не считать его вхолостую.
+
+    До 06.08.2026 задача прогрева ходила с use_cache=False (не читать И не
+    писать): кэш наполняли только посетители, платя за это холодным расчётом
+    дольше таймаута фронтенда.
+    """
+    _write_locations_index_cache({"items": [], "total": 0, "stale": True})
+
+    def fake_compute(_db: Any) -> dict[str, object]:
+        return {"items": [], "total": 0, "stale": False}
+
+    monkeypatch.setattr(location_page_service, "_compute_locations_index", fake_compute)
+
+    build_locations_index(db=None, refresh=True)  # type: ignore[arg-type]
+
+    assert _read_locations_index_cache() == {"items": [], "total": 0, "stale": False}
+
+
 # --- Кэш страницы/журнала/рейтингов одной локации (ключ на slug) ---
 #
 # Кэш здесь не косметика: без него каждое открытие страницы гоняло полтора
@@ -192,6 +265,34 @@ def test_build_location_per_slug_bypasses_cache_when_disabled(
     assert calls["count"] == 2
 
 
+@pytest.mark.parametrize(("compute_name", "build_func"), _PER_SLUG_CASES)
+def test_build_location_per_slug_refresh_rewrites_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_redis: fakeredis.FakeRedis,
+    compute_name: str,
+    build_func: Any,
+) -> None:
+    """refresh=True — единственный режим прогрева: пересчитать и положить обратно."""
+    invalidate_location_page_cache("izmailovo")
+
+    def stale_compute(_db: Any, slug: str, **_kwargs: Any) -> dict[str, object]:
+        return {"slug": slug, "stale": True}
+
+    monkeypatch.setattr(location_page_service, compute_name, stale_compute)
+    build_func(None, "izmailovo")
+
+    def fresh_compute(_db: Any, slug: str, **_kwargs: Any) -> dict[str, object]:
+        return {"slug": slug, "stale": False}
+
+    monkeypatch.setattr(location_page_service, compute_name, fresh_compute)
+    build_func(None, "izmailovo", refresh=True)
+
+    # Следующий обычный вызов обязан увидеть уже свежий payload из кэша,
+    # а не пересчитывать его сам.
+    monkeypatch.setattr(location_page_service, compute_name, stale_compute)
+    assert build_func(None, "izmailovo") == {"slug": "izmailovo", "stale": False}
+
+
 def test_build_location_page_cache_is_isolated_per_slug(
     monkeypatch: pytest.MonkeyPatch,
     fake_redis: fakeredis.FakeRedis,
@@ -241,9 +342,19 @@ def test_invalidate_location_page_cache_clears_all_three(
     build_location_page(None, "izmailovo")  # type: ignore[arg-type]
     build_location_events(None, "izmailovo")  # type: ignore[arg-type]
     build_location_leaders(None, "izmailovo")  # type: ignore[arg-type]
-    assert fake_redis.exists("locations:page:v3:izmailovo")
+
+    # Ключи берём у тех же строителей, что и продовый код: раньше тест сверялся
+    # с захардкоженными v3/v1, которых писатели давно не пишут, и «ничего не
+    # удалилось» проходило как успех.
+    keys = [
+        location_page_cache_key("izmailovo"),
+        location_events_cache_key("izmailovo"),
+        location_leaders_cache_key("izmailovo"),
+    ]
+    for key in keys:
+        assert fake_redis.exists(key), key
 
     invalidate_location_page_cache("izmailovo")
 
-    for key in ("locations:page:v3:izmailovo", "locations:events:v3:izmailovo", "locations:leaders:v1:izmailovo"):
+    for key in keys:
         assert not fake_redis.exists(key), key

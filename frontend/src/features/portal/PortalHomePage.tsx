@@ -1,10 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import {
+  getHomeVariant,
+  trackAbEvent,
+  trackHomeLinkClick,
+  useAbCtaView,
+  useAbScrollDepth,
+  useAbVariantView,
+} from "../../lib/abTest";
+import { cabinetTabHref, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import { useOptionalUser } from "../../lib/useOptionalUser";
+import { CountUpNumber } from "./CountUpNumber";
 import { PortalBlogSection } from "./PortalBlogSection";
+import { PortalFooter } from "./PortalFooter";
 import { PortalGeoMap } from "./PortalGeoMap";
 import { PortalHeader } from "./PortalHeader";
 import { PLATFORM_CHART_META, PortalTrendChart, type TrendPoint } from "./PortalTrendChart";
+import { PortalTeaserCard } from "./PortalTeaser";
 import {
   fetchPortalHome,
   PortalHomeError,
@@ -13,6 +25,7 @@ import {
   type PortalHomeResponse,
 } from "./portalTypes";
 import "./portal.css";
+import { formatInt } from "../../lib/format";
 
 const EARTH_EQUATOR_KM = 40_075;
 const SECONDS_PER_YEAR = 365 * 24 * 3600;
@@ -24,10 +37,6 @@ function plural(count: number, one: string, few: string, many: string): string {
   if (mod10 === 1) return one;
   if (mod10 >= 2 && mod10 <= 4) return few;
   return many;
-}
-
-function formatInt(value: number): string {
-  return value.toLocaleString("ru-RU");
 }
 
 function formatDateLong(iso: string): string {
@@ -66,6 +75,47 @@ function funTimeNote(totalSec: number): string {
   return `${formatInt(Math.round(days))} суток непрерывного бега`;
 }
 
+/**
+ * Название локации ссылкой на её страницу.
+ *
+ * Главная — самая посещаемая страница сайта, и до этого она была тупиком:
+ * десятки названий локаций и имён рекордсменов текстом, без единого перехода
+ * вглубь. Слага может не быть (старый кэш ответа) — тогда остаётся текст.
+ */
+function LocationLink({ name, slug }: { name: string; slug?: string | null }) {
+  if (!slug) {
+    return <>{name}</>;
+  }
+  return (
+    <a
+      className="portal-inline-link"
+      href={`/locations/${encodeURIComponent(slug)}`}
+      title="Открыть страницу локации"
+      onClick={() => trackHomeLinkClick("location", slug)}
+    >
+      {name}
+    </a>
+  );
+}
+
+/** Имя участника ссылкой на его профиль — если он привязал систему на сайте. */
+function RunnerLink({ name, handle }: { name: string | null; handle?: string | null }) {
+  const label = name?.trim() || "Участник";
+  if (!handle) {
+    return <>{label}</>;
+  }
+  return (
+    <a
+      className="portal-inline-link"
+      href={`/users/${encodeURIComponent(handle)}`}
+      title="Открыть профиль участника"
+      onClick={() => trackHomeLinkClick("runner", handle)}
+    >
+      {label}
+    </a>
+  );
+}
+
 function FastestPlatformCard({
   title,
   code,
@@ -99,7 +149,8 @@ function FastestPlatformCard({
               )}
             </b>
             <span>
-              {row.runner_name ?? "Участник"} · {row.location_name},{" "}
+              <RunnerLink name={row.runner_name} handle={row.runner_handle} /> ·{" "}
+              <LocationLink name={row.location_name} slug={row.location_slug} />,{" "}
               {formatDateCompact(row.event_date)}
             </span>
           </span>
@@ -118,7 +169,14 @@ function AttendanceTopList({ rows }: { rows: PortalAttendanceTopRow[] }) {
       {rows.map((row, index) => (
         <li key={`${row.location_name}-${row.event_date}`}>
           <span className="portal-top-rank num">{index + 1}</span>
-          <span className="portal-top-name">{row.location_name}</span>
+          <span className="portal-top-name">
+            <LocationLink name={row.location_name} slug={row.location_slug} />
+            {/* Город второй строкой: список сплошь из названий парков ничего не
+                говорит о географии. */}
+            {row.location_city && (
+              <span className="portal-top-city">{row.location_city}</span>
+            )}
+          </span>
           <PlatformBadge code={row.platform_code} />
           <span className="portal-top-value">
             <b className="num">{formatInt(row.finishers)}</b>
@@ -216,10 +274,49 @@ function GenderSplitPanel({ data }: { data: import("./portalTypes").PortalGender
   );
 }
 
+type ChartTabKey = "finishes" | "newcomers" | "records" | "locations";
+
 export function PortalHomePage() {
+  // Вариант АБ-эксперимента home_v1: B — новая главная (Т1–Т10), A — как было.
+  const isB = getHomeVariant() === "B";
+
+  // CTA «Найти себя в статистике» раньше вёл на /login безусловно: залогиненный
+  // на секунду видел вход, пока тот сам проверял сессию и уводил в кабинет.
+  // Кэшированная (см. useOptionalUser) сессия сразу даёт правильный адрес.
+  const optionalUser = useOptionalUser();
+  const ctaHref =
+    optionalUser != null ? cabinetTabHref(optionalUser, "dashboard") : PORTAL_LOGIN_HREF;
+
   const [data, setData] = useState<PortalHomeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [period, setPeriod] = useState<"all" | "year">("all");
+  // Т2 (вариант B): по умолчанию «Последний год» — его цифры можно примерить
+  // на себя, вечные итоги — абстракция.
+  const [period, setPeriod] = useState<"all" | "year">(isB ? "year" : "all");
+  const [chartTab, setChartTab] = useState<ChartTabKey>("finishes");
+
+  // АБ-аналитика главной: глубина скролла и видимость CTA (нижней и hero).
+  const ctaRef = useRef<HTMLElement | null>(null);
+  const heroCtaRef = useRef<HTMLDivElement | null>(null);
+  // Показ варианта — до загрузки данных: считаем всех, кто открыл страницу,
+  // а не только тех, у кого она успела дорисоваться.
+  useAbVariantView();
+  useAbScrollDepth(data !== null);
+  useAbCtaView(ctaRef, "bottom", data !== null);
+  useAbCtaView(heroCtaRef, "hero", isB && data !== null);
+
+  const selectPeriod = (next: "all" | "year") => {
+    if (next !== period) {
+      trackAbEvent("period", next);
+    }
+    setPeriod(next);
+  };
+
+  const selectChartTab = (next: ChartTabKey) => {
+    if (next !== chartTab) {
+      trackAbEvent("chart_tab", next);
+    }
+    setChartTab(next);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -357,40 +454,89 @@ export function PortalHomePage() {
     }));
   }, [data, period]);
 
+  // Четыре показателя живут в ОДНОЙ панели с вкладками: раньше это были четыре
+  // одинаковых графика подряд, которые занимали почти весь экран главной.
+  const chartTabs = useMemo(() => {
+    const weekly = period === "year";
+    return [
+      {
+        key: "finishes" as ChartTabKey,
+        label: "Финиши",
+        title: "Финиши по системам",
+        sub: weekly
+          ? "Последние 52 недели — наведите на график, чтобы увидеть детали"
+          : "Сколько финишей набрала каждая система в каждом году",
+        points: chartPoints,
+        projection: chartProjection,
+        totalLabel: "Всего" as string | undefined,
+      },
+      {
+        key: "newcomers" as ChartTabKey,
+        label: "Новички",
+        title: "Новички по системам",
+        sub: weekly
+          ? "Первые старты по неделям за последние 52 недели"
+          : "Сколько людей пробежали свой первый старт в каждом году",
+        points: newcomersPoints,
+        projection: newcomersProjection,
+        totalLabel: "Всего" as string | undefined,
+      },
+      {
+        key: "records" as ChartTabKey,
+        label: "Рекорды",
+        title: "Личные рекорды по системам",
+        sub: weekly
+          ? "Обновления личных рекордов по неделям за последние 52 недели"
+          : "Сколько раз участники улучшали свой лучший результат в каждой системе",
+        points: personalRecordsPoints,
+        projection: personalRecordsProjection,
+        totalLabel: "Всего" as string | undefined,
+      },
+      {
+        key: "locations" as ChartTabKey,
+        label: "Локации",
+        title: "Локации по системам",
+        sub: weekly
+          ? "Сколько локаций стартовали в каждую из 52 недель"
+          : "Сколько локаций проводили старты в каждом году",
+        points: locationsPoints,
+        projection: null,
+        totalLabel: undefined as string | undefined,
+      },
+    ];
+  }, [
+    period,
+    chartPoints,
+    chartProjection,
+    newcomersPoints,
+    newcomersProjection,
+    personalRecordsPoints,
+    personalRecordsProjection,
+    locationsPoints,
+  ]);
+
+  const activeChart = chartTabs.find((tab) => tab.key === chartTab) ?? chartTabs[0];
+
   const hero = data ? (period === "year" && data.hero_last_year ? data.hero_last_year : data.hero) : null;
 
-  return (
+  // Т1 (вариант B): блок последней недели поднимается выше вечной статистики,
+  // поэтому обе крупные секции собраны в константы и рендерятся в нужном порядке.
+  const scopeSection = data ? (
     <>
-      <PortalHeader />
-      <main className="portal-home">
-        {!data && !error && <p className="portal-loading">Загрузка статистики…</p>}
-        {error && <p className="portal-error">{error}</p>}
-
-        {data && (
-          <>
-            <section className="portal-hero">
-              <p className="portal-eyebrow">Суббота · утро · парк · 5 км</p>
-              <h1>Все парковые беговые системы — в цифрах</h1>
-              <p className="portal-hero-lead">
-                5 вёрст, S95, parkrun и RunPark: вся история — от первого старта до прошлой
-                субботы, в одном месте.
-              </p>
-            </section>
-
             <section className="portal-scope" aria-label="Статистика за период">
             <div className="portal-period-sticky">
             <div className="portal-period" role="tablist" aria-label="Период статистики">
               <button
                 type="button"
                 className={period === "all" ? "active" : ""}
-                onClick={() => setPeriod("all")}
+                onClick={() => selectPeriod("all")}
               >
                 За всё время
               </button>
               <button
                 type="button"
                 className={period === "year" ? "active" : ""}
-                onClick={() => setPeriod("year")}
+                onClick={() => selectPeriod("year")}
               >
                 Последний год
               </button>
@@ -400,115 +546,73 @@ export function PortalHomePage() {
             {hero && (
               <section className="portal-counts" aria-label="Итоги периода">
                 <div className="portal-count">
-                  <b className="num">{formatInt(hero.finishes_total)}</b>
+                  <b className="num">
+                    <CountUpNumber value={hero.finishes_total} format={formatInt} enabled={isB} />
+                  </b>
                   <span>финишей</span>
                 </div>
                 <div className="portal-count">
-                  <b className="num">{formatInt(hero.participants_total)}</b>
+                  <b className="num">
+                    <CountUpNumber value={hero.participants_total} format={formatInt} enabled={isB} />
+                  </b>
                   <span>участников</span>
                 </div>
                 <div className="portal-count">
-                  <b className="num">{formatInt(hero.locations_total)}</b>
+                  <b className="num">
+                    <CountUpNumber value={hero.locations_total} format={formatInt} enabled={isB} />
+                  </b>
                   <span>локаций</span>
                 </div>
                 <div className="portal-count">
-                  <b className="num">{formatInt(hero.starts_total)}</b>
+                  <b className="num">
+                    <CountUpNumber value={hero.starts_total} format={formatInt} enabled={isB} />
+                  </b>
                   <span>стартов</span>
                 </div>
               </section>
             )}
 
-            <section className="portal-panel">
-              <div className="portal-panel-head">
+            <section className="portal-panel portal-chart-panel">
+              <div className="portal-panel-head portal-chart-panel-head">
                 <div>
-                  <h2>Финиши по системам</h2>
-                  {period === "year" ? (
+                  <h2>{activeChart.title}</h2>
+                  <p className="portal-panel-sub">{activeChart.sub}</p>
+                  {activeChart.projection && (
                     <p className="portal-panel-sub">
-                      Последние 52 недели — наведите на график, чтобы увидеть детали
-                    </p>
-                  ) : (
-                    chartProjection && (
-                      <p className="portal-panel-sub">
-                        {chartProjection.label.replace(" (оценка)", "")} год ещё не закончился —
-                        пунктир прогнозирует итог при текущем темпе
-                      </p>
-                    )
-                  )}
-                </div>
-              </div>
-              <PortalTrendChart
-                points={chartPoints}
-                totalLabel="Всего"
-                showGrowth={period === "all"}
-                projection={chartProjection}
-              />
-            </section>
-
-            <section className="portal-panel">
-              <div className="portal-panel-head">
-                <div>
-                  <h2>Новички по системам</h2>
-                  <p className="portal-panel-sub">
-                    {period === "all"
-                      ? "Сколько людей пробежали свой первый старт в каждом году"
-                      : "Первые старты по неделям за последние 52 недели"}
-                  </p>
-                  {newcomersProjection && (
-                    <p className="portal-panel-sub">
-                      {newcomersProjection.label.replace(" (оценка)", "")} год ещё не закончился —
+                      {activeChart.projection.label.replace(" (оценка)", "")} год ещё не закончился —
                       пунктир прогнозирует итог при текущем темпе
                     </p>
                   )}
                 </div>
-              </div>
-              <PortalTrendChart
-                points={newcomersPoints}
-                totalLabel="Всего"
-                showGrowth={period === "all"}
-                projection={newcomersProjection}
-              />
-            </section>
-
-            <section className="portal-panel">
-              <div className="portal-panel-head">
-                <div>
-                  <h2>Личные рекорды по системам</h2>
-                  <p className="portal-panel-sub">
-                    {period === "all"
-                      ? "Сколько раз участники улучшали свой лучший результат в каждой системе"
-                      : "Обновления личных рекордов по неделям за последние 52 недели"}
-                  </p>
-                  {personalRecordsProjection && (
-                    <p className="portal-panel-sub">
-                      {personalRecordsProjection.label.replace(" (оценка)", "")} год ещё не закончился —
-                      пунктир прогнозирует итог при текущем темпе
-                    </p>
-                  )}
+                <div className="portal-chart-tabs" role="tablist" aria-label="Показатель на графике">
+                  {chartTabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={tab.key === activeChart.key}
+                      className={tab.key === activeChart.key ? "active" : ""}
+                      onClick={() => selectChartTab(tab.key)}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
               </div>
               <PortalTrendChart
-                points={personalRecordsPoints}
-                totalLabel="Всего"
+                key={activeChart.key}
+                points={activeChart.points}
+                totalLabel={activeChart.totalLabel}
                 showGrowth={period === "all"}
-                projection={personalRecordsProjection}
+                projection={activeChart.projection}
               />
             </section>
-
-            <section className="portal-panel">
-              <div className="portal-panel-head">
-                <div>
-                  <h2>Локации по системам</h2>
-                  <p className="portal-panel-sub">
-                    {period === "all"
-                      ? "Сколько локаций проводили старты в каждом году"
-                      : "Сколько локаций стартовали в каждую из 52 недель"}
-                  </p>
-                </div>
-              </div>
-              <PortalTrendChart points={locationsPoints} showGrowth={period === "all"} />
             </section>
-            </section>
+    </>
+  ) : null;
 
+  const weekSection = data ? (
+    <>
             <section className="portal-week-scope" aria-label="Итоги последней недели">
             <div className="portal-week-heading">Последняя беговая неделя</div>
 
@@ -520,19 +624,34 @@ export function PortalHomePage() {
                     {formatDateLong(data.pulse.event_date)}
                   </span>
                   <span className="portal-pulse-metric">
-                    <b className="num">{formatInt(data.pulse.starts)}</b> стартов
+                    <b className="num">
+                      <CountUpNumber value={data.pulse.starts} format={formatInt} enabled={isB} />
+                    </b>{" "}
+                    стартов
                   </span>
                   <span className="portal-pulse-metric">
-                    <b className="num">{formatInt(data.pulse.finishes)}</b> финишей
+                    <b className="num">
+                      <CountUpNumber value={data.pulse.finishes} format={formatInt} enabled={isB} />
+                    </b>{" "}
+                    финишей
                   </span>
                   <span className="portal-pulse-metric">
-                    <b className="num">{formatInt(data.pulse.newcomers)}</b> новичков
+                    <b className="num">
+                      <CountUpNumber value={data.pulse.newcomers} format={formatInt} enabled={isB} />
+                    </b>{" "}
+                    новичков
                   </span>
                   <span className="portal-pulse-metric">
-                    <b className="num">{formatInt(data.pulse.volunteers)}</b> волонтёров
+                    <b className="num">
+                      <CountUpNumber value={data.pulse.volunteers} format={formatInt} enabled={isB} />
+                    </b>{" "}
+                    волонтёров
                   </span>
                   <span className="portal-pulse-metric">
-                    <b className="num">{formatInt(data.pulse.personal_records)}</b> личных рекордов
+                    <b className="num">
+                      <CountUpNumber value={data.pulse.personal_records} format={formatInt} enabled={isB} />
+                    </b>{" "}
+                    личных рекордов
                   </span>
                 </section>
               </div>
@@ -546,12 +665,14 @@ export function PortalHomePage() {
                   <div>
                     <h2>Рекорды посещаемости за неделю</h2>
                     <p className="portal-panel-sub">
-                      Локации, собравшие больше финишёров, чем когда-либо
+                      Локации, собравшие больше финишёров, чем когда-либо, и открытия новых площадок
                     </p>
                   </div>
                 </div>
                 {!data.week_records || data.week_records.attendance.length === 0 ? (
-                  <p className="portal-empty-note">На этой неделе рекордов посещаемости нет.</p>
+                  <p className="portal-empty-note">
+                    На этой неделе рекордов посещаемости и открытий нет.
+                  </p>
                 ) : (
                   <ul className="portal-record-list">
                     {data.week_records.attendance.map((record) => (
@@ -559,23 +680,52 @@ export function PortalHomePage() {
                         className="portal-record-row"
                         key={`${record.location_name}-${record.event_date}`}
                       >
-                        <span className="portal-record-icon">🏆</span>
+                        <span
+                          className={`portal-record-icon${record.is_debut ? " is-debut" : ""}`}
+                          title={record.is_debut ? "Открытие площадки" : "Рекорд посещаемости"}
+                        >
+                          {record.is_debut ? "🎉" : "🏆"}
+                        </span>
                         <span className="portal-record-main">
-                          <b>{record.location_name}</b>
-                          <span>{formatDateShort(record.event_date)}</span>
+                          <b>
+                            <LocationLink
+                              name={record.location_name}
+                              slug={record.location_slug}
+                            />
+                            {record.is_debut && (
+                              <>
+                                {" "}
+                                <span className="portal-record-tag">открытие</span>
+                              </>
+                            )}
+                          </b>
+                          {/* Город перед датой: по одному названию парка не
+                              понять, о каком конце страны речь. */}
+                          <span>
+                            {record.location_city ? `${record.location_city} · ` : ""}
+                            {formatDateShort(record.event_date)}
+                          </span>
                         </span>
                         <PlatformBadge code={record.platform_code} />
                         <span className="portal-record-value">
                           <b className="num">
                             {formatInt(record.finishers)}
-                            <span className="portal-delta up">
-                              ↑ +{formatInt(record.finishers - record.previous_record)}
-                            </span>
+                            {!record.is_debut && (
+                              <span className="portal-delta up">
+                                ↑ +{formatInt(record.finishers - record.previous_record)}
+                              </span>
+                            )}
                           </b>
                           <span>
-                            было {formatInt(record.previous_record)}
-                            {record.previous_record_date &&
-                              ` · ${formatDateCompact(record.previous_record_date)}`}
+                            {record.is_debut ? (
+                              "первый старт"
+                            ) : (
+                              <>
+                                было {formatInt(record.previous_record)}
+                                {record.previous_record_date &&
+                                  ` · ${formatDateCompact(record.previous_record_date)}`}
+                              </>
+                            )}
                           </span>
                         </span>
                       </li>
@@ -603,7 +753,9 @@ export function PortalHomePage() {
                       const widthPct = Math.max(14, Math.round((row.finishers / max) * 100));
                       return (
                         <div className="portal-bar-row" key={row.location_name}>
-                          <span className="portal-bar-name">{row.location_name}</span>
+                          <span className="portal-bar-name">
+                            <LocationLink name={row.location_name} slug={row.location_slug} />
+                          </span>
                           <span className="portal-bar-track">
                             <span
                               className={`portal-bar-fill portal-bar-fill-${row.platform_code}`}
@@ -652,7 +804,8 @@ export function PortalHomePage() {
                       </span>
                       <span className="portal-record-main">
                         <b>
-                          {record.runner_name ?? "Участник"} · {record.location_name}
+                          <RunnerLink name={record.runner_name} handle={record.runner_handle} />{" "}
+                          · <LocationLink name={record.location_name} slug={record.location_slug} />
                         </b>
                         <span>{formatDateShort(record.event_date)}</span>
                       </span>
@@ -664,12 +817,16 @@ export function PortalHomePage() {
                             <span className="portal-delta down">↓ −{record.delta_sec} сек</span>
                           )}
                         </b>
-                        {record.previous_display && (
-                          <span>
-                            было {record.previous_display}
-                            {record.previous_record_date &&
-                              ` · ${formatDateCompact(record.previous_record_date)}`}
-                          </span>
+                        {record.is_debut ? (
+                          <span>первый рекорд трассы</span>
+                        ) : (
+                          record.previous_display && (
+                            <span>
+                              было {record.previous_display}
+                              {record.previous_record_date &&
+                                ` · ${formatDateCompact(record.previous_record_date)}`}
+                            </span>
+                          )
                         )}
                       </span>
                     </li>
@@ -678,6 +835,60 @@ export function PortalHomePage() {
               </section>
             )}
             </section>
+    </>
+  ) : null;
+
+
+  return (
+    <>
+      <PortalHeader />
+      <main className="portal-home">
+        {!data && !error && <p className="portal-loading">Загрузка статистики…</p>}
+        {error && <p className="portal-error">{error}</p>}
+
+        {data && (
+          <>
+            <section className="portal-hero">
+              <p className="portal-eyebrow">Суббота · утро · парк · 5 км</p>
+              {isB ? (
+                <>
+                  {/* Т8: заголовок про посетителя, а не про сайт. */}
+                  <h1>Вся ваша беговая история — от первого старта до прошлой субботы</h1>
+                  <p className="portal-hero-lead">
+                    5 вёрст, S95, parkrun и RunPark: рекорды, серии суббот, карта визитов и
+                    встречи — уже посчитаны и ждут вас.
+                  </p>
+                  {/* Т6+Т7: CTA в верхней трети, текст про ценность; Т9: соц-доказательство. */}
+                  <div className="portal-hero-cta" ref={heroCtaRef}>
+                    <a
+                      className="btn primary"
+                      href={ctaHref}
+                      onClick={() => trackAbEvent("cta_click", "hero")}
+                    >
+                      {optionalUser != null ? "Открыть кабинет" : "Найти себя в статистике"}
+                    </a>
+                    {data.registered_parks > 0 && (
+                      <span className="portal-hero-proof">
+                        Участники из {formatInt(data.registered_parks)}{" "}
+                        {plural(data.registered_parks, "парка", "парков", "парков")} уже нашли здесь
+                        свою статистику
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h1>Все парковые беговые системы — в цифрах</h1>
+                  <p className="portal-hero-lead">
+                    5 вёрст, S95, parkrun и RunPark: вся история — от первого старта до прошлой
+                    субботы, в одном месте.
+                  </p>
+                </>
+              )}
+            </section>
+
+            {isB ? weekSection : scopeSection}
+            {isB ? scopeSection : weekSection}
 
             <section className="portal-panel" aria-label="Рекорды посещаемости">
               <div className="portal-panel-head">
@@ -855,21 +1066,41 @@ export function PortalHomePage() {
               )}
             </section>
 
-            <section className="portal-cta portal-cta-split">
+            <section className="portal-cta portal-cta-split" ref={ctaRef}>
               <div className="portal-cta-copy">
                 <h2>А теперь найдите здесь себя</h2>
-                <p>
-                  Привяжите профили беговых систем — и получите личную статистику по всем
-                  платформам: рекорды, серии суббот, карту визитов, встречи и вехи вашей беговой
-                  истории.
-                </p>
+                {isB ? (
+                  <p>
+                    Выберите свою систему и введите ID — покажем предпросмотр вашей карточки
+                    прямо сейчас, без регистрации. Полная версия — рекорды, серии суббот, карта
+                    визитов и встречи — откроется после входа.
+                  </p>
+                ) : (
+                  <p>
+                    Привяжите профили беговых систем — и получите личную статистику по всем
+                    платформам: рекорды, серии суббот, карту визитов, встречи и вехи вашей беговой
+                    истории.
+                  </p>
+                )}
                 <div className="portal-cta-actions">
-                  <a className="btn primary" href={PORTAL_LOGIN_HREF}>
-                    Создать кабинет
+                  <a
+                    className="btn primary"
+                    href={ctaHref}
+                    onClick={() => trackAbEvent("cta_click", "bottom")}
+                  >
+                    {optionalUser != null
+                      ? "Открыть кабинет"
+                      : isB
+                        ? "Найти себя в статистике"
+                        : "Создать кабинет"}
                   </a>
                 </div>
               </div>
 
+              {/* Т10 (вариант B): вместо примера карточки — живой предпросмотр по ID. */}
+              {isB ? (
+                <PortalTeaserCard />
+              ) : (
               <div className="portal-poster" aria-hidden="true">
                 <div className="portal-poster-badge">пример вашей карточки</div>
                 <div className="portal-poster-head">
@@ -1002,10 +1233,12 @@ export function PortalHomePage() {
                   <span className="portal-poster-chip">⚡ 8 PR</span>
                 </div>
               </div>
+              )}
             </section>
           </>
         )}
       </main>
+      <PortalFooter />
     </>
   );
 }

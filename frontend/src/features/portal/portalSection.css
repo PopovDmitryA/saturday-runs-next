@@ -1,0 +1,122 @@
+/* Разделы портала верхнего уровня (Локации, Рейтинги) — каркас PortalSectionShell.
+   Легаси-контент страниц рескинится здесь scoped-правилами, сами страницы не
+   трогаем (только меняем их старый SiteHeader-шелл на PortalSectionShell). */
+
+.portal-section-page {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+/* 1440px — общая ширина сайта, синхронизирована с .portal-home (portal.css)
+   и .portal-cab-layout (cabinet.css). Меняете одну — меняйте все, иначе при
+   переходе между разделами контент визуально «прыгает». */
+.portal-section {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 24px 20px 72px;
+}
+
+/* ---------- заголовок раздела ---------- */
+
+.portal-section .lb-header h1,
+.portal-section .loc-index-head h1 {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+/* ---------- карточки → портальные панели ---------- */
+
+.portal-section .card {
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+
+/* Плашка «оцените старт»: у неё справа абсолютный крестик, место под который
+   зарезервировано её собственным padding-right. Наш общий рескин .card выше
+   по специфичности и затирал его — кнопка «Оценить» наезжала на крестик. */
+.portal-section .card.loc-rate-prompt {
+  padding-right: 2.8rem;
+}
+
+.portal-section .section-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- таблицы ---------- */
+
+.portal-section .table-wrap {
+  border-radius: 14px;
+}
+
+/* Без капса: сортируемые заголовки — <button>, а браузер сбрасывает у кнопок
+   text-transform, поэтому капсом отображались только несортируемые колонки —
+   в одной шапке половина слов КАПСОМ, половина нет (репорт Дмитрия 11.08.2026). */
+.portal-section .data-table thead th {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+/* ---------- чипы-фильтры (как на главной портала) ---------- */
+
+.portal-section .map-mode-tab,
+.portal-section .insights-filter-chip {
+  border-radius: 9px;
+  border-color: var(--border);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.portal-section .map-mode-tab.active,
+.portal-section .insights-filter-chip.active {
+  background: var(--tint-indigo-bg);
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+}
+
+/* Раздел внутри единого лейаута с сайдбаром (.portal-cab-layout): контейнер
+   и паддинги даёт лейаут, у .portal-section остаётся только роль scope для
+   рескин-правил ниже. */
+.portal-cab-layout > .portal-section {
+  max-width: none;
+  margin: 0;
+  margin-top: 20px;
+  padding: 0;
+}
+
+/* ---------- публичный профиль ---------- */
+
+/* Статичный заголовок группы (имя участника) — не кнопка. */
+.portal-cab-group-head-static {
+  cursor: default;
+}
+
+.portal-cab-group-head-static:hover {
+  background: transparent;
+  color: var(--text-3);
+}
+
+/* Вкладки-чипы профиля: на десктопе их заменяет сайдбар. */
+@media (min-width: 901px) {
+  /* Двойной класс — перебиваем display:flex базовых .admin-preview-tabs
+     независимо от порядка в бандле. */
+  .admin-preview-tabs.public-profile-tabs {
+    display: none;
+  }
+}
+
+.portal-section .admin-preview-tab {
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.portal-section .admin-preview-tab.active {
+  background: var(--tint-indigo-bg);
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+}

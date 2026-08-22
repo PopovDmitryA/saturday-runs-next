@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
 from collections import defaultdict
@@ -11,10 +13,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.activity_url import prefer_event_source_url
+from app.geo.country_names import normalize_country_name
 from app.models import (
     Event,
     EventSummary,
     Location,
+    LocationDescription,
     Participant,
     Platform,
     RunResult,
@@ -25,9 +29,11 @@ from app.pace import resolve_run_pace
 from app.platform_adapters.canonical import (
     CanonicalEventSummary,
     CanonicalLocation,
+    CanonicalLocationDescription,
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
+from app.services.gender_position_service import resolve_participant_gender
 from app.services.location_catalog_service import backfill_city_from_catalog, backfill_region_from_catalog
 
 PARSER_VERSION = "0.3.2"
@@ -36,17 +42,43 @@ logger = logging.getLogger(__name__)
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def _resolve_region(location: CanonicalLocation) -> str | None:
-    if location.region:
-        return location.region
-    if location.latitude is None or location.longitude is None:
-        return None
-    try:
-        from app.geo.reverse_geocode import lookup_region
+def _resolve_geo(
+    location: CanonicalLocation, row: Location | None
+) -> tuple[str | None, str | None, str | None]:
+    """Страна, регион и город: что дала система — то и берём, пробелы добираем
+    обратным геокодом по координатам.
 
-        return lookup_region(location.latitude, location.longitude)
+    Раньше геокод доставал только регион, а страну каждый вызывающий должен был
+    заполнить сам. s95 её не отдаёт вовсе, и локация, найденная не через реестр,
+    а через протокол (см. s95_global_sync_api._ensure_location), оставалась без
+    страны — так появилось Кратово. Заполняем здесь, чтобы это работало для всех
+    систем и всех путей создания, а не только там, где вызывающий не забыл.
+
+    Один запрос вместо прежнего запроса-на-регион: у Nominatim в ответе и так
+    все три поля. Если всё уже известно — в сеть не ходим совсем.
+
+    Страну прогоняем через normalize_country_name: в БД она хранится по-русски,
+    одно название на одну страну (см. app/geo/country_names.py).
+    """
+    country = normalize_country_name(location.country) or (row.country if row else None)
+    region = location.region or (row.region if row else None)
+    city = location.city or (row.city if row else None)
+    if country and region and city:
+        return country, region, city
+    if location.latitude is None or location.longitude is None:
+        return country, region, city
+    try:
+        from app.geo.reverse_geocode import lookup_address
+
+        address = lookup_address(location.latitude, location.longitude)
     except Exception:
-        return None
+        logger.warning("geocode failed for %s", location.external_key, exc_info=True)
+        return country, region, city
+    return (
+        country or normalize_country_name(address.get("country")),
+        region or address.get("region"),
+        city or address.get("city"),
+    )
 
 
 def get_platform(db: Session, platform_code: str) -> Platform:
@@ -75,15 +107,15 @@ def upsert_location(
     changed = False
     if location.latitude is not None and location.longitude is not None and location.region is None:
         logger.info("geocode region for %s", location.external_key)
-    region = _resolve_region(location)
+    country, region, city = _resolve_geo(location, row)
 
     if row is None:
         row = Location(
             platform_id=platform.id,
             external_key=location.external_key,
             name=location.name,
-            country=location.country,
-            city=location.city,
+            country=country,
+            city=city,
             region=region,
             latitude=location.latitude,
             longitude=location.longitude,
@@ -99,22 +131,65 @@ def upsert_location(
         return row, True
 
     if row.source_hash == source_hash and source_hash is not None:
-        if row.region is None and region is not None:
-            row.region = region
+        # Ничего не изменилось, но геопробелы дозаполняем: строка могла родиться
+        # до того, как геокод стал общим для всех путей создания.
+        if (row.country, row.region, row.city) != (country, region, city):
+            row.country, row.region, row.city = country, region, city
             db.flush()
         return row, False
 
-    row.name = location.name
-    row.country = location.country
-    row.city = location.city or row.city
-    row.region = region or row.region
-    row.latitude = location.latitude or row.latitude
-    row.longitude = location.longitude or row.longitude
-    if location.map_url:
-        row.map_url = location.map_url
-    row.source_url = location.source_url
+    # Собираем целевое состояние строки. Правило общее: пустое значение из
+    # источника НЕ затирает уже известное — разные пути знают о локации разное.
+    # Импорт профиля, например, видит только слаг и название, без координат,
+    # хеша страницы и карты; синк локаций — наоборот, знает всё.
+    new_name = location.name or row.name
+    # `or row.country` — s95 страну не отдаёт, и без этого каждый синк стирал бы
+    # уже известную. Город и регион так и жили, страна была исключением.
+    new_country = country or row.country
+    new_city = city or row.city
+    new_region = region or row.region
+    new_latitude = location.latitude or row.latitude
+    new_longitude = location.longitude or row.longitude
+    new_map_url = location.map_url or row.map_url
+    new_source_url = location.source_url or row.source_url
+    # Хеш ставит только тот, кто реально его посчитал (синк по HTML страницы).
+    # Раньше вызовы без хеша (импорт профиля) затирали его в NULL, и оптимизация
+    # «не обновлять, если не изменилось» переставала работать для ВСЕХ путей:
+    # на 05.08.2026 хеша не было у 2837 локаций из 2875.
+    new_source_hash = source_hash if source_hash is not None else row.source_hash
+
+    unchanged = (
+        row.name == new_name
+        and row.country == new_country
+        and row.city == new_city
+        and row.region == new_region
+        and row.latitude == new_latitude
+        and row.longitude == new_longitude
+        and row.map_url == new_map_url
+        and row.source_url == new_source_url
+        and row.source_hash == new_source_hash
+        and row.parser_version == PARSER_VERSION
+        and row.sync_status == SyncStatus.ok
+        and row.error_message is None
+    )
+    if unchanged:
+        # Ни одного отличия — не трогаем строку вообще. Раньше здесь всё равно
+        # шёл UPDATE ради fetched_at, и на прод-базе такие «пустые» апдейты
+        # вставали в очередь за блокировками боевых воркеров (23 с на запрос).
+        # fetched_at означает «когда локацию реально пересинкали», поэтому
+        # упоминание локации в чужом импорте его двигать не должно.
+        return row, False
+
+    row.name = new_name
+    row.country = new_country
+    row.city = new_city
+    row.region = new_region
+    row.latitude = new_latitude
+    row.longitude = new_longitude
+    row.map_url = new_map_url
+    row.source_url = new_source_url
     row.parser_version = PARSER_VERSION
-    row.source_hash = source_hash
+    row.source_hash = new_source_hash
     row.fetched_at = now
     row.sync_status = SyncStatus.ok
     row.error_message = None
@@ -122,6 +197,101 @@ def upsert_location(
     logger.info("DB flush location %s", location.external_key)
     db.flush()
     return row, changed
+
+
+def _description_payload(description: CanonicalLocationDescription) -> dict[str, object]:
+    return {
+        "schedule_text": description.schedule_text,
+        "course_text": description.course_text,
+        "travel_text": description.travel_text,
+        "travel_sections": [
+            {"title": section.title, "text": section.text} for section in description.travel_sections
+        ],
+        "links": [{"title": link.title, "url": link.url} for link in description.links],
+    }
+
+
+def _description_hash(payload: dict[str, object]) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
+def upsert_location_description(
+    db: Session,
+    location: Location,
+    description: CanonicalLocationDescription,
+) -> tuple[LocationDescription, bool]:
+    """Сохраняет описание площадки. Пустое описание не затирает уже собранное.
+
+    Пустым оно приходит штатно: страница «О трассе» у площадок «на паузе»
+    подменяется приглашением стать организатором, и разбор оттуда ничего не
+    достаёт. Терять из-за этого нормальный текст, собранный месяц назад, — хуже,
+    чем показать слегка устаревший.
+
+    Но отметку fetched_at ставим даже на пустое: обход S95 берёт локации по
+    давности загрузки, и локация, с которой текст не снимается никогда, иначе
+    навсегда осталась бы первой в очереди и заслоняла все остальные.
+    """
+
+    payload = _description_payload(description)
+    content_hash = _description_hash(payload)
+    now = datetime.now(timezone.utc)
+    empty = description.is_empty()
+
+    row = db.query(LocationDescription).filter(LocationDescription.location_id == location.id).one_or_none()
+    if row is not None and empty:
+        row.fetched_at = now
+        db.flush()
+        return row, False
+
+    if row is None and empty:
+        row = LocationDescription(
+            location_id=location.id,
+            source_url=description.source_url or None,
+            fetched_at=now,
+        )
+        db.add(row)
+        db.flush()
+        return row, False
+
+    if row is None:
+        row = LocationDescription(
+            location_id=location.id,
+            schedule_text=description.schedule_text,
+            course_text=description.course_text,
+            travel_text=description.travel_text,
+            travel_sections=payload["travel_sections"],
+            links=payload["links"],
+            source_url=description.source_url or None,
+            content_hash=content_hash,
+            fetched_at=now,
+            content_updated_at=now,
+            # Первый сбор — не «изменение»: revision считает, сколько раз текст
+            # поменялся ПОСЛЕ того, как мы его впервые увидели.
+            revision=0,
+        )
+        db.add(row)
+        db.flush()
+        return row, True
+
+    row.fetched_at = now
+    if row.content_hash == content_hash:
+        db.flush()
+        return row, False
+
+    row.schedule_text = description.schedule_text
+    row.course_text = description.course_text
+    row.travel_text = description.travel_text
+    row.travel_sections = payload["travel_sections"]
+    row.links = payload["links"]
+    row.source_url = description.source_url or row.source_url
+    row.content_hash = content_hash
+    row.content_updated_at = now
+    row.revision = (row.revision or 0) + 1
+    logger.info("DB flush location description %s", location.external_key)
+    db.flush()
+    return row, True
 
 
 def upsert_event_summary(
@@ -311,14 +481,25 @@ def upsert_participant(
     age_category: str | None = None,
     barcode_id: str | None = None,
 ) -> Participant:
-    row = (
-        db.query(Participant)
-        .filter(
-            Participant.platform_id == platform.id,
-            Participant.external_user_id == external_user_id,
+    # Кеш «платформа+внешний id → строка» на время сессии: профильный импорт
+    # ищет одного и того же участника на каждой пробежке, и по SSH-туннелю к
+    # проду это были сотни одинаковых SELECT (42% времени импорта долгожителя).
+    # Живёт на самой Session, поэтому не течёт между запросами и прогонами.
+    cache: dict[tuple[UUID, str], Participant] = getattr(db, "_participant_cache", None)
+    if cache is None:
+        cache = {}
+        db._participant_cache = cache  # noqa: SLF001
+    cache_key = (platform.id, external_user_id)
+    row = cache.get(cache_key)
+    if row is None:
+        row = (
+            db.query(Participant)
+            .filter(
+                Participant.platform_id == platform.id,
+                Participant.external_user_id == external_user_id,
+            )
+            .one_or_none()
         )
-        .one_or_none()
-    )
     now = datetime.now(timezone.utc)
     if external_user_id.startswith("unknown:"):
         default_profile_url = None
@@ -336,6 +517,7 @@ def upsert_participant(
             profile_url=profile_url or default_profile_url,
             club_name=club_name,
             age_category=age_category,
+            gender=resolve_participant_gender(platform.code, age_category),
             barcode_id=barcode_id,
             source_url=profile_url,
             parser_version=PARSER_VERSION,
@@ -344,18 +526,39 @@ def upsert_participant(
         )
         db.add(row)
     else:
-        row.display_name = display_name
-        if profile_url:
-            row.profile_url = profile_url
-        if club_name:
-            row.club_name = club_name
-        if age_category:
-            row.age_category = age_category
-        if barcode_id:
-            row.barcode_id = barcode_id
-        row.fetched_at = now
-        row.sync_status = SyncStatus.ok
+        # Профильный импорт зовёт эту функцию на КАЖДУЮ пробежку одного и того
+        # же человека (upsert_run_results вызывается по одной строке), поэтому
+        # безусловная запись fetched_at давала сотни UPDATE одинаковыми
+        # данными: у долгожителя с 284 забегами — 298 апдейтов по туннелю.
+        # Трогаем строку, только если что-то реально меняется.
+        changes = (
+            row.display_name != display_name
+            or (profile_url and row.profile_url != profile_url)
+            or (club_name and row.club_name != club_name)
+            or (age_category and row.age_category != age_category)
+            or (barcode_id and row.barcode_id != barcode_id)
+            or row.sync_status != SyncStatus.ok
+        )
+        if changes:
+            row.display_name = display_name
+            if profile_url:
+                row.profile_url = profile_url
+            if club_name:
+                row.club_name = club_name
+            if age_category:
+                row.age_category = age_category
+            if barcode_id:
+                row.barcode_id = barcode_id
+            row.fetched_at = now
+            row.sync_status = SyncStatus.ok
+    # Пол пересчитываем всегда: у s95 он приезжает в profile_extra отдельным
+    # апсертом профиля, у остальных — вместе с обновлённой категорией.
+    # Известный пол не затираем на None (протокол без категории — не повод).
+    gender = resolve_participant_gender(platform.code, row.age_category, row.profile_extra)
+    if gender is not None and row.gender != gender:
+        row.gender = gender
     db.flush()
+    cache[cache_key] = row
     return row
 
 
@@ -959,6 +1162,9 @@ def import_profile_run_results(
 ) -> int:
     imported = 0
     touched_participant_ids: set[UUID] = set()
+    # external_user_id → Participant.id (или None). В профильном импорте ключ
+    # всегда один, но код общий для всех платформ — держим словарь.
+    participant_id_cache: dict[str, UUID | None] = {}
     for item in results:
         slug = _normalize_location_slug(item.location_external_key, item.location_name)
         display_name = item.location_name or slug
@@ -969,7 +1175,11 @@ def import_profile_run_results(
             location_source_url = (
                 f"https://www.parkrun.org.uk/{slug}/" if slug != "unknown" else None
             )
-            country = "United Kingdom"
+            # Профиль не говорит, где площадка: parkrun.org.uk — общий вход в
+            # мировой каталог, а не признак Британии. Прежняя заглушка «United
+            # Kingdom» помечала ею Якутск и Йошкар-Олу. Пусто честнее — страну
+            # добирает бэкфилл по координатам (scripts/backfill_location_country.py).
+            country = None
         else:
             location_source_url = f"https://5verst.ru/{slug}/" if slug != "unknown" else None
             country = "Россия"
@@ -1029,16 +1239,26 @@ def import_profile_run_results(
             from app.services.gender_position_service import recalculate_event_gender_positions
 
             recalculate_event_gender_positions(db, event.id, platform.code)
-        participant = (
-            db.query(Participant)
-            .filter(
-                Participant.platform_id == platform.id,
-                Participant.external_user_id == item.external_user_id,
+        # Участник в профильном импорте один и тот же на все пробежки, но раньше
+        # его искали заново на каждой строке: у долгожителя с 284 забегами это
+        # давало сотни одинаковых SELECT по туннелю (42% всего времени импорта).
+        # Кешируем найденное в пределах вызова.
+        external_user_id = item.external_user_id
+        if external_user_id in participant_id_cache:
+            participant_id = participant_id_cache[external_user_id]
+        else:
+            participant_row = (
+                db.query(Participant.id)
+                .filter(
+                    Participant.platform_id == platform.id,
+                    Participant.external_user_id == external_user_id,
+                )
+                .one_or_none()
             )
-            .one_or_none()
-        )
-        if participant is not None:
-            touched_participant_ids.add(participant.id)
+            participant_id = participant_row[0] if participant_row is not None else None
+            participant_id_cache[external_user_id] = participant_id
+        if participant_id is not None:
+            touched_participant_ids.add(participant_id)
     if platform.code == "five_verst":
         participant_ids = {item.external_user_id for item in results}
         for external_user_id in participant_ids:
@@ -1214,7 +1434,9 @@ def import_profile_volunteer_results(
         slug = _normalize_location_slug(item.location_external_key, item.location_name)
         display_name = item.location_name or slug
         if platform.code == "parkrun":
-            country = "United Kingdom"
+            # См. import_profile_run_results: домен parkrun.org.uk не означает
+            # Британию, поэтому страну отсюда не выдумываем.
+            country = None
             default_source = f"https://www.parkrun.org.uk/{slug}/" if slug != "unknown" else ""
         elif platform.code == "s95":
             country = "Россия"

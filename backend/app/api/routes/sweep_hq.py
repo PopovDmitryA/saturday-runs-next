@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hmac
 import os
+import time
 from datetime import date, timedelta
 from typing import Annotated
 
@@ -19,6 +20,13 @@ router = APIRouter(prefix="/sweep-hq", tags=["sweep-hq"])
 
 QUEUE_TOTAL_FALLBACK = 6_693_994  # для прогноза, если запрос не отдал total
 
+# Кэш публичного табло: адрес открытый, а каждый запрос — коннект к staging-БД
+# на сервере. Данные и так меняются раз в минуты, поэтому отдаём из памяти.
+# Отдельный кэш на каждый период графика (ключ — число часов).
+PUBLIC_CACHE_TTL_SECONDS = 60
+_public_cache: dict[str, object] = {"at": 0.0, "data": None}
+_public_rate_cache: dict[int, tuple[float, dict]] = {}
+
 
 def _rows(conn, sql: str) -> list[dict]:
     cur = conn.execute(sql)
@@ -26,14 +34,18 @@ def _rows(conn, sql: str) -> list[dict]:
     return [dict(zip(cols, r, strict=False)) for r in cur.fetchall()]
 
 
-def _guard(token: str, settings: Settings) -> str:
-    secret = settings.sweep_hq_token
-    if not secret or not hmac.compare_digest(token, secret):
-        raise HTTPException(status_code=404, detail="Not found")
+def _dsn_or_503() -> str:
     dsn = os.getenv("PM_WORLD_DSN")
     if not dsn:
         raise HTTPException(status_code=503, detail="sweep DB not configured")
     return dsn
+
+
+def _guard(token: str, settings: Settings) -> str:
+    secret = settings.sweep_hq_token
+    if not secret or not hmac.compare_digest(token, secret):
+        raise HTTPException(status_code=404, detail="Not found")
+    return _dsn_or_503()
 
 
 @router.get("/athletes")
@@ -79,6 +91,123 @@ def sweep_hq_athletes(
     return {"athletes": rows}
 
 
+@router.get("/public")
+def sweep_public() -> dict:
+    """ПУБЛИЧНОЕ табло прогресса обхода (страница /world), без токена.
+
+    Сознательно отдаёт только обезличенные агрегаты. Здесь НЕ должно появиться
+    ничего из того, что есть на закрытом /hq:
+    - имена и ID атлетов (персональные данные живых людей);
+    - адреса прокси и имена VPN-выходов (наша инфраструктура);
+    - счётчики капч и уровни банов (документируют обход защиты).
+    Добавляя сюда поле, спрашивай себя, готов ли ты показать его незнакомому
+    человеку в интернете.
+    """
+    now = time.time()
+    cached = _public_cache.get("data")
+    if cached is not None and now - float(_public_cache["at"]) < PUBLIC_CACHE_TTL_SECONDS:
+        return cached  # type: ignore[return-value]
+
+    dsn = _dsn_or_503()
+    import psycopg
+
+    with psycopg.connect(dsn, connect_timeout=5) as conn:
+        prog = _rows(conn, """
+            SELECT count(*) AS total,
+                   count(*) FILTER (WHERE status IN
+                       ('collected','ok','not_found','registered_empty','unclassified')) AS checked,
+                   count(*) FILTER (WHERE fetched_at > now() - interval '24 hours') AS rate_24h,
+                   count(*) FILTER (WHERE fetched_at > now() - interval '1 hour') AS rate_1h,
+                   (SELECT count(*) FROM runs) AS runs,
+                   (SELECT count(*) FROM athletes WHERE source='crawl' AND status='ok') AS profiles
+            FROM crawl_queue""")[0]
+
+    # "checked" — сколько ID проверено (включая пустые/несуществующие), это и есть
+    # прогресс по диапазону. "profiles" — сколько из них оказались живыми бегунами.
+    checked = int(prog["checked"] or 0)
+    total = int(prog["total"] or 0) or QUEUE_TOTAL_FALLBACK
+    remaining = max(0, total - checked)
+    rate_24h = int(prog["rate_24h"] or 0)
+
+    forecast: dict = {"days": None, "date": None}
+    if rate_24h > 0:
+        days = remaining / rate_24h
+        forecast = {"days": round(days, 1),
+                    "date": (date.today() + timedelta(days=days)).isoformat()}
+
+    data = {
+        "progress": {
+            "checked": checked, "total": total, "remaining": remaining,
+            "pct": round(checked / total * 100, 3) if total else 0.0,
+            "runs": int(prog["runs"] or 0),
+            "profiles": int(prog["profiles"] or 0),
+        },
+        "rate_1h": int(prog["rate_1h"] or 0),
+        "rate_24h": rate_24h,
+        "forecast": forecast,
+    }
+    _public_cache["at"] = now
+    _public_cache["data"] = data
+    return data
+
+
+@router.get("/public/rate-history")
+def sweep_public_rate_history(
+    hours: Annotated[int, Query(ge=0, le=24 * 365)] = 48,
+) -> dict:
+    """Публичная динамика темпа сбора по часам. hours=0 — весь период.
+    Без имён/прокси — просто «сколько ID проверено за час». Кэш по периоду."""
+    now = time.time()
+    hit = _public_rate_cache.get(hours)
+    if hit is not None and now - hit[0] < PUBLIC_CACHE_TTL_SECONDS:
+        return hit[1]
+
+    dsn = _dsn_or_503()
+    import psycopg
+
+    where = (
+        f"fetched_at > now() - interval '{hours} hours'"
+        if hours
+        else "fetched_at IS NOT NULL"
+    )
+    with psycopg.connect(dsn, connect_timeout=5) as conn:
+        rows = _rows(conn, f"""
+            SELECT to_char(date_trunc('hour', fetched_at), 'YYYY-MM-DD"T"HH24:00:00"Z"') AS hour,
+                   count(*) AS collected
+            FROM crawl_queue
+            WHERE {where}
+            GROUP BY 1 ORDER BY 1""")
+    data = {"hours": [{"hour": r["hour"], "collected": int(r["collected"] or 0)} for r in rows]}
+    _public_rate_cache[hours] = (now, data)
+    return data
+
+
+@router.get("/rate-history")
+def sweep_hq_rate_history(
+    token: Annotated[str, Query()] = "",
+    hours: Annotated[int, Query(ge=0, le=24 * 365)] = 48,
+    settings: Annotated[Settings, Depends(get_settings)] = None,  # type: ignore[assignment]
+) -> dict:
+    """Сколько атлетов собрано за каждый час — динамика скорости обхода.
+    fetched_at хранится на каждой строке crawl_queue постоянно, отдельного
+    снапшота не нужно: считаем ретроспективно группировкой по часу.
+    hours=0 — весь период (без фильтра по времени)."""
+    dsn = _guard(token, settings)
+    import psycopg
+
+    where = f"WHERE fetched_at > now() - interval '{hours} hours'" if hours else "WHERE fetched_at IS NOT NULL"
+    with psycopg.connect(dsn, connect_timeout=5) as conn:
+        rows = _rows(conn, f"""
+            SELECT to_char(date_trunc('hour', fetched_at), 'YYYY-MM-DD"T"HH24:00:00"Z"') AS hour,
+                   count(*) AS collected
+            FROM crawl_queue
+            {where}
+            GROUP BY 1 ORDER BY 1""")
+    for r in rows:
+        r["collected"] = int(r["collected"] or 0)
+    return {"hours": rows}
+
+
 @router.get("")
 def sweep_hq(
     token: Annotated[str, Query()] = "",
@@ -90,16 +219,26 @@ def sweep_hq(
 
     with psycopg.connect(dsn, connect_timeout=5) as conn:
         prog = _rows(conn, """
-            SELECT count(*) FILTER (WHERE status<>'pending') AS done,
-                   count(*) AS total,
+            SELECT count(*) AS total,
+                   count(*) FILTER (WHERE status IN
+                       ('collected','ok','not_found','registered_empty','unclassified')) AS done,
+                   count(*) FILTER (WHERE status='collected') AS in_processing,
                    count(*) FILTER (WHERE fetched_at > now() - interval '24 hours') AS rate_24h,
                    count(*) FILTER (WHERE fetched_at > now() - interval '1 hour') AS rate_1h,
-                   (SELECT count(*) FROM athletes WHERE source='crawl') AS collected,
-                   (SELECT count(*) FROM runs) AS runs
+                   (SELECT count(*) FROM runs) AS runs,
+                   (SELECT count(*) FROM athletes WHERE source='crawl'
+                       AND parsed_at > now() - interval '24 hours') AS parse_rate_24h,
+                   (SELECT count(*) FROM athletes WHERE source='crawl'
+                       AND parsed_at > now() - interval '1 hour') AS parse_rate_1h
             FROM crawl_queue""")[0]
         vpn = _rows(conn, """
             SELECT name, account, collected_total, active_seconds, delay_sec,
-                   CASE WHEN NOT enabled THEN 'off'
+                   captcha_total, captcha_solved,
+                   to_char(last_captcha_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_captcha_at,
+                   CASE WHEN account='mac' AND (worker_heartbeat_at IS NULL
+                             OR worker_heartbeat_at <= now() - interval '90 seconds')
+                             THEN 'off'   -- локальный скрипт: нет heartbeat = не запущен
+                        WHEN NOT enabled THEN 'off'
                         WHEN cooldown_until > now() THEN 'cooldown'
                         WHEN worker_heartbeat_at > now() - interval '90 seconds' THEN 'working'
                         ELSE 'queued' END AS status,
@@ -109,7 +248,9 @@ def sweep_hq(
             FROM sweep_exits WHERE account <> 'free'
             ORDER BY
                 collected_total DESC,                   -- РЕЙТИНГ: сколько спарсил (главное)
-                CASE WHEN NOT enabled THEN 3
+                CASE WHEN account='mac' AND (worker_heartbeat_at IS NULL
+                          OR worker_heartbeat_at <= now() - interval '90 seconds') THEN 3
+                     WHEN NOT enabled THEN 3
                      WHEN cooldown_until > now() THEN 2
                      WHEN worker_heartbeat_at > now() - interval '90 seconds' THEN 0
                      ELSE 1 END,                        -- вторым: работает→очередь→отлёжка→выкл
@@ -147,6 +288,8 @@ def sweep_hq(
         return float(x) if x is not None else 0.0
 
     for r in vpn:
+        r["captcha_total"] = int(r.get("captcha_total") or 0)
+        r["captcha_solved"] = int(r.get("captcha_solved") or 0)
         r["collected_total"] = int(r["collected_total"] or 0)
         r["active_seconds"] = int(r["active_seconds"] or 0)
         r["delay_sec"] = round(num(r["delay_sec"]), 1)
@@ -162,10 +305,14 @@ def sweep_hq(
     return {
         "progress": {
             "done": done, "total": total, "remaining": remaining, "pct": pct,
-            "collected": int(prog["collected"] or 0), "runs": int(prog["runs"] or 0),
+            "collected": done,  # собрано = в папке (не распарсено) + распарсено
+            "in_processing": int(prog["in_processing"] or 0),
+            "runs": int(prog["runs"] or 0),
         },
         "rate_24h": rate_24h,
         "rate_1h": int(prog["rate_1h"] or 0),
+        "parse_rate_24h": int(prog["parse_rate_24h"] or 0),
+        "parse_rate_1h": int(prog["parse_rate_1h"] or 0),
         "forecast": forecast,
         "vpn": vpn,
         "free": {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { PortalBlogCard } from "./PortalBlogCard";
+import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
 import { fetchBlogPosts, type BlogPostList } from "./blogTypes";
 import { PORTAL_HOME_HREF } from "../../lib/portalRoutes";
@@ -89,6 +90,7 @@ export function PortalBlogPage() {
           </>
         )}
       </main>
+      <PortalFooter />
     </>
   );
 }

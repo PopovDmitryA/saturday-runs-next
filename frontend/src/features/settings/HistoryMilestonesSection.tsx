@@ -16,6 +16,8 @@ const KIND_ICON: Record<MyHistoryMilestoneKind, string> = {
   global_pr: "🏆",
   pr: "⚡",
   location_pr: "🥉",
+  location_course_record: "👑",
+  location_age_group_record: "🏵️",
   first_foreign_parkrun: "✈️",
   first_foreign_run: "✈️",
   new_country: "🌍",
@@ -36,7 +38,10 @@ const GROUPS: { title: string; kinds: MyHistoryMilestoneKind[] }[] = [
     title: "Пробежки",
     kinds: ["first_run", "first_run_platform", "run_club", "run_club_platform", "location_club"],
   },
-  { title: "Рекорды", kinds: ["global_pr", "pr", "location_pr"] },
+  {
+    title: "Рекорды",
+    kinds: ["location_course_record", "location_age_group_record", "global_pr", "pr", "location_pr"],
+  },
   {
     title: "География",
     kinds: [

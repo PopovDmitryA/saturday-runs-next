@@ -17,6 +17,7 @@ from app.models import (
     User,
     VolunteerResult,
 )
+from app.services.admin_home_location_service import resolve_admin_home_locations
 from app.services.dashboard_service import (
     get_dashboard_payload,
     list_user_best_results,
@@ -24,6 +25,7 @@ from app.services.dashboard_service import (
     list_user_runs,
     list_user_volunteer_role_stats,
     list_user_volunteering,
+    list_user_wins,
 )
 
 
@@ -249,10 +251,14 @@ def search_admin_users(
     links_by_user = _load_user_links(db, user_ids)
     auth_by_user = _load_user_auth_logins(db, user_ids)
     totals_by_user = _load_user_totals(db, user_ids)
+    # Домашняя площадка — только для видимой страницы списка: считается она по
+    # протоколам, и гонять её по всей базе ради ста строк незачем.
+    homes_by_user = resolve_admin_home_locations(db, user_ids)
 
     items: list[dict[str, object]] = []
     for user in users:
         links = links_by_user.get(user.id, [])
+        home = homes_by_user.get(user.id)
         total_runs, total_volunteering = totals_by_user.get(user.id, (0, 0))
         auth_logins = list(auth_by_user.get(user.id, []))
         if user.telegram_id is not None and not any(item["provider"] == AuthProvider.telegram.value for item in auth_logins):
@@ -281,6 +287,31 @@ def search_admin_users(
                 "total_runs": total_runs,
                 "total_volunteering": total_volunteering,
                 "platform_links": links,
+                "home_location": None
+                if home is None
+                else {
+                    "identity_key": home.identity_key,
+                    "name": home.name,
+                    "slug": home.slug,
+                    "city": home.city,
+                    "region": home.region,
+                    "run_days": home.run_days,
+                    "volunteer_days": home.volunteer_days,
+                    "is_manual": home.is_manual,
+                    "is_tie": home.is_tie,
+                    "locations_total": home.locations_total,
+                    "tied": [
+                        {
+                            "identity_key": item.identity_key,
+                            "name": item.name,
+                            "city": item.city,
+                            "slug": item.slug,
+                            "run_days": item.run_days,
+                            "volunteer_days": item.volunteer_days,
+                        }
+                        for item in home.tied
+                    ],
+                },
             }
         )
     return items, int(total)
@@ -315,6 +346,8 @@ def get_admin_user_preview_dashboard(db: Session, user_id: UUID) -> dict[str, ob
             "telegram_username": user.telegram_username,
             "display_name": user.display_name,
             "news_subscribed": user.news_subscribed,
+            "avatar_url": user.avatar_url,
+            "avatar_full_url": user.avatar_full_url,
             "auth_logins": auth_logins,
         },
         "stats": payload["stats"],
@@ -369,6 +402,17 @@ def get_admin_user_preview_personal_records(
     if get_admin_user(db, user_id) is None:
         return None
     return list_user_personal_records(db, user_id, include_test_events=include_test_events)
+
+
+def get_admin_user_preview_wins(
+    db: Session,
+    user_id: UUID,
+    *,
+    include_test_events: bool = False,
+) -> list[dict[str, object]] | None:
+    if get_admin_user(db, user_id) is None:
+        return None
+    return list_user_wins(db, user_id, include_test_events=include_test_events)
 
 
 def get_admin_user_preview_volunteer_role_stats(

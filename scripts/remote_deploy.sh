@@ -15,7 +15,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # Функция, а не eval: eval ломает кавычки внутри --format / python -c.
-compose() { docker compose -f docker-compose.yml -f docker-compose.prod.yml "$@"; }
+# --profile telegram: сервисы bot и tg-proxy сидят под профилем, чтобы НЕ подниматься
+# на Маке (второй long-poll на том же токене воровал бы апдейты у прод-бота). На проде
+# они обязательны, поэтому профиль включён для всех compose-команд — иначе up их не
+# создаст, а smoke ниже не заметит, что бота нет.
+compose() { docker compose --profile telegram -f docker-compose.yml -f docker-compose.prod.yml "$@"; }
 
 # Заглушка 502 у host nginx: на время деплоя показываем «Обновляемся» вместо
 # дежурной «Что-то сломалось» (см. deploy/nginx/run5k.run.conf, try_files).
@@ -27,7 +31,9 @@ trap 'rm -f "$MAINT_CURRENT"' EXIT HUP INT TERM
 
 # Сервисы, которые пересоздаём. nginx собирать нельзя — он на готовом образе
 # (nginx:1.27-alpine), build-контекст есть только у python-сервисов.
-SERVICES="worker worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat vk-bot"
+# tg-proxy (xray) — тоже готовый образ; без него бот не видит Telegram и ляжет,
+# поэтому он в списке и попадает в проверку «все ли running» ниже.
+SERVICES="worker worker-s95 worker-five-verst worker-five-verst-user worker-parkrun worker-runpark api nginx beat tg-proxy bot"
 
 # NB: `docker compose exec/run -T` всё равно цепляет контейнер к stdin, поэтому
 # каждый exec/run обязан читать из /dev/null — иначе он сожрёт остаток скрипта.
@@ -38,7 +44,16 @@ compose exec -T redis redis-cli LLEN s95 </dev/null || true
 compose exec -T redis redis-cli LLEN s95_user </dev/null || true
 
 echo "--- frontend build ---"
-docker run --rm -v "$PWD/frontend:/app" -w /app node:22-alpine sh -c "npm ci && npm run build"
+# Флаги фронта (VITE_*) Vite зашивает в бандл во время сборки. Собираем в
+# контейнере, куда примонтирована только папка frontend, — корневой .env туда
+# не попадает, поэтому нужные значения читаем здесь и передаём через -e.
+# Пилот АБ-теста главной по умолчанию ВЫКЛЮЧЕН: нет строки в .env — все видят
+# вариант A (см. frontend/src/lib/abTest.ts).
+AB_HOME_ACTIVE="$(sed -n 's/^VITE_AB_HOME_ACTIVE=//p' .env 2>/dev/null | tail -1)"
+echo "VITE_AB_HOME_ACTIVE=${AB_HOME_ACTIVE:-false}"
+docker run --rm -v "$PWD/frontend:/app" -w /app \
+  -e VITE_AB_HOME_ACTIVE="${AB_HOME_ACTIVE:-false}" \
+  node:22-alpine sh -c "npm ci && npm run build"
 
 echo "--- build api image (нужен свежий образ для миграций) ---"
 compose build api
@@ -56,8 +71,12 @@ echo "--- recreate services ---"
 # коде (обычный up -d может переиспользовать старый контейнер).
 compose up -d --build --force-recreate $SERVICES
 compose restart nginx
-compose stop worker-s95-user worker-five-verst-user 2>/dev/null || true
-compose rm -f worker-s95-user worker-five-verst-user 2>/dev/null || true
+# Уборка сервисов, которых больше нет в compose (иначе контейнер остался бы
+# висеть на старом коде). worker-five-verst-user из этого списка убран: с
+# 08.2026 он снова живой сервис и стоит в $SERVICES выше — пользовательские
+# синки 5 вёрст обслуживает он, а батч на это время встаёт на паузу.
+compose stop worker-s95-user 2>/dev/null || true
+compose rm -f worker-s95-user 2>/dev/null || true
 
 echo "--- host nginx (run5k.run Grafana redirects) ---"
 if sudo -n cp deploy/nginx/run5k.run.conf /etc/nginx/sites-available/run5k.run 2>/dev/null; then
@@ -108,3 +127,16 @@ curl -sI 'https://run5k.run/d/de1hu8dabny80c/karta-turistov' 2>/dev/null | head 
 
 echo "--- prod git == deployed commit ---"
 git log --oneline -1
+
+# Уборка docker-мусора. СТРОГО после успешного health — пока прод не подтверждён
+# живым, ничего не удаляем (может понадобиться откат). Любая ошибка уборки не
+# должна ронять уже успешный деплой, отсюда `|| true`.
+#
+# Осознанно НЕ используем:
+#   -a (все неиспользуемые)  — снесёт node:22-alpine, которым собирается фронт,
+#                              и его пришлось бы качать заново каждый деплой;
+#   --volumes                — там живут данные (pm_pgdata с parkrun_world, redis).
+# Кэш сборки чистим только старше недели: свежий кратно ускоряет пересборку.
+echo "--- cleanup docker ---"
+docker image prune -f 2>/dev/null | tail -1 || true
+docker builder prune -f --filter "until=168h" 2>/dev/null | tail -1 || true

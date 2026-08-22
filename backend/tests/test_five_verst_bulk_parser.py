@@ -230,3 +230,83 @@ def test_parse_unknown_participant_in_protocol() -> None:
     assert results[0].status == "unknown"
     assert results[0].external_user_id.startswith("unknown:")
     assert results[0].finish_time_sec is None
+
+
+def test_parse_unregistered_participant_is_kept() -> None:
+    """«(Нужна регистрация)» — тоже финишёр, 5 вёрст считает его в численности.
+
+    У него есть имя и позиция, но нет ссылки на профиль, времени и категории.
+    Раньше такая строка выбрасывалась (сохранялись только «НЕИЗВЕСТНЫЙ»), и
+    протокол приезжал короче: у Дружбы 29.11.2025 не хватало позиций 67 и 118,
+    из-за чего рекорд посещаемости показывался как 193 вместо 195.
+    """
+    html = """
+    <table>
+    <tr><td>67</td>
+      <td><div class="cell-label cell-label_name">Михаил МИХАЙЛОВ (Нужна регистрация)</div></td>
+      <td></td><td>&nbsp;</td>
+    </tr>
+    </table>
+    """
+    results = bulk_parser.parse_run_protocol_html(
+        html,
+        slug="druzhba",
+        event_date=date(2025, 11, 29),
+        event_number=189,
+    )
+    assert len(results) == 1
+    assert results[0].position == 67
+    assert results[0].status == "unknown"
+    assert results[0].external_user_id == "unknown:druzhba:2025-11-29:67"
+    assert results[0].finish_time_sec is None
+
+
+def test_parse_protocol_keeps_every_numbered_row() -> None:
+    """В протоколе не должно быть дыр по позициям: каждая строка — финишёр."""
+    html = """
+    <table>
+    <tr><td>1</td>
+      <td><a href="/userstats/?id=100">Быстрый Бегун</a></td>
+      <td>М30-34 (1)</td><td>00:17:00</td>
+    </tr>
+    <tr><td>2</td>
+      <td><div class="cell-label cell-label_name">Без Профиля (Нужна регистрация)</div></td>
+      <td></td><td>&nbsp;</td>
+    </tr>
+    <tr><td>3</td>
+      <td><div class="unknown cell-label cell-label_name">НЕИЗВЕСТНЫЙ</div></td>
+      <td></td><td></td>
+    </tr>
+    </table>
+    """
+    results = bulk_parser.parse_run_protocol_html(
+        html, slug="druzhba", event_date=date(2025, 11, 29), event_number=189
+    )
+    assert [row.position for row in results] == [1, 2, 3]
+
+
+def test_age_category_regex_keeps_three_digit_bands() -> None:
+    """«М110-114» не должна обрезаться до «М11».
+
+    У участника с незаполненной датой рождения 5 вёрст считает абсурдный
+    возраст и печатает трёхзначную границу. Старая регулярка брала «М» и ровно
+    две цифры, поэтому в базу уезжала несуществующая категория «М11» — 114
+    таких строк накопилось на проде (Анатолий БАЕВ, Елена КРУЧИНИНА и др.).
+    Живая ячейка: «М110-114 (1) 170.89% age grade 1-й в возрастной группе».
+    """
+    from app.platform_adapters.five_verst.bulk_parser import AGE_CATEGORY_RE
+
+    def parse(text: str) -> str | None:
+        match = AGE_CATEGORY_RE.search(text)
+        return match.group(1) if match else None
+
+    assert parse("М110-114") == "М110-114"
+    assert parse("Ж110-114") == "Ж110-114"
+    assert parse("М120-124") == "М120-124"
+    # Тот же сорт данных одним числом — встречается чаще диапазона.
+    assert parse("М120") == "М120"
+    # Обычные группы и хвост с местом в группе разбираются как раньше.
+    assert parse("М40-44") == "М40-44"
+    assert parse("М40-44 (2)") == "М40-44"
+    assert parse("М10") == "М10"
+    assert parse("Ж65-69  (12)") == "Ж65-69"

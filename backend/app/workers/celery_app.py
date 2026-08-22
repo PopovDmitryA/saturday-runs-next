@@ -26,9 +26,12 @@ celery_app.conf.update(
         "app.workers.tasks.runpark_sync",
         "app.workers.tasks.leaderboards_warm",
         "app.workers.tasks.portal_cache",
+        "app.workers.tasks.locations_status",
         "app.workers.tasks.locations_warm",
+        "app.workers.tasks.dashboard_warm",
         "app.workers.tasks.page_stats",
         "app.workers.tasks.admin_digest",
+        "app.workers.tasks.og_render",
     ),
     task_routes={
         "five_verst_sync.*": {"queue": "five_verst"},
@@ -38,11 +41,64 @@ celery_app.conf.update(
         "s95_sync.*": {"queue": "s95"},
         "parkrun_sync.*": {"queue": "parkrun"},
         "runpark_sync.*": {"queue": "runpark"},
+        # OG-картинки рендерит Playwright — Chromium есть только в образе
+        # worker-parkrun (Dockerfile.parkrun), поэтому очередь parkrun.
+        "og_render.*": {"queue": "parkrun"},
     },
     beat_schedule={
+        # OG-картинки локаций (Л19): обновить после субботних/воскресных синков
+        # протоколов + полный прогон в понедельник ночью (часы — Europe/Moscow).
+        "og-render-weekend": {
+            "task": "og_render.render_location_images",
+            "schedule": crontab(minute=0, hour="14,22", day_of_week="6,0"),
+            "options": {"queue": "parkrun"},
+        },
+        "og-render-weekly": {
+            "task": "og_render.render_location_images",
+            "schedule": crontab(minute=30, hour=4, day_of_week=1),
+            "options": {"queue": "parkrun"},
+        },
+        # Карточки участников: после субботних синков (цифры за неделю уже
+        # приехали) и полным прогоном в понедельник ночью.
+        "og-render-users-weekend": {
+            "task": "og_render.render_user_images",
+            "schedule": crontab(minute=20, hour=22, day_of_week="6,0"),
+            "options": {"queue": "parkrun"},
+        },
+        "og-render-users-weekly": {
+            "task": "og_render.render_user_images",
+            "schedule": crontab(minute=50, hour=4, day_of_week=1),
+            "options": {"queue": "parkrun"},
+        },
+        # Страховочные вечерние прогоны в понедельник: если субботний или
+        # ночной прошли по неполным данным (синк опоздал, парк был под
+        # кулдауном), к началу недели картинки всё равно свежие.
+        "og-render-monday-evening": {
+            "task": "og_render.render_location_images",
+            "schedule": crontab(minute=0, hour=21, day_of_week=1),
+            "options": {"queue": "parkrun"},
+        },
+        "og-render-users-monday-evening": {
+            "task": "og_render.render_user_images",
+            "schedule": crontab(minute=20, hour=21, day_of_week=1),
+            "options": {"queue": "parkrun"},
+        },
+        # Очередь five_verst обслуживает один воркер с concurrency=1, поэтому
+        # задачи разведены по минутам: старт в одну и ту же минуту не даёт
+        # параллельности, а только выстраивает пачку в хвост (до 08.2026 в 20:00
+        # будней стартовали разом latest + реестр + ротация). Приоритет минуты
+        # :00 — у latest: это свежие субботние протоколы.
+        # Правило молчания: после реестра 5 вёрст, чтобы догадка по датам
+        # ложилась поверх свежих заявлений систем, а не спорила с ними.
+        "locations-activity-status": {
+            "task": "locations.refresh_activity_status",
+            "schedule": crontab(hour=21, minute=10),
+            "options": {"queue": "default"},
+        },
         "five-verst-registry-daily": {
             "task": "five_verst_sync.sync_locations_registry",
-            "schedule": crontab(hour=20, minute=0),
+            # 20:50 — после latest 20:00; до сводки 21:50 успевает (~1.5 мин).
+            "schedule": crontab(hour=20, minute=50),
             "options": {"queue": "five_verst"},
         },
         "five-verst-latest-weekday": {
@@ -62,12 +118,17 @@ celery_app.conf.update(
         },
         "five-verst-location-rotation": {
             "task": "five_verst_sync.sync_location_rotation",
-            "schedule": crontab(minute=0, hour="*/4"),
+            "schedule": crontab(minute=30, hour="*/4"),
             "options": {"queue": "five_verst"},
         },
-        "five-verst-reconcile-protocols": {
+        # Сверка истории протоколов — только по будням: прогон занимает пару
+        # часов (200 протоколов через паузы между фетчами), и в выходные он
+        # задерживал часовой latest, из-за чего свежие субботние протоколы
+        # опаздывали (скипы duplicate_hour_slot на проде). В будни новых
+        # результатов нет — латентность latest там не важна.
+        "five-verst-reconcile-protocols-weekday": {
             "task": "five_verst_sync.reconcile_stale_protocols",
-            "schedule": crontab(minute=0, hour="*/3"),
+            "schedule": crontab(minute=10, hour="*/3", day_of_week="1-5"),
             "options": {"queue": "five_verst"},
         },
         # Clubs list (/clubs/) — twice a week; changed rows are queued for detail re-sync.
@@ -86,6 +147,15 @@ celery_app.conf.update(
         "s95-registry-3days": {
             "task": "s95_sync.sync_locations_registry",
             "schedule": crontab(hour=20, minute=30, day_of_month="*/3"),
+            "options": {"queue": "s95"},
+        },
+        # Описания площадок S95 (HTML /events/{slug}) — каждые 4 часа по 5 самых
+        # давно не обновлявшихся. Локаций у S95 ~35, полный круг ≈ сутки.
+        # :50 — подальше от реестра (:30) и от протоколов (:00), чтобы не
+        # толкаться за общий лок загрузок S95.
+        "s95-location-descriptions": {
+            "task": "s95_sync.sync_location_descriptions",
+            "schedule": crontab(minute=50, hour="*/4"),
             "options": {"queue": "s95"},
         },
         # New protocols scan (JSON API, updated_at-aware) — Sat & Sun at 11:00 / 17:00 / 23:00 MSK.
@@ -114,7 +184,11 @@ celery_app.conf.update(
             "options": {"queue": "runpark"},
         },
         # Прогрев кэша рейтингов (TTL 6ч): каждые 2 часа, со сдвигом от :00,
-        # чтобы не толкаться с runpark-latest на том же воркере.
+        # чтобы не толкаться с runpark-latest на том же воркере. Это страховка и
+        # обещанный витриной срок пересчёта (REFRESH_INTERVAL_HOURS в
+        # app/services/leaderboard_service.py — парное место, менять вместе);
+        # свежие протоколы доезжают быстрее: каждый синк, записавший результаты,
+        # будит тот же прогрев сам (schedule_leaderboards_warm).
         "leaderboards-warm-cache": {
             "task": "leaderboards.warm_cache",
             "schedule": crontab(minute=20, hour="*/2"),
@@ -136,9 +210,23 @@ celery_app.conf.update(
         # придёт по расписанию. Без этого простой воркера копит в очереди десятки
         # одинаковых задач, и после старта он часами гоняет их подряд по БД
         # (18.07.2026 так накопился 41 таск).
-        "portal-home-cache-warm": {
+        # Частота прогрева привязана к тому, когда данные реально меняются, а не
+        # «на всякий случай ежечасно»: TTL кэша 24ч, и до 24.07.2026 прогрев шёл
+        # каждый час — 23 из 24 запусков пересчитывали заведомо свежий кэш. Один
+        # прогрев стоит ~59 сек времени БД и ~300 МБ временных файлов, то есть
+        # впустую уходило ~24 мин работы базы и ~7 ГБ спилла в сутки.
+        # Выходные — ежечасно: субботние/воскресные протоколы приезжают каждый час
+        # (five-verst-latest-*-hourly), и главная должна их показывать сразу.
+        "portal-home-cache-warm-weekend": {
             "task": "portal_cache.warm_home",
-            "schedule": crontab(minute=15),
+            "schedule": crontab(minute=15, day_of_week="6,0"),
+            "options": {"expires": 30 * 60},
+        },
+        # Будни — 4 раза в сутки, каждый раз через час после runpark-latest
+        # (3,8,13,18): это единственный будний источник новых результатов.
+        "portal-home-cache-warm-weekday": {
+            "task": "portal_cache.warm_home",
+            "schedule": crontab(minute=15, hour="4,9,14,19", day_of_week="1-5"),
             "options": {"expires": 30 * 60},
         },
         # Агрегаты популярности страниц (сегодня+вчера, upsert) + чистка сырых

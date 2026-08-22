@@ -117,9 +117,16 @@ def test_unlink_removes_platform_link(
     )
 
     with patch(
-        "app.platform_adapters.five_verst.adapter.FiveVerstAdapter.fetch_profile_preview",
+        "app.services.profile_linking_service.persist_live_profile_preview",
         return_value=preview,
     ):
+        # Подтверждение требует свежего предпросмотра в кэше — идём полным флоу.
+        preview_response = authenticated_client.post(
+            "/api/profiles/five-verst/preview",
+            json={"profile_url": preview.profile_url},
+        )
+        assert preview_response.status_code == 200, preview_response.text
+
         confirm_response = authenticated_client.post(
             "/api/profiles/five-verst/confirm",
             json={"profile_url": preview.profile_url},

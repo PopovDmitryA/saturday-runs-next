@@ -1,21 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { AppShell } from "../../components/AppShell";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { RequireAuth } from "../../components/RequireAuth";
 import {
-  demoGetMyHistory,
   getDashboard,
-  getMyHistory,
   type MyHistory,
   type MyHistoryMilestone,
 } from "../../lib/api";
 import { formatDate, formatDateLong, pluralFormRu } from "../../lib/format";
-import { DemoShell } from "../demo/DemoShell";
+import { useOptionalUser } from "../../lib/useOptionalUser";
+import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
+import { milestoneSubject } from "../sharing/subjects";
 import {
   milestoneBragText,
   runNumberLabel,
   saturdayStreakLabel,
-  storeMilestoneShare,
   volunteerNumberLabel,
 } from "./milestoneShare";
 
@@ -63,6 +60,10 @@ export function milestoneVisual(milestone: MyHistoryMilestone): MilestoneVisual 
       return { icon: "⚡", className: "history-kind-pr" };
     case "location_pr":
       return { icon: "🥉", className: "history-kind-pr-location" };
+    case "location_course_record":
+      return { icon: "👑", className: "history-kind-pr-global" };
+    case "location_age_group_record":
+      return { icon: "🏵️", className: "history-kind-pr-location" };
     case "new_country":
       return { icon: "🌍", className: "history-kind-geo" };
     case "new_region":
@@ -132,6 +133,21 @@ export function milestoneTitle(milestone: MyHistoryMilestone): string {
       return time ? `Личный рекорд в системе — ${time}` : "Личный рекорд в системе";
     case "location_pr":
       return time ? `Личный рекорд в локации — ${time}` : "Личный рекорд в локации";
+    case "location_course_record": {
+      const base =
+        milestone.record_scope === "global"
+          ? "Глобальный рекорд локации"
+          : milestone.record_scope
+            ? "Рекорд локации в системе"
+            : "Рекорд локации";
+      return time ? `${base} — ${time}` : base;
+    }
+    case "location_age_group_record": {
+      const base = milestone.age_group
+        ? `Рекорд локации в группе ${milestone.age_group}`
+        : "Рекорд локации в возрастной группе";
+      return time ? `${base} — ${time}` : base;
+    }
     case "new_country":
       return `Новая страна: ${milestone.country ?? milestone.location_name}`;
     case "new_region":
@@ -178,6 +194,18 @@ function milestoneHint(milestone: MyHistoryMilestone): string | null {
     case "pr":
     case "location_pr":
       return milestone.delta_sec != null ? deltaLabel(milestone.delta_sec) : null;
+    case "location_course_record":
+      // Пояснение уровня нужно только мультисистемным площадкам (у них охват
+      // проставлен); у монолокаций record_scope пуст — и пояснять нечего.
+      if (milestone.record_scope === "global") {
+        return "лучшее время сквозь все системы площадки";
+      }
+      if (milestone.record_scope) {
+        return "лучшее время площадки в этой системе";
+      }
+      return "лучшее время площадки";
+    case "location_age_group_record":
+      return "лучшее время площадки в возрастной группе";
     default:
       return null;
   }
@@ -205,24 +233,23 @@ function MilestoneLocation({ milestone }: { milestone: MyHistoryMilestone }) {
   );
 }
 
-function MilestoneShareButton({
-  milestone,
-  shareBase,
-}: {
-  milestone: MyHistoryMilestone;
-  shareBase: string;
-}) {
+function MilestoneShareButton({ milestone }: { milestone: MyHistoryMilestone }) {
+  const sheet = useOptionalShareSheet();
+  const user = useOptionalUser();
+  if (sheet === null) {
+    return null;
+  }
   return (
-    <a
+    <button
+      type="button"
       className="history-share"
-      href={`${shareBase}?story=milestone`}
       title="Сделать картинку-сториз с этой вехой"
       aria-label="Поделиться вехой"
-      onClick={() => storeMilestoneShare(milestone)}
+      onClick={() => sheet.open({ subject: milestoneSubject(milestone, user ?? null), entry: "history" })}
     >
       <ShareIcon />
       <span className="history-share-label">Поделиться</span>
-    </a>
+    </button>
   );
 }
 
@@ -330,7 +357,7 @@ function MilestoneCard({
             {formatDate(milestone.event_date)}
           </span>
           {siteUrl && <MilestoneBragButton milestone={milestone} siteUrl={siteUrl} />}
-          {shareBase && <MilestoneShareButton milestone={milestone} shareBase={shareBase} />}
+          {shareBase && <MilestoneShareButton milestone={milestone} />}
         </span>
       </div>
     </li>
@@ -458,9 +485,10 @@ export function HistoryContent({
   );
 }
 
-function HistoryPageContent() {
-  // Ссылка на сайт для текста-хвастовства: публичный профиль, если он есть и
-  // открыт; пока не загрузился (или профиля нет) — просто корень сайта.
+// Ссылка на сайт для текста-хвастовства: публичный профиль, если он есть и
+// открыт; пока не загрузился (или профиля нет) — просто корень сайта.
+// Экспорт: хук переиспользуется в портальном ЛК (/new/history).
+export function useOwnSiteUrl(): string {
   const [siteUrl, setSiteUrl] = useState(() => window.location.origin);
 
   useEffect(() => {
@@ -483,21 +511,6 @@ function HistoryPageContent() {
     };
   }, []);
 
-  return (
-    <AppShell title="Моя история" activePath="/history">
-      <HistoryContent load={getMyHistory} shareBase="/share" siteUrl={siteUrl} />
-    </AppShell>
-  );
+  return siteUrl;
 }
 
-export function HistoryPage() {
-  return <RequireAuth>{() => <HistoryPageContent />}</RequireAuth>;
-}
-
-export function DemoHistoryPage() {
-  return (
-    <DemoShell title="Моя история">
-      <HistoryContent load={demoGetMyHistory} shareBase="/share" siteUrl={window.location.origin} />
-    </DemoShell>
-  );
-}

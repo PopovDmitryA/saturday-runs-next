@@ -6,11 +6,14 @@ import { ActivityDateLink } from "../../components/ActivityDateLink";
 import { AppShell } from "../../components/AppShell";
 import { EmptyActivityState } from "../../components/EmptyActivityState";
 import { LocationNameLink } from "../../components/LocationNameLink";
-import { RequireAuth } from "../../components/RequireAuth";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RateRunModal } from "../../components/RateRunModal";
 import { RunRatingStar } from "../../components/RunRatingStar";
+import { Snackbar } from "../../components/Snackbar";
+import { useSnackbar } from "../../hooks/useSnackbar";
 import { useVolunteeringFilters } from "../../hooks/useVolunteeringFilters";
+import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
+import { TableWrap } from "../../components/tableUx/TableWrap";
 import {
   getEligibleRuns,
   getMyRatings,
@@ -19,12 +22,16 @@ import {
   type MyRating,
   type VolunteeringItem,
 } from "../../lib/api";
-import { useAppDataSource, AppDataSourceProvider, demoDataSource } from "../../lib/appDataSource";
+import { useAppDataSource } from "../../lib/appDataSource";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import { createFullSelection, sortVolunteering, toggleDateSort, uniquePlatforms } from "../../lib/activityList";
-import { platformCodeLabel } from "../../lib/format";
-import { DemoShell } from "../demo/DemoShell";
+import { formatInt, platformCodeLabel } from "../../lib/format";
+import { ShareRowButton } from "../sharing/ShareRowButton";
+import { volunteeringSubject } from "../sharing/subjects";
 
-function VolunteeringContent() {
+// bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
+// оборачивает контент в собственный каркас с сайдбаром.
+function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
   const { listVolunteering, mode } = useAppDataSource();
   const isDemo = mode === "demo";
   const [items, setItems] = useState<VolunteeringItem[]>([]);
@@ -36,30 +43,35 @@ function VolunteeringContent() {
 
   // Оценка стартов — только в своём разделе волонтёрств.
   const showRating = mode === "auth";
+  const currentUser = useOptionalUser();
   const [ratingsMap, setRatingsMap] = useState<Map<string, MyRating>>(new Map());
   const [canRate, setCanRate] = useState(false);
   // entry_id стартов, доступных к оценке прямо сейчас (правило считает бэк).
   const [eligibleIds, setEligibleIds] = useState<Set<string>>(new Set());
   const [ratingsVersion, setRatingsVersion] = useState(0);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
+  const { snackbar, showSnackbar, dismissSnackbar } = useSnackbar();
 
   // parkrun volunteering: counted but not shown in table
-  // count taken from "Total Credits" summary row, e.g. role = "Total Credits (2×)"
+  // счётчик — из parkrun_total_credits (см. parkrun_total_credits в бэкенде,
+  // берётся из "Total Credits" профиля parkrun), а не числа строк ролей:
+  // одна смена волонтёрства может дать кредит сразу нескольким ролям.
   const tableItems = useMemo(() => items.filter((i) => i.platform_code !== "parkrun"), [items]);
   const parkrunCount = useMemo(() => {
-    const totalCreditsRow = items.find(
-      (i) => i.platform_code === "parkrun" && i.role?.startsWith("Total Credits"),
+    const rowWithCredits = items.find(
+      (i) => i.platform_code === "parkrun" && i.parkrun_total_credits != null,
     );
-    if (totalCreditsRow?.role) {
-      const match = /\((\d+)×\)/.exec(totalCreditsRow.role);
-      if (match) return parseInt(match[1], 10);
-    }
+    if (rowWithCredits) return rowWithCredits.parkrun_total_credits as number;
     return items.filter((i) => i.platform_code === "parkrun").length;
   }, [items]);
 
   const allPlatforms = useMemo(() => uniquePlatforms(tableItems), [tableItems]);
 
   const filters = useVolunteeringFilters(tableItems);
+  // На телефоне роль и локация схлопываются в одну колонку (роль крупно,
+  // система и локация подстрокой), дата остаётся отдельной — по ней нужны
+  // сортировка и фильтр. Фильтры роли и локации переезжают в общую шторку.
+  const narrowViewport = useNarrowViewport();
 
   const displayedItems = useMemo(
     () =>
@@ -208,7 +220,13 @@ function VolunteeringContent() {
             <p className="muted">В демо-профиле нет записей о волонтёрстве.</p>
           </div>
         ) : (
-          <EmptyActivityState activityLabel="Записей о волонтёрстве" hasProfileLink={hasProfileLink} />
+          <EmptyActivityState
+            activityLabel="Волонтёрств"
+            ownerHint="Попробуйте себя волонтёром на ближайшем старте — и записи появятся здесь."
+            publicHint="Как только появится первое волонтёрство, оно окажется здесь."
+            hasProfileLink={hasProfileLink}
+            isPublicProfile={mode === "public-profile"}
+          />
         ))}
 
       {!loading && !error && items.length > 0 && (
@@ -221,7 +239,7 @@ function VolunteeringContent() {
               className={activePlatformFilter === "all" ? "map-mode-tab active" : "map-mode-tab"}
               onClick={() => filters.setSelectedPlatforms(createFullSelection(allPlatforms))}
             >
-              Все ({visibleVolCount})
+              Все ({formatInt(visibleVolCount)})
             </button>
             {platformCounts.map(({ code, count }) => (
               <button
@@ -232,7 +250,7 @@ function VolunteeringContent() {
                 className={activePlatformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
                 onClick={() => filters.setSelectedPlatforms(new Set([code]))}
               >
-                {platformCodeLabel(code)} ({count})
+                {platformCodeLabel(code)} ({formatInt(count)})
               </button>
             ))}
             {parkrunCount > 0 && (
@@ -244,11 +262,177 @@ function VolunteeringContent() {
                 disabled
                 title="Волонтёрства parkrun учтены в общей статистике, но не отображаются в таблице"
               >
-                parkrun ({parkrunCount})
+                parkrun ({formatInt(parkrunCount)})
               </button>
             )}
           </div>
 
+          {narrowViewport ? (
+            <TableWrap>
+              <table className="data-table data-table-filterable data-table-vol-mobile">
+                <colgroup>
+                  <col className="col-date" />
+                  <col />
+                  {showRating && <col className="col-rating" />}
+                </colgroup>
+                <thead>
+                  <tr>
+                    <ColumnHeader
+                      label="Дата"
+                      filterActive={filters.dateFilterActive}
+                      sortActive={dateSortActive}
+                      sortAsc={filters.sort === "date_asc"}
+                      onSort={() => filters.setSort((current) => toggleDateSort(current))}
+                      filterTitle="Фильтр по дате"
+                      filterContent={
+                        <div className="date-filter-fields">
+                          <label className="filter-field">
+                            <span className="filter-field-label">С</span>
+                            <input
+                              className="filter-field-input"
+                              type="date"
+                              value={filters.dateFrom}
+                              onChange={(event) => filters.setDateFrom(event.target.value)}
+                            />
+                          </label>
+                          <label className="filter-field">
+                            <span className="filter-field-label">По</span>
+                            <input
+                              className="filter-field-input"
+                              type="date"
+                              value={filters.dateTo}
+                              onChange={(event) => filters.setDateTo(event.target.value)}
+                            />
+                          </label>
+                        </div>
+                      }
+                      filterFooter={
+                        filters.dateFilterActive ? (
+                          <button
+                            type="button"
+                            className="filter-popover-link"
+                            onClick={() => {
+                              filters.setDateFrom("");
+                              filters.setDateTo("");
+                            }}
+                          >
+                            Сбросить фильтр
+                          </button>
+                        ) : undefined
+                      }
+                    />
+                    {/* Роль и локация схлопнуты в одну колонку — фильтры обоих
+                        живут в общей шторке. Система не нужна: она фильтруется
+                        табами над таблицей. */}
+                    <ColumnHeader
+                      label="Волонтёрство"
+                      filterActive={filters.roleFilterActive || filters.locationFilterActive}
+                      filterTitle="Роль и локация"
+                      filterContent={
+                        <div className="filter-groups">
+                          <div className="filter-group">
+                            <p className="filter-group-title">Роль</p>
+                            <CheckboxListFilter
+                              options={filters.roleOptions}
+                              selected={filters.selectedRoles}
+                              onSelectedChange={filters.setSelectedRoles}
+                              searchPlaceholder="Поиск роли…"
+                            />
+                          </div>
+                          <div className="filter-group">
+                            <p className="filter-group-title">Локация</p>
+                            <CheckboxListFilter
+                              options={filters.locationOptions}
+                              selected={filters.selectedLocations}
+                              onSelectedChange={filters.setSelectedLocations}
+                              searchPlaceholder="Поиск локации…"
+                            />
+                          </div>
+                        </div>
+                      }
+                    />
+                    {showRating && (
+                      <ColumnHeader
+                        label="★"
+                        filterable={false}
+                        headerTitle="Оценка старта — жёлтая звезда, если вы оценили"
+                      />
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayedItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={showRating ? 3 : 2} className="table-empty-cell">
+                        <span className="muted">Нет строк по фильтрам</span>
+                        {filters.hasActiveFilters && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm table-empty-reset"
+                            onClick={filters.resetFilters}
+                          >
+                            Сбросить
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ) : (
+                    displayedItems.map((item, index) => {
+                      const rating = item.rating_entry_id
+                        ? ratingsMap.get(item.rating_entry_id)
+                        : undefined;
+                      const canCreate =
+                        canRate &&
+                        !rating &&
+                        !!item.rating_entry_id &&
+                        !item.is_crosslinked &&
+                        isEligible(item.rating_entry_id);
+                      return (
+                        <tr
+                          key={`${item.platform_code}-${item.event_date}-${item.location_name}-${index}`}
+                          className={item.is_crosslinked ? "run-crosslinked" : undefined}
+                        >
+                          <td className="td-date">
+                            <ActivityDateLink date={item.event_date} url={item.event_url} />
+                            {item.is_test_event && <span className="badge">тест</span>}
+                            {item.is_crosslinked && (
+                              <span className="badge badge-crosslinked">не в зачёте</span>
+                            )}
+                          </td>
+                          <td className="td-vol">
+                            <div className="td-vol-role">{item.role ?? "—"}</div>
+                            <div className="td-vol-sub">
+                              <PlatformBadge code={item.platform_code} />{" "}
+                              <LocationNameLink
+                                name={item.location_name}
+                                slug={item.location_slug}
+                              />
+                            </div>
+                          </td>
+                          {showRating && (
+                            <td className="td-rating">
+                              <span className="s2-row-actions">
+                                <RunRatingStar
+                                  rating={rating}
+                                  canCreate={canCreate}
+                                  canRate={canRate}
+                                  onOpen={() => setActiveRun(buildEligibleRun(item, rating))}
+                                />
+                                <ShareRowButton
+                                  subject={volunteeringSubject(item, currentUser ?? null)}
+                                  entry="volunteering"
+                                />
+                              </span>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </TableWrap>
+          ) : (
           <div className="table-wrap">
             <table className="data-table data-table-filterable data-table-layout-fixed data-table-volunteering">
               <ActivityTableCols variant="volunteering" withRating={showRating} />
@@ -391,12 +575,18 @@ function VolunteeringContent() {
                             isEligible(item.rating_entry_id);
                           return (
                             <td className="td-rating">
-                              <RunRatingStar
-                                rating={rating}
-                                canCreate={canCreate}
-                                canRate={canRate}
-                                onOpen={() => setActiveRun(buildEligibleRun(item, rating))}
-                              />
+                              <span className="s2-row-actions">
+                                <RunRatingStar
+                                  rating={rating}
+                                  canCreate={canCreate}
+                                  canRate={canRate}
+                                  onOpen={() => setActiveRun(buildEligibleRun(item, rating))}
+                                />
+                                <ShareRowButton
+                                  subject={volunteeringSubject(item, currentUser ?? null)}
+                                  entry="volunteering"
+                                />
+                              </span>
                             </td>
                           );
                         })()}
@@ -406,10 +596,11 @@ function VolunteeringContent() {
               </tbody>
             </table>
           </div>
+          )}
 
           <p className="table-foot muted">
             <span>
-              Показано: {displayedItems.length} из {visibleVolCount}
+              Показано: {formatInt(displayedItems.length)} из {formatInt(visibleVolCount)}
             </span>
             {filters.hasActiveFilters && (
               <button type="button" className="btn btn-ghost btn-sm" onClick={filters.resetAll}>
@@ -427,6 +618,7 @@ function VolunteeringContent() {
           onSaved={() => {
             reloadRatings();
             setActiveRun(null);
+            showSnackbar({ variant: "default", title: "Спасибо!", message: "Отзыв сохранён" });
           }}
           onDeleted={() => {
             reloadRatings();
@@ -434,14 +626,14 @@ function VolunteeringContent() {
           }}
         />
       )}
+
+      <Snackbar open={snackbar.open} title={snackbar.title} variant={snackbar.variant} onDismiss={dismissSnackbar}>
+        {snackbar.message}
+      </Snackbar>
     </>
   );
 
-  if (isDemo) {
-    return <DemoShell title="Волонтёрство">{pageBody}</DemoShell>;
-  }
-
-  if (mode === "public-profile") {
+  if (bare || mode === "public-profile") {
     return <>{pageBody}</>;
   }
 
@@ -450,14 +642,3 @@ function VolunteeringContent() {
 
 export { VolunteeringContent };
 
-export function VolunteeringPage() {
-  return <RequireAuth>{() => <VolunteeringContent />}</RequireAuth>;
-}
-
-export function DemoVolunteeringPage() {
-  return (
-    <AppDataSourceProvider source={demoDataSource}>
-      <VolunteeringContent />
-    </AppDataSourceProvider>
-  );
-}

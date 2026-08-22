@@ -36,7 +36,13 @@ class AbuseProtectionMiddleware:
         settings = get_settings()
         request = Request(scope)
         client_ip = get_client_ip(request)
-        decision = check_abuse_request(client_ip, request.url.path, request.method, settings)
+        decision = check_abuse_request(
+            client_ip,
+            request.url.path,
+            request.method,
+            settings,
+            session_cookie=request.cookies.get(settings.session_cookie_name),
+        )
 
         if not decision.allowed:
             retry_after = decision.retry_after or settings.abuse_block_duration_seconds

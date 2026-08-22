@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AppShell } from "../../components/AppShell";
+import { AdminShell } from "./AdminShell";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { RequireAdmin } from "../../components/RequireAdmin";
@@ -325,7 +325,7 @@ function AdminLocationContactsContent() {
   };
 
   return (
-    <AppShell title="Контакты локаций" activePath="/admin">
+    <AdminShell title="Контакты локаций">
       <AdminSubnav activePath="/admin/location-contacts" />
 
       <section className="card">
@@ -508,7 +508,7 @@ function AdminLocationContactsContent() {
           </div>
         </section>
       </div>
-    </AppShell>
+    </AdminShell>
   );
 }
 

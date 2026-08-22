@@ -11,10 +11,13 @@ from app.services.sync_run_maintenance import close_stale_sync_runs, stale_after
 
 @pytest.fixture
 def five_verst_platform(db_session: Session) -> Platform:
-    row = Platform(code="five_verst", name="5 verst", base_url="https://5verst.ru")
-    db_session.add(row)
-    db_session.commit()
-    db_session.refresh(row)
+    # Платформа уже засеяна миграцией 001 — берём существующую, иначе UniqueViolation.
+    row = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if row is None:
+        row = Platform(code="five_verst", name="5 verst", base_url="https://5verst.ru")
+        db_session.add(row)
+        db_session.commit()
+        db_session.refresh(row)
     return row
 
 

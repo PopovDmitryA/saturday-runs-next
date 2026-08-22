@@ -44,8 +44,7 @@ backend/
   app/workers/tasks/      # five_verst_sync, s95_sync, parkrun_sync, sync_task_reporting
   app/s95/fetch/          # Playwright + Redis lock + priority yield
   app/services/           # dashboard, location_catalog, sync_job, personal_record
-  vk_bot/                 # VK admin bot (/stats, /sync)
-  bot_app/                # Telegram auth bot
+  bot_app/                # Telegram: вход + admin-бот (/stats, /status, /sweep, /sync)
   scripts/                # CLI, backfill, check_failed_sync_jobs.py
   tests/
   alembic/versions/       # миграции (027 — profile_private)
@@ -90,11 +89,12 @@ GitHub: `PopovDmitryA/saturday-runs-next`, branch `main`.
 | `nginx` | React `frontend/dist` + proxy `/api` |
 | `redis` | Sessions, Celery, locks, cooldown — **не публиковать :6379** |
 | `beat` | Celery Beat (Europe/Moscow) |
-| `worker-five-verst` | `-Q five_verst_user,five_verst --concurrency=1` |
+| `worker-five-verst` | `-Q five_verst --concurrency=1` (батчи) |
+| `worker-five-verst-user` | `-Q five_verst_user --concurrency=1` (синки по кнопке) |
 | `worker-s95` | `-Q s95_user,s95 --concurrency=1` |
 | `worker-parkrun` | `-Q parkrun` |
-| `vk-bot` | VK long poll |
-| ~~`worker`~~ | **Отключён на prod** |
+| `bot` | Telegram long poll (вход + admin: /stats /status /sweep /sync) |
+| `worker` | default очередь: прогрев главной, агрегаты популярности, admin-дайджест |
 
 ### Деплой
 
@@ -103,10 +103,16 @@ GitHub: `PopovDmitryA/saturday-runs-next`, branch `main`.
 bash scripts/deploy_prod.sh
 ```
 
-Rsync: `backend/app/`, `backend/vk_bot/`, `deploy/`, compose files, `frontend/src/`.  
-На сервере: `npm ci && npm run build` в Docker node, rebuild workers + api + nginx.
+Git-based (не rsync, см. scripts/remote_deploy.sh): прод переводится на вершину `origin/main` одним SSH,
+затем `npm ci && npm run build` в Docker node, alembic upgrade, rebuild workers + api + bot + nginx.
 
 **Если фронт не обновился** — remote build мог не выполниться; см. PROJECT_HANDOFF.local.md §1.
+
+**Версия релиза.** Каждый деплой получает версию X.Y.Z (или X.Y.Z-fixN) по
+протоколу docs/release_management.md: ПЕРЕД деплоем согласовать номер с
+Дмитрием (`scripts/add_release.py --suggest` печатает кандидатов), ПОСЛЕ —
+внести скрытую запись релиза на проде (`scripts/add_release.py`). Публикация
+и правки — в админке `/admin/releases`.
 
 **Фронт локально:**
 
@@ -157,7 +163,7 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 
 | Очередь | Worker | Задачи |
 |---------|--------|--------|
-| `five_verst_user` | worker-five-verst | user profile sync (приоритетная) |
+| `five_verst_user` | worker-five-verst-user | user profile sync (приоритетная) |
 | `five_verst` | worker-five-verst | registry, latest, rotation, reconcile |
 | `s95_user` | worker-s95 | user profile sync (приоритетная) |
 | `s95` | worker-s95 | batch S95 + athletes_registry |
@@ -171,16 +177,30 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 
 Код: `coordinator.py`, `rate_limit.py`, `s95_athletes_registry.py`, `workers/s95_batch_yield.py`.
 
+### 5 вёрст user priority (пауза батча)
+
+Два воркера: батчи и пользовательские синки. Пока идёт синк по кнопке (или его
+задача ждёт в `five_verst_user`), батч **замирает между фетчами** и продолжает
+с того же места — прогресс не теряется, в отличие от прерывания у S95. К
+5verst.ru по-прежнему ходит один запрос за раз: общий Redis-лок
+`five_verst:fetch:global_lock` и общий rate limit соблюдают оба воркера.
+
+Отметка `five_verst:user_sync:active` живёт по TTL, а пауза имеет потолок
+(`five_verst_user_sync_pause_max_seconds`) — умерший user-воркер или копящаяся
+очередь не заморозят батч навсегда.
+
+Код: `app/five_verst/fetch/priority.py`, `coordinator.py`, `workers/tasks/user_sync.py`.
+
 ### Beat schedule (MSK)
 
-**5 verst** — `:00`:
+**5 verst**:
 
 | Task | Расписание |
 |------|------------|
-| registry | 20:00 daily |
-| latest | пн–пт 0,5,10,15,20; сб/вс hourly |
-| rotation | каждые 4 ч |
-| reconcile | каждые 3 ч |
+| registry | 20:50 daily |
+| latest | пн–пт 0,5,10,15,20 (`:00`); сб/вс hourly |
+| rotation | `:30` каждые 4 ч |
+| reconcile | `:10` каждые 3 ч, **только пн–пт**; 200 протоколов цепочкой 2×100 |
 
 **S95** — **+30 мин** к 5verst:
 
@@ -191,6 +211,7 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 | rotation | :30 каждые 4 ч |
 | reconcile | :30 каждые 3 ч |
 | athletes_registry | :30 каждые 2 ч, batch 50 |
+| location_descriptions | :50 каждые 4 ч, batch 5 |
 
 ---
 
@@ -275,13 +296,46 @@ Import: `make location-catalog-import-docker`.
 
 ---
 
-## 10. VK admin
+## 10. Admin-бот (Telegram, fallback ВК)
 
-Env: `VK_BOT_GROUP_TOKEN`, `VK_BOT_GROUP_ID`, `VK_ADMIN_USER_ID`, `VK_BOT_INTERNAL_SECRET`.
+Env: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_CHAT_ID`, `ADMIN_TELEGRAM_ID`, `TELEGRAM_PROXY_URL`.
 
-Scheduled sync → VK через `run_reported_sync()` + dedup `scheduled_sync_guard.py`.
+**Прокси обязательна на проде.** С сервера в РФ `api.telegram.org` недоступен напрямую
+совсем: без прокси aiogram падает на `get_me()` и контейнер `bot` уходит в крэш-луп
+(так и было 26.07.2026 — 545 рестартов). Через прокси идёт ВЕСЬ трафик: long-poll бота
+(`AiohttpSession(proxy=...)`) и admin-уведомления (httpx). Схема именно `http://` —
+её понимают нативно и httpx, и aiohttp; для `socks5://` aiohttp требует `aiohttp_socks`.
+Прокси даёт сервис `tg-proxy` (xray-core, VLESS+Reality, два профиля под балансировщиком),
+см. `deploy/tg-proxy/`. Реальный `config.json` gitignored, в репо — `config.example.json`.
 
-Команды: `/stats`, `/status`, `/sync registry|latest|…`, `/sync s95-latest|…`.
+Fallback на ВК (`VK_BOT_GROUP_TOKEN`, `VK_ADMIN_USER_ID`) — только когда прокси легла;
+пока всё работает, в ВК ничего не приходит.
+
+Scheduled sync → лог в `scheduled_run_logs` через `run_reported_sync()` + dedup
+`scheduled_sync_guard.py`; суточная сводка (`admin_digest.daily_sync_summary`) уходит
+в Telegram.
+
+Все уведомления админу идут через `services/admin_notify.py` — прямых вызовов
+`send_vk_admin_message()` в фичах не осталось (03.08.2026), ВК живёт только внутри
+фолбэка `send_admin_report()`:
+
+- `notify_admin(text) -> bool` — в один конец: карточки/голоса/комментарии бэклога,
+  алерты синков (дубль локации 5 вёрст, смена slug клуба). Возвращает признак
+  доставки: алерты помечают заявку отправленной только после успеха.
+- `notify_admin_dialog(text, reply_to_message_id=None) -> (chat_id, message_id)` —
+  для диалогов Reply (заявки на координаты новых локаций, `location_coordinate_service`).
+  Только Telegram, без фолбэка: ответы разбирает бот через
+  `/internal/bot/coordinate-message`, а слушателя ВК нет с перевода бота на Telegram —
+  до 03.08.2026 запрос уходил в ВК, и ответить на него было некому.
+
+На прогоне тестов admin-уведомления не уходят никуда: `core/runtime_env.is_test_run()`
+глушит их в `notify_admin()`, `notify_admin_dialog()` и в самом `send_vk_admin_message()`.
+Локальный pytest работает с боевым `.env`, и до 03.08.2026 каждый прогон тестов бэклога
+прилетал админу в ВК живыми сообщениями («Новая карточка бэклога: [фича] «Идея»»,
+«Комментарий … Первый»).
+
+Команды (bot_app, admin-only): `/stats`, `/status`, `/sweep`, `/sync registry|latest|…`,
+`/sync s95-latest|…`.
 
 ---
 
@@ -311,10 +365,21 @@ Scheduled sync → VK через `run_reported_sync()` + dedup `scheduled_sync_g
 
 1. `_STATIC_PAGE_TYPES` — `page_analytics_service.py`
 2. `PAGE_TYPE_LABELS` — `AdminPageAnalyticsPage.tsx`
-3. `APP_ROUTES` — `tests/test_page_analytics_service.py` (тест упадёт, если забыть)
 
-Иначе раздел уедет в «Прочее» и метрик по нему не будет. Подробности и нюансы —
-в CLAUDE.md, раздел «Аналитика страниц».
+Третьего пункта больше нет: список роутов для теста **читается прямо из
+`App.tsx`** (`_static_routes_from_app` в `tests/test_page_analytics_service.py`),
+поэтому забыть его обновить нельзя. Раньше там лежала копия списка, и её
+забывали ровно так же, как классификатор: тест зеленел, а раздел молча уезжал
+в «Прочее» — так пропали `/backlog` и победные рейтинги.
+
+Проверить: `pytest tests/test_page_analytics_service.py` — упадёт с текстом
+«Раздел X не попадает в статистику». Тесту нужен доступ к `frontend/src`, в
+контейнере он примонтирован в `/frontend-src` (см. `docker-compose.yml`).
+
+Динамические адреса (`/users/{хендл}`, `/locations/{slug}`, `/hq/{токен}`)
+разбираются регулярками в `classify_page` — их сторож не покрывает, добавлять
+руками. Вкладки профиля (`/users/{хендл}/{вкладка}`) считаются обычным
+просмотром профиля: в `entity_key` едет хендл, а не вкладка.
 
 ---
 
@@ -381,6 +446,7 @@ Prod API **не** fetch'ит parkrun.org.uk. Очередь `profile_fetch_pendi
 | `scripts/check_failed_sync_jobs.py` | failed sync_jobs за 7 дней |
 | `scripts/recalculate_personal_records.py` | backfill PR |
 | `scripts/import_location_catalog.py` | catalog → DB |
+| `scripts/backfill_location_descriptions.py` | первый сбор описаний площадок (5 вёрст, S95) |
 | `scripts/deploy_prod.sh` | rsync + prod deploy |
 | `scripts/dev_prod_db.sh` | локальный сайт на prod DB (read-only tunnel) |
 | `make parkrun` | Mac parkrun fetch daemon |

@@ -1,0 +1,1007 @@
+/* Личный кабинет в портальном дизайне (тёмный запуск: /new/dashboard и др.).
+   Каркас: сайдбар на десктопе, нижняя навигация на телефоне.
+   Все цвета — через переменные темы из index.css, обе темы бесплатно.
+
+   Внутри .portal-cab-main живёт контент существующих вкладок со старыми
+   классами (.card, .data-table, .map-mode-tabs…) — здесь же их портальный
+   рескин, чтобы не трогать сами страницы до полной замены дизайна. */
+
+.portal-cab {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+/* Шапка теперь — переиспользованный <PortalHeader/> (portal.css),
+   собственной вёрстки топбара у кабинета больше нет: ширина синхронизирована
+   автоматически через тот же класс .portal-header-inner. */
+
+/* ---------- раскладка: сайдбар + контент ---------- */
+
+.portal-cab-layout {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 20px 72px;
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
+}
+
+.portal-cab-sidebar {
+  position: sticky;
+  top: 76px;
+  flex: 0 0 236px;
+  width: 236px;
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Сайдбар со своим скроллом, если пунктов больше, чем высоты экрана. */
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+}
+
+.portal-cab-main {
+  flex: 1;
+  min-width: 0;
+  margin-top: 20px;
+}
+
+/* ---------- карточка пользователя ---------- */
+
+.portal-cab-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.portal-cab-user-avatar {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent-indigo), #7c3aed);
+}
+
+.portal-cab-user-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.portal-cab-user-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-cab-user-edit {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.portal-cab-user-edit:hover {
+  color: var(--text);
+  background: var(--bg-muted);
+}
+
+.portal-cab-user-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.portal-cab-user-input {
+  width: 100%;
+  font-size: 13.5px;
+}
+
+.portal-cab-user-form-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.portal-cab-user-error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+  color: var(--accent-red-text);
+}
+
+/* Дубль карточки участника над контентом кабинета: на телефоне сайдбар
+   скрыт, и правка имени («✎») была недостижима. На десктопе не показываем —
+   там карточка живёт в сайдбаре (включается в медиазапросе на 900px). */
+.portal-cab-user-mobile {
+  display: none;
+}
+
+/* ---------- навигация сайдбара ---------- */
+
+.portal-cab-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.portal-cab-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-decoration: none;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.portal-cab-nav-item:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.portal-cab-nav-item.active {
+  background: var(--tint-indigo-bg);
+  color: var(--accent-indigo-text);
+}
+
+.portal-cab-nav-icon {
+  flex: none;
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+}
+
+.portal-cab-nav-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.portal-cab-nav-secondary {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+/* ---------- сворачивание сайдбара (узкий рельс-иконки) ---------- */
+
+.portal-cab-collapse {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  margin-top: 2px;
+  padding-top: 12px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-faint);
+  cursor: pointer;
+  text-align: left;
+}
+
+.portal-cab-collapse:hover {
+  color: var(--text);
+}
+
+.portal-cab-sidebar.collapsed {
+  flex-basis: 64px;
+  width: 64px;
+}
+
+.portal-cab-sidebar.collapsed .portal-cab-nav-label {
+  display: none;
+}
+
+.portal-cab-sidebar.collapsed .portal-cab-nav-item,
+.portal-cab-sidebar.collapsed .portal-cab-collapse {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Служебные пункты без иконок в свёрнутом виде прячем целиком —
+   они доступны после разворота (и в мобильной шторке «Ещё»). */
+.portal-cab-sidebar.collapsed .portal-cab-nav-secondary {
+  display: none;
+}
+
+.portal-cab-user-collapsed {
+  justify-content: center;
+  padding: 8px;
+}
+
+.portal-cab-nav-item-secondary {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* «Админка» — янтарный ТЕКСТ с точкой-маркером, без заливки: заливка выглядела
+   как «активная вкладка» (замечание Дмитрия 25.07.2026). Выделяется цветом
+   среди серых пунктов, но не спорит с подсветкой текущего раздела. */
+.portal-cab-nav-item-admin {
+  color: var(--tint-amber-text);
+}
+
+.portal-cab-nav-item-admin::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-amber-text, var(--tint-amber-text));
+  margin-right: 7px;
+  vertical-align: 2px;
+}
+
+.portal-cab-nav-item-admin:hover {
+  color: var(--tint-amber-text);
+  background: var(--tint-amber-bg);
+}
+
+/* ---------- заголовок страницы ---------- */
+
+.portal-cab-pagehead {
+  margin: 6px 0 18px;
+}
+
+.portal-cab-pagehead h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.portal-cab-pagehead-sub {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  max-width: 640px;
+}
+
+/* ---------- нижняя навигация (телефон) ---------- */
+
+/* Высота панели (6px + иконка + подпись + 6px, без safe-area — она в padding).
+   Плавающие кнопки поднимаются на неё, иначе «наверх» садится прямо на «Ещё».
+   На ширинах без панели — ноль, кнопки остаются у нижнего края. */
+:root {
+  --portal-bottomnav-h: 0px;
+}
+
+.portal-cab-bottomnav {
+  display: none;
+}
+
+.portal-cab-more-backdrop {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  :root {
+    --portal-bottomnav-h: 58px;
+  }
+
+  .portal-cab-layout {
+    display: block;
+    padding-bottom: 92px;
+  }
+
+  .portal-cab-sidebar {
+    display: none;
+  }
+
+  .portal-cab-user-mobile {
+    display: block;
+    margin-bottom: 14px;
+  }
+
+  /* Имя на телефоне крупнее: карточка здесь работает заголовком страницы. */
+  .portal-cab-user-mobile .portal-cab-user-name {
+    font-size: 16px;
+  }
+
+  .portal-cab-user-mobile .portal-cab-user-edit {
+    font-size: 16px;
+    padding: 6px 8px;
+  }
+
+  .portal-cab-bottomnav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    display: flex;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .portal-cab-bottomnav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 5px 2px;
+    border: 0;
+    background: transparent;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-decoration: none;
+    cursor: pointer;
+    min-width: 0;
+  }
+
+  .portal-cab-bottomnav-item:hover {
+    text-decoration: none;
+  }
+
+  .portal-cab-bottomnav-item.active {
+    color: var(--accent-indigo-text);
+  }
+
+  .portal-cab-bottomnav-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* шторка «Ещё» */
+  .portal-cab-more-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    background: rgba(15, 23, 42, 0.45);
+  }
+
+  .portal-cab-more-sheet {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--surface);
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    padding: 8px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    box-shadow: 0 -12px 40px rgba(15, 23, 42, 0.25);
+    /* Со вкладками участника пунктов набирается больше экрана — шторка
+       скроллится сама, а не уезжает под верхний край. */
+    max-height: 82vh;
+    overflow-y: auto;
+  }
+
+  /* Заголовок блока в шторке (например, имя участника над его вкладками). */
+  .portal-cab-more-title {
+    padding: 6px 10px 2px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  .portal-cab-more-grabber {
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--chip-bg-strong);
+    margin: 4px auto 10px;
+  }
+
+  .portal-cab-more-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 10px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-2);
+    text-decoration: none;
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .portal-cab-more-item:hover {
+    background: var(--bg-muted);
+    text-decoration: none;
+  }
+
+  .portal-cab-more-item.active {
+    color: var(--accent-indigo-text);
+  }
+
+  .portal-cab-more-item-secondary {
+    font-size: 14px;
+    color: var(--text-muted);
+    padding: 8px 10px;
+  }
+
+  .portal-cab-more-sep {
+    border-top: 1px solid var(--border);
+    margin: 6px 0;
+  }
+}
+
+/* ---------- герой дашборда ---------- */
+
+.portal-cab-hero {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px 22px;
+  margin-bottom: 16px;
+}
+
+.portal-cab-hero-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.portal-cab-hero-sub {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Бейджи привязанных систем — как на странице локации; ведут к секции профилей. */
+.portal-cab-hero-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.portal-cab-hero-stats {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.portal-cab-hero-stat {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 12px;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  min-width: 0;
+}
+
+a.portal-cab-hero-stat:hover {
+  text-decoration: none;
+}
+
+a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
+  color: var(--accent-indigo-text);
+}
+
+.portal-cab-hero-stat-value {
+  font-size: clamp(20px, 2.6vw, 28px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.portal-cab-hero-stat-label {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.portal-cab-hero-stat-runs {
+  border-left-color: var(--accent-green-text);
+}
+
+.portal-cab-hero-stat-vol {
+  border-left-color: var(--accent-indigo);
+}
+
+.portal-cab-hero-stat-pr {
+  border-left-color: var(--accent-amber-text);
+}
+
+.portal-cab-hero-stat-geo {
+  border-left-color: var(--accent-teal-text);
+}
+
+/* Карточка участника (вариант по умолчанию): аватар + имя на обычной
+   поверхности — в тонах портала, без тёмной панели. Лёгкий индиговый отсвет
+   в углу отделяет её от остальных панелей, не уводя в другую тему. */
+
+.portal-cab-hero-card {
+  background:
+    radial-gradient(120% 150% at 100% 0%, var(--tint-indigo-bg), transparent 60%),
+    var(--surface);
+}
+
+.portal-cab-hero-card-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.portal-cab-hero-card-id {
+  min-width: 0;
+}
+
+.portal-cab-hero-card .portal-cab-hero-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-cab-hero-card-avatar {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent-indigo), #7c3aed);
+}
+
+/* Вариант C: компактная строка */
+
+.portal-cab-hero-compact {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+}
+
+.portal-cab-hero-compact-name {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-cab-hero-compact-stats {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.portal-cab-hero-compact .portal-cab-hero-stat {
+  padding-left: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.portal-cab-hero-compact .portal-cab-hero-stat-value {
+  font-size: 18px;
+}
+
+.portal-cab-hero-compact .portal-cab-hero-stat-label {
+  margin-top: 0;
+  font-size: 11px;
+}
+
+@media (max-width: 640px) {
+  .portal-cab-hero {
+    padding: 16px;
+  }
+
+  .portal-cab-hero-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 10px;
+  }
+
+  .portal-cab-hero-compact {
+    padding: 12px 16px;
+  }
+
+  .portal-cab-hero-compact-stats {
+    margin-left: 0;
+    gap: 14px;
+  }
+}
+
+/* ======================================================================
+   Портальный рескин легаси-контента вкладок внутри .portal-cab-main
+   ====================================================================== */
+
+/* Карточки → портальные панели */
+.portal-cab-main .card {
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+
+.portal-cab-main .section-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Отступ между блоком чекбоксов («тестовые»/«незачётные») и полосой
+   чипов-фильтров: у .map-mode-tabs есть только margin-bottom, поэтому без
+   этого фильтры прижимались к чекбоксам вплотную. */
+.portal-cab-main .checkbox-row-group + .map-mode-tabs {
+  margin-top: 18px;
+}
+
+/* Вертикальный ритм дашборда: в старом дизайне .shell-main был grid со
+   сквозным gap, из-за его отсутствия блоки без своего margin-bottom
+   (например «Цели на год») слипались с соседями. Собственные отступы детей
+   гасим, чтобы ритм был равномерным, а не gap+margin вразнобой. */
+/* minmax(0, 1fr), а не 1fr по умолчанию: иначе единственная колонка не может
+   стать уже min-content своего содержимого, и любая неразрывная строка (напр.
+   «Новый город: … · 4 июля 2026» в тизере истории) расширяет не себя, а весь
+   кабинет — на телефоне страница уезжала вбок вместе с шапкой. */
+.portal-cab-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-content: start;
+}
+
+.portal-cab-stack > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* Чипы-фильтры систем — как переключатели на портальной главной */
+.portal-cab-main .map-mode-tab {
+  border-radius: 9px;
+  border-color: var(--border);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  color: var(--text-muted);
+}
+
+.portal-cab-main .map-mode-tab.active {
+  background: var(--tint-indigo-bg);
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+}
+
+/* Таблицы: шапка в портальной типографике */
+.portal-cab-main .table-wrap {
+  border-radius: 14px;
+}
+
+/* Капса нет по той же причине, что и в portalSection.css: у кнопок-заголовков
+   браузер сбрасывает text-transform, и шапка выходила разнобоем. */
+.portal-cab-main .data-table thead th {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+/* Аватарка-картинка вместо инициалов (когда пользователь её загрузил). */
+.portal-cab-user-avatar-img {
+  object-fit: cover;
+  background: none;
+  padding: 0;
+}
+
+/* ---------- единый сайдбар сайта (SiteSidebar) ---------- */
+
+/* Заголовок-кнопка группы «Личный кабинет» с шевроном. */
+.portal-cab-group-head {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.portal-cab-group-head-current {
+  font-weight: 700;
+}
+
+/* Шеврон — отдельная кнопка внутри пункта: клик по тексту ведёт в обзор,
+   клик по стрелке только раскрывает/скрывает группу. Хит-зона больше иконки. */
+.portal-cab-group-chevron {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  margin-top: -4px;
+  margin-bottom: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.portal-cab-group-chevron:hover {
+  background: var(--tint-indigo-bg);
+  color: var(--text);
+}
+
+.portal-cab-group-chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.portal-cab-group-chevron.open {
+  transform: rotate(90deg);
+}
+
+/* Подпункты (вкладки ЛК под группой, подразделы локации) — со сдвигом. */
+.portal-cab-nav-subitem {
+  padding-left: 22px;
+}
+
+/* Текстовые подпункты без иконки (локация, журнал) — ровняем по тексту. */
+.portal-cab-nav-textitem {
+  padding-left: 50px;
+}
+
+/* Недоступное анониму: видно, но не кликается. */
+.portal-cab-nav-item-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+
+/* pointer-events НЕ отключаем: иначе браузер не покажет подсказку (title),
+   объясняющую, почему пункт недоступен. Переход не случится сам — у таких
+   пунктов не задан href. */
+a.portal-cab-nav-item-disabled {
+  cursor: not-allowed;
+}
+
+/* Карточка-CTA анонима на месте карточки пользователя. */
+.portal-cab-login-card {
+  justify-content: center;
+}
+
+.portal-cab-login-btn {
+  width: 100%;
+  text-align: center;
+}
+
+.portal-cab-login-avatar {
+  text-decoration: none;
+  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* В свёрнутом рельсе текстовые подпункты (без иконок) прячем, шеврон тоже. */
+.portal-cab-sidebar.collapsed .portal-cab-nav-textitem,
+.portal-cab-sidebar.collapsed .portal-cab-group-chevron {
+  display: none;
+}
+
+.portal-cab-sidebar.collapsed .portal-cab-nav-subitem {
+  padding-left: 0;
+}
+
+/* Плейсхолдер юзер-зоны, пока сессия проверяется (первый заход без кэша) —
+   чтобы не мигать кнопкой «Войти» перед залогиненным. */
+.portal-cab-user-pending {
+  min-height: 62px;
+}
+
+/* ---------- аналитические плитки в портальном стиле ----------
+   Легаси .stat-card-runs/.stat-card-volunteering заливали карточку светло-
+   зелёным/светло-синим захардкоженным hex — в тёмной теме это выглядело
+   чужеродными пятнами, да и в светлой спорило с портальными панелями.
+   Здесь: нейтральная панель как везде, категория — тонкая цветная полоска
+   слева; цвета через переменные темы, поэтому обе темы бесплатно. */
+
+.portal-cab-main .stat-card,
+.portal-section .stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  text-align: left;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.portal-cab-main .stat-card.stat-card-runs,
+.portal-section .stat-card.stat-card-runs {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: inset 3px 0 0 var(--accent-green-text);
+}
+
+.portal-cab-main .stat-card.stat-card-volunteering,
+.portal-section .stat-card.stat-card-volunteering {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: inset 3px 0 0 var(--accent-indigo);
+}
+
+/* Победы — та же нейтральная панель с полоской, но янтарной, и значение
+   тоже янтарное: это единственная плитка-награда в сетке, и в отличие от
+   счётчиков локаций её стоит замечать. Одна цветная цифра из трёх десятков
+   пестроты не создаёт. */
+.portal-cab-main .stat-card.stat-card-wins,
+.portal-section .stat-card.stat-card-wins {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: inset 3px 0 0 var(--accent-amber-text);
+}
+
+.portal-cab-main .stat-card.stat-card-wins .stat-value,
+.portal-section .stat-card.stat-card-wins .stat-value {
+  color: var(--accent-amber-text);
+}
+
+.portal-cab-main .stat-card.stat-card-wins .stat-label,
+.portal-section .stat-card.stat-card-wins .stat-label {
+  color: var(--text-muted);
+}
+
+/* Значение — обычный цвет текста: цветными остаются только полоски,
+   иначе сетка из 15 плиток снова превращается в пестроту. */
+.portal-cab-main .stat-card.stat-card-runs .stat-value,
+.portal-cab-main .stat-card.stat-card-volunteering .stat-value,
+.portal-section .stat-card.stat-card-runs .stat-value,
+.portal-section .stat-card.stat-card-volunteering .stat-value {
+  color: var(--text);
+}
+
+.portal-cab-main .stat-card.stat-card-runs .stat-label,
+.portal-cab-main .stat-card.stat-card-volunteering .stat-label,
+.portal-section .stat-card.stat-card-runs .stat-label,
+.portal-section .stat-card.stat-card-volunteering .stat-label {
+  color: var(--text-muted);
+}
+
+.portal-cab-main .stat-value,
+.portal-section .stat-value {
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.portal-cab-main .stat-label,
+.portal-section .stat-label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* Кликабельные плитки: подсветка рамкой вместо смены заливки. */
+.portal-cab-main .stat-card-nav:hover,
+.portal-section .stat-card-nav:hover {
+  border-color: var(--accent-indigo);
+  transform: none;
+}
+
+/* Разделитель перед временной группой (профиль другого участника). */
+.portal-cab-nav-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 8px 4px;
+}
+
+/* Имя пользователя — кликабельная ссылка в обзор кабинета. */
+a.portal-cab-user-name {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.portal-cab-user-name:hover {
+  color: var(--accent-indigo-text);
+  text-decoration: none;
+}
+
+/* ---------- уровни сайдбара ----------
+   Верхний уровень (Личный кабинет, Локации, Рейтинги) — один размер и одна
+   левая граница; всё, что внутри них, — на ступень правее и мельче. */
+.portal-cab-nav-item {
+  font-size: 14px;
+}
+
+.portal-cab-nav-subitem,
+.portal-cab-nav-textitem {
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+.portal-cab-nav-subitem:hover,
+.portal-cab-nav-textitem:hover {
+  color: var(--text);
+}
+
+/* Подпункты с иконкой (разделы кабинета) и без неё (локация, журнал)
+   начинаются с одной вертикали: 12px базового паддинга + 18px ступень. */
+.portal-cab-nav-subitem {
+  padding-left: 30px;
+}
+
+.portal-cab-nav-textitem {
+  padding-left: 30px;
+}
+
+/* Иконки подпунктов чуть меньше — вложенность видна и по ним. */
+.portal-cab-nav-subitem .portal-cab-nav-icon {
+  width: 17px;
+  height: 17px;
+}
+
+/* Аватарка в сайдбаре кликабельна — раскрывает оригинал. */
+.portal-cab-user-avatar-button {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+  overflow: hidden;
+}
+
+.portal-cab-user-avatar-button img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}

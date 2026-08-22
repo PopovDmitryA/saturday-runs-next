@@ -27,19 +27,69 @@ def test_display_parkrun_via_five_verst_catalog() -> None:
     )
 
 
+def test_active_platform_name_wins_over_legacy_canonical() -> None:
+    # У части узлов canonical_name — транслитерация времён parkrun; актуальное
+    # название площадки живёт в локации действующей системы, его и показываем.
+    catalog = _catalog(
+        canonical_name="Ufa Botanichesky Sad", active_platform="five_verst", is_closed=False
+    )
+    assert (
+        resolve_location_display_name(
+            catalog,
+            platform_code="parkrun",
+            source_name="Ufa Botanichesky Sad",
+            active_platform_name="Парк Лесоводов",
+        )
+        == "Парк Лесоводов"
+    )
+
+
+def test_canonical_name_is_fallback_without_active_location() -> None:
+    # Действующей локации у узла нет (осталась одна parkrun-история) —
+    # тогда каталожное имя всё ещё лучше сырого латинского.
+    catalog = _catalog(canonical_name="Тимирязевский", active_platform="five_verst", is_closed=False)
+    assert (
+        resolve_location_display_name(
+            catalog,
+            platform_code="parkrun",
+            source_name="Timiryazevsky",
+            active_platform_name=None,
+        )
+        == "Тимирязевский"
+    )
+
+
 def test_closed_keeps_source_name() -> None:
     catalog = _catalog(canonical_name="Memorial", active_platform="five_verst", is_closed=True)
     assert should_use_catalog_display(catalog, "parkrun") is False
     assert resolve_location_display_name(catalog, platform_code="parkrun", source_name="Memorialny Park") == "Memorialny Park"
 
 
-def test_runpark_keeps_source_name() -> None:
+def test_runpark_is_a_valid_name_source() -> None:
+    """Площадка, которая сегодня бегает только в runpark, называется по нему.
+
+    Раньше runpark отсеивался наравне с parkrun, и «Покровское-Стрешнево» с
+    «Лесопарк Северный» оставались латиницей: действующей системы, чьё имя
+    разрешено брать, у этих узлов просто не было.
+    """
     catalog = _catalog(canonical_name="Покровское-Стрешнево", active_platform="runpark", is_closed=False)
-    assert should_use_catalog_display(catalog, "parkrun") is False
+    assert should_use_catalog_display(catalog, "parkrun") is True
     assert (
-        resolve_location_display_name(catalog, platform_code="parkrun", source_name="Pokrovskoe-Streshnevo")
-        == "Pokrovskoe-Streshnevo"
+        resolve_location_display_name(
+            catalog,
+            platform_code="parkrun",
+            source_name="Pokrovskoe-Streshnevo",
+            active_platform_name="Покровское-Стрешнево",
+        )
+        == "Покровское-Стрешнево"
     )
+
+
+def test_parkrun_never_overrides_name() -> None:
+    """Узел, где действующей осталась parkrun-строка, имя не переопределяет —
+    её латиница и есть то, от чего мы уходим."""
+    catalog = _catalog(canonical_name="Тимирязевский", active_platform="parkrun", is_closed=False)
+    assert should_use_catalog_display(catalog, "parkrun") is False
 
 
 def test_catalog_lookup_matches_hyphenated_parkrun_slug(db_session) -> None:
@@ -214,6 +264,78 @@ def test_unique_location_counts_merge_catalog_and_coords(db_session) -> None:
     assert counts.unique_total == 2
     assert counts.unique_with_coordinates == 2
     assert counts.unique_without_coordinates == 0
+
+
+def test_coordinates_come_from_active_platform_not_first_link(db_session) -> None:
+    """Мытищи: точка сбора — старт действующих 5 вёрст, а не runpark-лавочки.
+
+    runpark-связку добавляем первой: раньше побеждала любая связка, пришедшая из БД
+    раньше остальных, и на карте оказывалась точка в ~3 км от реального старта.
+    """
+    from uuid import uuid4
+
+    from app.models import Location, LocationCatalog, LocationCatalogLink, Platform
+
+    try:
+        five_verst = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+        runpark = db_session.query(Platform).filter(Platform.code == "runpark").one_or_none()
+    except Exception:
+        pytest.skip("Database not available")
+
+    if runpark is None:
+        runpark = Platform(code="runpark", name="runpark")
+        db_session.add(runpark)
+        db_session.flush()
+
+    suffix = uuid4().hex[:8]
+    runpark_location = Location(
+        platform_id=runpark.id,
+        external_key=f"runpark-coords-{suffix}",
+        name="Лавочки у зелёного моста",
+        latitude=55.8984,
+        longitude=37.713,
+    )
+    five_verst_location = Location(
+        platform_id=five_verst.id,
+        external_key=f"fiveverst-coords-{suffix}",
+        name="Мытищи Центральный парк",
+        latitude=55.910941,
+        longitude=37.742125,
+    )
+    db_session.add_all([runpark_location, five_verst_location])
+    db_session.flush()
+
+    catalog = LocationCatalog(
+        canonical_name=f"Coords Test Park {suffix}",
+        active_platform="five_verst",
+        is_closed=False,
+    )
+    db_session.add(catalog)
+    db_session.flush()
+    db_session.add_all(
+        [
+            LocationCatalogLink(
+                catalog_id=catalog.id,
+                platform_id=runpark.id,
+                external_key=runpark_location.external_key,
+                location_id=runpark_location.id,
+            ),
+            LocationCatalogLink(
+                catalog_id=catalog.id,
+                platform_id=five_verst.id,
+                external_key=five_verst_location.external_key,
+                location_id=five_verst_location.id,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    index = LocationCatalogIndex(db_session)
+    expected = (five_verst_location.latitude, five_verst_location.longitude)
+    # Через любую связку узла — координаты действующей платформы.
+    assert index.coordinates_for(runpark_location, "runpark") == expected
+    assert index.coordinates_for(five_verst_location, "five_verst") == expected
+    assert index.coordinates_for_identity_key(f"catalog:{catalog.id}") == expected
 
 
 def test_backfill_region_from_catalog_fills_gap_from_sibling_platform(db_session) -> None:

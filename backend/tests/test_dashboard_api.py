@@ -959,6 +959,242 @@ def test_dashboard_pr_count_includes_location_pr(
     assert prs.json()[0]["is_pr"] is False
 
 
+def _seed_wins_fixture(
+    db_session: Session,
+    user: User,
+    *,
+    gender: str,
+    results: list[tuple[int, int | None]],
+) -> None:
+    """Один участник заданного пола и по результату на каждое (place, gender_place)."""
+    suffix = str(uuid4().int % 1_000_000)
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+    location = Location(
+        platform_id=platform.id,
+        external_key=f"loc-win-{suffix}",
+        name="Win Park",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=f"win-user-{suffix}",
+        display_name="Win Tester",
+        profile_url=f"https://5verst.ru/userstats/win-{suffix}/",
+        gender=gender,
+    )
+    db_session.add(participant)
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=platform.id,
+            participant_id=participant.id,
+            external_user_id=participant.external_user_id,
+            external_url=participant.profile_url,
+        )
+    )
+
+    for index, (position, gender_position) in enumerate(results):
+        event = Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=f"win-event-{suffix}-{index}",
+            event_date=date(2026, 5, 2 + index),
+            event_number=950_000 + index,
+            title="Win Event",
+            finishers_count=10,
+            runners_count=10,
+        )
+        db_session.add(event)
+        db_session.flush()
+        db_session.add(
+            RunResult(
+                event_id=event.id,
+                participant_id=participant.id,
+                external_result_key=f"win-result-{suffix}-{index}",
+                position=position,
+                gender_position=gender_position,
+                finish_time_sec=20 * 60 + index,
+                finish_time_display="00:20:00",
+                status="finished",
+            )
+        )
+    db_session.flush()
+    db_session.commit()
+
+
+def test_dashboard_wins_counts_absolute_for_men(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """У мужчин победа — первое место в протоколе, а не в своей половине."""
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+    # Победа в абсолюте, победа среди мужчин без победы в абсолюте, и обычный забег.
+    _seed_wins_fixture(db_session, user, gender="male", results=[(1, 1), (4, 1), (7, 5)])
+
+    analytics = authenticated_client.get("/api/dashboard").json()["stats"]["analytics"]
+    assert analytics["wins_scope"] == "absolute"
+    assert analytics["wins_count"] == 1
+
+    wins = authenticated_client.get("/api/runs/wins")
+    assert wins.status_code == 200
+    # Цифра плитки и детализация обязаны совпадать.
+    assert len(wins.json()) == analytics["wins_count"]
+    assert wins.json()[0]["position"] == 1
+    assert wins.json()[0]["scope"] == "absolute"
+
+
+def test_dashboard_wins_counts_gender_places_for_women(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """У женщин победа — первое место среди женщин, абсолют не важен."""
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+    _seed_wins_fixture(db_session, user, gender="female", results=[(12, 1), (5, 3)])
+
+    analytics = authenticated_client.get("/api/dashboard").json()["stats"]["analytics"]
+    assert analytics["wins_scope"] == "female"
+    assert analytics["wins_count"] == 1
+
+    wins = authenticated_client.get("/api/runs/wins")
+    assert wins.status_code == 200
+    assert len(wins.json()) == 1
+    item = wins.json()[0]
+    assert item["gender_position"] == 1
+    assert item["position"] == 12
+    assert item["scope"] == "female"
+
+
+def _seed_parkrun_win(
+    db_session: Session,
+    user: User,
+    *,
+    catalogued: bool,
+    gender: str = "female",
+) -> None:
+    """Победа на parkrun-площадке: catalogued=True — русская (есть связка с
+    каталогом локаций), False — зарубежная (протокола у нас нет)."""
+    suffix = str(uuid4().int % 1_000_000)
+    parkrun = db_session.query(Platform).filter(Platform.code == "parkrun").one_or_none()
+    if parkrun is None:
+        parkrun = Platform(code="parkrun", name="parkrun")
+        db_session.add(parkrun)
+        db_session.flush()
+
+    location = Location(
+        platform_id=parkrun.id,
+        external_key=f"parkrun-win-{suffix}",
+        name="Parkrun Win Park",
+        country="United Kingdom",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    if catalogued:
+        catalog = LocationCatalog(
+            canonical_name=f"Parkrun Win Park {suffix}",
+            active_platform="five_verst",
+            is_closed=False,
+        )
+        db_session.add(catalog)
+        db_session.flush()
+        db_session.add(
+            LocationCatalogLink(
+                catalog_id=catalog.id,
+                platform_id=parkrun.id,
+                external_key=location.external_key,
+                location_id=location.id,
+            )
+        )
+
+    participant = Participant(
+        platform_id=parkrun.id,
+        external_user_id=f"parkrun-win-user-{suffix}",
+        display_name="Parkrun Win Tester",
+        profile_url=f"https://www.parkrun.com/parkrunner/{suffix}/",
+        gender=gender,
+    )
+    db_session.add(participant)
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=parkrun.id,
+            participant_id=participant.id,
+            external_user_id=participant.external_user_id,
+            external_url=participant.profile_url,
+        )
+    )
+
+    event = Event(
+        platform_id=parkrun.id,
+        location_id=location.id,
+        external_event_key=f"parkrun-win-event-{suffix}",
+        event_date=date(2019, 6, 1),
+        event_number=100,
+        title="Parkrun Win Event",
+        finishers_count=1,
+        runners_count=1,
+    )
+    db_session.add(event)
+    db_session.flush()
+    db_session.add(
+        RunResult(
+            event_id=event.id,
+            participant_id=participant.id,
+            external_result_key=f"parkrun-win-result-{suffix}",
+            position=1,
+            gender_position=1,
+            finish_time_sec=22 * 60,
+            finish_time_display="00:22:00",
+            status="finished",
+        )
+    )
+    db_session.flush()
+    db_session.commit()
+
+
+def test_dashboard_wins_ignore_foreign_parkrun(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """Зарубежный parkrun в зачёт побед не идёт: протокола у нас нет, и
+    единственная строка из профиля всегда оказывается первой."""
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+    _seed_parkrun_win(db_session, user, catalogued=False)
+
+    analytics = authenticated_client.get("/api/dashboard").json()["stats"]["analytics"]
+    assert analytics["wins_count"] == 0
+    assert authenticated_client.get("/api/runs/wins").json() == []
+
+
+def test_dashboard_wins_count_russian_parkrun(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """Русский parkrun собран протоколами целиком — его победы в зачёте."""
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+    _seed_parkrun_win(db_session, user, catalogued=True)
+
+    analytics = authenticated_client.get("/api/dashboard").json()["stats"]["analytics"]
+    assert analytics["wins_count"] == 1
+    wins = authenticated_client.get("/api/runs/wins").json()
+    assert len(wins) == 1
+    assert wins[0]["platform_code"] == "parkrun"
+
+
+def test_wins_require_auth(client: TestClient) -> None:
+    assert client.get("/api/runs/wins").status_code == 401
+
+
 def test_dashboard_unique_locations_merged_by_catalog(
     authenticated_client: TestClient,
     db_session: Session,
@@ -1422,9 +1658,16 @@ def test_user_sync_updates_cache(authenticated_client: TestClient, db_session: S
         club_name="Test Club",
     )
 
-    with patch("app.platform_adapters.five_verst.adapter.FiveVerstAdapter.fetch_user_profile", return_value=profile):
+    # У five_verst синк идёт мимо адаптера — напрямую через fetch_userstats_html,
+    # поэтому патчим именно его, иначе тест уходит в живую сеть на 5verst.ru.
+    with (
+        patch("app.sync.user_sync.fetch_userstats_html", return_value="<html></html>"),
+        patch("app.sync.user_sync.parse_userstats_html", return_value=profile),
+        patch("app.sync.user_sync.parse_userstats_runs_html", return_value=[]),
+        patch("app.sync.user_sync.parse_userstats_volunteering_html", return_value=[]),
+    ):
         job = run_user_sync(db_session, user.id, SyncJobTrigger.manual)
-        assert job.status.value == "success"
+        assert job.status.value == "success", job.error_message
 
     dashboard = authenticated_client.get("/api/dashboard")
     assert dashboard.status_code == 200

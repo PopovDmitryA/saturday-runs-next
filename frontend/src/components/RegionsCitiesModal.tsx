@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { UniqueLocationsDetailResponse } from "../lib/api";
 import { useAppDataSource } from "../lib/appDataSource";
-import { pluralizeRu } from "../lib/format";
+import { formatInt, pluralizeRu } from "../lib/format";
 import { matchesActivity, type ActivityFilter } from "./uniqueLocationsHelpers";
 import { DetailModal } from "./DetailModal";
 
@@ -139,7 +139,7 @@ function ModalContent({
               <tr key={group.name} className={group.isUnknown ? "geo-groups-row-unknown" : undefined}>
                 <td className="geo-groups-name">{group.name}</td>
                 <td className="col-count">{group.locations.length}</td>
-                <td className="col-count">{group.totalVisits}</td>
+                <td className="col-count">{formatInt(group.totalVisits)}</td>
                 <td className="geo-groups-locations muted">
                   {group.isUnknown
                     ? group.locations.map((loc, i) => (
@@ -150,7 +150,7 @@ function ModalContent({
                             <span className="geo-groups-hint"> ({loc.hint})</span>
                           )}
                           {loc.visitCount > 1 && (
-                            <span className="geo-groups-visit-count"> ×{loc.visitCount}</span>
+                            <span className="geo-groups-visit-count"> ×{formatInt(loc.visitCount)}</span>
                           )}
                         </span>
                       ))
@@ -159,7 +159,7 @@ function ModalContent({
                           {i > 0 && ", "}
                           {loc.name}
                           {loc.visitCount > 1 && (
-                            <span className="geo-groups-visit-count"> ×{loc.visitCount}</span>
+                            <span className="geo-groups-visit-count"> ×{formatInt(loc.visitCount)}</span>
                           )}
                         </span>
                       ))}

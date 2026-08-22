@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { CatalogLocationTableRow, CatalogLocationsTableResponse } from "../../lib/api";
-import { formatDate } from "../../lib/format";
+import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { CheckboxListFilter } from "../../components/activityTable/CheckboxListFilter";
 import { PlatformBadge } from "../../components/PlatformBadge";
@@ -21,7 +21,7 @@ import {
   type CatalogTableSortKey,
   type VisitedFilter,
 } from "./catalogLocationsTableHelpers";
-import type { PlatformFilters } from "./mapFilters";
+import { resolveVisit, type PlatformFilters } from "./mapFilters";
 
 type CatalogLocationsTableProps = {
   data: CatalogLocationsTableResponse | null;
@@ -34,7 +34,7 @@ function formatLocationsCount(filtered: number, total: number): string {
   if (filtered === total) {
     return String(filtered);
   }
-  return `${filtered} из ${total}`;
+  return `${formatInt(filtered)} из ${formatInt(total)}`;
 }
 
 export function CatalogLocationsTable({
@@ -99,7 +99,7 @@ export function CatalogLocationsTable({
                     }))
                   }
                 />
-                Скрыть локации на паузе
+                Скрыть недействующие локации
               </label>
               <button
                 type="button"
@@ -294,7 +294,11 @@ export function CatalogLocationsTable({
                     </tr>
                   ) : (
                     filteredRows.map((row) => (
-                      <CatalogLocationTableRowView key={row.row_key} row={row} />
+                      <CatalogLocationTableRowView
+                        key={row.row_key}
+                        row={row}
+                        platformFilters={platformFilters}
+                      />
                     ))
                   )}
                 </tbody>
@@ -307,7 +311,16 @@ export function CatalogLocationsTable({
   );
 }
 
-function CatalogLocationTableRowView({ row }: { row: CatalogLocationTableRow }) {
+function CatalogLocationTableRowView({
+  row,
+  platformFilters,
+}: {
+  row: CatalogLocationTableRow;
+  platformFilters: PlatformFilters;
+}) {
+  // Отметка и дата — по системам, включённым в фильтре: при сужении до
+  // 5 вёрст визит parkrun-эпохи не должен светиться посещением.
+  const visit = resolveVisit(row.visits_by_platform, platformFilters);
   const name = row.location_slug ? (
     <a href={`/locations/${encodeURIComponent(row.location_slug)}`} className="map-popup-link" title="Открыть страницу локации">
       {row.name}
@@ -320,7 +333,7 @@ function CatalogLocationTableRowView({ row }: { row: CatalogLocationTableRow }) 
     row.name
   );
 
-  const statusNote = row.is_cancelled ? "Отменена" : row.is_paused ? "На паузе" : null;
+  const statusNote = row.is_cancelled ? "Отменена" : row.is_paused ? "Не действует" : null;
 
   return (
     <tr
@@ -349,13 +362,21 @@ function CatalogLocationTableRowView({ row }: { row: CatalogLocationTableRow }) 
       <td className="td-visited">
         <span
           className={
-            row.visited ? "visit-status-badge visit-status-yes" : "visit-status-badge visit-status-no"
+            visit ? "visit-status-badge visit-status-yes" : "visit-status-badge visit-status-no"
           }
         >
-          {row.visited ? "Посещал" : "Не посещал"}
+          {visit ? "Посещал" : "Не посещал"}
         </span>
       </td>
-      <td className="td-date">{row.first_visit_date ? formatDate(row.first_visit_date) : "—"}</td>
+      <td className="td-date">
+        {visit ? formatDate(visit.date) : "—"}
+        {/* Отметка «Посещал» ставится по локации, а не по системе. Если визит
+            был в другой системе (обычно parkrun-эпоха), называем её — иначе
+            дата 2020 года на строке 5 вёрст выглядит ошибкой. */}
+        {visit && visit.platform !== row.platform_code && (
+          <span className="td-date-source">в {platformCodeLabel(visit.platform)}</span>
+        )}
+      </td>
     </tr>
   );
 }

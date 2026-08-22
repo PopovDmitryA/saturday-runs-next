@@ -50,7 +50,7 @@ sudo_cmd systemctl restart grafana-server
 sed -i 's|https://app.run5k.run|https://run5k.run|g' "$ROOT/.env" || true
 grep -q '^APP_BASE_URL=' "$ROOT/.env" && sed -i 's|^APP_BASE_URL=.*|APP_BASE_URL=https://run5k.run|' "$ROOT/.env" || echo 'APP_BASE_URL=https://run5k.run' >> "$ROOT/.env"
 
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate api vk-bot nginx
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate api bot nginx
 
 docker run --rm -v "$ROOT/frontend:/app" -w /app node:22-alpine sh -c "npm ci && npm run build" 2>&1 | tail -3
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate nginx

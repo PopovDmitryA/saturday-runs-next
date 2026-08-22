@@ -142,9 +142,12 @@ def import_parkrun_participant_activity(
         participant.id,
         volunteering,
     )
-    from app.services.parkrun_pr_service import recalculate_parkrun_personal_records
+    # Пересчёт личных рекордов — самая дорогая часть импорта. В пакетном режиме
+    # (см. deferred_pr_recalc) участник только запоминается, а считается один раз
+    # в конце прогона; вне пакета поведение прежнее — считаем сразу.
+    from app.services.parkrun_pr_service import note_or_recalculate
 
-    recalculate_parkrun_personal_records(db, participant_id=participant.id)
+    note_or_recalculate(db, participant.id)
     return ParkrunParticipantImportResult(
         participant=participant,
         runs_imported=runs_imported,

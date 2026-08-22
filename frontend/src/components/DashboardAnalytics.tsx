@@ -14,8 +14,12 @@ import { PersonalRecordsModal } from "./PersonalRecordsModal";
 import { StatHintTooltip } from "./StatHintTooltip";
 import { TopLocationValue } from "./TopLocationValue";
 import { VolunteerRolesModal } from "./VolunteerRolesModal";
+import { HomeDistanceModal } from "./HomeDistanceModal";
+import { PORTAL_CABINET_SETTINGS_HREF } from "../lib/portalRoutes";
 import { UniqueLocationsModal } from "./UniqueLocationsModal";
+import { WinsModal } from "./WinsModal";
 import { RegionsCitiesModal, type GroupBy } from "./RegionsCitiesModal";
+import { LocationRecordsModal } from "./LocationRecordsModal";
 import {
   formatDate,
   formatDuration,
@@ -23,6 +27,9 @@ import {
   formatMonthYear,
   formatPace,
   daysCapLabel,
+  formatKm,
+  formatNumber,
+  formatStatValue,
   kilometersLabel,
   citiesWithRunsLabel,
   citiesWithVolunteeringLabel,
@@ -33,19 +40,27 @@ import {
   pluralizeRu,
   prRunsLabel,
   runsCapLabel,
+  runsFormLabel,
   saturdaysLabel,
   timesLabel,
   volunteerRolesLabel,
   volunteeringCapLabel,
+  winsCapLabel,
 } from "../lib/format";
 
 type DashboardAnalyticsProps = {
   analytics: DashboardAnalyticsData | undefined;
   totalRuns: number;
   totalVolunteering: number;
+  /**
+   * Показывать ли красную подсказку «проверьте домашнюю локацию». Только в
+   * своём кабинете: в чужом публичном профиле это совет, который гость всё
+   * равно не может выполнить, — настройки чужого профиля ему недоступны.
+   */
+  showHomeLocationWarning?: boolean;
 };
 
-type AnalyticsCardCategory = "runs" | "volunteering";
+type AnalyticsCardCategory = "runs" | "volunteering" | "wins";
 
 type AnalyticsCard = {
   key: string;
@@ -56,7 +71,17 @@ type AnalyticsCard = {
   /** Пара с другой half-картой делит ряд пополам (не на всю ширину, но и не в общей сетке). */
   half?: boolean;
   clickable?: boolean;
-  modalTarget?: "unique_locations" | "best_results" | "personal_records" | "volunteer_roles" | "unique_regions" | "unique_cities";
+  modalTarget?:
+    | "unique_locations"
+    | "best_results"
+    | "personal_records"
+    | "volunteer_roles"
+    | "unique_regions"
+    | "unique_cities"
+    | "location_records"
+    | "age_group_records"
+    | "home_distance"
+    | "wins";
   modalActivity?: "all" | "runs" | "volunteering";
   firstVisitSince?: string;
   tooltipContent?: ReactNode;
@@ -84,6 +109,18 @@ const SATURDAY_CONSISTENCY_TOOLTIP = (
   </>
 );
 
+const HOME_DISTANCE_TOOLTIP = (
+  <>
+    <span>
+      Сумма расстояний по прямой от домашней локации до каждой площадки, где вы бежали.
+    </span>
+    <span className="stat-hint-tooltip-note">
+      Каждая площадка засчитывается один раз, сколько бы раз вы туда ни ездили. Домашняя
+      локация меняется в настройках.
+    </span>
+  </>
+);
+
 const TOTAL_DISTANCE_TOOLTIP = (
   <span>Примерная суммарная дистанция: 5 км на каждую пробежку.</span>
 );
@@ -101,6 +138,11 @@ function cardThemeClass(category?: AnalyticsCardCategory): string {
   if (category === "volunteering") {
     return " stat-card-volunteering";
   }
+  // Победы — золотая плитка: единственная награда в сетке, зелёный «беговой»
+  // фон её теряет среди счётчиков локаций и километров.
+  if (category === "wins") {
+    return " stat-card-wins";
+  }
   return "";
 }
 
@@ -114,7 +156,7 @@ function buildAnalyticsCards(
   if (analytics.unique_run_locations > 0) {
     cards.push({
       key: "unique_run_locations",
-      value: String(analytics.unique_run_locations),
+      value: formatNumber(analytics.unique_run_locations),
       label: locationsWithRunsLabel(analytics.unique_run_locations),
       category: "runs",
       clickable: true,
@@ -126,7 +168,7 @@ function buildAnalyticsCards(
   if ((analytics.unique_run_regions ?? 0) > 0) {
     cards.push({
       key: "unique_run_regions",
-      value: String(analytics.unique_run_regions),
+      value: formatNumber(analytics.unique_run_regions),
       label: regionsWithRunsLabel(analytics.unique_run_regions ?? 0),
       category: "runs",
       clickable: true,
@@ -138,7 +180,7 @@ function buildAnalyticsCards(
   if ((analytics.unique_run_cities ?? 0) > 0) {
     cards.push({
       key: "unique_run_cities",
-      value: String(analytics.unique_run_cities),
+      value: formatNumber(analytics.unique_run_cities),
       label: citiesWithRunsLabel(analytics.unique_run_cities ?? 0),
       category: "runs",
       clickable: true,
@@ -150,7 +192,7 @@ function buildAnalyticsCards(
   if (analytics.unique_volunteer_locations > 0) {
     cards.push({
       key: "unique_volunteer_locations",
-      value: String(analytics.unique_volunteer_locations),
+      value: formatNumber(analytics.unique_volunteer_locations),
       label: locationsWithVolunteeringLabel(analytics.unique_volunteer_locations),
       category: "volunteering",
       clickable: true,
@@ -162,7 +204,7 @@ function buildAnalyticsCards(
   if ((analytics.unique_volunteer_regions ?? 0) > 0) {
     cards.push({
       key: "unique_volunteer_regions",
-      value: String(analytics.unique_volunteer_regions),
+      value: formatNumber(analytics.unique_volunteer_regions),
       label: regionsWithVolunteeringLabel(analytics.unique_volunteer_regions ?? 0),
       category: "volunteering",
       clickable: true,
@@ -174,7 +216,7 @@ function buildAnalyticsCards(
   if ((analytics.unique_volunteer_cities ?? 0) > 0) {
     cards.push({
       key: "unique_volunteer_cities",
-      value: String(analytics.unique_volunteer_cities),
+      value: formatNumber(analytics.unique_volunteer_cities),
       label: citiesWithVolunteeringLabel(analytics.unique_volunteer_cities ?? 0),
       category: "volunteering",
       clickable: true,
@@ -186,7 +228,7 @@ function buildAnalyticsCards(
   if (totalRuns > 0 && analytics.avg_position != null) {
     cards.push({
       key: "avg_position",
-      value: String(analytics.avg_position),
+      value: formatNumber(analytics.avg_position),
       label: "Среднее место в протоколе",
       category: "runs",
     });
@@ -195,7 +237,7 @@ function buildAnalyticsCards(
   if (totalRuns > 0 && analytics.avg_gender_position != null) {
     cards.push({
       key: "avg_gender_position",
-      value: String(analytics.avg_gender_position),
+      value: formatNumber(analytics.avg_gender_position),
       label: "Среднее место по полу",
       category: "runs",
     });
@@ -243,7 +285,7 @@ function buildAnalyticsCards(
   if (analytics.runs_current_year > 0) {
     cards.push({
       key: "runs_year",
-      value: String(analytics.runs_current_year),
+      value: formatNumber(analytics.runs_current_year),
       label: `${runsCapLabel(analytics.runs_current_year)} в этом году`,
       category: "runs",
     });
@@ -261,16 +303,32 @@ function buildAnalyticsCards(
   if ((analytics.volunteering_current_year ?? 0) > 0) {
     cards.push({
       key: "volunteering_year",
-      value: String(analytics.volunteering_current_year),
+      value: formatNumber(analytics.volunteering_current_year),
       label: `${volunteeringCapLabel(analytics.volunteering_current_year ?? 0)} в этом году`,
       category: "volunteering",
+    });
+  }
+
+  // Дальность от дома: сумма расстояний до уникальных площадок. Самый дальний
+  // старт в подписи не называем (решение Дмитрия 03.08.2026 — перегружало
+  // плитку), его видно первой строкой в модалке: она отсортирована по убыванию.
+  const homeDistance = analytics.home_distance;
+  if (homeDistance?.home && homeDistance.total_distance_km > 0) {
+    cards.push({
+      key: "home_distance",
+      value: formatKm(homeDistance.total_distance_km),
+      label: "бегового туризма",
+      category: "runs",
+      clickable: true,
+      modalTarget: "home_distance",
+      tooltipContent: HOME_DISTANCE_TOOLTIP,
     });
   }
 
   if (totalRuns > 0 && (analytics.total_distance_km ?? 0) > 0) {
     cards.push({
       key: "total_distance",
-      value: String(analytics.total_distance_km),
+      value: formatNumber(analytics.total_distance_km),
       label: kilometersLabel(analytics.total_distance_km ?? 0),
       category: "runs",
       tooltipContent: TOTAL_DISTANCE_TOOLTIP,
@@ -280,8 +338,8 @@ function buildAnalyticsCards(
   if (analytics.next_milestone_runs != null && analytics.runs_to_next_milestone != null && totalRuns > 0) {
     cards.push({
       key: "next_milestone",
-      value: String(analytics.runs_to_next_milestone),
-      label: `До ${analytics.next_milestone_runs} ${runsCapLabel(analytics.next_milestone_runs).toLowerCase()}`,
+      value: formatNumber(analytics.runs_to_next_milestone),
+      label: `До ${formatNumber(analytics.next_milestone_runs)} ${runsCapLabel(analytics.next_milestone_runs).toLowerCase()}`,
       category: "runs",
     });
   }
@@ -293,19 +351,69 @@ function buildAnalyticsCards(
     cards.push({
       key: "saturday_consistency",
       value: `${analytics.saturday_consistency_pct}%`,
-      label: `${saturdaysLabel(analytics.saturday_consistency_active)} из ${analytics.saturday_consistency_total}`,
+      label: `${saturdaysLabel(analytics.saturday_consistency_active)} из ${formatNumber(analytics.saturday_consistency_total)}`,
       tooltipContent: SATURDAY_CONSISTENCY_TOOLTIP,
+    });
+  }
+
+  // Победы: у женщин — среди женщин, у мужчин — в абсолюте (разрез приходит
+  // с бэка в wins_scope). Плитку без побед не показываем — как и остальные
+  // счётчики, она появляется, когда есть что показать.
+  const winsCount = analytics.wins_count ?? 0;
+  if (winsCount > 0) {
+    cards.push({
+      key: "wins",
+      value: formatNumber(winsCount),
+      label:
+        analytics.wins_scope === "female"
+          ? `${winsCapLabel(winsCount)} среди женщин`
+          : `${winsCapLabel(winsCount)} в абсолюте`,
+      category: "wins",
+      clickable: true,
+      modalTarget: "wins",
+      labelMultiline: true,
     });
   }
 
   if (analytics.pr_count > 0) {
     cards.push({
       key: "pr_count",
-      value: String(analytics.pr_count),
+      value: formatNumber(analytics.pr_count),
       label: prRunsLabel(analytics.pr_count),
       category: "runs",
       clickable: true,
       modalTarget: "personal_records",
+    });
+  }
+
+  // Плитки рекордов локаций показываем и когда все рекорды утеряны (счётчик 0,
+  // но есть утерянные): участник должен суметь открыть модалку и увидеть, какой
+  // рекорд он потерял, кем и когда перебит.
+  const locationRecords = analytics.location_records;
+  if (locationRecords && (locationRecords.current_count > 0 || locationRecords.lost_count > 0)) {
+    cards.push({
+      key: "location_records",
+      value: formatNumber(locationRecords.current_count),
+      label: locationRecords.current_count === 1 ? "Рекорд локации" : "Рекорды локаций",
+      category: "runs",
+      clickable: true,
+      modalTarget: "location_records",
+    });
+  }
+
+  const ageGroupRecords = analytics.age_group_records;
+  if (ageGroupRecords && (ageGroupRecords.current_count > 0 || ageGroupRecords.lost_count > 0)) {
+    cards.push({
+      key: "age_group_records",
+      value: formatNumber(ageGroupRecords.current_count),
+      label:
+        ageGroupRecords.current_count === 1
+          ? "Рекорд в возрастной группе"
+          : "Рекорды в возрастных группах",
+      category: "runs",
+      clickable: true,
+      modalTarget: "age_group_records",
+      labelMultiline: true,
     });
   }
 
@@ -342,7 +450,7 @@ function buildAnalyticsCards(
   if (analytics.saturday_streak > 0) {
     cards.push({
       key: "saturday_streak",
-      value: String(analytics.saturday_streak),
+      value: formatNumber(analytics.saturday_streak),
       label: `${saturdaysLabel(analytics.saturday_streak)} подряд`,
     });
   }
@@ -350,7 +458,7 @@ function buildAnalyticsCards(
   if (analytics.days_since_first_run != null && analytics.days_since_first_run >= 0) {
     cards.push({
       key: "days_since_first_run",
-      value: String(analytics.days_since_first_run),
+      value: formatNumber(analytics.days_since_first_run),
       label: `${daysCapLabel(analytics.days_since_first_run)} с первой пробежки`,
       category: "runs",
     });
@@ -376,7 +484,7 @@ function buildAnalyticsCards(
   if (totalVolunteering > 0 && analytics.unique_volunteer_roles > 0) {
     cards.push({
       key: "unique_roles",
-      value: String(analytics.unique_volunteer_roles),
+      value: formatNumber(analytics.unique_volunteer_roles),
       label: volunteerRolesLabel(analytics.unique_volunteer_roles),
       category: "volunteering",
       clickable: true,
@@ -388,7 +496,7 @@ function buildAnalyticsCards(
     cards.push({
       key: "top_role",
       value: analytics.top_volunteer_role.role,
-      label: `Частая роль · ${analytics.top_volunteer_role.count} ${timesLabel(analytics.top_volunteer_role.count)}`,
+      label: `Частая роль · ${formatNumber(analytics.top_volunteer_role.count)} ${timesLabel(analytics.top_volunteer_role.count)}`,
       category: "volunteering",
       half: true,
     });
@@ -398,7 +506,7 @@ function buildAnalyticsCards(
     cards.push({
       key: "top_location",
       value: <TopLocationValue topLocation={analytics.top_location} />,
-      label: `Самая частая локация · ${analytics.top_location.count} ${timesLabel(analytics.top_location.count)}`,
+      label: `Самая частая локация · ${formatNumber(analytics.top_location.count)} ${timesLabel(analytics.top_location.count)}`,
       half: true,
     });
   }
@@ -414,7 +522,12 @@ function ActivityMonthChart({ data }: { data: DashboardAnalyticsData["activity_b
 
   return (
     <div className="analytics-chart">
-      <div className="analytics-chart-bars" role="img" aria-label="Активность по месяцам">
+      <div
+        className="analytics-chart-bars analytics-chart-bars-month"
+        style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
+        role="img"
+        aria-label="Активность по месяцам"
+      >
         {data.map((item) => {
           const total = item.runs + item.volunteering;
           const stackHeight = total > 0 ? (total / maxValue) * 100 : 0;
@@ -441,10 +554,24 @@ function ActivityMonthChart({ data }: { data: DashboardAnalyticsData["activity_b
                   )}
                 </div>
               </ChartColumnTooltip>
-              <span className="analytics-chart-label">{formatMonthShort(item.month)}</span>
             </div>
           );
         })}
+      </div>
+      {/* Подписи вынесены из колонок в отдельный ряд: на телефоне они
+          вертикальные и разной длины («нояб.» против «дек.»), а внутри колонки
+          съедали её высоту неодинаково — столбцы стояли на разных уровнях и
+          график «плясал». Своя сетка с теми же колонками держит их под баром. */}
+      <div
+        className="analytics-chart-month-labels"
+        style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
+        aria-hidden="true"
+      >
+        {data.map((item) => (
+          <span key={item.month} className="analytics-chart-label analytics-chart-label-month">
+            {formatMonthShort(item.month)}
+          </span>
+        ))}
       </div>
       <div className="analytics-chart-legend">
         <span className="analytics-legend-item">
@@ -460,12 +587,46 @@ function ActivityMonthChart({ data }: { data: DashboardAnalyticsData["activity_b
   );
 }
 
-function PaceTrendChart({ data }: { data: DashboardAnalyticsData["pace_trend"] }) {
+type PacePoint = {
+  key: string;
+  axisLabel: string;
+  tooltipTitle: string;
+  avgPaceSecPerKm: number | null;
+  avgFinishTimeSec: number | null;
+};
+
+function PaceTrendChart({
+  monthly,
+  yearly,
+}: {
+  monthly: DashboardAnalyticsData["pace_trend"];
+  yearly: NonNullable<DashboardAnalyticsData["pace_trend_yearly"]>;
+}) {
+  const hasYearly = yearly.length > 1;
+  const [period, setPeriod] = useState<"months" | "all">("months");
+  const showYearly = period === "all" && hasYearly;
+
+  const data: PacePoint[] = showYearly
+    ? yearly.map((item) => ({
+        key: item.year,
+        axisLabel: item.year,
+        tooltipTitle: item.year,
+        avgPaceSecPerKm: item.avg_pace_sec_per_km,
+        avgFinishTimeSec: item.avg_finish_time_sec ?? null,
+      }))
+    : monthly.map((item) => ({
+        key: item.month,
+        axisLabel: formatMonthShort(item.month),
+        tooltipTitle: formatMonthYear(item.month),
+        avgPaceSecPerKm: item.avg_pace_sec_per_km,
+        avgFinishTimeSec: item.avg_finish_time_sec ?? null,
+      }));
+
   if (data.length === 0) {
     return null;
   }
 
-  const paces = data.map((item) => item.avg_pace_sec_per_km ?? 0);
+  const paces = data.map((item) => item.avgPaceSecPerKm ?? 0);
   const minPace = Math.min(...paces);
   const maxPace = Math.max(...paces);
   const spread = Math.max(maxPace - minPace, 1);
@@ -475,23 +636,39 @@ function PaceTrendChart({ data }: { data: DashboardAnalyticsData["pace_trend"] }
   const plotRange = plotBottom - plotTop;
 
   const points = data.map((item, index) => {
-    const pace = item.avg_pace_sec_per_km ?? minPace;
+    const pace = item.avgPaceSecPerKm ?? minPace;
     const x = ((index + 0.5) / data.length) * 100;
     const y = plotTop + ((pace - minPace) / spread) * plotRange;
-    return {
-      item,
-      pace,
-      x,
-      y,
-      monthLabel: formatMonthYear(item.month),
-    };
+    return { item, pace, x, y };
   });
 
   const linePoints = points.map((point) => `${point.x},${point.y}`).join(" ");
 
   return (
     <div className="analytics-chart analytics-chart-pace">
-      <div className="analytics-chart-pace-line-wrap" role="img" aria-label="Динамика темпа по месяцам">
+      <div className="analytics-chart-pace-toggle" role="tablist" aria-label="Период графика темпа">
+        <button
+          type="button"
+          className={`insights-filter-chip${period === "months" ? " active" : ""}`}
+          onClick={() => setPeriod("months")}
+        >
+          12 месяцев
+        </button>
+        {hasYearly && (
+          <button
+            type="button"
+            className={`insights-filter-chip${period === "all" ? " active" : ""}`}
+            onClick={() => setPeriod("all")}
+          >
+            Весь период
+          </button>
+        )}
+      </div>
+      <div
+        className="analytics-chart-pace-line-wrap"
+        role="img"
+        aria-label={showYearly ? "Динамика темпа по годам" : "Динамика темпа по месяцам"}
+      >
         <div className="analytics-chart-pace-plot">
           <svg className="analytics-chart-pace-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
             <polyline
@@ -503,7 +680,7 @@ function PaceTrendChart({ data }: { data: DashboardAnalyticsData["pace_trend"] }
           </svg>
           {points.map((point) => (
             <span
-              key={point.item.month}
+              key={point.item.key}
               className="analytics-chart-pace-marker"
               style={{ left: `${point.x}%`, top: `${point.y}%` }}
               aria-hidden="true"
@@ -515,9 +692,14 @@ function PaceTrendChart({ data }: { data: DashboardAnalyticsData["pace_trend"] }
           >
             {points.map((point) => (
               <ChartColumnTooltip
-                key={point.item.month}
-                title={point.monthLabel}
-                lines={[`Средний темп: ${formatPace(point.pace)} /км`]}
+                key={point.item.key}
+                title={point.item.tooltipTitle}
+                lines={[
+                  `Средний темп: ${formatPace(point.pace)} /км`,
+                  ...(point.item.avgFinishTimeSec != null
+                    ? [`Среднее время финиша: ${formatDuration(point.item.avgFinishTimeSec)}`]
+                    : []),
+                ]}
               >
                 <span className="analytics-chart-pace-hit" aria-hidden="true" />
               </ChartColumnTooltip>
@@ -529,8 +711,8 @@ function PaceTrendChart({ data }: { data: DashboardAnalyticsData["pace_trend"] }
           style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
         >
           {points.map((point) => (
-            <span key={point.item.month} className="analytics-chart-label">
-              {formatMonthShort(point.item.month)}
+            <span key={point.item.key} className="analytics-chart-label analytics-chart-label-month">
+              {point.item.axisLabel}
             </span>
           ))}
         </div>
@@ -544,12 +726,17 @@ export function DashboardAnalytics({
   analytics,
   totalRuns,
   totalVolunteering,
+  showHomeLocationWarning = false,
 }: DashboardAnalyticsProps) {
   const [uniqueLocationsOpen, setUniqueLocationsOpen] = useState(false);
   const [bestResultsOpen, setBestResultsOpen] = useState(false);
   const [personalRecordsOpen, setPersonalRecordsOpen] = useState(false);
+  const [winsOpen, setWinsOpen] = useState(false);
   const [volunteerRolesOpen, setVolunteerRolesOpen] = useState(false);
+  const [locationRecordsOpen, setLocationRecordsOpen] = useState(false);
+  const [ageGroupRecordsOpen, setAgeGroupRecordsOpen] = useState(false);
   const [regionsCitiesOpen, setRegionsCitiesOpen] = useState(false);
+  const [homeDistanceOpen, setHomeDistanceOpen] = useState(false);
   const [regionsCitiesGroupBy, setRegionsCitiesGroupBy] = useState<GroupBy>("region");
   const [modalActivity, setModalActivity] = useState<"all" | "runs" | "volunteering">("all");
   const [uniqueLocationsFirstVisitSince, setUniqueLocationsFirstVisitSince] = useState<
@@ -574,8 +761,24 @@ export function DashboardAnalytics({
       setPersonalRecordsOpen(true);
       return;
     }
+    if (card.modalTarget === "wins") {
+      setWinsOpen(true);
+      return;
+    }
     if (card.modalTarget === "volunteer_roles") {
       setVolunteerRolesOpen(true);
+      return;
+    }
+    if (card.modalTarget === "location_records") {
+      setLocationRecordsOpen(true);
+      return;
+    }
+    if (card.modalTarget === "age_group_records") {
+      setAgeGroupRecordsOpen(true);
+      return;
+    }
+    if (card.modalTarget === "home_distance") {
+      setHomeDistanceOpen(true);
       return;
     }
     if (card.modalTarget === "unique_regions") {
@@ -596,6 +799,14 @@ export function DashboardAnalytics({
   if (!analytics) {
     return null;
   }
+
+  // Красным подсвечиваем только шаткий автовыбор (ничья по числу пробежек или
+  // вторая площадка почти вровень) — выбранное руками не трогаем, иначе баннер
+  // висел бы у всех, кто в настройки просто не заходил.
+  const homeAmbiguity =
+    showHomeLocationWarning && analytics.home_distance?.home?.ambiguity
+      ? analytics.home_distance.home
+      : null;
 
   const cards = sortByLayoutOrder(
     buildAnalyticsCards(analytics, totalRuns, totalVolunteering),
@@ -624,7 +835,7 @@ export function DashboardAnalytics({
 
   const renderCardBody = (card: AnalyticsCard) => (
     <>
-      <span className="stat-value stat-value-secondary">{card.value}</span>
+      <span className="stat-value stat-value-secondary">{formatStatValue(card.value)}</span>
       <span className={`stat-label${card.labelMultiline ? " stat-label-multiline" : ""}`}>
         {card.label}
       </span>
@@ -683,6 +894,11 @@ export function DashboardAnalytics({
             {analytics.platform_metrics.map((item) => (
               <li key={item.platform_code} className="platform-metrics-row">
                 <PlatformBadge code={item.platform_code} />
+                {(item.runs_count ?? 0) > 0 && (
+                  <span className="platform-metrics-count">
+                    <b>{formatNumber(item.runs_count ?? 0)}</b> {runsFormLabel(item.runs_count ?? 0)}
+                  </span>
+                )}
                 <div className="platform-metrics-values">
                   {item.avg_finish_time_sec != null && (
                     <span>{formatDuration(item.avg_finish_time_sec)}</span>
@@ -738,8 +954,8 @@ export function DashboardAnalytics({
       key: "pace_trend",
       node: (
         <>
-          <h2 className="section-title">Динамика темпа за год</h2>
-          <PaceTrendChart data={analytics.pace_trend} />
+          <h2 className="section-title">Динамика темпа</h2>
+          <PaceTrendChart monthly={analytics.pace_trend} yearly={analytics.pace_trend_yearly ?? []} />
         </>
       ),
     });
@@ -764,6 +980,19 @@ export function DashboardAnalytics({
 
   return (
     <section className="dashboard-analytics" aria-label="Дополнительная аналитика">
+      {homeAmbiguity && (
+        <p className="home-location-warning" role="status">
+          <b>Проверьте домашнюю локацию.</b> От неё считается дальность ваших стартов, а
+          выбралась она автоматически и неуверенно: сейчас это {homeAmbiguity.name}
+          {homeAmbiguity.runner_up_name && (
+            <>
+              , но почти столько же пробежек у вас на площадке «{homeAmbiguity.runner_up_name}»
+            </>
+          )}
+          . Укажите домашнюю локацию в{" "}
+          <a href={PORTAL_CABINET_SETTINGS_HREF}>настройках</a>.
+        </p>
+      )}
       {gridCards.length > 0 && (
         <div className="stats-grid stats-grid-secondary">{gridCards.map((card) => renderCard(card))}</div>
       )}
@@ -795,7 +1024,29 @@ export function DashboardAnalytics({
         onClose={() => setPersonalRecordsOpen(false)}
       />
 
+      <WinsModal
+        open={winsOpen}
+        onClose={() => setWinsOpen(false)}
+        scope={analytics.wins_scope ?? "absolute"}
+      />
+
       <VolunteerRolesModal open={volunteerRolesOpen} onClose={() => setVolunteerRolesOpen(false)} />
+
+      <HomeDistanceModal open={homeDistanceOpen} onClose={() => setHomeDistanceOpen(false)} />
+
+      <LocationRecordsModal
+        open={locationRecordsOpen}
+        onClose={() => setLocationRecordsOpen(false)}
+        kind="course"
+        block={analytics.location_records}
+      />
+
+      <LocationRecordsModal
+        open={ageGroupRecordsOpen}
+        onClose={() => setAgeGroupRecordsOpen(false)}
+        kind="age_group"
+        block={analytics.age_group_records}
+      />
 
       <RegionsCitiesModal
         open={regionsCitiesOpen}

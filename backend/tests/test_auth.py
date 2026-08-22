@@ -238,3 +238,43 @@ def test_display_name_can_be_customized_and_reset(client: TestClient) -> None:
     assert reset["display_name_customized"] is False
     assert reset["display_name"] == "runner_login"
     assert reset["telegram_username"] == "runner_login"
+
+
+def test_login_journal_records_login_and_logout(client: TestClient, db_session: Session) -> None:
+    """Журнал входов: magic link пишет login, /logout пишет logout."""
+    from app.models import LoginEvent
+    from app.services.login_journal_service import EVENT_LOGIN, EVENT_LOGOUT
+
+    login_response = client.post("/api/auth/login-request")
+    request_token = login_response.json()["request_token"]
+    confirm_response = client.post(
+        "/api/auth/bot/confirm",
+        json={
+            "request_token": request_token,
+            "telegram_id": 778899,
+            "telegram_chat_id": 778899,
+            "consent_accepted": True,
+        },
+        headers={"X-Bot-Secret": "bot-secret"},
+    )
+    token = confirm_response.json()["magic_link"].split("token=")[1]
+    callback_response = client.get("/api/auth/callback", params={"token": token}, follow_redirects=False)
+    session_cookie = callback_response.cookies["sr_session"]
+
+    me_response = client.get("/api/auth/me", cookies={"sr_session": session_cookie})
+    user_id = me_response.json()["id"]
+
+    client.post("/api/auth/logout", cookies={"sr_session": session_cookie})
+
+    events = (
+        db_session.query(LoginEvent)
+        .filter(LoginEvent.user_id == user_id)
+        .order_by(LoginEvent.ts)
+        .all()
+    )
+    types = [event.event_type for event in events]
+    assert types == [EVENT_LOGIN, EVENT_LOGOUT]
+    assert events[0].provider == "magic_link"
+    # login и logout одной сессии связаны общей меткой.
+    assert events[0].session_ref == events[1].session_ref
+    assert events[0].session_ref != ""

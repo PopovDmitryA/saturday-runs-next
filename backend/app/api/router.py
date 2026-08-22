@@ -4,17 +4,20 @@ from app.api.routes import (
     achievements,
     admin,
     auth,
+    avatars,
+    backlog,
     blog,
     dashboard,
     demo,
     internal_bot,
-    internal_vk_bot,
     leaderboards,
     location_ratings,
     locations,
+    media,
     portal,
     profiles,
     public_profiles,
+    releases,
     reports,
     runs,
     settings,
@@ -25,6 +28,7 @@ from app.api.routes import (
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
+api_router.include_router(avatars.router)
 api_router.include_router(stats.router)
 api_router.include_router(demo.router)
 api_router.include_router(admin.router)
@@ -35,12 +39,14 @@ api_router.include_router(runs.router)
 api_router.include_router(leaderboards.router)
 api_router.include_router(location_ratings.router)
 api_router.include_router(locations.router)
+api_router.include_router(media.router)
 api_router.include_router(portal.router)
 api_router.include_router(blog.router)
+api_router.include_router(releases.router)
+api_router.include_router(backlog.router)
 api_router.include_router(sync.router)
 api_router.include_router(settings.router)
 api_router.include_router(public_profiles.router)
 api_router.include_router(internal_bot.router)
-api_router.include_router(internal_vk_bot.router)
 api_router.include_router(reports.router)
 api_router.include_router(sweep_hq.router)

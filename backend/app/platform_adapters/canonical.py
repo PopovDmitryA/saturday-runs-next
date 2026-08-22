@@ -47,6 +47,41 @@ class ProfilePreview:
     data_through_date: date | None = None
 
 
+@dataclass(frozen=True)
+class CanonicalDescriptionSection:
+    """Именованный кусок описания: «Общественным транспортом», «Пешком», …"""
+
+    title: str | None
+    text: str
+
+
+@dataclass(frozen=True)
+class CanonicalDescriptionLink:
+    title: str
+    url: str
+
+
+@dataclass
+class CanonicalLocationDescription:
+    """Человеческий текст о площадке с сайта системы: трасса и как добраться.
+
+    Собирается со страниц 5 вёрст (`/{slug}/course/` + главная) и S95
+    (`/events/{slug}`). Одна структура на обе системы: у них разная вёрстка, но
+    одинаковый смысл — когда и где старт, что за трасса, как до неё добраться.
+    """
+
+    # «Где и когда?»: адрес старта и время (у 5 вёрст оно бывает сезонным).
+    schedule_text: str | None = None
+    course_text: str | None = None
+    travel_text: str | None = None
+    travel_sections: list[CanonicalDescriptionSection] = field(default_factory=list)
+    links: list[CanonicalDescriptionLink] = field(default_factory=list)
+    source_url: str = ""
+
+    def is_empty(self) -> bool:
+        return not (self.schedule_text or self.course_text or self.travel_text or self.travel_sections)
+
+
 @dataclass
 class CanonicalLocation:
     external_key: str
@@ -59,6 +94,9 @@ class CanonicalLocation:
     source_url: str = ""
     course_source_url: str = ""
     map_url: str | None = None
+    # Описание площадки — отдельным блоком: его знают только те пути синка,
+    # которые реально грузили страницу локации (реестр по API его не видит).
+    description: CanonicalLocationDescription | None = None
 
 
 @dataclass

@@ -8,9 +8,56 @@ from pydantic import BaseModel, Field
 
 class TopLocationResponse(BaseModel):
     name: str
+    # Слаг страницы локации (/locations/{slug}) — для ссылки из плитки дашборда.
+    slug: str | None = None
     platform_codes: list[str]
     count: int
     tied_count: int = 1
+
+
+class HomeDistanceLocationResponse(BaseModel):
+    catalog_identity_key: str
+    location_slug: str | None = None
+    name: str
+    city: str | None = None
+    region: str | None = None
+    # None — координат площадки нет (закрытые зарубежные parkrun), в зачёт не идёт.
+    distance_km: float | None = None
+    run_count: int = 0
+    last_visit_date: date | None = None
+    is_home: bool = False
+    is_paused: bool = False
+    # Системы площадки — плашками рядом с названием в модалке.
+    platform_codes: list[str] = Field(default_factory=list)
+
+
+class HomeLocationSummaryResponse(BaseModel):
+    catalog_identity_key: str
+    location_slug: str | None = None
+    name: str
+    city: str | None = None
+    region: str | None = None
+    run_count: int = 0
+    is_auto: bool = True
+    # "tie" — ничья по числу пробежек, "close" — вторая площадка рядом по числу
+    # пробежек. Ровно эти два случая подсвечиваем на главной красным.
+    ambiguity: str | None = None
+    runner_up_name: str | None = None
+    has_coordinates: bool = False
+
+
+class HomeDistanceResponse(BaseModel):
+    home: HomeLocationSummaryResponse | None = None
+    total_distance_km: float = 0
+    farthest: HomeDistanceLocationResponse | None = None
+    visited_count: int = 0
+    counted_count: int = 0
+    unknown_count: int = 0
+
+
+class HomeDistanceDetailResponse(HomeDistanceResponse):
+    visited: list[HomeDistanceLocationResponse] = Field(default_factory=list)
+    unvisited: list[HomeDistanceLocationResponse] = Field(default_factory=list)
 
 
 class TopVolunteerRoleResponse(BaseModel):
@@ -20,6 +67,7 @@ class TopVolunteerRoleResponse(BaseModel):
 
 class PlatformRunMetricsResponse(BaseModel):
     platform_code: str
+    runs_count: int = 0
     avg_finish_time_sec: int | None = None
     avg_pace_sec_per_km: int | None = None
 
@@ -33,6 +81,13 @@ class MonthlyActivityResponse(BaseModel):
 class MonthlyPaceResponse(BaseModel):
     month: str
     avg_pace_sec_per_km: int | None = None
+    avg_finish_time_sec: int | None = None
+
+
+class YearlyPaceResponse(BaseModel):
+    year: str
+    avg_pace_sec_per_km: int | None = None
+    avg_finish_time_sec: int | None = None
 
 
 class ActivityCalendarItemResponse(BaseModel):
@@ -46,6 +101,35 @@ class ActivityCalendarDayResponse(BaseModel):
     volunteering: int = 0
     run_items: list[ActivityCalendarItemResponse] = Field(default_factory=list)
     volunteer_items: list[ActivityCalendarItemResponse] = Field(default_factory=list)
+
+
+class LocationRecordEntryResponse(BaseModel):
+    """Рекорд локации, который пользователь держит или держал раньше."""
+
+    location_name: str
+    location_slug: str | None = None
+    location_city: str | None = None
+    # Уровень рекорда: "global" | код системы — только для площадок, живших в
+    # нескольких системах; у монолокаций None (уровень один, не показываем).
+    level: str | None = None
+    platform_code: str
+    # Возрастная группа («30–34») — только для рекордов по возрастным группам.
+    age_group: str | None = None
+    finish_time_sec: int
+    finish_time_display: str
+    event_date: date
+    is_current: bool = True
+    # Когда/кем/каким временем рекорд перебит (для утерянных).
+    beaten_date: date | None = None
+    beaten_by: str | None = None
+    beaten_time_sec: int | None = None
+    beaten_time_display: str | None = None
+
+
+class LocationRecordsBlockResponse(BaseModel):
+    current_count: int = 0
+    lost_count: int = 0
+    entries: list[LocationRecordEntryResponse] = Field(default_factory=list)
 
 
 class DashboardAnalyticsResponse(BaseModel):
@@ -64,6 +148,9 @@ class DashboardAnalyticsResponse(BaseModel):
     avg_position: float | None = None
     avg_gender_position: float | None = None
     pr_count: int = 0
+    # Победы: "absolute" (первое место в протоколе) либо "female" (среди женщин).
+    wins_count: int = 0
+    wins_scope: str = "absolute"
     unique_volunteer_roles: int = 0
     first_activity_date: date | None = None
     last_activity_date: date | None = None
@@ -102,6 +189,10 @@ class DashboardAnalyticsResponse(BaseModel):
     platform_metrics: list[PlatformRunMetricsResponse] = Field(default_factory=list)
     activity_by_month: list[MonthlyActivityResponse] = Field(default_factory=list)
     pace_trend: list[MonthlyPaceResponse] = Field(default_factory=list)
+    pace_trend_yearly: list[YearlyPaceResponse] = Field(default_factory=list)
+    location_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
+    age_group_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
+    home_distance: HomeDistanceResponse | None = None
 
 
 class OnThisDayRunResponse(BaseModel):
@@ -147,6 +238,11 @@ class MyHistoryMilestoneResponse(BaseModel):
     # Волонтёрская роль (для волонтёрских вех).
     role: str | None = None
     event_url: str | None = None
+    # Охват рекорда локации: "global" | код системы (мультисистемные площадки),
+    # None — монолокация (для kind=location_course_record).
+    record_scope: str | None = None
+    # Возрастная группа («30–34») — для kind=location_age_group_record.
+    age_group: str | None = None
 
 
 class MyHistoryResponse(BaseModel):
@@ -240,6 +336,24 @@ class PersonalRecordResponse(BaseModel):
     event_url: str | None = None
 
 
+class WinResponse(BaseModel):
+    """Победа: первое место в своём разрезе (см. wins_scope в аналитике)."""
+
+    platform_code: str
+    event_date: date
+    event_number: int | None = None
+    location_name: str
+    location_city: str | None = None
+    finish_time_display: str | None = None
+    finish_time_sec: int | None = None
+    position: int | None = None
+    gender_position: int | None = None
+    # Сколько финишёров было в этом зачёте (абсолют или женский) — знаменатель «1 из N».
+    field_size: int | None = None
+    scope: str = "absolute"
+    event_url: str | None = None
+
+
 class CoRunnerResponse(BaseModel):
     participant_key: str
     display_name: str | None = None
@@ -289,6 +403,9 @@ class VolunteeringItemResponse(BaseModel):
     rating_entry_id: str | None = None
     is_crosslinked: bool = False
     is_test_event: bool = False
+    # parkrun: "Total Credits" из профиля — не равно числу строк ниже, если одна
+    # смена дала несколько ролей. Заполнено только для platform_code == "parkrun".
+    parkrun_total_credits: int | None = None
     event_url: str | None = None
 
 

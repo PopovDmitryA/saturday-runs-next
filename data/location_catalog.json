@@ -2246,5 +2246,23 @@
         "external_key": "runpark-yuzhniy"
       }
     ]
+  },
+  {
+    "parkrun_location": "Ostrov Yunost",
+    "canonical_name": "Иркутск остров Юность",
+    "active_platform": "five_verst",
+    "legacy_parkrun_slug": "ostrov-yunost",
+    "is_closed": false,
+    "notes": "Иркутск. parkrun Ostrov Yunost (04.09.2021–26.02.2022, 26 протоколов) → 5 вёрст ostrovyunost (с 21.05.2022). Единственная русская parkrun-локация, которой не было в каталоге: slug parkrun с дефисом (ostrov-yunost) не совпадал с 5verst (ostrovyunost), связка не завелась ни импортом, ни аудитом RunPark. Найдено по репорту 01.08.2026 («потерялись забеги серии parkrun»).",
+    "links": [
+      {
+        "platform": "parkrun",
+        "external_key": "ostrov-yunost"
+      },
+      {
+        "platform": "five_verst",
+        "external_key": "ostrovyunost"
+      }
+    ]
   }
 ]

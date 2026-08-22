@@ -11,17 +11,52 @@ class Settings(BaseSettings):
     app_secret_key: str = "change-me-in-production"
     app_base_url: str = "http://localhost:8080"
 
+    # OG-превью (Л19): куда celery-задача складывает готовые PNG (nginx раздаёт
+    # /og/locations/* из этой папки) и по какому адресу Playwright открывает
+    # внутренний рендер-роут фронта (docker-сеть).
+    og_image_dir: str = "/data/og"
+    og_render_base_url: str = "http://nginx"
+
     database_url: str = "postgresql+psycopg://saturday_runs:saturday_runs@localhost:5433/saturday_runs_lk"
     redis_url: str = "redis://localhost:6379/0"
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
+    # Хранилище аватарок пользователей (том ./data:/data в docker-compose).
+    # В БД лежит только имя файла (users.avatar_path), файлы — здесь.
+    avatars_dir: str = "/data/avatars"
+
+    # Публичное S3-совместимое хранилище пользовательских картинок (фото в
+    # отзывах на локации, фото в карточках бэклога, аватарки). Пустой
+    # s3_bucket = режим локального диска (media_dir + отдача через
+    # /api/media/...), чтобы dev и тесты работали без облака —
+    # см. app/core/media_storage.py.
+    s3_bucket: str = ""
+    s3_endpoint_url: str = ""
+    s3_region: str = "ru-1"
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    # База для публичных ссылок. Пусто — собирается из endpoint + bucket.
+    s3_public_base_url: str = ""
+    # Разные папки в бакете под каждого потребителя (решение Дмитрия 28.07.2026).
+    s3_prefix_location_reviews: str = "location-reviews"
+    s3_prefix_backlog: str = "backlog"
+    s3_prefix_avatars: str = "avatars"
+    # Локальный фолбэк, когда S3 не сконфигурирован (том ./data:/data).
+    media_dir: str = "/data/media"
+
     telegram_bot_token: str = ""
     telegram_bot_username: str = ""
     telegram_bot_internal_secret: str = ""
     telegram_admin_chat_id: int = 0
     admin_telegram_id: int = 0
+    # Прокси для ВСЕГО трафика к api.telegram.org (long-poll бота + уведомления):
+    # с прод-сервера в РФ прямые запросы не проходят вообще, бот без прокси
+    # уходит в крэш-луп на get_me(). Держим http://, а не socks5://: его понимают
+    # нативно и httpx, и aiohttp (aiogram) — socks5 у aiohttp требует aiohttp_socks.
+    # Поднимается сервисом tg-proxy, см. deploy/tg-proxy/. Пусто — напрямую.
+    telegram_proxy_url: str = ""
     # Comma-separated emails (OAuth). Grants admin if any linked auth_identity matches (case-insensitive).
     admin_emails: str = ""
     demo_telegram_id: int = 0
@@ -61,8 +96,29 @@ class Settings(BaseSettings):
     sync_refresh_rate_limit_per_user: int = 1
     sync_refresh_rate_limit_window_seconds: int = 1800
 
+    # Прогрев дашбордов идёт от водяного знака «докуда уже разобрано». Если знак
+    # потерян (Redis перезапустили) — не сканируем всю историю, а откатываемся на
+    # это окно: дальше в прошлое кэш всё равно чинит dashboard_cache_max_age_hours.
+    dashboard_warm_max_lookback_hours: int = 168
+    # Страховка на чтении: кэш старше этого срока пересчитывается при заходе,
+    # даже если прогрев его почему-то не тронул. Без неё промах прогрева жил вечно
+    # (08.08.2026: у 27 человек на «Обзоре» не хватало забегов S95).
+    dashboard_cache_max_age_hours: int = 24
+
+    # Рейтинги пересчитываются от протоколов, а не только по расписанию: каждый
+    # синк, записавший результаты, будит прогрев. Окно склейки — чтобы серия
+    # синков подряд (суббота: 5 вёрст ежечасно + S95 + RunPark) не выстроила
+    # очередь из полных пересчётов: пока окно не истекло, новые не планируются.
+    leaderboards_warm_debounce_seconds: int = 1800
+    # Пауза перед прогревом: за неё успевают дописаться протоколы соседних
+    # систем, синхронизирующихся следом, и они попадают в тот же пересчёт.
+    leaderboards_warm_delay_seconds: int = 120
+
     # Сырые события page_view_events живут столько дней; вечная история — в page_stats_daily.
     page_events_retention_days: int = 90
+    # Журнал входов держим дольше сырых просмотров: его ценность как раз в
+    # длинной истории — потеря сессии случается редко и ловится ретроспективно.
+    login_events_retention_days: int = 365
 
     abuse_protection_enabled: bool = True
     abuse_whitelist_ips: str = ""
@@ -103,11 +159,22 @@ class Settings(BaseSettings):
     five_verst_protocol_max_interval_seconds: float = 40.0
     five_verst_fetch_lock_timeout_seconds: int = 120
     five_verst_fetch_lock_blocking_seconds: int = 600
+    # Приоритет пользовательских синков: батч замирает между фетчами, пока
+    # пользователь качается (см. app/five_verst/fetch/priority.py).
+    # TTL отметки — страховка от умершего воркера: батч разморозится сам.
+    five_verst_user_sync_active_ttl_seconds: int = 180
+    # Потолок паузы батча. Если воркер пользовательской очереди не поднят,
+    # очередь копится и разбирать её некому — батч не должен вставать навсегда.
+    five_verst_user_sync_pause_max_seconds: int = 300
     five_verst_ban_cooldown_seconds: int = 600
     five_verst_sync_protocol_limit: int | None = None
     five_verst_sync_latest_update_limit: int | None = None
     five_verst_fetch_all_protocols_on_change: bool = True
     five_verst_location_batch_summaries_limit: int = 20
+    # Как часто ротация всё же перечитывает саму страницу локации и /course/
+    # (имя, координаты), а не только таблицу результатов. Между этими проходами
+    # хватает ежедневного реестра /events/, который следит за именем и статусом.
+    five_verst_location_refresh_interval_days: int = 7
     s95_sync_protocol_limit: int = 3
     s95_sync_latest_update_limit: int = 20
     s95_fetch_all_protocols_on_change: bool = True
@@ -115,14 +182,24 @@ class Settings(BaseSettings):
     s95_reconcile_min_check_interval_days: int = 7
     s95_location_batch_summaries_limit: int = 20
     s95_athlete_mismatch_check_runs: int = 10
+    # Протоколов за один заход воркера. Общая норма прогона — 200 (см.
+    # five_verst_reconcile_chunks_per_run): пачка режется пополам, чтобы
+    # пользовательский синк не ждал два часа за спиной батча.
     five_verst_reconcile_batch_limit: int = 100
-    five_verst_reconcile_min_check_interval_days: int = 0
+    # Сколько заходов подряд делает один запуск по расписанию. Каждый заход —
+    # отдельная celery-задача, и между ними воркер успевает взять задачу из
+    # приоритетной очереди five_verst_user.
+    five_verst_reconcile_chunks_per_run: int = 2
+    # 0 = перечитывать по кругу без пауз (как было до 08.2026). При пуле в 31 тыс.
+    # протоколов полный круг и так занимает недели — это страховка от повторных
+    # проверок, если поднять лимит пачки или частоту.
+    five_verst_reconcile_min_check_interval_days: int = 7
     five_verst_clubs_batch_limit: int = 20
 
+    # Fallback-канал для admin-уведомлений (см. app/services/admin_telegram_notify.py) —
+    # используется только когда Telegram-прокси недоступна.
     vk_bot_group_token: str = ""
-    vk_bot_group_id: int = 0
     vk_admin_user_id: int = 0
-    vk_bot_internal_secret: str = ""
 
     # Секретный токен для скрытой страницы-табло обхода атлетов (/hq/<token>).
     sweep_hq_token: str = ""

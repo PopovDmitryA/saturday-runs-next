@@ -12,9 +12,18 @@
 
 /* flex-дети по умолчанию не сжимаются ниже min-content — широкая таблица
    распирала бы страницу на мобильных; скроллится сам .lb-table-wrap */
-.lb-page > * {
+.lb-page > *,
+.lb-page-body > * {
   min-width: 0;
   max-width: 100%;
+}
+
+/* Обёртка загруженного рейтинга: живёт внутри .lb-page, поэтому повторяет её
+   колоночную раскладку — иначе шапка, баннер и таблица слипаются без отступов. */
+.lb-page-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .lb-breadcrumb {
@@ -44,11 +53,46 @@
   font-size: 0.85rem;
 }
 
+/* Вторая строка шапки (у дальности — про срок пересчёта) не должна слипаться
+   с датой данных: без зазора две подписи читаются как один абзац. */
+.lb-meta + .lb-meta {
+  margin-top: 0.25rem;
+}
+
 .lb-error {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   color: var(--text-2);
+}
+
+/* Плашка «дом сменили, таблица ещё не пересчиталась»: янтарная — это не ошибка,
+   а объяснение задержки, поэтому мягче красного предупреждения. */
+.lb-home-change {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  border: 1px solid var(--tint-amber-border);
+  background: var(--tint-amber-bg);
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.lb-home-change-icon {
+  font-size: 1.1rem;
+  line-height: 1.4;
+}
+
+.lb-home-change-text {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.lb-home-change-text p {
+  margin: 0;
 }
 
 /* --- Моя строка --- */
@@ -106,6 +150,14 @@
   font-weight: 700;
 }
 
+/* «Последняя неделя» в своей строке: названия площадок длиннее чисел, поэтому
+   узкий min-width числовых плиток тут не годится. */
+.lb-me-value-wide {
+  align-items: flex-start;
+  min-width: 0;
+  max-width: 16rem;
+}
+
 .lb-me-threshold {
   margin: 0;
   color: var(--text-2);
@@ -125,8 +177,22 @@
   gap: 0.75rem 1.5rem;
 }
 
+/* У победных рейтингов зачёт по полу и фильтр систем стоят друг под другом —
+   без собственного отступа подпись «Система» липла бы к кнопкам зачёта. */
 .lb-controls-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   min-width: 0;
+}
+
+/* Туристические рейтинги несут сразу два независимых фильтра (визиты +
+   система) — на широких экранах кладём их переключатели в один ряд, на узких
+   перенос сам разведёт их по строкам. */
+.lb-filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 2rem;
 }
 
 .lb-controls-right {
@@ -170,23 +236,56 @@
    тут — страница целиком, отдельного бокса не создаём. */
 .table-wrap.lb-table-wrap {
   overflow-x: visible;
+  /* Липнет к окну — значит ниже шапки сайта, иначе прячется под ней; и ниже
+     липкой полосы «Кратко | Полно», иначе шапка уходит под неё. */
+  --table-head-top: calc(var(--portal-header-h) + var(--tview-bar-h));
+}
+
+/* Когда краткий вид вместил все колонки, полосы «Кратко | Полно» нет вовсе —
+   обходить нечего, иначе между шапкой сайта и шапкой таблицы зияла бы её
+   высота. Класс ставит LeaderboardPage по tableColumns.hasToggle. */
+.table-wrap.lb-table-wrap-flat {
+  --table-head-top: var(--portal-header-h);
 }
 
 @media (max-width: 820px) {
   /* Ниже этой ширины таблица (6 числовых колонок) не помещается без скролла.
-     На узких экранах включаем горизонтальный скролл локально (ценой
-     sticky-шапки только на мобильных/планшетных ширинах). */
+     На узких экранах включаем горизонтальный скролл локально. Обёртка при этом
+     становится скролл-контейнером: настоящая шапка липнет к её верху (ноль), а
+     видимой при листании страницы её делает плавающая копия из
+     useFloatingTableHead. */
   .table-wrap.lb-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    --table-head-top: 0px;
+  }
+}
+
+/* У победных рейтингов колонок на три больше (лучшее время, топ-локация,
+   последняя победа), и порог, ниже которого нужен скролл, соответственно выше:
+   иначе колонка участника схлопывается в ничто, а имена налезают на время. */
+@media (max-width: 1150px) {
+  .table-wrap.lb-table-wrap-wide {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
 }
 
+/* Столбцы карты туристов набираются кликами, и их бывает полтора десятка — на
+   любой ширине экрана. Ширину рамки фиксируем по контейнеру, а таблицу листаем
+   внутри неё: иначе она уезжает за правый край страницы (репорт Дмитрия
+   16.08.2026). Условия те же, что у мобильной ветки выше: обёртка становится
+   скролл-контейнером, поэтому шапка липнет к её верху (ноль), а видимой при
+   листании страницы её делает плавающая копия из useFloatingTableHead. */
+.table-wrap.lb-table-wrap-lights {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  --table-head-top: 0px;
+}
+
 .lb-table thead th {
   background: var(--surface);
-  /* Липнет к верху ОКНА (не своего контейнера) — родитель не имеет
-     overflow-y, поэтому ближайший скроллящийся предок — сам документ. */
-  top: 0;
+  top: var(--table-head-top, 0);
 }
 
 .lb-sortable {
@@ -211,6 +310,15 @@
   width: 6.2rem;
 }
 
+/* Краткий вид идёт без table-layout: fixed, и лишнюю ширину браузер раздавал
+   всем колонкам пропорционально — «Место» на широком экране раздувалось чуть ли
+   не на треть таблицы (репорт Дмитрия 11.08.2026). width: 100% у имени
+   участника означает «весь остаток мой»: остальные колонки схлопываются до
+   своей ширины и больше не растягиваются. */
+.lb-table:not(.lb-table-fixed) .lb-col-name {
+  width: 100%;
+}
+
 .lb-table .lb-col-num {
   text-align: center;
   width: 6.4rem;
@@ -228,24 +336,42 @@
    колонке дотягивалось вплотную до дельты и наезжало на неё. Из-за резерва
    число чуть смещено от геометрического центра колонки в сторону от дельты,
    но это в разы меньше сдвига, что был при центрировании всего блока. */
+/* Дельта идёт в потоке верхним индексом, поэтому резерв под неё больше не
+   нужен — раньше он был фиксированной ширины и с ростом чисел переставал
+   спасать (см. .lb-delta). */
 .lb-table .lb-col-num .lb-cell {
-  position: relative;
   display: block;
   width: 100%;
-  padding-right: 1.4rem;
 }
 
-.lb-table .lb-col-num .lb-delta {
-  position: absolute;
-  top: 50%;
-  right: 0.2rem;
-  transform: translateY(-50%);
-  width: auto;
-  margin-left: 0;
-}
+/* Ширины колонок для рейтингов в километрах — ниже, ПОСЛЕ общих правил
+   .lb-table-fixed .lb-col-*: там та же специфичность, и порядок решает всё. */
 
+/* «Всего» — то самое число, по которому построен рейтинг, поэтому колонка
+   выделена вертикальной полосой: заливка + рамки по бокам, сверху донизу
+   вместе с шапкой. Без этого она терялась среди соседей — у туризма справа
+   от неё встали «Городов», «Регионов» и «Последняя неделя», у победных
+   рейтингов «Топ-локация» и «Последняя победа» (репорт Дмитрия 02.08.2026).
+   Тон синий, а не индиговый: индиго занят подсветкой своей строки, и на ней
+   полоса иначе слилась бы с фоном. */
 .lb-table .lb-col-total {
-  font-weight: 600;
+  font-weight: 700;
+  background: var(--tint-blue-bg);
+  border-left: 1px solid var(--tint-blue-border);
+  border-right: 1px solid var(--tint-blue-border);
+}
+
+/* Шапка сама по себе непрозрачная (sticky), поэтому фон полосы ей нужно
+   задать отдельно — иначе полоса начиналась бы только с первой строки. */
+.lb-table thead th.lb-col-total {
+  background: var(--tint-blue-bg-strong);
+}
+
+/* На своей строке (индиговая подсветка) полоса берёт насыщенный тон, иначе
+   два близких пастельных фона сливаются и выделение пропадает именно там,
+   где оно нужнее всего. */
+.lb-table .lb-row-me td.lb-col-total {
+  background: var(--tint-blue-bg-strong);
 }
 
 /* Переключатель зачёта по полу (Абсолют / Мужчины / Женщины) — живёт в левой
@@ -257,6 +383,12 @@
   padding: 0.25rem;
   border-radius: 999px;
   background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  /* Пять кнопок фильтра по системе не помещаются на узких экранах — скроллим
+     сам переключатель, а не даём ему распереть страницу (см. тот же приём у
+     .lb-table-wrap). Кнопки внутри с nowrap не сжимаются ниже своей ширины. */
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .lb-gender-tab {
@@ -269,6 +401,7 @@
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .lb-gender-tab-active {
@@ -277,11 +410,36 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
-.lb-gender-note {
-  margin: 0.55rem 0 0;
-  max-width: 60ch;
-  font-size: 0.82rem;
-  line-height: 1.45;
+/* Фильтр «локация засчитывается от N визитов» (рейтинг туризма): подпись над
+   тем же сегментированным переключателем, что и у зачёта по полу. */
+.lb-visits {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  /* Flex-item по умолчанию не сжимается ниже контента — на узких экранах,
+     где .lb-filters-row переносит блок на свою строку, это распирало бы
+     страницу вбок (переключатель внутри и так умеет скроллиться сам). */
+  min-width: 0;
+  max-width: 100%;
+}
+
+.lb-visits-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted, inherit);
+}
+
+/* Пересчёт под новый фильтр: таблица гаснет, но остаётся на месте, а кнопки
+   продолжают работать (клик по другому порогу просто отменит ожидание). */
+.lb-refreshing .lb-table-wrap,
+.lb-refreshing .lb-me,
+.lb-refreshing .lb-more {
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
 }
 
 /* «Топ-локация» (только рейтинг побед): имя локации + счёт побед там.
@@ -294,30 +452,191 @@
   overflow-wrap: break-word;
 }
 
-/* table-layout:fixed для 8-колоночного рейтинга побед — иначе браузер
-   игнорирует заданные width и раздувает таблицу вширь под длинные
-   неразрывные названия локаций («Стрежевой Городской парк», «Магнитогорск
-   Экопарк» и т.п.): в table-layout:auto колонка не может стать уже своего
-   самого длинного «слова», сколько бы width ей ни задали. Fixed жёстко
-   фиксирует ширины столбцов и переносит длинный текст внутри колонки —
-   участник (единственная колонка без явной ширины) получает весь остаток. */
-.lb-table.lb-table-wins {
+/* «Последняя победа» / «последняя новая локация»: ссылка на страницу локации
+   и дата под ней. Перенос — как у топ-локации (длинные неразрывные названия). */
+.lb-table .lb-col-last-win {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.lb-last-win {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.lb-last-win-date {
+  color: var(--text-faint);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+/* «Последняя неделя»: одна-две площадки столбиком, остальное свёрнуто в «+N»
+   с полным списком в подсказке. Перенос — как у «последней победы». */
+.lb-week-locations {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.lb-week-location {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.lb-best-time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Заголовок «Лучшее время» в узкую колонку одной строкой не влезает (у
+   .lb-sortable по умолчанию nowrap) — разрешаем перенос именно ему. */
+.lb-table th.lb-col-time {
+  white-space: normal;
+}
+
+/* table-layout:fixed для всех широких рейтингов — иначе браузер игнорирует
+   заданные width и раздувает таблицу вширь под длинные неразрывные названия
+   локаций («Стрежевой Городской парк», «Магнитогорск Экопарк» и т.п.): в
+   table-layout:auto колонка не может стать уже своего самого длинного «слова»,
+   сколько бы width ей ни задали. Fixed жёстко фиксирует ширины столбцов и
+   переносит длинный текст внутри колонки — участник (единственная колонка без
+   явной ширины) получает весь остаток. */
+/* border-collapse:collapse ломает position:sticky на ячейках в WebKit (Safari
+   и все браузеры на iPhone): стиль применяется, а колонка при горизонтальном
+   скролле всё равно уезжает. Границы у нас и так нарисованы на самих ячейках
+   (.data-table th/td { border-bottom }), поэтому separate ничего не меняет
+   визуально, но возвращает липкость «Места» и «Участника» на телефоне.
+   Селектор двухклассовый: у .data-table та же одноклассовая специфичность, и
+   какой из двух файлов окажется ниже в бандле — не наша забота. */
+.data-table.lb-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.lb-table.lb-table-fixed {
   table-layout: fixed;
 }
 
-.lb-table.lb-table-wins .lb-col-rank {
-  width: 5rem;
+/* min-width считается по сумме ширин своего набора колонок: без него
+   fixed-раскладка ужала бы их пропорционально на узком экране (имена налезали
+   бы на соседей), а так включается горизонтальный скролл обёртки.
+   wins — лучшее время + топ-локация + последняя победа;
+   geo — туризм: города, регионы и «последняя неделя»;
+   week — пробежки и волонтёрства: только «последняя неделя». */
+.lb-table.lb-table-wins {
+  min-width: 67rem;
 }
 
-.lb-table.lb-table-wins .lb-col-num {
-  width: 5rem;
+.lb-table.lb-table-geo {
+  min-width: 60rem;
 }
 
-.lb-table.lb-table-wins .lb-col-home {
-  width: 11rem;
+.lb-table.lb-table-week {
+  min-width: 52rem;
 }
 
-/* Значок «i»: число рядом с топ-локацией — это победы там, не все пробежки. */
+.lb-table.lb-table-fixed .lb-col-rank {
+  width: 4.5rem;
+}
+
+.lb-table.lb-table-fixed .lb-col-name {
+  width: 13rem;
+}
+
+.lb-table.lb-table-fixed .lb-col-num {
+  width: 4.75rem;
+}
+
+.lb-table.lb-table-fixed .lb-col-home {
+  width: 9.5rem;
+}
+
+.lb-table.lb-table-fixed .lb-col-time {
+  width: 6rem;
+}
+
+.lb-table.lb-table-fixed .lb-col-last-win {
+  width: 10rem;
+}
+
+/* Рейтинг дальности: в ячейке не число, а «365 821 км» с дельтой «+5 997»
+   верхним индексом — 108–112px текста, тогда как общие 4.75rem дают 58px под
+   контент. Ячейка в table-layout:fixed не расширяется под содержимое, поэтому
+   лишнее просто вылезало поверх соседней колонки (репорт Дмитрия 16.08.2026:
+   у первого места дельта 5 вёрст ложилась на значение С95).
+   Раньше запас здесь уже был (6.4rem), но правила стояли ВЫШЕ общих
+   .lb-table-fixed .lb-col-*: специфичность одинаковая, три класса, и побеждал
+   тот, что ниже, — колонки жили с 4.75rem. Отсюда место блока: после общих.
+   8.75rem = 140px, минус ужатые боковые отступы это 124px под текст: хватает
+   и на пятизначную дельту («+20 026») — такие набегают у лидеров за неделю.
+   Горизонтальные отступы срезаны с 0.75rem до 0.5rem — шесть числовых колонок,
+   и на них экономится почти 100px ширины таблицы. */
+.lb-table.lb-table-wide-values .lb-col-num {
+  width: 8.75rem;
+}
+
+.lb-table.lb-table-wide-values .lb-col-total {
+  width: 9rem;
+}
+
+/* «Локаций» — обычный счётчик в три знака, ему запас не нужен. */
+.lb-table.lb-table-wide-values .lb-col-geo {
+  width: 5.25rem;
+}
+
+.lb-table.lb-table-wide-values th.lb-col-num,
+.lb-table.lb-table-wide-values td.lb-col-num {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+/* Сумма ширин своего набора колонок (4.5 + 13 + 4×8.75 + 9 + 5.25 + 9.5 + 10):
+   без неё fixed-раскладка ужимает колонки под ширину обёртки, и числа снова
+   наезжают на соседей. Перебивает min-width набора (.lb-table-week и др.) —
+   правило ниже по файлу. Только для полного набора: в кратком виде раскладка
+   auto и колонок три, там эта ширина гнала бы таблицу в скролл на пустом
+   месте. */
+.lb-table.lb-table-fixed.lb-table-wide-values {
+  min-width: 86.25rem;
+}
+
+/* У туризма числовых колонок семь (четыре системы + «Всего» + города +
+   регионы), поэтому они и колонка недели ужаты: иначе таблица не влезает в
+   контентную колонку десктопа (~974px при сайдбаре) и распирает страницу.
+   Гео-колонкам оставляем побольше: «РЕГИОНОВ» — длинное неразрывное слово,
+   в шапке набранное прописными в разрядку, и в 4.4rem оно обрезается.
+   Правила идут ПОСЛЕ общих .lb-table-fixed: специфичность у них одинаковая
+   (три класса), решает порядок. */
+.lb-table.lb-table-geo .lb-col-num {
+  width: 4.4rem;
+}
+
+.lb-table.lb-table-geo .lb-col-geo {
+  width: 5.2rem;
+}
+
+/* «Всего локаций» в две строки — шире соседей: подпись называет единицу
+   зачёта, иначе среди «Городов» и «Регионов» не понять, что в итоге. */
+.lb-table.lb-table-geo .lb-col-total {
+  width: 5.6rem;
+}
+
+.lb-table.lb-table-geo .lb-col-last-win {
+  width: 9rem;
+}
+
+/* Заголовки числовых колонок рвём по словам, как у «Лучшего времени»
+   в победных рейтингах: «5 вёрст» одной строкой в 4.4rem не помещается. */
+.lb-table.lb-table-geo thead th.lb-col-num {
+  white-space: normal;
+}
+
+/* Значок «i» — пояснение к колонке по наведению.
+   Собственная типографика обязательна: значок живёт в шапке таблицы, а та
+   набрана uppercase с разрядкой — без сброса «i» превращалась в прописную «I»,
+   которую курсив довершал до косой палки (читалось как слэш). Засечный шрифт
+   даёт узнаваемую «i» вместо голой вертикальной черты. */
 .lb-info-hint {
   display: inline-flex;
   align-items: center;
@@ -327,9 +646,13 @@
   border-radius: 50%;
   background: var(--surface-2, rgba(127, 127, 127, 0.18));
   color: var(--text-muted, inherit);
-  font-size: 0.65rem;
-  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 0.78rem;
+  font-style: normal;
   font-weight: 700;
+  line-height: 1;
+  text-transform: none;
+  letter-spacing: 0;
   cursor: help;
   vertical-align: middle;
 }
@@ -343,6 +666,34 @@
   white-space: nowrap;
 }
 
+/* «!» у домашней локации в рейтинге дальности: от неё считаются все километры
+   строки, поэтому спорный выбор дома видно прямо в таблице. Красный — ручной
+   выбор вне тройки (предупреждение), янтарный — неоднозначный автовыбор. */
+.lb-home-warn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-left: 0.3rem;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+}
+
+.lb-home-warn-danger {
+  background: var(--tint-red-bg-strong);
+  color: var(--tint-red-text);
+}
+
+.lb-home-warn-warn {
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
+}
+
 .lb-rank {
   display: inline-flex;
   align-items: baseline;
@@ -350,9 +701,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Дельта места — тоже надстрочная, как и дельта значения: «▲2» рядом с
+   номером занимало половину узкой колонки «Место». */
 .lb-rank-delta {
-  font-size: 0.72rem;
+  font-size: 0.62em;
   font-weight: 600;
+  vertical-align: super;
+  line-height: 0;
+  white-space: nowrap;
 }
 
 .lb-rank-up {
@@ -370,19 +726,33 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Слот дельты всегда занимает одну и ту же ширину — цифры в колонке не съезжают */
+/* Дельта — надстрочной пометкой у числа (решение Дмитрия 04.08.2026): раньше
+   она занимала собственный слот шириной 2rem в каждой числовой колонке, и у
+   рейтингов с большими числами («372 830 км» и «+1 172») строка не помещалась.
+   Верхний индекс не расширяет колонку и не спорит со значением за место. */
 .lb-delta {
-  display: inline-block;
-  width: 2rem;
-  margin-left: 0.15rem;
-  text-align: left;
+  display: inline;
+  margin-left: 0.1rem;
   color: #16a34a;
-  font-size: 0.75rem;
+  font-size: 0.62em;
   font-weight: 700;
+  vertical-align: super;
+  line-height: 0;
+  white-space: nowrap;
 }
 
 .lb-zero {
   color: var(--text-faint);
+}
+
+/* Единица измерения сразу за числом: без неё «126 789» в колонке «Всего»
+   у рейтинга дальности читается как счётчик пробежек. Мельче и приглушённее
+   самого числа, чтобы не спорить с ним за внимание. */
+.lb-unit {
+  margin-left: 0.15rem;
+  font-size: 0.75em;
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 .lb-name {
@@ -402,12 +772,117 @@
   background: var(--tint-indigo-bg);
 }
 
+/* --- Разворачивание строки: детализация ролей (мультиволонтёр) --- */
+
+.lb-row-expandable {
+  cursor: pointer;
+}
+
+.lb-row-expandable:hover td {
+  background: var(--bg-muted);
+}
+
+/* Развёрнутая строка и её детализация читаются как один блок: у верхней
+   убираем нижнюю границу, чтобы между ними не было «шва». */
+.lb-row-expanded td {
+  border-bottom: none;
+}
+
+.lb-expand-toggle {
+  border: 0;
+  background: none;
+  padding: 0;
+  margin-right: 0.35rem;
+  color: var(--text-faint);
+  font-size: 0.85em;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lb-row-expandable:hover .lb-expand-toggle,
+.lb-row-expanded .lb-expand-toggle {
+  color: var(--link);
+}
+
+.lb-detail-row td {
+  padding: 0 0 0.9rem;
+  background: var(--bg-muted);
+}
+
+.lb-roles-detail {
+  padding: 0.2rem 0.9rem 0;
+}
+
+.lb-roles-caption {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+}
+
+.lb-roles-table {
+  width: auto;
+  min-width: min(100%, 34rem);
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.lb-roles-table th,
+.lb-roles-table td {
+  padding: 0.28rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.lb-roles-table th {
+  color: var(--text-faint);
+  font-weight: 500;
+  text-align: right;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+
+.lb-roles-table tr:last-child td {
+  border-bottom: none;
+}
+
+.lb-roles-table .lb-roles-col-name {
+  text-align: left;
+  white-space: normal;
+}
+
+.lb-roles-table .lb-col-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-roles-table .lb-col-total {
+  font-weight: 600;
+}
+
+.lb-roles-empty {
+  margin: 0;
+}
+
 .lb-more {
   display: flex;
   justify-content: center;
 }
 
 /* --- Хаб --- */
+
+/* Общий для всех карточек фильтр «Система» — визуально тот же переключатель,
+   что и на странице конкретного рейтинга (.lb-visits/.lb-gender-tabs), но
+   своя нижняя отбивка, т.к. дальше сразу идут секции с карточками, а не
+   таблица. */
+.lb-hub-platform-filter {
+  margin-bottom: 0.2rem;
+}
+
+.lb-hub-card-fallback {
+  margin: 0.1rem 0 0;
+  font-size: 0.76rem;
+  font-style: italic;
+}
 
 .lb-hub-section {
   border: 1px solid var(--border);
@@ -575,12 +1050,14 @@ a.lb-hub-card:hover {
 }
 
 .lb-hub-delta {
-  display: inline-block;
-  min-width: 1.6rem;
-  margin-left: 0.15rem;
+  display: inline;
+  margin-left: 0.1rem;
   color: #16a34a;
-  font-size: 0.7rem;
+  font-size: 0.62em;
   font-weight: 700;
+  vertical-align: super;
+  line-height: 0;
+  white-space: nowrap;
 }
 
 .lb-hub-me {
@@ -633,7 +1110,8 @@ a.lb-hub-card:hover {
 .lb-scroll-top {
   position: fixed;
   right: max(1.25rem, calc((100vw - var(--layout-max-width)) / 2 + 1rem - 2.75rem - 0.75rem));
-  bottom: 1.25rem;
+  /* Над нижней навигацией телефона: иначе кнопка садится на «Ещё». */
+  bottom: calc(1.25rem + var(--portal-bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px));
   z-index: 400;
   display: flex;
   align-items: center;
@@ -652,4 +1130,766 @@ a.lb-hub-card:hover {
 
 .lb-scroll-top:hover {
   color: var(--accent-indigo-text);
+}
+
+/* Продающий баннер для анонима: раздел открыт без логина, своя строка — после входа. */
+/* .card даёт display:grid — перебиваем двумя классами независимо от порядка бандла. */
+.card.lb-login-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.lb-login-banner-text {
+  flex: 1 1 320px;
+  display: grid;
+  gap: 4px;
+}
+
+.lb-login-banner-text p {
+  margin: 0;
+}
+
+.lb-login-banner .btn {
+  flex-shrink: 0;
+}
+
+/* === Узкий полный вид: липкие «Место» и «Участник» === */
+
+/* В кратком виде (3 колонки) скролла нет и липкость не нужна; в полном
+   идентификатор строки не должен уезжать за экран. Ширины фиксируем,
+   иначе sticky-смещение второй колонки не посчитать.
+
+   Порог совпадает с тем, на котором обёртка получает overflow-x:auto: липкость
+   нужна ровно там, где таблицу можно листать вбок. Здесь — общий случай (820),
+   а у широких рейтингов (.lb-table-wrap-wide: туризм, победы, «последняя
+   неделя») скролл включается раньше, с 1150px, и для них тот же набор правил
+   продублирован ниже. Объединить в один медиазапрос нельзя: у остальных
+   рейтингов между 820 и 1150 скролла нет, и узкие колонки там только зря
+   обрезали бы имена. */
+@media (max-width: 820px) {
+  /* Ширина «Места» и есть смещение для «Участника» — держим их одной
+     переменной, чтобы колонки не разъехались при правке одной из них. */
+  .lb-table {
+    --lb-sticky-rank-w: 4.4rem;
+    --lb-sticky-name-w: 8.5rem;
+  }
+
+  /* Ширина по содержимому — обязательна для липкости второй колонки.
+     С min-width таблица тянется до ширины обёртки, а table-layout:fixed
+     распределяет разницу по колонкам: «Место» получало 77px вместо заданных
+     4.4rem (70.4px). Смещение «Участника» задано константой left:4.4rem, и он
+     прилипал на 7px левее правого края «Места» — заезжал под него, из-за чего
+     колонка выглядела неприлипающей. При width:max-content колонки получают
+     ровно свои ширины, и стык сходится в ноль. min-width:100% оставляет
+     таблицу во всю обёртку, когда колонок мало и скролла нет. */
+  .lb-table.lb-table-fixed.lb-table-full {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  /* Селекторы с .lb-table (три класса) обязательны: у широких рейтингов
+     ширины колонок заданы правилами .lb-table.lb-table-fixed .lb-col-*, и
+     двухклассовый мобильный селектор им проигрывал по специфичности —
+     «Участник» получал десктопные 13rem вместо 8.5rem и занимал пол-экрана,
+     а «Место» — 4.5rem вместо 4.4rem, из-за чего липкая колонка вставала не
+     на границе соседней. Медиазапрос специфичность не повышает. */
+  .lb-table.lb-table-full .lb-col-rank {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+    width: var(--lb-sticky-rank-w);
+    min-width: var(--lb-sticky-rank-w);
+    max-width: var(--lb-sticky-rank-w);
+  }
+
+  .lb-table.lb-table-full .lb-col-name {
+    position: sticky;
+    left: var(--lb-sticky-rank-w);
+    z-index: 2;
+    background: var(--surface);
+    width: var(--lb-sticky-name-w);
+    min-width: var(--lb-sticky-name-w);
+    max-width: var(--lb-sticky-name-w);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lb-table.lb-table-full thead .lb-col-rank,
+  .lb-table.lb-table-full thead .lb-col-name {
+    z-index: 4;
+  }
+
+  /* Подсветка своей строки должна побеждать фон липких ячеек. */
+  .lb-table.lb-table-full .lb-row-me .lb-col-rank,
+  .lb-table.lb-table-full .lb-row-me .lb-col-name {
+    background: var(--tint-indigo-bg);
+  }
+
+  /* Тень-отрыв у липкого блока, когда таблица прокручена вбок. */
+  .tshadow-left .lb-table.lb-table-full .lb-col-name {
+    box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+  }
+}
+
+/* Широкие рейтинги на планшете и в узком окне десктопа: обёртка получает
+   горизонтальный скролл уже с 1150px, значит и липкость нужна с той же ширины —
+   иначе колонка с именем уезжает ровно так же, как уезжала на телефоне.
+   Набор правил тот же, что выше, отличается только областью применения;
+   «Участнику» тут оставляем 10rem — места больше, чем на телефоне. */
+@media (min-width: 821px) and (max-width: 1150px) {
+  .lb-table-wrap-wide .lb-table {
+    --lb-sticky-rank-w: 4.4rem;
+    --lb-sticky-name-w: 10rem;
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-fixed.lb-table-full {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-full .lb-col-rank {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+    width: var(--lb-sticky-rank-w);
+    min-width: var(--lb-sticky-rank-w);
+    max-width: var(--lb-sticky-rank-w);
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-full .lb-col-name {
+    position: sticky;
+    left: var(--lb-sticky-rank-w);
+    z-index: 2;
+    background: var(--surface);
+    width: var(--lb-sticky-name-w);
+    min-width: var(--lb-sticky-name-w);
+    max-width: var(--lb-sticky-name-w);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-full thead .lb-col-rank,
+  .lb-table-wrap-wide .lb-table.lb-table-full thead .lb-col-name {
+    z-index: 4;
+  }
+
+  .lb-table-wrap-wide .lb-table.lb-table-full .lb-row-me .lb-col-rank,
+  .lb-table-wrap-wide .lb-table.lb-table-full .lb-row-me .lb-col-name {
+    background: var(--tint-indigo-bg);
+  }
+
+  .tshadow-left .lb-table-wrap-wide .lb-table.lb-table-full .lb-col-name {
+    box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+  }
+}
+
+/* Перцентиль — короткая приписка справа от кнопки «Показать в таблице», а не
+   отдельная строка: flex-basis:100% занимал целую строку высоты ради полутора
+   десятков слов. Кнопка и приписка живут одной связкой и переносятся вместе,
+   так что на узком экране они всё равно окажутся рядом, просто ниже значений. */
+.lb-me-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.lb-me-percentile {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+/* Краткий вид широких рейтингов: в нём остаются три колонки, поэтому жёсткая
+   раскладка полного вида (table-layout: fixed + min-width под весь набор
+   колонок) не нужна — из-за неё три колонки растягивались на всю ширину и
+   таблица зря скроллилась вбок. */
+@media (max-width: 820px) {
+  .lb-table.lb-table-fixed:not(.lb-table-full) {
+    table-layout: auto;
+    min-width: 0;
+  }
+
+  .lb-table.lb-table-fixed:not(.lb-table-full) .lb-col-rank,
+  .lb-table.lb-table-fixed:not(.lb-table-full) .lb-col-name,
+  .lb-table.lb-table-fixed:not(.lb-table-full) .lb-col-num,
+  .lb-table.lb-table-fixed:not(.lb-table-full) .lb-col-total {
+    width: auto;
+  }
+}
+
+/* Пока видна липкая «моя строка», кнопка «наверх» уезжает над ней — иначе
+   круглая кнопка садится прямо на строку и закрывает кнопку «Показать». */
+body.has-pinned-me .lb-scroll-top {
+  bottom: calc(
+    4.5rem + var(--portal-bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px)
+  );
+}
+
+/* --- Фильтр «какие роли считать»: кнопка-шестерёнка и модалка --- */
+
+.lb-roles-gear {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.lb-roles-gear:hover {
+  border-color: var(--border-strong);
+}
+
+.lb-roles-gear:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+/* Активный фильтр видно, не открывая модалку: рейтинг посчитан не по всем ролям. */
+.lb-roles-gear-active {
+  background: var(--tint-indigo-bg);
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+  font-weight: 600;
+}
+
+.vrm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.vrm-panel {
+  width: min(560px, 100%);
+  max-height: min(86vh, 720px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 20px 16px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vrm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vrm-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.vrm-close {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 2px 8px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.vrm-close:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.vrm-intro,
+.vrm-note {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.vrm-note {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  font-size: 0.8rem;
+}
+
+.vrm-presets {
+  display: grid;
+  gap: 8px;
+}
+
+@media (min-width: 520px) {
+  .vrm-presets {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.vrm-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 10px 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.vrm-preset:hover {
+  border-color: var(--border-strong);
+}
+
+.vrm-preset-active {
+  border-color: var(--accent-indigo);
+  background: var(--tint-indigo-bg);
+}
+
+.vrm-preset-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.vrm-preset-note {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.vrm-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.vrm-group-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.vrm-group-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
+
+.vrm-group-note {
+  font-size: 0.76rem;
+}
+
+.vrm-role-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+@media (min-width: 520px) {
+  .vrm-role-list {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.vrm-role {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  font-size: 0.88rem;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.vrm-role:hover {
+  background: var(--bg-muted);
+}
+
+.vrm-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  position: sticky;
+  bottom: -16px;
+  background: var(--surface);
+}
+
+.vrm-count {
+  font-size: 0.82rem;
+}
+
+.vrm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Массовые действия над галочками ролей. */
+.vrm-bulk {
+  display: flex;
+  gap: 10px;
+}
+
+.vrm-bulk-btn {
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  font-family: inherit;
+  font-size: 0.83rem;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.vrm-bulk-btn:hover {
+  text-decoration: underline;
+}
+
+/* ─── Карта туристов ─────────────────────────────────────────────────────── */
+/* Спойлер над таблицей: карта локаций с числом «сколько человек из топ-100 тут
+   было» и светофоры «был / не был» в самой таблице. */
+
+.lb-tourist {
+  margin: 14px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.lb-tourist-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lb-tourist-toggle:hover {
+  background: var(--surface-muted, rgba(148, 163, 184, 0.12));
+}
+
+.lb-tourist-toggle-text {
+  flex: 1 1 auto;
+}
+
+/* Свёрнутый спойлер помнит выбранную площадку — иначе столбец в таблице
+   выглядит взявшимся ниоткуда. */
+.lb-tourist-toggle-chip {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
+}
+
+.lb-tourist-map {
+  padding: 0 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lb-tourist-caption {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.lb-tourist-selected {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--tint-amber-bg);
+  border: 1px solid var(--tint-amber-border);
+  font-size: 0.86rem;
+}
+
+.lb-tourist-selected-name {
+  font-weight: 700;
+}
+
+.lb-tourist-selected-link {
+  color: var(--link);
+}
+
+.lb-tourist-summary {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.lb-tourist-legend {
+  align-items: center;
+}
+
+.lb-tourist-legend-badge {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* Кружок кластера в легенде — тем же видом, что на карте. */
+.lb-tourist-legend-cluster {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 2px solid var(--accent-indigo);
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Столбец светофоров: заголовок называет площадку и умеет её убрать.
+   Селектор с тегом — иначе общий `.data-table th, td { text-align: left }`
+   специфичнее и светофор липнет к левому краю ячейки. */
+.lb-table th.lb-col-light,
+.lb-table td.lb-col-light {
+  width: 108px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.lb-col-light-head {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.15;
+  cursor: pointer;
+  user-select: none;
+}
+
+.lb-col-light-head:hover {
+  color: var(--accent-indigo-text);
+}
+
+.lb-col-light-name {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Кнопки столбца: фильтр и «убрать». Стоят в строку под названием — в 108 px
+   ширины они рядом с текстом уже не помещаются. */
+.lb-col-light-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.lb-col-light-clear {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.lb-col-light-clear:hover {
+  color: var(--accent-red-text);
+}
+
+/* Состояние фильтра читается цветом кружка: серый — все, зелёный — только
+   побывавшие, красный — только те, кто не был. */
+.lb-col-light-filter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.lb-col-light-filter span {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 2px solid var(--text-muted);
+}
+
+.lb-col-light-filter:hover span {
+  border-color: var(--accent-indigo-text);
+}
+
+.lb-col-light-filter-yes span {
+  background: var(--accent-green-text);
+  border-color: var(--accent-green-text);
+}
+
+.lb-col-light-filter-no span {
+  background: var(--accent-red-text);
+  border-color: var(--accent-red-text);
+}
+
+.lb-light-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+}
+
+.lb-light {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+}
+
+.lb-light-yes {
+  background: var(--accent-green-text);
+}
+
+.lb-light-no {
+  background: var(--accent-red-text);
+  opacity: 0.55;
+}
+
+.lb-light-loading {
+  background: var(--border);
+}
+
+.lb-light-unknown {
+  width: auto;
+  height: auto;
+  border: 0;
+  color: var(--text-muted);
+}
+
+.lb-light-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+/* Выбранные площадки: чипы над картой, каждый = столбец светофоров. */
+.lb-tourist-selected-label {
+  font-size: 0.82rem;
+}
+
+.lb-tourist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--tint-amber-border-strong);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lb-tourist-chip:hover {
+  border-color: var(--accent-red-text);
+}
+
+.lb-tourist-chip-count {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.lb-tourist-chip-remove {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.lb-tourist-chip:hover .lb-tourist-chip-remove {
+  color: var(--accent-red-text);
+}
+
+.lb-tourist-limit {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+/* Кнопка «Посмотреть людей в таблице» в попапе карты — выглядит ссылкой. */
+.map-popup-details {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--link);
+  cursor: pointer;
+}
+
+.map-popup-details:hover {
+  text-decoration: underline;
+}
+
+/* Ступень «какой топ считать» — влияет только на числа у точек карты. */
+.lb-tourist-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.lb-tourist-top-label {
+  font-size: 0.82rem;
 }

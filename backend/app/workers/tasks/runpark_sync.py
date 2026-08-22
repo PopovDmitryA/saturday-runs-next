@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from app.db.session import get_session_factory
@@ -21,11 +21,23 @@ def runpark_sync_latest() -> dict[str, object]:
     def _run() -> dict[str, object]:
         db = get_session_factory()()
         try:
+            started_at = datetime.now(timezone.utc)
             result = sync_runpark_batch(db, since)
+            # Батч RunPark идёт своим расписанием (3,8,13,18,23), мимо окон
+            # синка 5 вёрст — без этого его результаты попадали в прогрев
+            # дашбордов только по совпадению таймингов.
+            if result.run_results_upserted > 0:
+                db.commit()
+                from app.workers.tasks.dashboard_warm import schedule_dashboard_warm
+                from app.workers.tasks.leaderboards_warm import schedule_leaderboards_warm
+
+                schedule_dashboard_warm(started_at)
+                schedule_leaderboards_warm()
             return {
                 "since": since.isoformat(),
                 "events_total": result.events_total,
                 "events_upserted": result.events_upserted,
+                "events_unchanged": result.events_unchanged,
                 "run_results_upserted": result.run_results_upserted,
                 "volunteer_results_upserted": result.volunteer_results_upserted,
                 "errors": result.errors,
@@ -72,7 +84,6 @@ def runpark_user_sync_task(
             platform_link_id=UUID(platform_link_id) if platform_link_id else None,
         )
         job.status = SyncJobStatus.running
-        from datetime import datetime, timezone
         job.started_at = datetime.now(timezone.utc)
         db.commit()
 

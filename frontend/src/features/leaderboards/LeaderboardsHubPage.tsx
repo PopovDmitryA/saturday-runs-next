@@ -1,16 +1,47 @@
-import { useEffect, useState } from "react";
-import { InsightsShell } from "../insights/InsightsShell";
+import { useEffect, useMemo, useState } from "react";
+import { StatHintTooltip } from "../../components/StatHintTooltip";
+import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
+  ADMIN_ONLY_METRICS,
   getLeaderboard,
   getMyLeaderboardRow,
+  METRIC_VALUE_UNIT,
+  PLATFORM_LABELS,
   type LeaderboardMetric,
   type LeaderboardResponse,
   type MyLeaderboardRow,
+  type PlatformFilter,
 } from "./leaderboardsApi";
+import { formatInt } from "../../lib/format";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import { unitLabel } from "./pluralize";
+import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import "./leaderboards.css";
 
 const HUB_TOP_N = 3;
+
+// Тот же фильтр «по системе», что и на странице конкретного рейтинга —
+// здесь он один на весь хаб и сразу пересчитывает топ-3 и «моё место» во
+// всех живых карточках (решение Дмитрия 01.08.2026: хотел его именно на
+// главной «Рейтингов», не только внутри отдельных таблиц). Полный список
+// кнопок захардкожен (не с бэкенда, как на странице метрики) — на хабе
+// фильтр общий сразу для нескольких рейтингов с разным набором систем;
+// карточка, которой выбранная система не подходит (parkrun у волонтёрского
+// туризма), сама откатывается на общий зачёт и подписывает это под собой.
+const HUB_PLATFORM_OPTIONS: PlatformFilter[] = ["all", "five_verst", "s95", "runpark", "parkrun"];
+const HUB_PLATFORM_TAB_LABELS: Record<string, string> = { all: "Все", ...PLATFORM_LABELS };
+
+const HUB_PLATFORM_FILTER_HINT =
+  "Пересчитывает топ-3 и ваше место по одной системе вместо общего зачёта. " +
+  "Если система не участвует в конкретном рейтинге — карточка покажет общий зачёт.";
+
+function InfoHint({ text }: { text: string }) {
+  return (
+    <StatHintTooltip text={text} className="lb-info-hint">
+      <span aria-hidden="true">i</span>
+    </StatHintTooltip>
+  );
+}
 
 type LiveCard = {
   metric: LeaderboardMetric;
@@ -18,18 +49,18 @@ type LiveCard = {
   title: string;
 };
 
-type SoonCard = {
-  title: string;
-  description: string;
-};
-
 type HubSection = {
   emoji: string;
   title: string;
   live: LiveCard[];
-  soon: SoonCard[];
 };
 
+// Только готовые рейтинги. Карточек-анонсов «скоро» здесь нет намеренно
+// (решение Дмитрия 09.08.2026): раздел показывает то, что уже работает, а
+// планы живут в бэклоге «Рейтинги» — новый рейтинг появляется на хабе в тот
+// же момент, когда становится доступен всем. Секция «Локации» (Р18/Р19) по
+// этой же причине пока отсутствует целиком — в ней нет ни одного живого
+// рейтинга.
 const SECTIONS: HubSection[] = [
   {
     emoji: "🏃",
@@ -38,36 +69,32 @@ const SECTIONS: HubSection[] = [
       { metric: "runs", href: "/ratings/runs", title: "Количество пробежек" },
       { metric: "wins", href: "/ratings/wins", title: "Количество первых мест" },
     ],
-    soon: [
-      { title: "Самые быстрые", description: "Лучшие результаты и бегуны М/Ж за всю историю." },
-      { title: "Серии суббот", description: "Самые длинные серии подряд — текущие и исторические." },
-    ],
   },
   {
     emoji: "🤝",
     title: "Волонтёры",
-    live: [{ metric: "volunteering", href: "/ratings/volunteering", title: "Количество волонтёрств" }],
-    soon: [{ title: "Мультиволонтёр", description: "Кто освоил больше всего разных ролей." }],
+    live: [
+      { metric: "volunteering", href: "/ratings/volunteering", title: "Количество волонтёрств" },
+      {
+        metric: "volunteer_locations",
+        href: "/ratings/volunteer-locations",
+        title: "Уникальные локации",
+      },
+      {
+        metric: "volunteer_roles",
+        href: "/ratings/volunteer-roles",
+        title: "Мультиволонтёр — разнообразие ролей",
+      },
+    ],
   },
   {
     emoji: "🧭",
     title: "Паркран-туристы",
     live: [
       { metric: "locations", href: "/ratings/locations", title: "Уникальные локации" },
+      { metric: "openings", href: "/ratings/openings", title: "Открытия локаций" },
       { metric: "win_locations", href: "/ratings/win-locations", title: "Локации с первым местом" },
-    ],
-    soon: [
-      { title: "Дальность от дома", description: "Кто уезжает бегать дальше всех от домашней локации." },
-      { title: "Гео-коллекционер", description: "Уникальные регионы и города." },
-    ],
-  },
-  {
-    emoji: "📍",
-    title: "Локации",
-    live: [],
-    soon: [
-      { title: "Посещаемость локаций", description: "Самые массовые и быстрорастущие площадки." },
-      { title: "Быстрые трассы", description: "Где бегут быстрее всего." },
+      { metric: "home_distance", href: "/ratings/home-distance", title: "Дальность от дома" },
     ],
   },
 ];
@@ -85,15 +112,15 @@ type CardState = {
   error: boolean;
 };
 
-function LiveRatingCard({ card }: { card: LiveCard }) {
+function LiveRatingCard({ card, platform }: { card: LiveCard; platform: PlatformFilter }) {
   const [state, setState] = useState<CardState>({ board: null, me: null, loading: true, error: false });
 
   useEffect(() => {
     let cancelled = false;
     setState({ board: null, me: null, loading: true, error: false });
     Promise.all([
-      getLeaderboard(card.metric, HUB_TOP_N),
-      getMyLeaderboardRow(card.metric).catch(() => null),
+      getLeaderboard(card.metric, HUB_TOP_N, "all", 1, platform),
+      getMyLeaderboardRow(card.metric, "all", 1, platform).catch(() => null),
     ])
       .then(([board, me]) => {
         if (!cancelled) {
@@ -108,9 +135,14 @@ function LiveRatingCard({ card }: { card: LiveCard }) {
     return () => {
       cancelled = true;
     };
-  }, [card.metric]);
+  }, [card.metric, platform]);
 
   const { board, me, loading, error } = state;
+  const valueUnit = METRIC_VALUE_UNIT[card.metric];
+  // Бэкенд молча откатывает фильтр на общий зачёт, если система не участвует
+  // в этом рейтинге (напр. parkrun у волонтёрского туризма) — сверяем с тем,
+  // что реально пришло, а не с тем, что выбрано глобально на хабе.
+  const fellBackToAll = platform !== "all" && board != null && board.platform === "all";
 
   return (
     <a className="lb-hub-card lb-hub-card-live" href={card.href}>
@@ -120,6 +152,11 @@ function LiveRatingCard({ card }: { card: LiveCard }) {
 
       {loading && <p className="lb-hub-loading muted">Считаем…</p>}
       {error && <p className="lb-hub-loading muted">Не удалось загрузить</p>}
+      {fellBackToAll && (
+        <p className="lb-hub-card-fallback muted">
+          {HUB_PLATFORM_TAB_LABELS[platform]} не участвует — показан общий зачёт
+        </p>
+      )}
 
       {board && (
         <div className="lb-hub-top3">
@@ -131,7 +168,8 @@ function LiveRatingCard({ card }: { card: LiveCard }) {
               </span>
               <span className="lb-hub-rank-name">{row.display_name?.trim() || "Участник"}</span>
               <span className="lb-hub-rank-value">
-                {row.total}
+                {formatInt(row.total)}
+                {valueUnit && <span className="lb-unit">{valueUnit}</span>}
                 <DeltaSlot delta={row.total_delta} />
               </span>
             </div>
@@ -146,14 +184,15 @@ function LiveRatingCard({ card }: { card: LiveCard }) {
               <span className="lb-hub-rank-chip lb-hub-rank-me">{me.rank}</span>
               <span className="lb-hub-rank-name">Вы</span>
               <span className="lb-hub-rank-value">
-                {me.total}
+                {formatInt(me.total)}
+                {valueUnit && <span className="lb-unit">{valueUnit}</span>}
                 <DeltaSlot delta={me.total_delta} />
               </span>
             </div>
           ) : (
             <p className="lb-hub-me-threshold">
               Вы появитесь после {me.threshold} {unitLabel(card.metric, me.threshold)} — сейчас у вас{" "}
-              {me.total}.
+              {formatInt(me.total)}{valueUnit ? ` ${valueUnit}` : ""}.
             </p>
           )}
         </div>
@@ -164,41 +203,69 @@ function LiveRatingCard({ card }: { card: LiveCard }) {
   );
 }
 
-function SoonRatingCard({ card }: { card: SoonCard }) {
-  return (
-    <div className="lb-hub-card lb-hub-card-soon">
-      <span className="lb-hub-card-title">
-        {card.title} <span className="lb-soon">скоро</span>
-      </span>
-      <span className="lb-hub-card-text">{card.description}</span>
-    </div>
-  );
-}
-
 export function LeaderboardsHubPage() {
+  const [platform, setPlatform] = useState<PlatformFilter>("all");
+  // Закрытые рейтинги показываем только админу: карточка тянет данные, а API
+  // отдаёт их лишь ему — остальным она молча висела бы «Считаем…».
+  const viewer = useOptionalUser();
+  const sections = useMemo(
+    () =>
+      SECTIONS.map((section) => ({
+        ...section,
+        live: section.live.filter(
+          (card) => viewer?.is_admin || !ADMIN_ONLY_METRICS.includes(card.metric),
+        ),
+      })).filter((section) => section.live.length > 0),
+    [viewer],
+  );
+
   return (
-    <InsightsShell title="Рейтинги" activePath="/ratings">
+    <PortalSectionShell sidebar={{ active: "ratings" }}>
       <div className="lb-page lb-hub">
         <header className="lb-header">
           <h1>Рейтинги</h1>
+          <p className="lb-description">
+            Сквозные лидерборды по всем беговым системам сразу. Здесь каждый найдёт рейтинг по
+            душе: кто-то берёт числом стартов, кто-то скоростью, кто-то волонтёрит каждую
+            субботу, а кто-то коллекционирует новые парки. Найдите себя — и посмотрите, кто
+            впереди.
+          </p>
         </header>
 
-        {SECTIONS.map((section) => (
+        <RatingsLoginBanner />
+
+        <div className="lb-visits lb-hub-platform-filter">
+          <span className="lb-visits-label">
+            Система <InfoHint text={HUB_PLATFORM_FILTER_HINT} />
+          </span>
+          <div className="lb-gender-tabs" role="group" aria-label="Смотреть по системе">
+            {HUB_PLATFORM_OPTIONS.map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={platform === value}
+                className={`lb-gender-tab${platform === value ? " lb-gender-tab-active" : ""}`}
+                onClick={() => setPlatform(value)}
+              >
+                {HUB_PLATFORM_TAB_LABELS[value] ?? value}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {sections.map((section) => (
           <section key={section.title} className="lb-hub-section">
             <h2>
               <span aria-hidden>{section.emoji}</span> {section.title}
             </h2>
             <div className="lb-hub-cards">
               {section.live.map((card) => (
-                <LiveRatingCard key={card.metric} card={card} />
-              ))}
-              {section.soon.map((card) => (
-                <SoonRatingCard key={card.title} card={card} />
+                <LiveRatingCard key={card.metric} card={card} platform={platform} />
               ))}
             </div>
           </section>
         ))}
       </div>
-    </InsightsShell>
+    </PortalSectionShell>
   );
 }

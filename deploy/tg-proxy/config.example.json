@@ -1,0 +1,91 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "_comment": "http — основной вход: понимают и httpx, и aiohttp (aiogram) без доп. пакетов",
+      "listen": "0.0.0.0",
+      "port": 8118,
+      "protocol": "http",
+      "settings": {}
+    },
+    {
+      "listen": "0.0.0.0",
+      "port": 1080,
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": false
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy-primary",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "__PRIMARY_SERVER_ADDRESS__",
+            "port": 443,
+            "users": [
+              {
+                "id": "__PRIMARY_UUID__",
+                "encryption": "none",
+                "flow": ""
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "__PRIMARY_SERVER_ADDRESS__",
+          "fingerprint": "safari",
+          "publicKey": "__PRIMARY_REALITY_PUBLIC_KEY__",
+          "shortId": "__PRIMARY_REALITY_SHORT_ID__",
+          "spiderX": ""
+        },
+        "xhttpSettings": {
+          "path": "__PRIMARY_XHTTP_PATH__",
+          "host": "example.com",
+          "mode": "auto",
+          "extra": {
+            "scMaxBufferedPosts": 30,
+            "scMaxEachPostBytes": 1000000,
+            "scMinPostsIntervalMs": "10-50",
+            "scStreamUpServerSecs": "20-80",
+            "xPaddingBytes": "100-1000"
+          }
+        }
+      }
+    }
+  ],
+  "_comment_reserve_proxy": "Резервный профиль добавляется вторым outbound'ом (tag proxy-secondary) + routing.balancers/observatory ниже, см. реальный (гитигнорённый) config.json.",
+  "routing": {
+    "balancers": [
+      {
+        "tag": "tg-balancer",
+        "selector": ["proxy-primary"],
+        "strategy": {
+          "type": "leastPing"
+        }
+      }
+    ],
+    "rules": [
+      {
+        "type": "field",
+        "network": "tcp,udp",
+        "balancerTag": "tg-balancer"
+      }
+    ]
+  },
+  "observatory": {
+    "subjectSelector": ["proxy-primary"],
+    "probeUrl": "https://api.telegram.org",
+    "probeInterval": "30s"
+  }
+}

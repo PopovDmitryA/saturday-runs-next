@@ -1,16 +1,5 @@
-import type { MyHistoryMilestone, RunItem } from "../../lib/api";
+import type { MyHistoryMilestone } from "../../lib/api";
 import { formatDateLong, platformCodeLabel, pluralFormRu } from "../../lib/format";
-
-// Ключ, по которому «Моя история» передаёт веху в мастер «Поделиться»
-// (SharePage читает его при ?story=milestone).
-export const MILESTONE_SHARE_KEY = "shareMyHistoryMilestone";
-
-// Что кладём в sessionStorage: пробежка-носитель вехи (для однопробежечного
-// рендера постера) + текст акцент-плашки.
-export type MilestoneSharePayload = {
-  accent_label: string;
-  run: RunItem;
-};
 
 const VOLUNTEER_FORMS = ["волонтёрство", "волонтёрства", "волонтёрств"] as const;
 
@@ -57,6 +46,16 @@ export function milestoneAccentLabel(milestone: MyHistoryMilestone): string {
       return "Личный рекорд в системе";
     case "location_pr":
       return "Личный рекорд в локации";
+    case "location_course_record":
+      return milestone.record_scope === "global"
+        ? "Глобальный рекорд локации"
+        : milestone.record_scope
+          ? "Рекорд локации в системе"
+          : "Рекорд локации";
+    case "location_age_group_record":
+      return milestone.age_group
+        ? `Рекорд локации · группа ${milestone.age_group}`
+        : "Рекорд локации в группе";
     case "new_region": {
       const milestoneNumber = geoMilestoneNumber(milestone.number);
       if (milestoneNumber != null) {
@@ -105,36 +104,6 @@ export function saturdayStreakLabel(number: number | null): string {
 
 export function volunteeringCountPhrase(count: number): string {
   return `${count} ${pluralFormRu(count, VOLUNTEER_FORMS)}`;
-}
-
-// Веха → RunItem для однопробежечного рендера постера (как onThisDayRunToRunItem).
-export function milestoneToRunItem(milestone: MyHistoryMilestone): RunItem {
-  return {
-    platform_code: milestone.platform_code,
-    event_date: milestone.event_date,
-    event_number: null,
-    location_name: milestone.location_name,
-    location_city: milestone.location_city,
-    location_country: null,
-    position: milestone.position,
-    gender_position: milestone.gender_position,
-    finish_time_display: milestone.finish_time_display,
-    finish_time_sec: milestone.finish_time_sec,
-    pace_display: milestone.pace_display,
-    pace_sec_per_km: null,
-    age_category: null,
-    is_pr: milestone.kind === "pr" || milestone.kind === "global_pr",
-    is_global_pr: milestone.is_global_pr,
-    is_location_pr: milestone.kind === "location_pr",
-    is_crosslinked: false,
-    is_first_run: milestone.kind === "first_run",
-    is_first_run_at_location: false,
-    club_name: null,
-    achievement_labels: [],
-    status: null,
-    is_test_event: false,
-    event_url: milestone.event_url,
-  };
 }
 
 // «00:26:43» → «26:43».
@@ -234,6 +203,21 @@ export function milestoneBragText(milestone: MyHistoryMilestone, siteUrl: string
       headline = `🥉 Новый личный рекорд в локации «${milestone.location_name}»!`;
       details = milestoneDetailsLine(milestone, { time: true, position: true, delta: true });
       break;
+    case "location_course_record":
+      headline =
+        milestone.record_scope === "global"
+          ? `👑 Глобальный рекорд локации «${milestone.location_name}» — лучшее время площадки за всю историю!`
+          : milestone.record_scope
+            ? `👑 Рекорд локации «${milestone.location_name}» в системе «${platform}»!`
+            : `👑 Рекорд локации «${milestone.location_name}» — лучшее время площадки!`;
+      details = milestoneDetailsLine(milestone, { time: true, position: true });
+      break;
+    case "location_age_group_record":
+      headline = milestone.age_group
+        ? `🏵️ Рекорд локации «${milestone.location_name}» в группе ${milestone.age_group}!`
+        : `🏵️ Рекорд локации «${milestone.location_name}» в возрастной группе!`;
+      details = milestoneDetailsLine(milestone, { time: true, position: true });
+      break;
     case "first_foreign_parkrun":
       headline = "✈️ Первый зарубежный паркран!";
       details = milestoneDetailsLine(milestone, { time: true, position: true });
@@ -296,16 +280,4 @@ export function milestoneBragText(milestone: MyHistoryMilestone, siteUrl: string
   }
 
   return `${headline}\n${details}\n\nИсточник: ${siteUrl}`;
-}
-
-export function storeMilestoneShare(milestone: MyHistoryMilestone): void {
-  const payload: MilestoneSharePayload = {
-    accent_label: milestoneAccentLabel(milestone),
-    run: milestoneToRunItem(milestone),
-  };
-  try {
-    sessionStorage.setItem(MILESTONE_SHARE_KEY, JSON.stringify(payload));
-  } catch {
-    // приватный режим/переполнение — мастер откроется без пресета, не критично
-  }
 }

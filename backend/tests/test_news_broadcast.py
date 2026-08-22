@@ -116,6 +116,7 @@ def test_broadcast_api_flow(client: TestClient, db_session: Session, fake_redis:
         db_session.commit()
 
 
-def test_send_news_broadcast_skips_empty_message(db_session: Session) -> None:
+def test_send_news_broadcast_skips_empty_message(db_session: Session, bot_settings: Settings) -> None:
+    # Токен проверяется раньше текста, поэтому берём тестовые настройки бота.
     with pytest.raises(ValueError, match="empty"):
-        send_news_broadcast(db_session, "   ")
+        send_news_broadcast(db_session, "   ", settings=bot_settings)

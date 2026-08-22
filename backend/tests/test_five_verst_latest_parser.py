@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from app.platform_adapters.five_verst import bulk_parser
 
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "five_verst_latest.html"
@@ -20,7 +22,9 @@ def test_parse_latest_results_html_fixture() -> None:
     assert first.source_url.endswith("/")
 
 
+@pytest.mark.network
 def test_fetch_latest_results_integration_smoke() -> None:
+    """Живой запрос к 5 вёрстам. Запускать вручную: pytest -m network."""
     summaries, html = bulk_parser.fetch_latest_results(limit=3)
     assert len(summaries) == 3
     assert len(html) > 1000

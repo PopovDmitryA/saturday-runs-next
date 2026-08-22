@@ -19,14 +19,24 @@ from app.schemas.abuse_admin import (
     AbuseMessageResponse,
     AbuseTelegramBanItem,
 )
-from app.schemas.admin import AdminUserListResponse
+from app.schemas.admin import AdminLoginEventItem, AdminLoginEventsResponse, AdminUserListResponse
 from app.schemas.admin_event_report import (
     EventReportDatesResponse,
     EventReportLocationsResponse,
     EventReportResponse,
 )
-from app.schemas.admin_stats import AdminSiteStatsResponse, PageAnalyticsResponse
+from app.schemas.admin_stats import (
+    AdminSiteStatsResponse,
+    AdminUsersGeographyResponse,
+    PageAnalyticsResponse,
+)
 from app.schemas.admin_sync_runs import AdminSyncRunsResponse
+from app.schemas.backlog import (
+    BacklogCardAdminListResponse,
+    BacklogCardAdminResponse,
+    BacklogCardUpdateRequest,
+    BacklogVoteAdminListResponse,
+)
 from app.schemas.blocked_slug_admin import (
     BlockedSlugCreateRequest,
     BlockedSlugItem,
@@ -48,11 +58,22 @@ from app.schemas.location_contacts import (
     LocationContactLinkUpdateRequest,
     LocationContactListResponse,
 )
+from app.schemas.location_openings import (
+    LocationOpeningListResponse,
+    LocationOpeningResponse,
+    LocationOpeningUpdateRequest,
+)
 from app.schemas.rating import (
     AdminLocationRatingsResponse,
     AdminRatingsResponse,
 )
 from app.schemas.records_digest import DigestDatesResponse, RecordsDigestResponse
+from app.schemas.releases import (
+    ReleaseAdminListResponse,
+    ReleaseAdminResponse,
+    ReleaseCreateRequest,
+    ReleaseUpdateRequest,
+)
 from app.services.abuse_admin_service import (
     AbuseAdminError,
     clear_ip_score,
@@ -68,7 +89,20 @@ from app.services.admin_event_report_service import (
     list_report_locations,
 )
 from app.services.admin_site_stats_service import get_admin_site_stats
+from app.services.admin_users_geo_stats_service import get_admin_users_geography
 from app.services.admin_users_service import get_admin_user, search_admin_users
+from app.services.backlog_service import (
+    BacklogError,
+    list_card_votes_admin,
+    list_cards_admin,
+    update_card_admin,
+)
+from app.services.backlog_service import (
+    delete_card as delete_backlog_card,
+)
+from app.services.backlog_service import (
+    delete_comment as delete_backlog_comment,
+)
 from app.services.blocked_slug_admin_service import (
     BlockedSlugError,
     create_blocked_slug,
@@ -83,6 +117,7 @@ from app.services.blog_service import (
     list_all_posts,
     update_post,
 )
+from app.services.leaderboard_service import drop_metric_cache
 from app.services.location_contacts_service import (
     LocationContactError,
     create_location_contact_link,
@@ -91,13 +126,35 @@ from app.services.location_contacts_service import (
     update_location_announce_settings,
     update_location_contact_link,
 )
-from app.services.page_analytics_service import build_page_analytics, resolve_period
+from app.services.location_openings_service import (
+    LocationOpeningError,
+    clear_opening,
+    list_openings,
+    set_opening,
+)
+from app.services.login_journal_service import list_login_events, summarize_login_events
+from app.services.page_analytics_service import (
+    build_home_ab_stats,
+    build_home_link_clicks,
+    build_og_fetch_stats,
+    build_page_analytics,
+    build_share_stats,
+    resolve_period,
+)
 from app.services.rating_service import (
     list_all_ratings,
     location_rating_aggregates,
     ratings_stats,
 )
 from app.services.records_digest_service import build_records_digest, list_digest_dates
+from app.services.release_service import (
+    ReleaseError,
+    create_release,
+    delete_release,
+    list_all_releases,
+    suggest_next_versions,
+    update_release,
+)
 from app.services.scheduled_run_log_service import list_runs as list_scheduled_runs
 from app.services.scheduled_run_log_service import resolve_period as resolve_runs_period
 from app.services.scheduled_run_log_service import summarize as summarize_scheduled_runs
@@ -145,6 +202,27 @@ def list_admin_users(
         limit=limit,
         offset=offset,
         query=q,
+    )
+
+
+@router.get("/users/{user_id}/login-events", response_model=AdminLoginEventsResponse)
+def admin_user_login_events(
+    user_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> AdminLoginEventsResponse:
+    if get_admin_user(db, user_id) is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    events = list_login_events(db, user_id, limit=limit)
+    summary = summarize_login_events(events)
+    return AdminLoginEventsResponse(
+        items=[AdminLoginEventItem.model_validate(event, from_attributes=True) for event in events],
+        logins=int(summary["logins"]),  # type: ignore[arg-type]
+        logouts=int(summary["logouts"]),  # type: ignore[arg-type]
+        devices=int(summary["devices"]),  # type: ignore[arg-type]
+        unexpected_relogins=int(summary["unexpected_relogins"]),  # type: ignore[arg-type]
     )
 
 
@@ -333,6 +411,18 @@ def admin_site_stats(
     return AdminSiteStatsResponse.model_validate(payload)
 
 
+@router.get("/stats/geography", response_model=AdminUsersGeographyResponse)
+def admin_users_geography(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    period_days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> AdminUsersGeographyResponse:
+    """Регистрации по городам и площадкам. Отдельным запросом от /stats:
+    считается по протоколам и заметно дольше остальных чисел страницы."""
+    payload = get_admin_users_geography(db, period_days=period_days)
+    return AdminUsersGeographyResponse.model_validate(payload)
+
+
 @router.get("/page-analytics", response_model=PageAnalyticsResponse)
 def admin_page_analytics(
     db: Annotated[Session, Depends(get_db)],
@@ -347,6 +437,10 @@ def admin_page_analytics(
     """
     start, end = resolve_period(period_days=period_days, date_from=date_from, date_to=date_to)
     payload = build_page_analytics(db, start=start, end=end)
+    payload["home_ab"] = build_home_ab_stats(db, start=start, end=end)
+    payload["home_links"] = build_home_link_clicks(db, start=start, end=end)
+    payload["share"] = build_share_stats(db, start=start, end=end)
+    payload["og_fetches"] = build_og_fetch_stats(db, start=start, end=end)
     payload["generated_at"] = datetime.now(timezone.utc)
     return PageAnalyticsResponse.model_validate(payload)
 
@@ -545,6 +639,63 @@ def admin_delete_location_contact_link(
     return AbuseMessageResponse(message="contact_link_deleted")
 
 
+# Разметка открытий: какой старт считается торжественным открытием локации.
+# Нужна прежде всего С95 (по номерам её забегов открытие не опознать), но
+# открывается и для остальных систем — чтобы гасить ложное открытие там, где
+# система начала вести протоколы позже самой локации.
+@router.get("/location-openings", response_model=LocationOpeningListResponse)
+def admin_location_openings(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    platform: Annotated[str, Query(max_length=32)] = "s95",
+    q: Annotated[str | None, Query(max_length=128)] = None,
+    only_missing: Annotated[bool, Query()] = False,
+) -> LocationOpeningListResponse:
+    try:
+        payload = list_openings(db, platform=platform, query=q, only_missing=only_missing)
+    except LocationOpeningError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return LocationOpeningListResponse.model_validate(payload)
+
+
+@router.put("/location-openings/{location_id}", response_model=LocationOpeningResponse)
+def admin_set_location_opening(
+    location_id: UUID,
+    body: LocationOpeningUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> LocationOpeningResponse:
+    try:
+        payload = set_opening(
+            db,
+            location_id,
+            opening_event_number=body.opening_event_number,
+            note=body.note,
+            admin=admin,
+        )
+    except LocationOpeningError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    # Рейтинг открытий считается по этой разметке: без сброса кэша правка
+    # доехала бы до таблицы только через TTL снапшота.
+    drop_metric_cache("openings")
+    return LocationOpeningResponse.model_validate(payload)
+
+
+@router.delete("/location-openings/{location_id}", response_model=LocationOpeningResponse)
+def admin_clear_location_opening(
+    location_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> LocationOpeningResponse:
+    """Снять ручную разметку — площадка возвращается к правилу своей системы."""
+    try:
+        payload = clear_opening(db, location_id)
+    except LocationOpeningError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    drop_metric_cache("openings")
+    return LocationOpeningResponse.model_validate(payload)
+
+
 
 
 @router.get("/blog/posts", response_model=BlogPostAdminListResponse)
@@ -614,3 +765,142 @@ def admin_delete_blog_post(
     except BlogPostError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return AbuseMessageResponse(message="blog_post_deleted")
+
+
+@router.get("/releases", response_model=ReleaseAdminListResponse)
+def admin_list_releases(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> ReleaseAdminListResponse:
+    releases = list_all_releases(db)
+    return ReleaseAdminListResponse(
+        items=[ReleaseAdminResponse.model_validate(release) for release in releases],
+        total=len(releases),
+        next_versions=suggest_next_versions(db),
+    )
+
+
+@router.post("/releases", response_model=ReleaseAdminResponse, status_code=status.HTTP_201_CREATED)
+def admin_create_release(
+    body: ReleaseCreateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> ReleaseAdminResponse:
+    try:
+        release = create_release(
+            db,
+            version=body.version,
+            title=body.title,
+            body=body.body,
+            released_at=body.released_at,
+            is_published=body.is_published,
+        )
+    except ReleaseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return ReleaseAdminResponse.model_validate(release)
+
+
+@router.put("/releases/{release_id}", response_model=ReleaseAdminResponse)
+def admin_update_release(
+    release_id: UUID,
+    body: ReleaseUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> ReleaseAdminResponse:
+    try:
+        release = update_release(
+            db,
+            release_id,
+            version=body.version,
+            title=body.title,
+            body=body.body,
+            released_at=body.released_at,
+            is_published=body.is_published,
+        )
+    except ReleaseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return ReleaseAdminResponse.model_validate(release)
+
+
+@router.delete("/releases/{release_id}", response_model=AbuseMessageResponse)
+def admin_delete_release(
+    release_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AbuseMessageResponse:
+    try:
+        delete_release(db, release_id)
+    except ReleaseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return AbuseMessageResponse(message="release_deleted")
+
+
+@router.get("/backlog/cards", response_model=BacklogCardAdminListResponse)
+def admin_list_backlog_cards(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> BacklogCardAdminListResponse:
+    items = list_cards_admin(db)
+    return BacklogCardAdminListResponse(items=items, total=len(items))
+
+
+@router.get("/backlog/cards/{card_id}/votes", response_model=BacklogVoteAdminListResponse)
+def admin_list_backlog_votes(
+    card_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> BacklogVoteAdminListResponse:
+    try:
+        return list_card_votes_admin(db, card_id)
+    except BacklogError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.patch("/backlog/cards/{card_id}", response_model=BacklogCardAdminResponse)
+def admin_update_backlog_card(
+    card_id: UUID,
+    body: BacklogCardUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    admin_user: Annotated[User, Depends(get_current_admin_user)],
+) -> BacklogCardAdminResponse:
+    # Админ правит любое поле карточки, включая статус (модерация).
+    try:
+        return update_card_admin(
+            db,
+            card_id,
+            editor=admin_user,
+            type_=body.type,
+            category=body.category,
+            title=body.title,
+            description=body.description,
+            is_anonymous=body.is_anonymous,
+            status=body.status,
+        )
+    except BacklogError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.delete("/backlog/cards/{card_id}", response_model=AbuseMessageResponse)
+def admin_delete_backlog_card(
+    card_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AbuseMessageResponse:
+    try:
+        delete_backlog_card(db, card_id)
+    except BacklogError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return AbuseMessageResponse(message="backlog_card_deleted")
+
+
+@router.delete("/backlog/comments/{comment_id}", response_model=AbuseMessageResponse)
+def admin_delete_backlog_comment(
+    comment_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AbuseMessageResponse:
+    try:
+        delete_backlog_comment(db, comment_id)
+    except BacklogError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return AbuseMessageResponse(message="backlog_comment_deleted")

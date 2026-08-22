@@ -19,7 +19,10 @@ from app.models import (
 from app.platform_adapters.canonical import CanonicalEventSummary
 from app.s95.api_client import S95ApiActivityRef, fetch_activity
 from app.s95.parsers.api_protocol import ParsedApiProtocol, parse_s95_activity
-from app.services.gender_position_service import recalculate_event_gender_positions
+from app.services.gender_position_service import (
+    recalculate_event_gender_positions,
+    resolve_participant_gender,
+)
 from app.sync import upsert
 
 
@@ -109,6 +112,11 @@ def _store_athlete_codes(db: Session, platform: Platform, parsed: ParsedApiProto
         existing.update(codes)
         extra["platform_codes"] = existing
         row.profile_extra = extra
+        # У s95 пол приезжает только здесь (в протоколе категории нет), а
+        # participants.gender должен быть заполнен — на нём держатся агрегаты.
+        gender = resolve_participant_gender(platform.code, row.age_category, extra)
+        if gender is not None and row.gender != gender:
+            row.gender = gender
     db.flush()
 
 

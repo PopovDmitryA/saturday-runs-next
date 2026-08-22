@@ -79,23 +79,28 @@ def test_enqueue_dedupes_by_external_id(db_session: Session) -> None:
 
 
 def test_preview_enqueues_on_cooldown(db_session: Session, monkeypatch) -> None:
-    from app.platform_adapters.registry import get_adapter
-
     platform = db_session.query(Platform).filter(Platform.code == "parkrun").one()
     platform.is_active = True
     user = _sample_user(db_session)
 
-    def _raise_cooldown(_profile_url: str):
+    def _raise_cooldown(_db, _platform_code, _profile_url):
         raise ParkrunBanDetected("parkrun fetch in cooldown until 1780445000")
 
-    monkeypatch.setattr(get_adapter("parkrun"), "fetch_profile_preview", _raise_cooldown)
+    # Подменять надо именно fetch_live_preview_bundle: при переданном user
+    # preview_profile_link уходит в persist_live_profile_preview и до
+    # adapter.fetch_profile_preview не доходит. С подменой адаптера тест
+    # уходил в живой parkrun через Playwright и висел вечно.
+    monkeypatch.setattr(
+        "app.services.profile_preview_persist.fetch_live_preview_bundle",
+        _raise_cooldown,
+    )
 
     try:
         preview_profile_link(db_session, "parkrun", "3197430", user=user)
         raise AssertionError("expected ProfileLinkingError")
     except ProfileLinkingError as exc:
         assert exc.status_code == 503
-        assert "очередь ожидания" in exc.message
+        assert "добавлена в очередь" in exc.message
 
     pending = list_pending_rows(db_session, platform_code="parkrun")
     assert len(pending) == 1
@@ -360,8 +365,15 @@ def test_describe_processed_profile_returns_url_and_name(db_session: Session) ->
     )
     db_session.commit()
 
+    # Формат «успех: Имя — N заб., M волонт. → ссылка» уходит в статусную
+    # строку демона (parkrun_queue_daemon.session.show_status). Объём профиля
+    # добавлен в 62b386c: по нему видно, почему долгожитель обрабатывался
+    # дольше новичка. У свежесозданного участника обе цифры нулевые.
     description = describe_processed_profile(db_session, "parkrun", "5003845")
-    assert description == "→ https://www.parkrun.org.uk/parkrunner/5003845/  Иван ИВАНОВ"
+    assert description == (
+        "успех: Иван ИВАНОВ — 0 заб., 0 волонт. "
+        "→ https://www.parkrun.org.uk/parkrunner/5003845/"
+    )
 
 
 def test_describe_processed_profile_none_for_unknown_or_missing_id(
