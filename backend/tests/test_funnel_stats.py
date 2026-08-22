@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models import AbEvent, User
 from app.services.ab_service import record_ab_event
-from app.services.page_analytics_service import build_funnel_stats, local_today
+from app.services.page_analytics_service import build_funnel_stats
 
 
 def _visitor(db_session: Session, key: str, *, viewer: User | None = None, steps=()) -> None:
@@ -24,6 +25,24 @@ def _visitor(db_session: Session, key: str, *, viewer: User | None = None, steps
             path="/",
             viewer=viewer if event_type == "auth_done" else None,
         )
+
+
+def _move_to_day(db_session: Session, day: date, keys: list[str]) -> None:
+    """Переносит события ЭТИХ посетителей в свой день теста.
+
+    Сводка считается по всей таблице за период, а тесты в одном прогоне пишут в
+    общую БД и не откатываются. Свой день изолирует тест от соседей; фильтр по
+    ключам обязателен — иначе в него уехали бы и события тестов, которые день
+    себе не назначали.
+    """
+    db_session.execute(
+        text(
+            "UPDATE ab_events SET ts = :moment "
+            "WHERE experiment = 'funnel' AND visitor_key = ANY(:keys)"
+        ),
+        {"moment": datetime.combine(day, time(12, 0), tzinfo=timezone.utc), "keys": keys},
+    )
+    db_session.commit()
 
 
 def _make_user(db_session: Session, *, age_days: float = 0.0) -> User:
@@ -102,8 +121,9 @@ def test_build_funnel_counts_people_not_events(db_session: Session) -> None:
         key,
         steps=[("home_view", ""), ("home_view", ""), ("cta_click", "hero"), ("cta_click", "bottom")],
     )
-    today = local_today()
-    rows = build_funnel_stats(db_session, start=today - timedelta(days=1), end=today + timedelta(days=1))
+    day = date(2026, 1, 5)
+    _move_to_day(db_session, day, [key])
+    rows = build_funnel_stats(db_session, start=day, end=day)
     by_step = {row["step"]: row for row in rows}
 
     assert by_step["Открыли главную"]["visitors"] == 1
@@ -120,8 +140,9 @@ def test_build_funnel_ignores_visitors_without_home_view(db_session: Session) ->
     _visitor(db_session, "a:home-only", steps=[("home_view", "")])
     _visitor(db_session, "a:direct-login", steps=[("auth_start", "vk")])
 
-    today = local_today()
-    rows = build_funnel_stats(db_session, start=today - timedelta(days=1), end=today + timedelta(days=1))
+    day = date(2026, 1, 6)
+    _move_to_day(db_session, day, ["a:home-only", "a:direct-login"])
+    rows = build_funnel_stats(db_session, start=day, end=day)
     by_step = {row["step"]: row for row in rows}
 
     assert by_step["Открыли главную"]["visitors"] == 1
@@ -135,8 +156,9 @@ def test_build_funnel_percentages(db_session: Session) -> None:
     for i in range(2):
         _visitor(db_session, f"a:pct-{i}", steps=[("cta_click", "hero")])
 
-    today = local_today()
-    rows = build_funnel_stats(db_session, start=today - timedelta(days=1), end=today + timedelta(days=1))
+    day = date(2026, 1, 7)
+    _move_to_day(db_session, day, [f"a:pct-{i}" for i in range(4)])
+    rows = build_funnel_stats(db_session, start=day, end=day)
     by_step = {row["step"]: row for row in rows}
 
     assert by_step["Открыли главную"]["pct_of_start"] == 100.0
@@ -157,8 +179,9 @@ def test_build_funnel_returning_row_has_no_percentages(db_session: Session) -> N
         event_type="auth_done",
         viewer=_make_user(db_session, age_days=30),
     )
-    today = local_today()
-    rows = build_funnel_stats(db_session, start=today - timedelta(days=1), end=today + timedelta(days=1))
+    day = date(2026, 1, 8)
+    _move_to_day(db_session, day, ["a:ret"])
+    rows = build_funnel_stats(db_session, start=day, end=day)
     returning = next(row for row in rows if row["step"].startswith("— из них"))
 
     assert returning["visitors"] == 1

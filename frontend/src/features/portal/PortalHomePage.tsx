@@ -12,10 +12,12 @@ import { PLATFORM_CHART_META, PortalTrendChart, type TrendPoint } from "./Portal
 import { PortalTeaserCard } from "./PortalTeaser";
 import {
   fetchPortalHome,
+  fetchPortalMe,
   PortalHomeError,
   type PortalAttendanceTopRow,
   type PortalFastestRow,
   type PortalHomeResponse,
+  type PortalMe,
 } from "./portalTypes";
 import "./portal.css";
 import { formatInt } from "../../lib/format";
@@ -282,6 +284,9 @@ export function PortalHomePage() {
 
   const [data, setData] = useState<PortalHomeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Личная сводка для залогиненного (Т4). Грузится отдельным запросом ПОСЛЕ
+  // главной: анонимный путь — самый массовый — ждать её не должен.
+  const [me, setMe] = useState<PortalMe | null>(null);
   // По умолчанию «Последний год» — его цифры можно примерить на себя,
   // вечные итоги — абстракция.
   const [period, setPeriod] = useState<"all" | "year">("year");
@@ -322,6 +327,28 @@ export function PortalHomePage() {
       }
     };
   }, []);
+
+  // Личная сводка — только залогиненному и только когда сессия уже известна.
+  // Молча гасим ошибку: не загрузилось — человек просто увидит обычную главную,
+  // ронять её из-за необязательного блока нельзя.
+  const viewerId = optionalUser?.id ?? null;
+  useEffect(() => {
+    if (viewerId === null) {
+      setMe(null);
+      return;
+    }
+    let cancelled = false;
+    fetchPortalMe()
+      .then((response) => {
+        if (!cancelled) {
+          setMe(response);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerId]);
 
   const weekLabel = (iso: string) =>
     new Date(`${iso}T00:00:00`).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
@@ -817,32 +844,84 @@ export function PortalHomePage() {
 
         {data && (
           <>
-            <section className="portal-hero">
-              <p className="portal-eyebrow">Суббота · утро · парк · 5 км</p>
-              {/* Заголовок про посетителя, а не про сайт. */}
-              <h1>Вся ваша беговая история — от первого старта до прошлой субботы</h1>
-              <p className="portal-hero-lead">
-                5 вёрст, S95, parkrun и RunPark: рекорды, серии суббот, карта визитов и встречи —
-                уже посчитаны и ждут вас.
-              </p>
-              {/* CTA в верхней трети: главный источник регистраций по итогам АБ-теста. */}
-              <div className="portal-hero-cta">
-                <a
-                  className="btn primary"
-                  href={ctaHref}
-                  onClick={() => trackCtaClick("hero")}
-                >
-                  {optionalUser != null ? "Открыть кабинет" : "Найти себя в статистике"}
-                </a>
-                {data.registered_parks > 0 && (
-                  <span className="portal-hero-proof">
-                    Участники из {formatInt(data.registered_parks)}{" "}
-                    {plural(data.registered_parks, "парка", "парков", "парков")} уже нашли здесь
-                    свою статистику
-                  </span>
+            {/* Залогиненному главная показывает не приглашение найти себя (он уже
+                нашёл), а его собственную последнюю субботу — см. Т4 и
+                portal_me_service. Анонимный экран не тронут. */}
+            {optionalUser != null ? (
+              <section className="portal-hero portal-hero-personal">
+                {me?.linked === false ? (
+                  <>
+                    <p className="portal-eyebrow">Остался один шаг</p>
+                    <h1>Аккаунт есть — а статистики пока нет</h1>
+                    <p className="portal-hero-lead">
+                      Укажите свой ID в 5 вёрстах, S95, parkrun или RunPark — и мы посчитаем
+                      рекорды, серии суббот, карту визитов и встречи.
+                    </p>
+                  </>
+                ) : me?.last_run ? (
+                  <>
+                    <p className="portal-eyebrow">Ваша последняя пробежка</p>
+                    <h1>
+                      <span className="portal-hero-time num">
+                        {me.last_run.finish_time_display}
+                      </span>
+                      <span className="portal-hero-place">{me.last_run.location_name}</span>
+                    </h1>
+                    <p className="portal-hero-lead">
+                      {formatDateShort(me.last_run.event_date)}
+                      {(me.last_run.is_global_pr || me.last_run.is_pr) && (
+                        <span className="portal-hero-pr">
+                          {me.last_run.is_global_pr ? "личный рекорд" : "рекорд платформы"}
+                        </span>
+                      )}
+                      {me.saturday_streak > 1 && (
+                        <span className="portal-hero-streak">
+                          {me.saturday_streak}{" "}
+                          {plural(me.saturday_streak, "суббота", "субботы", "суббот")} подряд
+                        </span>
+                      )}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="portal-eyebrow">Суббота · утро · парк · 5 км</p>
+                    <h1>С возвращением</h1>
+                    <p className="portal-hero-lead">
+                      Рекорды, серии суббот, карта визитов и встречи — всё уже посчитано и ждёт
+                      в кабинете.
+                    </p>
+                  </>
                 )}
-              </div>
-            </section>
+                <div className="portal-hero-cta">
+                  <a className="btn primary" href={ctaHref} onClick={() => trackCtaClick("hero")}>
+                    {me?.linked === false ? "Привязать профиль" : "Открыть кабинет"}
+                  </a>
+                </div>
+              </section>
+            ) : (
+              <section className="portal-hero">
+                <p className="portal-eyebrow">Суббота · утро · парк · 5 км</p>
+                {/* Заголовок про посетителя, а не про сайт. */}
+                <h1>Вся ваша беговая история — от первого старта до прошлой субботы</h1>
+                <p className="portal-hero-lead">
+                  5 вёрст, S95, parkrun и RunPark: рекорды, серии суббот, карта визитов и встречи —
+                  уже посчитаны и ждут вас.
+                </p>
+                {/* CTA в верхней трети: главный источник регистраций по итогам АБ-теста. */}
+                <div className="portal-hero-cta">
+                  <a className="btn primary" href={ctaHref} onClick={() => trackCtaClick("hero")}>
+                    Найти себя в статистике
+                  </a>
+                  {data.registered_parks > 0 && (
+                    <span className="portal-hero-proof">
+                      Участники из {formatInt(data.registered_parks)}{" "}
+                      {plural(data.registered_parks, "парка", "парков", "парков")} уже нашли здесь
+                      свою статистику
+                    </span>
+                  )}
+                </div>
+              </section>
+            )}
 
             {weekSection}
             {scopeSection}

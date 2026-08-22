@@ -2806,6 +2806,47 @@
   color: var(--text-muted);
 }
 
+/* ── Личная шапка залогиненного (Т4) ────────────────────────────────────── */
+
+/* Заголовок здесь — конкретный результат, а не слоган: он короче рекламного и
+   при 22ch из общего правила рвался бы после времени. */
+.portal-hero-personal h1 {
+  max-width: 30ch;
+}
+
+.portal-hero-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-teal-text);
+}
+
+/* «24:31 · Кузьминки» вместо «24:31 в локации Кузьминки»: название локации в
+   русском требует предложного падежа, а склонять полторы тысячи названий
+   нечем. Точка-разделитель читается как строка результата в протоколе. */
+.portal-hero-place::before {
+  content: " · ";
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+/* Рекорд и серия — приписки к дате в одну строку. Точка-разделитель рисуется
+   псевдоэлементом, чтобы в разметке не висели ручные «·» между условными
+   блоками (без рекорда или без серии строка осталась бы с висячей точкой). */
+.portal-hero-pr,
+.portal-hero-streak {
+  white-space: nowrap;
+}
+
+.portal-hero-pr::before,
+.portal-hero-streak::before {
+  content: " · ";
+  color: var(--text-faint);
+}
+
+.portal-hero-pr {
+  color: var(--accent-green-text);
+  font-weight: 600;
+}
+
 .portal-teaser {
   display: flex;
   flex-direction: column;

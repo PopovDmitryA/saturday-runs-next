@@ -208,6 +208,31 @@ export async function fetchPortalHome(): Promise<PortalHomeResponse> {
   return (await response.json()) as PortalHomeResponse;
 }
 
+export type PortalMeLastRun = {
+  event_date: string;
+  location_name: string;
+  platform_code: string;
+  finish_time_display: string;
+  is_pr: boolean;
+  is_global_pr: boolean;
+};
+
+/** Личная плашка главной. linked=false — привязанных профилей ещё нет. */
+export type PortalMe = {
+  linked: boolean;
+  last_run: PortalMeLastRun | null;
+  saturday_streak: number;
+};
+
+/** Личная сводка для главной; 401 — не залогинен, это нормальный исход. */
+export async function fetchPortalMe(): Promise<PortalMe> {
+  const response = await fetch("/api/portal/me", { credentials: "same-origin" });
+  if (!response.ok) {
+    throw new PortalHomeError(response.status);
+  }
+  return (await response.json()) as PortalMe;
+}
+
 /** Тизер Т10: предпросмотр карточки по ID системы. 404 — не нашли. */
 export async function fetchPortalTeaser(platform: string, athleteId: string): Promise<PortalTeaser> {
   const params = new URLSearchParams({ platform, athlete_id: athleteId });
