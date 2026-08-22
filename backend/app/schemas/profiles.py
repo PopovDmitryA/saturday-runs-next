@@ -76,3 +76,30 @@ class ProfileUnlinkResponse(BaseModel):
     platform_code: str
     message: str = "unlinked"
     cancelled_sync_jobs: int = 0
+
+
+class ParticipantSearchResultResponse(BaseModel):
+    participant_id: UUID
+    platform_code: str
+    platform_name: str
+    display_name: str
+    club_name: str | None = None
+    age_category: str | None = None
+    profile_url: str | None = None
+    total_runs: int = 0
+    total_volunteering: int = 0
+    last_run_date: date | None = None
+    home_location_name: str | None = None
+    home_location_city: str | None = None
+    already_linked: bool = False
+    linked_to_me: bool = False
+
+
+class ParticipantSearchResponse(BaseModel):
+    query: str
+    results: list[ParticipantSearchResultResponse]
+    truncated: bool = False
+
+
+class LinkByParticipantRequest(BaseModel):
+    participant_id: UUID

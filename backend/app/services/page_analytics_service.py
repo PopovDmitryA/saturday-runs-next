@@ -46,6 +46,7 @@ _STATIC_PAGE_TYPES = {
     "/blog": "portal_blog",
     "/login": "portal_login",
     "/new/map-lab": "portal_map_lab",
+    "/welcome": "welcome",
     "/dashboard": "dashboard",
     "/profiles": "dashboard",  # тот же компонент, что и /dashboard
     "/runs": "runs",

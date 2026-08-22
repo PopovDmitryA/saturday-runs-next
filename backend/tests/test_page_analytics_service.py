@@ -89,6 +89,7 @@ APP_ROUTES = [
     "/demo/volunteering",
     "/demo/maps",
     "/demo/history",
+    "/welcome",
     "/dashboard",
     "/profiles",
     "/runs",

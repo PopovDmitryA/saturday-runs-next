@@ -15,6 +15,7 @@ import { AchievementsPage } from "./features/achievements/AchievementsPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
 import { DemoDashboardPage } from "./features/demo/DemoDashboardPage";
+import { OnboardingPage } from "./features/onboarding/OnboardingPage";
 import { PortalAboutPage } from "./features/portal/PortalAboutPage";
 import { PortalBlogPage } from "./features/portal/PortalBlogPage";
 import { PortalHomePage } from "./features/portal/PortalHomePage";
@@ -104,6 +105,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/demo/volunteering": () => <DemoVolunteeringPage />,
   "/demo/maps": () => <DemoMapsPage />,
   "/demo/history": () => <DemoHistoryPage />,
+  "/welcome": () => <OnboardingPage />,
   "/dashboard": () => <DashboardPage />,
   "/profiles": () => <DashboardPage />,
   "/runs": () => <RunsPage />,

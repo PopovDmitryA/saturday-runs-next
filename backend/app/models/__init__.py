@@ -766,6 +766,9 @@ class User(Base):
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_login_auto_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Онбординг (/welcome) пройден или пропущен: пока NULL и нет привязок,
+    # после входа пользователя ведём на /welcome, а не в кабинет.
+    onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     auto_sync_by_platform: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,

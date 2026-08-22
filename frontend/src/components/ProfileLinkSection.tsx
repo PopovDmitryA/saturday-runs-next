@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConfirmModal } from "./ConfirmModal";
+import { ParticipantNameSearch } from "./ParticipantNameSearch";
 import { Snackbar } from "./Snackbar";
 import {
   ApiError,
@@ -463,9 +464,10 @@ function PlatformSpoiler({
 type ProfileLinkSectionProps = {
   byPlatform?: Record<string, { runs: number; volunteering: number }>;
   onLinksChange?: () => void;
+  onLinksLoaded?: (links: PlatformLink[]) => void;
 };
 
-export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLinkSectionProps) {
+export function ProfileLinkSection({ byPlatform = {}, onLinksChange, onLinksLoaded }: ProfileLinkSectionProps) {
   const [links, setLinks] = useState<PlatformLink[]>([]);
   const [loadingLinks, setLoadingLinks] = useState(true);
   const [forms, setForms] = useState<Record<string, PlatformFormState>>(() =>
@@ -486,6 +488,10 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLi
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const hasLoadedLinksRef = useRef(false);
+  // Колбэк родителя держим в ref, чтобы инлайн-функция в пропсах не
+  // пересоздавала loadLinks (и не перезапускала эффекты) на каждом рендере.
+  const onLinksLoadedRef = useRef(onLinksLoaded);
+  onLinksLoadedRef.current = onLinksLoaded;
   const didScrollToProfilesRef = useRef(false);
   const previewAbortControllersRef = useRef<Partial<Record<string, AbortController>>>({});
   const previewBlockRefs = useRef<Partial<Record<string, HTMLDivElement | null>>>({});
@@ -536,6 +542,7 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLi
     try {
       const data = await listProfileLinks();
       setLinks(data);
+      onLinksLoadedRef.current?.(data);
       setPendingSyncPlatforms((prev) => {
         const next = new Set(prev);
         for (const link of data) {
@@ -765,6 +772,22 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange }: ProfileLi
         <summary className="profile-spoilers-root-summary">Профили</summary>
         <div className="profile-spoilers-inner">
           {loadingLinks && links.length === 0 && <p className="muted">Загрузка…</p>}
+
+          {(!loadingLinks || links.length > 0) && links.length < PLATFORMS.length && (
+            <div className="profile-name-search-block">
+              <p className="profile-name-search-title">Найти себя по имени</p>
+              <p className="muted">
+                Поиск сразу по всем системам — привязка в один клик, без ссылок и штрихкодов.
+              </p>
+              <ParticipantNameSearch
+                linkedPlatformCodes={new Set(links.map((link) => link.platform_code))}
+                onLinked={() => {
+                  void loadLinks();
+                  onLinksChange?.();
+                }}
+              />
+            </div>
+          )}
 
           {(!loadingLinks || links.length > 0) &&
             PLATFORMS.map((config) => {

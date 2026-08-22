@@ -404,7 +404,9 @@ def auth_callback(
     except AuthError as exc:
         raise _handle_auth_error(exc) from exc
 
-    redirect_url = f"{settings.app_base_url.rstrip('/')}/dashboard"
+    from app.services.onboarding_service import post_login_redirect_target
+
+    redirect_url = f"{settings.app_base_url.rstrip('/')}/{post_login_redirect_target(db, user_id)}"
     response = RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
     _set_session_cookie(response, settings, signed_session)
     return response
@@ -424,6 +426,17 @@ def auth_me(
     if signed_session:
         _set_session_cookie(response, settings, signed_session)
     return _user_payload(db, user, settings)
+
+
+@router.post("/onboarding/complete", response_model=MessageResponse)
+def onboarding_complete(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> MessageResponse:
+    from app.services.onboarding_service import complete_onboarding
+
+    complete_onboarding(db, user)
+    return MessageResponse(message="onboarding_completed")
 
 
 @router.patch("/me", response_model=UserResponse)

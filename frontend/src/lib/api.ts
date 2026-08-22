@@ -600,6 +600,45 @@ export function unlinkProfile(platformCode: string) {
   );
 }
 
+export type ParticipantSearchResult = {
+  participant_id: string;
+  platform_code: string;
+  platform_name: string;
+  display_name: string;
+  club_name: string | null;
+  age_category: string | null;
+  profile_url: string | null;
+  total_runs: number;
+  total_volunteering: number;
+  last_run_date: string | null;
+  home_location_name: string | null;
+  home_location_city: string | null;
+  already_linked: boolean;
+  linked_to_me: boolean;
+};
+
+export type ParticipantSearchResponse = {
+  query: string;
+  results: ParticipantSearchResult[];
+  truncated: boolean;
+};
+
+export function searchParticipants(query: string, signal?: AbortSignal) {
+  const params = new URLSearchParams({ q: query });
+  return apiFetch<ParticipantSearchResponse>(`/profiles/search?${params.toString()}`, { signal });
+}
+
+export function linkParticipant(participantId: string) {
+  return apiFetch<{ link: PlatformLink; message: string }>("/profiles/link-by-participant", {
+    method: "POST",
+    body: JSON.stringify({ participant_id: participantId }),
+  });
+}
+
+export function completeOnboarding() {
+  return apiFetch<{ message: string }>("/auth/onboarding/complete", { method: "POST" });
+}
+
 export function getDashboard() {
   return apiFetch<DashboardResponse>("/dashboard");
 }

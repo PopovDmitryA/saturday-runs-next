@@ -47,6 +47,7 @@ function DashboardContent({ isAdmin }: { isAdmin: boolean }) {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [linksCount, setLinksCount] = useState<number | null>(null);
   const hasLoadedRef = useRef(false);
 
   const load = useCallback(async (options?: { background?: boolean }) => {
@@ -82,6 +83,18 @@ function DashboardContent({ isAdmin }: { isAdmin: boolean }) {
   return (
     <AppShell title="Личный кабинет">
       {loading && !data && <p className="muted">Загрузка…</p>}
+
+      {linksCount === 0 && (
+        <div className="card onboarding-dashboard-banner">
+          <p className="onboarding-dashboard-banner-title">Начните с привязки профилей</p>
+          <p className="muted">
+            Найдите себя по имени сразу во всех системах — и вся статистика пробежек появится здесь.
+          </p>
+          <a className="btn primary" href="/welcome">
+            Найти себя по имени
+          </a>
+        </div>
+      )}
 
       {error && (
         <div className="card error">
@@ -144,6 +157,7 @@ function DashboardContent({ isAdmin }: { isAdmin: boolean }) {
       <ProfileLinkSection
         byPlatform={byPlatform}
         onLinksChange={() => void load({ background: true })}
+        onLinksLoaded={(links) => setLinksCount(links.length)}
       />
     </AppShell>
   );
