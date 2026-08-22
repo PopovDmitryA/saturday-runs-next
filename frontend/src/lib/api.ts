@@ -316,6 +316,9 @@ export type BestResultItem = {
   event_date: string;
   location_name: string;
   location_city: string | null;
+  // Слаг площадки и тестовый старт — чтобы дата вела на наш протокол.
+  location_slug?: string | null;
+  is_test_event?: boolean;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   event_url?: string | null;
@@ -326,6 +329,8 @@ export type PersonalRecordItem = {
   event_date: string;
   location_name: string;
   location_city: string | null;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   is_pr?: boolean;
@@ -343,6 +348,8 @@ export type WinItem = {
   event_number: number | null;
   location_name: string;
   location_city: string | null;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   position: number | null;
@@ -827,6 +834,8 @@ export type OnThisDayRun = {
   event_date: string;
   location_name: string;
   location_city: string | null;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   platform_code: string;
   finish_time_display: string | null;
   finish_time_sec: number | null;
@@ -1113,6 +1122,8 @@ export type MyHistoryMilestone = {
   platform_code: string;
   location_name: string;
   location_city: string | null;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   position: number | null;
@@ -1859,6 +1870,8 @@ export type CoRunnerMeetingItem = {
   event_date: string;
   platform_code: string;
   location_name: string;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   my_time_sec: number | null;
   their_time_sec: number | null;
   my_position: number | null;

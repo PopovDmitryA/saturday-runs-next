@@ -273,7 +273,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
                   label="№"
                   headerTitle={
                     showOverallNumber
-                      ? "Номер события в системе; в скобках — сквозной номер сбора локации по всем системам"
+                      ? "Номер события в системе; в скобках — сквозной номер старта локации по всем системам"
                       : "Номер события в системе"
                   }
                   filterable={false}
@@ -343,7 +343,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
                       <span className="loc-events-number">
                         {row.event_number ?? "—"}
                         {showOverallNumber && (
-                          <StatHintTooltip text="Сквозной номер старта — какой это по счёту сбор локации за всю историю, по всем системам вместе">
+                          <StatHintTooltip text="Сквозной номер старта — какой это по счёту старт локации за всю историю, по всем системам вместе">
                             <span className="muted">({row.overall_number})</span>
                           </StatHintTooltip>
                         )}

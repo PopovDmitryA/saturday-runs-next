@@ -417,7 +417,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                     >
                       <td className="td-date">
                         <ActivityDateCell
-                          date={<ActivityDateLink date={run.event_date} url={run.event_url} />}
+                          date={<ActivityDateLink date={run.event_date} target={run} url={run.event_url} />}
                           badges={
                             <>
                               {run.is_test_event && <span className="badge">тест</span>}

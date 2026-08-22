@@ -67,6 +67,87 @@ function stripHours(display: string | null): string {
   return display.replace(/^00:/, "");
 }
 
+/**
+ * Сколько человек, по нашим данным, финишировало: заявленное число из сводки
+ * либо последняя занятая позиция — что больше.
+ */
+function protocolKnownTotal(data: LocationProtocol): number {
+  return Math.max(
+    data.declared_finishers ?? 0,
+    ...data.results.map((row) => row.position ?? 0),
+  );
+}
+
+/** Дыра в нумерации — строка «Неизвестный» с прочерками во всех колонках. */
+function unknownProtocolRow(position: number): ProtocolResult {
+  return {
+    position,
+    name: "Неизвестный",
+    external_user_id: null,
+    profile_url: null,
+    serial_id: null,
+    gender: null,
+    gender_position: null,
+    gender_total: null,
+    age_category: null,
+    age_group: null,
+    age_group_position: null,
+    age_group_total: null,
+    age_grade: null,
+    finish_time_sec: null,
+    finish_time_display: null,
+    pace_display: null,
+    club_name: null,
+    status: null,
+    is_unknown: true,
+    is_pr: false,
+    is_global_pr: false,
+    is_location_pr: false,
+    is_first_run: false,
+    is_first_run_at_location: false,
+    achievement_labels: [],
+    history_rank: null,
+    history_total: null,
+    run_number: null,
+    run_number_all_systems: false,
+    age_group_history_rank: null,
+    age_group_history_total: null,
+    is_age_group_record: false,
+    is_me: false,
+  };
+}
+
+/**
+ * Пропущенные позиции протокола.
+ *
+ * У parkrun протокол собран из профилей участников, и строка без штрихкода в
+ * нём просто отсутствует: за 5-м местом шло 8-е, будто двоих не было вовсе.
+ * Дорисовываем дыры «неизвестными», чтобы нумерация шла подряд.
+ *
+ * Не трогаем протоколы, собранные по кусочкам: у зарубежных паркранов в базе
+ * лежат только наши участники, и «дыра» там — весь забег. Порог тот же, что у
+ * плашки о неполном протоколе (mostlyMissing).
+ */
+function missingProtocolRows(data: LocationProtocol): ProtocolResult[] {
+  const knownTotal = protocolKnownTotal(data);
+  if (knownTotal === 0 || data.results.length < knownTotal * 0.8) {
+    return [];
+  }
+  const taken = new Set(
+    data.results.map((row) => row.position).filter((position): position is number => position !== null),
+  );
+  // Только дыры внутри нумерации: хвост до заявленного числа финишёров не
+  // дорисовываем — там мы не знаем, было ли место занято вообще.
+  const lastPosition = Math.max(0, ...taken);
+  const rows: ProtocolResult[] = [];
+  for (let position = 1; position <= lastPosition; position += 1) {
+    if (!taken.has(position)) {
+      rows.push(unknownProtocolRow(position));
+    }
+  }
+  return rows;
+}
+
 function sortValue(row: ProtocolResult, key: SortKey): number | null {
   switch (key) {
     case "position":
@@ -304,12 +385,28 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
     return roleFilter ? all.filter((person) => person.roles.includes(roleFilter)) : all;
   }, [data, roleFilter]);
 
+  // Дорисованные «неизвестные» — только в чистом виде протокола, отсортированном
+  // по местам: в отфильтрованной или пересортированной таблице сплошная
+  // нумерация смысла не имеет, а прочерки сбились бы в кучу в конце.
+  const filled = useMemo(() => {
+    if (!data) {
+      return [];
+    }
+    const noFilters =
+      genderFilter === "all" && !ageFilter && !nameFilter.trim() && !clubFilter;
+    if (!noFilters || sort.key !== "position") {
+      return data.results;
+    }
+    const missing = missingProtocolRows(data);
+    return missing.length > 0 ? [...data.results, ...missing] : data.results;
+  }, [data, genderFilter, ageFilter, nameFilter, clubFilter, sort.key]);
+
   const rows = useMemo(() => {
     if (!data) {
       return [];
     }
     const needle = nameFilter.trim().toLowerCase();
-    const filtered = data.results.filter((row) => {
+    const filtered = filled.filter((row) => {
       if (genderFilter !== "all" && row.gender !== genderFilter) {
         return false;
       }
@@ -341,7 +438,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
       return sort.asc ? compare : -compare;
     });
     return filtered;
-  }, [data, genderFilter, ageFilter, nameFilter, clubFilter, sort]);
+  }, [data, filled, genderFilter, ageFilter, nameFilter, clubFilter, sort]);
 
   const toggleClubFilter = (club: string) => {
     setClubFilter((current) => (current === club ? null : club));
@@ -422,10 +519,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
   // Лучшие времена этого старта в секундах — для дельт со вчерашними лучшими.
   const bestMaleSec = timeToSec(summary.best_male_time_display);
   const bestFemaleSec = timeToSec(summary.best_female_time_display);
-  const knownTotal = Math.max(
-    data.declared_finishers ?? 0,
-    ...data.results.map((row) => row.position ?? 0),
-  );
+  const knownTotal = protocolKnownTotal(data);
   const mostlyMissing = knownTotal > 0 && data.results.length < knownTotal * 0.8;
 
   return (
@@ -454,8 +548,8 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           <PlatformBadge code={data.platform_code} />{" "}
           <span>{formatDate(data.event_date)}</span>
           {data.overall_number !== null && (
-            <StatHintTooltip text="Сквозной номер: какой это по счёту сбор локации за всю историю, по всем системам вместе">
-              <span className="muted"> · {data.overall_number}-й сбор площадки</span>
+            <StatHintTooltip text="Сквозной номер: какой это по счёту старт локации за всю историю, по всем системам вместе">
+              <span className="muted"> · {data.overall_number}-й старт площадки</span>
             </StatHintTooltip>
           )}
         </p>

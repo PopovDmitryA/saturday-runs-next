@@ -35,6 +35,7 @@ from app.platform_adapters.canonical import (
 )
 from app.services.gender_position_service import resolve_participant_gender
 from app.services.location_catalog_service import backfill_city_from_catalog, backfill_region_from_catalog
+from app.services.location_freshness import mark_location_results_changed
 
 PARSER_VERSION = "0.3.2"
 logger = logging.getLogger(__name__)
@@ -336,6 +337,7 @@ def upsert_event_summary(
             sync_status=SyncStatus.ok,
         )
         db.add(row)
+        _mark_summary_changed(db, platform, location, summary)
         db.flush()
         return row, True
 
@@ -366,8 +368,26 @@ def upsert_event_summary(
     row.fetched_at = now
     row.sync_status = SyncStatus.ok
     row.error_message = None
+    _mark_summary_changed(db, platform, location, summary)
     db.flush()
     return row, True
+
+
+def _mark_summary_changed(
+    db: Session,
+    platform: Platform,
+    location: Location,
+    summary: CanonicalEventSummary,
+) -> None:
+    """Сводка старта — уже повод обновить витрины: «Последний старт» на странице
+    площадки и «Результаты последней субботы» считаются по ней, полного
+    протокола можно ждать ещё часы."""
+    mark_location_results_changed(
+        db,
+        [location.id],
+        reason=f"сводка {platform.code}",
+        protocols=[(platform.code, summary.event_date)],
+    )
 
 
 def upsert_event_for_summary(
@@ -690,6 +710,16 @@ def upsert_run_results(
         recalculate_participants_first_run_flags(db, platform.code, touched_participant_ids)
         recalculate_participants_personal_records(db, platform.code, touched_participant_ids)
         recalculate_participants_cross_platform_personal_records(db, touched_participant_ids)
+    if upserted:
+        # Витрины площадки (страница, журнал, каталог, «последняя суббота»)
+        # держат снимок на 3 часа — иначе новая пробежка была бы видна в
+        # профиле и не видна на локации. Подрезка TTL — после коммита.
+        mark_location_results_changed(
+            db,
+            [event.location_id],
+            reason=f"результаты {platform.code}",
+            protocols=[(platform.code, event.event_date)],
+        )
     db.flush()
     return upserted
 
@@ -858,6 +888,13 @@ def upsert_volunteer_results(
                 row.role = _prefer_volunteer_role(row.role, role)
             row.fetched_at = now
             upserted += 1
+    if upserted:
+        mark_location_results_changed(
+            db,
+            [event.location_id],
+            reason=f"волонтёры {platform.code}",
+            protocols=[(platform.code, event.event_date)],
+        )
     db.flush()
     return upserted
 
@@ -881,6 +918,12 @@ def replace_event_volunteer_results(
             db.delete(row)
             deleted += 1
     if deleted:
+        mark_location_results_changed(
+            db,
+            [event.location_id],
+            reason=f"волонтёры {platform.code} (удаление)",
+            protocols=[(platform.code, event.event_date)],
+        )
         db.flush()
     return upserted
 
@@ -914,6 +957,12 @@ def replace_event_run_results(
             db.delete(row)
             deleted += 1
     if deleted:
+        mark_location_results_changed(
+            db,
+            [event.location_id],
+            reason=f"результаты {platform.code} (удаление)",
+            protocols=[(platform.code, event.event_date)],
+        )
         db.flush()
     return upserted
 

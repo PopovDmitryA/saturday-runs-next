@@ -11,6 +11,7 @@ import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
+import { ActivityDateLink } from "../../components/ActivityDateLink";
 
 function SiteProfileIcon() {
   return (
@@ -113,14 +114,7 @@ function meetingDiff(meeting: CoRunnerMeetingItem): { label: string; tone: strin
 }
 
 function MeetingDate({ meeting }: { meeting: CoRunnerMeetingItem }) {
-  if (meeting.event_url) {
-    return (
-      <a href={meeting.event_url} target="_blank" rel="noreferrer">
-        {formatDate(meeting.event_date)}
-      </a>
-    );
-  }
-  return <>{formatDate(meeting.event_date)}</>;
+  return <ActivityDateLink date={meeting.event_date} target={meeting} url={meeting.event_url} />;
 }
 
 function MeetingsDetail({ meetings }: { meetings: CoRunnerMeetingItem[] }) {

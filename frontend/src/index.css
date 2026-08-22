@@ -10662,6 +10662,37 @@ a.admin-system-chip:hover {
   min-width: 104rem;
 }
 
+/* «Результаты последней субботы» — та же таблица плюс колонка номера старта
+   (col-compact, 4.5rem). */
+.last-results-table {
+  min-width: 108.5rem;
+}
+
+/* Липнет не только номер, но и название: при горизонтальном скролле по одному
+   «№ 90» строку не опознать. Смещение второй колонки = ширина первой. */
+.table-sticky-first .last-results-table th:nth-child(2),
+.table-sticky-first .last-results-table td:nth-child(2) {
+  position: sticky;
+  left: 4.5rem;
+  background: var(--surface);
+  z-index: 2;
+}
+
+.table-sticky-first .last-results-table thead th:nth-child(2) {
+  z-index: 4;
+  background: var(--bg-muted);
+}
+
+.tshadow-left .table-sticky-first .last-results-table th:first-child,
+.tshadow-left .table-sticky-first .last-results-table td:first-child {
+  box-shadow: none;
+}
+
+.tshadow-left .table-sticky-first .last-results-table th:nth-child(2),
+.tshadow-left .table-sticky-first .last-results-table td:nth-child(2) {
+  box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+}
+
 /* В кратком виде колонки подбирает useAdaptiveColumns — ровно столько, сколько
    влезает в ширину блока, — и он же проставляет таблице inline min-width по
    сумме их ширин (inline перебивает min-width полного набора выше). Здесь
