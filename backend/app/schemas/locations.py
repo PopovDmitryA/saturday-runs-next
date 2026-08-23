@@ -659,6 +659,15 @@ class ProtocolVolunteerResponse(BaseModel):
     is_me: bool = False
 
 
+class ProtocolVolunteerRoleResponse(BaseModel):
+    """Роль этого старта и сколько человек её исполняли — для фильтра."""
+
+    role: str
+    count: int
+    # Ключевая роль: на площадке и без возможности бежать. Такие идут первыми.
+    is_core: bool = False
+
+
 class LocationProtocolResponse(BaseModel):
     slug: str
     name: str
@@ -680,3 +689,5 @@ class LocationProtocolResponse(BaseModel):
     age_groups: list[ProtocolAgeGroupResponse] = Field(default_factory=list)
     results: list[ProtocolResultResponse] = Field(default_factory=list)
     volunteers: list[ProtocolVolunteerResponse] = Field(default_factory=list)
+    # Роли старта в порядке показа: сначала ключевые, потом остальные.
+    volunteer_roles: list[ProtocolVolunteerRoleResponse] = Field(default_factory=list)

@@ -2492,6 +2492,14 @@ export type ProtocolVolunteer = {
   is_me: boolean;
 };
 
+/** Роль этого старта и сколько человек её исполняли — для фильтра волонтёров. */
+export type ProtocolVolunteerRole = {
+  role: string;
+  count: number;
+  /** Ключевая роль: на площадке и без возможности бежать — такие идут первыми. */
+  is_core: boolean;
+};
+
 export type LocationProtocol = {
   slug: string;
   name: string;
@@ -2511,6 +2519,8 @@ export type LocationProtocol = {
   age_groups: ProtocolAgeGroup[];
   results: ProtocolResult[];
   volunteers: ProtocolVolunteer[];
+  /** Роли старта в порядке показа: сначала ключевые, потом остальные. */
+  volunteer_roles: ProtocolVolunteerRole[];
 };
 
 export function getLocationProtocol(slug: string, platformCode: string, eventDate: string) {

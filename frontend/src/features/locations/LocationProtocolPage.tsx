@@ -270,6 +270,9 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
   const [ageFilter, setAgeFilter] = useState<string | null>(null);
   const [nameFilter, setNameFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState<string | null>(null);
+  // Порядок волонтёров: null — как отдал бэкенд (ключевые роли сверху),
+  // иначе сортировка по числу волонтёрств человека.
+  const [volunteerSortAsc, setVolunteerSortAsc] = useState<boolean | null>(null);
   const [clubFilter, setClubFilter] = useState<string | null>(null);
   // Клик по клубу листает страницу к протоколу — иначе отфильтрованная
   // таблица остаётся за экраном и кажется, что ничего не произошло.
@@ -369,21 +372,32 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
     return [...bins.values()].sort((a, b) => a.start_sec - b.start_sec);
   }, [data]);
 
-  // Роли для фильтра волонтёров — ровно те, что есть на этом старте.
-  const volunteerRoles = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const person of data?.volunteers ?? []) {
-      for (const role of person.roles) {
-        counts.set(role, (counts.get(role) ?? 0) + 1);
-      }
-    }
-    return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], "ru"));
-  }, [data]);
+  // Роли для фильтра волонтёров — ровно те, что есть на этом старте. Порядок
+  // задаёт бэкенд: сначала ключевые (на площадке и без бега), потом остальные.
+  const volunteerRoles = data?.volunteer_roles ?? [];
 
   const volunteerRows = useMemo(() => {
     const all = data?.volunteers ?? [];
-    return roleFilter ? all.filter((person) => person.roles.includes(roleFilter)) : all;
-  }, [data, roleFilter]);
+    const filtered = roleFilter
+      ? all.filter((person) => person.roles.includes(roleFilter))
+      : all;
+    if (volunteerSortAsc === null) {
+      return filtered;
+    }
+    // Без номера волонтёрства (человек без привязанного участника) — всегда в
+    // конце, в обе стороны сортировки.
+    return [...filtered].sort((a, b) => {
+      if (a.volunteer_number === null || b.volunteer_number === null) {
+        return a.volunteer_number === b.volunteer_number
+          ? 0
+          : a.volunteer_number === null
+            ? 1
+            : -1;
+      }
+      const compare = a.volunteer_number - b.volunteer_number;
+      return volunteerSortAsc ? compare : -compare;
+    });
+  }, [data, roleFilter, volunteerSortAsc]);
 
   // Дорисованные «неизвестные» — только в чистом виде протокола, отсортированном
   // по местам: в отфильтрованной или пересортированной таблице сплошная
@@ -1135,9 +1149,9 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                 aria-label="Фильтр по роли"
               >
                 <option value="">Все роли</option>
-                {volunteerRoles.map(([role, count]) => (
-                  <option key={role} value={role}>
-                    {role} ({count})
+                {volunteerRoles.map((item) => (
+                  <option key={item.role} value={item.role}>
+                    {item.role} ({item.count})
                   </option>
                 ))}
               </select>
@@ -1158,6 +1172,13 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                     label="Волонтёрство"
                     hint="Какое это волонтёрство по счёту у человека в этой системе"
                     filterable={false}
+                    sortActive={volunteerSortAsc !== null}
+                    sortAsc={volunteerSortAsc ?? false}
+                    // Первый клик — самые опытные сверху; дальше туда-обратно.
+                    // Третьего состояния нет: вернуть порядок «ключевые роли
+                    // сверху» можно перезагрузкой — иначе клик по стрелке
+                    // становится непредсказуемым.
+                    onSort={() => setVolunteerSortAsc((current) => (current === false ? true : false))}
                   />
                 </tr>
               </thead>
