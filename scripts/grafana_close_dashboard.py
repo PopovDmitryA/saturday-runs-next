@@ -67,14 +67,17 @@ def archive_folder_uid() -> str:
 
 
 def stub_panel(title: str, url: str, where: str) -> dict:
-    where_text = f" — {where}" if where else ""
+    # --where — законченное предложение-подсказка, отдельным абзацем: раньше он
+    # вклеивался в середину фразы, и длинная подсказка её ломала.
+    where_text = f"{where.rstrip('.')}.\n\n" if where else ""
     content = (
         # Через «дашборд», а не через название: иначе не согласуется род
         # («Карта … переехала», но «Рейтинг … переехал»).
         f"# {title}\n\n"
         f"**Дашборд закрыт** и больше не обновляется — он переехал на сайт:\n\n"
         f"## 👉 [{url.replace('https://', '')}]({url})\n\n"
-        f"Там то же самое{where_text}, только свежее и быстрее.\n\n"
+        f"Там то же самое, только свежее и быстрее.\n\n"
+        f"{where_text}"
         f"---\n\n"
         f"*Эта Grafana скоро будет отключена: все дашборды переезжают на "
         f"[run5k.run](https://run5k.run).*"
@@ -89,26 +92,103 @@ def stub_panel(title: str, url: str, where: str) -> dict:
     }
 
 
+def archive_from_history(args, dash: dict, meta: dict, title: str) -> None:
+    """Для дашбордов, закрытых заглушкой вручную: архив берём из истории версий.
+
+    Ищем самую свежую версию, где есть панель с данными — предыдущие правки
+    заглушки (опечатка в тексте, поправленная ссылка) пропускаем.
+    """
+    versions = api(f"/api/dashboards/uid/{args.uid}/versions?limit=50")
+    items = versions.get("versions", versions) if isinstance(versions, dict) else versions
+    full = None
+    for item in items:
+        data = api(f"/api/dashboards/uid/{args.uid}/versions/{item['version']}").get("data") or {}
+        if any(p.get("type") != "text" for p in data.get("panels", [])):
+            full = (item["version"], data)
+            break
+    if full is None:
+        sys.exit(f"«{title}»: в истории нет версии с панелями данных — архивировать нечего")
+    version, data = full
+    print(f"дашборд:  {title} ({args.uid}) — заглушка уже стоит")
+    print(f"в архив:  версия v{version} от {items[0]['created'][:10] if items else '?'}, "
+          f"панелей {len(data.get('panels', []))}")
+
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    backup = BACKUP_DIR / f"{args.uid}.v{version}.json"
+    if args.dry_run:
+        print("--- dry-run, ничего не записано ---")
+        return
+    backup.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    print(f"копия на диск: {backup}")
+
+    archived = dict(data)
+    archived.pop("id", None)
+    archived.pop("uid", None)
+    archived["title"] = f"{title} (архив версии v{version})"
+    archived["tags"] = sorted(set(data.get("tags") or []) | {"архив"})
+    res = api(
+        "/api/dashboards/db",
+        {
+            "dashboard": archived,
+            "folderUid": archive_folder_uid(),
+            "message": f"Архивная копия из истории версий (v{version})",
+            "overwrite": False,
+        },
+    )
+    print(f"архив: {ORIGIN}{res['url']}")
+
+    if CLOSED_TAG not in (dash.get("tags") or []):
+        dash["tags"] = sorted(set(dash.get("tags") or []) | {CLOSED_TAG})
+        api(
+            "/api/dashboards/db",
+            {"dashboard": dash, "folderUid": meta.get("folderUid", ""),
+             "message": "Тег «закрыт»", "overwrite": True},
+        )
+        print("тег «закрыт» проставлен")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--uid", required=True, help="uid закрываемого дашборда")
-    ap.add_argument("--url", required=True, help="куда ведём на сайте")
+    ap.add_argument("--url", default="", help="куда ведём на сайте (не нужен с --from-history)")
     ap.add_argument("--where", default="", help="уточнение, где именно на странице")
+    ap.add_argument(
+        "--from-history",
+        action="store_true",
+        help="дашборд уже закрыт заглушкой руками: достать из истории версий последнюю "
+             "версию с данными, положить её в архив и проставить тег «закрыт»",
+    )
+    ap.add_argument(
+        "--restub",
+        action="store_true",
+        help="только переписать текст уже стоящей заглушки (без архивирования)",
+    )
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     got = api(f"/api/dashboards/uid/{args.uid}")
     dash, meta = got["dashboard"], got["meta"]
     title = dash["title"]
-    if CLOSED_TAG in (dash.get("tags") or []):
-        sys.exit(f"«{title}» уже закрыт — выходим, чтобы не затереть архивом заглушку")
+
+    if args.from_history:
+        archive_from_history(args, dash, meta, title)
+        return
+
+    if not args.url:
+        sys.exit("нужен --url: куда ведём на сайте")
+    closed = CLOSED_TAG in (dash.get("tags") or [])
+    if closed and not args.restub:
+        sys.exit(f"«{title}» уже закрыт — выходим, чтобы не затереть архивом заглушку "
+                 f"(переписать текст: --restub)")
+    if args.restub and not closed:
+        sys.exit(f"«{title}» ещё не закрыт — --restub нечего переписывать")
 
     print(f"дашборд:  {title} ({args.uid}), версия {dash.get('version')}, панелей {len(dash.get('panels', []))}")
     print(f"ведём на: {args.url}")
 
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     backup = BACKUP_DIR / f"{args.uid}.before-close.json"
-    if not args.dry_run:
+    if not args.dry_run and not args.restub:
         backup.write_text(json.dumps(dash, ensure_ascii=False, indent=2))
     print(f"копия на диск: {backup}")
 
@@ -118,7 +198,7 @@ def main() -> None:
     archived.pop("uid", None)
     archived["title"] = f"{title} (архив {today})"
     archived["tags"] = sorted(set(dash.get("tags") or []) | {"архив"})
-    if not args.dry_run:
+    if not args.dry_run and not args.restub:
         res = api(
             "/api/dashboards/db",
             {
