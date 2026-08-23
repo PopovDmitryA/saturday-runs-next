@@ -25,6 +25,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -82,7 +83,8 @@ def parse(raw: str) -> list[dict]:
             ts = dt.datetime.fromisoformat(parts[0]).astimezone(MSK)
         except ValueError:
             continue
-        path = parts[3]
+        # nginx пишет $arg_p как есть, то есть percent-encoded.
+        path = urllib.parse.unquote(parts[3])
         m = DASH_RE.match(path)
         events.append(
             {

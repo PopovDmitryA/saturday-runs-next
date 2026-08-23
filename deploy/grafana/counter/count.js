@@ -34,7 +34,9 @@
     var lastPath = null;
 
     function hit(kind) {
-      var path = location.pathname + location.search;
+      // Только pathname: в query Grafana постоянно переписывает orgId и диапазон
+      // времени, и каждая такая правка выглядела бы как переход на новый дашборд.
+      var path = location.pathname;
       if (kind === "nav" && path === lastPath) return; // Grafana дёргает history и без смены URL
       lastPath = path;
       var url =
