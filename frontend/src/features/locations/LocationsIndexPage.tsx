@@ -22,7 +22,8 @@ type SortKey =
   | "attendance_record"
   | "best_male"
   | "best_female"
-  | "first_event_date";
+  | "first_event_date"
+  | "first_event_date_in_system";
 
 // Колонки, которые логичнее открывать по возрастанию: алфавит и рекорды
 // (у времени «лучше» = меньше).
@@ -83,6 +84,8 @@ function sortValue(item: LocationIndexItem, key: SortKey): number | string | nul
       return item.best_female_time_sec;
     case "first_event_date":
       return item.first_event_date;
+    case "first_event_date_in_system":
+      return item.first_event_date_in_system;
   }
 }
 
@@ -97,6 +100,7 @@ const LOCATIONS_COLUMNS: AdaptiveColumn[] = [
   { key: "city", width: 160 },
   { key: "finishers_total", width: 148 },
   { key: "first_event_date", width: 160 },
+  { key: "first_event_date_in_system", width: 200 },
   { key: "avg_finishers", width: 148 },
   { key: "attendance_record", width: 148 },
   { key: "best_male", width: 184 },
@@ -173,6 +177,7 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
           {show("best_male") && <col className="col-metric-wide" />}
           {show("best_female") && <col className="col-metric-wide" />}
           {show("first_event_date") && <col className="col-date" />}
+          {show("first_event_date_in_system") && <col className="col-date-wide" />}
         </colgroup>
         <thead>
           <tr>
@@ -222,7 +227,15 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
             {show("first_event_date") && (
               <ColumnHeader
                 label="Первый старт"
+                hint="Самый первый старт площадки — в любой системе, включая parkrun-эпоху"
                 {...sortProps("first_event_date")}
+              />
+            )}
+            {show("first_event_date_in_system") && (
+              <ColumnHeader
+                label="Первый старт в системе"
+                hint="Когда площадка начала работать в нынешней системе. У переехавших из parkrun-эпохи эта дата на годы позже сквозной"
+                {...sortProps("first_event_date_in_system")}
               />
             )}
           </tr>
@@ -283,6 +296,26 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
                 )}
                 {show("first_event_date") && (
                   <td>{item.first_event_date ? formatDate(item.first_event_date) : "—"}</td>
+                )}
+                {show("first_event_date_in_system") && (
+                  <td>
+                    {item.first_event_date_in_system ? (
+                      // Обёртка-span, а не flex на самой ячейке: td с display:flex
+                      // перестаёт быть табличной ячейкой и ломает выравнивание
+                      // (так же сделан столбец систем выше).
+                      <span className="loc-index-first-in-system">
+                        {formatDate(item.first_event_date_in_system)}
+                        {/* Систему подписываем прямо в ячейке: колонка отвечает
+                            на вопрос «когда здесь начались 5 вёрст», и без имени
+                            системы ответ половинчатый. */}
+                        {item.first_event_system_code && (
+                          <PlatformBadge code={item.first_event_system_code} />
+                        )}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                 )}
               </tr>
             ))

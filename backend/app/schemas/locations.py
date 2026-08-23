@@ -353,7 +353,13 @@ class LocationIndexItemResponse(BaseModel):
     is_cancelled: bool = False
     events_count: int = 0
     finishers_total: int = 0
+    # Самый первый старт площадки в любой системе, включая parkrun-эпоху.
     first_event_date: date | None = None
+    # Первый старт в системе, в которой площадка живёт сейчас, и код этой
+    # системы. У переехавших из parkrun-эпохи даты расходятся на годы, и без
+    # второй колонки «когда здесь начались 5 вёрст» приходилось вычислять руками.
+    first_event_date_in_system: date | None = None
+    first_event_system_code: str | None = None
     last_event_date: date | None = None
     best_male_time_sec: int | None = None
     best_male_time_display: str | None = None

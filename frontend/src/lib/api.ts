@@ -2292,7 +2292,11 @@ export type LocationIndexItem = {
   is_cancelled: boolean;
   events_count: number;
   finishers_total: number;
+  /** Самый первый старт площадки в любой системе, включая parkrun-эпоху. */
   first_event_date: string | null;
+  /** Первый старт в системе, где площадка живёт сейчас, и код этой системы. */
+  first_event_date_in_system: string | null;
+  first_event_system_code: string | null;
   last_event_date: string | null;
   best_male_time_sec: number | null;
   best_male_time_display: string | null;
