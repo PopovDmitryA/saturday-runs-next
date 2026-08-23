@@ -92,19 +92,24 @@ function sortValue(item: LocationIndexItem, key: SortKey): number | string | nul
 // Краткий вид: колонки в порядке важности, а не в порядке вывода. Обязательный
 // минимум — название, система и «Стартов»; дальше добавляем по мере ширины.
 // Ширины совпадают с CSS (.loc-index-table): col-city 10rem, col-platform
-// 6.5rem, col-metric 9.25rem, col-metric-wide 11.5rem, col-date 10rem.
+// 6.5rem, col-metric 9.25rem, col-metric-wide 11.5rem, col-date 10rem,
+// col-date-wide 13rem.
+//
+// Обе даты первого старта — в самом хвосте (решение Дмитрия 23.08.2026): в
+// краткий вид важнее пустить явку и рекорды, а «когда здесь начали бегать» —
+// вопрос разовый, за ним не грех переключиться в «Полно».
 const LOCATIONS_COLUMNS: AdaptiveColumn[] = [
   { key: "name", width: 170, required: true },
   { key: "platform", width: 104, required: true },
   { key: "events_count", width: 148, required: true },
   { key: "city", width: 160 },
   { key: "finishers_total", width: 148 },
-  { key: "first_event_date", width: 160 },
-  { key: "first_event_date_in_system", width: 200 },
   { key: "avg_finishers", width: 148 },
   { key: "attendance_record", width: 148 },
   { key: "best_male", width: 184 },
   { key: "best_female", width: 184 },
+  { key: "first_event_date", width: 160 },
+  { key: "first_event_date_in_system", width: 200 },
 ];
 
 function LocationsTable({ items }: { items: LocationIndexItem[] }) {
