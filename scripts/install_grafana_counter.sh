@@ -56,7 +56,14 @@ fi
 systemctl reload nginx
 echo "=== nginx перезагружен ==="
 
+# reload возвращает управление раньше, чем новые воркеры подхватят конфиг:
+# первый же запрос успевает попасть в старый воркер и уходит в Grafana (404).
 echo "=== проверка: скрипт отдаётся ==="
+for attempt in 1 2 3 4 5; do
+  code=$(curl -sS -o /dev/null -w "%{http_code}" https://grafana.run5k.run/__count.js || true)
+  [[ "$code" == "200" ]] && break
+  sleep 1
+done
 curl -sS -o /dev/null -w "  /__count.js → %{http_code} %{content_type}\n" https://grafana.run5k.run/__count.js
 
 echo "=== проверка: скрипт вставлен в HTML дашборда ==="
