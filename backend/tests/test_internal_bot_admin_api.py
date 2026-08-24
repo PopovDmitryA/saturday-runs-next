@@ -88,14 +88,3 @@ def test_admin_sync_enqueue_unknown_pipeline(client: TestClient, monkeypatch: py
     )
     assert response.status_code == 400
     assert "Неизвестный пайплайн" in response.json()["detail"]
-
-
-def test_admin_sweep_status_returns_text(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(internal_bot, "sweep_report_text", lambda: "🌍 обход ок")
-    response = client.get(
-        "/api/internal/bot/admin/sweep-status",
-        params={"telegram_id": ADMIN_TG_ID},
-        headers={"X-Bot-Secret": SECRET},
-    )
-    assert response.status_code == 200
-    assert response.json()["text"] == "🌍 обход ок"

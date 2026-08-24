@@ -42,7 +42,6 @@ ADMIN_HELP_TEXT = (
     "Admin-команды:\n"
     "/stats [дней] — статистика ЛК\n"
     "/status — запущенные пайплайны и время старта\n"
-    "/sweep — статус мирового обхода атлетов parkrun (по VPN-выходам)\n"
     "/sync — список пайплайнов 5 вёрст и s95\n"
     "/sync registry — реестр /events/\n"
     "/sync latest — /results/latest/\n"
@@ -249,16 +248,6 @@ async def on_cmd_status(message: Message) -> None:
     await _send_admin_reply(message.chat.id, text)
 
 
-async def on_cmd_sweep(message: Message) -> None:
-    if not await _admin_only(message) or message.chat is None:
-        return
-    try:
-        text = admin_ops.fetch_sweep_status(settings)
-    except Exception as exc:
-        text = f"Не удалось получить статус обхода: {exc}"
-    await _send_admin_reply(message.chat.id, text)
-
-
 async def on_cmd_sync(message: Message, command: CommandObject) -> None:
     if not await _admin_only(message) or message.chat is None:
         return
@@ -401,7 +390,6 @@ async def main() -> None:
     dispatcher.message.register(on_cmd_broadcast_cancel, Command("broadcast_cancel"))
     dispatcher.message.register(on_cmd_stats, Command("stats"))
     dispatcher.message.register(on_cmd_status, Command("status"))
-    dispatcher.message.register(on_cmd_sweep, Command("sweep", "обход"))
     dispatcher.message.register(on_cmd_sync, Command("sync"))
     dispatcher.message.register(on_cmd_admin_help, Command("admin_help"))
     dispatcher.message.register(on_text, F.text & ~F.text.startswith("/"))
