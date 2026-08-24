@@ -32,6 +32,7 @@ celery_app.conf.update(
         "app.workers.tasks.page_stats",
         "app.workers.tasks.admin_digest",
         "app.workers.tasks.og_render",
+        "app.workers.tasks.sweep_hq_snapshot",
     ),
     task_routes={
         "five_verst_sync.*": {"queue": "five_verst"},
@@ -46,6 +47,13 @@ celery_app.conf.update(
         "og_render.*": {"queue": "parkrun"},
     },
     beat_schedule={
+        # Табло обхода /hq и /world: пересчёт тяжёлых агрегатов раз в 3 минуты.
+        # Считать на каждый показ нельзя — один только count(*) по runs (124 млн
+        # строк) занимал 5.5 с из 6.7 с ответа.
+        "sweep-hq-snapshot": {
+            "task": "sweep_hq.refresh_snapshot",
+            "schedule": crontab(minute="*/3"),
+        },
         # OG-картинки локаций (Л19): обновить после субботних/воскресных синков
         # протоколов + полный прогон в понедельник ночью (часы — Europe/Moscow).
         "og-render-weekend": {
