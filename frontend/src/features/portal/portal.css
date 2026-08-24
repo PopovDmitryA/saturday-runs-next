@@ -3032,28 +3032,101 @@
 .portal-footer-inner {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 18px 32px;
+  padding: 36px 32px 20px;
+}
+
+/* Верх подвала: колонка с описанием проекта + колонки ссылок. */
+.portal-footer-top {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.4fr) minmax(0, 2.6fr);
+  gap: 28px 48px;
+  align-items: start;
+}
+
+.portal-footer-about {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 24px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 380px;
 }
 
 .portal-footer-brand {
-  color: var(--text-muted);
-  font-size: 13.5px;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.portal-footer-brand:hover {
+  color: var(--link);
 }
 
 .portal-footer-tld {
   opacity: 0.7;
 }
 
-.portal-footer-nav {
-  display: flex;
+.portal-footer-tagline {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 13.5px;
+}
+
+.portal-footer-note {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.portal-footer-channel {
+  display: inline-flex;
   align-items: center;
-  gap: 18px;
-  flex-wrap: wrap;
+  gap: 7px;
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.portal-footer-channel svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
+
+.portal-footer-channel:hover {
+  border-color: var(--link);
+  color: var(--link);
+}
+
+.portal-footer-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.portal-footer-column-title {
+  margin: 0 0 10px;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.portal-footer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .portal-footer-link {
@@ -3067,6 +3140,30 @@
   text-decoration: underline;
 }
 
+/* Нижняя строка: копирайт, источники данных и номер версии сайта. */
+.portal-footer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.portal-footer-copy {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.portal-footer-sources {
+  flex: 1 1 260px;
+  color: var(--text-faint);
+}
+
 .portal-footer-version {
   color: var(--text-muted);
   font-size: 12.5px;
@@ -3075,6 +3172,7 @@
   border-radius: 999px;
   padding: 2px 10px;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .portal-footer-version:hover {
@@ -3082,9 +3180,29 @@
   border-color: var(--link);
 }
 
+@media (max-width: 900px) {
+  .portal-footer-top {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .portal-footer-about {
+    max-width: none;
+  }
+}
+
 @media (max-width: 560px) {
   .portal-footer-inner {
-    padding: 16px 20px;
+    padding: 28px 20px 18px;
+  }
+
+  /* Три колонки в ряд на телефоне не читаются — оставляем две. */
+  .portal-footer-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 16px;
+  }
+
+  .portal-footer-bottom {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -3095,6 +3213,13 @@
 .portal-updates-list {
   max-width: 680px;
   margin: 0 auto;
+}
+
+/* Подгрузка следующей страницы: показываем прежние релизы приглушёнными,
+   а не выбрасываем список ради «Загрузка…» — страница не прыгает. */
+.portal-updates-list-loading {
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
 }
 
 .portal-release {

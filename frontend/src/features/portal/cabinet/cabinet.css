@@ -833,9 +833,14 @@ a.portal-cab-nav-item-disabled {
   justify-content: center;
 }
 
-/* В свёрнутом рельсе текстовые подпункты (без иконок) прячем, шеврон тоже. */
-.portal-cab-sidebar.collapsed .portal-cab-nav-textitem,
+/* В свёрнутом рельсе шеврон не нужен (раскрывать нечего — подписи скрыты). */
 .portal-cab-sidebar.collapsed .portal-cab-group-chevron {
+  display: none;
+}
+
+/* Текстовые пункты без иконки в рельсе превратились бы в пустые полоски —
+   прячем именно их. Пункты с иконкой (вкладки чужого профиля) остаются. */
+.portal-cab-sidebar.collapsed .portal-cab-nav-textitem:not(:has(.portal-cab-nav-icon)) {
   display: none;
 }
 
@@ -1002,6 +1007,18 @@ a.portal-cab-user-name:hover {
 .portal-cab-user-avatar-button img {
   width: 100%;
   height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---------- группа участника в сайдбаре ----------
+   Аватарка вместо родовой иконки профиля: на чужой странице сразу видно,
+   чей это блок, — особенно в свёрнутом рельсе, где подписи скрыты. */
+
+.portal-cab-nav-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
   object-fit: cover;
   display: block;
 }

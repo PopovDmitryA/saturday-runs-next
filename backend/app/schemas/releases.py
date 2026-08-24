@@ -17,8 +17,13 @@ class ReleaseResponse(BaseModel):
 
 
 class ReleaseListResponse(BaseModel):
+    """Страница истории релизов: срез `items` и его координаты в общем списке."""
+
     items: list[ReleaseResponse]
     total: int
+    page: int = 1
+    page_size: int = 0
+    pages: int = 1
     latest_version: str | None = None
 
 
