@@ -287,7 +287,8 @@ def read_section(conn, key: str) -> tuple[dict, str] | None:
     """Готовый раздел и время расчёта, либо None — если снимка ещё нет."""
     try:
         cur = conn.execute(
-            f"SELECT payload, to_char(computed_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
+            f"SELECT payload, to_char(computed_at AT TIME ZONE 'UTC', "
+            f"                        'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
             f"FROM {SNAPSHOT_TABLE} WHERE key = %s", (key,))
     except Exception:            # таблицы ещё нет — первый запуск
         conn.rollback()
