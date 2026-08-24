@@ -540,6 +540,11 @@
 }
 
 /* ---------- rate history chart ---------- */
+.hq-topbar__stale {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
 .hq-ratechart {
   position: relative;
 }

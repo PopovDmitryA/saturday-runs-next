@@ -39,6 +39,8 @@ type SweepData = {
   parse_rate_24h: number;
   parse_rate_1h: number;
   forecast: { days: number | null; date: string | null };
+  // Время расчёта снимка на бэкенде. null — посчитано на месте (снимка ещё нет).
+  snapshot_at?: string | null;
   vpn: Bot[];
   free: {
     summary: { total: number; active: number; cooldown: number; collected: number };
@@ -630,11 +632,19 @@ export function SweepHqPage({ token }: { token: string }) {
       }
     };
     const apply = (next: SweepData) => {
-      setPrev(curRef.current);
+      // Данные считает снимок на бэкенде раз в 3 минуты. Если он не обновился
+      // (расписание встало, база недоступна), числа придут те же — и дельты
+      // показали бы честный ноль, неотличимый от «за 3 минуты ничего не собрали».
+      // Поэтому prev двигаем только когда снимок действительно сменился.
+      const same =
+        next.snapshot_at != null && next.snapshot_at === curRef.current?.snapshot_at;
+      if (!same) {
+        setPrev(curRef.current);
+        saveSnap(token, next);
+      }
       curRef.current = next;
       setData(next);
       setUpdatedAt(new Date());
-      saveSnap(token, next);
     };
     // немедленная загрузка при входе
     doFetch().then((d) => {
@@ -689,6 +699,12 @@ export function SweepHqPage({ token }: { token: string }) {
   const p = data.progress;
   const freeSum = data.free.summary;
   const vpnWorking = data.vpn.filter((b) => b.status === "working").length;
+  // Снимок пересчитывается раз в 3 минуты; допускаем задержку в два цикла,
+  // дальше это уже поломка, и о ней лучше сказать, чем показывать нули дельт.
+  const snapAgeMs = data?.snapshot_at ? now - new Date(data.snapshot_at).getTime() : null;
+  const staleMinutes =
+    snapAgeMs != null && snapAgeMs > 2 * REFRESH_MS ? Math.floor(snapAgeMs / 60_000) : null;
+
   const prevVpnMap = collectedMap(prev?.vpn);
   const prevFreeMap = collectedMap(prev?.free.top);
   // Сумма собранного флотом целиком + дельта за интервал опроса — виден вклад
@@ -718,6 +734,12 @@ export function SweepHqPage({ token }: { token: string }) {
         <div className={imminent ? "hq-topbar hq-topbar--hot" : "hq-topbar"}>
           <span className="hq-topbar__upd">
             🕐 обновлено {updatedAt ? fmtMoscow(updatedAt) : "…"}
+            {staleMinutes != null && (
+              <b className="hq-topbar__stale" title="Снимок на бэкенде не обновляется">
+                {" "}
+                · данные {staleMinutes} мин назад
+              </b>
+            )}
           </span>
           <span className="hq-topbar__next">
             {imminent ? "⚡ обновление через " : "следующее через "}
