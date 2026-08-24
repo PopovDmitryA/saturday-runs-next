@@ -94,7 +94,7 @@ def compute_hq(conn, shared: dict | None = None) -> dict:
     vpn = _rows(conn, """
         SELECT name, account, collected_total, active_seconds, delay_sec,
                captcha_total, captcha_solved,
-               to_char(last_captcha_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_captcha_at,
+               to_char(last_captcha_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_captcha_at,
                CASE WHEN account='mac' AND (worker_heartbeat_at IS NULL
                          OR worker_heartbeat_at <= now() - interval '90 seconds')
                          THEN 'off'   -- локальный скрипт: нет heartbeat = не запущен
@@ -103,7 +103,7 @@ def compute_hq(conn, shared: dict | None = None) -> dict:
                     WHEN worker_heartbeat_at > now() - interval '90 seconds' THEN 'working'
                     ELSE 'queued' END AS status,
                GREATEST(0, EXTRACT(EPOCH FROM (cooldown_until - now())) / 3600) AS cooldown_hours,
-               to_char(last_ok_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_ok_at,
+               to_char(last_ok_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_ok_at,
                ban_level
         FROM sweep_exits WHERE account <> 'free'
         ORDER BY
@@ -128,7 +128,7 @@ def compute_hq(conn, shared: dict | None = None) -> dict:
                     WHEN last_ok_at IS NOT NULL THEN 'working'
                     ELSE 'off' END AS status,
                GREATEST(0, EXTRACT(EPOCH FROM (cooldown_until - now())) / 3600) AS cooldown_hours,
-               to_char(last_ok_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_ok_at
+               to_char(last_ok_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_ok_at
         FROM free_proxies
         ORDER BY collected_total DESC, last_ok_at DESC NULLS LAST LIMIT 300""")
 
@@ -219,9 +219,13 @@ def compute_rate_history(conn, shared: dict | None = None) -> dict:
     группировка по всей crawl_queue стоит секунды, а нарезка готового списка —
     доли миллисекунды, и снимок один на любой запрошенный период.
 
-    Рядом кладём `now_hour` — текущий час по часам самой базы. Метки часов
-    `to_char` рисует в её часовом поясе и лишь дописывает «Z», поэтому резать
-    окно по UTC нельзя: получилось бы смещение на разницу поясов.
+    Метки — настоящий UTC. Раньше `to_char` рисовал время в поясе базы
+    (Europe/Moscow) и просто дописывал «Z», а фронтенд читал это как UTC и
+    переводил в Москву ещё раз: подписи оси уезжали на +3 часа, а отсечение
+    незакрытого часа выбрасывало три последних. Отсюда `AT TIME ZONE 'UTC'`.
+
+    Рядом кладём `now_hour` — тот же UTC-час на момент расчёта; по нему роут
+    режет окно, не заглядывая в часы веб-сервера.
     """
     # Группируем по метке времени, а в текст переводим уже готовые сотни строк.
     # Если сгруппировать сразу по to_char, СУБД хэширует 10 млн строк текста —
@@ -229,14 +233,15 @@ def compute_rate_history(conn, shared: dict | None = None) -> dict:
     rows = _rows(conn, """
         SELECT to_char(h, 'YYYY-MM-DD"T"HH24:00:00"Z"') AS hour, collected
         FROM (
-            SELECT date_trunc('hour', fetched_at) AS h, count(*) AS collected
+            SELECT date_trunc('hour', fetched_at AT TIME ZONE 'UTC') AS h, count(*) AS collected
             FROM crawl_queue
             WHERE fetched_at IS NOT NULL
             GROUP BY 1
         ) g
         ORDER BY h""")
     now_hour = _rows(conn, """
-        SELECT to_char(date_trunc('hour', now()), 'YYYY-MM-DD"T"HH24:00:00"Z"') AS now_hour
+        SELECT to_char(date_trunc('hour', now() AT TIME ZONE 'UTC'),
+                       'YYYY-MM-DD"T"HH24:00:00"Z"') AS now_hour
         """)[0]["now_hour"]
     return {"hours": [{"hour": r["hour"], "collected": int(r["collected"] or 0)} for r in rows],
             "now_hour": now_hour}
@@ -252,9 +257,9 @@ SECTIONS = {
 def slice_hours(payload: dict, hours: int) -> dict:
     """Окно последних `hours` часов из полной истории. hours=0 — весь период.
 
-    Отсчитываем от `now_hour` снимка, а не от часов этой машины: метки в одном
-    поясе с базой. Формат меток фиксирован, поэтому сравнение строк совпадает
-    со сравнением времени.
+    Отсчитываем от `now_hour` снимка, а не от часов этой машины: так окно не
+    зависит от того, насколько разъехались часы прода и базы. Формат меток
+    фиксирован, поэтому сравнение строк совпадает со сравнением времени.
     """
     rows = payload.get("hours") or []
     if not hours:
