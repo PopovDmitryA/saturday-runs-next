@@ -79,6 +79,7 @@ _STATIC_PAGE_TYPES = {
     "/ratings/wins": "ratings_wins",
     "/ratings/win-locations": "ratings_win_locations",
     "/ratings/home-distance": "ratings_home_distance",
+    "/ratings/location-records": "ratings_location_records",
     "/backlog": "backlog",
     # Превью кабинета на демо-данных — витрина дизайна, а не раздел сайта.
     "/new/cabinet-preview": "cabinet_preview",

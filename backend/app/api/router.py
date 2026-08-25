@@ -12,6 +12,7 @@ from app.api.routes import (
     internal_bot,
     leaderboards,
     location_ratings,
+    location_records,
     locations,
     media,
     portal,
@@ -38,6 +39,7 @@ api_router.include_router(achievements.router)
 api_router.include_router(runs.router)
 api_router.include_router(leaderboards.router)
 api_router.include_router(location_ratings.router)
+api_router.include_router(location_records.router)
 api_router.include_router(locations.router)
 api_router.include_router(media.router)
 api_router.include_router(portal.router)

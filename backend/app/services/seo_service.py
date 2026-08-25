@@ -171,6 +171,12 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "На скольких разных локациях участники успевали финишировать первыми.",
         indexable=True,
     ),
+    "/ratings/location-records": _meta(
+        "Рекорды локаций — run5k.run",
+        "Рекорды трасс субботних пятёрок: лучшее время каждой локации среди мужчин и "
+        "женщин и рекорды возрастных групп.",
+        indexable=True,
+    ),
     # Публичная доска предложений: смотреть может любой, но в поиске ей делать
     # нечего — это рабочая кухня, а не витрина.
     "/backlog": _meta(
@@ -605,6 +611,7 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/ratings/wins", "0.7"),
     ("/ratings/win-locations", "0.6"),
     ("/ratings/home-distance", "0.6"),
+    ("/ratings/location-records", "0.7"),
     ("/blog", "0.7"),
     ("/about", "0.6"),
     ("/login", "0.4"),
