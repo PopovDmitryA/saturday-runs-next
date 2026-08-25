@@ -2347,6 +2347,82 @@
   margin-top: 12px;
 }
 
+/* Вход по коду на почту — второй способ под кнопками провайдеров. */
+.portal-login-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 14px;
+  font-size: 12.5px;
+  color: var(--text-3, var(--text-2));
+}
+
+.portal-login-divider::before,
+.portal-login-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.portal-login-email {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.portal-login-email-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.portal-login-email input {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-1, transparent);
+  color: var(--text-1);
+  font-size: 15px;
+}
+
+.portal-login-email input:focus-visible {
+  outline: 2px solid var(--accent-indigo);
+  outline-offset: 1px;
+}
+
+/* Код набирают цифрами: моноширинный шрифт и разрядка помогают свериться с письмом. */
+#portal-login-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 20px;
+  letter-spacing: 6px;
+  text-align: center;
+}
+
+.portal-login-email-notice {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.portal-login-email-back {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-2);
+  font-size: 12.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.portal-login-email-error {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--danger, #d33);
+}
+
 .portal-login-scopes {
   margin-top: 16px;
   padding-top: 14px;

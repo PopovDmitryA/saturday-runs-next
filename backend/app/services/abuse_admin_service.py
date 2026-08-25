@@ -8,12 +8,14 @@ from sqlalchemy.orm import Session
 from app.config import Settings
 from app.core.abuse_store import (
     IpBlockRecord,
+    SignupBlockRecord,
     TelegramBanRecord,
     clear_ip_abuse_score,
     get_ip_block_record,
     get_user_last_ip,
     is_valid_ip,
     list_ip_blocks,
+    list_signup_blocks,
     list_telegram_bans,
     remove_ip_block,
     remove_telegram_ban,
@@ -99,6 +101,7 @@ def list_abuse_blocks(db: Session) -> dict[str, object]:
             _serialize_telegram_ban(item, users_by_telegram.get(item.telegram_id))
             for item in telegram_bans
         ],
+        "signup_blocks": [_serialize_signup_block(item) for item in list_signup_blocks()],
     }
 
 
@@ -204,6 +207,16 @@ def _serialize_ip_block(record: IpBlockRecord) -> dict[str, object]:
         "reason": record.reason,
         "created_at": record.created_at,
         "created_by": record.created_by,
+    }
+
+
+def _serialize_signup_block(record: SignupBlockRecord) -> dict[str, object]:
+    return {
+        "ip": record.ip,
+        "device_ref": record.device_ref,
+        "reason": record.reason,
+        "provider": record.provider,
+        "created_at": record.created_at,
     }
 
 

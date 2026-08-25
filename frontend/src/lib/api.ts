@@ -31,7 +31,7 @@ export type User = {
 };
 
 export type AuthIdentity = {
-  provider: "telegram" | "vk" | "yandex";
+  provider: "telegram" | "vk" | "yandex" | "email";
   external_id: string;
   display_name: string | null;
   email: string | null;
@@ -603,6 +603,31 @@ export function createLoginRequest(link = false) {
 export function oauthStartUrl(provider: "vk" | "yandex", mode: "login" | "link", consent = false) {
   const params = new URLSearchParams({ mode, consent: consent ? "true" : "false" });
   return `${API_BASE}/auth/oauth/${provider}/start?${params.toString()}`;
+}
+
+export type EmailCodeResult = {
+  expires_in: number;
+};
+
+export function requestEmailCode(email: string, consent: boolean) {
+  return apiFetch<EmailCodeResult>("/auth/email/request-code", {
+    method: "POST",
+    body: JSON.stringify({ email, consent }),
+  });
+}
+
+export function verifyEmailCode(email: string, code: string) {
+  return apiFetch<{ redirect: string }>("/auth/email/verify", {
+    method: "POST",
+    body: JSON.stringify({ email, code }),
+  });
+}
+
+export function linkEmailIdentity(email: string, code: string) {
+  return apiFetch<{ merge_token: string | null }>("/auth/email/link", {
+    method: "POST",
+    body: JSON.stringify({ email, code }),
+  });
 }
 
 export type OAuthFinishResult = {
@@ -3029,9 +3054,18 @@ export type AbuseTelegramBanItem = {
   created_by: string | null;
 };
 
+export type SignupBlockItem = {
+  ip: string;
+  device_ref: string;
+  reason: string;
+  provider: string;
+  created_at: string | null;
+};
+
 export type AbuseBlockListResponse = {
   ip_blocks: AbuseIpBlockItem[];
   telegram_bans: AbuseTelegramBanItem[];
+  signup_blocks: SignupBlockItem[];
 };
 
 export function listAdminAbuseBlocks() {

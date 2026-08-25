@@ -13,6 +13,7 @@ PROVIDER_LABELS = {
     AuthProvider.telegram: "Telegram",
     AuthProvider.vk: "VK",
     AuthProvider.yandex: "Яндекс",
+    AuthProvider.email: "Почта",
 }
 
 

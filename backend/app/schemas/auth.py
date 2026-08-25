@@ -104,3 +104,28 @@ class OAuthFinishRequest(BaseModel):
 class OAuthFinishResponse(BaseModel):
     redirect: str
     merge_token: str | None = None
+
+
+class EmailCodeRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    # Согласие на обработку данных — как и у OAuth, без него вход не начинается.
+    consent: bool = False
+
+
+class EmailCodeResponse(BaseModel):
+    expires_in: int
+
+
+class EmailVerifyRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    code: str = Field(min_length=4, max_length=12)
+
+
+class EmailVerifyResponse(BaseModel):
+    redirect: str
+
+
+class EmailLinkResponse(BaseModel):
+    # merge_token не пуст, когда ящиком владеет другой профиль: тогда человек
+    # решает, объединять ли их, — как при привязке VK или Яндекса.
+    merge_token: str | None = None

@@ -27,9 +27,20 @@ class AbuseTelegramBanItem(BaseModel):
     created_by: str | None = None
 
 
+class SignupBlockItem(BaseModel):
+    """Отказ в создании нового профиля: сработал суточный лимит регистраций."""
+
+    ip: str = ""
+    device_ref: str = ""
+    reason: str = ""
+    provider: str = ""
+    created_at: datetime | None = None
+
+
 class AbuseBlockListResponse(BaseModel):
     ip_blocks: list[AbuseIpBlockItem]
     telegram_bans: list[AbuseTelegramBanItem]
+    signup_blocks: list[SignupBlockItem] = Field(default_factory=list)
 
 
 class AbuseBanCreateRequest(BaseModel):

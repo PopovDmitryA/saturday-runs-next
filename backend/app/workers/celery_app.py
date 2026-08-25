@@ -33,6 +33,7 @@ celery_app.conf.update(
         "app.workers.tasks.admin_digest",
         "app.workers.tasks.og_render",
         "app.workers.tasks.sweep_hq_snapshot",
+        "app.workers.tasks.email_send",
     ),
     task_routes={
         "five_verst_sync.*": {"queue": "five_verst"},

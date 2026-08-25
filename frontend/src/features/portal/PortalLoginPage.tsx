@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { trackAuthStart } from "../../lib/abTest";
-import { ApiError, getCurrentUser, oauthStartUrl } from "../../lib/api";
+import {
+  ApiError,
+  getCurrentUser,
+  oauthStartUrl,
+  requestEmailCode,
+  verifyEmailCode,
+} from "../../lib/api";
 import { PORTAL_ABOUT_PRIVACY_HREF } from "../../lib/portalRoutes";
 import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
@@ -90,6 +96,23 @@ function YandexMark() {
   );
 }
 
+// Вход по коду: своей марки у почты нет, рисуем нейтральный конверт.
+function MailMark() {
+  return (
+    <svg className="portal-login-scope-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <rect width="24" height="24" rx="7" fill="#5b6472" />
+      <path
+        d="M5.5 8.5h13v7h-13z"
+        fill="none"
+        stroke="#ffffff"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M5.5 9l6.5 4.5L18.5 9" fill="none" stroke="#ffffff" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
 export function PortalLoginPage() {
   const consentRef = useRef<HTMLInputElement>(null);
   const [consentChecked, setConsentChecked] = useState(false);
@@ -98,6 +121,14 @@ export function PortalLoginPage() {
   const [oauthError, setOauthError] = useState<string | null>(() => readOAuthError());
   const [redirectingProvider, setRedirectingProvider] = useState<"vk" | "yandex" | null>(null);
   const [returning] = useState<boolean>(() => isReturningUser());
+  // Вход по почте: сначала адрес, потом код из письма. Второй шаг показываем
+  // только после отправки — пустое поле кода на первом экране лишь путает.
+  const [emailStep, setEmailStep] = useState<"idle" | "code">("idle");
+  const [email, setEmail] = useState("");
+  const [emailCode, setEmailCode] = useState("");
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailNotice, setEmailNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setCheckingAuth(false), 8_000);
@@ -141,6 +172,48 @@ export function PortalLoginPage() {
     // cta_click и auth_start и есть цена экрана входа.
     trackAuthStart(provider);
     setRedirectingProvider(provider);
+  };
+
+  const requireConsent = (): boolean => {
+    if (consentChecked) {
+      return true;
+    }
+    setConsentHint(true);
+    consentRef.current?.focus();
+    consentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return false;
+  };
+
+  const handleEmailSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!requireConsent()) {
+      return;
+    }
+    setEmailError(null);
+    setEmailBusy(true);
+    try {
+      await requestEmailCode(email.trim(), true);
+      markReturningUser();
+      setEmailStep("code");
+      setEmailNotice(`Код отправлен на ${email.trim()}. Он действует 10 минут.`);
+    } catch (err) {
+      setEmailError(err instanceof Error ? err.message : "Не удалось отправить код");
+    } finally {
+      setEmailBusy(false);
+    }
+  };
+
+  const handleCodeSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setEmailError(null);
+    setEmailBusy(true);
+    try {
+      const result = await verifyEmailCode(email.trim(), emailCode.trim());
+      window.location.href = `/${result.redirect}`;
+    } catch (err) {
+      setEmailError(err instanceof Error ? err.message : "Не удалось войти");
+      setEmailBusy(false);
+    }
   };
 
   if (checkingAuth) {
@@ -251,6 +324,75 @@ export function PortalLoginPage() {
               </a>
             </div>
 
+            <div className="portal-login-divider">
+              <span>или по почте</span>
+            </div>
+
+            {emailStep === "idle" ? (
+              <form className="portal-login-email" onSubmit={(event) => void handleEmailSubmit(event)}>
+                <label className="portal-login-email-label" htmlFor="portal-login-email">
+                  Адрес почты
+                </label>
+                <input
+                  id="portal-login-email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  required
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+                <button type="submit" className="btn primary" disabled={emailBusy || !email.trim()}>
+                  {emailBusy ? "Отправляем…" : "Получить код"}
+                </button>
+              </form>
+            ) : (
+              <form className="portal-login-email" onSubmit={(event) => void handleCodeSubmit(event)}>
+                {emailNotice && <p className="portal-login-email-notice">{emailNotice}</p>}
+                <label className="portal-login-email-label" htmlFor="portal-login-code">
+                  Код из письма
+                </label>
+                <input
+                  id="portal-login-code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="000000"
+                  maxLength={6}
+                  value={emailCode}
+                  required
+                  autoFocus
+                  onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, ""))}
+                />
+                <button
+                  type="submit"
+                  className="btn primary"
+                  disabled={emailBusy || emailCode.length < 6}
+                >
+                  {emailBusy ? "Проверяем…" : "Войти"}
+                </button>
+                <button
+                  type="button"
+                  className="portal-login-email-back"
+                  onClick={() => {
+                    setEmailStep("idle");
+                    setEmailCode("");
+                    setEmailError(null);
+                    setEmailNotice(null);
+                  }}
+                >
+                  Другой адрес
+                </button>
+              </form>
+            )}
+
+            {emailError && (
+              <p className="portal-login-email-error" role="alert">
+                {emailError}
+              </p>
+            )}
+
             <div className="portal-login-scopes">
               <p className="portal-login-scopes-title">Что мы получаем при входе</p>
               <ul>
@@ -261,6 +403,10 @@ export function PortalLoginPage() {
                 <li>
                   <YandexMark />
                   Яндекс — адрес почты и имя
+                </li>
+                <li>
+                  <MailMark />
+                  Почта — только сам адрес
                 </li>
               </ul>
               <p className="portal-login-scopes-note">

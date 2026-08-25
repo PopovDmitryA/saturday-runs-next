@@ -76,6 +76,9 @@ class AuthProvider(str, enum.Enum):
     telegram = "telegram"
     vk = "vk"
     yandex = "yandex"
+    # Вход по одноразовому коду на почту: external_id — нормализованный адрес
+    # (app/core/email_address.py), а не идентификатор у чужого сервиса.
+    email = "email"
 
 
 class SyncLogLevel(str, enum.Enum):

@@ -18,6 +18,7 @@ from app.schemas.abuse_admin import (
     AbuseIpBlockItem,
     AbuseMessageResponse,
     AbuseTelegramBanItem,
+    SignupBlockItem,
 )
 from app.schemas.admin import AdminLoginEventItem, AdminLoginEventsResponse, AdminUserListResponse
 from app.schemas.admin_event_report import (
@@ -278,6 +279,7 @@ def admin_list_abuse_blocks(
     return AbuseBlockListResponse(
         ip_blocks=[AbuseIpBlockItem.model_validate(item) for item in payload["ip_blocks"]],
         telegram_bans=[AbuseTelegramBanItem.model_validate(item) for item in payload["telegram_bans"]],
+        signup_blocks=[SignupBlockItem.model_validate(item) for item in payload["signup_blocks"]],
     )
 
 
