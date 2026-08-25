@@ -80,7 +80,7 @@ export function icon(paths: ReactNode) {
   );
 }
 
-const NAV_ICONS: Record<Exclude<CabinetTabKey, "settings">, ReactNode> = {
+export const NAV_ICONS: Record<Exclude<CabinetTabKey, "settings">, ReactNode> = {
   dashboard: icon(
     <>
       <rect x="3" y="3" width="7.5" height="9" rx="1.6" />
@@ -349,13 +349,15 @@ export function isCabinetTab(active: SiteSidebarActive): active is CabinetTabKey
 export type SidebarExtraGroup = {
   /** Заголовок группы (например, имя участника на публичном профиле). */
   title: string;
+  /** Аватарка участника — вместо родовой иконки профиля в заголовке группы. */
+  avatarUrl?: string | null;
   /**
    * Клик по заголовку. Задан — заголовок становится кнопкой: на публичном
    * профиле имя участника ведёт на его главную, как ожидается от «шапки»
    * раздела (репорт Дмитрия 04.08.2026 — раньше клик не делал ничего).
    */
   onTitleClick?: () => void;
-  items: { key: string; label: string; active: boolean; onClick: () => void }[];
+  items: { key: string; label: string; icon?: ReactNode; active: boolean; onClick: () => void }[];
 };
 
 export type SiteSidebarProps = {
@@ -399,15 +401,26 @@ export function SiteSidebar({
       return false;
     }
   });
+  // На чужой странице (публичный профиль участника) свой кабинет сворачивается
+  // сам: иначе в сайдбаре подряд шли два одинаковых списка разделов — свой и
+  // чужой — и получалась «колбаса» на два экрана (репорт Дмитрия 25.08.2026).
+  // Выбор при этом НЕ запоминается: вернувшись в свой кабинет, человек снова
+  // видит группу такой, какой оставил её там.
+  const hasExtraGroup = Boolean(extraGroup);
   // Группа ЛК по умолчанию РАЗВЁРНУТА (решение Дмитрия 25.07.2026), но выбор
   // запоминается: свернул — остаётся свёрнутой и на других страницах.
   const [cabinetOpen, setCabinetOpen] = useState(() => {
+    if (hasExtraGroup) {
+      return false;
+    }
     try {
       return localStorage.getItem(CABINET_GROUP_OPEN_KEY) !== "0";
     } catch {
       return true;
     }
   });
+  // Группа чужого профиля раскрыта: ради неё человек сюда и пришёл.
+  const [extraOpen, setExtraOpen] = useState(true);
 
   useEffect(() => {
     onCollapsedChange?.(collapsed);
@@ -427,6 +440,11 @@ export function SiteSidebar({
 
   const setCabinetOpenPersisted = (next: boolean) => {
     setCabinetOpen(next);
+    if (hasExtraGroup) {
+      // Свернули/развернули свой кабинет на чужой странице — это разовое
+      // решение для этой страницы, общую настройку сайта оно не меняет.
+      return;
+    }
     try {
       localStorage.setItem(CABINET_GROUP_OPEN_KEY, next ? "1" : "0");
     } catch {
@@ -530,6 +548,85 @@ export function SiteSidebar({
             </a>
           ))}
 
+        {/* Группа текущей страницы (публичный профиль участника): заголовок —
+            имя, подпункты — вкладки профиля, переключаются без перезагрузки.
+            Стоит сразу под своим кабинетом (который на чужой странице
+            свёрнут), а не в конце навигации: человек пришёл смотреть именно
+            этого участника, и его разделы должны быть под рукой, а не после
+            Локаций и Рейтингов. */}
+        {extraGroup && (
+          <>
+            {/* Линии-разделители: пункты чужого профиля временные, их надо
+                визуально отделить от постоянной навигации сайта. */}
+            <div className="portal-cab-nav-sep" aria-hidden="true" />
+            {/* Строка-заголовок: имя — отдельная кнопка (ведёт на главную
+                участника), шеврон — соседняя, а не вложенная. Вложенная
+                кнопка в кнопке невалидна и ломала гидрацию React. */}
+            <div
+              className={`portal-cab-nav-item portal-cab-group-head${
+                extraGroup.onTitleClick ? "" : " portal-cab-group-head-static"
+              }`}
+              title={collapsed ? extraGroup.title : undefined}
+            >
+              {extraGroup.onTitleClick ? (
+                <button
+                  type="button"
+                  className="portal-cab-group-title"
+                  onClick={extraGroup.onTitleClick}
+                >
+                  <span className="portal-cab-nav-icon">
+                    {extraGroup.avatarUrl ? (
+                      <img className="portal-cab-nav-avatar" src={extraGroup.avatarUrl} alt="" />
+                    ) : (
+                      PROFILE_ICON
+                    )}
+                  </span>
+                  <span className="portal-cab-nav-label">{extraGroup.title}</span>
+                </button>
+              ) : (
+                <span className="portal-cab-group-title">
+                  <span className="portal-cab-nav-icon">
+                    {extraGroup.avatarUrl ? (
+                      <img className="portal-cab-nav-avatar" src={extraGroup.avatarUrl} alt="" />
+                    ) : (
+                      PROFILE_ICON
+                    )}
+                  </span>
+                  <span className="portal-cab-nav-label">{extraGroup.title}</span>
+                </span>
+              )}
+              <button
+                type="button"
+                className={`portal-cab-group-chevron${extraOpen ? " open" : ""}`}
+                aria-label={extraOpen ? "Скрыть разделы участника" : "Показать разделы участника"}
+                aria-expanded={extraOpen}
+                onClick={() => setExtraOpen((open) => !open)}
+              >
+                {icon(<path d="M9 6l6 6-6 6" />)}
+              </button>
+            </div>
+            {extraOpen &&
+              extraGroup.items.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={item.onClick}
+                  className={`portal-cab-nav-item portal-cab-nav-subitem${
+                    item.active ? " active" : ""
+                  }`}
+                  aria-current={item.active ? "page" : undefined}
+                  title={collapsed ? item.label : undefined}
+                >
+                  {/* Иконка нужна и в свёрнутом рельсе: без неё пункты чужого
+                      профиля превращались там в пустые полоски. */}
+                  {item.icon && <span className="portal-cab-nav-icon">{item.icon}</span>}
+                  <span className="portal-cab-nav-label">{item.label}</span>
+                </button>
+              ))}
+            <div className="portal-cab-nav-sep" aria-hidden="true" />
+          </>
+        )}
+
         <a
           href="/locations"
           className={`portal-cab-nav-item${active === "locations" && !location ? " active" : ""}`}
@@ -595,47 +692,6 @@ export function SiteSidebar({
           <span className="portal-cab-nav-label">Рейтинги</span>
         </a>
 
-        {/* Группа текущей страницы (публичный профиль участника): заголовок —
-            имя, подпункты — вкладки профиля, переключаются без перезагрузки. */}
-        {extraGroup && (
-          <>
-            {/* Линия-разделитель: пункты чужого профиля временные, их надо
-                визуально отделить от постоянной навигации сайта. */}
-            <div className="portal-cab-nav-sep" aria-hidden="true" />
-            {extraGroup.onTitleClick ? (
-              <button
-                type="button"
-                onClick={extraGroup.onTitleClick}
-                className="portal-cab-nav-item portal-cab-group-head portal-cab-nav-textitem"
-                title={collapsed ? extraGroup.title : undefined}
-              >
-                <span className="portal-cab-nav-icon">{PROFILE_ICON}</span>
-                <span className="portal-cab-nav-label">{extraGroup.title}</span>
-              </button>
-            ) : (
-              <div
-                className="portal-cab-nav-item portal-cab-group-head portal-cab-group-head-static"
-                title={collapsed ? extraGroup.title : undefined}
-              >
-                <span className="portal-cab-nav-icon">{PROFILE_ICON}</span>
-                <span className="portal-cab-nav-label">{extraGroup.title}</span>
-              </div>
-            )}
-            {extraGroup.items.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={item.onClick}
-                className={`portal-cab-nav-item portal-cab-nav-subitem portal-cab-nav-textitem${
-                  item.active ? " active" : ""
-                }`}
-                aria-current={item.active ? "page" : undefined}
-              >
-                <span className="portal-cab-nav-label">{item.label}</span>
-              </button>
-            ))}
-          </>
-        )}
       </nav>
 
       {!hideSecondaryNav && (

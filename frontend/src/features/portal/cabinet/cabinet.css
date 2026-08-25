@@ -737,6 +737,24 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   font-weight: 700;
 }
 
+/* Имя участника внутри строки-заголовка: своя кнопка, чтобы шеврон рядом был
+   соседом, а не вложенной кнопкой (невалидная разметка). Занимает всё место
+   до шеврона — кликать можно по всей строке. */
+.portal-cab-group-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: inherit;
+}
+
 /* Шеврон — отдельная кнопка внутри пункта: клик по тексту ведёт в обзор,
    клик по стрелке только раскрывает/скрывает группу. Хит-зона больше иконки. */
 .portal-cab-group-chevron {
@@ -775,11 +793,6 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   padding-left: 22px;
 }
 
-/* Текстовые подпункты без иконки (локация, журнал) — ровняем по тексту. */
-.portal-cab-nav-textitem {
-  padding-left: 50px;
-}
-
 /* Недоступное анониму: видно, но не кликается. */
 .portal-cab-nav-item-disabled {
   opacity: 0.45;
@@ -812,8 +825,7 @@ a.portal-cab-nav-item-disabled {
   justify-content: center;
 }
 
-/* В свёрнутом рельсе текстовые подпункты (без иконок) прячем, шеврон тоже. */
-.portal-cab-sidebar.collapsed .portal-cab-nav-textitem,
+/* В свёрнутом рельсе шеврон не нужен (раскрывать нечего — подписи скрыты). */
 .portal-cab-sidebar.collapsed .portal-cab-group-chevron {
   display: none;
 }
@@ -942,24 +954,17 @@ a.portal-cab-user-name:hover {
   font-size: 14px;
 }
 
-.portal-cab-nav-subitem,
-.portal-cab-nav-textitem {
+.portal-cab-nav-subitem {
   font-size: 13.5px;
   color: var(--text-muted);
 }
 
-.portal-cab-nav-subitem:hover,
-.portal-cab-nav-textitem:hover {
+.portal-cab-nav-subitem:hover {
   color: var(--text);
 }
 
-/* Подпункты с иконкой (разделы кабинета) и без неё (локация, журнал)
-   начинаются с одной вертикали: 12px базового паддинга + 18px ступень. */
+/* Ступень вложенности: 12px базового паддинга + 18px. */
 .portal-cab-nav-subitem {
-  padding-left: 30px;
-}
-
-.portal-cab-nav-textitem {
   padding-left: 30px;
 }
 
@@ -981,6 +986,18 @@ a.portal-cab-user-name:hover {
 .portal-cab-user-avatar-button img {
   width: 100%;
   height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---------- группа участника в сайдбаре ----------
+   Аватарка вместо родовой иконки профиля: на чужой странице сразу видно,
+   чей это блок, — особенно в свёрнутом рельсе, где подписи скрыты. */
+
+.portal-cab-nav-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
   object-fit: cover;
   display: block;
 }

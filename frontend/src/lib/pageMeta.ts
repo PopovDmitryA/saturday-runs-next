@@ -133,6 +133,13 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
     description: "На скольких разных локациях участники успевали финишировать первыми.",
     indexable: true,
   },
+  "/ratings/location-records": {
+    title: "Рекорды локаций — run5k.run",
+    description:
+      "Рекорды трасс субботних пятёрок: лучшее время каждой локации среди мужчин и " +
+      "женщин и рекорды возрастных групп.",
+    indexable: true,
+  },
   "/backlog": {
     title: "Бэклог — run5k.run",
     description: "Что участники предлагают добавить на сайт и за что голосуют.",

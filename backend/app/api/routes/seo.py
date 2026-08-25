@@ -80,6 +80,11 @@ def prerender(
     Тело на HEAD Starlette отбросит сам, заголовки останутся.
     """
     path = f"/{full_path}"
+    # Строка запроса нужна пререндеру: у «Обновлений» номер страницы живёт
+    # именно там (/updates?page=3), а без него робот всегда получал бы первую.
+    # В аналитику и классификатор она не идёт — там адрес без параметров.
+    query = request.url.query
+    path_with_query = f"{path}?{query}" if query else path
     bot = _messenger_bot_name(request.headers.get("user-agent", ""))
     if bot is not None:
         # Бот мессенджера разворачивает ссылку — значит, её кинули в чат.
@@ -96,7 +101,7 @@ def prerender(
             )
         except Exception:  # noqa: BLE001 — аналитика не должна ломать пререндер
             db.rollback()
-    html, status = render_prerendered_page(db, path)
+    html, status = render_prerendered_page(db, path_with_query)
     return Response(
         content=html,
         status_code=status,

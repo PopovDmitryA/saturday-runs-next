@@ -110,6 +110,39 @@
   }
 }
 
+/* Телефон: сайдбара нет, и семь чипов в перенос занимали три ряда — экран
+   открывался «колбасой» из вкладок вместо содержимого профиля. Здесь один
+   ряд с горизонтальной прокруткой, липнущий под шапкой: вкладки всегда под
+   рукой, а места занимают одну строку. */
+@media (max-width: 900px) {
+  .admin-preview-tabs.public-profile-tabs {
+    position: sticky;
+    /* Высота портальной шапки (.portal-header-inner) — она тоже липкая. */
+    top: 60px;
+    z-index: 20;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    /* Полоса тянется на всю ширину экрана, чтобы прокрутка начиналась от
+       его края: 20px — боковой паддинг .portal-cab-layout на телефоне. */
+    margin: 0 -20px 0.75rem;
+    padding: 0.5rem 20px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .admin-preview-tabs.public-profile-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .public-profile-tabs .admin-preview-tab {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    white-space: nowrap;
+  }
+}
+
 .portal-section .admin-preview-tab {
   border-radius: 999px;
   font-weight: 600;
