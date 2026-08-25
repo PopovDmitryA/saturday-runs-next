@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from app.db.session import get_session_factory
+from app.services.fastest_rating_service import warm_fastest_rating
 from app.services.leaderboard_service import (
     AMBIGUOUS_HOME_METRICS,
     GENDERED_METRICS,
@@ -214,6 +215,16 @@ def warm_leaderboards_cache() -> dict[str, object]:
                 if source is not None:
                     source.release()
                 results[key] = "error"
+
+        # Рейтинг быстрых греется тем же проходом — своим try и БЕЗ записи в
+        # results: этот словарь читают тесты прогрева лидербордов, и лишние
+        # ключи в нём их ломали бы. Итог уходит в лог.
+        try:
+            logger.info("fastest rating warmed: %s slices", warm_fastest_rating(db))
+            db.rollback()
+        except Exception:
+            logger.exception("fastest rating warm failed")
+            db.rollback()
     finally:
         # close() у SQLAlchemy делает ROLLBACK, и на убитом сервером соединении
         # он сам бросает исключение — уже посчитанный и разложенный по Redis

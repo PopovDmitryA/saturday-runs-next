@@ -9,6 +9,7 @@ from app.api.routes import (
     blog,
     dashboard,
     demo,
+    fastest,
     internal_bot,
     leaderboards,
     location_ratings,
@@ -37,6 +38,7 @@ api_router.include_router(dashboard.router)
 api_router.include_router(achievements.router)
 api_router.include_router(runs.router)
 api_router.include_router(leaderboards.router)
+api_router.include_router(fastest.router)
 api_router.include_router(location_ratings.router)
 api_router.include_router(locations.router)
 api_router.include_router(media.router)

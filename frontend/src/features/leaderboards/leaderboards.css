@@ -1893,3 +1893,118 @@ body.has-pinned-me .lb-scroll-top {
 .lb-tourist-top-label {
   font-size: 0.82rem;
 }
+
+/* --- Рейтинг быстрых (/ratings/fastest) --- */
+
+/* Строка рейтинга быстрых — это конкретный забег, поэтому «Система» и «Группа»
+   стоят в таблице пометками, а не колонками-счётчиками: числа в них нет, есть
+   ярлык, и он не должен спорить с главной колонкой — временем. */
+.lb-fastest-platform,
+.lb-fastest-age {
+  color: var(--text-2);
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.lb-fastest-location {
+  color: var(--text-2);
+}
+
+/* Время — главная колонка таблицы, а не сноска у имени, как в лидербордах. */
+.lb-fastest-table .lb-best-time {
+  font-weight: 600;
+}
+
+/* Запертый фильтр объясняется подсказкой у своего названия, без подписи под
+   селектором (решение Дмитрия 25.08.2026: текстовых приписок у фильтров не
+   заводим). */
+.protocol-age-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Ширины колонок рейтинга быстрых.
+   В остальных рейтингах остаток ширины забирает имя участника (.lb-col-name
+   width:100%): там справа стоят узкие числа. Здесь справа текст — название
+   локации, дата, система, — и от разбухшего имени правая половина таблицы
+   оказывалась стиснутой, а «Лобня Городской парк» переносилась на две строки
+   (репорт Дмитрия 25.08.2026). Поэтому свободная ширина делится между двумя
+   текстовыми колонками — именем и локацией, — а не достаётся одной: отдать
+   остаток только локации значило получить дыру посреди таблицы, только имени —
+   стиснутую правую половину.
+   Селекторы с двумя классами таблицы (.lb-table.lb-fastest-table) не для
+   красоты: общее правило .lb-table:not(.lb-table-fixed) .lb-col-name весит три
+   класса, и без такого же веса имя продолжало забирать весь остаток. */
+.lb-table.lb-fastest-table .lb-col-name {
+  width: 55%;
+  min-width: 11rem;
+}
+
+.lb-table.lb-fastest-table .lb-col-home {
+  width: 45%;
+  min-width: 10rem;
+}
+
+.lb-table.lb-fastest-table .lb-col-time {
+  width: 5.5rem;
+}
+
+.lb-table.lb-fastest-table .lb-col-date {
+  width: 7rem;
+  white-space: nowrap;
+}
+
+.lb-table.lb-fastest-table .lb-col-system {
+  width: 7rem;
+  white-space: nowrap;
+}
+
+.lb-table.lb-fastest-table .lb-col-age {
+  width: 6rem;
+  white-space: nowrap;
+}
+
+/* Панель фильтров рейтинга быстрых — два намеренных ряда.
+   Одной строкой все шесть органов управления не помещаются ни на каком
+   мониторе, и поиск оставался висеть в одиночестве справа («как не пришей
+   кобыле хвост», репорт Дмитрия 25.08.2026). Поэтому ряды заданы явно:
+   сверху переключатели, снизу выпадающие списки и поиск. Ничего не ужимаем —
+   каждый контрол своей естественной ширины. */
+.lb-fastest-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.lb-fastest-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  /* Подписи у контролов разной высоты нет — сажаем всё на общую нижнюю линию. */
+  align-items: end;
+  gap: 0.9rem 1.75rem;
+}
+
+/* Поиск заметно шире соседних селектов: в него вводят фамилию или название
+   локации целиком, а не выбирают из готового. */
+.lb-fastest-controls .lb-search {
+  min-width: 18rem;
+}
+
+@media (max-width: 640px) {
+  .lb-fastest-controls .lb-search {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .lb-fastest-controls .lb-fastest-search {
+    width: 100%;
+  }
+}
+
+/* Обёртка запертого селектора: сам disabled-элемент событий мыши не получает,
+   и подсказка на нём в браузерах срабатывает через раз. Обёртка их получает
+   всегда — на ней и висит title. */
+.lb-fastest-select-wrap {
+  display: inline-flex;
+}

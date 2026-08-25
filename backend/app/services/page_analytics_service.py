@@ -77,6 +77,7 @@ _STATIC_PAGE_TYPES = {
     "/ratings/volunteer-locations": "ratings_volunteer_locations",
     "/ratings/openings": "ratings_openings",
     "/ratings/wins": "ratings_wins",
+    "/ratings/fastest": "ratings_fastest",
     "/ratings/win-locations": "ratings_win_locations",
     "/ratings/home-distance": "ratings_home_distance",
     "/backlog": "backlog",

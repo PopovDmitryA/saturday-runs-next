@@ -52,6 +52,7 @@ import { LocationProtocolPage } from "./features/locations/LocationProtocolPage"
 import { LocationPage } from "./features/locations/LocationPage";
 import { LastResultsPage } from "./features/locations/LastResultsPage";
 import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
+import { FastestRatingPage } from "./features/leaderboards/FastestRatingPage";
 import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
 import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
 import { QueuePage } from "./features/queue/QueuePage";
@@ -235,6 +236,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/volunteer-locations": () => <LeaderboardPage metric="volunteer_locations" />,
   "/ratings/openings": () => <LeaderboardPage metric="openings" />,
   "/ratings/wins": () => <LeaderboardPage metric="wins" />,
+  "/ratings/fastest": () => <FastestRatingPage />,
   "/ratings/win-locations": () => <LeaderboardPage metric="win_locations" />,
   "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только

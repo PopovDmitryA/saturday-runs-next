@@ -121,6 +121,13 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
     description: "Кто чаще всех финишировал первым на субботних стартах, с разбивкой по полу.",
     indexable: true,
   },
+  "/ratings/fastest": {
+    title: "Самые быстрые результаты и участники — run5k.run",
+    description:
+      "5 000 самых быстрых финишей и 3 000 самых быстрых участников субботних стартов: " +
+      "срезы по системе, полу, возрастной группе и году.",
+    indexable: true,
+  },
   "/ratings/home-distance": {
     title: "Рейтинг дальности от дома — run5k.run",
     description:

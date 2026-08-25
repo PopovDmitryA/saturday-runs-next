@@ -160,6 +160,12 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "Кто чаще всех финишировал первым на субботних стартах, с разбивкой по полу.",
         indexable=True,
     ),
+    "/ratings/fastest": _meta(
+        "Самые быстрые результаты и участники — run5k.run",
+        "5 000 самых быстрых финишей и 3 000 самых быстрых участников субботних "
+        "стартов: срезы по системе, полу, возрастной группе и году.",
+        indexable=True,
+    ),
     "/ratings/home-distance": _meta(
         "Рейтинг дальности от дома — run5k.run",
         "Кто уезжает бегать дальше всех от своей домашней локации: сумма километров "
@@ -603,6 +609,7 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/ratings/volunteer-locations", "0.6"),
     ("/ratings/openings", "0.6"),
     ("/ratings/wins", "0.7"),
+    ("/ratings/fastest", "0.7"),
     ("/ratings/win-locations", "0.6"),
     ("/ratings/home-distance", "0.6"),
     ("/blog", "0.7"),
