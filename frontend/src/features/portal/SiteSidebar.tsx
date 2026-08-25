@@ -13,8 +13,8 @@
  * - служебный блок (Настройки/Бэклог/Админка/Выйти) виден на всех страницах;
  * - сворачивание в рельс-иконки работает везде (общий localStorage-ключ).
  */
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { logout, updateDisplayName, type User } from "../../lib/api";
+import { useEffect, useState, type ReactNode } from "react";
+import { logout, type User } from "../../lib/api";
 import {
   cabinetTabHref,
   type CabinetTabSegmentKey,
@@ -26,6 +26,7 @@ import {
   PORTAL_CABINET_MEETINGS_HREF,
   PORTAL_CABINET_RUNS_HREF,
   PORTAL_CABINET_SETTINGS_HREF,
+  PORTAL_DISPLAY_NAME_SETTINGS_HREF,
   PORTAL_CABINET_SHARE_HREF,
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_LOGIN_HREF,
@@ -227,17 +228,16 @@ export const SECONDARY_NAV: SecondaryNavItem[] = [
 ];
 
 // Экспорт: имя пользователя нужно и герою дашборда.
+// display_name с 25.08.2026 считается на сервере из профилей беговых систем,
+// поэтому фронту выбирать больше не из чего — только запасные варианты на
+// случай, если сервер имени так и не нашёл.
 export function userLabel(user: User): string {
-  const customName = user.display_name?.trim();
-  if (user.display_name_customized === true && customName) {
-    return customName;
+  const name = user.display_name?.trim();
+  if (name) {
+    return name;
   }
   if (user.telegram_username) {
-    const login = user.telegram_username.replace(/^@/, "");
-    return `@${login}`;
-  }
-  if (customName) {
-    return customName;
+    return `@${user.telegram_username.replace(/^@/, "")}`;
   }
   return `Участник ${user.telegram_id ?? user.id.slice(0, 8)}`;
 }
@@ -258,12 +258,8 @@ function userInitials(label: string): string {
  * компьютера — баг, 29.07.2026).
  */
 export function CabinetUserCard({ initialUser, collapsed = false }: { initialUser: User; collapsed?: boolean }) {
-  const [user, setUser] = useState(initialUser);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [avatarZoomed, setAvatarZoomed] = useState(false);
+  const user = initialUser;
 
   const label = userLabel(user);
 
@@ -273,10 +269,10 @@ export function CabinetUserCard({ initialUser, collapsed = false }: { initialUse
     <>
       <button
         type="button"
-        className="portal-cab-user-avatar portal-cab-user-avatar-img portal-cab-user-avatar-button"
+        className="portal-cab-user-avatar portal-cab-user-avatar-btn"
         onClick={() => setAvatarZoomed(true)}
-        aria-label="Открыть аватар"
-        title="Открыть аватар"
+        aria-label="Открыть аватарку"
+        title="Открыть аватарку"
       >
         <img src={user.avatar_url} alt="" />
       </button>
@@ -302,83 +298,31 @@ export function CabinetUserCard({ initialUser, collapsed = false }: { initialUse
     );
   }
 
-  const handleSave = async (event: FormEvent) => {
-    event.preventDefault();
-    setSaving(true);
-    setError(null);
-    try {
-      const updated = await updateDisplayName(draft);
-      setUser(updated);
-      setEditing(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось сохранить имя");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <div className="portal-cab-user">
       {avatar}
-      {!editing ? (
-        <div className="portal-cab-user-info">
-          {/* Имя — ссылка в обзор кабинета (просьба Дмитрия 26.07.2026):
-              раньше по нему кликали и ничего не происходило. */}
-          <a className="portal-cab-user-name" href={cabinetTabHref(user, "dashboard")} title={label}>
-            {label}
-          </a>
-          <button
-            type="button"
-            className="portal-cab-user-edit"
-            aria-label="Изменить имя"
-            title="Изменить имя"
-            onClick={() => {
-              setDraft(
-                user.display_name_customized === true && user.display_name ? user.display_name : "",
-              );
-              setEditing(true);
-              setError(null);
-            }}
-          >
-            ✎
-          </button>
-        </div>
-      ) : (
-        <form className="portal-cab-user-form" onSubmit={(event) => void handleSave(event)}>
-          <input
-            className="input portal-cab-user-input"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            maxLength={128}
-            placeholder={
-              user.telegram_username
-                ? `Пусто — будет @${user.telegram_username.replace(/^@/, "")}`
-                : "Пусто — имя из Telegram"
-            }
-            autoFocus
-          />
-          <div className="portal-cab-user-form-actions">
-            <button type="submit" className="btn btn-ghost btn-sm" disabled={saving}>
-              {saving ? "…" : "OK"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={saving}
-              onClick={() => {
-                setEditing(false);
-                setError(null);
-              }}
-            >
-              Отмена
-            </button>
-          </div>
-        </form>
-      )}
-      {error && <p className="portal-cab-user-error">{error}</p>}
+      <div className="portal-cab-user-info">
+        {/* Имя — ссылка в обзор кабинета (просьба Дмитрия 26.07.2026):
+            раньше по нему кликали и ничего не происходило. */}
+        <a className="portal-cab-user-name" href={cabinetTabHref(user, "dashboard")} title={label}>
+          {label}
+        </a>
+        {/* Настройка имени живёт в «Настройках»: форма выбора источника и вида
+            записи в узкий сайдбар не помещалась (решение Дмитрия 25.08.2026).
+            Ведём сразу на раздел, а не в начало длинной страницы. */}
+        <a
+          className="portal-cab-user-edit"
+          href={PORTAL_DISPLAY_NAME_SETTINGS_HREF}
+          aria-label="Изменить имя"
+          title="Изменить имя"
+        >
+          ✎
+        </a>
+      </div>
     </div>
   );
 }
+
 
 const SIDEBAR_COLLAPSED_KEY = "portalCabSidebarCollapsed";
 // Раскрыта ли группа «Личный кабинет». По умолчанию раскрыта; выбор помнится

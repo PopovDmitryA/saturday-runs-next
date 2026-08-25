@@ -23,6 +23,7 @@ from app.services.profile_preview_persist import (
     linking_sync_should_run,
     persist_live_profile_preview,
 )
+from app.services.user_display_name_service import rebind_display_name_source
 
 
 class ProfileLinkingError(Exception):
@@ -359,6 +360,11 @@ def confirm_profile_link(db: Session, user: User, platform_code: str, profile_ur
 
     db.commit()
     db.refresh(link)
+
+    # Имя на сайте берётся из профилей систем, и источник пересматривается именно
+    # здесь: привязка — действие самого человека, он видит результат сразу. В
+    # фоне источник не меняется, иначе имя гуляло бы само по себе.
+    rebind_display_name_source(db, user, commit=True)
 
     from app.services.sync_enqueue_service import enqueue_linking_platform_sync
 

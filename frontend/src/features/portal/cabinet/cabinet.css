@@ -91,6 +91,8 @@
   white-space: nowrap;
 }
 
+/* Ссылка в «Настройки → Имя на сайте». Была кнопкой с формой прямо в сайдбаре —
+   форма туда не помещалась (решение Дмитрия 25.08.2026). */
 .portal-cab-user-edit {
   flex: none;
   border: 0;
@@ -98,9 +100,11 @@
   color: var(--text-faint);
   font: inherit;
   font-size: 13px;
+  line-height: 1;
   padding: 2px 4px;
   border-radius: 6px;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .portal-cab-user-edit:hover {
@@ -108,33 +112,8 @@
   background: var(--bg-muted);
 }
 
-.portal-cab-user-form {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-}
-
-.portal-cab-user-input {
-  width: 100%;
-  font-size: 13.5px;
-}
-
-.portal-cab-user-form-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.portal-cab-user-error {
-  flex-basis: 100%;
-  margin: 0;
-  font-size: 12px;
-  color: var(--accent-red-text);
-}
-
-/* Дубль карточки участника над контентом кабинета: на телефоне сайдбар
-   скрыт, и правка имени («✎») была недостижима. На десктопе не показываем —
+/* Дубль карточки участника над контентом кабинета: на телефоне сайдбар скрыт,
+   и «✎» (ссылка в настройки имени) была недостижима. На десктопе не показываем —
    там карточка живёт в сайдбаре (включается в медиазапросе на 900px). */
 .portal-cab-user-mobile {
   display: none;
