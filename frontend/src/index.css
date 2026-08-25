@@ -464,27 +464,6 @@ body {
   color: var(--text);
 }
 
-.shell-user-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.shell-user-input {
-  width: min(100%, 18rem);
-  padding: 0.5rem 0.65rem;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
-.shell-user-error {
-  width: 100%;
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--tint-red-text);
-}
-
 .btn-icon {
   border: none;
   background: transparent;
@@ -615,6 +594,22 @@ body {
   background: var(--tint-blue-bg);
   border: 1px solid var(--tint-blue-border);
   color: var(--tint-blue-text);
+}
+
+/* Требует решения человека — например, имя в системе разошлось с тем, что
+   показывается на сайте. Синий «просто к сведению» тут читался бы как шум. */
+.banner.warning {
+  background: var(--tint-amber-bg);
+  border: 1px solid var(--tint-amber-border);
+  color: var(--tint-amber-text);
+}
+
+.banner p {
+  margin: 0 0 0.5rem;
+}
+
+.banner p:last-child {
+  margin-bottom: 0;
 }
 
 
@@ -3462,6 +3457,53 @@ button.badge-platform-btn:hover {
 
 .settings-lead {
   margin: 0;
+}
+
+/* Раздел «Имя на сайте»: свободного ввода нет — выбор системы-источника и вида
+   записи. Каждое изменение сохраняется сразу, кнопки «Сохранить» нет. */
+
+/* Приходим сюда по якорю из сайдбара и из плашек про смену имени. Шапка сайта
+   липкая и высотой 61 px — без этого отступа заголовок раздела уезжает под неё. */
+.display-name-card {
+  scroll-margin-top: 5rem;
+}
+
+.display-name-field {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.display-name-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.display-name-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.display-name-preview {
+  margin: 1rem 0 0;
+  color: var(--text-muted);
+}
+
+.display-name-saved {
+  color: var(--tint-green-text);
+}
+
+.display-name-suggestion {
+  margin-top: 0.75rem;
+}
+
+.display-name-suggestion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .profile-slug-current {

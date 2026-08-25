@@ -16,8 +16,16 @@ export type User = {
   telegram_username: string | null;
   telegram_first_name: string | null;
   telegram_last_name: string | null;
+  // Считается на сервере из профилей беговых систем (5 вёрст / S95 / RunPark /
+  // parkrun). Свободного ввода имени нет с 25.08.2026.
   display_name: string | null;
-  display_name_customized: boolean;
+  // "auto" — полное имя, "initial" — «Иван П.».
+  display_name_style: "auto" | "initial";
+  // Прежнее имя для одноразовой плашки «имя теперь из профиля»; null — не нужна.
+  display_name_notice: string | null;
+  // Алгоритм расходится с зафиксированным источником: имя не меняем, а зовём
+  // человека в настройки. null — расхождения нет.
+  display_name_suggestion: DisplayNameSuggestion | null;
   consent_accepted: boolean;
   is_admin: boolean;
   avatar_url: string | null;
@@ -706,11 +714,53 @@ export async function probeCurrentUser(): Promise<SessionProbe> {
   }
 }
 
-export function updateDisplayName(displayName: string) {
-  return apiFetch<User>("/auth/me", {
+export type DisplayNameSource = {
+  // null — имя пришло не из беговой системы, а от провайдера входа.
+  platform_code: string | null;
+  source_title: string;
+  name: string;
+  name_initial: string;
+  last_run: string | null;
+};
+
+export type DisplayNameSuggestion = {
+  name: string;
+  platform_code: string | null;
+  source_title: string;
+};
+
+export type DisplayNameOptions = {
+  current: string | null;
+  style: "auto" | "initial";
+  // Зафиксированная система-источник; null — выбирается автоматически.
+  source: string | null;
+  // Источник выбран человеком, а не алгоритмом: новая привязка его не перебьёт.
+  source_manual: boolean;
+  auto_name: string | null;
+  auto_source: string | null;
+  // Алгоритм расходится с текущим выбором — предлагаем сменить источник.
+  suggestion: DisplayNameSuggestion | null;
+  notice: string | null;
+  sources: DisplayNameSource[];
+};
+
+export function getDisplayNameOptions() {
+  return apiFetch<DisplayNameOptions>("/auth/me/display-name");
+}
+
+export function setDisplayNamePreferences(body: {
+  style: "auto" | "initial";
+  platform_code: string | null;
+}) {
+  return apiFetch<User>("/auth/me/display-name", {
     method: "PATCH",
-    body: JSON.stringify({ display_name: displayName.trim() }),
+    body: JSON.stringify(body),
   });
+}
+
+/** «Оставить как есть»: гасит баннер и запоминает отклонённое предложение. */
+export function keepDisplayName() {
+  return apiFetch<User>("/auth/me/display-name/keep", { method: "POST" });
 }
 
 export function uploadAvatar(file: File) {
