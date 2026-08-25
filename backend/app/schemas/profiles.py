@@ -115,6 +115,8 @@ class ParticipantSearchResponse(BaseModel):
     query: str
     results: list[ParticipantSearchResultResponse]
     truncated: bool = False
+    # Привязанные системы, где есть скрытые совпадения (кто именно — не раскрываем).
+    hidden_linked_platform_codes: list[str] = Field(default_factory=list)
 
 
 class LinkByParticipantRequest(BaseModel):

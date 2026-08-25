@@ -65,6 +65,9 @@ class ParticipantSearchPage:
     query: str
     results: list[ParticipantSearchResult]
     truncated: bool
+    # Привязанные системы, где по запросу есть совпадения, скрытые из выдачи.
+    # Кто именно нашёлся — не раскрываем, только факт и код системы.
+    hidden_linked_platform_codes: list[str]
 
 
 # Код участника: «A7035519» (штрихкод из QR любой системы) или просто цифры
@@ -79,6 +82,25 @@ def _escape_like(term: str) -> str:
 
 def _query_words(raw_query: str) -> list[str]:
     return [word for word in raw_query.split() if word]
+
+
+def _apply_query_filters(query, words: list[str]):
+    """Общие условия поиска: код участника (точно) или все слова имени (подстроки)."""
+    if len(words) == 1 and _IDENTIFIER_RE.match(words[0]):
+        # Ввели код участника — точное совпадение во всех системах:
+        # и как штрихкод (A…), и как номер участника (цифры).
+        digits = words[0].lstrip("Aa")
+        return query.filter(
+            or_(
+                func.upper(Participant.barcode_id) == f"A{digits}",
+                Participant.external_user_id == digits,
+            )
+        )
+    for word in words:
+        query = query.filter(
+            func.lower(Participant.display_name).like(f"%{_escape_like(word.lower())}%", escape="\\")
+        )
+    return query
 
 
 def search_participants(db: Session, user: User, raw_query: str) -> ParticipantSearchPage:
@@ -107,22 +129,26 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
     ]
     if linked_platform_ids:
         candidates_query = candidates_query.filter(Participant.platform_id.notin_(linked_platform_ids))
-    if len(words) == 1 and _IDENTIFIER_RE.match(words[0]):
-        # Ввели код участника — ищем по точному совпадению во всех системах:
-        # и как штрихкод (A…), и как номер участника (цифры).
-        digits = words[0].lstrip("Aa")
-        candidates_query = candidates_query.filter(
-            or_(
-                func.upper(Participant.barcode_id) == f"A{digits}",
-                Participant.external_user_id == digits,
+    candidates_query = _apply_query_filters(candidates_query, words)
+    candidates = candidates_query.limit(CANDIDATE_LIMIT + 1).all()
+
+    # Совпадения в привязанных системах не показываем, но честно говорим, что
+    # они есть: иначе «никого не нашли» выглядит враньём (кейс Дмитрия: ввёл
+    # штрихкод, а система этого бегуна у него уже привязана).
+    hidden_linked_codes: list[str] = []
+    if linked_platform_ids:
+        hidden_query = (
+            db.query(Platform.code)
+            .select_from(Participant)
+            .join(Platform, Participant.platform_id == Platform.id)
+            .filter(
+                Platform.is_active.is_(True),
+                Participant.display_name.isnot(None),
+                Participant.platform_id.in_(linked_platform_ids),
             )
         )
-    else:
-        for word in words:
-            candidates_query = candidates_query.filter(
-                func.lower(Participant.display_name).like(f"%{_escape_like(word.lower())}%", escape="\\")
-            )
-    candidates = candidates_query.limit(CANDIDATE_LIMIT + 1).all()
+        hidden_query = _apply_query_filters(hidden_query, words)
+        hidden_linked_codes = sorted({code for (code,) in hidden_query.distinct().limit(10).all()})
 
     truncated_candidates = len(candidates) > CANDIDATE_LIMIT
     candidates = [
@@ -131,7 +157,12 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
         if not _is_unknown_participant_name(participant.display_name)
     ]
     if not candidates:
-        return ParticipantSearchPage(query=query_text, results=[], truncated=truncated_candidates)
+        return ParticipantSearchPage(
+            query=query_text,
+            results=[],
+            truncated=truncated_candidates,
+            hidden_linked_platform_codes=hidden_linked_codes,
+        )
 
     participant_ids = [participant.id for participant, _ in candidates]
     run_stats = _load_run_stats(db, participant_ids)
@@ -180,7 +211,12 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
     # Последние события тянем только для показываемой верхушки — не для всех кандидатов.
     recents = _load_recent_activities(db, [item.participant_id for item in top])
     top = [replace(item, recent_activities=recents.get(item.participant_id, [])) for item in top]
-    return ParticipantSearchPage(query=query_text, results=top, truncated=truncated)
+    return ParticipantSearchPage(
+        query=query_text,
+        results=top,
+        truncated=truncated,
+        hidden_linked_platform_codes=hidden_linked_codes,
+    )
 
 
 def _rank_key(item: ParticipantSearchResult) -> tuple[int, int, int, str]:

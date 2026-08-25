@@ -144,6 +144,11 @@ def test_search_excludes_platforms_already_linked_by_user(db_session: Session, s
 
     page = search_participants(db_session, search_user, "Исключение")
     assert all(item.platform_code != "five_verst" for item in page.results)
+    # Скрытые совпадения не пропадают молча: система называется, имя — нет.
+    assert page.hidden_linked_platform_codes == ["five_verst"]
+
+    clean = search_participants(db_session, search_user, "Такогоименинет")
+    assert clean.hidden_linked_platform_codes == []
 
 
 def test_search_skips_unknown_and_empty_names(db_session: Session, search_user: User) -> None:

@@ -127,6 +127,7 @@ export function ParticipantNameSearch({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ParticipantSearchResult[] | null>(null);
   const [truncated, setTruncated] = useState(false);
+  const [hiddenLinkedCodes, setHiddenLinkedCodes] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [linkingId, setLinkingId] = useState<string | null>(null);
@@ -158,11 +159,13 @@ export function ParticipantNameSearch({
       }
       setResults(response.results);
       setTruncated(response.truncated);
+      setHiddenLinkedCodes(response.hidden_linked_platform_codes ?? []);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         return;
       }
       setResults(null);
+      setHiddenLinkedCodes([]);
       setSearchError(err instanceof Error ? err.message : "Не удалось выполнить поиск");
     } finally {
       if (!controller.signal.aborted) {
@@ -228,6 +231,7 @@ export function ParticipantNameSearch({
       abortRef.current?.abort();
       setResults(null);
       setTruncated(false);
+      setHiddenLinkedCodes([]);
       setSearching(false);
       return;
     }
@@ -501,14 +505,27 @@ export function ParticipantNameSearch({
 
       {!searching && results !== null && visibleResults.length === 0 && !searchError && (
         <div className="participant-name-search-empty">
-          <p>
-            По запросу «{trimmedQuery}» никого не нашли. Проверьте написание — имя должно совпадать с
-            протоколами пробежек.
-          </p>
-          <p className="muted">
-            Ещё можно вставить в это же поле ссылку на профиль с сайта системы — например,
-            https://5verst.ru/userstats/….
-          </p>
+          {hiddenLinkedCodes.length > 0 ? (
+            <p>
+              По запросу «{trimmedQuery}» есть бегун в{" "}
+              {hiddenLinkedCodes.length === 1
+                ? `системе ${platformCodeLabel(hiddenLinkedCodes[0])}`
+                : `системах ${hiddenLinkedCodes.map(platformCodeLabel).join(", ")}`}
+              , но она уже привязана к вашему аккаунту — поиск работает только по системам без
+              привязки.
+            </p>
+          ) : (
+            <>
+              <p>
+                По запросу «{trimmedQuery}» никого не нашли. Проверьте написание — имя должно
+                совпадать с протоколами пробежек.
+              </p>
+              <p className="muted">
+                Ещё можно вставить в это же поле ссылку на профиль с сайта системы — например,
+                https://5verst.ru/userstats/….
+              </p>
+            </>
+          )}
         </div>
       )}
 
@@ -575,6 +592,13 @@ export function ParticipantNameSearch({
             );
           })}
         </ul>
+      )}
+
+      {visibleResults.length > 0 && hiddenLinkedCodes.length > 0 && (
+        <p className="muted participant-name-search-status">
+          Совпадения в уже привязанных системах ({hiddenLinkedCodes.map(platformCodeLabel).join(", ")})
+          не показываются.
+        </p>
       )}
 
       {truncated && (

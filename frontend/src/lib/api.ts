@@ -898,6 +898,7 @@ export type ParticipantSearchResponse = {
   query: string;
   results: ParticipantSearchResult[];
   truncated: boolean;
+  hidden_linked_platform_codes: string[];
 };
 
 export function searchParticipants(query: string, signal?: AbortSignal) {

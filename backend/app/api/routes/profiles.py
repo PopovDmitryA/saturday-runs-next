@@ -310,6 +310,7 @@ def search_profiles(
             ParticipantSearchResultResponse.model_validate(dataclass_asdict(item)) for item in page.results
         ],
         truncated=page.truncated,
+        hidden_linked_platform_codes=page.hidden_linked_platform_codes,
     )
 
 
