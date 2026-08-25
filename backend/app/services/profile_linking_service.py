@@ -432,6 +432,10 @@ def confirm_profile_link_by_participant(db: Session, user: User, participant_id:
     db.commit()
     db.refresh(link)
 
+    # Как и в confirm_profile_link: привязка — момент пересмотра источника
+    # имени на сайте.
+    rebind_display_name_source(db, user, commit=True)
+
     from app.services.sync_enqueue_service import enqueue_linking_platform_sync
 
     if linking_sync_should_run(db, platform, participant, preview):
