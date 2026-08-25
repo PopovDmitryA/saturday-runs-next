@@ -11474,6 +11474,12 @@ a.admin-system-chip:hover {
   font-size: 13px;
 }
 
+/* Возврат в мастер привязки (/welcome) из кабинета, пока привязано не всё. */
+.profile-link-wizard {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .profile-platform-grid {
   display: grid;
   /* Ровно 2 карточки в строке (просьба Дмитрия): при auto-fill влезало 3,

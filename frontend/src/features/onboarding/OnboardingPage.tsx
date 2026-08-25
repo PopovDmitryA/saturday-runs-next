@@ -204,8 +204,8 @@ function OnboardingContent({ user }: { user: User }) {
         <section className="card onboarding-search-card">
           <h2 className="onboarding-search-title">Найдите себя</h2>
           <p className="muted onboarding-search-sub">
-            Имя из протокола, номер участника или штрихкод из QR-кода — например,{" "}
-            <span className="onboarding-code-example">A7035519</span>. Ищем сразу по всем системам.
+            Одно поле на все системы: имя из протокола, код участника — например,{" "}
+            <span className="onboarding-code-example">A7035519</span> — или ссылка на ваш профиль.
           </p>
           <ParticipantNameSearch
             autoFocus
@@ -213,11 +213,8 @@ function OnboardingContent({ user }: { user: User }) {
             onLinked={() => void loadLinks()}
           />
           <p className="muted onboarding-fallback">
-            Не нашли себя? Профиль можно привязать по ссылке —{" "}
-            <a className="link" href="/dashboard#profiles">
-              в личном кабинете
-            </a>
-            .
+            Не нашли себя? Вставьте в это же поле ссылку на профиль с сайта системы — например,
+            https://5verst.ru/userstats/… — мы загрузим его и привяжем.
           </p>
         </section>
 

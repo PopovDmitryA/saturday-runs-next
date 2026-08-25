@@ -1,16 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
+  confirmFiveVerstProfile,
+  confirmParkrunProfile,
+  confirmS95Profile,
   linkParticipant,
+  previewFiveVerstProfile,
+  previewParkrunProfile,
+  previewS95Profile,
   searchParticipants,
   type ParticipantSearchResult,
   type PlatformLink,
+  type ProfilePreview,
+  type ProfilePreviewActivity,
 } from "../lib/api";
-import { formatDate, pluralizeRu } from "../lib/format";
+import { formatDate, platformCodeLabel, pluralizeRu } from "../lib/format";
 import { PlatformBadge } from "./PlatformBadge";
 
 const SEARCH_DEBOUNCE_MS = 400;
 const MIN_QUERY_LENGTH = 3;
+
+type UrlPlatformCode = "five_verst" | "s95" | "parkrun" | "runpark";
+
+type UrlState = {
+  platformCode: UrlPlatformCode;
+  url: string;
+  loading: boolean;
+  confirming: boolean;
+  preview: ProfilePreview | null;
+  linked: boolean;
+  message: string | null;
+  error: string | null;
+};
 
 type ParticipantNameSearchProps = {
   linkedPlatformCodes: Set<string>;
@@ -19,15 +40,36 @@ type ParticipantNameSearchProps = {
   placeholder?: string;
 };
 
-function resultMetaLine(result: ParticipantSearchResult): string {
+/** Ссылка на профиль беговой системы, вставленная прямо в поиск. */
+function detectUrlPlatform(value: string): UrlPlatformCode | null {
+  const lower = value.toLowerCase();
+  if (!lower.includes(".")) {
+    return null;
+  }
+  if (lower.includes("5verst.ru")) {
+    return "five_verst";
+  }
+  if (lower.includes("s95.ru")) {
+    return "s95";
+  }
+  if (lower.includes("parkrun.")) {
+    return "parkrun";
+  }
+  if (lower.includes("runpark.ru")) {
+    return "runpark";
+  }
+  return null;
+}
+
+function countsLine(totalRuns: number | null, totalVolunteering: number | null): string {
   const parts: string[] = [];
-  if (result.total_runs > 0) {
-    parts.push(pluralizeRu(result.total_runs, ["пробежка", "пробежки", "пробежек"]));
+  if (totalRuns !== null && totalRuns > 0) {
+    parts.push(pluralizeRu(totalRuns, ["пробежка", "пробежки", "пробежек"]));
   } else {
     parts.push("пока без пробежек");
   }
-  if (result.total_volunteering > 0) {
-    parts.push(pluralizeRu(result.total_volunteering, ["волонтёрство", "волонтёрства", "волонтёрств"]));
+  if (totalVolunteering !== null && totalVolunteering > 0) {
+    parts.push(pluralizeRu(totalVolunteering, ["волонтёрство", "волонтёрства", "волонтёрств"]));
   }
   return parts.join(" · ");
 }
@@ -49,11 +91,38 @@ function resultLocationLine(result: ParticipantSearchResult): string | null {
     : result.home_location_name;
 }
 
+function RecentActivitiesSpoiler({ activities }: { activities: ProfilePreviewActivity[] }) {
+  if (activities.length === 0) {
+    return null;
+  }
+  return (
+    <details className="participant-search-card-recent-spoiler">
+      <summary>Последние события</summary>
+      <ul className="participant-search-card-recent">
+        {activities.slice(0, 3).map((activity, index) => (
+          <li key={`${activity.kind}-${activity.event_date}-${index}`}>
+            <span
+              className={`participant-search-card-recent-kind participant-search-card-recent-kind-${activity.kind}`}
+            >
+              {activity.kind === "run" ? "Пробежка" : "Волонтёрство"}
+            </span>
+            <span className="participant-search-card-recent-date">{formatDate(activity.event_date)}</span>
+            <span className="participant-search-card-recent-loc">{activity.location_name}</span>
+            <span className="participant-search-card-recent-detail">
+              {activity.kind === "run" ? shortFinishTime(activity.finish_time_display) : activity.role ?? ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 export function ParticipantNameSearch({
   linkedPlatformCodes,
   onLinked,
   autoFocus = false,
-  placeholder = "Иванов Иван — или код участника, например A7035519",
+  placeholder = "Иванов Иван, код A7035519 или ссылка на профиль",
 }: ParticipantNameSearchProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ParticipantSearchResult[] | null>(null);
@@ -63,6 +132,7 @@ export function ParticipantNameSearch({
   const [linkingId, setLinkingId] = useState<string | null>(null);
   const [justLinkedIds, setJustLinkedIds] = useState<Set<string>>(() => new Set());
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
+  const [urlState, setUrlState] = useState<UrlState | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<number | null>(null);
 
@@ -101,10 +171,55 @@ export function ParticipantNameSearch({
     }
   }, []);
 
+  const runUrlPreview = useCallback(async (platformCode: UrlPlatformCode, url: string) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setUrlState({
+      platformCode,
+      url,
+      loading: true,
+      confirming: false,
+      preview: null,
+      linked: false,
+      message: null,
+      error: null,
+    });
+    const previewFn =
+      platformCode === "five_verst"
+        ? previewFiveVerstProfile
+        : platformCode === "s95"
+          ? previewS95Profile
+          : previewParkrunProfile;
+    try {
+      const preview = await previewFn(url, controller.signal);
+      if (controller.signal.aborted) {
+        return;
+      }
+      setUrlState((prev) =>
+        prev && prev.url === url ? { ...prev, loading: false, preview } : prev,
+      );
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
+      setUrlState((prev) =>
+        prev && prev.url === url
+          ? {
+              ...prev,
+              loading: false,
+              error: err instanceof Error ? err.message : "Не удалось загрузить профиль",
+            }
+          : prev,
+      );
+    }
+  }, []);
+
   const handleQueryChange = (value: string) => {
     setQuery(value);
     setSearchError(null);
     setCardErrors({});
+    setUrlState(null);
     if (debounceRef.current !== null) {
       window.clearTimeout(debounceRef.current);
     }
@@ -116,6 +231,45 @@ export function ParticipantNameSearch({
       setSearching(false);
       return;
     }
+
+    const urlPlatform = detectUrlPlatform(trimmed);
+    if (urlPlatform !== null) {
+      abortRef.current?.abort();
+      setResults(null);
+      setTruncated(false);
+      setSearching(false);
+      if (linkedPlatformCodes.has(urlPlatform)) {
+        setUrlState({
+          platformCode: urlPlatform,
+          url: trimmed,
+          loading: false,
+          confirming: false,
+          preview: null,
+          linked: false,
+          message: null,
+          error: `Система ${platformCodeLabel(urlPlatform)} уже привязана к вашему аккаунту.`,
+        });
+        return;
+      }
+      if (urlPlatform === "runpark") {
+        setUrlState({
+          platformCode: urlPlatform,
+          url: trimmed,
+          loading: false,
+          confirming: false,
+          preview: null,
+          linked: false,
+          message: null,
+          error: "Для RunPark введите штрихкод участника — буква A и цифры, например A6871786.",
+        });
+        return;
+      }
+      debounceRef.current = window.setTimeout(() => {
+        void runUrlPreview(urlPlatform, trimmed);
+      }, SEARCH_DEBOUNCE_MS);
+      return;
+    }
+
     debounceRef.current = window.setTimeout(() => {
       void runSearch(trimmed);
     }, SEARCH_DEBOUNCE_MS);
@@ -156,13 +310,58 @@ export function ParticipantNameSearch({
     }
   };
 
+  const handleUrlConfirm = async (linkParkrun: boolean) => {
+    if (!urlState || urlState.preview === null) {
+      return;
+    }
+    const { platformCode, url } = urlState;
+    setUrlState((prev) => (prev ? { ...prev, confirming: true, error: null } : prev));
+    try {
+      let link: PlatformLink;
+      let message: string | null = null;
+      if (platformCode === "s95") {
+        const response = await confirmS95Profile(url, linkParkrun);
+        link = response.link;
+        if (linkParkrun) {
+          message =
+            response.message === "linked_s95_parkrun_skipped"
+              ? "Профиль С95 привязан; parkrun уже был привязан или недоступен."
+              : "Профили С95 и parkrun привязаны.";
+        }
+      } else if (platformCode === "five_verst") {
+        link = (await confirmFiveVerstProfile(url)).link;
+      } else {
+        link = (await confirmParkrunProfile(url)).link;
+      }
+      setUrlState((prev) =>
+        prev ? { ...prev, confirming: false, linked: true, message } : prev,
+      );
+      onLinked(link);
+    } catch (err) {
+      setUrlState((prev) =>
+        prev
+          ? {
+              ...prev,
+              confirming: false,
+              error: err instanceof Error ? err.message : "Не удалось привязать профиль",
+            }
+          : prev,
+      );
+    }
+  };
+
   const visibleResults = useMemo(() => results ?? [], [results]);
   const trimmedQuery = query.trim();
+  const urlPreview = urlState?.preview ?? null;
+  const showParkrunPair =
+    urlState?.platformCode === "s95" &&
+    urlPreview?.parkrun_match != null &&
+    !linkedPlatformCodes.has("parkrun");
 
   return (
     <div className="participant-name-search">
       <label className="field">
-        <span className="field-label">Имя, номер участника или штрихкод</span>
+        <span className="field-label">Имя, код участника или ссылка на профиль</span>
         <span className="participant-name-search-input-wrap">
           <svg
             className="participant-name-search-icon"
@@ -205,6 +404,101 @@ export function ParticipantNameSearch({
         </div>
       )}
 
+      {urlState?.loading && (
+        <>
+          <div className="participant-name-search-skeletons" role="status" aria-label="Загружаем профиль">
+            <div className="participant-name-search-skeleton" />
+          </div>
+          <p className="muted participant-name-search-status">
+            Проверяем базу сайта и при необходимости загружаем профиль с платформы — это может занять
+            время. Пожалуйста, не закрывайте страницу.
+          </p>
+        </>
+      )}
+
+      {urlState?.error && (
+        <div className="profile-form-error" role="alert">
+          <p>{urlState.error}</p>
+        </div>
+      )}
+
+      {urlPreview && (
+        <ul className="participant-search-results">
+          <li
+            className={`participant-search-card${urlState?.linked ? " participant-search-card-linked" : ""}`}
+          >
+            <div className="participant-search-card-head">
+              <PlatformBadge code={urlPreview.platform_code} />
+              <span className="participant-search-card-name">{urlPreview.display_name}</span>
+              {urlPreview.profile_url.startsWith("http") && (
+                <a
+                  className="link participant-search-card-open"
+                  href={urlPreview.profile_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Открыть профиль ↗
+                </a>
+              )}
+            </div>
+            <div className="participant-search-card-body">
+              <div className="participant-search-card-meta">
+                <span className="muted">
+                  {countsLine(urlPreview.total_runs, urlPreview.total_volunteering)}
+                </span>
+                {urlPreview.club_name && <span className="muted">Клуб: {urlPreview.club_name}</span>}
+                {showParkrunPair && urlPreview.parkrun_match && (
+                  <span className="muted">
+                    Найден и parkrun: {urlPreview.parkrun_match.display_name} (
+                    {countsLine(
+                      urlPreview.parkrun_match.total_runs,
+                      urlPreview.parkrun_match.total_volunteering,
+                    )}
+                    )
+                  </span>
+                )}
+              </div>
+              <div className="participant-search-card-cta">
+                {urlState?.linked ? (
+                  <span className="participant-search-card-done">
+                    {urlState.message ?? "Привязан ✓"}
+                  </span>
+                ) : showParkrunPair ? (
+                  <>
+                    <button
+                      type="button"
+                      className="btn secondary btn-sm"
+                      disabled={urlState?.confirming}
+                      onClick={() => void handleUrlConfirm(false)}
+                    >
+                      Только С95
+                    </button>{" "}
+                    <button
+                      type="button"
+                      className="btn primary btn-sm"
+                      disabled={urlState?.confirming}
+                      onClick={() => void handleUrlConfirm(true)}
+                    >
+                      {urlState?.confirming ? "Привязка…" : "Привязать оба"}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn primary btn-sm"
+                    disabled={urlState?.confirming}
+                    onClick={() => void handleUrlConfirm(false)}
+                  >
+                    {urlState?.confirming ? "Привязка…" : "Это я — привязать"}
+                  </button>
+                )}
+              </div>
+            </div>
+            <RecentActivitiesSpoiler activities={urlPreview.recent_activities} />
+          </li>
+        </ul>
+      )}
+
       {!searching && results !== null && visibleResults.length === 0 && !searchError && (
         <div className="participant-name-search-empty">
           <p>
@@ -212,8 +506,8 @@ export function ParticipantNameSearch({
             протоколами пробежек.
           </p>
           <p className="muted">
-            Если вы ещё не участвовали в пробежках или профиль совсем свежий, привяжите его по ссылке или
-            штрихкоду ниже.
+            Ещё можно вставить в это же поле ссылку на профиль с сайта системы — например,
+            https://5verst.ru/userstats/….
           </p>
         </div>
       )}
@@ -249,7 +543,7 @@ export function ParticipantNameSearch({
                 <div className="participant-search-card-body">
                   <div className="participant-search-card-meta">
                     {locationLine && <span className="participant-search-card-location">{locationLine}</span>}
-                    <span className="muted">{resultMetaLine(result)}</span>
+                    <span className="muted">{countsLine(result.total_runs, result.total_volunteering)}</span>
                     {result.club_name && <span className="muted">Клуб: {result.club_name}</span>}
                   </div>
                   <div className="participant-search-card-cta">
@@ -271,31 +565,7 @@ export function ParticipantNameSearch({
                     )}
                   </div>
                 </div>
-                {result.recent_activities.length > 0 && (
-                  <details className="participant-search-card-recent-spoiler">
-                    <summary>Последние события</summary>
-                    <ul className="participant-search-card-recent">
-                      {result.recent_activities.map((activity, index) => (
-                        <li key={`${activity.kind}-${activity.event_date}-${index}`}>
-                          <span
-                            className={`participant-search-card-recent-kind participant-search-card-recent-kind-${activity.kind}`}
-                          >
-                            {activity.kind === "run" ? "Пробежка" : "Волонтёрство"}
-                          </span>
-                          <span className="participant-search-card-recent-date">
-                            {formatDate(activity.event_date)}
-                          </span>
-                          <span className="participant-search-card-recent-loc">{activity.location_name}</span>
-                          <span className="participant-search-card-recent-detail">
-                            {activity.kind === "run"
-                              ? shortFinishTime(activity.finish_time_display)
-                              : activity.role ?? ""}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
+                <RecentActivitiesSpoiler activities={result.recent_activities} />
                 {cardError && (
                   <div className="profile-form-error" role="alert">
                     <p>{cardError}</p>
