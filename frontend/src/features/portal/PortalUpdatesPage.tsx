@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { Pagination } from "../../components/Pagination";
 import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
@@ -56,6 +56,16 @@ function pageHref(page: number): string {
 }
 
 /**
+ * Ссылка на один релиз — ею делятся («смотри, вот когда появились протоколы»).
+ * Сознательно без номера страницы: с каждым новым релизом старые уезжают на
+ * страницу ниже, и ссылка с `?page=` протухла бы. По одному якорю сервер сам
+ * находит нужную страницу (параметр version в /api/releases).
+ */
+function releaseHref(version: string): string {
+  return `${PORTAL_UPDATES_HREF}#v${version}`;
+}
+
+/**
  * Докрутить до релиза, на который указывает якорь. Браузер обработал якорь
  * ещё при загрузке, когда никаких релизов в разметке не было, — поэтому
  * прокручиваем сами и с несколькими попытками: секция появится только после
@@ -85,6 +95,10 @@ export function PortalUpdatesPage() {
   // страница за концом истории): после setPage эффект пошёл бы по второму
   // кругу, а перезапрашивать ровно то же самое незачем.
   const loadedPage = useRef<number | null>(null);
+  // Релиз, на который указывает адрес: подсвечиваем его, чтобы пришедший по
+  // ссылке сразу видел нужную запись. Через CSS :target это не сделать —
+  // после history.replaceState браузер перестаёт считать элемент целью.
+  const [highlighted, setHighlighted] = useState<string | null>(() => versionFromHash());
 
   // Кнопки «назад/вперёд» браузера должны листать страницы истории релизов,
   // а не уводить с раздела: адрес — источник правды для номера страницы.
@@ -141,9 +155,26 @@ export function PortalUpdatesPage() {
   const goToPage = useCallback((next: number) => {
     // Адрес без якоря: он относится к релизу с прошлой страницы.
     anchorVersion.current = null;
+    setHighlighted(null);
     window.history.pushState(null, "", pageHref(next));
     setPage(next);
     window.scrollTo({ top: 0 });
+  }, []);
+
+  /**
+   * Клик по номеру или заголовку релиза. Уходить со страницы незачем — релиз
+   * уже перед глазами: ставим его якорь в адрес (адресную строку можно
+   * скопировать и отправить) и подкручиваем к нему. Без preventDefault общий
+   * обработчик ссылок сайта увёл бы читателя со второй страницы на первую.
+   */
+  const selectRelease = useCallback((event: MouseEvent<HTMLAnchorElement>, version: string) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    event.preventDefault();
+    window.history.replaceState(null, "", releaseHref(version));
+    setHighlighted(version);
+    scrollToRelease(version);
   }, []);
 
   const shownFrom = data && data.total ? (data.page - 1) * data.page_size + 1 : 0;
@@ -174,10 +205,31 @@ export function PortalUpdatesPage() {
           ) : (
             <div className={`portal-updates-list${loading ? " portal-updates-list-loading" : ""}`}>
               {data.items.map((release: SiteRelease) => (
-                <article key={release.id} className="portal-release" id={`v${release.version}`}>
+                <article
+                  key={release.id}
+                  className={`portal-release${
+                    release.version === highlighted ? " portal-release-highlighted" : ""
+                  }`}
+                  id={`v${release.version}`}
+                >
                   <header className="portal-release-head">
-                    <span className="portal-release-version">v{release.version}</span>
-                    <h2 className="portal-release-title">{release.title}</h2>
+                    <a
+                      className="portal-release-version"
+                      href={releaseHref(release.version)}
+                      onClick={(event) => selectRelease(event, release.version)}
+                      title="Ссылка на этот релиз — ею можно поделиться"
+                    >
+                      v{release.version}
+                    </a>
+                    <h2 className="portal-release-title">
+                      <a
+                        className="portal-release-title-link"
+                        href={releaseHref(release.version)}
+                        onClick={(event) => selectRelease(event, release.version)}
+                      >
+                        {release.title}
+                      </a>
+                    </h2>
                     <time className="portal-release-date" dateTime={release.released_at}>
                       {formatDate(release.released_at)}
                     </time>

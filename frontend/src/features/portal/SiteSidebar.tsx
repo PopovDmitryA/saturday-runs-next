@@ -615,9 +615,21 @@ export function SiteSidebar({
             {/* Линии-разделители: пункты чужого профиля временные, их надо
                 визуально отделить от постоянной навигации сайта. */}
             <div className="portal-cab-nav-sep" aria-hidden="true" />
-            {(() => {
-              const head = (
-                <>
+            {/* Строка-заголовок: имя — отдельная кнопка (ведёт на главную
+                участника), шеврон — соседняя, а не вложенная. Вложенная
+                кнопка в кнопке невалидна и ломала гидрацию React. */}
+            <div
+              className={`portal-cab-nav-item portal-cab-group-head${
+                extraGroup.onTitleClick ? "" : " portal-cab-group-head-static"
+              }`}
+              title={collapsed ? extraGroup.title : undefined}
+            >
+              {extraGroup.onTitleClick ? (
+                <button
+                  type="button"
+                  className="portal-cab-group-title"
+                  onClick={extraGroup.onTitleClick}
+                >
                   <span className="portal-cab-nav-icon">
                     {extraGroup.avatarUrl ? (
                       <img className="portal-cab-nav-avatar" src={extraGroup.avatarUrl} alt="" />
@@ -626,46 +638,36 @@ export function SiteSidebar({
                     )}
                   </span>
                   <span className="portal-cab-nav-label">{extraGroup.title}</span>
-                  <button
-                    type="button"
-                    className={`portal-cab-group-chevron${extraOpen ? " open" : ""}`}
-                    aria-label={extraOpen ? "Скрыть разделы участника" : "Показать разделы участника"}
-                    aria-expanded={extraOpen}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setExtraOpen((open) => !open);
-                    }}
-                  >
-                    {icon(<path d="M9 6l6 6-6 6" />)}
-                  </button>
-                </>
-              );
-              return extraGroup.onTitleClick ? (
-                <button
-                  type="button"
-                  onClick={extraGroup.onTitleClick}
-                  className="portal-cab-nav-item portal-cab-group-head portal-cab-nav-textitem"
-                  title={collapsed ? extraGroup.title : undefined}
-                >
-                  {head}
                 </button>
               ) : (
-                <div
-                  className="portal-cab-nav-item portal-cab-group-head portal-cab-group-head-static"
-                  title={collapsed ? extraGroup.title : undefined}
-                >
-                  {head}
-                </div>
-              );
-            })()}
+                <span className="portal-cab-group-title">
+                  <span className="portal-cab-nav-icon">
+                    {extraGroup.avatarUrl ? (
+                      <img className="portal-cab-nav-avatar" src={extraGroup.avatarUrl} alt="" />
+                    ) : (
+                      PROFILE_ICON
+                    )}
+                  </span>
+                  <span className="portal-cab-nav-label">{extraGroup.title}</span>
+                </span>
+              )}
+              <button
+                type="button"
+                className={`portal-cab-group-chevron${extraOpen ? " open" : ""}`}
+                aria-label={extraOpen ? "Скрыть разделы участника" : "Показать разделы участника"}
+                aria-expanded={extraOpen}
+                onClick={() => setExtraOpen((open) => !open)}
+              >
+                {icon(<path d="M9 6l6 6-6 6" />)}
+              </button>
+            </div>
             {extraOpen &&
               extraGroup.items.map((item) => (
                 <button
                   key={item.key}
                   type="button"
                   onClick={item.onClick}
-                  className={`portal-cab-nav-item portal-cab-nav-subitem portal-cab-nav-textitem${
+                  className={`portal-cab-nav-item portal-cab-nav-subitem${
                     item.active ? " active" : ""
                   }`}
                   aria-current={item.active ? "page" : undefined}

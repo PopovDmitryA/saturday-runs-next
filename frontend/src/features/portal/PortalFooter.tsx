@@ -59,7 +59,7 @@ const FOOTER_COLUMNS: FooterColumn[] = [
       { href: PORTAL_UPDATES_HREF, label: "Обновления" },
       { href: PORTAL_BLOG_HREF, label: "Блог" },
       { href: "/backlog", label: "Бэклог идей" },
-      { href: PORTAL_ABOUT_PRIVACY_HREF, label: "Честность и данные" },
+      { href: PORTAL_ABOUT_PRIVACY_HREF, label: "Данные и приватность" },
     ],
   },
 ];
