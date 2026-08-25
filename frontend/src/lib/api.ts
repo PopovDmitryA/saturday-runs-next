@@ -36,6 +36,7 @@ export type User = {
   serial_id: number | null;
   public_slug: string | null;
   auth_identities: AuthIdentity[];
+  onboarding_no_account_platforms: string[];
 };
 
 export type AuthIdentity = {
@@ -913,6 +914,13 @@ export function linkParticipant(participantId: string) {
 
 export function completeOnboarding() {
   return apiFetch<{ message: string }>("/auth/onboarding/complete", { method: "POST" });
+}
+
+export function setOnboardingNoAccount(platformCode: string, noAccount: boolean) {
+  return apiFetch<{ no_account_platforms: string[] }>("/auth/onboarding/no-account", {
+    method: "POST",
+    body: JSON.stringify({ platform_code: platformCode, no_account: noAccount }),
+  });
 }
 
 export function getDashboard() {

@@ -38,6 +38,7 @@ const PREVIEW_USER: User = {
   telegram_last_name: null,
   display_name: "Демо-участник",
   display_name_style: "auto",
+  onboarding_no_account_platforms: [],
   display_name_notice: null,
   display_name_suggestion: null,
   consent_accepted: true,

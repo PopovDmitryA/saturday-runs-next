@@ -54,6 +54,15 @@ class DisplayNameSuggestion(BaseModel):
     source_title: str
 
 
+class NoAccountPlatformRequest(BaseModel):
+    platform_code: str = Field(min_length=1, max_length=32)
+    no_account: bool = True
+
+
+class NoAccountPlatformsResponse(BaseModel):
+    no_account_platforms: list[str] = Field(default_factory=list)
+
+
 class UserResponse(BaseModel):
     id: UUID
     telegram_id: int | None = None
@@ -80,6 +89,15 @@ class UserResponse(BaseModel):
     serial_id: int | None = None
     public_slug: str | None = None
     auth_identities: list[AuthIdentityResponse] = Field(default_factory=list)
+    # Онбординг: системы, где человек отметил «у меня там нет аккаунта».
+    onboarding_no_account_platforms: list[str] = Field(default_factory=list)
+
+    @field_validator("onboarding_no_account_platforms", mode="before")
+    @classmethod
+    def _no_account_none_as_empty(cls, value: object) -> object:
+        # У неперсистнутого User (в тестах) JSONB-поле ещё None: server_default
+        # применяется только при INSERT.
+        return [] if value is None else value
 
     model_config = {"from_attributes": True}
 

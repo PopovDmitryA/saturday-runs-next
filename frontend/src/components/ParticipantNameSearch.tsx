@@ -242,26 +242,29 @@ export function ParticipantNameSearch({
                   {result.club_name && <span className="muted">Клуб: {result.club_name}</span>}
                 </div>
                 {result.recent_activities.length > 0 && (
-                  <ul className="participant-search-card-recent">
-                    {result.recent_activities.map((activity, index) => (
-                      <li key={`${activity.kind}-${activity.event_date}-${index}`}>
-                        <span
-                          className={`participant-search-card-recent-kind participant-search-card-recent-kind-${activity.kind}`}
-                        >
-                          {activity.kind === "run" ? "Пробежка" : "Волонтёрство"}
-                        </span>
-                        <span className="participant-search-card-recent-date">
-                          {formatDate(activity.event_date)}
-                        </span>
-                        <span className="participant-search-card-recent-loc">{activity.location_name}</span>
-                        <span className="participant-search-card-recent-detail">
-                          {activity.kind === "run"
-                            ? shortFinishTime(activity.finish_time_display)
-                            : activity.role ?? ""}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                  <details className="participant-search-card-recent-spoiler">
+                    <summary>Последние события</summary>
+                    <ul className="participant-search-card-recent">
+                      {result.recent_activities.map((activity, index) => (
+                        <li key={`${activity.kind}-${activity.event_date}-${index}`}>
+                          <span
+                            className={`participant-search-card-recent-kind participant-search-card-recent-kind-${activity.kind}`}
+                          >
+                            {activity.kind === "run" ? "Пробежка" : "Волонтёрство"}
+                          </span>
+                          <span className="participant-search-card-recent-date">
+                            {formatDate(activity.event_date)}
+                          </span>
+                          <span className="participant-search-card-recent-loc">{activity.location_name}</span>
+                          <span className="participant-search-card-recent-detail">
+                            {activity.kind === "run"
+                              ? shortFinishTime(activity.finish_time_display)
+                              : activity.role ?? ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
                 )}
                 <div className="participant-search-card-actions">
                   {result.profile_url && result.profile_url.startsWith("http") && (

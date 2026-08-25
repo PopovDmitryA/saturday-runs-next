@@ -8,7 +8,12 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User
-from app.services.onboarding_service import complete_onboarding, post_login_redirect_target
+from app.services.onboarding_service import (
+    OnboardingError,
+    complete_onboarding,
+    post_login_redirect_target,
+    set_platform_no_account,
+)
 from app.services.participant_search_service import ParticipantSearchError, search_participants
 from app.services.profile_linking_service import ProfileLinkingError, confirm_profile_link_by_participant
 
@@ -230,6 +235,34 @@ def test_confirm_link_by_participant_refuses_foreign_profile(db_session: Session
     with pytest.raises(ProfileLinkingError) as taken:
         confirm_profile_link_by_participant(db_session, search_user, participant.id)
     assert taken.value.status_code == 409
+
+
+def test_set_platform_no_account_toggles_and_validates(db_session: Session, search_user: User) -> None:
+    assert set_platform_no_account(db_session, search_user, "parkrun", True) == ["parkrun"]
+    assert set_platform_no_account(db_session, search_user, "s95", True) == ["parkrun", "s95"]
+    # Повторная отметка не дублирует, снятие убирает только свою систему.
+    assert set_platform_no_account(db_session, search_user, "parkrun", True) == ["parkrun", "s95"]
+    assert set_platform_no_account(db_session, search_user, "parkrun", False) == ["s95"]
+
+    with pytest.raises(OnboardingError) as unknown:
+        set_platform_no_account(db_session, search_user, "strava", True)
+    assert unknown.value.status_code == 404
+
+
+def test_search_builds_runpark_profile_url(db_session: Session, search_user: User) -> None:
+    runpark = db_session.query(Platform).filter(Platform.code == "runpark").one()
+    participant = Participant(
+        platform_id=runpark.id,
+        external_user_id="RP-EXT-001",
+        display_name="Кармический Тест",
+        barcode_id="A7933333",
+    )
+    db_session.add(participant)
+    db_session.commit()
+
+    page = search_participants(db_session, search_user, "Кармический")
+    result = next(item for item in page.results if item.participant_id == participant.id)
+    assert result.profile_url == "https://runpark.ru/Account/Karmas/RP-EXT-001"
 
 
 def test_post_login_redirect_targets(db_session: Session, search_user: User) -> None:

@@ -940,6 +940,16 @@ class User(Base):
     # Онбординг (/welcome) пройден или пропущен: пока NULL и нет привязок,
     # после входа пользователя ведём на /welcome, а не в кабинет.
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Системы, где человек отметил «у меня там нет аккаунта» (список кодов
+    # платформ): прогресс онбординга закрывается ими честно, без привязки.
+    onboarding_no_account_platforms: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        # default=list — чтобы непер­систнутый User() имел [], а не None
+        # (server_default применяется только при INSERT в БД).
+        default=list,
+        server_default="[]",
+    )
     auto_sync_by_platform: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,

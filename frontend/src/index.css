@@ -14378,10 +14378,17 @@ a.admin-system-chip:hover {
   transition: border-color 0.35s, background 0.35s, transform 0.35s, box-shadow 0.35s;
 }
 
-.onboarding-system-tile-done {
+.onboarding-system-tile-linked {
   border-color: var(--tint-green-border-strong);
   background: var(--tint-green-bg);
   box-shadow: 0 4px 14px color-mix(in srgb, var(--tint-green-border-strong) 25%, transparent);
+}
+
+/* «У меня там нет аккаунта»: честно закрывает прогресс, но выглядит нейтрально. */
+.onboarding-system-tile-no-account {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: var(--bg-muted);
 }
 
 .onboarding-system-check {
@@ -14407,9 +14414,15 @@ a.admin-system-chip:hover {
   }
 }
 
-.onboarding-system-tile-done .onboarding-system-check {
+.onboarding-system-tile-linked .onboarding-system-check {
   background: #22c55e;
   color: #fff;
+  animation: onboarding-check-pop 0.45s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.onboarding-system-tile-no-account .onboarding-system-check {
+  background: var(--neutral-soft);
+  color: var(--surface);
   animation: onboarding-check-pop 0.45s cubic-bezier(0.68, -0.55, 0.27, 1.55);
 }
 
@@ -14424,9 +14437,31 @@ a.admin-system-chip:hover {
   color: var(--text-faint);
 }
 
-.onboarding-system-tile-done .onboarding-system-state {
+.onboarding-system-tile-linked .onboarding-system-state {
   color: var(--tint-green-text);
   font-weight: 600;
+}
+
+.onboarding-system-tile-no-account .onboarding-system-state {
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.onboarding-system-toggle {
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.onboarding-system-toggle:hover:not(:disabled) {
+  color: var(--link);
 }
 
 .onboarding-progress-row {
@@ -14441,13 +14476,18 @@ a.admin-system-chip:hover {
   border-radius: 999px;
   background: var(--chip-bg);
   overflow: hidden;
+  display: flex;
 }
 
 .onboarding-progress-fill {
   height: 100%;
-  border-radius: 999px;
   background: linear-gradient(90deg, var(--link), #22c55e);
   transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Сегмент «нет аккаунта»: прогресс движется, но другим цветом. */
+.onboarding-progress-fill-skipped {
+  background: var(--neutral-soft);
 }
 
 .onboarding-progress-count {
@@ -14643,9 +14683,22 @@ a.admin-system-chip:hover {
   color: var(--text-2);
 }
 
+.participant-search-card-recent-spoiler summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  user-select: none;
+  width: fit-content;
+  transition: color 0.2s;
+}
+
+.participant-search-card-recent-spoiler summary:hover {
+  color: var(--link);
+}
+
 .participant-search-card-recent {
   list-style: none;
-  margin: 2px 0 0;
+  margin: 6px 0 0;
   padding: 8px 10px;
   border-radius: 10px;
   background: var(--bg-muted);
@@ -14653,17 +14706,19 @@ a.admin-system-chip:hover {
   flex-direction: column;
   gap: 4px;
   font-size: 0.85rem;
+  animation: onboarding-rise 0.25s ease both;
 }
 
+/* Сетка вместо flex: колонки «тип · дата · локация · результат» выровнены
+   между строками, длинное «Волонтёрство» ничего не сдвигает. */
 .participant-search-card-recent li {
-  display: flex;
-  align-items: baseline;
+  display: grid;
+  grid-template-columns: 96px 82px minmax(0, 1fr) auto;
   gap: 8px;
-  flex-wrap: wrap;
+  align-items: baseline;
 }
 
 .participant-search-card-recent-kind {
-  flex: 0 0 96px;
   font-weight: 600;
   color: var(--text-3);
 }
@@ -14684,6 +14739,9 @@ a.admin-system-chip:hover {
 .participant-search-card-recent-loc {
   color: var(--text-2);
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .participant-search-card-recent-detail {
@@ -14698,6 +14756,12 @@ a.admin-system-chip:hover {
   gap: 12px;
   flex-wrap: wrap;
   margin-top: 2px;
+}
+
+/* Кнопка «Это я» (или статус) — всегда у правого края, вне зависимости
+   от наличия ссылки на профиль слева. */
+.participant-search-card-actions > :last-child {
+  margin-left: auto;
 }
 
 .participant-search-card-done {
@@ -14726,6 +14790,14 @@ a.admin-system-chip:hover {
   font-weight: 700;
 }
 
+@media (max-width: 480px) {
+  .participant-search-card-recent li {
+    grid-template-columns: 84px 78px minmax(0, 1fr) auto;
+    gap: 6px;
+    font-size: 0.8rem;
+  }
+}
+
 @media (max-width: 720px) {
   .onboarding-page {
     padding: 26px 16px 44px;
@@ -14744,7 +14816,8 @@ a.admin-system-chip:hover {
 @media (prefers-reduced-motion: reduce) {
   .onboarding-page > *,
   .participant-search-card,
-  .onboarding-system-tile-done .onboarding-system-check,
+  .onboarding-system-tile-linked .onboarding-system-check,
+  .onboarding-system-tile-no-account .onboarding-system-check,
   .participant-search-card-done {
     animation: none;
   }

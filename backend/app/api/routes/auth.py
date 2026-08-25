@@ -31,6 +31,8 @@ from app.schemas.auth import (
     MergeConfirmRequest,
     MergePreviewResponse,
     MessageResponse,
+    NoAccountPlatformRequest,
+    NoAccountPlatformsResponse,
     OAuthFinishRequest,
     OAuthFinishResponse,
     UserResponse,
@@ -529,6 +531,21 @@ def onboarding_complete(
 
     complete_onboarding(db, user)
     return MessageResponse(message="onboarding_completed")
+
+
+@router.post("/onboarding/no-account", response_model=NoAccountPlatformsResponse)
+def onboarding_no_account(
+    body: NoAccountPlatformRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> NoAccountPlatformsResponse:
+    from app.services.onboarding_service import OnboardingError, set_platform_no_account
+
+    try:
+        platforms = set_platform_no_account(db, user, body.platform_code, body.no_account)
+    except OnboardingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return NoAccountPlatformsResponse(no_account_platforms=platforms)
 
 
 @router.get("/me/display-name", response_model=DisplayNameOptionsResponse)

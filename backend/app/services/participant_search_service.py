@@ -149,6 +149,11 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
             from app.parkrun.age_category import normalize_parkrun_age_group
 
             age_category = normalize_parkrun_age_group(age_category)
+        profile_url = participant.profile_url
+        if platform.code == "runpark" and not profile_url and participant.external_user_id:
+            # У RunPark в participants нет ссылки — публичная страница кармы
+            # собирается из external_user_id (как в platformProfileUrl на фронте).
+            profile_url = f"https://runpark.ru/Account/Karmas/{participant.external_user_id}"
         results.append(
             ParticipantSearchResult(
                 participant_id=participant.id,
@@ -157,7 +162,7 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
                 display_name=(participant.display_name or "").strip(),
                 club_name=participant.club_name,
                 age_category=age_category,
-                profile_url=participant.profile_url,
+                profile_url=profile_url,
                 total_runs=runs_count,
                 total_volunteering=volunteering_counts.get(participant.id, 0),
                 last_run_date=last_run_date,
