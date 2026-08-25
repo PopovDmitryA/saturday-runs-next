@@ -509,10 +509,9 @@ export function ParticipantNameSearch({
             <p>
               По запросу «{trimmedQuery}» есть бегун в{" "}
               {hiddenLinkedCodes.length === 1
-                ? `системе ${platformCodeLabel(hiddenLinkedCodes[0])}`
-                : `системах ${hiddenLinkedCodes.map(platformCodeLabel).join(", ")}`}
-              , но она уже привязана к вашему аккаунту — поиск работает только по системам без
-              привязки.
+                ? `системе ${platformCodeLabel(hiddenLinkedCodes[0])}, но к вашему профилю уже привязана учётная запись в этой системе`
+                : `системах ${hiddenLinkedCodes.map(platformCodeLabel).join(", ")}, но к вашему профилю уже привязаны учётные записи в этих системах`}{" "}
+              — поиск работает только по системам без привязки.
             </p>
           ) : (
             <>
