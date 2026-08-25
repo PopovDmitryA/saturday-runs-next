@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app.migration.helpers import s95_country_from_url
 from app.models import Event, Location, Participant, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalLocation
 from app.s95.api_client import S95ApiActivityRef, S95ApiLocation, fetch_all_locations, fetch_event_activities
@@ -89,13 +90,15 @@ def _ensure_location(db: Session, platform: Platform, api_loc: S95ApiLocation) -
     )
     if row is not None:
         return row
+    source_url = f"{api_loc.domain}/events/{api_loc.slug}"
     canonical = CanonicalLocation(
         external_key=api_loc.slug,
         name=api_loc.name,
+        country=s95_country_from_url(source_url),
         city=api_loc.town or None,
         latitude=api_loc.latitude,
         longitude=api_loc.longitude,
-        source_url=f"{api_loc.domain}/events/{api_loc.slug}",
+        source_url=source_url,
     )
     row, _ = upsert.upsert_location(db, platform, canonical)
     # Координаты пришли из того же реестра s95, что и у синка локаций, — значит
@@ -281,10 +284,11 @@ def sync_updated_protocols(
         return result
     except Exception as exc:
         db.rollback()
-        failed = _start_run(db, platform, "s95:api:sync_updated")
-        failed.status = SyncRunStatus.failed
-        failed.finished_at = datetime.now(timezone.utc)
-        failed.error_message = str(exc)
+        # Закрываем исходный (закоммиченный) ран, а не плодим второй failed,
+        # оставляя первый висеть в running навсегда.
+        run.status = SyncRunStatus.failed
+        run.finished_at = datetime.now(timezone.utc)
+        run.error_message = str(exc)
         db.commit()
         raise
 
@@ -328,10 +332,10 @@ def reconcile_protocols_for_date(
         return result
     except Exception as exc:
         db.rollback()
-        failed = _start_run(db, platform, f"s95:api:reconcile:{target_date.isoformat()}")
-        failed.status = SyncRunStatus.failed
-        failed.finished_at = datetime.now(timezone.utc)
-        failed.error_message = str(exc)
+        # Закрываем исходный ран, второй не создаём (см. sync_updated_protocols).
+        run.status = SyncRunStatus.failed
+        run.finished_at = datetime.now(timezone.utc)
+        run.error_message = str(exc)
         db.commit()
         raise
 
@@ -417,9 +421,9 @@ def full_backfill(
         return result
     except Exception as exc:
         db.rollback()
-        failed = _start_run(db, platform, "s95:api:full_backfill")
-        failed.status = SyncRunStatus.failed
-        failed.finished_at = datetime.now(timezone.utc)
-        failed.error_message = str(exc)
+        # Закрываем исходный ран, второй не создаём (см. sync_updated_protocols).
+        run.status = SyncRunStatus.failed
+        run.finished_at = datetime.now(timezone.utc)
+        run.error_message = str(exc)
         db.commit()
         raise

@@ -12,6 +12,7 @@ const LINKS = [
   { href: "/admin/event-report", label: "Отчёт по событию" },
   { href: "/admin/records-digest", label: "Рекорды локаций" },
   { href: "/admin/location-contacts", label: "Контакты локаций" },
+  { href: "/admin/location-openings", label: "Открытия локаций" },
   { href: "/admin/blog", label: "Блог" },
   { href: "/admin/releases", label: "Релизы" },
   { href: "/admin/backlog", label: "Бэклог" },
@@ -22,12 +23,22 @@ const LINKS = [
 // Внешние панели вебмастеров — не разделы сайта, поэтому отдельная группа со
 // своим стилем (пунктирная рамка + иконка внешней ссылки) и открытием в новой
 // вкладке: уходя туда, не хочется терять админку в этой же вкладке.
-// Ссылки на общий вход панели, а не на deep-link конкретного сайта — формат
-// URL сайта в обеих системах негарантированно стабилен (порт/протокол в
-// пути у Яндекса, sc-domain-префикс у Google), а с одним подключённым сайтом
-// обе панели сами приводят на его дашборд после входа.
+// Ведём сразу на дашборд нашего сайта, где это возможно. У Google остаётся
+// общий вход: ресурс типа «Домен» адресуется префиксом sc-domain, и прямая
+// ссылка ломается при смене типа ресурса.
 const EXTERNAL_LINKS = [
-  { href: "https://webmaster.yandex.ru/", label: "Яндекс.Вебмастер" },
+  {
+    // Формат адреса у Яндекса нестандартный — протокол и порт внутри пути.
+    // Это не опечатка, короче он не открывается (просьба Дмитрия 13.08.2026).
+    href: "https://webmaster.yandex.ru/site/https:run5k.run:443/dashboard/",
+    label: "Яндекс.Вебмастер",
+  },
+  {
+    // Метрика — исключение из правила «общий вход»: счётчик один, а его id
+    // в URL стабилен, поэтому ведём сразу на дашборд «Сводка».
+    href: "https://metrika.yandex.ru/overview?id=111350728&period=today&group=dekaminute&isMinSamplingEnabled=false&currency=RUB&attr=%7B%22attributionId%22%3A%22LastSign%22%2C%22isCrossDevice%22%3Atrue%7D&isUndefinedEnabled=false",
+    label: "Яндекс.Метрика",
+  },
   { href: "https://search.google.com/search-console", label: "Google Search Console" },
 ] as const;
 

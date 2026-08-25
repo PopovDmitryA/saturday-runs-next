@@ -7,6 +7,16 @@
 - counter: накопить события-совпадения (палиндромы, дежавю…), уровни — пороги;
 - value: вырастить показатель (p-индекс, уникальные локации…), уровни — пороги.
 
+Каждый челлендж (кроме «Семь дней» — коллекция из 7 клеток, не режется на тиры)
+даёт три уровня сложности — easy/medium/hard, в каждом свои бронза/серебро/золото
+(CHALLENGE_TIERS). Пороги easy/medium откалиброваны по фактическому распределению
+прогресса зарегистрированных пользователей (307–401 чел., август 2026): easy
+закрывается за первые полгода-год активности, medium — цель регулярного бегуна,
+hard в основном воспроизводит прежние, «ветеранские» пороги. Тиры внутри тира
+монотонно растут (bronze medium > gold easy и т.д.) — это гарантирует, что
+"лучший" тир/уровень при показе бейджа однозначно определяется как самый
+сложный тир, где вообще есть хоть один уровень (см. _challenge()).
+
 Цели — пресеты (без свободного текста), можно выбрать любое число из GOAL_PRESETS
 на год, хранятся в user_goals. Прогресс и прогноз «успеешь/не успеешь» считаются
 на лету.
@@ -15,11 +25,12 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -33,13 +44,50 @@ from app.models import (
     UserGoal,
     VolunteerResult,
 )
-from app.services.location_catalog_service import LocationCatalogIndex
-from app.services.location_map_service import RU_COUNTRY_NAMES
+from app.services.location_catalog_service import LocationCatalogIndex, russian_parkrun_location_ids
+from app.services.location_map_service import MAP_HISTORIC_PLATFORM
+from app.services.platform_titles import PLATFORM_TITLES
 from app.services.user_location_stats import _canonical_region, _normalize_geo_value
 from app.time_format import normalize_finish_time_display
 from app.volunteering_occasions import count_volunteering_for_platform, is_inventory_day, volunteer_occasion_dates
 
 LEVEL_ORDER = ("bronze", "silver", "gold")
+
+# Один тир на «весь» челлендж — единственный ключ словаря должен называться
+# "solo" (сигнал фронту не рисовать вкладки сложности). Иначе три тира —
+# всегда именно "easy"/"medium"/"hard" в этом порядке (порядок словаря важен:
+# на нём строится выбор дефолтной вкладки и "лучшего" достижения).
+TIER_LABELS: dict[str, str | None] = {
+    "easy": "Лёгкий",
+    "medium": "Средний",
+    "hard": "Сложный",
+    "solo": None,
+}
+
+# Реестр порогов: code -> {tier_key: (bronze, silver, gold)}. Единственное
+# место в кодовой базе, где меняются числа уровней — история (level_dates)
+# считается на лету по сырым событиям, так что правка порогов не требует ни
+# миграции, ни бэкфилла.
+CHALLENGE_TIERS: dict[str, dict[str, tuple[int, int, int]]] = {
+    "seconds": {"easy": (3, 7, 10), "medium": (15, 25, 35), "hard": (40, 50, 60)},
+    "positions": {"easy": (3, 7, 10), "medium": (15, 25, 40), "hard": (50, 75, 100)},
+    "alphabet": {"easy": (2, 4, 7), "medium": (9, 13, 17), "hard": (20, 24, 28)},
+    "calendar_days": {"easy": (5, 10, 25), "medium": (50, 100, 150), "hard": (200, 280, 366)},
+    "start_numbers": {"easy": (5, 15, 30), "medium": (50, 80, 120), "hard": (150, 175, 200)},
+    "start_numbers_pro": {"easy": (5, 15, 30), "medium": (50, 80, 120), "hard": (150, 175, 200)},
+    "weekdays": {"solo": (2, 4, 7)},
+    "palindrome": {"easy": (1, 3, 5), "medium": (7, 10, 13), "hard": (15, 20, 25)},
+    "deja_vu": {"easy": (1, 2, 4), "medium": (8, 15, 25), "hard": (40, 70, 110)},
+    "number_match": {"easy": (1, 2, 3), "medium": (5, 8, 12), "hard": (20, 35, 50)},
+    "jubilee": {"easy": (1, 2, 3), "medium": (5, 7, 10), "hard": (15, 25, 50)},
+    "p_index": {"easy": (2, 3, 4), "medium": (5, 6, 8), "hard": (10, 12, 15)},
+    "pilgrim": {"easy": (3, 5, 10), "medium": (15, 25, 40), "hard": (60, 100, 150)},
+    "regions": {"easy": (2, 3, 5), "medium": (8, 12, 18), "hard": (25, 40, 60)},
+    "streak": {"easy": (4, 8, 12), "medium": (20, 30, 45), "hard": (60, 85, 120)},
+    "best_year": {"easy": (5, 10, 20), "medium": (26, 34, 42), "hard": (45, 50, 55)},
+    "inspector": {"easy": (1, 5, 10), "medium": (20, 40, 70), "hard": (100, 150, 200)},
+    "reviewer": {"easy": (1, 3, 7), "medium": (15, 25, 50), "hard": (75, 100, 150)},
+}
 
 # Диапазоны номеров для «Нумератора» и «Нумератора ПРО». Одни и те же границы
 # нужны и карточке челленджа, и таблице планирования — держим в одном месте,
@@ -47,6 +95,13 @@ LEVEL_ORDER = ("bronze", "silver", "gold")
 START_NUMBER_RANGES: dict[str, tuple[int, int]] = {
     "start_numbers": (1, 200),
     "start_numbers_pro": (201, 400),
+}
+# Названия тех же челленджей: их спрашивает не только страница достижений, но и
+# попап точки на карте («даст ли этот старт +1 в Нумераторе»), — держим рядом с
+# диапазонами, чтобы подписи не разъехались.
+START_NUMBER_TITLES: dict[str, str] = {
+    "start_numbers": "Нумератор",
+    "start_numbers_pro": "Нумератор ПРО",
 }
 # Сколько недельных окон показываем в планировании: ближайшая неделя, W+1, W+2.
 START_NUMBER_PLAN_WEEKS = 3
@@ -240,6 +295,32 @@ def _threshold_dates(sorted_dates: list[date], thresholds: tuple[int, ...]) -> d
     }
 
 
+def _tier_payload(
+    tier_key: str,
+    thresholds: tuple[int, int, int],
+    current: int,
+    *,
+    level_dates_fn: Callable[[dict[str, int]], dict[str, str | None]],
+    to_next_label_fn: Callable[[dict[str, int], str], str | None] | None,
+) -> dict[str, object]:
+    levels = {"bronze": thresholds[0], "silver": thresholds[1], "gold": thresholds[2]}
+    level, next_level, to_next = _resolve_level(current, levels)
+    gold = levels["gold"]
+    to_next_label = to_next_label_fn(levels, next_level) if (to_next_label_fn and next_level) else None
+    return {
+        "tier": tier_key,
+        "label": TIER_LABELS.get(tier_key),
+        "levels": levels,
+        "target": gold,
+        "level": level,
+        "next_level": next_level,
+        "to_next_level": to_next,
+        "to_next_label": to_next_label,
+        "pct": round(min(current / gold, 1.0) * 100, 1) if gold else 0.0,
+        "level_dates": level_dates_fn(levels),
+    }
+
+
 def _challenge(
     *,
     code: str,
@@ -248,14 +329,33 @@ def _challenge(
     description: str,
     category: str,
     current: int,
-    levels: dict[str, int],
+    level_dates_fn: Callable[[dict[str, int]], dict[str, str | None]],
     unit: str | None = None,
     detail: dict[str, object] | None = None,
-    to_next_label: str | None = None,
-    level_dates: dict[str, str | None] | None = None,
+    to_next_label_fn: Callable[[dict[str, int], str], str | None] | None = None,
+    tier_thresholds: dict[str, tuple[int, int, int]] | None = None,
 ) -> dict[str, object]:
-    level, next_level, to_next = _resolve_level(current, levels)
-    gold = levels["gold"]
+    # tier_thresholds — пороги, посчитанные на лету вместо реестра: сегодня так
+    # делает только «Алфавит», у которого размер коллекции зависит от фильтра
+    # систем (см. _alphabet_tiers).
+    thresholds_by_tier = tier_thresholds or CHALLENGE_TIERS[code]
+    tiers = [
+        _tier_payload(
+            tier_key, thresholds, current, level_dates_fn=level_dates_fn, to_next_label_fn=to_next_label_fn
+        )
+        for tier_key, thresholds in thresholds_by_tier.items()
+    ]
+    # "Лучшее" достижение — самый сложный тир, где взят хоть один уровень.
+    # Пороги тиров заданы монотонно растущими (bronze medium > gold easy), так
+    # что взятие любого уровня в более сложном тире гарантированно означает
+    # золото во всех более лёгких — простой проход по порядку с перезаписью
+    # даёт тот же результат, что явный поиск "с конца".
+    best_tier: str | None = None
+    best_level: str | None = None
+    for tier in tiers:
+        if tier["level"] is not None:
+            best_tier, best_level = str(tier["tier"]), str(tier["level"])
+    default_tier = next((str(t["tier"]) for t in tiers if t["level"] != "gold"), str(tiers[-1]["tier"]))
     return {
         "code": code,
         "title": title,
@@ -263,19 +363,19 @@ def _challenge(
         "description": description,
         "category": category,
         "current": current,
-        "target": gold,
-        "levels": levels,
-        "level": level,
-        "next_level": next_level,
-        "to_next_level": to_next,
-        "to_next_label": to_next_label,
-        "pct": round(min(current / gold, 1.0) * 100, 1) if gold else 0.0,
         "unit": unit,
         "detail": detail or {},
-        "level_dates": level_dates or {"bronze": None, "silver": None, "gold": None},
+        "tiers": tiers,
+        "best_tier": best_tier,
+        "best_level": best_level,
+        "default_tier": default_tier,
         # Насколько последняя пробежка продвинула счётчик — проставляется
         # снаружи (compute_challenges), по умолчанию 0.
         "recent_delta": 0,
+        # Дата того самого последнего дня активности: по ней «Детали» подсвечивают
+        # клетки, закрытые этой пробежкой (иначе «↑ +1» на карточке есть, а какая
+        # именно клетка новая — приходится помнить самому).
+        "recent_date": None,
     }
 
 
@@ -335,7 +435,6 @@ def _seconds_challenge(rows: list[RunRow]) -> dict[str, object]:
         _cell(f":{second:02d}", first_by_second.get(second), count=count_by_second.get(second))
         for second in range(60)
     ]
-    levels = {"bronze": 40, "silver": 50, "gold": 60}
     sorted_dates = sorted(row.event_date for row in first_by_second.values())
     return _challenge(
         code="seconds",
@@ -344,10 +443,9 @@ def _seconds_challenge(rows: list[RunRow]) -> dict[str, object]:
         description="Финишируй с каждой секундой на часах — от :00 до :59.",
         category="collection",
         current=len(first_by_second),
-        levels=levels,
         unit="секунд",
         detail={"cells": cells},
-        level_dates=_level_dates(sorted_dates, levels),
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
 
@@ -357,7 +455,6 @@ def _weekdays_challenge(rows: list[RunRow]) -> dict[str, object]:
     for row in rows:
         first_by_weekday.setdefault(row.event_date.weekday(), row)
     cells = [_cell(labels[index], first_by_weekday.get(index)) for index in range(7)]
-    levels = {"bronze": 2, "silver": 4, "gold": 7}
     sorted_dates = sorted(row.event_date for row in first_by_weekday.values())
     return _challenge(
         code="weekdays",
@@ -366,10 +463,9 @@ def _weekdays_challenge(rows: list[RunRow]) -> dict[str, object]:
         description="Пробеги парковый старт в каждый день недели — не субботой единой.",
         category="collection",
         current=len(first_by_weekday),
-        levels=levels,
         unit="дней недели",
         detail={"cells": cells},
-        level_dates=_level_dates(sorted_dates, levels),
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
 
@@ -379,7 +475,6 @@ def _positions_challenge(rows: list[RunRow]) -> dict[str, object]:
         if row.position is not None and row.position > 0:
             first_by_position.setdefault(row.position % 100, row)
     cells = [_cell(f"{position:02d}", first_by_position.get(position)) for position in range(100)]
-    levels = {"bronze": 50, "silver": 75, "gold": 100}
     sorted_dates = sorted(row.event_date for row in first_by_position.values())
     return _challenge(
         code="positions",
@@ -388,24 +483,53 @@ def _positions_challenge(rows: list[RunRow]) -> dict[str, object]:
         description="Финишируй на местах со всеми окончаниями от 00 до 99. Клетку определяют две последние цифры места: 18-е, 118-е и 218-е место закрывают одну и ту же клетку «18».",
         category="collection",
         current=len(first_by_position),
-        levels=levels,
         unit="позиций",
         detail={"cells": cells},
-        level_dates=_level_dates(sorted_dates, levels),
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
 
-def _alphabet_challenge(db: Session, rows: list[RunRow]) -> dict[str, object]:
-    """Parkrun-локации не считаются: у parkrun имена латиницей/местные, они
-    искажали бы букву старта — challenge остаётся про русский алфавит."""
+def _alphabet_available_names(db: Session, platform_code: str | None) -> dict[str, set[str]]:
+    """Буква -> названия локаций, которыми её можно закрыть.
+
+    Каталог букв зависит от выбранной системы: в 5 вёрстах нет ни одной
+    локации на «Ц», в S95 нет «Д» — показывать в фильтре по системе буквы,
+    которые в ней физически не закрыть, значит врать о цели.
+    """
+    query = (
+        db.query(Location.name)
+        .join(Platform, Location.platform_id == Platform.id)
+        .filter(Location.name.isnot(None))
+    )
+    if platform_code is None:
+        # Сквозной вид: parkrun не считается (см. _alphabet_challenge), значит
+        # и буквы его локаций в каталог не попадают.
+        query = query.filter(Platform.code != MAP_HISTORIC_PLATFORM)
+    else:
+        query = query.filter(Platform.code == platform_code)
     available_names: dict[str, set[str]] = {}
-    for (name,) in db.query(Location.name).filter(Location.name.isnot(None)).all():
+    for (name,) in query.all():
         letter = _first_letter(name or "")
         if letter is not None and letter in _RU_ALPHABET:
             available_names.setdefault(letter, set()).add((name or "").strip())
+    return available_names
+
+
+def _alphabet_challenge(
+    rows: list[RunRow],
+    available_names: dict[str, set[str]],
+    *,
+    platform_code: str | None = None,
+) -> dict[str, object]:
+    """Parkrun-локации не считаются: у parkrun имена латиницей/местные, они
+    искажали бы букву старта — challenge остаётся про русский алфавит.
+    Исключение — фильтр по самому parkrun: там весь скоуп и есть parkrun, и
+    буквы берутся с его же русскоязычных локаций.
+    """
+    skip_parkrun = platform_code is None
     first_by_letter: dict[str, RunRow] = {}
     for row in rows:
-        if row.platform_code == "parkrun":
+        if skip_parkrun and row.platform_code == MAP_HISTORIC_PLATFORM:
             continue
         letter = _first_letter(row.location_name)
         if letter is not None and letter in available_names:
@@ -427,19 +551,79 @@ def _alphabet_challenge(db: Session, rows: list[RunRow]) -> dict[str, object]:
                 "platform_code": first_row.platform_code if first_row else None,
             }
         )
-    levels = {"bronze": 10, "silver": 17, "gold": 28}
     sorted_dates = sorted(row.event_date for row in first_by_letter.values())
     return _challenge(
         code="alphabet",
         title="Алфавит",
         icon="🔤",
-        description="Финишируй в локациях на каждую букву алфавита (считаются буквы, на которые есть хотя бы одна локация; parkrun в этом челлендже не учитывается).",
+        description=_alphabet_description(len(letters), platform_code),
         category="collection",
         current=len(first_by_letter),
-        levels=levels,
         unit="букв",
-        detail={"letters": letters},
-        level_dates=_level_dates(sorted_dates, levels),
+        detail={"letters": letters, "available": len(letters)},
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+        tier_thresholds=_alphabet_tiers(len(letters)),
+    )
+
+
+def _alphabet_tiers(available: int) -> dict[str, tuple[int, int, int]]:
+    """Пороги «Алфавита» под размер каталога букв.
+
+    Пороги в CHALLENGE_TIERS откалиброваны на полный каталог (28 букв). Под
+    фильтром систем букв меньше — у 5 вёрст их 26, у S95 17 — и прежняя шкала
+    обещала недостижимое: золото за 28 букв там нельзя взять физически.
+    Поэтому шкала линейно сжимается, а золото сложного тира приравнивается к
+    числу доступных букв: собрал весь алфавит своей системы — взял золото.
+
+    Порядок порогов остаётся строго возрастающим сквозь все тиры — на этом
+    держится выбор «лучшего» тира в _challenge(). Если букв меньше, чем самих
+    порогов, три тира в такой каталог не укладываются, и остаётся один тир
+    ("solo", как у «Семи дней» — фронт тогда не рисует вкладки сложности).
+    """
+    reference = CHALLENGE_TIERS["alphabet"]
+    full = reference["hard"][2]
+    if available >= full:
+        return reference
+
+    flat = [value for thresholds in reference.values() for value in thresholds]
+    if available >= len(flat):
+        scaled: list[int] = []
+        previous = 0
+        for value in flat:
+            scaled.append(max(1, round(value * available / full), previous + 1))
+            previous = scaled[-1]
+        # Золото сложного тира — ровно весь доступный алфавит, без округлений.
+        scaled[-1] = available
+        return {
+            tier_key: (scaled[index * 3], scaled[index * 3 + 1], scaled[index * 3 + 2])
+            for index, tier_key in enumerate(reference)
+        }
+
+    bronze = max(1, -(-available // 3))
+    silver = max(bronze, -(-available * 2 // 3))
+    return {"solo": (bronze, silver, max(silver, available))}
+
+
+def _alphabet_description(available: int, platform_code: str | None) -> str:
+    """Описание называет размер каталога и цену золота: под фильтром систем
+    и букв меньше, и пороги другие (см. _alphabet_tiers)."""
+    if platform_code is None:
+        return (
+            "Финишируй в локациях на каждую букву алфавита (считаются буквы, на которые есть "
+            f"хотя бы одна локация — сейчас их {available}; parkrun в этом челлендже не учитывается). "
+            f"Золото сложного уровня — все {available}."
+        )
+    title = PLATFORM_TITLES.get(platform_code, platform_code)
+    if available == 0:
+        return (
+            f"Финишируй в локациях на каждую букву алфавита. У системы «{title}» нет локаций "
+            "с русскими названиями — закрывать нечего, снимите фильтр систем."
+        )
+    letters = f"{available} {_plural_ru(available, ('букву', 'буквы', 'букв'))}"
+    return (
+        f"Финишируй в локациях на каждую букву алфавита. Выбрана система «{title}» — считаются "
+        f"только её локации, а они дают {letters}. Пороги уровней подстроены под этот каталог: "
+        f"золото даётся за все {available}."
     )
 
 
@@ -456,8 +640,7 @@ def _calendar_days_challenge(rows: list[RunRow]) -> dict[str, object]:
         }
         for key, row in sorted(first_by_day.items())
     ]
-    # gold = 366 (весь календарь, включая 29 февраля) — больше дат физически не бывает.
-    levels = {"bronze": 100, "silver": 200, "gold": 366}
+    # hard-золото = 366 (весь календарь, включая 29 февраля) — больше дат физически не бывает.
     sorted_dates = sorted(row.event_date for row in first_by_day.values())
     return _challenge(
         code="calendar_days",
@@ -466,10 +649,9 @@ def _calendar_days_challenge(rows: list[RunRow]) -> dict[str, object]:
         description="Закрой каждую дату календаря — все 366 дней в году (год не важен).",
         category="collection",
         current=len(first_by_day),
-        levels=levels,
         unit="дат",
         detail={"days": days},
-        level_dates=_level_dates(sorted_dates, levels),
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
 
@@ -499,10 +681,15 @@ def _predict_upcoming_starts(
     системы (five_verst/s95/parkrun/runpark) — каждая платформа нумерует события
     независимо.
 
-    Только Россия: из 2859 активных локаций 2437 — зарубежные (почти все
-    parkrun из мирового каталога), и подсказка «Скоро: Westpark ≈ 01.08»
-    предлагала номер, который человек закрыть не может. Пустая страна означает
-    «не заполнили», и такие строки у нас российские — их оставляем.
+    Отсекаем только зарубежный parkrun: из 2859 активных локаций 2437 — его
+    мировой каталог, и подсказка «Скоро: Westpark ≈ 01.08» предлагала номер,
+    который человек закрыть не может (у нас от такой площадки лежат лишь строки
+    наших же участников из их профилей — см. russian_parkrun_location_ids).
+
+    Действующие системы берём целиком, независимо от страны: у 5 вёрст, s95 и
+    RunPark есть площадки в Беларуси, Сербии, Грузии и далее, и для тамошних
+    участников это домашние старты. Раньше фильтр шёл по стране, и вместе с
+    мировым parkrun выкидывал Гомель с Нови-Садом.
 
     Окно недели считаем от сегодня (`week_index`), а не по счётчику цикла: у
     локаций разные даты последнего старта, и «+1 неделя» для отставшей локации
@@ -534,12 +721,14 @@ def _predict_upcoming_starts(
             Event.event_number.isnot(None),
             Location.is_cancelled.is_(False),
             Location.is_paused.is_(False),
-            or_(Location.country.is_(None), Location.country.in_(RU_COUNTRY_NAMES)),
         )
     )
     catalog_index = LocationCatalogIndex(db)
+    russian_parkrun = russian_parkrun_location_ids(db, catalog_index)
     predictions: list[PredictedStart] = []
     for event_number, event_date, location, platform_code in query.all():
+        if platform_code == MAP_HISTORIC_PLATFORM and location.id not in russian_parkrun:
+            continue
         display_name = catalog_index.display_name(location, platform_code)
         for week in range(1, weeks + 1):
             predicted_number = event_number + week
@@ -601,7 +790,6 @@ def _start_numbers_range_challenge(
     description: str,
     low: int,
     high: int,
-    levels: dict[str, int],
 ) -> dict[str, object]:
     """Номер старта считается ВНУТРИ одной системы (каждая платформа нумерует
     события независимо — см. _upcoming_event_numbers), но само число в
@@ -636,10 +824,9 @@ def _start_numbers_range_challenge(
         description=description,
         category="collection",
         current=len(first_by_number),
-        levels=levels,
         unit="номеров",
         detail={"cells": cells},
-        level_dates=_level_dates(sorted_dates, levels),
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
 
@@ -660,7 +847,6 @@ def _palindrome_challenge(rows: list[RunRow]) -> dict[str, object]:
                     "location": row.location_name,
                 }
             )
-    levels = {"bronze": 1, "silver": 10, "gold": 25}
     sorted_dates = sorted(date.fromisoformat(str(item["date"])) for item in items)
     return _challenge(
         code="palindrome",
@@ -669,10 +855,9 @@ def _palindrome_challenge(rows: list[RunRow]) -> dict[str, object]:
         description="Финишируй со временем-зеркалом: минуты читаются как секунды наоборот — 23:32, 21:12, 30:03.",
         category="coincidence",
         current=len(items),
-        levels=levels,
         unit="палиндромов",
         detail={"items": items},
-        level_dates=_level_dates(sorted_dates, levels),
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
 
@@ -693,7 +878,6 @@ def _deja_vu_challenge(rows: list[RunRow]) -> dict[str, object]:
         }
         for time_sec in repeated
     ]
-    levels = {"bronze": 3, "silver": 15, "gold": 50}
     # Дежавю "случается" в момент ВТОРОГО финиша с этим временем — эта дата и
     # закрывает соответствующую клетку счётчика совпадений.
     sorted_dates = sorted(rows_by_time[time_sec][1].event_date for time_sec in repeated)
@@ -704,10 +888,9 @@ def _deja_vu_challenge(rows: list[RunRow]) -> dict[str, object]:
         description="Финишируй с одним и тем же временем — секунда в секунду — на разных пробежках.",
         category="coincidence",
         current=len(repeated),
-        levels=levels,
         unit="совпадений",
         detail={"items": items},
-        level_dates=_level_dates(sorted_dates, levels),
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
 
@@ -732,7 +915,6 @@ def _number_match_challenge(rows: list[RunRow]) -> dict[str, object]:
             "location": top_location[0][0] if top_location else "Кузьминки",
             "note": f"так запишется совпадение — твоя {next_index}-я пробежка на старте №{next_index}",
         }
-    levels = {"bronze": 1, "silver": 10, "gold": 25}
     sorted_dates = [date.fromisoformat(str(item["date"])) for item in items]
     return _challenge(
         code="number_match",
@@ -741,10 +923,9 @@ def _number_match_challenge(rows: list[RunRow]) -> dict[str, object]:
         description="Порядковый номер старта совпал с номером твоей пробежки: твоя 30-я — и старт №30.",
         category="coincidence",
         current=len(items),
-        levels=levels,
         unit="совпадений",
         detail=detail,
-        level_dates=_level_dates(sorted_dates, levels),
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
 
@@ -759,7 +940,6 @@ def _jubilee_challenge(rows: list[RunRow]) -> dict[str, object]:
                     "location": row.location_name,
                 }
             )
-    levels = {"bronze": 1, "silver": 10, "gold": 25}
     sorted_dates = [date.fromisoformat(str(item["date"])) for item in items]
     return _challenge(
         code="jubilee",
@@ -768,10 +948,9 @@ def _jubilee_challenge(rows: list[RunRow]) -> dict[str, object]:
         description="Участвуй в юбилейных стартах локаций — событиях с круглыми номерами №50, №100, №150…",
         category="coincidence",
         current=len(items),
-        levels=levels,
         unit="юбилеев",
         detail={"items": items},
-        level_dates=_level_dates(sorted_dates, levels),
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
 
@@ -815,12 +994,12 @@ def _p_index_challenge(rows: list[RunRow]) -> dict[str, object]:
             p_index = index
         else:
             break
-    levels = {"bronze": 3, "silver": 5, "gold": 10}
-    _, next_level, _ = _resolve_level(p_index, levels)
-    to_next_label: str | None = None
-    if next_level is not None:
-        needed = _runs_needed_for_p(list(counts.values()), levels[next_level])
-        to_next_label = f"ещё {needed} {_plural_ru(needed, ('пробежка', 'пробежки', 'пробежек'))}"
+    counts_values = list(counts.values())
+
+    def _to_next_label(levels: dict[str, int], next_level: str) -> str | None:
+        needed = _runs_needed_for_p(counts_values, levels[next_level])
+        return f"ещё {needed} {_plural_ru(needed, ('пробежка', 'пробежки', 'пробежек'))}"
+
     top = [
         {"location": names[key], "count": count}
         for key, count in counts.most_common(20)
@@ -832,11 +1011,10 @@ def _p_index_challenge(rows: list[RunRow]) -> dict[str, object]:
         description="p локаций, в каждой из которых минимум p финишей.",
         category="scale",
         current=p_index,
-        levels=levels,
         unit="",
         detail={"items": top},
-        to_next_label=to_next_label,
-        level_dates=_p_index_level_dates(rows, levels),
+        to_next_label_fn=_to_next_label,
+        level_dates_fn=lambda levels: _p_index_level_dates(rows, levels),
     )
 
 
@@ -845,7 +1023,6 @@ def _pilgrim_challenge(rows: list[RunRow]) -> dict[str, object]:
     for row in rows:
         if row.location_key not in first_visit or row.event_date < first_visit[row.location_key]:
             first_visit[row.location_key] = row.event_date
-    levels = {"bronze": 25, "silver": 75, "gold": 125}
     sorted_dates = sorted(first_visit.values())
     return _challenge(
         code="pilgrim",
@@ -854,14 +1031,12 @@ def _pilgrim_challenge(rows: list[RunRow]) -> dict[str, object]:
         description="Финишируй в как можно большем числе разных локаций.",
         category="scale",
         current=len(first_visit),
-        levels=levels,
         unit="локаций",
-        level_dates=_level_dates(sorted_dates, levels),
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
 
 def _inspector_challenge(rating_rows: list[RatingRow]) -> dict[str, object]:
-    levels = {"bronze": 25, "silver": 50, "gold": 100}
     sorted_dates = sorted(row.rated_on for row in rating_rows)
     return _challenge(
         code="inspector",
@@ -870,14 +1045,12 @@ def _inspector_challenge(rating_rows: list[RatingRow]) -> dict[str, object]:
         description="Оценивай старты, где бегал или волонтёрил: звёзды за организацию, трассу и атмосферу помогают другим выбрать, куда ехать.",
         category="community",
         current=len(sorted_dates),
-        levels=levels,
         unit="оценок",
-        level_dates=_level_dates(sorted_dates, levels),
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
 
 def _reviewer_challenge(rating_rows: list[RatingRow]) -> dict[str, object]:
-    levels = {"bronze": 10, "silver": 25, "gold": 50}
     sorted_dates = sorted(row.rated_on for row in rating_rows if row.is_review)
     return _challenge(
         code="reviewer",
@@ -889,9 +1062,8 @@ def _reviewer_challenge(rating_rows: list[RatingRow]) -> dict[str, object]:
         ),
         category="community",
         current=len(sorted_dates),
-        levels=levels,
         unit="рецензий",
-        level_dates=_level_dates(sorted_dates, levels),
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
 
@@ -903,7 +1075,6 @@ def _regions_challenge(rows: list[RunRow]) -> dict[str, object]:
         region = _canonical_region(row.region)
         if region not in first_visit or row.event_date < first_visit[region]:
             first_visit[region] = row.event_date
-    levels = {"bronze": 10, "silver": 20, "gold": 30}
     sorted_dates = sorted(first_visit.values())
     return _challenge(
         code="regions",
@@ -912,9 +1083,8 @@ def _regions_challenge(rows: list[RunRow]) -> dict[str, object]:
         description="Пробеги в разных регионах — от домашнего парка до другого конца страны.",
         category="scale",
         current=len(first_visit),
-        levels=levels,
         unit="регионов",
-        level_dates=_level_dates(sorted_dates, levels),
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
 
@@ -952,7 +1122,6 @@ def _streak_challenge(rows: list[RunRow], vol_rows: dict[str, list[tuple[date, s
     for platform_code, platform_rows in vol_rows.items():
         activity_dates |= volunteer_occasion_dates(platform_code, platform_rows)
     streak = _max_saturday_streak(activity_dates)
-    levels = {"bronze": 10, "silver": 25, "gold": 50}
     return _challenge(
         code="streak",
         title="Серийный бегун",
@@ -960,9 +1129,8 @@ def _streak_challenge(rows: list[RunRow], vol_rows: dict[str, list[tuple[date, s
         description="Лучшая серия суббот подряд — пробежкой или волонтёрством, без пропусков.",
         category="scale",
         current=streak,
-        levels=levels,
         unit="суббот",
-        level_dates=_streak_level_dates(activity_dates, levels),
+        level_dates_fn=lambda levels: _streak_level_dates(activity_dates, levels),
     )
 
 
@@ -989,7 +1157,6 @@ def _best_year_level_dates(rows: list[RunRow], levels: dict[str, int]) -> dict[s
 def _best_year_challenge(rows: list[RunRow]) -> dict[str, object]:
     by_year = Counter(row.event_date.year for row in rows)
     best = max(by_year.values(), default=0)
-    levels = {"bronze": 20, "silver": 30, "gold": 50}
     return _challenge(
         code="best_year",
         title="Ударный год",
@@ -997,9 +1164,8 @@ def _best_year_challenge(rows: list[RunRow]) -> dict[str, object]:
         description="Твой личный рекорд активности: сколько пробежек уместилось в один календарный год.",
         category="scale",
         current=best,
-        levels=levels,
         unit="пробежек за год",
-        level_dates=_best_year_level_dates(rows, levels),
+        level_dates_fn=lambda levels: _best_year_level_dates(rows, levels),
     )
 
 
@@ -1105,36 +1271,36 @@ def _compute_clubs(
 
 
 def _build_challenge_list(
-    db: Session,
     rows: list[RunRow],
     vol_rows: dict[str, list[tuple[date, str]]],
     upcoming: dict[tuple[str, int], list[tuple[date, str]]],
     rating_rows: list[RatingRow],
+    *,
+    alphabet_names: dict[str, set[str]],
+    platform_code: str | None,
 ) -> list[dict[str, object]]:
     return [
         _seconds_challenge(rows),
         _positions_challenge(rows),
-        _alphabet_challenge(db, rows),
+        _alphabet_challenge(rows, alphabet_names, platform_code=platform_code),
         _calendar_days_challenge(rows),
         _start_numbers_range_challenge(
             rows,
             upcoming,
             code="start_numbers",
-            title="Нумератор",
+            title=START_NUMBER_TITLES["start_numbers"],
             description="Прими участие в стартах с порядковыми номерами от №1 до №200 — неважно, в какой системе получен каждый номер.",
             low=START_NUMBER_RANGES["start_numbers"][0],
             high=START_NUMBER_RANGES["start_numbers"][1],
-            levels={"bronze": 50, "silver": 100, "gold": 200},
         ),
         _start_numbers_range_challenge(
             rows,
             upcoming,
             code="start_numbers_pro",
-            title="Нумератор ПРО",
+            title=START_NUMBER_TITLES["start_numbers_pro"],
             description="Для тех, кому мало двух сотен: старты с порядковыми номерами от №201 до №400 — неважно, в какой системе получен каждый номер.",
             low=START_NUMBER_RANGES["start_numbers_pro"][0],
             high=START_NUMBER_RANGES["start_numbers_pro"][1],
-            levels={"bronze": 50, "silver": 100, "gold": 200},
         ),
         _weekdays_challenge(rows),
         _palindrome_challenge(rows),
@@ -1274,35 +1440,62 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
         rows, vol_rows, upcoming, rating_rows, platform_code
     )
 
+    # Каталог букв «Алфавита» зависит от того же фильтра систем — читаем его
+    # один раз на оба прогона списка челленджей (второй считает recent_delta).
+    alphabet_names = _alphabet_available_names(db, platform_code)
+
     challenges = _build_challenge_list(
-        db, scoped_rows, scoped_vol_rows, scoped_upcoming, scoped_rating_rows
+        scoped_rows,
+        scoped_vol_rows,
+        scoped_upcoming,
+        scoped_rating_rows,
+        alphabet_names=alphabet_names,
+        platform_code=platform_code,
     )
 
     rows_before = _rows_before_last_activity(scoped_rows)
     if rows_before is not None and len(rows_before) < len(scoped_rows):
+        # Тот самый последний день активности, относительно которого считается
+        # recent_delta: «Детали» подсветят по нему свежие клетки.
+        recent_date = scoped_rows[-1].event_date.isoformat()
         previous: dict[str, int] = {
             str(c["code"]): int(c["current"])  # type: ignore[call-overload]
             for c in _build_challenge_list(
-                db, rows_before, scoped_vol_rows, scoped_upcoming, scoped_rating_rows
+                rows_before,
+                scoped_vol_rows,
+                scoped_upcoming,
+                scoped_rating_rows,
+                alphabet_names=alphabet_names,
+                platform_code=platform_code,
             )
         }
         for challenge in challenges:
             code = str(challenge["code"])
             delta = int(challenge["current"]) - previous.get(code, int(challenge["current"]))  # type: ignore[call-overload]
             challenge["recent_delta"] = max(delta, 0)
+            challenge["recent_date"] = recent_date
 
-    summary = Counter(challenge["level"] for challenge in challenges if challenge["level"])
+    def _tier(challenge: dict[str, object], tier_key: object) -> dict[str, object]:
+        tiers = challenge["tiers"]
+        assert isinstance(tiers, list)
+        return next(t for t in tiers if t["tier"] == tier_key)
+
+    summary = Counter(challenge["best_level"] for challenge in challenges if challenge["best_level"])
     badges = [
         {
             "code": challenge["code"],
             "title": challenge["title"],
             "icon": challenge["icon"],
-            "level": challenge["level"],
-            "achieved_at": challenge["level_dates"].get(challenge["level"]),  # type: ignore[attr-defined]
+            "level": challenge["best_level"],
+            "tier": challenge["best_tier"],
+            "tier_label": _tier(challenge, challenge["best_tier"])["label"],
+            "achieved_at": _tier(challenge, challenge["best_tier"])["level_dates"].get(  # type: ignore[attr-defined]
+                str(challenge["best_level"])
+            ),
         }
         for challenge in sorted(
-            (c for c in challenges if c["level"]),
-            key=lambda c: LEVEL_ORDER.index(str(c["level"])),
+            (c for c in challenges if c["best_level"]),
+            key=lambda c: LEVEL_ORDER.index(str(c["best_level"])),
             reverse=True,
         )
     ]

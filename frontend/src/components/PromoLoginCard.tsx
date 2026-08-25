@@ -11,15 +11,21 @@ export function PromoLoginCard({
   text,
   cta = "Войти",
   href = PORTAL_LOGIN_HREF,
+  className,
 }: {
   icon: string;
   title: string;
   text: string;
   cta?: string;
   href?: string;
+  /** Класс страницы: подправить отступы и высоту под своё окружение. */
+  className?: string;
 }) {
   return (
-    <section className="promo-login-card" aria-label={title}>
+    <section
+      className={`promo-login-card${className ? ` ${className}` : ""}`}
+      aria-label={title}
+    >
       <span className="promo-login-card-glow" aria-hidden="true" />
       <span className="promo-login-card-icon" aria-hidden="true">
         {icon}

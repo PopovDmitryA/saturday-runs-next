@@ -41,19 +41,6 @@ def fetch_pipeline_status(settings: BotSettings) -> str:
     return format_pipeline_status(response.json())
 
 
-def fetch_sweep_status(settings: BotSettings) -> str:
-    response = httpx.get(
-        f"{_base_url(settings)}/api/internal/bot/admin/sweep-status",
-        params={"telegram_id": settings.admin_telegram_id},
-        headers=bot_headers(settings),
-        timeout=30.0,
-    )
-    if response.status_code != 200:
-        detail = response.json().get("detail", response.text)
-        raise RuntimeError(f"sweep-status API {response.status_code}: {detail}")
-    return response.json()["text"]
-
-
 def list_pipelines(settings: BotSettings) -> list[tuple[str, str]]:
     response = httpx.get(
         f"{_base_url(settings)}/api/internal/bot/admin/sync-pipelines",

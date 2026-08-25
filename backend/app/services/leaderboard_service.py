@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from bisect import bisect_right
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -42,6 +43,10 @@ from app.services.location_catalog_service import (
     is_foreign_location,
     russian_parkrun_location_ids,
 )
+from app.services.location_openings_service import (
+    OPENING_EVENT_CONDITION,
+    OPENING_EVENT_JOIN,
+)
 from app.time_format import format_finish_time_display
 from app.volunteer_role_taxonomy import (
     CANONICAL_ROLE_LABELS,
@@ -57,6 +62,7 @@ LeaderboardMetric = Literal[
     "volunteer_roles",
     "locations",
     "volunteer_locations",
+    "openings",
     "wins",
     "win_locations",
     "home_distance",
@@ -68,6 +74,7 @@ LEADERBOARD_METRICS: tuple[LeaderboardMetric, ...] = (
     "volunteer_roles",
     "locations",
     "volunteer_locations",
+    "openings",
     "wins",
     "win_locations",
     "home_distance",
@@ -102,6 +109,12 @@ MAX_MIN_VISITS = 5
 # «Регионов» в таблице видны всегда, а фильтр решает, что считает «Всего» и по
 # чему строится место: коллекционер 30 площадок в одной Москве и человек с 10
 # площадками в 10 регионах — это два разных достижения.
+# Карта туристов: спойлер в туристических рейтингах, где рядом с каждой
+# площадкой стоит число — сколько человек из верхушки рейтинга там было
+# (возрождение карты из старой Grafana, просьба Дмитрия 15.08.2026). Глубина
+# расчёта — TOURIST_MAP_LIMIT, объявлен рядом с TOP_LIMIT.
+TOURIST_MAP_METRICS: tuple[str, ...] = ("locations", "volunteer_locations")
+
 CountBy = Literal["locations", "cities", "regions"]
 COUNT_BY_VALUES: tuple[str, ...] = ("locations", "cities", "regions")
 COUNT_BY_METRICS: tuple[LeaderboardMetric, ...] = ("locations", "volunteer_locations")
@@ -140,6 +153,17 @@ ROLE_FILTER_METRICS: tuple[LeaderboardMetric, ...] = ("volunteering", "volunteer
 AMBIGUOUS_HOME_METRICS: tuple[LeaderboardMetric, ...] = ("home_distance",)
 
 
+# Рейтинги, ещё закрытые от публики: их видит только админ, пока данные не
+# выверены. Сейчас таких нет — «Открытия» открыты всем 15.08.2026, после того
+# как Дмитрий закончил ручную разметку С95.
+#
+# ЗАКРЫТЬ/ОТКРЫТЬ РЕЙТИНГ = поправить этот набор и три парных места:
+#   1) frontend/src/features/leaderboards/leaderboardsApi.ts — ADMIN_ONLY_METRICS;
+#   2) app/services/seo_service.py — indexable и адрес в _SITEMAP_STATIC;
+#   3) frontend/src/lib/pageMeta.ts — indexable (зеркало серверной меты).
+ADMIN_ONLY_METRICS: frozenset[str] = frozenset()
+
+
 def _normalize_hide_ambiguous_home(metric: str, value: bool) -> bool:
     return bool(value) and metric in AMBIGUOUS_HOME_METRICS
 PLATFORM_FILTER_VALUES: tuple[str, ...] = ("all", *PLATFORM_COLUMNS)
@@ -165,7 +189,32 @@ def platform_filter_values(metric: str) -> tuple[str, ...]:
     return ("all", *platform_columns_for(metric))
 
 TOP_LIMIT = 1000
+
+# Глубина карты туристов равна глубине таблицы (решение Дмитрия 15.08.2026):
+# светофор есть у каждой строки, которую посетитель видит, и «прочерка» как
+# понятия не остаётся. По сотне считать было втрое дешевле (по проду 10 222 пары
+# «человек × площадка» против 35 775), но тогда 900 видимых строк пришлось бы
+# объяснять подсказкой. Выборка точечная (по участникам верхушки) и кэшируется,
+# а ответ уходит под gzip — на проде он жмёт JSON рейтингов в 16 раз.
+TOURIST_MAP_LIMIT = TOP_LIMIT
+
+# Ступени фильтра «какой топ считать на карте» (просьба Дмитрия 19.08.2026).
+# Фильтр меняет ТОЛЬКО числа у точек: «сколько человек из топ-50 сюда доехало»
+# — вопрос про элиту туризма, а не про всю тысячу. Светофоры в таблице он не
+# трогает, они всегда по всем строкам. Числа для всех ступеней считаются разом
+# и едут в одном ответе (это ~15 КБ на полтысячи площадок), поэтому переключение
+# ступени мгновенное и в базу не ходит.
+TOURIST_MAP_TOP_STEPS: tuple[int, ...] = (10, 30, 50, 100, 300, 500, TOURIST_MAP_LIMIT)
+
 CACHE_TTL_SECONDS = 6 * 3600
+# Как часто таблицы пересчитываются по расписанию — этим числом витрина
+# обещает участнику срок. Не TTL: TTL (6 ч) — только страховка на случай, если
+# прогрев не отработал. Парное место — beat-задача "leaderboards-warm-cache" в
+# app/workers/celery_app.py: меняя одно, поправить и второе.
+# Сверх расписания пересчёт будит каждый синк, записавший протоколы
+# (см. schedule_leaderboards_warm), — свежие результаты доезжают до таблиц за
+# минуты, а не за часы.
+REFRESH_INTERVAL_HOURS = 2
 # v2 — в снапшот победных рейтингов добавлены «лучшее время» и «последняя
 # победа» (26.07.2026): старые кэшированные payload'ы этих полей не несут,
 # поэтому ключ версионируем, а не ждём протухания по TTL.
@@ -173,7 +222,13 @@ CACHE_TTL_SECONDS = 6 * 3600
 # (02.08.2026): по той же причине.
 # v4 — parkrun вошёл в разбивку по полу (02.08.2026): состав и порядок гендерных
 # рейтингов изменились, старые снапшоты пришлось бы ждать до конца TTL.
-CACHE_KEY_PREFIX = "leaderboards:v5"
+# v6 — в строках появился row_key, а в снапшоте entity_keys (карта туристов,
+# 15.08.2026): без них спойлер карты не сопоставил бы светофоры со строками.
+# v7 — «Последняя неделя» у туристических рейтингов выбирает площадку, давшую
+# «+1» (22.08.2026). Здесь меняется не форма payload'а, а значение поля:
+# старые снапшоты продолжали бы показывать повтор рядом с плюсом до конца TTL,
+# и правка выглядела бы неработающей.
+CACHE_KEY_PREFIX = "leaderboards:v7"
 
 # Победные рейтинги показывают две дополнительные колонки: глобальный рекорд
 # участника и последнюю победу (у win_locations — последнюю НОВУЮ локацию с
@@ -194,6 +249,11 @@ METRIC_THRESHOLD_PERCENTILE: dict[str, float] = {
     # Волонтёрский туризм — та же форма распределения, что у бегового (подавляющее
     # большинство волонтёров знает ровно одну площадку), поэтому и перцентиль тот же.
     "volunteer_locations": 95,
+    # Открытия: на прод-данных у 82% побывавших хоть на одном открытии оно ровно
+    # одно (15 970 человек из 18 400) — форма распределения та же, что у туризма,
+    # и порог тот же. Ниже p95 таблица превратилась бы в список всех, кто
+    # однажды случайно попал на первый старт своей площадки.
+    "openings": 95,
     "wins": 0,
     "win_locations": 0,
     # Дальность от дома: у 89% участников ровно одна площадка, и сумма у них
@@ -245,6 +305,18 @@ METRIC_META: dict[str, dict[str, str]] = {
             "волонтёрства приходят сводкой ролей, без локации и даты."
         ),
     },
+    "openings": {
+        "title": "Рейтинг открытий — первопроходцы",
+        "unit": "открытий",
+        "description": (
+            "Кто чаще всех бывал на ТОРЖЕСТВЕННОМ ОТКРЫТИИ локации. У 5 вёрст, "
+            "parkrun и RunPark открытие — это забег №1, у С95 оно размечено "
+            "вручную: по номерам забегов там открытие не опознать. У локации "
+            "открытие одно: парк открывается один раз, и если он открывался "
+            "ещё во времена parkrun, то это оно и есть — первый старт следующей "
+            "системы на той же локации открытием уже не считается."
+        ),
+    },
     "wins": {
         "title": "Рейтинг количества первых мест",
         "unit": "первых мест",
@@ -267,13 +339,13 @@ METRIC_META: dict[str, dict[str, str]] = {
         "title": "Рейтинг дальности от дома",
         "unit": "км от дома",
         "description": (
-            "Сумма расстояний от домашней локации до каждой площадки, где "
-            "участник финишировал. Каждая площадка даёт свои километры один "
+            "Сумма расстояний от домашней локации до каждой локации, где "
+            "участник финишировал. Каждая локация даёт свои километры один "
             "раз, сколько бы раз человек туда ни ездил. Домашняя локация — где "
             "больше всего пробежек (зарегистрированные на сайте могут выбрать "
             "её вручную в настройках). В рейтинг идут участники, чей дом — "
-            "площадка 5 вёрст, С95 или RunPark либо российский parkrun. "
-            "Расстояние — по прямой. «Всего» — не сумма колонок: площадка, где "
+            "локация 5 вёрст, С95 или RunPark либо российский parkrun. "
+            "Расстояние — по прямой. «Всего» — не сумма колонок: локация, где "
             "бегали в двух системах, попадает в обе колонки, но в зачёт идёт "
             "один раз."
         ),
@@ -312,7 +384,7 @@ COUNT_BY_META: dict[str, dict[str, dict[str, str]]] = {
             "title": "Рейтинг туризма — города",
             "unit": "городов",
             "description": (
-                "Уникальные ГОРОДА, где участник финишировал. Несколько площадок "
+                "Уникальные ГОРОДА, где участник финишировал. Несколько локаций "
                 "одного города дают один балл. Зарубежные старты считаются по "
                 "стране: одна страна — один город и один регион."
             ),
@@ -321,7 +393,7 @@ COUNT_BY_META: dict[str, dict[str, dict[str, str]]] = {
             "title": "Рейтинг туризма — регионы",
             "unit": "регионов",
             "description": (
-                "Уникальные РЕГИОНЫ, где участник финишировал. Все площадки одного "
+                "Уникальные РЕГИОНЫ, где участник финишировал. Все локации одного "
                 "региона дают один балл. Зарубежные старты считаются по стране: "
                 "одна страна — один регион."
             ),
@@ -332,7 +404,7 @@ COUNT_BY_META: dict[str, dict[str, dict[str, str]]] = {
             "title": "Рейтинг волонтёрского туризма — города",
             "unit": "городов",
             "description": (
-                "Уникальные ГОРОДА, где участник волонтёрил. Несколько площадок "
+                "Уникальные ГОРОДА, где участник волонтёрил. Несколько локаций "
                 "одного города дают один балл. Зарубежные смены считаются по "
                 "стране: одна страна — один город и один регион."
             ),
@@ -341,7 +413,7 @@ COUNT_BY_META: dict[str, dict[str, dict[str, str]]] = {
             "title": "Рейтинг волонтёрского туризма — регионы",
             "unit": "регионов",
             "description": (
-                "Уникальные РЕГИОНЫ, где участник волонтёрил. Все площадки одного "
+                "Уникальные РЕГИОНЫ, где участник волонтёрил. Все локации одного "
                 "региона дают один балл. Зарубежные смены считаются по стране: "
                 "одна страна — один регион."
             ),
@@ -587,13 +659,18 @@ GROUP BY vr.participant_id, p.code, vr.role
 )
 
 
-def _location_visits_sql(*, only_wins: bool) -> str:
+def _location_visits_sql(*, only_wins: bool, with_last_date: bool = False) -> str:
     """Визиты участника по локациям: дата первого, всего и за последнюю неделю.
 
     В варианте only_wins — только финиши первым в абсолюте (first_date тогда =
     дата первой победы там). Счётчики визитов нужны фильтру «локация от N
     визитов»: из них видно и то, набрана ли норма, и то, набрана ли она именно
     на этой неделе (visits - week_visits < N ≤ visits).
+
+    with_last_date добавляет седьмой столбец — дату последнего визита. Она нужна
+    только карте туристов (подсказка светофора «когда он там был»), и колонка
+    приписана в хвост, чтобы распаковка шести полей во всех остальных местах
+    осталась прежней.
     """
     # only_wins — зачёт побед, поэтому зарубежный parkrun из него выпадает
     # целиком (_RUSSIAN_PARKRUN_ONLY). В обычном туризме он остаётся: съездить
@@ -601,6 +678,7 @@ def _location_visits_sql(*, only_wins: bool) -> str:
     wins_filter = (
         f"AND rr.position = 1\n  {_RUSSIAN_PARKRUN_ONLY}" if only_wins else ""
     )
+    last_date = ",\n    MAX(e.event_date) AS last_date" if with_last_date else ""
     return (
         _PARKRUN_ELIGIBLE_CTE
         + f"""
@@ -610,7 +688,7 @@ SELECT
     e.location_id AS location_id,
     MIN(e.event_date) AS first_date,
     COUNT(*) AS visits,
-    COUNT(*) FILTER (WHERE e.event_date >= :week_start) AS week_visits
+    COUNT(*) FILTER (WHERE e.event_date >= :week_start) AS week_visits{last_date}
 FROM run_results rr
 JOIN events e ON e.id = rr.event_id
 JOIN platforms p ON p.id = e.platform_id
@@ -628,6 +706,80 @@ GROUP BY rr.participant_id, p.code, e.location_id
 
 _LOCATION_VISITS_SQL = _location_visits_sql(only_wins=False)
 _WIN_LOCATION_VISITS_SQL = _location_visits_sql(only_wins=True)
+# Тот же беговой туризм, но с датой последнего визита — для карты туристов.
+_TOURIST_RUN_VISITS_SQL = _location_visits_sql(only_wins=False, with_last_date=True)
+
+# Открытия локаций: по строке на каждое торжественное открытие, где участник
+# бежал. Что считается открытием, решает app.services.location_openings_service —
+# здесь только его условие, чтобы правило жило в одном месте (у С95 номер
+# проставляется руками, у остальных систем это событие №1).
+#
+# Строки НЕ схлопываются по канонической локации: открытие в parkrun и
+# открытие в 5 вёрст на той же физической точке — два разных события, и оба
+# идут в зачёт (решение Дмитрия 14.08.2026). А вот один и тот же старт,
+# попавший в протоколы двух систем, схлопывается как везде — вторичное событие
+# кросслинка отбрасывается (иначе открытие локации, которую RunPark
+# зеркалит за 5 вёрст, дало бы +2 за одну и ту же пробежку).
+_OPENING_ROWS_SQL = (
+    _PARKRUN_ELIGIBLE_CTE
+    + f"""
+SELECT DISTINCT
+    rr.participant_id AS participant_id,
+    p.code AS platform_code,
+    e.location_id AS location_id,
+    e.event_date AS event_date,
+    e.id AS event_id
+FROM run_results rr
+JOIN events e ON e.id = rr.event_id
+JOIN platforms p ON p.id = e.platform_id
+LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
+{OPENING_EVENT_JOIN}
+WHERE e.is_test_event = false
+  AND rr.participant_id IS NOT NULL
+  AND ec.secondary_event_id IS NULL
+  AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
+  AND {OPENING_EVENT_CONDITION}
+  -- Открытие у локации одно. Номер забега — не первичный ключ: на неполной
+  -- истории (частично синканная локация С95) один номер висит сразу на
+  -- нескольких датах. Без этой оговорки такая локация раздавала бы по
+  -- открытию за каждую из них; берём самый ранний старт.
+  AND NOT EXISTS (
+    SELECT 1 FROM events e_prev
+    WHERE e_prev.location_id = e.location_id
+      AND e_prev.event_number = e.event_number
+      AND e_prev.is_test_event = false
+      AND (e_prev.event_date, e_prev.id) < (e.event_date, e.id)
+  )
+  /*PIDS_FILTER*/
+"""
+)
+
+# Все события-открытия — без привязки к участникам. Нужны, чтобы выбрать ОДНО
+# открытие на физическую локацию: у площадки, побывавшей и parkrun'ом, и
+# «5 вёрст», открытие всё равно одно — самое раннее (решение Дмитрия
+# 16.08.2026). Считать минимум по строкам участников нельзя: на открытии могли
+# бежать только те, кого рейтинг не допускает (иностранцы parkrun), и тогда
+# «самым ранним» ошибочно стало бы открытие следующей системы.
+_OPENING_EVENTS_SQL = f"""
+SELECT
+    e.id AS event_id,
+    e.location_id AS location_id,
+    e.event_date AS event_date
+FROM events e
+JOIN platforms p ON p.id = e.platform_id
+LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
+{OPENING_EVENT_JOIN}
+WHERE e.is_test_event = false
+  AND ec.secondary_event_id IS NULL
+  AND {OPENING_EVENT_CONDITION}
+  AND NOT EXISTS (
+    SELECT 1 FROM events e_prev
+    WHERE e_prev.location_id = e.location_id
+      AND e_prev.event_number = e.event_number
+      AND e_prev.is_test_event = false
+      AND (e_prev.event_date, e_prev.id) < (e.event_date, e.id)
+  )
+"""
 
 # Волонтёрские визиты по локациям — та же форма строк, что у беговых, так что
 # рейтинг волонтёрского туризма считается тем же кодом (_collect_location_entities).
@@ -654,6 +806,7 @@ WHERE e.is_test_event = false
   AND vr.participant_id IS NOT NULL
   AND p.code <> 'parkrun'
   AND ec.secondary_event_id IS NULL
+  /*PIDS_FILTER*/
 """
 
 # Выбор домашней локации в рейтинге дальности повторяет кабинет
@@ -684,14 +837,19 @@ GROUP BY rr.participant_id, p.code, e.location_id
 """
 )
 
-_VOLUNTEER_LOCATION_VISITS_SQL = """
+
+def _volunteer_location_visits_sql(*, with_last_date: bool = False) -> str:
+    """Волонтёрские визиты по площадкам. with_last_date — как у беговой выборки
+    (см. _location_visits_sql): седьмой столбец нужен только карте туристов."""
+    last_date = ",\n    MAX(e.event_date) AS last_date" if with_last_date else ""
+    return f"""
 SELECT
     vr.participant_id AS participant_id,
     p.code AS platform_code,
     e.location_id AS location_id,
     MIN(e.event_date) AS first_date,
     COUNT(DISTINCT e.event_date) AS visits,
-    COUNT(DISTINCT e.event_date) FILTER (WHERE e.event_date >= :week_start) AS week_visits
+    COUNT(DISTINCT e.event_date) FILTER (WHERE e.event_date >= :week_start) AS week_visits{last_date}
 FROM volunteer_results vr
 JOIN events e ON e.id = vr.event_id
 JOIN platforms p ON p.id = e.platform_id
@@ -704,6 +862,10 @@ WHERE e.is_test_event = false
 GROUP BY vr.participant_id, p.code, e.location_id
 """
 
+
+_VOLUNTEER_LOCATION_VISITS_SQL = _volunteer_location_visits_sql()
+_TOURIST_VOLUNTEER_VISITS_SQL = _volunteer_location_visits_sql(with_last_date=True)
+
 # Колонка «Последняя неделя»: где участник был за окно дельты — площадка и дата
 # под ней, тем же видом, что «Последняя победа» в победных рейтингах. Именно
 # «был», а не «прибавил» (решение Дмитрия 02.08.2026): повторный заезд на давно
@@ -711,6 +873,11 @@ GROUP BY vr.participant_id, p.code, e.location_id
 # там был. Поэтому у всех четырёх рейтингов список берётся из одних и тех же
 # выборок окна: беговые метрики читают протоколы забегов, волонтёрские —
 # волонтёрские. Окно недели маленькое, поэтому выборки дешёвые.
+#
+# Уточнение 22.08.2026: у туристических рейтингов, если прибавка на неделе
+# БЫЛА, из этих же визитов выбирается площадка, которая её и дала. За день
+# можно отволонтёрить на двух площадках, и «+1» рядом с повтором читался как
+# ошибка счёта (см. _latest_week_location).
 _WEEK_RUN_LOCATIONS_SQL = (
     _PARKRUN_ELIGIBLE_CTE
     + f"""
@@ -967,6 +1134,9 @@ class _Entity:
     # Где участник был за последнюю неделю (метрики с колонкой «Последняя
     # неделя») — ОДНА площадка, самый поздний старт окна.
     week_location: dict[str, object] | None = None
+    # Туристические рейтинги: площадки, которые и дали «+N» этой недели.
+    # «Последняя неделя» выбирается из них, а не из всех визитов окна.
+    week_new_identities: set[str] = field(default_factory=set)
     # Участники, из которых собрана строка — нужны для запроса рекорда.
     participant_ids: set[UUID] = field(default_factory=set)
 
@@ -1012,6 +1182,18 @@ def _entity_key(pid: UUID, link: _SiteLink | None) -> str:
     if link is not None:
         return f"u:{link.user_id}"
     return f"p:{pid}"
+
+
+def _row_key(entity_key: str) -> str:
+    """Публичный идентификатор строки рейтинга.
+
+    Внутренний ключ сущности — это «u:<uuid пользователя>» или «p:<uuid
+    участника>», отдавать такое наружу незачем. Витрине же нужен стабильный
+    якорь строки: по нему карта туристов сопоставляет светофоры со строками
+    таблицы (site_serial_id есть не у всех, а место дублируется при равенстве
+    значений). Хэш от ключа стабилен между пересчётами и вариантами фильтров.
+    """
+    return hashlib.blake2s(entity_key.encode(), digest_size=6).hexdigest()
 
 
 def _parkrun_eligible_ids(db: Session) -> set[UUID]:
@@ -1155,6 +1337,9 @@ _RUSSIA_COUNTRY_NAMES = frozenset({"россия", "russia", "russian federation
 # и ещё 274 — «United Kingdom» (проверено 02.08.2026). Без склейки турист по
 # британским паркранам получал бы два региона вместо одного. Список дополнять
 # по мере появления новых написаний: SELECT DISTINCT country FROM locations.
+# С 10.08.2026 английские написания в БД не пишутся вовсе (normalize_country_name
+# в upsert_location), а накопленное разбирает scripts/backfill_location_country.py —
+# склейка осталась страховкой на случай новой заглушки от внешней системы.
 _COUNTRY_ALIASES: dict[str, str] = {
     "united kingdom": "великобритания",
     "great britain": "великобритания",
@@ -1309,6 +1494,26 @@ def _manual_home_identity_keys(db: Session) -> dict[UUID, str]:
     return {user_id: str(key) for user_id, key in rows if key}
 
 
+def _opening_event_ids(
+    db: Session, identity_by_location: dict[UUID, str]
+) -> set[UUID]:
+    """События-открытия, по одному на физическую локацию.
+
+    Локация открывается один раз: если площадка успела побывать parkrun'ом, а
+    потом стала «5 вёрст», открытие у неё всё равно одно — самое раннее
+    (решение Дмитрия 16.08.2026). Из нескольких открытий одной канонической
+    площадки оставляем первое по дате; ничью разводит id события, чтобы выбор
+    не «дышал» между пересчётами.
+    """
+    first: dict[str, tuple[date, UUID]] = {}
+    for event_id, location_id, event_date in db.execute(text(_OPENING_EVENTS_SQL)).all():
+        identity = identity_by_location.get(location_id, str(location_id))
+        current = first.get(identity)
+        if current is None or (event_date, event_id) < current:
+            first[identity] = (event_date, event_id)
+    return {event_id for _date, event_id in first.values()}
+
+
 def _row_params(db: Session, week_start: date, **extra: object) -> dict[str, object]:
     """Общие параметры сырых выборок рейтингов.
 
@@ -1349,6 +1554,9 @@ class _MetricSource:
         self._manual_homes: dict[UUID, str] | None = None
         self._home_eligible: set[str] | None = None
         self._names: dict[UUID, str | None] | None = None
+        # Открытия физических локаций (по одному на площадку) — общий справочник
+        # рейтинга открытий, не зависящий от фильтров.
+        self._opening_events: set[UUID] | None = None
         self._rows: dict[str, Sequence[Row[Any]]] = {}
         # Волонтёрские выборки зависят от фильтра ролей, поэтому кэшируются
         # по нему: базовый вариант (None) и каждый набор ролей — своя запись.
@@ -1388,6 +1596,20 @@ class _MetricSource:
         if self._home_eligible is None:
             self._home_eligible = _home_eligible_identities(self.db)
         return self._home_eligible
+
+    def opening_event_ids(self) -> set[UUID]:
+        """События, которые считаются открытием СВОЕЙ физической локации.
+
+        У локации открытие одно, даже если систем на ней было несколько: парк
+        открывается один раз, а смена системы — это не новое открытие (решение
+        Дмитрия 16.08.2026). Из нескольких открытий одной канонической площадки
+        оставляем самое раннее; ничью по дате разводит id, чтобы выбор не
+        «дышал» между пересчётами.
+        """
+        if self._opening_events is None:
+            identity_by_location, _names, _slugs = self.identity_maps()
+            self._opening_events = _opening_event_ids(self.db, identity_by_location)
+        return self._opening_events
 
     def names(self) -> dict[UUID, str | None]:
         """Имена всех участников: справочник целиком дешевле, чем гигантский IN
@@ -1429,6 +1651,7 @@ class _MetricSource:
         привязок — их переиспользует следующий рейтинг."""
         self._rows.clear()
         self._names = None
+        self._opening_events = None
         self._occasion_rows.clear()
         self._parkrun_volunteering.clear()
 
@@ -1476,9 +1699,11 @@ WEEK_LOCATIONS_METRICS: tuple[LeaderboardMetric, ...] = cast(
     "tuple[LeaderboardMetric, ...]", tuple(_WEEK_LOCATIONS_SQL_BY_METRIC)
 )
 
-# Таблица, по которой фильтруются участники «моей» строки: у беговых выборок это
-# run_results (rr), у волонтёрских — volunteer_results (vr).
-_WEEK_LOCATIONS_PIDS_ALIAS: dict[str, str] = {
+# Таблица, по которой фильтруются участники в точечных выборках (/*PIDS_FILTER*/):
+# у беговых метрик это run_results (rr), у волонтёрских — volunteer_results (vr).
+# Так считаются «моя» строка и карта туристов — обе поверх горстки участников,
+# а не всех протоколов.
+_METRIC_PIDS_ALIAS: dict[str, str] = {
     "runs": "rr",
     "locations": "rr",
     "home_distance": "rr",
@@ -1491,6 +1716,7 @@ def _latest_week_location(
     dates: dict[str, date],
     identity_names: dict[str, str],
     identity_slugs: dict[str, str],
+    prefer: set[str] | None = None,
 ) -> dict[str, object] | None:
     """Последний старт окна: ОДНА площадка, самая поздняя по дате.
 
@@ -1498,6 +1724,12 @@ def _latest_week_location(
     03.08.2026): колонка отвечает на вопрос «где человек был в последний раз»,
     а перечисление рядом с числовыми колонками читалось как приращение.
     Ничью по дате разводим названием, чтобы выбор не «дышал» между пересчётами.
+
+    prefer — площадки, давшие прибавку недели (туристические рейтинги). В один
+    день можно отволонтёрить на двух площадках, и если одна из них новая, а
+    вторая — повтор, то рядом с «+1» должна стоять именно новая: иначе колонка
+    спорит с дельтой (репорт Дмитрия 22.08.2026). Если прибавки не было,
+    выбираем как раньше — по самому позднему визиту окна.
     """
 
     def name_of(identity: str) -> str:
@@ -1505,8 +1737,9 @@ def _latest_week_location(
 
     if not dates:
         return None
+    pool = {identity: on for identity, on in dates.items() if identity in prefer} if prefer else {}
     identity, on_date = min(
-        dates.items(), key=lambda item: (-item[1].toordinal(), name_of(item[0]))
+        (pool or dates).items(), key=lambda item: (-item[1].toordinal(), name_of(item[0]))
     )
     return {
         "name": name_of(identity),
@@ -1544,7 +1777,7 @@ def _attach_week_locations(
         by_identity[identity] = max(known, last_date) if known is not None else last_date
     for key, dates in per_entity.items():
         entities[key].week_location = _latest_week_location(
-            dates, identity_names, identity_slugs
+            dates, identity_names, identity_slugs, entities[key].week_new_identities
         )
 
 
@@ -1606,6 +1839,70 @@ def _collect_numeric_entities(
             bucket[1] += week
             entity.total += total
             entity.week += week
+    return entities
+
+
+def _collect_opening_entities(
+    source: _MetricSource, platform: str = "all"
+) -> dict[str, _Entity]:
+    """Открытия локаций: счёт торжественных открытий, где участник бежал.
+
+    Одна локация — максимум одно открытие (решение Дмитрия 16.08.2026): парк
+    открывается один раз, и если он открывался ещё во времена parkrun, то
+    открытие именно то, а первый старт следующей системы на той же площадке
+    открытием не считается. Какие события прошли этот отбор — знает
+    source.opening_event_ids().
+
+    Заодно заполняется «Последнее открытие» — локация и дата самого свежего
+    открытия участника (тот же слот строки, что «Последняя победа»).
+    """
+    links = source.links()
+    identity_by_location, identity_names, identity_slugs = source.identity_maps()
+    names = source.names()
+    opening_events = source.opening_event_ids()
+
+    entities: dict[str, _Entity] = {}
+    last_dates: dict[str, dict[str, date]] = {}
+    meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
+    per_entity: dict[str, dict[str, list[int]]] = {}
+    # Учтённые пары «строка рейтинга × открытие»: у зарегистрированного строка
+    # склеена из нескольких участников, и на одном открытии могли бежать двое
+    # его профилей (кросслинк такую пару не всегда ловит). Балл всё равно один.
+    counted: set[tuple[str, UUID]] = set()
+
+    for pid, code, location_id, event_date, event_id in source.rows(_OPENING_ROWS_SQL):
+        if platform != "all" and code != platform:
+            continue
+        if event_id not in opening_events:
+            continue
+        link = links.get(pid)
+        key = _entity_key(pid, link)
+        meta.setdefault(key, (pid, link))
+        if (key, event_id) in counted:
+            continue
+        counted.add((key, event_id))
+        bucket = per_entity.setdefault(key, {}).setdefault(code, [0, 0])
+        bucket[0] += 1
+        if event_date >= source.week_start:
+            bucket[1] += 1
+        identity = identity_by_location.get(location_id, str(location_id))
+        by_identity = last_dates.setdefault(key, {})
+        known = by_identity.get(identity)
+        by_identity[identity] = max(known, event_date) if known is not None else event_date
+
+    for key, (pid, link) in meta.items():
+        entity = _Entity(key=key)
+        if link is not None and not link.private:
+            entity.site_serial_id = link.serial_id
+            entity.display_name = link.display_name or names.get(pid)
+        else:
+            entity.display_name = names.get(pid)
+        for code, cell in per_entity.get(key, {}).items():
+            entity.values[code] = [cell[0], cell[1]]
+            entity.total += cell[0]
+            entity.week += cell[1]
+        _apply_last_win(entity, last_dates.get(key, {}), identity_names, identity_slugs)
+        entities[key] = entity
     return entities
 
 
@@ -2093,6 +2390,10 @@ class _UnitTally:
     week: int
     # platform code -> [всего, из них прибавилось на этой неделе]
     values: dict[str, list[int]]
+    # Площадки, которые и дали прибавку недели: единица, куда они входят,
+    # взята именно сейчас. Из них выбирается «Последняя неделя» (см.
+    # _latest_week_location).
+    new_identities: set[str] = field(default_factory=set)
 
 
 def _unit_key_getters(
@@ -2125,19 +2426,23 @@ def _unit_counts(
     городе прибавляет площадку, но не город.
     """
     groups: dict[str, list[_LocationVisits]] = {}
+    identities_by_unit: dict[str, list[str]] = {}
     for identity, visits in counted.items():
         unit = unit_key(identity)
         if unit is None:
             continue
         groups.setdefault(unit, []).append(visits)
+        identities_by_unit.setdefault(unit, []).append(identity)
 
     values: dict[str, list[int]] = {}
+    new_identities: set[str] = set()
     total = 0
     week = 0
-    for group in groups.values():
+    for unit, group in groups.items():
         total += 1
         if all(visits.is_new(min_visits) for visits in group):
             week += 1
+            new_identities.update(identities_by_unit[unit])
         # Система «даёт» единицу, если хотя бы одна её площадка набрала порог
         # визитов силами именно этой системы (см. _LocationVisits.by_platform).
         counted_by_code: dict[str, list[_LocationVisits]] = {}
@@ -2150,7 +2455,7 @@ def _unit_counts(
             cell[0] += 1
             if all(visits.platform_is_new(code, min_visits) for visits in in_code):
                 cell[1] += 1
-    return _UnitTally(total=total, week=week, values=values)
+    return _UnitTally(total=total, week=week, values=values, new_identities=new_identities)
 
 
 def _collect_location_entities(
@@ -2224,6 +2529,7 @@ def _collect_location_entities(
         entity.total = selected.total
         entity.week = selected.week
         entity.values = selected.values
+        entity.week_new_identities = selected.new_identities
         if with_geo:
             entity.locations_total = tallies["locations"].total
             entity.cities_total = tallies["cities"].total
@@ -2621,6 +2927,8 @@ def _build_snapshot(
             with_geo=True,
             role_filter=role_filter,
         )
+    elif metric == "openings":
+        entities = _collect_opening_entities(src, platform=platform)
     elif metric == "win_locations":
         if gender == "all":
             entities = _collect_location_entities(
@@ -2642,8 +2950,9 @@ def _build_snapshot(
             src, metric, platform=platform, role_filter=role_filter
         )
 
-    # «Последняя неделя» — одинаково для всех четырёх метрик: просто где человек
-    # был за окно дельты, независимо от того, дало это +1 или нет.
+    # «Последняя неделя» — где человек был за окно дельты. У туристических
+    # рейтингов из визитов окна выбирается площадка, давшая «+1» (если она
+    # была): колонка не должна спорить с дельтой.
     week_sql = _WEEK_LOCATIONS_SQL_BY_METRIC.get(metric)
     if week_sql is not None:
         _attach_week_locations(
@@ -2684,6 +2993,7 @@ def _build_snapshot(
         row: dict[str, object] = {
             "rank": rank,
             "rank_delta": prev_rank - rank,
+            "row_key": _row_key(entity.key),
             "display_name": entity.display_name,
             "site_serial_id": entity.site_serial_id,
             "platforms": {
@@ -2731,6 +3041,11 @@ def _build_snapshot(
         "platform": platform,
         "count_by": count_by,
         "rows": rows,
+        # Служебное поле снапшота (наружу не уходит — get_leaderboard собирает
+        # свой словарь): внутренние ключи сущностей верхушки рейтинга в том же
+        # порядке, что строки. По ним карта туристов узнаёт, чьи протоколы
+        # перечитать, не пересчитывая рейтинг заново.
+        "entity_keys": [entity.key for entity in visible[:TOURIST_MAP_LIMIT]],
         "totals_desc": totals_desc,
         "prev_totals_desc": prev_totals_desc,
         "threshold": threshold,
@@ -2773,21 +3088,11 @@ def _cache_key(
     return key
 
 
-def _read_cache(
-    metric: str,
-    gender: str = "all",
-    min_visits: int = 1,
-    platform: str = "all",
-    count_by: str = "locations",
-    roles_key: str = "",
-    hide_ambiguous_home: bool = False,
-) -> dict[str, object] | None:
+def _read_raw_cache(key: str) -> dict[str, object] | None:
+    """Снапшот из Redis по готовому ключу. Недоступный Redis — не ошибка: без
+    кэша всё считается заново, просто медленнее."""
     try:
-        raw = get_redis_client().get(
-            _cache_key(
-                metric, gender, min_visits, platform, count_by, roles_key, hide_ambiguous_home
-            )
-        )
+        raw = get_redis_client().get(key)
     except Exception:
         return None
     if not raw or not isinstance(raw, (str, bytes, bytearray)):
@@ -2797,6 +3102,31 @@ def _read_cache(
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _write_raw_cache(key: str, payload: dict[str, object]) -> None:
+    try:
+        get_redis_client().setex(
+            key, CACHE_TTL_SECONDS, json.dumps(payload, ensure_ascii=False)
+        )
+    except Exception:
+        return
+
+
+def _read_cache(
+    metric: str,
+    gender: str = "all",
+    min_visits: int = 1,
+    platform: str = "all",
+    count_by: str = "locations",
+    roles_key: str = "",
+    hide_ambiguous_home: bool = False,
+) -> dict[str, object] | None:
+    return _read_raw_cache(
+        _cache_key(
+            metric, gender, min_visits, platform, count_by, roles_key, hide_ambiguous_home
+        )
+    )
 
 
 def _write_cache(
@@ -2809,16 +3139,30 @@ def _write_cache(
     roles_key: str = "",
     hide_ambiguous_home: bool = False,
 ) -> None:
+    _write_raw_cache(
+        _cache_key(
+            metric, gender, min_visits, platform, count_by, roles_key, hide_ambiguous_home
+        ),
+        payload,
+    )
+
+
+def drop_metric_cache(metric: str) -> int:
+    """Выбросить все снапшоты одного рейтинга (по всей сетке фильтров).
+
+    Нужно там, где данные рейтинга меняются не протоколом, а руками: разметка
+    открытий в админке иначе доехала бы до таблицы только через TTL (6 часов),
+    и админ не увидел бы результата своей же правки. Ключи снимаем сканом —
+    FLUSHDB на этом Redis запрещён (в нём же сессии и очереди).
+    """
     try:
-        get_redis_client().setex(
-            _cache_key(
-                metric, gender, min_visits, platform, count_by, roles_key, hide_ambiguous_home
-            ),
-            CACHE_TTL_SECONDS,
-            json.dumps(payload, ensure_ascii=False),
-        )
+        client = get_redis_client()
+        keys = list(client.scan_iter(match=f"{CACHE_KEY_PREFIX}:{metric}*"))
+        if not keys:
+            return 0
+        return int(cast(int, client.delete(*keys)))
     except Exception:
-        return
+        return 0
 
 
 _USED_ROLES_CACHE_KEY = f"{CACHE_KEY_PREFIX}:used_roles"
@@ -3030,6 +3374,346 @@ def get_leaderboard(
         "latest_event_date": snapshot.get("latest_event_date"),
         "week_start": snapshot.get("week_start"),
         "built_at": snapshot.get("built_at"),
+        # Через сколько часов после built_at таблица пересчитается: витрина
+        # объясняет этим задержку между сменой домашней локации и новыми
+        # километрами в строках. Смену дома протокол не приносит, поэтому здесь
+        # именно расписание, а не событийный прогрев от синка.
+        "refresh_hours": REFRESH_INTERVAL_HOURS,
+    }
+
+
+# ─── Карта туристов ──────────────────────────────────────────────────────────
+# Спойлер в туристических рейтингах: та же карта локаций, что в разделе «Карта»,
+# но рядом с каждой точкой стоит число — сколько человек из топ-100 рейтинга там
+# было. Клик по точке зажигает в таблице светофоры «был / не был».
+#
+# Считается НЕ пересчётом рейтинга: снапшот (он и так в кэше) отдаёт ключи
+# сущностей своей верхушки, а протоколы перечитываются точечно — только по
+# участникам этой сотни. Поэтому спойлер открывается за один короткий запрос к
+# базе, а не за полное сканирование протоколов.
+
+_TOURIST_MAP_SQL: dict[str, str] = {
+    "locations": _TOURIST_RUN_VISITS_SQL,
+    "volunteer_locations": _TOURIST_VOLUNTEER_VISITS_SQL,
+}
+
+def _tourist_pids_filter(metric: str) -> str:
+    return f"AND {_METRIC_PIDS_ALIAS[metric]}.participant_id = ANY(:pids)"
+
+
+@dataclass
+class _TouristPlatformVisit:
+    """Визиты одного человека на площадку в одной системе."""
+
+    visits: int = 0
+    first_date: date | None = None
+    last_date: date | None = None
+
+    def add(self, visits: int, first_date: date, last_date: date) -> None:
+        self.visits += visits
+        if self.first_date is None or first_date < self.first_date:
+            self.first_date = first_date
+        if self.last_date is None or last_date > self.last_date:
+            self.last_date = last_date
+
+
+def _tourist_row_participants(db: Session, entity_keys: Sequence[str]) -> dict[UUID, str]:
+    """participant_id -> row_key строки рейтинга, в которую он входит.
+
+    Обратный ход к _entity_key: строка зарегистрированного участника собрана из
+    всех его привязанных платформ, поэтому «u:<user_id>» разворачивается в набор
+    участников, а «p:<participant_id>» — сам в себя.
+    """
+    links = _site_links(db)
+    by_user: dict[UUID, list[UUID]] = {}
+    for pid, link in links.items():
+        by_user.setdefault(link.user_id, []).append(pid)
+
+    result: dict[UUID, str] = {}
+    for entity_key in entity_keys:
+        prefix, _, raw = entity_key.partition(":")
+        try:
+            identifier = UUID(raw)
+        except ValueError:
+            continue
+        row_key = _row_key(entity_key)
+        if prefix == "u":
+            for pid in by_user.get(identifier, ()):
+                result[pid] = row_key
+        else:
+            result[identifier] = row_key
+    return result
+
+
+def _tourist_visit_rows(
+    db: Session,
+    metric: str,
+    participant_ids: list[UUID],
+    week_start: date,
+    role_filter: frozenset[str] | None,
+) -> list[tuple[UUID, str, UUID, date, int, date]]:
+    """Строки «участник × система × площадка» по верхушке рейтинга.
+
+    Форма — как у выборок рейтинга, плюс дата последнего визита: подсказка
+    светофора обещает не только систему, но и когда человек там был.
+    """
+    if not participant_ids:
+        return []
+    params = _row_params(db, week_start, pids=participant_ids)
+    if role_filter is not None and metric == "volunteer_locations":
+        # Фильтр ролей: визиты считаются по дням, оставшимся после фильтра, —
+        # ровно как в самом рейтинге (см. _volunteer_location_rows_filtered).
+        sql = _VOLUNTEER_LOCATION_ROLE_ROWS_SQL.replace(
+            "/*PIDS_FILTER*/", _tourist_pids_filter("volunteer_locations")
+        )
+        dates: dict[tuple[UUID, str, UUID], set[date]] = {}
+        for pid, code, location_id, event_date, role in db.execute(text(sql), params).all():
+            if not _role_allowed(role, role_filter):
+                continue
+            dates.setdefault((pid, code, location_id), set()).add(event_date)
+        return [
+            (pid, code, location_id, min(event_dates), len(event_dates), max(event_dates))
+            for (pid, code, location_id), event_dates in dates.items()
+        ]
+
+    sql = _TOURIST_MAP_SQL[metric].replace("/*PIDS_FILTER*/", _tourist_pids_filter(metric))
+    return [
+        (pid, code, location_id, first_date, int(visits), last_date)
+        for pid, code, location_id, first_date, visits, _week, last_date in db.execute(
+            text(sql), params
+        ).all()
+    ]
+
+
+def _tourist_visit_payload(
+    row_key: str,
+    platforms: dict[str, _TouristPlatformVisit],
+) -> dict[str, object]:
+    """Одна клетка матрицы «участник × площадка» в виде для витрины.
+
+    Порог визитов рейтинга сюда не примешивается (решение Дмитрия 15.08.2026):
+    светофор отвечает на вопрос «был или не был», а не «засчитано ли». Один
+    визит — такой же зелёный, как двадцатый; сколько их было, видно в подсказке.
+    """
+    visits = sum(item.visits for item in platforms.values())
+    first_dates = [item.first_date for item in platforms.values() if item.first_date]
+    last_dates = [item.last_date for item in platforms.values() if item.last_date]
+    return {
+        "row_key": row_key,
+        "visits": visits,
+        "first_date": min(first_dates).isoformat() if first_dates else None,
+        "last_date": max(last_dates).isoformat() if last_dates else None,
+        "platforms": [
+            {
+                "code": code,
+                "visits": item.visits,
+                "first_date": item.first_date.isoformat() if item.first_date else None,
+                "last_date": item.last_date.isoformat() if item.last_date else None,
+            }
+            for code, item in sorted(
+                platforms.items(),
+                key=lambda pair: PLATFORM_COLUMNS.index(pair[0])
+                if pair[0] in PLATFORM_COLUMNS
+                else len(PLATFORM_COLUMNS),
+            )
+        ],
+    }
+
+
+def _build_tourist_map(
+    db: Session,
+    metric: LeaderboardMetric,
+    *,
+    snapshot: dict[str, object],
+    min_visits: int,
+    platform: str,
+    roles: Sequence[str] | None,
+) -> dict[str, object]:
+    """Полная матрица карты туристов: площадки с числами и визиты по строкам."""
+    entity_keys = cast("list[str]", snapshot.get("entity_keys") or [])
+    week_start_raw = cast("str | None", snapshot.get("week_start"))
+    empty: dict[str, object] = {
+        "metric": metric,
+        "min_visits": min_visits,
+        "platform": platform,
+        "limit": TOURIST_MAP_LIMIT,
+        "built_at": snapshot.get("built_at"),
+        "row_keys": [],
+        "locations": [],
+        "visits": {},
+    }
+    if not entity_keys or week_start_raw is None:
+        return empty
+
+    week_start = date.fromisoformat(week_start_raw)
+    pid_to_row = _tourist_row_participants(db, entity_keys)
+    role_filter, _roles_key = normalize_role_filter(metric, roles)
+    rows = _tourist_visit_rows(db, metric, list(pid_to_row), week_start, role_filter)
+
+    identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
+    # identity-ключ площадки -> row_key -> визиты по системам.
+    matrix: dict[str, dict[str, dict[str, _TouristPlatformVisit]]] = {}
+    for pid, code, location_id, first_date, visits, last_date in rows:
+        # Фильтр «по одной системе» действует и здесь: если таблица считает
+        # только 5 вёрст, то и числа на карте должны быть про 5 вёрст.
+        if platform != "all" and code != platform:
+            continue
+        row_key = pid_to_row.get(pid)
+        if row_key is None:
+            continue
+        identity = identity_by_location.get(location_id, str(location_id))
+        cell = matrix.setdefault(identity, {}).setdefault(row_key, {})
+        cell.setdefault(code, _TouristPlatformVisit()).add(visits, first_date, last_date)
+
+    # Место строки в рейтинге — по нему считается, в какие ступени фильтра
+    # («топ-10», «топ-50», …) попадает побывавший здесь участник.
+    place_by_row = {_row_key(key): index for index, key in enumerate(entity_keys)}
+
+    locations: list[dict[str, object]] = []
+    visits_by_location: dict[str, list[dict[str, object]]] = {}
+    for identity, by_row in matrix.items():
+        cells = [
+            _tourist_visit_payload(row_key, platforms)
+            for row_key, platforms in by_row.items()
+        ]
+        cells.sort(key=lambda cell: (-int(cast("int", cell["visits"])), str(cell["row_key"])))
+        visits_by_location[identity] = cells
+        places = sorted(
+            place_by_row[key]
+            for key in by_row
+            if key in place_by_row
+        )
+        locations.append(
+            {
+                "key": identity,
+                "name": identity_names.get(identity, "Локация"),
+                "slug": identity_slugs.get(identity),
+                "visitors": len(cells),
+                "visits": sum(int(cast("int", cell["visits"])) for cell in cells),
+                # Сколько побывавших попадает в каждую ступень фильтра. Места
+                # отсортированы, поэтому bisect отвечает за один шаг вместо
+                # прохода по всем ячейкам на каждую ступень.
+                "visitors_by_top": {
+                    str(step): bisect_right(places, step - 1)
+                    for step in TOURIST_MAP_TOP_STEPS
+                },
+            }
+        )
+    locations.sort(key=lambda item: (-int(cast("int", item["visitors"])), str(item["name"])))
+
+    return {
+        **empty,
+        "row_keys": [_row_key(key) for key in entity_keys],
+        "locations": locations,
+        "visits": visits_by_location,
+    }
+
+
+def _tourist_map_cache_key(
+    metric: str, min_visits: int, platform: str, count_by: str, roles_key: str
+) -> str:
+    """Ключ матрицы карты — те же суффиксы фильтров, что у снапшота рейтинга,
+    только своей веткой: срок жизни общий, а содержимое разное."""
+    key = _cache_key(metric, "all", min_visits, platform, count_by, roles_key)
+    # tmap2 — в матрице появились числа по ступеням фильтра (19.08.2026): в
+    # payload'ах прежней версии их нет, и ждать их протухания по TTL незачем.
+    return key.replace(f"{CACHE_KEY_PREFIX}:", f"{CACHE_KEY_PREFIX}:tmap2:", 1)
+
+
+def refresh_tourist_map_cache(
+    db: Session,
+    metric: LeaderboardMetric,
+    snapshot: dict[str, object],
+) -> int:
+    """Пересчитать карту туристов базового варианта под свежий снапшот.
+
+    Матрица привязана к built_at снапшота (см. get_tourist_map), поэтому каждый
+    прогрев рейтингов её обесценивает. Считать её заново тут же дешевле, чем
+    оставлять расчёт первому, кто раскроет спойлер: запрос точечный, по сотне
+    участников. Прогреваем только базовый вариант фильтров — на остальные
+    сочетания заходят единицы, и секунда ожидания там не беда.
+    """
+    payload = _build_tourist_map(
+        db, metric, snapshot=snapshot, min_visits=1, platform="all", roles=None
+    )
+    _write_raw_cache(_tourist_map_cache_key(metric, 1, "all", "locations", ""), payload)
+    return len(cast("list[object]", payload.get("locations") or []))
+
+
+def get_tourist_map(
+    db: Session,
+    metric: LeaderboardMetric,
+    *,
+    min_visits: int = 1,
+    platform: str = "all",
+    count_by: str = "locations",
+    roles: Sequence[str] | None = None,
+    location_key: str | None = None,
+    use_cache: bool = True,
+) -> dict[str, object]:
+    """Карта туристов под теми же фильтрами, что таблица рейтинга.
+
+    Без location_key отдаём только числа по площадкам (это все точки карты);
+    с ним — ещё и визиты выбранной площадки по строкам таблицы. Матрица целиком
+    весила бы сотни килобайт, поэтому по проводу она никогда не едет целиком, а
+    в кэше лежит одна на оба запроса.
+    """
+    visits = _normalize_min_visits(metric, min_visits)
+    platform_resolved = _normalize_platform_filter(metric, platform)
+    unit = _normalize_count_by(metric, count_by)
+    _role_filter, roles_key = normalize_role_filter(metric, roles)
+    cache_key = _tourist_map_cache_key(metric, visits, platform_resolved, unit, roles_key)
+
+    # Снапшот читаем всегда: он и так в кэше, зато из него видно, к какому
+    # пересчёту таблицы относится лежащая рядом матрица. Иначе прогрев обновил
+    # бы состав верхушки, а карта до конца своего TTL светила бы прочерками по
+    # строкам, которых в её сотне не было.
+    snapshot = get_leaderboard_snapshot(
+        db,
+        metric,
+        "all",
+        min_visits=visits,
+        platform=platform_resolved,
+        count_by=unit,
+        roles=roles,
+    )
+    payload: dict[str, object] | None = None
+    if use_cache:
+        payload = _read_raw_cache(cache_key)
+        if payload is not None and payload.get("built_at") != snapshot.get("built_at"):
+            payload = None
+    if payload is None:
+        payload = _build_tourist_map(
+            db,
+            metric,
+            snapshot=snapshot,
+            min_visits=visits,
+            platform=platform_resolved,
+            roles=roles,
+        )
+        if use_cache:
+            _write_raw_cache(cache_key, payload)
+
+    all_visits = cast("dict[str, list[dict[str, object]]]", payload.get("visits") or {})
+    locations = cast("list[dict[str, object]]", payload.get("locations") or [])
+    selected = (
+        next((item for item in locations if item["key"] == location_key), None)
+        if location_key
+        else None
+    )
+    return {
+        "metric": payload.get("metric", metric),
+        "min_visits": payload.get("min_visits", visits),
+        "platform": payload.get("platform", platform_resolved),
+        "limit": payload.get("limit", TOURIST_MAP_LIMIT),
+        "top_steps": list(TOURIST_MAP_TOP_STEPS),
+        "built_at": payload.get("built_at"),
+        "row_keys": payload.get("row_keys") or [],
+        # Список площадок витрина получила при открытии спойлера — при клике по
+        # точке гонять его второй раз незачем (это 58 КБ на каждый клик).
+        "locations": [] if location_key else locations,
+        "location": selected,
+        "visits": all_visits.get(location_key or "", []) if location_key else [],
     }
 
 
@@ -3069,7 +3753,12 @@ def _my_numeric_values_all(
         {"pids": participant_ids},
     ).all()
     occasion_rows_by_platform: dict[str, list[tuple[date, str]]] = {}
-    for _pid, platform_code, event_date, location_key in occasion_raw:
+    # Разбираем по индексам, а не распаковкой: в этот же запрос добавляли
+    # колонку роли (для фильтра ролей в таблице), и распаковка «в четыре» тут
+    # начала падать — своя строка в рейтинге волонтёрств пропадала целиком
+    # (репорт Дмитрия 12.08.2026).
+    for row in occasion_raw:
+        platform_code, event_date, location_key = row[1], row[2], row[3]
         occasion_rows_by_platform.setdefault(platform_code, []).append(
             (event_date, location_key or "unknown")
         )
@@ -3200,6 +3889,45 @@ def _my_win_values(
     return values, None, last_win
 
 
+def _my_opening_values(
+    db: Session, participant_ids: list[UUID], week_start: date, platform: str = "all"
+) -> tuple[dict[str, list[int]], int, int, _LastWin | None]:
+    """Открытия залогиненного: значения по системам, «всего» и последнее открытие.
+
+    Правило то же, что в таблице: одна локация — максимум одно открытие, и это
+    самое раннее из её систем (см. _opening_event_ids).
+    """
+    if not participant_ids:
+        return {}, 0, 0, None
+    sql = _OPENING_ROWS_SQL.replace(
+        "/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)"
+    )
+    rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
+    if not rows:
+        return {}, 0, 0, None
+    identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
+    opening_events = _opening_event_ids(db, identity_by_location)
+    values: dict[str, list[int]] = {}
+    last_dates: dict[str, date] = {}
+    counted: set[UUID] = set()
+    for _pid, code, location_id, event_date, event_id in rows:
+        if platform != "all" and code != platform:
+            continue
+        if event_id not in opening_events or event_id in counted:
+            continue
+        counted.add(event_id)
+        bucket = values.setdefault(code, [0, 0])
+        bucket[0] += 1
+        if event_date >= week_start:
+            bucket[1] += 1
+        identity = identity_by_location.get(location_id, str(location_id))
+        known = last_dates.get(identity)
+        last_dates[identity] = max(known, event_date) if known is not None else event_date
+    total = sum(cell[0] for cell in values.values())
+    week = sum(cell[1] for cell in values.values())
+    return values, total, week, _resolve_last_win(last_dates, identity_names, identity_slugs)
+
+
 def _my_gendered_win_values(
     db: Session,
     participant_ids: list[UUID],
@@ -3293,6 +4021,8 @@ class _MyLocationRow:
     locations_total: int | None = None
     cities_total: int | None = None
     regions_total: int | None = None
+    # Площадки, давшие прибавку недели — из них выбирается «Последняя неделя».
+    new_identities: set[str] = field(default_factory=set)
 
 
 def _my_location_values(
@@ -3309,7 +4039,13 @@ def _my_location_values(
 ) -> _MyLocationRow:
     if not participant_ids:
         return _MyLocationRow(values={}, total=0, week=0)
-    sql = sql_template.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
+    # Беговые шаблоны считают по run_results rr, волонтёрский — по
+    # volunteer_results vr. Фильтр по своим participant_id должен ссылаться на
+    # алиас ИЗ шаблона: с зашитым «rr» волонтёрская своя строка падала на
+    # «missing FROM-clause entry for table rr», и витрина молча оставалась без
+    # строки участника (репорт Дмитрия 12.08.2026).
+    pid_alias = "vr" if "FROM volunteer_results vr" in sql_template else "rr"
+    sql = sql_template.replace("/*PIDS_FILTER*/", f"AND {pid_alias}.participant_id = ANY(:pids)")
     rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     getters = _unit_key_getters(_location_geo_map(db) if with_geo else {})
@@ -3326,7 +4062,10 @@ def _my_location_values(
     tallies = {unit: _unit_counts(counted, getters[unit], min_visits) for unit in units}
     selected = tallies[count_by if count_by in tallies else "locations"]
     row = _MyLocationRow(
-        values=selected.values, total=selected.total, week=selected.week
+        values=selected.values,
+        total=selected.total,
+        week=selected.week,
+        new_identities=selected.new_identities,
     )
     if with_geo:
         row.locations_total = tallies["locations"].total
@@ -3433,12 +4172,13 @@ def _my_week_location(
     week_start: date,
     platform: str = "all",
     role_filter: frozenset[str] | None = None,
+    prefer: set[str] | None = None,
 ) -> dict[str, object] | None:
     """«Где я был в последний раз за неделю» — как и в строках таблицы."""
     template = _WEEK_LOCATIONS_SQL_BY_METRIC.get(metric)
     if template is None or not participant_ids:
         return None
-    alias = _WEEK_LOCATIONS_PIDS_ALIAS[metric]
+    alias = _METRIC_PIDS_ALIAS[metric]
     sql = template.replace(
         "/*PIDS_FILTER*/", f"AND {alias}.participant_id = ANY(:pids)"
     )
@@ -3453,7 +4193,7 @@ def _my_week_location(
         identity = identity_by_location.get(location_id, str(location_id))
         known = dates.get(identity)
         dates[identity] = max(known, last_date) if known is not None else last_date
-    return _latest_week_location(dates, identity_names, identity_slugs)
+    return _latest_week_location(dates, identity_names, identity_slugs, prefer)
 
 
 def get_my_leaderboard_row(
@@ -3538,6 +4278,10 @@ def get_my_leaderboard_row(
             with_geo=True,
         )
         values, total, week = my_geo.values, my_geo.total, my_geo.week
+    elif metric == "openings":
+        values, total, week, my_last_win = _my_opening_values(
+            db, participant_ids, week_start, platform_resolved
+        )
     elif metric == "win_locations":
         if resolved == "all":
             my_row = _my_location_values(
@@ -3582,10 +4326,16 @@ def get_my_leaderboard_row(
         total = sum(v[0] for v in values.values())
         week = sum(v[1] for v in values.values())
 
-    # «Последняя неделя» — одинаково для всех метрик с этой колонкой: просто где
-    # человек был за окно дельты, дало это +1 или нет (у остальных вернётся []).
+    # «Последняя неделя» — где человек был за окно дельты (у метрик без этой
+    # колонки вернётся None). У туристических рейтингов предпочитаем площадку,
+    # давшую «+1», — как и в строках таблицы.
     my_week_location = _my_week_location(
-        db, metric, participant_ids, week_start, platform_resolved
+        db,
+        metric,
+        participant_ids,
+        week_start,
+        platform_resolved,
+        prefer=my_geo.new_identities if my_geo is not None else None,
     )
 
     threshold = int(cast(int, snapshot.get("threshold") or 0))
@@ -3630,6 +4380,10 @@ def get_my_leaderboard_row(
         "total": total,
         "total_delta": week,
         "rank": rank if included else None,
+        # Место среди всех, у кого метрика вообще ненулевая, — считается и до
+        # порога рейтинга. «rank» остаётся местом В рейтинге (только для тех,
+        # кто порог прошёл), а это — ответ на «а где я сейчас вообще стою».
+        "rank_overall": rank,
         "rank_delta": (prev_rank - rank) if included and rank is not None and prev_rank is not None else None,
         "included": included,
         "threshold": threshold,
@@ -3638,6 +4392,14 @@ def get_my_leaderboard_row(
         "home_location_slug": my_home[1] if my_home else my_home_slug,
         "home_location_wins": my_home[2] if my_home else None,
         "home_location_note": my_home_note,
+        # Когда участник менял дом руками — только у дальности: своя строка
+        # считается вживую, а таблица приходит из снапшота, и витрина по этой
+        # отметке понимает, что километры в таблице ещё от прежнего дома.
+        "home_location_changed_at": (
+            user.home_location_changed_at.isoformat()
+            if metric == "home_distance" and user.home_location_changed_at is not None
+            else None
+        ),
         "top_role": my_top_role[0] if my_top_role else None,
         "top_role_count": my_top_role[1] if my_top_role else None,
         "role_details": my_role_details,

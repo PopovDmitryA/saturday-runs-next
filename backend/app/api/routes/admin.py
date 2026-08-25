@@ -25,7 +25,11 @@ from app.schemas.admin_event_report import (
     EventReportLocationsResponse,
     EventReportResponse,
 )
-from app.schemas.admin_stats import AdminSiteStatsResponse, PageAnalyticsResponse
+from app.schemas.admin_stats import (
+    AdminSiteStatsResponse,
+    AdminUsersGeographyResponse,
+    PageAnalyticsResponse,
+)
 from app.schemas.admin_sync_runs import AdminSyncRunsResponse
 from app.schemas.backlog import (
     BacklogCardAdminListResponse,
@@ -54,6 +58,11 @@ from app.schemas.location_contacts import (
     LocationContactLinkUpdateRequest,
     LocationContactListResponse,
 )
+from app.schemas.location_openings import (
+    LocationOpeningListResponse,
+    LocationOpeningResponse,
+    LocationOpeningUpdateRequest,
+)
 from app.schemas.rating import (
     AdminLocationRatingsResponse,
     AdminRatingsResponse,
@@ -80,6 +89,7 @@ from app.services.admin_event_report_service import (
     list_report_locations,
 )
 from app.services.admin_site_stats_service import get_admin_site_stats
+from app.services.admin_users_geo_stats_service import get_admin_users_geography
 from app.services.admin_users_service import get_admin_user, search_admin_users
 from app.services.backlog_service import (
     BacklogError,
@@ -107,6 +117,7 @@ from app.services.blog_service import (
     list_all_posts,
     update_post,
 )
+from app.services.leaderboard_service import drop_metric_cache
 from app.services.location_contacts_service import (
     LocationContactError,
     create_location_contact_link,
@@ -115,11 +126,20 @@ from app.services.location_contacts_service import (
     update_location_announce_settings,
     update_location_contact_link,
 )
+from app.services.location_openings_service import (
+    LocationOpeningError,
+    clear_opening,
+    list_openings,
+    set_opening,
+)
 from app.services.login_journal_service import list_login_events, summarize_login_events
 from app.services.page_analytics_service import (
+    build_funnel_stats,
     build_home_ab_stats,
     build_home_link_clicks,
+    build_og_fetch_stats,
     build_page_analytics,
+    build_share_stats,
     resolve_period,
 )
 from app.services.rating_service import (
@@ -392,6 +412,18 @@ def admin_site_stats(
     return AdminSiteStatsResponse.model_validate(payload)
 
 
+@router.get("/stats/geography", response_model=AdminUsersGeographyResponse)
+def admin_users_geography(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    period_days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> AdminUsersGeographyResponse:
+    """Регистрации по городам и площадкам. Отдельным запросом от /stats:
+    считается по протоколам и заметно дольше остальных чисел страницы."""
+    payload = get_admin_users_geography(db, period_days=period_days)
+    return AdminUsersGeographyResponse.model_validate(payload)
+
+
 @router.get("/page-analytics", response_model=PageAnalyticsResponse)
 def admin_page_analytics(
     db: Annotated[Session, Depends(get_db)],
@@ -406,8 +438,11 @@ def admin_page_analytics(
     """
     start, end = resolve_period(period_days=period_days, date_from=date_from, date_to=date_to)
     payload = build_page_analytics(db, start=start, end=end)
+    payload["funnel"] = build_funnel_stats(db, start=start, end=end)
     payload["home_ab"] = build_home_ab_stats(db, start=start, end=end)
     payload["home_links"] = build_home_link_clicks(db, start=start, end=end)
+    payload["share"] = build_share_stats(db, start=start, end=end)
+    payload["og_fetches"] = build_og_fetch_stats(db, start=start, end=end)
     payload["generated_at"] = datetime.now(timezone.utc)
     return PageAnalyticsResponse.model_validate(payload)
 
@@ -604,6 +639,63 @@ def admin_delete_location_contact_link(
     except LocationContactError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return AbuseMessageResponse(message="contact_link_deleted")
+
+
+# Разметка открытий: какой старт считается торжественным открытием локации.
+# Нужна прежде всего С95 (по номерам её забегов открытие не опознать), но
+# открывается и для остальных систем — чтобы гасить ложное открытие там, где
+# система начала вести протоколы позже самой локации.
+@router.get("/location-openings", response_model=LocationOpeningListResponse)
+def admin_location_openings(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    platform: Annotated[str, Query(max_length=32)] = "s95",
+    q: Annotated[str | None, Query(max_length=128)] = None,
+    only_missing: Annotated[bool, Query()] = False,
+) -> LocationOpeningListResponse:
+    try:
+        payload = list_openings(db, platform=platform, query=q, only_missing=only_missing)
+    except LocationOpeningError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return LocationOpeningListResponse.model_validate(payload)
+
+
+@router.put("/location-openings/{location_id}", response_model=LocationOpeningResponse)
+def admin_set_location_opening(
+    location_id: UUID,
+    body: LocationOpeningUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> LocationOpeningResponse:
+    try:
+        payload = set_opening(
+            db,
+            location_id,
+            opening_event_number=body.opening_event_number,
+            note=body.note,
+            admin=admin,
+        )
+    except LocationOpeningError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    # Рейтинг открытий считается по этой разметке: без сброса кэша правка
+    # доехала бы до таблицы только через TTL снапшота.
+    drop_metric_cache("openings")
+    return LocationOpeningResponse.model_validate(payload)
+
+
+@router.delete("/location-openings/{location_id}", response_model=LocationOpeningResponse)
+def admin_clear_location_opening(
+    location_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> LocationOpeningResponse:
+    """Снять ручную разметку — площадка возвращается к правилу своей системы."""
+    try:
+        payload = clear_opening(db, location_id)
+    except LocationOpeningError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    drop_metric_cache("openings")
+    return LocationOpeningResponse.model_validate(payload)
 
 
 

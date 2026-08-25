@@ -7,8 +7,11 @@ import {
 } from "../../lib/api";
 import { formatDate, formatDuration, platformCodeLabel, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
-import { TableViewToggle, useTableView } from "../../components/tableUx/TableViewToggle";
+import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
+import { useTableColumns } from "../../components/tableUx/useTableColumns";
+import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
+import { ActivityDateLink } from "../../components/ActivityDateLink";
 
 function SiteProfileIcon() {
   return (
@@ -111,14 +114,7 @@ function meetingDiff(meeting: CoRunnerMeetingItem): { label: string; tone: strin
 }
 
 function MeetingDate({ meeting }: { meeting: CoRunnerMeetingItem }) {
-  if (meeting.event_url) {
-    return (
-      <a href={meeting.event_url} target="_blank" rel="noreferrer">
-        {formatDate(meeting.event_date)}
-      </a>
-    );
-  }
-  return <>{formatDate(meeting.event_date)}</>;
+  return <ActivityDateLink date={meeting.event_date} target={meeting} url={meeting.event_url} />;
 }
 
 function MeetingsDetail({ meetings }: { meetings: CoRunnerMeetingItem[] }) {
@@ -205,14 +201,25 @@ type CoRunnersContentProps = {
   loadMeetings: (participantKey: string) => Promise<CoRunnerMeetingItem[]>;
 };
 
+// Колонки «Соседей» в порядке важности; ширины — под подписи шапки.
+const CO_RUNNERS_COLUMNS: AdaptiveColumn[] = [
+  { key: "num", width: 56, required: true },
+  { key: "name", width: 200, required: true },
+  { key: "meetings", width: 104, required: true },
+  { key: "score", width: 104 },
+  { key: "platform", width: 120 },
+  { key: "last_meeting", width: 160 },
+  { key: "first_meeting", width: 160 },
+];
+
 export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) {
   const [items, setItems] = useState<CoRunnerItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // «Кратко | Полно» действует только на узких экранах; десктоп всегда полный.
-  const [tableView, setTableView] = useTableView("coRunners");
-  const narrowViewport = useNarrowViewport();
-  const showFull = !narrowViewport || tableView === "full";
+  // «Кратко» набирает колонки по ширине блока, «Полно» — весь набор со скроллом.
+  const tableColumns = useTableColumns(CO_RUNNERS_COLUMNS);
+  const showFull = tableColumns.showFull;
+  const show = tableColumns.show;
   const [query, setQuery] = useState("");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [meetingsByKey, setMeetingsByKey] = useState<Record<string, CoRunnerMeetingItem[]>>({});
@@ -298,18 +305,21 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
-            <TableViewToggle value={tableView} onChange={setTableView} />
-            <TableWrap stickyFirstCol={showFull}>
-              <table className="data-table co-runners-table">
+            <TableViewToggle columns={tableColumns} />
+            <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
+              <table
+                className="data-table co-runners-table"
+                style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
+              >
                 <thead>
                   <tr>
                     <th className="td-num">#</th>
                     <th>Участник</th>
-                    {showFull && <th>Система</th>}
+                    {show("platform") && <th>Система</th>}
                     <th className="td-num">Встреч</th>
-                    {showFull && <th className="td-num">Счёт</th>}
-                    {showFull && <th>Первая встреча</th>}
-                    {showFull && <th>Последняя встреча</th>}
+                    {show("score") && <th className="td-num">Счёт</th>}
+                    {show("first_meeting") && <th>Первая встреча</th>}
+                    {show("last_meeting") && <th>Последняя встреча</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -320,6 +330,9 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
                         key={item.participant_key}
                         className={`co-runners-row${expanded ? " co-runners-row-expanded" : ""}`}
                         onClick={() => toggleRow(item.participant_key)}
+                        // Тап по строке разворачивает детали — подсказки по title
+                        // внутри неё в тач-режиме не показываем.
+                        data-tap-tooltip="off"
                       >
                         <td className="td-num muted">{index + 1}</td>
                         <td className="co-runners-name-cell">
@@ -329,7 +342,7 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
                           />
                           <ParticipantName item={item} />
                         </td>
-                        {showFull && (
+                        {show("platform") && (
                           <td>
                           <span className="co-runners-badges">
                             {item.platform_codes.map((code) => {
@@ -360,21 +373,21 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
                           </td>
                         )}
                         <td className="td-num">{item.meetings}</td>
-                        {showFull && (
+                        {show("score") && (
                           <td className={`td-num co-runners-score${scoreTone(item)}`}>
                             {scoreLabel(item)}
                           </td>
                         )}
-                        {showFull && (
+                        {show("first_meeting") && (
                           <td>{item.first_meeting_date ? formatDate(item.first_meeting_date) : "—"}</td>
                         )}
-                        {showFull && (
+                        {show("last_meeting") && (
                           <td>{item.last_meeting_date ? formatDate(item.last_meeting_date) : "—"}</td>
                         )}
                       </tr>,
                       expanded ? (
                         <tr key={`${item.participant_key}-detail`} className="co-runners-detail-row">
-                          <td colSpan={showFull ? 7 : 3}>
+                          <td colSpan={CO_RUNNERS_COLUMNS.filter((column) => show(column.key)).length}>
                             <div className="co-runners-detail-card">
                               <p className="co-runners-detail-title">
                                 Встречи с участником · {item.display_name ?? "Без имени"}

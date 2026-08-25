@@ -3,6 +3,7 @@ import { DashboardAnalytics } from "../../../components/DashboardAnalytics";
 import { MyHistoryTeaser } from "../../../components/MyHistoryTeaser";
 import { LastSaturdayCard } from "../../../components/LastSaturdayCard";
 import { OnThisDayCard } from "../../../components/OnThisDayCard";
+import { PlatformBadge } from "../../../components/PlatformBadge";
 import { ProfileLinkSection } from "../../../components/ProfileLinkSection";
 import { RecentRunsRating } from "../../../components/RecentRunsRating";
 import { RequireAuth } from "../../../components/RequireAuth";
@@ -12,23 +13,34 @@ import {
   getDashboard,
   getMyHistory,
   getOnThisDay,
+  keepDisplayName,
   type DashboardResponse,
   type User,
 } from "../../../lib/api";
-import { formatDuration, pluralFormRu } from "../../../lib/format";
+import { formatDuration, formatStatValue, pluralFormRu } from "../../../lib/format";
 import {
   PORTAL_CABINET_HISTORY_HREF,
   PORTAL_CABINET_MAP_HREF,
-  PORTAL_CABINET_SHARE_HREF,
   PORTAL_CABINET_RUNS_HREF,
+  PORTAL_DISPLAY_NAME_SETTINGS_HREF,
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_LOGIN_HREF,
 } from "../../../lib/portalRoutes";
+import { ShareMomentCard } from "../../sharing/ShareMomentCard";
 import { PortalCabinetShell, userLabel } from "./PortalCabinetShell";
 
 // «00:23:12» → «23:12»: в герое часы почти всегда нулевые, укорачиваем.
 export function formatHeroFinishTime(totalSec: number): string {
   return formatDuration(totalSec).replace(/^00:/, "");
+}
+
+// Порядок бейджей систем в герое — тот же, что в секции «Профили беговых
+// систем» внизу страницы, чтобы клик по бейджу приводил к предсказуемой карточке.
+const PLATFORM_ORDER = ["five_verst", "s95", "parkrun", "runpark"] as const;
+
+/** Прокрутка к секции привязок внизу «Обзора» — цель бейджей систем в герое. */
+function scrollToProfiles(): void {
+  document.getElementById("profiles")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 const RUN_FORMS = ["пробежка", "пробежки", "пробежек"] as const;
@@ -108,18 +120,42 @@ function buildHeroStats(data: Pick<DashboardResponse, "stats">): HeroStat[] {
   ];
 }
 
+/**
+ * Бейджи привязанных систем — как на странице локации. Клик уводит к секции
+ * «Профили беговых систем» внизу страницы: там привязка, отвязка и кнопка
+ * обновления данных.
+ */
+function HeroPlatforms({ byPlatform }: { byPlatform: Record<string, unknown> }) {
+  const codes = PLATFORM_ORDER.filter((code) => code in byPlatform);
+  if (codes.length === 0) {
+    return null;
+  }
+  return (
+    <div className="portal-cab-hero-platforms">
+      {codes.map((code) => (
+        <PlatformBadge
+          key={code}
+          code={code}
+          onClick={scrollToProfiles}
+          title="Перейти к профилям беговых систем"
+        />
+      ))}
+    </div>
+  );
+}
+
 function HeroStatsGrid({ items }: { items: HeroStat[] }) {
   return (
     <div className="portal-cab-hero-stats">
       {items.map((item) =>
         item.href ? (
           <a key={item.key} className={`portal-cab-hero-stat ${item.className}`} href={item.href}>
-            <div className="portal-cab-hero-stat-value">{item.value}</div>
+            <div className="portal-cab-hero-stat-value">{formatStatValue(item.value)}</div>
             <div className="portal-cab-hero-stat-label">{item.label}</div>
           </a>
         ) : (
           <div key={item.key} className={`portal-cab-hero-stat ${item.className}`}>
-            <div className="portal-cab-hero-stat-value">{item.value}</div>
+            <div className="portal-cab-hero-stat-value">{formatStatValue(item.value)}</div>
             <div className="portal-cab-hero-stat-label">{item.label}</div>
           </div>
         ),
@@ -146,7 +182,7 @@ export function DashboardHero({
   const streak = analytics.saturday_streak_current ?? analytics.saturday_streak;
   const streakLine =
     streak > 0
-      ? `Текущая серия — ${streak} ${pluralFormRu(streak, SATURDAY_FORMS)} подряд. Так держать!`
+      ? `Текущая серия — ${formatStatValue(streak)} ${pluralFormRu(streak, SATURDAY_FORMS)} подряд. Так держать!`
       : "Ваша сводная статистика по всем беговым системам.";
   const items = buildHeroStats(data).map((item) =>
     item.href && hrefForStat ? { ...item, href: hrefForStat(item.key, item.href) } : item,
@@ -166,6 +202,7 @@ export function DashboardHero({
             </p>
           </div>
         </div>
+        <HeroPlatforms byPlatform={data.stats.by_platform} />
         <HeroStatsGrid items={items} />
       </section>
     );
@@ -179,12 +216,12 @@ export function DashboardHero({
           {items.map((item) =>
             item.href ? (
               <a key={item.key} className={`portal-cab-hero-stat ${item.className}`} href={item.href}>
-                <span className="portal-cab-hero-stat-value">{item.value}</span>
+                <span className="portal-cab-hero-stat-value">{formatStatValue(item.value)}</span>
                 <span className="portal-cab-hero-stat-label">{item.label}</span>
               </a>
             ) : (
               <div key={item.key} className={`portal-cab-hero-stat ${item.className}`}>
-                <span className="portal-cab-hero-stat-value">{item.value}</span>
+                <span className="portal-cab-hero-stat-value">{formatStatValue(item.value)}</span>
                 <span className="portal-cab-hero-stat-label">{item.label}</span>
               </div>
             ),
@@ -198,6 +235,7 @@ export function DashboardHero({
     <section className="portal-cab-hero">
       <h1 className="portal-cab-hero-title">{heroGreeting()}!</h1>
       <p className="portal-cab-hero-sub">{streakLine}</p>
+      <HeroPlatforms byPlatform={data.stats.by_platform} />
       <HeroStatsGrid items={items} />
     </section>
   );
@@ -207,6 +245,13 @@ function PortalDashboardContent({ user }: { user: User }) {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [linksCount, setLinksCount] = useState<number | null>(null);
+  // Две разные плашки про имя, обе гасятся одной кнопкой «Понятно»:
+  //  - notice: разовое «имя теперь берётся из профиля» после перехода 25.08.2026;
+  //  - suggestion: алгоритм считает, что подошла бы другая система. Имя при этом
+  //    молча НЕ меняется — человек решает сам в настройках.
+  const [nameNotice, setNameNotice] = useState<string | null>(user.display_name_notice);
+  const [nameSuggestion, setNameSuggestion] = useState(user.display_name_suggestion);
   const hasLoadedRef = useRef(false);
 
   const load = useCallback(async (options?: { background?: boolean }) => {
@@ -238,11 +283,55 @@ function PortalDashboardContent({ user }: { user: User }) {
       <div className="portal-cab-stack">
       {loading && !data && <p className="muted">Загрузка…</p>}
 
+      {linksCount === 0 && (
+        <div className="card onboarding-dashboard-banner">
+          <p className="onboarding-dashboard-banner-title">Начните с привязки профилей</p>
+          <p className="muted">
+            Найдите себя по имени сразу во всех системах — и вся статистика пробежек появится здесь.
+          </p>
+          <a className="btn primary" href="/welcome">
+            Найти себя по имени
+          </a>
+        </div>
+      )}
+
       {error && (
         <div className="card error">
           <p>{error}</p>
           <button type="button" className="btn secondary" onClick={() => void load()}>
             Повторить
+          </button>
+        </div>
+      )}
+
+      {(nameNotice || nameSuggestion) && (
+        <div className={`banner ${nameSuggestion ? "warning" : "info"}`}>
+          {nameSuggestion ? (
+            <p>
+              В системе «{nameSuggestion.source_title}» вы записаны как{" "}
+              <strong>{nameSuggestion.name}</strong>, а на сайте показываетесь как{" "}
+              <strong>{userLabel(user)}</strong>. Имя менять не стали —{" "}
+              <a href={PORTAL_DISPLAY_NAME_SETTINGS_HREF}>решите в настройках</a>.
+            </p>
+          ) : (
+            <p>
+              Имя в рейтингах и протоколах теперь берётся из вашего профиля в беговой системе —{" "}
+              <strong>{userLabel(user)}</strong> (было «{nameNotice}»). Поменять его можно{" "}
+              <a href={PORTAL_DISPLAY_NAME_SETTINGS_HREF}>в настройках</a>.
+            </p>
+          )}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              // Гасим сразу: ответ сервера тут не нужен, а ждать его ради
+              // исчезновения баннера — лишняя пауза.
+              setNameNotice(null);
+              setNameSuggestion(null);
+              void keepDisplayName().catch(() => undefined);
+            }}
+          >
+            Понятно
           </button>
         </div>
       )}
@@ -255,7 +344,9 @@ function PortalDashboardContent({ user }: { user: User }) {
             <LastSaturdayCard data={stats.analytics.last_saturday} own />
           )}
 
-          <OnThisDayCard load={getOnThisDay} shareBase={PORTAL_CABINET_SHARE_HREF} />
+          {stats && <ShareMomentCard stats={stats} user={user} />}
+
+          <OnThisDayCard load={getOnThisDay} />
 
           <GoalsTeaser />
 
@@ -292,6 +383,7 @@ function PortalDashboardContent({ user }: { user: User }) {
       <ProfileLinkSection
         byPlatform={byPlatform}
         onLinksChange={() => void load({ background: true })}
+        onLinksLoaded={(links) => setLinksCount(links.length)}
       />
       </div>
     </PortalCabinetShell>

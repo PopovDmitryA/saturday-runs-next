@@ -10,7 +10,7 @@ import { HistoryContent, useOwnSiteUrl } from "../../history/HistoryPage";
 import { MapsContent } from "../../maps/MapsPage";
 import { RunsContent } from "../../runs/RunsPage";
 import { SettingsContent } from "../../settings/SettingsPage";
-import { ShareContent } from "../../share/SharePage";
+import { SharingContent } from "../../sharing/SharingGalleryPage";
 import { VolunteeringContent } from "../../volunteering/VolunteeringPage";
 import { getCoRunnerMeetings, getCoRunners, getMyHistory, type User } from "../../../lib/api";
 import { PORTAL_CABINET_SHARE_HREF, PORTAL_LOGIN_HREF } from "../../../lib/portalRoutes";
@@ -91,8 +91,8 @@ export function PortalCabinetSharePage() {
   return cabinetPage(
     "share",
     "Поделиться",
-    "Карточки со статистикой для сториз и мессенджеров — по итогам недели, месяца или всей истории.",
-    () => <ShareContent bare />,
+    "Готовые сюжеты из вашей статистики: постер для сториз или чата — в один тап.",
+    () => <SharingContent bare />,
   );
 }
 

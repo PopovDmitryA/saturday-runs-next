@@ -8,6 +8,11 @@ from app.core.redis_client import get_redis_client
 from app.core.request_cancel import check_cancelled
 from app.five_verst.errors import FiveVerstBanDetected
 from app.five_verst.fetch.lock import five_verst_fetch_lock
+from app.five_verst.fetch.priority import (
+    five_verst_user_sync_active,
+    mark_user_sync_alive,
+    wait_for_user_sync_window,
+)
 from app.five_verst.fetch.rate_limit import mark_fetch_completed, wait_for_turn
 from app.platform_adapters.five_verst.http import FetchError, _fetch_html_raw
 from app.s95.ban import is_ban_or_protection_html
@@ -46,10 +51,30 @@ def fetch_page_html(
     Single entry point for all 5verst page loads.
     Serialized via Redis lock + minimum interval between requests.
     """
+    settings = get_settings()
     check_cancelled()
     _check_ban_cooldown()
+
+    if five_verst_user_sync_active():
+        # Продлеваем отметку перед каждым запросом: пока пользователь качается,
+        # батчи стоят на паузе, а после его завершения отметка исчезает сама.
+        mark_user_sync_alive(settings.five_verst_user_sync_active_ttl_seconds)
+    else:
+        # Пауза берётся до захвата лока и до ожидания слота rate limit —
+        # иначе батч занял бы очередь, ради которой уступает.
+        wait_for_user_sync_window(
+            max_wait_seconds=settings.five_verst_user_sync_pause_max_seconds,
+            reason=reason,
+        )
+
     wait_for_turn(reason=reason)
     check_cancelled()
+    if not five_verst_user_sync_active():
+        # Пользователь мог прийти, пока мы отстаивали свой интервал.
+        wait_for_user_sync_window(
+            max_wait_seconds=settings.five_verst_user_sync_pause_max_seconds,
+            reason=reason,
+        )
 
     with five_verst_fetch_lock():
         check_cancelled()

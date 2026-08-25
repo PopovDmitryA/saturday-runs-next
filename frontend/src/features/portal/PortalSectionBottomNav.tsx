@@ -2,7 +2,13 @@ import { useState } from "react";
 import { logout } from "../../lib/api";
 import { clearCachedUser, useOptionalUser } from "../../lib/useOptionalUser";
 import { PORTAL_LOGIN_HREF, cabinetTabHref } from "../../lib/portalRoutes";
-import { SECONDARY_NAV, SITE_SECTIONS_NAV, icon, type SidebarExtraGroup } from "./SiteSidebar";
+import {
+  SECONDARY_NAV,
+  SITE_SECTIONS_NAV,
+  icon,
+  siteSectionKey,
+  type SidebarExtraGroup,
+} from "./SiteSidebar";
 import "./cabinet/cabinet.css";
 
 /**
@@ -130,8 +136,10 @@ export function PortalSectionBottomNav({
           <a
             key={item.href}
             href={item.href}
-            className={`portal-cab-bottomnav-item${item.key === active ? " active" : ""}`}
-            aria-current={item.key === active ? "page" : undefined}
+            className={`portal-cab-bottomnav-item${
+              item.key === siteSectionKey(active) ? " active" : ""
+            }`}
+            aria-current={item.key === siteSectionKey(active) ? "page" : undefined}
           >
             <span className="portal-cab-nav-icon">{item.icon}</span>
             <span className="portal-cab-bottomnav-label">{item.label}</span>

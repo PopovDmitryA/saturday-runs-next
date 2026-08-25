@@ -331,18 +331,3 @@ def create_user_session(settings: Settings, user_id: UUID) -> str:
     return create_session(settings, str(user_id))
 
 
-def update_user_display_name(db: Session, user: User, display_name: str) -> User:
-    cleaned = display_name.strip()
-    if not cleaned:
-        user.display_name_customized = False
-        user.display_name = _telegram_default_display_name(
-            first_name=user.telegram_first_name,
-            last_name=user.telegram_last_name,
-            username=user.telegram_username,
-        )
-    else:
-        user.display_name = cleaned
-        user.display_name_customized = True
-    db.commit()
-    db.refresh(user)
-    return user

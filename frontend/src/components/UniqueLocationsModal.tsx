@@ -4,6 +4,7 @@ import { type UniqueLocationsDetailResponse } from "../lib/api";
 import { useAppDataSource } from "../lib/appDataSource";
 import {
   formatDate,
+  formatInt,
   locationsWithRunsSummary,
   locationsWithVolunteeringSummary,
   uniqueLocationsLabel,
@@ -117,13 +118,13 @@ function VisitCountCell({ row, activityFilter }: { row: UniqueLocationRow; activ
     return <>—</>;
   }
   if (activityFilter === "runs") {
-    return <span>{count}</span>;
+    return <span>{formatInt(count)}</span>;
   }
   const tooltipLines = volunteerRolesTooltipLines(row.location);
   if (tooltipLines) {
-    return <VisitCountTooltip lines={tooltipLines}>{count}</VisitCountTooltip>;
+    return <VisitCountTooltip lines={tooltipLines}>{formatInt(count)}</VisitCountTooltip>;
   }
-  return <span>{count}</span>;
+  return <span>{formatInt(count)}</span>;
 }
 
 function ModalContent({
@@ -208,7 +209,7 @@ function ModalContent({
           className={platformFilter === "all" ? "map-mode-tab active" : "map-mode-tab"}
           onClick={() => onPlatformFilterChange("all")}
         >
-          Все ({uniqueLocationCount})
+          Все ({formatInt(uniqueLocationCount)})
         </button>
         {platformCounts.map((item) => (
           <button
@@ -219,7 +220,7 @@ function ModalContent({
             className={platformFilter === item.platform_code ? "map-mode-tab active" : "map-mode-tab"}
             onClick={() => onPlatformFilterChange(item.platform_code)}
           >
-            {platformLabel(item.platform_code)} ({item.location_count})
+            {platformLabel(item.platform_code)} ({formatInt(item.location_count)})
           </button>
         ))}
       </div>
@@ -284,7 +285,7 @@ function ModalContent({
                         row.location.has_coordinates &&
                         !row.location.is_cancelled &&
                         row.location.is_paused && (
-                        <span className="unique-locations-badge-paused">на паузе</span>
+                        <span className="unique-locations-badge-paused">не действует</span>
                       )}
                     </td>
                     <td className="col-city muted">{row.location.city ?? "—"}</td>

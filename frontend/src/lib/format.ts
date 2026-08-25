@@ -170,8 +170,43 @@ export function pluralFormRu(count: number, forms: readonly [string, string, str
 }
 
 export function pluralizeRu(count: number, forms: readonly [string, string, string]): string {
-  return `${count} ${pluralFormRu(count, forms)}`;
+  return `${formatInt(count)} ${pluralFormRu(count, forms)}`;
 }
+
+/**
+ * Тройки форм для подписей, которые стоят рядом с числом: плитки статистики,
+ * подписи под героем на карточках «Поделиться», попапы на картах. Подпись
+ * обязана согласоваться с числом — «33 финишёра», а не «33 финишёров»
+ * (репорт Дмитрия 22.08.2026).
+ *
+ * Заголовки вида «всего волонтёрств parkrun» сюда не относятся: там
+ * родительный падеж не от числа, а от «всего».
+ */
+export const COUNT_FORMS = {
+  finishers: ["финишёр", "финишёра", "финишёров"],
+  finishes: ["финиш", "финиша", "финишей"],
+  runs: ["пробежка", "пробежки", "пробежек"],
+  kilometers: ["километр", "километра", "километров"],
+  events: ["старт", "старта", "стартов"],
+  locations: ["локация", "локации", "локаций"],
+  regions: ["регион", "региона", "регионов"],
+  cities: ["город", "города", "городов"],
+  participants: ["участник", "участника", "участников"],
+  uniqueParticipants: ["уникальный участник", "уникальных участника", "уникальных участников"],
+  volunteers: ["волонтёр", "волонтёра", "волонтёров"],
+  uniqueVolunteers: ["уникальный волонтёр", "уникальных волонтёра", "уникальных волонтёров"],
+  volunteering: ["волонтёрство", "волонтёрства", "волонтёрств"],
+  volunteerRoles: ["роль волонтёра", "роли волонтёра", "ролей волонтёра"],
+  roles: ["роль", "роли", "ролей"],
+  openings: ["открытие", "открытия", "открытий"],
+  newcomers: ["новичок", "новичка", "новичков"],
+  debuts: ["дебют", "дебюта", "дебютов"],
+  prs: ["личный рекорд", "личных рекорда", "личных рекордов"],
+  saturdays: ["суббота", "субботы", "суббот"],
+  wins: ["победа", "победы", "побед"],
+  firstPlaces: ["первое место", "первых места", "первых мест"],
+  clubs: ["клуб", "клуба", "клубов"],
+} as const satisfies Record<string, readonly [string, string, string]>;
 
 const LOCATION_CAP_FORMS = ["Локация", "Локации", "Локаций"] as const;
 const REGION_CAP_FORMS = ["Регион", "Региона", "Регионов"] as const;
@@ -289,6 +324,22 @@ export function kilometersLabel(count: number): string {
  */
 export function formatInt(value: number): string {
   return Math.round(value).toLocaleString("ru-RU");
+}
+
+/**
+ * Разряды без округления: 2465.5 → «2 465,5». Замена для String(число) там,
+ * где дробная часть может быть осмысленной (километры, средние).
+ */
+export function formatNumber(value: number): string {
+  return value.toLocaleString("ru-RU");
+}
+
+/**
+ * То же самое, но для плиток и ячеек, куда прилетает уже готовый ReactNode:
+ * число разбиваем по разрядам, всё остальное отдаём как есть.
+ */
+export function formatStatValue<T>(value: T): T | string {
+  return typeof value === "number" && Number.isFinite(value) ? formatNumber(value) : value;
 }
 
 /** «6 141 км», близкие расстояния — с десятыми: «0,8 км» честнее, чем «1 км». */

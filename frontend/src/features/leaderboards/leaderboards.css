@@ -53,11 +53,46 @@
   font-size: 0.85rem;
 }
 
+/* Вторая строка шапки (у дальности — про срок пересчёта) не должна слипаться
+   с датой данных: без зазора две подписи читаются как один абзац. */
+.lb-meta + .lb-meta {
+  margin-top: 0.25rem;
+}
+
 .lb-error {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   color: var(--text-2);
+}
+
+/* Плашка «дом сменили, таблица ещё не пересчиталась»: янтарная — это не ошибка,
+   а объяснение задержки, поэтому мягче красного предупреждения. */
+.lb-home-change {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  border: 1px solid var(--tint-amber-border);
+  background: var(--tint-amber-bg);
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.lb-home-change-icon {
+  font-size: 1.1rem;
+  line-height: 1.4;
+}
+
+.lb-home-change-text {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.lb-home-change-text p {
+  margin: 0;
 }
 
 /* --- Моя строка --- */
@@ -201,7 +236,15 @@
    тут — страница целиком, отдельного бокса не создаём. */
 .table-wrap.lb-table-wrap {
   overflow-x: visible;
-  /* Липнет к окну — значит ниже шапки сайта, иначе прячется под ней. */
+  /* Липнет к окну — значит ниже шапки сайта, иначе прячется под ней; и ниже
+     липкой полосы «Кратко | Полно», иначе шапка уходит под неё. */
+  --table-head-top: calc(var(--portal-header-h) + var(--tview-bar-h));
+}
+
+/* Когда краткий вид вместил все колонки, полосы «Кратко | Полно» нет вовсе —
+   обходить нечего, иначе между шапкой сайта и шапкой таблицы зияла бы её
+   высота. Класс ставит LeaderboardPage по tableColumns.hasToggle. */
+.table-wrap.lb-table-wrap-flat {
   --table-head-top: var(--portal-header-h);
 }
 
@@ -226,6 +269,18 @@
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
+}
+
+/* Столбцы карты туристов набираются кликами, и их бывает полтора десятка — на
+   любой ширине экрана. Ширину рамки фиксируем по контейнеру, а таблицу листаем
+   внутри неё: иначе она уезжает за правый край страницы (репорт Дмитрия
+   16.08.2026). Условия те же, что у мобильной ветки выше: обёртка становится
+   скролл-контейнером, поэтому шапка липнет к её верху (ноль), а видимой при
+   листании страницы её делает плавающая копия из useFloatingTableHead. */
+.table-wrap.lb-table-wrap-lights {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  --table-head-top: 0px;
 }
 
 .lb-table thead th {
@@ -255,6 +310,15 @@
   width: 6.2rem;
 }
 
+/* Краткий вид идёт без table-layout: fixed, и лишнюю ширину браузер раздавал
+   всем колонкам пропорционально — «Место» на широком экране раздувалось чуть ли
+   не на треть таблицы (репорт Дмитрия 11.08.2026). width: 100% у имени
+   участника означает «весь остаток мой»: остальные колонки схлопываются до
+   своей ширины и больше не растягиваются. */
+.lb-table:not(.lb-table-fixed) .lb-col-name {
+  width: 100%;
+}
+
 .lb-table .lb-col-num {
   text-align: center;
   width: 6.4rem;
@@ -280,16 +344,8 @@
   width: 100%;
 }
 
-/* Рейтинги в километрах: числа шире обычных, поэтому колонкам нужен запас —
-   «372 830 км» в 4.75rem не помещается. Дельта места не занимает: она
-   надстрочная (см. .lb-delta). */
-.lb-table.lb-table-wide-values .lb-col-num {
-  width: 6.4rem;
-}
-
-.lb-table.lb-table-wide-values .lb-col-total {
-  width: 7.2rem;
-}
+/* Ширины колонок для рейтингов в километрах — ниже, ПОСЛЕ общих правил
+   .lb-table-fixed .lb-col-*: там та же специфичность, и порядок решает всё. */
 
 /* «Всего» — то самое число, по которому построен рейтинг, поэтому колонка
    выделена вертикальной полосой: заливка + рамки по бокам, сверху донизу
@@ -502,6 +558,47 @@
 
 .lb-table.lb-table-fixed .lb-col-last-win {
   width: 10rem;
+}
+
+/* Рейтинг дальности: в ячейке не число, а «365 821 км» с дельтой «+5 997»
+   верхним индексом — 108–112px текста, тогда как общие 4.75rem дают 58px под
+   контент. Ячейка в table-layout:fixed не расширяется под содержимое, поэтому
+   лишнее просто вылезало поверх соседней колонки (репорт Дмитрия 16.08.2026:
+   у первого места дельта 5 вёрст ложилась на значение С95).
+   Раньше запас здесь уже был (6.4rem), но правила стояли ВЫШЕ общих
+   .lb-table-fixed .lb-col-*: специфичность одинаковая, три класса, и побеждал
+   тот, что ниже, — колонки жили с 4.75rem. Отсюда место блока: после общих.
+   8.75rem = 140px, минус ужатые боковые отступы это 124px под текст: хватает
+   и на пятизначную дельту («+20 026») — такие набегают у лидеров за неделю.
+   Горизонтальные отступы срезаны с 0.75rem до 0.5rem — шесть числовых колонок,
+   и на них экономится почти 100px ширины таблицы. */
+.lb-table.lb-table-wide-values .lb-col-num {
+  width: 8.75rem;
+}
+
+.lb-table.lb-table-wide-values .lb-col-total {
+  width: 9rem;
+}
+
+/* «Локаций» — обычный счётчик в три знака, ему запас не нужен. */
+.lb-table.lb-table-wide-values .lb-col-geo {
+  width: 5.25rem;
+}
+
+.lb-table.lb-table-wide-values th.lb-col-num,
+.lb-table.lb-table-wide-values td.lb-col-num {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+/* Сумма ширин своего набора колонок (4.5 + 13 + 4×8.75 + 9 + 5.25 + 9.5 + 10):
+   без неё fixed-раскладка ужимает колонки под ширину обёртки, и числа снова
+   наезжают на соседей. Перебивает min-width набора (.lb-table-week и др.) —
+   правило ниже по файлу. Только для полного набора: в кратком виде раскладка
+   auto и колонок три, там эта ширина гнала бы таблицу в скролл на пустом
+   месте. */
+.lb-table.lb-table-fixed.lb-table-wide-values {
+  min-width: 86.25rem;
 }
 
 /* У туризма числовых колонок семь (четыре системы + «Всего» + города +
@@ -1472,4 +1569,412 @@ body.has-pinned-me .lb-scroll-top {
 
 .vrm-bulk-btn:hover {
   text-decoration: underline;
+}
+
+/* ─── Карта туристов ─────────────────────────────────────────────────────── */
+/* Спойлер над таблицей: карта локаций с числом «сколько человек из топ-100 тут
+   было» и светофоры «был / не был» в самой таблице. */
+
+.lb-tourist {
+  margin: 14px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.lb-tourist-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lb-tourist-toggle:hover {
+  background: var(--surface-muted, rgba(148, 163, 184, 0.12));
+}
+
+.lb-tourist-toggle-text {
+  flex: 1 1 auto;
+}
+
+/* Свёрнутый спойлер помнит выбранную площадку — иначе столбец в таблице
+   выглядит взявшимся ниоткуда. */
+.lb-tourist-toggle-chip {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
+}
+
+.lb-tourist-map {
+  padding: 0 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lb-tourist-caption {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.lb-tourist-selected {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--tint-amber-bg);
+  border: 1px solid var(--tint-amber-border);
+  font-size: 0.86rem;
+}
+
+.lb-tourist-selected-name {
+  font-weight: 700;
+}
+
+.lb-tourist-selected-link {
+  color: var(--link);
+}
+
+.lb-tourist-summary {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.lb-tourist-legend {
+  align-items: center;
+}
+
+.lb-tourist-legend-badge {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* Кружок кластера в легенде — тем же видом, что на карте. */
+.lb-tourist-legend-cluster {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 2px solid var(--accent-indigo);
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Столбец светофоров: заголовок называет площадку и умеет её убрать.
+   Селектор с тегом — иначе общий `.data-table th, td { text-align: left }`
+   специфичнее и светофор липнет к левому краю ячейки. */
+.lb-table th.lb-col-light,
+.lb-table td.lb-col-light {
+  width: 108px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.lb-col-light-head {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.15;
+  cursor: pointer;
+  user-select: none;
+}
+
+.lb-col-light-head:hover {
+  color: var(--accent-indigo-text);
+}
+
+.lb-col-light-name {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Кнопки столбца: фильтр и «убрать». Стоят в строку под названием — в 108 px
+   ширины они рядом с текстом уже не помещаются. */
+.lb-col-light-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.lb-col-light-clear {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.lb-col-light-clear:hover {
+  color: var(--accent-red-text);
+}
+
+/* Состояние фильтра читается цветом кружка: серый — все, зелёный — только
+   побывавшие, красный — только те, кто не был. */
+.lb-col-light-filter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.lb-col-light-filter span {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 2px solid var(--text-muted);
+}
+
+.lb-col-light-filter:hover span {
+  border-color: var(--accent-indigo-text);
+}
+
+.lb-col-light-filter-yes span {
+  background: var(--accent-green-text);
+  border-color: var(--accent-green-text);
+}
+
+.lb-col-light-filter-no span {
+  background: var(--accent-red-text);
+  border-color: var(--accent-red-text);
+}
+
+.lb-light-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+}
+
+.lb-light {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+}
+
+.lb-light-yes {
+  background: var(--accent-green-text);
+}
+
+.lb-light-no {
+  background: var(--accent-red-text);
+  opacity: 0.55;
+}
+
+.lb-light-loading {
+  background: var(--border);
+}
+
+.lb-light-unknown {
+  width: auto;
+  height: auto;
+  border: 0;
+  color: var(--text-muted);
+}
+
+.lb-light-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+/* Выбранные площадки: чипы над картой, каждый = столбец светофоров. */
+.lb-tourist-selected-label {
+  font-size: 0.82rem;
+}
+
+.lb-tourist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--tint-amber-border-strong);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lb-tourist-chip:hover {
+  border-color: var(--accent-red-text);
+}
+
+.lb-tourist-chip-count {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.lb-tourist-chip-remove {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.lb-tourist-chip:hover .lb-tourist-chip-remove {
+  color: var(--accent-red-text);
+}
+
+.lb-tourist-limit {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+/* Кнопка «Посмотреть людей в таблице» в попапе карты — выглядит ссылкой. */
+.map-popup-details {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--link);
+  cursor: pointer;
+}
+
+.map-popup-details:hover {
+  text-decoration: underline;
+}
+
+/* Ступень «какой топ считать» — влияет только на числа у точек карты. */
+.lb-tourist-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.lb-tourist-top-label {
+  font-size: 0.82rem;
+}
+
+/* ─── Рейтинг рекордов локаций ──────────────────────────────────────────────
+   Строка здесь — площадка, а не участник: колонок меньше, чем у лидербордов
+   людей, и ширины заданы вручную, чтобы время и дата не расползались. */
+.lb-locrec-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.lb-locrec-table th:first-child,
+.lb-locrec-rank {
+  width: 3.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-locrec-time {
+  width: 5.5rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.lb-locrec-date {
+  width: 7rem;
+  white-space: nowrap;
+}
+
+.lb-locrec-platform {
+  width: 6rem;
+}
+
+/* Город и регион — второй строкой под названием площадки. */
+.lb-locrec-place {
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.lb-locrec-select {
+  min-width: 9rem;
+}
+
+/* Поиск стоит в правой колонке строки фильтров и прижат к её нижней линии —
+   к ряду «Система» (в возрастном зачёте — к ряду «Группа»). Плейсхолдер
+   «Поиск по локации, городу, имени…» в 20rem не помещался и обрезался. */
+/* Фильтров тут немного (зачёт, пол, и либо система, либо группа), и каждый —
+   короткий переключатель: ставим их в один ряд, а не этажами. Строка — общий
+   flex вместе с поиском: в две колонки (grid 1fr + поле) левая часть
+   схлопывалась до ширины самого широкого фильтра и всё равно шла этажами.
+   Не влезло по ширине — flex-wrap перенесёт хвост на вторую строку сам. */
+.lb-locrec-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 1.25rem;
+}
+
+/* Контейнер фильтров становится прозрачным для раскладки: в общий ряд встают
+   сами фильтры, а не их обёртка. */
+.lb-locrec-controls .lb-controls-left {
+  display: contents;
+}
+
+.lb-locrec-controls .lb-controls-right {
+  /* Поиск прижат к правому краю строки и занимает остаток места; ниже 13rem
+     плейсхолдер обрезается, выше 22rem поле выглядит распухшим. */
+  margin-left: auto;
+  flex: 1 1 13rem;
+  max-width: 22rem;
+}
+
+.lb-locrec-search {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  /* Одна колонка: поиск идёт под фильтрами во всю ширину. */
+  .lb-locrec-controls .lb-controls-right {
+    justify-content: stretch;
+  }
+
+  .lb-locrec-search {
+    width: 100%;
+  }
 }

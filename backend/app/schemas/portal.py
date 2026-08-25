@@ -26,6 +26,8 @@ class PortalAttendanceRecordResponse(BaseModel):
     # Слаг страницы локации: имя на главной становится ссылкой /locations/{slug}.
     # None у старого кэша главной (ключ бампается, но перестраховка дешевле).
     location_slug: str | None = None
+    # Город рядом с названием: пусто, если он неизвестен или уже есть в имени.
+    location_city: str | None = None
     platform_code: str
     event_date: date
     finishers: int
@@ -99,6 +101,7 @@ class PortalLocationsWeekPointResponse(BaseModel):
 class PortalAttendanceTopRowResponse(BaseModel):
     location_name: str
     location_slug: str | None = None
+    location_city: str | None = None
     platform_code: str
     event_date: date
     finishers: int
@@ -217,6 +220,23 @@ class PortalHomeResponse(BaseModel):
     # валиден, фронт при нуле строку просто не показывает.
     registered_parks: int = 0
     gender_split: PortalGenderSplitResponse | None = None
+
+
+class PortalMeLastRunResponse(BaseModel):
+    event_date: date
+    location_name: str
+    platform_code: str
+    finish_time_display: str
+    is_pr: bool
+    is_global_pr: bool
+
+
+class PortalMeResponse(BaseModel):
+    """Личная плашка на главной. linked=False — профилей ещё нет."""
+
+    linked: bool
+    last_run: PortalMeLastRunResponse | None = None
+    saturday_streak: int = 0
 
 
 class PortalTeaserResponse(BaseModel):

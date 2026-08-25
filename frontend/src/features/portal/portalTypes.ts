@@ -18,6 +18,8 @@ export type PortalAttendanceRecord = {
   location_name: string;
   /** Слаг страницы локации: имя рендерится ссылкой на /locations/{slug}. */
   location_slug?: string | null;
+  /** Город локации; пусто, если он неизвестен или уже звучит в названии. */
+  location_city?: string | null;
   platform_code: string;
   event_date: string;
   finishers: number;
@@ -89,6 +91,8 @@ export type PortalFastestRow = {
 export type PortalAttendanceTopRow = {
   location_name: string;
   location_slug?: string | null;
+  /** Город локации; пусто, если он неизвестен или уже звучит в названии. */
+  location_city?: string | null;
   platform_code: string;
   event_date: string;
   finishers: number;
@@ -202,6 +206,31 @@ export async function fetchPortalHome(): Promise<PortalHomeResponse> {
     throw new PortalHomeError(response.status);
   }
   return (await response.json()) as PortalHomeResponse;
+}
+
+export type PortalMeLastRun = {
+  event_date: string;
+  location_name: string;
+  platform_code: string;
+  finish_time_display: string;
+  is_pr: boolean;
+  is_global_pr: boolean;
+};
+
+/** Личная плашка главной. linked=false — привязанных профилей ещё нет. */
+export type PortalMe = {
+  linked: boolean;
+  last_run: PortalMeLastRun | null;
+  saturday_streak: number;
+};
+
+/** Личная сводка для главной; 401 — не залогинен, это нормальный исход. */
+export async function fetchPortalMe(): Promise<PortalMe> {
+  const response = await fetch("/api/portal/me", { credentials: "same-origin" });
+  if (!response.ok) {
+    throw new PortalHomeError(response.status);
+  }
+  return (await response.json()) as PortalMe;
 }
 
 /** Тизер Т10: предпросмотр карточки по ID системы. 404 — не нашли. */

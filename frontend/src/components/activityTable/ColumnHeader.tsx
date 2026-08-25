@@ -17,6 +17,8 @@ type ColumnHeaderProps = {
   headerTitle?: string;
   /** Расшифровка сокращённого заголовка: «?» с тап/ховер-подсказкой. */
   hint?: string;
+  /** Дополнительный класс на th (например, подкраска исторических колонок). */
+  className?: string;
 };
 
 function ColumnHeaderText({ label }: { label: string }) {
@@ -61,13 +63,14 @@ export function ColumnHeader({
   filterFooter,
   headerTitle,
   hint,
+  className,
 }: ColumnHeaderProps) {
   const [open, setOpen] = useState(false);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
   const showFilter = filterable && filterContent;
 
   return (
-    <th className="th-col" title={headerTitle}>
+    <th className={className ? `th-col ${className}` : "th-col"} title={headerTitle}>
       <div className="th-col-inner">
         {onSort ? (
           <button

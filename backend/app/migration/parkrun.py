@@ -33,7 +33,8 @@ def _ensure_summary_location(db: Session, platform, target: TargetLookups, *, dr
         CanonicalLocation(
             external_key=ParkrunLookups.PARKRUN_SUMMARY_SLUG,
             name=ParkrunLookups.PARKRUN_SUMMARY_NAME,
-            country="United Kingdom",
+            # Псевдолокация-сводка ролей, физического адреса у неё нет.
+            country=None,
             source_url="https://www.parkrun.org.uk/",
         ),
     )

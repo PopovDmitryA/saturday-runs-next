@@ -2,6 +2,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import {
   getPublicProfileBestResults,
   getPublicProfileCatalogTable,
+  getPublicProfileHomeDistanceDetail,
   getPublicProfilePersonalRecords,
   getPublicProfileVisitedDetail,
   getPublicProfileVisitedMap,
@@ -12,6 +13,7 @@ import {
   getBestResults,
   getCatalogLocationsMap,
   getCatalogLocationsTable,
+  getHomeDistanceDetail,
   getPersonalRecords,
   getUniqueLocationsDetail,
   getVisitedLocationsMap,
@@ -21,6 +23,7 @@ import {
   getAllUserVolunteering,
   type BestResultItem,
   type CatalogLocationsTableResponse,
+  type HomeDistanceDetail,
   type MapLocationsResponse,
   type PersonalRecordItem,
   type RunItem,
@@ -44,6 +47,9 @@ export type AppDataSource = {
   getVisitedLocationsMap: (includeTest?: boolean) => Promise<MapLocationsResponse>;
   getCatalogLocationsMap: () => Promise<MapLocationsResponse>;
   getCatalogLocationsTable: (includeTest?: boolean) => Promise<CatalogLocationsTableResponse>;
+  // Модалка «Дальность от дома» ходит за деталями сама, поэтому в чужом профиле
+  // ей нужен свой источник: личный эндпоинт вернул бы данные смотрящего.
+  getHomeDistanceDetail: (includeTest?: boolean) => Promise<HomeDistanceDetail>;
 };
 
 export const authDataSource: AppDataSource = {
@@ -58,6 +64,7 @@ export const authDataSource: AppDataSource = {
   getVisitedLocationsMap,
   getCatalogLocationsMap,
   getCatalogLocationsTable,
+  getHomeDistanceDetail,
 };
 
 export function createPublicProfileDataSource(serialId: number): AppDataSource {
@@ -73,6 +80,8 @@ export function createPublicProfileDataSource(serialId: number): AppDataSource {
     getVisitedLocationsMap: (includeTest) => getPublicProfileVisitedMap(serialId, includeTest),
     getCatalogLocationsMap,
     getCatalogLocationsTable: (includeTest) => getPublicProfileCatalogTable(serialId, includeTest),
+    getHomeDistanceDetail: (includeTest) =>
+      getPublicProfileHomeDistanceDetail(serialId, includeTest),
   };
 }
 

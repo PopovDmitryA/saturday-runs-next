@@ -1,6 +1,6 @@
 import { ChartColumnTooltip } from "./ChartColumnTooltip";
 import { useScrollShadows } from "./tableUx/useScrollShadows";
-import { formatDate, platformCodeLabel, pluralizeRu, saturdaysLabel } from "../lib/format";
+import { formatDate, formatInt, platformCodeLabel, pluralizeRu, saturdaysLabel } from "../lib/format";
 
 type CalendarItem = { platform_code: string; location: string };
 
@@ -126,14 +126,14 @@ function cellTooltipLines(aggregate: WeekAggregate | undefined): string[] {
 // активность, только пробежки, только волонтёрство), а не части одной общей
 // серии — поэтому runs и volunteering не обязаны суммироваться в total.
 function streakLine(label: string, streak: StreakBreakdown): string {
-  return `${label} (пробежки и/или волонтёрство) — ${streak.total} ${saturdaysLabel(streak.total)} подряд`;
+  return `${label} (пробежки и/или волонтёрство) — ${formatInt(streak.total)} ${saturdaysLabel(streak.total)} подряд`;
 }
 
 function streakBreakdownLine(label: string, streak: StreakBreakdown): string | null {
   if (streak.runs === 0 && streak.volunteering === 0) {
     return null;
   }
-  return `${label} только пробежки — ${streak.runs}, только волонтёрства — ${streak.volunteering}`;
+  return `${label} только пробежки — ${formatInt(streak.runs)}, только волонтёрства — ${formatInt(streak.volunteering)}`;
 }
 
 export function ActivityCalendarHeatmap({

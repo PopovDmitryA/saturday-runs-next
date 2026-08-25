@@ -51,6 +51,9 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
       {/* Локации и Рейтинги открыты без логина (25.07.2026) — аноним идёт
           прямо в разделы, личные блоки внутри зовут его войти сами. */}
       {navLink("/locations", "/locations", "Локации")}
+      {/* «Результаты» — свой раздел с 25.08.2026: последние пробежки, единый
+          протокол недели и журналы протоколов. */}
+      {navLink("/results", "/results", "Результаты")}
       {navLink("/ratings", "/ratings", "Рейтинги")}
       {/* «О проекте» — последним пунктом; «Блог» из шапки убран по просьбе. */}
       {navLink(PORTAL_ABOUT_HREF, PORTAL_ABOUT_HREF, "О проекте")}
@@ -87,20 +90,11 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
         <nav className="portal-header-nav" aria-label="Разделы портала">
           {navLinks}
         </nav>
+        {/* Кнопка канала из шапки убрана (просьба Дмитрия 25.08.2026):
+            ссылка на Telegram живёт в подвале, а шапка на телефоне и так
+            переполнялась. */}
         <div className="portal-header-actions">
           <ThemeToggle />
-          <a
-            className="portal-header-channel"
-            href="https://t.me/popov_way"
-            target="_blank"
-            rel="noreferrer"
-            title="Канал автора в Telegram — о субботних пробежках, жизни и цифрах"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M21.5 2.7 2.6 10c-.9.35-.87 1.6.05 1.9l4.6 1.44 1.73 5.5c.27.86 1.36 1.06 1.92.36l2.05-2.53 4.5 3.3c.77.57 1.87.15 2.06-.79L22.9 4.1c.2-1-.55-1.72-1.4-1.4Z" />
-            </svg>
-            Канал
-          </a>
           {!hideLogin &&
             authResolved &&
             (user ? (

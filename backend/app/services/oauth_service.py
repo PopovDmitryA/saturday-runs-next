@@ -184,7 +184,10 @@ def handle_oauth_callback(
         user = create_oauth_user(db, profile, provider, consent=consent)
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
-    return user.id, None, "dashboard"
+
+    from app.services.onboarding_service import post_login_redirect_target
+
+    return user.id, None, post_login_redirect_target(db, user.id)
 
 
 def _store_merge_token(db: Session, survivor: User, merged: User) -> str:

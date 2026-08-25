@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { addZoomControl } from "../../lib/mapZoomControl";
+import { COUNT_FORMS, formatInt, pluralizeRu } from "../../lib/format";
 import { regionKey } from "../../lib/regionMatch";
 import { PortalHeader } from "./PortalHeader";
 import { fetchPortalHome, type PortalGeoPoint } from "./portalTypes";
@@ -19,7 +21,12 @@ function cssColor(varName: string, fallback: string): string {
 }
 
 function baseMap(container: HTMLDivElement): L.Map {
-  const map = L.map(container, { scrollWheelZoom: false, attributionControl: false });
+  const map = L.map(container, {
+    scrollWheelZoom: false,
+    attributionControl: false,
+    zoomControl: false,
+  });
+  addZoomControl(map);
   L.control.attribution({ prefix: false }).addTo(map);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
@@ -78,7 +85,7 @@ function VariantPlatformDots({ points }: { points: PortalGeoPoint[] }) {
         fillColor: color,
         fillOpacity: 0.5,
       })
-        .bindPopup(`<strong>${p.location_name}</strong><br>${p.starts} стартов`)
+        .bindPopup(`<strong>${p.location_name}</strong><br>${pluralizeRu(p.starts, COUNT_FORMS.events)}`)
         .addTo(map);
     }
   });
@@ -102,7 +109,7 @@ function VariantClusters({ points }: { points: PortalGeoPoint[] }) {
             fillColor: accent,
             fillOpacity: 0.6,
           })
-            .bindPopup(`<strong>${p.location_name}</strong><br>${p.starts} стартов`)
+            .bindPopup(`<strong>${p.location_name}</strong><br>${pluralizeRu(p.starts, COUNT_FORMS.events)}`)
             .addTo(layer);
         }
         return;
@@ -128,7 +135,7 @@ function VariantClusters({ points }: { points: PortalGeoPoint[] }) {
         L.marker([lat, lon], {
           icon: L.divIcon({
             className: "portal-cluster-icon",
-            html: `<span style="width:${size}px;height:${size}px;">${cell.count}</span>`,
+            html: `<span style="width:${size}px;height:${size}px;">${formatInt(cell.count)}</span>`,
             iconSize: [size, size],
           }),
         }).addTo(layer);
@@ -175,7 +182,7 @@ function VariantChoropleth({ points }: { points: PortalGeoPoint[] }) {
             const entry = counts.get(regionKey(name));
             layer.bindTooltip(
               entry
-                ? `<strong>${name}</strong><br>${entry.locations} локаций · ${entry.starts.toLocaleString("ru-RU")} стартов`
+                ? `<strong>${name}</strong><br>${pluralizeRu(entry.locations, COUNT_FORMS.locations)} · ${pluralizeRu(entry.starts, COUNT_FORMS.events)}`
                 : `<strong>${name}</strong><br>локаций пока нет`,
               { sticky: true },
             );
@@ -211,7 +218,7 @@ function VariantHeat({ points }: { points: PortalGeoPoint[] }) {
         fillColor: "#ffffff",
         fillOpacity: 0.55,
       })
-        .bindPopup(`<strong>${p.location_name}</strong><br>${p.starts} стартов`)
+        .bindPopup(`<strong>${p.location_name}</strong><br>${pluralizeRu(p.starts, COUNT_FORMS.events)}`)
         .addTo(map);
     }
   });

@@ -33,7 +33,7 @@ trap 'rm -f "$MAINT_CURRENT"' EXIT HUP INT TERM
 # (nginx:1.27-alpine), build-контекст есть только у python-сервисов.
 # tg-proxy (xray) — тоже готовый образ; без него бот не видит Telegram и ляжет,
 # поэтому он в списке и попадает в проверку «все ли running» ниже.
-SERVICES="worker worker-s95 worker-five-verst worker-parkrun worker-runpark api nginx beat tg-proxy bot"
+SERVICES="worker worker-s95 worker-five-verst worker-five-verst-user worker-parkrun worker-runpark api nginx beat tg-proxy bot"
 
 # NB: `docker compose exec/run -T` всё равно цепляет контейнер к stdin, поэтому
 # каждый exec/run обязан читать из /dev/null — иначе он сожрёт остаток скрипта.
@@ -44,15 +44,10 @@ compose exec -T redis redis-cli LLEN s95 </dev/null || true
 compose exec -T redis redis-cli LLEN s95_user </dev/null || true
 
 echo "--- frontend build ---"
-# Флаги фронта (VITE_*) Vite зашивает в бандл во время сборки. Собираем в
-# контейнере, куда примонтирована только папка frontend, — корневой .env туда
-# не попадает, поэтому нужные значения читаем здесь и передаём через -e.
-# Пилот АБ-теста главной по умолчанию ВЫКЛЮЧЕН: нет строки в .env — все видят
-# вариант A (см. frontend/src/lib/abTest.ts).
-AB_HOME_ACTIVE="$(sed -n 's/^VITE_AB_HOME_ACTIVE=//p' .env 2>/dev/null | tail -1)"
-echo "VITE_AB_HOME_ACTIVE=${AB_HOME_ACTIVE:-false}"
+# Собираем в контейнере, куда примонтирована только папка frontend. Флагов
+# VITE_* сейчас нет; если появятся — Vite зашивает их в бандл во время сборки,
+# корневой .env сюда не попадает, значит читать и передавать через -e надо здесь.
 docker run --rm -v "$PWD/frontend:/app" -w /app \
-  -e VITE_AB_HOME_ACTIVE="${AB_HOME_ACTIVE:-false}" \
   node:22-alpine sh -c "npm ci && npm run build"
 
 echo "--- build api image (нужен свежий образ для миграций) ---"
@@ -71,8 +66,12 @@ echo "--- recreate services ---"
 # коде (обычный up -d может переиспользовать старый контейнер).
 compose up -d --build --force-recreate $SERVICES
 compose restart nginx
-compose stop worker-s95-user worker-five-verst-user 2>/dev/null || true
-compose rm -f worker-s95-user worker-five-verst-user 2>/dev/null || true
+# Уборка сервисов, которых больше нет в compose (иначе контейнер остался бы
+# висеть на старом коде). worker-five-verst-user из этого списка убран: с
+# 08.2026 он снова живой сервис и стоит в $SERVICES выше — пользовательские
+# синки 5 вёрст обслуживает он, а батч на это время встаёт на паузу.
+compose stop worker-s95-user 2>/dev/null || true
+compose rm -f worker-s95-user 2>/dev/null || true
 
 echo "--- host nginx (run5k.run Grafana redirects) ---"
 if sudo -n cp deploy/nginx/run5k.run.conf /etc/nginx/sites-available/run5k.run 2>/dev/null; then

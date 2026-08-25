@@ -13,7 +13,12 @@ from app.db.session import get_db
 from app.models import User
 from app.platform_adapters.canonical import ProfilePreview
 from app.schemas.profiles import (
+    LinkByParticipantRequest,
+    ParticipantSearchResponse,
+    ParticipantSearchResultResponse,
     PlatformLinkResponse,
+    ProfileClaimRequest,
+    ProfileClaimResponse,
     ProfileLinkConfirmResponse,
     ProfilePreviewResponse,
     ProfileUnlinkResponse,
@@ -22,9 +27,12 @@ from app.schemas.profiles import (
     S95ProfileLinkConfirmResponse,
     S95ProfilePreviewResponse,
 )
+from app.services.participant_search_service import ParticipantSearchError, search_participants
 from app.services.profile_linking_service import (
     ProfileLinkingError,
+    claim_profile_by_athlete_id,
     confirm_profile_link,
+    confirm_profile_link_by_participant,
     confirm_s95_profile_link,
     list_user_profile_links,
     preview_profile_link,
@@ -284,6 +292,44 @@ def runpark_confirm(
     return ProfileLinkConfirmResponse(link=PlatformLinkResponse.model_validate(link_data))
 
 
+@router.get("/search", response_model=ParticipantSearchResponse)
+def search_profiles(
+    q: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ParticipantSearchResponse:
+    from dataclasses import asdict as dataclass_asdict
+
+    try:
+        page = search_participants(db, user, q)
+    except ParticipantSearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return ParticipantSearchResponse(
+        query=page.query,
+        results=[
+            ParticipantSearchResultResponse.model_validate(dataclass_asdict(item)) for item in page.results
+        ],
+        truncated=page.truncated,
+        hidden_linked_platform_codes=page.hidden_linked_platform_codes,
+    )
+
+
+@router.post("/link-by-participant", response_model=ProfileLinkConfirmResponse)
+def link_by_participant(
+    body: LinkByParticipantRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ProfileLinkConfirmResponse:
+    try:
+        link = confirm_profile_link_by_participant(db, user, body.participant_id)
+    except ProfileLinkingError as exc:
+        raise _handle_linking_error(exc) from exc
+
+    links = list_user_profile_links(db, user)
+    link_data = next(item for item in links if item["id"] == link.id)
+    return ProfileLinkConfirmResponse(link=PlatformLinkResponse.model_validate(link_data))
+
+
 @router.get("", response_model=list[PlatformLinkResponse])
 def list_profiles(
     db: Annotated[Session, Depends(get_db)],
@@ -309,3 +355,46 @@ def unlink_profile(
     except ProfileLinkingError as exc:
         raise _handle_linking_error(exc) from exc
     return ProfileUnlinkResponse.model_validate(payload)
+
+
+@router.post("/claim", response_model=ProfileClaimResponse)
+async def claim_profile(
+    request: Request,
+    body: ProfileClaimRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ProfileClaimResponse | Response:
+    """Досылка привязки после входа: человек ввёл ID в тизере ДО регистрации.
+
+    Один вызов вместо пары «предпросмотр → подтверждение»: своё имя и свои
+    цифры человек уже видел в тизере на главной, повторно подтверждать нечего.
+    Внутри всё те же проверки, что и в ручной привязке, включая «этот профиль
+    уже привязан к другому аккаунту».
+    """
+    try:
+        outcome = await _run_with_cancel(
+            request,
+            claim_profile_by_athlete_id,
+            db,
+            user,
+            body.platform_code,
+            body.athlete_id,
+        )
+    except ProfileLinkingError as exc:
+        raise _handle_linking_error(exc) from exc
+
+    if outcome is None:
+        # Клиент отвалился на середине внешнего фетча — как в остальных ручках.
+        return Response(status_code=499)
+
+    status, link = outcome
+    if link is None:
+        return ProfileClaimResponse(status=status, platform_code=body.platform_code)
+
+    links = list_user_profile_links(db, user)
+    link_data = next(item for item in links if item["id"] == link.id)
+    return ProfileClaimResponse(
+        status=status,
+        platform_code=body.platform_code,
+        link=PlatformLinkResponse.model_validate(link_data),
+    )

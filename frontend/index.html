@@ -2,7 +2,10 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" href="/favicon.png" type="image/png" />
+    <!-- Иконка вкладки — та же растущая кривая, что в шапке портала.
+         SVG для современных браузеров, PNG — фолбэк для остальных. -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.png" type="image/png" sizes="512x512" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Дефолт на случай, если по маршруту мета-тегов не нашлось; на всех
          известных страницах их перетирает setPageMeta (src/lib/pageMeta.ts),

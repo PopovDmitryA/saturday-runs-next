@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from app.core.abuse_protection import RouteTier, classify_route
+from app.services.release_service import ReleasesPage
 from app.services.seo_service import (
     DEFAULT_DESCRIPTION,
     DEFAULT_TITLE,
@@ -15,8 +18,15 @@ from app.services.seo_service import (
     TITLE_BUDGET,
     PageMeta,
     _catalog_body,
+    _location_body,
+    _og_image_tags,
+    _page_number,
+    _releases_body,
     build_location_meta,
     build_robots_txt,
+    catalog_json_ld,
+    is_known_path,
+    location_json_ld,
     location_lead_sentences,
     normalize_path,
     resolve_page_meta,
@@ -162,9 +172,9 @@ def test_normalize_path(raw: str, expected: str) -> None:
         ("/locations/kuzminki", True),
         ("/locations/kuzminki/events", True),
         ("/ratings/wins", True),
-        # Личные страницы участников и мировой обход в индекс не идут —
-        # решение Дмитрия 02.08.2026.
-        ("/users/ivan", False),
+        # Карточка участника индексируется с 15.08.2026: под noindex ВК и
+        # Telegram строят превью без картинки. Вкладки — по-прежнему нет.
+        ("/users/ivan", True),
         ("/users/ivan/runs", False),
         ("/world", False),
         ("/hq/hq-2kl5kfrlzmnvn8sc", False),
@@ -223,7 +233,8 @@ def test_location_meta_uses_name_and_numbers() -> None:
     # «кузьминки 5 вёрст», и первые слова заголовка весят больше.
     assert meta.title.startswith("5 вёрст Кузьминки, Москва")
     assert "271 старт" in meta.description
-    assert "40123 финиша" in meta.description
+    # Разряды в тысячах разделены неразрывным пробелом: «40123» читается сплошняком.
+    assert "40\u00a0123 финиша" in meta.description
     assert "15:42 / 18:03" in meta.description
     assert len(meta.description) <= DESCRIPTION_BUDGET
     assert meta.indexable is True
@@ -289,6 +300,9 @@ def test_location_lead_reads_as_sentences() -> None:
     sentences = location_lead_sentences(_location_payload())
     assert sentences[0] == "«Кузьминки» (Москва) — площадка субботних пробежек 5 вёрст."
     assert "271 старт" in sentences[1]
+    # Число финишёров во вводном абзаце — с разбивкой по разрядам: репорт
+    # Дмитрия 14.08.2026, «21581 участник» на странице читался сплошняком.
+    assert "финишировали 40 123 участника" in sentences[1]
     # Прошлых систем нет — третьего предложения быть не должно.
     assert len(sentences) == 2
 
@@ -337,6 +351,58 @@ def test_location_meta_pluralizes_starts(count: int, expected: str) -> None:
     assert expected in meta.description
 
 
+_DESCRIPTION_PAYLOAD = {
+    "platform_code": "five_verst",
+    "schedule_text": "Старт проходит по адресу: Москва, Сокольнический Вал, 1с1. Каждую субботу с 9:00.",
+    "course_text": "Маршрут проходит по дорожкам парка.\n\nСтарт у центрального входа.",
+    "travel_text": "Москва, Сокольнический Вал, 1с1",
+    "travel_sections": [
+        {"title": "Общественным транспортом", "text": "Ближайшая станция метро — Сокольники."},
+        {"title": "На автомобиле", "text": "Парковка в 200 метрах от старта."},
+        # У S95 врезка называется как наш заголовок — сервис отдаёт её без title.
+        {"title": None, "text": "Ориентир — беседка-купол у катка."},
+    ],
+    "links": [{"title": "Карта и схема проезда", "url": "https://yandex.ru/maps/-/CDHUrYj8"}],
+    "source_url": "https://5verst.ru/sokolniki/course/",
+}
+
+
+def test_location_body_shows_course_and_travel_text() -> None:
+    """Робот получает то же описание трассы, что человек видит на странице."""
+    body = _location_body(_location_payload(description=_DESCRIPTION_PAYLOAD), events_log=False)
+
+    # Заголовок блока сразу называет источник — так же, как подблок-цитата на
+    # самой странице; чужой текст обязан быть подписан ссылкой.
+    assert "Описание с официального сайта 5 вёрст" in body
+    assert 'href="https://5verst.ru/sokolniki/course/"' in body
+
+    assert "<h3>Где и когда</h3>" in body
+    assert "Каждую субботу с 9:00" in body
+    assert "<h3>Трасса</h3>" in body
+    assert "<p>Маршрут проходит по дорожкам парка.</p>" in body
+    assert "<p>Старт у центрального входа.</p>" in body
+    assert "<h3>Как добраться</h3>" in body
+    assert "<h4>Общественным транспортом</h4>" in body
+    assert "Парковка в 200 метрах" in body
+    # Секция без заголовка выводится просто абзацем, без пустого <h4>.
+    assert "Ориентир — беседка-купол у катка." in body
+    assert body.count("Как добраться") == 1
+
+    # Порядок как на странице: сначала наши данные, потом цитата с чужого сайта.
+    assert body.index("<h2>История систем</h2>") < body.index("Описание с официального сайта")
+
+
+def test_location_body_without_description() -> None:
+    body = _location_body(_location_payload(), events_log=False)
+    assert "Описание с официального сайта" not in body
+
+
+def test_events_log_body_does_not_repeat_description() -> None:
+    """Журнал протоколов — отдельный адрес; тот же текст там был бы дублем."""
+    body = _location_body(_location_payload(description=_DESCRIPTION_PAYLOAD), events_log=True)
+    assert "Маршрут проходит по дорожкам парка" not in body
+
+
 def test_catalog_body_lists_locations_with_links() -> None:
     """Робот на /locations получает список площадок, а не два служебных предложения."""
     items = [
@@ -353,6 +419,167 @@ def test_catalog_body_lists_locations_with_links() -> None:
     assert "5 вёрст — 1 площадка" in body
 
 
+@pytest.mark.parametrize(
+    ("path", "known"),
+    [
+        ("/", True),
+        ("/locations", True),
+        ("/ratings/wins", True),
+        ("/locations/kuzminki", True),
+        ("/locations/kuzminki/events", True),
+        ("/users/ivan", True),
+        ("/admin/users", True),
+        ("/world", True),
+        ("/protocol", True),
+        ("/protocol/2026-08-15", True),
+        # Форму даты регулярка пропускает, а недели такой нет — это 404, а не 500.
+        ("/protocol/2026-08-99", False),
+        ("/protocol/2026-02-30", False),
+        ("/protocol/latest", False),
+        # Мусор обязан быть неизвестен: SPA отвечал 200 на что угодно, и Яндекс
+        # отметил это диагностикой «некорректно настроен возврат 404».
+        ("/something-strange", False),
+        ("/locations/kuzminki/events/extra", False),
+        ("/ratings/fake-metric", False),
+        ("/wp-admin", False),
+    ],
+)
+def test_is_known_path(path: str, known: bool) -> None:
+    assert is_known_path(path) is known
+
+
+def test_unified_protocol_meta_carries_the_week() -> None:
+    """Дата недели едет в заголовок — превью ссылки в чате должно её называть."""
+    meta = resolve_page_meta("/protocol/2026-08-15")
+    assert "15.08.2026" in meta.title
+    assert meta.indexable is True
+
+
+def test_robots_closes_user_pages_from_crawl() -> None:
+    """Страницы участников не должны жечь краулинговый бюджет.
+
+    Они и так noindex, но робот их скачивал сотнями — особенно после
+    включения обхода по счётчикам Метрики.
+    """
+    robots = build_robots_txt()
+    # Закрыты вкладки (/users/12/maps), сама карточка участника открыта —
+    # иначе превью ссылки в ВК и Telegram остаётся без картинки.
+    assert "Disallow: /users/*/" in robots
+    # /world закрывать не за что: он один, а noindex в странице сохраняет вес.
+    assert "Disallow: /world" not in robots
+
+
+def test_last_event_block_reaches_the_robot() -> None:
+    """«5 вёрст X результаты» — самый частый интент, робот обязан их видеть."""
+    payload = _location_payload()
+    stats = cast("dict[str, object]", payload["stats"])
+    stats["last_event"] = {
+        "event_date": "2026-08-08",
+        "platform_code": "five_verst",
+        "finishers": 62,
+        "volunteers": 20,
+        "best_male_time_display": "00:18:09",
+        "best_female_time_display": "00:19:08",
+        "avg_time_display": "00:27:28",
+        "debutants": 2,
+        "first_at_location": 2,
+        "prs": 2,
+    }
+    body = _location_body(payload, events_log=False)
+    assert "Последний старт: 2026-08-08 (5 вёрст)" in body
+    assert "Финишировали: 62" in body
+    # Часы отрезаются здесь так же, как везде: «18:09», а не «00:18:09».
+    assert "Лучшее время, мужчины: 18:09" in body
+    assert "Впервые здесь: 4" in body
+
+
+def test_location_json_ld_describes_place_and_event() -> None:
+    payload = _location_payload(
+        latitude=55.667123,
+        longitude=37.404714,
+        region="Московская",
+        country="Россия",
+        platforms=[
+            {
+                "platform_code": "five_verst",
+                "is_active": True,
+                "events_count": 271,
+                "url": "https://5verst.ru/kuzminki/",
+            }
+        ],
+    )
+    stats = cast("dict[str, object]", payload["stats"])
+    stats["last_event"] = {"event_date": "2026-08-08", "finishers": 62}
+
+    objects = location_json_ld(payload)
+    types = [o["@type"] for o in objects]
+    assert types == ["SportsActivityLocation", "SportsEvent", "BreadcrumbList"]
+
+    place = objects[0]
+    assert place["name"] == "5 вёрст Кузьминки"
+    assert place["address"]["addressLocality"] == "Москва"
+    assert place["geo"]["latitude"] == 55.667123
+    # sameAs связывает нас с первоисточником, а не выдаёт за него.
+    assert place["sameAs"] == ["https://5verst.ru/kuzminki/"]
+
+    event = objects[1]
+    assert event["startDate"] == "2026-08-08"
+    # Финишёры — в description: maximumAttendeeCapacity означает вместимость.
+    assert "62" in event["description"]
+    assert "maximumAttendeeCapacity" not in event
+
+    crumbs = objects[2]["itemListElement"]
+    assert [c["name"] for c in crumbs] == ["Главная", "Локации", "Кузьминки"]
+
+
+def test_location_json_ld_skips_event_without_date() -> None:
+    """Нет данных о старте — нет и SportsEvent: разметка не выдумывает."""
+    objects = location_json_ld(_location_payload())
+    assert [o["@type"] for o in objects] == ["SportsActivityLocation", "BreadcrumbList"]
+
+
+def test_catalog_json_ld_lists_live_locations() -> None:
+    objects = catalog_json_ld(
+        [
+            {"slug": "b", "name": "Бутово", "city": "Москва"},
+            {"slug": "a", "name": "Алёшкинский", "city": "Москва"},
+            {"slug": "x", "name": "Закрытая", "is_cancelled": True},
+        ]
+    )
+    listing = objects[0]
+    assert listing["numberOfItems"] == 2
+    # По алфавиту, как и на самой странице.
+    assert [i["name"] for i in listing["itemListElement"]] == ["Алёшкинский", "Бутово"]
+
+
+def test_og_image_tags_are_complete_for_previews() -> None:
+    """Полный набор подтегов og:image — иначе ВК показывает миниатюру.
+
+    secure_url ищут отдельные парсеры, type снимает угадывание формата,
+    alt часть площадок берёт подписью к карточке.
+    """
+    tags = _og_image_tags("https://run5k.run/og/locations/butovo.png", alt="5 вёрст Бутово")
+    joined = "\n".join(tags)
+    for needed in (
+        'property="og:image"',
+        'property="og:image:secure_url"',
+        'property="og:image:type" content="image/png"',
+        'property="og:image:width" content="1200"',
+        'property="og:image:height" content="630"',
+        'property="og:image:alt" content="5 вёрст Бутово"',
+        'name="twitter:card" content="summary_large_image"',
+    ):
+        assert needed in joined, needed
+
+
+def test_og_image_falls_back_to_default_without_alt() -> None:
+    tags = _og_image_tags(None)
+    joined = "\n".join(tags)
+    assert "/og/default.png" in joined
+    # Без подписи тега alt быть не должно: пустой alt хуже отсутствующего.
+    assert "og:image:alt" not in joined
+
+
 def test_robots_lists_sitemap_and_closes_service_paths() -> None:
     robots = build_robots_txt()
     assert "Sitemap: " in robots
@@ -367,3 +594,42 @@ def test_robots_lists_sitemap_and_closes_service_paths() -> None:
 def test_seo_paths_are_exempt_from_rate_limit(path: str) -> None:
     """429 в адрес поисковика останавливает обход — эти адреса вне тарифов."""
     assert classify_route(path, "GET") is RouteTier.exempt
+
+
+def test_page_number_reads_query_and_ignores_garbage() -> None:
+    assert _page_number("/updates") == 1
+    assert _page_number("/updates?page=4") == 4
+    assert _page_number("/updates?page=0") == 1
+    assert _page_number("/updates?page=-2") == 1
+    assert _page_number("/updates?page=abc") == 1
+    assert _page_number("/updates?other=7") == 1
+
+
+def test_releases_body_renders_history_with_neighbour_links() -> None:
+    """Робот должен видеть текст релизов и путь к соседним страницам."""
+
+    class _Release:
+        def __init__(self, version: str, title: str, body: str) -> None:
+            self.version = version
+            self.title = title
+            self.body = body
+            self.released_at = date(2026, 8, 1)
+
+    page = ReleasesPage(
+        items=[
+            _Release("2.4.0", "Таблицы на телефоне", "Вступление.\n\n- Первый пункт\n- Второй"),
+        ],
+        total=25,
+        page=2,
+        page_size=10,
+        pages=3,
+        latest_version="2.9.0",
+    )
+    html = _releases_body(page)  # type: ignore[arg-type]
+    assert "v2.4.0 — Таблицы на телефоне" in html
+    assert "<li>Первый пункт</li>" in html
+    assert "<p>Вступление.</p>" in html
+    assert "страница 2 из 3" in html
+    # Со второй страницы «назад» ведёт на чистый /updates, а не на ?page=1.
+    assert 'href="/updates" rel="prev"' in html
+    assert 'href="/updates?page=3" rel="next"' in html

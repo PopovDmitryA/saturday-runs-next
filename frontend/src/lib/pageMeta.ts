@@ -8,6 +8,8 @@
  * при добавлении роута не выйдет.
  */
 
+import { formatDate } from "./format";
+
 export const SITE_NAME = "run5k.run";
 
 export const DEFAULT_TITLE = "run5k.run — статистика субботних пробежек";
@@ -71,6 +73,14 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
       "было на каждой площадке, лучшие времена, новички и дата последнего старта.",
     indexable: true,
   },
+  // Единый протокол недели: последняя неделя без даты в адресе.
+  "/protocol": {
+    title: "Единый протокол недели — 5 вёрст, С95, parkrun и RunPark — run5k.run",
+    description:
+      "Все площадки всех систем за неделю одним протоколом: кто и с каким временем " +
+      "финишировал, зачёты по системам, полу и возрастным группам.",
+    indexable: true,
+  },
   "/ratings": {
     title: "Рейтинги — run5k.run",
     description:
@@ -99,12 +109,19 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
   },
   "/ratings/locations": {
     title: "Рейтинг по числу локаций — run5k.run",
-    description: "Беговой туризм в цифрах: кто пробежал на наибольшем числе разных площадок.",
+    description: "Беговой туризм в цифрах: кто пробежал на наибольшем числе разных локаций.",
     indexable: true,
   },
   "/ratings/volunteer-locations": {
     title: "Рейтинг волонтёрского туризма — run5k.run",
-    description: "Кто волонтёрил на наибольшем числе разных площадок субботних пробежек.",
+    description: "Кто волонтёрил на наибольшем числе разных локаций субботних пробежек.",
+    indexable: true,
+  },
+  "/ratings/openings": {
+    title: "Рейтинг открытий локаций — run5k.run",
+    description:
+      "Первопроходцы субботних пробежек: кто чаще всех бывал на торжественном открытии " +
+      "новых локаций 5 вёрст, С95, parkrun и RunPark.",
     indexable: true,
   },
   "/ratings/wins": {
@@ -116,12 +133,19 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
     title: "Рейтинг дальности от дома — run5k.run",
     description:
       "Кто уезжает бегать дальше всех от своей домашней локации: сумма километров " +
-      "по уникальным площадкам.",
+      "по уникальным локациям.",
     indexable: true,
   },
   "/ratings/win-locations": {
     title: "Рейтинг побед по локациям — run5k.run",
-    description: "На скольких разных площадках участники успевали финишировать первыми.",
+    description: "На скольких разных локациях участники успевали финишировать первыми.",
+    indexable: true,
+  },
+  "/ratings/location-records": {
+    title: "Рекорды локаций — run5k.run",
+    description:
+      "Рекорды трасс субботних пятёрок: лучшее время каждой локации среди мужчин и " +
+      "женщин и рекорды возрастных групп.",
     indexable: true,
   },
   "/backlog": {
@@ -139,6 +163,10 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
   "/settings": {
     title: "Настройки — run5k.run",
     description: "Настройки профиля и привязанных аккаунтов.",
+  },
+  "/welcome": {
+    title: "Добро пожаловать — run5k.run",
+    description: "Найдите себя по имени во всех системах пробежек и привяжите профили.",
   },
   "/oauth/yandex/callback": { title: "Вход — run5k.run", description: "Завершаем вход через Яндекс." },
   "/oauth/vk/callback": { title: "Вход — run5k.run", description: "Завершаем вход через VK." },
@@ -180,7 +208,9 @@ const ADMIN_META: PageMeta = {
 };
 
 const PROFILE_RE = /^\/users\/([^/]+)(?:\/([^/]+))?$/;
+const UNIFIED_PROTOCOL_RE = /^\/protocol\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_EVENTS_RE = /^\/locations\/([^/]+)\/events$/;
+const LOCATION_PROTOCOL_RE = /^\/locations\/([^/]+)\/protocol\/([^/]+)\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_RE = /^\/locations\/([^/]+)$/;
 const SWEEP_HQ_RE = /^\/hq\/.+$/;
 
@@ -224,11 +254,35 @@ export function resolvePageMeta(rawPath: string): PageMeta {
     };
   }
   if (PROFILE_RE.test(path)) {
+    // indexable с 15.08.2026: под noindex ВКонтакте и Telegram показывают
+    // превью ссылки без картинки. Точные имя и цифры подставляет пререндер
+    // (build_profile_meta), здесь — родовой вариант до загрузки данных.
+    const [, , tab] = PROFILE_RE.exec(path) ?? [];
     return {
       title: "Участник — run5k.run",
       description:
         "Страница участника субботних пробежек: пробежки, волонтёрство, " +
         "достижения и посещённые локации.",
+      // Вкладки профиля в индекс не идут — это срезы той же страницы.
+      indexable: tab === undefined,
+    };
+  }
+  if (UNIFIED_PROTOCOL_RE.test(path)) {
+    return {
+      title: "Единый протокол недели — run5k.run",
+      description:
+        "Все площадки всех систем за неделю одним протоколом: зачёты по системам, " +
+        "полу и возрастным группам.",
+      indexable: true,
+    };
+  }
+  if (LOCATION_PROTOCOL_RE.test(path)) {
+    return {
+      title: "Протокол старта — run5k.run",
+      description:
+        "Полный протокол старта: места по полу и возрастным группам, личные " +
+        "рекорды, дебютанты и волонтёры дня.",
+      indexable: true,
     };
   }
   if (LOCATION_EVENTS_RE.test(path)) {
@@ -251,6 +305,15 @@ export function resolvePageMeta(rawPath: string): PageMeta {
   }
 
   return STATIC_PAGE_META[path] ?? { title: DEFAULT_TITLE, description: DEFAULT_DESCRIPTION };
+}
+
+/**
+ * Разбивка по разрядам неразрывным пробелом: 21581 → «21 581».
+ * Зеркало _num из seo_service.py — тексты страницы и пререндера обязаны
+ * совпадать символ в символ.
+ */
+function num(value: number): string {
+  return value.toLocaleString("ru-RU");
 }
 
 function plural(count: number, one: string, few: string, many: string): string {
@@ -322,10 +385,10 @@ export function locationPageMeta(
   const events = stats.events_count ?? 0;
   const finishers = stats.finishers_total ?? 0;
   if (events) {
-    parts.push(`${events} ${plural(events, "старт", "старта", "стартов")}`);
+    parts.push(`${num(events)} ${plural(events, "старт", "старта", "стартов")}`);
   }
   if (finishers) {
-    parts.push(`${finishers} ${plural(finishers, "финиш", "финиша", "финишей")}`);
+    parts.push(`${num(finishers)} ${plural(finishers, "финиш", "финиша", "финишей")}`);
   }
   const male = stripLeadingHours(stats.course_records?.male?.finish_time_display ?? null);
   const female = stripLeadingHours(stats.course_records?.female?.finish_time_display ?? null);
@@ -364,6 +427,42 @@ export function locationPageMeta(
       numbers,
       ". Результаты субботних забегов, посещаемость и рейтинги участников.",
       ". Результаты забегов и рейтинги участников.",
+    ),
+    indexable: true,
+  };
+}
+
+/** Заголовок протокола: имя, дата и номер уже известны из ответа API. */
+export function locationProtocolMeta(payload: {
+  name: string;
+  city: string | null;
+  platform_code: string;
+  event_date: string;
+  event_number: number | null;
+  summary: { finishers: number; volunteers: number; best_time_display: string | null };
+}): PageMeta {
+  const name = payload.name || "Локация";
+  const platform = PLATFORM_LABELS[payload.platform_code] ?? payload.platform_code;
+  const day = formatDate(payload.event_date);
+  const numberPart = payload.event_number ? ` №${payload.event_number}` : "";
+  const parts: string[] = [];
+  if (payload.summary.finishers) {
+    parts.push(
+      `${num(payload.summary.finishers)} ${plural(payload.summary.finishers, "финишёр", "финишёра", "финишёров")}`,
+    );
+  }
+  if (payload.summary.volunteers) {
+    parts.push(
+      `${num(payload.summary.volunteers)} ${plural(payload.summary.volunteers, "волонтёр", "волонтёра", "волонтёров")}`,
+    );
+  }
+  return {
+    title: fitTitle(`${name}${numberPart} — протокол ${day}`),
+    description: describe(
+      `Протокол старта ${platform} «${name}» ${day}`,
+      parts.join(", "),
+      ". Места по полу и возрастным группам, личные рекорды и дебютанты.",
+      ". Места, рекорды и дебютанты дня.",
     ),
     indexable: true,
   };
@@ -452,8 +551,8 @@ export function locationLeadSentences(payload: LocationMetaSource): string[] {
   const finishers = stats.finishers_total ?? 0;
   if (events && finishers) {
     sentences.push(
-      `Здесь прошло ${events} ${plural(events, "старт", "старта", "стартов")}, ` +
-        `финишировали ${finishers} ${plural(finishers, "участник", "участника", "участников")}.`,
+      `Здесь прошло ${num(events)} ${plural(events, "старт", "старта", "стартов")}, ` +
+        `финишировали ${num(finishers)} ${plural(finishers, "участник", "участника", "участников")}.`,
     );
   }
 
@@ -493,6 +592,14 @@ export function applyPageMeta(meta: PageMeta): void {
   setMetaTag('meta[property="og:site_name"]', "property", "og:site_name", SITE_NAME);
   setMetaTag('meta[property="og:type"]', "property", "og:type", "website");
   setMetaTag('meta[property="og:url"]', "property", "og:url", window.location.href);
+  // Дефолтная брендовая картинка. Роботы мессенджеров сюда не смотрят (они
+  // получают пререндер с точным og:image от бэкенда) — это для JS-краулеров.
+  setMetaTag(
+    'meta[property="og:image"]',
+    "property",
+    "og:image",
+    `${window.location.origin}/og/default.png`,
+  );
 
   let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
   if (!canonical) {

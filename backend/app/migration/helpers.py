@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 from datetime import date
+from urllib.parse import urlparse
 
 from app.time_format import format_finish_time_display, parse_finish_time
 
@@ -46,14 +47,31 @@ def slug_from_s95_url(url: str | None) -> str | None:
     return match.group(1).lower() if match else None
 
 
+S95_DOMAIN_COUNTRY = {
+    "s95.rs": "Сербия",
+    "s95.by": "Беларусь",
+    "s95.ru": "Россия",
+}
+
+
 def s95_country_from_url(url: str | None) -> str:
+    """Страна локации s95 по домену: страну сама система нигде не отдаёт, а домен
+    её задаёт однозначно — s95.rs это Сербия, s95.by Беларусь, s95.ru Россия.
+
+    Раньше сверка шла по подстроке «s95.by/» — голый домен без пути (а именно он
+    приходит из реестра как `entry.domain`) в неё не попадал и молча становился
+    Россией. Сравниваем хост целиком.
+    """
     if not url:
         return "Россия"
     lowered = url.strip().lower()
-    if "s95.rs/" in lowered:
-        return "Сербия"
-    if "s95.by/" in lowered:
-        return "Беларусь"
+    host = urlparse(lowered if "//" in lowered else f"//{lowered}").hostname or ""
+    host = host.removeprefix("www.")
+    if host in S95_DOMAIN_COUNTRY:
+        return S95_DOMAIN_COUNTRY[host]
+    for domain, country in S95_DOMAIN_COUNTRY.items():
+        if host.endswith(f".{domain}"):
+            return country
     return "Россия"
 
 

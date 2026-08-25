@@ -112,6 +112,10 @@ def _base_entry(
     platform_code: str,
     location_name: str,
     location_city: str | None,
+    # Слаг площадки и признак тестового старта — чтобы веха вела на НАШ протокол,
+    # а не на сайт системы (см. protocolHref.ts).
+    location_slug: str | None = None,
+    is_test_event: bool = False,
     number: int | None = None,
     finish_time_display: str | None = None,
     finish_time_sec: int | None = None,
@@ -132,6 +136,8 @@ def _base_entry(
         "platform_code": platform_code,
         "location_name": location_name,
         "location_city": location_city,
+        "location_slug": location_slug,
+        "is_test_event": is_test_event,
         "finish_time_display": finish_time_display,
         "finish_time_sec": finish_time_sec,
         "position": position,
@@ -166,6 +172,8 @@ def _run_milestone(
         platform_code=platform_code,
         location_name=catalog_index.display_name(location, platform_code),
         location_city=_city_geo_value(location.city),
+        location_slug=(location.external_key or "").strip().lower() or None,
+        is_test_event=event.is_test_event,
         finish_time_display=normalize_finish_time_display(
             run.finish_time_sec, run.finish_time_display
         ),
@@ -420,6 +428,8 @@ def _collect_volunteer_milestones(
                     "platform_code": platform_code,
                     "location_name": catalog_index.display_name(location, platform_code),
                     "location_city": _city_geo_value(location.city),
+                    "location_slug": (location.external_key or "").strip().lower() or None,
+                    "is_test_event": event.is_test_event,
                     "location_key": catalog_index.canonical_identity_key(location, platform_code),
                     "role": (volunteer.role or "").strip() or None,
                     "event_url": _milestone_event_url(
@@ -446,6 +456,8 @@ def _collect_volunteer_milestones(
             platform_code=str(occasion["platform_code"]),
             location_name=str(occasion["location_name"]),
             location_city=occasion["location_city"],  # type: ignore[arg-type]
+            location_slug=occasion["location_slug"],  # type: ignore[arg-type]
+            is_test_event=bool(occasion["is_test_event"]),
             role=occasion["role"],  # type: ignore[arg-type]
             event_url=occasion["event_url"],  # type: ignore[arg-type]
         )
@@ -589,6 +601,8 @@ def _visit_entry(
         platform_code=platform_code,
         location_name=catalog_index.display_name(location, platform_code),
         location_city=_city_geo_value(location.city),
+        location_slug=(location.external_key or "").strip().lower() or None,
+        is_test_event=event.is_test_event if event is not None else False,
         finish_time_display=finish_time_display,
         finish_time_sec=finish_time_sec,
         position=position,
@@ -823,9 +837,13 @@ def _collect_location_record_milestones(db: Session, user_id: UUID) -> list[dict
     for row in rows:
         platform_code = str(row["platform_code"])
         event_url: str | None = None
+        location_slug: str | None = None
+        is_test_event = False
         pair = events_by_id.get(UUID(str(row["event_id"])))
         if pair is not None:
             event, location = pair
+            location_slug = (location.external_key or "").strip().lower() or None
+            is_test_event = event.is_test_event
             event_url = _milestone_event_url(
                 platform_code=platform_code, event=event, location=location, profile_url=None
             )
@@ -835,6 +853,8 @@ def _collect_location_record_milestones(db: Session, user_id: UUID) -> list[dict
             platform_code=platform_code,
             location_name=str(row["location_name"]),
             location_city=cast(str | None, row.get("location_city")),
+            location_slug=location_slug,
+            is_test_event=is_test_event,
             finish_time_display=cast(str | None, row.get("finish_time_display")),
             finish_time_sec=cast(int | None, row.get("finish_time_sec")),
             event_url=event_url,

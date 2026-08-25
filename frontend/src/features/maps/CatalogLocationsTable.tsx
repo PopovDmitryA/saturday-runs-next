@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { CatalogLocationTableRow, CatalogLocationsTableResponse } from "../../lib/api";
-import { formatDate, platformCodeLabel } from "../../lib/format";
+import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { CheckboxListFilter } from "../../components/activityTable/CheckboxListFilter";
 import { PlatformBadge } from "../../components/PlatformBadge";
@@ -34,7 +34,7 @@ function formatLocationsCount(filtered: number, total: number): string {
   if (filtered === total) {
     return String(filtered);
   }
-  return `${filtered} из ${total}`;
+  return `${formatInt(filtered)} из ${formatInt(total)}`;
 }
 
 export function CatalogLocationsTable({
@@ -99,7 +99,7 @@ export function CatalogLocationsTable({
                     }))
                   }
                 />
-                Скрыть локации на паузе
+                Скрыть недействующие локации
               </label>
               <button
                 type="button"
@@ -333,7 +333,7 @@ function CatalogLocationTableRowView({
     row.name
   );
 
-  const statusNote = row.is_cancelled ? "Отменена" : row.is_paused ? "На паузе" : null;
+  const statusNote = row.is_cancelled ? "Отменена" : row.is_paused ? "Не действует" : null;
 
   return (
     <tr

@@ -1,57 +1,46 @@
-import { useState } from "react";
-
-export type TableView = "short" | "full";
-
-/**
- * Режим «Кратко | Полно». Всегда открывается кратким: это дефолт для телефона,
- * а запоминание выбора между заходами сбивало — страница неожиданно
- * открывалась широкой таблицей со скроллом.
- */
-export function useTableView(_storageKey: string): [TableView, (view: TableView) => void] {
-  return useState<TableView>("short");
-}
+import type { TableColumns } from "./useTableColumns";
 
 type TableViewToggleProps = {
-  value: TableView;
-  onChange: (view: TableView) => void;
-  /** Подпись полного режима — по умолчанию «Полно». */
-  fullLabel?: string;
-  /**
-   * Дополнительный класс. `tview-toggle-always` показывает сегмент и на
-   * компьютере: так сделано в рейтингах, где краткий вид убирает тяжёлые
-   * колонки систем. По умолчанию сегмент виден только на узких экранах.
-   */
-  className?: string;
+  /** Результат useTableColumns: он же решает, нужен ли сегмент вообще. */
+  columns: TableColumns;
 };
 
-export function TableViewToggle({
-  value,
-  onChange,
-  fullLabel = "Полно",
-  className = "",
-}: TableViewToggleProps) {
+/**
+ * Сегмент «Кратко | Полно» в собственной липкой полосе (`.tview-bar`): полоса
+ * прилипает под шапкой сайта, чтобы сменить набор колонок можно было из любого
+ * места длинной таблицы, а не отматывая страницу назад (просьба Дмитрия
+ * 11.08.2026).
+ *
+ * Ничего не рисуем, когда краткий вид и так показывает все колонки: раньше
+ * сегмент висел на любой ширине и на широком мониторе «Полно» только меняло
+ * пропорции, не добавляя ни одной колонки. Полоса пропадает вместе с сегментом,
+ * иначе от неё осталась бы пустая строка над таблицей.
+ */
+export function TableViewToggle({ columns }: TableViewToggleProps) {
+  if (!columns.hasToggle) {
+    return null;
+  }
+
   return (
-    <div
-      className={`tview-toggle${className ? ` ${className}` : ""}`}
-      role="group"
-      aria-label="Набор колонок таблицы"
-    >
-      <button
-        type="button"
-        aria-pressed={value === "short"}
-        className={`tview-tab${value === "short" ? " tview-tab-active" : ""}`}
-        onClick={() => onChange("short")}
-      >
-        Кратко
-      </button>
-      <button
-        type="button"
-        aria-pressed={value === "full"}
-        className={`tview-tab${value === "full" ? " tview-tab-active" : ""}`}
-        onClick={() => onChange("full")}
-      >
-        {fullLabel}
-      </button>
+    <div className="tview-bar">
+      <div className="tview-toggle" role="group" aria-label="Набор колонок таблицы">
+        <button
+          type="button"
+          aria-pressed={!columns.showFull}
+          className={`tview-tab${columns.showFull ? "" : " tview-tab-active"}`}
+          onClick={() => columns.setView("short")}
+        >
+          Кратко
+        </button>
+        <button
+          type="button"
+          aria-pressed={columns.showFull}
+          className={`tview-tab${columns.showFull ? " tview-tab-active" : ""}`}
+          onClick={() => columns.setView("full")}
+        >
+          Полно
+        </button>
+      </div>
     </div>
   );
 }

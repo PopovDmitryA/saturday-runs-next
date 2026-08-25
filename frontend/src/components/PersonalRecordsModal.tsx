@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { type PersonalRecordItem } from "../lib/api";
 import { useAppDataSource } from "../lib/appDataSource";
-import { formatFinishTimeValue, platformCodeLabel } from "../lib/format";
+import { formatFinishTimeValue, formatInt, platformCodeLabel } from "../lib/format";
 import { ActivityDateLink } from "./ActivityDateLink";
 import { ColumnHeader } from "./activityTable/ColumnHeader";
 import { GlobalPrFinishTime } from "./GlobalPrFinishTime";
@@ -185,7 +185,7 @@ export function PersonalRecordsModal({ open, onClose, includeTest = false }: Per
                   setSortAsc(false);
                 }}
               >
-                {platformCodeLabel(item.platform_code)} ({item.count})
+                {platformCodeLabel(item.platform_code)} ({formatInt(item.count)})
               </button>
             ))}
           </div>
@@ -236,7 +236,7 @@ export function PersonalRecordsModal({ open, onClose, includeTest = false }: Per
                   {rows.map((item, index) => (
                     <tr key={`${item.platform_code}-${item.event_date}-${item.location_name}-${index}`}>
                       <td className="col-date">
-                        <ActivityDateLink date={item.event_date} url={item.event_url} />
+                        <ActivityDateLink date={item.event_date} target={item} url={item.event_url} />
                         {item.is_pr && <span className="badge badge-pr">PR</span>}
                       </td>
                       <td className="col-location">

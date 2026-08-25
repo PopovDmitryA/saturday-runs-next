@@ -6,9 +6,12 @@ from datetime import date, timedelta
 
 from app.models import UserGoal
 from app.services.achievements_service import (
+    CHALLENGE_TIERS,
     REVIEW_MIN_COMMENT_LEN,
     RatingRow,
     RunRow,
+    _alphabet_challenge,
+    _alphabet_tiers,
     _best_year_challenge,
     _best_year_level_dates,
     _calendar_days_challenge,
@@ -202,21 +205,31 @@ def test_scope_by_platform_filters_rows_vol_rows_and_upcoming() -> None:
     )
 
 
+def _tier(challenge: dict, tier_key: str) -> dict:
+    return next(t for t in challenge["tiers"] if t["tier"] == tier_key)
+
+
 def test_inspector_counts_every_rating() -> None:
     rows = [_rating_row(rated_on=date(2026, 1, 4) + timedelta(days=i)) for i in range(25)]
     challenge = _inspector_challenge(rows)
     assert challenge["code"] == "inspector"
     assert challenge["current"] == 25
-    # Бронза — на 25-й оценке, то есть в день последней из них.
-    assert challenge["level"] == "bronze"
-    assert challenge["level_dates"]["bronze"] == (date(2026, 1, 4) + timedelta(days=24)).isoformat()  # type: ignore[index]
+    # easy (1/5/10) закрыт целиком, medium (20/40/70) — только бронза (20-я
+    # оценка) — "лучшее" достижение вычисляется по самому сложному тиру,
+    # где взят хоть один уровень.
+    assert _tier(challenge, "easy")["level"] == "gold"
+    assert challenge["best_tier"] == "medium"
+    assert challenge["best_level"] == "bronze"
+    assert _tier(challenge, "medium")["level_dates"]["bronze"] == (
+        date(2026, 1, 4) + timedelta(days=19)
+    ).isoformat()
 
 
 def test_inspector_empty_has_no_level() -> None:
     challenge = _inspector_challenge([])
     assert challenge["current"] == 0
-    assert challenge["level"] is None
-    assert challenge["level_dates"] == {"bronze": None, "silver": None, "gold": None}
+    assert challenge["best_level"] is None
+    assert _tier(challenge, "easy")["level_dates"] == {"bronze": None, "silver": None, "gold": None}
 
 
 def test_reviewer_counts_only_reviews() -> None:
@@ -226,9 +239,11 @@ def test_reviewer_counts_only_reviews() -> None:
     ]
     challenge = _reviewer_challenge(rows)
     assert challenge["code"] == "reviewer"
-    # Голые звёзды в рецензии не идут — только 10 развёрнутых.
+    # Голые звёзды в рецензии не идут — только 10 развёрнутых, что закрывает
+    # easy-тир (1/3/7) целиком до золота.
     assert challenge["current"] == 10
-    assert challenge["level"] == "bronze"
+    assert challenge["best_tier"] == "easy"
+    assert challenge["best_level"] == "gold"
 
 
 def test_reviewer_and_inspector_count_same_rating_once_each() -> None:
@@ -284,6 +299,86 @@ def test_first_letter_rules() -> None:
     assert _first_letter("5-й километр") is None
 
 
+def _alphabet_names(*pairs: tuple[str, str]) -> dict[str, set[str]]:
+    """Каталог «буква -> названия локаций» в том виде, в каком его отдаёт БД."""
+    names: dict[str, set[str]] = {}
+    for letter, name in pairs:
+        names.setdefault(letter, set()).add(name)
+    return names
+
+
+def test_alphabet_letters_limited_to_scope_catalog() -> None:
+    """Буквы приходят из каталога локаций: нет локации на «Ц» — нет и клетки."""
+    names = _alphabet_names(("К", "Кузьминки"), ("Б", "Битца"))
+    challenge = _alphabet_challenge(
+        [_row(location_name="Кузьминки", location_key="kuzminki")],
+        names,
+        platform_code="five_verst",
+    )
+    letters = challenge["detail"]["letters"]  # type: ignore[index]
+    assert [item["letter"] for item in letters] == ["Б", "К"]
+    assert [item["done"] for item in letters] == [False, True]
+    assert challenge["current"] == 1
+    assert challenge["detail"]["available"] == 2  # type: ignore[index]
+
+
+def test_alphabet_gold_equals_available_letters() -> None:
+    """Золото сложного тира — весь доступный алфавит: 28 сквозь все системы,
+    26 у 5 вёрст, 17 у S95. Иначе под фильтром обещали бы недостижимое."""
+    assert _alphabet_tiers(28) == CHALLENGE_TIERS["alphabet"]
+    assert _alphabet_tiers(26)["hard"][2] == 26
+    assert _alphabet_tiers(17)["hard"][2] == 17
+
+
+def test_alphabet_tiers_stay_strictly_increasing() -> None:
+    """На строгом росте порогов сквозь тиры держится выбор «лучшего» тира."""
+    for available in range(9, 29):
+        flat = [value for thresholds in _alphabet_tiers(available).values() for value in thresholds]
+        assert flat == sorted(set(flat)), f"пороги не растут строго при {available} буквах"
+        assert flat[0] >= 1
+        assert flat[-1] == available
+
+
+def test_alphabet_small_catalog_collapses_to_single_tier() -> None:
+    """Букв меньше, чем порогов: три тира не укладываются — остаётся один
+    (как у «Семи дней», фронт тогда не рисует вкладки сложности)."""
+    assert _alphabet_tiers(6) == {"solo": (2, 4, 6)}
+    # Пустой каталог: золото не должно доставаться само собой при нуле букв.
+    assert _alphabet_tiers(0)["solo"][2] >= 1
+
+
+def test_alphabet_challenge_uses_scoped_tiers() -> None:
+    names = _alphabet_names(*((letter, f"Локация {letter}") for letter in "АБВГДЕЖЗИКЛМНОПРСТУФХЧШЭЮЯ"))
+    challenge = _alphabet_challenge([], names, platform_code="five_verst")
+    hard = next(tier for tier in challenge["tiers"] if tier["tier"] == "hard")  # type: ignore[union-attr]
+    assert challenge["detail"]["available"] == 26  # type: ignore[index]
+    assert hard["target"] == 26
+    assert "золото даётся за все 26" in str(challenge["description"])
+
+
+def test_alphabet_description_names_the_scoped_platform() -> None:
+    names = _alphabet_names(("К", "Кузьминки"), ("Б", "Битца"))
+    scoped = _alphabet_challenge([], names, platform_code="five_verst")
+    assert "5 вёрст" in str(scoped["description"])
+    assert "2 буквы" in str(scoped["description"])
+    overall = _alphabet_challenge([], names, platform_code=None)
+    assert "parkrun" in str(overall["description"])
+
+
+def test_alphabet_skips_parkrun_only_in_cross_platform_scope() -> None:
+    """Сквозной вид parkrun не считает, а в скоупе самого parkrun — считает:
+    иначе буквы его русскоязычных локаций были бы недостижимы."""
+    names = _alphabet_names(("Т", "Тропарёво"))
+    rows = [_row(location_name="Тропарёво", location_key="troparevo", platform_code="parkrun")]
+
+    overall = _alphabet_challenge(rows, names, platform_code=None)
+    assert overall["current"] == 0
+
+    scoped = _alphabet_challenge(rows, names, platform_code="parkrun")
+    assert scoped["current"] == 1
+    assert scoped["detail"]["letters"][0]["done"] is True  # type: ignore[index]
+
+
 def test_saturdays_left_end_of_year() -> None:
     # 26.12.2026 — последняя суббота года; сегодняшняя суббота ещё считается
     assert _saturdays_left(date(2026, 12, 26)) == 1
@@ -300,9 +395,8 @@ def test_start_numbers_range_counts_any_platform() -> None:
         _row(event_number=52, platform_code="five_verst"),
         _row(event_number=60, platform_code="s95"),
     ]
-    levels = {"bronze": 2, "silver": 3, "gold": 200}
     result = _start_numbers_range_challenge(
-        rows, {}, code="start_numbers", title="Нумератор", description="", low=1, high=200, levels=levels
+        rows, {}, code="start_numbers", title="Нумератор", description="", low=1, high=200
     )
     assert result["current"] == 4
     assert result["detail"]["cells"][49]["done"] is True  # type: ignore[index]
@@ -313,9 +407,8 @@ def test_start_numbers_range_counts_any_platform() -> None:
 
 def test_start_numbers_pro_range() -> None:
     rows = [_row(event_number=250, platform_code="s95"), _row(event_number=399, platform_code="s95")]
-    levels = {"bronze": 50, "silver": 100, "gold": 200}
     pro = _start_numbers_range_challenge(
-        rows, {}, code="start_numbers_pro", title="Нумератор ПРО", description="", low=201, high=400, levels=levels
+        rows, {}, code="start_numbers_pro", title="Нумератор ПРО", description="", low=201, high=400
     )
     assert pro["current"] == 2
     assert pro["detail"]["cells"][250 - 201]["done"] is True  # type: ignore[index]
@@ -542,6 +635,23 @@ def test_challenge_recent_delta_via_manual_diff() -> None:
     full = _seconds_challenge(rows)
     before = _seconds_challenge(_rows_before_last_activity(rows) or [])
     assert full["current"] - before["current"] == 1
+
+
+def test_challenge_detail_cell_carries_last_activity_date() -> None:
+    """«Детали» подсвечивают свежую клетку, сверяя её date с recent_date —
+    датой последнего дня активности. Payload обязан давать ровно такое
+    совпадение, иначе «↑ +1» на карточке снова останется числом без адреса."""
+    rows = [
+        _row(finish_time_sec=25 * 60 + 13, event_date=date(2026, 1, 3)),
+        _row(finish_time_sec=26 * 60 + 14, event_date=date(2026, 1, 10)),
+    ]
+    challenge = _seconds_challenge(rows)
+    recent_date = rows[-1].event_date.isoformat()
+    cells = challenge["detail"]["cells"]  # type: ignore[index]
+    fresh = [cell for cell in cells if cell["date"] == recent_date]
+    assert [cell["label"] for cell in fresh] == [":14"]
+    # Саму дату проставляет compute_challenges — у отдельного челленджа её нет.
+    assert challenge["recent_date"] is None
 
 
 def test_goal_progress_runs_year_recent_delta() -> None:

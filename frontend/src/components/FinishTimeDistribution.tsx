@@ -145,6 +145,8 @@ export function FinishTimeDistribution({ times }: FinishTimeDistributionProps) {
                   anchorStart === bin.startSec ? " finish-dist-bar-wrap-anchor" : ""
                 }`}
                 onClick={() => handleBinClick(bin)}
+                // Тап по столбцу задаёт диапазон — подсказку тач-режимом не открываем.
+                data-tap-tooltip="off"
               >
                 <ChartColumnTooltip
                   title={`${formatMinSec(bin.startSec)}–${formatMinSec(bin.endSec - 1)}`}

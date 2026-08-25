@@ -7,6 +7,7 @@ export type LeaderboardMetric =
   | "volunteer_roles"
   | "locations"
   | "volunteer_locations"
+  | "openings"
   | "wins"
   | "win_locations"
   | "home_distance";
@@ -25,6 +26,16 @@ export type LeaderboardGender = "all" | "female";
 export const METRIC_VALUE_UNIT: Partial<Record<LeaderboardMetric, string>> = {
   home_distance: "км",
 };
+
+/**
+ * Рейтинги, ещё закрытые от публики: карточки нет в хабе, страница отдаёт 404,
+ * API отвечает «неизвестный рейтинг» всем, кроме админа. Сейчас таких нет —
+ * «Открытия» открыты всем 15.08.2026 после ручной разметки С95.
+ *
+ * Зеркало ADMIN_ONLY_METRICS на бэкенде — закрывать/открывать рейтинг надо в
+ * обоих местах (плюс indexable в pageMeta.ts и seo_service.py).
+ */
+export const ADMIN_ONLY_METRICS: LeaderboardMetric[] = [];
 
 // Женский зачёт есть только у победных рейтингов (parkrun в него не идёт).
 export const GENDERED_METRICS: LeaderboardMetric[] = ["wins", "win_locations"];
@@ -127,6 +138,12 @@ export type LeaderboardCell = {
 export type LeaderboardRow = {
   rank: number;
   rank_delta: number;
+  /**
+   * Стабильный якорь строки: по нему карта туристов сопоставляет светофоры со
+   * строками таблицы. Место дублируется при равных значениях, а site_serial_id
+   * есть только у зарегистрированных — ни то, ни другое строку не опознаёт.
+   */
+  row_key?: string;
   display_name: string | null;
   site_serial_id: number | null;
   platforms: Record<string, LeaderboardCell>;
@@ -185,6 +202,11 @@ export type LeaderboardResponse = {
   latest_event_date: string | null;
   week_start: string | null;
   built_at: string | null;
+  /**
+   * Как часто таблица пересчитывается по расписанию. Новый протокол доезжает
+   * быстрее: его пересчёт будит сам синк, это число — верхняя граница.
+   */
+  refresh_hours?: number;
 };
 
 export type MyLeaderboardRow = {
@@ -202,6 +224,9 @@ export type MyLeaderboardRow = {
   total: number;
   total_delta: number;
   rank: number | null;
+  // Место среди всех с ненулевой метрикой — есть и у тех, кто порог рейтинга
+  // ещё не прошёл (в отличие от rank).
+  rank_overall?: number | null;
   rank_delta: number | null;
   included: boolean;
   threshold: number;
@@ -214,6 +239,12 @@ export type MyLeaderboardRow = {
   // Только у home_distance: "ambiguous" — автовыбор дома шаткий,
   // "manual_off_top" — человек выбрал руками площадку вне своей тройки.
   home_location_note?: "ambiguous" | "manual_off_top" | null;
+  /**
+   * Только у home_distance: когда участник менял домашнюю локацию в настройках.
+   * Своя строка считается вживую, а таблица приходит из снапшота — если отметка
+   * свежее built_at таблицы, в её строках ещё километры от прежнего дома.
+   */
+  home_location_changed_at?: string | null;
   best_time_sec?: number | null;
   best_time_display?: string | null;
   last_win_location?: string | null;
@@ -297,6 +328,102 @@ export function getMyLeaderboardRow(
   const query = params.toString();
   return leaderboardsFetch<MyLeaderboardRow>(
     `/leaderboards/${metric}/me${query ? `?${query}` : ""}`,
+  );
+}
+
+// ─── Карта туристов ──────────────────────────────────────────────────────────
+// Спойлер туристических рейтингов: та же карта локаций, что в разделе «Карта»,
+// но рядом с каждой точкой стоит число — сколько человек из верхушки рейтинга
+// там было. Клик по точке зажигает в таблице светофоры «был / не был».
+export const TOURIST_MAP_METRICS: LeaderboardMetric[] = ["locations", "volunteer_locations"];
+
+export type TouristMapLocation = {
+  /** Тот же ключ идентичности, что catalog_identity_key у точек карты. */
+  key: string;
+  name: string;
+  slug: string | null;
+  /** Сколько человек из верхушки рейтинга здесь были — число у точки. */
+  visitors: number;
+  visits: number;
+  /**
+   * То же число по ступеням фильтра «какой топ считать»: "10" → 3, "50" → 12.
+   * Все ступени приходят разом, поэтому переключение не ходит на сервер.
+   */
+  visitors_by_top?: Record<string, number>;
+};
+
+export type TouristMapPlatformVisit = {
+  code: string;
+  visits: number;
+  first_date: string | null;
+  last_date: string | null;
+};
+
+export type TouristMapVisit = {
+  row_key: string;
+  visits: number;
+  first_date: string | null;
+  last_date: string | null;
+  platforms: TouristMapPlatformVisit[];
+};
+
+export type TouristMapResponse = {
+  metric: string;
+  min_visits: number;
+  platform: PlatformFilter;
+  /** По скольким верхним строкам рейтинга посчитаны светофоры в таблице. */
+  limit: number;
+  /** Ступени фильтра «какой топ считать на карте» — набор задаёт бэкенд. */
+  top_steps?: number[];
+  built_at: string | null;
+  /** Строки, попавшие в расчёт: у остальных светофор не горит вовсе. */
+  row_keys: string[];
+  locations: TouristMapLocation[];
+  /** Заполнены только в ответе на запрос конкретной площадки. */
+  location: TouristMapLocation | null;
+  visits: TouristMapVisit[];
+};
+
+/**
+ * Карта туристов под теми же фильтрами, что таблица. Без locationKey приходят
+ * только числа по площадкам; с ним — ещё и визиты выбранной площадки по
+ * строкам таблицы (матрица целиком по проводу не ездит — это сотни килобайт).
+ */
+export function getTouristMap(
+  metric: LeaderboardMetric,
+  {
+    minVisits = 1,
+    platform = "all",
+    countBy = "locations",
+    roles = null,
+    locationKey = null,
+  }: {
+    minVisits?: number;
+    platform?: PlatformFilter;
+    countBy?: CountBy;
+    roles?: string[] | null;
+    locationKey?: string | null;
+  } = {},
+) {
+  const params = new URLSearchParams();
+  if (minVisits > 1) {
+    params.set("min_visits", String(minVisits));
+  }
+  if (platform !== "all") {
+    params.set("platform", platform);
+  }
+  if (countBy !== "locations") {
+    params.set("count_by", countBy);
+  }
+  for (const role of roles ?? []) {
+    params.append("roles", role);
+  }
+  if (locationKey) {
+    params.set("location_key", locationKey);
+  }
+  const query = params.toString();
+  return leaderboardsFetch<TouristMapResponse>(
+    `/leaderboards/${metric}/tourist-map${query ? `?${query}` : ""}`,
   );
 }
 

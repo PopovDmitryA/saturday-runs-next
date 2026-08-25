@@ -14,9 +14,11 @@ from app.platform_adapters.five_verst.bulk_parser import (
     ParsedRegistryEntry,
     registry_entry_is_cancelled,
     registry_entry_is_paused,
+    registry_entry_is_upcoming,
 )
 from app.platform_adapters.five_verst.http import NotFoundError
 from app.services.admin_notify import notify_admin
+from app.services.location_catalog_cache import flush_location_catalog_caches
 from app.services.location_geo_service import apply_reverse_geocode_to_location
 from app.sync import upsert
 from app.sync.iteration_commit import commit_step, rollback_step
@@ -114,6 +116,7 @@ def _enrich_location_geo(location: CanonicalLocation) -> CanonicalLocation:
         source_url=location.source_url,
         course_source_url=location.course_source_url,
         map_url=location.map_url,
+        description=location.description,
     )
 
 
@@ -129,6 +132,7 @@ def _apply_registry_meta(db: Session, row: Location, entry: ParsedRegistryEntry)
         row,
         is_paused=registry_entry_is_paused(entry.status),
         is_cancelled=registry_entry_is_cancelled(entry.status),
+        is_upcoming=registry_entry_is_upcoming(entry.status),
     )
     if row.name != entry.name:
         row.name = entry.name
@@ -321,6 +325,8 @@ def _process_registry_entry(
                         source_hash=bulk_parser.source_hash(location_html),
                     )
                     updated_row.is_official_map = True
+                    if location_data.description is not None:
+                        upsert.upsert_location_description(db, updated_row, location_data.description)
                     result.coords_fetched += 1
                     _record_location(result, "coords_fetched_locations", entry.slug, entry.name)
                     meta_changed, pause_changed, cancel_changed = _apply_registry_meta(db, updated_row, entry)
@@ -372,6 +378,7 @@ def _process_registry_entry(
         source_url=entry.source_url,
         course_source_url=location_data.course_source_url,
         map_url=location_data.map_url,
+        description=location_data.description,
     )
     new_row, _ = upsert.upsert_location(
         db,
@@ -380,6 +387,8 @@ def _process_registry_entry(
         source_hash=bulk_parser.source_hash(location_html),
     )
     new_row.is_official_map = True
+    if location_data.description is not None:
+        upsert.upsert_location_description(db, new_row, location_data.description)
     _, pause_changed, cancel_changed = _apply_registry_meta(db, new_row, entry)
     if pause_changed:
         result.pause_status_changed += 1
@@ -456,10 +465,15 @@ def sync_locations_registry(
             error="; ".join(result.errors) or None,
         )
         db.commit()
+        # Витрины каталога держат снимок в Redis на часы: без сброса отмена
+        # ближайшего старта доедет до карты только к протуханию кэша.
+        if result.locations_created or result.locations_updated:
+            flush_location_catalog_caches("синк реестра 5 вёрст")
         return result
     except Exception as exc:
         db.rollback()
-        failed_run = _start_sync_run(db, platform)
-        _finish_sync_run(db, failed_run, success=False, fetched=0, upserted=0, unchanged=0, error=str(exc))
+        # Закрываем исходный (закоммиченный) ран, а не плодим второй failed,
+        # оставляя первый висеть в running навсегда.
+        _finish_sync_run(db, sync_run, success=False, fetched=0, upserted=0, unchanged=0, error=str(exc))
         db.commit()
         raise

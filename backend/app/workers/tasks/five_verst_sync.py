@@ -28,16 +28,18 @@ logger = logging.getLogger(__name__)
 
 
 def _schedule_dashboard_warm(started_at: datetime) -> None:
-    """Отдать прогрев дашбордов в фоновую задачу.
+    """Отдать прогрев дашбордов и рейтингов в фоновые задачи.
 
     Синк знает только момент своего старта; кого именно затронули новые
     протоколы — разбирается dashboard_warm по run_results.fetched_at. Раньше
     здесь сносился кэш всем пользователям платформы, и пересчёт доставался
     первому зашедшему в профиль.
     """
-    from app.workers.tasks.dashboard_warm import warm_dashboards_after_sync
+    from app.workers.tasks.dashboard_warm import schedule_dashboard_warm
+    from app.workers.tasks.leaderboards_warm import schedule_leaderboards_warm
 
-    warm_dashboards_after_sync.delay(started_at.isoformat())
+    schedule_dashboard_warm(started_at)
+    schedule_leaderboards_warm()
 
 
 def _protocol_limit(settings) -> int | None:
@@ -211,6 +213,7 @@ def sync_latest_results_task(
                 "new_summaries": result.new_summaries,
                 "changed_summaries": result.changed_summaries,
                 "missing_protocol": result.missing_protocol,
+                "stale_protocols": result.stale_protocols,
                 "protocols_fetched": result.protocols_fetched,
                 "fetched_protocols": result.fetched_protocols,
                 "changed_protocols": result.changed_protocols,
@@ -329,9 +332,19 @@ def reconcile_stale_protocols_task(
     limit: int | None = None,
     min_check_interval_days: int | None = None,
     location_slug: str | None = None,
+    chunks_left: int | None = None,
     *,
     force: bool = False,
 ) -> dict[str, object]:
+    """Сверка протоколов 5 вёрст пачками.
+
+    Норма прогона по расписанию — `batch_limit × chunks_per_run` протоколов, но
+    берутся они не одной задачей, а цепочкой: отработал свою пачку — поставил
+    следующую в очередь. Воркер `five_verst` один и с concurrency=1, прервать
+    задачу на середине нельзя, поэтому одна двухчасовая задача заставила бы
+    пользовательский синк ждать все два часа. Между звеньями цепочки воркер
+    успевает забрать задачу из приоритетной очереди five_verst_user.
+    """
     from app.config import get_settings
 
     settings = get_settings()
@@ -339,6 +352,9 @@ def reconcile_stale_protocols_task(
         limit = settings.five_verst_reconcile_batch_limit
     if min_check_interval_days is None:
         min_check_interval_days = settings.five_verst_reconcile_min_check_interval_days
+    if chunks_left is None:
+        chunks_left = settings.five_verst_reconcile_chunks_per_run
+    mismatch_retry_hours = settings.five_verst_reconcile_mismatch_retry_hours
     name = "5v reconcile protocols"
     details = five_verst_reconcile_details(
         limit=limit,
@@ -349,19 +365,27 @@ def reconcile_stale_protocols_task(
     def _run() -> dict[str, object]:
         db = get_session_factory()()
         try:
+            started_at = datetime.now(timezone.utc)
             result = reconcile_stale_protocols(
                 db,
                 ReconcileProtocolsOptions(
                     limit=limit,
                     min_check_interval_days=min_check_interval_days,
                     location_slug=location_slug,
+                    mismatch_retry_interval_hours=mismatch_retry_hours,
                 ),
             )
+            # Сверка переписывает уже существующие протоколы — позиции и метки
+            # рекордов после неё меняются ровно так же, как после нового
+            # протокола, поэтому дашборды тоже надо греть.
+            if result.run_results_upserted > 0:
+                db.commit()
+                _schedule_dashboard_warm(started_at)
             return asdict(result)
         finally:
             db.close()
 
-    return run_reported_sync(
+    payload = run_reported_sync(
         name,
         _run,
         details=details,
@@ -369,6 +393,28 @@ def reconcile_stale_protocols_task(
         force=force,
         batch_queue_name="five_verst",
     )
+
+    # Следующее звено ставим, только если пачка реально отработала и нашла
+    # полный батч кандидатов: на скипе (кулдаун, занятая очередь) или на
+    # недоборе продолжать нечего. force=True — часовой слот уже занят этим же
+    # прогоном, иначе звено отвалится как duplicate_hour_slot.
+    if (
+        chunks_left > 1
+        and not payload.get("skipped")
+        and int(payload.get("candidates_total") or 0) >= limit
+    ):
+        reconcile_stale_protocols_task.apply_async(
+            kwargs={
+                "limit": limit,
+                "min_check_interval_days": min_check_interval_days,
+                "location_slug": location_slug,
+                "chunks_left": chunks_left - 1,
+                "force": True,
+            },
+            queue="five_verst",
+        )
+        payload = {**payload, "next_chunk_enqueued": True}
+    return payload
 
 
 @celery_app.task(name="five_verst_sync.enqueue_reconcile_protocols", queue="five_verst")

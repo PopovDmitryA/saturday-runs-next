@@ -98,6 +98,10 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
       REDIS_URL: redis://redis:6379/0
+      # База обхода parkrun: тут крутится sweep_hq.refresh_snapshot (очередь по
+      # умолчанию). Читается через os.getenv, поля в Settings нет, поэтому
+      # смонтированного .env недостаточно — переменную надо передать явно.
+      PM_WORLD_DSN: ${PM_WORLD_DSN:-}
     volumes:
       - ./backend:/app
       - ./.env:/app/.env:ro
@@ -127,6 +131,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Батчи 5 вёрст (сверка истории, ротация локаций, реестр). Идут часами,
+  # поэтому пользовательская очередь вынесена в отдельный воркер ниже: внутри
+  # одного процесса с concurrency=1 задачу не прервать, и «обновить» в личном
+  # кабинете ждало бы конца батча.
   worker-five-verst:
     build:
       context: ./backend
@@ -137,7 +145,29 @@ services:
     volumes:
       - ./backend:/app
       - ./.env:/app/.env:ro
-    command: celery -A app.workers.celery_app worker -Q five_verst_user,five_verst --concurrency=1 --loglevel=info
+    command: celery -A app.workers.celery_app worker -Q five_verst --concurrency=1 --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Только пользовательские синки 5 вёрст. Пока такой синк идёт, батч-воркер
+  # стоит на паузе между фетчами (app/five_verst/fetch/priority.py), так что к
+  # 5verst.ru по-прежнему ходит один запрос за раз — общий Redis-лок никуда не
+  # делся, оба воркера берут его.
+  worker-five-verst-user:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - ./.env:/app/.env:ro
+    command: celery -A app.workers.celery_app worker -Q five_verst_user --concurrency=1 --loglevel=info
     depends_on:
       postgres:
         condition: service_healthy
@@ -208,6 +238,9 @@ services:
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./frontend/dist:/usr/share/nginx/html:ro
+      # OG-картинки локаций: пишет celery-задача og_render (worker-parkrun),
+      # nginx раздаёт как /og/locations/* (location ^~ /og/locations/).
+      - ./data/og:/og-static/og:ro
     depends_on:
       - api
 

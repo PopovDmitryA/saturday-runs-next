@@ -390,6 +390,8 @@ def list_co_runner_meetings(
             "event_date": event.event_date,
             "platform_code": platform_code,
             "location_name": catalog_index.display_name(location, platform_code),
+            "location_slug": (location.external_key or "").strip().lower() or None,
+            "is_test_event": event.is_test_event,
             "my_time_sec": my_time,
             "their_time_sec": run.finish_time_sec,
             "my_position": my_position,

@@ -149,6 +149,7 @@ function MapsContent({ bare = false }: { bare?: boolean } = {}) {
           loadVisitedMap={loadVisitedMap}
           loadCatalogMap={getCatalogLocationsMap}
           loadCatalogTable={loadCatalogTable}
+          myLocation
         />
       </div>
       <div className="maps-view-panel" hidden={view !== "regions"}>

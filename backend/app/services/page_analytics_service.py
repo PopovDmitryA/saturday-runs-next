@@ -42,6 +42,12 @@ _PROFILE_TAB_RE = re.compile(r"^/users/([^/]+)/[^/]+$")
 # не кладём — он одноразовый и в отчёте бесполезен.
 _SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
 _LOCATION_EVENTS_RE = re.compile(r"^/locations/([^/]+)/events$")
+# Единый протокол недели: /protocol/{дата-субботы}. В entity_key едет дата —
+# по ней видно, какие недели открывают (свежая суббота или архив).
+_UNIFIED_PROTOCOL_RE = re.compile(r"^/protocol/(\d{4}-\d{2}-\d{2})$")
+# Протокол старта: /locations/{slug}/protocol/{система}/{дата}. В entity_key
+# едет slug — просмотры протоколов копятся к локации, как у журнала.
+_LOCATION_PROTOCOL_RE = re.compile(r"^/locations/([^/]+)/protocol/[^/]+/\d{4}-\d{2}-\d{2}$")
 _LOCATION_RE = re.compile(r"^/locations/([^/]+)$")
 
 # Одна страница приложения = один page_type. Ключ — нормализованный путь;
@@ -56,6 +62,7 @@ _STATIC_PAGE_TYPES = {
     "/updates": "updates",
     "/login": "portal_login",
     "/new/map-lab": "portal_map_lab",
+    "/welcome": "welcome",
     "/dashboard": "dashboard",
     "/profiles": "dashboard",  # тот же компонент, что и /dashboard
     "/runs": "runs",
@@ -65,6 +72,7 @@ _STATIC_PAGE_TYPES = {
     "/maps": "maps",
     "/locations": "locations_index",
     "/results": "last_results",
+    "/protocol": "unified_protocol",
     "/history": "history",
     "/ratings": "ratings_hub",
     "/ratings/runs": "ratings_runs",
@@ -72,9 +80,11 @@ _STATIC_PAGE_TYPES = {
     "/ratings/volunteer-roles": "ratings_volunteer_roles",
     "/ratings/locations": "ratings_locations",
     "/ratings/volunteer-locations": "ratings_volunteer_locations",
+    "/ratings/openings": "ratings_openings",
     "/ratings/wins": "ratings_wins",
     "/ratings/win-locations": "ratings_win_locations",
     "/ratings/home-distance": "ratings_home_distance",
+    "/ratings/location-records": "ratings_location_records",
     "/backlog": "backlog",
     "/share": "share",
     "/settings": "settings",
@@ -147,6 +157,14 @@ def classify_page(path: str) -> tuple[str, str]:
     if _SWEEP_HQ_RE.match(normalized):
         return "sweep_hq", ""
 
+    unified_protocol = _UNIFIED_PROTOCOL_RE.match(normalized)
+    if unified_protocol:
+        return "unified_protocol", unified_protocol.group(1)
+
+    location_protocol = _LOCATION_PROTOCOL_RE.match(normalized)
+    if location_protocol:
+        return "location_protocol", location_protocol.group(1)[:128]
+
     location_events = _LOCATION_EVENTS_RE.match(normalized)
     if location_events:
         return "location_events", location_events.group(1)[:128]
@@ -157,6 +175,10 @@ def classify_page(path: str) -> tuple[str, str]:
 
     if normalized.startswith("/oauth/"):
         return "oauth_callback", ""
+    # Служебный рендер OG-картинок (Playwright): фронт такие просмотры не шлёт
+    # вовсе, ветка — страховка, чтобы случайный заход не падал в "other".
+    if normalized.startswith("/render/"):
+        return "og_render", ""
     # Демо и админка — одной строкой каждая (разбивка по подстраницам не нужна:
     # демо — витрина целиком, админка внутренняя). Подстраница едет в entity_key,
     # так что при желании разложить их можно и задним числом, без потери данных.
@@ -555,15 +577,288 @@ def build_home_link_clicks(
     return result
 
 
+# Канал постоянного счётчика воронки регистрации (см. FUNNEL_EXPERIMENT в
+# ab_service). Пять ступеней: главная → клик по кнопке → старт входа у
+# провайдера → аккаунт → привязанная платформа.
+FUNNEL_EXPERIMENT = "funnel"
+
+
+def build_funnel_stats(db: Session, *, start: date, end: date) -> list[dict[str, object]]:
+    """Воронка регистрации по посетителям: сколько дошло до каждой ступени.
+
+    Считаем ПОСЕТИТЕЛЕЙ (visitor_key), а не события: человек может открыть
+    главную пять раз и нажать кнопку трижды, и в конверсии это один человек.
+    visitor_key анонимный и переживает редирект на VK/Яндекс, поэтому цепочка
+    не рвётся на входе.
+
+    Ступени со второй по четвёртую берутся только у тех, кто в этом же периоде
+    открывал главную: клик и вход бывают и без неё (прямая ссылка на /login),
+    но тогда знаменатель и числитель считались бы по разным людям.
+
+    Пятая ступень — привязка платформы — считается по platform_links, а не по
+    событию: таблица и есть источник правды. Она сознательно НЕ ограничена
+    концом периода — человеку, зарегистрировавшемуся в последний день, нужно
+    время; иначе свежие периоды показывали бы заниженную активацию.
+
+    Пишется с 22.08.2026, за более ранние периоды ступени будут пустыми.
+    """
+    row = db.execute(
+        text(
+            """
+            WITH home AS (
+                SELECT DISTINCT visitor_key FROM ab_events
+                WHERE experiment = :experiment AND event_type = 'home_view'
+                  AND ts >= :start AND ts < :end_exclusive
+            ),
+            step AS (
+                SELECT event_type, visitor_key, min(cohort) AS cohort,
+                       min(viewer_user_id::text) AS user_id
+                FROM ab_events
+                WHERE experiment = :experiment
+                  AND ts >= :start AND ts < :end_exclusive
+                  AND visitor_key IN (SELECT visitor_key FROM home)
+                GROUP BY event_type, visitor_key
+            )
+            SELECT
+              (SELECT count(*) FROM home) AS home_view,
+              (SELECT count(*) FROM step WHERE event_type = 'cta_click') AS cta_click,
+              (SELECT count(*) FROM step WHERE event_type = 'auth_start') AS auth_start,
+              (SELECT count(*) FROM step WHERE event_type = 'auth_done' AND cohort = 'new')
+                AS registered,
+              (SELECT count(*) FROM step s
+                 WHERE s.event_type = 'auth_done' AND s.cohort = 'new'
+                   AND EXISTS (SELECT 1 FROM platform_links pl
+                               WHERE pl.user_id::text = s.user_id)) AS activated,
+              (SELECT count(*) FROM step WHERE event_type = 'auth_done' AND cohort = 'returning')
+                AS returning_logins
+            """
+        ),
+        {
+            "experiment": FUNNEL_EXPERIMENT,
+            "start": start,
+            "end_exclusive": end + timedelta(days=1),
+        },
+    ).one()
+
+    steps = [
+        ("Открыли главную", int(row.home_view or 0)),
+        ("Нажали кнопку входа", int(row.cta_click or 0)),
+        ("Дошли до провайдера", int(row.auth_start or 0)),
+        ("Завели аккаунт", int(row.registered or 0)),
+        ("Привязали платформу", int(row.activated or 0)),
+    ]
+    base = steps[0][1]
+    result: list[dict[str, object]] = []
+    previous: int | None = None
+    for label, visitors in steps:
+        result.append(
+            {
+                "step": label,
+                "visitors": visitors,
+                # Доля от первой ступени — «сквозная» конверсия воронки.
+                "pct_of_start": round(100.0 * visitors / base, 1) if base else None,
+                # Доля от предыдущей ступени — где именно рвётся.
+                "pct_of_prev": (
+                    round(100.0 * visitors / previous, 1) if previous else None
+                ),
+            }
+        )
+        previous = visitors
+    # Вернувшиеся не ступень воронки (аккаунт у них уже был), но без них
+    # непонятно, почему входов больше, чем регистраций.
+    result.append(
+        {
+            "step": "— из них вернувшихся (не конверсия)",
+            "visitors": int(row.returning_logins or 0),
+            "pct_of_start": None,
+            "pct_of_prev": None,
+        }
+    )
+    return result
+
+
+# Канал событий фичи «Поделиться» в ab_events (см. KNOWN_EXPERIMENTS в ab_service).
+SHARE_EXPERIMENT = "share"
+
+# Порядок ступеней воронки шаринга в отчёте.
+_SHARE_FUNNEL_ORDER = ("share_moment_shown", "share_open", "share_customize", "share_success")
+
+
+def build_share_stats(db: Session, *, start: date, end: date) -> dict[str, object]:
+    """Воронка и разрезы фичи «Поделиться».
+
+    Все события лежат в ab_events с experiment='share'; value кодируется
+    префиксами: "сюжет:вход" у показов/открытий, "канал:сюжет" у успехов,
+    "look:<id>"/"format:<id>" у переключений. Пишется с релиза «Поделиться
+    2.0» — за более ранние периоды отчёт пустой.
+    """
+    params = {
+        "experiment": SHARE_EXPERIMENT,
+        "start": start,
+        "end_exclusive": end + timedelta(days=1),
+    }
+    funnel_rows = db.execute(
+        text(
+            """
+            SELECT event_type,
+                   count(*) AS events,
+                   count(DISTINCT visitor_key) AS visitors
+            FROM ab_events
+            WHERE experiment = :experiment
+              AND event_type <> 'og_preview_fetch'
+              AND ts >= :start AND ts < :end_exclusive
+            GROUP BY event_type
+            """
+        ),
+        params,
+    ).all()
+    detail_rows = db.execute(
+        text(
+            """
+            SELECT event_type, value, count(*) AS events
+            FROM ab_events
+            WHERE experiment = :experiment
+              AND event_type <> 'og_preview_fetch'
+              AND ts >= :start AND ts < :end_exclusive
+            GROUP BY event_type, value
+            """
+        ),
+        params,
+    ).all()
+
+    by_type = {row.event_type: row for row in funnel_rows}
+    funnel = [
+        {
+            "event_type": event_type,
+            "events": int(by_type[event_type].events or 0),
+            "visitors": int(by_type[event_type].visitors or 0),
+        }
+        for event_type in _SHARE_FUNNEL_ORDER
+        if event_type in by_type
+    ]
+
+    # Пары «сюжет + вход»: главный разрез — ГДЕ именно люди жмут «Поделиться»
+    # (веха в истории, своя пробежка на локации, строка таблицы пробежек…).
+    pairs: dict[tuple[str, str], dict[str, int]] = {}
+    channels: dict[str, int] = {}
+    looks: dict[str, int] = {}
+    formats: dict[str, int] = {}
+    photo_added = 0
+
+    def pair_bucket(subject: str, entry: str) -> dict[str, int]:
+        return pairs.setdefault((subject, entry), {"shown": 0, "opens": 0})
+
+    for row in detail_rows:
+        value = row.value or ""
+        count = int(row.events or 0)
+        head, _, tail = value.partition(":")
+        if row.event_type == "share_moment_shown" and tail:
+            pair_bucket(head, tail)["shown"] += count
+        elif row.event_type == "share_open" and tail:
+            pair_bucket(head, tail)["opens"] += count
+        elif row.event_type == "share_success" and tail:
+            channels[head] = channels.get(head, 0) + count
+        elif row.event_type == "share_template_switch" and tail:
+            if head == "look":
+                looks[tail] = looks.get(tail, 0) + count
+            elif head == "format":
+                formats[tail] = formats.get(tail, 0) + count
+        elif row.event_type == "share_customize" and value == "photo":
+            photo_added += count
+
+    return {
+        "funnel": funnel,
+        "pairs": [
+            {"subject": subject, "entry": entry, **bucket}
+            for (subject, entry), bucket in sorted(pairs.items(), key=lambda kv: -kv[1]["opens"])
+        ],
+        "channels": [
+            {"channel": channel, "successes": count}
+            for channel, count in sorted(channels.items(), key=lambda kv: -kv[1])
+        ],
+        "looks": [
+            {"value": value, "count": count}
+            for value, count in sorted(looks.items(), key=lambda kv: -kv[1])
+        ],
+        "formats": [
+            {"value": value, "count": count}
+            for value, count in sorted(formats.items(), key=lambda kv: -kv[1])
+        ],
+        "photo_added": photo_added,
+    }
+
+
+def build_og_fetch_stats(
+    db: Session, *, start: date, end: date, limit: int = 20
+) -> list[dict[str, object]]:
+    """«Разворачивания ссылок»: сколько раз боты мессенджеров и поисковиков
+    запрашивали превью страниц (событие og_preview_fetch пишет сам бэкенд в
+    /__prerender). Прокси-метрика «ссылку кинули в чат», которой раньше не
+    было ни в каком виде."""
+    rows = db.execute(
+        text(
+            """
+            SELECT value,
+                   count(*) AS fetches,
+                   count(DISTINCT visitor_key) AS bots
+            FROM ab_events
+            WHERE experiment = :experiment
+              AND event_type = 'og_preview_fetch'
+              AND ts >= :start AND ts < :end_exclusive
+            GROUP BY value
+            ORDER BY fetches DESC, value
+            LIMIT :limit
+            """
+        ),
+        {
+            "experiment": SHARE_EXPERIMENT,
+            "start": start,
+            "end_exclusive": end + timedelta(days=1),
+            "limit": limit,
+        },
+    ).all()
+
+    parsed: list[tuple[str, str, object]] = []
+    for row in rows:
+        page_type, _, entity_key = (row.value or "").partition(":")
+        parsed.append((page_type or "other", entity_key, row))
+
+    location_keys = [
+        entity_key
+        for page_type, entity_key, _row in parsed
+        if entity_key and page_type in ("location", "location_events")
+    ]
+    location_labels = _location_labels(db, location_keys)
+
+    result: list[dict[str, object]] = []
+    for page_type, entity_key, row in parsed:
+        label: dict[str, object] = {"label": entity_key or page_type, "href": None}
+        if entity_key and page_type in ("location", "location_events"):
+            label = location_labels.get(
+                entity_key, {"label": entity_key, "href": f"/locations/{entity_key}"}
+            )
+        result.append(
+            {
+                "page_type": page_type,
+                "entity_key": entity_key,
+                **label,
+                "fetches": int(row.fetches or 0),
+                "bots": int(row.bots or 0),
+            }
+        )
+    return result
+
+
 def build_home_ab_stats(db: Session, *, start: date, end: date) -> list[dict[str, object]]:
-    """Сколько раз показали каждый вариант главной и скольким посетителям.
+    """Архив АБ-теста главной: показы вариантов A и B по периоду.
 
-    Только показы. Воронку (клики CTA, логины, конверсия) сознательно не
-    считаем: до выводов по эксперименту цифры разбираются офлайн, а
-    полуавтоматический отчёт подталкивал бы делать выводы по горстке событий.
+    Эксперимент шёл 27.07–22.08.2026 и завершён — вариант B принят как
+    единственная главная, событие variant_view больше не пишется. Отчёт живёт
+    дальше как окно в историю: за периоды вне теста он пустой и блок в админке
+    просто не показывается.
 
-    Показы пишутся с 27.07.2026 (событие variant_view), у более ранних
-    периодов будут нули.
+    Только показы. Воронку (клики CTA, логины, конверсия) отчёт не считал
+    никогда — итоги теста разобраны офлайн, SQL по ab_events.
     """
     rows = db.execute(
         text(

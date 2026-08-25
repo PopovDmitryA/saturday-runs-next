@@ -8,10 +8,12 @@ import { AdminPageAnalyticsPage } from "./features/admin/AdminPageAnalyticsPage"
 import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
 import { AdminEventReportPage } from "./features/admin/AdminEventReportPage";
 import { AdminLocationContactsPage } from "./features/admin/AdminLocationContactsPage";
+import { AdminLocationOpeningsPage } from "./features/admin/AdminLocationOpeningsPage";
 import { AdminRecordsDigestPage } from "./features/admin/AdminRecordsDigestPage";
 import { ProfileRoute } from "./features/profile/ProfileRoute";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
+import { OnboardingPage } from "./features/onboarding/OnboardingPage";
 import { PortalAboutPage } from "./features/portal/PortalAboutPage";
 import { PortalBlogPage } from "./features/portal/PortalBlogPage";
 import { PortalHomePage } from "./features/portal/PortalHomePage";
@@ -46,17 +48,28 @@ import {
   PortalCabinetSharePage,
 } from "./features/portal/cabinet/PortalCabinetPages";
 import { LocationEventsPage } from "./features/locations/LocationEventsPage";
+import { LocationProtocolPage } from "./features/locations/LocationProtocolPage";
 import { LocationPage } from "./features/locations/LocationPage";
 import { LastResultsPage } from "./features/locations/LastResultsPage";
 import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
+import { UnifiedProtocolPage } from "./features/locations/UnifiedProtocolPage";
 import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
 import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
+import { LocationRecordsRatingPage } from "./features/leaderboards/LocationRecordsRatingPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
 import { NotFoundPage } from "./features/NotFoundPage";
+import { TapTooltipLayer } from "./components/TapTooltipLayer";
 import { useAppPath } from "./hooks/useAppPath";
-import { reportAbLoginOnce } from "./lib/abTest";
+import {
+  RenderOgDefaultPage,
+  RenderOgLocationPage,
+  RenderOgUserPage,
+} from "./features/sharing/RenderOgPage";
+import { ShareSheetProvider } from "./features/sharing/ShareSheetContext";
+import { TeaserClaimRunner } from "./features/portal/teaserClaim";
+import { reportAuthDoneOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
 import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
@@ -67,6 +80,11 @@ import { buildVisitorKey } from "./lib/siteVisitor";
 
 function useSitePageviewTracking(path: string) {
   useEffect(() => {
+    // Служебный рендер OG-картинок открывает Playwright — это не визиты людей,
+    // в аналитику им нельзя.
+    if (path.startsWith("/render/")) {
+      return;
+    }
     let cleanup: (() => void) | null = null;
     let cancelled = false;
     const begin = (authenticated: boolean, userId: string | undefined) => {
@@ -77,9 +95,9 @@ function useSitePageviewTracking(path: string) {
     getCurrentUser()
       .then((user) => {
         begin(true, user.id);
-        // АБ-воронка: первый авторизованный визит в этом браузере — событие
-        // login_complete (когорту new/returning определяет сервер).
-        reportAbLoginOnce(user.id);
+        // Ступень воронки: вход завершён. Раз на пару (браузер, пользователь) —
+        // когорту new/returning ставит сервер по возрасту аккаунта.
+        reportAuthDoneOnce(user.id);
       })
       .catch(() => begin(false, undefined));
     return () => {
@@ -139,7 +157,9 @@ function CabinetLegacyRedirect({ tab }: { tab: CabinetTabSegmentKey }) {
     const target = profileBaseHref(user) ? cabinetTabHref(user, tab) : null;
     // Без хендла (профиль ещё не получил номер) оставляем старый экран.
     if (target) {
-      window.location.replace(target);
+      // Якорь переезжает вместе с адресом: ссылки вида /dashboard#profiles
+      // должны докручивать до секции и после редиректа.
+      window.location.replace(target + window.location.hash);
     }
   }, [user, tab]);
   return (
@@ -192,6 +212,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/new/settings": () => <PathRedirect to={PORTAL_CABINET_SETTINGS_HREF} />,
   "/oauth/yandex/callback": () => <OAuthCallbackPage provider="yandex" />,
   "/oauth/vk/callback": () => <OAuthCallbackPage provider="vk" />,
+  // Онбординг первичного входа: поиск себя по ФИО и привязка профилей.
+  "/welcome": () => <OnboardingPage />,
   // Старые адреса кабинета уводят на публичный адрес участника. Демо-режим
   // удалён вместе со старым дизайном (решение Дмитрия 26.07.2026).
   "/dashboard": () => <CabinetLegacyRedirect tab="dashboard" />,
@@ -205,6 +227,9 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/locations": () => <LocationsIndexPage />,
   // Посадочная под «5 вёрст результаты»: последний старт каждой площадки.
   "/results": () => <LastResultsPage />,
+  // Единый протокол недели: все площадки всех систем в порядке финиша.
+  // Без даты — последняя неделя с данными.
+  "/protocol": () => <UnifiedProtocolPage saturday={null} />,
   "/history": () => <CabinetLegacyRedirect tab="history" />,
   // Рейтинги открыты без логина (решение 25.07.2026): аноним видит таблицы,
   // а свою строку и позицию — только залогиненный (баннер-призыв на страницах).
@@ -214,9 +239,11 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/volunteer-roles": () => <LeaderboardPage metric="volunteer_roles" />,
   "/ratings/locations": () => <LeaderboardPage metric="locations" />,
   "/ratings/volunteer-locations": () => <LeaderboardPage metric="volunteer_locations" />,
+  "/ratings/openings": () => <LeaderboardPage metric="openings" />,
   "/ratings/wins": () => <LeaderboardPage metric="wins" />,
   "/ratings/win-locations": () => <LeaderboardPage metric="win_locations" />,
   "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
+  "/ratings/location-records": () => <LocationRecordsRatingPage />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,
@@ -235,6 +262,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/event-report": () => <AdminEventReportPage />,
   "/admin/records-digest": () => <AdminRecordsDigestPage />,
   "/admin/location-contacts": () => <AdminLocationContactsPage />,
+  "/admin/location-openings": () => <AdminLocationOpeningsPage />,
   "/admin/blog": () => <AdminBlogPage />,
   "/admin/releases": () => <AdminReleasesPage />,
   "/admin/backlog": () => <AdminBacklogPage />,
@@ -268,6 +296,18 @@ function ApiPathRedirect() {
   );
 }
 
+/**
+ * Настоящая ли это дата. Форму («2026-08-99») ловит регулярка адреса, а вот
+ * 30 февраля она пропускает — и Date.parse тоже: JS молча переносит такую дату
+ * на 2 марта. Поэтому сверяем разбор с исходной строкой: несуществующая дата
+ * должна уходить в 404 вместе с бэкендом (см. is_known_path в seo_service),
+ * а не в ошибку API.
+ */
+function isRealDate(iso: string): boolean {
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === iso;
+}
+
 function renderRoute(path: string): ReactElement {
   if (isLegacyGrafanaPath(path)) {
     return <LegacyGrafanaRedirect />;
@@ -294,6 +334,25 @@ function renderRoute(path: string): ReactElement {
       />
     );
   }
+  // Протокол одного старта: /locations/{slug}/protocol/{система}/{дата}.
+  // Единый протокол конкретной недели: /protocol/{дата}. В адресе — суббота,
+  // но бэкенд принимает любой день недели и сам приводит к субботе.
+  const unifiedProtocolMatch = path.match(/^\/protocol\/(\d{4}-\d{2}-\d{2})$/);
+  if (unifiedProtocolMatch && isRealDate(unifiedProtocolMatch[1])) {
+    return <UnifiedProtocolPage saturday={unifiedProtocolMatch[1]} />;
+  }
+  const locationProtocolMatch = path.match(
+    /^\/locations\/([^/]+)\/protocol\/([^/]+)\/(\d{4}-\d{2}-\d{2})$/,
+  );
+  if (locationProtocolMatch) {
+    return (
+      <LocationProtocolPage
+        slug={decodeURIComponent(locationProtocolMatch[1])}
+        platformCode={decodeURIComponent(locationProtocolMatch[2])}
+        eventDate={locationProtocolMatch[3]}
+      />
+    );
+  }
   const locationEventsMatch = path.match(/^\/locations\/([^/]+)\/events$/);
   if (locationEventsMatch) {
     return <LocationEventsPage slug={decodeURIComponent(locationEventsMatch[1])} />;
@@ -301,6 +360,19 @@ function renderRoute(path: string): ReactElement {
   const locationMatch = path.match(/^\/locations\/([^/]+)$/);
   if (locationMatch) {
     return <LocationPage slug={decodeURIComponent(locationMatch[1])} />;
+  }
+  // Служебный рендер OG-картинок: открывает Playwright из celery-задачи
+  // og_render (снаружи путь закрыт в host-nginx). См. features/sharing/RenderOgPage.
+  const renderOgLocationMatch = path.match(/^\/render\/og\/location\/([^/]+)$/);
+  if (renderOgLocationMatch) {
+    return <RenderOgLocationPage slug={decodeURIComponent(renderOgLocationMatch[1])} />;
+  }
+  const renderOgUserMatch = path.match(/^\/render\/og\/user\/([^/]+)$/);
+  if (renderOgUserMatch) {
+    return <RenderOgUserPage handle={decodeURIComponent(renderOgUserMatch[1])} />;
+  }
+  if (path === "/render/og/default") {
+    return <RenderOgDefaultPage />;
   }
   const render = STATIC_ROUTES[path];
   if (render) {
@@ -313,5 +385,16 @@ export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
   usePageMeta(path);
-  return renderRoute(path);
+  // Отложенная привязка из тизера главной: сработает на любой странице, куда
+  // провайдер вернул человека после входа, поэтому живёт на уровне App.
+  const viewer = useOptionalUser();
+  // Шторка «Поделиться» доступна из любого раздела — провайдер на всё дерево.
+  return (
+    <ShareSheetProvider>
+      {renderRoute(path)}
+      <TeaserClaimRunner userId={viewer?.id ?? null} />
+      {/* Тап-подсказки на телефоне — один слой на весь сайт (см. TapTooltipLayer). */}
+      <TapTooltipLayer />
+    </ShareSheetProvider>
+  );
 }
