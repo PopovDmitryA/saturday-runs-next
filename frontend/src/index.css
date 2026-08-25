@@ -464,27 +464,6 @@ body {
   color: var(--text);
 }
 
-.shell-user-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.shell-user-input {
-  width: min(100%, 18rem);
-  padding: 0.5rem 0.65rem;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
-.shell-user-error {
-  width: 100%;
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--tint-red-text);
-}
-
 .btn-icon {
   border: none;
   background: transparent;
@@ -615,6 +594,22 @@ body {
   background: var(--tint-blue-bg);
   border: 1px solid var(--tint-blue-border);
   color: var(--tint-blue-text);
+}
+
+/* Требует решения человека — например, имя в системе разошлось с тем, что
+   показывается на сайте. Синий «просто к сведению» тут читался бы как шум. */
+.banner.warning {
+  background: var(--tint-amber-bg);
+  border: 1px solid var(--tint-amber-border);
+  color: var(--tint-amber-text);
+}
+
+.banner p {
+  margin: 0 0 0.5rem;
+}
+
+.banner p:last-child {
+  margin-bottom: 0;
 }
 
 
@@ -3464,6 +3459,53 @@ button.badge-platform-btn:hover {
   margin: 0;
 }
 
+/* Раздел «Имя на сайте»: свободного ввода нет — выбор системы-источника и вида
+   записи. Каждое изменение сохраняется сразу, кнопки «Сохранить» нет. */
+
+/* Приходим сюда по якорю из сайдбара и из плашек про смену имени. Шапка сайта
+   липкая и высотой 61 px — без этого отступа заголовок раздела уезжает под неё. */
+.display-name-card {
+  scroll-margin-top: 5rem;
+}
+
+.display-name-field {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.display-name-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.display-name-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.display-name-preview {
+  margin: 1rem 0 0;
+  color: var(--text-muted);
+}
+
+.display-name-saved {
+  color: var(--tint-green-text);
+}
+
+.display-name-suggestion {
+  margin-top: 0.75rem;
+}
+
+.display-name-suggestion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .profile-slug-current {
   margin: 0.75rem 0 0;
 }
@@ -3989,6 +4031,11 @@ button.badge-platform-btn:hover {
 .leaflet-container {
   position: relative;
   z-index: 0;
+  /* Подложка под тайлами: её видно в прорехах, пока новые тайлы едут. У
+     Leaflet по умолчанию #ddd — на светлой теме он читается светлее самой
+     карты, и смена масштаба выглядит как вспышка. Берём тон суши OSM, чтобы
+     дырка была незаметна (у тёмной темы свой цвет — см. блок тёмной темы). */
+  background: #e8e4dc;
 }
 
 .location-map-shell {
@@ -4096,16 +4143,97 @@ button.badge-platform-btn:hover {
   transition: background 0.15s, color 0.15s;
 }
 
-/* Зум-кнопки живут в правом верхнем углу (см. lib/mapZoomControl.ts), там же —
-   кнопка фуллскрина. Где она есть, сдвигаем зум левее неё: 0.6rem отступ +
-   2rem кнопка + зазор. Высоту не трогаем — обе группы кнопок в одном ряду. */
-.location-map-shell:has(.location-map-fullscreen-btn) .leaflet-top.leaflet-right .leaflet-control-zoom {
-  margin-right: 2.9rem;
+/* Зум-кнопки — по правой кромке, но ниже середины карты: телефон держат правой
+   рукой, и на этой высоте «+/−» попадают под большой палец, не перехватывая
+   аппарат (просьба Дмитрия 22.08.2026). Кнопка фуллскрина остаётся в углу, зум
+   висит под ней — по одной вертикали, поэтому и разъезжаться им незачем.
+
+   Двигаем сам угловой контейнер Leaflet (`top: auto; bottom: …`), а не поля
+   контрола: у контейнера высота по содержимому, и проценты внутри него не от
+   чего считать, а вот у карты высота задана — и `bottom` от неё честный. */
+.location-map-shell .leaflet-top.leaflet-right:has(.map-zoom-thumb) {
+  top: auto;
+  bottom: 24%;
+}
+
+.location-map-shell .leaflet-top.leaflet-right .map-zoom-thumb {
+  /* По правой кромке ровно под кнопкой фуллскрина — у той тот же отступ. */
+  margin-right: 0.6rem;
 }
 
 .location-map-fullscreen-btn:hover {
   background: var(--bg-muted);
   color: var(--text);
+}
+
+/* «Где я» — под кнопкой фуллскрина, в том же правом верхнем углу. Зум живёт
+   ниже по той же кромке (см. .map-zoom-thumb), так что дороги не пересекаются. */
+.location-map-locate-btn {
+  position: absolute;
+  top: 3.1rem;
+  right: 0.6rem;
+  z-index: 1001;
+  width: 2rem;
+  height: 2rem;
+  padding: 0.3rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  transition: background 0.15s, color 0.15s;
+}
+
+.location-map-locate-btn:hover:not(:disabled) {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.location-map-locate-btn svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Положение найдено — кнопка подсвечена: по ней видно, что синяя точка на карте
+   это вы, а не очередная площадка. */
+.location-map-locate-btn-active {
+  color: var(--tint-teal-text);
+  border-color: var(--tint-teal-text);
+}
+
+.location-map-locate-btn-loading {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* Точка «вы здесь»: синий кружок в белом кольце — узнаваемая метка карт, её не
+   спутать с цветными точками площадок. */
+.map-my-position {
+  background: transparent;
+  border: none;
+}
+
+.map-my-position span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: #2563eb;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.55), 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* Круг погрешности — только у грубого определения (по вышкам и Wi-Fi). */
+.map-my-position-accuracy {
+  fill: #2563eb;
+  fill-opacity: 0.10;
+  stroke: #2563eb;
+  stroke-opacity: 0.35;
+  stroke-width: 1;
 }
 
 .location-map-fullscreen-btn svg {
@@ -4394,6 +4522,91 @@ button.badge-platform-btn:hover {
 
 .map-popup-link:hover {
   color: var(--tint-teal-text);
+}
+
+/* Личный контекст точки (номер ближайшего старта, «+1 в Нумераторе», дальность
+   от дома) приезжает отдельным запросом уже после открытия попапа — отделяем
+   его чертой, чтобы догрузившиеся строки не читались как продолжение адреса. */
+.map-popup-context {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0.15rem 0;
+  padding: 0.35rem 0;
+  /* Рамка с обеих сторон: блок стоит посреди попапа, между адресом и историей
+     визитов, и без нижней черты «от дома» слипалось со строкой «Пробежек: …». */
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* Пустой контекст (аноним без прогноза, сеть отвалилась) не должен оставлять
+   висящую в воздухе черту. */
+.map-popup-context:empty {
+  display: none;
+}
+
+.map-popup-context-loading {
+  font-size: 0.82rem;
+}
+
+.map-popup-next {
+  color: var(--text);
+}
+
+/* Оба зачёта «Нумератора» одной строкой; цветом выделены только сами ответы —
+   зелёное «да» и приглушённое «нет». */
+.map-popup-plus-line {
+  color: var(--text-2);
+  cursor: help;
+}
+
+.map-popup-plus-line b {
+  font-weight: 700;
+}
+
+.map-popup-plus-yes {
+  color: var(--tint-green-text);
+}
+
+.map-popup-plus-no {
+  color: var(--text-muted);
+}
+
+/* Плашки систем рядом с названием — цвета те же, что у точек на карте и у
+   кнопок фильтра, поэтому отдельной строки «Система: …» в попапе больше нет. */
+.map-popup-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.35rem;
+}
+
+.map-popup-system {
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.map-popup-system-five_verst {
+  background: #2c326d;
+}
+
+.map-popup-system-s95 {
+  background: #c74389;
+}
+
+.map-popup-system-runpark {
+  background: #ea580c;
+}
+
+.map-popup-system-parkrun {
+  background: #94a3b8;
+}
+
+.map-popup-home {
+  color: var(--text-2);
 }
 
 .modal-panel-wide {
@@ -10484,11 +10697,58 @@ a.admin-system-chip:hover {
   width: 11.5rem;
 }
 
+/* «Первый старт в системе» — самая длинная подпись каталога, плюс в ячейке
+   рядом с датой стоит плашка системы. */
+.loc-index-table .col-date-wide {
+  width: 13rem;
+}
+
+/* Дата и плашка системы в одной ячейке: плашка переносится под дату, когда
+   колонка ужимается. */
+.loc-index-first-in-system {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.4rem;
+}
+
 /* Колонок с фиксированной шириной много (метрики + рекорды + даты): без
    min-width колонка «Локация» схлопывается в ноль, вместо этого скроллим
-   обёртку по горизонтали. */
+   обёртку по горизонтали. Прибавка к прежним 104rem — ширина «Первого старта
+   в системе». */
 .loc-index-table {
-  min-width: 104rem;
+  min-width: 117rem;
+}
+
+/* «Результаты последней субботы» — та же таблица плюс колонка номера старта
+   (col-compact, 4.5rem). */
+.last-results-table {
+  min-width: 108.5rem;
+}
+
+/* Липнет не только номер, но и название: при горизонтальном скролле по одному
+   «№ 90» строку не опознать. Смещение второй колонки = ширина первой. */
+.table-sticky-first .last-results-table th:nth-child(2),
+.table-sticky-first .last-results-table td:nth-child(2) {
+  position: sticky;
+  left: 4.5rem;
+  background: var(--surface);
+  z-index: 2;
+}
+
+.table-sticky-first .last-results-table thead th:nth-child(2) {
+  z-index: 4;
+  background: var(--bg-muted);
+}
+
+.tshadow-left .table-sticky-first .last-results-table th:first-child,
+.tshadow-left .table-sticky-first .last-results-table td:first-child {
+  box-shadow: none;
+}
+
+.tshadow-left .table-sticky-first .last-results-table th:nth-child(2),
+.tshadow-left .table-sticky-first .last-results-table td:nth-child(2) {
+  box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
 }
 
 /* В кратком виде колонки подбирает useAdaptiveColumns — ровно столько, сколько
@@ -13202,6 +13462,76 @@ a.admin-system-chip:hover {
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
 }
 
+/* Единый протокол: ровно ЧЕТЫРЕ плитки в ряд (решение Дмитрия 25.08.2026 —
+   восемь в одну строку читались нагромождением, каждой не хватало места).
+   Жёсткая сетка, а не auto-fit: восемь плиток при auto-fit раскладывались
+   как придётся — 5+3 на ноутбуке, 7+1 на широком экране. На телефоне две. */
+.uniprot-stats-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (min-width: 760px) {
+  .uniprot-stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Разбивка М/Ж в подписи плитки: колонками, а не сплошной строкой — иначе
+   «6 885 М · 4 713 Ж · 903 без данных» переносилось по случайному месту. */
+.uniprot-stat-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.7rem;
+  line-height: 1.35;
+}
+
+.uniprot-stat-split-part b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* «без данных» — на свою строку: это не третий пол, а отсутствие метки. */
+.uniprot-stat-split-rest {
+  flex-basis: 100%;
+}
+
+/* «Кратко | Полно» встроен в ряд фильтров: сегмент сам по себе — блок с
+   верхним отступом, здесь он должен просто встать в линию и прижаться
+   вправо, когда место остаётся. */
+.uniprot-view-toggle {
+  display: inline-flex;
+  margin-left: auto;
+}
+
+.uniprot-view-toggle > * {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .uniprot-view-toggle {
+    margin-left: 0;
+  }
+}
+
+/* Призыв войти на единый протокол — компактнее общего PromoLoginCard и с
+   отступом сверху: без него он прилипал к нижнему ряду плиток. */
+.promo-login-card.uniprot-login-card {
+  margin-top: 1.1rem;
+  padding: 15px 20px;
+  gap: 14px;
+}
+
+.uniprot-login-card .promo-login-card-icon {
+  width: 42px;
+  height: 42px;
+  font-size: 21px;
+  border-radius: 13px;
+}
+
+.uniprot-login-card .promo-login-card-text p {
+  font-size: 0.9rem;
+}
+
 .protocol-subtitle {
   display: flex;
   align-items: center;
@@ -13639,7 +13969,325 @@ a.admin-system-chip:hover {
   margin-top: 1rem;
 }
 
-/* ===== Онбординг (/welcome) и поиск участников по имени ===== */
+/* ── Пагинация публичных разделов (components/Pagination.tsx) ───────────── */
+
+.pager {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1.75rem 0 0.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.pager-summary {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pager-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.pager-pages {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.pager-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.25rem;
+  height: 2.25rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.pager-item:hover {
+  border-color: var(--link);
+  color: var(--link);
+}
+
+.pager-item-current {
+  background: var(--tint-indigo-bg);
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+  font-weight: 600;
+  cursor: default;
+}
+
+.pager-item-disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pager-item-disabled:hover {
+  border-color: var(--border-strong);
+  color: var(--text-2);
+}
+
+.pager-gap {
+  min-width: 1.25rem;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+/* На узком экране ряд номеров съедает всю ширину — оставляем стрелки и
+   текущую страницу, остальное уходит в подпись «Релизы 11–20 из 32». */
+@media (max-width: 560px) {
+  .pager-controls {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+  }
+
+  .pager-pages {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .pager-pages::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   Единый протокол недели (/protocol) — все площадки всех систем одним списком.
+   Опирается на классы протокола локации (.protocol-*), своих правил ровно
+   столько, сколько нужно новым колонкам и кликабельным возрастным группам.
+   ========================================================================== */
+
+.uniprot-scope-note {
+  font-size: 0.85rem;
+  margin: 0.3rem 0 0;
+}
+
+/* Возрастных ступеней под два десятка, и развёрнутыми они съедали экран до
+   самой таблицы — прячем под спойлер (правка Дмитрия 22.08.2026).
+   Селектор с .portal-section: общий рескин карточек `.portal-section .card`
+   (portalSection.css) специфичнее одного класса и возвращал бы карточке своё
+   padding поверх нашего нуля — заголовок спойлера висел бы в пустоте. */
+.portal-section .uniprot-groups-spoiler {
+  margin-top: 1rem;
+  padding: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.uniprot-groups-summary {
+  padding: 1rem 1.1rem;
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.uniprot-groups-summary::-webkit-details-marker {
+  display: none;
+}
+
+.uniprot-groups-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.45rem;
+  transition: transform 0.15s ease;
+}
+
+.uniprot-groups-spoiler[open] > .uniprot-groups-summary::before {
+  transform: rotate(90deg);
+}
+
+/* Как пользоваться ступенями — мелким текстом прямо в заголовке спойлера:
+   полосы кликабельные, но без подписи читаются как картинка. На узком экране
+   уезжает на свою строку. */
+.uniprot-groups-howto {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+  margin-left: 0.6rem;
+}
+
+@media (max-width: 620px) {
+  .uniprot-groups-howto {
+    display: block;
+    margin: 0.2rem 0 0;
+  }
+}
+
+/* Выбранная ступень видна на свёрнутом спойлере — иначе фильтр «40–44»
+   остаётся включённым, а по заголовку этого не понять. */
+.uniprot-groups-chosen {
+  color: var(--link);
+  font-weight: 600;
+}
+
+.uniprot-groups-body {
+  padding: 0 1.1rem 1.1rem;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.uniprot-scope-note {
+  margin-bottom: 0.6rem;
+}
+
+.uniprot-total {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Место и «М 12 / 6885» — цифры колонкой, без прыжков при листании страниц. */
+.uniprot-place {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.uniprot-location {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15rem;
+  flex-wrap: wrap;
+}
+
+/* Ширины колонок — зеркало UNIFIED_COLUMNS в UnifiedProtocolPage.tsx.
+   «№» шире, чем в протоколе локации: сюда влезает медаль первых трёх.
+   Ширина есть и у «Участника»: колонок здесь на 83rem, и без неё имя
+   схлопывалось в столбик по букве («Илья КОЗН ЕВ»), а таблица вместо
+   горизонтальной прокрутки давила остаток. min-width = сумма всех ширин. */
+.uniprot-table .col-number {
+  width: 4.2rem;
+}
+
+.uniprot-table .col-runner {
+  width: 10.5rem;
+}
+
+.uniprot-table .col-time {
+  width: 6rem;
+}
+
+.uniprot-table .col-location {
+  width: 13rem;
+}
+
+.uniprot-table .col-gender {
+  width: 7.6rem;
+}
+
+.uniprot-table .col-age {
+  width: 11.5rem;
+}
+
+.uniprot-table .col-platform {
+  width: 6.8rem;
+}
+
+.uniprot-table .col-pace {
+  width: 5.5rem;
+}
+
+.uniprot-table .col-local-place {
+  width: 7.2rem;
+}
+
+.uniprot-table .col-club {
+  width: 10.5rem;
+}
+
+.uniprot-table:not(.data-table-short) {
+  min-width: 83rem;
+}
+
+/* Липнут две первые колонки — как в протоколе локации: «№» без имени
+   бесполезен. Смещение второй = ширина .col-number. */
+.table-sticky-first .uniprot-table th:nth-child(2),
+.table-sticky-first .uniprot-table td:nth-child(2) {
+  position: sticky;
+  left: 4.2rem;
+  background: var(--surface);
+  z-index: 2;
+}
+
+.table-sticky-first .uniprot-table thead th:nth-child(2) {
+  z-index: 4;
+  background: var(--bg-muted);
+}
+
+.tshadow-left .table-sticky-first .uniprot-table th:nth-child(2),
+.tshadow-left .table-sticky-first .uniprot-table td:nth-child(2) {
+  box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+}
+
+.tshadow-left .table-sticky-first .uniprot-table th:first-child,
+.tshadow-left .table-sticky-first .uniprot-table td:first-child {
+  box-shadow: none;
+}
+
+.table-sticky-first .uniprot-table .protocol-row-me td:first-child,
+.table-sticky-first .uniprot-table .protocol-row-me td:nth-child(2) {
+  background: var(--bg-muted);
+}
+
+/* Строка возрастной группы — кнопка-фильтр: клик оставляет в протоколе только
+   эту ступень, повторный снимает. Внешне остаётся той же полосой. */
+.uniprot-age-row {
+  width: 100%;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.uniprot-age-row:hover {
+  background: var(--bg-muted);
+}
+
+.uniprot-age-row.active {
+  border-color: var(--link);
+  background: var(--bg-muted);
+}
+
+/* Постраничная навигация протокола: 12 тыс. строк одной страницей не отдать. */
+.uniprot-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-top: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* /* ===== Онбординг (/welcome) и поиск участников по имени ===== */
 
 .onboarding-page h1 {
   margin-bottom: 16px;

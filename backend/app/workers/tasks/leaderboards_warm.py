@@ -17,6 +17,7 @@ from app.services.leaderboard_service import (
     refresh_leaderboard_cache,
     refresh_tourist_map_cache,
 )
+from app.services.location_records_rating_service import refresh_location_records_rating_cache
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -214,6 +215,18 @@ def warm_leaderboards_cache() -> dict[str, object]:
                 if source is not None:
                     source.release()
                 results[key] = "error"
+        # Рекорды локаций живут отдельным снапшотом (строка там — площадка, а
+        # не участник), но обесцениваются от тех же новых протоколов — греем их
+        # тем же проходом. Итог идёт в лог, а не в results: там сводка по
+        # метрикам лидербордов, и посторонний ключ ломал бы её читателей.
+        # Своим try: рейтинг рекордов не должен ронять прогрев лидербордов людей.
+        try:
+            warmed = refresh_location_records_rating_cache(db)
+            db.rollback()
+            logger.info("location records rating warmed: %s локаций", warmed)
+        except Exception:
+            logger.exception("leaderboards warm failed for location_records")
+            db.rollback()
     finally:
         # close() у SQLAlchemy делает ROLLBACK, и на убитом сервером соединении
         # он сам бросает исключение — уже посчитанный и разложенный по Redis

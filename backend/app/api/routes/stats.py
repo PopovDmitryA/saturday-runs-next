@@ -69,7 +69,7 @@ def record_ab_event_endpoint(
 ) -> Response:
     if _rate_limited(request, "abevent"):
         return Response(status_code=204)
-    # Обходы админа не должны двигать метрики эксперимента — как в pageview.
+    # Обходы админа не должны двигать продуктовые метрики — как в pageview.
     if viewer is not None and is_admin_user(viewer, settings):
         return Response(status_code=204)
     record_ab_event(

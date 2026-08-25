@@ -16,8 +16,16 @@ export type User = {
   telegram_username: string | null;
   telegram_first_name: string | null;
   telegram_last_name: string | null;
+  // Считается на сервере из профилей беговых систем (5 вёрст / S95 / RunPark /
+  // parkrun). Свободного ввода имени нет с 25.08.2026.
   display_name: string | null;
-  display_name_customized: boolean;
+  // "auto" — полное имя, "initial" — «Иван П.».
+  display_name_style: "auto" | "initial";
+  // Прежнее имя для одноразовой плашки «имя теперь из профиля»; null — не нужна.
+  display_name_notice: string | null;
+  // Алгоритм расходится с зафиксированным источником: имя не меняем, а зовём
+  // человека в настройки. null — расхождения нет.
+  display_name_suggestion: DisplayNameSuggestion | null;
   consent_accepted: boolean;
   is_admin: boolean;
   avatar_url: string | null;
@@ -316,6 +324,9 @@ export type BestResultItem = {
   event_date: string;
   location_name: string;
   location_city: string | null;
+  // Слаг площадки и тестовый старт — чтобы дата вела на наш протокол.
+  location_slug?: string | null;
+  is_test_event?: boolean;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   event_url?: string | null;
@@ -326,6 +337,8 @@ export type PersonalRecordItem = {
   event_date: string;
   location_name: string;
   location_city: string | null;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   is_pr?: boolean;
@@ -343,6 +356,8 @@ export type WinItem = {
   event_number: number | null;
   location_name: string;
   location_city: string | null;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   position: number | null;
@@ -699,11 +714,53 @@ export async function probeCurrentUser(): Promise<SessionProbe> {
   }
 }
 
-export function updateDisplayName(displayName: string) {
-  return apiFetch<User>("/auth/me", {
+export type DisplayNameSource = {
+  // null — имя пришло не из беговой системы, а от провайдера входа.
+  platform_code: string | null;
+  source_title: string;
+  name: string;
+  name_initial: string;
+  last_run: string | null;
+};
+
+export type DisplayNameSuggestion = {
+  name: string;
+  platform_code: string | null;
+  source_title: string;
+};
+
+export type DisplayNameOptions = {
+  current: string | null;
+  style: "auto" | "initial";
+  // Зафиксированная система-источник; null — выбирается автоматически.
+  source: string | null;
+  // Источник выбран человеком, а не алгоритмом: новая привязка его не перебьёт.
+  source_manual: boolean;
+  auto_name: string | null;
+  auto_source: string | null;
+  // Алгоритм расходится с текущим выбором — предлагаем сменить источник.
+  suggestion: DisplayNameSuggestion | null;
+  notice: string | null;
+  sources: DisplayNameSource[];
+};
+
+export function getDisplayNameOptions() {
+  return apiFetch<DisplayNameOptions>("/auth/me/display-name");
+}
+
+export function setDisplayNamePreferences(body: {
+  style: "auto" | "initial";
+  platform_code: string | null;
+}) {
+  return apiFetch<User>("/auth/me/display-name", {
     method: "PATCH",
-    body: JSON.stringify({ display_name: displayName.trim() }),
+    body: JSON.stringify(body),
   });
+}
+
+/** «Оставить как есть»: гасит баннер и запоминает отклонённое предложение. */
+export function keepDisplayName() {
+  return apiFetch<User>("/auth/me/display-name/keep", { method: "POST" });
 }
 
 export function uploadAvatar(file: File) {
@@ -738,6 +795,23 @@ export function confirmFiveVerstProfile(profileUrl: string) {
   return apiFetch<{ link: PlatformLink; message: string }>("/profiles/five-verst/confirm", {
     method: "POST",
     body: JSON.stringify({ profile_url: profileUrl }),
+  });
+}
+
+export type ProfileClaimResult = {
+  status: "linked" | "already_linked";
+  platform_code: string;
+  link: PlatformLink | null;
+};
+
+/**
+ * Досылка привязки по ID, введённому в тизере главной до регистрации:
+ * предпросмотр и подтверждение делает сервер одним вызовом (см. Т1).
+ */
+export function claimProfileByAthleteId(platformCode: string, athleteId: string) {
+  return apiFetch<ProfileClaimResult>("/profiles/claim", {
+    method: "POST",
+    body: JSON.stringify({ platform_code: platformCode, athlete_id: athleteId }),
   });
 }
 
@@ -849,6 +923,8 @@ export type OnThisDayRun = {
   event_date: string;
   location_name: string;
   location_city: string | null;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   platform_code: string;
   finish_time_display: string | null;
   finish_time_sec: number | null;
@@ -1135,6 +1211,8 @@ export type MyHistoryMilestone = {
   platform_code: string;
   location_name: string;
   location_city: string | null;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   position: number | null;
@@ -1881,6 +1959,8 @@ export type CoRunnerMeetingItem = {
   event_date: string;
   platform_code: string;
   location_name: string;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   my_time_sec: number | null;
   their_time_sec: number | null;
   my_position: number | null;
@@ -2059,6 +2139,47 @@ export function getPublicProfileHomeDistanceDetail(serialId: number, includeTest
 
 export function getCatalogLocationsMap() {
   return apiFetch<MapLocationsResponse>("/locations/catalog/map");
+}
+
+export type MapPointNextStart = {
+  platform_code: string;
+  number: number;
+  date: string;
+  /** Сколько недель откручено от последнего старта: >1 — площадка пропускала субботы. */
+  weeks_ahead: number;
+  challenge_code: string | null;
+  challenge_title: string | null;
+  /** null — аноним либо номер вне диапазонов «Нумератора»: считать нечего. */
+  plus_one_overall: boolean | null;
+  plus_one_platform: boolean | null;
+};
+
+export type MapPointContext = {
+  identity_key: string;
+  authenticated: boolean;
+  next_starts: MapPointNextStart[];
+  home_distance: LocationHomeDistance | null;
+};
+
+/**
+ * Огрублённая отметка положения. Координаты округляет вызывающий код — точные
+ * значения из браузера наружу не уходят (см. lib/mapGeolocation.ts).
+ */
+export function sendMapGeoPing(body: {
+  latitude: number;
+  longitude: number;
+  accuracy_m: number | null;
+}) {
+  return apiFetch<void>("/locations/map/geo-ping", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Подробности одной точки карты — грузятся по клику, а не со всей картой. */
+export function getMapPointContext(identityKey: string) {
+  const query = new URLSearchParams({ identity_key: identityKey });
+  return apiFetch<MapPointContext>(`/locations/map/point-context?${query.toString()}`);
 }
 
 export type CatalogLocationTableRow = {
@@ -2260,7 +2381,11 @@ export type LocationIndexItem = {
   is_cancelled: boolean;
   events_count: number;
   finishers_total: number;
+  /** Самый первый старт площадки в любой системе, включая parkrun-эпоху. */
   first_event_date: string | null;
+  /** Первый старт в системе, где площадка живёт сейчас, и код этой системы. */
+  first_event_date_in_system: string | null;
+  first_event_system_code: string | null;
   last_event_date: string | null;
   best_male_time_sec: number | null;
   best_male_time_display: string | null;
@@ -2460,6 +2585,14 @@ export type ProtocolVolunteer = {
   is_me: boolean;
 };
 
+/** Роль этого старта и сколько человек её исполняли — для фильтра волонтёров. */
+export type ProtocolVolunteerRole = {
+  role: string;
+  count: number;
+  /** Ключевая роль: на площадке и без возможности бежать — такие идут первыми. */
+  is_core: boolean;
+};
+
 export type LocationProtocol = {
   slug: string;
   name: string;
@@ -2479,12 +2612,172 @@ export type LocationProtocol = {
   age_groups: ProtocolAgeGroup[];
   results: ProtocolResult[];
   volunteers: ProtocolVolunteer[];
+  /** Роли старта в порядке показа: сначала ключевые, потом остальные. */
+  volunteer_roles: ProtocolVolunteerRole[];
 };
 
 export function getLocationProtocol(slug: string, platformCode: string, eventDate: string) {
   return apiFetch<LocationProtocol>(
     `/locations/page/${encodeURIComponent(slug)}/protocol/${encodeURIComponent(platformCode)}/${encodeURIComponent(eventDate)}`,
   );
+}
+
+/** Строка единого протокола недели — все площадки всех систем сразу. */
+export type UnifiedProtocolRow = {
+  /** Место в выбранном зачёте: система + пол + возрастная группа. */
+  place: number | null;
+  /** Места по полу и по группе — по всей неделе своей СИСТЕМЫ, без среза. */
+  gender_place: number | null;
+  gender_total: number | null;
+  age_group_place: number | null;
+  age_group_total: number | null;
+  name: string | null;
+  external_user_id: string | null;
+  serial_id: number | null;
+  is_unknown: boolean;
+  gender: "male" | "female" | null;
+  age_category: string | null;
+  age_group: string | null;
+  age_grade: number | null;
+  finish_time_sec: number | null;
+  finish_time_display: string | null;
+  pace_display: string | null;
+  club_name: string | null;
+  platform_code: string;
+  location_slug: string | null;
+  location_name: string;
+  city: string | null;
+  country: string | null;
+  event_date: string;
+  event_number: number | null;
+  /** Место на своей площадке — то, что стоит в протоколе платформы. */
+  location_position: number | null;
+  is_pr: boolean;
+  is_first_run: boolean;
+  is_me: boolean;
+};
+
+export type UnifiedProtocolPlatform = {
+  platform_code: string;
+  title: string;
+  finishers: number;
+  locations: number;
+};
+
+export type UnifiedProtocolBest = {
+  name: string | null;
+  time_display: string | null;
+  time_sec: number | null;
+  location_name: string;
+  location_slug: string | null;
+  platform_code: string | null;
+};
+
+export type UnifiedProtocolSummary = {
+  /** Плитка «финишёров»: по полу не сужается — она же показывает разбивку М/Ж. */
+  finishers: number;
+  /** Строк в зачёте — знаменатель долей «N% финишёров». */
+  scope_finishers: number;
+  male: number;
+  female: number;
+  unknown_gender: number;
+  /** null в зачёте одной системы: там считаем площадки, а не старты. */
+  locations: number;
+  /** Волонтёры недели: записей (ролей) и людей — по зачёту системы. */
+  volunteers: number;
+  volunteer_people: number;
+  avg_time_sec: number | null;
+  avg_time_display: string | null;
+  median_time_sec: number | null;
+  median_time_display: string | null;
+  best_male: UnifiedProtocolBest | null;
+  best_female: UnifiedProtocolBest | null;
+  debutants: number;
+  prs: number;
+  clubs_count: number;
+  /** Строки зарубежного parkrun, оставшиеся вне зачёта. */
+  skipped_foreign_parkrun: number;
+};
+
+/** Мужчины/женщины в зачёте системы — цифры на таблетках фильтра пола. */
+export type UnifiedProtocolGenderCounts = {
+  male: number;
+  female: number;
+  unknown: number;
+  total: number;
+};
+
+export type UnifiedProtocolAgeGroup = {
+  age_group: string;
+  male: number;
+  female: number;
+  unknown: number;
+  total: number;
+};
+
+export type UnifiedProtocolWeekRef = {
+  saturday: string;
+  finishers: number;
+  events: number;
+};
+
+export type UnifiedProtocol = {
+  week_start: string;
+  week_end: string;
+  saturday: string;
+  scope_platform: string | null;
+  gender: "male" | "female" | null;
+  age_group: string | null;
+  query: string | null;
+  platforms: UnifiedProtocolPlatform[];
+  summary: UnifiedProtocolSummary;
+  gender_counts: UnifiedProtocolGenderCounts;
+  age_groups: UnifiedProtocolAgeGroup[];
+  results: UnifiedProtocolRow[];
+  /** Свои строки недели целиком — чтобы не искать себя среди тысяч. */
+  my_results: UnifiedProtocolRow[];
+  page: number;
+  pages: number;
+  per_page: number;
+  total: number;
+  previous_saturday: string | null;
+  next_saturday: string | null;
+  latest_saturday: string | null;
+};
+
+export type UnifiedProtocolWeeks = {
+  weeks: UnifiedProtocolWeekRef[];
+  latest_saturday: string | null;
+};
+
+export type UnifiedProtocolQuery = {
+  platform?: string | null;
+  gender?: string | null;
+  ageGroup?: string | null;
+  q?: string | null;
+  page?: number;
+  perPage?: number;
+};
+
+export function getUnifiedProtocol(saturday: string | null, params: UnifiedProtocolQuery = {}) {
+  const search = new URLSearchParams();
+  if (params.platform) search.set("platform", params.platform);
+  if (params.gender) search.set("gender", params.gender);
+  if (params.ageGroup) search.set("age_group", params.ageGroup);
+  if (params.q) search.set("q", params.q);
+  if (params.page && params.page > 1) search.set("page", String(params.page));
+  if (params.perPage) search.set("per_page", String(params.perPage));
+  const suffix = search.toString();
+  const base = saturday ? `/protocol/week/${encodeURIComponent(saturday)}` : "/protocol/week";
+  // Холодная неделя считается несколько секунд (16 тыс. строк, кэш на 3 часа) —
+  // штатного таймаута не хватает.
+  return apiFetch<UnifiedProtocol>(`${base}${suffix ? `?${suffix}` : ""}`, undefined, {
+    timeoutMs: 60_000,
+  });
+}
+
+export function getUnifiedProtocolWeeks() {
+  return apiFetch<UnifiedProtocolWeeks>("/protocol/weeks", undefined, { timeoutMs: 60_000 });
 }
 
 /** Место участника в топе локации по одной его возрастной группе. */
@@ -3224,10 +3517,18 @@ export type OgFetchRow = {
   bots: number;
 };
 
+export type FunnelStepStats = {
+  step: string;
+  visitors: number;
+  pct_of_start: number | null;
+  pct_of_prev: number | null;
+};
+
 export type PageAnalyticsResponse = {
   date_from: string;
   date_to: string;
   generated_at: string;
+  funnel: FunnelStepStats[];
   home_ab: HomeAbVariantStats[];
   home_links: HomeLinkClickStats[];
   share: ShareStats;

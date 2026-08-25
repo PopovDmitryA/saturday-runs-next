@@ -13,7 +13,14 @@ import {
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { applyPageMeta, locationProtocolMeta } from "../../lib/pageMeta";
 import { flushMetrikaHit } from "../../lib/metrika";
-import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
+import {
+  COUNT_FORMS,
+  formatDate,
+  formatInt,
+  platformCodeLabel,
+  pluralFormRu,
+  pluralizeRu,
+} from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
@@ -40,6 +47,15 @@ function protocolHref(slug: string, platformCode: string, eventDate: string): st
   return `/locations/${encodeURIComponent(slug)}/protocol/${encodeURIComponent(platformCode)}/${eventDate}`;
 }
 
+/** Единый протокол той же недели: адрес подписан субботой (пн — начало недели). */
+function unifiedWeekHref(eventDate: string): string {
+  const day = new Date(`${eventDate}T00:00:00`);
+  const monday = new Date(day);
+  monday.setDate(day.getDate() - ((day.getDay() + 6) % 7));
+  monday.setDate(monday.getDate() + 5);
+  return `/protocol/${monday.toISOString().slice(0, 10)}`;
+}
+
 /** «00:21:07» → секунды; null, если времени нет. */
 function timeToSec(display: string | null): number | null {
   if (!display) {
@@ -58,6 +74,87 @@ function stripHours(display: string | null): string {
     return "—";
   }
   return display.replace(/^00:/, "");
+}
+
+/**
+ * Сколько человек, по нашим данным, финишировало: заявленное число из сводки
+ * либо последняя занятая позиция — что больше.
+ */
+function protocolKnownTotal(data: LocationProtocol): number {
+  return Math.max(
+    data.declared_finishers ?? 0,
+    ...data.results.map((row) => row.position ?? 0),
+  );
+}
+
+/** Дыра в нумерации — строка «Неизвестный» с прочерками во всех колонках. */
+function unknownProtocolRow(position: number): ProtocolResult {
+  return {
+    position,
+    name: "Неизвестный",
+    external_user_id: null,
+    profile_url: null,
+    serial_id: null,
+    gender: null,
+    gender_position: null,
+    gender_total: null,
+    age_category: null,
+    age_group: null,
+    age_group_position: null,
+    age_group_total: null,
+    age_grade: null,
+    finish_time_sec: null,
+    finish_time_display: null,
+    pace_display: null,
+    club_name: null,
+    status: null,
+    is_unknown: true,
+    is_pr: false,
+    is_global_pr: false,
+    is_location_pr: false,
+    is_first_run: false,
+    is_first_run_at_location: false,
+    achievement_labels: [],
+    history_rank: null,
+    history_total: null,
+    run_number: null,
+    run_number_all_systems: false,
+    age_group_history_rank: null,
+    age_group_history_total: null,
+    is_age_group_record: false,
+    is_me: false,
+  };
+}
+
+/**
+ * Пропущенные позиции протокола.
+ *
+ * У parkrun протокол собран из профилей участников, и строка без штрихкода в
+ * нём просто отсутствует: за 5-м местом шло 8-е, будто двоих не было вовсе.
+ * Дорисовываем дыры «неизвестными», чтобы нумерация шла подряд.
+ *
+ * Не трогаем протоколы, собранные по кусочкам: у зарубежных паркранов в базе
+ * лежат только наши участники, и «дыра» там — весь забег. Порог тот же, что у
+ * плашки о неполном протоколе (mostlyMissing).
+ */
+function missingProtocolRows(data: LocationProtocol): ProtocolResult[] {
+  const knownTotal = protocolKnownTotal(data);
+  if (knownTotal === 0 || data.results.length < knownTotal * 0.8) {
+    return [];
+  }
+  const taken = new Set(
+    data.results.map((row) => row.position).filter((position): position is number => position !== null),
+  );
+  // Только дыры внутри нумерации: хвост до заявленного числа финишёров не
+  // дорисовываем — там мы не знаем, было ли место занято вообще.
+  const lastPosition = Math.max(0, ...taken);
+  const rows: ProtocolResult[] = [];
+  for (let position = 1; position <= lastPosition; position += 1) {
+    if (!taken.has(position)) {
+      rows.push(unknownProtocolRow(position));
+    }
+  }
+  return rows;
 }
 
 function sortValue(row: ProtocolResult, key: SortKey): number | null {
@@ -182,6 +279,9 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
   const [ageFilter, setAgeFilter] = useState<string | null>(null);
   const [nameFilter, setNameFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState<string | null>(null);
+  // Порядок волонтёров: null — как отдал бэкенд (ключевые роли сверху),
+  // иначе сортировка по числу волонтёрств человека.
+  const [volunteerSortAsc, setVolunteerSortAsc] = useState<boolean | null>(null);
   const [clubFilter, setClubFilter] = useState<string | null>(null);
   // Клик по клубу листает страницу к протоколу — иначе отфильтрованная
   // таблица остаётся за экраном и кажется, что ничего не произошло.
@@ -281,28 +381,55 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
     return [...bins.values()].sort((a, b) => a.start_sec - b.start_sec);
   }, [data]);
 
-  // Роли для фильтра волонтёров — ровно те, что есть на этом старте.
-  const volunteerRoles = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const person of data?.volunteers ?? []) {
-      for (const role of person.roles) {
-        counts.set(role, (counts.get(role) ?? 0) + 1);
-      }
-    }
-    return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], "ru"));
-  }, [data]);
+  // Роли для фильтра волонтёров — ровно те, что есть на этом старте. Порядок
+  // задаёт бэкенд: сначала ключевые (на площадке и без бега), потом остальные.
+  const volunteerRoles = data?.volunteer_roles ?? [];
 
   const volunteerRows = useMemo(() => {
     const all = data?.volunteers ?? [];
-    return roleFilter ? all.filter((person) => person.roles.includes(roleFilter)) : all;
-  }, [data, roleFilter]);
+    const filtered = roleFilter
+      ? all.filter((person) => person.roles.includes(roleFilter))
+      : all;
+    if (volunteerSortAsc === null) {
+      return filtered;
+    }
+    // Без номера волонтёрства (человек без привязанного участника) — всегда в
+    // конце, в обе стороны сортировки.
+    return [...filtered].sort((a, b) => {
+      if (a.volunteer_number === null || b.volunteer_number === null) {
+        return a.volunteer_number === b.volunteer_number
+          ? 0
+          : a.volunteer_number === null
+            ? 1
+            : -1;
+      }
+      const compare = a.volunteer_number - b.volunteer_number;
+      return volunteerSortAsc ? compare : -compare;
+    });
+  }, [data, roleFilter, volunteerSortAsc]);
+
+  // Дорисованные «неизвестные» — только в чистом виде протокола, отсортированном
+  // по местам: в отфильтрованной или пересортированной таблице сплошная
+  // нумерация смысла не имеет, а прочерки сбились бы в кучу в конце.
+  const filled = useMemo(() => {
+    if (!data) {
+      return [];
+    }
+    const noFilters =
+      genderFilter === "all" && !ageFilter && !nameFilter.trim() && !clubFilter;
+    if (!noFilters || sort.key !== "position") {
+      return data.results;
+    }
+    const missing = missingProtocolRows(data);
+    return missing.length > 0 ? [...data.results, ...missing] : data.results;
+  }, [data, genderFilter, ageFilter, nameFilter, clubFilter, sort.key]);
 
   const rows = useMemo(() => {
     if (!data) {
       return [];
     }
     const needle = nameFilter.trim().toLowerCase();
-    const filtered = data.results.filter((row) => {
+    const filtered = filled.filter((row) => {
       if (genderFilter !== "all" && row.gender !== genderFilter) {
         return false;
       }
@@ -334,7 +461,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
       return sort.asc ? compare : -compare;
     });
     return filtered;
-  }, [data, genderFilter, ageFilter, nameFilter, clubFilter, sort]);
+  }, [data, filled, genderFilter, ageFilter, nameFilter, clubFilter, sort]);
 
   const toggleClubFilter = (club: string) => {
     setClubFilter((current) => (current === club ? null : club));
@@ -415,10 +542,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
   // Лучшие времена этого старта в секундах — для дельт со вчерашними лучшими.
   const bestMaleSec = timeToSec(summary.best_male_time_display);
   const bestFemaleSec = timeToSec(summary.best_female_time_display);
-  const knownTotal = Math.max(
-    data.declared_finishers ?? 0,
-    ...data.results.map((row) => row.position ?? 0),
-  );
+  const knownTotal = protocolKnownTotal(data);
   const mostlyMissing = knownTotal > 0 && data.results.length < knownTotal * 0.8;
 
   return (
@@ -447,8 +571,8 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           <PlatformBadge code={data.platform_code} />{" "}
           <span>{formatDate(data.event_date)}</span>
           {data.overall_number !== null && (
-            <StatHintTooltip text="Сквозной номер: какой это по счёту сбор локации за всю историю, по всем системам вместе">
-              <span className="muted"> · {data.overall_number}-й сбор площадки</span>
+            <StatHintTooltip text="Сквозной номер: какой это по счёту старт локации за всю историю, по всем системам вместе">
+              <span className="muted"> · {data.overall_number}-й старт площадки</span>
             </StatHintTooltip>
           )}
         </p>
@@ -464,6 +588,8 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
             <span className="muted">первый старт</span>
           )}
           <a href={`/locations/${data.slug}/events`}>журнал</a>
+          {/* Тот же старт в масштабе страны: где эти времена в общем протоколе недели. */}
+          <a href={unifiedWeekHref(data.event_date)}>единый протокол недели</a>
           {data.next ? (
             <a href={protocolHref(data.slug, data.next.platform_code, data.next.event_date)}>
               {formatDate(data.next.event_date)}
@@ -481,7 +607,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
       <div className="loc-stats-grid protocol-stats-grid">
         <StatTile
           value={formatInt(summary.finishers)}
-          label="финишёров"
+          label={pluralFormRu(summary.finishers, COUNT_FORMS.finishers)}
           delta={
             data.previous?.finishers != null ? summary.finishers - data.previous.finishers : null
           }
@@ -550,7 +676,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
         />
         <StatTile
           value={newcomers ? formatInt(newcomers) : summary.finishers ? "0" : null}
-          label="новичков"
+          label={pluralFormRu(newcomers, COUNT_FORMS.newcomers)}
           delta={
             data.previous?.debutants != null || data.previous?.first_at_location != null
               ? newcomers -
@@ -559,20 +685,20 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           }
           sub={
             newcomers
-              ? `${formatInt(summary.debutants)} дебют · ${formatInt(summary.first_at_location)} впервые здесь`
+              ? `${pluralizeRu(summary.debutants, COUNT_FORMS.debuts)} · ${formatInt(summary.first_at_location)} впервые здесь`
               : null
           }
           hint="Дебютанты движения + участники, впервые пришедшие на эту локацию"
         />
         <StatTile
           value={summary.prs ? formatInt(summary.prs) : summary.finishers ? "0" : null}
-          label="личных рекордов"
+          label={pluralFormRu(summary.prs, COUNT_FORMS.prs)}
           delta={data.previous?.prs != null ? summary.prs - data.previous.prs : null}
           hint="Сколько участников улучшили в этот день своё лучшее время в системе"
         />
         <StatTile
           value={formatInt(summary.volunteers)}
-          label="волонтёров"
+          label={pluralFormRu(summary.volunteers, COUNT_FORMS.volunteers)}
           delta={
             data.previous?.volunteers != null ? summary.volunteers - data.previous.volunteers : null
           }
@@ -583,7 +709,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
         <p className="protocol-partial-note muted">
           Протокол неполный: в нашей базе {formatInt(data.results.length)}{" "}
           {data.declared_finishers
-            ? `из ${formatInt(data.declared_finishers)} финишёров`
+            ? `из ${pluralizeRu(data.declared_finishers, COUNT_FORMS.finishers)}`
             : "строк, часть позиций отсутствует"}
           {/* Дыра в половину протокола и больше — зарубежный parkrun, где мы
               собираем только своих; пара потерянных строк у русского
@@ -1034,9 +1160,9 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                 aria-label="Фильтр по роли"
               >
                 <option value="">Все роли</option>
-                {volunteerRoles.map(([role, count]) => (
-                  <option key={role} value={role}>
-                    {role} ({count})
+                {volunteerRoles.map((item) => (
+                  <option key={item.role} value={item.role}>
+                    {item.role} ({item.count})
                   </option>
                 ))}
               </select>
@@ -1057,6 +1183,13 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                     label="Волонтёрство"
                     hint="Какое это волонтёрство по счёту у человека в этой системе"
                     filterable={false}
+                    sortActive={volunteerSortAsc !== null}
+                    sortAsc={volunteerSortAsc ?? false}
+                    // Первый клик — самые опытные сверху; дальше туда-обратно.
+                    // Третьего состояния нет: вернуть порядок «ключевые роли
+                    // сверху» можно перезагрузкой — иначе клик по стрелке
+                    // становится непредсказуемым.
+                    onSort={() => setVolunteerSortAsc((current) => (current === false ? true : false))}
                   />
                 </tr>
               </thead>

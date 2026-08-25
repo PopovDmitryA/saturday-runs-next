@@ -73,6 +73,14 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
       "было на каждой площадке, лучшие времена, новички и дата последнего старта.",
     indexable: true,
   },
+  // Единый протокол недели: последняя неделя без даты в адресе.
+  "/protocol": {
+    title: "Единый протокол недели — 5 вёрст, С95, parkrun и RunPark — run5k.run",
+    description:
+      "Все площадки всех систем за неделю одним протоколом: кто и с каким временем " +
+      "финишировал, зачёты по системам, полу и возрастным группам.",
+    indexable: true,
+  },
   "/ratings": {
     title: "Рейтинги — run5k.run",
     description:
@@ -131,6 +139,13 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
   "/ratings/win-locations": {
     title: "Рейтинг побед по локациям — run5k.run",
     description: "На скольких разных локациях участники успевали финишировать первыми.",
+    indexable: true,
+  },
+  "/ratings/location-records": {
+    title: "Рекорды локаций — run5k.run",
+    description:
+      "Рекорды трасс субботних пятёрок: лучшее время каждой локации среди мужчин и " +
+      "женщин и рекорды возрастных групп.",
     indexable: true,
   },
   "/backlog": {
@@ -197,6 +212,7 @@ const ADMIN_META: PageMeta = {
 };
 
 const PROFILE_RE = /^\/users\/([^/]+)(?:\/([^/]+))?$/;
+const UNIFIED_PROTOCOL_RE = /^\/protocol\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_EVENTS_RE = /^\/locations\/([^/]+)\/events$/;
 const LOCATION_PROTOCOL_RE = /^\/locations\/([^/]+)\/protocol\/([^/]+)\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_RE = /^\/locations\/([^/]+)$/;
@@ -253,6 +269,15 @@ export function resolvePageMeta(rawPath: string): PageMeta {
         "достижения и посещённые локации.",
       // Вкладки профиля в индекс не идут — это срезы той же страницы.
       indexable: tab === undefined,
+    };
+  }
+  if (UNIFIED_PROTOCOL_RE.test(path)) {
+    return {
+      title: "Единый протокол недели — run5k.run",
+      description:
+        "Все площадки всех систем за неделю одним протоколом: зачёты по системам, " +
+        "полу и возрастным группам.",
+      indexable: true,
     };
   }
   if (LOCATION_PROTOCOL_RE.test(path)) {

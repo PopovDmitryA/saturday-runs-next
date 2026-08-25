@@ -224,7 +224,11 @@ REFRESH_INTERVAL_HOURS = 2
 # рейтингов изменились, старые снапшоты пришлось бы ждать до конца TTL.
 # v6 — в строках появился row_key, а в снапшоте entity_keys (карта туристов,
 # 15.08.2026): без них спойлер карты не сопоставил бы светофоры со строками.
-CACHE_KEY_PREFIX = "leaderboards:v6"
+# v7 — «Последняя неделя» у туристических рейтингов выбирает площадку, давшую
+# «+1» (22.08.2026). Здесь меняется не форма payload'а, а значение поля:
+# старые снапшоты продолжали бы показывать повтор рядом с плюсом до конца TTL,
+# и правка выглядела бы неработающей.
+CACHE_KEY_PREFIX = "leaderboards:v7"
 
 # Победные рейтинги показывают две дополнительные колонки: глобальный рекорд
 # участника и последнюю победу (у win_locations — последнюю НОВУЮ локацию с
@@ -869,6 +873,11 @@ _TOURIST_VOLUNTEER_VISITS_SQL = _volunteer_location_visits_sql(with_last_date=Tr
 # там был. Поэтому у всех четырёх рейтингов список берётся из одних и тех же
 # выборок окна: беговые метрики читают протоколы забегов, волонтёрские —
 # волонтёрские. Окно недели маленькое, поэтому выборки дешёвые.
+#
+# Уточнение 22.08.2026: у туристических рейтингов, если прибавка на неделе
+# БЫЛА, из этих же визитов выбирается площадка, которая её и дала. За день
+# можно отволонтёрить на двух площадках, и «+1» рядом с повтором читался как
+# ошибка счёта (см. _latest_week_location).
 _WEEK_RUN_LOCATIONS_SQL = (
     _PARKRUN_ELIGIBLE_CTE
     + f"""
@@ -1125,6 +1134,9 @@ class _Entity:
     # Где участник был за последнюю неделю (метрики с колонкой «Последняя
     # неделя») — ОДНА площадка, самый поздний старт окна.
     week_location: dict[str, object] | None = None
+    # Туристические рейтинги: площадки, которые и дали «+N» этой недели.
+    # «Последняя неделя» выбирается из них, а не из всех визитов окна.
+    week_new_identities: set[str] = field(default_factory=set)
     # Участники, из которых собрана строка — нужны для запроса рекорда.
     participant_ids: set[UUID] = field(default_factory=set)
 
@@ -1704,6 +1716,7 @@ def _latest_week_location(
     dates: dict[str, date],
     identity_names: dict[str, str],
     identity_slugs: dict[str, str],
+    prefer: set[str] | None = None,
 ) -> dict[str, object] | None:
     """Последний старт окна: ОДНА площадка, самая поздняя по дате.
 
@@ -1711,6 +1724,12 @@ def _latest_week_location(
     03.08.2026): колонка отвечает на вопрос «где человек был в последний раз»,
     а перечисление рядом с числовыми колонками читалось как приращение.
     Ничью по дате разводим названием, чтобы выбор не «дышал» между пересчётами.
+
+    prefer — площадки, давшие прибавку недели (туристические рейтинги). В один
+    день можно отволонтёрить на двух площадках, и если одна из них новая, а
+    вторая — повтор, то рядом с «+1» должна стоять именно новая: иначе колонка
+    спорит с дельтой (репорт Дмитрия 22.08.2026). Если прибавки не было,
+    выбираем как раньше — по самому позднему визиту окна.
     """
 
     def name_of(identity: str) -> str:
@@ -1718,8 +1737,9 @@ def _latest_week_location(
 
     if not dates:
         return None
+    pool = {identity: on for identity, on in dates.items() if identity in prefer} if prefer else {}
     identity, on_date = min(
-        dates.items(), key=lambda item: (-item[1].toordinal(), name_of(item[0]))
+        (pool or dates).items(), key=lambda item: (-item[1].toordinal(), name_of(item[0]))
     )
     return {
         "name": name_of(identity),
@@ -1757,7 +1777,7 @@ def _attach_week_locations(
         by_identity[identity] = max(known, last_date) if known is not None else last_date
     for key, dates in per_entity.items():
         entities[key].week_location = _latest_week_location(
-            dates, identity_names, identity_slugs
+            dates, identity_names, identity_slugs, entities[key].week_new_identities
         )
 
 
@@ -2370,6 +2390,10 @@ class _UnitTally:
     week: int
     # platform code -> [всего, из них прибавилось на этой неделе]
     values: dict[str, list[int]]
+    # Площадки, которые и дали прибавку недели: единица, куда они входят,
+    # взята именно сейчас. Из них выбирается «Последняя неделя» (см.
+    # _latest_week_location).
+    new_identities: set[str] = field(default_factory=set)
 
 
 def _unit_key_getters(
@@ -2402,19 +2426,23 @@ def _unit_counts(
     городе прибавляет площадку, но не город.
     """
     groups: dict[str, list[_LocationVisits]] = {}
+    identities_by_unit: dict[str, list[str]] = {}
     for identity, visits in counted.items():
         unit = unit_key(identity)
         if unit is None:
             continue
         groups.setdefault(unit, []).append(visits)
+        identities_by_unit.setdefault(unit, []).append(identity)
 
     values: dict[str, list[int]] = {}
+    new_identities: set[str] = set()
     total = 0
     week = 0
-    for group in groups.values():
+    for unit, group in groups.items():
         total += 1
         if all(visits.is_new(min_visits) for visits in group):
             week += 1
+            new_identities.update(identities_by_unit[unit])
         # Система «даёт» единицу, если хотя бы одна её площадка набрала порог
         # визитов силами именно этой системы (см. _LocationVisits.by_platform).
         counted_by_code: dict[str, list[_LocationVisits]] = {}
@@ -2427,7 +2455,7 @@ def _unit_counts(
             cell[0] += 1
             if all(visits.platform_is_new(code, min_visits) for visits in in_code):
                 cell[1] += 1
-    return _UnitTally(total=total, week=week, values=values)
+    return _UnitTally(total=total, week=week, values=values, new_identities=new_identities)
 
 
 def _collect_location_entities(
@@ -2501,6 +2529,7 @@ def _collect_location_entities(
         entity.total = selected.total
         entity.week = selected.week
         entity.values = selected.values
+        entity.week_new_identities = selected.new_identities
         if with_geo:
             entity.locations_total = tallies["locations"].total
             entity.cities_total = tallies["cities"].total
@@ -2921,8 +2950,9 @@ def _build_snapshot(
             src, metric, platform=platform, role_filter=role_filter
         )
 
-    # «Последняя неделя» — одинаково для всех четырёх метрик: просто где человек
-    # был за окно дельты, независимо от того, дало это +1 или нет.
+    # «Последняя неделя» — где человек был за окно дельты. У туристических
+    # рейтингов из визитов окна выбирается площадка, давшая «+1» (если она
+    # была): колонка не должна спорить с дельтой.
     week_sql = _WEEK_LOCATIONS_SQL_BY_METRIC.get(metric)
     if week_sql is not None:
         _attach_week_locations(
@@ -3991,6 +4021,8 @@ class _MyLocationRow:
     locations_total: int | None = None
     cities_total: int | None = None
     regions_total: int | None = None
+    # Площадки, давшие прибавку недели — из них выбирается «Последняя неделя».
+    new_identities: set[str] = field(default_factory=set)
 
 
 def _my_location_values(
@@ -4030,7 +4062,10 @@ def _my_location_values(
     tallies = {unit: _unit_counts(counted, getters[unit], min_visits) for unit in units}
     selected = tallies[count_by if count_by in tallies else "locations"]
     row = _MyLocationRow(
-        values=selected.values, total=selected.total, week=selected.week
+        values=selected.values,
+        total=selected.total,
+        week=selected.week,
+        new_identities=selected.new_identities,
     )
     if with_geo:
         row.locations_total = tallies["locations"].total
@@ -4137,6 +4172,7 @@ def _my_week_location(
     week_start: date,
     platform: str = "all",
     role_filter: frozenset[str] | None = None,
+    prefer: set[str] | None = None,
 ) -> dict[str, object] | None:
     """«Где я был в последний раз за неделю» — как и в строках таблицы."""
     template = _WEEK_LOCATIONS_SQL_BY_METRIC.get(metric)
@@ -4157,7 +4193,7 @@ def _my_week_location(
         identity = identity_by_location.get(location_id, str(location_id))
         known = dates.get(identity)
         dates[identity] = max(known, last_date) if known is not None else last_date
-    return _latest_week_location(dates, identity_names, identity_slugs)
+    return _latest_week_location(dates, identity_names, identity_slugs, prefer)
 
 
 def get_my_leaderboard_row(
@@ -4290,10 +4326,16 @@ def get_my_leaderboard_row(
         total = sum(v[0] for v in values.values())
         week = sum(v[1] for v in values.values())
 
-    # «Последняя неделя» — одинаково для всех метрик с этой колонкой: просто где
-    # человек был за окно дельты, дало это +1 или нет (у остальных вернётся []).
+    # «Последняя неделя» — где человек был за окно дельты (у метрик без этой
+    # колонки вернётся None). У туристических рейтингов предпочитаем площадку,
+    # давшую «+1», — как и в строках таблицы.
     my_week_location = _my_week_location(
-        db, metric, participant_ids, week_start, platform_resolved
+        db,
+        metric,
+        participant_ids,
+        week_start,
+        platform_resolved,
+        prefer=my_geo.new_identities if my_geo is not None else None,
     )
 
     threshold = int(cast(int, snapshot.get("threshold") or 0))

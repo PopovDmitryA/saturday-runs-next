@@ -1,80 +1,42 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect } from "react";
 import { getOrCreateVisitorId } from "./siteVisitor";
 
 /**
- * АБ-эксперименты главной страницы.
+ * События сайта в таблице ab_events.
  *
- * Пилот включается переменной окружения VITE_AB_HOME_ACTIVE=true (прод-.env на
- * сервере, см. .env.example). Выключен — все видят вариант A, события пишутся
- * с variant="A" как базовая линия «до». Включён — посетители детерминированно
- * разложатся 50/50 по стабильному анонимному id браузера (перезагрузка
- * страницы и VK-редирект вариант не меняют).
+ * Исторически здесь жил АБ-тест главной (эксперимент home_v1, 27.07–22.08.2026).
+ * Тест завершён: вариант B выиграл по конверсии в регистрацию (22.5% против
+ * 15.0% на зрителя главной, p=0.012) и принят как единственная главная.
+ * Раскладки 50/50, форса ?ab= и поэлементной инструментовки эксперимента
+ * больше нет — вместо них постоянный счётчик воронки.
  *
- * ВАЖНО: переменная читается ВО ВРЕМЯ СБОРКИ фронта (Vite зашивает значение в
- * бандл), поэтому включение и выключение пилота требуют пересборки — то есть
- * деплоя. Мгновенного рубильника без деплоя здесь нет.
+ * Три живых потребителя:
+ * - воронка регистрации (канал "funnel") — useFunnelHomeView/trackCtaClick/
+ *   trackAuthStart/reportAuthDoneOnce, сводка в админке «Популярность»;
+ * - trackHomeLinkClick — «куда уводит главная» (канал "home_v1");
+ * - abVisitorKey — общий ключ посетителя, им же пользуется фича «Поделиться».
  */
-export const HOME_EXPERIMENT = "home_v1";
+const FUNNEL_CHANNEL = "funnel";
+const HOME_CHANNEL = "home_v1";
 
-const HOME_EXPERIMENT_ACTIVE = import.meta.env.VITE_AB_HOME_ACTIVE === "true";
-
-export type AbVariant = "A" | "B";
-
-/** FNV-1a: стабильный бакет из анонимного id браузера. */
-function bucketOf(id: string): AbVariant {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < id.length; i += 1) {
-    hash ^= id.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0) % 2 === 0 ? "A" : "B";
-}
+// Вариантов больше нет: пишем "-", как канал "share". Заодно в SQL видно, где
+// кончился эксперимент главной.
+const NO_VARIANT = "-";
 
 /**
- * Принудительный вариант для просмотра глазами: ?ab=B (или ?ab=A) в адресе.
- * Нужен, чтобы посмотреть вариант B до запуска эксперимента; такие просмотры
- * не пишутся в ab_events — QA не должен загрязнять данные.
- */
-function forcedVariant(): AbVariant | null {
-  try {
-    const param = new URLSearchParams(window.location.search).get("ab");
-    if (param === "A" || param === "B") {
-      return param;
-    }
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-export function getHomeVariant(): AbVariant {
-  const forced = forcedVariant();
-  if (forced !== null) {
-    return forced;
-  }
-  if (!HOME_EXPERIMENT_ACTIVE) {
-    return "A";
-  }
-  return bucketOf(getOrCreateVisitorId());
-}
-
-/**
- * Ключ посетителя для АБ-событий — ВСЕГДА анонимный ("a:<id>"), в отличие от
- * buildVisitorKey общей аналитики, где после логина ключ меняется на
- * "u:<user_id>". Иначе воронку «увидел главную → кликнул CTA → залогинился»
- * нельзя сшить сквозь VK-редирект; сам пользователь виден серверу по куке.
+ * Ключ посетителя — ВСЕГДА анонимный ("a:<id>"), в отличие от buildVisitorKey
+ * общей аналитики, где после логина ключ меняется на "u:<user_id>". Только так
+ * ступени воронки «увидел главную → кликнул → вошёл» сшиваются в одну цепочку
+ * сквозь редирект на VK/Яндекс; самого пользователя сервер видит по куке.
  */
 export function abVisitorKey(): string {
   return `a:${getOrCreateVisitorId()}`;
 }
 
-export function trackAbEvent(eventType: string, value = ""): void {
-  if (forcedVariant() !== null) {
-    return;
-  }
+function sendEvent(channel: string, eventType: string, value: string): void {
   const body = JSON.stringify({
-    experiment: HOME_EXPERIMENT,
-    variant: getHomeVariant(),
+    experiment: channel,
+    variant: NO_VARIANT,
     visitor_key: abVisitorKey(),
     event_type: eventType,
     value,
@@ -89,79 +51,39 @@ export function trackAbEvent(eventType: string, value = ""): void {
 }
 
 /**
- * Переход по внутренней ссылке главной: имя локации → /locations/{slug},
- * имя участника → /users/{хендл}.
+ * Ступень 1 — главная открыта. Знаменатель всей воронки, поэтому шлём сразу
+ * при отрисовке, не дожидаясь загрузки данных: иначе в выборку попадут только
+ * те, у кого страница успела дорисоваться, и конверсия окажется завышенной.
+ */
+export function useFunnelHomeView(): void {
+  useEffect(() => {
+    sendEvent(FUNNEL_CHANNEL, "home_view", "");
+    // Пустые зависимости: строго один раз за монтирование страницы.
+  }, []);
+}
+
+/** Ступень 2 — клик по кнопке входа. place: "hero" | "bottom" | "teaser". */
+export function trackCtaClick(place: string): void {
+  sendEvent(FUNNEL_CHANNEL, "cta_click", place);
+}
+
+/** Ступень 3 — человек выбрал провайдера и уходит на его страницу входа. */
+export function trackAuthStart(provider: string): void {
+  sendEvent(FUNNEL_CHANNEL, "auth_start", provider);
+}
+
+/**
+ * Ступень 4 — вход завершён. Шлётся один раз на пару (браузер, пользователь):
+ * иначе каждое открытие сайта с живой сессией засчитывалось бы как новый вход
+ * и знаменатель воронки поплыл бы. Когорту new (регистрация) или returning
+ * (вернулся) определяет сервер по возрасту аккаунта.
  *
- * Событие одно на оба варианта эксперимента (ссылки есть и в A, и в B) —
- * кроме сравнения A/B оно отвечает на вопрос «уводит ли главная людей вглубь
- * сайта и куда именно». Сводка — в админке «Популярность».
+ * Пятой ступени — привязки платформы — здесь нет: она считается по
+ * platform_links, у события не было бы своего источника правды.
  */
-export function trackHomeLinkClick(kind: "location" | "runner", target: string): void {
-  trackAbEvent("home_link_click", `${kind}:${target}`);
-}
-
-/**
- * Глубина скролла страницы: события 25/50/75/100 (%), каждое один раз за
- * просмотр. ready передавать только когда контент загружен — до этого высота
- * страницы «пустая» и проценты врут.
- */
-export function useAbScrollDepth(ready: boolean): void {
-  useEffect(() => {
-    if (!ready) {
-      return;
-    }
-    const sent = new Set<number>();
-    const onScroll = () => {
-      const total = document.documentElement.scrollHeight - window.innerHeight;
-      if (total <= 0) {
-        return;
-      }
-      const pct = (window.scrollY / total) * 100;
-      for (const threshold of [25, 50, 75, 100]) {
-        if (pct >= threshold - 0.5 && !sent.has(threshold)) {
-          sent.add(threshold);
-          trackAbEvent("scroll_depth", String(threshold));
-        }
-      }
-      if (sent.size === 4) {
-        window.removeEventListener("scroll", onScroll);
-      }
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [ready]);
-}
-
-/**
- * CTA попала во вьюпорт — один раз за просмотр. Знаменатель для честного CTR
- * кнопки: клики делить на «кто кнопку видел», а не на все визиты.
- */
-export function useAbCtaView(ref: RefObject<Element | null>, placement: string, ready: boolean): void {
-  useEffect(() => {
-    const el = ref.current;
-    if (!ready || el === null || typeof IntersectionObserver === "undefined") {
-      return;
-    }
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        trackAbEvent("cta_view", placement);
-        observer.disconnect();
-      }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref, placement, ready]);
-}
-
-/**
- * Завершённый вход: шлётся один раз на пару (браузер, пользователь).
- * Когорту new/returning сервер определяет сам по возрасту аккаунта —
- * вернувшиеся разлогиненные участники в конверсию эксперимента не идут.
- */
-export function reportAbLoginOnce(userId: string): void {
+export function reportAuthDoneOnce(userId: string): void {
   try {
-    const key = `sr_ab_login_sent:${userId}`;
+    const key = `sr_funnel_auth_done:${userId}`;
     if (localStorage.getItem(key) !== null) {
       return;
     }
@@ -169,20 +91,14 @@ export function reportAbLoginOnce(userId: string): void {
   } catch {
     return;
   }
-  trackAbEvent("login_complete");
+  sendEvent(FUNNEL_CHANNEL, "auth_done", "");
 }
 
 /**
- * Показ варианта главной — один раз за просмотр страницы.
- *
- * Это знаменатель эксперимента: клики и логины без него — абсолютные числа,
- * зависящие от того, кому сколько раз показали, и сравнивать по ним A с B
- * нельзя. Отправляем сразу при отрисовке, не дожидаясь скролла: иначе в
- * выборку попадут только те, кто долистал.
+ * Переход по внутренней ссылке главной: имя локации → /locations/{slug},
+ * имя участника → /users/{хендл}. Отвечает на вопрос «уводит ли главная людей
+ * вглубь сайта и куда именно». Сводка — в админке «Популярность».
  */
-export function useAbVariantView(): void {
-  useEffect(() => {
-    trackAbEvent("variant_view");
-    // Пустые зависимости: строго один раз за монтирование страницы.
-  }, []);
+export function trackHomeLinkClick(kind: "location" | "runner", target: string): void {
+  sendEvent(HOME_CHANNEL, "home_link_click", `${kind}:${target}`);
 }

@@ -12,6 +12,7 @@ from app.models import (
     Participant,
     Platform,
     RunResult,
+    VolunteerResult,
 )
 from app.services.leaderboard_service import (
     _LOCATION_VISITS_SQL,
@@ -54,6 +55,8 @@ from app.services.leaderboard_service import (
     _LocationVisits,
     _merge_visit_row,
     _my_gendered_win_values,
+    _my_location_values,
+    _my_week_location,
     _my_win_values,
     _normalize_count_by,
     _normalize_gender,
@@ -356,6 +359,8 @@ def test_unit_counts_locations_counts_every_venue() -> None:
     assert tally.total == 2
     assert tally.week == 1
     assert tally.values["five_verst"] == [2, 1]
+    # Прибавку дала ровно одна площадка — её и запоминаем для «Последней недели».
+    assert tally.new_identities == {"loc:2"}
 
 
 def test_unit_counts_collapses_venues_of_one_city() -> None:
@@ -375,6 +380,9 @@ def test_unit_counts_collapses_venues_of_one_city() -> None:
     # Москва не «прибавилась»: один из её парков был освоен ещё до недели.
     # Курск — целиком новый город.
     assert cities.week == 1
+    # «Прибавился» Курск — значит и площадка недели должна быть курская, даже
+    # если позже человек сходил в давно освоенный московский парк.
+    assert cities.new_identities == {"loc:3"}
     regions = _unit_counts(counted, _unit_key_getters(geo)["regions"], 1)
     assert regions.total == 2
 
@@ -488,6 +496,40 @@ def test_latest_week_location_takes_the_freshest_start() -> None:
 
     # Не был нигде — ячейка пустая.
     assert _latest_week_location({}, names, slugs) is None
+
+
+def test_latest_week_location_prefers_the_venue_that_gave_the_delta() -> None:
+    """В один день можно отволонтёрить дважды: рядом с «+1» — новая площадка.
+
+    Репорт Дмитрия 22.08.2026: в рейтинге волонтёрского туризма дельта была +1,
+    а в «Последней неделе» стоял повтор — он просто оказался позже по алфавиту
+    при равной дате.
+    """
+    names = {"loc:new": "Новая площадка", "loc:again": "Мещерский"}
+    slugs = {"loc:new": "new-park", "loc:again": "meshchersky"}
+    same_day = {"loc:new": date(2026, 8, 22), "loc:again": date(2026, 8, 22)}
+
+    # Без подсказки побеждает алфавит — прежнее поведение.
+    assert _latest_week_location(same_day, names, slugs)["name"] == "Мещерский"
+    # С подсказкой — та площадка, которая и дала прибавку.
+    assert _latest_week_location(same_day, names, slugs, {"loc:new"}) == {
+        "name": "Новая площадка",
+        "slug": "new-park",
+        "date": "2026-08-22",
+    }
+
+    # Даже если повтор был ПОЗЖЕ новой площадки, в ячейке всё равно новая.
+    later_repeat = {"loc:new": date(2026, 8, 19), "loc:again": date(2026, 8, 22)}
+    assert _latest_week_location(later_repeat, names, slugs, {"loc:new"}) == {
+        "name": "Новая площадка",
+        "slug": "new-park",
+        "date": "2026-08-19",
+    }
+
+    # Прибавки не было — выбираем как раньше, по самому позднему визиту.
+    assert _latest_week_location(later_repeat, names, slugs, set())["name"] == "Мещерский"
+    # Площадка прибавки вне окна (так не бывает, но пусть не роняет ячейку).
+    assert _latest_week_location(later_repeat, names, slugs, {"loc:other"})["name"] == "Мещерский"
 
 
 def test_cache_key_versions_min_visits() -> None:
@@ -909,3 +951,101 @@ def test_tourist_map_top_steps_end_at_table_depth() -> None:
     assert len(set(TOURIST_MAP_TOP_STEPS)) == len(TOURIST_MAP_TOP_STEPS)
     assert TOURIST_MAP_TOP_STEPS[0] > 0
     assert TOURIST_MAP_TOP_STEPS[-1] == TOURIST_MAP_LIMIT
+
+
+def _seed_volunteer_week(db_session: Session) -> tuple[UUID, str, str]:
+    """Волонтёр: давняя площадка «Мещерский» и новая — обе в одну субботу.
+
+    Ровно случай из репорта: за неделю два волонтёрства в один день, «+1» дала
+    только новая площадка, повтор — нет.
+    """
+    suffix = str(uuid4().int % 1_000_000)
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        platform = Platform(code="five_verst", name="5 вёрст")
+        db_session.add(platform)
+        db_session.flush()
+
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=f"vol-week-user-{suffix}",
+        display_name="Volunteer Tester",
+    )
+    db_session.add(participant)
+    db_session.flush()
+
+    def venue(tag: str, name: str) -> Location:
+        location = Location(
+            platform_id=platform.id,
+            external_key=f"vol-week-{suffix}-{tag}",
+            name=name,
+            country="Россия",
+        )
+        db_session.add(location)
+        db_session.flush()
+        return location
+
+    def shift(location: Location, on_date: date, tag: str) -> None:
+        event = Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=f"vol-week-event-{suffix}-{tag}",
+            event_date=on_date,
+            event_number=1,
+            title="Volunteer Week Event",
+        )
+        db_session.add(event)
+        db_session.flush()
+        db_session.add(
+            VolunteerResult(
+                event_id=event.id,
+                participant_id=participant.id,
+                external_result_key=f"vol-week-result-{suffix}-{tag}",
+                role="Маршал",
+            )
+        )
+
+    # Новая площадка нарочно позже по алфавиту: при равной дате прежний выбор
+    # взял бы повтор, и тест поймал бы регресс.
+    repeat = venue("repeat", f"Мещерский {suffix}")
+    fresh = venue("fresh", f"Яуза {suffix}")
+    # Повтор освоен задолго до окна недели, новая площадка — впервые в субботу.
+    shift(repeat, date(2026, 6, 6), "repeat-old")
+    shift(repeat, date(2026, 8, 22), "repeat-week")
+    shift(fresh, date(2026, 8, 22), "fresh-week")
+    db_session.flush()
+    return participant.id, repeat.name, fresh.name
+
+
+def test_my_week_location_shows_the_venue_behind_the_plus_one(db_session: Session) -> None:
+    """«Последняя неделя» показывает площадку, давшую «+1», а не повтор."""
+    participant_id, repeat_name, fresh_name = _seed_volunteer_week(db_session)
+    week_start = date(2026, 8, 16)
+
+    row = _my_location_values(
+        db_session,
+        [participant_id],
+        week_start,
+        sql_template=_VOLUNTEER_LOCATION_VISITS_SQL,
+        with_geo=True,
+    )
+    assert row.week == 1, "прибавка недели — ровно одна новая площадка"
+
+    cell = _my_week_location(
+        db_session,
+        "volunteer_locations",
+        [participant_id],
+        week_start,
+        prefer=row.new_identities,
+    )
+    assert cell is not None
+    assert cell["name"] == fresh_name
+
+    # Без подсказки — прежнее поведение: обе смены в одну субботу, ничью
+    # разводит алфавит, и в ячейке оказывается повтор. Ровно то, на что
+    # пожаловался Дмитрий.
+    plain = _my_week_location(
+        db_session, "volunteer_locations", [participant_id], week_start
+    )
+    assert plain is not None
+    assert plain["name"] == repeat_name

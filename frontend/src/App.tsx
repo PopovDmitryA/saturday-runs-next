@@ -53,8 +53,10 @@ import { LocationProtocolPage } from "./features/locations/LocationProtocolPage"
 import { LocationPage } from "./features/locations/LocationPage";
 import { LastResultsPage } from "./features/locations/LastResultsPage";
 import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
+import { UnifiedProtocolPage } from "./features/locations/UnifiedProtocolPage";
 import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
 import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
+import { LocationRecordsRatingPage } from "./features/leaderboards/LocationRecordsRatingPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
@@ -67,7 +69,8 @@ import {
   RenderOgUserPage,
 } from "./features/sharing/RenderOgPage";
 import { ShareSheetProvider } from "./features/sharing/ShareSheetContext";
-import { reportAbLoginOnce } from "./lib/abTest";
+import { TeaserClaimRunner } from "./features/portal/teaserClaim";
+import { reportAuthDoneOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
 import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
@@ -93,9 +96,9 @@ function useSitePageviewTracking(path: string) {
     getCurrentUser()
       .then((user) => {
         begin(true, user.id);
-        // АБ-воронка: первый авторизованный визит в этом браузере — событие
-        // login_complete (когорту new/returning определяет сервер).
-        reportAbLoginOnce(user.id);
+        // Ступень воронки: вход завершён. Раз на пару (браузер, пользователь) —
+        // когорту new/returning ставит сервер по возрасту аккаунта.
+        reportAuthDoneOnce(user.id);
       })
       .catch(() => begin(false, undefined));
     return () => {
@@ -226,6 +229,9 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/locations": () => <LocationsIndexPage />,
   // Посадочная под «5 вёрст результаты»: последний старт каждой площадки.
   "/results": () => <LastResultsPage />,
+  // Единый протокол недели: все площадки всех систем в порядке финиша.
+  // Без даты — последняя неделя с данными.
+  "/protocol": () => <UnifiedProtocolPage saturday={null} />,
   "/history": () => <CabinetLegacyRedirect tab="history" />,
   // Рейтинги открыты без логина (решение 25.07.2026): аноним видит таблицы,
   // а свою строку и позицию — только залогиненный (баннер-призыв на страницах).
@@ -239,6 +245,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/wins": () => <LeaderboardPage metric="wins" />,
   "/ratings/win-locations": () => <LeaderboardPage metric="win_locations" />,
   "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
+  "/ratings/location-records": () => <LocationRecordsRatingPage />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,
@@ -291,6 +298,18 @@ function ApiPathRedirect() {
   );
 }
 
+/**
+ * Настоящая ли это дата. Форму («2026-08-99») ловит регулярка адреса, а вот
+ * 30 февраля она пропускает — и Date.parse тоже: JS молча переносит такую дату
+ * на 2 марта. Поэтому сверяем разбор с исходной строкой: несуществующая дата
+ * должна уходить в 404 вместе с бэкендом (см. is_known_path в seo_service),
+ * а не в ошибку API.
+ */
+function isRealDate(iso: string): boolean {
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === iso;
+}
+
 function renderRoute(path: string): ReactElement {
   if (isLegacyGrafanaPath(path)) {
     return <LegacyGrafanaRedirect />;
@@ -318,6 +337,12 @@ function renderRoute(path: string): ReactElement {
     );
   }
   // Протокол одного старта: /locations/{slug}/protocol/{система}/{дата}.
+  // Единый протокол конкретной недели: /protocol/{дата}. В адресе — суббота,
+  // но бэкенд принимает любой день недели и сам приводит к субботе.
+  const unifiedProtocolMatch = path.match(/^\/protocol\/(\d{4}-\d{2}-\d{2})$/);
+  if (unifiedProtocolMatch && isRealDate(unifiedProtocolMatch[1])) {
+    return <UnifiedProtocolPage saturday={unifiedProtocolMatch[1]} />;
+  }
   const locationProtocolMatch = path.match(
     /^\/locations\/([^/]+)\/protocol\/([^/]+)\/(\d{4}-\d{2}-\d{2})$/,
   );
@@ -362,10 +387,14 @@ export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
   usePageMeta(path);
+  // Отложенная привязка из тизера главной: сработает на любой странице, куда
+  // провайдер вернул человека после входа, поэтому живёт на уровне App.
+  const viewer = useOptionalUser();
   // Шторка «Поделиться» доступна из любого раздела — провайдер на всё дерево.
   return (
     <ShareSheetProvider>
       {renderRoute(path)}
+      <TeaserClaimRunner userId={viewer?.id ?? null} />
       {/* Тап-подсказки на телефоне — один слой на весь сайт (см. TapTooltipLayer). */}
       <TapTooltipLayer />
     </ShareSheetProvider>

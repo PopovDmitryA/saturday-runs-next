@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, cast
 from uuid import UUID
@@ -55,7 +55,9 @@ HISTOGRAM_BIN_SEC = 10
 # TTL, а не точечная инвалидация: синк идёт множеством независимых batch-джоб
 # по трём платформам — вешать инвалидацию на каждую было бы куда инвазивнее,
 # чем оправдывает выигрыш (эти цифры не обязаны быть live).
-LOCATIONS_INDEX_CACHE_KEY = "locations:index:v4"
+# v5 — в строку добавлены first_event_date_in_system и first_event_system_code:
+# без бампа кэшированный payload отдавал бы их как None до истечения TTL.
+LOCATIONS_INDEX_CACHE_KEY = "locations:index:v5"
 LOCATIONS_INDEX_CACHE_TTL_SECONDS = 3 * 60 * 60
 # Страница/журнал/рейтинги одной локации — тоже тяжёлые (resolve_location_identity
 # перечитывает ВСЕ локации + весь каталог на каждый вызов, плюс десяток
@@ -1752,6 +1754,10 @@ class _IndexIdentityStat:
     events_count: int = 0
     finishers_total: int = 0
     first_event_date: date | None = None
+    # Первый старт отдельно по каждой системе: сквозная дата выше теряет момент,
+    # когда площадка начала работать в нынешней системе (просьба Дмитрия
+    # 23.08.2026 — этот вопрос закрывал дашборд «дни рождения» в Grafana).
+    first_event_date_by_platform: dict[str, date] = field(default_factory=dict)
     last_event_date: date | None = None
     best_male_time_sec: int | None = None
     best_female_time_sec: int | None = None
@@ -1769,7 +1775,8 @@ def _bulk_identity_stats(
         return {}
 
     event_rows = (
-        db.query(Event.id, Event.location_id, Event.event_date, Event.finishers_count)
+        db.query(Event.id, Event.location_id, Event.event_date, Event.finishers_count, Platform.code)
+        .join(Platform, Event.platform_id == Platform.id)
         .filter(Event.location_id.in_(location_ids), Event.is_test_event.is_(False))
         .all()
     )
@@ -1803,11 +1810,18 @@ def _bulk_identity_stats(
     }
 
     stats: dict[str, _IndexIdentityStat] = {}
-    for event_id, location_id, event_date, finishers_count in event_rows:
-        if event_id in excluded_secondary:
-            continue
+    for event_id, location_id, event_date, finishers_count, platform_code in event_rows:
         identity_key = location_id_to_identity[location_id]
         stat = stats.setdefault(identity_key, _IndexIdentityStat())
+        # Первый старт в системе считаем ДО дедупа кросслинков, в отличие от
+        # счётчиков ниже. Вторичная строка связки — тот же физический старт,
+        # записанный второй системой: для «сколько стартов» её учитывать нельзя,
+        # а для «когда эта система здесь началась» она как раз и есть ответ.
+        known = stat.first_event_date_by_platform.get(platform_code)
+        if known is None or event_date < known:
+            stat.first_event_date_by_platform[platform_code] = event_date
+        if event_id in excluded_secondary:
+            continue
         stat.events_count += 1
         finishers = protocol_counts.get(event_id) or finishers_count
         if finishers:
@@ -2026,6 +2040,30 @@ def _collect_catalog_identities(
     return identity_locations, location_id_to_identity
 
 
+def _first_event_in_current_system(
+    ordered: list[tuple[Location, str]],
+    stat: _IndexIdentityStat | None,
+) -> tuple[str | None, date | None]:
+    """Система, в которой площадка живёт сейчас, и дата её первого старта именно там.
+
+    `ordered` уже отсортирован «активная платформа первой» (_sort_identity_locations),
+    поэтому просто берём первую систему, в которой у площадки вообще есть старты —
+    ровно то, о чём просил Дмитрий 23.08.2026: «берём актуальную систему, по
+    которой есть пробежки».
+
+    У площадки без прошлого в других системах эта дата совпадёт со сквозной, и
+    это не дубль: две колонки расходятся ровно там, где было интересно — на
+    парках, переехавших из parkrun-эпохи.
+    """
+    if stat is None:
+        return None, None
+    for _location, code in ordered:
+        first = stat.first_event_date_by_platform.get(code)
+        if first is not None:
+            return code, first
+    return None, None
+
+
 def _compute_locations_index(db: Session) -> dict[str, object]:
     """Тяжёлая агрегация каталога локаций: одна строка на каноническую идентичность."""
     catalog_index = LocationCatalogIndex(db)
@@ -2040,6 +2078,7 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
         primary_location, primary_code = ordered[0]
         stat = identity_stats.get(identity_key)
         is_paused, is_cancelled = _identity_status(catalog_index, ordered)
+        system_code, system_first_date = _first_event_in_current_system(ordered, stat)
         items.append(
             {
                 "slug": primary_location.external_key.strip().lower(),
@@ -2054,6 +2093,8 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
                 "events_count": stat.events_count if stat else 0,
                 "finishers_total": stat.finishers_total if stat else 0,
                 "first_event_date": stat.first_event_date if stat else None,
+                "first_event_date_in_system": system_first_date,
+                "first_event_system_code": system_code,
                 "last_event_date": stat.last_event_date if stat else None,
                 "best_male_time_sec": stat.best_male_time_sec if stat else None,
                 "best_male_time_display": (

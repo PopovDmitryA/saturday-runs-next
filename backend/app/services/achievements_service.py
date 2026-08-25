@@ -96,6 +96,13 @@ START_NUMBER_RANGES: dict[str, tuple[int, int]] = {
     "start_numbers": (1, 200),
     "start_numbers_pro": (201, 400),
 }
+# Названия тех же челленджей: их спрашивает не только страница достижений, но и
+# попап точки на карте («даст ли этот старт +1 в Нумераторе»), — держим рядом с
+# диапазонами, чтобы подписи не разъехались.
+START_NUMBER_TITLES: dict[str, str] = {
+    "start_numbers": "Нумератор",
+    "start_numbers_pro": "Нумератор ПРО",
+}
 # Сколько недельных окон показываем в планировании: ближайшая неделя, W+1, W+2.
 START_NUMBER_PLAN_WEEKS = 3
 
@@ -1281,7 +1288,7 @@ def _build_challenge_list(
             rows,
             upcoming,
             code="start_numbers",
-            title="Нумератор",
+            title=START_NUMBER_TITLES["start_numbers"],
             description="Прими участие в стартах с порядковыми номерами от №1 до №200 — неважно, в какой системе получен каждый номер.",
             low=START_NUMBER_RANGES["start_numbers"][0],
             high=START_NUMBER_RANGES["start_numbers"][1],
@@ -1290,7 +1297,7 @@ def _build_challenge_list(
             rows,
             upcoming,
             code="start_numbers_pro",
-            title="Нумератор ПРО",
+            title=START_NUMBER_TITLES["start_numbers_pro"],
             description="Для тех, кому мало двух сотен: старты с порядковыми номерами от №201 до №400 — неважно, в какой системе получен каждый номер.",
             low=START_NUMBER_RANGES["start_numbers_pro"][0],
             high=START_NUMBER_RANGES["start_numbers_pro"][1],

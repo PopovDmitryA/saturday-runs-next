@@ -1,13 +1,19 @@
 import { useState } from "react";
-import { trackAbEvent } from "../../lib/abTest";
+import { trackCtaClick } from "../../lib/abTest";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { fetchPortalTeaser, PortalHomeError, type PortalTeaser } from "./portalTypes";
-import { formatInt } from "../../lib/format";
+import { COUNT_FORMS, formatInt, pluralFormRu } from "../../lib/format";
+import { rememberTeaserClaim } from "./teaserClaim";
 
 /**
- * Тизер Т10 (вариант B): посетитель выбирает свою систему, вводит ID — и
+ * Тизер главной: посетитель выбирает свою систему, вводит ID — и
  * видит предпросмотр СВОЕЙ карточки на реальных данных из нашей БД. Полная
  * статистика — за регистрацией; тизер намеренно показывает только затравку.
+ *
+ * Кнопка под предпросмотром не просто ведёт на вход: введённый ID переживает
+ * редирект к провайдеру и после регистрации сам превращается в привязку
+ * профиля (см. teaserClaim). Иначе человек, только что посмотревший на свои
+ * цифры, попадал бы в пустой кабинет и вводил тот же ID заново.
  */
 
 const TEASER_PLATFORMS: { code: string; title: string; hint: string }[] = [
@@ -39,7 +45,6 @@ export function PortalTeaserCard() {
     }
     setLoading(true);
     setError(null);
-    trackAbEvent("teaser_preview", platform.code);
     fetchPortalTeaser(platform.code, cleaned)
       .then((result) => setTeaser(result))
       .catch((err) => {
@@ -107,7 +112,7 @@ export function PortalTeaserCard() {
           <div className="portal-teaser-grid">
             <div className="portal-teaser-tile">
               <b className="num">{formatInt(teaser.finishes)}</b>
-              <span>финишей</span>
+              <span>{pluralFormRu(teaser.finishes, COUNT_FORMS.finishes)}</span>
             </div>
             {teaser.best_time_display && (
               <div className="portal-teaser-tile">
@@ -117,7 +122,7 @@ export function PortalTeaserCard() {
             )}
             <div className="portal-teaser-tile">
               <b className="num">{formatInt(teaser.locations)}</b>
-              <span>{teaser.locations === 1 ? "локация" : "локаций"}</span>
+              <span>{pluralFormRu(teaser.locations, COUNT_FORMS.locations)}</span>
             </div>
           </div>
           <p className="portal-teaser-more">
@@ -127,10 +132,16 @@ export function PortalTeaserCard() {
           <a
             className="btn primary"
             href={PORTAL_LOGIN_HREF}
-            onClick={() => trackAbEvent("cta_click", "teaser")}
+            onClick={() => {
+              rememberTeaserClaim(platform.code, athleteId.trim(), platform.title);
+              trackCtaClick("teaser");
+            }}
           >
-            Увидеть свою полную статистику
+            Сохранить в кабинет
           </a>
+          <p className="portal-teaser-note">
+            Войдите — и профиль {platform.title} привяжется сам, вводить ID заново не придётся.
+          </p>
         </div>
       )}
     </div>

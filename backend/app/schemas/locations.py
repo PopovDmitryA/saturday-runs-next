@@ -353,7 +353,13 @@ class LocationIndexItemResponse(BaseModel):
     is_cancelled: bool = False
     events_count: int = 0
     finishers_total: int = 0
+    # Самый первый старт площадки в любой системе, включая parkrun-эпоху.
     first_event_date: date | None = None
+    # Первый старт в системе, в которой площадка живёт сейчас, и код этой
+    # системы. У переехавших из parkrun-эпохи даты расходятся на годы, и без
+    # второй колонки «когда здесь начались 5 вёрст» приходилось вычислять руками.
+    first_event_date_in_system: date | None = None
+    first_event_system_code: str | None = None
     last_event_date: date | None = None
     best_male_time_sec: int | None = None
     best_male_time_display: str | None = None
@@ -471,6 +477,44 @@ class LocationHomeDistanceResponse(BaseModel):
     home_name: str
     home_slug: str | None = None
     home_is_auto: bool = True
+
+
+class MapPointNextStartResponse(BaseModel):
+    """Прогноз ближайшего старта площадки в одной системе — для попапа карты."""
+
+    platform_code: str
+    number: int
+    date: date
+    # Сколько недель откручено от последнего известного старта: 1 — площадка
+    # идёт вровень, больше — она пропускала субботы, и прогноз тем шатче.
+    weeks_ahead: int = 1
+    # Какой «Нумератор» закрывает этот номер. None — номер вне обоих диапазонов.
+    challenge_code: str | None = None
+    challenge_title: str | None = None
+    # Даст ли старт +1: в сквозном зачёте челленджа и внутри своей системы.
+    # None — аноним либо номер вне диапазонов: считать нечего.
+    plus_one_overall: bool | None = None
+    plus_one_platform: bool | None = None
+
+
+class MapPointContextResponse(BaseModel):
+    """Личный контекст точки карты: он грузится по клику, а не пачкой со всей
+    картой, — на карте каталога три тысячи точек."""
+
+    identity_key: str
+    authenticated: bool = False
+    next_starts: list[MapPointNextStartResponse] = Field(default_factory=list)
+    home_distance: LocationHomeDistanceResponse | None = None
+
+
+class MapGeoPingRequest(BaseModel):
+    """Огрублённая отметка положения с карты. Координаты фронт присылает уже
+    округлёнными до двух знаков — сервер округляет их ещё раз."""
+
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    # Погрешность определения в метрах, как её отдал браузер.
+    accuracy_m: float | None = Field(default=None, ge=0)
 
 
 class LocationPersonalStatsResponse(BaseModel):
@@ -621,6 +665,15 @@ class ProtocolVolunteerResponse(BaseModel):
     is_me: bool = False
 
 
+class ProtocolVolunteerRoleResponse(BaseModel):
+    """Роль этого старта и сколько человек её исполняли — для фильтра."""
+
+    role: str
+    count: int
+    # Ключевая роль: на площадке и без возможности бежать. Такие идут первыми.
+    is_core: bool = False
+
+
 class LocationProtocolResponse(BaseModel):
     slug: str
     name: str
@@ -642,3 +695,5 @@ class LocationProtocolResponse(BaseModel):
     age_groups: list[ProtocolAgeGroupResponse] = Field(default_factory=list)
     results: list[ProtocolResultResponse] = Field(default_factory=list)
     volunteers: list[ProtocolVolunteerResponse] = Field(default_factory=list)
+    # Роли старта в порядке показа: сначала ключевые, потом остальные.
+    volunteer_roles: list[ProtocolVolunteerRoleResponse] = Field(default_factory=list)

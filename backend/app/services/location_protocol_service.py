@@ -21,7 +21,7 @@
 
 Сводные цифры старта и флаги рекордов не пересчитываем — берём из журнала
 локации (build_location_events, кэш 3ч): там уже посчитана и прогрессия
-рекордов, и сквозной номер сбора площадки.
+рекордов, и сквозной номер старта площадки.
 """
 
 from __future__ import annotations
@@ -69,7 +69,12 @@ from app.services.location_page_service import (
     resolve_location_identity,
 )
 from app.time_format import format_finish_time_display, normalize_finish_time_display
-from app.volunteer_role_taxonomy import canonical_volunteer_role
+from app.volunteer_role_taxonomy import (
+    canonical_volunteer_role,
+    platform_role_label,
+    role_display_order,
+    role_is_core,
+)
 
 # Тот же TTL, что у журнала: субботним вечером протокол дозаливается частями
 # (сводка приходит раньше полного состава), и залипший на полдня кэш показывал
@@ -84,7 +89,11 @@ HISTORY_RANK_MAX_RESULTS = 150_000
 
 
 def location_protocol_cache_key(slug: str, platform_code: str, event_date: date) -> str:
-    return f"locations:protocol:v6:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
+    # v7 — роли волонтёров названы по системе протокола и упорядочены (ключевые
+    # сверху), плюс появился volunteer_roles для фильтра. Без смены версии
+    # старый снимок ещё три часа показывал бы «Директор забега» в 5 вёрст и
+    # пустой фильтр ролей.
+    return f"locations:protocol:v7:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
 
 
 def invalidate_location_protocol_cache(slug: str, platform_code: str, event_date: date) -> None:
@@ -233,7 +242,8 @@ def _compute_location_protocol(
     _attach_history_ranks(db, location_ids, results)
     _attach_run_numbers(db, event, results)
     _attach_age_group_records(db, event, event_platform_code, location_ids, results)
-    volunteers = _build_volunteers(db, event, location_ids)
+    volunteers = _build_volunteers(db, event, event_platform_code, location_ids)
+    volunteer_roles = _volunteer_role_counts(db, event, event_platform_code)
 
     summary_row = (
         db.query(EventSummary)
@@ -309,6 +319,7 @@ def _compute_location_protocol(
         "age_groups": age_groups,
         "results": results,
         "volunteers": volunteers,
+        "volunteer_roles": volunteer_roles,
     }
     return payload
 
@@ -622,7 +633,9 @@ def _volunteer_history(
     return dict(career), dict(here), dict(prior_roles)
 
 
-def _build_volunteers(db: Session, event: Event, location_ids: list[UUID]) -> list[dict[str, Any]]:
+def _build_volunteers(
+    db: Session, event: Event, platform_code: str, location_ids: list[UUID]
+) -> list[dict[str, Any]]:
     """Волонтёры старта: один человек — одна строка, роли собраны в список."""
     rows = (
         db.query(
@@ -677,21 +690,66 @@ def _build_volunteers(db: Session, event: Event, location_ids: list[UUID]) -> li
         if (key, role.key) in seen_role_keys:
             continue
         seen_role_keys.add((key, role.key))
-        person["roles"].append(role.label)
+        # Показываем название роли той системы, чей это протокол; канонический
+        # ключ остаётся для дедупликации и отметки «впервые в этой роли».
+        label = platform_role_label(platform_code, row.role, role)
+        person["roles"].append((role_display_order(role.key), label))
         if row.participant_id is not None and role.key not in prior_roles.get(
             row.participant_id, set()
         ):
-            person["new_roles"].append(role.label)
+            person["new_roles"].append((role_display_order(role.key), label))
 
     for person in people.values():
-        person["roles"].sort()
-        person["new_roles"].sort()
+        # Ключевые роли (на площадке и без бега) — первыми, дальше остальные.
+        person["roles"].sort(key=lambda item: (item[0], item[1]))
+        person["new_roles"].sort(key=lambda item: (item[0], item[1]))
+
     # Без ролей человек в списке не нужен: у parkrun такую строку даёт служебная
     # сводка «Total Credits (N×)», ролью не являющаяся.
-    return sorted(
-        (person for person in people.values() if person["roles"]),
-        key=lambda person: (person["name"] or "").lower(),
+    ranked = [person for person in people.values() if person["roles"]]
+    # Наверху таблицы — те, кто держал ключевые роли; внутри группы по алфавиту.
+    ranked.sort(key=lambda person: (person["roles"][0][0], (person["name"] or "").lower()))
+    for person in ranked:
+        person["roles"] = [label for _order, label in person["roles"]]
+        person["new_roles"] = [label for _order, label in person["new_roles"]]
+    return ranked
+
+
+def _volunteer_role_counts(
+    db: Session, event: Event, platform_code: str
+) -> list[dict[str, Any]]:
+    """Роли этого старта со счётчиком — в порядке показа фильтра.
+
+    Считаем по строкам протокола, а не по собранным людям: один человек с двумя
+    ролями должен быть учтён в обеих.
+    """
+    counts: dict[str, int] = defaultdict(int)
+    labels: dict[str, str] = {}
+    seen: set[tuple[str, str]] = set()
+    rows = (
+        db.query(VolunteerResult.role, VolunteerResult.participant_id, VolunteerResult.external_result_key)
+        .filter(VolunteerResult.event_id == event.id)
+        .all()
     )
+    for role_raw, participant_id, external_key in rows:
+        role = canonical_volunteer_role(role_raw)
+        if role is None:
+            continue
+        person = str(participant_id or external_key)
+        if (person, role.key) in seen:
+            continue
+        seen.add((person, role.key))
+        counts[role.key] += 1
+        labels[role.key] = platform_role_label(platform_code, role_raw, role)
+    ordered = sorted(counts, key=lambda key: (role_display_order(key), labels[key]))
+    return [
+        {
+            "role": labels[key],
+            "count": counts[key],
+            "is_core": role_is_core(key),
+        }
+        for key in ordered
+    ]
 
 
 def _attach_history_ranks(

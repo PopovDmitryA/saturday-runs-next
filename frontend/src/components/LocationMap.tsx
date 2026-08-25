@@ -1,11 +1,23 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type { MapLocationPoint } from "../lib/api";
-import { formatDate, formatInt, platformCodeLabel, pluralFormRu } from "../lib/format";
+import { getMapPointContext, type MapLocationPoint, type MapPointContext } from "../lib/api";
+import { formatDate, formatInt, formatKm, platformCodeLabel, pluralFormRu } from "../lib/format";
+import { addDoubleTapDragZoom } from "../lib/mapDoubleTapZoom";
+import {
+  drawMyPosition,
+  focusOnMyPosition,
+  geolocationPermission,
+  geolocationSupported,
+  hasAskedForGeolocation,
+  rememberGeolocationAsked,
+  reportMyPosition,
+  requestMyPosition,
+} from "../lib/mapGeolocation";
 import type { MapViewportRef } from "../lib/mapViewport";
 import { addZoomControl } from "../lib/mapZoomControl";
 import { MapFullscreenButton } from "./MapFullscreenButton";
+import { MapMyLocationButton } from "./MapMyLocationButton";
 
 const visitedIcon = L.divIcon({
   className: "map-marker map-marker-visited",
@@ -210,6 +222,11 @@ type LocationMapProps = {
   countLabel?: (count: number) => string;
   /** Кнопка «Посмотреть людей в таблице» в попапе карты туристов. */
   onShowDetails?: (identityKey: string, name: string) => void;
+  /**
+   * Показывать кнопку «где я» и спрашивать геопозицию при открытии карты.
+   * На чужом профиле не нужна — там смотрят чужие визиты, а не свою округу.
+   */
+  myLocation?: boolean;
 };
 
 // Стартовая область каталога: Европа + вся Россия до Японии (просьба Дмитрия
@@ -276,13 +293,133 @@ function formatPopupTitle(name: string, url: string | null, pageSlug?: string | 
   const escapedName = escapeHtml(name);
   if (pageSlug) {
     // Внутренняя страница локации приоритетнее внешней ссылки на систему.
-    return `<strong><a class="map-popup-link" href="/locations/${encodeURIComponent(pageSlug)}">${escapedName}</a></strong>`;
+    // Открываем в новой вкладке (просьба Дмитрия 22.08.2026): карта — рабочий
+    // стол планирования, человек ходит по нескольким точкам подряд, и уводить
+    // его со сложенного вьюпорта ради одной страницы незачем.
+    return `<strong><a class="map-popup-link" href="/locations/${encodeURIComponent(pageSlug)}" target="_blank" rel="noopener noreferrer">${escapedName}</a></strong>`;
   }
   if (!url) {
     return `<strong>${escapedName}</strong>`;
   }
   const escapedUrl = escapeHtml(url);
   return `<strong><a class="map-popup-link" href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedName}</a></strong>`;
+}
+
+/** «2026-08-29» → «29.08»: год в прогнозе на ближайшие недели только мешает. */
+function shortDate(iso: string): string {
+  const [, month, day] = iso.split("-");
+  return day && month ? `${day}.${month}` : iso;
+}
+
+/**
+ * Даст ли этот старт +1 в «Нумераторе» — одной строкой на оба зачёта
+ * (формулировка Дмитрия 22.08.2026): «+1 в «Нумераторе»: 5 вёрст — да;
+ * общий зачёт — нет». До этого на то же самое уходило три строки попапа.
+ *
+ * Зачёта два, и это не дублирование: клетку челленджа закрывает пробежка в
+ * ЛЮБОЙ системе, но тот же челлендж считается и в разрезе одной системы
+ * (фильтр на странице достижений). Старт №137 на С95 у того, кто №137 уже брал
+ * на 5 вёрстах, в сквозном зачёте не даст ничего, а в зачёте С95 — даст.
+ * Механику объясняет подсказка по title — сайт показывает такие и по тапу.
+ */
+function plusOneLine(
+  title: string,
+  platformCode: string,
+  gainedOverall: boolean,
+  gainedPlatform: boolean,
+): string {
+  const answer = (gained: boolean) =>
+    `<b class="${gained ? "map-popup-plus-yes" : "map-popup-plus-no"}">${
+      gained ? "да" : "нет"
+    }</b>`;
+  const hint =
+    "Клетку «Нумератора» закрывает старт с этим номером в любой системе — это общий зачёт. " +
+    "Тот же челлендж считается и внутри одной системы, поэтому ответа два.";
+  return (
+    `<div class="map-popup-line map-popup-plus-line" title="${escapeHtml(hint)}">` +
+    `+1 в «${escapeHtml(title)}»: ${escapeHtml(platformCodeLabel(platformCode))} — ${answer(
+      gainedPlatform,
+    )}; общий зачёт — ${answer(gainedOverall)}</div>`
+  );
+}
+
+function nextStartHtml(entry: MapPointContext["next_starts"][number]): string {
+  const lines: string[] = [];
+  // «≈» — не кокетство: точного расписания у нас нет, номер и дата откручены от
+  // последнего известного старта, и локация вправе пропустить субботу.
+  lines.push(
+    `<div class="map-popup-line map-popup-next">Ближайший старт: <strong>№${entry.number}</strong> ≈ ${escapeHtml(
+      shortDate(entry.date),
+    )} · ${escapeHtml(platformCodeLabel(entry.platform_code))}</div>`,
+  );
+  // Приписки «площадка пропускала субботы» тут нет намеренно: дату мы называем,
+  // а перенос старта на неделю с тем же номером и так очевиден (решение Дмитрия
+  // 22.08.2026). Про номер вне диапазонов «Нумератора» тоже не пишем — просто не
+  // выводим строку челленджа: номер старта человек видит и сам.
+  if (entry.plus_one_overall === null || entry.plus_one_platform === null) {
+    return lines.join("");
+  }
+  lines.push(
+    plusOneLine(
+      entry.challenge_title ?? "Нумератор",
+      entry.platform_code,
+      entry.plus_one_overall,
+      entry.plus_one_platform,
+    ),
+  );
+  return lines.join("");
+}
+
+function homeDistanceHtml(home: NonNullable<MapPointContext["home_distance"]>): string {
+  const changeLink =
+    '<a class="map-popup-link map-popup-home-change" href="/settings#home-location" target="_blank" rel="noopener noreferrer">сменить дом</a>';
+  if (home.is_home) {
+    return `<div class="map-popup-line map-popup-home">Это ваша домашняя локация · ${changeLink}</div>`;
+  }
+  const distance = home.distance_km == null ? "—" : formatKm(home.distance_km);
+  // Приписку «выбран автоматически» показываем только у авто-дома: у выбранного
+  // руками сомневаться не в чем, а ссылка всё равно рядом.
+  const auto = home.home_is_auto ? " (выбран автоматически)" : "";
+  return (
+    `<div class="map-popup-line map-popup-home">От дома «${escapeHtml(home.home_name)}»${escapeHtml(auto)}: ` +
+    `<strong>${escapeHtml(distance)}</strong> · ${changeLink}</div>`
+  );
+}
+
+function pointContextHtml(context: MapPointContext): string {
+  const lines = context.next_starts.map(nextStartHtml);
+  if (context.home_distance) {
+    lines.push(homeDistanceHtml(context.home_distance));
+  }
+  return lines.join("");
+}
+
+/**
+ * Системы площадки плашками рядом с названием. Отдельной строкой «Система: …»
+ * они не нужны (решение Дмитрия 22.08.2026): цвет плашки тот же, что у точки на
+ * карте и у кнопки фильтра, — строка только съедала высоту попапа.
+ */
+function platformChips(point: MapLocationPoint, stats: MapLocationPoint): string {
+  const codes =
+    point.platform_codes.length > 0
+      ? point.platform_codes
+      : point.active_platform
+        ? [point.active_platform]
+        : (stats.platform_visits ?? point.platform_visits ?? []).map(
+            (visit) => visit.platform_code,
+          );
+  const unique = [...new Set(codes)].filter(Boolean);
+  if (unique.length === 0) {
+    return "";
+  }
+  return unique
+    .map(
+      (code) =>
+        `<span class="map-popup-system map-popup-system-${escapeHtml(code)}">${escapeHtml(
+          platformCodeLabel(code),
+        )}</span>`,
+    )
+    .join("");
 }
 
 function popupHtml(
@@ -292,6 +429,9 @@ function popupHtml(
   // Строка карты туристов («здесь были N из топ-1000») — на тачскринах попап
   // единственный способ прочитать число, всплывающей подсказки там нет.
   countLine?: string | null,
+  // Готовый HTML блока личного контекста. По умолчанию — заглушка «считаю»:
+  // он приезжает отдельным запросом уже после открытия попапа.
+  contextBody?: string,
 ): string {
   const visitedInfo =
     variant === "catalog" && point.catalog_identity_key
@@ -305,7 +445,13 @@ function popupHtml(
   // заголовка человек попадает на нашу страницу локации, а официальная ссылка
   // есть уже там. Внешний адрес остаётся запасным вариантом для заголовка —
   // у точки без своей страницы иначе не было бы ссылки вовсе.
-  const lines = [formatPopupTitle(point.name, locationUrl, pageSlug)];
+  const lines = [
+    `<div class="map-popup-title">${formatPopupTitle(
+      point.name,
+      locationUrl,
+      pageSlug,
+    )}${platformChips(point, stats)}</div>`,
+  ];
   if (countLine) {
     lines.push(`<div class="map-popup-line map-popup-tourists">${escapeHtml(countLine)}</div>`);
     // Кнопка вниз к таблице: клик по точке уже зажёг светофоры, но таблица
@@ -314,11 +460,17 @@ function popupHtml(
       '<div class="map-popup-line"><button type="button" class="map-popup-link map-popup-details">Посмотреть людей в таблице ↓</button></div>',
     );
   }
-  if (point.city) {
-    lines.push(`<div class="map-popup-line">${escapeHtml(point.city)}</div>`);
-  }
-  if (point.region && point.region !== point.city) {
-    lines.push(`<div class="map-popup-line">${escapeHtml(point.region)}</div>`);
+  // Город и регион — одной строкой («Екатеринбург — Свердловская»): порознь они
+  // занимали две строки попапа, а читаются всё равно как один адрес. Регион,
+  // повторяющий город (Москва, Питер), не дублируем.
+  // Регион не приписываем, если он уже сидит в названии города: у части
+  // зарубежных площадок город записан как «Аргентина, Буэнос-Айрес», и строка
+  // выходила «Аргентина, Буэнос-Айрес — Буэнос-Айрес».
+  const city = point.city ?? "";
+  const region = point.region && !city.includes(point.region) ? point.region : null;
+  const place = [city, region].filter(Boolean).join(" — ");
+  if (place) {
+    lines.push(`<div class="map-popup-line">${escapeHtml(place)}</div>`);
   }
 
   // «Не действует» сильнее отмены: у неработающей площадки сообщать про
@@ -329,6 +481,18 @@ function popupHtml(
     lines.push(`<div class="map-popup-line map-popup-cancelled">Отмена ближайшего старта</div>`);
   } else if (point.is_upcoming || stats.is_upcoming) {
     lines.push(`<div class="map-popup-line map-popup-upcoming">Скоро откроется</div>`);
+  }
+
+  // Место под личный контекст точки: номер ближайшего старта, «+1 в Нумераторе»
+  // и дальность от дома. Оно приезжает отдельным запросом по клику — считать
+  // это для всех трёх тысяч точек каталога разом незачем (см. popupopen ниже).
+  if (point.catalog_identity_key) {
+    lines.push(
+      `<div class="map-popup-context">${
+        contextBody ??
+        '<span class="muted map-popup-context-loading">Считаю ближайший старт…</span>'
+      }</div>`,
+    );
   }
 
   if (variant === "visited" || visitedInfo) {
@@ -367,19 +531,8 @@ function popupHtml(
         lines.push(`<div class="map-popup-line muted">Волонтёрство: ${volunteerDates}</div>`);
       }
     }
-  } else {
-    const platforms =
-      point.platform_codes.length > 0
-        ? point.platform_codes
-        : point.active_platform
-          ? [point.active_platform]
-          : [];
-    if (platforms.length > 0) {
-      lines.push(
-        `<div class="map-popup-line">Система: ${platforms.map(platformCodeLabel).join(", ")}</div>`,
-      );
-    }
   }
+  // Строки «Система: …» тут больше нет — системы висят плашками у названия.
   return `<div class="map-popup">${lines.join("")}</div>`;
 }
 
@@ -398,6 +551,7 @@ export function LocationMap({
   onSelectPoint,
   countLabel,
   onShowDetails,
+  myLocation = false,
 }: LocationMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -418,6 +572,14 @@ export function LocationMap({
   onSelectPointRef.current = onSelectPoint;
   const onShowDetailsRef = useRef(onShowDetails);
   onShowDetailsRef.current = onShowDetails;
+  // Личный контекст точек, уже загруженный в этой сессии карты: человек кликает
+  // по одним и тем же площадкам туда-сюда, и второй запрос за тем же ответом
+  // не нужен. Живёт в ref, а не в модуле, — данные личные, и при смене
+  // пользователя карта пересоздаётся вместе с кэшем.
+  const pointContextCacheRef = useRef(new Map<string, MapPointContext>());
+  // Карта уже наведена на положение человека («где я»). Общий вьюпорт поверх
+  // него не применяем: иначе кадр отбрасывало бы обратно на всю страну.
+  const myFocusAppliedRef = useRef(false);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -435,7 +597,7 @@ export function LocationMap({
       // активной карты и перезаписать shared её собственным (устаревшим) видом.
       const shared = viewportRef?.current;
       map.invalidateSize();
-      if (shared) {
+      if (shared && !myFocusAppliedRef.current) {
         map.setView([shared.lat, shared.lng], shared.zoom, { animate: false });
       }
     }, 30);
@@ -453,6 +615,7 @@ export function LocationMap({
     }).setView([55.75, 37.62], 5);
 
     addZoomControl(map);
+    const removeDoubleTapZoom = addDoubleTapDragZoom(map);
     L.control.attribution({ prefix: false }).addTo(map);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -475,6 +638,7 @@ export function LocationMap({
 
     return () => {
       map.off("moveend", writeViewport);
+      removeDoubleTapZoom();
       map.remove();
       mapRef.current = null;
       markersRef.current = null;
@@ -487,6 +651,47 @@ export function LocationMap({
     if (!map || !markers) {
       return;
     }
+
+    /**
+     * Догрузить личный контекст точки и перерисовать попап вместе с ним.
+     *
+     * Именно перерисовать через `setPopupContent`, а не подменить innerHTML у
+     * слота: Leaflet держит исходную строку и восстанавливает её из неё при
+     * каждом `update()` — вписанные в DOM строки тут же затирались обратно
+     * заглушкой «считаю».
+     */
+    const fillPointContext = async (
+      marker: L.Marker,
+      identity: string,
+      render: (contextBody?: string) => string,
+      // Перерисовка пересоздаёт узлы попапа, и обработчики на кнопках внутри
+      // него теряются — их вешают заново этим коллбэком.
+      onRendered: () => void,
+    ) => {
+      const apply = (body: string) => {
+        // Попап мог закрыться (или открыться другой), пока летел запрос —
+        // тогда переписывать содержимое незачем.
+        if (!marker.isPopupOpen()) {
+          return;
+        }
+        marker.setPopupContent(render(body));
+        onRendered();
+      };
+      const cached = pointContextCacheRef.current.get(identity);
+      if (cached) {
+        apply(pointContextHtml(cached));
+        return;
+      }
+      try {
+        const context = await getMapPointContext(identity);
+        pointContextCacheRef.current.set(identity, context);
+        apply(pointContextHtml(context));
+      } catch {
+        // Молча: попап и без прогноза остаётся полезным, а сообщение об ошибке
+        // сети в облачке над точкой человеку ничего не даёт.
+        apply("");
+      }
+    };
 
     const buildMarker = (point: MapLocationPoint): L.Marker => {
       const visitedInfo =
@@ -508,23 +713,35 @@ export function LocationMap({
               identity != null && selectedRef.current.has(identity),
             );
       const marker = L.marker([point.latitude, point.longitude], { icon });
-      marker.bindPopup(
-        popupHtml(point, variant, visitedByIdentity, count === null ? null : countLabel?.(count)),
-      );
+      const countLine = count === null ? null : countLabel?.(count) ?? null;
+      const render = (contextBody?: string) =>
+        popupHtml(point, variant, visitedByIdentity, countLine, contextBody);
+      marker.bindPopup(render());
+      // Кнопка «Посмотреть людей в таблице» живёт в HTML попапа, поэтому
+      // обработчик вешаем после каждой отрисовки: и при открытии, и когда
+      // догрузившийся контекст перерисовал содержимое.
+      const bindDetailsButton = () => {
+        if (count === null || !identity) {
+          return;
+        }
+        const button = marker
+          .getPopup()
+          ?.getElement()
+          ?.querySelector<HTMLButtonElement>(".map-popup-details");
+        button?.addEventListener("click", () =>
+          onShowDetailsRef.current?.(identity, point.name),
+        );
+      };
+      if (identity) {
+        marker.on("popupopen", () => {
+          void fillPointContext(marker, identity, render, bindDetailsButton);
+        });
+      }
       if (count !== null && identity) {
         // Клик по точке — выбор площадки: именно он зажигает светофоры в
         // таблице рейтинга. Попап при этом остаётся: в нём подробности точки.
         marker.on("click", () => onSelectPointRef.current?.(identity, point.name));
-        // Кнопка живёт в HTML попапа, поэтому обработчик вешаем при открытии:
-        // до этого её узла в документе нет.
-        marker.on("popupopen", (event) => {
-          const button = event.popup
-            .getElement()
-            ?.querySelector<HTMLButtonElement>(".map-popup-details");
-          button?.addEventListener("click", () =>
-            onShowDetailsRef.current?.(identity, point.name),
-          );
-        });
+        marker.on("popupopen", bindDetailsButton);
         marker.bindTooltip(count > 0 ? `${point.name}: ${count}` : point.name, {
           direction: "top",
           opacity: 0.92,
@@ -701,6 +918,73 @@ export function LocationMap({
     }
   }, [selectedKey, countsByIdentity]);
 
+  // ---------------------------------------------------------------------------
+  // «Где я»: точка текущего положения и приближение к ближайшим стартам.
+
+  const [locateState, setLocateState] = useState<"idle" | "loading" | "ready" | "denied">(
+    "idle",
+  );
+  const myPositionLayerRef = useRef<L.LayerGroup | null>(null);
+  // Точки нужны обработчику кнопки, а он создаётся один раз — держим их в ref.
+  const pointsRef = useRef(points);
+  pointsRef.current = points;
+  const autoLocateDoneRef = useRef(false);
+
+  const locate = useCallback(async () => {
+    const map = mapRef.current;
+    if (!map || !geolocationSupported()) {
+      return;
+    }
+    setLocateState("loading");
+    rememberGeolocationAsked();
+    try {
+      const position = await requestMyPosition();
+      const current = mapRef.current;
+      if (!current) {
+        return;
+      }
+      myPositionLayerRef.current?.remove();
+      myPositionLayerRef.current = drawMyPosition(current, position);
+      reportMyPosition(position);
+      focusOnMyPosition(current, position, pointsRef.current);
+      myFocusAppliedRef.current = true;
+      setLocateState("ready");
+    } catch {
+      // Отказ, таймаут GPS и «нет геолокации» для кнопки одно и то же: показать
+      // нечего, и подсказка в титле объясняет, где включить.
+      setLocateState("denied");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!myLocation || !active || autoLocateDoneRef.current || points.length === 0) {
+      return;
+    }
+    if (!geolocationSupported()) {
+      return;
+    }
+    // Отметку ставим до первого await: в dev React вызывает эффект дважды, и
+    // без неё окно браузера показывалось бы два раза подряд.
+    autoLocateDoneRef.current = true;
+    void (async () => {
+      const permission = await geolocationPermission();
+      if (permission === "denied") {
+        setLocateState("denied");
+        return;
+      }
+      // Разрешение уже выдано — определяемся молча. Не выдано, но окно человек
+      // однажды уже видел, — второй раз сами не показываем: остаётся кнопка.
+      if (permission !== "granted" && hasAskedForGeolocation()) {
+        return;
+      }
+      void locate();
+    })();
+    // Флага «отменено» тут нет намеренно: снимать размонтированную карту не от
+    // чего (locate() сам перечитывает mapRef), а лишний setState в React 18 —
+    // пустая операция. С флагом же двойной вызов эффекта в dev гасил бы первый
+    // — единственный — заход, и автоопределение в разработке не работало вовсе.
+  }, [myLocation, active, points.length, locate]);
+
   return (
     <div className="location-map-shell">
       {points.length === 0 ? <p className="location-map-empty">{emptyMessage}</p> : null}
@@ -712,6 +996,9 @@ export function LocationMap({
       ) : null}
       {onToggleFullscreen && (
         <MapFullscreenButton isFullscreen={isFullscreen} onToggle={onToggleFullscreen} />
+      )}
+      {myLocation && geolocationSupported() && points.length > 0 && (
+        <MapMyLocationButton state={locateState} onClick={() => void locate()} />
       )}
     </div>
   );

@@ -273,6 +273,7 @@ def _run_five_verst_latest(cfg: SessionConfig) -> None:
                 "new_summaries": sum(1 for x in plan if x.action.value == "new_summary"),
                 "changed_summaries": sum(1 for x in plan if x.action.value == "changed_summary"),
                 "missing_protocol": sum(1 for x in plan if x.action.value == "missing_protocol"),
+                "stale_protocols": sum(1 for x in plan if x.action.value == "stale_protocol"),
                 "needs_update": sum(1 for x in plan if x.action.value != "unchanged"),
             }
             _print_result(payload)

@@ -2,6 +2,9 @@
 from app.volunteer_role_taxonomy import (
     CANONICAL_ROLE_LABELS,
     canonical_volunteer_role,
+    platform_role_label,
+    role_display_order,
+    role_is_core,
     role_occasions,
     strip_role_counters,
 )
@@ -94,3 +97,63 @@ def test_canonical_labels_are_unique() -> None:
     # одна роль, но считались бы как две.
     labels = list(CANONICAL_ROLE_LABELS.values())
     assert len(labels) == len(set(labels))
+
+
+# --- Название роли в протоколе: по системе этого протокола -------------------
+
+
+def _label(platform_code: str, raw: str) -> str:
+    canonical = canonical_volunteer_role(raw)
+    assert canonical is not None
+    return platform_role_label(platform_code, raw, canonical)
+
+
+def test_protocol_shows_the_systems_own_role_name() -> None:
+    """Одна работа — четыре названия; в протоколе видно название его системы.
+
+    До 23.08.2026 витрина показывала канонический ярлык, и в протоколе 5 вёрст
+    стоял «Директор забега» — название С95 (репорт Дмитрия).
+    """
+    assert _label("five_verst", "Организатор") == "Организатор"
+    assert _label("s95", "Директор") == "Директор"
+    assert _label("runpark", "Руководитель") == "Руководитель"
+
+
+def test_scanner_keeps_its_local_name() -> None:
+    assert _label("five_verst", "Сканирование штрих-кодов") == "Сканирование штрих-кодов"
+    assert _label("s95", "Сканер") == "Сканер"
+    assert _label("runpark", "Сканирование") == "Сканирование"
+
+
+def test_s95_milestone_counter_is_not_part_of_the_name() -> None:
+    assert _label("s95", "Сканер 25") == "Сканер"
+
+
+def test_parkrun_keeps_russian_canonical_label() -> None:
+    """У parkrun свои ярлыки английские, а читают протокол по-русски."""
+    assert _label("parkrun", "Run Director (3×)") == "Директор забега"
+    assert _label("parkrun", "Barcode Scanning (1×)") == "Сканирование штрих-кодов"
+
+
+def test_core_roles_sort_before_the_rest() -> None:
+    """Ключевые (на площадке и без бега) — сверху, остальные под ними."""
+    assert role_is_core("run_director")
+    assert role_is_core("barcode_scanning")
+    # Пейсмейкер стоит на площадке, но бежит — не ключевая.
+    assert not role_is_core("pacer")
+    # Фотограф бегу не мешает, связи с общественностью — вообще удалённая.
+    assert not role_is_core("photographer")
+    assert not role_is_core("communications")
+
+    order = sorted(
+        ["pacer", "run_director", "communications", "timekeeper"],
+        key=role_display_order,
+    )
+    assert order[:2] == ["run_director", "timekeeper"]
+    assert set(order[2:]) == {"pacer", "communications"}
+
+
+def test_core_group_keeps_the_saturday_morning_order() -> None:
+    """Внутри группы порядок — как в CANONICAL_ROLE_LABELS (ход утра)."""
+    assert role_display_order("run_director") < role_display_order("timekeeper")
+    assert role_display_order("timekeeper") < role_display_order("barcode_scanning")

@@ -14,6 +14,7 @@ from app.services.sync_report_labels import protocol_detail_label
 from app.sync import upsert
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
 from app.sync.iteration_commit import commit_step, persist_summary_error, rollback_step
+from app.sync.protocol_debt import summary_protocol_is_stale
 
 PLATFORM_CODE = "five_verst"
 logger = logging.getLogger(__name__)
@@ -138,6 +139,8 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
 
         if location_row is None:
             logger.info("location sync: %s — fetch location page", options.location_slug)
+            # Транзакцию, открытую проверкой выше, закрываем до похода в сеть.
+            db.commit()
             location_data, location_html = bulk_parser.fetch_location(options.location_slug)
             logger.info("location sync: %s — upsert location to DB", options.location_slug)
             location_row, location_changed = upsert.upsert_location(
@@ -160,6 +163,7 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
             location_name = location_row.name
 
         logger.info("location sync: %s — fetch event summaries", options.location_slug)
+        db.commit()
         summaries, _ = bulk_parser.fetch_event_summaries(
             options.location_slug,
             location_name,
@@ -175,6 +179,12 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
                     result.summaries_upserted += 1
                     summaries_to_fetch.append((summary_row, summary))
                 elif summary_row.event_id is None:
+                    summaries_to_fetch.append((summary_row, summary))
+                elif summary_protocol_is_stale(db, summary_row):
+                    # Саммари сошлось, а протокол под ним — от прошлой версии:
+                    # долг с прогона, который записал саммари и не успел скачать
+                    # протокол. Без этой ветки старт остался бы `unchanged`
+                    # навсегда.
                     summaries_to_fetch.append((summary_row, summary))
                 else:
                     result.summaries_unchanged += 1
@@ -222,9 +232,11 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
                 result.fetched_protocols.append(label)
                 if upsert_result.protocol_changed:
                     result.changed_protocols.append(label)
+                # Коммит строго до паузы — иначе сон засчитывается в
+                # «idle in transaction», который прод рвёт через 15 минут.
+                commit_step(db)
                 if index + 1 < len(protocol_queue):
                     wait_between_protocols(reason="location")
-                commit_step(db)
             except FiveVerstBanDetected as exc:
                 # Кулдаун общий для всех фетчей — остаток очереди упал бы с той
                 # же ошибкой; недокачанное заберёт следующий прогон.

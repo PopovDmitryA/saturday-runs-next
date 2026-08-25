@@ -12,6 +12,7 @@ import {
   getDashboard,
   getMyHistory,
   getOnThisDay,
+  keepDisplayName,
   type DashboardResponse,
   type User,
 } from "../../../lib/api";
@@ -20,6 +21,7 @@ import {
   PORTAL_CABINET_HISTORY_HREF,
   PORTAL_CABINET_MAP_HREF,
   PORTAL_CABINET_RUNS_HREF,
+  PORTAL_DISPLAY_NAME_SETTINGS_HREF,
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_LOGIN_HREF,
 } from "../../../lib/portalRoutes";
@@ -243,6 +245,12 @@ function PortalDashboardContent({ user }: { user: User }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [linksCount, setLinksCount] = useState<number | null>(null);
+  // Две разные плашки про имя, обе гасятся одной кнопкой «Понятно»:
+  //  - notice: разовое «имя теперь берётся из профиля» после перехода 25.08.2026;
+  //  - suggestion: алгоритм считает, что подошла бы другая система. Имя при этом
+  //    молча НЕ меняется — человек решает сам в настройках.
+  const [nameNotice, setNameNotice] = useState<string | null>(user.display_name_notice);
+  const [nameSuggestion, setNameSuggestion] = useState(user.display_name_suggestion);
   const hasLoadedRef = useRef(false);
 
   const load = useCallback(async (options?: { background?: boolean }) => {
@@ -291,6 +299,38 @@ function PortalDashboardContent({ user }: { user: User }) {
           <p>{error}</p>
           <button type="button" className="btn secondary" onClick={() => void load()}>
             Повторить
+          </button>
+        </div>
+      )}
+
+      {(nameNotice || nameSuggestion) && (
+        <div className={`banner ${nameSuggestion ? "warning" : "info"}`}>
+          {nameSuggestion ? (
+            <p>
+              В системе «{nameSuggestion.source_title}» вы записаны как{" "}
+              <strong>{nameSuggestion.name}</strong>, а на сайте показываетесь как{" "}
+              <strong>{userLabel(user)}</strong>. Имя менять не стали —{" "}
+              <a href={PORTAL_DISPLAY_NAME_SETTINGS_HREF}>решите в настройках</a>.
+            </p>
+          ) : (
+            <p>
+              Имя в рейтингах и протоколах теперь берётся из вашего профиля в беговой системе —{" "}
+              <strong>{userLabel(user)}</strong> (было «{nameNotice}»). Поменять его можно{" "}
+              <a href={PORTAL_DISPLAY_NAME_SETTINGS_HREF}>в настройках</a>.
+            </p>
+          )}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              // Гасим сразу: ответ сервера тут не нужен, а ждать его ради
+              // исчезновения баннера — лишняя пауза.
+              setNameNotice(null);
+              setNameSuggestion(null);
+              void keepDisplayName().catch(() => undefined);
+            }}
+          >
+            Понятно
           </button>
         </div>
       )}

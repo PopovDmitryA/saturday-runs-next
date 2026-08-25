@@ -14,7 +14,6 @@ from app.schemas.admin_stats import AdminSiteStatsResponse
 from app.services.admin_pipeline_status_service import get_admin_pipeline_status
 from app.services.admin_protocol_sync_service import sync_protocol_from_url
 from app.services.admin_site_stats_service import get_admin_site_stats
-from app.services.admin_sweep_status_service import sweep_report_text
 from app.services.admin_sync_service import enqueue_pipeline, list_pipelines
 from app.services.broadcast_compose_state import (
     clear_broadcast_state,
@@ -266,15 +265,6 @@ def admin_sync_status(
         "queue_depths": payload["queue_depths"],
         "parkrun_local_worker": payload["parkrun_local_worker"],
     }
-
-
-@router.get("/admin/sweep-status")
-def admin_sweep_status(
-    telegram_id: int,
-    settings: Annotated[Settings, Depends(_verify_bot_secret)],
-) -> dict[str, str]:
-    _require_admin_telegram_id(telegram_id, settings)
-    return {"text": sweep_report_text()}
 
 
 @router.get("/admin/sync-pipelines")

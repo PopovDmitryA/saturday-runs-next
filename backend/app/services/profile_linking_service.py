@@ -23,6 +23,7 @@ from app.services.profile_preview_persist import (
     linking_sync_should_run,
     persist_live_profile_preview,
 )
+from app.services.user_display_name_service import rebind_display_name_source
 
 
 class ProfileLinkingError(Exception):
@@ -360,6 +361,11 @@ def confirm_profile_link(db: Session, user: User, platform_code: str, profile_ur
     db.commit()
     db.refresh(link)
 
+    # Имя на сайте берётся из профилей систем, и источник пересматривается именно
+    # здесь: привязка — действие самого человека, он видит результат сразу. В
+    # фоне источник не меняется, иначе имя гуляло бы само по себе.
+    rebind_display_name_source(db, user, commit=True)
+
     from app.services.sync_enqueue_service import enqueue_linking_platform_sync
 
     if linking_sync_should_run(db, platform, participant, preview):
@@ -475,3 +481,80 @@ def list_user_profile_links(db: Session, user: User) -> list[dict[str, object]]:
             }
         )
     return items
+
+
+# ── Сквозной путь «тизер на главной → вход → привязка» (гипотеза Т1) ──────────
+
+# Что за строку ждёт preview/confirm на входе, по платформам. Для 5 вёрст и
+# S95 это адрес профиля (лежит у участника в БД), для parkrun и RunPark —
+# сам идентификатор бегуна: их адаптеры принимают его строкой, ровно так же
+# внутри работает связка S95 → parkrun по штрихкоду.
+_CLAIM_INPUT_BY_ID = frozenset({"parkrun", "runpark"})
+
+
+def resolve_claim_input(db: Session, platform_code: str, raw_athlete_id: str) -> str:
+    """Строка для preview/confirm по ID участника из тизера.
+
+    Участник обязан быть у нас в БД — тизер показывает цифры именно из неё,
+    так что к моменту привязки он там точно есть. ID нормализуем тем же
+    правилом, что и тизер: человек мог ввести parkrun-ID как «A331».
+    """
+    from app.services.portal_teaser_service import TEASER_PLATFORMS, normalize_athlete_id
+
+    if platform_code not in TEASER_PLATFORMS:
+        raise ProfileLinkingError("Неизвестная система.", 400)
+    athlete_id = normalize_athlete_id(raw_athlete_id)
+    if athlete_id is None:
+        raise ProfileLinkingError("ID участника должен быть числом.", 400)
+
+    platform = _get_active_platform(db, platform_code)
+    participant = (
+        db.query(Participant)
+        .filter(
+            Participant.platform_id == platform.id,
+            Participant.external_user_id == athlete_id,
+        )
+        .one_or_none()
+    )
+    if participant is None:
+        raise ProfileLinkingError("Не нашли участника с таким ID — привяжите профиль вручную.", 404)
+
+    if platform_code in _CLAIM_INPUT_BY_ID:
+        return (participant.barcode_id or participant.external_user_id).strip()
+
+    profile_url = (participant.profile_url or "").strip()
+    if not profile_url:
+        raise ProfileLinkingError(
+            "У этого участника не сохранён адрес профиля — привяжите его вручную.", 422
+        )
+    return profile_url
+
+
+def claim_profile_by_athlete_id(
+    db: Session, user: User, platform_code: str, athlete_id: str
+) -> tuple[str, PlatformLink | None]:
+    """Привязывает профиль по ID из тизера: предпросмотр и подтверждение разом.
+
+    Обычный путь привязки состоит из двух шагов и живёт в кабинете: человек
+    жмёт «Предпросмотр» (внешний фетч, результат кладётся в кэш на 15 минут),
+    смотрит на имя и цифры, затем подтверждает. Здесь оба шага делает сервер:
+    подтверждать вслепую человеку не приходится — он уже посмотрел на свои
+    цифры в тизере ДО входа, и именно это согласие мы и исполняем.
+
+    Возвращает ("linked", ссылка) либо ("already_linked", None) — профиль этой
+    платформы у человека уже был; для сквозного пути это не ошибка, а «уже
+    сделано». Отличать «уже сделано» от отменённого запроса важно на уровне
+    ручки, поэтому статус возвращаем явно, а не через None.
+    """
+    claim_input = resolve_claim_input(db, platform_code, athlete_id)
+    if platform_code == "runpark":
+        preview_runpark_profile_link(db, claim_input, user=user)
+    else:
+        preview_profile_link(db, platform_code, claim_input, user=user)
+
+    try:
+        return "linked", confirm_profile_link(db, user, platform_code, claim_input)
+    except ProfileLinkingError as exc:
+        if exc.status_code == 409:
+            return "already_linked", None
+        raise

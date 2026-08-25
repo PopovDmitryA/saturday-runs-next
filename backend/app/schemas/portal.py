@@ -222,6 +222,23 @@ class PortalHomeResponse(BaseModel):
     gender_split: PortalGenderSplitResponse | None = None
 
 
+class PortalMeLastRunResponse(BaseModel):
+    event_date: date
+    location_name: str
+    platform_code: str
+    finish_time_display: str
+    is_pr: bool
+    is_global_pr: bool
+
+
+class PortalMeResponse(BaseModel):
+    """Личная плашка на главной. linked=False — профилей ещё нет."""
+
+    linked: bool
+    last_run: PortalMeLastRunResponse | None = None
+    saturday_streak: int = 0
+
+
 class PortalTeaserResponse(BaseModel):
     """Предпросмотр карточки участника для тизера на главной (Т10)."""
 

@@ -1893,3 +1893,88 @@ body.has-pinned-me .lb-scroll-top {
 .lb-tourist-top-label {
   font-size: 0.82rem;
 }
+
+/* ─── Рейтинг рекордов локаций ──────────────────────────────────────────────
+   Строка здесь — площадка, а не участник: колонок меньше, чем у лидербордов
+   людей, и ширины заданы вручную, чтобы время и дата не расползались. */
+.lb-locrec-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.lb-locrec-table th:first-child,
+.lb-locrec-rank {
+  width: 3.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-locrec-time {
+  width: 5.5rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.lb-locrec-date {
+  width: 7rem;
+  white-space: nowrap;
+}
+
+.lb-locrec-platform {
+  width: 6rem;
+}
+
+/* Город и регион — второй строкой под названием площадки. */
+.lb-locrec-place {
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.lb-locrec-select {
+  min-width: 9rem;
+}
+
+/* Поиск стоит в правой колонке строки фильтров и прижат к её нижней линии —
+   к ряду «Система» (в возрастном зачёте — к ряду «Группа»). Плейсхолдер
+   «Поиск по локации, городу, имени…» в 20rem не помещался и обрезался. */
+/* Фильтров тут немного (зачёт, пол, и либо система, либо группа), и каждый —
+   короткий переключатель: ставим их в один ряд, а не этажами. Строка — общий
+   flex вместе с поиском: в две колонки (grid 1fr + поле) левая часть
+   схлопывалась до ширины самого широкого фильтра и всё равно шла этажами.
+   Не влезло по ширине — flex-wrap перенесёт хвост на вторую строку сам. */
+.lb-locrec-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 1.25rem;
+}
+
+/* Контейнер фильтров становится прозрачным для раскладки: в общий ряд встают
+   сами фильтры, а не их обёртка. */
+.lb-locrec-controls .lb-controls-left {
+  display: contents;
+}
+
+.lb-locrec-controls .lb-controls-right {
+  /* Поиск прижат к правому краю строки и занимает остаток места; ниже 13rem
+     плейсхолдер обрезается, выше 22rem поле выглядит распухшим. */
+  margin-left: auto;
+  flex: 1 1 13rem;
+  max-width: 22rem;
+}
+
+.lb-locrec-search {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  /* Одна колонка: поиск идёт под фильтрами во всю ширину. */
+  .lb-locrec-controls .lb-controls-right {
+    justify-content: stretch;
+  }
+
+  .lb-locrec-search {
+    width: 100%;
+  }
+}

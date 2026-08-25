@@ -37,6 +37,11 @@ export type UserMapPanelProps = {
   // с фильтр-баром на /maps); без пропсов — свой внутренний, как раньше.
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  /**
+   * Спрашивать геопозицию и показывать кнопку «где я». Включаем там, где карту
+   * смотрят про себя (свой кабинет); на чужом профиле она ни к чему.
+   */
+  myLocation?: boolean;
 };
 
 // parkrun последний: своих локаций на карте у него нет (ушёл из России в 2022),
@@ -67,6 +72,7 @@ export function UserMapPanel({
   onMapModeChange,
   isFullscreen: isFullscreenProp,
   onToggleFullscreen,
+  myLocation = false,
 }: UserMapPanelProps) {
   // Контролируемый режим (общий фильтр-бар) vs автономный (admin/public-profile).
   const controlled = activityFilterProp !== undefined && platformFiltersProp !== undefined;
@@ -331,6 +337,7 @@ export function UserMapPanel({
             onToggleFullscreen={toggleFullscreen}
             active={isActive}
             viewportRef={viewportRef}
+            myLocation={myLocation}
             emptyMessage={
               !filtersActive
                 ? "Выберите хотя бы одну систему."

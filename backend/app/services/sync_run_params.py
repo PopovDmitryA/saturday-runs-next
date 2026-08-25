@@ -25,7 +25,7 @@ def five_verst_reconcile_details(
     location_slug: str | None,
 ) -> str:
     lines = [
-        f"Пакет: {limit} протоколов (самые давно не проверявшиеся)",
+        f"Пакет: {limit} протоколов (сначала расхождения, добор — самые давно не проверявшиеся)",
         f"Мин. интервал повторной проверки: {min_check_interval_days} дн.",
     ]
     if location_slug:

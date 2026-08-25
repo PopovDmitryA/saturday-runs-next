@@ -16,6 +16,11 @@ import { formatInt } from "../../lib/format";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
+import {
+  getLocationRecords,
+  type LocationRecordRow,
+  type LocationRecordsPlatform,
+} from "./locationRecordsApi";
 import "./leaderboards.css";
 
 const HUB_TOP_N = 3;
@@ -203,6 +208,73 @@ function LiveRatingCard({ card, platform }: { card: LiveCard; platform: Platform
   );
 }
 
+/** Часы в «00:14:30» на карточке лишние: пятёрку никто не бежит дольше часа. */
+function hubRecordTime(display: string | null): string {
+  if (!display) {
+    return "—";
+  }
+  return display.startsWith("00:") ? display.slice(3) : display;
+}
+
+/**
+ * Карточка «Рекорды локаций» — первая живая карточка секции «Локации».
+ * Строка здесь локация, а не участник, поэтому у неё свой фетч и свой вид:
+ * общий LiveRatingCard умеет только лидерборды людей.
+ */
+function LocationRecordsHubCard({ platform }: { platform: PlatformFilter }) {
+  const [rows, setRows] = useState<LocationRecordRow[] | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRows(null);
+    setError(false);
+    getLocationRecords({
+      scope: "absolute",
+      gender: "male",
+      platform: platform as LocationRecordsPlatform,
+    })
+      .then((payload) => {
+        if (!cancelled) {
+          setRows(payload.rows.slice(0, 3));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [platform]);
+
+  return (
+    <a className="lb-hub-card lb-hub-card-live" href="/ratings/location-records">
+      <div className="lb-hub-card-top">
+        <span className="lb-hub-card-title">Рекорды локаций</span>
+      </div>
+      {rows === null && !error && <p className="lb-hub-loading muted">Считаем…</p>}
+      {error && <p className="lb-hub-loading muted">Не удалось загрузить</p>}
+      {rows && (
+        <div className="lb-hub-top3">
+          <p className="lb-hub-top3-label">Самые быстрые трассы · мужчины</p>
+          {rows.map((row, index) => (
+            <div className="lb-hub-rank-row" key={row.slug}>
+              <span className={`lb-hub-rank-chip lb-hub-rank-${RANK_TIER[index] ?? "silver"}`}>
+                {row.place}
+              </span>
+              <span className="lb-hub-rank-name">{row.name}</span>
+              <span className="lb-hub-rank-value">{hubRecordTime(row.finish_time_display)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <span className="lb-hub-see-all">Смотреть топ →</span>
+    </a>
+  );
+}
+
 export function LeaderboardsHubPage() {
   const [platform, setPlatform] = useState<PlatformFilter>("all");
   // Закрытые рейтинги показываем только админу: карточка тянет данные, а API
@@ -265,6 +337,17 @@ export function LeaderboardsHubPage() {
             </div>
           </section>
         ))}
+
+        {/* Секция «Локации»: здесь рейтингуются локации, а не люди. Пока в
+            ней одна карточка — рекорды трасс (Р18/Р19 из бэклога ещё в плане). */}
+        <section className="lb-hub-section">
+          <h2>
+            <span aria-hidden>📍</span> Локации
+          </h2>
+          <div className="lb-hub-cards">
+            <LocationRecordsHubCard platform={platform} />
+          </div>
+        </section>
       </div>
     </PortalSectionShell>
   );

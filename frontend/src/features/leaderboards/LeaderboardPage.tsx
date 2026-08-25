@@ -29,7 +29,13 @@ import {
   type VolunteerRoleDetail,
   type WeekLocation,
 } from "./leaderboardsApi";
-import { formatDateTime, formatInt, pluralFormRu, pluralizeRu } from "../../lib/format";
+import {
+  COUNT_FORMS,
+  formatDateTime,
+  formatInt,
+  pluralFormRu,
+  pluralizeRu,
+} from "../../lib/format";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { NotFoundPage } from "../NotFoundPage";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
@@ -249,7 +255,7 @@ function formatPercentile(rank: number, entrants: number): string {
     return `Вы в топ-${value} % участников рейтинга`;
   }
   const ahead = Math.floor(100 - topShare);
-  return `Вы опережаете ${ahead} % из ${entrants.toLocaleString("ru-RU")} участников рейтинга`;
+  return `Вы опережаете ${ahead} % из ${pluralizeRu(entrants, COUNT_FORMS.participants)} рейтинга`;
 }
 
 function InfoHint({ text }: { text: string }) {

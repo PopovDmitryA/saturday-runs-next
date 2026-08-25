@@ -164,10 +164,16 @@ def test_classify_reconcile_reason_never_checked() -> None:
 def test_classify_reconcile_reason_count_mismatch() -> None:
     from app.sync.five_verst_reconcile import ReconcileReason, _classify_reconcile_reason
 
-    summary = SimpleNamespace(finishers_count=10)
+    summary = SimpleNamespace(
+        finishers_count=10,
+        summary_hash="hash-1",
+        best_male_time_sec=None,
+        best_female_time_sec=None,
+    )
     state = SimpleNamespace(
         last_protocol_check_at=datetime.now(timezone.utc),
         finishers_at_fetch=10,
+        summary_hash_at_fetch="hash-1",
     )
     reason = _classify_reconcile_reason(
         summary,

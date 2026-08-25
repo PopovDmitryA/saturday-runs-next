@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { trackAuthStart } from "../../lib/abTest";
 import { ApiError, getCurrentUser, oauthStartUrl } from "../../lib/api";
 import { PORTAL_ABOUT_PRIVACY_HREF } from "../../lib/portalRoutes";
 import { PortalFooter } from "./PortalFooter";
@@ -135,6 +136,10 @@ export function PortalLoginPage() {
       return;
     }
     markReturningUser();
+    // Ступень воронки: человек прошёл галочку согласия и уходит к провайдеру.
+    // Клики, остановленные проверкой выше, сюда не попадают — разрыв между
+    // cta_click и auth_start и есть цена экрана входа.
+    trackAuthStart(provider);
     setRedirectingProvider(provider);
   };
 
