@@ -339,6 +339,11 @@ function LastResultsContent() {
               "локаций",
             ])}.`}
         </p>
+        {/* Соседний срез тех же данных: не «сколько на каждой площадке»,
+            а «кто и с каким временем» — вся страна одним протоколом. */}
+        <p className="loc-header-place">
+          <a href="/protocol">Единый протокол недели — все финишёры страны по времени →</a>
+        </p>
       </header>
 
       <section className="card loc-section loc-wide-page">

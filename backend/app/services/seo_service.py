@@ -116,6 +116,14 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "было на каждой площадке, лучшие времена, новички и дата последнего старта.",
         indexable=True,
     ),
+    # Единый протокол недели: все площадки всех систем одним списком. Ловит
+    # запросы вида «результаты 5 вёрст за субботу», где нужен не парк, а страна.
+    "/protocol": _meta(
+        "Единый протокол недели — 5 вёрст, С95, parkrun и RunPark — run5k.run",
+        "Все площадки всех систем за неделю одним протоколом: кто и с каким временем "
+        "финишировал, зачёты по системам, полу и возрастным группам.",
+        indexable=True,
+    ),
     "/ratings": _meta(
         "Рейтинги — run5k.run",
         "Сквозные рейтинги участников субботних пробежек по всем системам: пробежки, "
@@ -220,6 +228,20 @@ _ADMIN_META = _meta("Админка — run5k.run", "Служебный разд
 
 _PROFILE_RE = re.compile(r"^/users/([^/]+)(?:/([^/]+))?$")
 _LOCATION_EVENTS_RE = re.compile(r"^/locations/([^/]+)/events$")
+# Единый протокол конкретной недели: /protocol/{дата-субботы}.
+_UNIFIED_PROTOCOL_RE = re.compile(r"^/protocol/(\d{4}-\d{2}-\d{2})$")
+
+
+def _iso_to_ru_date(value: str) -> str | None:
+    """«2026-08-15» → «15.08.2026»; «2026-08-99» → None.
+
+    Форму адреса регулярка проверяет, а вот существование даты — нет: 99-е
+    августа ей подходит. Без этой проверки робот получал 500 вместо 404.
+    """
+    try:
+        return date.fromisoformat(value).strftime("%d.%m.%Y")
+    except ValueError:
+        return None
 _LOCATION_PROTOCOL_RE = re.compile(r"^/locations/([^/]+)/protocol/([^/]+)/(\d{4}-\d{2}-\d{2})$")
 _LOCATION_RE = re.compile(r"^/locations/([^/]+)$")
 _SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
@@ -265,6 +287,16 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
             # показывают превью без картинки); вкладки — срезы той же страницы.
             indexable=profile.group(2) is None,
         )
+    unified = _UNIFIED_PROTOCOL_RE.match(path)
+    if unified:
+        day = _iso_to_ru_date(unified.group(1))
+        if day is not None:
+            return _meta(
+                f"Единый протокол недели {day} — run5k.run",
+                "Все площадки всех систем за неделю одним протоколом: зачёты по системам, "
+                "полу и возрастным группам.",
+                indexable=True,
+            )
     if _LOCATION_PROTOCOL_RE.match(path):
         return _meta(
             "Протокол старта — run5k.run",
@@ -595,6 +627,7 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/", "1.0"),
     ("/locations", "0.9"),
     ("/results", "0.9"),
+    ("/protocol", "0.8"),
     ("/ratings", "0.8"),
     ("/ratings/runs", "0.7"),
     ("/ratings/volunteering", "0.7"),
@@ -1362,6 +1395,10 @@ def is_known_path(raw_path: str) -> bool:
         return True
     if path.startswith("/admin/") or path == "/world":
         return True
+    unified = _UNIFIED_PROTOCOL_RE.match(path)
+    if unified:
+        # Только настоящая дата: «/protocol/2026-08-99» — не адрес сайта, а 404.
+        return _iso_to_ru_date(unified.group(1)) is not None
     for pattern in (_PROFILE_RE, _LOCATION_EVENTS_RE, _LOCATION_RE, _SWEEP_HQ_RE):
         if pattern.match(path):
             return True

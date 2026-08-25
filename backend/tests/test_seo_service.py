@@ -426,6 +426,12 @@ def test_catalog_body_lists_locations_with_links() -> None:
         ("/users/ivan", True),
         ("/admin/users", True),
         ("/world", True),
+        ("/protocol", True),
+        ("/protocol/2026-08-15", True),
+        # Форму даты регулярка пропускает, а недели такой нет — это 404, а не 500.
+        ("/protocol/2026-08-99", False),
+        ("/protocol/2026-02-30", False),
+        ("/protocol/latest", False),
         # Мусор обязан быть неизвестен: SPA отвечал 200 на что угодно, и Яндекс
         # отметил это диагностикой «некорректно настроен возврат 404».
         ("/something-strange", False),
@@ -436,6 +442,13 @@ def test_catalog_body_lists_locations_with_links() -> None:
 )
 def test_is_known_path(path: str, known: bool) -> None:
     assert is_known_path(path) is known
+
+
+def test_unified_protocol_meta_carries_the_week() -> None:
+    """Дата недели едет в заголовок — превью ссылки в чате должно её называть."""
+    meta = resolve_page_meta("/protocol/2026-08-15")
+    assert "15.08.2026" in meta.title
+    assert meta.indexable is True
 
 
 def test_robots_closes_user_pages_from_crawl() -> None:

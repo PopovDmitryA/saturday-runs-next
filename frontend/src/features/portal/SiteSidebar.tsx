@@ -5,10 +5,13 @@
  *
  * - группа «Личный кабинет» раскрывается по клику и автоматически при
  *   переходе в любой его раздел; анониму — задизейблена, не скрыта;
- * - «Локации» — один пункт с постоянными подпунктами «Последние пробежки» и
- *   «Журнал протоколов» (второй активен только внутри локации, иначе
- *   задизейблен с тултипом); на странице локации между ними появляется сама
+ * - «Локации» — каталог площадок; на странице локации под ним появляется сама
  *   площадка;
+ * - «Результаты» — свой раздел (решение Дмитрия 25.08.2026: последние
+ *   пробежки и протоколы — это не каталог площадок): заголовок ведёт на
+ *   витрину раздела, подпункты — «Последние пробежки», «Единый протокол» и
+ *   «Журнал протоколов» (последний активен только внутри локации, иначе
+ *   задизейблен с тултипом);
  * - «Рейтинги» — один пункт без перечня лидербордов (их будут десятки);
  * - служебный блок (Настройки/Бэклог/Админка/Выйти) виден на всех страницах;
  * - сворачивание в рельс-иконки работает везде (общий localStorage-ключ).
@@ -48,7 +51,15 @@ export type CabinetTabKey =
   | "settings";
 
 /** Что подсвечивать: вкладка ЛК, раздел сайта или ничего. */
-export type SiteSidebarActive = CabinetTabKey | "locations" | "last-results" | "ratings" | "backlog" | null;
+export type SiteSidebarActive =
+  | CabinetTabKey
+  | "locations"
+  | "results"
+  | "last-results"
+  | "unified-protocol"
+  | "ratings"
+  | "backlog"
+  | null;
 
 type CabinetNavItem = {
   key: CabinetTabKey;
@@ -175,6 +186,16 @@ const LAST_RESULTS_ICON = icon(
   </>,
 );
 
+// «Единый протокол»: список-стопка — вся страна одной таблицей.
+const UNIFIED_PROTOCOL_ICON = icon(
+  <>
+    <path d="M4 6.5h16M4 12h16M4 17.5h16" />
+    <circle cx="7" cy="6.5" r="1.4" />
+    <circle cx="7" cy="12" r="1.4" />
+    <circle cx="7" cy="17.5" r="1.4" />
+  </>,
+);
+
 const RATINGS_ICON = icon(
   <>
     <path d="M7.5 4h9v4.5a4.5 4.5 0 0 1-9 0V4Z" />
@@ -212,10 +233,29 @@ export type SecondaryNavItem = { href: string; label: string; adminOnly?: boolea
  * навигации телефона: без него «Локации» и «Рейтинги» не попадали в шторку
  * «Ещё» и на телефоне были недостижимы вовсе.
  */
-export const SITE_SECTIONS_NAV: { key: "locations" | "ratings"; href: string; label: string; icon: ReactNode }[] = [
+export const SITE_SECTIONS_NAV: {
+  key: "locations" | "results" | "ratings";
+  href: string;
+  label: string;
+  icon: ReactNode;
+}[] = [
   { key: "locations", href: "/locations", label: "Локации", icon: LOCATIONS_ICON },
+  { key: "results", href: "/results", label: "Результаты", icon: LAST_RESULTS_ICON },
   { key: "ratings", href: "/ratings", label: "Рейтинги", icon: RATINGS_ICON },
 ];
+
+/**
+ * К какому разделу верхнего уровня относится подсвеченный пункт сайдбара.
+ * Нижняя навигация телефона и шапка кабинета показывают только сами разделы,
+ * а `active` приходит от страницы и бывает подпунктом («Единый протокол»
+ * живёт в «Результатах»).
+ */
+export function siteSectionKey(active: string | null | undefined): string | null {
+  if (active === "last-results" || active === "unified-protocol") {
+    return "results";
+  }
+  return active ?? null;
+}
 
 // Служебные разделы — видны на всех страницах с сайдбаром.
 // «Админка» подсвечена янтарным (см. .portal-cab-nav-item-admin).
@@ -595,18 +635,6 @@ export function SiteSidebar({
           <span className="portal-cab-nav-icon">{LOCATIONS_ICON}</span>
           <span className="portal-cab-nav-label">Локации</span>
         </a>
-        {/* Постоянный подпункт раздела: последние результаты всех площадок. */}
-        <a
-          href="/results"
-          className={`portal-cab-nav-item portal-cab-nav-subitem${
-            active === "last-results" ? " active" : ""
-          }`}
-          aria-current={active === "last-results" ? "page" : undefined}
-          title={collapsed ? "Последние пробежки" : undefined}
-        >
-          <span className="portal-cab-nav-icon">{LAST_RESULTS_ICON}</span>
-          <span className="portal-cab-nav-label">Последние пробежки</span>
-        </a>
         {location && (
           <a
             href={`/locations/${location.slug}`}
@@ -619,6 +647,43 @@ export function SiteSidebar({
             <span className="portal-cab-nav-label">{location.name}</span>
           </a>
         )}
+
+        {/* «Результаты» — про то, что было на выходных, а не про каталог
+            площадок. Заголовок ведёт на витрину раздела, но своим пунктом
+            «Последние пробежки» тоже перечислены (просьба Дмитрия
+            25.08.2026): по одному заголовку не понять, что за ним. */}
+        <a
+          href="/results"
+          className={`portal-cab-nav-item${active === "last-results" ? " active" : ""}`}
+          aria-current={active === "last-results" ? "page" : undefined}
+          title={collapsed ? "Результаты" : undefined}
+        >
+          <span className="portal-cab-nav-icon">{LAST_RESULTS_ICON}</span>
+          <span className="portal-cab-nav-label">Результаты</span>
+        </a>
+        <a
+          href="/results"
+          className={`portal-cab-nav-item portal-cab-nav-subitem${
+            active === "last-results" ? " active" : ""
+          }`}
+          aria-current={active === "last-results" ? "page" : undefined}
+          title={collapsed ? "Последние пробежки" : undefined}
+        >
+          <span className="portal-cab-nav-icon">{LAST_RESULTS_ICON}</span>
+          <span className="portal-cab-nav-label">Последние пробежки</span>
+        </a>
+        {/* Единый протокол недели: все площадки всех систем одним списком. */}
+        <a
+          href="/protocol"
+          className={`portal-cab-nav-item portal-cab-nav-subitem${
+            active === "unified-protocol" ? " active" : ""
+          }`}
+          aria-current={active === "unified-protocol" ? "page" : undefined}
+          title={collapsed ? "Единый протокол" : undefined}
+        >
+          <span className="portal-cab-nav-icon">{UNIFIED_PROTOCOL_ICON}</span>
+          <span className="portal-cab-nav-label">Единый протокол</span>
+        </a>
         {/* Журнал протоколов виден всегда (просьба Дмитрия 11.08.2026): вне
             локации он задизейблен и объясняет тултипом, что сначала нужно
             открыть площадку — раньше пункт просто исчезал, и было непонятно,

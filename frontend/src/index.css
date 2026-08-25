@@ -13202,6 +13202,76 @@ a.admin-system-chip:hover {
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
 }
 
+/* Единый протокол: ровно ЧЕТЫРЕ плитки в ряд (решение Дмитрия 25.08.2026 —
+   восемь в одну строку читались нагромождением, каждой не хватало места).
+   Жёсткая сетка, а не auto-fit: восемь плиток при auto-fit раскладывались
+   как придётся — 5+3 на ноутбуке, 7+1 на широком экране. На телефоне две. */
+.uniprot-stats-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (min-width: 760px) {
+  .uniprot-stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Разбивка М/Ж в подписи плитки: колонками, а не сплошной строкой — иначе
+   «6 885 М · 4 713 Ж · 903 без данных» переносилось по случайному месту. */
+.uniprot-stat-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.7rem;
+  line-height: 1.35;
+}
+
+.uniprot-stat-split-part b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* «без данных» — на свою строку: это не третий пол, а отсутствие метки. */
+.uniprot-stat-split-rest {
+  flex-basis: 100%;
+}
+
+/* «Кратко | Полно» встроен в ряд фильтров: сегмент сам по себе — блок с
+   верхним отступом, здесь он должен просто встать в линию и прижаться
+   вправо, когда место остаётся. */
+.uniprot-view-toggle {
+  display: inline-flex;
+  margin-left: auto;
+}
+
+.uniprot-view-toggle > * {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .uniprot-view-toggle {
+    margin-left: 0;
+  }
+}
+
+/* Призыв войти на единый протокол — компактнее общего PromoLoginCard и с
+   отступом сверху: без него он прилипал к нижнему ряду плиток. */
+.promo-login-card.uniprot-login-card {
+  margin-top: 1.1rem;
+  padding: 15px 20px;
+  gap: 14px;
+}
+
+.uniprot-login-card .promo-login-card-icon {
+  width: 42px;
+  height: 42px;
+  font-size: 21px;
+  border-radius: 13px;
+}
+
+.uniprot-login-card .promo-login-card-text p {
+  font-size: 0.9rem;
+}
+
 .protocol-subtitle {
   display: flex;
   align-items: center;
@@ -13637,4 +13707,221 @@ a.admin-system-chip:hover {
 
 .protocol-source-link {
   margin-top: 1rem;
+}
+
+/* ==========================================================================
+   Единый протокол недели (/protocol) — все площадки всех систем одним списком.
+   Опирается на классы протокола локации (.protocol-*), своих правил ровно
+   столько, сколько нужно новым колонкам и кликабельным возрастным группам.
+   ========================================================================== */
+
+.uniprot-scope-note {
+  font-size: 0.85rem;
+  margin: 0.3rem 0 0;
+}
+
+/* Возрастных ступеней под два десятка, и развёрнутыми они съедали экран до
+   самой таблицы — прячем под спойлер (правка Дмитрия 22.08.2026).
+   Селектор с .portal-section: общий рескин карточек `.portal-section .card`
+   (portalSection.css) специфичнее одного класса и возвращал бы карточке своё
+   padding поверх нашего нуля — заголовок спойлера висел бы в пустоте. */
+.portal-section .uniprot-groups-spoiler {
+  margin-top: 1rem;
+  padding: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.uniprot-groups-summary {
+  padding: 1rem 1.1rem;
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.uniprot-groups-summary::-webkit-details-marker {
+  display: none;
+}
+
+.uniprot-groups-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.45rem;
+  transition: transform 0.15s ease;
+}
+
+.uniprot-groups-spoiler[open] > .uniprot-groups-summary::before {
+  transform: rotate(90deg);
+}
+
+/* Как пользоваться ступенями — мелким текстом прямо в заголовке спойлера:
+   полосы кликабельные, но без подписи читаются как картинка. На узком экране
+   уезжает на свою строку. */
+.uniprot-groups-howto {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+  margin-left: 0.6rem;
+}
+
+@media (max-width: 620px) {
+  .uniprot-groups-howto {
+    display: block;
+    margin: 0.2rem 0 0;
+  }
+}
+
+/* Выбранная ступень видна на свёрнутом спойлере — иначе фильтр «40–44»
+   остаётся включённым, а по заголовку этого не понять. */
+.uniprot-groups-chosen {
+  color: var(--link);
+  font-weight: 600;
+}
+
+.uniprot-groups-body {
+  padding: 0 1.1rem 1.1rem;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.uniprot-scope-note {
+  margin-bottom: 0.6rem;
+}
+
+.uniprot-total {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Место и «М 12 / 6885» — цифры колонкой, без прыжков при листании страниц. */
+.uniprot-place {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.uniprot-location {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15rem;
+  flex-wrap: wrap;
+}
+
+/* Ширины колонок — зеркало UNIFIED_COLUMNS в UnifiedProtocolPage.tsx.
+   «№» шире, чем в протоколе локации: сюда влезает медаль первых трёх.
+   Ширина есть и у «Участника»: колонок здесь на 83rem, и без неё имя
+   схлопывалось в столбик по букве («Илья КОЗН ЕВ»), а таблица вместо
+   горизонтальной прокрутки давила остаток. min-width = сумма всех ширин. */
+.uniprot-table .col-number {
+  width: 4.2rem;
+}
+
+.uniprot-table .col-runner {
+  width: 10.5rem;
+}
+
+.uniprot-table .col-time {
+  width: 6rem;
+}
+
+.uniprot-table .col-location {
+  width: 13rem;
+}
+
+.uniprot-table .col-gender {
+  width: 7.6rem;
+}
+
+.uniprot-table .col-age {
+  width: 11.5rem;
+}
+
+.uniprot-table .col-platform {
+  width: 6.8rem;
+}
+
+.uniprot-table .col-pace {
+  width: 5.5rem;
+}
+
+.uniprot-table .col-local-place {
+  width: 7.2rem;
+}
+
+.uniprot-table .col-club {
+  width: 10.5rem;
+}
+
+.uniprot-table:not(.data-table-short) {
+  min-width: 83rem;
+}
+
+/* Липнут две первые колонки — как в протоколе локации: «№» без имени
+   бесполезен. Смещение второй = ширина .col-number. */
+.table-sticky-first .uniprot-table th:nth-child(2),
+.table-sticky-first .uniprot-table td:nth-child(2) {
+  position: sticky;
+  left: 4.2rem;
+  background: var(--surface);
+  z-index: 2;
+}
+
+.table-sticky-first .uniprot-table thead th:nth-child(2) {
+  z-index: 4;
+  background: var(--bg-muted);
+}
+
+.tshadow-left .table-sticky-first .uniprot-table th:nth-child(2),
+.tshadow-left .table-sticky-first .uniprot-table td:nth-child(2) {
+  box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+}
+
+.tshadow-left .table-sticky-first .uniprot-table th:first-child,
+.tshadow-left .table-sticky-first .uniprot-table td:first-child {
+  box-shadow: none;
+}
+
+.table-sticky-first .uniprot-table .protocol-row-me td:first-child,
+.table-sticky-first .uniprot-table .protocol-row-me td:nth-child(2) {
+  background: var(--bg-muted);
+}
+
+/* Строка возрастной группы — кнопка-фильтр: клик оставляет в протоколе только
+   эту ступень, повторный снимает. Внешне остаётся той же полосой. */
+.uniprot-age-row {
+  width: 100%;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.uniprot-age-row:hover {
+  background: var(--bg-muted);
+}
+
+.uniprot-age-row.active {
+  border-color: var(--link);
+  background: var(--bg-muted);
+}
+
+/* Постраничная навигация протокола: 12 тыс. строк одной страницей не отдать. */
+.uniprot-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-top: 0.8rem;
+  font-variant-numeric: tabular-nums;
 }

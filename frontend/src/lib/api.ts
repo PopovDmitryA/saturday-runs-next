@@ -2448,6 +2448,164 @@ export function getLocationProtocol(slug: string, platformCode: string, eventDat
   );
 }
 
+/** Строка единого протокола недели — все площадки всех систем сразу. */
+export type UnifiedProtocolRow = {
+  /** Место в выбранном зачёте: система + пол + возрастная группа. */
+  place: number | null;
+  /** Места по полу и по группе — по всей неделе своей СИСТЕМЫ, без среза. */
+  gender_place: number | null;
+  gender_total: number | null;
+  age_group_place: number | null;
+  age_group_total: number | null;
+  name: string | null;
+  external_user_id: string | null;
+  serial_id: number | null;
+  is_unknown: boolean;
+  gender: "male" | "female" | null;
+  age_category: string | null;
+  age_group: string | null;
+  age_grade: number | null;
+  finish_time_sec: number | null;
+  finish_time_display: string | null;
+  pace_display: string | null;
+  club_name: string | null;
+  platform_code: string;
+  location_slug: string | null;
+  location_name: string;
+  city: string | null;
+  country: string | null;
+  event_date: string;
+  event_number: number | null;
+  /** Место на своей площадке — то, что стоит в протоколе платформы. */
+  location_position: number | null;
+  is_pr: boolean;
+  is_first_run: boolean;
+  is_me: boolean;
+};
+
+export type UnifiedProtocolPlatform = {
+  platform_code: string;
+  title: string;
+  finishers: number;
+  locations: number;
+};
+
+export type UnifiedProtocolBest = {
+  name: string | null;
+  time_display: string | null;
+  time_sec: number | null;
+  location_name: string;
+  location_slug: string | null;
+  platform_code: string | null;
+};
+
+export type UnifiedProtocolSummary = {
+  /** Плитка «финишёров»: по полу не сужается — она же показывает разбивку М/Ж. */
+  finishers: number;
+  /** Строк в зачёте — знаменатель долей «N% финишёров». */
+  scope_finishers: number;
+  male: number;
+  female: number;
+  unknown_gender: number;
+  /** null в зачёте одной системы: там считаем площадки, а не старты. */
+  locations: number;
+  /** Волонтёры недели: записей (ролей) и людей — по зачёту системы. */
+  volunteers: number;
+  volunteer_people: number;
+  avg_time_sec: number | null;
+  avg_time_display: string | null;
+  median_time_sec: number | null;
+  median_time_display: string | null;
+  best_male: UnifiedProtocolBest | null;
+  best_female: UnifiedProtocolBest | null;
+  debutants: number;
+  prs: number;
+  clubs_count: number;
+  /** Строки зарубежного parkrun, оставшиеся вне зачёта. */
+  skipped_foreign_parkrun: number;
+};
+
+/** Мужчины/женщины в зачёте системы — цифры на таблетках фильтра пола. */
+export type UnifiedProtocolGenderCounts = {
+  male: number;
+  female: number;
+  unknown: number;
+  total: number;
+};
+
+export type UnifiedProtocolAgeGroup = {
+  age_group: string;
+  male: number;
+  female: number;
+  unknown: number;
+  total: number;
+};
+
+export type UnifiedProtocolWeekRef = {
+  saturday: string;
+  finishers: number;
+  events: number;
+};
+
+export type UnifiedProtocol = {
+  week_start: string;
+  week_end: string;
+  saturday: string;
+  scope_platform: string | null;
+  gender: "male" | "female" | null;
+  age_group: string | null;
+  query: string | null;
+  platforms: UnifiedProtocolPlatform[];
+  summary: UnifiedProtocolSummary;
+  gender_counts: UnifiedProtocolGenderCounts;
+  age_groups: UnifiedProtocolAgeGroup[];
+  results: UnifiedProtocolRow[];
+  /** Свои строки недели целиком — чтобы не искать себя среди тысяч. */
+  my_results: UnifiedProtocolRow[];
+  page: number;
+  pages: number;
+  per_page: number;
+  total: number;
+  previous_saturday: string | null;
+  next_saturday: string | null;
+  latest_saturday: string | null;
+};
+
+export type UnifiedProtocolWeeks = {
+  weeks: UnifiedProtocolWeekRef[];
+  latest_saturday: string | null;
+};
+
+export type UnifiedProtocolQuery = {
+  platform?: string | null;
+  gender?: string | null;
+  ageGroup?: string | null;
+  q?: string | null;
+  page?: number;
+  perPage?: number;
+};
+
+export function getUnifiedProtocol(saturday: string | null, params: UnifiedProtocolQuery = {}) {
+  const search = new URLSearchParams();
+  if (params.platform) search.set("platform", params.platform);
+  if (params.gender) search.set("gender", params.gender);
+  if (params.ageGroup) search.set("age_group", params.ageGroup);
+  if (params.q) search.set("q", params.q);
+  if (params.page && params.page > 1) search.set("page", String(params.page));
+  if (params.perPage) search.set("per_page", String(params.perPage));
+  const suffix = search.toString();
+  const base = saturday ? `/protocol/week/${encodeURIComponent(saturday)}` : "/protocol/week";
+  // Холодная неделя считается несколько секунд (16 тыс. строк, кэш на 3 часа) —
+  // штатного таймаута не хватает.
+  return apiFetch<UnifiedProtocol>(`${base}${suffix ? `?${suffix}` : ""}`, undefined, {
+    timeoutMs: 60_000,
+  });
+}
+
+export function getUnifiedProtocolWeeks() {
+  return apiFetch<UnifiedProtocolWeeks>("/protocol/weeks", undefined, { timeoutMs: 60_000 });
+}
+
 /** Место участника в топе локации по одной его возрастной группе. */
 export type LocationAgeGroupStanding = {
   // Тот же ключ, что у строки в age_group_records: по нему плитка раскрывает топ-5.

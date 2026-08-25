@@ -24,6 +24,7 @@ from app.api.routes import (
     stats,
     sweep_hq,
     sync,
+    unified_protocol,
 )
 
 api_router = APIRouter()
@@ -39,6 +40,7 @@ api_router.include_router(runs.router)
 api_router.include_router(leaderboards.router)
 api_router.include_router(location_ratings.router)
 api_router.include_router(locations.router)
+api_router.include_router(unified_protocol.router)
 api_router.include_router(media.router)
 api_router.include_router(portal.router)
 api_router.include_router(blog.router)
