@@ -134,6 +134,7 @@ from app.services.location_openings_service import (
 )
 from app.services.login_journal_service import list_login_events, summarize_login_events
 from app.services.page_analytics_service import (
+    build_funnel_stats,
     build_home_ab_stats,
     build_home_link_clicks,
     build_og_fetch_stats,
@@ -437,6 +438,7 @@ def admin_page_analytics(
     """
     start, end = resolve_period(period_days=period_days, date_from=date_from, date_to=date_to)
     payload = build_page_analytics(db, start=start, end=end)
+    payload["funnel"] = build_funnel_stats(db, start=start, end=end)
     payload["home_ab"] = build_home_ab_stats(db, start=start, end=end)
     payload["home_links"] = build_home_link_clicks(db, start=start, end=end)
     payload["share"] = build_share_stats(db, start=start, end=end)

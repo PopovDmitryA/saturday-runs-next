@@ -695,6 +695,10 @@ class ProtocolSyncState(Base):
     last_protocol_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     protocol_source_hash: Mapped[str | None] = mapped_column(String(64))
+    # summary_hash саммари на момент последней успешной закачки протокола.
+    # Отличается от EventSummary.summary_hash → протокол отстал от витрины
+    # и его надо перечитать (app/sync/protocol_debt.py).
+    summary_hash_at_fetch: Mapped[str | None] = mapped_column(String(64))
     finishers_at_fetch: Mapped[int | None] = mapped_column(Integer)
     run_results_count: Mapped[int | None] = mapped_column(Integer)
     volunteer_results_count: Mapped[int | None] = mapped_column(Integer)
@@ -869,8 +873,38 @@ class User(Base):
     telegram_first_name: Mapped[str | None] = mapped_column(String(128))
     telegram_last_name: Mapped[str | None] = mapped_column(String(128))
     telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger)
+    # Материализованный результат: имя считается из профилей беговых систем
+    # (см. app.services.user_display_name_service). Все 20+ мест, которые имя
+    # читают — рейтинги, страницы локаций, публичный профиль, OG-карточки —
+    # продолжают читать это поле, а не пересчитывать самостоятельно.
     display_name: Mapped[str | None] = mapped_column(String(128))
+    # УСТАРЕЛО с 25.08.2026: свободного ввода имени больше нет, поле не читается
+    # и не пишется. Оставлено как архив прежних ручных значений на случай отката.
     display_name_customized: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Как показывать имя: "auto" — полное («Иван Петров»), "initial" — «Иван П.».
+    # Канон значений — DISPLAY_NAME_STYLES в user_display_name_service.
+    display_name_style: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="auto", server_default="auto"
+    )
+    # Зафиксированная система-источник имени. Пересматривается ТОЛЬКО при
+    # привязке и отвязке профиля — фоновый пересчёт её не трогает, иначе имя
+    # человека менялось бы само по себе. NULL — привязок нет, имя от провайдера.
+    display_name_platform_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("platforms.id", ondelete="SET NULL")
+    )
+    # Источник выбран человеком в настройках, а не алгоритмом. Такой выбор не
+    # перебивается новой привязкой: молча меняем имя только тем, кто его не
+    # выбирал сам.
+    display_name_source_manual: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Прежнее имя для одноразовой плашки в кабинете («было pele1985»). Ставится
+    # только бэкфиллом при переходе на имена из профилей; NULL — плашка не нужна
+    # либо человек её закрыл.
+    display_name_notice: Mapped[str | None] = mapped_column(String(128))
+    # Предложение сменить источник, которое человек отклонил («оставить как
+    # есть»). Пока алгоритм предлагает то же самое имя, баннер не показывается.
+    display_name_dismissed_name: Mapped[str | None] = mapped_column(String(128))
     consent_accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     consent_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     news_subscribed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
@@ -1280,6 +1314,43 @@ class PageViewEvent(Base):
     # Владелец смотрит свой собственный профиль (только для page_type=profile).
     is_self: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     duration_sec: Mapped[int | None] = mapped_column(Integer)
+
+
+class UserGeoPing(Base):
+    """Огрублённая отметка «где был участник, когда открывал карту».
+
+    Пишется, только если человек сам разрешил браузеру определять положение
+    (карта показывает ему точку «вы здесь»), и не чаще одной строки в сутки —
+    это держит уникальная пара user_id + observed_on.
+
+    Точные координаты сюда не попадают: широта и долгота приходят с фронта уже
+    округлёнными до двух знаков и округляются ещё раз на сервере — клетка
+    примерно километр на километр. На таком масштабе видно город и район, но не
+    дом и не работу, а нужны отметки ровно для двух вопросов: где есть участники
+    без площадки поблизости и верно ли сайт угадывает домашнюю локацию.
+    """
+
+    __tablename__ = "user_geo_pings"
+    __table_args__ = (
+        UniqueConstraint("user_id", "observed_on", name="uq_user_geo_pings_user_day"),
+        Index("ix_user_geo_pings_observed_on", "observed_on"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    observed_on: Mapped[date] = mapped_column(Date, nullable=False)
+    latitude: Mapped[float] = mapped_column(nullable=False)
+    longitude: Mapped[float] = mapped_column(nullable=False)
+    # Погрешность определения в метрах: у вышек и Wi-Fi она в километрах, и при
+    # разборе такие отметки стоит отличать от честного GPS.
+    accuracy_m: Mapped[int | None] = mapped_column(Integer)
+    nearest_identity_key: Mapped[str | None] = mapped_column(String(128))
+    nearest_distance_km: Mapped[float | None] = mapped_column()
+    # Домашняя локация на момент отметки — она может смениться, поэтому храним,
+    # а не вычисляем задним числом.
+    home_identity_key: Mapped[str | None] = mapped_column(String(128))
+    home_distance_km: Mapped[float | None] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class LoginEvent(Base):

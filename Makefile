@@ -20,11 +20,8 @@ backend-test:
 frontend-lint:
 	cd frontend && npm run lint
 
-# VITE_* зашиваются в бандл при сборке; корневой .env в контейнер не монтируется,
-# поэтому пилот АБ-теста главной передаём явно (по умолчанию выключен).
 frontend-build:
 	docker run --rm -v $(CURDIR)/frontend:/app -w /app \
-		-e VITE_AB_HOME_ACTIVE="$$(sed -n 's/^VITE_AB_HOME_ACTIVE=//p' .env 2>/dev/null | tail -1)" \
 		node:22-alpine sh -c "npm ci && npm run build"
 
 location-mapping:

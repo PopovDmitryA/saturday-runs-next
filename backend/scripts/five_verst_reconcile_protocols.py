@@ -35,6 +35,12 @@ def main() -> int:
         help="Re-check protocols older than N days",
     )
     parser.add_argument("--slug", default=None, help="Limit reconcile to one location slug")
+    parser.add_argument(
+        "--mismatch-retry-hours",
+        type=int,
+        default=None,
+        help="Не возвращаться к неизлечимому расхождению чаще, чем раз в N часов (0 = без потолка)",
+    )
     parser.add_argument("--pretty", action="store_true")
     args = parser.parse_args()
     apply_bootstrap_args(args)
@@ -44,6 +50,8 @@ def main() -> int:
         args.limit = settings.five_verst_reconcile_batch_limit
     if args.min_age_days is None:
         args.min_age_days = settings.five_verst_reconcile_min_check_interval_days
+    if args.mismatch_retry_hours is None:
+        args.mismatch_retry_hours = settings.five_verst_reconcile_mismatch_retry_hours
 
     db = get_session_factory()()
     try:
@@ -53,6 +61,7 @@ def main() -> int:
                 limit=args.limit,
                 min_check_interval_days=args.min_age_days,
                 location_slug=args.slug,
+                mismatch_retry_interval_hours=args.mismatch_retry_hours,
             )
             payload = {
                 "candidates_total": len(candidates),
@@ -73,6 +82,7 @@ def main() -> int:
                     limit=args.limit,
                     min_check_interval_days=args.min_age_days,
                     location_slug=args.slug,
+                    mismatch_retry_interval_hours=args.mismatch_retry_hours,
                 ),
             )
             payload = asdict(result)

@@ -98,6 +98,10 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
       REDIS_URL: redis://redis:6379/0
+      # База обхода parkrun: тут крутится sweep_hq.refresh_snapshot (очередь по
+      # умолчанию). Читается через os.getenv, поля в Settings нет, поэтому
+      # смонтированного .env недостаточно — переменную надо передать явно.
+      PM_WORLD_DSN: ${PM_WORLD_DSN:-}
     volumes:
       - ./backend:/app
       - ./.env:/app/.env:ro

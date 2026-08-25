@@ -236,7 +236,7 @@ export function PersonalRecordsModal({ open, onClose, includeTest = false }: Per
                   {rows.map((item, index) => (
                     <tr key={`${item.platform_code}-${item.event_date}-${item.location_name}-${index}`}>
                       <td className="col-date">
-                        <ActivityDateLink date={item.event_date} url={item.event_url} />
+                        <ActivityDateLink date={item.event_date} target={item} url={item.event_url} />
                         {item.is_pr && <span className="badge badge-pr">PR</span>}
                       </td>
                       <td className="col-location">

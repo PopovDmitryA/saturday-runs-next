@@ -61,6 +61,21 @@ class PlatformLinkResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ProfileClaimRequest(BaseModel):
+    """Привязка по ID из тизера главной: система + номер участника."""
+
+    platform_code: str = Field(min_length=1, max_length=32)
+    athlete_id: str = Field(min_length=1, max_length=32)
+
+
+class ProfileClaimResponse(BaseModel):
+    # "linked" — привязали сейчас, "already_linked" — профиль этой системы у
+    # человека уже был (для сквозного пути это успех, а не ошибка).
+    status: str
+    platform_code: str
+    link: PlatformLinkResponse | None = None
+
+
 class ProfileLinkConfirmResponse(BaseModel):
     link: PlatformLinkResponse
     message: str = "linked"

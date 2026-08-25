@@ -16,8 +16,16 @@ export type User = {
   telegram_username: string | null;
   telegram_first_name: string | null;
   telegram_last_name: string | null;
+  // Считается на сервере из профилей беговых систем (5 вёрст / S95 / RunPark /
+  // parkrun). Свободного ввода имени нет с 25.08.2026.
   display_name: string | null;
-  display_name_customized: boolean;
+  // "auto" — полное имя, "initial" — «Иван П.».
+  display_name_style: "auto" | "initial";
+  // Прежнее имя для одноразовой плашки «имя теперь из профиля»; null — не нужна.
+  display_name_notice: string | null;
+  // Алгоритм расходится с зафиксированным источником: имя не меняем, а зовём
+  // человека в настройки. null — расхождения нет.
+  display_name_suggestion: DisplayNameSuggestion | null;
   consent_accepted: boolean;
   is_admin: boolean;
   avatar_url: string | null;
@@ -316,6 +324,9 @@ export type BestResultItem = {
   event_date: string;
   location_name: string;
   location_city: string | null;
+  // Слаг площадки и тестовый старт — чтобы дата вела на наш протокол.
+  location_slug?: string | null;
+  is_test_event?: boolean;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   event_url?: string | null;
@@ -326,6 +337,8 @@ export type PersonalRecordItem = {
   event_date: string;
   location_name: string;
   location_city: string | null;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   is_pr?: boolean;
@@ -343,6 +356,8 @@ export type WinItem = {
   event_number: number | null;
   location_name: string;
   location_city: string | null;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   position: number | null;
@@ -699,11 +714,53 @@ export async function probeCurrentUser(): Promise<SessionProbe> {
   }
 }
 
-export function updateDisplayName(displayName: string) {
-  return apiFetch<User>("/auth/me", {
+export type DisplayNameSource = {
+  // null — имя пришло не из беговой системы, а от провайдера входа.
+  platform_code: string | null;
+  source_title: string;
+  name: string;
+  name_initial: string;
+  last_run: string | null;
+};
+
+export type DisplayNameSuggestion = {
+  name: string;
+  platform_code: string | null;
+  source_title: string;
+};
+
+export type DisplayNameOptions = {
+  current: string | null;
+  style: "auto" | "initial";
+  // Зафиксированная система-источник; null — выбирается автоматически.
+  source: string | null;
+  // Источник выбран человеком, а не алгоритмом: новая привязка его не перебьёт.
+  source_manual: boolean;
+  auto_name: string | null;
+  auto_source: string | null;
+  // Алгоритм расходится с текущим выбором — предлагаем сменить источник.
+  suggestion: DisplayNameSuggestion | null;
+  notice: string | null;
+  sources: DisplayNameSource[];
+};
+
+export function getDisplayNameOptions() {
+  return apiFetch<DisplayNameOptions>("/auth/me/display-name");
+}
+
+export function setDisplayNamePreferences(body: {
+  style: "auto" | "initial";
+  platform_code: string | null;
+}) {
+  return apiFetch<User>("/auth/me/display-name", {
     method: "PATCH",
-    body: JSON.stringify({ display_name: displayName.trim() }),
+    body: JSON.stringify(body),
   });
+}
+
+/** «Оставить как есть»: гасит баннер и запоминает отклонённое предложение. */
+export function keepDisplayName() {
+  return apiFetch<User>("/auth/me/display-name/keep", { method: "POST" });
 }
 
 export function uploadAvatar(file: File) {
@@ -738,6 +795,23 @@ export function confirmFiveVerstProfile(profileUrl: string) {
   return apiFetch<{ link: PlatformLink; message: string }>("/profiles/five-verst/confirm", {
     method: "POST",
     body: JSON.stringify({ profile_url: profileUrl }),
+  });
+}
+
+export type ProfileClaimResult = {
+  status: "linked" | "already_linked";
+  platform_code: string;
+  link: PlatformLink | null;
+};
+
+/**
+ * Досылка привязки по ID, введённому в тизере главной до регистрации:
+ * предпросмотр и подтверждение делает сервер одним вызовом (см. Т1).
+ */
+export function claimProfileByAthleteId(platformCode: string, athleteId: string) {
+  return apiFetch<ProfileClaimResult>("/profiles/claim", {
+    method: "POST",
+    body: JSON.stringify({ platform_code: platformCode, athlete_id: athleteId }),
   });
 }
 
@@ -810,6 +884,8 @@ export type OnThisDayRun = {
   event_date: string;
   location_name: string;
   location_city: string | null;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   platform_code: string;
   finish_time_display: string | null;
   finish_time_sec: number | null;
@@ -1096,6 +1172,8 @@ export type MyHistoryMilestone = {
   platform_code: string;
   location_name: string;
   location_city: string | null;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   position: number | null;
@@ -1842,6 +1920,8 @@ export type CoRunnerMeetingItem = {
   event_date: string;
   platform_code: string;
   location_name: string;
+  location_slug?: string | null;
+  is_test_event?: boolean;
   my_time_sec: number | null;
   their_time_sec: number | null;
   my_position: number | null;
@@ -2020,6 +2100,47 @@ export function getPublicProfileHomeDistanceDetail(serialId: number, includeTest
 
 export function getCatalogLocationsMap() {
   return apiFetch<MapLocationsResponse>("/locations/catalog/map");
+}
+
+export type MapPointNextStart = {
+  platform_code: string;
+  number: number;
+  date: string;
+  /** Сколько недель откручено от последнего старта: >1 — площадка пропускала субботы. */
+  weeks_ahead: number;
+  challenge_code: string | null;
+  challenge_title: string | null;
+  /** null — аноним либо номер вне диапазонов «Нумератора»: считать нечего. */
+  plus_one_overall: boolean | null;
+  plus_one_platform: boolean | null;
+};
+
+export type MapPointContext = {
+  identity_key: string;
+  authenticated: boolean;
+  next_starts: MapPointNextStart[];
+  home_distance: LocationHomeDistance | null;
+};
+
+/**
+ * Огрублённая отметка положения. Координаты округляет вызывающий код — точные
+ * значения из браузера наружу не уходят (см. lib/mapGeolocation.ts).
+ */
+export function sendMapGeoPing(body: {
+  latitude: number;
+  longitude: number;
+  accuracy_m: number | null;
+}) {
+  return apiFetch<void>("/locations/map/geo-ping", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Подробности одной точки карты — грузятся по клику, а не со всей картой. */
+export function getMapPointContext(identityKey: string) {
+  const query = new URLSearchParams({ identity_key: identityKey });
+  return apiFetch<MapPointContext>(`/locations/map/point-context?${query.toString()}`);
 }
 
 export type CatalogLocationTableRow = {
@@ -2221,7 +2342,11 @@ export type LocationIndexItem = {
   is_cancelled: boolean;
   events_count: number;
   finishers_total: number;
+  /** Самый первый старт площадки в любой системе, включая parkrun-эпоху. */
   first_event_date: string | null;
+  /** Первый старт в системе, где площадка живёт сейчас, и код этой системы. */
+  first_event_date_in_system: string | null;
+  first_event_system_code: string | null;
   last_event_date: string | null;
   best_male_time_sec: number | null;
   best_male_time_display: string | null;
@@ -2421,6 +2546,14 @@ export type ProtocolVolunteer = {
   is_me: boolean;
 };
 
+/** Роль этого старта и сколько человек её исполняли — для фильтра волонтёров. */
+export type ProtocolVolunteerRole = {
+  role: string;
+  count: number;
+  /** Ключевая роль: на площадке и без возможности бежать — такие идут первыми. */
+  is_core: boolean;
+};
+
 export type LocationProtocol = {
   slug: string;
   name: string;
@@ -2440,6 +2573,8 @@ export type LocationProtocol = {
   age_groups: ProtocolAgeGroup[];
   results: ProtocolResult[];
   volunteers: ProtocolVolunteer[];
+  /** Роли старта в порядке показа: сначала ключевые, потом остальные. */
+  volunteer_roles: ProtocolVolunteerRole[];
 };
 
 export function getLocationProtocol(slug: string, platformCode: string, eventDate: string) {
@@ -3343,10 +3478,18 @@ export type OgFetchRow = {
   bots: number;
 };
 
+export type FunnelStepStats = {
+  step: string;
+  visitors: number;
+  pct_of_start: number | null;
+  pct_of_prev: number | null;
+};
+
 export type PageAnalyticsResponse = {
   date_from: string;
   date_to: string;
   generated_at: string;
+  funnel: FunnelStepStats[];
   home_ab: HomeAbVariantStats[];
   home_links: HomeLinkClickStats[];
   share: ShareStats;

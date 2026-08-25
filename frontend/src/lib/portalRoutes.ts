@@ -26,6 +26,10 @@ export const PORTAL_CABINET_MAP_HREF = "/new/maps";
 export const PORTAL_CABINET_HISTORY_HREF = "/new/history";
 export const PORTAL_CABINET_SHARE_HREF = "/share";
 export const PORTAL_CABINET_SETTINGS_HREF = "/settings";
+// Якорь на раздел «Имя на сайте»: из сайдбара и из плашек про смену имени ведём
+// сразу к нему, а не в начало длинных настроек. Значение после «#» совпадает с
+// DISPLAY_NAME_ANCHOR в DisplayNameSection.
+export const PORTAL_DISPLAY_NAME_SETTINGS_HREF = "/settings#display-name";
 
 /**
  * Публичный адрес участника — он же адрес его кабинета (решение Дмитрия

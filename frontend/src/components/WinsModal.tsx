@@ -97,7 +97,7 @@ export function WinsModal({ open, onClose, scope, includeTest = false }: WinsMod
               {items.map((item) => (
                 <tr key={`${item.platform_code}-${item.event_date}-${item.location_name}`}>
                   <td className="col-date">
-                    <ActivityDateLink date={item.event_date} url={item.event_url} />
+                    <ActivityDateLink date={item.event_date} target={item} url={item.event_url} />
                   </td>
                   <td className="col-location">
                     <span className="unique-locations-name">{item.location_name}</span>

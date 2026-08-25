@@ -16,6 +16,8 @@ type RecordRow = {
   runnerSerialId: number | null;
   platform_code: string;
   protocol_url: string | null;
+  // Полный протокол у нас есть — дата ведёт на нашу страницу, а не на сайт системы.
+  has_protocol: boolean;
   isGlobal: boolean;
 };
 
@@ -143,6 +145,7 @@ function buildRows(items: LocationEventRow[], type: RecordType): RecordRow[] {
       runnerSerialId: runnerSerialIdFor(item, type),
       platform_code: item.platform_code,
       protocol_url: item.protocol_url,
+      has_protocol: item.has_protocol,
       isGlobal: isGlobalRecord(item, type),
     });
   }
@@ -211,7 +214,19 @@ export function LocationRecordsModal({
                 {rows.map((row) => (
                   <tr key={row.key}>
                     <td className="col-date">
-                      <ActivityDateLink date={row.event_date} url={row.protocol_url} />
+                      <ActivityDateLink
+                        date={row.event_date}
+                        target={
+                          row.has_protocol
+                            ? {
+                                location_slug: slug,
+                                platform_code: row.platform_code,
+                                event_date: row.event_date,
+                              }
+                            : null
+                        }
+                        url={row.protocol_url}
+                      />
                     </td>
                     {showRunnerColumn && (
                       <td className="col-runner">

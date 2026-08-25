@@ -39,6 +39,8 @@ type SweepData = {
   parse_rate_24h: number;
   parse_rate_1h: number;
   forecast: { days: number | null; date: string | null };
+  // Время расчёта снимка на бэкенде. null — посчитано на месте (снимка ещё нет).
+  snapshot_at?: string | null;
   vpn: Bot[];
   free: {
     summary: { total: number; active: number; cooldown: number; collected: number };
@@ -272,134 +274,6 @@ function BotTable({
   );
 }
 
-type Athlete = {
-  athlete_id: number;
-  name: string | null;
-  total_runs: number;
-  status: string;
-  parsed_at: string;
-  volunteer: number;
-  location: string | null;
-  country_name: string | null;
-  iso2: string | null;
-};
-
-function flagFromIso2(iso2: string | null): string {
-  if (!iso2 || iso2.length !== 2) return "";
-  const A = 0x1f1e6;
-  const c = iso2.toLowerCase();
-  return String.fromCodePoint(A + c.charCodeAt(0) - 97, A + c.charCodeAt(1) - 97);
-}
-
-const ATHLETE_STATUS: Record<string, { label: string; cls: string }> = {
-  ok: { label: "✓ валидна", cls: "ok" },
-  registered_empty: { label: "пусто", cls: "empty" },
-  not_found: { label: "нет", cls: "empty" },
-  unclassified: { label: "ревью", cls: "review" },
-};
-
-function AthletesTab({ token }: { token: string }) {
-  const [rows, setRows] = useState<Athlete[] | null>(null);
-  const [error, setError] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await fetch(`/api/sweep-hq/athletes?token=${encodeURIComponent(token)}`, {
-          credentials: "same-origin",
-        });
-        if (!alive) return;
-        if (!res.ok) {
-          setError(true);
-          return;
-        }
-        setError(false);
-        setRows(((await res.json()) as { athletes: Athlete[] }).athletes);
-      } catch {
-        if (alive) setError(true);
-      }
-    };
-    load();
-    // Опрос выравниваем по стенным часам (границы кратны 3 мин), чтобы отсчёт
-    // не сбрасывался при перезагрузке страницы — данные на сервере живые.
-    let interval: number | undefined;
-    const msToBoundary = REFRESH_MS - (Date.now() % REFRESH_MS);
-    const timer = window.setTimeout(() => {
-      load();
-      interval = window.setInterval(load, REFRESH_MS);
-    }, msToBoundary);
-    return () => {
-      alive = false;
-      window.clearTimeout(timer);
-      if (interval) window.clearInterval(interval);
-    };
-  }, [token]);
-
-  if (error) return <p className="hq-muted hq-pad">Не удалось загрузить.</p>;
-  if (!rows) return <p className="hq-muted hq-pad">Загрузка…</p>;
-
-  return (
-    <section className="hq-card">
-      <header className="hq-card__head">
-        <h2>🏃 Последние 100 обработанных</h2>
-        <span className="hq-card__sub">свежие сверху · обновление раз в 3 мин</span>
-      </header>
-      <div className="hq-tablewrap">
-        <table className="hq-table hq-table--ath">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Результат</th>
-              <th>ФИО</th>
-              <th className="hq-num">Пробежек</th>
-              <th className="hq-num">Волонтёрств</th>
-              <th>Частая локация</th>
-              <th className="hq-num">Обработан (МСК)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((a) => {
-              const st = ATHLETE_STATUS[a.status] ?? { label: a.status, cls: "empty" };
-              return (
-                <tr key={a.athlete_id}>
-                  <td className="hq-mono">
-                    <a
-                      href={`https://www.parkrun.org.uk/parkrunner/${a.athlete_id}/`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="hq-idlink"
-                    >
-                      {a.athlete_id}
-                    </a>
-                  </td>
-                  <td>
-                    <span className={`hq-astatus hq-astatus--${st.cls}`}>{st.label}</span>
-                  </td>
-                  <td>{a.name ?? "—"}</td>
-                  <td className="hq-num">{a.total_runs || "—"}</td>
-                  <td className="hq-num">{a.volunteer || "—"}</td>
-                  <td>
-                    {a.location ? (
-                      <span className="hq-loc">
-                        {a.iso2 && <span className="hq-loc__flag">{flagFromIso2(a.iso2)}</span>}
-                        <span>{a.location}</span>
-                        {a.country_name && <span className="hq-loc__cn">{a.country_name}</span>}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="hq-num hq-mono hq-muted">{fmtMoscowDateTime(a.parsed_at)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
 type RateHour = { hour: string; collected: number };
 
 function fmtHourLabel(iso: string): string {
@@ -412,44 +286,119 @@ function fmtHourLabel(iso: string): string {
   });
 }
 
+/** Метка часа покороче — для подписей оси, где важен только день и час. */
+function fmtHourShort(iso: string): string {
+  return new Date(iso).toLocaleString("ru-RU", {
+    timeZone: "Europe/Moscow",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+  });
+}
+
+/** Круглый потолок оси: 8 700 -> 9 000, 27 400 -> 30 000. Сетка с такими
+ *  числами читается быстрее, чем с 8 743.
+ *
+ *  Шагов нарочно много: с грубой шкалой (1-2-5-10) максимум в 27 тысяч задирал
+ *  потолок до пятидесяти, и график ужимался в нижнюю половину поля. */
+function niceCeil(v: number): number {
+  if (v <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / pow;
+  const step = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((c) => n <= c) ?? 10;
+  return step * pow;
+}
+
+/** Монотонная кубическая интерполяция (Фрич–Карлсон).
+ *
+ *  Обычный сплайн на всплесках вылетает за пределы данных и рисует провалы
+ *  ниже нуля, которых не было. Монотонный по построению не выходит за
+ *  соседние точки, поэтому сглаживание не выдумывает значений.
+ */
+function monotonePath(xs: number[], ys: number[]): string {
+  const n = xs.length;
+  if (n < 2) return "";
+  const dx: number[] = [];
+  const slope: number[] = [];
+  for (let i = 0; i < n - 1; i += 1) {
+    dx[i] = xs[i + 1] - xs[i];
+    slope[i] = (ys[i + 1] - ys[i]) / dx[i];
+  }
+  const t: number[] = new Array(n);
+  t[0] = slope[0];
+  t[n - 1] = slope[n - 2];
+  for (let i = 1; i < n - 1; i += 1) {
+    if (slope[i - 1] * slope[i] <= 0) {
+      t[i] = 0;
+    } else {
+      const w1 = 2 * dx[i] + dx[i - 1];
+      const w2 = dx[i] + 2 * dx[i - 1];
+      t[i] = (w1 + w2) / (w1 / slope[i - 1] + w2 / slope[i]);
+    }
+  }
+  let d = `M${xs[0].toFixed(1)},${ys[0].toFixed(1)}`;
+  for (let i = 0; i < n - 1; i += 1) {
+    const h = dx[i] / 3;
+    d += ` C${(xs[i] + h).toFixed(1)},${(ys[i] + t[i] * h).toFixed(1)}`;
+    d += ` ${(xs[i + 1] - h).toFixed(1)},${(ys[i + 1] - t[i + 1] * h).toFixed(1)}`;
+    d += ` ${xs[i + 1].toFixed(1)},${ys[i + 1].toFixed(1)}`;
+  }
+  return d;
+}
+
 function RateChart({ points }: { points: RateHour[] }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const width = 720;
-  const height = 220;
-  const plot = { left: 46, right: 712, top: 12, bottom: 190 };
+  const width = 760;
+  const height = 260;
+  const plot = { left: 58, right: 744, top: 18, bottom: 214 };
 
-  if (points.length < 2) {
+  const geom = useMemo(() => {
+    if (points.length < 2) return null;
+    const values = points.map((p) => p.collected);
+    const top = niceCeil(Math.max(1, ...values));
+    const last = points.length - 1;
+    const stepX = (plot.right - plot.left) / last;
+    const xs = points.map((_, i) => plot.left + i * stepX);
+    const ys = values.map((v) => plot.bottom - (v / top) * (plot.bottom - plot.top));
+    // Больше двух сотен точек — они и так сливаются в сплошную линию,
+    // сглаживать нечего, а строка пути выросла бы в разы.
+    const line = points.length > 200
+      ? `M${xs.map((x, i) => `${x.toFixed(1)},${ys[i].toFixed(1)}`).join(" L")}`
+      : monotonePath(xs, ys);
+    const area = `${line} L${xs[last].toFixed(1)},${plot.bottom} L${xs[0].toFixed(1)},${plot.bottom} Z`;
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const peak = values.indexOf(Math.max(...values));
+    return { top, last, stepX, xs, ys, line, area, avg, peak, values };
+  }, [points]);
+
+  if (!geom) {
     return <p className="hq-muted hq-pad">Пока недостаточно данных для графика.</p>;
   }
 
-  const maxValue = Math.max(1, ...points.map((p) => p.collected));
-  const lastIndex = points.length - 1;
-  const stepX = (plot.right - plot.left) / lastIndex;
-  const xFor = (i: number) => plot.left + i * stepX;
-  const yFor = (v: number) => plot.bottom - (v / maxValue) * (plot.bottom - plot.top);
-  const gridValues = [0.25, 0.5, 0.75, 1].map((s) => Math.round(maxValue * s));
-  const labelEvery = Math.max(1, Math.ceil(points.length / 8));
-  const line = points.map((p, i) => `${xFor(i).toFixed(1)},${yFor(p.collected).toFixed(1)}`).join(" ");
+  const { top, last, stepX, xs, ys, line, area, avg, peak } = geom;
+  const avgLabel = `среднее ${fmt(Math.round(avg))}`;
+  const yFor = (v: number) => plot.bottom - (v / top) * (plot.bottom - plot.top);
+  const grid = [0, 0.25, 0.5, 0.75, 1].map((s) => top * s);
+  const labelEvery = Math.max(1, Math.ceil(points.length / 7));
+  // Последний час подписываем всегда, а очередную регулярную подпись рядом с ним
+  // пропускаем — иначе они налезают друг на друга у правого края.
+  const showLabel = (i: number) =>
+    i === last || (i % labelEvery === 0 && last - i > labelEvery * 0.55);
 
   const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const px = (e.clientX - rect.left) * (width / rect.width);
-    setHoverIdx(Math.min(lastIndex, Math.max(0, Math.round((px - plot.left) / stepX))));
+    setHoverIdx(Math.min(last, Math.max(0, Math.round((px - plot.left) / stepX))));
   };
 
   const hp = hoverIdx != null ? points[hoverIdx] : null;
+  // Подсказку прижимаем к краям поля, иначе на первых и последних часах
+  // она уезжала бы за границу картинки.
+  const tipW = 168;
+  const tipX = hoverIdx == null ? 0 : Math.min(plot.right - tipW, Math.max(plot.left, xs[hoverIdx] - tipW / 2));
 
   return (
     <div className="hq-ratechart">
-      <div className="hq-ratechart__tip">
-        {hp ? (
-          <>
-            {fmtHourLabel(hp.hour)} · <b>{fmt(hp.collected)}</b> атлетов
-          </>
-        ) : (
-          " "
-        )}
-      </div>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
@@ -457,29 +406,89 @@ function RateChart({ points }: { points: RateHour[] }) {
         onMouseMove={handleMove}
         onMouseLeave={() => setHoverIdx(null)}
       >
-        {gridValues.map((v) => (
-          <g key={v}>
-            <line x1={plot.left} x2={plot.right} y1={yFor(v)} y2={yFor(v)} stroke="rgba(94, 128, 190, 0.18)" />
-            <text x={plot.left - 6} y={yFor(v) + 3} textAnchor="end">
-              {fmt(v)}
+        <defs>
+          <linearGradient id="hq-rc-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.38" />
+            <stop offset="60%" stopColor="#38bdf8" stopOpacity="0.10" />
+            <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="hq-rc-line" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#818cf8" />
+            <stop offset="55%" stopColor="#38bdf8" />
+            <stop offset="100%" stopColor="#34d399" />
+          </linearGradient>
+          <filter id="hq-rc-glow" x="-20%" y="-40%" width="140%" height="180%">
+            <feGaussianBlur stdDeviation="4" result="b" />
+            <feMerge>
+              <feMergeNode in="b" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {grid.map((v) => (
+          <g key={v} className="hq-rc-grid">
+            <line
+              x1={plot.left}
+              x2={plot.right}
+              y1={yFor(v)}
+              y2={yFor(v)}
+              strokeDasharray={v === 0 ? undefined : "2 6"}
+            />
+            <text x={plot.left - 10} y={yFor(v) + 4} textAnchor="end">
+              {fmt(Math.round(v))}
             </text>
           </g>
         ))}
-        <line x1={plot.left} x2={plot.right} y1={plot.bottom} y2={plot.bottom} stroke="rgba(94, 128, 190, 0.3)" />
-        <polyline points={line} fill="none" stroke="#38bdf8" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        {points.map((p, i) => (
-          <circle key={p.hour} cx={xFor(i)} cy={yFor(p.collected)} r={hoverIdx === i ? 4 : 2} fill="#38bdf8" />
-        ))}
-        {hoverIdx != null && (
-          <line x1={xFor(hoverIdx)} x2={xFor(hoverIdx)} y1={plot.top} y2={plot.bottom} stroke="rgba(230, 237, 247, 0.35)" strokeDasharray="3 3" />
-        )}
+
+        <path d={area} fill="url(#hq-rc-fill)" />
+        <path
+          d={line}
+          fill="none"
+          stroke="url(#hq-rc-line)"
+          strokeWidth="2.4"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          filter="url(#hq-rc-glow)"
+        />
+
+        <g className="hq-rc-avg">
+          <line x1={plot.left} x2={plot.right} y1={yFor(avg)} y2={yFor(avg)} strokeDasharray="6 5" />
+          {/* Подпись на подложке и у левого края: на самой линии её перекрывал
+              график, а у правого края — финальный всплеск. */}
+          <g transform={`translate(${plot.left + 8}, ${Math.max(plot.top + 14, yFor(avg) - 8)})`}>
+            <rect x="0" y="-11" width={avgLabel.length * 5.4 + 14} height="15" rx="7.5" />
+            <text x="7" y="0">{avgLabel}</text>
+          </g>
+        </g>
+
+        {points.length <= 60 &&
+          points.map((p, i) => (
+            <circle key={p.hour} className="hq-rc-dot" cx={xs[i]} cy={ys[i]} r={2.4} />
+          ))}
+        <circle className="hq-rc-peak" cx={xs[peak]} cy={ys[peak]} r={4} />
+
         {points.map(
           (p, i) =>
-            (i % labelEvery === 0 || i === lastIndex) && (
-              <text key={p.hour} x={xFor(i)} y={height - 4} textAnchor="middle">
-                {fmtHourLabel(p.hour)}
+            showLabel(i) && (
+              <text key={p.hour} className="hq-rc-xlab" x={xs[i]} y={height - 8} textAnchor="middle">
+                {fmtHourShort(p.hour)}
               </text>
             ),
+        )}
+
+        {hoverIdx != null && hp && (
+          <g className="hq-rc-hover">
+            <line x1={xs[hoverIdx]} x2={xs[hoverIdx]} y1={plot.top} y2={plot.bottom} />
+            <circle cx={xs[hoverIdx]} cy={ys[hoverIdx]} r={5} />
+            <g transform={`translate(${tipX}, ${plot.top})`}>
+              <rect width={tipW} height="42" rx="9" />
+              <text x="12" y="17">{fmtHourLabel(hp.hour)}</text>
+              <text x="12" y="33" className="hq-rc-tipval">
+                {fmt(hp.collected)} атлетов
+              </text>
+            </g>
+          </g>
         )}
       </svg>
     </div>
@@ -599,7 +608,7 @@ export function SweepHqPage({ token }: { token: string }) {
   const [prev, setPrev] = useState<SweepData | null>(() => loadSnap(token));
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [error, setError] = useState<number | null>(null);
-  const [tab, setTab] = useState<"fleet" | "athletes" | "rate">("fleet");
+  const [tab, setTab] = useState<"fleet" | "rate">("fleet");
   const [now, setNow] = useState<number>(() => Date.now());
   const curRef = useRef<SweepData | null>(loadSnap(token));
 
@@ -623,11 +632,19 @@ export function SweepHqPage({ token }: { token: string }) {
       }
     };
     const apply = (next: SweepData) => {
-      setPrev(curRef.current);
+      // Данные считает снимок на бэкенде раз в 3 минуты. Если он не обновился
+      // (расписание встало, база недоступна), числа придут те же — и дельты
+      // показали бы честный ноль, неотличимый от «за 3 минуты ничего не собрали».
+      // Поэтому prev двигаем только когда снимок действительно сменился.
+      const same =
+        next.snapshot_at != null && next.snapshot_at === curRef.current?.snapshot_at;
+      if (!same) {
+        setPrev(curRef.current);
+        saveSnap(token, next);
+      }
       curRef.current = next;
       setData(next);
       setUpdatedAt(new Date());
-      saveSnap(token, next);
     };
     // немедленная загрузка при входе
     doFetch().then((d) => {
@@ -682,6 +699,12 @@ export function SweepHqPage({ token }: { token: string }) {
   const p = data.progress;
   const freeSum = data.free.summary;
   const vpnWorking = data.vpn.filter((b) => b.status === "working").length;
+  // Снимок пересчитывается раз в 3 минуты; допускаем задержку в два цикла,
+  // дальше это уже поломка, и о ней лучше сказать, чем показывать нули дельт.
+  const snapAgeMs = data?.snapshot_at ? now - new Date(data.snapshot_at).getTime() : null;
+  const staleMinutes =
+    snapAgeMs != null && snapAgeMs > 2 * REFRESH_MS ? Math.floor(snapAgeMs / 60_000) : null;
+
   const prevVpnMap = collectedMap(prev?.vpn);
   const prevFreeMap = collectedMap(prev?.free.top);
   // Сумма собранного флотом целиком + дельта за интервал опроса — виден вклад
@@ -711,6 +734,12 @@ export function SweepHqPage({ token }: { token: string }) {
         <div className={imminent ? "hq-topbar hq-topbar--hot" : "hq-topbar"}>
           <span className="hq-topbar__upd">
             🕐 обновлено {updatedAt ? fmtMoscow(updatedAt) : "…"}
+            {staleMinutes != null && (
+              <b className="hq-topbar__stale" title="Снимок на бэкенде не обновляется">
+                {" "}
+                · данные {staleMinutes} мин назад
+              </b>
+            )}
           </span>
           <span className="hq-topbar__next">
             {imminent ? "⚡ обновление через " : "следующее через "}
@@ -829,12 +858,6 @@ export function SweepHqPage({ token }: { token: string }) {
             🤖 Флот ботов
           </button>
           <button
-            className={tab === "athletes" ? "hq-tab hq-tab--on" : "hq-tab"}
-            onClick={() => setTab("athletes")}
-          >
-            🏃 Атлеты
-          </button>
-          <button
             className={tab === "rate" ? "hq-tab hq-tab--on" : "hq-tab"}
             onClick={() => setTab("rate")}
           >
@@ -842,9 +865,7 @@ export function SweepHqPage({ token }: { token: string }) {
           </button>
         </nav>
 
-        {tab === "athletes" ? (
-          <AthletesTab token={token} />
-        ) : tab === "rate" ? (
+        {tab === "rate" ? (
           <RateHistoryTab token={token} />
         ) : (
           <div className="hq-fleet">

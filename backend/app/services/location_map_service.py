@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.location_page_url import location_page_url, pick_primary_location_url
 from app.models import Location, Platform
@@ -20,7 +21,7 @@ MAP_PLATFORMS = (*MAP_LIVE_PLATFORMS, MAP_HISTORIC_PLATFORM)
 RU_COUNTRY_NAMES = ("Россия", "Russia")
 
 
-def map_location_filter() -> object:
+def map_location_filter() -> ColumnElement[bool]:
     """Условие отбора локаций для карты и каталога.
 
     У действующих систем ориентир — is_official_map. parkrun тащим целиком:

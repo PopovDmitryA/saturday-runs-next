@@ -381,50 +381,6 @@
   padding: 24px;
 }
 
-/* ---------- athletes table ---------- */
-.hq-mono {
-  font-variant-numeric: tabular-nums;
-}
-.hq-idlink {
-  color: #7dd3fc;
-  text-decoration: none;
-}
-.hq-idlink:hover {
-  text-decoration: underline;
-}
-.hq-astatus {
-  display: inline-block;
-  font-size: 12px;
-  font-weight: 600;
-  border-radius: 6px;
-  padding: 2px 8px;
-  white-space: nowrap;
-}
-.hq-astatus--ok {
-  color: #34d399;
-  background: rgba(52, 211, 153, 0.14);
-}
-.hq-astatus--empty {
-  color: #8091ad;
-  background: rgba(128, 145, 173, 0.12);
-}
-.hq-astatus--review {
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.14);
-}
-.hq-loc {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.hq-loc__flag {
-  font-size: 15px;
-}
-.hq-loc__cn {
-  font-size: 11px;
-  color: #8091ad;
-}
-
 /* ---------- fleet tables ---------- */
 .hq-fleet {
   display: grid;
@@ -584,24 +540,79 @@
 }
 
 /* ---------- rate history chart ---------- */
+.hq-topbar__stale {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
 .hq-ratechart {
   position: relative;
 }
 .hq-ratechart svg {
   width: 100%;
   height: auto;
+  overflow: visible;
 }
 .hq-ratechart svg text {
   font-size: 11px;
   fill: #8091ad;
 }
-.hq-ratechart__tip {
-  min-height: 18px;
-  margin-bottom: 8px;
-  text-align: center;
-  font-size: 13px;
-  color: #b9c6dd;
+
+/* Сетка: нулевая линия чуть заметнее остальных — она задаёт основание. */
+.hq-rc-grid line {
+  stroke: rgba(94, 128, 190, 0.16);
 }
-.hq-ratechart__tip b {
-  color: #67e8f9;
+.hq-rc-grid text {
+  font-variant-numeric: tabular-nums;
+}
+
+.hq-rc-avg line {
+  stroke: rgba(251, 191, 36, 0.45);
+}
+.hq-rc-avg rect {
+  fill: rgba(11, 17, 32, 0.88);
+  stroke: rgba(251, 191, 36, 0.28);
+}
+.hq-rc-avg text {
+  fill: rgba(251, 191, 36, 0.85);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hq-rc-dot {
+  fill: #38bdf8;
+  opacity: 0.7;
+}
+.hq-rc-peak {
+  fill: #34d399;
+  stroke: rgba(15, 23, 42, 0.9);
+  stroke-width: 2;
+}
+
+.hq-rc-xlab {
+  font-size: 10px;
+}
+
+.hq-rc-hover line {
+  stroke: rgba(230, 237, 247, 0.28);
+  stroke-dasharray: 3 3;
+}
+.hq-rc-hover circle {
+  fill: #e6edf7;
+  stroke: #38bdf8;
+  stroke-width: 2.5;
+}
+.hq-rc-hover rect {
+  fill: rgba(12, 20, 38, 0.94);
+  stroke: rgba(94, 128, 190, 0.4);
+}
+.hq-rc-hover text {
+  fill: #b9c6dd;
+  font-size: 11px;
+}
+.hq-rc-hover .hq-rc-tipval {
+  fill: #67e8f9;
+  font-weight: 600;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }

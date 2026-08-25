@@ -15,6 +15,7 @@ import {
   saturdayStreakLabel,
   volunteerNumberLabel,
 } from "./milestoneShare";
+import { ourProtocolHref } from "../../lib/protocolHref";
 
 const MILESTONE_FORMS = ["веха", "вехи", "вех"] as const;
 const YEAR_FORMS = ["год", "года", "лет"] as const;
@@ -224,6 +225,16 @@ function ShareIcon() {
 }
 
 function MilestoneLocation({ milestone }: { milestone: MyHistoryMilestone }) {
+  // Внутрь сайта, на наш протокол этого старта; наружу — только если своей
+  // страницы у старта быть не может (тестовый старт, локация без слага).
+  const internal = ourProtocolHref(milestone);
+  if (internal) {
+    return (
+      <a href={internal} className="history-location" title="Открыть протокол старта">
+        {milestone.location_name}
+      </a>
+    );
+  }
   return milestone.event_url ? (
     <a href={milestone.event_url} target="_blank" rel="noreferrer" className="history-location">
       {milestone.location_name}

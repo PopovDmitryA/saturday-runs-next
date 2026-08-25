@@ -55,6 +55,7 @@ import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
 import { UnifiedProtocolPage } from "./features/locations/UnifiedProtocolPage";
 import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
 import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
+import { LocationRecordsRatingPage } from "./features/leaderboards/LocationRecordsRatingPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
@@ -67,7 +68,8 @@ import {
   RenderOgUserPage,
 } from "./features/sharing/RenderOgPage";
 import { ShareSheetProvider } from "./features/sharing/ShareSheetContext";
-import { reportAbLoginOnce } from "./lib/abTest";
+import { TeaserClaimRunner } from "./features/portal/teaserClaim";
+import { reportAuthDoneOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
 import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
@@ -93,9 +95,9 @@ function useSitePageviewTracking(path: string) {
     getCurrentUser()
       .then((user) => {
         begin(true, user.id);
-        // АБ-воронка: первый авторизованный визит в этом браузере — событие
-        // login_complete (когорту new/returning определяет сервер).
-        reportAbLoginOnce(user.id);
+        // Ступень воронки: вход завершён. Раз на пару (браузер, пользователь) —
+        // когорту new/returning ставит сервер по возрасту аккаунта.
+        reportAuthDoneOnce(user.id);
       })
       .catch(() => begin(false, undefined));
     return () => {
@@ -240,6 +242,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/wins": () => <LeaderboardPage metric="wins" />,
   "/ratings/win-locations": () => <LeaderboardPage metric="win_locations" />,
   "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
+  "/ratings/location-records": () => <LocationRecordsRatingPage />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,
@@ -381,10 +384,14 @@ export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
   usePageMeta(path);
+  // Отложенная привязка из тизера главной: сработает на любой странице, куда
+  // провайдер вернул человека после входа, поэтому живёт на уровне App.
+  const viewer = useOptionalUser();
   // Шторка «Поделиться» доступна из любого раздела — провайдер на всё дерево.
   return (
     <ShareSheetProvider>
       {renderRoute(path)}
+      <TeaserClaimRunner userId={viewer?.id ?? null} />
       {/* Тап-подсказки на телефоне — один слой на весь сайт (см. TapTooltipLayer). */}
       <TapTooltipLayer />
     </ShareSheetProvider>

@@ -83,6 +83,7 @@ _STATIC_PAGE_TYPES = {
     "/ratings/wins": "ratings_wins",
     "/ratings/win-locations": "ratings_win_locations",
     "/ratings/home-distance": "ratings_home_distance",
+    "/ratings/location-records": "ratings_location_records",
     "/backlog": "backlog",
     # Превью кабинета на демо-данных — витрина дизайна, а не раздел сайта.
     "/new/cabinet-preview": "cabinet_preview",
@@ -577,6 +578,106 @@ def build_home_link_clicks(
     return result
 
 
+# Канал постоянного счётчика воронки регистрации (см. FUNNEL_EXPERIMENT в
+# ab_service). Пять ступеней: главная → клик по кнопке → старт входа у
+# провайдера → аккаунт → привязанная платформа.
+FUNNEL_EXPERIMENT = "funnel"
+
+
+def build_funnel_stats(db: Session, *, start: date, end: date) -> list[dict[str, object]]:
+    """Воронка регистрации по посетителям: сколько дошло до каждой ступени.
+
+    Считаем ПОСЕТИТЕЛЕЙ (visitor_key), а не события: человек может открыть
+    главную пять раз и нажать кнопку трижды, и в конверсии это один человек.
+    visitor_key анонимный и переживает редирект на VK/Яндекс, поэтому цепочка
+    не рвётся на входе.
+
+    Ступени со второй по четвёртую берутся только у тех, кто в этом же периоде
+    открывал главную: клик и вход бывают и без неё (прямая ссылка на /login),
+    но тогда знаменатель и числитель считались бы по разным людям.
+
+    Пятая ступень — привязка платформы — считается по platform_links, а не по
+    событию: таблица и есть источник правды. Она сознательно НЕ ограничена
+    концом периода — человеку, зарегистрировавшемуся в последний день, нужно
+    время; иначе свежие периоды показывали бы заниженную активацию.
+
+    Пишется с 22.08.2026, за более ранние периоды ступени будут пустыми.
+    """
+    row = db.execute(
+        text(
+            """
+            WITH home AS (
+                SELECT DISTINCT visitor_key FROM ab_events
+                WHERE experiment = :experiment AND event_type = 'home_view'
+                  AND ts >= :start AND ts < :end_exclusive
+            ),
+            step AS (
+                SELECT event_type, visitor_key, min(cohort) AS cohort,
+                       min(viewer_user_id::text) AS user_id
+                FROM ab_events
+                WHERE experiment = :experiment
+                  AND ts >= :start AND ts < :end_exclusive
+                  AND visitor_key IN (SELECT visitor_key FROM home)
+                GROUP BY event_type, visitor_key
+            )
+            SELECT
+              (SELECT count(*) FROM home) AS home_view,
+              (SELECT count(*) FROM step WHERE event_type = 'cta_click') AS cta_click,
+              (SELECT count(*) FROM step WHERE event_type = 'auth_start') AS auth_start,
+              (SELECT count(*) FROM step WHERE event_type = 'auth_done' AND cohort = 'new')
+                AS registered,
+              (SELECT count(*) FROM step s
+                 WHERE s.event_type = 'auth_done' AND s.cohort = 'new'
+                   AND EXISTS (SELECT 1 FROM platform_links pl
+                               WHERE pl.user_id::text = s.user_id)) AS activated,
+              (SELECT count(*) FROM step WHERE event_type = 'auth_done' AND cohort = 'returning')
+                AS returning_logins
+            """
+        ),
+        {
+            "experiment": FUNNEL_EXPERIMENT,
+            "start": start,
+            "end_exclusive": end + timedelta(days=1),
+        },
+    ).one()
+
+    steps = [
+        ("Открыли главную", int(row.home_view or 0)),
+        ("Нажали кнопку входа", int(row.cta_click or 0)),
+        ("Дошли до провайдера", int(row.auth_start or 0)),
+        ("Завели аккаунт", int(row.registered or 0)),
+        ("Привязали платформу", int(row.activated or 0)),
+    ]
+    base = steps[0][1]
+    result: list[dict[str, object]] = []
+    previous: int | None = None
+    for label, visitors in steps:
+        result.append(
+            {
+                "step": label,
+                "visitors": visitors,
+                # Доля от первой ступени — «сквозная» конверсия воронки.
+                "pct_of_start": round(100.0 * visitors / base, 1) if base else None,
+                # Доля от предыдущей ступени — где именно рвётся.
+                "pct_of_prev": (
+                    round(100.0 * visitors / previous, 1) if previous else None
+                ),
+            }
+        )
+        previous = visitors
+    # Вернувшиеся не ступень воронки (аккаунт у них уже был), но без них
+    # непонятно, почему входов больше, чем регистраций.
+    result.append(
+        {
+            "step": "— из них вернувшихся (не конверсия)",
+            "visitors": int(row.returning_logins or 0),
+            "pct_of_start": None,
+            "pct_of_prev": None,
+        }
+    )
+    return result
+
+
 # Канал событий фичи «Поделиться» в ab_events (см. KNOWN_EXPERIMENTS в ab_service).
 SHARE_EXPERIMENT = "share"
 
@@ -750,14 +851,15 @@ def build_og_fetch_stats(
 
 
 def build_home_ab_stats(db: Session, *, start: date, end: date) -> list[dict[str, object]]:
-    """Сколько раз показали каждый вариант главной и скольким посетителям.
+    """Архив АБ-теста главной: показы вариантов A и B по периоду.
 
-    Только показы. Воронку (клики CTA, логины, конверсия) сознательно не
-    считаем: до выводов по эксперименту цифры разбираются офлайн, а
-    полуавтоматический отчёт подталкивал бы делать выводы по горстке событий.
+    Эксперимент шёл 27.07–22.08.2026 и завершён — вариант B принят как
+    единственная главная, событие variant_view больше не пишется. Отчёт живёт
+    дальше как окно в историю: за периоды вне теста он пустой и блок в админке
+    просто не показывается.
 
-    Показы пишутся с 27.07.2026 (событие variant_view), у более ранних
-    периодов будут нули.
+    Только показы. Воронку (клики CTA, логины, конверсия) отчёт не считал
+    никогда — итоги теста разобраны офлайн, SQL по ab_events.
     """
     rows = db.execute(
         text(

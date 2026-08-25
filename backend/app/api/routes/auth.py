@@ -24,6 +24,8 @@ from app.schemas.auth import (
     BotConfirmResponse,
     BotLoginStatusRequest,
     BotLoginStatusResponse,
+    DisplayNameOptionsResponse,
+    DisplayNamePreferencesUpdate,
     LoginRequestResponse,
     LoginRequestStatusResponse,
     MergeConfirmRequest,
@@ -31,7 +33,6 @@ from app.schemas.auth import (
     MessageResponse,
     OAuthFinishRequest,
     OAuthFinishResponse,
-    UserDisplayNameUpdate,
     UserResponse,
 )
 from app.services.auth_identity_service import (
@@ -47,7 +48,6 @@ from app.services.auth_service import (
     create_login_request,
     create_user_session,
     get_login_request_status,
-    update_user_display_name,
 )
 from app.services.login_journal_service import (
     EVENT_LOGIN,
@@ -60,6 +60,12 @@ from app.services.oauth_service import (
     get_merge_preview_by_token,
     handle_oauth_callback,
     start_oauth_flow,
+)
+from app.services.user_display_name_service import (
+    dismiss_display_name_notice,
+    display_name_options,
+    display_name_suggestion,
+    set_display_name_preferences,
 )
 
 logger = logging.getLogger(__name__)
@@ -132,7 +138,14 @@ def _log_login(
 
 def _user_payload(db: Session, user: User, settings: Settings) -> UserResponse:
     identities = list_user_identities(db, user.id)
-    return user_response(user, settings, identities)
+    # Расхождение алгоритма с зафиксированным источником отдаём вместе с /me:
+    # баннер про смену имени рисуется по этому полю, отдельного запроса не нужно.
+    return user_response(
+        user,
+        settings,
+        identities,
+        display_name_suggestion=display_name_suggestion(db, user),
+    )
 
 
 def _parse_vk_callback_params(
@@ -505,18 +518,41 @@ def auth_me(
     return _user_payload(db, user, settings)
 
 
-@router.patch("/me", response_model=UserResponse)
-def auth_me_update(
-    body: UserDisplayNameUpdate,
+@router.get("/me/display-name", response_model=DisplayNameOptionsResponse)
+def auth_me_display_name_options(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> DisplayNameOptionsResponse:
+    """Варианты имени для селектора в кабинете.
+
+    Свободного ввода нет: имя берётся из профилей беговых систем, человек лишь
+    выбирает стиль и, если имена в системах разошлись, систему-источник.
+    """
+    return DisplayNameOptionsResponse.model_validate(display_name_options(db, user))
+
+
+@router.patch("/me/display-name", response_model=UserResponse)
+def auth_me_display_name_update(
+    body: DisplayNamePreferencesUpdate,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> UserResponse:
     try:
-        updated = update_user_display_name(db, user, body.display_name)
-    except AuthError as exc:
-        raise _handle_auth_error(exc) from exc
+        updated = set_display_name_preferences(db, user, style=body.style, platform_code=body.platform_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _user_payload(db, updated, settings)
+
+
+@router.post("/me/display-name/keep", response_model=UserResponse)
+def auth_me_display_name_keep(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> UserResponse:
+    """«Оставить как есть»: гасит баннер и запоминает отклонённое предложение."""
+    return _user_payload(db, dismiss_display_name_notice(db, user), settings)
 
 
 @router.post("/logout", response_model=MessageResponse)

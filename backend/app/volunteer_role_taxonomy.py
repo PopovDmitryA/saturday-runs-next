@@ -399,6 +399,55 @@ def canonical_volunteer_role(role: str | None) -> CanonicalRole | None:
     return CanonicalRole(key=f"raw:{key}", label=cleaned)
 
 
+# Ключевые роли: быть на площадке обязательно, и бежать в этот день нельзя —
+# те, без кого старт не состоится. В протоколе они идут первыми (просьба
+# Дмитрия 23.08.2026): читателю важнее, кто вёл забег и стоял на финише, чем
+# кто снимал фото. Ровно то же «строгое ядро», что и в пресете on_site_no_run.
+CORE_ROLE_KEYS: frozenset[str] = frozenset(
+    key for key in ROLE_ON_SITE if key not in ROLE_RUNNABLE
+)
+
+
+def role_is_core(key: str) -> bool:
+    """Ключевая ли роль: на площадке и без возможности бежать."""
+    return key in CORE_ROLE_KEYS
+
+
+def role_display_order(key: str) -> tuple[int, int]:
+    """Порядок роли в протоколе: сначала ключевые, потом остальные.
+
+    Внутри группы — порядок CANONICAL_ROLE_LABELS (ход субботнего утра:
+    подготовка → трасса → финиш → после); незнакомые роли (raw:*) в хвосте.
+    """
+    try:
+        within = list(CANONICAL_ROLE_LABELS).index(key)
+    except ValueError:
+        within = len(CANONICAL_ROLE_LABELS)
+    return (0 if role_is_core(key) else 1, within)
+
+
+# У parkrun ярлыки ролей английские («Marshal», «Finish Tokens») — это его
+# собственные названия, но читают наши протоколы по-русски, и русские parkrun
+# 2014–2022 годов подписывали роли по-русски. Поэтому единственная система, для
+# которой в протоколе остаётся канонический русский ярлык.
+_PLATFORMS_WITHOUT_OWN_RU_LABELS: frozenset[str] = frozenset({"parkrun"})
+
+
+def platform_role_label(platform_code: str, raw_role: str | None, canonical: CanonicalRole) -> str:
+    """Название роли так, как её называет система этого протокола.
+
+    В `volunteer_results.role` лежит ярлык самой системы («Организатор» у
+    5 вёрст, «Директор» у С95, «Руководитель» у RunPark) — он и есть ответ.
+    Канонический ярлык нужен для межсистемного зачёта, а в протоколе он врал:
+    в 5 вёрст показывался «Директор забега» — название С95 (репорт Дмитрия
+    23.08.2026).
+    """
+    if platform_code in _PLATFORMS_WITHOUT_OWN_RU_LABELS:
+        return canonical.label
+    cleaned = strip_role_counters(raw_role or "")
+    return cleaned or canonical.label
+
+
 def role_occasions(role: str | None) -> int | None:
     """Число кредитов из parkrun-ярлыка «Marshal (12×)» — 12. None, если его нет."""
     if not role:

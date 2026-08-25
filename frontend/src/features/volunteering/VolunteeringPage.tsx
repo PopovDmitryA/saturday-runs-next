@@ -393,7 +393,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                           className={item.is_crosslinked ? "run-crosslinked" : undefined}
                         >
                           <td className="td-date">
-                            <ActivityDateLink date={item.event_date} url={item.event_url} />
+                            <ActivityDateLink date={item.event_date} target={item} url={item.event_url} />
                             {item.is_test_event && <span className="badge">тест</span>}
                             {item.is_crosslinked && (
                               <span className="badge badge-crosslinked">не в зачёте</span>
@@ -544,7 +544,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                       className={item.is_crosslinked ? "run-crosslinked" : undefined}
                     >
                       <td className="td-date">
-                        <ActivityDateLink date={item.event_date} url={item.event_url} />
+                        <ActivityDateLink date={item.event_date} target={item} url={item.event_url} />
                         {item.is_test_event && <span className="badge">тест</span>}
                         {item.is_crosslinked && (
                           <span

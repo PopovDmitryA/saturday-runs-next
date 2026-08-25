@@ -5,6 +5,7 @@ import type { CatalogLocationTableRow, UniqueLocationsDetailResponse } from "../
 import { regionKey } from "../lib/regionMatch";
 import { pluralFormRu, pluralizeRu } from "../lib/format";
 import type { MapViewportRef } from "../lib/mapViewport";
+import { addDoubleTapDragZoom } from "../lib/mapDoubleTapZoom";
 import { addZoomControl } from "../lib/mapZoomControl";
 import type { PlatformFilters } from "../features/maps/mapFilters";
 import { MapFullscreenButton } from "./MapFullscreenButton";
@@ -241,6 +242,7 @@ export function RegionChoropleth({
     }).setView([62, 94], 3);
 
     addZoomControl(map);
+    const removeDoubleTapZoom = addDoubleTapDragZoom(map);
 
     L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
       subdomains: "abcd",
@@ -263,6 +265,7 @@ export function RegionChoropleth({
 
     return () => {
       map.off("moveend", writeViewport);
+      removeDoubleTapZoom();
       map.remove();
       mapRef.current = null;
       layersRef.current = [];

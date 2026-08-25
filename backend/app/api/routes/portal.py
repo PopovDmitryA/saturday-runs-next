@@ -3,11 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_client_ip
+from app.api.deps import get_client_ip, get_current_user
 from app.core.rate_limit import check_rate_limit
 from app.db.session import get_db
-from app.schemas.portal import PortalHomeResponse, PortalTeaserResponse
+from app.models import User
+from app.schemas.portal import PortalHomeResponse, PortalMeResponse, PortalTeaserResponse
 from app.services.portal_home_service import build_portal_home
+from app.services.portal_me_service import build_portal_me
 from app.services.portal_teaser_service import build_portal_teaser
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -17,6 +19,20 @@ router = APIRouter(prefix="/portal", tags=["portal"])
 def get_portal_home(db: Session = Depends(get_db)) -> PortalHomeResponse:
     """Публичные агрегаты для главной портала (без авторизации)."""
     return build_portal_home(db)
+
+
+@router.get("/me", response_model=PortalMeResponse)
+def get_portal_me(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PortalMeResponse:
+    """Личная плашка главной: последняя пробежка и живая серия суббот.
+
+    Отдельно от /portal/home: та кэшируется и одна на всех, эта персональная.
+    Фронт грузит её вторым запросом, поэтому анонимная главная от неё не
+    зависит и не ждёт.
+    """
+    return PortalMeResponse.model_validate(build_portal_me(db, user))
 
 
 @router.get("/teaser", response_model=PortalTeaserResponse)
