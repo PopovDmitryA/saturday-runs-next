@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from typing import Any
 
-from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, func, or_
+from sqlalchemy.orm import Query, Session
+from sqlalchemy.sql import Subquery
 
 from app.five_verst.errors import FiveVerstBanDetected
 from app.five_verst.fetch.protocol_pause import wait_between_protocols
@@ -25,6 +27,23 @@ class ReconcileReason(str, Enum):
     check_due = "check_due"
     count_mismatch = "count_mismatch"
     summary_changed = "summary_changed"
+    # Протокол отстал от саммари по расписке summary_hash_at_fetch.
+    protocol_debt = "protocol_debt"
+    # Сводка обещает время лидера, которого в нашем протоколе нет.
+    time_mismatch = "time_mismatch"
+
+
+# Причины, ради которых кандидат идёт вне очереди и вне фильтра по давности.
+# Общее у них одно: протокол, который мы держим, заведомо не тот, что на
+# сайте. count_mismatch сюда НЕ входит намеренно — расхождение по количеству
+# у 5 вёрст чаще всего структурное (схлопнутые дубли, «НЕИЗВЕСТНЫЙ» без
+# времени), перекачкой не лечится, и таких строк под две сотни: в приоритете
+# они встали бы навсегда и заслонили обычную ротацию.
+PRIORITY_REASONS = (
+    ReconcileReason.protocol_debt,
+    ReconcileReason.summary_changed,
+    ReconcileReason.time_mismatch,
+)
 
 
 @dataclass(frozen=True)
@@ -41,6 +60,11 @@ class ReconcileProtocolsOptions:
     limit: int = 10
     min_check_interval_days: int = 7
     location_slug: str | None = None
+    # Не перекачивать протокол с расхождением чаще, чем раз в N часов (счёт от
+    # последней ЗАКАЧКИ). Фильтр min_check_interval_days на расхождения не
+    # действует вовсе, и без этого потолка неизлечимое расхождение
+    # перечитывалось бы каждые три часа.
+    mismatch_retry_interval_hours: int = 6
 
 
 @dataclass
@@ -111,21 +135,171 @@ def _summary_to_canonical(summary_row: EventSummary, location: Location) -> Cano
     )
 
 
+def _claimed_fastest_sec(summary_row: EventSummary) -> int | None:
+    """Время лидера, которое обещает сводка 5 вёрст.
+
+    0 в best_male/best_female — не результат, а «в этом зачёте никого не было».
+    """
+    claimed = [
+        value
+        for value in (summary_row.best_male_time_sec, summary_row.best_female_time_sec)
+        if value
+    ]
+    return min(claimed) if claimed else None
+
+
 def _classify_reconcile_reason(
     summary_row: EventSummary,
     state: ProtocolSyncState | None,
     run_count: int,
     *,
     check_cutoff: datetime,
+    fastest_stored_sec: int | None = None,
 ) -> ReconcileReason | None:
     del check_cutoff
     if state is None or state.last_protocol_check_at is None:
         return ReconcileReason.never_checked
+    if state.summary_hash_at_fetch is not None and state.summary_hash_at_fetch != summary_row.summary_hash:
+        return ReconcileReason.protocol_debt
     if summary_row.finishers_count is not None and state.finishers_at_fetch != summary_row.finishers_count:
         return ReconcileReason.summary_changed
+    claimed_fastest = _claimed_fastest_sec(summary_row)
+    if claimed_fastest is not None and fastest_stored_sec is not None and claimed_fastest != fastest_stored_sec:
+        # Единственный признак, который видит правку времени при неизменном
+        # числе финишёров. Именно так выглядел Серов 22.08.2026: 38 = 38,
+        # а победитель разный.
+        return ReconcileReason.time_mismatch
     if summary_row.finishers_count is not None and run_count != summary_row.finishers_count:
         return ReconcileReason.count_mismatch
     return ReconcileReason.check_due
+
+
+def _protocol_aggregates(db: Session) -> Subquery:
+    """Количество строк и лучшее время по каждому протоколу в нашей базе."""
+    return (
+        db.query(
+            RunResult.event_id.label("event_id"),
+            func.count(RunResult.id).label("run_count"),
+            func.min(func.nullif(RunResult.finish_time_sec, 0)).label("fastest_sec"),
+        )
+        .group_by(RunResult.event_id)
+        .subquery()
+    )
+
+
+def _candidates_query(
+    db: Session,
+    platform: Platform,
+    location_slug: str | None,
+) -> tuple[Query[Any], Subquery]:
+    aggregates = _protocol_aggregates(db)
+    query = (
+        db.query(
+            EventSummary,
+            Location,
+            ProtocolSyncState,
+            aggregates.c.run_count,
+            aggregates.c.fastest_sec,
+        )
+        .join(Event, EventSummary.event_id == Event.id)
+        .join(Location, EventSummary.location_id == Location.id)
+        .outerjoin(ProtocolSyncState, ProtocolSyncState.event_id == Event.id)
+        .outerjoin(aggregates, aggregates.c.event_id == Event.id)
+        .filter(
+            EventSummary.platform_id == platform.id,
+            EventSummary.event_id.isnot(None),
+        )
+    )
+    if location_slug:
+        query = query.filter(Location.external_key == location_slug)
+    return query, aggregates
+
+
+def _to_candidate(summary_row: EventSummary, location: Location, reason: ReconcileReason) -> ReconcileCandidate:
+    return ReconcileCandidate(
+        external_event_key=summary_row.external_event_key,
+        location_external_key=location.external_key,
+        event_date=summary_row.event_date,
+        reason=reason,
+    )
+
+
+def _plan_mismatch_candidates(
+    db: Session,
+    platform: Platform,
+    *,
+    limit: int,
+    location_slug: str | None,
+    retry_interval_hours: int,
+) -> list[ReconcileCandidate]:
+    """Протоколы, про которые точно известно, что они не те, — вне очереди.
+
+    Фильтр по давности сюда не применяется: расхождение, найденное сегодня, и
+    перечитать надо сегодня, а не через `min_check_interval_days` дней. Именно
+    этот фильтр держал Серова невидимым — его протокол «проверяли» в то же
+    утро, когда качали.
+
+    От бесконечного круга спасает `retry_interval_hours`, и считается он от
+    момента ПОСЛЕДНЕЙ ЗАКАЧКИ, а не последней проверки. Это принципиально:
+    расхождение у Серова появилось через 8 часов после того, как мы скачали
+    протокол, — потолок «от проверки» спрятал бы ровно тот случай, ради
+    которого всё и делается. Потолок «от закачки» отсекает другое: протокол,
+    который мы только что перечитали, а он всё равно расходится (у 5 вёрст
+    есть старты, где сводка вечно обещает не то число финишёров).
+    """
+    if limit <= 0:
+        return []
+    query, aggregates = _candidates_query(db, platform, location_slug)
+    claimed_fastest = func.least(
+        func.nullif(EventSummary.best_male_time_sec, 0),
+        func.nullif(EventSummary.best_female_time_sec, 0),
+    )
+    query = query.filter(
+        or_(
+            and_(
+                ProtocolSyncState.summary_hash_at_fetch.isnot(None),
+                ProtocolSyncState.summary_hash_at_fetch != EventSummary.summary_hash,
+            ),
+            and_(
+                EventSummary.finishers_count.isnot(None),
+                ProtocolSyncState.finishers_at_fetch.isnot(None),
+                ProtocolSyncState.finishers_at_fetch != EventSummary.finishers_count,
+            ),
+            and_(
+                claimed_fastest.isnot(None),
+                aggregates.c.fastest_sec.isnot(None),
+                claimed_fastest != aggregates.c.fastest_sec,
+            ),
+        )
+    )
+    if retry_interval_hours > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=retry_interval_hours)
+        query = query.filter(
+            or_(
+                ProtocolSyncState.last_protocol_fetched_at.is_(None),
+                ProtocolSyncState.last_protocol_fetched_at < cutoff,
+            )
+        )
+
+    # Свежие старты вперёд: сайту важнее правильный прошлый субботний протокол,
+    # чем правильный протокол трёхлетней давности.
+    rows = query.order_by(EventSummary.event_date.desc()).limit(limit).all()
+    candidates: list[ReconcileCandidate] = []
+    for summary_row, location, state, run_count, fastest_sec in rows:
+        reason = _classify_reconcile_reason(
+            summary_row,
+            state,
+            int(run_count or 0),
+            check_cutoff=datetime.now(timezone.utc),
+            fastest_stored_sec=int(fastest_sec) if fastest_sec is not None else None,
+        )
+        if reason not in PRIORITY_REASONS:
+            # Строка попала в SQL-фильтр, но точную причину даёт классификатор
+            # (например, state ещё ни разу не качали — это never_checked).
+            # Такие отдаём обычной ротации, а не приоритету.
+            continue
+        candidates.append(_to_candidate(summary_row, location, reason))
+    return candidates
 
 
 def plan_stale_protocol_reconcile(
@@ -134,26 +308,21 @@ def plan_stale_protocol_reconcile(
     limit: int = 100,
     min_check_interval_days: int = 0,
     location_slug: str | None = None,
+    mismatch_retry_interval_hours: int = 6,
 ) -> list[ReconcileCandidate]:
     platform = upsert.get_platform(db, PLATFORM_CODE)
-    run_counts = (
-        db.query(RunResult.event_id, func.count(RunResult.id).label("run_count"))
-        .group_by(RunResult.event_id)
-        .subquery()
+    priority = _plan_mismatch_candidates(
+        db,
+        platform,
+        limit=limit,
+        location_slug=location_slug,
+        retry_interval_hours=mismatch_retry_interval_hours,
     )
-    query = (
-        db.query(EventSummary, Location, ProtocolSyncState, run_counts.c.run_count)
-        .join(Event, EventSummary.event_id == Event.id)
-        .join(Location, EventSummary.location_id == Location.id)
-        .outerjoin(ProtocolSyncState, ProtocolSyncState.event_id == Event.id)
-        .outerjoin(run_counts, run_counts.c.event_id == Event.id)
-        .filter(
-            EventSummary.platform_id == platform.id,
-            EventSummary.event_id.isnot(None),
-        )
-    )
-    if location_slug:
-        query = query.filter(Location.external_key == location_slug)
+    if len(priority) >= limit:
+        return priority[:limit]
+
+    already_planned = {item.external_event_key for item in priority}
+    query, aggregates = _candidates_query(db, platform, location_slug)
     if min_check_interval_days > 0:
         # Протокол, проверенный недавно, не перечитываем: без этого фильтра
         # reconcile гонял всю историю (~2900 протоколов) по кругу каждые
@@ -167,23 +336,21 @@ def plan_stale_protocol_reconcile(
             )
         )
 
-    rows = query.order_by(ProtocolSyncState.last_protocol_check_at.asc().nullsfirst()).limit(limit).all()
-    candidates: list[ReconcileCandidate] = []
-    for summary_row, location, state, run_count in rows:
+    if already_planned:
+        query = query.filter(EventSummary.external_event_key.notin_(already_planned))
+
+    rest_limit = limit - len(priority)
+    rows = query.order_by(ProtocolSyncState.last_protocol_check_at.asc().nullsfirst()).limit(rest_limit).all()
+    candidates = list(priority)
+    for summary_row, location, state, run_count, fastest_sec in rows:
         reason = _classify_reconcile_reason(
             summary_row,
             state,
             int(run_count or 0),
             check_cutoff=datetime.now(timezone.utc),
+            fastest_stored_sec=int(fastest_sec) if fastest_sec is not None else None,
         )
-        candidates.append(
-            ReconcileCandidate(
-                external_event_key=summary_row.external_event_key,
-                location_external_key=location.external_key,
-                event_date=summary_row.event_date,
-                reason=reason or ReconcileReason.check_due,
-            )
-        )
+        candidates.append(_to_candidate(summary_row, location, reason or ReconcileReason.check_due))
     return candidates
 
 
@@ -199,6 +366,7 @@ def reconcile_stale_protocols(
         limit=options.limit,
         min_check_interval_days=options.min_check_interval_days,
         location_slug=options.location_slug,
+        mismatch_retry_interval_hours=options.mismatch_retry_interval_hours,
     )
     result.candidates_total = len(candidates)
     result.planned = [item.external_event_key for item in candidates]

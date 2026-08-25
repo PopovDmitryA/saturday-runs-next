@@ -354,6 +354,7 @@ def reconcile_stale_protocols_task(
         min_check_interval_days = settings.five_verst_reconcile_min_check_interval_days
     if chunks_left is None:
         chunks_left = settings.five_verst_reconcile_chunks_per_run
+    mismatch_retry_hours = settings.five_verst_reconcile_mismatch_retry_hours
     name = "5v reconcile protocols"
     details = five_verst_reconcile_details(
         limit=limit,
@@ -371,6 +372,7 @@ def reconcile_stale_protocols_task(
                     limit=limit,
                     min_check_interval_days=min_check_interval_days,
                     location_slug=location_slug,
+                    mismatch_retry_interval_hours=mismatch_retry_hours,
                 ),
             )
             # Сверка переписывает уже существующие протоколы — позиции и метки
