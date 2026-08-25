@@ -497,7 +497,16 @@ def build_location_records_rating(
 
     resolved_age_group: str | None = None
     if resolved_scope == "age_group":
-        known = {str(item["age_group"]) for item in groups}
+        # Группу сверяем со снапшотом, а не со списком селектора: порог
+        # MIN_GROUP_LOCATIONS прячет редкие ступени из выпадашки, но прямая
+        # ссылка на «Ж90–94» должна открывать её таблицу, а не молча
+        # подменять группу на самую массовую.
+        known = {
+            str(entry[1])
+            for location in locations
+            for entry in location.get("age_groups", [])
+            if entry[0] == resolved_gender
+        }
         viewer_age = (viewer_group or {}).get("age_group")
         if age_group in known:
             resolved_age_group = age_group
