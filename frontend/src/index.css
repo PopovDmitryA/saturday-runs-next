@@ -14289,77 +14289,199 @@ a.admin-system-chip:hover {
 
 /* /* ===== Онбординг (/welcome) и поиск участников по имени ===== */
 
-/* Онбординг — узкая центрированная колонка: фокус на одном действии,
-   а не полотно на всю ширину экрана. */
+/* Узкая центрированная колонка: фокус на одном действии, а не полотно
+   на всю ширину экрана. Секции всплывают каскадом при загрузке. */
 .onboarding-page {
-  max-width: 680px;
+  max-width: 640px;
   margin: 0 auto;
-  padding: 40px 20px 56px;
+  padding: 44px 20px 64px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 22px;
 }
 
-.onboarding-page h1 {
-  margin: 0 0 4px;
-  font-size: 1.75rem;
-}
-
-@media (max-width: 720px) {
-  .onboarding-page {
-    padding: 24px 16px 40px;
+@keyframes onboarding-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
   }
-
-  .onboarding-page h1 {
-    font-size: 1.4rem;
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
-.onboarding-hero {
+.onboarding-page > * {
+  animation: onboarding-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.onboarding-page > *:nth-child(2) {
+  animation-delay: 0.07s;
+}
+
+.onboarding-page > *:nth-child(3) {
+  animation-delay: 0.14s;
+}
+
+.onboarding-page > *:nth-child(4) {
+  animation-delay: 0.21s;
+}
+
+.onboarding-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+}
+
+.onboarding-title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(92deg, var(--link) 0%, #8b5cf6 55%, #22c55e 110%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.onboarding-lead {
+  margin: 0 auto;
+  max-width: 46ch;
+  color: var(--text-2);
+  font-size: 1.02rem;
+  line-height: 1.5;
+}
+
+/* Плитки четырёх систем + прогресс-бар под ними. */
+.onboarding-systems-block {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.onboarding-hero-lead {
-  margin: 0;
-  font-size: 1.05rem;
-  color: var(--text-2);
+.onboarding-systems {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
 }
 
-.onboarding-progress {
+.onboarding-system-tile {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  transition: border-color 0.35s, background 0.35s, transform 0.35s, box-shadow 0.35s;
 }
 
-.onboarding-progress-chip {
-  padding: 4px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-muted);
-  color: var(--text-3);
-  font-size: 0.85rem;
+.onboarding-system-tile-done {
+  border-color: var(--tint-green-border-strong);
+  background: var(--tint-green-bg);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--tint-green-border-strong) 25%, transparent);
+}
+
+.onboarding-system-check {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--chip-bg);
+  color: transparent;
+  transition: background 0.35s, color 0.35s;
+}
+
+@keyframes onboarding-check-pop {
+  0% {
+    transform: scale(0.3);
+  }
+  60% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.onboarding-system-tile-done .onboarding-system-check {
+  background: #22c55e;
+  color: #fff;
+  animation: onboarding-check-pop 0.45s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.onboarding-system-name {
+  font-weight: 700;
+  font-size: 0.88rem;
   white-space: nowrap;
 }
 
-.onboarding-progress-chip-done {
-  border-color: var(--tint-green-border-strong);
-  background: var(--tint-green-bg-strong);
+.onboarding-system-state {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.onboarding-system-tile-done .onboarding-system-state {
   color: var(--tint-green-text);
   font-weight: 600;
 }
 
-.onboarding-progress-note {
-  margin: 0;
-  color: var(--tint-green-text);
-  font-size: 0.9rem;
+.onboarding-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.onboarding-progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  overflow: hidden;
+}
+
+.onboarding-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--link), #22c55e);
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.onboarding-progress-count {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .onboarding-search-card {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  border-radius: 16px;
+  padding: 22px 20px;
+}
+
+.onboarding-search-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.onboarding-search-sub {
+  margin: -4px 0 0;
+  line-height: 1.45;
+}
+
+.onboarding-code-example {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-soft);
 }
 
 .onboarding-fallback {
@@ -14369,8 +14491,18 @@ a.admin-system-chip:hover {
 .onboarding-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
-  margin-top: 4px;
+  margin-top: 2px;
+}
+
+.onboarding-cta {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.onboarding-cta:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--link) 30%, transparent);
 }
 
 .onboarding-dashboard-banner {
@@ -14388,14 +14520,65 @@ a.admin-system-chip:hover {
   font-size: 1.05rem;
 }
 
+/* --- Поиск участника (общий компонент онбординга и кабинета) --- */
+
 .participant-name-search {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
+.participant-name-search-input-wrap {
+  position: relative;
+  display: block;
+}
+
+.participant-name-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.participant-name-search-input {
+  width: 100%;
+  padding: 13px 16px 13px 42px;
+  border-radius: 13px;
+  font-size: 1rem;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.participant-name-search-input:focus {
+  border-color: var(--link);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--link) 16%, transparent);
+  outline: none;
+}
+
 .participant-name-search-status {
   margin: 0;
+}
+
+/* Скелетоны вместо «ищем…»: три мерцающие карточки. */
+.participant-name-search-skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@keyframes participant-search-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.participant-name-search-skeleton {
+  height: 84px;
+  border-radius: 14px;
+  background: linear-gradient(100deg, var(--bg-muted) 40%, var(--chip-bg) 50%, var(--bg-muted) 60%);
+  background-size: 200% 100%;
+  animation: participant-search-shimmer 1.1s linear infinite;
 }
 
 .participant-name-search-empty p {
@@ -14413,17 +14596,29 @@ a.admin-system-chip:hover {
 
 .participant-search-card {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface);
-  padding: 12px 14px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
+  animation: onboarding-rise 0.35s ease both;
+  transition: border-color 0.35s, background 0.35s, transform 0.2s, box-shadow 0.2s;
+}
+
+.participant-search-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.1);
 }
 
 .participant-search-card-linked {
   border-color: var(--tint-green-border-strong);
   background: var(--tint-green-bg);
+}
+
+.participant-search-card-linked:hover {
+  transform: none;
+  box-shadow: none;
 }
 
 .participant-search-card-head {
@@ -14508,6 +14703,7 @@ a.admin-system-chip:hover {
 .participant-search-card-done {
   color: var(--tint-green-text);
   font-weight: 600;
+  animation: onboarding-check-pop 0.45s cubic-bezier(0.68, -0.55, 0.27, 1.55);
 }
 
 .profile-name-search-block {
@@ -14528,4 +14724,33 @@ a.admin-system-chip:hover {
 .profile-name-search-title {
   margin: 0;
   font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .onboarding-page {
+    padding: 26px 16px 44px;
+    gap: 18px;
+  }
+
+  .onboarding-title {
+    font-size: 1.5rem;
+  }
+
+  .onboarding-systems {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-page > *,
+  .participant-search-card,
+  .onboarding-system-tile-done .onboarding-system-check,
+  .participant-search-card-done {
+    animation: none;
+  }
+
+  .participant-name-search-skeleton {
+    animation: none;
+    background: var(--bg-muted);
+  }
 }

@@ -8,9 +8,29 @@ import { PortalHeader } from "../portal/PortalHeader";
 
 const ONBOARDING_PLATFORMS = ["five_verst", "s95", "parkrun", "runpark"] as const;
 
+function SystemTile({ code, done }: { code: string; done: boolean }) {
+  return (
+    <div className={`onboarding-system-tile${done ? " onboarding-system-tile-done" : ""}`}>
+      <span className="onboarding-system-check" aria-hidden>
+        <svg viewBox="0 0 24 24" width="14" height="14">
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M4 12.5 9.5 18 20 6.5"
+          />
+        </svg>
+      </span>
+      <span className="onboarding-system-name">{platformCodeLabel(code)}</span>
+      <span className="onboarding-system-state">{done ? "привязано" : "не привязано"}</span>
+    </div>
+  );
+}
+
 function OnboardingContent({ user }: { user: User }) {
   const [links, setLinks] = useState<PlatformLink[]>([]);
-  const [linksLoaded, setLinksLoaded] = useState(false);
   const [finishing, setFinishing] = useState(false);
 
   const loadLinks = useCallback(async () => {
@@ -19,9 +39,7 @@ function OnboardingContent({ user }: { user: User }) {
       setLinks(data);
     } catch {
       // Не блокируем онбординг, если список привязок не загрузился —
-      // прогресс-чипы просто останутся пустыми.
-    } finally {
-      setLinksLoaded(true);
+      // плитки систем просто останутся пустыми.
     }
   }, []);
 
@@ -31,6 +49,7 @@ function OnboardingContent({ user }: { user: User }) {
 
   const linkedCodes = useMemo(() => new Set(links.map((link) => link.platform_code)), [links]);
   const linkedCount = ONBOARDING_PLATFORMS.filter((code) => linkedCodes.has(code)).length;
+  const progressPct = (linkedCount / ONBOARDING_PLATFORMS.length) * 100;
 
   const finish = async () => {
     setFinishing(true);
@@ -48,41 +67,51 @@ function OnboardingContent({ user }: { user: User }) {
     <>
       <PortalHeader />
       <main className="app onboarding-page">
-        <h1>{firstName ? `Добро пожаловать, ${firstName}!` : "Добро пожаловать!"}</h1>
-
-        <section className="card onboarding-hero">
-          <p className="onboarding-hero-lead">
-            Соберём всю вашу беговую историю в одном кабинете. Найдите себя по имени — мы поищем сразу
-            во всех системах: 5 вёрст, С95, parkrun и RunPark.
+        <header className="onboarding-head">
+          <h1 className="onboarding-title">
+            {firstName ? `Добро пожаловать, ${firstName}!` : "Добро пожаловать!"}
+          </h1>
+          <p className="onboarding-lead">
+            Соберём всю вашу беговую историю в одном кабинете — найдите себя, и статистика подтянется
+            сама.
           </p>
-          <div className="onboarding-progress" role="status">
+        </header>
+
+        <section className="onboarding-systems-block" aria-label="Прогресс привязки систем">
+          <div className="onboarding-systems">
             {ONBOARDING_PLATFORMS.map((code) => (
-              <span
-                key={code}
-                className={`onboarding-progress-chip${linkedCodes.has(code) ? " onboarding-progress-chip-done" : ""}`}
-              >
-                {linkedCodes.has(code) ? "✓ " : ""}
-                {platformCodeLabel(code)}
-              </span>
+              <SystemTile key={code} code={code} done={linkedCodes.has(code)} />
             ))}
           </div>
-          {linksLoaded && linkedCount > 0 && (
-            <p className="onboarding-progress-note">
-              Привязано систем: {linkedCount} из {ONBOARDING_PLATFORMS.length}. Можно продолжить поиск
-              или перейти в кабинет.
-            </p>
-          )}
+          <div className="onboarding-progress-row">
+            <div
+              className="onboarding-progress-track"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={ONBOARDING_PLATFORMS.length}
+              aria-valuenow={linkedCount}
+            >
+              <div className="onboarding-progress-fill" style={{ width: `${progressPct}%` }} />
+            </div>
+            <span className="onboarding-progress-count">
+              {linkedCount} из {ONBOARDING_PLATFORMS.length}
+            </span>
+          </div>
         </section>
 
         <section className="card onboarding-search-card">
-          <h2 className="section-title">Найдите себя по имени</h2>
+          <h2 className="onboarding-search-title">Найдите себя</h2>
+          <p className="muted onboarding-search-sub">
+            Имя из протокола, номер участника или штрихкод из QR-кода — например,{" "}
+            <span className="onboarding-code-example">A7035519</span>. Ищем сразу по всем системам.
+          </p>
           <ParticipantNameSearch
             autoFocus
             linkedPlatformCodes={linkedCodes}
             onLinked={() => void loadLinks()}
           />
           <p className="muted onboarding-fallback">
-            Не нашли себя? Профиль можно привязать по ссылке или штрихкоду —{" "}
+            Не нашли себя? Профиль можно привязать по ссылке —{" "}
             <a className="link" href="/dashboard#profiles">
               в личном кабинете
             </a>
@@ -93,7 +122,7 @@ function OnboardingContent({ user }: { user: User }) {
         <div className="onboarding-actions">
           <button
             type="button"
-            className="btn primary"
+            className="btn primary onboarding-cta"
             disabled={finishing}
             onClick={() => void finish()}
           >

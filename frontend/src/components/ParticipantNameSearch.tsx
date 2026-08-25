@@ -53,7 +53,7 @@ export function ParticipantNameSearch({
   linkedPlatformCodes,
   onLinked,
   autoFocus = false,
-  placeholder = "Фамилия и имя, как в протоколах — например, Иванов Иван",
+  placeholder = "Иванов Иван — или код участника, например A7035519",
 }: ParticipantNameSearchProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ParticipantSearchResult[] | null>(null);
@@ -162,22 +162,41 @@ export function ParticipantNameSearch({
   return (
     <div className="participant-name-search">
       <label className="field">
-        <span className="field-label">Имя и фамилия</span>
-        <input
-          className="input participant-name-search-input"
-          type="search"
-          value={query}
-          autoFocus={autoFocus}
-          onChange={(event) => handleQueryChange(event.target.value)}
-          placeholder={placeholder}
-          autoComplete="off"
-        />
+        <span className="field-label">Имя, номер участника или штрихкод</span>
+        <span className="participant-name-search-input-wrap">
+          <svg
+            className="participant-name-search-icon"
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            aria-hidden
+          >
+            <path
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              d="M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Zm10.4 2.9-4.6-4.6"
+            />
+          </svg>
+          <input
+            className="input participant-name-search-input"
+            type="search"
+            value={query}
+            autoFocus={autoFocus}
+            onChange={(event) => handleQueryChange(event.target.value)}
+            placeholder={placeholder}
+            autoComplete="off"
+          />
+        </span>
       </label>
 
       {searching && (
-        <p className="muted participant-name-search-status" role="status">
-          Ищем во всех системах…
-        </p>
+        <div className="participant-name-search-skeletons" role="status" aria-label="Ищем во всех системах">
+          {[0, 1, 2].map((index) => (
+            <div className="participant-name-search-skeleton" key={index} />
+          ))}
+        </div>
       )}
 
       {searchError && (
@@ -201,7 +220,7 @@ export function ParticipantNameSearch({
 
       {visibleResults.length > 0 && (
         <ul className="participant-search-results">
-          {visibleResults.map((result) => {
+          {visibleResults.map((result, index) => {
             const isLinkedToMe = result.linked_to_me || justLinkedIds.has(result.participant_id);
             const platformBusy = linkedPlatformCodes.has(result.platform_code) && !isLinkedToMe;
             const takenByOther = result.already_linked && !result.linked_to_me && !justLinkedIds.has(result.participant_id);
@@ -211,6 +230,7 @@ export function ParticipantNameSearch({
               <li
                 key={result.participant_id}
                 className={`participant-search-card${isLinkedToMe ? " participant-search-card-linked" : ""}`}
+                style={{ animationDelay: `${Math.min(index, 8) * 60}ms` }}
               >
                 <div className="participant-search-card-head">
                   <PlatformBadge code={result.platform_code} />

@@ -7,11 +7,12 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User, VolunteerResult
@@ -66,6 +67,12 @@ class ParticipantSearchPage:
     truncated: bool
 
 
+# Код участника: «A7035519» (штрихкод из QR любой системы) или просто цифры
+# (номер участника 5 вёрст / parkrun / С95). Минимум 3 цифры, чтобы не путать
+# с короткими именами.
+_IDENTIFIER_RE = re.compile(r"^[Aa]?\d{3,16}$")
+
+
 def _escape_like(term: str) -> str:
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
@@ -100,10 +107,21 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
     ]
     if linked_platform_ids:
         candidates_query = candidates_query.filter(Participant.platform_id.notin_(linked_platform_ids))
-    for word in words:
+    if len(words) == 1 and _IDENTIFIER_RE.match(words[0]):
+        # Ввели код участника — ищем по точному совпадению во всех системах:
+        # и как штрихкод (A…), и как номер участника (цифры).
+        digits = words[0].lstrip("Aa")
         candidates_query = candidates_query.filter(
-            func.lower(Participant.display_name).like(f"%{_escape_like(word.lower())}%", escape="\\")
+            or_(
+                func.upper(Participant.barcode_id) == f"A{digits}",
+                Participant.external_user_id == digits,
+            )
         )
+    else:
+        for word in words:
+            candidates_query = candidates_query.filter(
+                func.lower(Participant.display_name).like(f"%{_escape_like(word.lower())}%", escape="\\")
+            )
     candidates = candidates_query.limit(CANDIDATE_LIMIT + 1).all()
 
     truncated_candidates = len(candidates) > CANDIDATE_LIMIT

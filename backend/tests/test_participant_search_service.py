@@ -97,6 +97,31 @@ def test_search_finds_by_name_regardless_of_word_order(db_session: Session, sear
     ]
 
 
+def test_search_by_barcode_and_numeric_id(db_session: Session, search_user: User) -> None:
+    platform = _five_verst(db_session)
+    with_barcode = _make_participant(db_session, platform, "Штрихкодовый Тест", barcode_id="A7911111")
+    numeric = Participant(
+        platform_id=platform.id,
+        external_user_id="791222333",
+        display_name="Номерной Тест",
+    )
+    db_session.add(numeric)
+    db_session.commit()
+
+    # Штрихкод находится и с буквой, и без, и в нижнем регистре.
+    for query in ("A7911111", "7911111", "a7911111"):
+        page = search_participants(db_session, search_user, query)
+        assert [item.participant_id for item in page.results] == [with_barcode.id], query
+
+    # Номер участника — точное совпадение по external_user_id.
+    page = search_participants(db_session, search_user, "791222333")
+    assert [item.participant_id for item in page.results] == [numeric.id]
+
+    # Чужой номер ничего не находит (никаких LIKE по цифрам).
+    page = search_participants(db_session, search_user, "791222")
+    assert page.results == []
+
+
 def test_search_excludes_platforms_already_linked_by_user(db_session: Session, search_user: User) -> None:
     platform = _five_verst(db_session)
     mine = _make_participant(db_session, platform, "Исключение Привязанный Тест")
