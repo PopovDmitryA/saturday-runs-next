@@ -213,6 +213,7 @@ def sync_latest_results_task(
                 "new_summaries": result.new_summaries,
                 "changed_summaries": result.changed_summaries,
                 "missing_protocol": result.missing_protocol,
+                "stale_protocols": result.stale_protocols,
                 "protocols_fetched": result.protocols_fetched,
                 "fetched_protocols": result.fetched_protocols,
                 "changed_protocols": result.changed_protocols,

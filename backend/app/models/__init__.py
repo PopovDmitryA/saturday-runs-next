@@ -695,6 +695,10 @@ class ProtocolSyncState(Base):
     last_protocol_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     protocol_source_hash: Mapped[str | None] = mapped_column(String(64))
+    # summary_hash саммари на момент последней успешной закачки протокола.
+    # Отличается от EventSummary.summary_hash → протокол отстал от витрины
+    # и его надо перечитать (app/sync/protocol_debt.py).
+    summary_hash_at_fetch: Mapped[str | None] = mapped_column(String(64))
     finishers_at_fetch: Mapped[int | None] = mapped_column(Integer)
     run_results_count: Mapped[int | None] = mapped_column(Integer)
     volunteer_results_count: Mapped[int | None] = mapped_column(Integer)

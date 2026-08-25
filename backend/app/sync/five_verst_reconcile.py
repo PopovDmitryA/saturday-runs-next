@@ -247,9 +247,12 @@ def reconcile_stale_protocols(
                 if upsert_result.protocol_changed:
                     result.protocols_changed += 1
                     result.changed_protocols.append(label)
+                # Коммит строго до паузы: сон с открытой транзакцией копится в
+                # «idle in transaction», а прод рвёт такие сессии через 15 минут
+                # (по этой причине падал каждый утренний reconcile в 06:10).
+                commit_step(db)
                 if index + 1 < len(candidates):
                     wait_between_protocols(reason="reconcile")
-                commit_step(db)
             except FiveVerstBanDetected as exc:
                 # Кулдаун общий на все фетчи: остаток пачки гарантированно
                 # упадёт с тем же «in cooldown». Раньше цикл шёл дальше и

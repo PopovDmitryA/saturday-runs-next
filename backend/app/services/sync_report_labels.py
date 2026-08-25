@@ -40,6 +40,7 @@ FIELD_LABELS: dict[str, str] = {
     "new_summaries": "новых сводок",
     "changed_summaries": "изменённых сводок",
     "missing_protocol": "без протокола в БД",
+    "stale_protocols": "протоколов отстало от сводки",
     "protocols_fetched": "протоколов загружено",
     "protocols_changed": "протоколов изменено",
     "protocols_created": "протоколов добавлено",
