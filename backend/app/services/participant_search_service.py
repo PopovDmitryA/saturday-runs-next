@@ -174,7 +174,7 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
             )
         )
 
-    results.sort(key=lambda item: _rank_key(item, query_text))
+    results.sort(key=_rank_key)
     truncated = truncated_candidates or len(results) > RESULT_LIMIT
     top = results[:RESULT_LIMIT]
     # Последние события тянем только для показываемой верхушки — не для всех кандидатов.
@@ -183,17 +183,15 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
     return ParticipantSearchPage(query=query_text, results=top, truncated=truncated)
 
 
-def _rank_key(item: ParticipantSearchResult, query_text: str) -> tuple[int, int, str]:
-    name = item.display_name.casefold()
-    needle = query_text.casefold()
-    if name == needle:
-        match_rank = 0
-    elif name.startswith(needle):
-        match_rank = 1
-    else:
-        match_rank = 2
-    # Внутри одинакового совпадения активные бегуны выше «пустых» однофамильцев.
-    return (match_rank, -item.total_runs, name)
+def _rank_key(item: ParticipantSearchResult) -> tuple[int, int, int, str]:
+    # Свежепробежавшие — выше (решение Дмитрия 25.08.2026): человек скорее
+    # всего активен и ищет себя, а «пустые» однофамильцы без пробежек — внизу.
+    return (
+        0 if item.last_run_date is not None else 1,
+        -(item.last_run_date.toordinal() if item.last_run_date is not None else 0),
+        -item.total_runs,
+        item.display_name.casefold(),
+    )
 
 
 RECENT_ACTIVITIES_LIMIT = 3

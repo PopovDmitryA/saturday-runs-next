@@ -11479,7 +11479,10 @@ a.admin-system-chip:hover {
   /* Ровно 2 карточки в строке (просьба Дмитрия): при auto-fill влезало 3,
      вёрстка формы ужималась, а четвёртая карточка оставалась одна в ряду. */
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 10px;
+  /* Карточка не тянется до самой высокой соседки: пустая RunPark не должна
+     быть ростом с parkrun с его жёлтой пометкой (просьба Дмитрия 25.08). */
+  align-items: start;
 }
 
 @media (max-width: 720px) {
@@ -11506,9 +11509,9 @@ a.admin-system-chip:hover {
 .profile-platform-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px;
-  border-radius: 14px;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--bg-muted, var(--surface));
 }
@@ -14636,12 +14639,12 @@ a.admin-system-chip:hover {
 
 .participant-search-card {
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--surface);
-  padding: 14px 16px;
+  padding: 9px 12px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 3px;
   animation: onboarding-rise 0.35s ease both;
   transition: border-color 0.35s, background 0.35s, transform 0.2s, box-shadow 0.2s;
 }
@@ -14672,11 +14675,39 @@ a.admin-system-chip:hover {
   font-weight: 700;
 }
 
+/* Ссылка на профиль — справа от имени, в той же строке. */
+.participant-search-card-open {
+  margin-left: auto;
+  font-size: 0.83rem;
+  white-space: nowrap;
+}
+
+/* Строка «мета слева · действие справа» — почти табличный вид. */
+.participant-search-card-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+}
+
 .participant-search-card-meta {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 0.9rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 1px;
+  font-size: 0.86rem;
+  min-width: 0;
+}
+
+.participant-search-card-cta {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.participant-search-card-note {
+  font-size: 0.83rem;
 }
 
 .participant-search-card-location {
@@ -14685,7 +14716,7 @@ a.admin-system-chip:hover {
 
 .participant-search-card-recent-spoiler summary {
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--text-muted);
   user-select: none;
   width: fit-content;
@@ -14758,11 +14789,6 @@ a.admin-system-chip:hover {
   margin-top: 2px;
 }
 
-/* Кнопка «Это я» (или статус) — всегда у правого края, вне зависимости
-   от наличия ссылки на профиль слева. */
-.participant-search-card-actions > :last-child {
-  margin-left: auto;
-}
 
 .participant-search-card-done {
   color: var(--tint-green-text);

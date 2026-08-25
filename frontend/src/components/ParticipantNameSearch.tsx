@@ -235,11 +235,41 @@ export function ParticipantNameSearch({
                 <div className="participant-search-card-head">
                   <PlatformBadge code={result.platform_code} />
                   <span className="participant-search-card-name">{result.display_name}</span>
+                  {result.profile_url && result.profile_url.startsWith("http") && (
+                    <a
+                      className="link participant-search-card-open"
+                      href={result.profile_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Открыть профиль ↗
+                    </a>
+                  )}
                 </div>
-                <div className="participant-search-card-meta">
-                  {locationLine && <span className="participant-search-card-location">{locationLine}</span>}
-                  <span className="muted">{resultMetaLine(result)}</span>
-                  {result.club_name && <span className="muted">Клуб: {result.club_name}</span>}
+                <div className="participant-search-card-body">
+                  <div className="participant-search-card-meta">
+                    {locationLine && <span className="participant-search-card-location">{locationLine}</span>}
+                    <span className="muted">{resultMetaLine(result)}</span>
+                    {result.club_name && <span className="muted">Клуб: {result.club_name}</span>}
+                  </div>
+                  <div className="participant-search-card-cta">
+                    {isLinkedToMe ? (
+                      <span className="participant-search-card-done">Привязан ✓</span>
+                    ) : takenByOther ? (
+                      <span className="muted participant-search-card-note">Привязан к другому аккаунту</span>
+                    ) : platformBusy ? (
+                      <span className="muted participant-search-card-note">Система уже привязана</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn primary btn-sm"
+                        disabled={linkingId !== null}
+                        onClick={() => void handleLink(result)}
+                      >
+                        {linkingId === result.participant_id ? "Привязка…" : "Это я — привязать"}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {result.recent_activities.length > 0 && (
                   <details className="participant-search-card-recent-spoiler">
@@ -266,29 +296,6 @@ export function ParticipantNameSearch({
                     </ul>
                   </details>
                 )}
-                <div className="participant-search-card-actions">
-                  {result.profile_url && result.profile_url.startsWith("http") && (
-                    <a className="link" href={result.profile_url} target="_blank" rel="noreferrer">
-                      Открыть профиль ↗
-                    </a>
-                  )}
-                  {isLinkedToMe ? (
-                    <span className="participant-search-card-done">Привязан ✓</span>
-                  ) : takenByOther ? (
-                    <span className="muted">Уже привязан к другому аккаунту</span>
-                  ) : platformBusy ? (
-                    <span className="muted">В этой системе у вас уже есть профиль</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn primary btn-sm"
-                      disabled={linkingId !== null}
-                      onClick={() => void handleLink(result)}
-                    >
-                      {linkingId === result.participant_id ? "Привязка…" : "Это я — привязать"}
-                    </button>
-                  )}
-                </div>
                 {cardError && (
                   <div className="profile-form-error" role="alert">
                     <p>{cardError}</p>

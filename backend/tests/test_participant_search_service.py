@@ -237,6 +237,19 @@ def test_confirm_link_by_participant_refuses_foreign_profile(db_session: Session
     assert taken.value.status_code == 409
 
 
+def test_search_orders_by_last_run_date(db_session: Session, search_user: User) -> None:
+    platform = _five_verst(db_session)
+    fresh = _make_participant(db_session, platform, "Сортировочный Свежий Тест")
+    _make_run(db_session, platform, fresh, date(2026, 8, 15))
+    stale = _make_participant(db_session, platform, "Сортировочный Давний Тест")
+    _make_run(db_session, platform, stale, date(2025, 3, 1))
+    empty = _make_participant(db_session, platform, "Сортировочный Пустой Тест")
+
+    page = search_participants(db_session, search_user, "Сортировочный")
+    ordered = [item.participant_id for item in page.results]
+    assert ordered == [fresh.id, stale.id, empty.id]
+
+
 def test_set_platform_no_account_toggles_and_validates(db_session: Session, search_user: User) -> None:
     assert set_platform_no_account(db_session, search_user, "parkrun", True) == ["parkrun"]
     assert set_platform_no_account(db_session, search_user, "s95", True) == ["parkrun", "s95"]
