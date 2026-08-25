@@ -464,27 +464,6 @@ body {
   color: var(--text);
 }
 
-.shell-user-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.shell-user-input {
-  width: min(100%, 18rem);
-  padding: 0.5rem 0.65rem;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
-.shell-user-error {
-  width: 100%;
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--tint-red-text);
-}
-
 .btn-icon {
   border: none;
   background: transparent;
@@ -615,6 +594,22 @@ body {
   background: var(--tint-blue-bg);
   border: 1px solid var(--tint-blue-border);
   color: var(--tint-blue-text);
+}
+
+/* Требует решения человека — например, имя в системе разошлось с тем, что
+   показывается на сайте. Синий «просто к сведению» тут читался бы как шум. */
+.banner.warning {
+  background: var(--tint-amber-bg);
+  border: 1px solid var(--tint-amber-border);
+  color: var(--tint-amber-text);
+}
+
+.banner p {
+  margin: 0 0 0.5rem;
+}
+
+.banner p:last-child {
+  margin-bottom: 0;
 }
 
 
@@ -3462,6 +3457,53 @@ button.badge-platform-btn:hover {
 
 .settings-lead {
   margin: 0;
+}
+
+/* Раздел «Имя на сайте»: свободного ввода нет — выбор системы-источника и вида
+   записи. Каждое изменение сохраняется сразу, кнопки «Сохранить» нет. */
+
+/* Приходим сюда по якорю из сайдбара и из плашек про смену имени. Шапка сайта
+   липкая и высотой 61 px — без этого отступа заголовок раздела уезжает под неё. */
+.display-name-card {
+  scroll-margin-top: 5rem;
+}
+
+.display-name-field {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.display-name-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.display-name-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.display-name-preview {
+  margin: 1rem 0 0;
+  color: var(--text-muted);
+}
+
+.display-name-saved {
+  color: var(--tint-green-text);
+}
+
+.display-name-suggestion {
+  margin-top: 0.75rem;
+}
+
+.display-name-suggestion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .profile-slug-current {
@@ -11432,12 +11474,21 @@ a.admin-system-chip:hover {
   font-size: 13px;
 }
 
+/* Возврат в мастер привязки (/welcome) из кабинета, пока привязано не всё. */
+.profile-link-wizard {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .profile-platform-grid {
   display: grid;
   /* Ровно 2 карточки в строке (просьба Дмитрия): при auto-fill влезало 3,
      вёрстка формы ужималась, а четвёртая карточка оставалась одна в ряду. */
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 10px;
+  /* Карточка не тянется до самой высокой соседки: пустая RunPark не должна
+     быть ростом с parkrun с его жёлтой пометкой (просьба Дмитрия 25.08). */
+  align-items: start;
 }
 
 @media (max-width: 720px) {
@@ -11464,9 +11515,9 @@ a.admin-system-chip:hover {
 .profile-platform-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px;
-  border-radius: 14px;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--bg-muted, var(--surface));
 }
@@ -13420,6 +13471,76 @@ a.admin-system-chip:hover {
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
 }
 
+/* Единый протокол: ровно ЧЕТЫРЕ плитки в ряд (решение Дмитрия 25.08.2026 —
+   восемь в одну строку читались нагромождением, каждой не хватало места).
+   Жёсткая сетка, а не auto-fit: восемь плиток при auto-fit раскладывались
+   как придётся — 5+3 на ноутбуке, 7+1 на широком экране. На телефоне две. */
+.uniprot-stats-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (min-width: 760px) {
+  .uniprot-stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Разбивка М/Ж в подписи плитки: колонками, а не сплошной строкой — иначе
+   «6 885 М · 4 713 Ж · 903 без данных» переносилось по случайному месту. */
+.uniprot-stat-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.7rem;
+  line-height: 1.35;
+}
+
+.uniprot-stat-split-part b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* «без данных» — на свою строку: это не третий пол, а отсутствие метки. */
+.uniprot-stat-split-rest {
+  flex-basis: 100%;
+}
+
+/* «Кратко | Полно» встроен в ряд фильтров: сегмент сам по себе — блок с
+   верхним отступом, здесь он должен просто встать в линию и прижаться
+   вправо, когда место остаётся. */
+.uniprot-view-toggle {
+  display: inline-flex;
+  margin-left: auto;
+}
+
+.uniprot-view-toggle > * {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .uniprot-view-toggle {
+    margin-left: 0;
+  }
+}
+
+/* Призыв войти на единый протокол — компактнее общего PromoLoginCard и с
+   отступом сверху: без него он прилипал к нижнему ряду плиток. */
+.promo-login-card.uniprot-login-card {
+  margin-top: 1.1rem;
+  padding: 15px 20px;
+  gap: 14px;
+}
+
+.uniprot-login-card .promo-login-card-icon {
+  width: 42px;
+  height: 42px;
+  font-size: 21px;
+  border-radius: 13px;
+}
+
+.uniprot-login-card .promo-login-card-text p {
+  font-size: 0.9rem;
+}
+
 .protocol-subtitle {
   display: flex;
   align-items: center;
@@ -13855,4 +13976,886 @@ a.admin-system-chip:hover {
 
 .protocol-source-link {
   margin-top: 1rem;
+}
+
+/* ── Пагинация публичных разделов (components/Pagination.tsx) ───────────── */
+
+.pager {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1.75rem 0 0.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.pager-summary {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pager-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.pager-pages {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.pager-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.25rem;
+  height: 2.25rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.pager-item:hover {
+  border-color: var(--link);
+  color: var(--link);
+}
+
+.pager-item-current {
+  background: var(--tint-indigo-bg);
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+  font-weight: 600;
+  cursor: default;
+}
+
+.pager-item-disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pager-item-disabled:hover {
+  border-color: var(--border-strong);
+  color: var(--text-2);
+}
+
+.pager-gap {
+  min-width: 1.25rem;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+/* На узком экране ряд номеров съедает всю ширину — оставляем стрелки и
+   текущую страницу, остальное уходит в подпись «Релизы 11–20 из 32». */
+@media (max-width: 560px) {
+  .pager-controls {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+  }
+
+  .pager-pages {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .pager-pages::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   Единый протокол недели (/protocol) — все площадки всех систем одним списком.
+   Опирается на классы протокола локации (.protocol-*), своих правил ровно
+   столько, сколько нужно новым колонкам и кликабельным возрастным группам.
+   ========================================================================== */
+
+.uniprot-scope-note {
+  font-size: 0.85rem;
+  margin: 0.3rem 0 0;
+}
+
+/* Возрастных ступеней под два десятка, и развёрнутыми они съедали экран до
+   самой таблицы — прячем под спойлер (правка Дмитрия 22.08.2026).
+   Селектор с .portal-section: общий рескин карточек `.portal-section .card`
+   (portalSection.css) специфичнее одного класса и возвращал бы карточке своё
+   padding поверх нашего нуля — заголовок спойлера висел бы в пустоте. */
+.portal-section .uniprot-groups-spoiler {
+  margin-top: 1rem;
+  padding: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.uniprot-groups-summary {
+  padding: 1rem 1.1rem;
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.uniprot-groups-summary::-webkit-details-marker {
+  display: none;
+}
+
+.uniprot-groups-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.45rem;
+  transition: transform 0.15s ease;
+}
+
+.uniprot-groups-spoiler[open] > .uniprot-groups-summary::before {
+  transform: rotate(90deg);
+}
+
+/* Как пользоваться ступенями — мелким текстом прямо в заголовке спойлера:
+   полосы кликабельные, но без подписи читаются как картинка. На узком экране
+   уезжает на свою строку. */
+.uniprot-groups-howto {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+  margin-left: 0.6rem;
+}
+
+@media (max-width: 620px) {
+  .uniprot-groups-howto {
+    display: block;
+    margin: 0.2rem 0 0;
+  }
+}
+
+/* Выбранная ступень видна на свёрнутом спойлере — иначе фильтр «40–44»
+   остаётся включённым, а по заголовку этого не понять. */
+.uniprot-groups-chosen {
+  color: var(--link);
+  font-weight: 600;
+}
+
+.uniprot-groups-body {
+  padding: 0 1.1rem 1.1rem;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.uniprot-scope-note {
+  margin-bottom: 0.6rem;
+}
+
+.uniprot-total {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Место и «М 12 / 6885» — цифры колонкой, без прыжков при листании страниц. */
+.uniprot-place {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.uniprot-location {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15rem;
+  flex-wrap: wrap;
+}
+
+/* Ширины колонок — зеркало UNIFIED_COLUMNS в UnifiedProtocolPage.tsx.
+   «№» шире, чем в протоколе локации: сюда влезает медаль первых трёх.
+   Ширина есть и у «Участника»: колонок здесь на 83rem, и без неё имя
+   схлопывалось в столбик по букве («Илья КОЗН ЕВ»), а таблица вместо
+   горизонтальной прокрутки давила остаток. min-width = сумма всех ширин. */
+.uniprot-table .col-number {
+  width: 4.2rem;
+}
+
+.uniprot-table .col-runner {
+  width: 10.5rem;
+}
+
+.uniprot-table .col-time {
+  width: 6rem;
+}
+
+.uniprot-table .col-location {
+  width: 13rem;
+}
+
+.uniprot-table .col-gender {
+  width: 7.6rem;
+}
+
+.uniprot-table .col-age {
+  width: 11.5rem;
+}
+
+.uniprot-table .col-platform {
+  width: 6.8rem;
+}
+
+.uniprot-table .col-pace {
+  width: 5.5rem;
+}
+
+.uniprot-table .col-local-place {
+  width: 7.2rem;
+}
+
+.uniprot-table .col-club {
+  width: 10.5rem;
+}
+
+.uniprot-table:not(.data-table-short) {
+  min-width: 83rem;
+}
+
+/* Липнут две первые колонки — как в протоколе локации: «№» без имени
+   бесполезен. Смещение второй = ширина .col-number. */
+.table-sticky-first .uniprot-table th:nth-child(2),
+.table-sticky-first .uniprot-table td:nth-child(2) {
+  position: sticky;
+  left: 4.2rem;
+  background: var(--surface);
+  z-index: 2;
+}
+
+.table-sticky-first .uniprot-table thead th:nth-child(2) {
+  z-index: 4;
+  background: var(--bg-muted);
+}
+
+.tshadow-left .table-sticky-first .uniprot-table th:nth-child(2),
+.tshadow-left .table-sticky-first .uniprot-table td:nth-child(2) {
+  box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+}
+
+.tshadow-left .table-sticky-first .uniprot-table th:first-child,
+.tshadow-left .table-sticky-first .uniprot-table td:first-child {
+  box-shadow: none;
+}
+
+.table-sticky-first .uniprot-table .protocol-row-me td:first-child,
+.table-sticky-first .uniprot-table .protocol-row-me td:nth-child(2) {
+  background: var(--bg-muted);
+}
+
+/* Строка возрастной группы — кнопка-фильтр: клик оставляет в протоколе только
+   эту ступень, повторный снимает. Внешне остаётся той же полосой. */
+.uniprot-age-row {
+  width: 100%;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.uniprot-age-row:hover {
+  background: var(--bg-muted);
+}
+
+.uniprot-age-row.active {
+  border-color: var(--link);
+  background: var(--bg-muted);
+}
+
+/* Постраничная навигация протокола: 12 тыс. строк одной страницей не отдать. */
+.uniprot-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-top: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* /* ===== Онбординг (/welcome) и поиск участников по имени ===== */
+
+/* Узкая центрированная колонка: фокус на одном действии, а не полотно
+   на всю ширину экрана. Секции всплывают каскадом при загрузке. */
+.onboarding-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 44px 20px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+@keyframes onboarding-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.onboarding-page > * {
+  animation: onboarding-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.onboarding-page > *:nth-child(2) {
+  animation-delay: 0.07s;
+}
+
+.onboarding-page > *:nth-child(3) {
+  animation-delay: 0.14s;
+}
+
+.onboarding-page > *:nth-child(4) {
+  animation-delay: 0.21s;
+}
+
+.onboarding-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+}
+
+.onboarding-title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(92deg, var(--link) 0%, #8b5cf6 55%, #22c55e 110%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.onboarding-lead {
+  margin: 0 auto;
+  max-width: 46ch;
+  color: var(--text-2);
+  font-size: 1.02rem;
+  line-height: 1.5;
+}
+
+/* Плитки четырёх систем + прогресс-бар под ними. */
+.onboarding-systems-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.onboarding-systems {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.onboarding-system-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  transition: border-color 0.35s, background 0.35s, transform 0.35s, box-shadow 0.35s;
+}
+
+.onboarding-system-tile-linked {
+  border-color: var(--tint-green-border-strong);
+  background: var(--tint-green-bg);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--tint-green-border-strong) 25%, transparent);
+}
+
+/* «У меня там нет аккаунта»: честно закрывает прогресс, но выглядит нейтрально. */
+.onboarding-system-tile-no-account {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: var(--bg-muted);
+}
+
+.onboarding-system-check {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--chip-bg);
+  color: transparent;
+  transition: background 0.35s, color 0.35s;
+}
+
+@keyframes onboarding-check-pop {
+  0% {
+    transform: scale(0.3);
+  }
+  60% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.onboarding-system-tile-linked .onboarding-system-check {
+  background: #22c55e;
+  color: #fff;
+  animation: onboarding-check-pop 0.45s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.onboarding-system-tile-no-account .onboarding-system-check {
+  background: var(--neutral-soft);
+  color: var(--surface);
+  animation: onboarding-check-pop 0.45s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.onboarding-system-name {
+  font-weight: 700;
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.onboarding-system-state {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.onboarding-system-tile-linked .onboarding-system-state {
+  color: var(--tint-green-text);
+  font-weight: 600;
+}
+
+.onboarding-system-tile-no-account .onboarding-system-state {
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.onboarding-system-toggle {
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.onboarding-system-toggle:hover:not(:disabled) {
+  color: var(--link);
+}
+
+.onboarding-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.onboarding-progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  overflow: hidden;
+  display: flex;
+}
+
+.onboarding-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--link), #22c55e);
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Сегмент «нет аккаунта»: прогресс движется, но другим цветом. */
+.onboarding-progress-fill-skipped {
+  background: var(--neutral-soft);
+}
+
+.onboarding-progress-count {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.onboarding-search-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-radius: 16px;
+  padding: 22px 20px;
+}
+
+.onboarding-search-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.onboarding-search-sub {
+  margin: -4px 0 0;
+  line-height: 1.45;
+}
+
+.onboarding-code-example {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-soft);
+}
+
+.onboarding-fallback {
+  margin: 0;
+}
+
+.onboarding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.onboarding-cta {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.onboarding-cta:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--link) 30%, transparent);
+}
+
+.onboarding-dashboard-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  border-color: var(--tint-blue-border);
+  background: var(--tint-blue-bg);
+}
+
+.onboarding-dashboard-banner-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+/* --- Поиск участника (общий компонент онбординга и кабинета) --- */
+
+.participant-name-search {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.participant-name-search-input-wrap {
+  position: relative;
+  display: block;
+}
+
+.participant-name-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.participant-name-search-input {
+  width: 100%;
+  padding: 13px 16px 13px 42px;
+  border-radius: 13px;
+  font-size: 1rem;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.participant-name-search-input:focus {
+  border-color: var(--link);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--link) 16%, transparent);
+  outline: none;
+}
+
+.participant-name-search-status {
+  margin: 0;
+}
+
+/* Скелетоны вместо «ищем…»: три мерцающие карточки. */
+.participant-name-search-skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@keyframes participant-search-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.participant-name-search-skeleton {
+  height: 84px;
+  border-radius: 14px;
+  background: linear-gradient(100deg, var(--bg-muted) 40%, var(--chip-bg) 50%, var(--bg-muted) 60%);
+  background-size: 200% 100%;
+  animation: participant-search-shimmer 1.1s linear infinite;
+}
+
+.participant-name-search-empty p {
+  margin: 0 0 4px;
+}
+
+.participant-search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.participant-search-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  animation: onboarding-rise 0.35s ease both;
+  transition: border-color 0.35s, background 0.35s, transform 0.2s, box-shadow 0.2s;
+}
+
+.participant-search-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.1);
+}
+
+.participant-search-card-linked {
+  border-color: var(--tint-green-border-strong);
+  background: var(--tint-green-bg);
+}
+
+.participant-search-card-linked:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.participant-search-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.participant-search-card-name {
+  font-weight: 700;
+}
+
+/* Ссылка на профиль — справа от имени, в той же строке. */
+.participant-search-card-open {
+  margin-left: auto;
+  font-size: 0.83rem;
+  white-space: nowrap;
+}
+
+/* Строка «мета слева · действие справа» — почти табличный вид. */
+.participant-search-card-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+}
+
+.participant-search-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 1px;
+  font-size: 0.86rem;
+  min-width: 0;
+}
+
+.participant-search-card-cta {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.participant-search-card-note {
+  font-size: 0.83rem;
+}
+
+.participant-search-card-location {
+  color: var(--text-2);
+}
+
+.participant-search-card-recent-spoiler summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  user-select: none;
+  width: fit-content;
+  transition: color 0.2s;
+}
+
+.participant-search-card-recent-spoiler summary:hover {
+  color: var(--link);
+}
+
+.participant-search-card-recent {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  animation: onboarding-rise 0.25s ease both;
+}
+
+/* Сетка вместо flex: колонки «тип · дата · локация · результат» выровнены
+   между строками, длинное «Волонтёрство» ничего не сдвигает. */
+.participant-search-card-recent li {
+  display: grid;
+  grid-template-columns: 96px 82px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.participant-search-card-recent-kind {
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.participant-search-card-recent-kind-run {
+  color: var(--tint-blue-text);
+}
+
+.participant-search-card-recent-kind-volunteer {
+  color: var(--tint-green-text);
+}
+
+.participant-search-card-recent-date {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.participant-search-card-recent-loc {
+  color: var(--text-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.participant-search-card-recent-detail {
+  margin-left: auto;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.participant-search-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+
+.participant-search-card-done {
+  color: var(--tint-green-text);
+  font-weight: 600;
+  animation: onboarding-check-pop 0.45s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.profile-name-search-block {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--bg-muted);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-name-search-block > .muted {
+  margin: 0;
+}
+
+.profile-name-search-title {
+  margin: 0;
+  font-weight: 700;
+}
+
+@media (max-width: 480px) {
+  .participant-search-card-recent li {
+    grid-template-columns: 84px 78px minmax(0, 1fr) auto;
+    gap: 6px;
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 720px) {
+  .onboarding-page {
+    padding: 26px 16px 44px;
+    gap: 18px;
+  }
+
+  .onboarding-title {
+    font-size: 1.5rem;
+  }
+
+  .onboarding-systems {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-page > *,
+  .participant-search-card,
+  .onboarding-system-tile-linked .onboarding-system-check,
+  .onboarding-system-tile-no-account .onboarding-system-check,
+  .participant-search-card-done {
+    animation: none;
+  }
+
+  .participant-name-search-skeleton {
+    animation: none;
+    background: var(--bg-muted);
+  }
 }

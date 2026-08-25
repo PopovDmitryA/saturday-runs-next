@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
@@ -6,7 +6,7 @@ import { ImageLightbox } from "../../components/ImageLightbox";
 import { PortalFooter } from "../portal/PortalFooter";
 import { PortalHeader } from "../portal/PortalHeader";
 import { CABINET_TAB_SEGMENTS, profileTabHref } from "../../lib/portalRoutes";
-import { SiteSidebar, type SidebarExtraGroup } from "../portal/SiteSidebar";
+import { NAV_ICONS, SiteSidebar, type SidebarExtraGroup } from "../portal/SiteSidebar";
 import { PortalSectionBottomNav } from "../portal/PortalSectionBottomNav";
 import "../portal/portal.css";
 import "../portal/portalSection.css";
@@ -164,12 +164,20 @@ function ProfileAvatar({
 function PublicProfileContent({
   serialId,
   handle,
+  fallbackName,
   initialTab = "dashboard",
 }: {
   serialId: number;
   // Хендл из адреса — по нему строим ссылки вкладок, чтобы адрес совпадал с тем,
   // что видит пользователь (ник, а не номер).
   handle: string;
+  /**
+   * Имя участника из резолва хендла. Полное имя приезжает вместе с дашбордом,
+   * а он грузится только на вкладке «Главная»: без этого запаса заход по прямой
+   * ссылке на карту или историю оставлял страницу вообще без имени — на
+   * телефоне, где сайдбара нет, было не понять, чей это профиль.
+   */
+  fallbackName?: string | null;
   initialTab?: ProfileTab;
 }) {
   const dataSource = useMemo(() => createPublicProfileDataSource(serialId), [serialId]);
@@ -275,10 +283,12 @@ function PublicProfileContent({
   );
 
   const stats = dashboard?.stats;
-  const profileName = dashboard ? profileDisplayName(dashboard.user) : null;
+  const profileName = dashboard ? profileDisplayName(dashboard.user) : (fallbackName ?? null);
   const tabClass = (value: ProfileTab) =>
     tab === value ? "admin-preview-tab active" : "admin-preview-tab";
 
+  // Иконки те же, что у одноимённых разделов своего кабинета: в свёрнутом
+  // рельсе сайдбара подписи скрыты, и без иконок пункты были не видны вовсе.
   const TAB_LABELS: { key: ProfileTab; label: string }[] = [
     { key: "dashboard", label: "Главная" },
     { key: "runs", label: "Пробежки" },
@@ -297,13 +307,27 @@ function PublicProfileContent({
     // Имя участника — это «шапка» его раздела, поэтому ведёт на главную
     // профиля: раньше клик по нему не делал ничего.
     onTitleClick: () => setTab("dashboard"),
+    avatarUrl: dashboard?.user.avatar_url ?? null,
     items: TAB_LABELS.map((item) => ({
       key: item.key,
       label: item.label,
+      icon: NAV_ICONS[item.key],
       active: tab === item.key,
       onClick: () => setTab(item.key),
     })),
   };
+
+  // Полоса вкладок на телефоне прокручивается горизонтально: активная вкладка
+  // может оказаться за краем экрана (например, «Встречи» после захода по
+  // прямой ссылке) — подтягиваем её в видимую часть.
+  const tabsStripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const active = tabsStripRef.current?.querySelector<HTMLElement>(`[data-tab="${tab}"]`);
+    active?.scrollIntoView({ block: "nearest", inline: "center" });
+    // currentUser в зависимостях не лишний: пока сессия проверяется, страница
+    // рисует «Загрузка…» — полосы вкладок в разметке ещё нет, и прокручивать
+    // нечего. Эффект должен повториться, когда она появится.
+  }, [tab, currentUser]);
 
   if (currentUser === undefined) {
     return <main className="app"><p className="muted">Загрузка…</p></main>;
@@ -341,29 +365,28 @@ function PublicProfileContent({
       tabsGroup={tabsGroup}
     >
 
-      {/* Мобильные чипы-вкладки: на десктопе навигация в сайдбаре. */}
-      <div className="admin-preview-tabs public-profile-tabs" role="tablist" aria-label="Разделы профиля">
-        <button type="button" className={tabClass("dashboard")} onClick={() => setTab("dashboard")}>
-          Главная
-        </button>
-        <button type="button" className={tabClass("runs")} onClick={() => setTab("runs")}>
-          Пробежки
-        </button>
-        <button type="button" className={tabClass("volunteering")} onClick={() => setTab("volunteering")}>
-          Волонтёрство
-        </button>
-        <button type="button" className={tabClass("map")} onClick={() => setTab("map")}>
-          Карта
-        </button>
-        <button type="button" className={tabClass("achievements")} onClick={() => setTab("achievements")}>
-          Достижения
-        </button>
-        <button type="button" className={tabClass("history")} onClick={() => setTab("history")}>
-          История
-        </button>
-        <button type="button" className={tabClass("meetings")} onClick={() => setTab("meetings")}>
-          Встречи
-        </button>
+      {/* Мобильные чипы-вкладки: на десктопе навигация в сайдбаре. Список тот
+          же, что и в сайдбаре (TAB_LABELS), — раньше он был продублирован
+          руками и разъезжался при правках. */}
+      <div
+        className="admin-preview-tabs public-profile-tabs"
+        role="tablist"
+        aria-label="Разделы профиля"
+        ref={tabsStripRef}
+      >
+        {TAB_LABELS.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.key}
+            data-tab={item.key}
+            className={tabClass(item.key)}
+            onClick={() => setTab(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
       </div>
 
       {currentUser === null && (
@@ -474,6 +497,7 @@ export function PublicProfilePage({
 }) {
   const isNumeric = /^\d+$/.test(handle);
   const [serialId, setSerialId] = useState<number | null>(isNumeric ? Number(handle) : null);
+  const [resolvedName, setResolvedName] = useState<string | null>(null);
   const [state, setState] = useState<"ready" | "resolving" | "not-found">(
     isNumeric ? "ready" : "resolving",
   );
@@ -487,8 +511,12 @@ export function PublicProfilePage({
       // есть ник, показываем в адресной строке его: ссылкой удобнее делиться.
       resolveProfileHandle(handle)
         .then((res) => {
+          if (cancelled) {
+            return;
+          }
+          setResolvedName(res.display_name);
           const slug = res.public_slug?.trim();
-          if (!cancelled && slug) {
+          if (slug) {
             // Сегмент вкладки сохраняем: иначе переход по ссылке на чужую карту
             // по числовому адресу сбрасывал бы её на главную страницу профиля.
             const segment = window.location.pathname.split("/")[3] ?? "";
@@ -508,6 +536,7 @@ export function PublicProfilePage({
       .then((res) => {
         if (cancelled) return;
         setSerialId(res.serial_id);
+        setResolvedName(res.display_name);
         setState("ready");
       })
       .catch(() => {
@@ -536,5 +565,12 @@ export function PublicProfilePage({
       </div>
     );
   }
-  return <PublicProfileContent serialId={serialId} handle={handle} initialTab={initialTab} />;
+  return (
+    <PublicProfileContent
+      serialId={serialId}
+      handle={handle}
+      fallbackName={resolvedName}
+      initialTab={initialTab}
+    />
+  );
 }

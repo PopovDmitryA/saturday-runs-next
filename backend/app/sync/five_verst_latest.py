@@ -9,13 +9,14 @@ from sqlalchemy.orm import Session
 
 from app.five_verst.errors import FiveVerstBanDetected
 from app.five_verst.fetch.protocol_pause import wait_between_protocols
-from app.models import EventSummary, Location, Platform, SyncRun, SyncRunStatus
+from app.models import EventSummary, Location, Platform, ProtocolSyncState, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalEventSummary, CanonicalLocation
 from app.platform_adapters.five_verst import bulk_parser
 from app.services.sync_report_labels import protocol_detail_label
 from app.sync import upsert
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
 from app.sync.iteration_commit import commit_step, persist_summary_error, rollback_step
+from app.sync.protocol_debt import protocol_is_stale
 
 PLATFORM_CODE = "five_verst"
 logger = logging.getLogger(__name__)
@@ -26,6 +27,9 @@ class LatestResultAction(str, Enum):
     new_summary = "new_summary"
     changed_summary = "changed_summary"
     missing_protocol = "missing_protocol"
+    # Саммари уже совпадает с сайтом, а протокол под ним — от прошлой версии:
+    # прошлый прогон записал новый summary_hash и не успел скачать протокол.
+    stale_protocol = "stale_protocol"
 
 
 @dataclass(frozen=True)
@@ -51,6 +55,7 @@ class LatestResultsSyncResult:
     new_summaries: int = 0
     changed_summaries: int = 0
     missing_protocol: int = 0
+    stale_protocols: int = 0
     needs_update: int = 0
     locations_created: int = 0
     locations_missing: int = 0
@@ -97,16 +102,18 @@ def _finish_sync_run(
 
 
 def _classify_summary(db: Session, platform: Platform, summary: CanonicalEventSummary) -> LatestResultPlanItem:
-    row = (
-        db.query(EventSummary)
+    found = (
+        db.query(EventSummary, ProtocolSyncState)
+        .outerjoin(ProtocolSyncState, ProtocolSyncState.event_id == EventSummary.event_id)
         .filter(
             EventSummary.platform_id == platform.id,
             EventSummary.external_event_key == summary.external_event_key,
         )
         .one_or_none()
     )
-    if row is None:
+    if found is None:
         return LatestResultPlanItem(summary=summary, action=LatestResultAction.new_summary)
+    row, state = found
     if row.summary_hash != summary.summary_hash:
         return LatestResultPlanItem(
             summary=summary,
@@ -117,6 +124,15 @@ def _classify_summary(db: Session, platform: Platform, summary: CanonicalEventSu
         return LatestResultPlanItem(
             summary=summary,
             action=LatestResultAction.missing_protocol,
+            location_id=str(row.location_id),
+        )
+    if protocol_is_stale(state, row):
+        # Хэш саммари сошёлся с сайтом, но под ним лежит протокол от прошлой
+        # версии — долг с прогона, который записал саммари и не дошёл до
+        # протокола. Без этой ветки площадка навсегда осталась бы `unchanged`.
+        return LatestResultPlanItem(
+            summary=summary,
+            action=LatestResultAction.stale_protocol,
             location_id=str(row.location_id),
         )
     return LatestResultPlanItem(
@@ -154,6 +170,9 @@ def _ensure_location(
         return row
 
     try:
+        # Поиск локации выше уже открыл транзакцию — закрываем её до похода в
+        # сеть, иначе соединение висит «idle in transaction» всю загрузку.
+        db.commit()
         location_data, location_html = bulk_parser.fetch_location(summary.location_external_key)
     except Exception as exc:
         result.errors.append(f"{summary.location_external_key}: location fetch failed: {exc}")
@@ -195,7 +214,12 @@ def _plan_protocol_queue(
     priority = [
         item
         for item in apply_items
-        if item.action in (LatestResultAction.changed_summary, LatestResultAction.missing_protocol)
+        if item.action
+        in (
+            LatestResultAction.changed_summary,
+            LatestResultAction.missing_protocol,
+            LatestResultAction.stale_protocol,
+        )
     ]
     regular = [item for item in apply_items if item.action == LatestResultAction.new_summary]
     combined = priority + regular
@@ -258,14 +282,18 @@ def sync_latest_results(
         elif item.action == LatestResultAction.missing_protocol:
             result.missing_protocol += 1
             to_update.append(item)
+        elif item.action == LatestResultAction.stale_protocol:
+            result.stale_protocols += 1
+            to_update.append(item)
 
     result.needs_update = len(to_update)
     logger.info(
-        "latest sync: plan unchanged=%d new=%d changed=%d missing_protocol=%d",
+        "latest sync: plan unchanged=%d new=%d changed=%d missing_protocol=%d stale_protocol=%d",
         result.unchanged,
         result.new_summaries,
         result.changed_summaries,
         result.missing_protocol,
+        result.stale_protocols,
     )
     apply_items = to_update
     if options.update_limit is not None:
@@ -314,7 +342,11 @@ def sync_latest_results(
                         continue
 
                 summary_row, changed = upsert.upsert_event_summary(db, platform, location, summary)
-                if changed or item.action != LatestResultAction.unchanged:
+                if changed:
+                    # Считаем только реальные записи. Прежнее условие
+                    # «или действие не unchanged» было всегда истинным (в
+                    # apply_items unchanged не попадает), и в отчёт шли даже
+                    # нетронутые сводки — у stale_protocol они все такие.
                     result.summaries_upserted += 1
                 commit_step(db)
             except Exception as exc:
@@ -359,9 +391,12 @@ def sync_latest_results(
                     summary_row,
                     result=result,
                 )
+                # Коммит строго до паузы: 30-40 секунд сна с открытой
+                # транзакцией — это 30-40 секунд «idle in transaction», а на
+                # проде такие сессии рвёт таймаут в 15 минут.
+                commit_step(db)
                 if index + 1 < len(protocol_queue):
                     wait_between_protocols(reason="latest")
-                commit_step(db)
             except FiveVerstBanDetected as exc:
                 # Кулдаун общий для всех фетчей — остаток очереди упал бы с той же
                 # ошибкой. Недокачанные протоколы заберёт следующий запуск.

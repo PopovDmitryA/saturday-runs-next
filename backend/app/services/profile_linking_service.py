@@ -23,6 +23,7 @@ from app.services.profile_preview_persist import (
     linking_sync_should_run,
     persist_live_profile_preview,
 )
+from app.services.user_display_name_service import rebind_display_name_source
 
 
 class ProfileLinkingError(Exception):
@@ -359,6 +360,81 @@ def confirm_profile_link(db: Session, user: User, platform_code: str, profile_ur
 
     db.commit()
     db.refresh(link)
+
+    # Имя на сайте берётся из профилей систем, и источник пересматривается именно
+    # здесь: привязка — действие самого человека, он видит результат сразу. В
+    # фоне источник не меняется, иначе имя гуляло бы само по себе.
+    rebind_display_name_source(db, user, commit=True)
+
+    from app.services.sync_enqueue_service import enqueue_linking_platform_sync
+
+    if linking_sync_should_run(db, platform, participant, preview):
+        enqueue_linking_platform_sync(db, user.id, link, platform)
+        db.commit()
+    else:
+        complete_link_without_sync(db, link)
+
+    return link
+
+
+def confirm_profile_link_by_participant(db: Session, user: User, participant_id: object) -> PlatformLink:
+    """Привязка из поиска по ФИО: участник уже в нашей БД, предпросмотр-кэш не нужен."""
+    from app.services.participant_profile_service import ResolvedProfileIdentity, build_profile_preview_from_db
+
+    _require_personal_data_consent(user)
+    participant = db.get(Participant, participant_id)
+    if participant is None:
+        raise ProfileLinkingError("Профиль не найден — обновите результаты поиска", 404)
+    platform = db.get(Platform, participant.platform_id)
+    if platform is None:
+        raise ProfileLinkingError("Платформа не найдена", 404)
+    if not platform.is_active:
+        raise ProfileLinkingError("Платформа пока недоступна для привязки", 400)
+
+    existing_user_link = (
+        db.query(PlatformLink)
+        .filter(PlatformLink.user_id == user.id, PlatformLink.platform_id == platform.id)
+        .one_or_none()
+    )
+    if existing_user_link is not None:
+        raise ProfileLinkingError("Профиль на этой платформе уже привязан к вашему аккаунту", 409)
+
+    existing_external_link = (
+        db.query(PlatformLink)
+        .filter(
+            PlatformLink.platform_id == platform.id,
+            PlatformLink.external_user_id == participant.external_user_id,
+        )
+        .one_or_none()
+    )
+    if existing_external_link is not None and existing_external_link.user_id != user.id:
+        raise ProfileLinkingError("Этот профиль уже привязан к другому аккаунту", 409)
+
+    identity = ResolvedProfileIdentity(
+        external_user_id=participant.external_user_id,
+        canonical_profile_url=participant.profile_url or "",
+    )
+    preview = build_profile_preview_from_db(db, platform, participant, identity=identity)
+    if preview is None:
+        raise ProfileLinkingError("По этому профилю нет данных для привязки", 422)
+
+    # У RunPark нет публичной страницы профиля — как и при привязке по штрихкоду,
+    # в external_url кладём сам штрихкод.
+    external_url = participant.profile_url or participant.barcode_id or participant.external_user_id
+    link = PlatformLink(
+        user_id=user.id,
+        platform_id=platform.id,
+        participant_id=participant.id,
+        external_user_id=participant.external_user_id,
+        external_url=external_url,
+    )
+    db.add(link)
+    db.commit()
+    db.refresh(link)
+
+    # Как и в confirm_profile_link: привязка — момент пересмотра источника
+    # имени на сайте.
+    rebind_display_name_source(db, user, commit=True)
 
     from app.services.sync_enqueue_service import enqueue_linking_platform_sync
 

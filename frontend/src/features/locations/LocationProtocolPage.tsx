@@ -47,6 +47,15 @@ function protocolHref(slug: string, platformCode: string, eventDate: string): st
   return `/locations/${encodeURIComponent(slug)}/protocol/${encodeURIComponent(platformCode)}/${eventDate}`;
 }
 
+/** Единый протокол той же недели: адрес подписан субботой (пн — начало недели). */
+function unifiedWeekHref(eventDate: string): string {
+  const day = new Date(`${eventDate}T00:00:00`);
+  const monday = new Date(day);
+  monday.setDate(day.getDate() - ((day.getDay() + 6) % 7));
+  monday.setDate(monday.getDate() + 5);
+  return `/protocol/${monday.toISOString().slice(0, 10)}`;
+}
+
 /** «00:21:07» → секунды; null, если времени нет. */
 function timeToSec(display: string | null): number | null {
   if (!display) {
@@ -579,6 +588,8 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
             <span className="muted">первый старт</span>
           )}
           <a href={`/locations/${data.slug}/events`}>журнал</a>
+          {/* Тот же старт в масштабе страны: где эти времена в общем протоколе недели. */}
+          <a href={unifiedWeekHref(data.event_date)}>единый протокол недели</a>
           {data.next ? (
             <a href={protocolHref(data.slug, data.next.platform_code, data.next.event_date)}>
               {formatDate(data.next.event_date)}

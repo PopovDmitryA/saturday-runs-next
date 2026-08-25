@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import date
 from uuid import UUID
 
@@ -56,6 +57,69 @@ def _sorted_desc(releases: list[SiteRelease]) -> list[SiteRelease]:
 def list_published_releases(db: Session) -> list[SiteRelease]:
     rows = db.execute(select(SiteRelease).where(SiteRelease.is_published.is_(True))).scalars().all()
     return _sorted_desc(list(rows))
+
+
+# Сколько релизов показывать на одной странице «Обновлений». Записи длинные
+# (заголовок + описание в несколько абзацев), поэтому десятка хватает, чтобы
+# страница читалась целиком и не превращалась в бесконечную ленту.
+RELEASES_PAGE_SIZE = 10
+RELEASES_MAX_PAGE_SIZE = 100
+
+
+@dataclass(frozen=True)
+class ReleasesPage:
+    """Одна страница истории релизов вместе с координатами в общем списке."""
+
+    items: list[SiteRelease]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+    # Номер самого свежего релиза — он же версия сайта в футере. Отдаём здесь,
+    # чтобы страница не выясняла его вторым запросом: на второй странице
+    # первая запись среза уже не самая свежая.
+    latest_version: str | None
+
+
+def paginate_published_releases(
+    db: Session,
+    *,
+    page: int = 1,
+    page_size: int = RELEASES_PAGE_SIZE,
+    version: str | None = None,
+) -> ReleasesPage:
+    """Страница опубликованных релизов, новые сверху.
+
+    Порядок задаётся номером версии, а не датой, поэтому сортируем и режем на
+    страницы в Python: релизов десятки, не миллионы.
+
+    `version` — «открой страницу, на которой лежит эта версия». Нужен старым
+    ссылкам-якорям вида /updates#v2.5.0: с появлением страниц такая версия
+    вполне может оказаться не на первой из них, и без этого якорь вёл бы в
+    никуда. Неизвестная версия просто игнорируется — отдаём запрошенную
+    страницу.
+    """
+    releases = list_published_releases(db)
+    total = len(releases)
+    page_size = max(1, min(page_size, RELEASES_MAX_PAGE_SIZE))
+    pages = max(1, -(-total // page_size))
+
+    if version:
+        wanted = version.strip()
+        index = next((i for i, r in enumerate(releases) if r.version == wanted), None)
+        if index is not None:
+            page = index // page_size + 1
+
+    page = max(1, min(page, pages))
+    start = (page - 1) * page_size
+    return ReleasesPage(
+        items=releases[start : start + page_size],
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=pages,
+        latest_version=releases[0].version if releases else None,
+    )
 
 
 def latest_published_version(db: Session) -> str | None:

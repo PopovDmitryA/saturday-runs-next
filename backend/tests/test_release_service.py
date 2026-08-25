@@ -21,6 +21,7 @@ from app.services.release_service import (
     latest_version,
     list_all_releases,
     list_published_releases,
+    paginate_published_releases,
     parse_version,
     suggest_next_versions,
     update_release,
@@ -143,3 +144,48 @@ def test_validation_and_missing_release(db_session: Session) -> None:
         )
     with pytest.raises(ReleaseError):
         delete_release(db_session, uuid4())
+
+
+def test_pagination_slices_history_newest_first(db_session: Session) -> None:
+    """Страницы режут общий список сверху вниз, не теряя и не дублируя записи."""
+    for version in ("987.10.0", "987.11.0", "987.12.0", "987.13.0", "987.14.0"):
+        _make_release(db_session, version=version)
+
+    first = paginate_published_releases(db_session, page=1, page_size=3)
+    # Тестовые версии с мажором 987 заведомо свежее настоящих, поэтому лежат
+    # в самом начале истории — на первой странице.
+    assert [r.version for r in first.items] == ["987.14.0", "987.13.0", "987.12.0"]
+    assert first.page == 1
+    assert first.pages == max(1, -(-first.total // 3))
+    assert first.latest_version == "987.14.0"
+
+    second = paginate_published_releases(db_session, page=2, page_size=3)
+    assert [r.version for r in second.items][:2] == ["987.11.0", "987.10.0"]
+    assert second.page == 2
+    # Свежая версия не зависит от страницы: футер берёт её из любого ответа.
+    assert second.latest_version == "987.14.0"
+
+
+def test_pagination_clamps_page_and_finds_page_by_version(db_session: Session) -> None:
+    for version in ("987.20.0", "987.21.0", "987.22.0", "987.23.0"):
+        _make_release(db_session, version=version)
+
+    # Страница за концом истории — отдаём последнюю, а не пустоту.
+    beyond = paginate_published_releases(db_session, page=10_000, page_size=2)
+    assert beyond.page == beyond.pages
+    assert beyond.items
+
+    # Якорь /updates#v987.21.0 должен открыть страницу, где эта версия лежит.
+    by_version = paginate_published_releases(db_session, page=1, page_size=2, version="987.21.0")
+    assert "987.21.0" in [r.version for r in by_version.items]
+    assert by_version.page == 2
+
+    # Неизвестная версия не ломает запрос — остаётся запрошенная страница.
+    unknown = paginate_published_releases(db_session, page=1, page_size=2, version="987.99.9")
+    assert unknown.page == 1
+
+
+def test_pagination_hides_unpublished_releases(db_session: Session) -> None:
+    _make_release(db_session, version="987.30.0", published=False)
+    page = paginate_published_releases(db_session, page=1, page_size=50)
+    assert "987.30.0" not in [r.version for r in page.items]
