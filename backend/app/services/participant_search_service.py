@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from uuid import UUID
 
@@ -32,6 +32,15 @@ class ParticipantSearchError(Exception):
 
 
 @dataclass(frozen=True)
+class ParticipantSearchActivity:
+    kind: str  # "run" | "volunteer"
+    event_date: date
+    location_name: str
+    finish_time_display: str | None
+    role: str | None
+
+
+@dataclass(frozen=True)
 class ParticipantSearchResult:
     participant_id: UUID
     platform_code: str
@@ -47,6 +56,7 @@ class ParticipantSearchResult:
     home_location_city: str | None
     already_linked: bool
     linked_to_me: bool
+    recent_activities: list[ParticipantSearchActivity]
 
 
 @dataclass(frozen=True)
@@ -82,6 +92,14 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
         .join(Platform, Participant.platform_id == Platform.id)
         .filter(Platform.is_active.is_(True), Participant.display_name.isnot(None))
     )
+    # Системы, где профиль уже привязан, из поиска исключаем: искать там больше
+    # нечего, а оставлять работающий поиск людей по чужим именам — нечестно.
+    linked_platform_ids = [
+        platform_id
+        for (platform_id,) in db.query(PlatformLink.platform_id).filter(PlatformLink.user_id == user.id)
+    ]
+    if linked_platform_ids:
+        candidates_query = candidates_query.filter(Participant.platform_id.notin_(linked_platform_ids))
     for word in words:
         candidates_query = candidates_query.filter(
             func.lower(Participant.display_name).like(f"%{_escape_like(word.lower())}%", escape="\\")
@@ -129,12 +147,17 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
                 home_location_city=home[1] if home else None,
                 already_linked=owner_id is not None,
                 linked_to_me=owner_id == user.id,
+                recent_activities=[],
             )
         )
 
     results.sort(key=lambda item: _rank_key(item, query_text))
     truncated = truncated_candidates or len(results) > RESULT_LIMIT
-    return ParticipantSearchPage(query=query_text, results=results[:RESULT_LIMIT], truncated=truncated)
+    top = results[:RESULT_LIMIT]
+    # Последние события тянем только для показываемой верхушки — не для всех кандидатов.
+    recents = _load_recent_activities(db, [item.participant_id for item in top])
+    top = [replace(item, recent_activities=recents.get(item.participant_id, [])) for item in top]
+    return ParticipantSearchPage(query=query_text, results=top, truncated=truncated)
 
 
 def _rank_key(item: ParticipantSearchResult, query_text: str) -> tuple[int, int, str]:
@@ -148,6 +171,99 @@ def _rank_key(item: ParticipantSearchResult, query_text: str) -> tuple[int, int,
         match_rank = 2
     # Внутри одинакового совпадения активные бегуны выше «пустых» однофамильцев.
     return (match_rank, -item.total_runs, name)
+
+
+RECENT_ACTIVITIES_LIMIT = 3
+
+
+def _load_recent_activities(
+    db: Session,
+    participant_ids: list[UUID],
+) -> dict[UUID, list[ParticipantSearchActivity]]:
+    """Последние события участника (пробежки и волонтёрства вместе), по 3 на карточку."""
+    if not participant_ids:
+        return {}
+
+    run_rn = (
+        func.row_number()
+        .over(partition_by=RunResult.participant_id, order_by=Event.event_date.desc())
+        .label("rn")
+    )
+    runs_sq = (
+        db.query(
+            RunResult.participant_id.label("participant_id"),
+            Event.event_date.label("event_date"),
+            Location.name.label("location_name"),
+            RunResult.finish_time_display.label("finish_time_display"),
+            run_rn,
+        )
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Location, Event.location_id == Location.id)
+        .filter(
+            RunResult.participant_id.in_(participant_ids),
+            Event.is_test_event.is_(False),
+        )
+        .subquery()
+    )
+    run_rows = (
+        db.query(runs_sq)
+        .filter(runs_sq.c.rn <= RECENT_ACTIVITIES_LIMIT)
+        .all()
+    )
+
+    vol_rn = (
+        func.row_number()
+        .over(partition_by=VolunteerResult.participant_id, order_by=Event.event_date.desc())
+        .label("rn")
+    )
+    vol_sq = (
+        db.query(
+            VolunteerResult.participant_id.label("participant_id"),
+            Event.event_date.label("event_date"),
+            Location.name.label("location_name"),
+            VolunteerResult.role.label("role"),
+            vol_rn,
+        )
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .join(Location, Event.location_id == Location.id)
+        .filter(
+            VolunteerResult.participant_id.in_(participant_ids),
+            Event.is_test_event.is_(False),
+            Event.event_date > date(1970, 1, 1),
+        )
+        .subquery()
+    )
+    vol_rows = (
+        db.query(vol_sq)
+        .filter(vol_sq.c.rn <= RECENT_ACTIVITIES_LIMIT)
+        .all()
+    )
+
+    merged: dict[UUID, list[ParticipantSearchActivity]] = {}
+    for row in run_rows:
+        merged.setdefault(row.participant_id, []).append(
+            ParticipantSearchActivity(
+                kind="run",
+                event_date=row.event_date,
+                location_name=row.location_name,
+                finish_time_display=row.finish_time_display,
+                role=None,
+            )
+        )
+    for row in vol_rows:
+        merged.setdefault(row.participant_id, []).append(
+            ParticipantSearchActivity(
+                kind="volunteer",
+                event_date=row.event_date,
+                location_name=row.location_name,
+                finish_time_display=None,
+                role=row.role,
+            )
+        )
+    return {
+        participant_id: sorted(items, key=lambda a: a.event_date, reverse=True)[:RECENT_ACTIVITIES_LIMIT]
+        for participant_id, items in merged.items()
+    }
 
 
 def _load_run_stats(db: Session, participant_ids: list[UUID]) -> dict[UUID, tuple[int, date | None]]:

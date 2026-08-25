@@ -890,6 +890,7 @@ export type ParticipantSearchResult = {
   home_location_city: string | null;
   already_linked: boolean;
   linked_to_me: boolean;
+  recent_activities: ProfilePreviewActivity[];
 };
 
 export type ParticipantSearchResponse = {

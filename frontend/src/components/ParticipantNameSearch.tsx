@@ -29,10 +29,15 @@ function resultMetaLine(result: ParticipantSearchResult): string {
   if (result.total_volunteering > 0) {
     parts.push(pluralizeRu(result.total_volunteering, ["волонтёрство", "волонтёрства", "волонтёрств"]));
   }
-  if (result.last_run_date) {
-    parts.push(`последняя ${formatDate(result.last_run_date)}`);
-  }
   return parts.join(" · ");
+}
+
+/** «00:29:07» → «29:07»: часы у пятикилометровых финишей всегда нулевые. */
+function shortFinishTime(display: string | null): string {
+  if (!display) {
+    return "—";
+  }
+  return display.replace(/^00:/, "");
 }
 
 function resultLocationLine(result: ParticipantSearchResult): string | null {
@@ -126,6 +131,17 @@ export function ParticipantNameSearch({
     try {
       const response = await linkParticipant(result.participant_id);
       setJustLinkedIds((prev) => new Set(prev).add(result.participant_id));
+      // Система закрыта привязкой — остальные найденные в ней профили прячем,
+      // остаётся только привязанная карточка (поиск по занятым системам не работает).
+      setResults((prev) =>
+        prev === null
+          ? prev
+          : prev.filter(
+              (item) =>
+                item.platform_code !== result.platform_code ||
+                item.participant_id === result.participant_id,
+            ),
+      );
       onLinked(response.link);
     } catch (err) {
       const message =
@@ -205,6 +221,28 @@ export function ParticipantNameSearch({
                   <span className="muted">{resultMetaLine(result)}</span>
                   {result.club_name && <span className="muted">Клуб: {result.club_name}</span>}
                 </div>
+                {result.recent_activities.length > 0 && (
+                  <ul className="participant-search-card-recent">
+                    {result.recent_activities.map((activity, index) => (
+                      <li key={`${activity.kind}-${activity.event_date}-${index}`}>
+                        <span
+                          className={`participant-search-card-recent-kind participant-search-card-recent-kind-${activity.kind}`}
+                        >
+                          {activity.kind === "run" ? "Пробежка" : "Волонтёрство"}
+                        </span>
+                        <span className="participant-search-card-recent-date">
+                          {formatDate(activity.event_date)}
+                        </span>
+                        <span className="participant-search-card-recent-loc">{activity.location_name}</span>
+                        <span className="participant-search-card-recent-detail">
+                          {activity.kind === "run"
+                            ? shortFinishTime(activity.finish_time_display)
+                            : activity.role ?? ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <div className="participant-search-card-actions">
                   {result.profile_url && result.profile_url.startsWith("http") && (
                     <a className="link" href={result.profile_url} target="_blank" rel="noreferrer">

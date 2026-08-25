@@ -14289,8 +14289,30 @@ a.admin-system-chip:hover {
 
 /* /* ===== Онбординг (/welcome) и поиск участников по имени ===== */
 
+/* Онбординг — узкая центрированная колонка: фокус на одном действии,
+   а не полотно на всю ширину экрана. */
+.onboarding-page {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 40px 20px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .onboarding-page h1 {
-  margin-bottom: 16px;
+  margin: 0 0 4px;
+  font-size: 1.75rem;
+}
+
+@media (max-width: 720px) {
+  .onboarding-page {
+    padding: 24px 16px 40px;
+  }
+
+  .onboarding-page h1 {
+    font-size: 1.4rem;
+  }
 }
 
 .onboarding-hero {
@@ -14424,6 +14446,55 @@ a.admin-system-chip:hover {
 
 .participant-search-card-location {
   color: var(--text-2);
+}
+
+.participant-search-card-recent {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.participant-search-card-recent li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.participant-search-card-recent-kind {
+  flex: 0 0 96px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.participant-search-card-recent-kind-run {
+  color: var(--tint-blue-text);
+}
+
+.participant-search-card-recent-kind-volunteer {
+  color: var(--tint-green-text);
+}
+
+.participant-search-card-recent-date {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.participant-search-card-recent-loc {
+  color: var(--text-2);
+  min-width: 0;
+}
+
+.participant-search-card-recent-detail {
+  margin-left: auto;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .participant-search-card-actions {

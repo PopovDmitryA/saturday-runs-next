@@ -92,6 +92,28 @@ def test_search_finds_by_name_regardless_of_word_order(db_session: Session, sear
     assert result.home_location_name == "Тестовый парк"
     assert result.home_location_city == "Тестоград"
     assert result.already_linked is False
+    assert [(a.kind, a.event_date, a.location_name) for a in result.recent_activities] == [
+        ("run", date(2026, 7, 11), "Тестовый парк")
+    ]
+
+
+def test_search_excludes_platforms_already_linked_by_user(db_session: Session, search_user: User) -> None:
+    platform = _five_verst(db_session)
+    mine = _make_participant(db_session, platform, "Исключение Привязанный Тест")
+    db_session.add(
+        PlatformLink(
+            user_id=search_user.id,
+            platform_id=platform.id,
+            participant_id=mine.id,
+            external_user_id=mine.external_user_id,
+            external_url="https://example.test/mine",
+        )
+    )
+    db_session.commit()
+    _make_participant(db_session, platform, "Исключение Однофамилец Тест")
+
+    page = search_participants(db_session, search_user, "Исключение")
+    assert all(item.platform_code != "five_verst" for item in page.results)
 
 
 def test_search_skips_unknown_and_empty_names(db_session: Session, search_user: User) -> None:

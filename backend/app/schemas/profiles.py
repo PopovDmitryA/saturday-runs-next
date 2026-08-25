@@ -108,6 +108,7 @@ class ParticipantSearchResultResponse(BaseModel):
     home_location_city: str | None = None
     already_linked: bool = False
     linked_to_me: bool = False
+    recent_activities: list[ProfilePreviewActivityResponse] = Field(default_factory=list)
 
 
 class ParticipantSearchResponse(BaseModel):
