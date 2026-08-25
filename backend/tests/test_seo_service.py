@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 from typing import cast
 
 import pytest
 
 from app.core.abuse_protection import RouteTier, classify_route
+from app.services.release_service import ReleasesPage
 from app.services.seo_service import (
     DEFAULT_DESCRIPTION,
     DEFAULT_TITLE,
@@ -18,6 +20,8 @@ from app.services.seo_service import (
     _catalog_body,
     _location_body,
     _og_image_tags,
+    _page_number,
+    _releases_body,
     build_location_meta,
     build_robots_txt,
     catalog_json_ld,
@@ -577,3 +581,42 @@ def test_robots_lists_sitemap_and_closes_service_paths() -> None:
 def test_seo_paths_are_exempt_from_rate_limit(path: str) -> None:
     """429 в адрес поисковика останавливает обход — эти адреса вне тарифов."""
     assert classify_route(path, "GET") is RouteTier.exempt
+
+
+def test_page_number_reads_query_and_ignores_garbage() -> None:
+    assert _page_number("/updates") == 1
+    assert _page_number("/updates?page=4") == 4
+    assert _page_number("/updates?page=0") == 1
+    assert _page_number("/updates?page=-2") == 1
+    assert _page_number("/updates?page=abc") == 1
+    assert _page_number("/updates?other=7") == 1
+
+
+def test_releases_body_renders_history_with_neighbour_links() -> None:
+    """Робот должен видеть текст релизов и путь к соседним страницам."""
+
+    class _Release:
+        def __init__(self, version: str, title: str, body: str) -> None:
+            self.version = version
+            self.title = title
+            self.body = body
+            self.released_at = date(2026, 8, 1)
+
+    page = ReleasesPage(
+        items=[
+            _Release("2.4.0", "Таблицы на телефоне", "Вступление.\n\n- Первый пункт\n- Второй"),
+        ],
+        total=25,
+        page=2,
+        page_size=10,
+        pages=3,
+        latest_version="2.9.0",
+    )
+    html = _releases_body(page)  # type: ignore[arg-type]
+    assert "v2.4.0 — Таблицы на телефоне" in html
+    assert "<li>Первый пункт</li>" in html
+    assert "<p>Вступление.</p>" in html
+    assert "страница 2 из 3" in html
+    # Со второй страницы «назад» ведёт на чистый /updates, а не на ?page=1.
+    assert 'href="/updates" rel="prev"' in html
+    assert 'href="/updates?page=3" rel="next"' in html

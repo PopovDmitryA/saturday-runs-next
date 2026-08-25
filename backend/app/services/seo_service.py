@@ -28,12 +28,14 @@ from datetime import date
 from html import escape
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import parse_qs
 from xml.sax.saxutils import escape as xml_escape
 
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.services.location_page_service import build_location_page, build_locations_index
+from app.services.release_service import ReleasesPage, paginate_published_releases
 
 logger = logging.getLogger(__name__)
 
@@ -645,6 +647,13 @@ def build_sitemap(db: Session) -> str:
         for path, priority in _SITEMAP_STATIC
     ]
 
+    # Страницы истории релизов: без них поисковик видит только первую десятку,
+    # а старые релизы («Запуск сайта», «Тёмная тема») остаются недостижимы —
+    # ссылки на них есть только внутри пагинации.
+    releases_pages = paginate_published_releases(db).pages
+    for page in range(2, releases_pages + 1):
+        urls.append(_sitemap_url(base, f"/updates?page={page}", lastmod=None, priority="0.3"))
+
     index = build_locations_index(db)
     items: list[dict[str, Any]] = cast("list[dict[str, Any]]", index.get("items") or [])
     for item in items:
@@ -982,6 +991,47 @@ def _json_ld_scripts(objects: list[dict[str, Any]]) -> list[str]:
         payload = json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
         scripts.append(f'<script type="application/ld+json">{payload}</script>')
     return scripts
+
+
+def _releases_body(page: ReleasesPage) -> str:
+    """Тело «Обновлений» для робота: релизы страницы плюс ссылки на соседние.
+
+    До пагинации робот видел здесь два служебных предложения — список рисует
+    JS. Теперь, когда история разбита на страницы, без статики старые релизы
+    стали бы недостижимы совсем: ссылки на них есть только внутри пагинации,
+    которой в разметке нет.
+    """
+    rows = [
+        "    <h1>Обновления run5k.run</h1>",
+        "    <p>Что нового на сайте: новые разделы, улучшения и исправления. "
+        f"Всего релизов — {_num(page.total)}, "
+        f"страница {page.page} из {page.pages}.</p>",
+    ]
+    for release in page.items:
+        rows.append(
+            f'    <h2 id="v{escape(release.version, quote=True)}">'
+            f"v{escape(release.version)} — {escape(release.title)} "
+            f"({release.released_at.isoformat()})</h2>"
+        )
+        for block in release.body.split("\n\n"):
+            lines = [line.strip() for line in block.strip().split("\n") if line.strip()]
+            if not lines:
+                continue
+            if all(line.startswith("- ") for line in lines):
+                items = "".join(f"<li>{escape(line[2:])}</li>" for line in lines)
+                rows.append(f"    <ul>{items}</ul>")
+            else:
+                rows.append(f"    <p>{escape(' '.join(lines))}</p>")
+
+    nav = []
+    if page.page > 1:
+        previous = "/updates" if page.page == 2 else f"/updates?page={page.page - 1}"
+        nav.append(f'<a href="{previous}" rel="prev">Предыдущая страница</a>')
+    if page.page < page.pages:
+        nav.append(f'<a href="/updates?page={page.page + 1}" rel="next">Следующая страница</a>')
+    if nav:
+        rows.append(f"    <p>{' · '.join(nav)}</p>")
+    return "\n".join(rows)
 
 
 def _render_html(
@@ -1427,6 +1477,13 @@ def _protocol_body(payload: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _page_number(raw_path: str) -> int:
+    """Номер страницы из строки запроса (/updates?page=3); мусор — первая."""
+    query = raw_path.split("?", 1)[1] if "?" in raw_path else ""
+    raw = parse_qs(query).get("page", ["1"])[0]
+    return int(raw) if raw.isdigit() and int(raw) > 0 else 1
+
+
 def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
     """(HTML, HTTP-код) для робота: мета-теги плюс настоящий текст страницы.
 
@@ -1439,6 +1496,7 @@ def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
     настроен возврат 404» (11.08.2026).
     """
     path = normalize_path(raw_path)
+    page_number = _page_number(raw_path)
     canonical = site_base_url() + ("" if path == "/" else path)
 
     profile_match = _PROFILE_RE.match(path)
@@ -1521,6 +1579,25 @@ def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
                     canonical=canonical,
                     body_html=_catalog_body(items),
                     json_ld=catalog_json_ld(items),
+                ),
+                200,
+            )
+
+    if path == "/updates":
+        try:
+            releases = paginate_published_releases(db, page=page_number)
+        except Exception:  # noqa: BLE001 — робот получит родовую страницу, не 500
+            releases = None
+        if releases is not None and releases.items:
+            # Канонический адрес — с номером страницы: иначе страницы 2+ сами
+            # отправляли бы робота на первую, и старые релизы, ради которых
+            # пагинацию и обошли статикой, снова выпали бы из индекса.
+            page_canonical = canonical if releases.page == 1 else f"{canonical}?page={releases.page}"
+            return (
+                _render_html(
+                    meta=meta,
+                    canonical=page_canonical,
+                    body_html=_releases_body(releases),
                 ),
                 200,
             )
