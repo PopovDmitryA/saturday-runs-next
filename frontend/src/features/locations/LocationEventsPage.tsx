@@ -12,7 +12,7 @@ import {
 } from "../../lib/api";
 import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
 import { flushMetrikaHit } from "../../lib/metrika";
-import { formatInt, platformCodeLabel } from "../../lib/format";
+import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
@@ -116,6 +116,12 @@ function LocationEventsContent({ slug }: { slug: string }) {
     }
     return counts;
   }, [data]);
+
+  // Сквозной номер в скобках рассказывает ровно об одном: локация сменила
+  // систему и счёт стартов там пошёл заново. У площадки, прожившей всю
+  // историю в одной системе, он просто повторяет цифру слева (просьба
+  // Дмитрия 22.08.2026) — там колонка остаётся с одним номером.
+  const showOverallNumber = platformCounts.size > 1;
 
   const rows = useMemo(() => {
     if (!data) {
@@ -265,7 +271,11 @@ function LocationEventsContent({ slug }: { slug: string }) {
               <tr>
                 <ColumnHeader
                   label="№"
-                  headerTitle="Номер события в системе; в скобках — сквозной номер сбора локации по всем системам"
+                  headerTitle={
+                    showOverallNumber
+                      ? "Номер события в системе; в скобках — сквозной номер старта локации по всем системам"
+                      : "Номер события в системе"
+                  }
                   filterable={false}
                 />
                 <ColumnHeader label="Дата" {...sortProps("date")} />
@@ -332,9 +342,11 @@ function LocationEventsContent({ slug }: { slug: string }) {
                     <td className="td-compact">
                       <span className="loc-events-number">
                         {row.event_number ?? "—"}
-                        <StatHintTooltip text="Сквозной номер старта — какой это по счёту сбор локации за всю историю, по всем системам вместе">
-                          <span className="muted">({row.overall_number})</span>
-                        </StatHintTooltip>
+                        {showOverallNumber && (
+                          <StatHintTooltip text="Сквозной номер старта — какой это по счёту старт локации за всю историю, по всем системам вместе">
+                            <span className="muted">({row.overall_number})</span>
+                          </StatHintTooltip>
+                        )}
                         {row.is_attendance_record && (
                           <RecordIcon
                             icon="🏆"
@@ -345,7 +357,19 @@ function LocationEventsContent({ slug }: { slug: string }) {
                       </span>
                     </td>
                     <td className="td-date">
-                      <ActivityDateLink date={row.event_date} url={row.protocol_url} />
+                      {/* Есть полный протокол — дата ведёт на НАШ протокол;
+                          внешняя ссылка платформы остаётся на его странице. */}
+                      {row.has_protocol ? (
+                        <a
+                          className="activity-date-link"
+                          href={`/locations/${encodeURIComponent(data.slug)}/protocol/${row.platform_code}/${row.event_date}`}
+                          title="Открыть протокол старта"
+                        >
+                          {formatDate(row.event_date)}
+                        </a>
+                      ) : (
+                        <ActivityDateLink date={row.event_date} url={row.protocol_url} />
+                      )}
                     </td>
                     {show("platform") && (
                       <td className="td-platform">

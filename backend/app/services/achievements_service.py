@@ -96,6 +96,13 @@ START_NUMBER_RANGES: dict[str, tuple[int, int]] = {
     "start_numbers": (1, 200),
     "start_numbers_pro": (201, 400),
 }
+# Названия тех же челленджей: их спрашивает не только страница достижений, но и
+# попап точки на карте («даст ли этот старт +1 в Нумераторе»), — держим рядом с
+# диапазонами, чтобы подписи не разъехались.
+START_NUMBER_TITLES: dict[str, str] = {
+    "start_numbers": "Нумератор",
+    "start_numbers_pro": "Нумератор ПРО",
+}
 # Сколько недельных окон показываем в планировании: ближайшая неделя, W+1, W+2.
 START_NUMBER_PLAN_WEEKS = 3
 
@@ -365,6 +372,10 @@ def _challenge(
         # Насколько последняя пробежка продвинула счётчик — проставляется
         # снаружи (compute_challenges), по умолчанию 0.
         "recent_delta": 0,
+        # Дата того самого последнего дня активности: по ней «Детали» подсвечивают
+        # клетки, закрытые этой пробежкой (иначе «↑ +1» на карточке есть, а какая
+        # именно клетка новая — приходится помнить самому).
+        "recent_date": None,
     }
 
 
@@ -1277,7 +1288,7 @@ def _build_challenge_list(
             rows,
             upcoming,
             code="start_numbers",
-            title="Нумератор",
+            title=START_NUMBER_TITLES["start_numbers"],
             description="Прими участие в стартах с порядковыми номерами от №1 до №200 — неважно, в какой системе получен каждый номер.",
             low=START_NUMBER_RANGES["start_numbers"][0],
             high=START_NUMBER_RANGES["start_numbers"][1],
@@ -1286,7 +1297,7 @@ def _build_challenge_list(
             rows,
             upcoming,
             code="start_numbers_pro",
-            title="Нумератор ПРО",
+            title=START_NUMBER_TITLES["start_numbers_pro"],
             description="Для тех, кому мало двух сотен: старты с порядковыми номерами от №201 до №400 — неважно, в какой системе получен каждый номер.",
             low=START_NUMBER_RANGES["start_numbers_pro"][0],
             high=START_NUMBER_RANGES["start_numbers_pro"][1],
@@ -1444,6 +1455,9 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
 
     rows_before = _rows_before_last_activity(scoped_rows)
     if rows_before is not None and len(rows_before) < len(scoped_rows):
+        # Тот самый последний день активности, относительно которого считается
+        # recent_delta: «Детали» подсветят по нему свежие клетки.
+        recent_date = scoped_rows[-1].event_date.isoformat()
         previous: dict[str, int] = {
             str(c["code"]): int(c["current"])  # type: ignore[call-overload]
             for c in _build_challenge_list(
@@ -1459,6 +1473,7 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
             code = str(challenge["code"])
             delta = int(challenge["current"]) - previous.get(code, int(challenge["current"]))  # type: ignore[call-overload]
             challenge["recent_delta"] = max(delta, 0)
+            challenge["recent_date"] = recent_date
 
     def _tier(challenge: dict[str, object], tier_key: object) -> dict[str, object]:
         tiers = challenge["tiers"]

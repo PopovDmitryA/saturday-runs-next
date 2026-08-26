@@ -43,6 +43,8 @@ def _run_entry(
         "event_date": event.event_date,
         "location_name": catalog_index.display_name(location, platform_code),
         "location_city": location.city,
+        "location_slug": location.external_key.strip().lower(),
+        "is_test_event": event.is_test_event,
         "platform_code": platform_code,
         "finish_time_display": normalize_finish_time_display(
             run.finish_time_sec, run.finish_time_display

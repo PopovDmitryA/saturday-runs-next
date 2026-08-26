@@ -6,16 +6,39 @@
 // узел как есть — превью и PNG совпадают пиксель в пиксель.
 
 import type { CSSProperties } from "react";
+import { fitText, type FitBox } from "./fitText";
 import { shareFontFamily, type ShareFontId } from "./fonts";
 import {
   DEFAULT_PHOTO_TRANSFORM,
   type ShareLook,
   type SharePhoto,
 } from "./looks";
-import type { ShareCardData, ShareFormat, ShareMetric } from "./types";
+import type { ShareCardData, ShareFormat, ShareFormatId, ShareMetric } from "./types";
 
 /** Базовый кегль в нативном размере: 1em = 40px. */
 const BASE_FONT_PX = 40;
+
+/** Начертание героя (.s2-hero-value) — им же меряем строки при подборе кегля. */
+const BOLD_WEIGHT = 800;
+
+/**
+ * Коробка под значение героя в каждом формате. Ширина выведена из паддингов
+ * .s2-content, высота — из того, что остаётся в теле карточки под шапкой,
+ * плашкой, подписью героя и бренд-футером (см. .s2-card--* в index.css).
+ * В широком формате герой живёт в левой колонке грида 1fr / 1.25fr с зазором
+ * 1.1em — отсюда 464px, вдвое меньше, чем в остальных форматах.
+ *
+ * Первый кегль лесенки — «как задумано»: короткие герои (число, время)
+ * выглядят ровно так же, как до подбора.
+ */
+const HERO_BOXES: Record<ShareFormatId, FitBox> = {
+  // 1080 − 2×1.6em паддинга.
+  story: { maxWidthPx: 952, maxHeightPx: 470, maxLines: 3, sizesEm: [4.2, 3.4, 2.8, 2.3, 1.9, 1.55, 1.3] },
+  // 1080 − 2×1.4em паддинга.
+  square: { maxWidthPx: 968, maxHeightPx: 330, maxLines: 3, sizesEm: [3, 2.5, 2.1, 1.75, 1.45, 1.2] },
+  // (1200 − 2×1.4em паддинга − 1.1em зазора) / 2.25 — левая колонка грида.
+  wide: { maxWidthPx: 464, maxHeightPx: 240, maxLines: 3, sizesEm: [2.9, 2.4, 2, 1.7, 1.4, 1.15] },
+};
 
 /**
  * Сколько метрик-плиток влезает: формат × есть ли герой.
@@ -31,9 +54,9 @@ export function metricLimit(format: ShareFormat, data: ShareCardData): number {
   if (format.id === "square") {
     return hasHero ? 4 : 6;
   }
-  // Широкий (1200×630): по высоте помещается ровно два ряда плиток — третий
-  // наезжает на бренд-футер. Кому нужно больше цифр — сториз и квадрат.
-  return 4;
+  // Широкий (1200×630): два ряда по три плитки. Ряд третьим не делаем — он
+  // наезжает на бренд-футер, а вот третья колонка по ширине помещается.
+  return 6;
 }
 
 /**
@@ -61,6 +84,16 @@ export function photoGeometry(
 /** Фон карточки под своим фото: видно там, где фото сдвинули с края. */
 export const PHOTO_BACKDROP_COLOR = "#0f172a";
 
+/** Кегль и интерлиньяж героя, подобранные под колонку формата. */
+function heroStyle(value: string, format: ShareFormat, font: ShareFontId): CSSProperties {
+  const fit = fitText(value, HERO_BOXES[format.id], {
+    basePx: BASE_FONT_PX,
+    fontFamily: shareFontFamily(font),
+    fontWeight: BOLD_WEIGHT,
+  });
+  return { fontSize: `${fit.sizeEm}em`, lineHeight: fit.lineHeight };
+}
+
 function MetricTiles({ metrics, limit }: { metrics: ShareMetric[]; limit: number }) {
   const visible = metrics.slice(0, limit);
   if (visible.length === 0) {
@@ -73,7 +106,9 @@ function MetricTiles({ metrics, limit }: { metrics: ShareMetric[]; limit: number
           <div className={`s2-tile-value ${metric.value.length > 4 ? "s2-tile-value--long" : ""}`}>
             {metric.value}
           </div>
-          <div className="s2-tile-label">{metric.label}</div>
+          <div className={`s2-tile-label ${metric.keepLabelCase ? "s2-tile-label--as-is" : ""}`}>
+            {metric.label}
+          </div>
         </div>
       ))}
     </div>
@@ -144,7 +179,7 @@ export function ShareCardView({
           {data.plate ? <div className="s2-plate">{data.plate}</div> : null}
           {data.hero ? (
             <div className="s2-hero">
-              <div className={`s2-hero-value ${data.hero.value.length > 4 ? "s2-hero-value--long" : ""}`}>
+              <div className="s2-hero-value" style={heroStyle(data.hero.value, format, font)}>
                 {data.hero.value}
               </div>
               {data.hero.caption ? <div className="s2-hero-caption">{data.hero.caption}</div> : null}

@@ -26,11 +26,15 @@ celery_app.conf.update(
         "app.workers.tasks.runpark_sync",
         "app.workers.tasks.leaderboards_warm",
         "app.workers.tasks.portal_cache",
+        "app.workers.tasks.locations_status",
         "app.workers.tasks.locations_warm",
         "app.workers.tasks.dashboard_warm",
         "app.workers.tasks.page_stats",
         "app.workers.tasks.admin_digest",
         "app.workers.tasks.og_render",
+        "app.workers.tasks.sweep_hq_snapshot",
+        "app.workers.tasks.email_send",
+        "app.workers.tasks.user_names",
     ),
     task_routes={
         "five_verst_sync.*": {"queue": "five_verst"},
@@ -45,6 +49,20 @@ celery_app.conf.update(
         "og_render.*": {"queue": "parkrun"},
     },
     beat_schedule={
+        # Имена пользователей берутся из профилей беговых систем — раз в сутки
+        # после ночных синков сверяем их заново (смена фамилии, новая привязка,
+        # правка имени в самой системе). Часы — Europe/Moscow.
+        "user-names-refresh": {
+            "task": "user_names.refresh",
+            "schedule": crontab(minute=10, hour=5),
+        },
+        # Табло обхода /hq и /world: пересчёт тяжёлых агрегатов раз в 3 минуты.
+        # Считать на каждый показ нельзя — один только count(*) по runs (124 млн
+        # строк) занимал 5.5 с из 6.7 с ответа.
+        "sweep-hq-snapshot": {
+            "task": "sweep_hq.refresh_snapshot",
+            "schedule": crontab(minute="*/3"),
+        },
         # OG-картинки локаций (Л19): обновить после субботних/воскресных синков
         # протоколов + полный прогон в понедельник ночью (часы — Europe/Moscow).
         "og-render-weekend": {
@@ -87,6 +105,13 @@ celery_app.conf.update(
         # параллельности, а только выстраивает пачку в хвост (до 08.2026 в 20:00
         # будней стартовали разом latest + реестр + ротация). Приоритет минуты
         # :00 — у latest: это свежие субботние протоколы.
+        # Правило молчания: после реестра 5 вёрст, чтобы догадка по датам
+        # ложилась поверх свежих заявлений систем, а не спорила с ними.
+        "locations-activity-status": {
+            "task": "locations.refresh_activity_status",
+            "schedule": crontab(hour=21, minute=10),
+            "options": {"queue": "default"},
+        },
         "five-verst-registry-daily": {
             "task": "five_verst_sync.sync_locations_registry",
             # 20:50 — после latest 20:00; до сводки 21:50 успевает (~1.5 мин).
@@ -189,7 +214,11 @@ celery_app.conf.update(
             "options": {"queue": "runpark"},
         },
         # Прогрев кэша рейтингов (TTL 6ч): каждые 2 часа, со сдвигом от :00,
-        # чтобы не толкаться с runpark-latest на том же воркере.
+        # чтобы не толкаться с runpark-latest на том же воркере. Это страховка и
+        # обещанный витриной срок пересчёта (REFRESH_INTERVAL_HOURS в
+        # app/services/leaderboard_service.py — парное место, менять вместе);
+        # свежие протоколы доезжают быстрее: каждый синк, записавший результаты,
+        # будит тот же прогрев сам (schedule_leaderboards_warm).
         "leaderboards-warm-cache": {
             "task": "leaderboards.warm_cache",
             "schedule": crontab(minute=20, hour="*/2"),

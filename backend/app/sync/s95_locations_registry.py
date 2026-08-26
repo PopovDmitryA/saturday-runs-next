@@ -10,6 +10,7 @@ from app.migration.helpers import s95_country_from_url
 from app.models import Location, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalLocation
 from app.s95.api_client import S95ApiLocation, fetch_all_locations
+from app.services.location_catalog_cache import flush_location_catalog_caches
 from app.services.location_geo_service import apply_reverse_geocode_to_location
 from app.sync import upsert
 from app.sync.iteration_commit import commit_step, rollback_step
@@ -86,7 +87,10 @@ def _process_entry(
     entry: S95ApiLocation,
     result: S95LocationRegistrySyncResult,
 ) -> None:
-    is_cancelled = not entry.active
+    # entry.active=false у s95 означает «площадка закрыта», а не «в эту субботу
+    # отмена»: недельных отмен их реестр не публикует. Поэтому закрытая уходит
+    # в «не действует» (is_paused), а is_cancelled остаётся под отмену старта.
+    is_inactive = not entry.active
 
     row = (
         db.query(Location)
@@ -99,8 +103,10 @@ def _process_entry(
         row, _ = upsert.upsert_location(db, platform, canonical)
         if entry.latitude is not None:
             row.is_official_map = True
-        _, _, cancel_changed = apply_location_registry_flags(row, is_paused=False, is_cancelled=is_cancelled)
-        if cancel_changed:
+        _, pause_changed, _ = apply_location_registry_flags(
+            row, is_paused=is_inactive, is_cancelled=False
+        )
+        if pause_changed:
             result.cancel_status_changed += 1
         if apply_reverse_geocode_to_location(row):
             result.regions_backfilled += 1
@@ -155,8 +161,10 @@ def _process_entry(
         row.is_official_map = True
         changed = True
 
-    _, _, cancel_changed = apply_location_registry_flags(row, is_paused=False, is_cancelled=is_cancelled)
-    if cancel_changed:
+    _, pause_changed, _ = apply_location_registry_flags(
+        row, is_paused=is_inactive, is_cancelled=False
+    )
+    if pause_changed:
         result.cancel_status_changed += 1
         changed = True
 
@@ -213,6 +221,8 @@ def sync_s95_locations_registry(
             error="; ".join(result.errors) or None,
         )
         db.commit()
+        if result.locations_created or result.locations_updated:
+            flush_location_catalog_caches("синк реестра s95")
         return result
 
     except Exception as exc:

@@ -22,6 +22,36 @@ class AdminUserAuthBrief(BaseModel):
     external_id: str
 
 
+class AdminUserHomeLocationCandidate(BaseModel):
+    identity_key: str
+    name: str
+    city: str | None = None
+    slug: str | None = None
+    run_days: int = 0
+    volunteer_days: int = 0
+
+
+class AdminUserHomeLocation(BaseModel):
+    """Предполагаемый «дом» участника — та же площадка, что видит он сам.
+
+    is_manual — выбрал руками в настройках, иначе определено автоматически.
+    is_tie — правило отбора исчерпано и площадки поделили первое место: тогда
+    в tied лежат все претенденты.
+    """
+
+    identity_key: str
+    name: str
+    slug: str | None = None
+    city: str | None = None
+    region: str | None = None
+    run_days: int = 0
+    volunteer_days: int = 0
+    is_manual: bool = False
+    is_tie: bool = False
+    tied: list[AdminUserHomeLocationCandidate] = Field(default_factory=list)
+    locations_total: int = 0
+
+
 class AdminUserListItem(BaseModel):
     id: str
     serial_id: int | None = None
@@ -38,6 +68,7 @@ class AdminUserListItem(BaseModel):
     total_runs: int | None = None
     total_volunteering: int | None = None
     platform_links: list[AdminPlatformLinkBrief] = Field(default_factory=list)
+    home_location: AdminUserHomeLocation | None = None
 
 
 class AdminUserListResponse(BaseModel):

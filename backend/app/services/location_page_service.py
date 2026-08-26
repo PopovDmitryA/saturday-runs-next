@@ -12,13 +12,13 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, cast
 from uuid import UUID
 
 import redis
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import and_, bindparam, case, func, or_, text
 from sqlalchemy.orm import Session
 
 from app.activity_url import resolve_activity_url
@@ -55,7 +55,9 @@ HISTOGRAM_BIN_SEC = 10
 # TTL, а не точечная инвалидация: синк идёт множеством независимых batch-джоб
 # по трём платформам — вешать инвалидацию на каждую было бы куда инвазивнее,
 # чем оправдывает выигрыш (эти цифры не обязаны быть live).
-LOCATIONS_INDEX_CACHE_KEY = "locations:index:v4"
+# v5 — в строку добавлены first_event_date_in_system и first_event_system_code:
+# без бампа кэшированный payload отдавал бы их как None до истечения TTL.
+LOCATIONS_INDEX_CACHE_KEY = "locations:index:v5"
 LOCATIONS_INDEX_CACHE_TTL_SECONDS = 3 * 60 * 60
 # Страница/журнал/рейтинги одной локации — тоже тяжёлые (resolve_location_identity
 # перечитывает ВСЕ локации + весь каталог на каждый вызов, плюс десяток
@@ -73,8 +75,10 @@ _TRAVEL_HEADING_RE = re.compile(r"\s*как\s+добраться\s*[?:.]*\s*", r
 
 
 def location_page_cache_key(slug: str) -> str:
-    # v12 — в описании появилось распарсенное время старта (start_time_current).
-    return f"locations:page:v12:{slug.strip().lower()}"
+    # v13 — обе ветки бампали v11→v12: в описании появилось время старта
+    # (start_time_current), в last_event — номер старта, победители поимённо,
+    # разбивка по полу и клубные юбиляры.
+    return f"locations:page:v13:{slug.strip().lower()}"
 
 
 def location_events_cache_key(slug: str) -> str:
@@ -543,6 +547,95 @@ def _first_by_platform_order(
     return None
 
 
+# Клубные пороги 5 вёрст/parkrun (футболки за 10/25/50/100/250 финишей) плюс
+# «круглые» юбилеи кратно 25 — те самые, которые локации поздравляют в чатах.
+_CLUB_LEVELS = (10, 25, 50, 100, 250)
+# Секундомер secondary-событий кросслинков не должен удваивать счёт финишей.
+_NOT_SECONDARY_SQL = "id NOT IN (SELECT secondary_event_id FROM event_crosslinks)"
+
+
+def _last_event_winners(db: Session, event_id: UUID) -> dict[str, str | None]:
+    """Имена самого быстрого мужчины и самой быстрой женщины на старте.
+
+    Локации в постах всегда называют победителей поимённо («18:07 — Алексей
+    САЙФУЛИН»), поэтому имя нужно рядом со временем.
+    """
+    gender_expr = _gender_expression(
+        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+    )
+    winners: dict[str, str | None] = {"male": None, "female": None}
+    for gender in ("male", "female"):
+        row = (
+            db.query(Participant.display_name)
+            .select_from(RunResult)
+            .join(Event, RunResult.event_id == Event.id)
+            .join(Platform, Event.platform_id == Platform.id)
+            .outerjoin(Participant, RunResult.participant_id == Participant.id)
+            .filter(
+                RunResult.event_id == event_id,
+                RunResult.finish_time_sec.isnot(None),
+                RunResult.finish_time_sec > 0,
+                gender_expr == gender,
+            )
+            .order_by(RunResult.finish_time_sec.asc())
+            .first()
+        )
+        if row is not None and row[0]:
+            winners[gender] = str(row[0])
+    return winners
+
+
+def _last_event_milestones(
+    db: Session, event_id: UUID, event_date: date
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Кто на этом старте закрыл клубный порог и кому остался один финиш.
+
+    Счёт ведётся внутри платформы: participants привязаны к платформе, поэтому
+    «клуб 25 финишей» у 5 вёрст не смешивается с parkrun. Логика порогов — та
+    же, что в админском «Своде по пробежке» (admin_event_report_service).
+    """
+    rows = db.execute(
+        text(
+            f"""
+            WITH today AS (
+                SELECT DISTINCT participant_id FROM run_results
+                WHERE event_id = :event_id AND participant_id IS NOT NULL
+            ),
+            counts AS (
+                SELECT r.participant_id, count(DISTINCT r.event_id) AS total
+                FROM run_results r
+                JOIN events e ON e.id = r.event_id
+                WHERE r.participant_id IN (SELECT participant_id FROM today)
+                  AND NOT e.is_test_event
+                  AND e.event_date <= :event_date
+                  AND e.{_NOT_SECONDARY_SQL}
+                GROUP BY r.participant_id
+            )
+            SELECT c.total, p.display_name
+            FROM counts c
+            JOIN participants p ON p.id = c.participant_id
+            WHERE c.total IN :levels
+               OR (c.total >= 25 AND c.total % 25 = 0)
+               OR (c.total + 1) IN :levels
+            ORDER BY c.total DESC
+            """
+        ).bindparams(bindparam("levels", expanding=True)),
+        {"event_id": str(event_id), "event_date": event_date, "levels": list(_CLUB_LEVELS)},
+    ).all()
+
+    milestones: list[dict[str, object]] = []
+    one_step: list[dict[str, object]] = []
+    for total, name in rows:
+        total = int(total)
+        if not name:
+            continue
+        if total in _CLUB_LEVELS or (total >= 25 and total % 25 == 0):
+            milestones.append({"name": str(name), "count": total})
+        elif (total + 1) in _CLUB_LEVELS:
+            one_step.append({"name": str(name), "next": total + 1})
+    return milestones[:5], one_step[:5]
+
+
 def _last_event_stats(
     db: Session,
     events: Sequence[Any],
@@ -560,7 +653,7 @@ def _last_event_stats(
     if not events:
         return None, None, None
 
-    last_event_id, last_event_date, _last_event_number, last_finishers_count, last_platform_code = max(
+    last_event_id, last_event_date, last_event_number, last_finishers_count, last_platform_code = max(
         events, key=lambda row: row[1]
     )
 
@@ -579,6 +672,10 @@ def _last_event_stats(
             func.sum(case((RunResult.is_first_run.is_(True), 1), else_=0)).label("debutants"),
             func.sum(case((RunResult.is_first_run_at_location.is_(True), 1), else_=0)).label("first_here"),
             func.sum(case((RunResult.is_pr.is_(True), 1), else_=0)).label("prs"),
+            # Разбивка по полу: локации пишут её в постах «в цифрах»
+            # («57 мужчин, 33 девушки, 4 неизвестных»).
+            func.sum(case((gender_expr == "male", 1), else_=0)).label("male_count"),
+            func.sum(case((gender_expr == "female", 1), else_=0)).label("female_count"),
         )
         .select_from(RunResult)
         .join(Event, RunResult.event_id == Event.id)
@@ -600,9 +697,23 @@ def _last_event_stats(
         .scalar()
     )
 
+    winners = _last_event_winners(db, last_event_id)
+    milestones, one_step = _last_event_milestones(db, last_event_id, last_event_date)
+    male_count = int(row.male_count or 0) if row is not None else 0
+    female_count = int(row.female_count or 0) if row is not None else 0
+
     last_event_payload = {
         "event_date": last_event_date,
+        "event_number": int(last_event_number) if last_event_number is not None else None,
         "platform_code": last_platform_code,
+        "male_finishers": male_count or None,
+        "female_finishers": female_count or None,
+        "best_male_name": winners.get("male"),
+        "best_female_name": winners.get("female"),
+        # Юбиляры клубных порогов на этом старте и те, кому до клуба остался
+        # один финиш, — самый частый жанр в каналах локаций.
+        "milestones": milestones,
+        "one_step": one_step,
         "finishers": event_finishers(last_event_id, last_finishers_count),
         "volunteers": int(last_volunteers) if last_volunteers else None,
         "avg_time_sec": last_avg_time,
@@ -1652,6 +1763,10 @@ class _IndexIdentityStat:
     events_count: int = 0
     finishers_total: int = 0
     first_event_date: date | None = None
+    # Первый старт отдельно по каждой системе: сквозная дата выше теряет момент,
+    # когда площадка начала работать в нынешней системе (просьба Дмитрия
+    # 23.08.2026 — этот вопрос закрывал дашборд «дни рождения» в Grafana).
+    first_event_date_by_platform: dict[str, date] = field(default_factory=dict)
     last_event_date: date | None = None
     best_male_time_sec: int | None = None
     best_female_time_sec: int | None = None
@@ -1669,7 +1784,8 @@ def _bulk_identity_stats(
         return {}
 
     event_rows = (
-        db.query(Event.id, Event.location_id, Event.event_date, Event.finishers_count)
+        db.query(Event.id, Event.location_id, Event.event_date, Event.finishers_count, Platform.code)
+        .join(Platform, Event.platform_id == Platform.id)
         .filter(Event.location_id.in_(location_ids), Event.is_test_event.is_(False))
         .all()
     )
@@ -1703,11 +1819,18 @@ def _bulk_identity_stats(
     }
 
     stats: dict[str, _IndexIdentityStat] = {}
-    for event_id, location_id, event_date, finishers_count in event_rows:
-        if event_id in excluded_secondary:
-            continue
+    for event_id, location_id, event_date, finishers_count, platform_code in event_rows:
         identity_key = location_id_to_identity[location_id]
         stat = stats.setdefault(identity_key, _IndexIdentityStat())
+        # Первый старт в системе считаем ДО дедупа кросслинков, в отличие от
+        # счётчиков ниже. Вторичная строка связки — тот же физический старт,
+        # записанный второй системой: для «сколько стартов» её учитывать нельзя,
+        # а для «когда эта система здесь началась» она как раз и есть ответ.
+        known = stat.first_event_date_by_platform.get(platform_code)
+        if known is None or event_date < known:
+            stat.first_event_date_by_platform[platform_code] = event_date
+        if event_id in excluded_secondary:
+            continue
         stat.events_count += 1
         finishers = protocol_counts.get(event_id) or finishers_count
         if finishers:
@@ -1926,6 +2049,30 @@ def _collect_catalog_identities(
     return identity_locations, location_id_to_identity
 
 
+def _first_event_in_current_system(
+    ordered: list[tuple[Location, str]],
+    stat: _IndexIdentityStat | None,
+) -> tuple[str | None, date | None]:
+    """Система, в которой площадка живёт сейчас, и дата её первого старта именно там.
+
+    `ordered` уже отсортирован «активная платформа первой» (_sort_identity_locations),
+    поэтому просто берём первую систему, в которой у площадки вообще есть старты —
+    ровно то, о чём просил Дмитрий 23.08.2026: «берём актуальную систему, по
+    которой есть пробежки».
+
+    У площадки без прошлого в других системах эта дата совпадёт со сквозной, и
+    это не дубль: две колонки расходятся ровно там, где было интересно — на
+    парках, переехавших из parkrun-эпохи.
+    """
+    if stat is None:
+        return None, None
+    for _location, code in ordered:
+        first = stat.first_event_date_by_platform.get(code)
+        if first is not None:
+            return code, first
+    return None, None
+
+
 def _compute_locations_index(db: Session) -> dict[str, object]:
     """Тяжёлая агрегация каталога локаций: одна строка на каноническую идентичность."""
     catalog_index = LocationCatalogIndex(db)
@@ -1940,6 +2087,7 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
         primary_location, primary_code = ordered[0]
         stat = identity_stats.get(identity_key)
         is_paused, is_cancelled = _identity_status(catalog_index, ordered)
+        system_code, system_first_date = _first_event_in_current_system(ordered, stat)
         items.append(
             {
                 "slug": primary_location.external_key.strip().lower(),
@@ -1954,6 +2102,8 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
                 "events_count": stat.events_count if stat else 0,
                 "finishers_total": stat.finishers_total if stat else 0,
                 "first_event_date": stat.first_event_date if stat else None,
+                "first_event_date_in_system": system_first_date,
+                "first_event_system_code": system_code,
                 "last_event_date": stat.last_event_date if stat else None,
                 "best_male_time_sec": stat.best_male_time_sec if stat else None,
                 "best_male_time_display": (
@@ -1979,7 +2129,9 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
 # Посадочная «Результаты последней субботы»: последний старт каждой локации по
 # всем системам разом. Тот же режим обновления, что у каталога: данные меняются
 # раз в неделю после субботнего синка, точечная инвалидация не окупается.
-LAST_RESULTS_CACHE_KEY = "locations:last-results:v1"
+# v2 — в строку добавлена система первичного протокола (event_platform_code):
+# без бампа кэшированный payload отдавал бы поле как None до истечения TTL.
+LAST_RESULTS_CACHE_KEY = "locations:last-results:v2"
 
 
 def invalidate_last_results_cache() -> None:
@@ -2182,6 +2334,9 @@ def _compute_last_results(db: Session) -> dict[str, object]:
                     {code for _event, code in events_for_key}, key=_platform_order_index
                 ),
                 "event_number": primary_event.event_number,
+                # Система первичного протокола — из неё складывается адрес
+                # нашей страницы протокола (/locations/{slug}/protocol/...).
+                "event_platform_code": primary_event_code,
                 "is_last_saturday": saturday_date is not None and primary_event.event_date == saturday_date,
                 "finishers": finishers,
                 "volunteers": volunteers,

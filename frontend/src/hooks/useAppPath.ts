@@ -6,6 +6,44 @@ export function normalizeAppPath(pathname = window.location.pathname): string {
   return collapsed.replace(/\/$/, "") || "/";
 }
 
+/**
+ * Новая страница должна открываться с начала.
+ *
+ * Роутинг у нас свой (pushState + перерисовка), а браузер при pushState скролл
+ * не трогает: перейдя из середины журнала протоколов в сам протокол, читатель
+ * попадал в его середину — «как будто уже проскроллил». Возврат назад
+ * (popstate) не трогаем: там позицию восстанавливает сам браузер.
+ *
+ * Ссылка с якорем (`/dashboard#profiles`) докручивает до своей секции — и не
+ * сразу, а после перерисовки: элемента с этим id на старой странице нет.
+ */
+function scrollForNavigation(hash: string): void {
+  const anchorId = hash.startsWith("#") ? hash.slice(1) : hash;
+  if (!anchorId) {
+    window.scrollTo(0, 0);
+    return;
+  }
+  // Секция появляется не в этом кадре: сначала React перерисует страницу, а
+  // содержимое может приехать ещё и запросом. Пробуем несколько кадров, потом
+  // сдаёмся и показываем начало страницы.
+  let attempts = 10;
+  const tryScroll = () => {
+    const target = document.getElementById(decodeURIComponent(anchorId));
+    if (target) {
+      target.scrollIntoView({ block: "start" });
+      return;
+    }
+    attempts -= 1;
+    if (attempts > 0) {
+      requestAnimationFrame(tryScroll);
+    } else {
+      window.scrollTo(0, 0);
+    }
+  };
+  window.scrollTo(0, 0);
+  requestAnimationFrame(tryScroll);
+}
+
 export function useAppPath(): string {
   const [path, setPath] = useState(normalizeAppPath);
 
@@ -48,13 +86,20 @@ export function useAppPath(): string {
       }
 
       const nextPath = normalizeAppPath(url.pathname);
-      if (nextPath === normalizeAppPath() && url.search === window.location.search) {
+      const pathChanged = nextPath !== normalizeAppPath();
+      if (!pathChanged && url.search === window.location.search) {
         return;
       }
 
       event.preventDefault();
       window.history.pushState(null, "", `${url.pathname}${url.search}${url.hash}`);
       sync();
+      // Смена только строки запроса (фильтр, страница таблицы) — это та же
+      // страница: сбрасывать скролл там значило бы отбрасывать читателя от
+      // таблицы, на которую он смотрит.
+      if (pathChanged) {
+        scrollForNavigation(url.hash);
+      }
     };
 
     document.addEventListener("click", onClick);

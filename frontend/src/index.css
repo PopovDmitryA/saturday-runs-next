@@ -397,6 +397,37 @@ body {
   margin-top: 0.75rem;
 }
 
+/* Привязка почты: в отличие от VK и Яндекса, здесь не редирект, а два поля. */
+.auth-provider-email {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.auth-provider-email .settings-platform-info {
+  flex: 1 1 12rem;
+}
+
+.auth-provider-email-form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.auth-provider-email-form input {
+  min-width: 11rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font-size: 0.95rem;
+}
+
 .auth-merge-links-list {
   margin: 0.75rem 0 0;
   padding-left: 1.1rem;
@@ -462,27 +493,6 @@ body {
   line-height: 1.15;
   letter-spacing: -0.02em;
   color: var(--text);
-}
-
-.shell-user-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.shell-user-input {
-  width: min(100%, 18rem);
-  padding: 0.5rem 0.65rem;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
-.shell-user-error {
-  width: 100%;
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--tint-red-text);
 }
 
 .btn-icon {
@@ -615,6 +625,22 @@ body {
   background: var(--tint-blue-bg);
   border: 1px solid var(--tint-blue-border);
   color: var(--tint-blue-text);
+}
+
+/* Требует решения человека — например, имя в системе разошлось с тем, что
+   показывается на сайте. Синий «просто к сведению» тут читался бы как шум. */
+.banner.warning {
+  background: var(--tint-amber-bg);
+  border: 1px solid var(--tint-amber-border);
+  color: var(--tint-amber-text);
+}
+
+.banner p {
+  margin: 0 0 0.5rem;
+}
+
+.banner p:last-child {
+  margin-bottom: 0;
 }
 
 
@@ -1101,6 +1127,22 @@ a.on-this-day-location {
   color: var(--link);
 }
 
+/* Уточнение к главному числу плитки: «из них действует 1». Тише подписи, но
+   того же цвета — это часть подписи, а не ссылка «Подробнее». */
+.stat-card-note {
+  display: block;
+  font-size: 0.74rem;
+  line-height: 1.2;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.stat-card-runs .stat-card-note,
+.stat-card-volunteering .stat-card-note,
+.stat-card-wins .stat-card-note {
+  color: var(--stat-theme-label);
+}
+
 .link-button {
   padding: 0;
   border: none;
@@ -1345,7 +1387,16 @@ a.on-this-day-location {
   color: var(--neutral-soft);
 }
 
-.analytics-chart-tooltip-wrap:hover .analytics-chart-tooltip,
+/* Только там, где мышь есть. На телефоне :hover прилипает после тапа, и рядом
+   с портальной подсказкой тач-режима (TapTooltipBubble) открывалась вторая,
+   та же самая — вжатая в свою клетку и обрезанная краем экрана. */
+@media (hover: hover) {
+  .analytics-chart-tooltip-wrap:hover .analytics-chart-tooltip {
+    display: flex;
+    opacity: 1;
+  }
+}
+
 .analytics-chart-tooltip-wrap:focus-within .analytics-chart-tooltip {
   display: flex;
   opacity: 1;
@@ -3455,6 +3506,53 @@ button.badge-platform-btn:hover {
   margin: 0;
 }
 
+/* Раздел «Имя на сайте»: свободного ввода нет — выбор системы-источника и вида
+   записи. Каждое изменение сохраняется сразу, кнопки «Сохранить» нет. */
+
+/* Приходим сюда по якорю из сайдбара и из плашек про смену имени. Шапка сайта
+   липкая и высотой 61 px — без этого отступа заголовок раздела уезжает под неё. */
+.display-name-card {
+  scroll-margin-top: 5rem;
+}
+
+.display-name-field {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.display-name-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.display-name-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.display-name-preview {
+  margin: 1rem 0 0;
+  color: var(--text-muted);
+}
+
+.display-name-saved {
+  color: var(--tint-green-text);
+}
+
+.display-name-suggestion {
+  margin-top: 0.75rem;
+}
+
+.display-name-suggestion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .profile-slug-current {
   margin: 0.75rem 0 0;
 }
@@ -3980,6 +4078,11 @@ button.badge-platform-btn:hover {
 .leaflet-container {
   position: relative;
   z-index: 0;
+  /* Подложка под тайлами: её видно в прорехах, пока новые тайлы едут. У
+     Leaflet по умолчанию #ddd — на светлой теме он читается светлее самой
+     карты, и смена масштаба выглядит как вспышка. Берём тон суши OSM, чтобы
+     дырка была незаметна (у тёмной темы свой цвет — см. блок тёмной темы). */
+  background: #e8e4dc;
 }
 
 .location-map-shell {
@@ -4087,16 +4190,97 @@ button.badge-platform-btn:hover {
   transition: background 0.15s, color 0.15s;
 }
 
-/* Зум-кнопки живут в правом верхнем углу (см. lib/mapZoomControl.ts), там же —
-   кнопка фуллскрина. Где она есть, сдвигаем зум левее неё: 0.6rem отступ +
-   2rem кнопка + зазор. Высоту не трогаем — обе группы кнопок в одном ряду. */
-.location-map-shell:has(.location-map-fullscreen-btn) .leaflet-top.leaflet-right .leaflet-control-zoom {
-  margin-right: 2.9rem;
+/* Зум-кнопки — по правой кромке, но ниже середины карты: телефон держат правой
+   рукой, и на этой высоте «+/−» попадают под большой палец, не перехватывая
+   аппарат (просьба Дмитрия 22.08.2026). Кнопка фуллскрина остаётся в углу, зум
+   висит под ней — по одной вертикали, поэтому и разъезжаться им незачем.
+
+   Двигаем сам угловой контейнер Leaflet (`top: auto; bottom: …`), а не поля
+   контрола: у контейнера высота по содержимому, и проценты внутри него не от
+   чего считать, а вот у карты высота задана — и `bottom` от неё честный. */
+.location-map-shell .leaflet-top.leaflet-right:has(.map-zoom-thumb) {
+  top: auto;
+  bottom: 24%;
+}
+
+.location-map-shell .leaflet-top.leaflet-right .map-zoom-thumb {
+  /* По правой кромке ровно под кнопкой фуллскрина — у той тот же отступ. */
+  margin-right: 0.6rem;
 }
 
 .location-map-fullscreen-btn:hover {
   background: var(--bg-muted);
   color: var(--text);
+}
+
+/* «Где я» — под кнопкой фуллскрина, в том же правом верхнем углу. Зум живёт
+   ниже по той же кромке (см. .map-zoom-thumb), так что дороги не пересекаются. */
+.location-map-locate-btn {
+  position: absolute;
+  top: 3.1rem;
+  right: 0.6rem;
+  z-index: 1001;
+  width: 2rem;
+  height: 2rem;
+  padding: 0.3rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  transition: background 0.15s, color 0.15s;
+}
+
+.location-map-locate-btn:hover:not(:disabled) {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.location-map-locate-btn svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Положение найдено — кнопка подсвечена: по ней видно, что синяя точка на карте
+   это вы, а не очередная площадка. */
+.location-map-locate-btn-active {
+  color: var(--tint-teal-text);
+  border-color: var(--tint-teal-text);
+}
+
+.location-map-locate-btn-loading {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* Точка «вы здесь»: синий кружок в белом кольце — узнаваемая метка карт, её не
+   спутать с цветными точками площадок. */
+.map-my-position {
+  background: transparent;
+  border: none;
+}
+
+.map-my-position span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: #2563eb;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.55), 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* Круг погрешности — только у грубого определения (по вышкам и Wi-Fi). */
+.map-my-position-accuracy {
+  fill: #2563eb;
+  fill-opacity: 0.10;
+  stroke: #2563eb;
+  stroke-opacity: 0.35;
+  stroke-width: 1;
 }
 
 .location-map-fullscreen-btn svg {
@@ -4167,11 +4351,112 @@ button.badge-platform-btn:hover {
   box-shadow: 0 0 0 2px #16a34a;
 }
 
+/* Карта туристов: к обычной точке приписано число — сколько человек из
+   верхушки рейтинга здесь было. Сама точка везде в полную силу: площадка, куда
+   из сотни не доехал никто, — такая же площадка, и её ноль тоже ответ. Тише
+   звучит только подпись. */
+.map-marker-counted {
+  cursor: pointer;
+}
+
+.map-marker-count {
+  position: absolute;
+  left: calc(100% + 3px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+}
+
+/* Ноль — без плашки и бледнее: не спорит с числами, но площадку не прячет. */
+.map-marker-count-zero {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.map-marker-counted-selected span {
+  box-shadow: 0 0 0 3px var(--accent-amber-text);
+}
+
+.map-marker-counted-selected .map-marker-count {
+  background: var(--accent-amber-text);
+  border-color: var(--accent-amber-text);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+  color: #fff;
+  opacity: 1;
+}
+
+/* Кластер карты туристов: гроздь точек, чьи подписи налезли бы друг на друга,
+   схлопнута в кружок с числом ПЛОЩАДОК. Число туристов — только у одиночных
+   точек (решение Дмитрия 15.08.2026). */
+.map-cluster {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+/* Гроздь не должна читаться как точка с числом туристов (репорт Дмитрия
+   15.08.2026: «75» над Москвой выглядело как 75 туристов на одной площадке).
+   Отличаем тремя вещами сразу: круг залит цветом, а не светлый; вокруг — мягкое
+   гало, какого у точек нет; под числом подпись «локаций». */
+.map-cluster span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 25%, #7c8cf8, #4f46e5 70%);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow:
+    0 0 0 5px rgba(79, 70, 229, 0.25),
+    0 2px 6px rgba(15, 23, 42, 0.4);
+}
+
+/* Подпись мельче числа и без разрядки: «локации» — семь букв, и на прежнем
+   размере слово вылезало за края кружка (репорт Дмитрия 16.08.2026). */
+.map-cluster b {
+  font-size: 0.38rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.map-cluster:hover span {
+  background: radial-gradient(circle at 30% 25%, #94a2ff, #4338ca 70%);
+  box-shadow:
+    0 0 0 7px rgba(79, 70, 229, 0.3),
+    0 2px 8px rgba(15, 23, 42, 0.45);
+}
+
 .map-marker-tooltip {
   font-size: 0.78rem;
   font-weight: 600;
   padding: 0.2rem 0.45rem;
   border-radius: 6px;
+}
+
+.map-popup-tourists {
+  font-weight: 600;
 }
 
 .map-popup-paused {
@@ -4284,6 +4569,91 @@ button.badge-platform-btn:hover {
 
 .map-popup-link:hover {
   color: var(--tint-teal-text);
+}
+
+/* Личный контекст точки (номер ближайшего старта, «+1 в Нумераторе», дальность
+   от дома) приезжает отдельным запросом уже после открытия попапа — отделяем
+   его чертой, чтобы догрузившиеся строки не читались как продолжение адреса. */
+.map-popup-context {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0.15rem 0;
+  padding: 0.35rem 0;
+  /* Рамка с обеих сторон: блок стоит посреди попапа, между адресом и историей
+     визитов, и без нижней черты «от дома» слипалось со строкой «Пробежек: …». */
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* Пустой контекст (аноним без прогноза, сеть отвалилась) не должен оставлять
+   висящую в воздухе черту. */
+.map-popup-context:empty {
+  display: none;
+}
+
+.map-popup-context-loading {
+  font-size: 0.82rem;
+}
+
+.map-popup-next {
+  color: var(--text);
+}
+
+/* Оба зачёта «Нумератора» одной строкой; цветом выделены только сами ответы —
+   зелёное «да» и приглушённое «нет». */
+.map-popup-plus-line {
+  color: var(--text-2);
+  cursor: help;
+}
+
+.map-popup-plus-line b {
+  font-weight: 700;
+}
+
+.map-popup-plus-yes {
+  color: var(--tint-green-text);
+}
+
+.map-popup-plus-no {
+  color: var(--text-muted);
+}
+
+/* Плашки систем рядом с названием — цвета те же, что у точек на карте и у
+   кнопок фильтра, поэтому отдельной строки «Система: …» в попапе больше нет. */
+.map-popup-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.35rem;
+}
+
+.map-popup-system {
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.map-popup-system-five_verst {
+  background: #2c326d;
+}
+
+.map-popup-system-s95 {
+  background: #c74389;
+}
+
+.map-popup-system-runpark {
+  background: #ea580c;
+}
+
+.map-popup-system-parkrun {
+  background: #94a3b8;
+}
+
+.map-popup-home {
+  color: var(--text-2);
 }
 
 .modal-panel-wide {
@@ -4404,6 +4774,13 @@ button.badge-platform-btn:hover {
    для элементов у верхней кромки экрана. */
 .tap-tooltip {
   max-width: min(20rem, calc(100vw - 1rem));
+}
+
+/* Хвостик — не по центру плашки, а под элементом, который её открыл: у краёв
+   экрана подсказка вжимается в экран, и центр плашки от элемента уезжает.
+   Смещение считает TapTooltipBubble, здесь только точка приложения. */
+.tap-tooltip::after {
+  left: var(--tap-tooltip-arrow, 50%);
 }
 
 .tap-tooltip-title {
@@ -4979,6 +5356,25 @@ button.badge-platform-btn:hover {
 .location-status-label.location-status-active {
   background: var(--tint-green-bg);
   color: var(--tint-green-text);
+}
+
+/* «Скоро»: площадка объявлена, но ещё не стартовала — не ошибка и не потеря,
+   поэтому янтарный, а не красный. */
+.location-status-badge.location-status-upcoming,
+.location-status-label.location-status-upcoming {
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-text);
+}
+
+/* Точка «скоро» на карте: контур вместо заливки — площадка ещё не работает. */
+.map-marker-upcoming span {
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--accent-amber-text);
+}
+
+.map-popup-upcoming {
+  color: var(--tint-amber-text);
+  font-weight: 600;
 }
 
 .map-locations-table-row-paused td {
@@ -6077,26 +6473,6 @@ button.badge-platform-btn:hover {
   font-weight: 600;
 }
 
-.admin-organizer-access p {
-  margin: 0 0 0.5rem;
-}
-
-.admin-organizer-access-form {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  align-items: center;
-  max-width: 42rem;
-}
-
-.admin-organizer-access-form select {
-  max-width: 20rem;
-}
-
-.admin-organizer-access-form input {
-  max-width: 14rem;
-}
-
 /* Журнал может быть длинным — прокручиваем его, а не страницу. */
 .admin-login-journal-table {
   display: block;
@@ -6124,6 +6500,76 @@ button.badge-platform-btn:hover {
 .admin-users-id {
   display: block;
   font-size: 0.82rem;
+}
+
+/* Колонка «Дом»: название площадки, город и пометки о происхождении выбора. */
+.admin-users-home {
+  display: inline-block;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  min-width: 9rem;
+}
+
+.admin-users-home-city {
+  white-space: nowrap;
+}
+
+.admin-users-home-badge {
+  margin-left: 0.35rem;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.admin-users-home-badge-warn {
+  color: var(--danger, #c0392b);
+  border-color: currentColor;
+}
+
+/* Ничья: список претендентов — первые пять, остальные под кнопкой «ещё». */
+.admin-users-home-tie {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* Сегмент «Кратко | Полно» для колонок систем — в панели над таблицей,
+   рядом с поиском (сама полоса .tview-bar тут не нужна: таблица админки
+   и так живёт в карточке со своим скроллом). */
+.admin-users-view {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.admin-users-view-label {
+  font-size: 0.92rem;
+}
+
+/* Свёрнутая колонка «Системы»: чипы привязок, подробности — в подсказке. */
+.admin-users-systems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  min-width: 7rem;
+  max-width: 12rem;
+}
+
+.admin-system-chip {
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  background: var(--chip-bg);
+  color: var(--text-2);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+a.admin-system-chip:hover {
+  color: var(--link);
 }
 
 .admin-platform-link {
@@ -6279,8 +6725,81 @@ button.badge-platform-btn:hover {
 }
 
 .admin-stats-platform-links,
-.admin-stats-data-core {
+.admin-stats-data-core,
+.admin-stats-geo {
   margin-bottom: 1rem;
+}
+
+/* Наборы привязок — таблица под списком систем в той же карточке. */
+.admin-stats-combos {
+  margin-top: 1.25rem;
+}
+
+.admin-stats-combos-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.admin-stats-combos-lead {
+  margin: 0.2rem 0 0.75rem;
+  font-size: 0.88rem;
+}
+
+.admin-stats-combo-codes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: center;
+}
+
+.admin-stats-combo-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+
+.admin-stats-geo-lead {
+  margin: 0 0 0.85rem;
+  font-size: 0.9rem;
+}
+
+.admin-stats-geo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1rem 0 0.75rem;
+}
+
+.admin-stats-geo-search {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+}
+
+.admin-stats-geo-sort {
+  display: flex;
+  gap: 0.35rem;
+}
+
+/* Города и площадки — две колонки на широком экране, стопкой на телефоне. */
+.admin-stats-geo-tables {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 960px) {
+  .admin-stats-geo-tables {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.admin-stats-geo-table .table-scroll {
+  max-height: 26rem;
+  overflow: auto;
 }
 
 .admin-stats-platform-list {
@@ -7628,6 +8147,32 @@ button.badge-platform-btn:hover {
 .admin-ratings-count {
   font-size: 0.92rem;
 }
+.admin-ratings-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.admin-ratings-pagination-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.admin-ratings-pagination-label {
+  font-size: 0.92rem;
+}
+/* .input тянется на всю ширину — в строке пагинации селектор должен остаться
+   по содержимому, иначе он разъезжается на весь блок. */
+.admin-ratings-page-size {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 6rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.9rem;
+}
 .admin-ratings-raw-table td,
 .admin-ratings-raw-table th {
   vertical-align: top;
@@ -8843,6 +9388,47 @@ button.badge-platform-btn:hover {
   background: var(--tint-orange-bg);
   border-color: var(--tint-orange-text);
   color: var(--tint-orange-text);
+}
+
+/* Клетка, закрытая последней пробежкой (той самой, за которую на карточке стоит
+   «↑ +1»). Цвет заливки уже занят системой — все четыре (зелёный / синий /
+   фиолетовый / оранжевый) заняты, поэтому свежесть показываем янтарным кольцом
+   и точкой в углу: они читаются поверх любой системы и поверх «не закрыто». */
+.challenge-cell-fresh {
+  position: relative;
+  outline: 2px solid var(--accent-amber-text);
+  outline-offset: 1px;
+}
+
+.challenge-cell-fresh::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-amber-text);
+  border: 1px solid var(--surface);
+}
+
+/* День календаря «Круглого года» — 0.55rem, точка в него не влезает: там
+   кольцо и есть вся индикация. */
+.challenge-year-day-fresh {
+  outline: 2px solid var(--accent-amber-text);
+  outline-offset: 1px;
+}
+
+/* Строка списка находок (палиндромы, дежавю, юбилеи), появившаяся с последней
+   пробежкой, и отдельное совпадение внутри неё. */
+.challenge-item-fresh {
+  box-shadow: inset 2px 0 0 var(--accent-amber-text);
+  padding-left: 0.5rem;
+}
+
+.challenge-occurrence-fresh {
+  color: var(--accent-amber-text);
+  font-weight: 600;
 }
 
 /* Легенда цветов систем над коллекционными челленджами */
@@ -10158,11 +10744,58 @@ button.badge-platform-btn:hover {
   width: 11.5rem;
 }
 
+/* «Первый старт в системе» — самая длинная подпись каталога, плюс в ячейке
+   рядом с датой стоит плашка системы. */
+.loc-index-table .col-date-wide {
+  width: 13rem;
+}
+
+/* Дата и плашка системы в одной ячейке: плашка переносится под дату, когда
+   колонка ужимается. */
+.loc-index-first-in-system {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.4rem;
+}
+
 /* Колонок с фиксированной шириной много (метрики + рекорды + даты): без
    min-width колонка «Локация» схлопывается в ноль, вместо этого скроллим
-   обёртку по горизонтали. */
+   обёртку по горизонтали. Прибавка к прежним 104rem — ширина «Первого старта
+   в системе». */
 .loc-index-table {
-  min-width: 104rem;
+  min-width: 117rem;
+}
+
+/* «Результаты последней субботы» — та же таблица плюс колонка номера старта
+   (col-compact, 4.5rem). */
+.last-results-table {
+  min-width: 108.5rem;
+}
+
+/* Липнет не только номер, но и название: при горизонтальном скролле по одному
+   «№ 90» строку не опознать. Смещение второй колонки = ширина первой. */
+.table-sticky-first .last-results-table th:nth-child(2),
+.table-sticky-first .last-results-table td:nth-child(2) {
+  position: sticky;
+  left: 4.5rem;
+  background: var(--surface);
+  z-index: 2;
+}
+
+.table-sticky-first .last-results-table thead th:nth-child(2) {
+  z-index: 4;
+  background: var(--bg-muted);
+}
+
+.tshadow-left .table-sticky-first .last-results-table th:first-child,
+.tshadow-left .table-sticky-first .last-results-table td:first-child {
+  box-shadow: none;
+}
+
+.tshadow-left .table-sticky-first .last-results-table th:nth-child(2),
+.tshadow-left .table-sticky-first .last-results-table td:nth-child(2) {
+  box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
 }
 
 /* В кратком виде колонки подбирает useAdaptiveColumns — ровно столько, сколько
@@ -10888,12 +11521,21 @@ button.badge-platform-btn:hover {
   font-size: 13px;
 }
 
+/* Возврат в мастер привязки (/welcome) из кабинета, пока привязано не всё. */
+.profile-link-wizard {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .profile-platform-grid {
   display: grid;
   /* Ровно 2 карточки в строке (просьба Дмитрия): при auto-fill влезало 3,
      вёрстка формы ужималась, а четвёртая карточка оставалась одна в ряду. */
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 10px;
+  /* Карточка не тянется до самой высокой соседки: пустая RunPark не должна
+     быть ростом с parkrun с его жёлтой пометкой (просьба Дмитрия 25.08). */
+  align-items: start;
 }
 
 @media (max-width: 720px) {
@@ -10920,9 +11562,9 @@ button.badge-platform-btn:hover {
 .profile-platform-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px;
-  border-radius: 14px;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--bg-muted, var(--surface));
 }
@@ -11989,15 +12631,14 @@ button.badge-platform-btn:hover {
   margin: 0.1em 0;
 }
 
+/* Кегль героя задаётся инлайном: его подбирает fitText.ts под ширину колонки
+   формата (лесенка HERO_BOXES в ShareCardView). Здесь — только начертание и
+   страховка на случай слова, которое не влезает даже мелким кеглем. */
 .s2-hero-value {
-  font-size: 3.6em;
   font-weight: 800;
   line-height: 1;
   letter-spacing: -0.03em;
-}
-
-.s2-hero-value--long {
-  font-size: 2.4em;
+  overflow-wrap: anywhere;
 }
 
 .s2-hero-caption {
@@ -12067,6 +12708,12 @@ button.badge-platform-btn:hover {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* Подписи с именами — обычным регистром (см. keepLabelCase в ShareMetric). */
+.s2-tile-label--as-is {
+  text-transform: none;
+  letter-spacing: 0.01em;
 }
 
 .s2-timeline {
@@ -12224,14 +12871,6 @@ button.badge-platform-btn:hover {
   font-size: 0.5em;
 }
 
-.s2-card--story .s2-hero-value {
-  font-size: 4.2em;
-}
-
-.s2-card--story .s2-hero-value--long {
-  font-size: 2.6em;
-}
-
 .s2-card--story .s2-fact {
   font-size: 0.56em;
 }
@@ -12249,7 +12888,8 @@ button.badge-platform-btn:hover {
 
 .s2-card--wide .s2-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  /* Правой колонке отдано больше: в ней шесть плиток в три столбца. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
   column-gap: 1.1em;
   row-gap: 0.6em;
   /* safe: если рядов больше, чем помещается, грид растёт вниз, а не наезжает
@@ -12268,28 +12908,33 @@ button.badge-platform-btn:hover {
   /* Заведомо больше числа элементов левой колонки: пустые ряды схлопываются. */
   grid-row: 1 / span 8;
   justify-self: stretch;
-  grid-template-columns: 1fr 1fr;
+  /* Три колонки на два ряда: шесть цифр вместо четырёх. По высоте третий ряд
+     наехал бы на бренд-футер, а по ширине третий столбец помещается. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.4em;
   align-content: safe center;
 }
 
-/* Плитки в широком формате компактнее: три ряда должны уместиться по высоте
-   и не наехать на бренд-футер. */
+/* Плитки в широком формате компактнее: два ряда по три столбца должны
+   уместиться и не наехать на бренд-футер. */
 .s2-card--wide .s2-tile {
-  padding: 0.38em 0.5em;
+  padding: 0.38em 0.45em;
 }
 
 .s2-card--wide .s2-tile-value {
-  font-size: 0.92em;
+  font-size: 0.82em;
 }
 
 .s2-card--wide .s2-tile-value--long {
-  font-size: 0.72em;
+  font-size: 0.62em;
 }
 
 .s2-card--wide .s2-tile-label {
   font-size: 0.4em;
   margin-top: 0.3em;
+  /* Подписи с именем рекордсмена и датой длиннее обычных — в узкой колонке
+     им нужна третья строка, иначе хвост обрезается. */
+  -webkit-line-clamp: 3;
 }
 
 .s2-card--wide .s2-body > .s2-heat-wrap {
@@ -12297,17 +12942,9 @@ button.badge-platform-btn:hover {
   justify-self: stretch;
 }
 
-.s2-card--wide .s2-hero-value {
-  font-size: 2.9em;
-}
-
 /* Квадрат: чуть плотнее вертикаль. */
 .s2-card--square .s2-content {
   padding: 1.3em 1.4em 1.1em;
-}
-
-.s2-card--square .s2-hero-value {
-  font-size: 3em;
 }
 
 /* ── Шторка ── */
@@ -12867,6 +13504,1413 @@ button.badge-platform-btn:hover {
   line-height: 1;
   cursor: pointer;
 }
+
+/* Кластер, внутри которого выбрана площадка: иначе выбор в московской грозди
+   на карте никак не отражался бы. */
+.map-cluster-selected span {
+  border-color: var(--accent-amber-text);
+  box-shadow:
+    0 0 0 5px rgba(217, 119, 6, 0.35),
+    0 2px 6px rgba(15, 23, 42, 0.4);
+}
+
+/* ===== Протокол старта (/locations/{slug}/protocol/{система}/{дата}) ===== */
+
+/* auto-fit вместо auto-fill: 7 плиток растягиваются на всю ширину одной
+   строкой, а не оставляют пустой хвост под восьмую. */
+.protocol-stats-grid {
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+/* Единый протокол: ровно ЧЕТЫРЕ плитки в ряд (решение Дмитрия 25.08.2026 —
+   восемь в одну строку читались нагромождением, каждой не хватало места).
+   Жёсткая сетка, а не auto-fit: восемь плиток при auto-fit раскладывались
+   как придётся — 5+3 на ноутбуке, 7+1 на широком экране. На телефоне две. */
+.uniprot-stats-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (min-width: 760px) {
+  .uniprot-stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Разбивка М/Ж в подписи плитки: колонками, а не сплошной строкой — иначе
+   «6 885 М · 4 713 Ж · 903 без данных» переносилось по случайному месту. */
+.uniprot-stat-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.7rem;
+  line-height: 1.35;
+}
+
+.uniprot-stat-split-part b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* «без данных» — на свою строку: это не третий пол, а отсутствие метки. */
+.uniprot-stat-split-rest {
+  flex-basis: 100%;
+}
+
+/* «Кратко | Полно» встроен в ряд фильтров: сегмент сам по себе — блок с
+   верхним отступом, здесь он должен просто встать в линию и прижаться
+   вправо, когда место остаётся. */
+.uniprot-view-toggle {
+  display: inline-flex;
+  margin-left: auto;
+}
+
+.uniprot-view-toggle > * {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .uniprot-view-toggle {
+    margin-left: 0;
+  }
+}
+
+/* Призыв войти на единый протокол — компактнее общего PromoLoginCard и с
+   отступом сверху: без него он прилипал к нижнему ряду плиток. */
+.promo-login-card.uniprot-login-card {
+  margin-top: 1.1rem;
+  padding: 15px 20px;
+  gap: 14px;
+}
+
+.uniprot-login-card .promo-login-card-icon {
+  width: 42px;
+  height: 42px;
+  font-size: 21px;
+  border-radius: 13px;
+}
+
+.uniprot-login-card .promo-login-card-text p {
+  font-size: 0.9rem;
+}
+
+.protocol-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.35rem 0 0;
+  color: var(--text-2);
+}
+
+/* Стрелки «предыдущий / журнал / следующий» под заголовком */
+.protocol-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+  font-size: 0.9rem;
+}
+
+.protocol-partial-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+}
+
+/* Возрастные группы: подпись — двухцветная полоса М/Ж — количество */
+.protocol-age-groups {
+  display: grid;
+  gap: 0.35rem;
+}
+
+/* Числа тремя колонками с выравниванием по правому краю: итог, «N М», «N Ж» —
+   значения стоят друг под другом, а не пляшут за скобками. */
+.protocol-age-row {
+  display: grid;
+  grid-template-columns: 3.4rem minmax(0, 1fr) 2.6rem 3.6rem 3.4rem;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.protocol-age-total {
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.protocol-age-gender {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.protocol-age-label {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.protocol-age-bar-track {
+  display: flex;
+  gap: 2px;
+  height: 0.85rem;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-muted);
+}
+
+.protocol-age-bar {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  min-width: 0;
+}
+
+.protocol-age-bar-male {
+  background: #3b82f6;
+}
+
+.protocol-age-bar-female {
+  background: #ec4899;
+}
+
+/* Фильтры над таблицей: пол — поиск — группа */
+.protocol-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+/* Таблетки пола, селект и поиск стоят в одном ряду — у .map-mode-tabs есть
+   свой нижний отступ, здесь он ломал выравнивание по одной линии. */
+.protocol-filters .map-mode-tabs {
+  margin-bottom: 0;
+}
+
+.protocol-age-select,
+.protocol-name-filter {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+}
+
+.protocol-name-filter {
+  min-width: 11rem;
+}
+
+.protocol-table .col-number {
+  width: 3.6rem;
+}
+
+/* Ширины под полные подписи шапки («Время ↕», «М/Ж ?», «Возр. группа ?»,
+   «Age grade ?») — как у остальных таблиц сайта, подписи не режем.
+   «Участник» без width: забирает остаток ширины таблицы. */
+.protocol-table .col-time {
+  width: 7rem;
+}
+
+.protocol-table .col-gender {
+  width: 7rem;
+}
+
+.protocol-table .col-age {
+  width: 9.5rem;
+}
+
+.protocol-table .col-history {
+  width: 10.5rem;
+}
+
+.protocol-table .col-history-group {
+  width: 11rem;
+}
+
+.protocol-table .col-run-number {
+  width: 8rem;
+}
+
+.protocol-table .col-grade {
+  width: 7.5rem;
+}
+
+.protocol-table .col-pace {
+  width: 5.5rem;
+}
+
+.protocol-table .col-club {
+  width: 11rem;
+}
+
+.protocol-table:not(.data-table-short) {
+  min-width: 82rem;
+}
+
+/* Строки «НЕИЗВЕСТНЫЙ» (бегун без штрихкода): приглушаем, чтобы не сливались
+   с настоящими участниками. */
+.protocol-row-unknown td {
+  color: var(--text-faint);
+}
+
+.protocol-runner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+/* Значки строки: дебют / впервые здесь / ЛР */
+.protocol-row-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--text-3);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.protocol-badge-me {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+:root[data-theme="dark"] .protocol-badge-me {
+  background: #1e3a8a;
+  color: #bfdbfe;
+}
+
+/* Своя строка в протоколе */
+.protocol-row-me td {
+  background: var(--bg-muted);
+}
+
+.protocol-time {
+  cursor: default;
+}
+
+/* «Возрастные группы» + «Клубы на старте» бок о бок: группы тянутся, клубы
+   занимают правую колонку — пустоты справа больше нет. На узком экране
+   колонки складываются в столбик. */
+.protocol-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(15rem, 22rem);
+  gap: 0 2rem;
+  /* stretch: высота строки = возрастные группы, рамка клубов растягивается
+     на неё (сама она в расчёте не участвует — absolute). */
+  align-items: stretch;
+}
+
+@media (max-width: 860px) {
+  .protocol-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.protocol-clubs-table .protocol-clubs-count {
+  width: 7rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Высоту правой колонки задают возрастные группы: рамка клубов растянута на
+   их высоту (absolute не участвует в расчёте строки грида), список внутри
+   скроллится. На узком экране колонки складываются — там рамка обычная. */
+.protocol-clubs {
+  position: relative;
+  min-height: 14rem;
+}
+
+.protocol-clubs-frame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.protocol-clubs-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+}
+
+.protocol-clubs-scroll thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+@media (max-width: 860px) {
+  .protocol-clubs {
+    position: static;
+    min-height: 0;
+  }
+
+  .protocol-clubs-frame {
+    position: static;
+  }
+
+  .protocol-clubs-scroll {
+    max-height: 18rem;
+  }
+}
+
+/* Липнут ДВЕ первые колонки: «№» без имени бесполезен, при горизонтальной
+   прокрутке уезжало именно ФИО. Смещение второй = ширина .col-number. */
+.table-sticky-first .protocol-table th:nth-child(2),
+.table-sticky-first .protocol-table td:nth-child(2) {
+  position: sticky;
+  left: 3.6rem;
+  background: var(--surface);
+  z-index: 2;
+}
+
+.table-sticky-first .protocol-table thead th:nth-child(2) {
+  z-index: 4;
+  background: var(--bg-muted);
+}
+
+.tshadow-left .table-sticky-first .protocol-table th:nth-child(2),
+.tshadow-left .table-sticky-first .protocol-table td:nth-child(2) {
+  box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+}
+
+/* Тень висит на второй колонке — на первой она рисовалась бы под второй. */
+.tshadow-left .table-sticky-first .protocol-table th:first-child,
+.tshadow-left .table-sticky-first .protocol-table td:first-child {
+  box-shadow: none;
+}
+
+/* Свою подсветку строки «вы»/«неизвестный» липкие ячейки обязаны повторить —
+   иначе на прокрутке они выпадают из строки белым прямоугольником. */
+.table-sticky-first .protocol-table .protocol-row-me td:first-child,
+.table-sticky-first .protocol-table .protocol-row-me td:nth-child(2) {
+  background: var(--bg-muted);
+}
+
+/* Клуб — кнопка-фильтр: выглядит ссылкой, ведёт себя как тумблер. */
+.protocol-club-button {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--link);
+  text-align: left;
+  cursor: pointer;
+}
+
+.protocol-club-button:hover {
+  text-decoration: underline;
+}
+
+.protocol-club-row-active {
+  background: var(--bg-muted);
+}
+
+.protocol-club-row-active .protocol-club-button {
+  font-weight: 700;
+}
+
+/* Чип активного фильтра по клубу в ряду фильтров протокола */
+.protocol-club-chip {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid #2563eb;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font: inherit;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+/* Исторические колонки («В истории М/Ж», «В истории группы») — сравнение со всей
+   историей площадки, а не с этим стартом: прижаты к правому краю, фон слегка
+   подкрашен, первая отделена линией. */
+.protocol-table .protocol-cell-history,
+.protocol-table th.protocol-cell-history {
+  background: var(--bg-muted);
+}
+
+.protocol-table td.protocol-cell-history:first-of-type,
+.protocol-table th.protocol-cell-history:first-of-type {
+  border-left: 2px solid var(--border-strong);
+}
+
+/* Топ-10 в истории площадки — жирным с медалькой, виден без наведения */
+.protocol-history-top {
+  font-weight: 700;
+  color: var(--accent-amber-text, #d97706);
+}
+
+/* Дельта к прошлому старту на плитке: «+37» / «−12» */
+.protocol-delta {
+  margin-left: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  vertical-align: middle;
+  cursor: default;
+}
+
+.protocol-delta-up {
+  color: #16a34a;
+}
+
+.protocol-delta-down {
+  color: #dc2626;
+}
+
+.protocol-histogram-note {
+  margin: -0.25rem 0 0.6rem;
+  font-size: 0.85rem;
+}
+
+.protocol-place {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Волонтёры */
+.protocol-volunteers-table .col-vol-name {
+  width: 18rem;
+}
+
+.protocol-volunteers-table .col-vol-number {
+  width: 7rem;
+}
+
+.protocol-volunteers-table:not(.data-table-short) {
+  min-width: 40rem;
+}
+
+.protocol-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.protocol-role-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--text-2);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+/* Роль, которую человек исполняет впервые в карьере */
+.protocol-role-chip-new {
+  background: #dcfce7;
+  color: #166534;
+}
+
+:root[data-theme="dark"] .protocol-role-chip-new {
+  background: #14532d;
+  color: #bbf7d0;
+}
+
+.protocol-source-link {
+  margin-top: 1rem;
+}
+
+/* ── Пагинация публичных разделов (components/Pagination.tsx) ───────────── */
+
+.pager {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1.75rem 0 0.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.pager-summary {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pager-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.pager-pages {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.pager-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.25rem;
+  height: 2.25rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.pager-item:hover {
+  border-color: var(--link);
+  color: var(--link);
+}
+
+.pager-item-current {
+  background: var(--tint-indigo-bg);
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo-text);
+  font-weight: 600;
+  cursor: default;
+}
+
+.pager-item-disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pager-item-disabled:hover {
+  border-color: var(--border-strong);
+  color: var(--text-2);
+}
+
+.pager-gap {
+  min-width: 1.25rem;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+/* На узком экране ряд номеров съедает всю ширину — оставляем стрелки и
+   текущую страницу, остальное уходит в подпись «Релизы 11–20 из 32». */
+@media (max-width: 560px) {
+  .pager-controls {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+  }
+
+  .pager-pages {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .pager-pages::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   Единый протокол недели (/protocol) — все площадки всех систем одним списком.
+   Опирается на классы протокола локации (.protocol-*), своих правил ровно
+   столько, сколько нужно новым колонкам и кликабельным возрастным группам.
+   ========================================================================== */
+
+.uniprot-scope-note {
+  font-size: 0.85rem;
+  margin: 0.3rem 0 0;
+}
+
+/* Возрастных ступеней под два десятка, и развёрнутыми они съедали экран до
+   самой таблицы — прячем под спойлер (правка Дмитрия 22.08.2026).
+   Селектор с .portal-section: общий рескин карточек `.portal-section .card`
+   (portalSection.css) специфичнее одного класса и возвращал бы карточке своё
+   padding поверх нашего нуля — заголовок спойлера висел бы в пустоте. */
+.portal-section .uniprot-groups-spoiler {
+  margin-top: 1rem;
+  padding: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.uniprot-groups-summary {
+  padding: 1rem 1.1rem;
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.uniprot-groups-summary::-webkit-details-marker {
+  display: none;
+}
+
+.uniprot-groups-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.45rem;
+  transition: transform 0.15s ease;
+}
+
+.uniprot-groups-spoiler[open] > .uniprot-groups-summary::before {
+  transform: rotate(90deg);
+}
+
+/* Как пользоваться ступенями — мелким текстом прямо в заголовке спойлера:
+   полосы кликабельные, но без подписи читаются как картинка. На узком экране
+   уезжает на свою строку. */
+.uniprot-groups-howto {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+  margin-left: 0.6rem;
+}
+
+@media (max-width: 620px) {
+  .uniprot-groups-howto {
+    display: block;
+    margin: 0.2rem 0 0;
+  }
+}
+
+/* Выбранная ступень видна на свёрнутом спойлере — иначе фильтр «40–44»
+   остаётся включённым, а по заголовку этого не понять. */
+.uniprot-groups-chosen {
+  color: var(--link);
+  font-weight: 600;
+}
+
+.uniprot-groups-body {
+  padding: 0 1.1rem 1.1rem;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.uniprot-scope-note {
+  margin-bottom: 0.6rem;
+}
+
+.uniprot-total {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Место и «М 12 / 6885» — цифры колонкой, без прыжков при листании страниц. */
+.uniprot-place {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.uniprot-location {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15rem;
+  flex-wrap: wrap;
+}
+
+/* Ширины колонок — зеркало UNIFIED_COLUMNS в UnifiedProtocolPage.tsx.
+   «№» шире, чем в протоколе локации: сюда влезает медаль первых трёх.
+   Ширина есть и у «Участника»: колонок здесь на 83rem, и без неё имя
+   схлопывалось в столбик по букве («Илья КОЗН ЕВ»), а таблица вместо
+   горизонтальной прокрутки давила остаток. min-width = сумма всех ширин. */
+.uniprot-table .col-number {
+  width: 4.2rem;
+}
+
+.uniprot-table .col-runner {
+  width: 10.5rem;
+}
+
+.uniprot-table .col-time {
+  width: 6rem;
+}
+
+.uniprot-table .col-location {
+  width: 13rem;
+}
+
+.uniprot-table .col-gender {
+  width: 7.6rem;
+}
+
+.uniprot-table .col-age {
+  width: 11.5rem;
+}
+
+.uniprot-table .col-platform {
+  width: 6.8rem;
+}
+
+.uniprot-table .col-pace {
+  width: 5.5rem;
+}
+
+.uniprot-table .col-local-place {
+  width: 7.2rem;
+}
+
+.uniprot-table .col-club {
+  width: 10.5rem;
+}
+
+.uniprot-table:not(.data-table-short) {
+  min-width: 83rem;
+}
+
+/* Липнут две первые колонки — как в протоколе локации: «№» без имени
+   бесполезен. Смещение второй = ширина .col-number. */
+.table-sticky-first .uniprot-table th:nth-child(2),
+.table-sticky-first .uniprot-table td:nth-child(2) {
+  position: sticky;
+  left: 4.2rem;
+  background: var(--surface);
+  z-index: 2;
+}
+
+.table-sticky-first .uniprot-table thead th:nth-child(2) {
+  z-index: 4;
+  background: var(--bg-muted);
+}
+
+.tshadow-left .table-sticky-first .uniprot-table th:nth-child(2),
+.tshadow-left .table-sticky-first .uniprot-table td:nth-child(2) {
+  box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+}
+
+.tshadow-left .table-sticky-first .uniprot-table th:first-child,
+.tshadow-left .table-sticky-first .uniprot-table td:first-child {
+  box-shadow: none;
+}
+
+.table-sticky-first .uniprot-table .protocol-row-me td:first-child,
+.table-sticky-first .uniprot-table .protocol-row-me td:nth-child(2) {
+  background: var(--bg-muted);
+}
+
+/* Строка возрастной группы — кнопка-фильтр: клик оставляет в протоколе только
+   эту ступень, повторный снимает. Внешне остаётся той же полосой. */
+.uniprot-age-row {
+  width: 100%;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.uniprot-age-row:hover {
+  background: var(--bg-muted);
+}
+
+.uniprot-age-row.active {
+  border-color: var(--link);
+  background: var(--bg-muted);
+}
+
+/* Постраничная навигация протокола: 12 тыс. строк одной страницей не отдать. */
+.uniprot-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-top: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* /* ===== Онбординг (/welcome) и поиск участников по имени ===== */
+
+/* Узкая центрированная колонка: фокус на одном действии, а не полотно
+   на всю ширину экрана. Секции всплывают каскадом при загрузке. */
+.onboarding-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 44px 20px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+@keyframes onboarding-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.onboarding-page > * {
+  animation: onboarding-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.onboarding-page > *:nth-child(2) {
+  animation-delay: 0.07s;
+}
+
+.onboarding-page > *:nth-child(3) {
+  animation-delay: 0.14s;
+}
+
+.onboarding-page > *:nth-child(4) {
+  animation-delay: 0.21s;
+}
+
+.onboarding-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+}
+
+.onboarding-title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(92deg, var(--link) 0%, #8b5cf6 55%, #22c55e 110%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.onboarding-lead {
+  margin: 0 auto;
+  max-width: 46ch;
+  color: var(--text-2);
+  font-size: 1.02rem;
+  line-height: 1.5;
+}
+
+/* Плитки четырёх систем + прогресс-бар под ними. */
+.onboarding-systems-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.onboarding-systems {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.onboarding-system-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  transition: border-color 0.35s, background 0.35s, transform 0.35s, box-shadow 0.35s;
+}
+
+.onboarding-system-tile-linked {
+  border-color: var(--tint-green-border-strong);
+  background: var(--tint-green-bg);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--tint-green-border-strong) 25%, transparent);
+}
+
+/* «У меня там нет аккаунта»: честно закрывает прогресс, но выглядит нейтрально. */
+.onboarding-system-tile-no-account {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: var(--bg-muted);
+}
+
+.onboarding-system-check {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--chip-bg);
+  color: transparent;
+  transition: background 0.35s, color 0.35s;
+}
+
+@keyframes onboarding-check-pop {
+  0% {
+    transform: scale(0.3);
+  }
+  60% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.onboarding-system-tile-linked .onboarding-system-check {
+  background: #22c55e;
+  color: #fff;
+  animation: onboarding-check-pop 0.45s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.onboarding-system-tile-no-account .onboarding-system-check {
+  background: var(--neutral-soft);
+  color: var(--surface);
+  animation: onboarding-check-pop 0.45s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.onboarding-system-name {
+  font-weight: 700;
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.onboarding-system-state {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.onboarding-system-tile-linked .onboarding-system-state {
+  color: var(--tint-green-text);
+  font-weight: 600;
+}
+
+.onboarding-system-tile-no-account .onboarding-system-state {
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.onboarding-system-toggle {
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.onboarding-system-toggle:hover:not(:disabled) {
+  color: var(--link);
+}
+
+.onboarding-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.onboarding-progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  overflow: hidden;
+  display: flex;
+}
+
+.onboarding-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--link), #22c55e);
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Сегмент «нет аккаунта»: прогресс движется, но другим цветом. */
+.onboarding-progress-fill-skipped {
+  background: var(--neutral-soft);
+}
+
+.onboarding-progress-count {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.onboarding-search-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-radius: 16px;
+  padding: 22px 20px;
+}
+
+.onboarding-search-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.onboarding-search-sub {
+  margin: -4px 0 0;
+  line-height: 1.45;
+}
+
+.onboarding-code-example {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-soft);
+}
+
+.onboarding-fallback {
+  margin: 0;
+}
+
+.onboarding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.onboarding-cta {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.onboarding-cta:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--link) 30%, transparent);
+}
+
+.onboarding-dashboard-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  border-color: var(--tint-blue-border);
+  background: var(--tint-blue-bg);
+}
+
+.onboarding-dashboard-banner-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+/* --- Поиск участника (общий компонент онбординга и кабинета) --- */
+
+.participant-name-search {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.participant-name-search-input-wrap {
+  position: relative;
+  display: block;
+}
+
+.participant-name-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.participant-name-search-input {
+  width: 100%;
+  padding: 13px 16px 13px 42px;
+  border-radius: 13px;
+  font-size: 1rem;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.participant-name-search-input:focus {
+  border-color: var(--link);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--link) 16%, transparent);
+  outline: none;
+}
+
+.participant-name-search-status {
+  margin: 0;
+}
+
+/* Скелетоны вместо «ищем…»: три мерцающие карточки. */
+.participant-name-search-skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@keyframes participant-search-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.participant-name-search-skeleton {
+  height: 84px;
+  border-radius: 14px;
+  background: linear-gradient(100deg, var(--bg-muted) 40%, var(--chip-bg) 50%, var(--bg-muted) 60%);
+  background-size: 200% 100%;
+  animation: participant-search-shimmer 1.1s linear infinite;
+}
+
+.participant-name-search-empty p {
+  margin: 0 0 4px;
+}
+
+.participant-search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.participant-search-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  animation: onboarding-rise 0.35s ease both;
+  transition: border-color 0.35s, background 0.35s, transform 0.2s, box-shadow 0.2s;
+}
+
+.participant-search-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.1);
+}
+
+.participant-search-card-linked {
+  border-color: var(--tint-green-border-strong);
+  background: var(--tint-green-bg);
+}
+
+.participant-search-card-linked:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.participant-search-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.participant-search-card-name {
+  font-weight: 700;
+}
+
+/* Ссылка на профиль — справа от имени, в той же строке. */
+.participant-search-card-open {
+  margin-left: auto;
+  font-size: 0.83rem;
+  white-space: nowrap;
+}
+
+/* Строка «мета слева · действие справа» — почти табличный вид. */
+.participant-search-card-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+}
+
+.participant-search-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 1px;
+  font-size: 0.86rem;
+  min-width: 0;
+}
+
+.participant-search-card-cta {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.participant-search-card-note {
+  font-size: 0.83rem;
+}
+
+.participant-search-card-location {
+  color: var(--text-2);
+}
+
+.participant-search-card-recent-spoiler summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  user-select: none;
+  width: fit-content;
+  transition: color 0.2s;
+}
+
+.participant-search-card-recent-spoiler summary:hover {
+  color: var(--link);
+}
+
+.participant-search-card-recent {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  animation: onboarding-rise 0.25s ease both;
+}
+
+/* Сетка вместо flex: колонки «тип · дата · локация · результат» выровнены
+   между строками, длинное «Волонтёрство» ничего не сдвигает. */
+.participant-search-card-recent li {
+  display: grid;
+  grid-template-columns: 96px 82px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.participant-search-card-recent-kind {
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.participant-search-card-recent-kind-run {
+  color: var(--tint-blue-text);
+}
+
+.participant-search-card-recent-kind-volunteer {
+  color: var(--tint-green-text);
+}
+
+.participant-search-card-recent-date {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.participant-search-card-recent-loc {
+  color: var(--text-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.participant-search-card-recent-detail {
+  margin-left: auto;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.participant-search-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+
+.participant-search-card-done {
+  color: var(--tint-green-text);
+  font-weight: 600;
+  animation: onboarding-check-pop 0.45s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.profile-name-search-block {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--bg-muted);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-name-search-block > .muted {
+  margin: 0;
+}
+
+.profile-name-search-title {
+  margin: 0;
+  font-weight: 700;
+}
+
+@media (max-width: 480px) {
+  .participant-search-card-recent li {
+    grid-template-columns: 84px 78px minmax(0, 1fr) auto;
+    gap: 6px;
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 720px) {
+  .onboarding-page {
+    padding: 26px 16px 44px;
+    gap: 18px;
+  }
+
+  .onboarding-title {
+    font-size: 1.5rem;
+  }
+
+  .onboarding-systems {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-page > *,
+  .participant-search-card,
+  .onboarding-system-tile-linked .onboarding-system-check,
+  .onboarding-system-tile-no-account .onboarding-system-check,
+  .participant-search-card-done {
+    animation: none;
+  }
+
+  .participant-name-search-skeleton {
+    animation: none;
+    background: var(--bg-muted);
+  }
+}
+
 
 /* Время старта в шапке локации: плашка рядом с бейджами систем.
    Отличное от 9:00 (или сезонное) время выделяется цветом — многие живут

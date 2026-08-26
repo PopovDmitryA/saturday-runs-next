@@ -152,6 +152,13 @@ def fetch_and_upsert_event_protocol(
     summary_row: EventSummary,
 ) -> ProtocolUpsertResult:
     slug = summary.location_external_key
+    # Сетевой запрос делаем БЕЗ открытой транзакции. Вызывающие циклы к этому
+    # моменту уже сделали свои SELECT'ы, то есть транзакция открыта, а фетч
+    # страницы 5verst.ru — это до пяти попыток по 30 секунд плюс ожидание
+    # общего лока загрузок; всё это время соединение висит «idle in
+    # transaction». На проде стоит idle_in_transaction_session_timeout=15min,
+    # и он регулярно рвал прогоны latest и reconcile на середине очереди.
+    db.commit()
     run_results, volunteer_results, protocol_html = bulk_parser.fetch_event_protocol(
         slug,
         summary.event_date,
@@ -186,6 +193,13 @@ def fetch_and_upsert_event_protocol(
     state.last_protocol_check_at = now
     state.protocol_source_hash = protocol_source_hash
     state.finishers_at_fetch = summary.finishers_count
+    # Расписка «этот протокол соответствует вот такому саммари». Пока она не
+    # совпадает с текущим summary_hash — за площадкой висит долг, и его увидит
+    # любой следующий прогон (см. protocol_debt.py). До этой отметки триггер
+    # «саммари изменилось» жил ровно один прогон: хэш коммитился в первом
+    # цикле, а если до второго цикла дело не доходило (падение, бан-кулдаун,
+    # protocol_fetch_limit), расхождение застывало навсегда.
+    state.summary_hash_at_fetch = summary.summary_hash
     state.run_results_count = run_results_count
     state.volunteer_results_count = volunteer_results_count
     summary_row.sync_status = SyncStatus.ok

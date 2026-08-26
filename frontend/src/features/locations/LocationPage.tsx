@@ -23,6 +23,7 @@ import { applyPageMeta, locationLeadSentences, locationPageMeta } from "../../li
 import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
 import { flushMetrikaHit } from "../../lib/metrika";
 import {
+  COUNT_FORMS,
   formatDate,
   formatInt,
   formatKm,
@@ -213,17 +214,42 @@ function LastEventSection({ lastEvent, page }: { lastEvent: LocationLastEvent; p
         )}
       </div>
       <div className="loc-stats-grid">
-        <StatTile value={formatDate(lastEvent.event_date)} label={platformCodeLabel(lastEvent.platform_code)} />
-        {lastEvent.finishers !== null && <StatTile value={lastEvent.finishers} label="финишей" />}
-        {lastEvent.volunteers !== null && <StatTile value={lastEvent.volunteers} label="волонтёров" />}
+        <StatTile
+          value={formatDate(lastEvent.event_date)}
+          label={platformCodeLabel(lastEvent.platform_code)}
+          link={
+            // Финишёры посчитаны из строк протокола — значит, протокол у нас
+            // есть и на него можно провалиться.
+            lastEvent.finishers !== null
+              ? {
+                  href: `/locations/${encodeURIComponent(page.slug)}/protocol/${lastEvent.platform_code}/${lastEvent.event_date}`,
+                  label: "протокол →",
+                }
+              : undefined
+          }
+        />
+        {lastEvent.finishers !== null && (
+          <StatTile
+            value={lastEvent.finishers}
+            label={pluralFormRu(lastEvent.finishers, COUNT_FORMS.finishes)}
+          />
+        )}
+        {lastEvent.volunteers !== null && (
+          <StatTile
+            value={lastEvent.volunteers}
+            label={pluralFormRu(lastEvent.volunteers, COUNT_FORMS.volunteers)}
+          />
+        )}
         {newcomers !== null && (
           <StatTile
             value={newcomers}
-            label="новичков"
+            label={pluralFormRu(newcomers, COUNT_FORMS.newcomers)}
             sub={
               lastEvent.debutants || lastEvent.first_at_location
                 ? [
-                    lastEvent.debutants ? `${lastEvent.debutants} дебют в системе` : null,
+                    lastEvent.debutants
+                      ? `${pluralizeRu(lastEvent.debutants, COUNT_FORMS.debuts)} в системе`
+                      : null,
                     lastEvent.first_at_location
                       ? `${lastEvent.first_at_location} впервые здесь`
                       : null,
@@ -234,7 +260,9 @@ function LastEventSection({ lastEvent, page }: { lastEvent: LocationLastEvent; p
             }
           />
         )}
-        {lastEvent.prs !== null && <StatTile value={lastEvent.prs} label="личных рекордов" />}
+        {lastEvent.prs !== null && (
+          <StatTile value={lastEvent.prs} label={pluralFormRu(lastEvent.prs, COUNT_FORMS.prs)} />
+        )}
         {lastEvent.avg_time_sec !== null && (
           <StatTile value={stripLeadingHours(lastEvent.avg_time_display)} label="среднее время" />
         )}
@@ -377,7 +405,7 @@ function AgeGroupRecordsTable({
                                 {" · всего "}
                                 {pluralizeRu(record.runners_total, ["участник", "участника", "участников"])}
                                 {record.finishes_total > 0 &&
-                                  ` и ${pluralizeRu(record.finishes_total, ["финиш", "финиша", "финишей"])}`}
+                                  ` и ${pluralizeRu(record.finishes_total, COUNT_FORMS.finishes)}`}
                               </>
                             )}
                           </span>
@@ -1255,7 +1283,7 @@ function LocationPageContent({ slug }: { slug: string }) {
         <div className="loc-stats-grid">
           <StatTile
             value={stats.events_count}
-            label={pluralFormRu(stats.events_count, ["старт", "старта", "стартов"])}
+            label={pluralFormRu(stats.events_count, COUNT_FORMS.events)}
             sub={
               stats.first_event_date
                 ? `с ${formatDate(stats.first_event_date)}`
@@ -1265,12 +1293,21 @@ function LocationPageContent({ slug }: { slug: string }) {
           />
           <StatTile
             value={stats.finishers_total}
-            label="финишей"
+            label={pluralFormRu(stats.finishers_total, COUNT_FORMS.finishes)}
             sub={stats.avg_finishers ? `в среднем ${formatInt(stats.avg_finishers)} на старте` : undefined}
           />
-          <StatTile value={stats.unique_participants} label="уникальных участников" />
-          <StatTile value={stats.volunteers_total} label="волонтёрств" />
-          <StatTile value={stats.unique_volunteers} label="уникальных волонтёров" />
+          <StatTile
+            value={stats.unique_participants}
+            label={pluralFormRu(stats.unique_participants, COUNT_FORMS.uniqueParticipants)}
+          />
+          <StatTile
+            value={stats.volunteers_total}
+            label={pluralFormRu(stats.volunteers_total, COUNT_FORMS.volunteering)}
+          />
+          <StatTile
+            value={stats.unique_volunteers}
+            label={pluralFormRu(stats.unique_volunteers, COUNT_FORMS.uniqueVolunteers)}
+          />
           {stats.attendance_record && (
             <StatTile
               value={stats.attendance_record.finishers}

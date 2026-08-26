@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.location_page_url import location_page_url, pick_primary_location_url
 from app.models import Location, Platform
@@ -20,7 +21,7 @@ MAP_PLATFORMS = (*MAP_LIVE_PLATFORMS, MAP_HISTORIC_PLATFORM)
 RU_COUNTRY_NAMES = ("Россия", "Russia")
 
 
-def map_location_filter() -> object:
+def map_location_filter() -> ColumnElement[bool]:
     """Условие отбора локаций для карты и каталога.
 
     У действующих систем ориентир — is_official_map. parkrun тащим целиком:
@@ -74,23 +75,31 @@ def _collect_dates(platforms: list[dict[str, object]], field: str) -> list[str]:
 
 def _location_is_paused(location: Location, catalog_index: LocationCatalogIndex, platform_code: str) -> bool:
     if platform_code == MAP_HISTORIC_PLATFORM:
-        # Российский parkrun не «на паузе», а закрыт — см. _location_is_cancelled.
-        return False
+        # Российский parkrun не работает с 2022 года, и это ровно «не
+        # действует»: отдельного правила ему больше не нужно — общий признак
+        # ставит правило молчания (решение Дмитрия 20.08.2026).
+        return True
     # Для каталожных узлов пауза считается по всем платформам сразу
     # (см. LocationCatalogIndex._catalog_is_paused), а не по одной строке.
     return catalog_index.is_paused(location, platform_code)
 
 
 def _location_is_cancelled(location: Location, platform_code: str | None = None) -> bool:
-    """parkrun в России считаем отменённым правилом, а не флагом в БД.
+    """Отмена ближайшего старта — временный статус.
 
-    У всех 55 российских строк is_cancelled=0, последнее событие — февраль 2022.
-    Бэкфилл пришлось бы повторять при каждом пополнении каталога, а правило
-    верно по построению: parkrun ушёл из России и не вернулся.
+    Приходит из реестра системы («(отмена)» у 5 вёрст) и снимается следующим
+    синком. С «не действует» не пересекается: площадка работает, просто в
+    ближайшую субботу не побегут. До 20.08.2026 сюда же попадал весь российский
+    parkrun — теперь он честно «не действует» (см. _location_is_paused).
     """
-    if platform_code == MAP_HISTORIC_PLATFORM:
-        return True
     return bool(location.is_cancelled)
+
+
+def _location_is_upcoming(location: Location, platform_code: str | None = None) -> bool:
+    """Площадка объявлена, но ещё не стартовала."""
+    if platform_code == MAP_HISTORIC_PLATFORM:
+        return False
+    return bool(location.is_upcoming)
 
 
 def list_user_visited_map_locations(
@@ -200,6 +209,7 @@ def list_catalog_map_locations(db: Session) -> dict[str, object]:
                 "active_platform": platform.code,
                 "is_paused": _location_is_paused(location, catalog_index, platform.code),
                 "is_cancelled": _location_is_cancelled(location, platform.code),
+                "is_upcoming": _location_is_upcoming(location, platform.code),
                 "run_count": 0,
                 "volunteer_count": 0,
                 "visit_count": 0,
@@ -220,12 +230,18 @@ def list_catalog_map_locations(db: Session) -> dict[str, object]:
                 bucket["name"] = catalog_index.display_name(location, platform.code)
             if location.region and not bucket.get("region"):
                 bucket["region"] = location.region
-            bucket["is_paused"] = bool(bucket["is_paused"]) or _location_is_paused(
+            # Площадка не действует, только если не действует ВЕЗДЕ: парк,
+            # ушедший из одной системы в другую, живой. Отмена наоборот —
+            # достаточно одной системы, там в субботу не побегут.
+            bucket["is_paused"] = bool(bucket["is_paused"]) and _location_is_paused(
                 location,
                 catalog_index,
                 platform.code,
             )
             bucket["is_cancelled"] = bool(bucket.get("is_cancelled")) or _location_is_cancelled(
+                location, platform.code
+            )
+            bucket["is_upcoming"] = bool(bucket.get("is_upcoming")) or _location_is_upcoming(
                 location, platform.code
             )
 

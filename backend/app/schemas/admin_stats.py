@@ -50,15 +50,64 @@ class AdminSiteStatsPageviewsDay(BaseModel):
     anonymous: int = 0
 
 
+class AdminLinkCombinationRow(BaseModel):
+    """Точный набор привязанных систем и сколько людей ровно на нём."""
+
+    codes: list[str]
+    users: int = 0
+
+
 class AdminSiteStatsResponse(BaseModel):
     period_days: int
     generated_at: datetime
     overview: AdminSiteStatsOverview
+    link_combinations: list[AdminLinkCombinationRow] = Field(default_factory=list)
+    users_without_links: int = 0
     users_new_by_day: list[AdminSiteStatsDayPoint]
     links_new_by_day: list[AdminSiteStatsDayPoint]
     logins_by_day: list[AdminSiteStatsDayPoint]
     login_requests_by_day: list[AdminSiteStatsDayPoint]
     pageviews_by_day: list[AdminSiteStatsPageviewsDay]
+
+
+class AdminGeographyCityRow(BaseModel):
+    city: str
+    region: str | None = None
+    users: int = 0
+    users_new_period: int = 0
+    # Сколько разных площадок города стали кому-то домашними.
+    locations: int = 0
+
+
+class AdminGeographyLocationRow(BaseModel):
+    identity_key: str
+    name: str
+    slug: str | None = None
+    city: str | None = None
+    region: str | None = None
+    users: int = 0
+    users_new_period: int = 0
+
+
+class AdminUsersGeographyResponse(BaseModel):
+    """Регистрации в разрезе городов и площадок — «где работает сарафанка».
+
+    Город и площадка берутся из домашней локации пользователя; у кого пробежек
+    в базе нет, дома нет тоже — такие идут в users_without_home.
+    """
+
+    generated_at: datetime
+    period_days: int
+    users_total: int
+    users_new_period: int = 0
+    users_with_home: int = 0
+    users_new_with_home: int = 0
+    users_without_home: int = 0
+    users_without_links: int = 0
+    cities_total: int = 0
+    locations_total: int = 0
+    cities: list[AdminGeographyCityRow] = Field(default_factory=list)
+    locations: list[AdminGeographyLocationRow] = Field(default_factory=list)
 
 
 class PageviewRecordRequest(BaseModel):
@@ -170,6 +219,13 @@ class OgFetchRow(BaseModel):
     bots: int
 
 
+class FunnelStepStats(BaseModel):
+    step: str
+    visitors: int
+    pct_of_start: float | None = None
+    pct_of_prev: float | None = None
+
+
 class PageAnalyticsResponse(BaseModel):
     # Границы включительно; сервер отдаёт их разрешёнными (в т.ч. когда клиент
     # прислал period_days), чтобы UI показывал ровно то, что посчитано.
@@ -177,6 +233,7 @@ class PageAnalyticsResponse(BaseModel):
     date_to: date
     generated_at: datetime
     sections: list[PageAnalyticsSection]
+    funnel: list[FunnelStepStats] = Field(default_factory=list)
     home_ab: list[HomeAbVariantStats] = Field(default_factory=list)
     home_links: list[HomeLinkClickStats] = Field(default_factory=list)
     share: ShareStats = Field(default_factory=ShareStats)

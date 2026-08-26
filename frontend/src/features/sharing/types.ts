@@ -34,6 +34,11 @@ export type ShareMetric = {
   id: string;
   value: string;
   label: string;
+  /**
+   * Подписи плиток набраны капсом. Имя рекордсмена в капсе читается как крик и
+   * хуже разбирается — такие подписи оставляем как есть.
+   */
+  keepLabelCase?: boolean;
 };
 
 /** Эпоха таймлайна систем для «Визитки» локации. */
@@ -83,6 +88,7 @@ export type ShareSubjectKind =
   | "volunteering"
   | "summary"
   | "location_event"
+  | "location_protocol"
   | "location_card"
   | "location_me"
   | "rating";

@@ -54,6 +54,9 @@ class ChallengeResponse(BaseModel):
     default_tier: str
     # Насколько последняя пробежка продвинула счётчик (0 — не продвинула)
     recent_delta: int = 0
+    # Дата последнего дня активности, по которой считался recent_delta: «Детали»
+    # подсвечивают ею клетки, закрытые этой пробежкой
+    recent_date: str | None = None
 
 
 class BadgeResponse(BaseModel):

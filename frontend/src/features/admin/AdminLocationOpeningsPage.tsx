@@ -22,6 +22,10 @@ const PLATFORMS: { code: string; label: string }[] = [
   { code: "parkrun", label: "parkrun" },
 ];
 
+const PLATFORM_LABELS: Record<string, string> = Object.fromEntries(
+  PLATFORMS.map((option) => [option.code, option.label]),
+);
+
 // Откуда взялся номер. У «none» подписи нет: в соседней ячейке и так написано
 // «открытия нет», и бейдж только дублировал бы её.
 const SOURCE_LABELS: Record<string, string> = {
@@ -155,6 +159,17 @@ function OpeningRow({
             {SOURCE_LABELS[item.opening_source]}
           </span>
         )}
+        {/* У локации открытие одно — самое раннее. Если парк открывали раньше в
+            другой системе, разметка здесь на рейтинг не влияет, и молчать об
+            этом нельзя: номер проставлялся бы впустую. */}
+        {item.earlier_opening && (
+          <span className="admin-openings-earlier">
+            В зачёте раньше:{" "}
+            {PLATFORM_LABELS[item.earlier_opening.platform_code] ??
+              item.earlier_opening.platform_code}{" "}
+            · {formatDate(item.earlier_opening.event_date)}
+          </span>
+        )}
       </td>
       <td>
         {/* Подсказка «какой старт был открытием»: по дате и числу финишёров
@@ -260,6 +275,10 @@ function AdminLocationOpeningsContent() {
     setItems((prev) =>
       prev.map((item) => (item.location_id === saved.location_id ? saved : item)),
     );
+    // Правка одной строки меняет расклад у соседей: открытие у физической
+    // локации одно, и если погасить его здесь, оно переедет к другой системе.
+    // Поэтому список перечитываем — иначе метка «в зачёте раньше» врала бы.
+    void load();
   };
 
   return (
@@ -274,6 +293,12 @@ function AdminLocationOpeningsContent() {
           торжественное открытие видно из протокола — это забег №1. У С95 по номерам
           забегов открытие не опознать, поэтому его номер для каждой локации С95 нужно
           проставить руками — до этого открытий у неё нет.
+        </p>
+        <p className="muted">
+          У локации открытие одно: парк открывается один раз, и если он открывался ещё
+          во времена parkrun, в зачёт идёт то, раннее открытие. У таких строк стоит
+          пометка «в зачёте раньше» — размечать их смысла нет, на рейтинг это не
+          повлияет.
         </p>
         <p className="muted">
           Пустой номер у сохранённой строки — это «открытия нет»: так гасится ложное

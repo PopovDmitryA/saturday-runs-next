@@ -61,6 +61,21 @@ class PlatformLinkResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ProfileClaimRequest(BaseModel):
+    """Привязка по ID из тизера главной: система + номер участника."""
+
+    platform_code: str = Field(min_length=1, max_length=32)
+    athlete_id: str = Field(min_length=1, max_length=32)
+
+
+class ProfileClaimResponse(BaseModel):
+    # "linked" — привязали сейчас, "already_linked" — профиль этой системы у
+    # человека уже был (для сквозного пути это успех, а не ошибка).
+    status: str
+    platform_code: str
+    link: PlatformLinkResponse | None = None
+
+
 class ProfileLinkConfirmResponse(BaseModel):
     link: PlatformLinkResponse
     message: str = "linked"
@@ -76,3 +91,33 @@ class ProfileUnlinkResponse(BaseModel):
     platform_code: str
     message: str = "unlinked"
     cancelled_sync_jobs: int = 0
+
+
+class ParticipantSearchResultResponse(BaseModel):
+    participant_id: UUID
+    platform_code: str
+    platform_name: str
+    display_name: str
+    club_name: str | None = None
+    age_category: str | None = None
+    profile_url: str | None = None
+    total_runs: int = 0
+    total_volunteering: int = 0
+    last_run_date: date | None = None
+    home_location_name: str | None = None
+    home_location_city: str | None = None
+    already_linked: bool = False
+    linked_to_me: bool = False
+    recent_activities: list[ProfilePreviewActivityResponse] = Field(default_factory=list)
+
+
+class ParticipantSearchResponse(BaseModel):
+    query: str
+    results: list[ParticipantSearchResultResponse]
+    truncated: bool = False
+    # Привязанные системы, где есть скрытые совпадения (кто именно — не раскрываем).
+    hidden_linked_platform_codes: list[str] = Field(default_factory=list)
+
+
+class LinkByParticipantRequest(BaseModel):
+    participant_id: UUID

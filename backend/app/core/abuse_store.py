@@ -233,3 +233,59 @@ def _parse_iso(value: str | None) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed
+
+
+SIGNUP_BLOCK_LOG_KEY = "abuse:signup:blocked"
+SIGNUP_BLOCK_LOG_LIMIT = 200
+SIGNUP_BLOCK_LOG_TTL_SECONDS = 30 * 86400
+
+
+@dataclass(frozen=True)
+class SignupBlockRecord:
+    ip: str
+    device_ref: str
+    reason: str
+    provider: str
+    created_at: datetime | None
+
+
+def record_signup_block(*, ip: str, device_ref: str, reason: str, provider: str) -> None:
+    """Записать отказ в регистрации.
+
+    Журнал нужен, чтобы отличить фродера от ложного срабатывания: по нему в
+    админке видно, один и тот же адрес долбится или это разные люди за общим
+    NAT. Список короткий и с TTL — это диагностика, а не архив.
+    """
+    redis = get_redis()
+    payload = json.dumps(
+        {
+            "ip": ip,
+            "device_ref": device_ref,
+            "reason": reason,
+            "provider": provider,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        },
+        ensure_ascii=False,
+    )
+    redis.lpush(SIGNUP_BLOCK_LOG_KEY, payload)
+    redis.ltrim(SIGNUP_BLOCK_LOG_KEY, 0, SIGNUP_BLOCK_LOG_LIMIT - 1)
+    redis.expire(SIGNUP_BLOCK_LOG_KEY, SIGNUP_BLOCK_LOG_TTL_SECONDS)
+
+
+def list_signup_blocks(limit: int = 50) -> list[SignupBlockRecord]:
+    raw_items = get_redis().lrange(SIGNUP_BLOCK_LOG_KEY, 0, max(limit, 1) - 1)
+    records: list[SignupBlockRecord] = []
+    for raw in raw_items:
+        meta = _read_meta(raw)
+        if not meta:
+            continue
+        records.append(
+            SignupBlockRecord(
+                ip=str(meta.get("ip") or ""),
+                device_ref=str(meta.get("device_ref") or ""),
+                reason=str(meta.get("reason") or ""),
+                provider=str(meta.get("provider") or ""),
+                created_at=_parse_iso(meta.get("created_at")),
+            )
+        )
+    return records

@@ -1329,6 +1329,8 @@ def list_user_best_results(
             "event_date": event.event_date,
             "location_name": catalog_index.display_name(location, platform.code),
             "location_city": location.city,
+            "location_slug": location.external_key.strip().lower(),
+            "is_test_event": event.is_test_event,
             "finish_time_display": normalize_finish_time_display(
                 run.finish_time_sec,
                 run.finish_time_display,
@@ -1415,6 +1417,8 @@ def list_user_personal_records(
             "event_date": event.event_date,
             "location_name": catalog_index.display_name(location, platform.code),
             "location_city": location.city,
+            "location_slug": location.external_key.strip().lower(),
+            "is_test_event": event.is_test_event,
             "finish_time_display": normalize_finish_time_display(
                 run.finish_time_sec,
                 run.finish_time_display,
@@ -1511,6 +1515,8 @@ def list_user_wins(
             "event_number": event.event_number,
             "location_name": catalog_index.display_name(location, platform.code),
             "location_city": location.city,
+            "location_slug": location.external_key.strip().lower(),
+            "is_test_event": event.is_test_event,
             "finish_time_display": normalize_finish_time_display(
                 run.finish_time_sec,
                 run.finish_time_display,

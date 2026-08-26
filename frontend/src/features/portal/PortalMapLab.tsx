@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { addZoomControl } from "../../lib/mapZoomControl";
-import { formatInt } from "../../lib/format";
+import { COUNT_FORMS, formatInt, pluralizeRu } from "../../lib/format";
 import { regionKey } from "../../lib/regionMatch";
 import { PortalHeader } from "./PortalHeader";
 import { fetchPortalHome, type PortalGeoPoint } from "./portalTypes";
@@ -85,7 +85,7 @@ function VariantPlatformDots({ points }: { points: PortalGeoPoint[] }) {
         fillColor: color,
         fillOpacity: 0.5,
       })
-        .bindPopup(`<strong>${p.location_name}</strong><br>${formatInt(p.starts)} стартов`)
+        .bindPopup(`<strong>${p.location_name}</strong><br>${pluralizeRu(p.starts, COUNT_FORMS.events)}`)
         .addTo(map);
     }
   });
@@ -109,7 +109,7 @@ function VariantClusters({ points }: { points: PortalGeoPoint[] }) {
             fillColor: accent,
             fillOpacity: 0.6,
           })
-            .bindPopup(`<strong>${p.location_name}</strong><br>${formatInt(p.starts)} стартов`)
+            .bindPopup(`<strong>${p.location_name}</strong><br>${pluralizeRu(p.starts, COUNT_FORMS.events)}`)
             .addTo(layer);
         }
         return;
@@ -182,7 +182,7 @@ function VariantChoropleth({ points }: { points: PortalGeoPoint[] }) {
             const entry = counts.get(regionKey(name));
             layer.bindTooltip(
               entry
-                ? `<strong>${name}</strong><br>${formatInt(entry.locations)} локаций · ${entry.starts.toLocaleString("ru-RU")} стартов`
+                ? `<strong>${name}</strong><br>${pluralizeRu(entry.locations, COUNT_FORMS.locations)} · ${pluralizeRu(entry.starts, COUNT_FORMS.events)}`
                 : `<strong>${name}</strong><br>локаций пока нет`,
               { sticky: true },
             );
@@ -218,7 +218,7 @@ function VariantHeat({ points }: { points: PortalGeoPoint[] }) {
         fillColor: "#ffffff",
         fillOpacity: 0.55,
       })
-        .bindPopup(`<strong>${p.location_name}</strong><br>${formatInt(p.starts)} стартов`)
+        .bindPopup(`<strong>${p.location_name}</strong><br>${pluralizeRu(p.starts, COUNT_FORMS.events)}`)
         .addTo(map);
     }
   });

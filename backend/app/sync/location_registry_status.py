@@ -10,11 +10,25 @@ def apply_location_registry_flags(
     *,
     is_paused: bool,
     is_cancelled: bool,
+    is_upcoming: bool = False,
 ) -> tuple[bool, bool, bool]:
-    """Apply registry pause/cancel flags. Returns (changed, pause_changed, cancel_changed)."""
+    """Разложить статус из реестра системы по признакам строки.
+
+    Возвращает (changed, pause_changed, cancel_changed). «Скоро» отдельного
+    счётчика не имеет: это состояние новой площадки, и меняется оно ровно
+    один раз — в день первого старта.
+
+    Флаги пишутся и когда становятся False: реестр — источник правды, и снятая
+    с сайта отметка обязана сниматься у нас. Иначе отмена одной субботы висела
+    бы на площадке вечно.
+    """
     changed = False
     pause_changed = False
     cancel_changed = False
+
+    if row.is_upcoming != is_upcoming:
+        row.is_upcoming = is_upcoming
+        changed = True
 
     if row.is_cancelled != is_cancelled:
         row.is_cancelled = is_cancelled

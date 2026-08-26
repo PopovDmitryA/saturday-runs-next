@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -18,8 +20,11 @@ from app.schemas.locations import (
     LocationLeadersResponse,
     LocationPageResponse,
     LocationPersonalStatsResponse,
+    LocationProtocolResponse,
     LocationsIndexResponse,
+    MapGeoPingRequest,
     MapLocationsResponse,
+    MapPointContextResponse,
     UniqueLocationsDetailResponse,
 )
 from app.services.home_distance_service import build_home_distance_detail
@@ -33,8 +38,13 @@ from app.services.location_page_service import (
     build_location_personal_stats,
     build_locations_index,
 )
+from app.services.location_protocol_service import build_location_protocol
+from app.services.map_point_context_service import build_map_point_context
 from app.services.organizer_access_service import has_organizer_access
+from app.services.user_geo_ping_service import record_geo_ping
 from app.services.user_unique_locations_detail import build_user_unique_location_details
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/locations", tags=["locations"])
 
@@ -97,6 +107,25 @@ def location_events(
     return LocationEventsResponse.model_validate(payload)
 
 
+@router.get("/page/{slug}/protocol/{platform_code}/{event_date}", response_model=LocationProtocolResponse)
+def location_protocol(
+    slug: str,
+    platform_code: str,
+    event_date: date,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_optional_user)],
+) -> LocationProtocolResponse:
+    """Протокол одного старта: состав забега, места по полу и возрастной группе, волонтёры.
+
+    Открыт без логина, как и вся витрина локаций. Логин добавляет ровно одно —
+    подсветку своей строки в протоколе.
+    """
+    payload = build_location_protocol(db, slug, platform_code, event_date, viewer=user)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Протокол не найден")
+    return LocationProtocolResponse.model_validate(payload)
+
+
 @router.get("/page/{slug}/me", response_model=LocationPersonalStatsResponse)
 def location_personal_stats(
     slug: str,
@@ -154,6 +183,50 @@ def catalog_locations_map(
 ) -> MapLocationsResponse:
     payload = list_catalog_map_locations(db)
     return MapLocationsResponse.model_validate(payload)
+
+
+@router.get("/map/point-context", response_model=MapPointContextResponse)
+def map_point_context(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_optional_user)],
+    identity_key: Annotated[str, Query()],
+) -> MapPointContextResponse:
+    """Подробности одной точки карты: номер ближайшего старта, даст ли он +1 в
+    «Нумераторе» и сколько отсюда до дома.
+
+    Отдельным запросом по клику, а не полем в /catalog/map: на карте каталога
+    почти три тысячи точек, и считать это для всех разом незачем. Аноним видит
+    только прогноз номера — остальное личное.
+    """
+    payload = build_map_point_context(db, user, identity_key)
+    return MapPointContextResponse.model_validate(payload)
+
+
+@router.post("/map/geo-ping", status_code=status.HTTP_204_NO_CONTENT)
+def map_geo_ping(
+    payload: MapGeoPingRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_optional_user)],
+) -> None:
+    """Огрублённая отметка «где был участник, когда открывал карту».
+
+    Приходит с той же карты, что показывает точку «вы здесь», и только если
+    человек сам разрешил браузеру определять положение. Аноним — молча мимо:
+    отметку не к чему привязать. Ошибки внутрь не пускаем, это запись на
+    обочине — карта не должна ломаться из-за неё.
+    """
+    if user is None:
+        return
+    try:
+        record_geo_ping(
+            db,
+            user,
+            latitude=payload.latitude,
+            longitude=payload.longitude,
+            accuracy_m=payload.accuracy_m,
+        )
+    except Exception:  # noqa: BLE001 — фоновая запись не должна ронять ответ
+        logger.warning("Не удалось записать геоотметку", exc_info=True)
 
 
 @router.get("/catalog/table", response_model=CatalogLocationsTableResponse)

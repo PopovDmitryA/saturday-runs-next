@@ -40,8 +40,10 @@ def _run_api_sync(sync: Callable[[Session], S95ApiSyncResult]) -> dict[str, obje
         if result.protocols_created or result.protocols_updated:
             db.commit()
             from app.workers.tasks.dashboard_warm import schedule_dashboard_warm
+            from app.workers.tasks.leaderboards_warm import schedule_leaderboards_warm
 
             schedule_dashboard_warm(started_at)
+            schedule_leaderboards_warm()
         return asdict(result)
     finally:
         db.close()

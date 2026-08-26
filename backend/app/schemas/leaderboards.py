@@ -30,6 +30,10 @@ class WeekLocationResponse(BaseModel):
 class LeaderboardRowResponse(BaseModel):
     rank: int
     rank_delta: int
+    # Стабильный якорь строки: по нему карта туристов сопоставляет светофоры со
+    # строками таблицы. Место дублируется при равных значениях, а site_serial_id
+    # есть только у зарегистрированных — ни то, ни другое строку не опознаёт.
+    row_key: str = ""
     display_name: str | None
     site_serial_id: int | None
     platforms: dict[str, LeaderboardCellResponse]
@@ -95,8 +99,9 @@ class LeaderboardResponse(BaseModel):
     latest_event_date: str | None
     week_start: str | None
     built_at: str | None
-    # Через сколько часов после built_at таблица пересчитается (TTL снапшота).
-    refresh_hours: int = 6
+    # Как часто таблица пересчитывается по расписанию (страховка сверх
+    # событийного прогрева от синка — см. REFRESH_INTERVAL_HOURS).
+    refresh_hours: int = 2
 
 
 class MyLeaderboardRowResponse(BaseModel):
@@ -155,3 +160,57 @@ class VolunteerRoleCatalogResponse(BaseModel):
     # Рейтинги, где фильтр ролей вообще применяется.
     metrics: list[str]
     roles: list[VolunteerRoleItem]
+
+
+class TouristMapLocationResponse(BaseModel):
+    """Одна площадка на карте туристов."""
+
+    # Тот же ключ идентичности площадки, что у точек карты локаций
+    # (catalog_identity_key) — по нему витрина сводит число с точкой на карте.
+    key: str
+    name: str
+    slug: str | None = None
+    # Сколько человек из верхушки рейтинга здесь были — это и есть число у точки.
+    visitors: int
+    # Сколько всего визитов они сюда сделали.
+    visits: int
+    # То же число по ступеням фильтра «какой топ считать»: "10" -> 3, "50" -> 12.
+    # Приходят все ступени разом, чтобы переключение не ходило на сервер.
+    visitors_by_top: dict[str, int] = {}
+
+
+class TouristMapPlatformVisitResponse(BaseModel):
+    """Визиты одного участника на выбранную площадку в одной системе."""
+
+    code: str
+    visits: int
+    first_date: str | None = None
+    last_date: str | None = None
+
+
+class TouristMapVisitResponse(BaseModel):
+    """Светофор одной строки таблицы на выбранной площадке."""
+
+    row_key: str
+    visits: int
+    first_date: str | None = None
+    last_date: str | None = None
+    platforms: list[TouristMapPlatformVisitResponse] = []
+
+
+class TouristMapResponse(BaseModel):
+    metric: str
+    min_visits: int = 1
+    platform: str = "all"
+    # По скольким верхним строкам рейтинга посчитаны светофоры в таблице.
+    limit: int
+    # Ступени фильтра «какой топ считать на карте» — их набор задаёт бэкенд,
+    # витрина не держит свою копию.
+    top_steps: list[int] = []
+    built_at: str | None = None
+    # Строки рейтинга, попавшие в расчёт: у остальных светофор не горит вовсе.
+    row_keys: list[str] = []
+    locations: list[TouristMapLocationResponse] = []
+    # Заполнены только при запросе конкретной площадки (location_key).
+    location: TouristMapLocationResponse | None = None
+    visits: list[TouristMapVisitResponse] = []

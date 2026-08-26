@@ -18,6 +18,7 @@ from app.schemas.abuse_admin import (
     AbuseIpBlockItem,
     AbuseMessageResponse,
     AbuseTelegramBanItem,
+    SignupBlockItem,
 )
 from app.schemas.admin import (
     AdminLoginEventItem,
@@ -31,7 +32,11 @@ from app.schemas.admin_event_report import (
     EventReportLocationsResponse,
     EventReportResponse,
 )
-from app.schemas.admin_stats import AdminSiteStatsResponse, PageAnalyticsResponse
+from app.schemas.admin_stats import (
+    AdminSiteStatsResponse,
+    AdminUsersGeographyResponse,
+    PageAnalyticsResponse,
+)
 from app.schemas.admin_sync_runs import AdminSyncRunsResponse
 from app.schemas.backlog import (
     BacklogCardAdminListResponse,
@@ -91,6 +96,7 @@ from app.services.admin_event_report_service import (
     list_report_locations,
 )
 from app.services.admin_site_stats_service import get_admin_site_stats
+from app.services.admin_users_geo_stats_service import get_admin_users_geography
 from app.services.admin_users_service import (
     create_organizer_grant,
     delete_organizer_grant,
@@ -141,6 +147,7 @@ from app.services.location_openings_service import (
 )
 from app.services.login_journal_service import list_login_events, summarize_login_events
 from app.services.page_analytics_service import (
+    build_funnel_stats,
     build_home_ab_stats,
     build_home_link_clicks,
     build_og_fetch_stats,
@@ -337,6 +344,7 @@ def admin_list_abuse_blocks(
     return AbuseBlockListResponse(
         ip_blocks=[AbuseIpBlockItem.model_validate(item) for item in payload["ip_blocks"]],
         telegram_bans=[AbuseTelegramBanItem.model_validate(item) for item in payload["telegram_bans"]],
+        signup_blocks=[SignupBlockItem.model_validate(item) for item in payload["signup_blocks"]],
     )
 
 
@@ -471,6 +479,18 @@ def admin_site_stats(
     return AdminSiteStatsResponse.model_validate(payload)
 
 
+@router.get("/stats/geography", response_model=AdminUsersGeographyResponse)
+def admin_users_geography(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    period_days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> AdminUsersGeographyResponse:
+    """Регистрации по городам и площадкам. Отдельным запросом от /stats:
+    считается по протоколам и заметно дольше остальных чисел страницы."""
+    payload = get_admin_users_geography(db, period_days=period_days)
+    return AdminUsersGeographyResponse.model_validate(payload)
+
+
 @router.get("/page-analytics", response_model=PageAnalyticsResponse)
 def admin_page_analytics(
     db: Annotated[Session, Depends(get_db)],
@@ -485,6 +505,7 @@ def admin_page_analytics(
     """
     start, end = resolve_period(period_days=period_days, date_from=date_from, date_to=date_to)
     payload = build_page_analytics(db, start=start, end=end)
+    payload["funnel"] = build_funnel_stats(db, start=start, end=end)
     payload["home_ab"] = build_home_ab_stats(db, start=start, end=end)
     payload["home_links"] = build_home_link_clicks(db, start=start, end=end)
     payload["share"] = build_share_stats(db, start=start, end=end)

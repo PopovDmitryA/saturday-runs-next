@@ -39,6 +39,20 @@ def journal(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     monkeypatch.setattr(
         leaderboards_warm, "make_snapshot_source", lambda _db: _FakeSource(events)
     )
+    # Карта туристов прогревается тем же проходом, но ходит в базу своим
+    # запросом — на фейковой сессии её подменяем.
+    monkeypatch.setattr(
+        leaderboards_warm,
+        "refresh_tourist_map_cache",
+        lambda *_args, **_kwargs: events.append("tourist-map") or 0,
+    )
+    # Тем же проходом греются рекорды локаций — отдельный снапшот со своими
+    # запросами к базе; на фейковой сессии подменяем и его.
+    monkeypatch.setattr(
+        leaderboards_warm,
+        "refresh_location_records_rating_cache",
+        lambda *_args, **_kwargs: events.append("location-records") or 0,
+    )
     return events
 
 
@@ -92,6 +106,62 @@ def test_warm_survives_failing_variant(
     assert journal[-1] == "close"
 
 
+def test_sync_schedules_warm_once_per_debounce_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Серия синков подряд ставит один пересчёт, а не очередь из полных прогонов.
+
+    В субботу протоколы приезжают ежечасно и сразу тремя системами (5 вёрст,
+    S95, RunPark) — без склейки каждый синк уводил бы воркер на полную сетку.
+    """
+    sent: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        leaderboards_warm.warm_leaderboards_cache,
+        "apply_async",
+        lambda **kwargs: sent.append(kwargs),
+    )
+
+    assert leaderboards_warm.schedule_leaderboards_warm() is True
+    assert leaderboards_warm.schedule_leaderboards_warm() is False
+
+    assert len(sent) == 1
+    assert sent[0]["queue"] == "runpark"
+    # Пауза перед стартом — чтобы протоколы соседних систем попали в тот же прогон.
+    assert sent[0]["countdown"] > 0
+
+
+def test_warm_skips_when_another_run_holds_lock(
+    journal: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Прогон от синка и прогон по расписанию не считают одну сетку вдвоём."""
+    monkeypatch.setattr(
+        leaderboards_warm,
+        "refresh_leaderboard_cache",
+        lambda *_args, **_kwargs: {"entrants": 1},
+    )
+    assert leaderboards_warm._acquire_running_lock() is True
+
+    results = leaderboards_warm.warm_leaderboards_cache()
+
+    assert results == {"skipped": "already_running"}
+    assert journal == [], "занятый замок не должен пускать прогон к базе"
+
+
+def test_warm_releases_lock_for_the_next_run(
+    journal: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Замок снимается по окончании — иначе следующий прогрев молчал бы до TTL."""
+    monkeypatch.setattr(
+        leaderboards_warm,
+        "refresh_leaderboard_cache",
+        lambda *_args, **_kwargs: {"entrants": 1},
+    )
+
+    leaderboards_warm.warm_leaderboards_cache()
+
+    assert leaderboards_warm._acquire_running_lock() is True
+
+
 def test_warm_survives_broken_session_close(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ошибка на close() не отменяет уже разложенный по Redis прогрев.
 
@@ -110,8 +180,55 @@ def test_warm_survives_broken_session_close(monkeypatch: pytest.MonkeyPatch) -> 
         "refresh_leaderboard_cache",
         lambda *_args, **_kwargs: {"entrants": 3},
     )
+    monkeypatch.setattr(
+        leaderboards_warm, "refresh_tourist_map_cache", lambda *_args, **_kwargs: 3
+    )
 
     results = leaderboards_warm.warm_leaderboards_cache()
 
     assert results
     assert all(value == 3 for value in results.values())
+
+
+def test_warm_refreshes_tourist_map_for_base_variant(
+    journal: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Карта туристов прогревается вместе с рейтингом — по разу на метрику.
+
+    Матрица карты привязана к built_at снапшота, поэтому каждый прогрев её
+    обесценивает: без этого шага первый, кто раскроет спойлер, ждал бы расчёт
+    прямо в запросе. Прогреваем только базовый вариант фильтров — на остальные
+    сочетания заходят единицы.
+    """
+    monkeypatch.setattr(
+        leaderboards_warm,
+        "refresh_leaderboard_cache",
+        lambda *_args, **_kwargs: {"entrants": 5},
+    )
+
+    results = leaderboards_warm.warm_leaderboards_cache()
+
+    warmed = [key for key in results if key.endswith(":tmap")]
+    assert warmed == ["locations:tmap", "volunteer_locations:tmap"]
+    assert journal.count("tourist-map") == 2
+
+
+def test_broken_tourist_map_does_not_fail_the_rating(
+    journal: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Упавшая карта не портит прогрев таблицы: она — дополнение к рейтингу."""
+    monkeypatch.setattr(
+        leaderboards_warm,
+        "refresh_leaderboard_cache",
+        lambda *_args, **_kwargs: {"entrants": 5},
+    )
+
+    def boom(*_args: Any, **_kwargs: Any) -> int:
+        raise RuntimeError("нет соединения")
+
+    monkeypatch.setattr(leaderboards_warm, "refresh_tourist_map_cache", boom)
+
+    results = leaderboards_warm.warm_leaderboards_cache()
+
+    assert "error" not in results.values()
+    assert not [key for key in results if key.endswith(":tmap")]

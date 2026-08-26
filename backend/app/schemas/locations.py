@@ -30,8 +30,12 @@ class MapLocationPointResponse(BaseModel):
     platform_codes: list[str] = Field(default_factory=list)
     active_platform: str | None = None
     location_url: str | None = None
+    # «Не действует»: стартов нет дольше порога либо так сказал реестр системы.
     is_paused: bool = False
+    # Отмена ближайшего старта — временно, площадка работает.
     is_cancelled: bool = False
+    # Площадка объявлена, но ещё не стартовала.
+    is_upcoming: bool = False
     run_count: int = 0
     volunteer_count: int = 0
     visit_count: int = 0
@@ -122,8 +126,23 @@ class LocationCourseRecordsResponse(BaseModel):
     female: LocationCourseRecordResponse | None = None
 
 
+class LocationMilestoneResponse(BaseModel):
+    """Участник, закрывший клубный порог на этом старте («25-й финиш»)."""
+
+    name: str
+    count: int
+
+
+class LocationOneStepResponse(BaseModel):
+    """Кому до клубного порога остался один финиш — жанр «в шаге до клуба»."""
+
+    name: str
+    next: int
+
+
 class LocationLastEventResponse(BaseModel):
     event_date: date
+    event_number: int | None = None
     platform_code: str
     finishers: int | None = None
     volunteers: int | None = None
@@ -137,6 +156,12 @@ class LocationLastEventResponse(BaseModel):
     debutants: int | None = None
     first_at_location: int | None = None
     prs: int | None = None
+    male_finishers: int | None = None
+    female_finishers: int | None = None
+    best_male_name: str | None = None
+    best_female_name: str | None = None
+    milestones: list[LocationMilestoneResponse] = []
+    one_step: list[LocationOneStepResponse] = []
 
 
 class LocationPageStatsResponse(BaseModel):
@@ -333,7 +358,13 @@ class LocationIndexItemResponse(BaseModel):
     is_cancelled: bool = False
     events_count: int = 0
     finishers_total: int = 0
+    # Самый первый старт площадки в любой системе, включая parkrun-эпоху.
     first_event_date: date | None = None
+    # Первый старт в системе, в которой площадка живёт сейчас, и код этой
+    # системы. У переехавших из parkrun-эпохи даты расходятся на годы, и без
+    # второй колонки «когда здесь начались 5 вёрст» приходилось вычислять руками.
+    first_event_date_in_system: date | None = None
+    first_event_system_code: str | None = None
     last_event_date: date | None = None
     best_male_time_sec: int | None = None
     best_male_time_display: str | None = None
@@ -360,6 +391,8 @@ class LastResultsItemResponse(BaseModel):
     is_cancelled: bool = False
     event_date: date
     event_platform_codes: list[str] = Field(default_factory=list)
+    # Система первичного протокола — для адреса нашей страницы протокола.
+    event_platform_code: str | None = None
     event_number: int | None = None
     is_last_saturday: bool = False
     finishers: int | None = None
@@ -451,6 +484,44 @@ class LocationHomeDistanceResponse(BaseModel):
     home_is_auto: bool = True
 
 
+class MapPointNextStartResponse(BaseModel):
+    """Прогноз ближайшего старта площадки в одной системе — для попапа карты."""
+
+    platform_code: str
+    number: int
+    date: date
+    # Сколько недель откручено от последнего известного старта: 1 — площадка
+    # идёт вровень, больше — она пропускала субботы, и прогноз тем шатче.
+    weeks_ahead: int = 1
+    # Какой «Нумератор» закрывает этот номер. None — номер вне обоих диапазонов.
+    challenge_code: str | None = None
+    challenge_title: str | None = None
+    # Даст ли старт +1: в сквозном зачёте челленджа и внутри своей системы.
+    # None — аноним либо номер вне диапазонов: считать нечего.
+    plus_one_overall: bool | None = None
+    plus_one_platform: bool | None = None
+
+
+class MapPointContextResponse(BaseModel):
+    """Личный контекст точки карты: он грузится по клику, а не пачкой со всей
+    картой, — на карте каталога три тысячи точек."""
+
+    identity_key: str
+    authenticated: bool = False
+    next_starts: list[MapPointNextStartResponse] = Field(default_factory=list)
+    home_distance: LocationHomeDistanceResponse | None = None
+
+
+class MapGeoPingRequest(BaseModel):
+    """Огрублённая отметка положения с карты. Координаты фронт присылает уже
+    округлёнными до двух знаков — сервер округляет их ещё раз."""
+
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    # Погрешность определения в метрах, как её отдал браузер.
+    accuracy_m: float | None = Field(default=None, ge=0)
+
+
 class LocationPersonalStatsResponse(BaseModel):
     """Личная статистика пользователя на локации (блок «Вы на этой локации»)."""
 
@@ -484,3 +555,153 @@ class LocationPersonalStatsResponse(BaseModel):
     # Расстояние от домашней локации. None — дом не определился (нет пробежек),
     # плитку на странице тогда не показываем.
     home_distance: LocationHomeDistanceResponse | None = None
+
+
+class ProtocolNeighbourResponse(BaseModel):
+    """Соседний старт локации в сквозной хронологии (для стрелок «‹ ›»)."""
+
+    platform_code: str
+    event_date: date
+    event_number: int | None = None
+    overall_number: int | None = None
+    # Цифры соседнего старта — для дельт «+37 к прошлому» на плитках.
+    finishers: int | None = None
+    volunteers: int | None = None
+    avg_time_sec: int | None = None
+    best_male_time_sec: int | None = None
+    best_female_time_sec: int | None = None
+    debutants: int | None = None
+    first_at_location: int | None = None
+    prs: int | None = None
+
+
+class ProtocolClubResponse(BaseModel):
+    name: str
+    count: int
+
+
+class ProtocolAgeGroupResponse(BaseModel):
+    age_group: str
+    male: int = 0
+    female: int = 0
+    unknown: int = 0
+    total: int = 0
+
+
+class ProtocolSummaryResponse(BaseModel):
+    finishers: int = 0
+    volunteers: int = 0
+    male: int = 0
+    female: int = 0
+    unknown_gender: int = 0
+    avg_time_sec: int | None = None
+    avg_time_display: str | None = None
+    median_time_sec: int | None = None
+    median_time_display: str | None = None
+    best_time_sec: int | None = None
+    best_time_display: str | None = None
+    last_time_sec: int | None = None
+    last_time_display: str | None = None
+    best_male_time_display: str | None = None
+    best_male_runner_name: str | None = None
+    best_female_time_display: str | None = None
+    best_female_runner_name: str | None = None
+    debutants: int = 0
+    first_at_location: int = 0
+    prs: int = 0
+    location_prs: int = 0
+    clubs_count: int = 0
+    top_clubs: list[ProtocolClubResponse] = Field(default_factory=list)
+    is_attendance_record: bool = False
+    is_course_record_male: bool = False
+    is_course_record_female: bool = False
+
+
+class ProtocolResultResponse(BaseModel):
+    position: int | None = None
+    name: str | None = None
+    external_user_id: str | None = None
+    profile_url: str | None = None
+    serial_id: int | None = None
+    gender: str | None = None
+    gender_position: int | None = None
+    gender_total: int | None = None
+    age_category: str | None = None
+    age_group: str | None = None
+    age_group_position: int | None = None
+    age_group_total: int | None = None
+    age_grade: float | None = None
+    finish_time_sec: int | None = None
+    finish_time_display: str | None = None
+    pace_display: str | None = None
+    club_name: str | None = None
+    status: str | None = None
+    # Финишёр без штрихкода («НЕИЗВЕСТНЫЙ») — витрина приглушает строку.
+    is_unknown: bool = False
+    is_pr: bool = False
+    is_global_pr: bool = False
+    is_location_pr: bool = False
+    is_first_run: bool = False
+    is_first_run_at_location: bool = False
+    achievement_labels: list[str] = Field(default_factory=list)
+    history_rank: int | None = None
+    history_total: int | None = None
+    # Какая это пробежка по счёту у участника: сквозная у связанных аккаунтов,
+    # иначе в своей системе (см. run_number_all_systems).
+    run_number: int | None = None
+    run_number_all_systems: bool = False
+    # Место времени в истории своей возрастной группы на площадке.
+    age_group_history_rank: int | None = None
+    age_group_history_total: int | None = None
+    # Результат обновил рекорд своей возрастной группы на площадке (только 5в).
+    is_age_group_record: bool = False
+    is_me: bool = False
+
+
+class ProtocolVolunteerResponse(BaseModel):
+    name: str | None = None
+    external_user_id: str | None = None
+    profile_url: str | None = None
+    serial_id: int | None = None
+    roles: list[str] = Field(default_factory=list)
+    # Роли, которые человек исполняет впервые в карьере.
+    new_roles: list[str] = Field(default_factory=list)
+    # Какое это волонтёрство по счёту в карьере (в своей системе).
+    volunteer_number: int | None = None
+    is_first_volunteering: bool = False
+    is_first_here: bool = False
+    is_me: bool = False
+
+
+class ProtocolVolunteerRoleResponse(BaseModel):
+    """Роль этого старта и сколько человек её исполняли — для фильтра."""
+
+    role: str
+    count: int
+    # Ключевая роль: на площадке и без возможности бежать. Такие идут первыми.
+    is_core: bool = False
+
+
+class LocationProtocolResponse(BaseModel):
+    slug: str
+    name: str
+    city: str | None = None
+    platform_code: str
+    event_date: date
+    event_number: int | None = None
+    overall_number: int | None = None
+    title: str | None = None
+    source_url: str | None = None
+    has_protocol: bool = False
+    # Строк меньше, чем позиций или заявленных финишёров: так помечены
+    # зарубежные parkrun-старты, где у нас только строки своих участников.
+    is_partial: bool = False
+    declared_finishers: int | None = None
+    previous: ProtocolNeighbourResponse | None = None
+    next: ProtocolNeighbourResponse | None = None
+    summary: ProtocolSummaryResponse = Field(default_factory=ProtocolSummaryResponse)
+    age_groups: list[ProtocolAgeGroupResponse] = Field(default_factory=list)
+    results: list[ProtocolResultResponse] = Field(default_factory=list)
+    volunteers: list[ProtocolVolunteerResponse] = Field(default_factory=list)
+    # Роли старта в порядке показа: сначала ключевые, потом остальные.
+    volunteer_roles: list[ProtocolVolunteerRoleResponse] = Field(default_factory=list)

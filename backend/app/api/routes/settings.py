@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.config import Settings, get_settings
 from app.db.session import get_db
-from app.models import Platform, PlatformLink, User
+from app.models import AuthProvider, Platform, PlatformLink, User
 from app.schemas.settings import (
     AutoSyncPlatformPreference,
     AutoSyncSettingsResponse,
@@ -26,6 +26,7 @@ from app.schemas.settings import (
     ProfileSlugResponse,
     ProfileSlugUpdateRequest,
 )
+from app.services.auth_identity_service import list_user_identities
 from app.services.dashboard_service import invalidate_dashboard_cache_for_users
 from app.services.home_location_service import (
     UnknownHomeLocationError,
@@ -112,11 +113,27 @@ def update_auto_sync_settings(
     return get_auto_sync_settings(db, user, settings)
 
 
+def _newsletter_email(db: Session, user: User) -> str | None:
+    """Адрес, на который уйдёт рассылка: почтовая привязка, иначе адрес от Яндекса."""
+    identities = list_user_identities(db, user.id)
+    for identity in identities:
+        if identity.provider == AuthProvider.email and identity.email:
+            return identity.email
+    for identity in identities:
+        if identity.email:
+            return identity.email
+    return None
+
+
 @router.get("/notifications", response_model=NotificationSettingsResponse)
 def get_notification_settings(
+    db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> NotificationSettingsResponse:
-    return NotificationSettingsResponse(enabled=user.news_subscribed)
+    return NotificationSettingsResponse(
+        enabled=user.news_subscribed,
+        email=_newsletter_email(db, user),
+    )
 
 
 @router.put("/notifications", response_model=NotificationSettingsResponse)
@@ -128,7 +145,10 @@ def update_notification_settings(
     user.news_subscribed = body.enabled
     db.commit()
     db.refresh(user)
-    return NotificationSettingsResponse(enabled=user.news_subscribed)
+    return NotificationSettingsResponse(
+        enabled=user.news_subscribed,
+        email=_newsletter_email(db, user),
+    )
 
 
 @router.get("/privacy", response_model=PrivacySettingsResponse)

@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 def _schedule_dashboard_warm(started_at: datetime) -> None:
-    """Отдать прогрев дашбордов в фоновую задачу.
+    """Отдать прогрев дашбордов и рейтингов в фоновые задачи.
 
     Синк знает только момент своего старта; кого именно затронули новые
     протоколы — разбирается dashboard_warm по run_results.fetched_at. Раньше
@@ -36,8 +36,10 @@ def _schedule_dashboard_warm(started_at: datetime) -> None:
     первому зашедшему в профиль.
     """
     from app.workers.tasks.dashboard_warm import schedule_dashboard_warm
+    from app.workers.tasks.leaderboards_warm import schedule_leaderboards_warm
 
     schedule_dashboard_warm(started_at)
+    schedule_leaderboards_warm()
 
 
 def _protocol_limit(settings) -> int | None:
@@ -211,6 +213,7 @@ def sync_latest_results_task(
                 "new_summaries": result.new_summaries,
                 "changed_summaries": result.changed_summaries,
                 "missing_protocol": result.missing_protocol,
+                "stale_protocols": result.stale_protocols,
                 "protocols_fetched": result.protocols_fetched,
                 "fetched_protocols": result.fetched_protocols,
                 "changed_protocols": result.changed_protocols,
@@ -351,6 +354,7 @@ def reconcile_stale_protocols_task(
         min_check_interval_days = settings.five_verst_reconcile_min_check_interval_days
     if chunks_left is None:
         chunks_left = settings.five_verst_reconcile_chunks_per_run
+    mismatch_retry_hours = settings.five_verst_reconcile_mismatch_retry_hours
     name = "5v reconcile protocols"
     details = five_verst_reconcile_details(
         limit=limit,
@@ -368,6 +372,7 @@ def reconcile_stale_protocols_task(
                     limit=limit,
                     min_check_interval_days=min_check_interval_days,
                     location_slug=location_slug,
+                    mismatch_retry_interval_hours=mismatch_retry_hours,
                 ),
             )
             # Сверка переписывает уже существующие протоколы — позиции и метки

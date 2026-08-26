@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AppShell } from "../../components/AppShell";
 import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
+import { TitleTooltipZone } from "../../components/TitleTooltipZone";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import {
   getAchievements,
@@ -204,12 +205,27 @@ export function MedalIcon({
   );
 }
 
-function cellTooltipLines(cell: ChallengeCell): string[] {
+/**
+ * Клетка закрыта тем самым последним днём активности, за который на карточке
+ * стоит «↑ +1». Раньше эту клетку приходилось искать глазами, вспоминая, каким
+ * по счёту был старт последней недели, — теперь она подсвечена в «Деталях».
+ */
+function isFreshlyClosed(date: string | null | undefined, recentDate: string | null): boolean {
+  return Boolean(recentDate && date && date === recentDate);
+}
+
+/** Подпись в подсказке у клетки, закрытой последней пробежкой. */
+const FRESH_TOOLTIP_LINE = "🆕 закрыто последней пробежкой";
+
+function cellTooltipLines(cell: ChallengeCell, recentDate: string | null): string[] {
   if (cell.done && cell.date) {
     const platform = cell.platform_code ? ` (${platformCodeLabel(cell.platform_code)})` : "";
     const lines = [`закрыто ${formatDate(cell.date)} · ${cell.location ?? ""}${platform}`.trim()];
     if (cell.count != null && cell.count > 0) {
       lines.push(pluralizeRu(cell.count, ["финиш", "финиша", "финишей"]));
+    }
+    if (isFreshlyClosed(cell.date, recentDate)) {
+      lines.push(FRESH_TOOLTIP_LINE);
     }
     return lines;
   }
@@ -219,16 +235,26 @@ function cellTooltipLines(cell: ChallengeCell): string[] {
   return ["ещё не закрыто"];
 }
 
-function ChallengeCells({ cells }: { cells: ChallengeCell[] }) {
+function ChallengeCells({
+  cells,
+  recentDate,
+}: {
+  cells: ChallengeCell[];
+  recentDate: string | null;
+}) {
   const dense = cells.length > 20;
   return (
     <div className={dense ? "challenge-cells challenge-cells-dense" : "challenge-cells"}>
       {cells.map((cell) => (
-        <ChartColumnTooltip key={cell.label} title={cell.label} lines={cellTooltipLines(cell)}>
+        <ChartColumnTooltip
+          key={cell.label}
+          title={cell.label}
+          lines={cellTooltipLines(cell, recentDate)}
+        >
           <span
             className={`challenge-cell${cell.done ? ` done ${platformCellClass(cell.platform_code)}` : ""}${
               !cell.done && cell.hint ? " has-hint" : ""
-            }`}
+            }${isFreshlyClosed(cell.date, recentDate) ? " challenge-cell-fresh" : ""}`}
           >
             {cell.label}
           </span>
@@ -240,25 +266,32 @@ function ChallengeCells({ cells }: { cells: ChallengeCell[] }) {
 
 function ChallengeLetters({ challenge }: { challenge: Challenge }) {
   const letters = challenge.detail.letters ?? [];
+  const recentDate = challenge.recent_date;
   return (
-    <div className="challenge-cells">
+    // Тёмная плашка вместо нативной подсказки браузера — как в «Коллекциях».
+    <TitleTooltipZone className="challenge-cells">
       {letters.map((item) => {
+        const fresh = isFreshlyClosed(item.date, recentDate);
         const title = item.done
-          ? `Первый финиш на «${item.letter}»: ${item.location ?? ""}${item.date ? ` · ${formatDate(item.date)}` : ""}`
+          ? `Первый финиш на «${item.letter}»: ${item.location ?? ""}${item.date ? ` · ${formatDate(item.date)}` : ""}${
+              fresh ? `\n${FRESH_TOOLTIP_LINE}` : ""
+            }`
           : `Локации на «${item.letter}»: ${item.locations.join(", ")}${
               item.locations_more > 0 ? ` и ещё ${item.locations_more}` : ""
             }`;
         return (
           <span
             key={item.letter}
-            className={`challenge-cell${item.done ? ` done ${platformCellClass(item.platform_code)}` : " has-hint"}`}
+            className={`challenge-cell${item.done ? ` done ${platformCellClass(item.platform_code)}` : " has-hint"}${
+              fresh ? " challenge-cell-fresh" : ""
+            }`}
             title={title}
           >
             {item.letter}
           </span>
         );
       })}
-    </div>
+    </TitleTooltipZone>
   );
 }
 
@@ -269,7 +302,7 @@ function ChallengeDays({ challenge }: { challenge: Challenge }) {
   const days = challenge.detail.days ?? [];
   const byKey = useMemo(() => new Map(days.map((day) => [day.key, day])), [days]);
   return (
-    <div className="challenge-year-scroll">
+    <TitleTooltipZone className="challenge-year-scroll">
       <div className="challenge-year">
         {MONTH_SHORT.map((monthLabel, monthIndex) => {
           const daysInMonth = MONTH_DAYS[monthIndex];
@@ -288,15 +321,18 @@ function ChallengeDays({ challenge }: { challenge: Challenge }) {
                   const info = byKey.get(key);
                   const label = `${String(dayIndex + 1).padStart(2, "0")}.${String(monthIndex + 1).padStart(2, "0")}`;
                   const platformLabel = info?.platform_code ? ` (${platformCodeLabel(info.platform_code)})` : "";
+                  const fresh = isFreshlyClosed(info?.date, challenge.recent_date);
                   return (
                     <span
                       key={key}
-                      className={
+                      className={`${
                         info ? `challenge-year-day done ${platformCellClass(info.platform_code)}` : "challenge-year-day"
-                      }
+                      }${fresh ? " challenge-year-day-fresh" : ""}`}
                       title={
                         info
-                          ? `${label} — закрыто ${formatDate(info.date)} · ${info.location}${platformLabel}`
+                          ? `${label} — закрыто ${formatDate(info.date)} · ${info.location}${platformLabel}${
+                              fresh ? `\n${FRESH_TOOLTIP_LINE}` : ""
+                            }`
                           : `${label} — ещё не закрыто`
                       }
                     />
@@ -307,7 +343,7 @@ function ChallengeDays({ challenge }: { challenge: Challenge }) {
           );
         })}
       </div>
-    </div>
+    </TitleTooltipZone>
   );
 }
 
@@ -316,7 +352,21 @@ const DEJA_VU_INLINE_LIMIT = 4;
 function ChallengeItems({ challenge }: { challenge: Challenge }) {
   const items = challenge.detail.items ?? [];
   const example = challenge.detail.example;
-  const [expandedIndices, setExpandedIndices] = useState<Set<number>>(new Set());
+  const recentDate = challenge.recent_date;
+  // Свежая запись, спрятанная под «показать все», — это ровно то, что человек
+  // и ищет в деталях, поэтому такие строки раскрываем сразу.
+  const [expandedIndices, setExpandedIndices] = useState<Set<number>>(
+    () =>
+      new Set(
+        items.flatMap((item, index) =>
+          (item.occurrences ?? []).some((occurrence) =>
+            isFreshlyClosed(occurrence.date, recentDate),
+          )
+            ? [index]
+            : [],
+        ),
+      ),
+  );
   if (items.length === 0) {
     return (
       <div className="challenge-items-empty">
@@ -350,14 +400,26 @@ function ChallengeItems({ challenge }: { challenge: Challenge }) {
         const occurrences = item.occurrences;
         const visibleOccurrences =
           occurrences && !expanded ? occurrences.slice(0, DEJA_VU_INLINE_LIMIT) : occurrences;
+        const fresh =
+          isFreshlyClosed(item.date, recentDate) ||
+          (occurrences ?? []).some((occurrence) => isFreshlyClosed(occurrence.date, recentDate));
         return (
-          <li key={index} className="challenge-item">
+          <li
+            key={index}
+            className={`challenge-item${fresh ? " challenge-item-fresh" : ""}`}
+            title={fresh ? FRESH_TOOLTIP_LINE : undefined}
+          >
             {item.value && <span className="challenge-item-value">{item.value}</span>}
             {item.count != null && <span className="challenge-item-count">× {item.count}</span>}
             {visibleOccurrences ? (
               <span className="challenge-item-occurrences">
                 {visibleOccurrences.map((occurrence, occurrenceIndex) => (
-                  <span key={occurrenceIndex} className="challenge-occurrence">
+                  <span
+                    key={occurrenceIndex}
+                    className={`challenge-occurrence${
+                      isFreshlyClosed(occurrence.date, recentDate) ? " challenge-occurrence-fresh" : ""
+                    }`}
+                  >
                     {occurrence.location} · {formatDate(occurrence.date)}
                   </span>
                 ))}
@@ -390,7 +452,7 @@ function ChallengeDetailBlock({ challenge }: { challenge: Challenge }) {
     return <ChallengeLetters challenge={challenge} />;
   }
   if (detail.cells) {
-    return <ChallengeCells cells={detail.cells} />;
+    return <ChallengeCells cells={detail.cells} recentDate={challenge.recent_date} />;
   }
   if (detail.days) {
     return <ChallengeDays challenge={challenge} />;
@@ -627,7 +689,14 @@ function ChallengeCard({
               </span>
             )}
             {challenge.recent_delta > 0 && (
-              <span className="recent-delta-badge" title="Продвинула последняя пробежка">
+              <span
+                className="recent-delta-badge"
+                title={
+                  challenge.recent_date
+                    ? `Продвинула пробежка ${formatDate(challenge.recent_date)} — в «Деталях» она подсвечена`
+                    : "Продвинула последняя пробежка"
+                }
+              >
                 ↑ +{challenge.recent_delta}
               </span>
             )}

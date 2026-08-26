@@ -637,6 +637,23 @@ def test_challenge_recent_delta_via_manual_diff() -> None:
     assert full["current"] - before["current"] == 1
 
 
+def test_challenge_detail_cell_carries_last_activity_date() -> None:
+    """«Детали» подсвечивают свежую клетку, сверяя её date с recent_date —
+    датой последнего дня активности. Payload обязан давать ровно такое
+    совпадение, иначе «↑ +1» на карточке снова останется числом без адреса."""
+    rows = [
+        _row(finish_time_sec=25 * 60 + 13, event_date=date(2026, 1, 3)),
+        _row(finish_time_sec=26 * 60 + 14, event_date=date(2026, 1, 10)),
+    ]
+    challenge = _seconds_challenge(rows)
+    recent_date = rows[-1].event_date.isoformat()
+    cells = challenge["detail"]["cells"]  # type: ignore[index]
+    fresh = [cell for cell in cells if cell["date"] == recent_date]
+    assert [cell["label"] for cell in fresh] == [":14"]
+    # Саму дату проставляет compute_challenges — у отдельного челленджа её нет.
+    assert challenge["recent_date"] is None
+
+
 def test_goal_progress_runs_year_recent_delta() -> None:
     goal = UserGoal(year=2026, goal_type="runs_year", target_value=50)
     rows_before = [_row(event_date=date(2026, 1, 3))]

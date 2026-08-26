@@ -27,7 +27,7 @@ export type CatalogTableFilters = {
 
 export const LOCATION_STATUS_OPTIONS: Array<{ value: LocationRegistryStatus; label: string }> = [
   { value: "active", label: "Активна" },
-  { value: "paused", label: "На паузе" },
+  { value: "paused", label: "Не действует" },
   { value: "cancelled", label: "Отменена" },
 ];
 

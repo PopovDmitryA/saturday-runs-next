@@ -89,12 +89,18 @@ def find_admin_user(db: Session, settings: Settings) -> User | None:
     return None
 
 
+# Поля ответа, которых нет в модели User: их передают отдельно.
+_COMPUTED_USER_FIELDS = {"is_admin", "is_organizer", "auth_identities", "display_name_suggestion"}
+
+
+
 def user_response(
     user: User,
     settings: Settings,
     db_identities: list | None = None,
     *,
     db: Session | None = None,
+    display_name_suggestion: dict | None = None,
 ) -> UserResponse:
     identities = db_identities or list(user.auth_identities)
     identity_responses = [
@@ -103,7 +109,7 @@ def user_response(
     scalar_fields = {
         name: getattr(user, name)
         for name in UserResponse.model_fields
-        if name not in {"is_admin", "is_organizer", "auth_identities"}
+        if name not in _COMPUTED_USER_FIELDS
     }
     is_organizer = False
     if db is not None:
@@ -115,4 +121,5 @@ def user_response(
         is_admin=is_admin_user(user, settings),
         is_organizer=is_organizer,
         auth_identities=identity_responses,
+        display_name_suggestion=display_name_suggestion,
     )

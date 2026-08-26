@@ -20,6 +20,7 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   landing: "Главная (старый лендинг, до портала)",
   login: "Вход (старый, до портала)",
   oauth_callback: "Возврат из OAuth",
+  welcome: "Онбординг (/welcome)",
   dashboard: "Дашборд",
   runs: "Пробежки",
   achievements: "Достижения",
@@ -30,8 +31,10 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   profile: "Публичные профили",
   locations_index: "Локации (список)",
   last_results: "Результаты последней субботы",
+  unified_protocol: "Единый протокол недели",
   location: "Локация (карточка)",
   location_events: "Локация (забеги)",
+  location_protocol: "Локация (протокол)",
   ratings_hub: "Рейтинги (хаб)",
   ratings_runs: "Рейтинг: пробежки",
   ratings_volunteering: "Рейтинг: волонтёрство",
@@ -311,12 +314,46 @@ function AdminPageAnalyticsContent() {
 
       {!loading && !error && data && (
         <>
+          {data.funnel.length > 0 && (
+            <section className="card">
+              <h2 className="section-title">Воронка регистрации</h2>
+              <p className="muted">
+                Считаются посетители, а не клики: открыл главную → нажал кнопку входа → дошёл до
+                VK/Яндекса → завёл аккаунт → привязал платформу. «От предыдущей» показывает, на
+                какой именно ступени рвётся. Привязка не ограничена концом периода — свежим
+                регистрациям нужно время. Пишется с 22.08.2026.
+              </p>
+              <div className="table-scroll">
+                <table className="data-table page-analytics-table">
+                  <thead>
+                    <tr>
+                      <th>Ступень</th>
+                      <th>Человек</th>
+                      <th>От начала</th>
+                      <th>От предыдущей</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.funnel.map((row) => (
+                      <tr key={row.step}>
+                        <td>{row.step}</td>
+                        <td>{row.visitors}</td>
+                        <td>{row.pct_of_start === null ? "—" : `${row.pct_of_start}%`}</td>
+                        <td>{row.pct_of_prev === null ? "—" : `${row.pct_of_prev}%`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
           {data.home_ab.length > 0 && (
             <section className="card">
-              <h2 className="section-title">Показы вариантов главной</h2>
+              <h2 className="section-title">Показы вариантов главной (архив АБ-теста)</h2>
               <p className="muted">
-                Сколько раз открылась главная каждого варианта АБ-теста и скольким посетителям.
-                Пишется с 27.07.2026 — за более ранние периоды будут нули.
+                Тест шёл 27.07–22.08.2026 и завершён: вариант B победил по конверсии в
+                регистрацию и стал единственной главной. За периоды вне теста блок пустой.
               </p>
               <div className="table-scroll">
                 <table className="data-table page-analytics-table">

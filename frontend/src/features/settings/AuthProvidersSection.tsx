@@ -5,7 +5,9 @@ import {
   confirmAccountMerge,
   getAuthIdentities,
   getMergePreview,
+  linkEmailIdentity,
   oauthStartUrl,
+  requestEmailCode,
   unlinkAuthProvider,
   type AuthIdentity,
   type MergePreview,
@@ -29,9 +31,20 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
   const [mergePreview, setMergePreview] = useState<MergePreview | null>(null);
   const [mergeLoading, setMergeLoading] = useState(false);
   const [mergeConfirmLoading, setMergeConfirmLoading] = useState(false);
+  // Почту нельзя привязать редиректом к провайдеру: владение ящиком
+  // подтверждается кодом, поэтому у неё свои два шага прямо в карточке.
+  const [emailStep, setEmailStep] = useState<"idle" | "code">("idle");
+  const [email, setEmail] = useState("");
+  const [emailCode, setEmailCode] = useState("");
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailNotice, setEmailNotice] = useState<string | null>(null);
 
   const linkedProviders = useMemo(
     () => new Set(identities.map((item) => item.provider)),
+    [identities],
+  );
+  const emailIdentity = useMemo(
+    () => identities.find((item) => item.provider === "email") ?? null,
     [identities],
   );
 
@@ -68,6 +81,44 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
     window.location.href = oauthStartUrl(provider, "link");
   };
 
+  const handleEmailCodeRequest = async () => {
+    setError(null);
+    setEmailBusy(true);
+    try {
+      await requestEmailCode(email.trim(), true);
+      setEmailStep("code");
+      setEmailNotice(`Код отправлен на ${email.trim()}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось отправить код");
+    } finally {
+      setEmailBusy(false);
+    }
+  };
+
+  const handleEmailLink = async () => {
+    setError(null);
+    setEmailBusy(true);
+    try {
+      const result = await linkEmailIdentity(email.trim(), emailCode.trim());
+      if (result.merge_token) {
+        // Ящиком владеет другой профиль — показываем то же окно объединения,
+        // что и при привязке VK или Яндекса.
+        setMergeLoading(true);
+        setMergePreview(await getMergePreview(result.merge_token));
+        setMergeLoading(false);
+      }
+      setEmailStep("idle");
+      setEmail("");
+      setEmailCode("");
+      setEmailNotice(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось привязать почту");
+    } finally {
+      setEmailBusy(false);
+    }
+  };
+
   const handleUnlink = async (provider: AuthIdentity["provider"]) => {
     setError(null);
     try {
@@ -102,8 +153,9 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
     <section className="card">
       <h2 className="section-title">Способы входа</h2>
       <p className="muted settings-lead">
-        Можно войти через VK или Яндекс и привязать оба способа к одному профилю. При объединении аккаунтов
-        привязки 5 вёрст / S95 / parkrun у поглощаемого профиля будут сброшены.
+        Можно войти через VK, Яндекс или по коду на почту и привязать все способы к одному профилю —
+        тогда любой из них приведёт в этот аккаунт. При объединении аккаунтов привязки
+        5 вёрст / S95 / parkrun у поглощаемого профиля будут сброшены.
       </p>
 
       {loading && <p className="muted">Загрузка…</p>}
@@ -153,6 +205,78 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
             );
           })}
         </ul>
+      )}
+
+      {!loading && (
+        <div className="auth-provider-email">
+          <div className="settings-platform-info">
+            <span className="settings-platform-name">Почта</span>
+            <span className="muted settings-platform-hint">
+              {emailIdentity
+                ? emailIdentity.email || emailIdentity.external_id
+                : "Вход по одноразовому коду из письма"}
+            </span>
+            <span className={`settings-toggle-label ${emailIdentity ? "on" : "off"}`}>
+              {emailIdentity ? "Привязана" : "Не привязана"}
+            </span>
+          </div>
+
+          {emailIdentity ? (
+            identities.length > 1 && (
+              <button
+                type="button"
+                className="btn secondary btn-sm"
+                onClick={() => void handleUnlink("email")}
+              >
+                Отвязать
+              </button>
+            )
+          ) : (
+            <div className="auth-provider-email-form">
+              {emailStep === "idle" ? (
+                <>
+                  <input
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn secondary btn-sm"
+                    disabled={emailBusy || !email.trim()}
+                    onClick={() => void handleEmailCodeRequest()}
+                  >
+                    {emailBusy ? "Отправляем…" : "Получить код"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="000000"
+                    maxLength={6}
+                    value={emailCode}
+                    onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, ""))}
+                  />
+                  <button
+                    type="button"
+                    className="btn secondary btn-sm"
+                    disabled={emailBusy || emailCode.length < 6}
+                    onClick={() => void handleEmailLink()}
+                  >
+                    {emailBusy ? "Проверяем…" : "Привязать"}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          {emailNotice && <p className="muted settings-platform-hint">{emailNotice}</p>}
+        </div>
       )}
 
       <ConfirmModal

@@ -6,6 +6,7 @@ import { formatDateLong, formatFinishTimeValue, formatInt, pluralFormRu } from "
 import { useOptionalUser } from "../lib/useOptionalUser";
 import { useOptionalShareSheet } from "../features/sharing/ShareSheetContext";
 import { onThisDaySubject } from "../features/sharing/subjects";
+import { ourProtocolHref } from "../lib/protocolHref";
 
 type OnThisDayCardProps = {
   load: () => Promise<OnThisDay>;
@@ -66,6 +67,19 @@ function ShareIcon() {
 }
 
 function RunLocation({ run }: { run: OnThisDayRun }) {
+  const internal = ourProtocolHref(run);
+  if (internal) {
+    return (
+      <a
+        href={internal}
+        className="on-this-day-location"
+        title="Открыть протокол старта"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {run.location_name}
+      </a>
+    );
+  }
   return run.event_url ? (
     <a
       href={run.event_url}

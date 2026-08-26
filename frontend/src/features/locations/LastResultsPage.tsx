@@ -14,6 +14,7 @@ import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns
 const PLATFORM_FILTERS = ["five_verst", "s95", "runpark"] as const;
 
 type SortKey =
+  | "event_number"
   | "name"
   | "city"
   | "event_date"
@@ -46,6 +47,8 @@ function matchesQuery(item: LastResultsItem, query: string): boolean {
 
 function sortValue(item: LastResultsItem, key: SortKey): number | string | null {
   switch (key) {
+    case "event_number":
+      return item.event_number;
     case "name":
       return item.name.toLowerCase();
     case "city":
@@ -69,6 +72,9 @@ function sortValue(item: LastResultsItem, key: SortKey): number | string | null 
 
 // Колонки краткого вида в порядке важности (ширины — как в CSS .loc-index-table).
 const LAST_RESULTS_COLUMNS: AdaptiveColumn[] = [
+  // Номер старта — первым столбцом (просьба Дмитрия 22.08.2026). Узкий и
+  // обязательный: без него строка теряет главную примету «какой это по счёту».
+  { key: "event_number", width: 72, required: true },
   { key: "name", width: 170, required: true },
   { key: "event_date", width: 160, required: true },
   { key: "finishers", width: 148, required: true },
@@ -138,12 +144,13 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
       <TableViewToggle columns={tableColumns} />
       <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
         <table
-          className={`data-table data-table-layout-fixed loc-index-table${
+          className={`data-table data-table-layout-fixed loc-index-table last-results-table${
             showFull ? "" : " data-table-short"
           }`}
           style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
         >
           <colgroup>
+            <col className="col-compact" />
             <col />
             {show("city") && <col className="col-city" />}
             {show("platform") && <col className="col-platform" />}
@@ -157,6 +164,11 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
           </colgroup>
           <thead>
             <tr>
+              <ColumnHeader
+                label="№"
+                headerTitle="Номер старта у локации внутри её системы (сквозного номера по всем системам здесь нет)"
+                {...sortProps("event_number")}
+              />
               <ColumnHeader label="Локация" {...sortProps("name")} />
               {show("city") && <ColumnHeader label="Город" {...sortProps("city")} />}
               {show("platform") && <ColumnHeader label="Система" filterable={false} />}
@@ -217,6 +229,9 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
             ) : (
               sorted.map((item) => (
                 <tr key={item.identity_key}>
+                  <td className="td-compact">
+                    {item.event_number != null ? formatInt(item.event_number) : "—"}
+                  </td>
                   <td className="td-location">
                     <a href={`/locations/${item.slug}`}>{item.name}</a>
                     <LocationStatusBadge isPaused={item.is_paused} isCancelled={item.is_cancelled} />
@@ -237,7 +252,16 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
                     </td>
                   )}
                   <td className={item.is_last_saturday ? undefined : "muted"}>
-                    {item.protocol_url ? (
+                    {/* Полный протокол есть у нас — дата ведёт на нашу страницу
+                        протокола; иначе остаётся внешняя ссылка платформы. */}
+                    {item.has_protocol && item.event_platform_code ? (
+                      <a
+                        href={`/locations/${encodeURIComponent(item.slug)}/protocol/${item.event_platform_code}/${item.event_date}`}
+                        title="Открыть протокол старта"
+                      >
+                        {formatDate(item.event_date)}
+                      </a>
+                    ) : item.protocol_url ? (
                       <a href={item.protocol_url} target="_blank" rel="noreferrer" title="Открыть протокол">
                         {formatDate(item.event_date)}
                       </a>
@@ -329,6 +353,11 @@ function LastResultsContent() {
               "локации",
               "локаций",
             ])}.`}
+        </p>
+        {/* Соседний срез тех же данных: не «сколько на каждой площадке»,
+            а «кто и с каким временем» — вся страна одним протоколом. */}
+        <p className="loc-header-place">
+          <a href="/protocol">Единый протокол недели — все финишёры страны по времени →</a>
         </p>
       </header>
 

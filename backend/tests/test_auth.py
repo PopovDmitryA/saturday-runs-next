@@ -75,7 +75,8 @@ def test_bot_confirm_and_callback_flow(client: TestClient, fake_redis: fakeredis
     token = magic_link.split("token=")[1]
     callback_response = client.get("/api/auth/callback", params={"token": token}, follow_redirects=False)
     assert callback_response.status_code == 302
-    assert callback_response.headers["location"] == "http://testserver/dashboard"
+    # Новый пользователь без привязок — на онбординг (поиск себя по ФИО).
+    assert callback_response.headers["location"] == "http://testserver/welcome"
     assert "sr_session" in callback_response.cookies
 
     session_cookie = callback_response.cookies["sr_session"]
@@ -215,29 +216,61 @@ def test_session_slides_on_me(
     assert f"Max-Age={auth_settings.session_ttl_seconds}" in set_cookie
 
 
-def test_display_name_can_be_customized_and_reset(client: TestClient) -> None:
+def test_display_name_free_text_endpoint_is_gone(client: TestClient) -> None:
+    """Свободного ввода имени больше нет: имя считается из профилей систем."""
     session_cookie = _login_session(client, 424242424, username="runner_login")
 
-    customize_response = client.patch(
+    response = client.patch(
         "/api/auth/me",
         json={"display_name": "Мой кастомный ник"},
         cookies={"sr_session": session_cookie},
     )
-    assert customize_response.status_code == 200
-    customized = customize_response.json()
-    assert customized["display_name"] == "Мой кастомный ник"
-    assert customized["display_name_customized"] is True
+    assert response.status_code == 405
 
-    reset_response = client.patch(
-        "/api/auth/me",
-        json={"display_name": ""},
+
+def test_display_name_options_without_links(client: TestClient) -> None:
+    """У непривязанного выбирать не из чего, а имя остаётся от провайдера входа."""
+    session_cookie = _login_session(client, 424242425, username="runner_login")
+
+    response = client.get("/api/auth/me/display-name", cookies={"sr_session": session_cookie})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sources"] == []
+    assert payload["suggestion"] is None
+    assert payload["source_manual"] is False
+    assert payload["style"] == "auto"
+
+    # Стиль сохранить можно и без привязок — имя просто не изменится.
+    saved = client.patch(
+        "/api/auth/me/display-name",
+        json={"style": "initial", "platform_code": None},
         cookies={"sr_session": session_cookie},
     )
-    assert reset_response.status_code == 200
-    reset = reset_response.json()
-    assert reset["display_name_customized"] is False
-    assert reset["display_name"] == "runner_login"
-    assert reset["telegram_username"] == "runner_login"
+    assert saved.status_code == 200
+    assert saved.json()["display_name_style"] == "initial"
+
+    bad = client.patch(
+        "/api/auth/me/display-name",
+        json={"style": "nonsense", "platform_code": None},
+        cookies={"sr_session": session_cookie},
+    )
+    assert bad.status_code == 400
+
+
+def test_display_name_notice_can_be_dismissed(client: TestClient, db_session: Session) -> None:
+    from app.models import User
+
+    session_cookie = _login_session(client, 424242426, username="runner_login")
+    user = db_session.query(User).filter(User.telegram_id == 424242426).one()
+    user.display_name_notice = "runner_login"
+    db_session.commit()
+
+    response = client.post(
+        "/api/auth/me/display-name/keep",
+        cookies={"sr_session": session_cookie},
+    )
+    assert response.status_code == 200
+    assert response.json()["display_name_notice"] is None
 
 
 def test_login_journal_records_login_and_logout(client: TestClient, db_session: Session) -> None:

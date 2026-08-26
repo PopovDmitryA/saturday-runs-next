@@ -285,7 +285,7 @@ function ModalContent({
                         row.location.has_coordinates &&
                         !row.location.is_cancelled &&
                         row.location.is_paused && (
-                        <span className="unique-locations-badge-paused">на паузе</span>
+                        <span className="unique-locations-badge-paused">не действует</span>
                       )}
                     </td>
                     <td className="col-city muted">{row.location.city ?? "—"}</td>

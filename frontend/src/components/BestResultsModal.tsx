@@ -72,7 +72,7 @@ export function BestResultsModal({ open, onClose, includeTest = false }: BestRes
               {items.map((item) => (
                 <tr key={item.platform_code}>
                   <td className="col-date">
-                    <ActivityDateLink date={item.event_date} url={item.event_url} />
+                    <ActivityDateLink date={item.event_date} target={item} url={item.event_url} />
                   </td>
                   <td className="col-location">
                     <span className="unique-locations-name">{item.location_name}</span>

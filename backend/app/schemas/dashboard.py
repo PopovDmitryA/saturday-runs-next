@@ -200,6 +200,8 @@ class OnThisDayRunResponse(BaseModel):
     event_date: date
     location_name: str
     location_city: str | None = None
+    location_slug: str | None = None
+    is_test_event: bool = False
     platform_code: str
     finish_time_display: str | None = None
     finish_time_sec: int | None = None
@@ -225,6 +227,8 @@ class MyHistoryMilestoneResponse(BaseModel):
     platform_code: str
     location_name: str
     location_city: str | None = None
+    location_slug: str | None = None
+    is_test_event: bool = False
     finish_time_display: str | None = None
     finish_time_sec: int | None = None
     position: int | None = None
@@ -311,6 +315,10 @@ class BestResultResponse(BaseModel):
     event_date: date
     location_name: str
     location_city: str | None = None
+    # Слаг площадки и признак тестового старта — чтобы дата вела на НАШ протокол
+    # (/locations/{слаг}/protocol/…), а не на сайт системы.
+    location_slug: str | None = None
+    is_test_event: bool = False
     finish_time_display: str | None = None
     finish_time_sec: int | None = None
     event_url: str | None = None
@@ -321,6 +329,8 @@ class PersonalRecordResponse(BaseModel):
     event_date: date
     location_name: str
     location_city: str | None = None
+    location_slug: str | None = None
+    is_test_event: bool = False
     finish_time_display: str | None = None
     finish_time_sec: int | None = None
     # Разрезы рекорда: система / все системы / физическая локация. Один забег
@@ -344,6 +354,8 @@ class WinResponse(BaseModel):
     event_number: int | None = None
     location_name: str
     location_city: str | None = None
+    location_slug: str | None = None
+    is_test_event: bool = False
     finish_time_display: str | None = None
     finish_time_sec: int | None = None
     position: int | None = None
@@ -373,6 +385,8 @@ class CoRunnerMeetingResponse(BaseModel):
     event_date: date
     platform_code: str
     location_name: str
+    location_slug: str | None = None
+    is_test_event: bool = False
     my_time_sec: int | None = None
     their_time_sec: int | None = None
     my_position: int | None = None

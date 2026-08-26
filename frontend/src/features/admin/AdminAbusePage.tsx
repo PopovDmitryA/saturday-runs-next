@@ -10,6 +10,7 @@ import {
   listAdminAbuseBlocks,
   type AbuseIpBlockItem,
   type AbuseTelegramBanItem,
+  type SignupBlockItem,
 } from "../../lib/api";
 import { formatDateTime, formatDurationShort } from "../../lib/format";
 import { AdminSubnav } from "./AdminSubnav";
@@ -31,6 +32,16 @@ function telegramLabel(item: AbuseTelegramBanItem): string {
   return String(item.telegram_id);
 }
 
+function signupReasonLabel(reason: string): string {
+  if (reason === "device") {
+    return "лимит устройства";
+  }
+  if (reason === "ip") {
+    return "лимит сети";
+  }
+  return reason || "—";
+}
+
 function sourceLabel(source: string): string {
   if (source === "manual") {
     return "вручную";
@@ -44,6 +55,7 @@ function sourceLabel(source: string): string {
 function AdminAbuseContent() {
   const [ipBlocks, setIpBlocks] = useState<AbuseIpBlockItem[]>([]);
   const [telegramBans, setTelegramBans] = useState<AbuseTelegramBanItem[]>([]);
+  const [signupBlocks, setSignupBlocks] = useState<SignupBlockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -67,6 +79,7 @@ function AdminAbuseContent() {
       const response = await listAdminAbuseBlocks();
       setIpBlocks(response.ip_blocks);
       setTelegramBans(response.telegram_bans);
+      setSignupBlocks(response.signup_blocks ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить блокировки");
     } finally {
@@ -323,6 +336,44 @@ function AdminAbuseContent() {
                             Разблокировать
                           </button>
                         </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+          <section className="card">
+            <h2 className="section-title">Отказы в регистрации ({signupBlocks.length})</h2>
+            <p className="muted">
+              Суточный лимит новых профилей: три с одного адреса, два с одного устройства. Вход
+              существующим профилем не ограничен. Один и тот же адрес в списке — похоже на
+              мультиаккаунт; разные адреса подряд — скорее общий NAT, и порог стоит поднять.
+            </p>
+            {signupBlocks.length === 0 ? (
+              <p className="muted">За последние 30 дней отказов не было.</p>
+            ) : (
+              <div className="table-scroll">
+                <table className="data-table admin-abuse-table">
+                  <thead>
+                    <tr>
+                      <th>Когда</th>
+                      <th>IP</th>
+                      <th>Устройство</th>
+                      <th>Причина</th>
+                      <th>Провайдер</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {signupBlocks.map((item, index) => (
+                      <tr key={`${item.created_at ?? ""}-${item.ip}-${index}`}>
+                        <td>{formatDateTime(item.created_at)}</td>
+                        <td>
+                          <code>{item.ip || "—"}</code>
+                        </td>
+                        <td>{item.device_ref ? <code>{item.device_ref}</code> : "—"}</td>
+                        <td>{signupReasonLabel(item.reason)}</td>
+                        <td>{item.provider || "—"}</td>
                       </tr>
                     ))}
                   </tbody>

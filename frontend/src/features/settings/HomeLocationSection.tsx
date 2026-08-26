@@ -124,7 +124,8 @@ export function HomeLocationSection() {
   };
 
   return (
-    <section className="card">
+    // id — якорь для ссылок «сменить дом» (попап точки на карте ведёт сюда).
+    <section className="card" id="home-location">
       <h2 className="section-title">Домашняя локация</h2>
       <p className="muted settings-lead">
         По умолчанию выбирается локация, где вы бегали чаще всего — но вы можете выбрать любую

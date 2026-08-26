@@ -99,7 +99,7 @@ export function CatalogLocationsTable({
                     }))
                   }
                 />
-                Скрыть локации на паузе
+                Скрыть недействующие локации
               </label>
               <button
                 type="button"
@@ -333,7 +333,7 @@ function CatalogLocationTableRowView({
     row.name
   );
 
-  const statusNote = row.is_cancelled ? "Отменена" : row.is_paused ? "На паузе" : null;
+  const statusNote = row.is_cancelled ? "Отменена" : row.is_paused ? "Не действует" : null;
 
   return (
     <tr
