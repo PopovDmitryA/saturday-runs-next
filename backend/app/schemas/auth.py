@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class LoginRequestResponse(BaseModel):
@@ -46,6 +46,23 @@ class AuthIdentityResponse(BaseModel):
     label: str
 
 
+class DisplayNameSuggestion(BaseModel):
+    """Алгоритм расходится с текущим выбором — предлагаем сменить источник."""
+
+    name: str
+    platform_code: str | None = None
+    source_title: str
+
+
+class NoAccountPlatformRequest(BaseModel):
+    platform_code: str = Field(min_length=1, max_length=32)
+    no_account: bool = True
+
+
+class NoAccountPlatformsResponse(BaseModel):
+    no_account_platforms: list[str] = Field(default_factory=list)
+
+
 class UserResponse(BaseModel):
     id: UUID
     telegram_id: int | None = None
@@ -53,7 +70,14 @@ class UserResponse(BaseModel):
     telegram_first_name: str | None = None
     telegram_last_name: str | None = None
     display_name: str | None = None
-    display_name_customized: bool = False
+    # Как показывать имя: "auto" — полное, "initial" — «Иван П.». Свободного
+    # ввода нет — имя считается из профилей беговых систем.
+    display_name_style: str = "auto"
+    # Прежнее имя для одноразовой плашки «имя теперь из профиля». NULL — не нужна.
+    display_name_notice: str | None = None
+    # Алгоритм расходится с зафиксированным источником: имя молча не меняем, а
+    # показываем баннер со ссылкой в настройки. NULL — расхождения нет.
+    display_name_suggestion: DisplayNameSuggestion | None = None
     consent_accepted: bool = False
     is_admin: bool = False
     avatar_url: str | None = None
@@ -65,12 +89,55 @@ class UserResponse(BaseModel):
     serial_id: int | None = None
     public_slug: str | None = None
     auth_identities: list[AuthIdentityResponse] = Field(default_factory=list)
+    # Онбординг: системы, где человек отметил «у меня там нет аккаунта».
+    onboarding_no_account_platforms: list[str] = Field(default_factory=list)
+
+    @field_validator("onboarding_no_account_platforms", mode="before")
+    @classmethod
+    def _no_account_none_as_empty(cls, value: object) -> object:
+        # У неперсистнутого User (в тестах) JSONB-поле ещё None: server_default
+        # применяется только при INSERT.
+        return [] if value is None else value
 
     model_config = {"from_attributes": True}
 
+    @field_validator("display_name_style", mode="before")
+    @classmethod
+    def _default_style(cls, value: object) -> object:
+        # У ещё не записанного в БД пользователя server_default не сработал, и
+        # в поле лежит None. Для ответа это то же самое, что «auto».
+        return "auto" if value is None else value
 
-class UserDisplayNameUpdate(BaseModel):
-    display_name: str = Field(default="", max_length=128)
+
+class DisplayNamePreferencesUpdate(BaseModel):
+    """Выбор из селектора имени: стиль и, при желании, система-источник."""
+
+    style: str = Field(default="auto", max_length=16)
+    # Код системы («five_verst», «s95», …), из профиля которой брать имя.
+    # None — авто-приоритет: 5 вёрст → S95 → RunPark → parkrun.
+    platform_code: str | None = Field(default=None, max_length=32)
+
+
+class DisplayNameSourceItem(BaseModel):
+    platform_code: str | None = None
+    source_title: str
+    name: str
+    name_initial: str
+    last_run: str | None = None
+
+
+class DisplayNameOptionsResponse(BaseModel):
+    current: str | None = None
+    style: str = "auto"
+    # Зафиксированная система-источник; None — выбирается автоматически.
+    source: str | None = None
+    # Источник выбран человеком, а не алгоритмом.
+    source_manual: bool = False
+    auto_name: str | None = None
+    auto_source: str | None = None
+    suggestion: DisplayNameSuggestion | None = None
+    notice: str | None = None
+    sources: list[DisplayNameSourceItem] = Field(default_factory=list)
 
 
 class MessageResponse(BaseModel):
@@ -110,6 +177,10 @@ class EmailCodeRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     # Согласие на обработку данных — как и у OAuth, без него вход не начинается.
     consent: bool = False
+    # Отдельное и необязательное: письма о крупных обновлениях. По закону о
+    # рекламе такое согласие должно быть явным и отдельным от условий сервиса,
+    # поэтому вторая галочка, а не одна на всё.
+    news_consent: bool = False
 
 
 class EmailCodeResponse(BaseModel):

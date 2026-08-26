@@ -42,6 +42,9 @@ _PROFILE_TAB_RE = re.compile(r"^/users/([^/]+)/[^/]+$")
 # не кладём — он одноразовый и в отчёте бесполезен.
 _SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
 _LOCATION_EVENTS_RE = re.compile(r"^/locations/([^/]+)/events$")
+# Единый протокол недели: /protocol/{дата-субботы}. В entity_key едет дата —
+# по ней видно, какие недели открывают (свежая суббота или архив).
+_UNIFIED_PROTOCOL_RE = re.compile(r"^/protocol/(\d{4}-\d{2}-\d{2})$")
 # Протокол старта: /locations/{slug}/protocol/{система}/{дата}. В entity_key
 # едет slug — просмотры протоколов копятся к локации, как у журнала.
 _LOCATION_PROTOCOL_RE = re.compile(r"^/locations/([^/]+)/protocol/[^/]+/\d{4}-\d{2}-\d{2}$")
@@ -59,6 +62,7 @@ _STATIC_PAGE_TYPES = {
     "/updates": "updates",
     "/login": "portal_login",
     "/new/map-lab": "portal_map_lab",
+    "/welcome": "welcome",
     "/dashboard": "dashboard",
     "/profiles": "dashboard",  # тот же компонент, что и /dashboard
     "/runs": "runs",
@@ -68,6 +72,7 @@ _STATIC_PAGE_TYPES = {
     "/maps": "maps",
     "/locations": "locations_index",
     "/results": "last_results",
+    "/protocol": "unified_protocol",
     "/history": "history",
     "/ratings": "ratings_hub",
     "/ratings/runs": "ratings_runs",
@@ -77,8 +82,10 @@ _STATIC_PAGE_TYPES = {
     "/ratings/volunteer-locations": "ratings_volunteer_locations",
     "/ratings/openings": "ratings_openings",
     "/ratings/wins": "ratings_wins",
+    "/ratings/fastest": "ratings_fastest",
     "/ratings/win-locations": "ratings_win_locations",
     "/ratings/home-distance": "ratings_home_distance",
+    "/ratings/location-records": "ratings_location_records",
     "/backlog": "backlog",
     # Превью кабинета на демо-данных — витрина дизайна, а не раздел сайта.
     "/new/cabinet-preview": "cabinet_preview",
@@ -152,6 +159,10 @@ def classify_page(path: str) -> tuple[str, str]:
 
     if _SWEEP_HQ_RE.match(normalized):
         return "sweep_hq", ""
+
+    unified_protocol = _UNIFIED_PROTOCOL_RE.match(normalized)
+    if unified_protocol:
+        return "unified_protocol", unified_protocol.group(1)
 
     location_protocol = _LOCATION_PROTOCOL_RE.match(normalized)
     if location_protocol:

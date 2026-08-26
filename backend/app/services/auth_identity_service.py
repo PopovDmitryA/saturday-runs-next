@@ -85,7 +85,9 @@ def upsert_telegram_identity(
     user.telegram_first_name = telegram_first_name
     user.telegram_last_name = telegram_last_name
     user.telegram_chat_id = telegram_chat_id
-    if not user.display_name_customized and display_name:
+    # Имя от провайдера входа — только запасной вариант: у привязанного человека
+    # оно проигрывает имени из бегового профиля (см. user_display_name_service).
+    if display_name and not user.display_name:
         user.display_name = display_name
 
     identity = find_identity(db, AuthProvider.telegram, str(telegram_id))
@@ -161,7 +163,7 @@ def upsert_oauth_identity(
         identity.email = profile.email
         identity.profile_json = profile.profile_json
         identity.last_login_at = now
-    if not user.display_name_customized and profile.display_name:
+    if profile.display_name and not user.display_name:
         user.display_name = profile.display_name
     return identity
 

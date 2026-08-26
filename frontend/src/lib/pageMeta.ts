@@ -73,6 +73,14 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
       "было на каждой площадке, лучшие времена, новички и дата последнего старта.",
     indexable: true,
   },
+  // Единый протокол недели: последняя неделя без даты в адресе.
+  "/protocol": {
+    title: "Единый протокол недели — 5 вёрст, С95, parkrun и RunPark — run5k.run",
+    description:
+      "Все площадки всех систем за неделю одним протоколом: кто и с каким временем " +
+      "финишировал, зачёты по системам, полу и возрастным группам.",
+    indexable: true,
+  },
   "/ratings": {
     title: "Рейтинги — run5k.run",
     description:
@@ -121,6 +129,13 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
     description: "Кто чаще всех финишировал первым на субботних стартах, с разбивкой по полу.",
     indexable: true,
   },
+  "/ratings/fastest": {
+    title: "Самые быстрые результаты и участники — run5k.run",
+    description:
+      "5 000 самых быстрых финишей и 3 000 самых быстрых участников субботних стартов: " +
+      "срезы по системе, полу, возрастной группе и году.",
+    indexable: true,
+  },
   "/ratings/home-distance": {
     title: "Рейтинг дальности от дома — run5k.run",
     description:
@@ -131,6 +146,13 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
   "/ratings/win-locations": {
     title: "Рейтинг побед по локациям — run5k.run",
     description: "На скольких разных локациях участники успевали финишировать первыми.",
+    indexable: true,
+  },
+  "/ratings/location-records": {
+    title: "Рекорды локаций — run5k.run",
+    description:
+      "Рекорды трасс субботних пятёрок: лучшее время каждой локации среди мужчин и " +
+      "женщин и рекорды возрастных групп.",
     indexable: true,
   },
   "/backlog": {
@@ -152,6 +174,10 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
   "/settings": {
     title: "Настройки — run5k.run",
     description: "Настройки профиля и привязанных аккаунтов.",
+  },
+  "/welcome": {
+    title: "Добро пожаловать — run5k.run",
+    description: "Найдите себя по имени во всех системах пробежек и привяжите профили.",
   },
   "/oauth/yandex/callback": { title: "Вход — run5k.run", description: "Завершаем вход через Яндекс." },
   "/oauth/vk/callback": { title: "Вход — run5k.run", description: "Завершаем вход через VK." },
@@ -193,6 +219,7 @@ const ADMIN_META: PageMeta = {
 };
 
 const PROFILE_RE = /^\/users\/([^/]+)(?:\/([^/]+))?$/;
+const UNIFIED_PROTOCOL_RE = /^\/protocol\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_EVENTS_RE = /^\/locations\/([^/]+)\/events$/;
 const LOCATION_PROTOCOL_RE = /^\/locations\/([^/]+)\/protocol\/([^/]+)\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_RE = /^\/locations\/([^/]+)$/;
@@ -249,6 +276,15 @@ export function resolvePageMeta(rawPath: string): PageMeta {
         "достижения и посещённые локации.",
       // Вкладки профиля в индекс не идут — это срезы той же страницы.
       indexable: tab === undefined,
+    };
+  }
+  if (UNIFIED_PROTOCOL_RE.test(path)) {
+    return {
+      title: "Единый протокол недели — run5k.run",
+      description:
+        "Все площадки всех систем за неделю одним протоколом: зачёты по системам, " +
+        "полу и возрастным группам.",
+      indexable: true,
     };
   }
   if (LOCATION_PROTOCOL_RE.test(path)) {

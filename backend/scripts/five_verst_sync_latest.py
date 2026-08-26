@@ -63,6 +63,7 @@ def main() -> int:
                 "new_summaries": sum(1 for item in plan if item.action.value == "new_summary"),
                 "changed_summaries": sum(1 for item in plan if item.action.value == "changed_summary"),
                 "missing_protocol": sum(1 for item in plan if item.action.value == "missing_protocol"),
+                "stale_protocols": sum(1 for item in plan if item.action.value == "stale_protocol"),
                 "needs_update": sum(1 for item in plan if item.action.value != "unchanged"),
                 "sample_updates": [
                     {

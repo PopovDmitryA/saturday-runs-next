@@ -25,6 +25,8 @@ from app.schemas.auth import (
     BotConfirmResponse,
     BotLoginStatusRequest,
     BotLoginStatusResponse,
+    DisplayNameOptionsResponse,
+    DisplayNamePreferencesUpdate,
     EmailCodeRequest,
     EmailCodeResponse,
     EmailLinkResponse,
@@ -35,9 +37,10 @@ from app.schemas.auth import (
     MergeConfirmRequest,
     MergePreviewResponse,
     MessageResponse,
+    NoAccountPlatformRequest,
+    NoAccountPlatformsResponse,
     OAuthFinishRequest,
     OAuthFinishResponse,
-    UserDisplayNameUpdate,
     UserResponse,
 )
 from app.services.auth_identity_service import (
@@ -53,7 +56,6 @@ from app.services.auth_service import (
     create_login_request,
     create_user_session,
     get_login_request_status,
-    update_user_display_name,
 )
 from app.services.email_auth_service import link_email
 from app.services.email_auth_service import request_code as request_email_code
@@ -70,10 +72,18 @@ from app.services.oauth_service import (
     handle_oauth_callback,
     start_oauth_flow,
 )
+from app.services.user_display_name_service import (
+    dismiss_display_name_notice,
+    display_name_options,
+    display_name_suggestion,
+    set_display_name_preferences,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+KNOWN_DEVICE_COOKIE_MAX_AGE_SECONDS = 400 * 86400  # предел, который браузеры хранят
 
 
 def _verify_bot_secret(
@@ -92,6 +102,18 @@ def _set_session_cookie(response: Response, settings: Settings, signed_session: 
         value=signed_session,
         max_age=settings.session_ttl_seconds,
         httponly=True,
+        secure=not settings.app_debug,
+        samesite="lax",
+        path="/",
+    )
+    # Метка «здесь уже входили» — переживает выход и читается экраном входа,
+    # чтобы не спрашивать согласие у того, кто его давно дал. Не HttpOnly
+    # намеренно: её читает фронт. Секрета в ней нет.
+    response.set_cookie(
+        key=settings.known_device_cookie_name,
+        value="1",
+        max_age=KNOWN_DEVICE_COOKIE_MAX_AGE_SECONDS,
+        httponly=False,
         secure=not settings.app_debug,
         samesite="lax",
         path="/",
@@ -141,7 +163,14 @@ def _log_login(
 
 def _user_payload(db: Session, user: User, settings: Settings) -> UserResponse:
     identities = list_user_identities(db, user.id)
-    return user_response(user, settings, identities)
+    # Расхождение алгоритма с зафиксированным источником отдаём вместе с /me:
+    # баннер про смену имени рисуется по этому полю, отдельного запроса не нужно.
+    return user_response(
+        user,
+        settings,
+        identities,
+        display_name_suggestion=display_name_suggestion(db, user),
+    )
 
 
 def _parse_vk_callback_params(
@@ -349,6 +378,7 @@ def email_request_code(
             body.email,
             client_ip=get_client_ip(request),
             consent=body.consent,
+            news_consent=body.news_consent,
         )
     except AuthError as exc:
         raise _handle_auth_error(exc) from exc
@@ -389,7 +419,11 @@ def email_verify(
         request=request,
     )
     _set_session_cookie(response, settings, signed_session)
-    return EmailVerifyResponse(redirect="dashboard")
+    # Новичка ведём туда же, куда и после OAuth: на онбординг, если профиль
+    # ещё не привязан к беговой системе.
+    from app.services.onboarding_service import post_login_redirect_target
+
+    return EmailVerifyResponse(redirect=post_login_redirect_target(db, user_id))
 
 
 @router.post("/email/link", response_model=EmailLinkResponse)
@@ -582,7 +616,9 @@ def auth_callback(
         request=request,
     )
 
-    redirect_url = f"{settings.app_base_url.rstrip('/')}/dashboard"
+    from app.services.onboarding_service import post_login_redirect_target
+
+    redirect_url = f"{settings.app_base_url.rstrip('/')}/{post_login_redirect_target(db, user_id)}"
     response = RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
     _set_session_cookie(response, settings, signed_session)
     return response
@@ -604,18 +640,67 @@ def auth_me(
     return _user_payload(db, user, settings)
 
 
-@router.patch("/me", response_model=UserResponse)
-def auth_me_update(
-    body: UserDisplayNameUpdate,
+@router.post("/onboarding/complete", response_model=MessageResponse)
+def onboarding_complete(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> MessageResponse:
+    from app.services.onboarding_service import complete_onboarding
+
+    complete_onboarding(db, user)
+    return MessageResponse(message="onboarding_completed")
+
+
+@router.post("/onboarding/no-account", response_model=NoAccountPlatformsResponse)
+def onboarding_no_account(
+    body: NoAccountPlatformRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> NoAccountPlatformsResponse:
+    from app.services.onboarding_service import OnboardingError, set_platform_no_account
+
+    try:
+        platforms = set_platform_no_account(db, user, body.platform_code, body.no_account)
+    except OnboardingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return NoAccountPlatformsResponse(no_account_platforms=platforms)
+
+
+@router.get("/me/display-name", response_model=DisplayNameOptionsResponse)
+def auth_me_display_name_options(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> DisplayNameOptionsResponse:
+    """Варианты имени для селектора в кабинете.
+
+    Свободного ввода нет: имя берётся из профилей беговых систем, человек лишь
+    выбирает стиль и, если имена в системах разошлись, систему-источник.
+    """
+    return DisplayNameOptionsResponse.model_validate(display_name_options(db, user))
+
+
+@router.patch("/me/display-name", response_model=UserResponse)
+def auth_me_display_name_update(
+    body: DisplayNamePreferencesUpdate,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> UserResponse:
     try:
-        updated = update_user_display_name(db, user, body.display_name)
-    except AuthError as exc:
-        raise _handle_auth_error(exc) from exc
+        updated = set_display_name_preferences(db, user, style=body.style, platform_code=body.platform_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _user_payload(db, updated, settings)
+
+
+@router.post("/me/display-name/keep", response_model=UserResponse)
+def auth_me_display_name_keep(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> UserResponse:
+    """«Оставить как есть»: гасит баннер и запоминает отклонённое предложение."""
+    return _user_payload(db, dismiss_display_name_notice(db, user), settings)
 
 
 @router.post("/logout", response_model=MessageResponse)

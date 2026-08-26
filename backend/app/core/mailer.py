@@ -109,7 +109,9 @@ def send_email(
         # вызывающего это один и тот же исход — письмо не ушло.
         raise MailerError(f"SMTP send failed: {exc}") from exc
 
-    logger.info("mailer: sent %r to %s", subject, to)
+    # Тему в лог не пишем: у писем с кодом она содержит сам код, а логи живут
+    # дольше и читаются шире, чем стоило бы одноразовому ключу от профиля.
+    logger.info("mailer: sent message to %s", to)
 
 
 def _connect(settings: Settings) -> smtplib.SMTP:

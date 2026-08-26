@@ -213,7 +213,10 @@ def handle_oauth_callback(
     # занимать место в суточном лимите.
     if created_new and signup_context is not None:
         register_signup(signup_context, settings)
-    return user.id, None, "dashboard"
+
+    from app.services.onboarding_service import post_login_redirect_target
+
+    return user.id, None, post_login_redirect_target(db, user.id)
 
 
 def _user_by_verified_email(db: Session, profile: OAuthProfile) -> User | None:

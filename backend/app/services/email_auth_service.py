@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from app.auth.providers.base import OAuthProfile
 from app.config import Settings
 from app.core import email_address
+from app.core.email_templates import login_code_email
 from app.core.mailer import is_configured as mailer_is_configured
 from app.core.rate_limit import check_rate_limit
 from app.core.redis_client import get_redis_client
@@ -109,6 +110,7 @@ def request_code(
     *,
     client_ip: str,
     consent: bool,
+    news_consent: bool = False,
 ) -> dict[str, object]:
     """Выслать код на указанный адрес.
 
@@ -142,40 +144,90 @@ def request_code(
         settings.email_login_code_window_seconds,
     ):
         raise AuthError("Слишком много запросов. Попробуйте позже.", 429)
+    # Общий потолок на сутки: ведра по адресу и по IP держат одного обидчика,
+    # но не толпу. Упёрлись — вход по почте молчит до завтра, а VK и Яндекс
+    # работают; это лучше, чем выжечь суточный лимит почтового кластера и
+    # остаться вообще без исходящей почты.
+    if not check_rate_limit("auth:email:req:global", settings.email_login_codes_per_day, 86400):
+        logger.error("email login: daily code quota exhausted (%s)", settings.email_login_codes_per_day)
+        raise AuthError("Вход по почте временно недоступен. Попробуйте войти через VK или Яндекс.", 503)
 
     code = _generate_code(settings.email_login_code_length)
-    payload = {
-        "code_hash": hash_token(code),
-        "email": email,
-        "consent": consent,
-        "attempts": 0,
-    }
-    get_redis_client().setex(
-        _code_key(normalized),
-        settings.email_login_code_ttl_seconds,
-        json.dumps(payload),
+    _remember_code(
+        settings,
+        normalized=normalized,
+        code=code,
+        email=email,
+        consent=consent,
+        news_consent=news_consent,
     )
 
-    _send_code(settings, to=email, code=code)
+    # Подписку предлагаем только тем, кто ещё не подписан: подписанному это
+    # шум, а кнопка «отписаться» служебному письму про вход не место — она
+    # живёт в самих рассылках.
+    from app.services.newsletter_service import is_subscribed, subscribe_url
+
+    offer_url = None
+    if not news_consent and not is_subscribed(db, email):
+        offer_url = subscribe_url(settings, normalized)
+
+    _send_code(settings, to=email, code=code, subscribe_url=offer_url)
     return {"expires_in": settings.email_login_code_ttl_seconds}
 
 
-def _send_code(settings: Settings, *, to: str, code: str) -> None:
+def _remember_code(
+    settings: Settings,
+    *,
+    normalized: str,
+    code: str,
+    email: str,
+    consent: bool,
+    news_consent: bool,
+) -> None:
+    """Добавить код к действующим для этого ящика.
+
+    Новый код не отменяет предыдущие: почта иногда приходит с задержкой, и
+    человек, запросивший код дважды, чаще берёт цифры из письма, которое
+    открыл первым. Отвергать его — злить того, кто всё сделал правильно.
+    Безопасность от этого не страдает: каждый код всё так же одноразовый,
+    живёт свои десять минут, а счётчик попыток общий на ящик.
+    """
+    redis_client = get_redis_client()
+    now = datetime.now(timezone.utc).timestamp()
+    state = _load_state(redis_client, normalized)
+
+    codes = [item for item in state.get("codes", []) if float(item.get("exp", 0)) > now]
+    codes.append(
+        {
+            "hash": hash_token(code),
+            "exp": now + settings.email_login_code_ttl_seconds,
+            "email": email,
+            "consent": consent,
+            "news": news_consent,
+        }
+    )
+    # Держим только последние: пачка «живых» ключей от профиля ни к чему.
+    state["codes"] = codes[-settings.email_login_active_codes :]
+    state.setdefault("attempts", 0)
+
+    ttl = max(int(max(float(item["exp"]) for item in state["codes"]) - now), 1)
+    redis_client.setex(_code_key(normalized), ttl, json.dumps(state))
+
+
+def _load_state(redis_client, normalized: str) -> dict[str, object]:
+    raw = redis_client.get(_code_key(normalized))
+    if not raw:
+        return {"codes": [], "attempts": 0}
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {"codes": [], "attempts": 0}
+
+
+def _send_code(settings: Settings, *, to: str, code: str, subscribe_url: str | None = None) -> None:
     minutes = max(1, settings.email_login_code_ttl_seconds // 60)
     subject = f"Код для входа: {code}"
-    text_body = (
-        f"Код для входа на run5k.run: {code}\n\n"
-        f"Он действует {minutes} мин. и подходит только для одного входа.\n\n"
-        "Если вы не запрашивали код, просто удалите это письмо — "
-        "без него войти в профиль нельзя.\n"
-    )
-    html_body = (
-        f"<p>Код для входа на run5k.run:</p>"
-        f'<p style="font-size:28px;font-weight:700;letter-spacing:4px">{code}</p>'
-        f"<p>Он действует {minutes} мин. и подходит только для одного входа.</p>"
-        "<p>Если вы не запрашивали код, просто удалите это письмо — "
-        "без него войти в профиль нельзя.</p>"
-    )
+    text_body, html_body = login_code_email(code, minutes=minutes, subscribe_url=subscribe_url)
 
     # Локальный импорт: celery тянет за собой брокер, а сервис зовётся из тестов.
     from app.workers.tasks.email_send import queue_email
@@ -202,13 +254,14 @@ def verify_code(
     signup_context: SignupContext | None = None,
 ) -> UUID:
     """Проверить код и вернуть id профиля, создав его при первом входе."""
-    normalized, display_email, consent = _consume_code(db, settings, raw_email, code)
+    normalized, display_email, consent, news_consent = _consume_code(db, settings, raw_email, code)
     return _login_or_create(
         db,
         settings,
         normalized=normalized,
         display_email=display_email,
         consent=consent,
+        news_consent=news_consent,
         signup_context=signup_context,
     )
 
@@ -218,8 +271,12 @@ def _consume_code(
     settings: Settings,
     raw_email: str,
     code: str,
-) -> tuple[str, str, bool]:
-    """Сверить код и сжечь его. Возвращает (нормализованный ящик, адрес, согласие)."""
+) -> tuple[str, str, bool, bool]:
+    """Сверить код и сжечь его.
+
+    Возвращает (нормализованный ящик, адрес как ввели, согласие на обработку,
+    согласие на рассылку).
+    """
     if not settings.email_login_enabled:
         raise AuthError("Вход по почте временно недоступен.", 503)
 
@@ -229,36 +286,35 @@ def _consume_code(
 
     normalized = email_address.normalize(email)
     redis_client = get_redis_client()
-    raw_state = redis_client.get(_code_key(normalized))
-    if raw_state is None:
+    state = _load_state(redis_client, normalized)
+    now = datetime.now(timezone.utc).timestamp()
+    codes = [item for item in state.get("codes", []) if float(item.get("exp", 0)) > now]
+    if not codes:
         raise AuthError("Код истёк или уже использован. Запросите новый.", 400)
 
-    state = json.loads(raw_state)
     attempts = int(state.get("attempts", 0))
     if attempts >= settings.email_login_max_attempts:
         redis_client.delete(_code_key(normalized))
         raise AuthError("Слишком много попыток. Запросите новый код.", 429)
 
-    if hash_token(code.strip()) != state.get("code_hash"):
+    given = hash_token(code.strip())
+    matched = next((item for item in codes if item.get("hash") == given), None)
+    if matched is None:
+        state["codes"] = codes
         state["attempts"] = attempts + 1
-        ttl = redis_client.ttl(_code_key(normalized))
-        redis_client.setex(
-            _code_key(normalized),
-            ttl if ttl and ttl > 0 else settings.email_login_code_ttl_seconds,
-            json.dumps(state),
-        )
-        left = settings.email_login_max_attempts - state["attempts"]
-        if left <= 0:
+        ttl = max(int(max(float(item["exp"]) for item in codes) - now), 1)
+        redis_client.setex(_code_key(normalized), ttl, json.dumps(state))
+        if state["attempts"] >= settings.email_login_max_attempts:
             redis_client.delete(_code_key(normalized))
             raise AuthError("Слишком много попыток. Запросите новый код.", 429)
         raise AuthError("Неверный код. Попробуйте ещё раз.", 400)
 
-    # Код верный — сжигаем его сразу: он одноразовый.
+    # Код подошёл — гасим все выданные на этот ящик: вход состоялся.
     redis_client.delete(_code_key(normalized))
 
-    consent = bool(state.get("consent"))
-    display_email = str(state.get("email") or email)
-    return normalized, display_email, consent
+    consent = bool(matched.get("consent"))
+    display_email = str(matched.get("email") or email)
+    return normalized, display_email, consent, bool(matched.get("news"))
 
 
 def link_email(
@@ -274,7 +330,7 @@ def link_email(
     решение об объединении принимает человек — так же, как при привязке VK или
     Яндекса. None означает «привязали, делать больше нечего».
     """
-    normalized, display_email, _consent = _consume_code(db, settings, raw_email, code)
+    normalized, display_email, _consent, news_consent = _consume_code(db, settings, raw_email, code)
     profile = _profile_for(normalized, display_email)
 
     existing = find_identity(db, AuthProvider.email, normalized)
@@ -288,8 +344,20 @@ def link_email(
         return store_merge_token_for_users(db, user, other)
 
     upsert_oauth_identity(db, user, AuthProvider.email, profile)
+    _apply_news_consent(user, news_consent)
     db.commit()
     return None
+
+
+def _apply_news_consent(user: User, news_consent: bool) -> None:
+    """Включить рассылку, если человек её отметил.
+
+    Только включаем: снятая галочка на экране входа означает «не отмечал
+    сейчас», а не «отпишите меня». Отписка живёт в настройках профиля —
+    иначе человек молча терял бы подписку каждым входом.
+    """
+    if news_consent:
+        user.news_subscribed = True
 
 
 def _profile_for(normalized: str, display_email: str) -> OAuthProfile:
@@ -308,6 +376,7 @@ def _login_or_create(
     normalized: str,
     display_email: str,
     consent: bool,
+    news_consent: bool,
     signup_context: SignupContext | None,
 ) -> UUID:
     profile = _profile_for(normalized, display_email)
@@ -316,6 +385,7 @@ def _login_or_create(
     if existing is not None:
         user = existing.user
         upsert_oauth_identity(db, user, AuthProvider.email, profile)
+        _apply_news_consent(user, news_consent)
         user.last_login_at = datetime.now(timezone.utc)
         db.commit()
         return user.id
@@ -326,6 +396,7 @@ def _login_or_create(
     if twin is not None:
         user = twin.user
         upsert_oauth_identity(db, user, AuthProvider.email, profile)
+        _apply_news_consent(user, news_consent)
         user.last_login_at = datetime.now(timezone.utc)
         db.commit()
         logger.info("email login: linked mailbox %s to existing user %s", normalized, user.id)
@@ -338,6 +409,7 @@ def _login_or_create(
             raise AuthError(signup_block_message(decision), 429)
 
     user: User = create_oauth_user(db, profile, AuthProvider.email, consent=consent)
+    _apply_news_consent(user, news_consent)
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
     if signup_context is not None:

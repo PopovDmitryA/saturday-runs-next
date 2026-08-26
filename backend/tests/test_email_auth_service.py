@@ -163,6 +163,64 @@ def test_wrong_code_is_rejected_and_attempts_run_out(
         email_auth_service.verify_code(db_session, settings, email, _code_from(sent_codes))
 
 
+def test_previous_code_still_works_after_a_second_request(
+    db_session: Session,
+    settings: Settings,
+    sent_codes: list[tuple[str, str]],
+) -> None:
+    """Почта приходит с задержкой: человек берёт цифры из первого письма."""
+    email = f"runner-{uuid4().hex[:8]}@example.com"
+
+    email_auth_service.request_code(db_session, settings, email, client_ip="10.0.0.1", consent=True)
+    first_code = _code_from(sent_codes)
+    email_auth_service.request_code(db_session, settings, email, client_ip="10.0.0.1", consent=True)
+    second_code = _code_from(sent_codes)
+    assert first_code != second_code
+
+    user_id = email_auth_service.verify_code(db_session, settings, email, first_code)
+    assert user_id is not None
+
+
+def test_successful_login_burns_every_outstanding_code(
+    db_session: Session,
+    settings: Settings,
+    sent_codes: list[tuple[str, str]],
+) -> None:
+    """Вошёл по одному — остальные письма превращаются в тыкву."""
+    email = f"runner-{uuid4().hex[:8]}@example.com"
+
+    email_auth_service.request_code(db_session, settings, email, client_ip="10.0.0.1", consent=True)
+    first_code = _code_from(sent_codes)
+    email_auth_service.request_code(db_session, settings, email, client_ip="10.0.0.1", consent=True)
+    second_code = _code_from(sent_codes)
+
+    email_auth_service.verify_code(db_session, settings, email, second_code)
+    with pytest.raises(AuthError):
+        email_auth_service.verify_code(db_session, settings, email, first_code)
+
+
+def test_only_the_last_few_codes_stay_alive(
+    db_session: Session,
+    settings: Settings,
+    sent_codes: list[tuple[str, str]],
+) -> None:
+    """Пачка живых ключей от профиля ни к чему: держим только последние."""
+    limited = settings.model_copy(update={"email_login_active_codes": 2})
+    email = f"runner-{uuid4().hex[:8]}@example.com"
+
+    email_auth_service.request_code(db_session, limited, email, client_ip="10.0.0.1", consent=True)
+    oldest = _code_from(sent_codes)
+    for _ in range(2):
+        email_auth_service.request_code(
+            db_session, limited, email, client_ip="10.0.0.1", consent=True
+        )
+    newest = _code_from(sent_codes)
+
+    with pytest.raises(AuthError):
+        email_auth_service.verify_code(db_session, limited, email, oldest)
+    assert email_auth_service.verify_code(db_session, limited, email, newest) is not None
+
+
 def test_code_is_single_use(
     db_session: Session,
     settings: Settings,
@@ -175,6 +233,53 @@ def test_code_is_single_use(
     email_auth_service.verify_code(db_session, settings, email, code)
     with pytest.raises(AuthError):
         email_auth_service.verify_code(db_session, settings, email, code)
+
+
+def test_news_consent_subscribes_a_new_person(
+    db_session: Session,
+    settings: Settings,
+    sent_codes: list[tuple[str, str]],
+) -> None:
+    email = f"runner-{uuid4().hex[:8]}@example.com"
+    email_auth_service.request_code(
+        db_session, settings, email, client_ip="10.0.0.1", consent=True, news_consent=True
+    )
+    user_id = email_auth_service.verify_code(db_session, settings, email, _code_from(sent_codes))
+
+    user = db_session.query(User).filter(User.id == user_id).one()
+    assert user.news_subscribed
+
+
+def test_login_without_the_news_box_does_not_subscribe(
+    db_session: Session,
+    settings: Settings,
+    sent_codes: list[tuple[str, str]],
+) -> None:
+    email = f"runner-{uuid4().hex[:8]}@example.com"
+    email_auth_service.request_code(db_session, settings, email, client_ip="10.0.0.1", consent=True)
+    user_id = email_auth_service.verify_code(db_session, settings, email, _code_from(sent_codes))
+
+    user = db_session.query(User).filter(User.id == user_id).one()
+    assert not user.news_subscribed
+
+
+def test_login_never_silently_unsubscribes(
+    db_session: Session,
+    settings: Settings,
+    sent_codes: list[tuple[str, str]],
+) -> None:
+    """Снятая галочка на входе — это «не отмечал сейчас», а не «отпишите меня»."""
+    email = f"runner-{uuid4().hex[:8]}@example.com"
+    email_auth_service.request_code(
+        db_session, settings, email, client_ip="10.0.0.1", consent=True, news_consent=True
+    )
+    user_id = email_auth_service.verify_code(db_session, settings, email, _code_from(sent_codes))
+
+    email_auth_service.request_code(db_session, settings, email, client_ip="10.0.0.1", consent=True)
+    email_auth_service.verify_code(db_session, settings, email, _code_from(sent_codes))
+
+    user = db_session.query(User).filter(User.id == user_id).one()
+    assert user.news_subscribed
 
 
 def test_disposable_mailbox_is_refused(db_session: Session, settings: Settings) -> None:
@@ -237,6 +342,28 @@ def test_signup_limit_applies_to_email_registrations(
             db_session, limited, second_email, _code_from(sent_codes), signup_context=context
         )
     assert exc.value.status_code == 429
+
+
+def test_daily_quota_stops_a_flood_from_many_addresses(
+    db_session: Session,
+    settings: Settings,
+    sent_codes: list[tuple[str, str]],
+) -> None:
+    """Вёдра по адресу и IP держат одного обидчика, суточный потолок — толпу."""
+    capped = settings.model_copy(update={"email_login_codes_per_day": 2})
+
+    for index in range(2):
+        email_auth_service.request_code(
+            db_session, capped, f"flood-{index}@example.com", client_ip=f"10.1.0.{index}", consent=True
+        )
+
+    with pytest.raises(AuthError) as exc:
+        email_auth_service.request_code(
+            db_session, capped, "flood-3@example.com", client_ip="10.1.0.3", consent=True
+        )
+    # 503, а не 429: это не «вы слишком часто», а «способ временно недоступен,
+    # войдите через VK или Яндекс».
+    assert exc.value.status_code == 503
 
 
 def test_login_is_refused_when_mailer_is_not_configured(

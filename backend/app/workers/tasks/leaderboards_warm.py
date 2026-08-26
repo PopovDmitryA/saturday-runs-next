@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from app.db.session import get_session_factory
+from app.services.fastest_rating_service import warm_fastest_rating
 from app.services.leaderboard_service import (
     AMBIGUOUS_HOME_METRICS,
     GENDERED_METRICS,
@@ -17,6 +18,7 @@ from app.services.leaderboard_service import (
     refresh_leaderboard_cache,
     refresh_tourist_map_cache,
 )
+from app.services.location_records_rating_service import refresh_location_records_rating_cache
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -214,6 +216,27 @@ def warm_leaderboards_cache() -> dict[str, object]:
                 if source is not None:
                     source.release()
                 results[key] = "error"
+        # Рекорды локаций живут отдельным снапшотом (строка там — площадка, а
+        # не участник), но обесцениваются от тех же новых протоколов — греем их
+        # тем же проходом. Итог идёт в лог, а не в results: там сводка по
+        # метрикам лидербордов, и посторонний ключ ломал бы её читателей.
+        # Своим try: рейтинг рекордов не должен ронять прогрев лидербордов людей.
+        try:
+            warmed = refresh_location_records_rating_cache(db)
+            db.rollback()
+            logger.info("location records rating warmed: %s локаций", warmed)
+        except Exception:
+            logger.exception("leaderboards warm failed for location_records")
+            db.rollback()
+
+        # Рейтинг быстрых — тем же проходом и по той же причине: свой снапшот,
+        # свой try, итог в лог, а не в results.
+        try:
+            logger.info("fastest rating warmed: %s slices", warm_fastest_rating(db))
+            db.rollback()
+        except Exception:
+            logger.exception("fastest rating warm failed")
+            db.rollback()
     finally:
         # close() у SQLAlchemy делает ROLLBACK, и на убитом сервером соединении
         # он сам бросает исключение — уже посчитанный и разложенный по Redis

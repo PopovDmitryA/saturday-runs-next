@@ -46,6 +46,13 @@ def journal(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         "refresh_tourist_map_cache",
         lambda *_args, **_kwargs: events.append("tourist-map") or 0,
     )
+    # Тем же проходом греются рекорды локаций — отдельный снапшот со своими
+    # запросами к базе; на фейковой сессии подменяем и его.
+    monkeypatch.setattr(
+        leaderboards_warm,
+        "refresh_location_records_rating_cache",
+        lambda *_args, **_kwargs: events.append("location-records") or 0,
+    )
     return events
 
 

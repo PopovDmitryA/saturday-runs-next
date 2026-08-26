@@ -48,6 +48,7 @@ def queue_email(to: str, subject: str, text_body: str, html_body: str | None = N
     try:
         deliver.delay(to, subject, text_body, html_body)
     except Exception:  # noqa: BLE001 — брокер лежит, письмо важнее исключения
-        logger.exception("mailer: failed to queue message %r to %s", subject, to)
+        # Без темы: у письма с кодом она содержит сам код (см. core/mailer.py).
+        logger.exception("mailer: failed to queue message to %s", to)
         return False
     return True

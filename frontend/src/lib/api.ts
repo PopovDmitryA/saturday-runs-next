@@ -16,8 +16,16 @@ export type User = {
   telegram_username: string | null;
   telegram_first_name: string | null;
   telegram_last_name: string | null;
+  // Считается на сервере из профилей беговых систем (5 вёрст / S95 / RunPark /
+  // parkrun). Свободного ввода имени нет с 25.08.2026.
   display_name: string | null;
-  display_name_customized: boolean;
+  // "auto" — полное имя, "initial" — «Иван П.».
+  display_name_style: "auto" | "initial";
+  // Прежнее имя для одноразовой плашки «имя теперь из профиля»; null — не нужна.
+  display_name_notice: string | null;
+  // Алгоритм расходится с зафиксированным источником: имя не меняем, а зовём
+  // человека в настройки. null — расхождения нет.
+  display_name_suggestion: DisplayNameSuggestion | null;
   consent_accepted: boolean;
   is_admin: boolean;
   avatar_url: string | null;
@@ -28,6 +36,7 @@ export type User = {
   serial_id: number | null;
   public_slug: string | null;
   auth_identities: AuthIdentity[];
+  onboarding_no_account_platforms: string[];
 };
 
 export type AuthIdentity = {
@@ -609,10 +618,10 @@ export type EmailCodeResult = {
   expires_in: number;
 };
 
-export function requestEmailCode(email: string, consent: boolean) {
+export function requestEmailCode(email: string, consent: boolean, newsConsent = false) {
   return apiFetch<EmailCodeResult>("/auth/email/request-code", {
     method: "POST",
-    body: JSON.stringify({ email, consent }),
+    body: JSON.stringify({ email, consent, news_consent: newsConsent }),
   });
 }
 
@@ -731,11 +740,53 @@ export async function probeCurrentUser(): Promise<SessionProbe> {
   }
 }
 
-export function updateDisplayName(displayName: string) {
-  return apiFetch<User>("/auth/me", {
+export type DisplayNameSource = {
+  // null — имя пришло не из беговой системы, а от провайдера входа.
+  platform_code: string | null;
+  source_title: string;
+  name: string;
+  name_initial: string;
+  last_run: string | null;
+};
+
+export type DisplayNameSuggestion = {
+  name: string;
+  platform_code: string | null;
+  source_title: string;
+};
+
+export type DisplayNameOptions = {
+  current: string | null;
+  style: "auto" | "initial";
+  // Зафиксированная система-источник; null — выбирается автоматически.
+  source: string | null;
+  // Источник выбран человеком, а не алгоритмом: новая привязка его не перебьёт.
+  source_manual: boolean;
+  auto_name: string | null;
+  auto_source: string | null;
+  // Алгоритм расходится с текущим выбором — предлагаем сменить источник.
+  suggestion: DisplayNameSuggestion | null;
+  notice: string | null;
+  sources: DisplayNameSource[];
+};
+
+export function getDisplayNameOptions() {
+  return apiFetch<DisplayNameOptions>("/auth/me/display-name");
+}
+
+export function setDisplayNamePreferences(body: {
+  style: "auto" | "initial";
+  platform_code: string | null;
+}) {
+  return apiFetch<User>("/auth/me/display-name", {
     method: "PATCH",
-    body: JSON.stringify({ display_name: displayName.trim() }),
+    body: JSON.stringify(body),
   });
+}
+
+/** «Оставить как есть»: гасит баннер и запоминает отклонённое предложение. */
+export function keepDisplayName() {
+  return apiFetch<User>("/auth/me/display-name/keep", { method: "POST" });
 }
 
 export function uploadAvatar(file: File) {
@@ -848,6 +899,54 @@ export function unlinkProfile(platformCode: string) {
     `/profiles/${platformCode}`,
     { method: "DELETE" },
   );
+}
+
+export type ParticipantSearchResult = {
+  participant_id: string;
+  platform_code: string;
+  platform_name: string;
+  display_name: string;
+  club_name: string | null;
+  age_category: string | null;
+  profile_url: string | null;
+  total_runs: number;
+  total_volunteering: number;
+  last_run_date: string | null;
+  home_location_name: string | null;
+  home_location_city: string | null;
+  already_linked: boolean;
+  linked_to_me: boolean;
+  recent_activities: ProfilePreviewActivity[];
+};
+
+export type ParticipantSearchResponse = {
+  query: string;
+  results: ParticipantSearchResult[];
+  truncated: boolean;
+  hidden_linked_platform_codes: string[];
+};
+
+export function searchParticipants(query: string, signal?: AbortSignal) {
+  const params = new URLSearchParams({ q: query });
+  return apiFetch<ParticipantSearchResponse>(`/profiles/search?${params.toString()}`, { signal });
+}
+
+export function linkParticipant(participantId: string) {
+  return apiFetch<{ link: PlatformLink; message: string }>("/profiles/link-by-participant", {
+    method: "POST",
+    body: JSON.stringify({ participant_id: participantId }),
+  });
+}
+
+export function completeOnboarding() {
+  return apiFetch<{ message: string }>("/auth/onboarding/complete", { method: "POST" });
+}
+
+export function setOnboardingNoAccount(platformCode: string, noAccount: boolean) {
+  return apiFetch<{ no_account_platforms: string[] }>("/auth/onboarding/no-account", {
+    method: "POST",
+    body: JSON.stringify({ platform_code: platformCode, no_account: noAccount }),
+  });
 }
 
 export function getDashboard() {
@@ -2558,6 +2657,164 @@ export function getLocationProtocol(slug: string, platformCode: string, eventDat
   );
 }
 
+/** Строка единого протокола недели — все площадки всех систем сразу. */
+export type UnifiedProtocolRow = {
+  /** Место в выбранном зачёте: система + пол + возрастная группа. */
+  place: number | null;
+  /** Места по полу и по группе — по всей неделе своей СИСТЕМЫ, без среза. */
+  gender_place: number | null;
+  gender_total: number | null;
+  age_group_place: number | null;
+  age_group_total: number | null;
+  name: string | null;
+  external_user_id: string | null;
+  serial_id: number | null;
+  is_unknown: boolean;
+  gender: "male" | "female" | null;
+  age_category: string | null;
+  age_group: string | null;
+  age_grade: number | null;
+  finish_time_sec: number | null;
+  finish_time_display: string | null;
+  pace_display: string | null;
+  club_name: string | null;
+  platform_code: string;
+  location_slug: string | null;
+  location_name: string;
+  city: string | null;
+  country: string | null;
+  event_date: string;
+  event_number: number | null;
+  /** Место на своей площадке — то, что стоит в протоколе платформы. */
+  location_position: number | null;
+  is_pr: boolean;
+  is_first_run: boolean;
+  is_me: boolean;
+};
+
+export type UnifiedProtocolPlatform = {
+  platform_code: string;
+  title: string;
+  finishers: number;
+  locations: number;
+};
+
+export type UnifiedProtocolBest = {
+  name: string | null;
+  time_display: string | null;
+  time_sec: number | null;
+  location_name: string;
+  location_slug: string | null;
+  platform_code: string | null;
+};
+
+export type UnifiedProtocolSummary = {
+  /** Плитка «финишёров»: по полу не сужается — она же показывает разбивку М/Ж. */
+  finishers: number;
+  /** Строк в зачёте — знаменатель долей «N% финишёров». */
+  scope_finishers: number;
+  male: number;
+  female: number;
+  unknown_gender: number;
+  /** null в зачёте одной системы: там считаем площадки, а не старты. */
+  locations: number;
+  /** Волонтёры недели: записей (ролей) и людей — по зачёту системы. */
+  volunteers: number;
+  volunteer_people: number;
+  avg_time_sec: number | null;
+  avg_time_display: string | null;
+  median_time_sec: number | null;
+  median_time_display: string | null;
+  best_male: UnifiedProtocolBest | null;
+  best_female: UnifiedProtocolBest | null;
+  debutants: number;
+  prs: number;
+  clubs_count: number;
+  /** Строки зарубежного parkrun, оставшиеся вне зачёта. */
+  skipped_foreign_parkrun: number;
+};
+
+/** Мужчины/женщины в зачёте системы — цифры на таблетках фильтра пола. */
+export type UnifiedProtocolGenderCounts = {
+  male: number;
+  female: number;
+  unknown: number;
+  total: number;
+};
+
+export type UnifiedProtocolAgeGroup = {
+  age_group: string;
+  male: number;
+  female: number;
+  unknown: number;
+  total: number;
+};
+
+export type UnifiedProtocolWeekRef = {
+  saturday: string;
+  finishers: number;
+  events: number;
+};
+
+export type UnifiedProtocol = {
+  week_start: string;
+  week_end: string;
+  saturday: string;
+  scope_platform: string | null;
+  gender: "male" | "female" | null;
+  age_group: string | null;
+  query: string | null;
+  platforms: UnifiedProtocolPlatform[];
+  summary: UnifiedProtocolSummary;
+  gender_counts: UnifiedProtocolGenderCounts;
+  age_groups: UnifiedProtocolAgeGroup[];
+  results: UnifiedProtocolRow[];
+  /** Свои строки недели целиком — чтобы не искать себя среди тысяч. */
+  my_results: UnifiedProtocolRow[];
+  page: number;
+  pages: number;
+  per_page: number;
+  total: number;
+  previous_saturday: string | null;
+  next_saturday: string | null;
+  latest_saturday: string | null;
+};
+
+export type UnifiedProtocolWeeks = {
+  weeks: UnifiedProtocolWeekRef[];
+  latest_saturday: string | null;
+};
+
+export type UnifiedProtocolQuery = {
+  platform?: string | null;
+  gender?: string | null;
+  ageGroup?: string | null;
+  q?: string | null;
+  page?: number;
+  perPage?: number;
+};
+
+export function getUnifiedProtocol(saturday: string | null, params: UnifiedProtocolQuery = {}) {
+  const search = new URLSearchParams();
+  if (params.platform) search.set("platform", params.platform);
+  if (params.gender) search.set("gender", params.gender);
+  if (params.ageGroup) search.set("age_group", params.ageGroup);
+  if (params.q) search.set("q", params.q);
+  if (params.page && params.page > 1) search.set("page", String(params.page));
+  if (params.perPage) search.set("per_page", String(params.perPage));
+  const suffix = search.toString();
+  const base = saturday ? `/protocol/week/${encodeURIComponent(saturday)}` : "/protocol/week";
+  // Холодная неделя считается несколько секунд (16 тыс. строк, кэш на 3 часа) —
+  // штатного таймаута не хватает.
+  return apiFetch<UnifiedProtocol>(`${base}${suffix ? `?${suffix}` : ""}`, undefined, {
+    timeoutMs: 60_000,
+  });
+}
+
+export function getUnifiedProtocolWeeks() {
+  return apiFetch<UnifiedProtocolWeeks>("/protocol/weeks", undefined, { timeoutMs: 60_000 });
+}
+
 /** Место участника в топе локации по одной его возрастной группе. */
 export type LocationAgeGroupStanding = {
   // Тот же ключ, что у строки в age_group_records: по нему плитка раскрывает топ-5.
@@ -2685,6 +2942,7 @@ export function updateAutoSyncSettings(autoSyncByPlatform: Record<string, boolea
 export type NotificationSettings = {
   enabled: boolean;
   description: string;
+  email: string | null;
 };
 
 export function getNotificationSettings() {

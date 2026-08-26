@@ -28,12 +28,14 @@ from datetime import date
 from html import escape
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import parse_qs
 from xml.sax.saxutils import escape as xml_escape
 
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.services.location_page_service import build_location_page, build_locations_index
+from app.services.release_service import ReleasesPage, paginate_published_releases
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +118,14 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "было на каждой площадке, лучшие времена, новички и дата последнего старта.",
         indexable=True,
     ),
+    # Единый протокол недели: все площадки всех систем одним списком. Ловит
+    # запросы вида «результаты 5 вёрст за субботу», где нужен не парк, а страна.
+    "/protocol": _meta(
+        "Единый протокол недели — 5 вёрст, С95, parkrun и RunPark — run5k.run",
+        "Все площадки всех систем за неделю одним протоколом: кто и с каким временем "
+        "финишировал, зачёты по системам, полу и возрастным группам.",
+        indexable=True,
+    ),
     "/ratings": _meta(
         "Рейтинги — run5k.run",
         "Сквозные рейтинги участников субботних пробежек по всем системам: пробежки, "
@@ -160,6 +170,12 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "Кто чаще всех финишировал первым на субботних стартах, с разбивкой по полу.",
         indexable=True,
     ),
+    "/ratings/fastest": _meta(
+        "Самые быстрые результаты и участники — run5k.run",
+        "5 000 самых быстрых финишей и 3 000 самых быстрых участников субботних "
+        "стартов: срезы по системе, полу, возрастной группе и году.",
+        indexable=True,
+    ),
     "/ratings/home-distance": _meta(
         "Рейтинг дальности от дома — run5k.run",
         "Кто уезжает бегать дальше всех от своей домашней локации: сумма километров "
@@ -169,6 +185,12 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
     "/ratings/win-locations": _meta(
         "Рейтинг побед по локациям — run5k.run",
         "На скольких разных локациях участники успевали финишировать первыми.",
+        indexable=True,
+    ),
+    "/ratings/location-records": _meta(
+        "Рекорды локаций — run5k.run",
+        "Рекорды трасс субботних пятёрок: лучшее время каждой локации среди мужчин и "
+        "женщин и рекорды возрастных групп.",
         indexable=True,
     ),
     # Публичная доска предложений: смотреть может любой, но в поиске ей делать
@@ -185,6 +207,10 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
     ),
     "/share": _meta("Поделиться — run5k.run", "Картинки с личной статистикой для соцсетей."),
     "/settings": _meta("Настройки — run5k.run", "Настройки профиля и привязанных аккаунтов."),
+    "/welcome": _meta(
+        "Добро пожаловать — run5k.run",
+        "Найдите себя по имени во всех системах пробежек и привяжите профили.",
+    ),
     "/oauth/yandex/callback": _meta("Вход — run5k.run", "Завершаем вход через Яндекс."),
     "/oauth/vk/callback": _meta("Вход — run5k.run", "Завершаем вход через VK."),
 }
@@ -220,6 +246,20 @@ _ADMIN_META = _meta("Админка — run5k.run", "Служебный разд
 
 _PROFILE_RE = re.compile(r"^/users/([^/]+)(?:/([^/]+))?$")
 _LOCATION_EVENTS_RE = re.compile(r"^/locations/([^/]+)/events$")
+# Единый протокол конкретной недели: /protocol/{дата-субботы}.
+_UNIFIED_PROTOCOL_RE = re.compile(r"^/protocol/(\d{4}-\d{2}-\d{2})$")
+
+
+def _iso_to_ru_date(value: str) -> str | None:
+    """«2026-08-15» → «15.08.2026»; «2026-08-99» → None.
+
+    Форму адреса регулярка проверяет, а вот существование даты — нет: 99-е
+    августа ей подходит. Без этой проверки робот получал 500 вместо 404.
+    """
+    try:
+        return date.fromisoformat(value).strftime("%d.%m.%Y")
+    except ValueError:
+        return None
 _LOCATION_PROTOCOL_RE = re.compile(r"^/locations/([^/]+)/protocol/([^/]+)/(\d{4}-\d{2}-\d{2})$")
 _LOCATION_RE = re.compile(r"^/locations/([^/]+)$")
 _SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
@@ -265,6 +305,16 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
             # показывают превью без картинки); вкладки — срезы той же страницы.
             indexable=profile.group(2) is None,
         )
+    unified = _UNIFIED_PROTOCOL_RE.match(path)
+    if unified:
+        day = _iso_to_ru_date(unified.group(1))
+        if day is not None:
+            return _meta(
+                f"Единый протокол недели {day} — run5k.run",
+                "Все площадки всех систем за неделю одним протоколом: зачёты по системам, "
+                "полу и возрастным группам.",
+                indexable=True,
+            )
     if _LOCATION_PROTOCOL_RE.match(path):
         return _meta(
             "Протокол старта — run5k.run",
@@ -595,6 +645,7 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/", "1.0"),
     ("/locations", "0.9"),
     ("/results", "0.9"),
+    ("/protocol", "0.8"),
     ("/ratings", "0.8"),
     ("/ratings/runs", "0.7"),
     ("/ratings/volunteering", "0.7"),
@@ -603,8 +654,10 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/ratings/volunteer-locations", "0.6"),
     ("/ratings/openings", "0.6"),
     ("/ratings/wins", "0.7"),
+    ("/ratings/fastest", "0.7"),
     ("/ratings/win-locations", "0.6"),
     ("/ratings/home-distance", "0.6"),
+    ("/ratings/location-records", "0.7"),
     ("/blog", "0.7"),
     ("/about", "0.6"),
     ("/login", "0.4"),
@@ -637,6 +690,13 @@ def build_sitemap(db: Session) -> str:
         _sitemap_url(base, path, lastmod=None, priority=priority)
         for path, priority in _SITEMAP_STATIC
     ]
+
+    # Страницы истории релизов: без них поисковик видит только первую десятку,
+    # а старые релизы («Запуск сайта», «Тёмная тема») остаются недостижимы —
+    # ссылки на них есть только внутри пагинации.
+    releases_pages = paginate_published_releases(db).pages
+    for page in range(2, releases_pages + 1):
+        urls.append(_sitemap_url(base, f"/updates?page={page}", lastmod=None, priority="0.3"))
 
     index = build_locations_index(db)
     items: list[dict[str, Any]] = cast("list[dict[str, Any]]", index.get("items") or [])
@@ -975,6 +1035,47 @@ def _json_ld_scripts(objects: list[dict[str, Any]]) -> list[str]:
         payload = json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
         scripts.append(f'<script type="application/ld+json">{payload}</script>')
     return scripts
+
+
+def _releases_body(page: ReleasesPage) -> str:
+    """Тело «Обновлений» для робота: релизы страницы плюс ссылки на соседние.
+
+    До пагинации робот видел здесь два служебных предложения — список рисует
+    JS. Теперь, когда история разбита на страницы, без статики старые релизы
+    стали бы недостижимы совсем: ссылки на них есть только внутри пагинации,
+    которой в разметке нет.
+    """
+    rows = [
+        "    <h1>Обновления run5k.run</h1>",
+        "    <p>Что нового на сайте: новые разделы, улучшения и исправления. "
+        f"Всего релизов — {_num(page.total)}, "
+        f"страница {page.page} из {page.pages}.</p>",
+    ]
+    for release in page.items:
+        rows.append(
+            f'    <h2 id="v{escape(release.version, quote=True)}">'
+            f"v{escape(release.version)} — {escape(release.title)} "
+            f"({release.released_at.isoformat()})</h2>"
+        )
+        for block in release.body.split("\n\n"):
+            lines = [line.strip() for line in block.strip().split("\n") if line.strip()]
+            if not lines:
+                continue
+            if all(line.startswith("- ") for line in lines):
+                items = "".join(f"<li>{escape(line[2:])}</li>" for line in lines)
+                rows.append(f"    <ul>{items}</ul>")
+            else:
+                rows.append(f"    <p>{escape(' '.join(lines))}</p>")
+
+    nav = []
+    if page.page > 1:
+        previous = "/updates" if page.page == 2 else f"/updates?page={page.page - 1}"
+        nav.append(f'<a href="{previous}" rel="prev">Предыдущая страница</a>')
+    if page.page < page.pages:
+        nav.append(f'<a href="/updates?page={page.page + 1}" rel="next">Следующая страница</a>')
+    if nav:
+        rows.append(f"    <p>{' · '.join(nav)}</p>")
+    return "\n".join(rows)
 
 
 def _render_html(
@@ -1362,6 +1463,10 @@ def is_known_path(raw_path: str) -> bool:
         return True
     if path.startswith("/admin/") or path == "/world":
         return True
+    unified = _UNIFIED_PROTOCOL_RE.match(path)
+    if unified:
+        # Только настоящая дата: «/protocol/2026-08-99» — не адрес сайта, а 404.
+        return _iso_to_ru_date(unified.group(1)) is not None
     for pattern in (_PROFILE_RE, _LOCATION_EVENTS_RE, _LOCATION_RE, _SWEEP_HQ_RE):
         if pattern.match(path):
             return True
@@ -1420,6 +1525,13 @@ def _protocol_body(payload: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _page_number(raw_path: str) -> int:
+    """Номер страницы из строки запроса (/updates?page=3); мусор — первая."""
+    query = raw_path.split("?", 1)[1] if "?" in raw_path else ""
+    raw = parse_qs(query).get("page", ["1"])[0]
+    return int(raw) if raw.isdigit() and int(raw) > 0 else 1
+
+
 def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
     """(HTML, HTTP-код) для робота: мета-теги плюс настоящий текст страницы.
 
@@ -1432,6 +1544,7 @@ def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
     настроен возврат 404» (11.08.2026).
     """
     path = normalize_path(raw_path)
+    page_number = _page_number(raw_path)
     canonical = site_base_url() + ("" if path == "/" else path)
 
     profile_match = _PROFILE_RE.match(path)
@@ -1514,6 +1627,25 @@ def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
                     canonical=canonical,
                     body_html=_catalog_body(items),
                     json_ld=catalog_json_ld(items),
+                ),
+                200,
+            )
+
+    if path == "/updates":
+        try:
+            releases = paginate_published_releases(db, page=page_number)
+        except Exception:  # noqa: BLE001 — робот получит родовую страницу, не 500
+            releases = None
+        if releases is not None and releases.items:
+            # Канонический адрес — с номером страницы: иначе страницы 2+ сами
+            # отправляли бы робота на первую, и старые релизы, ради которых
+            # пагинацию и обошли статикой, снова выпали бы из индекса.
+            page_canonical = canonical if releases.page == 1 else f"{canonical}?page={releases.page}"
+            return (
+                _render_html(
+                    meta=meta,
+                    canonical=page_canonical,
+                    body_html=_releases_body(releases),
                 ),
                 200,
             )
