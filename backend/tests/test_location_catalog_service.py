@@ -338,6 +338,54 @@ def test_coordinates_come_from_active_platform_not_first_link(db_session) -> Non
     assert index.coordinates_for_identity_key(f"catalog:{catalog.id}") == expected
 
 
+def test_coordinates_for_identity_key_reads_location_without_catalog(db_session) -> None:
+    """Площадка без каталожного узла живёт под ключом «location:<id>».
+
+    Такие есть у зарубежных s95, RunPark и части parkrun-площадок, и по ним
+    раньше не находилось координат вовсе: всё, что от них считается, молча
+    выходило пустым — так у геоотметок пропадало расстояние от дома.
+    """
+    from uuid import uuid4
+
+    from app.models import Location, Platform
+
+    try:
+        five_verst = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+    except Exception:
+        pytest.skip("Database not available")
+
+    suffix = uuid4().hex[:8]
+    lonely = Location(
+        platform_id=five_verst.id,
+        external_key=f"nocatalog-coords-{suffix}",
+        name=f"Площадка без каталога {suffix}",
+        latitude=59.840024,
+        longitude=30.324102,
+    )
+    db_session.add(lonely)
+    db_session.commit()
+
+    index = LocationCatalogIndex(db_session)
+    identity_key = index.canonical_identity_key(lonely, "five_verst")
+
+    assert identity_key == f"location:{lonely.id}"
+    assert index.coordinates_for_identity_key(identity_key) == (
+        lonely.latitude,
+        lonely.longitude,
+    )
+
+
+def test_coordinates_for_identity_key_survives_garbage(db_session) -> None:
+    """Ключ приходит в том числе из адресной строки — на мусоре не падаем."""
+    try:
+        index = LocationCatalogIndex(db_session)
+    except Exception:
+        pytest.skip("Database not available")
+
+    assert index.coordinates_for_identity_key("location:не-uuid") == (None, None)
+    assert index.coordinates_for_identity_key("вообще не ключ") == (None, None)
+
+
 def test_backfill_region_from_catalog_fills_gap_from_sibling_platform(db_session) -> None:
     from uuid import uuid4
 

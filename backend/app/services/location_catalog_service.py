@@ -35,6 +35,20 @@ def normalize_platform_code(value: str | None) -> str | None:
     return mapping.get(normalized, normalized)
 
 
+def _identity_key_uuid(identity_key: str, prefix: str) -> UUID | None:
+    """UUID из канонического ключа вида «<prefix><uuid>», иначе None.
+
+    Ключи приходят в том числе из адресной строки, поэтому мусор здесь —
+    штатный случай, а не повод падать.
+    """
+    if not identity_key.startswith(prefix):
+        return None
+    try:
+        return UUID(identity_key[len(prefix) :])
+    except ValueError:
+        return None
+
+
 def should_use_catalog_display(catalog: LocationCatalog, platform_code: str) -> bool:
     if catalog.is_closed:
         return False
@@ -75,6 +89,10 @@ class LocationCatalogIndex:
         self._by_platform_slug: dict[tuple[str, str], LocationCatalog] = {}
         self._catalogs: dict[UUID, LocationCatalog] = {}
         self._catalog_coords: dict[UUID, tuple[float, float]] = {}
+        # Координаты площадок, не сведённых в каталожный узел: их ключ — не
+        # «catalog:», а «location:<id>» (см. canonical_identity_key), и по
+        # каталогу они не находятся вовсе.
+        self._location_coords: dict[UUID, tuple[float, float]] = {}
         # Ранг платформы, из которой взяты текущие координаты узла (см. _coord_rank):
         # нужен, чтобы более приоритетная связка перебивала уже записанную.
         self._catalog_coords_rank: dict[UUID, tuple[int, int, str]] = {}
@@ -157,6 +175,18 @@ class LocationCatalogIndex:
         target[catalog_id] = (paused + int(is_paused), total + 1)
 
     def _load(self, db: Session) -> None:
+        # Координаты площадок как они лежат в самой строке локации. Для узлов
+        # каталога поверх ляжет их собственная точка (_set_coords ниже, она и
+        # выигрывает при разборе ключа), а для несведённых в каталог это
+        # единственный источник: из связок каталога они не приедут по определению.
+        self._location_coords = {
+            location_id: (latitude, longitude)
+            for location_id, latitude, longitude in db.query(
+                Location.id, Location.latitude, Location.longitude
+            )
+            .filter(Location.latitude.isnot(None), Location.longitude.isnot(None))
+            .all()
+        }
         locations_with_events = {
             location_id
             for (location_id,) in db.query(EventSummary.location_id).distinct().all()
@@ -230,10 +260,24 @@ class LocationCatalogIndex:
         return None, None
 
     def coordinates_for_identity_key(self, identity_key: str) -> tuple[float | None, float | None]:
+        """Координаты площадки по её каноническому ключу — обоих видов.
+
+        Ключ «location:<id>» получают площадки без каталожного узла (зарубежные
+        s95, RunPark, часть parkrun-площадок). Раньше по такому ключу координат
+        не находилось вовсе, и всё, что считается от них, молча выходило пустым:
+        у геоотметок так пропадало расстояние от дома до «где я» — ровно та
+        величина, ради которой отметки и собираются.
+        """
         catalog = self.get_for_identity_key(identity_key)
-        if catalog is None:
+        if catalog is not None:
+            coords = self._catalog_coords.get(catalog.id)
+            if coords is None:
+                return None, None
+            return coords
+        location_id = _identity_key_uuid(identity_key, "location:")
+        if location_id is None:
             return None, None
-        coords = self._catalog_coords.get(catalog.id)
+        coords = self._location_coords.get(location_id)
         if coords is None:
             return None, None
         return coords
