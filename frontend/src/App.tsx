@@ -13,6 +13,7 @@ import { AdminRecordsDigestPage } from "./features/admin/AdminRecordsDigestPage"
 import { ProfileRoute } from "./features/profile/ProfileRoute";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
+import { TelegramReturnPage } from "./features/auth/TelegramReturnPage";
 import { OnboardingPage } from "./features/onboarding/OnboardingPage";
 import { PortalAboutPage } from "./features/portal/PortalAboutPage";
 import { PortalBlogPage } from "./features/portal/PortalBlogPage";
@@ -215,6 +216,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/new/settings": () => <PathRedirect to={PORTAL_CABINET_SETTINGS_HREF} />,
   "/oauth/yandex/callback": () => <OAuthCallbackPage provider="yandex" />,
   "/oauth/vk/callback": () => <OAuthCallbackPage provider="vk" />,
+  // Telegram возвращает данные во фрагменте адреса — разбирает их страница.
+  "/auth/telegram/return": () => <TelegramReturnPage />,
   // Онбординг первичного входа: поиск себя по ФИО и привязка профилей.
   "/welcome": () => <OnboardingPage />,
   // Старые адреса кабинета уводят на публичный адрес участника. Демо-режим
