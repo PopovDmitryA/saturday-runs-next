@@ -11,8 +11,8 @@ run_director из volunteer_role_taxonomy — «Организатор» у 5 в
 users.home_location_key и location_ratings.location_key), а не location_id:
 грант должен покрывать все платформы одной физической точки сразу.
 
-Revision ID: 064_location_organizer_access
-Revises: 063_location_openings
+Revision ID: 071_location_organizer_access
+Revises: 070_auth_provider_email
 Create Date: 2026-08-16
 """
 
@@ -21,8 +21,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "064_location_organizer_access"
-down_revision = "063_location_openings"
+revision = "071_location_organizer_access"
+down_revision = "070_auth_provider_email"
 branch_labels = None
 depends_on = None
 

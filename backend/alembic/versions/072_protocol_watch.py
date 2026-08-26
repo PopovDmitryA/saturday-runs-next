@@ -21,8 +21,8 @@
 * protocol_revisions — журнал правок протокола: перечитка обнаружила, что
   протокол изменился (замена «Неизвестного» на имя правкой не считается).
 
-Revision ID: 065_protocol_watch
-Revises: 064_location_organizer_access
+Revision ID: 072_protocol_watch
+Revises: 071_location_organizer_access
 Create Date: 2026-08-23
 """
 
@@ -31,8 +31,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "065_protocol_watch"
-down_revision = "064_location_organizer_access"
+revision = "072_protocol_watch"
+down_revision = "071_location_organizer_access"
 branch_labels = None
 depends_on = None
 
