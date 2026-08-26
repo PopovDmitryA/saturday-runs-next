@@ -1127,6 +1127,22 @@ a.on-this-day-location {
   color: var(--link);
 }
 
+/* Уточнение к главному числу плитки: «из них действует 1». Тише подписи, но
+   того же цвета — это часть подписи, а не ссылка «Подробнее». */
+.stat-card-note {
+  display: block;
+  font-size: 0.74rem;
+  line-height: 1.2;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.stat-card-runs .stat-card-note,
+.stat-card-volunteering .stat-card-note,
+.stat-card-wins .stat-card-note {
+  color: var(--stat-theme-label);
+}
+
 .link-button {
   padding: 0;
   border: none;
