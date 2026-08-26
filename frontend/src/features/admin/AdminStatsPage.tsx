@@ -7,6 +7,8 @@ import {
   getAdminSiteStats,
   getAdminUsersGeography,
   type AdminLinkCombinationRow,
+  type AdminLinksByMethodRow,
+  type AdminOnboardingCohortRow,
   type AdminSiteStatsResponse,
   type AdminUsersGeographyResponse,
 } from "../../lib/api";
@@ -228,6 +230,114 @@ function StatCard({ label, value, hint }: { label: string; value: string | numbe
 // Наборы привязок: человек попадает ровно в одну строку, поэтому суммы по
 // строкам сходятся с числом учётных записей — это и позволяет сравнивать
 // «только 5 вёрст» с «5 вёрст + parkrun» напрямую.
+const LINK_METHOD_LABELS: Record<string, string> = {
+  search: "поиск",
+  url: "ссылка",
+  claim: "тизер главной",
+  s95_pair: "parkrun с С95",
+  legacy: "до отметки",
+};
+
+function pct(part: number, total: number): string {
+  if (total <= 0) {
+    return "—";
+  }
+  return `${Math.round((part / total) * 100)}%`;
+}
+
+/**
+ * Воронка онбординга: по неделям регистрации — сколько людей завело аккаунт и
+ * какая доля дошла до первой привязки. Недели до релиза поиска по ФИО считаются
+ * задним числом из created_at/linked_at, поэтому «до» и «после» стоят рядом.
+ */
+function OnboardingFunnel({
+  cohorts,
+  methods,
+}: {
+  cohorts: AdminOnboardingCohortRow[];
+  methods: AdminLinksByMethodRow[];
+}) {
+  const methodsByWeek = useMemo(
+    () => new Map(methods.map((row) => [row.week, row])),
+    [methods],
+  );
+  const methodCodes = useMemo(() => {
+    const codes = new Set<string>();
+    for (const row of methods) {
+      for (const code of Object.keys(row.by_method)) {
+        codes.add(code);
+      }
+    }
+    // Порядок фиксирован: сначала интересное (поиск), «до отметки» — в конец.
+    const order = ["search", "url", "claim", "s95_pair", "legacy"];
+    return [...codes].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  }, [methods]);
+
+  if (cohorts.length === 0) {
+    return null;
+  }
+
+  const recent = [...cohorts].reverse();
+
+  return (
+    <section className="card admin-stats-funnel">
+      <h2 className="section-title">Онбординг: от регистрации до привязки</h2>
+      <p className="muted admin-stats-funnel-hint">
+        Когорта — неделя регистрации. «За сутки» — доля тех, кто привязал первый профиль в первые
+        24 часа после создания аккаунта: это и есть эффект мастера привязки.
+      </p>
+      <div className="table-scroll">
+        <table className="data-table admin-stats-funnel-table">
+          <thead>
+            <tr>
+              <th>Неделя регистрации</th>
+              <th>Зарегистрировались</th>
+              <th>Привязали за сутки</th>
+              <th>За 7 дней</th>
+              <th>Когда-либо</th>
+              {methodCodes.map((code) => (
+                <th key={code}>{LINK_METHOD_LABELS[code] ?? code}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {recent.map((row) => {
+              const weekMethods = methodsByWeek.get(row.week);
+              return (
+                <tr key={row.week}>
+                  <td>{formatDate(row.week)}</td>
+                  <td>{formatInt(row.registered)}</td>
+                  <td>
+                    <strong>{pct(row.linked_1d, row.registered)}</strong>{" "}
+                    <span className="muted">({formatInt(row.linked_1d)})</span>
+                  </td>
+                  <td>
+                    {pct(row.linked_7d, row.registered)}{" "}
+                    <span className="muted">({formatInt(row.linked_7d)})</span>
+                  </td>
+                  <td>
+                    {pct(row.linked_any, row.registered)}{" "}
+                    <span className="muted">({formatInt(row.linked_any)})</span>
+                  </td>
+                  {methodCodes.map((code) => (
+                    <td key={code} className="muted">
+                      {weekMethods?.by_method[code] ? formatInt(weekMethods.by_method[code]) : "—"}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted admin-stats-funnel-hint">
+        Колонки способов считают все привязки недели, включая тех, кто зарегистрировался раньше и
+        добрал недостающую систему.
+      </p>
+    </section>
+  );
+}
+
 function LinkCombinations({
   rows,
   withoutLinks,
@@ -637,6 +747,11 @@ function AdminStatsContent() {
               usersTotal={overview.users_total}
             />
           </section>
+
+          <OnboardingFunnel
+            cohorts={data.onboarding_cohorts}
+            methods={data.links_by_method_weekly}
+          />
 
           <GeographySection periodDays={periodDays} />
 

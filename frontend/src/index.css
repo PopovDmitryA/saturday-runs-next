@@ -14859,3 +14859,21 @@ a.admin-system-chip:hover {
     background: var(--bg-muted);
   }
 }
+
+/* Воронка онбординга в админской статистике: узкие числовые колонки, чтобы
+   таблица с долями и способами привязки читалась одним взглядом. */
+.admin-stats-funnel-hint {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.admin-stats-funnel-table th,
+.admin-stats-funnel-table td {
+  white-space: nowrap;
+}
+
+.admin-stats-funnel-table td:not(:first-child),
+.admin-stats-funnel-table th:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
