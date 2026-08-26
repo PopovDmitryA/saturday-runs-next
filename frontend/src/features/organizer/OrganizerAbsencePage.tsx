@@ -10,6 +10,8 @@ import {
 import { formatInt } from "../../lib/format";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { locationHintFor } from "../../lib/locationHint";
+import { TableWrap } from "../../components/tableUx/TableWrap";
+import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { OrganizerBreadcrumbs } from "./OrganizerBreadcrumbs";
 import { OrganizerDenied } from "./OrganizerDenied";
@@ -38,6 +40,7 @@ function sortValue(row: OrganizerAbsenceItem, key: SortKey): number | string | n
 }
 
 function OrganizerAbsenceContent({ slug }: { slug: string }) {
+  const attachFloatingHead = useFloatingTableHead();
   const [minRuns, setMinRuns] = useState(10);
   const [minMissed, setMinMissed] = useState(4);
   const [data, setData] = useState<OrganizerAbsenceResponse | null>(null);
@@ -196,7 +199,7 @@ function OrganizerAbsenceContent({ slug }: { slug: string }) {
 
       {!loading && !error && rows.length > 0 && (
         <section className="card org-table-card">
-          <div className="table-scroll">
+          <TableWrap stickyFirstCol innerRef={attachFloatingHead}>
             <table className="data-table org-svod-table">
               <thead>
                 <tr>
@@ -243,7 +246,7 @@ function OrganizerAbsenceContent({ slug }: { slug: string }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         </section>
       )}
     </PortalSectionShell>

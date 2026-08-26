@@ -73,8 +73,8 @@ _TRAVEL_HEADING_RE = re.compile(r"\s*как\s+добраться\s*[?:.]*\s*", r
 
 
 def location_page_cache_key(slug: str) -> str:
-    # v11 — в ответ добавлено описание площадки (расписание, трасса, как добраться).
-    return f"locations:page:v11:{slug.strip().lower()}"
+    # v12 — в описании появилось распарсенное время старта (start_time_current).
+    return f"locations:page:v12:{slug.strip().lower()}"
 
 
 def location_events_cache_key(slug: str) -> str:
@@ -1093,9 +1093,17 @@ def _description_payload(
         row = rows.get(location.id)
         if row is None or not (row.schedule_text or row.course_text or row.travel_text or row.travel_sections):
             continue
+        # Действующее время старта — с учётом сезонных окон расписания. Многие
+        # живут в парадигме «все стартуют в 9:00», поэтому фронт подсвечивает
+        # время, когда оно другое (решение Дмитрия 23.08.2026).
+        from app.services.location_schedule_service import current_start_time_label
+
+        start_time_current = current_start_time_label(row.schedule_parsed, date.today())
         return {
             "platform_code": platform_code,
             "schedule_text": row.schedule_text,
+            "start_time_current": start_time_current,
+            "start_schedule": row.schedule_parsed or [],
             "course_text": row.course_text,
             "travel_text": row.travel_text,
             "travel_sections": [

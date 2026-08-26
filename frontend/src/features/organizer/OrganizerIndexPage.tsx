@@ -13,11 +13,14 @@ const ACCESS_SOURCE_LABELS: Record<OrganizerLocationItem["access_source"], strin
   volunteering: "вы были организатором",
   manual: "доступ выдан вручную",
   both: "вы были организатором",
+  admin: "доступ администратора",
 };
 
 function OrganizerIndexContent({ user }: { user: User }) {
   const [items, setItems] = useState<OrganizerLocationItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Поиск нужен админу: у него в списке весь каталог, у организатора 1–2 строки.
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +81,17 @@ function OrganizerIndexContent({ user }: { user: User }) {
 
       {!error && items !== null && items.length > 0 && (
         <div className="card">
+          {items.length > 15 && (
+            <p className="org-index-search">
+              <input
+                className="input"
+                type="search"
+                placeholder="Поиск по названию или городу…"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </p>
+          )}
           <table className="data-table">
             <thead>
               <tr>
@@ -88,7 +102,18 @@ function OrganizerIndexContent({ user }: { user: User }) {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {items
+                .filter((item) => {
+                  const needle = query.trim().toLowerCase();
+                  if (!needle) {
+                    return true;
+                  }
+                  return (
+                    (item.name ?? "").toLowerCase().includes(needle) ||
+                    (item.city ?? "").toLowerCase().includes(needle)
+                  );
+                })
+                .map((item) => (
                 <tr key={item.location_key}>
                   <td>
                     <a href={`/organizer/${item.slug}`}>

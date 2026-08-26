@@ -17,7 +17,7 @@ export function OrganizerDenied({ slug, notFound }: { slug: string; notFound: bo
     <div className="card">
       <h2 className="section-title">Кабинет закрыт для этой локации</h2>
       <p>
-        Расширенные данные площадки видит её оргкоманда: те, кто хоть раз выходил здесь
+        Расширенные данные локации видит её оргкоманда: те, кто хоть раз выходил здесь
         организатором, — и те, кому доступ выдали вручную.
       </p>
       <p className="muted">

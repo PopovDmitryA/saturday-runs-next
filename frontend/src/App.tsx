@@ -54,7 +54,15 @@ import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
 import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
 import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
 import { OrganizerAbsencePage } from "./features/organizer/OrganizerAbsencePage";
+import { OrganizerAttendancePage } from "./features/organizer/OrganizerAttendancePage";
+import { OrganizerProtocolsPage } from "./features/organizer/OrganizerProtocolsPage";
+import { OrganizerAudiencePage } from "./features/organizer/OrganizerAudiencePage";
+import { OrganizerBenchPage } from "./features/organizer/OrganizerBenchPage";
 import { OrganizerIndexPage } from "./features/organizer/OrganizerIndexPage";
+import { OrganizerMilestonesPage } from "./features/organizer/OrganizerMilestonesPage";
+import { OrganizerNewcomersPage } from "./features/organizer/OrganizerNewcomersPage";
+import { OrganizerPostPage } from "./features/organizer/OrganizerPostPage";
+import { OrganizerTeamPage } from "./features/organizer/OrganizerTeamPage";
 import { OrganizerLocationHubPage } from "./features/organizer/OrganizerLocationHubPage";
 import { OrganizerLocationPage } from "./features/organizer/OrganizerLocationPage";
 import { QueuePage } from "./features/queue/QueuePage";
@@ -327,6 +335,38 @@ function renderRoute(path: string): ReactElement {
   const organizerReportMatch = path.match(/^\/organizer\/([^/]+)\/report$/);
   if (organizerReportMatch) {
     return <OrganizerLocationPage slug={decodeURIComponent(organizerReportMatch[1])} />;
+  }
+  const organizerPostMatch = path.match(/^\/organizer\/([^/]+)\/post$/);
+  if (organizerPostMatch) {
+    return <OrganizerPostPage slug={decodeURIComponent(organizerPostMatch[1])} />;
+  }
+  const organizerMilestonesMatch = path.match(/^\/organizer\/([^/]+)\/milestones$/);
+  if (organizerMilestonesMatch) {
+    return <OrganizerMilestonesPage slug={decodeURIComponent(organizerMilestonesMatch[1])} />;
+  }
+  const organizerNewcomersMatch = path.match(/^\/organizer\/([^/]+)\/newcomers$/);
+  if (organizerNewcomersMatch) {
+    return <OrganizerNewcomersPage slug={decodeURIComponent(organizerNewcomersMatch[1])} />;
+  }
+  const organizerBenchMatch = path.match(/^\/organizer\/([^/]+)\/volunteers$/);
+  if (organizerBenchMatch) {
+    return <OrganizerBenchPage slug={decodeURIComponent(organizerBenchMatch[1])} />;
+  }
+  const organizerTeamMatch = path.match(/^\/organizer\/([^/]+)\/team$/);
+  if (organizerTeamMatch) {
+    return <OrganizerTeamPage slug={decodeURIComponent(organizerTeamMatch[1])} />;
+  }
+  const organizerAttendanceMatch = path.match(/^\/organizer\/([^/]+)\/attendance$/);
+  if (organizerAttendanceMatch) {
+    return <OrganizerAttendancePage slug={decodeURIComponent(organizerAttendanceMatch[1])} />;
+  }
+  const organizerAudienceMatch = path.match(/^\/organizer\/([^/]+)\/audience$/);
+  if (organizerAudienceMatch) {
+    return <OrganizerAudiencePage slug={decodeURIComponent(organizerAudienceMatch[1])} />;
+  }
+  const organizerProtocolsMatch = path.match(/^\/organizer\/([^/]+)\/protocols$/);
+  if (organizerProtocolsMatch) {
+    return <OrganizerProtocolsPage slug={decodeURIComponent(organizerProtocolsMatch[1])} />;
   }
   // Вход в кабинет локации — хаб с выбором инструмента, а не сразу таблица.
   const organizerLocationMatch = path.match(/^\/organizer\/([^/]+)$/);

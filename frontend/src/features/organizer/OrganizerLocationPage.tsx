@@ -4,7 +4,6 @@ import {
   ApiError,
   getOrganizerEventDates,
   getOrganizerEventReport,
-  organizerEventReportXlsxUrl,
   type OrganizerEventDateItem,
   type SvodResponse,
   type SvodRunnerRow,
@@ -13,6 +12,8 @@ import {
 import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { locationHintFor } from "../../lib/locationHint";
+import { TableWrap } from "../../components/tableUx/TableWrap";
+import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { OrganizerBreadcrumbs } from "./OrganizerBreadcrumbs";
 import { OrganizerDenied } from "./OrganizerDenied";
@@ -119,6 +120,8 @@ function eventOptionLabel(item: OrganizerEventDateItem): string {
 }
 
 function OrganizerLocationContent({ slug }: { slug: string }) {
+  const attachRunnersHead = useFloatingTableHead();
+  const attachVolunteersHead = useFloatingTableHead();
   const [dates, setDates] = useState<OrganizerEventDateItem[] | null>(null);
   const [locationName, setLocationName] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -244,14 +247,12 @@ function OrganizerLocationContent({ slug }: { slug: string }) {
                 ))}
               </select>
             </label>
-            {selectedEventId && (
-              <a
-                className="btn secondary btn-sm"
-                href={organizerEventReportXlsxUrl(slug, selectedEventId)}
-              >
-                Скачать для отчёта (.xlsx)
-              </a>
-            )}
+            {/* Кнопка «Скачать .xlsx» убрана по решению Дмитрия 24.08.2026;
+                эндпоинт экспорта на бэкенде остался. */}
+            {/* Формирователь поста — отдельный инструмент хаба. */}
+            <a className="btn btn-ghost btn-sm" href={`/organizer/${slug}/post`}>
+              ✍️ Пост-отчёт →
+            </a>
             </div>
           </section>
 
@@ -276,13 +277,14 @@ function OrganizerLocationContent({ slug }: { slug: string }) {
                       : ""}
                   </span>
                 </header>
-                <div className="table-scroll">
+                <TableWrap stickyFirstCol innerRef={attachRunnersHead}>
                   <table className="data-table org-svod-table">
                     <thead>
                       <tr>
                         <th>Место</th>
                         <th>Имя</th>
                         <th>Время</th>
+                        <th title="Возрастная группа в протоколе">Группа</th>
                         <th>Отметки для отчёта</th>
                         <th title="Пробежек на этой локации, включая эту">Здесь</th>
                         <th title="Пробежек в системе всего, включая эту">Всего</th>
@@ -302,6 +304,7 @@ function OrganizerLocationContent({ slug }: { slug: string }) {
                             )}
                           </td>
                           <td>{row.finish_time_display}</td>
+                          <td className="org-nowrap">{row.age_group ?? "—"}</td>
                           <td>
                             <Badges items={runnerBadges(row)} />
                           </td>
@@ -311,7 +314,7 @@ function OrganizerLocationContent({ slug }: { slug: string }) {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </TableWrap>
               </section>
 
               <section className="card org-table-card">
@@ -326,7 +329,7 @@ function OrganizerLocationContent({ slug }: { slug: string }) {
                     {formatInt(report.event.volunteers_count)} на старте
                   </span>
                 </header>
-                <div className="table-scroll">
+                <TableWrap stickyFirstCol innerRef={attachVolunteersHead}>
                   <table className="data-table org-svod-table">
                     <thead>
                       <tr>
@@ -363,7 +366,7 @@ function OrganizerLocationContent({ slug }: { slug: string }) {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </TableWrap>
               </section>
             </>
           )}

@@ -154,6 +154,9 @@ class Location(Base):
     is_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_official_map: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Смещение локации от Москвы в часах (Якутск +6, Калининград −1): время
+    # старта в описаниях — местное, момент фиксации протокола — UTC.
+    tz_offset_moscow: Mapped[int | None] = mapped_column(Integer)
     map_url: Mapped[str | None] = mapped_column(String(1024))
     source_url: Mapped[str | None] = mapped_column(String(1024))
     parser_version: Mapped[str | None] = mapped_column(String(32))
@@ -282,6 +285,10 @@ class LocationDescription(Base):
     travel_text: Mapped[str | None] = mapped_column(Text)
     # [{"title": "Общественным транспортом", "text": "…"}, …]
     travel_sections: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    # Распарсенное из schedule_text расписание стартов:
+    # [{"from_month": 9, "to_month": 5, "time": "09:00"}]. Производное поле —
+    # пересчитывается при каждом изменении schedule_text (см. location_schedule).
+    schedule_parsed: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, server_default="[]")
     # [{"title": "Карта и схема проезда", "url": "https://…"}, …]
     links: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, server_default="[]")
     source_url: Mapped[str | None] = mapped_column(String(1024))
@@ -732,6 +739,53 @@ class ProtocolSyncState(Base):
 
     event: Mapped["Event"] = relationship(back_populates="protocol_sync_state")
     event_summary: Mapped["EventSummary | None"] = relationship()
+
+
+class ProtocolUploadFact(Base):
+    """Момент первого появления протокола на 5verst.ru/results/latest/.
+
+    Факт наблюдения за внешним сайтом, а не свойство события: протокол мы
+    замечаем поминутным коллектором раньше, чем событие появляется в нашей БД,
+    поэтому ключ — (location_id, event_date). source: 'legacy' — импорт истории
+    из five_verst_stats (с 08.2024), 'site' — собственный коллектор.
+    """
+
+    __tablename__ = "protocol_upload_facts"
+    __table_args__ = (
+        UniqueConstraint("location_id", "event_date", name="uq_protocol_upload_facts_location_date"),
+        Index("ix_protocol_upload_facts_event_date", "event_date"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="site")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    location: Mapped["Location"] = relationship()
+
+
+class ProtocolRevision(Base):
+    """Журнал правок протокола: перечитка нашла отличие от сохранённой версии.
+
+    Замена «Неизвестного» на имя при тех же позиции и времени правкой НЕ
+    считается (решение Дмитрия 23.08.2026) — такие строки в журнал не попадают.
+    details — компактный дифф (счётчики + до 20 конкретных изменений), без
+    полных копий протокола.
+    """
+
+    __tablename__ = "protocol_revisions"
+    __table_args__ = (Index("ix_protocol_revisions_event", "event_id"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    event_id: Mapped[UUID] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    event: Mapped["Event"] = relationship()
 
 
 class ProfileFetchPending(Base):

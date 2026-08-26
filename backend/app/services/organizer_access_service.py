@@ -136,6 +136,33 @@ def build_organizer_locations(
     return payload
 
 
+def build_admin_organizer_locations(db: Session) -> dict[str, Any]:
+    """Список локаций кабинета для админа: весь каталог, source='admin'.
+
+    Просьба Дмитрия 24.08.2026: админ должен видеть /organizer «как будто он
+    организатор везде», а не пустую страницу с подсказкой про прямые ссылки.
+    Кэш не нужен — build_locations_index уже кэширован.
+    """
+
+    from app.services.location_page_service import build_locations_index
+
+    index = build_locations_index(db)
+    items = [
+        {
+            "location_key": entry.get("identity_key"),
+            "slug": entry.get("slug"),
+            "name": entry.get("name"),
+            "city": entry.get("city"),
+            "platform_codes": entry.get("platform_codes"),
+            "is_paused": entry.get("is_paused"),
+            "access_source": "admin",
+        }
+        for entry in index.get("items", [])
+    ]
+    items.sort(key=lambda item: (item.get("name") or ""))
+    return {"items": items, "total": len(items)}
+
+
 def _compute_organizer_locations(db: Session, user: User) -> dict[str, Any]:
     from app.services.location_page_service import build_locations_index
 

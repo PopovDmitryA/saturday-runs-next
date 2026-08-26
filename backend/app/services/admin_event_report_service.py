@@ -29,6 +29,10 @@ NOT_SECONDARY_SQL = "id NOT IN (SELECT secondary_event_id FROM event_crosslinks)
 # перейдёт в канал по ссылке, увидит там и новости о сайте run5k.run.
 POST_SIGNATURE = "📊 Статистика подготовлена каналом t.me/popov_way"
 
+# Подпись поста из кабинета организатора: посты пишут оргкоманды от себя,
+# поэтому ссылка на сайт, а не на канал автора (решение Дмитрия 16.08.2026).
+SITE_POST_SIGNATURE = "📊 Статистика подготовлена сайтом run5k.run"
+
 
 def age_group_sql(column: str) -> str:
     """Чистая возрастная группа без места в группе.
@@ -207,7 +211,8 @@ def _runner_stat_rows(db: Session, params: dict[str, Any]) -> list[dict[str, Any
         WITH today AS (
             SELECT rr.participant_id,
                    min(rr.finish_time_sec) AS finish_time_sec,
-                   min(rr.position) AS position
+                   min(rr.position) AS position,
+                   min(rr.age_category) AS age_category_raw
             FROM run_results rr
             WHERE rr.event_id = :event_id
               AND rr.participant_id IS NOT NULL
@@ -231,6 +236,7 @@ def _runner_stat_rows(db: Session, params: dict[str, Any]) -> list[dict[str, Any
             GROUP BY rr.participant_id
         )
         SELECT t.participant_id, p.display_name, p.profile_url, t.finish_time_sec, t.position,
+               {age_group_sql("t.age_category_raw")} AS age_group,
                (prev.participant_id IS NULL) AS first_in_system,
                (coalesce(prev.location_runs, 0) = 0) AS first_at_location,
                (t.finish_time_sec IS NOT NULL AND prev.best_platform_sec IS NOT NULL
@@ -336,7 +342,9 @@ def _event_context(
     return event, params, canonical_name
 
 
-def build_event_report(db: Session, event_id: UUID) -> dict[str, Any] | None:
+def build_event_report(
+    db: Session, event_id: UUID, *, post_signature: str = POST_SIGNATURE
+) -> dict[str, Any] | None:
     context = _event_context(db, event_id)
     if context is None:
         return None
@@ -736,7 +744,7 @@ def build_event_report(db: Session, event_id: UUID) -> dict[str, Any] | None:
         "clubs": {"runs": run_clubs, "volunteering": vol_clubs},
         "global_run_jubilees": global_run_jubilees,
     }
-    report["post_text"] = _build_post_text(report, location_title)
+    report["post_text"] = _build_post_text(report, location_title, signature=post_signature)
     return report
 
 
@@ -746,7 +754,9 @@ def _join_names(items: list[dict[str, Any]]) -> str:
     return ", ".join(item["name"] or "Неизвестный участник" for item in items)
 
 
-def _build_post_text(report: dict[str, Any], location_title: str) -> str:
+def _build_post_text(
+    report: dict[str, Any], location_title: str, *, signature: str = POST_SIGNATURE
+) -> str:
     event = report["event"]
     header_stats = report["header"]
     platform_label = event["platform_name"]
@@ -911,7 +921,7 @@ def _build_post_text(report: dict[str, Any], location_title: str) -> str:
         one_step_block,
         club_block,
         jub_extra_block,
-        POST_SIGNATURE,
+        signature,
     ]
     return "\n\n".join(block for block in blocks if block)
 
@@ -1010,6 +1020,7 @@ def build_event_svod(db: Session, event_id: UUID) -> dict[str, Any] | None:
                 "profile_url": row["profile_url"],
                 "finish_time_sec": row["finish_time_sec"],
                 "finish_time_display": fmt_time(row["finish_time_sec"]),
+                "age_group": row["age_group"],
                 "first_in_system": bool(row["first_in_system"]),
                 "first_at_location": bool(row["first_at_location"]),
                 "is_pb": bool(row["is_pb"]),
@@ -1066,6 +1077,29 @@ def build_event_svod(db: Session, event_id: UUID) -> dict[str, Any] | None:
                 "platform_next_milestone": _milestone_value(platform_vols + 1),
             }
         )
+
+    # «Шаг до юбилея» — только для домашних участников (уточнение Дмитрия
+    # 17.08.2026): дом считается общесайтовой логикой (как в рейтинге
+    # дальности), а не по недавней активности. Состоявшиеся юбилеи показываем
+    # всем — это факт, а не прогноз.
+    from app.services.location_catalog_service import LocationCatalogIndex
+    from app.services.organizer_service import home_participant_ids
+
+    identity_key = LocationCatalogIndex(db).canonical_identity_key(
+        event.location, event.platform.code
+    )
+    candidate_ids = {row["participant_id"] for row in runners if row["participant_id"]} | {
+        row["participant_id"] for row in volunteers if row["participant_id"]
+    }
+    home_ids = home_participant_ids(db, identity_key, candidate_ids)
+    for row in runners:
+        if row["participant_id"] not in home_ids:
+            row["location_next_milestone"] = None
+            row["platform_next_milestone"] = None
+    for row in volunteers:
+        if row["participant_id"] not in home_ids:
+            row["location_next_milestone"] = None
+            row["platform_next_milestone"] = None
 
     return {
         "event": {
