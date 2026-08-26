@@ -5,6 +5,7 @@ import { AvatarSection } from "./AvatarSection";
 import { DisplayNameSection } from "./DisplayNameSection";
 import { HistoryMilestonesSection } from "./HistoryMilestonesSection";
 import { HomeLocationSection } from "./HomeLocationSection";
+import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { PrivacySettingsSection } from "./PrivacySettingsSection";
 import { ProfileLinkSection } from "./ProfileLinkSection";
 
@@ -21,6 +22,7 @@ export function SettingsContent({ bare = false }: { bare?: boolean } = {}) {
       <AvatarSection />
       <DisplayNameSection />
       <PrivacySettingsSection />
+      <NotificationSettingsSection />
       <ProfileLinkSection />
       <HomeLocationSection />
       <HistoryMilestonesSection />

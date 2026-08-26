@@ -33,6 +33,7 @@ celery_app.conf.update(
         "app.workers.tasks.admin_digest",
         "app.workers.tasks.og_render",
         "app.workers.tasks.sweep_hq_snapshot",
+        "app.workers.tasks.email_send",
         "app.workers.tasks.user_names",
     ),
     task_routes={
@@ -136,6 +137,19 @@ celery_app.conf.update(
             "task": "five_verst_sync.sync_location_rotation",
             "schedule": crontab(minute=30, hour="*/4"),
             "options": {"queue": "five_verst"},
+        },
+        # Наблюдатель выгрузки протоколов (наследник легаси-крона из
+        # /root/scripts): сб и вс — каждую минуту (01:00–23:59 MSK, чтобы
+        # поймать и Дальний Восток, и вечерние догрузки), будни — раз в
+        # 30 минут (спецзабеги 1 января и переносы). Очередь общая: запрос
+        # один и крошечный, а в five_verst он вставал бы за reconcile.
+        "five-verst-protocol-watch-weekend": {
+            "task": "five_verst_sync.protocol_upload_watch",
+            "schedule": crontab(minute="*", hour="1-23", day_of_week="6,0"),
+        },
+        "five-verst-protocol-watch-weekday": {
+            "task": "five_verst_sync.protocol_upload_watch",
+            "schedule": crontab(minute="0,30", day_of_week="1-5"),
         },
         # Сверка истории протоколов — только по будням: прогон занимает пару
         # часов (200 протоколов через паузы между фетчами), и в выходные он

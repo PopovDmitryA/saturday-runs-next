@@ -256,10 +256,13 @@ def upsert_location_description(
         db.flush()
         return row, False
 
+    from app.services.location_schedule_service import parse_schedule_text
+
     if row is None:
         row = LocationDescription(
             location_id=location.id,
             schedule_text=description.schedule_text,
+            schedule_parsed=parse_schedule_text(description.schedule_text),
             course_text=description.course_text,
             travel_text=description.travel_text,
             travel_sections=payload["travel_sections"],
@@ -282,6 +285,7 @@ def upsert_location_description(
         return row, False
 
     row.schedule_text = description.schedule_text
+    row.schedule_parsed = parse_schedule_text(description.schedule_text)
     row.course_text = description.course_text
     row.travel_text = description.travel_text
     row.travel_sections = payload["travel_sections"]

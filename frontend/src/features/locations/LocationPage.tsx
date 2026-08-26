@@ -684,6 +684,59 @@ function TextBlock({ text }: { text: string }) {
  * (seo_service._location_description_rows): расхождение человека и робота
  * поисковик считает подменой.
  */
+const SCHEDULE_MONTHS_GEN = [
+  "января",
+  "февраля",
+  "марта",
+  "апреля",
+  "мая",
+  "июня",
+  "июля",
+  "августа",
+  "сентября",
+  "октября",
+  "ноября",
+  "декабря",
+];
+
+/**
+ * Время старта в шапке локации. Многие живут в парадигме «все стартуют
+ * в 9:00», поэтому время, отличное от 9:00 (и сезонные расписания), выделяется
+ * цветной плашкой (решение Дмитрия 23.08.2026). Данные — из описания локации,
+ * распарсенного на бэкенде (schedule_parsed).
+ */
+function StartTimeChip({ description }: { description: LocationDescription | null }) {
+  const current = description?.start_time_current;
+  if (!current) {
+    return null;
+  }
+  const schedule = description?.start_schedule ?? [];
+  const seasonal = schedule.length > 1;
+  const unusual = current !== "09:00" || seasonal;
+  const otherWindows = seasonal
+    ? schedule
+        .filter((entry) => entry.time !== current)
+        .map(
+          (entry) =>
+            `с ${SCHEDULE_MONTHS_GEN[entry.from_month - 1]} по ${SCHEDULE_MONTHS_GEN[entry.to_month - 1]} — в ${entry.time}`,
+        )
+        .join(", ")
+    : "";
+  return (
+    <span
+      className={`loc-start-chip${unusual ? " loc-start-chip-unusual" : ""}`}
+      title={
+        unusual
+          ? `Время старта отличается от привычных 9:00${otherWindows ? `. ${otherWindows}` : ""}`
+          : "Время старта по описанию локации"
+      }
+    >
+      🕘 Старт в {current}
+      {otherWindows && <span className="loc-start-chip-extra"> · {otherWindows}</span>}
+    </span>
+  );
+}
+
 function LocationDescriptionQuote({ description }: { description: LocationDescription }) {
   const schedule = (description.schedule_text ?? "").trim();
   const course = (description.course_text ?? "").trim();
@@ -862,10 +915,14 @@ function AgeGroupPlaceTile({
 function LocationPersonalSection({
   slug,
   onOpenAgeGroup,
+  onOrganizerAccess,
 }: {
   slug: string;
   // Плитка «место в группе» раскрывает и подсвечивает её топ-5 в «Рекордах» ниже.
   onOpenAgeGroup: (key: string) => void;
+  // Сообщает странице про доступ к кабинету организатора: кнопка входа живёт
+  // в общей навигации шапки, а не внутри этого блока (редизайн 24.08.2026).
+  onOrganizerAccess?: (access: boolean) => void;
 }) {
   const user = useOptionalUser();
   const personalSheet = useOptionalShareSheet();
@@ -879,7 +936,10 @@ function LocationPersonalSection({
     setStats(null);
     getLocationPersonalStats(slug)
       .then((result) => {
-        if (!cancelled) setStats(result);
+        if (!cancelled) {
+          setStats(result);
+          onOrganizerAccess?.(Boolean(result.organizer_access));
+        }
       })
       .catch(() => {
         // тихо: блок просто не покажется
@@ -1030,7 +1090,8 @@ function LocationPersonalSection({
       </div>
       {stats.runs_count > 0 && (
         <div className="loc-personal-actions">
-          {/* Открывает «Пробежки» кабинета сразу с фильтром по этой локации. */}
+          {/* Открывает «Пробежки» кабинета сразу с фильтром по этой локации.
+              Кнопка кабинета организатора переехала в навигацию шапки. */}
           <a className="btn secondary btn-sm" href={runsAtLocationHref(user, stats.name)}>
             Мои пробежки здесь →
           </a>
@@ -1049,6 +1110,9 @@ function LocationPageContent({ slug }: { slug: string }) {
   // Раскрытая возрастная группа в «Рекордах». Живёт на уровне страницы, потому
   // что открывать её умеет и плитка «место в группе» из блока «Вы на этой локации».
   const [openAgeGroupKey, setOpenAgeGroupKey] = useState<string | null>(null);
+  // Доступ к кабинету организатора (из личной статистики): включает кнопку
+  // в навигации шапки — единственное место входа со страницы локации.
+  const [organizerAccess, setOrganizerAccess] = useState(false);
 
   const toggleAgeGroup = useCallback((key: string) => {
     setOpenAgeGroupKey((current) => (current === key ? null : key));
@@ -1168,17 +1232,36 @@ function LocationPageContent({ slug }: { slug: string }) {
           {page.platforms.map((platform) => (
             <PlatformBadge key={platform.platform_code} code={platform.platform_code} />
           ))}
+          <StartTimeChip description={page.description ?? null} />
         </div>
         {/* Тот же текст, что серверный пререндер отдаёт роботу: если человек и
             робот видят разные страницы, поисковик считает это подменой. Плюс
             связная фраза полезнее плашек тому, кто попал сюда из поиска и
             ещё не понял, что за место. */}
         <p className="loc-header-lead">{locationLeadSentences(page).join(" ")}</p>
+        {/* Навигация по разделам локации одним рядом (редизайн 24.08.2026):
+            раньше журнал жил текстовой ссылкой в плитке, а кабинет — кнопкой
+            в середине страницы, и оба терялись. Кнопка кабинета появляется
+            после загрузки личной статистики — только у оргкоманды. */}
+        <nav className="loc-quick-nav" aria-label="Разделы локации">
+          <a className="loc-quick-link" href={`/locations/${page.slug}/events`}>
+            <span aria-hidden="true">📖</span> Журнал протоколов
+          </a>
+          {organizerAccess && (
+            <a className="loc-quick-link loc-quick-link-accent" href={`/organizer/${page.slug}`}>
+              <span aria-hidden="true">🛠</span> Кабинет организатора
+            </a>
+          )}
+        </nav>
       </header>
 
       <LocationRatingPrompt identityKey={page.identity_key} />
 
-      <LocationPersonalSection slug={page.slug} onOpenAgeGroup={revealAgeGroup} />
+      <LocationPersonalSection
+        slug={page.slug}
+        onOpenAgeGroup={revealAgeGroup}
+        onOrganizerAccess={setOrganizerAccess}
+      />
 
       {stats.last_event && <LastEventSection lastEvent={stats.last_event} page={page} />}
 

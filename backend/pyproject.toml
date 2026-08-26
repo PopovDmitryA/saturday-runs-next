@@ -25,6 +25,8 @@ dependencies = [
     "pillow>=11.0.0",
     "python-multipart>=0.0.18",
     "boto3>=1.35.0",
+    # Экспорт таблиц кабинета организатора в .xlsx (свод по пробежке).
+    "openpyxl>=3.1.0",
 ]
 
 [project.optional-dependencies]

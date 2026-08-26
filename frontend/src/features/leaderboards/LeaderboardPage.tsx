@@ -41,6 +41,7 @@ import { NotFoundPage } from "../NotFoundPage";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
 import { ratingSubject } from "../sharing/subjects";
+import { formatFinishTime } from "./formatFinishTime";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import { TouristMapPanel } from "./TouristMapPanel";
@@ -228,18 +229,7 @@ function formatBestTime(row: {
   best_time_sec?: number | null;
   best_time_display?: string | null;
 }): string | null {
-  const seconds = row.best_time_sec;
-  if (seconds == null || seconds <= 0) {
-    return row.best_time_display ?? null;
-  }
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const rest = seconds % 60;
-  // Компактный вид: «17:23», а не «00:17:23» — колонка узкая, часы у 5 км редкость.
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
-  }
-  return `${minutes}:${String(rest).padStart(2, "0")}`;
+  return formatFinishTime(row.best_time_sec, row.best_time_display);
 }
 
 /**

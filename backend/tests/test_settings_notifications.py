@@ -74,7 +74,10 @@ def test_notification_settings_default_disabled(client: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["enabled"] is False
-    assert "Telegram" in data["description"]
+    # Рассылка стала почтовой: описание говорит о письмах, а не о Telegram-боте.
+    assert "письма" in data["description"].lower()
+    # Адреса нет — почта к профилю не привязана, включать рассылку не на что.
+    assert data["email"] is None
 
 
 def test_notification_settings_update(client: TestClient) -> None:

@@ -170,6 +170,12 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "Кто чаще всех финишировал первым на субботних стартах, с разбивкой по полу.",
         indexable=True,
     ),
+    "/ratings/fastest": _meta(
+        "Самые быстрые результаты и участники — run5k.run",
+        "5 000 самых быстрых финишей и 3 000 самых быстрых участников субботних "
+        "стартов: срезы по системе, полу, возрастной группе и году.",
+        indexable=True,
+    ),
     "/ratings/home-distance": _meta(
         "Рейтинг дальности от дома — run5k.run",
         "Кто уезжает бегать дальше всех от своей домашней локации: сумма километров "
@@ -192,6 +198,11 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
     "/backlog": _meta(
         "Бэклог — run5k.run",
         "Что участники предлагают добавить на сайт и за что голосуют.",
+    ),
+    # Кабинет организатора — закрытый раздел оргкоманд, в поиске не нужен.
+    "/organizer": _meta(
+        "Кабинет организатора — run5k.run",
+        "Расширенные данные локаций для оргкоманд: свод по пробежке и долгая пауза.",
     ),
     # Лаборатория карты — витрина дизайна, наружу не публикуется.
     "/new/map-lab": _meta("Карта (лаборатория) — run5k.run", "Экспериментальная карта локаций."),
@@ -280,6 +291,13 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
 
     if path.startswith("/admin/"):
         return _ADMIN_META
+    # Семейство /organizer/{slug}[/report|/absence] — родовой заголовок, имя локации
+    # подставляет клиент после загрузки данных.
+    if path.startswith("/organizer/"):
+        return _meta(
+            "Кабинет организатора локации — run5k.run",
+            "Свод по пробежке для отчёта оргкоманды и участники на долгой паузе.",
+        )
     if _SWEEP_HQ_RE.match(path):
         return _meta("Обход parkrun — run5k.run", "Служебная витрина мирового обхода parkrun.")
     if path == "/world":
@@ -648,6 +666,7 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/ratings/volunteer-locations", "0.6"),
     ("/ratings/openings", "0.6"),
     ("/ratings/wins", "0.7"),
+    ("/ratings/fastest", "0.7"),
     ("/ratings/win-locations", "0.6"),
     ("/ratings/home-distance", "0.6"),
     ("/ratings/location-records", "0.7"),

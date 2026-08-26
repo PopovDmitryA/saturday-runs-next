@@ -6,7 +6,16 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.models import Location, Platform, User, UserGeoPing
+from app.models import (
+    Event,
+    Location,
+    Participant,
+    Platform,
+    PlatformLink,
+    RunResult,
+    User,
+    UserGeoPing,
+)
 from app.services.user_geo_ping_service import MAX_ACCURACY_M, record_geo_ping
 
 TODAY = date(2026, 8, 22)
@@ -130,6 +139,79 @@ def test_nearest_location_is_recorded(db_session: Session) -> None:
     # расстояние вообще посчиталось и выглядит правдоподобно.
     assert 0 <= ping.nearest_distance_km <= 100
     assert near.name == "Geo Ping Рядом"
+
+
+def _seed_runs(db_session: Session, user: User, location: Location, count: int) -> None:
+    """Пробежки участника на площадке — из них выбирается домашняя локация."""
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+    external_user_id = str(uuid4().int % 1_000_000_000)
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=external_user_id,
+        display_name="Geo Ping Tester",
+        profile_url=f"https://example.test/{external_user_id}/",
+    )
+    db_session.add(participant)
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=platform.id,
+            participant_id=participant.id,
+            external_user_id=external_user_id,
+            external_url=participant.profile_url,
+        )
+    )
+    db_session.flush()
+    for index in range(count):
+        key = f"geoping:{location.external_key}:{external_user_id}:{index}"
+        event = Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=key,
+            event_date=date(2026, 7, 4 + index),
+            event_number=index + 1,
+            title=f"Test event at {location.name}",
+        )
+        db_session.add(event)
+        db_session.flush()
+        db_session.add(
+            RunResult(
+                event_id=event.id,
+                participant_id=participant.id,
+                external_result_key=key,
+                position=1,
+                finish_time_sec=25 * 60,
+                finish_time_display="00:25:00",
+                status="finished",
+            )
+        )
+    db_session.commit()
+
+
+def test_home_distance_is_measured_for_location_without_catalog(
+    db_session: Session,
+) -> None:
+    """Дом на площадке без каталожного узла — расстояние всё равно считается.
+
+    Ключ такой площадки — «location:<id>», и по нему координаты когда-то не
+    находились: отметка писалась с пустым home_distance_km, то есть теряла
+    ровно ту величину, ради которой её и заводили.
+    """
+    user = _user(db_session)
+    home = _location(db_session, "Geo Ping Без Каталога", (59.84, 30.32))
+    _seed_runs(db_session, user, home, count=3)
+
+    # Отметка в паре километров от «дома» — примерно так и выглядит человек,
+    # открывший карту у себя в городе.
+    assert record_geo_ping(
+        db_session, user, latitude=59.86, longitude=30.32, today=TODAY
+    )
+
+    ping = _pings(db_session, user)[0]
+    assert ping.home_identity_key == f"location:{home.id}"
+    assert ping.home_distance_km is not None
+    assert 1 <= ping.home_distance_km <= 5
 
 
 def test_user_without_runs_has_no_home(db_session: Session) -> None:

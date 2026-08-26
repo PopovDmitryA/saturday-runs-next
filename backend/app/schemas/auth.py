@@ -80,6 +80,9 @@ class UserResponse(BaseModel):
     display_name_suggestion: DisplayNameSuggestion | None = None
     consent_accepted: bool = False
     is_admin: bool = False
+    # Есть ли доступ хоть к одной локации кабинета организатора (автодоступ по
+    # волонтёрствам в роли организатора или ручной грант) — для пункта меню.
+    is_organizer: bool = False
     avatar_url: str | None = None
     # Оригинал аватарки без пережатия — открывается по клику на аватарку.
     # NULL у аватарок, загруженных до появления оригиналов.
@@ -170,4 +173,33 @@ class OAuthFinishRequest(BaseModel):
 
 class OAuthFinishResponse(BaseModel):
     redirect: str
+    merge_token: str | None = None
+
+
+class EmailCodeRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    # Согласие на обработку данных — как и у OAuth, без него вход не начинается.
+    consent: bool = False
+    # Отдельное и необязательное: письма о крупных обновлениях. По закону о
+    # рекламе такое согласие должно быть явным и отдельным от условий сервиса,
+    # поэтому вторая галочка, а не одна на всё.
+    news_consent: bool = False
+
+
+class EmailCodeResponse(BaseModel):
+    expires_in: int
+
+
+class EmailVerifyRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    code: str = Field(min_length=4, max_length=12)
+
+
+class EmailVerifyResponse(BaseModel):
+    redirect: str
+
+
+class EmailLinkResponse(BaseModel):
+    # merge_token не пуст, когда ящиком владеет другой профиль: тогда человек
+    # решает, объединять ли их, — как при привязке VK или Яндекса.
     merge_token: str | None = None
