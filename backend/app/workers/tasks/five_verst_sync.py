@@ -534,3 +534,55 @@ def fetch_protocol_from_profile_task(
         }
     finally:
         db.close()
+
+
+@celery_app.task(name="five_verst_sync.protocol_upload_watch")
+def protocol_upload_watch_task() -> dict[str, object]:
+    """Поминутный наблюдатель выгрузки протоколов (наследник легаси-крона).
+
+    Идёт в общей очереди, а не в five_verst: та обслуживается одним воркером
+    с concurrency=1, и минутная задача встала бы в хвост за многочасовым
+    reconcile. Запрос один и крошечный (/results/latest/), суммарная нагрузка
+    на 5verst.ru не растёт — ровно этот же запрос раз в минуту делал легаси,
+    который после паритета выключается.
+
+    В scheduled_run_logs пишем только прогоны с находками или ошибкой:
+    ~1500 тихих прогонов в сутки утопили бы журнал автообновления.
+    """
+    from app.services.scheduled_run_log_service import record_run
+    from app.sync.five_verst_protocol_watch import record_protocol_upload_facts
+
+    started_at = datetime.now(timezone.utc)
+    db = get_session_factory()()
+    try:
+        result = record_protocol_upload_facts(db)
+        if result.new_facts:
+            db.commit()
+        payload = result.as_dict()
+        if result.new_facts or result.unknown_slugs:
+            try:
+                record_run(
+                    "5v протоколы: наблюдатель выгрузки",
+                    payload,
+                    started_at=started_at,
+                    finished_at=datetime.now(timezone.utc),
+                )
+            except Exception:
+                logger.exception("Не удалось записать историю protocol watch")
+        return payload
+    except Exception as exc:
+        db.rollback()
+        logger.warning("protocol watch failed: %s", exc)
+        try:
+            record_run(
+                "5v протоколы: наблюдатель выгрузки",
+                {"error": str(exc)},
+                started_at=started_at,
+                finished_at=datetime.now(timezone.utc),
+                failed=True,
+            )
+        except Exception:
+            logger.exception("Не удалось записать историю protocol watch")
+        return {"error": str(exc)}
+    finally:
+        db.close()

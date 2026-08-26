@@ -208,6 +208,7 @@ def _user_payload(db: Session, user: User, settings: Settings) -> UserResponse:
         user,
         settings,
         identities,
+        db=db,
         display_name_suggestion=display_name_suggestion(db, user),
     )
 

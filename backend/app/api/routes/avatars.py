@@ -145,7 +145,7 @@ async def upload_avatar(
         _delete_stored(old_full, settings)
     # Ответ собираем канонически (как /auth/me): model_validate на ORM-модели
     # падает на вложенных auth_identities и не проставляет is_admin.
-    return user_response(user, settings)
+    return user_response(user, settings, db=db)
 
 
 @router.delete("/users/me/avatar", response_model=UserResponse)
@@ -160,7 +160,7 @@ def delete_avatar(
     db.commit()
     _delete_stored(old_preview, settings)
     _delete_stored(old_full, settings)
-    return user_response(user, settings)
+    return user_response(user, settings, db=db)
 
 
 @router.get("/avatars/{filename}")

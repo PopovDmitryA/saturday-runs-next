@@ -6,7 +6,7 @@
  * - группа «Личный кабинет» раскрывается по клику и автоматически при
  *   переходе в любой его раздел; анониму — задизейблена, не скрыта;
  * - «Локации» — каталог площадок; на странице локации под ним появляется сама
- *   площадка;
+ *   площадка, а для оргкоманд и админа — подпункт «Кабинет организатора»;
  * - «Результаты» — свой раздел (решение Дмитрия 25.08.2026: последние
  *   пробежки и протоколы — это не каталог площадок): заголовок ведёт на
  *   витрину раздела, подпункты — «Последние пробежки», «Единый протокол» и
@@ -58,6 +58,7 @@ export type SiteSidebarActive =
   | "results"
   | "last-results"
   | "unified-protocol"
+  | "organizer"
   | "ratings"
   | "backlog"
   | null;
@@ -167,6 +168,14 @@ const LOCATION_PIN_ICON = icon(
   <>
     <circle cx="12" cy="12" r="3.2" />
     <path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21" />
+  </>,
+);
+
+// Кабинет организатора — планшет оргкоманды.
+const ORGANIZER_ICON = icon(
+  <>
+    <path d="M9 4.5h6M8 6.5h8a1 1 0 0 1 1 1V20a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 7 20V7.5a1 1 0 0 1 1-1Z" />
+    <path d="M10 11h4M10 14.5h4" />
   </>,
 );
 
@@ -433,6 +442,9 @@ export function SiteSidebar({
   const user = userProp !== undefined ? userProp : detectedUser;
   const authed = user != null;
   const anon = user === null;
+  // Пункт «Кабинет организатора» показываем только оргкомандам (и админу):
+  // остальным он вёл бы в пустой раздел.
+  const organizer = user != null && (user.is_organizer || user.is_admin);
 
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -689,6 +701,26 @@ export function SiteSidebar({
           </a>
         )}
 
+        {/* Кабинет организатора — постоянный подпункт, как «Последние
+            пробежки». Ведёт всегда к СПИСКУ своих локаций (/organizer): раньше
+            вёл в кабинет открытой локации, и со страницы чужой локации
+            организатор попадал в отказ (правка Дмитрия 24.08.2026). При одной
+            своей локации список сам редиректит в её кабинет. */}
+        {organizer && (
+          <a
+            href="/organizer"
+            className={`portal-cab-nav-item portal-cab-nav-subitem${
+              active === "organizer" ? " active" : ""
+            }`}
+            aria-current={active === "organizer" ? "page" : undefined}
+            title={collapsed ? "Кабинет организатора" : undefined}
+          >
+            <span className="portal-cab-nav-icon">{ORGANIZER_ICON}</span>
+            <span className="portal-cab-nav-label">Кабинет организатора</span>
+          </a>
+        )}
+
+
         {/* «Результаты» — про то, что было на выходных, а не про каталог
             площадок. Заголовок ведёт на витрину раздела, но своим пунктом
             «Последние пробежки» тоже перечислены (просьба Дмитрия
@@ -746,7 +778,6 @@ export function SiteSidebar({
           <span className="portal-cab-nav-icon">{PROTOCOL_ICON}</span>
           <span className="portal-cab-nav-label">Журнал протоколов</span>
         </a>
-
         <a
           href="/ratings"
           className={`portal-cab-nav-item${active === "ratings" ? " active" : ""}`}

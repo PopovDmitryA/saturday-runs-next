@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -254,6 +255,10 @@ class LocationDescriptionResponse(BaseModel):
 
     platform_code: str
     schedule_text: str | None = None
+    # Действующее время старта («09:00») и сезонные окна расписания —
+    # распарсено из schedule_text (location_schedule_service).
+    start_time_current: str | None = None
+    start_schedule: list[dict[str, Any]] = Field(default_factory=list)
     course_text: str | None = None
     travel_text: str | None = None
     travel_sections: list[LocationDescriptionSectionResponse] = Field(default_factory=list)
@@ -533,6 +538,9 @@ class LocationPersonalStatsResponse(BaseModel):
     first_run_date: date | None = None
     last_run_date: date | None = None
     volunteering_count: int = 0
+    # Есть ли у пользователя доступ к кабинету организатора этой локации —
+    # кнопка на странице локации (админ проходит всегда).
+    organizer_access: bool = False
     # Любимая роль на этой локации: чаще всего выходил (ярлыки систем схлопнуты
     # в канон, см. volunteer_role_taxonomy).
     top_volunteer_role: LocationTopRoleResponse | None = None

@@ -28,6 +28,9 @@ export type User = {
   display_name_suggestion: DisplayNameSuggestion | null;
   consent_accepted: boolean;
   is_admin: boolean;
+  // Есть доступ хоть к одной локации кабинета организатора (автодоступ по
+  // волонтёрствам организатором или ручной грант из админки).
+  is_organizer: boolean;
   avatar_url: string | null;
   // Оригинал аватарки без пережатия — раскрывается по клику. null у аватарок,
   // загруженных до переезда на S3.
@@ -2397,6 +2400,9 @@ export type LocationDescriptionLink = {
 export type LocationDescription = {
   platform_code: string;
   schedule_text: string | null;
+  /** Действующее время старта («09:00») с учётом сезонных окон. */
+  start_time_current: string | null;
+  start_schedule: { from_month: number; to_month: number; time: string }[];
   course_text: string | null;
   travel_text: string | null;
   travel_sections: LocationDescriptionSection[];
@@ -2879,6 +2885,8 @@ export type LocationPersonalStats = {
   first_run_date: string | null;
   last_run_date: string | null;
   volunteering_count: number;
+  /** Доступ к кабинету организатора этой локации (организатор или админ). */
+  organizer_access: boolean;
   /** Любимая роль на этой локации: чаще всего выходил. */
   top_volunteer_role: { role: string; count: number } | null;
   // Место в топе по пробежкам — только внутри своего пола
@@ -3196,6 +3204,508 @@ export function triggerAdminUserSyncPlatform(userId: string, platformCode: strin
   return apiFetch<SyncRefreshResponse>(`/admin/users/${userId}/sync/${platformCode}`, {
     method: "POST",
   });
+}
+
+// ===== Оргдоступ: гранты кабинета организатора (админка) =====
+
+export type AdminOrganizerGrantItem = {
+  id: string;
+  location_key: string;
+  location_name: string | null;
+  location_slug: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+export type AdminOrganizerDerivedItem = {
+  location_key: string;
+  location_name: string | null;
+  location_slug: string | null;
+};
+
+export type AdminOrganizerAccessResponse = {
+  manual: AdminOrganizerGrantItem[];
+  derived: AdminOrganizerDerivedItem[];
+};
+
+export function getAdminUserOrganizerAccess(userId: string) {
+  return apiFetch<AdminOrganizerAccessResponse>(`/admin/users/${userId}/organizer-access`);
+}
+
+export function createAdminOrganizerGrant(userId: string, locationKey: string, note?: string) {
+  return apiFetch<AdminOrganizerAccessResponse>(`/admin/users/${userId}/organizer-access`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ location_key: locationKey, note: note || null }),
+  });
+}
+
+export function deleteAdminOrganizerGrant(userId: string, grantId: string) {
+  return apiFetch<AdminOrganizerAccessResponse>(
+    `/admin/users/${userId}/organizer-access/${grantId}`,
+    { method: "DELETE" },
+  );
+}
+
+// ===== Кабинет организатора =====
+
+export type OrganizerLocationItem = {
+  location_key: string;
+  slug: string;
+  name: string;
+  city: string | null;
+  platform_codes: string[];
+  is_paused: boolean;
+  access_source: "volunteering" | "manual" | "both" | "admin";
+};
+
+export type OrganizerLocationsResponse = {
+  items: OrganizerLocationItem[];
+  total: number;
+};
+
+export function getOrganizerLocations() {
+  return apiFetch<OrganizerLocationsResponse>(`/organizer/locations`);
+}
+
+export type OrganizerAbsenceItem = {
+  name: string | null;
+  handle: string | null;
+  last_date: string;
+  last_date_display: string;
+  runs_here: number;
+  runs_total: number;
+  missed_events: number;
+};
+
+export type OrganizerAbsenceResponse = {
+  location: { slug: string; name: string };
+  min_runs: number;
+  min_missed: number;
+  events_total: number;
+  items: OrganizerAbsenceItem[];
+  total: number;
+};
+
+export function getOrganizerAbsence(slug: string, minRuns: number, minMissed: number) {
+  const params = new URLSearchParams();
+  params.set("min_runs", String(minRuns));
+  params.set("min_missed", String(minMissed));
+  return apiFetch<OrganizerAbsenceResponse>(
+    `/organizer/${encodeURIComponent(slug)}/absence?${params.toString()}`,
+  );
+}
+
+export type OrganizerEventDateItem = {
+  event_id: string;
+  event_date: string;
+  event_number: number | null;
+  platform_code: string;
+  finishers_count: number;
+};
+
+export type OrganizerEventDatesResponse = {
+  location: { slug: string; name: string };
+  items: OrganizerEventDateItem[];
+};
+
+export function getOrganizerEventDates(slug: string) {
+  return apiFetch<OrganizerEventDatesResponse>(
+    `/organizer/${encodeURIComponent(slug)}/event-dates`,
+  );
+}
+
+export type SvodRunnerRow = {
+  position: number | null;
+  participant_id: string | null;
+  name: string | null;
+  profile_url: string | null;
+  finish_time_sec: number | null;
+  finish_time_display: string;
+  age_group: string | null;
+  first_in_system: boolean;
+  first_at_location: boolean;
+  is_pb: boolean;
+  is_location_pb: boolean;
+  comeback: boolean;
+  location_runs_count: number;
+  platform_runs_count: number;
+  location_milestone: number | null;
+  location_next_milestone: number | null;
+  platform_milestone: number | null;
+  platform_next_milestone: number | null;
+};
+
+export type SvodVolunteerRole = {
+  label: string;
+  count: number;
+  milestone: number | null;
+};
+
+export type SvodVolunteerRow = {
+  participant_id: string | null;
+  name: string | null;
+  profile_url: string | null;
+  roles: SvodVolunteerRole[];
+  new_roles: string[];
+  first_volunteering: boolean;
+  first_at_location: boolean;
+  location_vol_count: number;
+  platform_vol_count: number;
+  location_milestone: number | null;
+  location_next_milestone: number | null;
+  platform_milestone: number | null;
+  platform_next_milestone: number | null;
+};
+
+export type SvodResponse = {
+  event: {
+    event_id: string;
+    event_date: string;
+    event_number: number | null;
+    location_id: string;
+    location_name: string;
+    platform_code: string;
+    platform_name: string;
+    source_url: string | null;
+    finishers_count: number;
+    volunteers_count: number;
+  };
+  runners: SvodRunnerRow[];
+  volunteers: SvodVolunteerRow[];
+};
+
+export function getOrganizerEventReport(slug: string, eventId: string) {
+  return apiFetch<SvodResponse>(
+    `/organizer/${encodeURIComponent(slug)}/event-report?event_id=${encodeURIComponent(eventId)}`,
+  );
+}
+
+// Скачивание .xlsx идёт обычной ссылкой (кука same-origin), без apiFetch.
+export function organizerEventReportXlsxUrl(slug: string, eventId: string) {
+  return `${API_BASE}/organizer/${encodeURIComponent(slug)}/event-report.xlsx?event_id=${encodeURIComponent(eventId)}`;
+}
+
+export type OrganizerPostTemplate =
+  | "full"
+  | "stats"
+  | "volunteers"
+  | "newcomers"
+  | "milestones"
+  | "upcoming"
+  | "vacancies"
+  | "travelers";
+
+export function getOrganizerEventPost(
+  slug: string,
+  eventId: string | null,
+  template: OrganizerPostTemplate = "full",
+  // Пороги «Юбилеев завтра» и «своих» в «Наших в гостях».
+  options?: { minRunMilestone?: number; minVolMilestone?: number; travelersMinRuns?: number },
+) {
+  const params = new URLSearchParams();
+  // «Юбилеи завтра» строится по локации — событие не передаётся.
+  if (eventId) {
+    params.set("event_id", eventId);
+  }
+  params.set("template", template);
+  if (options?.minRunMilestone) {
+    params.set("min_run_milestone", String(options.minRunMilestone));
+  }
+  if (options?.minVolMilestone) {
+    params.set("min_vol_milestone", String(options.minVolMilestone));
+  }
+  if (options?.travelersMinRuns) {
+    params.set("travelers_min_runs", String(options.travelersMinRuns));
+  }
+  return apiFetch<{ post_text: string; template: string }>(
+    `/organizer/${encodeURIComponent(slug)}/event-post?${params.toString()}`,
+  );
+}
+
+export type OrganizerMilestoneItem = {
+  participant_id: string;
+  name: string | null;
+  profile_url: string | null;
+  kind: "runs_here" | "runs_platform" | "vols_here" | "vols_platform";
+  kind_label: string;
+  current: number;
+  milestone: number;
+  remaining: number;
+  last_seen: string | null;
+  last_seen_display: string | null;
+};
+
+export type OrganizerMilestonesResponse = {
+  location: { slug: string; name: string };
+  horizon: number;
+  active_days: number;
+  items: OrganizerMilestoneItem[];
+  total: number;
+};
+
+export function getOrganizerMilestones(slug: string) {
+  return apiFetch<OrganizerMilestonesResponse>(
+    `/organizer/${encodeURIComponent(slug)}/milestones`,
+  );
+}
+
+export type OrganizerNewcomerItem = {
+  participant_id: string;
+  name: string | null;
+  profile_url: string | null;
+  debut_date: string;
+  debut_date_display: string;
+  runs_here: number;
+  runs_total: number;
+  runs_elsewhere: number;
+  last_here_display: string | null;
+  last_anywhere_display: string | null;
+  returned_here: boolean;
+};
+
+export type OrganizerNewcomersResponse = {
+  location: { slug: string; name: string };
+  days: number;
+  items: OrganizerNewcomerItem[];
+  total: number;
+  eligible_total: number;
+  returned_here_total: number;
+  retention_pct: number | null;
+};
+
+export function getOrganizerNewcomers(slug: string, days?: number) {
+  const suffix = days ? `?days=${days}` : "";
+  return apiFetch<OrganizerNewcomersResponse>(
+    `/organizer/${encodeURIComponent(slug)}/newcomers${suffix}`,
+  );
+}
+
+export type OrganizerBenchStatus = "never" | "paused" | "active";
+
+export type OrganizerBenchItem = {
+  participant_id: string;
+  name: string | null;
+  profile_url: string | null;
+  vols_here: number;
+  vols_total: number;
+  runs_here: number;
+  /** Пробежек уже после последнего волонтёрства — признак «человек рядом». */
+  runs_after_last_vol: number;
+  /** null — волонтёрств на локации не было вовсе. */
+  last_vol_date: string | null;
+  last_vol_display: string | null;
+  missed_events: number | null;
+  roles: { label: string; count: number }[];
+  last_run_date: string | null;
+  last_run_display: string | null;
+  status: OrganizerBenchStatus;
+  is_candidate: boolean;
+};
+
+export type OrganizerBenchResponse = {
+  location: { slug: string; name: string };
+  events_total: number;
+  min_runs: number;
+  pause_events: number;
+  items: OrganizerBenchItem[];
+  total: number;
+  candidates_total: number;
+};
+
+// ===== Аналитика локации (кабинет организатора) =====
+
+export type OrganizerTeamRole = {
+  role_key: string;
+  role: string;
+  is_critical: boolean;
+  slots: number;
+  people: number;
+  bus_factor: number;
+  top_name: string | null;
+  top_count: number;
+  top_share_pct: number;
+  rotation_pct: number;
+  network_rotation_pct: number | null;
+  rotation_delta_pct: number | null;
+};
+
+export type OrganizerTeamLoadResponse = {
+  location: { slug: string; name: string };
+  months: number;
+  events_total: number;
+  volunteers_total: number;
+  slots_total: number;
+  avg_per_event: number | null;
+  top_load: {
+    participant_id: string;
+    name: string | null;
+    profile_url: string | null;
+    slots: number;
+    share_pct: number;
+  }[];
+  roles: OrganizerTeamRole[];
+};
+
+export function getOrganizerTeamLoad(slug: string, months = 12) {
+  return apiFetch<OrganizerTeamLoadResponse>(
+    `/organizer/${encodeURIComponent(slug)}/team?months=${months}`,
+  );
+}
+
+export type OrganizerAttendanceResponse = {
+  location: { slug: string; name: string };
+  events: {
+    date: string;
+    date_display: string;
+    event_number: number | null;
+    platform_code: string;
+    finishers: number;
+    volunteers: number;
+  }[];
+  months: {
+    month: string;
+    events: number;
+    avg_finishers: number;
+    max_finishers: number;
+    platform_code: string;
+  }[];
+  events_total: number;
+  last_12m_avg: number | null;
+  prev_12m_avg: number | null;
+  yoy_delta_pct: number | null;
+  record_finishers: number | null;
+  record_date: string | null;
+};
+
+export function getOrganizerAttendance(slug: string) {
+  return apiFetch<OrganizerAttendanceResponse>(
+    `/organizer/${encodeURIComponent(slug)}/attendance`,
+  );
+}
+
+export type OrganizerAudienceResponse = {
+  location: { slug: string; name: string };
+  months: number;
+  finishes_total: number;
+  people_total: number;
+  age_groups: { group: string; finishes: number; share_pct: number }[];
+  genders: { label: string; finishes: number; share_pct: number }[];
+  clubs: { club: string; people: number; finishes: number }[];
+};
+
+export function getOrganizerAudience(slug: string, months = 12) {
+  return apiFetch<OrganizerAudienceResponse>(
+    `/organizer/${encodeURIComponent(slug)}/audience?months=${months}`,
+  );
+}
+
+export type OrganizerBenchmarkResponse = {
+  location: { slug: string; name: string };
+  months: number;
+  scope: string;
+  scope_label: string;
+  peers_total: number;
+  scope_sizes: Record<string, number>;
+  metrics: {
+    key: string;
+    label: string;
+    our_value: number;
+    median: number | null;
+    best: number | null;
+    rank: number | null;
+    peers: number;
+    delta_vs_median_pct: number | null;
+  }[];
+  peers: {
+    location_id: string;
+    name: string;
+    city: string | null;
+    region: string | null;
+    events: number;
+    avg_finishers: number;
+    avg_volunteers: number;
+    unique_runners: number;
+    unique_volunteers: number;
+    female_share_pct: number;
+    volunteer_rotation_pct: number;
+    is_ours: boolean;
+  }[];
+};
+
+export function getOrganizerBenchmark(slug: string, scope = "network", months = 12) {
+  return apiFetch<OrganizerBenchmarkResponse>(
+    `/organizer/${encodeURIComponent(slug)}/benchmark?scope=${scope}&months=${months}`,
+  );
+}
+
+export function getOrganizerVolunteerBench(slug: string, minRuns?: number) {
+  const suffix = minRuns ? `?min_runs=${minRuns}` : "";
+  return apiFetch<OrganizerBenchResponse>(
+    `/organizer/${encodeURIComponent(slug)}/volunteers${suffix}`,
+  );
+}
+
+export type OrganizerProtocolRevision = {
+  detected_at: string;
+  kind: string;
+  details: {
+    added?: number;
+    removed?: number;
+    time_changes?: { position: number | null; old_sec: number | null; new_sec: number | null }[];
+    time_changes_total?: number;
+    position_changes?: number;
+    identified?: number;
+  };
+};
+
+export type OrganizerProtocolItem = {
+  date: string;
+  date_display: string;
+  event_number: number | null;
+  start_time: string | null;
+  finishers: number;
+  last_finish_display: string | null;
+  first_seen_at: string | null;
+  first_seen_display: string | null;
+  delay_hours: number | null;
+  level: "green" | "yellow" | "red" | null;
+  directors: string[];
+  revisions: OrganizerProtocolRevision[];
+};
+
+export type OrganizerProtocolsResponse = {
+  location: { slug: string; name: string };
+  supported: boolean;
+  tz_offset_moscow: number;
+  items: OrganizerProtocolItem[];
+  median_delay_hours_12m: number | null;
+  network_rank: number | null;
+  network_size: number | null;
+};
+
+export function getOrganizerProtocols(slug: string) {
+  return apiFetch<OrganizerProtocolsResponse>(
+    `/organizer/${encodeURIComponent(slug)}/protocols`,
+  );
+}
+
+export type OrganizerHealthIndicator = {
+  key: string;
+  title: string;
+  level: "green" | "yellow" | "red" | null;
+  value_display: string | null;
+  hint: string;
+  advice: string | null;
+};
+
+export type OrganizerHealthResponse = {
+  location: { slug: string; name: string };
+  indicators: OrganizerHealthIndicator[];
+};
+
+export function getOrganizerHealth(slug: string) {
+  return apiFetch<OrganizerHealthResponse>(`/organizer/${encodeURIComponent(slug)}/health`);
 }
 
 const ADMIN_PREVIEW_PAGE_SIZE = 200;

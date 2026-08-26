@@ -55,6 +55,8 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   portal_map_lab: "Портал: карта (лаб)",
   admin: "Админка",
   backlog: "Бэклог",
+  organizer_index: "Кабинет организатора (список)",
+  organizer_location: "Кабинет организатора (локация)",
   cabinet_preview: "Превью кабинета (демо)",
   sweep_hq: "Штаб обхода parkrun",
   og_render: "Служебный рендер OG-картинок",

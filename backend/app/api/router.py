@@ -17,6 +17,7 @@ from app.api.routes import (
     locations,
     media,
     newsletter,
+    organizer,
     portal,
     profiles,
     public_profiles,
@@ -47,6 +48,7 @@ api_router.include_router(location_records.router)
 api_router.include_router(locations.router)
 api_router.include_router(unified_protocol.router)
 api_router.include_router(media.router)
+api_router.include_router(organizer.router)
 api_router.include_router(newsletter.router)
 api_router.include_router(portal.router)
 api_router.include_router(blog.router)

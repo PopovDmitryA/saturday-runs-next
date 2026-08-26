@@ -20,7 +20,13 @@ from app.schemas.abuse_admin import (
     AbuseTelegramBanItem,
     SignupBlockItem,
 )
-from app.schemas.admin import AdminLoginEventItem, AdminLoginEventsResponse, AdminUserListResponse
+from app.schemas.admin import (
+    AdminLoginEventItem,
+    AdminLoginEventsResponse,
+    AdminOrganizerAccessResponse,
+    AdminOrganizerGrantCreate,
+    AdminUserListResponse,
+)
 from app.schemas.admin_event_report import (
     EventReportDatesResponse,
     EventReportLocationsResponse,
@@ -91,7 +97,13 @@ from app.services.admin_event_report_service import (
 )
 from app.services.admin_site_stats_service import get_admin_site_stats
 from app.services.admin_users_geo_stats_service import get_admin_users_geography
-from app.services.admin_users_service import get_admin_user, search_admin_users
+from app.services.admin_users_service import (
+    create_organizer_grant,
+    delete_organizer_grant,
+    get_admin_user,
+    list_user_organizer_access,
+    search_admin_users,
+)
 from app.services.backlog_service import (
     BacklogError,
     list_card_votes_admin,
@@ -268,6 +280,59 @@ def admin_user_sync_platform(
         raise HTTPException(status_code=404, detail="Platform link not found") from None
     db.commit()
     return _admin_sync_refresh_response(result)
+
+
+@router.get("/users/{user_id}/organizer-access", response_model=AdminOrganizerAccessResponse)
+def admin_user_organizer_access(
+    user_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AdminOrganizerAccessResponse:
+    """Оргдоступ пользователя: ручные гранты + вычисленный автодоступ (read-only)."""
+    if get_admin_user(db, user_id) is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return AdminOrganizerAccessResponse.model_validate(list_user_organizer_access(db, user_id))
+
+
+@router.post(
+    "/users/{user_id}/organizer-access",
+    response_model=AdminOrganizerAccessResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def admin_create_organizer_grant(
+    user_id: UUID,
+    body: AdminOrganizerGrantCreate,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AdminOrganizerAccessResponse:
+    if get_admin_user(db, user_id) is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        create_organizer_grant(
+            db,
+            user_id,
+            location_key=body.location_key,
+            note=body.note,
+            granted_by_user_id=admin.id,
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Локация не найдена в каталоге") from None
+    return AdminOrganizerAccessResponse.model_validate(list_user_organizer_access(db, user_id))
+
+
+@router.delete(
+    "/users/{user_id}/organizer-access/{grant_id}",
+    response_model=AdminOrganizerAccessResponse,
+)
+def admin_delete_organizer_grant(
+    user_id: UUID,
+    grant_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AdminOrganizerAccessResponse:
+    if not delete_organizer_grant(db, user_id, grant_id):
+        raise HTTPException(status_code=404, detail="Grant not found")
+    return AdminOrganizerAccessResponse.model_validate(list_user_organizer_access(db, user_id))
 
 
 @router.get("/abuse/blocks", response_model=AbuseBlockListResponse)
