@@ -35,6 +35,7 @@ import {
   locationsWithVolunteeringLabel,
   regionsWithRunsLabel,
   regionsWithVolunteeringLabel,
+  pluralFormRu,
   pluralizeRu,
   prRunsLabel,
   runsCapLabel,
@@ -84,6 +85,8 @@ type AnalyticsCard = {
   firstVisitSince?: string;
   tooltipContent?: ReactNode;
   labelMultiline?: boolean;
+  /** Мелкая строка под подписью — уточнение к числу («из них действует 1»). */
+  note?: ReactNode;
 };
 
 const VOLUNTEERING_INDEX_TOOLTIP = (
@@ -127,6 +130,23 @@ function twelveMonthsAgoIso(): string {
   const date = new Date();
   date.setDate(date.getDate() - 365);
   return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Мелкая строка под плиткой рекордов: «из них действует N».
+ *
+ * Нужна только тем, кто хоть один рекорд потерял, — у остальных главное число
+ * и так означает действующие рекорды. Когда не держится ни одного, число без
+ * пояснения выглядело бы хвастовством, поэтому говорим прямо.
+ */
+function recordsNote(currentCount: number, lostCount: number): string | undefined {
+  if (lostCount <= 0) {
+    return undefined;
+  }
+  if (currentCount <= 0) {
+    return "ни одного действующего";
+  }
+  return `из них ${pluralFormRu(currentCount, ["действует", "действуют", "действует"])} ${formatNumber(currentCount)}`;
 }
 
 function cardThemeClass(category?: AnalyticsCardCategory): string {
@@ -387,12 +407,20 @@ function buildAnalyticsCards(
   // Плитки рекордов локаций показываем и когда все рекорды утеряны (счётчик 0,
   // но есть утерянные): участник должен суметь открыть модалку и увидеть, какой
   // рекорд он потерял, кем и когда перебит.
+  //
+  // В главном числе — сколько рекордов было установлено за всё время: это же
+  // число строк участник увидит в модалке. Тем, у кого рекорд уже перебит,
+  // раньше висел ноль — как будто рекорда и не было (репорт Дмитрия
+  // 26.08.2026). Сколько из них держится сейчас — мелкой строкой под подписью,
+  // и только когда есть утерянные: если не терял ни одного, уточнять нечего.
   const locationRecords = analytics.location_records;
   if (locationRecords && (locationRecords.current_count > 0 || locationRecords.lost_count > 0)) {
+    const total = locationRecords.current_count + locationRecords.lost_count;
     cards.push({
       key: "location_records",
-      value: formatNumber(locationRecords.current_count),
-      label: locationRecords.current_count === 1 ? "Рекорд локации" : "Рекорды локаций",
+      value: formatNumber(total),
+      label: total === 1 ? "Рекорд локации" : "Рекорды локаций",
+      note: recordsNote(locationRecords.current_count, locationRecords.lost_count),
       category: "runs",
       clickable: true,
       modalTarget: "location_records",
@@ -401,13 +429,12 @@ function buildAnalyticsCards(
 
   const ageGroupRecords = analytics.age_group_records;
   if (ageGroupRecords && (ageGroupRecords.current_count > 0 || ageGroupRecords.lost_count > 0)) {
+    const total = ageGroupRecords.current_count + ageGroupRecords.lost_count;
     cards.push({
       key: "age_group_records",
-      value: formatNumber(ageGroupRecords.current_count),
-      label:
-        ageGroupRecords.current_count === 1
-          ? "Рекорд в возрастной группе"
-          : "Рекорды в возрастных группах",
+      value: formatNumber(total),
+      label: total === 1 ? "Рекорд в возрастной группе" : "Рекорды в возрастных группах",
+      note: recordsNote(ageGroupRecords.current_count, ageGroupRecords.lost_count),
       category: "runs",
       clickable: true,
       modalTarget: "age_group_records",
@@ -848,6 +875,7 @@ export function DashboardAnalytics({
       <span className={`stat-label${card.labelMultiline ? " stat-label-multiline" : ""}`}>
         {card.label}
       </span>
+      {card.note && <span className="stat-card-note">{card.note}</span>}
       {card.clickable && <span className="stat-card-hint">Подробнее</span>}
       {card.tooltipContent && !card.clickable && (
         <span className="stat-card-hint">Подробнее</span>

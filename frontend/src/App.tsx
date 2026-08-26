@@ -52,9 +52,22 @@ import { LocationProtocolPage } from "./features/locations/LocationProtocolPage"
 import { LocationPage } from "./features/locations/LocationPage";
 import { LastResultsPage } from "./features/locations/LastResultsPage";
 import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
+import { FastestRatingPage } from "./features/leaderboards/FastestRatingPage";
 import { UnifiedProtocolPage } from "./features/locations/UnifiedProtocolPage";
 import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
 import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
+import { OrganizerAbsencePage } from "./features/organizer/OrganizerAbsencePage";
+import { OrganizerAttendancePage } from "./features/organizer/OrganizerAttendancePage";
+import { OrganizerProtocolsPage } from "./features/organizer/OrganizerProtocolsPage";
+import { OrganizerAudiencePage } from "./features/organizer/OrganizerAudiencePage";
+import { OrganizerBenchPage } from "./features/organizer/OrganizerBenchPage";
+import { OrganizerIndexPage } from "./features/organizer/OrganizerIndexPage";
+import { OrganizerMilestonesPage } from "./features/organizer/OrganizerMilestonesPage";
+import { OrganizerNewcomersPage } from "./features/organizer/OrganizerNewcomersPage";
+import { OrganizerPostPage } from "./features/organizer/OrganizerPostPage";
+import { OrganizerTeamPage } from "./features/organizer/OrganizerTeamPage";
+import { OrganizerLocationHubPage } from "./features/organizer/OrganizerLocationHubPage";
+import { OrganizerLocationPage } from "./features/organizer/OrganizerLocationPage";
 import { LocationRecordsRatingPage } from "./features/leaderboards/LocationRecordsRatingPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
@@ -241,12 +254,16 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/volunteer-locations": () => <LeaderboardPage metric="volunteer_locations" />,
   "/ratings/openings": () => <LeaderboardPage metric="openings" />,
   "/ratings/wins": () => <LeaderboardPage metric="wins" />,
+  "/ratings/fastest": () => <FastestRatingPage />,
   "/ratings/win-locations": () => <LeaderboardPage metric="win_locations" />,
   "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
   "/ratings/location-records": () => <LocationRecordsRatingPage />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,
+  // Кабинет организатора: список доступных локаций; сами кабинеты — по
+  // /organizer/{slug} (regex-ветки в renderRoute). Доступ проверяет бэкенд.
+  "/organizer": () => <OrganizerIndexPage />,
 
   "/sync": () => <SyncRedirect />,
   "/queue": () => <QueueRedirect />,
@@ -333,6 +350,51 @@ function renderRoute(path: string): ReactElement {
         segment={profileMatch[2] ? decodeURIComponent(profileMatch[2]) : undefined}
       />
     );
+  }
+  const organizerAbsenceMatch = path.match(/^\/organizer\/([^/]+)\/absence$/);
+  if (organizerAbsenceMatch) {
+    return <OrganizerAbsencePage slug={decodeURIComponent(organizerAbsenceMatch[1])} />;
+  }
+  const organizerReportMatch = path.match(/^\/organizer\/([^/]+)\/report$/);
+  if (organizerReportMatch) {
+    return <OrganizerLocationPage slug={decodeURIComponent(organizerReportMatch[1])} />;
+  }
+  const organizerPostMatch = path.match(/^\/organizer\/([^/]+)\/post$/);
+  if (organizerPostMatch) {
+    return <OrganizerPostPage slug={decodeURIComponent(organizerPostMatch[1])} />;
+  }
+  const organizerMilestonesMatch = path.match(/^\/organizer\/([^/]+)\/milestones$/);
+  if (organizerMilestonesMatch) {
+    return <OrganizerMilestonesPage slug={decodeURIComponent(organizerMilestonesMatch[1])} />;
+  }
+  const organizerNewcomersMatch = path.match(/^\/organizer\/([^/]+)\/newcomers$/);
+  if (organizerNewcomersMatch) {
+    return <OrganizerNewcomersPage slug={decodeURIComponent(organizerNewcomersMatch[1])} />;
+  }
+  const organizerBenchMatch = path.match(/^\/organizer\/([^/]+)\/volunteers$/);
+  if (organizerBenchMatch) {
+    return <OrganizerBenchPage slug={decodeURIComponent(organizerBenchMatch[1])} />;
+  }
+  const organizerTeamMatch = path.match(/^\/organizer\/([^/]+)\/team$/);
+  if (organizerTeamMatch) {
+    return <OrganizerTeamPage slug={decodeURIComponent(organizerTeamMatch[1])} />;
+  }
+  const organizerAttendanceMatch = path.match(/^\/organizer\/([^/]+)\/attendance$/);
+  if (organizerAttendanceMatch) {
+    return <OrganizerAttendancePage slug={decodeURIComponent(organizerAttendanceMatch[1])} />;
+  }
+  const organizerAudienceMatch = path.match(/^\/organizer\/([^/]+)\/audience$/);
+  if (organizerAudienceMatch) {
+    return <OrganizerAudiencePage slug={decodeURIComponent(organizerAudienceMatch[1])} />;
+  }
+  const organizerProtocolsMatch = path.match(/^\/organizer\/([^/]+)\/protocols$/);
+  if (organizerProtocolsMatch) {
+    return <OrganizerProtocolsPage slug={decodeURIComponent(organizerProtocolsMatch[1])} />;
+  }
+  // Вход в кабинет локации — хаб с выбором инструмента, а не сразу таблица.
+  const organizerLocationMatch = path.match(/^\/organizer\/([^/]+)$/);
+  if (organizerLocationMatch) {
+    return <OrganizerLocationHubPage slug={decodeURIComponent(organizerLocationMatch[1])} />;
   }
   // Протокол одного старта: /locations/{slug}/protocol/{система}/{дата}.
   // Единый протокол конкретной недели: /protocol/{дата}. В адресе — суббота,

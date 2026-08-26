@@ -397,6 +397,37 @@ body {
   margin-top: 0.75rem;
 }
 
+/* Привязка почты: в отличие от VK и Яндекса, здесь не редирект, а два поля. */
+.auth-provider-email {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.auth-provider-email .settings-platform-info {
+  flex: 1 1 12rem;
+}
+
+.auth-provider-email-form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.auth-provider-email-form input {
+  min-width: 11rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font-size: 0.95rem;
+}
+
 .auth-merge-links-list {
   margin: 0.75rem 0 0;
   padding-left: 1.1rem;
@@ -1094,6 +1125,22 @@ a.on-this-day-location {
   margin-top: 0.35rem;
   font-size: 0.78rem;
   color: var(--link);
+}
+
+/* Уточнение к главному числу плитки: «из них действует 1». Тише подписи, но
+   того же цвета — это часть подписи, а не ссылка «Подробнее». */
+.stat-card-note {
+  display: block;
+  font-size: 0.74rem;
+  line-height: 1.2;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.stat-card-runs .stat-card-note,
+.stat-card-volunteering .stat-card-note,
+.stat-card-wins .stat-card-note {
+  color: var(--stat-theme-label);
 }
 
 .link-button {
@@ -11857,9 +11904,13 @@ a.admin-system-chip:hover {
   cursor: default;
 }
 
-/* Кнопка «Мои пробежки здесь» под личной статистикой локации. */
+/* Кнопки «Мои пробежки здесь» и «Кабинет организатора» под личной
+   статистикой локации: без flex-gap они слипались в одну строку. */
 .loc-personal-actions {
   margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
 }
 
 /* Раскрывающийся топ-5 внутри «Рекордов по возрастным группам»: группа в
@@ -15023,4 +15074,69 @@ a.admin-system-chip:hover {
     animation: none;
     background: var(--bg-muted);
   }
+}
+
+
+/* Время старта в шапке локации: плашка рядом с бейджами систем.
+   Отличное от 9:00 (или сезонное) время выделяется цветом — многие живут
+   в парадигме «все стартуют в 9:00». */
+.loc-start-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: var(--bg-muted, rgba(127, 127, 127, 0.1));
+  border: 1px solid var(--border-soft, rgba(127, 127, 127, 0.25));
+}
+
+.loc-start-chip-unusual {
+  background: var(--tint-orange-bg, rgba(219, 154, 4, 0.16));
+  border-color: var(--tint-orange-text, #9a6700);
+  color: var(--tint-orange-text, #9a6700);
+}
+
+.loc-start-chip-extra {
+  font-weight: 400;
+  font-size: 0.78rem;
+}
+
+/* Навигация по разделам локации в шапке: журнал протоколов + кабинет
+   организатора одним рядом (раньше ссылки были разбросаны по странице). */
+.loc-quick-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.85rem;
+}
+
+.loc-quick-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: inherit;
+  background: var(--bg-muted, rgba(127, 127, 127, 0.1));
+  border: 1px solid var(--border-soft, rgba(127, 127, 127, 0.25));
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+
+.loc-quick-link:hover {
+  border-color: var(--accent, #6ea8fe);
+  transform: translateY(-1px);
+  text-decoration: none;
+}
+
+/* Кабинет организатора — акцентная: её видит только оргкоманда, и она должна
+   находиться с первого взгляда. */
+.loc-quick-link-accent {
+  background: var(--tint-blue-bg-strong, rgba(9, 105, 218, 0.12));
+  border-color: var(--tint-blue-border, rgba(9, 105, 218, 0.4));
+  color: var(--link-strong, #0969da);
 }

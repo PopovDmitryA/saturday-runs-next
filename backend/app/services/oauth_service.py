@@ -10,8 +10,16 @@ from app.auth.providers import vk as vk_provider
 from app.auth.providers import yandex as yandex_provider
 from app.auth.providers.base import OAuthProfile
 from app.config import Settings
+from app.core import email_address
 from app.core.redis_client import get_redis_client
 from app.core.security import generate_token
+from app.core.signup_guard import (
+    SignupContext,
+    check_signup_allowed,
+    record_block,
+    register_signup,
+    signup_block_message,
+)
 from app.models import AuthProvider, User
 from app.services.account_merge_service import (
     AccountMergeError,
@@ -126,6 +134,7 @@ def handle_oauth_callback(
     state: str,
     *,
     device_id: str | None = None,
+    signup_context: SignupContext | None = None,
 ) -> tuple[UUID, str | None, str]:
     provider = _provider_from_name(provider_name)
     state_payload = _load_oauth_state(state)
@@ -177,17 +186,60 @@ def handle_oauth_callback(
         db.commit()
         return survivor.id, None, "settings"
 
+    created_new = False
+    twin = None if existing is not None else _user_by_verified_email(db, profile)
     if existing is not None:
         user = existing.user
         upsert_oauth_identity(db, user, provider, profile)
+    elif twin is not None:
+        # Тем же ящиком уже подтверждён профиль (вход по коду на почту или
+        # другой провайдер, отдавший тот же адрес). Это один человек — добавляем
+        # ему способ входа вместо второго аккаунта.
+        user = twin
+        upsert_oauth_identity(db, user, provider, profile)
     else:
+        # Лимит стоит только здесь: вход существующим профилем свободен, а
+        # рождение нового считаем по адресу и устройству.
+        if signup_context is not None:
+            decision = check_signup_allowed(signup_context, settings)
+            if not decision.allowed:
+                record_block(signup_context, decision, provider=provider.value)
+                raise AuthError(signup_block_message(decision), 429)
         user = create_oauth_user(db, profile, provider, consent=consent)
+        created_new = True
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
+    # Счётчик двигаем после коммита: не состоявшаяся регистрация не должна
+    # занимать место в суточном лимите.
+    if created_new and signup_context is not None:
+        register_signup(signup_context, settings)
 
     from app.services.onboarding_service import post_login_redirect_target
 
     return user.id, None, post_login_redirect_target(db, user.id)
+
+
+def _user_by_verified_email(db: Session, profile: OAuthProfile) -> User | None:
+    """Профиль, у которого уже подтверждён тот же почтовый ящик.
+
+    Провайдер отдаёт адрес только после того, как человек залогинился у него,
+    то есть владение ящиком доказано — как и кодом из нашего письма. Значит
+    второй аккаунт на тот же ящик заводить не нужно: это тот же человек,
+    вернувшийся другим способом.
+
+    VK адреса не отдаёт вовсе, так что для него склейка невозможна — там
+    объединение остаётся ручным, через «Способы входа» в настройках.
+    """
+    if not profile.email:
+        return None
+
+    # Локальный импорт: email_auth_service тянет мейлер и celery, а oauth_service
+    # грузится на старте приложения.
+    from app.services.email_auth_service import find_identity_by_mailbox
+
+    normalized = email_address.normalize(profile.email)
+    identity = find_identity_by_mailbox(db, normalized)
+    return identity.user if identity is not None else None
 
 
 def _store_merge_token(db: Session, survivor: User, merged: User) -> str:

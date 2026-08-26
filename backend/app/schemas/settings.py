@@ -22,9 +22,12 @@ class AutoSyncSettingsUpdateRequest(BaseModel):
 class NotificationSettingsResponse(BaseModel):
     enabled: bool
     description: str = (
-        "Рассылка через Telegram-бота: новости сервиса «Статистика парковых пробежек», "
-        "обновления функций и другие сообщения от проекта. Отключить можно в любой момент."
+        "Редкие письма о крупных обновлениях сайта и итогах сезона. "
+        "Отписаться можно здесь или ссылкой в самом письме."
     )
+    # Куда придут письма. None — почта к профилю не привязана, и включать
+    # рассылку не на что: сначала нужно добавить почту в «Способах входа».
+    email: str | None = None
 
 
 class NotificationSettingsUpdateRequest(BaseModel):

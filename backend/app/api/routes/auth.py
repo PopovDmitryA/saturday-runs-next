@@ -15,6 +15,7 @@ from app.auth.providers import vk as vk_provider
 from app.config import Settings, get_settings
 from app.core.admin import user_response
 from app.core.session import delete_session
+from app.core.signup_guard import SignupContext, ensure_device_cookie, read_device_id
 from app.core.site_stats import record_login
 from app.db.session import get_db
 from app.models import AuthProvider, User
@@ -26,6 +27,11 @@ from app.schemas.auth import (
     BotLoginStatusResponse,
     DisplayNameOptionsResponse,
     DisplayNamePreferencesUpdate,
+    EmailCodeRequest,
+    EmailCodeResponse,
+    EmailLinkResponse,
+    EmailVerifyRequest,
+    EmailVerifyResponse,
     LoginRequestResponse,
     LoginRequestStatusResponse,
     MergeConfirmRequest,
@@ -51,6 +57,9 @@ from app.services.auth_service import (
     create_user_session,
     get_login_request_status,
 )
+from app.services.email_auth_service import link_email
+from app.services.email_auth_service import request_code as request_email_code
+from app.services.email_auth_service import verify_code as verify_email_code
 from app.services.login_journal_service import (
     EVENT_LOGIN,
     EVENT_LOGOUT,
@@ -74,6 +83,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+KNOWN_DEVICE_COOKIE_MAX_AGE_SECONDS = 400 * 86400  # предел, который браузеры хранят
+
 
 def _verify_bot_secret(
     settings: Annotated[Settings, Depends(get_settings)],
@@ -91,6 +102,18 @@ def _set_session_cookie(response: Response, settings: Settings, signed_session: 
         value=signed_session,
         max_age=settings.session_ttl_seconds,
         httponly=True,
+        secure=not settings.app_debug,
+        samesite="lax",
+        path="/",
+    )
+    # Метка «здесь уже входили» — переживает выход и читается экраном входа,
+    # чтобы не спрашивать согласие у того, кто его давно дал. Не HttpOnly
+    # намеренно: её читает фронт. Секрета в ней нет.
+    response.set_cookie(
+        key=settings.known_device_cookie_name,
+        value="1",
+        max_age=KNOWN_DEVICE_COOKIE_MAX_AGE_SECONDS,
+        httponly=False,
         secure=not settings.app_debug,
         samesite="lax",
         path="/",
@@ -146,6 +169,7 @@ def _user_payload(db: Session, user: User, settings: Settings) -> UserResponse:
         user,
         settings,
         identities,
+        db=db,
         display_name_suggestion=display_name_suggestion(db, user),
     )
 
@@ -165,6 +189,13 @@ def _parse_vk_callback_params(
     if not code or not state:
         raise AuthError("OAuth callback is missing code or state.", 400)
     return str(code), str(state), str(device_id) if device_id else None
+
+
+def _signup_context(request: Request | None, settings: Settings) -> SignupContext | None:
+    """Кто заводит аккаунт. None — источник без запроса (бот, тесты): лимит не считаем."""
+    if request is None:
+        return None
+    return SignupContext(ip=get_client_ip(request), device_id=read_device_id(request, settings))
 
 
 def _oauth_login_error_redirect(settings: Settings, message: str) -> RedirectResponse:
@@ -227,6 +258,7 @@ def _complete_oauth_login(
         code_value,
         state_value,
         device_id=device_id_value,
+        signup_context=_signup_context(request, settings),
     )
     signed_session = create_user_session(settings, user_id)
     _log_login(
@@ -320,7 +352,94 @@ def oauth_start(
         )
     except AuthError as exc:
         raise _handle_auth_error(exc) from exc
-    return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)
+    response = RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)
+    # Метку устройства выдаём здесь, до ухода к провайдеру: на callback браузер
+    # вернёт её вместе с навигацией (SameSite=lax), и лимит регистраций сможет
+    # отличить второе устройство от второго захода с того же.
+    ensure_device_cookie(request, response, settings)
+    return response
+
+
+@router.post("/email/request-code", response_model=EmailCodeResponse)
+def email_request_code(
+    body: EmailCodeRequest,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    request: Request,
+    response: Response,
+) -> EmailCodeResponse:
+    if not body.consent:
+        raise _handle_auth_error(
+            AuthError("Для входа необходимо принять условия обработки персональных данных.", 400)
+        )
+    try:
+        result = request_email_code(
+            db,
+            settings,
+            body.email,
+            client_ip=get_client_ip(request),
+            consent=body.consent,
+            news_consent=body.news_consent,
+        )
+    except AuthError as exc:
+        raise _handle_auth_error(exc) from exc
+
+    # Метку устройства выдаём здесь по той же причине, что и перед уходом к
+    # OAuth-провайдеру: к моменту ввода кода лимит регистраций должен уметь
+    # отличить второе устройство от второго захода с того же.
+    ensure_device_cookie(request, response, settings)
+    return EmailCodeResponse(expires_in=int(result["expires_in"]))
+
+
+@router.post("/email/verify", response_model=EmailVerifyResponse)
+def email_verify(
+    body: EmailVerifyRequest,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    request: Request,
+    response: Response,
+) -> EmailVerifyResponse:
+    try:
+        user_id = verify_email_code(
+            db,
+            settings,
+            body.email,
+            body.code,
+            signup_context=_signup_context(request, settings),
+        )
+    except AuthError as exc:
+        raise _handle_auth_error(exc) from exc
+
+    signed_session = create_user_session(settings, user_id)
+    _log_login(
+        db,
+        settings,
+        user_id=user_id,
+        provider="email",
+        signed_session=signed_session,
+        request=request,
+    )
+    _set_session_cookie(response, settings, signed_session)
+    # Новичка ведём туда же, куда и после OAuth: на онбординг, если профиль
+    # ещё не привязан к беговой системе.
+    from app.services.onboarding_service import post_login_redirect_target
+
+    return EmailVerifyResponse(redirect=post_login_redirect_target(db, user_id))
+
+
+@router.post("/email/link", response_model=EmailLinkResponse)
+def email_link(
+    body: EmailVerifyRequest,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> EmailLinkResponse:
+    """Добавить почту как способ входа в профиль, где человек уже сидит."""
+    try:
+        merge_token = link_email(db, settings, user, body.email, body.code)
+    except AuthError as exc:
+        raise _handle_auth_error(exc) from exc
+    return EmailLinkResponse(merge_token=merge_token)
 
 
 @router.get("/oauth/vk/redirect-uri")

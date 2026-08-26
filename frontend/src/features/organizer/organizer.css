@@ -1,0 +1,811 @@
+/* Кабинет организатора: тулбар, бейджи отметок свода. */
+
+.org-subnav {
+  margin-bottom: 1rem;
+}
+
+.org-toolbar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.org-toolbar-label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-weight: 600;
+}
+
+.org-toolbar-row select {
+  max-width: 26rem;
+}
+
+.org-badges {
+  display: inline-flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.org-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  background: var(--surface-muted, rgba(127, 127, 127, 0.12));
+}
+
+.org-badge-new {
+  background: rgba(46, 160, 67, 0.15);
+  color: var(--success, #1a7f37);
+}
+
+.org-badge-pb {
+  background: rgba(219, 154, 4, 0.18);
+  color: #9a6700;
+}
+
+.org-badge-jubilee {
+  background: rgba(130, 80, 223, 0.15);
+  color: #6639ba;
+}
+
+.org-badge-next {
+  background: rgba(9, 105, 218, 0.12);
+  color: #0969da;
+}
+
+.org-badge-comeback {
+  background: rgba(207, 34, 46, 0.12);
+  color: #cf222e;
+}
+
+.org-badge-role {
+  background: rgba(9, 105, 218, 0.12);
+  color: #0969da;
+}
+
+.org-svod-table td {
+  vertical-align: top;
+}
+
+/* Хаб локации: выбор инструмента карточками — как главная «Рейтингов». */
+.org-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.org-hub-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.org-hub-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent, #6ea8fe);
+}
+
+.org-hub-emoji {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.org-hub-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.org-hub-text {
+  margin: 0;
+  flex: 1;
+}
+
+.org-hub-meta {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.org-hub-footnote p {
+  margin: 0;
+}
+
+/* Свод: каждая таблица — отдельный блок, иначе «Бегуны» и «Волонтёры»
+   на прокрутке читаются одной простынёй. */
+.org-table-card {
+  margin-bottom: 1.25rem;
+}
+
+.org-table-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border, rgba(127, 127, 127, 0.25));
+}
+
+.org-table-head .section-title {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.org-table-emoji {
+  font-size: 1.1rem;
+}
+
+.org-table-count {
+  font-size: 0.9rem;
+}
+
+.org-toolbar-card {
+  margin-bottom: 1.25rem;
+}
+
+/* Ряд внутри карточки, а не сама карточка: скоуп-стили .portal-section
+   задают .card display:block и перебивают flex по специфичности. */
+.org-toolbar-row {
+  display: flex;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Подпись с селектом не должна растягиваться на всю карточку — иначе кнопка
+   выгрузки уезжает на отдельную строку. */
+.org-toolbar-row .org-toolbar-label {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.org-toolbar-row .btn {
+  flex: 0 0 auto;
+}
+
+.org-subnav-note {
+  align-self: center;
+  margin-left: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.org-toolbar-checkbox input {
+  margin-right: 0.25rem;
+}
+
+/* Ролям — побольше места: у ветеранов список длинный, и узкая колонка
+   раздувала высоту строк (горизонтальный скролл и так есть). */
+.org-bench-roles {
+  min-width: 30rem;
+  max-width: 44rem;
+}
+
+/* Готовый пост: моноширинный блок с прокруткой, как в админке. */
+.org-post-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  background: var(--surface-muted, rgba(127, 127, 127, 0.08));
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  max-height: 30rem;
+  overflow-y: auto;
+  margin: 0;
+}
+
+/* Календарь юбилеев: пробежки и волонтёрства разведены цветом. */
+.org-kind-run {
+  background: rgba(9, 105, 218, 0.14);
+  color: #0969da;
+}
+
+.org-kind-vol {
+  background: rgba(46, 160, 67, 0.16);
+  color: #1a7f37;
+}
+
+.org-badge-milestone {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+/* === Пост-отчёт: двухпанельная раскладка (редизайн 17.08.2026) === */
+
+.org-post-layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .org-post-layout {
+    grid-template-columns: 1fr;
+  }
+  .org-post-formats {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+  }
+  .org-format-card {
+    min-width: 15rem;
+  }
+}
+
+.org-post-formats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.org-format-card {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.25));
+  border-radius: 12px;
+  background: var(--surface, transparent);
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+}
+
+.org-format-card:hover {
+  border-color: var(--accent, #6ea8fe);
+  transform: translateY(-1px);
+}
+
+.org-format-card.active {
+  border-color: var(--accent, #6ea8fe);
+  background: rgba(110, 168, 254, 0.08);
+  box-shadow: inset 3px 0 0 var(--accent, #6ea8fe);
+}
+
+.org-format-emoji {
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+
+.org-format-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.org-format-title {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.org-format-hint {
+  font-size: 0.8rem;
+  opacity: 0.65;
+  line-height: 1.35;
+}
+
+.org-post-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.org-post-controls {
+  margin: 0;
+}
+
+.org-post-preview {
+  margin: 0;
+}
+
+.org-post-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border, rgba(127, 127, 127, 0.25));
+}
+
+.org-post-preview-title {
+  font-weight: 600;
+}
+
+.org-post-preview-sub {
+  font-weight: 400;
+  font-size: 0.85rem;
+}
+
+/* Пузырь в духе телеграм-сообщения: так пост читается как в канале. */
+.org-post-bubble {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  background: var(--surface-muted, rgba(127, 127, 127, 0.08));
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.15));
+  border-radius: 14px 14px 14px 4px;
+  padding: 0.9rem 1.05rem;
+  max-height: 34rem;
+  overflow-y: auto;
+}
+
+.org-post-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.9rem 1.05rem;
+}
+
+.org-post-skeleton span {
+  display: block;
+  height: 0.8rem;
+  border-radius: 6px;
+  background: var(--surface-muted, rgba(127, 127, 127, 0.12));
+  animation: org-skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.org-post-skeleton span:nth-child(2) {
+  width: 85%;
+  animation-delay: 0.1s;
+}
+
+.org-post-skeleton span:nth-child(3) {
+  width: 70%;
+  animation-delay: 0.2s;
+}
+
+.org-post-skeleton span:nth-child(4) {
+  width: 55%;
+  animation-delay: 0.3s;
+}
+
+@keyframes org-skeleton-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* Скамейка: плитки-счётчики над сегментами. */
+.org-bench-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.org-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+}
+
+.org-stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.org-stat-label {
+  font-size: 0.82rem;
+  opacity: 0.7;
+  line-height: 1.3;
+}
+
+.org-bench-missed {
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+/* Дельты «лучше/хуже среднего». */
+.org-delta-good {
+  color: var(--success, #1a7f37);
+  font-size: 0.85em;
+}
+
+.org-delta-bad {
+  color: #cf222e;
+  font-size: 0.85em;
+}
+
+/* Горизонтальные бары (доля нагрузки, возрастные группы). */
+.org-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 8rem;
+}
+
+.org-bar {
+  height: 0.7rem;
+  border-radius: 4px;
+  background: var(--accent, #6ea8fe);
+  opacity: 0.75;
+  min-width: 2px;
+}
+
+/* Гистограмма посещаемости: вся история локации, тонкий столбик = месяц.
+   Цвет столбика — система (эра parkrun видна на мультисистемных точках). */
+.org-hist {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 220px;
+  padding: 0.5rem 0 1.5rem;
+}
+
+.org-hist-col {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  flex: 1 1 0;
+  min-width: 2px;
+  height: 100%;
+}
+
+.org-hist-col:hover .org-hist-bar {
+  opacity: 1;
+}
+
+/* Обёртка ChartColumnTooltip должна занять всю высоту колонки: тогда ховер
+   ловится по всему столбцу (а не только по бару), и % высоты бара считается
+   от высоты графика. */
+.org-hist-col .analytics-chart-tooltip-wrap {
+  height: 100%;
+}
+
+.org-hist-bar {
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: var(--tint-green-bg-strong);
+  border: 1px solid var(--tint-green-border);
+  border-bottom: none;
+  opacity: 0.85;
+}
+
+.org-hist-year {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  font-size: 0.68rem;
+  opacity: 0.6;
+  white-space: nowrap;
+  padding-top: 0.25rem;
+  border-left: 1px solid var(--border-soft, #d0d7de);
+  padding-left: 3px;
+}
+
+.org-hist-note {
+  font-size: 0.8rem;
+  margin: 0.25rem 0 0;
+}
+
+/* Палитра систем — как у коллекционных челленджей (cell-plat-*). */
+.org-hist-plat-s95 {
+  background: var(--tint-blue-bg-strong);
+  border-color: var(--tint-blue-border);
+}
+
+.org-hist-plat-parkrun {
+  background: var(--tint-violet-bg-strong);
+  border-color: var(--tint-violet-border);
+}
+
+.org-hist-plat-runpark {
+  background: var(--tint-orange-bg);
+  border-color: var(--tint-orange-text);
+}
+
+.org-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.org-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-3, #57606a);
+}
+
+.org-legend-dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: var(--tint-green-bg-strong);
+  border: 1px solid var(--tint-green-border);
+}
+
+/* Бейдж системы в таблице стартов. */
+.org-badge-plat {
+  background: var(--tint-green-bg-strong);
+  border: 1px solid var(--tint-green-border);
+  color: inherit;
+}
+
+.org-badge-plat.org-hist-plat-s95 {
+  background: var(--tint-blue-bg-strong);
+  border-color: var(--tint-blue-border);
+}
+
+.org-badge-plat.org-hist-plat-parkrun {
+  background: var(--tint-violet-bg-strong);
+  border-color: var(--tint-violet-border);
+}
+
+.org-badge-plat.org-hist-plat-runpark {
+  background: var(--tint-orange-bg);
+  border-color: var(--tint-orange-text);
+}
+
+/* Портрет участника: две колонки на широком экране. Отступ снизу — иначе
+   блок «Мы и соседи» приклеивался вплотную (карточки внутри без margin). */
+.org-two-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: 1rem;
+  align-items: start;
+  margin-bottom: 1.25rem;
+}
+
+.org-two-col .org-table-card {
+  margin-bottom: 0;
+}
+
+.org-age-row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.2rem 0;
+}
+
+.org-age-label {
+  font-size: 0.85rem;
+}
+
+.org-benchmark-tabs {
+  margin: 0;
+}
+
+.org-benchmark-note {
+  margin: 0 0 0.75rem;
+}
+
+/* Дисклеймер этики на скамейке. */
+.org-notice {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  border: 1px solid rgba(46, 160, 67, 0.45);
+  background: rgba(46, 160, 67, 0.08);
+  border-radius: 12px;
+  padding: 0.8rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.org-notice-icon {
+  font-size: 1.3rem;
+  line-height: 1.3;
+}
+
+.org-notice-text {
+  line-height: 1.45;
+}
+
+/* Задизейбленная карточка хаба «скоро». */
+.org-hub-card-disabled {
+  opacity: 0.65;
+  cursor: default;
+  pointer-events: none;
+  border-style: dashed;
+}
+
+.org-hub-soon {
+  align-self: flex-start;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(130, 80, 223, 0.18);
+  color: #6639ba;
+}
+
+/* === Светофор здоровья локации (хаб) === */
+
+.org-health-card {
+  margin-bottom: 1.25rem;
+}
+
+.org-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem 1.25rem;
+}
+
+.org-health-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.org-health-dot {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  margin-top: 0.25rem;
+  flex: 0 0 auto;
+  background: var(--border, rgba(127, 127, 127, 0.4));
+}
+
+.org-health-green {
+  background: #2ea043;
+  box-shadow: 0 0 6px rgba(46, 160, 67, 0.5);
+}
+
+.org-health-yellow {
+  background: #d4a72c;
+  box-shadow: 0 0 6px rgba(212, 167, 44, 0.5);
+}
+
+.org-health-red {
+  background: #cf222e;
+  box-shadow: 0 0 6px rgba(207, 34, 46, 0.5);
+}
+
+.org-health-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.org-health-title {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.org-health-value {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+/* Задержка выгрузки: число фиксированной ширины, бейджи в колонке выровнены. */
+.org-delay-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.org-delay-num {
+  min-width: 3.3rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Поиск в списке локаций кабинета (нужен админу — у него весь каталог). */
+.org-index-search {
+  margin: 0 0 0.75rem;
+}
+
+.org-index-search .input {
+  max-width: 22rem;
+}
+
+/* Параметры постов: подпись не переносится, селект порога не расползается
+   на всю ширину (замечание Дмитрия 24.08.2026). */
+.org-toolbar-label {
+  white-space: nowrap;
+}
+
+/* Единый компактный вид ВСЕХ селекторов кабинета организатора (замечание
+   Дмитрия 24.08.2026: «огромные, высота и шрифт большие»). Селекторы с
+   предками — чтобы перебить глобальные габариты .input. */
+.org-toolbar-row select.input,
+.org-table-head select.input,
+.org-benchmark-controls select.input,
+.org-period-label select.input,
+select.org-select-compact {
+  width: auto;
+  min-width: 0;
+  height: auto;
+  padding: 0.3rem 1.6rem 0.3rem 0.6rem;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.org-period-label {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.org-post-preview-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.org-newcomers-search {
+  max-width: 20rem;
+}
+
+/* «ещё N» в столбце ролей: разворачивает полный список. */
+.org-roles-more {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.85em;
+  color: var(--link, #0969da);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.org-roles-more:hover {
+  text-decoration: underline;
+}
+
+/* Жёлтая ступень ротации: чуть ниже системы (в пределах −15%). */
+.org-delta-mid {
+  color: #9a6700;
+}
+
+/* Возрастная группа в своде: «М35-39» не должна переноситься. */
+.org-nowrap {
+  white-space: nowrap;
+}
+
+/* Фильтры «Мы и соседи»: тип сравнения и период одной строкой под заголовком. */
+.org-benchmark-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+/* У глобальных .map-mode-tabs есть margin-bottom — внутри строки фильтров он
+   сдвигал кнопки выше базовой линии подписей. */
+.org-benchmark-controls .map-mode-tabs {
+  margin-bottom: 0;
+}
+
+.org-benchmark-controls-label {
+  font-size: 0.85rem;
+}
+
+/* Селект периода — под размер таб-кнопок рядом. Селектор с предком, чтобы
+   перебить глобальные габариты .input (у него специфичность со скоупом). */
+.org-benchmark-controls .org-benchmark-period,
+.org-benchmark-controls select.input {
+  width: auto;
+  min-width: 0;
+  height: auto;
+  padding: 0.3rem 1.6rem 0.3rem 0.6rem;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}

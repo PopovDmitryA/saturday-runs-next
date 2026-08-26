@@ -75,9 +75,10 @@ _TRAVEL_HEADING_RE = re.compile(r"\s*как\s+добраться\s*[?:.]*\s*", r
 
 
 def location_page_cache_key(slug: str) -> str:
-    # v12 — в last_event добавлены номер старта, победители поимённо, разбивка
-    # по полу и клубные юбиляры (см. [[location-channels-content-analysis]]).
-    return f"locations:page:v12:{slug.strip().lower()}"
+    # v13 — обе ветки бампали v11→v12: в описании появилось время старта
+    # (start_time_current), в last_event — номер старта, победители поимённо,
+    # разбивка по полу и клубные юбиляры.
+    return f"locations:page:v13:{slug.strip().lower()}"
 
 
 def location_events_cache_key(slug: str) -> str:
@@ -1203,9 +1204,17 @@ def _description_payload(
         row = rows.get(location.id)
         if row is None or not (row.schedule_text or row.course_text or row.travel_text or row.travel_sections):
             continue
+        # Действующее время старта — с учётом сезонных окон расписания. Многие
+        # живут в парадигме «все стартуют в 9:00», поэтому фронт подсвечивает
+        # время, когда оно другое (решение Дмитрия 23.08.2026).
+        from app.services.location_schedule_service import current_start_time_label
+
+        start_time_current = current_start_time_label(row.schedule_parsed, date.today())
         return {
             "platform_code": platform_code,
             "schedule_text": row.schedule_text,
+            "start_time_current": start_time_current,
+            "start_schedule": row.schedule_parsed or [],
             "course_text": row.course_text,
             "travel_text": row.travel_text,
             "travel_sections": [
@@ -2552,6 +2561,8 @@ def build_location_personal_stats(db: Session, user: User, slug: str) -> dict[st
     payload: dict[str, object] = {
         "slug": identity.slug,
         "name": identity.name,
+        # Канонический ключ идентичности — нужен роуту для проверки оргдоступа.
+        "identity_key": identity.identity_key,
         "runs_count": 0,
         "total_runs": 0,
         "best_time_sec": None,

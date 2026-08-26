@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from app.db.session import get_session_factory
+from app.services.fastest_rating_service import warm_fastest_rating
 from app.services.leaderboard_service import (
     AMBIGUOUS_HOME_METRICS,
     GENDERED_METRICS,
@@ -226,6 +227,15 @@ def warm_leaderboards_cache() -> dict[str, object]:
             logger.info("location records rating warmed: %s локаций", warmed)
         except Exception:
             logger.exception("leaderboards warm failed for location_records")
+            db.rollback()
+
+        # Рейтинг быстрых — тем же проходом и по той же причине: свой снапшот,
+        # свой try, итог в лог, а не в results.
+        try:
+            logger.info("fastest rating warmed: %s slices", warm_fastest_rating(db))
+            db.rollback()
+        except Exception:
+            logger.exception("fastest rating warm failed")
             db.rollback()
     finally:
         # close() у SQLAlchemy делает ROLLBACK, и на убитом сервером соединении

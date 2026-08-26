@@ -21,6 +21,8 @@ import {
   type LocationRecordRow,
   type LocationRecordsPlatform,
 } from "./locationRecordsApi";
+import { formatFinishTime } from "./formatFinishTime";
+import { getFastestRating, type FastestRatingResponse } from "./fastestApi";
 import "./leaderboards.css";
 
 const HUB_TOP_N = 3;
@@ -58,6 +60,12 @@ type HubSection = {
   emoji: string;
   title: string;
   live: LiveCard[];
+  /**
+   * Рейтинг быстрых живёт не метрикой лидерборда, а своим API: строка там —
+   * забег, а не участник со счётчиками. Карточку рисуем отдельным компонентом,
+   * поэтому секция помечает её флагом, а не ещё одной записью в live.
+   */
+  fastest?: boolean;
 };
 
 // Только готовые рейтинги. Карточек-анонсов «скоро» здесь нет намеренно
@@ -74,6 +82,7 @@ const SECTIONS: HubSection[] = [
       { metric: "runs", href: "/ratings/runs", title: "Количество пробежек" },
       { metric: "wins", href: "/ratings/wins", title: "Количество первых мест" },
     ],
+    fastest: true,
   },
   {
     emoji: "🤝",
@@ -208,6 +217,70 @@ function LiveRatingCard({ card, platform }: { card: LiveCard; platform: Platform
   );
 }
 
+/**
+ * Карточка рейтинга быстрых: топ-3 результата и время вместо счётчика. Строки
+ * «Вы» тут нет намеренно — личный рекорд человек видит и в своём кабинете, а
+ * карточка на хабе про то, чтобы захотелось открыть таблицу.
+ */
+function FastestRatingCard({ platform }: { platform: PlatformFilter }) {
+  const [board, setBoard] = useState<FastestRatingResponse | null>(null);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    setState("loading");
+    setBoard(null);
+    getFastestRating(
+      { mode: "results", platform, gender: "all", ageGroup: "all", year: "all" },
+      HUB_TOP_N,
+    )
+      .then((payload) => {
+        if (!cancelled) {
+          setBoard(payload);
+          setState("ready");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setState("error");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [platform]);
+
+  return (
+    <a className="lb-hub-card lb-hub-card-live" href="/ratings/fastest">
+      <div className="lb-hub-card-top">
+        <span className="lb-hub-card-title">Самые быстрые</span>
+      </div>
+
+      {state === "loading" && <p className="lb-hub-loading muted">Считаем…</p>}
+      {state === "error" && <p className="lb-hub-loading muted">Не удалось загрузить</p>}
+
+      {board && (
+        <div className="lb-hub-top3">
+          <p className="lb-hub-top3-label">Топ-3 результата</p>
+          {board.rows.map((row, index) => (
+            <div className="lb-hub-rank-row" key={row.row_key + row.event_date}>
+              <span className={`lb-hub-rank-chip lb-hub-rank-${RANK_TIER[index] ?? "silver"}`}>
+                {row.rank}
+              </span>
+              <span className="lb-hub-rank-name">{row.display_name?.trim() || "Участник"}</span>
+              <span className="lb-hub-rank-value">
+                {formatFinishTime(row.finish_time_sec, row.finish_time_display)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <span className="lb-hub-see-all">Смотреть топ →</span>
+    </a>
+  );
+}
+
 /** Часы в «00:14:30» на карточке лишние: пятёрку никто не бежит дольше часа. */
 function hubRecordTime(display: string | null): string {
   if (!display) {
@@ -334,6 +407,7 @@ export function LeaderboardsHubPage() {
               {section.live.map((card) => (
                 <LiveRatingCard key={card.metric} card={card} platform={platform} />
               ))}
+              {section.fastest && <FastestRatingCard platform={platform} />}
             </div>
           </section>
         ))}

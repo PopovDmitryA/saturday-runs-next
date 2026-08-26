@@ -123,3 +123,30 @@ class AdminUserPreviewDashboardResponse(BaseModel):
     platform_links: list[AdminPlatformLinkBrief] = Field(default_factory=list)
 
 
+
+
+class AdminOrganizerGrantItem(BaseModel):
+    id: str
+    location_key: str
+    # Имя/слаг из каталога локаций; None, если ключ в каталоге не нашёлся
+    # (например, локация исчезла из выгрузки).
+    location_name: str | None = None
+    location_slug: str | None = None
+    note: str | None = None
+    created_at: datetime
+
+
+class AdminOrganizerDerivedItem(BaseModel):
+    location_key: str
+    location_name: str | None = None
+    location_slug: str | None = None
+
+
+class AdminOrganizerAccessResponse(BaseModel):
+    manual: list[AdminOrganizerGrantItem] = Field(default_factory=list)
+    derived: list[AdminOrganizerDerivedItem] = Field(default_factory=list)
+
+
+class AdminOrganizerGrantCreate(BaseModel):
+    location_key: str = Field(min_length=1, max_length=255)
+    note: str | None = Field(default=None, max_length=500)

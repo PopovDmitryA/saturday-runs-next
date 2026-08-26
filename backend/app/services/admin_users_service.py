@@ -424,3 +424,113 @@ def get_admin_user_preview_volunteer_role_stats(
     if get_admin_user(db, user_id) is None:
         return None
     return list_user_volunteer_role_stats(db, user_id, include_test_events=include_test_events)
+
+
+# ===== Оргдоступ: гранты кабинета организатора =====
+
+
+def _identity_index_map(db: Session) -> dict[str, dict[str, object]]:
+    """identity_key → {name, slug} из кэшированного индекса каталога локаций."""
+    from app.services.location_page_service import build_locations_index
+
+    index = build_locations_index(db)
+    return {
+        str(item["identity_key"]): {"name": item.get("name"), "slug": item.get("slug")}
+        for item in index.get("items", [])
+        if item.get("identity_key")
+    }
+
+
+def list_user_organizer_access(db: Session, user_id: UUID) -> dict[str, object]:
+    from app.models import LocationOrganizerAccess
+    from app.services.organizer_access_service import derive_organizer_identity_keys
+
+    identity_map = _identity_index_map(db)
+    grants = (
+        db.query(LocationOrganizerAccess)
+        .filter(LocationOrganizerAccess.user_id == user_id)
+        .order_by(LocationOrganizerAccess.created_at)
+        .all()
+    )
+    manual = [
+        {
+            "id": str(grant.id),
+            "location_key": grant.location_key,
+            "location_name": identity_map.get(grant.location_key, {}).get("name"),
+            "location_slug": identity_map.get(grant.location_key, {}).get("slug"),
+            "note": grant.note,
+            "created_at": grant.created_at,
+        }
+        for grant in grants
+    ]
+    derived = [
+        {
+            "location_key": key,
+            "location_name": identity_map.get(key, {}).get("name"),
+            "location_slug": identity_map.get(key, {}).get("slug"),
+        }
+        for key in sorted(derive_organizer_identity_keys(db, user_id))
+    ]
+    return {"manual": manual, "derived": derived}
+
+
+def create_organizer_grant(
+    db: Session,
+    user_id: UUID,
+    *,
+    location_key: str,
+    note: str | None,
+    granted_by_user_id: UUID,
+) -> str | None:
+    """Создать ручной грант. None — такой грант уже есть.
+
+    ValueError — ключ не найден в каталоге локаций (защита от опечаток:
+    грант с несуществующим ключом молча не давал бы ничего).
+    """
+    from app.models import LocationOrganizerAccess
+    from app.services.organizer_access_service import invalidate_organizer_locations_cache
+
+    location_key = location_key.strip()
+    if location_key not in _identity_index_map(db):
+        raise ValueError("Unknown location_key")
+
+    existing = (
+        db.query(LocationOrganizerAccess)
+        .filter(
+            LocationOrganizerAccess.user_id == user_id,
+            LocationOrganizerAccess.location_key == location_key,
+        )
+        .one_or_none()
+    )
+    if existing is not None:
+        return None
+    grant = LocationOrganizerAccess(
+        user_id=user_id,
+        location_key=location_key,
+        note=note,
+        granted_by_user_id=granted_by_user_id,
+    )
+    db.add(grant)
+    db.commit()
+    invalidate_organizer_locations_cache(user_id)
+    return str(grant.id)
+
+
+def delete_organizer_grant(db: Session, user_id: UUID, grant_id: UUID) -> bool:
+    from app.models import LocationOrganizerAccess
+    from app.services.organizer_access_service import invalidate_organizer_locations_cache
+
+    grant = (
+        db.query(LocationOrganizerAccess)
+        .filter(
+            LocationOrganizerAccess.id == grant_id,
+            LocationOrganizerAccess.user_id == user_id,
+        )
+        .one_or_none()
+    )
+    if grant is None:
+        return False
+    db.delete(grant)
+    db.commit()
+    invalidate_organizer_locations_cache(user_id)
+    return True

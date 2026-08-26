@@ -129,6 +129,13 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
     description: "Кто чаще всех финишировал первым на субботних стартах, с разбивкой по полу.",
     indexable: true,
   },
+  "/ratings/fastest": {
+    title: "Самые быстрые результаты и участники — run5k.run",
+    description:
+      "5 000 самых быстрых финишей и 3 000 самых быстрых участников субботних стартов: " +
+      "срезы по системе, полу, возрастной группе и году.",
+    indexable: true,
+  },
   "/ratings/home-distance": {
     title: "Рейтинг дальности от дома — run5k.run",
     description:
@@ -151,6 +158,11 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
   "/backlog": {
     title: "Бэклог — run5k.run",
     description: "Что участники предлагают добавить на сайт и за что голосуют.",
+  },
+  // Кабинет организатора — закрытый раздел оргкоманд, в поиске не нужен.
+  "/organizer": {
+    title: "Кабинет организатора — run5k.run",
+    description: "Расширенные данные локаций для оргкоманд: свод по пробежке и долгая пауза.",
   },
   "/new/map-lab": {
     title: "Карта (лаборатория) — run5k.run",
@@ -240,6 +252,14 @@ export function resolvePageMeta(rawPath: string): PageMeta {
 
   if (path.startsWith("/admin/")) {
     return ADMIN_META;
+  }
+  // Семейство /organizer/{slug}[/absence] — родовой заголовок, имя локации
+  // подставит сама страница после загрузки данных.
+  if (path.startsWith("/organizer/")) {
+    return {
+      title: "Кабинет организатора локации — run5k.run",
+      description: "Свод по пробежке для отчёта оргкоманды и участники на долгой паузе.",
+    };
   }
   if (SWEEP_HQ_RE.test(path)) {
     return {
