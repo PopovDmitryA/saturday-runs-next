@@ -15,9 +15,13 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy.orm import Session
+
 from app.services.location_page_service import (
     invalidate_last_results_cache,
+    invalidate_location_page_cache,
     invalidate_locations_index_cache,
+    resolve_location_identity,
 )
 from app.services.location_regions_rating_service import invalidate_regions_rating_cache
 
@@ -37,3 +41,21 @@ def flush_location_catalog_caches(reason: str) -> None:
         logger.warning("Не удалось сбросить кэш каталога локаций (%s)", reason, exc_info=True)
         return
     logger.info("Кэш каталога локаций сброшен: %s", reason)
+
+
+def flush_location_page_caches(db: Session, slugs: list[str], reason: str) -> None:
+    """Погасить кэш страниц перечисленных площадок (TTL там три часа).
+
+    Гасим и слаг системы, и слаг идентичности: страница резолвит любой из них,
+    а ключ кэша строится по тому, что попросили. Нужно там, где изменение
+    видно прямо на странице — например, отмена ближайшего старта: ждать три
+    часа с такой новостью бессмысленно.
+    """
+    for slug in slugs:
+        try:
+            invalidate_location_page_cache(slug)
+            identity = resolve_location_identity(db, slug)
+            if identity is not None and identity.slug != slug:
+                invalidate_location_page_cache(identity.slug)
+        except Exception:  # noqa: BLE001 — сброс кэша не должен ронять синк
+            logger.warning("Не удалось сбросить кэш страницы локации %s (%s)", slug, reason, exc_info=True)

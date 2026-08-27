@@ -11,12 +11,17 @@ def apply_location_registry_flags(
     is_paused: bool,
     is_cancelled: bool,
     is_upcoming: bool = False,
+    cancel_reason: str | None = None,
 ) -> tuple[bool, bool, bool]:
     """Разложить статус из реестра системы по признакам строки.
 
     Возвращает (changed, pause_changed, cancel_changed). «Скоро» отдельного
     счётчика не имеет: это состояние новой площадки, и меняется оно ровно
     один раз — в день первого старта.
+
+    `cancel_reason` — текст организатора со страницы площадки (его пишет только
+    s95). Он живёт ровно столько, сколько живёт отмена: снятая отметка стирает
+    и причину, иначе на странице осталась бы прошлогодняя записка.
 
     Флаги пишутся и когда становятся False: реестр — источник правды, и снятая
     с сайта отметка обязана сниматься у нас. Иначе отмена одной субботы висела
@@ -34,6 +39,11 @@ def apply_location_registry_flags(
         row.is_cancelled = is_cancelled
         changed = True
         cancel_changed = True
+
+    reason = cancel_reason if is_cancelled else None
+    if row.cancel_reason != reason:
+        row.cancel_reason = reason
+        changed = True
 
     if row.is_paused != is_paused:
         row.is_paused = is_paused

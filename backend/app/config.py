@@ -57,6 +57,17 @@ class Settings(BaseSettings):
     # нативно и httpx, и aiohttp (aiogram) — socks5 у aiohttp требует aiohttp_socks.
     # Поднимается сервисом tg-proxy, см. deploy/tg-proxy/. Пусто — напрямую.
     telegram_proxy_url: str = ""
+    # Вход через Telegram Login Widget. Отдельный токен от основного бота
+    # ставить не обязательно — пусто означает «взять telegram_bot_token».
+    # Домен сайта должен быть прописан боту через /setdomain у @BotFather,
+    # иначе Telegram виджет не покажет.
+    telegram_login_enabled: bool = True
+    telegram_login_bot_token: str = ""
+    telegram_login_bot_username: str = ""
+    # Сколько живёт подпись виджета. Сутки — как в примерах Telegram: человек
+    # мог подтвердить вход и уйти заваривать чай, но не на неделю.
+    telegram_login_max_age_seconds: int = 86400
+
     # Comma-separated emails (OAuth). Grants admin if any linked auth_identity matches (case-insensitive).
     admin_emails: str = ""
     demo_telegram_id: int = 0

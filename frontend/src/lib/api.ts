@@ -1,4 +1,4 @@
-const API_BASE = "/api";
+export const API_BASE = "/api";
 const DEFAULT_FETCH_TIMEOUT_MS = 20_000;
 
 export class ApiError extends Error {
@@ -305,6 +305,8 @@ export type RunItem = {
   location_is_cancelled?: boolean;
   position: number | null;
   gender_position?: number | null;
+  // Всего человек в протоколе старта; null — протокол неполон, честного числа нет.
+  participants_total?: number | null;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   pace_display: string | null;
@@ -632,6 +634,28 @@ export function verifyEmailCode(email: string, code: string) {
   return apiFetch<{ redirect: string }>("/auth/email/verify", {
     method: "POST",
     body: JSON.stringify({ email, code }),
+  });
+}
+
+export type TelegramLoginConfig = {
+  enabled: boolean;
+  bot_id: string;
+  bot_username: string;
+};
+
+export function getTelegramLoginConfig() {
+  return apiFetch<TelegramLoginConfig>("/auth/telegram/config");
+}
+
+export function telegramStartUrl(mode: "login" | "link", consent = false) {
+  const params = new URLSearchParams({ mode, consent: consent ? "true" : "false" });
+  return `${API_BASE}/auth/telegram/start?${params.toString()}`;
+}
+
+export function loginWithTelegramWidget(data: Record<string, string>, state: string) {
+  return apiFetch<{ redirect: string; merge_token: string | null }>("/auth/telegram/widget", {
+    method: "POST",
+    body: JSON.stringify({ data, state }),
   });
 }
 
@@ -2398,6 +2422,8 @@ export type LocationPage = {
   country: string | null;
   is_paused: boolean;
   is_cancelled: boolean;
+  /** Причина отмены ближайшего старта словами организатора (её пишет s95). */
+  cancel_reason: string | null;
   latitude: number | null;
   longitude: number | null;
   map_url: string | null;
@@ -3944,6 +3970,22 @@ export type AdminSiteStatsPageviewsDay = {
 // Точный набор привязанных систем: человек попадает ровно в одну строку.
 export type AdminLinkCombinationRow = { codes: string[]; users: number };
 
+// Когорта = неделя регистрации: сколько людей завели аккаунт и сколько из них
+// дошло до первой привязки (в сутки / за неделю / когда-либо).
+export type AdminOnboardingCohortRow = {
+  week: string;
+  registered: number;
+  linked_1d: number;
+  linked_7d: number;
+  linked_any: number;
+};
+
+export type AdminLinksByMethodRow = {
+  week: string;
+  total: number;
+  by_method: Record<string, number>;
+};
+
 export type AdminSiteStatsResponse = {
   period_days: number;
   generated_at: string;
@@ -3955,6 +3997,8 @@ export type AdminSiteStatsResponse = {
   logins_by_day: AdminSiteStatsDayPoint[];
   login_requests_by_day: AdminSiteStatsDayPoint[];
   pageviews_by_day: AdminSiteStatsPageviewsDay[];
+  onboarding_cohorts: AdminOnboardingCohortRow[];
+  links_by_method_weekly: AdminLinksByMethodRow[];
 };
 
 export function getAdminSiteStats(periodDays = 30) {

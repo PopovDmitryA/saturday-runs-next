@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -8,6 +8,8 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User
+from app.platform_adapters.canonical import ProfilePreview
+from app.services.admin_site_stats_service import get_admin_site_stats
 from app.services.onboarding_service import (
     OnboardingError,
     complete_onboarding,
@@ -15,7 +17,11 @@ from app.services.onboarding_service import (
     set_platform_no_account,
 )
 from app.services.participant_search_service import ParticipantSearchError, search_participants
-from app.services.profile_linking_service import ProfileLinkingError, confirm_profile_link_by_participant
+from app.services.profile_linking_service import (
+    ProfileLinkingError,
+    confirm_profile_link,
+    confirm_profile_link_by_participant,
+)
 
 
 @pytest.fixture
@@ -218,6 +224,87 @@ def test_confirm_link_by_participant_creates_link(db_session: Session, search_us
     with pytest.raises(ProfileLinkingError) as duplicate:
         confirm_profile_link_by_participant(db_session, search_user, participant.id)
     assert duplicate.value.status_code == 409
+
+
+def test_link_method_recorded_for_search_and_url(db_session: Session, search_user: User) -> None:
+    """Способ привязки пишется в platform_links — по нему меряем эффект поиска."""
+    platform = _five_verst(db_session)
+    from_search = _make_participant(
+        db_session,
+        platform,
+        "Метка Поиска Тест",
+        profile_url="https://5verst.ru/userstats/794000001/",
+    )
+
+    with (
+        patch("app.services.profile_linking_service.linking_sync_should_run", return_value=False),
+        patch("app.services.profile_linking_service.complete_link_without_sync"),
+    ):
+        link = confirm_profile_link_by_participant(db_session, search_user, from_search.id)
+    assert link.link_method == "search"
+
+    # Тот же участник, но привязка по ссылке — другой пользователь, метка "url".
+    url_user = User(consent_accepted=True, display_name="Ссылочник")
+    db_session.add(url_user)
+    db_session.commit()
+    url_participant = _make_participant(
+        db_session,
+        platform,
+        "Метка Ссылки Тест",
+        profile_url="https://5verst.ru/userstats/794000002/",
+    )
+    preview = ProfilePreview(
+        external_user_id=url_participant.external_user_id,
+        display_name="Метка Ссылки Тест",
+        profile_url=url_participant.profile_url,
+        total_runs=0,
+        platform_code="five_verst",
+    )
+    with (
+        patch("app.services.profile_linking_service.get_cached_profile_preview", return_value=preview),
+        patch("app.services.profile_linking_service.linking_sync_should_run", return_value=False),
+        patch("app.services.profile_linking_service.complete_link_without_sync"),
+        patch("app.services.profile_linking_service.rebind_display_name_source"),
+    ):
+        url_link = confirm_profile_link(db_session, url_user, "five_verst", url_participant.profile_url)
+    assert url_link.link_method == "url"
+
+
+def test_onboarding_cohorts_count_first_day_conversion(db_session: Session) -> None:
+    """Когорта недели регистрации: кто привязался в первые сутки, кто позже."""
+    platform = _five_verst(db_session)
+    now = datetime.now(timezone.utc)
+
+    fast = User(consent_accepted=True, display_name="Быстрый", created_at=now - timedelta(days=3))
+    slow = User(consent_accepted=True, display_name="Медленный", created_at=now - timedelta(days=3))
+    never = User(consent_accepted=True, display_name="Без привязки", created_at=now - timedelta(days=3))
+    db_session.add_all([fast, slow, never])
+    db_session.flush()
+
+    for user, linked_at in ((fast, now - timedelta(days=3)), (slow, now - timedelta(days=1))):
+        participant = _make_participant(db_session, platform, f"Когорта {user.display_name}")
+        db_session.add(
+            PlatformLink(
+                user_id=user.id,
+                platform_id=platform.id,
+                participant_id=participant.id,
+                external_user_id=participant.external_user_id,
+                external_url="https://example.test/cohort",
+                linked_at=linked_at,
+            )
+        )
+    db_session.commit()
+
+    stats = get_admin_site_stats(db_session, period_days=30)
+    cohort_users = {fast.id, slow.id, never.id}
+    assert cohort_users  # три подопытных лежат в одной неделе регистрации
+    current_week = max(row["week"] for row in stats["onboarding_cohorts"])
+    row = next(r for r in stats["onboarding_cohorts"] if r["week"] == current_week)
+    # В общей БД могут быть и другие пользователи этой недели — проверяем вклад.
+    assert row["registered"] >= 3
+    assert row["linked_1d"] >= 1
+    assert row["linked_7d"] >= 2
+    assert row["linked_any"] >= row["linked_1d"]
 
 
 def test_confirm_link_by_participant_refuses_foreign_profile(db_session: Session, search_user: User) -> None:

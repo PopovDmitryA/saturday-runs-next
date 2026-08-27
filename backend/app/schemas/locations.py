@@ -276,6 +276,8 @@ class LocationPageResponse(BaseModel):
     country: str | None = None
     is_paused: bool = False
     is_cancelled: bool = False
+    # Причина отмены словами организатора — её пишет на своей странице s95.
+    cancel_reason: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     map_url: str | None = None

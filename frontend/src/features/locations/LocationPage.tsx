@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
+import { LocationCancellationNotice } from "../../components/LocationCancellationNotice";
 import { LocationStatusLabel } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
@@ -1239,6 +1240,14 @@ function LocationPageContent({ slug }: { slug: string }) {
             связная фраза полезнее плашек тому, кто попал сюда из поиска и
             ещё не понял, что за место. */}
         <p className="loc-header-lead">{locationLeadSentences(page).join(" ")}</p>
+        {/* Отмена ближайшего старта — новость с коротким сроком годности:
+            ставим её выше навигации и таблиц, чтобы человек увидел раньше,
+            чем начнёт читать статистику. */}
+        <LocationCancellationNotice
+          isPaused={page.is_paused}
+          isCancelled={page.is_cancelled}
+          reason={page.cancel_reason}
+        />
         {/* Навигация по разделам локации одним рядом (редизайн 24.08.2026):
             раньше журнал жил текстовой ссылкой в плитке, а кабинет — кнопкой
             в середине страницы, и оба терялись. Кнопка кабинета появляется
