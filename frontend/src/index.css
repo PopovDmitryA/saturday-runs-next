@@ -15140,3 +15140,142 @@ a.admin-system-chip:hover {
   border-color: var(--tint-blue-border, rgba(9, 105, 218, 0.4));
   color: var(--link-strong, #0969da);
 }
+
+/* ============================================================
+   Профили участника (фокус дашборда): модалка выбора
+   ============================================================ */
+
+.focus-modal {
+  max-width: 480px;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.focus-modal-title {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.focus-modal-sub {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--text-2);
+}
+
+.focus-modal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.focus-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.focus-option:hover {
+  border-color: var(--border-heavy);
+}
+
+.focus-option-checked {
+  border-color: var(--accent-indigo);
+  background: var(--tint-indigo-bg);
+}
+
+/* Профиль, добавленный по данным свежепривязанного аккаунта. */
+.focus-option-new {
+  border-color: var(--tint-green-border-strong);
+  background: var(--tint-green-bg);
+}
+
+.focus-option input {
+  margin-top: 0.2rem;
+  accent-color: var(--accent-indigo);
+}
+
+.focus-option-icon {
+  font-size: 1.25rem;
+  line-height: 1.2;
+}
+
+.focus-option-text {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.focus-option-title {
+  font-weight: 650;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.focus-option-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: var(--tint-green-bg-strong);
+  color: var(--tint-green-text);
+}
+
+.focus-option-desc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.focus-modal-note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.focus-modal-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--accent-red-text);
+}
+
+.focus-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.focus-settings-sub {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+/* «похоже на вас» — пометка автонабора в настройках. */
+.focus-option-hint {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: var(--tint-indigo-bg-strong);
+  color: var(--accent-indigo-text);
+}
+
+.focus-settings-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.7rem;
+}
+
+.focus-settings-saved {
+  font-size: 0.85rem;
+  color: var(--accent-green-text);
+}

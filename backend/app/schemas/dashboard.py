@@ -291,6 +291,24 @@ class DashboardLinkSummary(BaseModel):
     last_user_sync_at: object | None = None
 
 
+class DashboardFocusResponse(BaseModel):
+    """Профили участника (фокус дашборда) и материал для модалки выбора.
+
+    selected=None — человек ещё не выбирал: фронт показывает первичную
+    модалку с предотмеченным suggested (пустой suggested — отметить все).
+    newly_suggested — профили, добавившиеся в автонабор после привязки
+    нового аккаунта: модалка «профиль дополнен», новые подсвечены.
+    """
+
+    selected: list[str] | None = None
+    suggested: list[str] = Field(default_factory=list)
+    newly_suggested: list[str] = Field(default_factory=list)
+
+
+class DashboardFocusUpdateRequest(BaseModel):
+    profiles: list[str] = Field(default_factory=list)
+
+
 class DashboardResponse(BaseModel):
     stats: DashboardStatsResponse
     computed_at: object
@@ -299,6 +317,7 @@ class DashboardResponse(BaseModel):
     serial_id: int | None = None
     # Уникальная vanity-ссылка на профиль; если задана — используется вместо serial_id.
     public_slug: str | None = None
+    focus: DashboardFocusResponse = Field(default_factory=DashboardFocusResponse)
 
 
 class RunItemResponse(BaseModel):

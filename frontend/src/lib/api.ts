@@ -311,7 +311,32 @@ export type DashboardResponse = {
   sync_enqueued: boolean;
   serial_id: number | null;
   public_slug: string | null;
+  focus: DashboardFocus;
 };
+
+/** Профили участника (фокус дашборда): tourist / racer / volunteer / regular. */
+export type FocusProfile = "tourist" | "racer" | "volunteer" | "regular";
+
+export type DashboardFocus = {
+  /** null — человек ещё не выбирал: показать первичную модалку. */
+  selected: FocusProfile[] | null;
+  /** Автонабор по фактической активности. */
+  suggested: FocusProfile[];
+  /** Профили, добавившиеся после привязки нового аккаунта, — подсветить. */
+  newly_suggested: FocusProfile[];
+};
+
+export async function getDashboardFocus(): Promise<DashboardFocus> {
+  return apiFetch<DashboardFocus>("/dashboard/focus");
+}
+
+export async function updateDashboardFocus(profiles: FocusProfile[]): Promise<DashboardFocus> {
+  return apiFetch<DashboardFocus>("/dashboard/focus", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profiles }),
+  });
+}
 
 export type RunItem = {
   run_result_id?: string | null;

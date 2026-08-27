@@ -81,3 +81,14 @@ export function sortByLayoutOrder<T extends { key: string }>(
       (rank.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.key) ?? Number.MAX_SAFE_INTEGER),
   );
 }
+
+/**
+ * Профиль участника → группа аналитики: выбор профилей в модалке фокуса
+ * решает, какие группы видны на дашборде. Пустой выбор или null — все.
+ */
+export const FOCUS_PROFILE_TO_GROUP: Record<string, string> = {
+  regular: "regularity",
+  racer: "speed",
+  tourist: "tourism",
+  volunteer: "volunteering",
+};

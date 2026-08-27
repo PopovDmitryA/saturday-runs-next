@@ -5,6 +5,7 @@ import { FinishTimeDistribution } from "./FinishTimeDistribution";
 import type { DashboardAnalytics as DashboardAnalyticsData } from "../lib/api";
 import {
   DASHBOARD_ANALYTICS_GROUPS,
+  FOCUS_PROFILE_TO_GROUP,
   type DashboardAnalyticsGroup,
 } from "../lib/dashboardLayout";
 import { PlatformBadge } from "./PlatformBadge";
@@ -57,6 +58,11 @@ type DashboardAnalyticsProps = {
    * равно не может выполнить, — настройки чужого профиля ему недоступны.
    */
   showHomeLocationWarning?: boolean;
+  /**
+   * Выбранные профили участника (фокус): показываются только их группы.
+   * null или пустой список — все группы, как раньше.
+   */
+  focusProfiles?: string[] | null;
 };
 
 type AnalyticsCardCategory = "runs" | "volunteering" | "wins";
@@ -743,6 +749,7 @@ export function DashboardAnalytics({
   totalRuns,
   totalVolunteering,
   showHomeLocationWarning = false,
+  focusProfiles = null,
 }: DashboardAnalyticsProps) {
   const [uniqueLocationsOpen, setUniqueLocationsOpen] = useState(false);
   const [bestResultsOpen, setBestResultsOpen] = useState(false);
@@ -1015,6 +1022,15 @@ export function DashboardAnalytics({
     });
   }
 
+  // Фокус: выбранные профили включают свои группы; пусто — показываем все.
+  const focusGroupKeys = new Set(
+    (focusProfiles ?? []).map((profile) => FOCUS_PROFILE_TO_GROUP[profile]).filter(Boolean),
+  );
+  const visibleGroups =
+    focusGroupKeys.size > 0
+      ? DASHBOARD_ANALYTICS_GROUPS.filter((group) => focusGroupKeys.has(group.key))
+      : DASHBOARD_ANALYTICS_GROUPS;
+
   const cardByKey = new Map(cards.map((card) => [card.key, card]));
   const panelByKey = new Map(panels.map((panel) => [panel.key, panel.node]));
   const groupedKeys = new Set<string>();
@@ -1101,7 +1117,7 @@ export function DashboardAnalytics({
         </p>
       )}
 
-      {DASHBOARD_ANALYTICS_GROUPS.map((group) => renderGroup(group))}
+      {visibleGroups.map((group) => renderGroup(group))}
 
       {leftoverCards.length > 0 && renderCardsGrid(leftoverCards)}
 
