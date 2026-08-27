@@ -1531,6 +1531,10 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         </div>
                       </div>
                     )}
+                    {/* «Система» и поиск занимают отдельную строку: поле
+                        встаёт справа от фильтра систем, а не уезжает под ряд
+                        (просьба Дмитрия 27.08.2026). */}
+                    <div className="lb-filters-tail">
                     {hasPlatformFilter && (
                       <div className="lb-visits">
                         <span className="lb-visits-label">
@@ -1574,17 +1578,21 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         </button>
                       </div>
                     )}
+                    {/* Поиск — последний в ряду фильтров и прижат вправо: на
+                        широком экране он встаёт справа от «Системы», на узком
+                        переезжает вместе с ней (просьба Дмитрия 27.08.2026). */}
+                    <div className="lb-controls-right">
+                      <input
+                        className="lb-search"
+                        type="search"
+                        placeholder="Поиск по имени…"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                      />
+                    </div>
+                    </div>
                   </div>
                 )}
-              </div>
-              <div className="lb-controls-right">
-                <input
-                  className="lb-search"
-                  type="search"
-                  placeholder="Поиск по имени…"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
               </div>
             </div>
 
