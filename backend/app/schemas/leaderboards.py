@@ -145,6 +145,50 @@ class MyLeaderboardRowResponse(BaseModel):
     role_details: list[VolunteerRoleDetailResponse] = []
 
 
+class JournalItemResponse(BaseModel):
+    """Одна отметка журнала посещаемости: дата и где это было."""
+
+    date: str
+    location: str | None = None
+    slug: str | None = None
+    platform: str
+    # Только у журнала волонтёрств: роль (канонический ярлык).
+    role: str | None = None
+    # Только у журнала туризма: первый визит на площадку за всю историю.
+    new: bool | None = None
+
+
+class JournalRowResponse(BaseModel):
+    row_key: str
+    # Место в рейтинге (все годы, текущие фильтры) — как в таблице рядом.
+    rank: int | None = None
+    display_name: str | None = None
+    site_serial_id: int | None = None
+    # «Всего» рейтинга за всю историю — для сверки с таблицей.
+    total: int | None = None
+    # Счёт выбранного года в единицах метрики (у туризма — новые площадки года).
+    year_total: int
+    # Закрытый профиль: счёт года остаётся, отметки по датам не отдаются.
+    private: bool = False
+    items: list[JournalItemResponse] = []
+
+
+class AttendanceJournalResponse(BaseModel):
+    metric: str
+    year: int
+    years: list[int] = []
+    platform: str = "all"
+    offset: int = 0
+    limit: int = 50
+    # Сколько строк всего в рейтинге — для «показать ещё».
+    total_rows: int = 0
+    latest_event_date: str | None = None
+    built_at: str | None = None
+    rows: list[JournalRowResponse] = []
+    # Строка зрителя — с его отметками, даже если он за пределами страницы.
+    me: JournalRowResponse | None = None
+
+
 class VolunteerRoleItem(BaseModel):
     """Роль в справочнике фильтра: ярлык и признаки для пресетов."""
 

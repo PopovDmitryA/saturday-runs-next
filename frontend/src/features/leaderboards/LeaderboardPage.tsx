@@ -44,6 +44,8 @@ import { ratingSubject } from "../sharing/subjects";
 import { formatFinishTime } from "./formatFinishTime";
 import { unitLabel } from "./pluralize";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
+import { JOURNAL_METRICS, type JournalMetric } from "../journal/attendanceApi";
+import { RatingJournalPanel } from "../journal/RatingJournalPanel";
 import { TouristMapPanel } from "./TouristMapPanel";
 import { useTouristMap } from "./useTouristMap";
 import { VolunteerRolesModal } from "./VolunteerRolesModal";
@@ -763,6 +765,26 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
   // Фильтр «только очевидный дом» — у рейтинга дальности: прячет участников,
   // у которых нулевая точка выбрана автоматически из почти равных площадок.
   const [hideAmbiguousHome, setHideAmbiguousHome] = useState(false);
+  // Режим «Журнал» (перенос журналов посещаемости из Grafana): матрица
+  // «участник × недели года» вместо таблицы. Стартовое значение — из ссылки,
+  // чтобы журналом можно было делиться.
+  const hasJournal = (JOURNAL_METRICS as string[]).includes(metric);
+  const [view, setView] = useState<"rating" | "journal">(() =>
+    new URLSearchParams(window.location.search).get("view") === "journal"
+      ? "journal"
+      : "rating",
+  );
+  const showJournal = hasJournal && view === "journal";
+  const switchView = useCallback((next: "rating" | "journal") => {
+    setView(next);
+    const url = new URL(window.location.href);
+    if (next === "journal") {
+      url.searchParams.set("view", "journal");
+    } else {
+      url.searchParams.delete("view");
+    }
+    window.history.replaceState(null, "", url.toString());
+  }, []);
   // Фильтр ролей: пресет + конкретные ключи. Стартовое значение — из ссылки
   // (можно кинуть в чат и спорить предметно), иначе из прошлого выбора
   // в этом браузере.
@@ -1360,6 +1382,39 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
 
             <RatingsLoginBanner />
 
+            {hasJournal && (
+              <div className="lb-controls-row">
+                <div className="lb-gender-tabs" role="tablist" aria-label="Вид раздела">
+                  {(
+                    [
+                      { value: "rating", label: "Рейтинг" },
+                      { value: "journal", label: "Журнал" },
+                    ] as const
+                  ).map((tab) => (
+                    <button
+                      key={tab.value}
+                      type="button"
+                      role="tab"
+                      aria-selected={view === tab.value}
+                      className={`lb-gender-tab${view === tab.value ? " lb-gender-tab-active" : ""}`}
+                      onClick={() => switchView(tab.value)}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {showJournal ? (
+              <RatingJournalPanel
+                metric={metric as JournalMetric}
+                platform={platform}
+                platformOptions={data.platform_options ?? []}
+                onPlatformChange={(value) => setPlatform(value as PlatformFilter)}
+              />
+            ) : (
+              <>
             {homeChangePending && homeChangedAt != null && (
               <HomeChangeNotice
                 changedAt={homeChangedAt}
@@ -2050,6 +2105,8 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                   Показать ещё (места {visibleCount + 1}–{nextChunkEnd})
                 </button>
               </div>
+            )}
+              </>
             )}
           </div>
         )}

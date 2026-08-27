@@ -1,0 +1,277 @@
+/* Журналы посещаемости (матрица дат): режим «Журнал» рейтингов и журнал
+   локации. Свежие даты слева, липкие колонки «# · Участник · Всего», клетки
+   в цветах хитмэпа «Пробежек» из ЛК (зелёный бег / синий волонтёрство). */
+
+.aj-panel {
+  margin-top: 0.5rem;
+}
+
+.aj-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.25rem;
+  margin-bottom: 0.6rem;
+}
+
+.aj-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1.1rem;
+  font-size: 0.85rem;
+  color: var(--text-2);
+  margin: 0 0 0.6rem;
+}
+
+.aj-legend .ajm-swatch {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  background: var(--chip-bg);
+  margin-right: 0.35rem;
+  vertical-align: -2px;
+}
+
+.aj-meta {
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+/* Сегментированные переключатели журнала — та же пилюля, что у фильтров
+   рейтингов (.lb-gender-tabs), но своим классом: журнал живёт и на странице
+   локации, где leaderboards.css не загружен. */
+.aj-tabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.aj-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, inherit);
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.aj-tab-active {
+  background: var(--surface, #fff);
+  color: var(--text, inherit);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+/* Переключатель «Рейтинг | Журнал» над топами страницы локации. */
+.loc-leaders-view {
+  margin-bottom: 0.75rem;
+}
+
+.aj-error {
+  color: var(--accent-red-text, #dc2626);
+}
+
+.aj-refreshing {
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+
+.aj-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+/* ── таблица-матрица ─────────────────────────────────────── */
+
+.ajm-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.85rem;
+  /* Не растягиваем на всю ширину: у короткого года таблица уже экрана. */
+  width: auto;
+}
+
+.ajm-table th,
+.ajm-table td {
+  padding: 0.28rem 0.4rem;
+  border-bottom: 1px solid var(--border-soft);
+  white-space: nowrap;
+  background: var(--surface);
+  text-align: center;
+}
+
+.ajm-table thead th {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.ajm-months-row th {
+  border-bottom: none;
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  letter-spacing: 0.03em;
+  text-align: left;
+  padding-bottom: 0;
+}
+
+/* Липкие колонки. Ширины фиксированные — от них считаются left-отступы. */
+.ajm-col-rank {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 2.8rem;
+  width: 2.8rem;
+  text-align: right;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.ajm-col-name {
+  position: sticky;
+  left: 2.8rem;
+  z-index: 2;
+  width: 168px;
+  min-width: 168px;
+  max-width: 168px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.ajm-col-total {
+  position: sticky;
+  left: calc(2.8rem + 168px);
+  z-index: 2;
+  min-width: 2.9rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  box-shadow: 3px 0 0 var(--border-soft);
+}
+
+.ajm-name-link {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.ajm-private {
+  margin-left: 0.3rem;
+  font-size: 0.75rem;
+  cursor: default;
+}
+
+.ajm-col-date {
+  padding: 0.22rem 0.24rem;
+}
+
+.ajm-month-start {
+  border-left: 1px solid var(--border);
+}
+
+/* Клетка. Цвета — те же, что у календаря-хитмэпа ЛК (activity-cal). */
+.ajm-dot {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: var(--chip-bg);
+  font-size: 0.68rem;
+  line-height: 22px;
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.ajm-dot-run {
+  background: #16a34a;
+}
+
+.ajm-dot-vol {
+  background: #2563eb;
+}
+
+.ajm-dot-both {
+  background: linear-gradient(135deg, #16a34a 50%, #2563eb 50%);
+}
+
+.ajm-dot-new {
+  background: #7c3aed;
+}
+
+.ajm-dot-repeat {
+  background: #86efac;
+  color: #14532d;
+}
+
+/* Подсветка столбца по наведению/тапу: скан «кто был в эту дату». */
+.ajm-table .ajm-hl {
+  background: var(--tint-indigo-bg);
+}
+
+.ajm-table tbody tr:hover td {
+  background: var(--bg-muted);
+}
+
+.ajm-table tbody tr:hover td.ajm-hl {
+  background: var(--tint-indigo-bg);
+}
+
+/* Строка «Вы» — как закреплённая своя строка в таблицах рейтингов. */
+.ajm-table tr.ajm-me td {
+  background: var(--tint-indigo-bg);
+}
+
+.ajm-table tr.ajm-me td .ajm-dot:not([class*="ajm-dot-"]) {
+  background: var(--tint-indigo-bg-strong);
+}
+
+/* Итоговая строка «Участников» журнала локации. */
+.ajm-table tfoot td {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+}
+
+.ajm-totals-label {
+  text-align: right;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 560px) {
+  .ajm-col-name {
+    left: 2.2rem;
+    width: 124px;
+    min-width: 124px;
+    max-width: 124px;
+  }
+
+  .ajm-col-rank {
+    min-width: 2.2rem;
+    width: 2.2rem;
+  }
+
+  .ajm-col-total {
+    left: calc(2.2rem + 124px);
+  }
+
+  .ajm-dot {
+    width: 20px;
+    height: 20px;
+    line-height: 20px;
+  }
+}

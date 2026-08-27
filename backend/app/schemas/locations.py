@@ -346,6 +346,52 @@ class LocationLeadersResponse(BaseModel):
     volunteers: list[LocationLeaderVolunteerResponse] = Field(default_factory=list)
 
 
+class LocationAttendanceItemResponse(BaseModel):
+    """Отметка журнала локации: что человек делал в эту дату."""
+
+    date: str
+    run: bool = False
+    roles: list[str] = Field(default_factory=list)
+
+
+class LocationAttendanceRowResponse(BaseModel):
+    name: str | None = None
+    handle: str | None = None
+    # Закрытый профиль: счёт года остаётся, клетки по датам не отдаются.
+    private: bool = False
+    # Дней активности в году (день с пробежкой и волонтёрством — один).
+    year_total: int
+    runs_total: int = 0
+    volunteering_total: int = 0
+    items: list[LocationAttendanceItemResponse] = Field(default_factory=list)
+
+
+class LocationAttendanceColumnResponse(BaseModel):
+    date: str
+    platforms: list[str] = Field(default_factory=list)
+
+
+class LocationAttendanceDateTotalsResponse(BaseModel):
+    runners: int = 0
+    volunteers: int = 0
+
+
+class LocationAttendanceResponse(BaseModel):
+    slug: str
+    name: str
+    year: int
+    years: list[int] = Field(default_factory=list)
+    kind: str = "all"
+    offset: int = 0
+    limit: int = 50
+    total_rows: int = 0
+    columns: list[LocationAttendanceColumnResponse] = Field(default_factory=list)
+    # ISO-дата -> сколько бегунов и волонтёров было на этом старте.
+    date_totals: dict[str, LocationAttendanceDateTotalsResponse] = Field(default_factory=dict)
+    rows: list[LocationAttendanceRowResponse] = Field(default_factory=list)
+    me: LocationAttendanceRowResponse | None = None
+
+
 class LocationIndexItemResponse(BaseModel):
     slug: str
     identity_key: str

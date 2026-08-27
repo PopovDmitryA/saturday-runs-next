@@ -38,6 +38,7 @@ import { useOptionalUser } from "../../lib/useOptionalUser";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
 import { locationCardSubject, locationEventSubject, locationMeSubject } from "../sharing/subjects";
+import { LocationAttendanceJournal } from "../journal/LocationAttendanceJournal";
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { LocationMiniMap } from "./LocationMiniMap";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
@@ -488,6 +489,10 @@ function AgeGroupRecordsSection({
 function LocationLeadersSection({ slug }: { slug: string }) {
   const [leaders, setLeaders] = useState<LocationLeaders | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // «Рейтинг | Журнал» — тот же переключатель, что в глобальных рейтингах:
+  // рейтинг — топ-20, журнал — матрица «участник × даты стартов» (перенос
+  // Grafana-дашборда «Журнал посещаемости локации»).
+  const [view, setView] = useState<"rating" | "journal">("rating");
   // На телефоне топы — карточки: имя не тесно соседствует с цифрами.
   const narrowViewport = useNarrowViewport();
 
@@ -524,8 +529,49 @@ function LocationLeadersSection({ slug }: { slug: string }) {
     return null;
   }
 
+  const viewToggle = (
+    <div className="aj-tabs loc-leaders-view" role="tablist" aria-label="Вид раздела">
+      {(
+        [
+          { value: "rating", label: "Рейтинг" },
+          { value: "journal", label: "Журнал" },
+        ] as const
+      ).map((tab) => (
+        <button
+          key={tab.value}
+          type="button"
+          role="tab"
+          aria-selected={view === tab.value}
+          className={`aj-tab${view === tab.value ? " aj-tab-active" : ""}`}
+          onClick={() => setView(tab.value)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (view === "journal") {
+    return (
+      <section className="card loc-section">
+        <h2 className="section-title">
+          Журнал посещаемости
+          <StatHintTooltip text="Кто был на каждом старте этой площадки в выбранном году: пробежки и волонтёрства по датам. Свежие даты слева, наведение или тап на клетку подсвечивает весь столбец — видно, кто был в конкретную дату.">
+            <span className="loc-section-title-info" aria-label="Как устроен журнал">
+              ⓘ
+            </span>
+          </StatHintTooltip>
+        </h2>
+        {viewToggle}
+        <LocationAttendanceJournal slug={slug} />
+      </section>
+    );
+  }
+
   return (
-    <div className="loc-columns">
+    <>
+      {viewToggle}
+      <div className="loc-columns">
       {leaders.runners.length > 0 && (
         <section className="card loc-section">
           <h2 className="section-title">
@@ -644,7 +690,8 @@ function LocationLeadersSection({ slug }: { slug: string }) {
           )}
         </section>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
