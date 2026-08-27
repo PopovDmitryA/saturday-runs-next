@@ -16,6 +16,30 @@ def beat_queue(entry: dict) -> str:
     return routed["queue"].name
 
 
+# Очереди, которые кто-то реально разбирает (docker-compose.yml, команды
+# воркеров): worker без -Q слушает дефолтную celery, остальные — свои.
+# Записать задачу в очередь вне этого списка — значит отправить её в никуда:
+# kombu молча создаст очередь, сообщения будут копиться, и ошибки не будет
+# нигде. Так с 20.08.2026 простаивало правило молчания с queue="default".
+CONSUMED_QUEUES = frozenset(
+    {"celery", "five_verst", "five_verst_user", "s95", "s95_user", "parkrun", "runpark"}
+)
+
+
+def test_every_beat_entry_lands_in_a_consumed_queue() -> None:
+    for key, entry in celery_app.conf.beat_schedule.items():
+        assert beat_queue(entry) in CONSUMED_QUEUES, f"{key}: очередь никто не слушает"
+
+
+def test_activity_status_runs_in_the_default_queue() -> None:
+    """Правило молчания — в общей очереди: сетевых запросов нет, занимать ею
+    очередь синков незачем (так и написано в самой задаче)."""
+    entry = celery_app.conf.beat_schedule["locations-activity-status"]
+    assert beat_queue(entry) == celery_app.conf.task_default_queue
+    assert entry["schedule"].hour == {21}
+    assert entry["schedule"].minute == {10}
+
+
 def test_s95_registry_every_3_days() -> None:
     schedule = celery_app.conf.beat_schedule
     reg = schedule["s95-registry-3days"]

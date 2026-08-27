@@ -107,10 +107,15 @@ celery_app.conf.update(
         # :00 — у latest: это свежие субботние протоколы.
         # Правило молчания: после реестра 5 вёрст, чтобы догадка по датам
         # ложилась поверх свежих заявлений систем, а не спорила с ними.
+        # Очередь celery, а не "default": так называется дефолтная очередь
+        # (task_default_queue), и только её слушает сервис worker — он стартует
+        # без -Q. Очередь с буквальным именем "default" не разбирает никто, и
+        # правило молчания с 20.08.2026 копилось в ней невостребованным
+        # (проверено на проде 27.08.2026: ни один статус пересчитан не был).
         "locations-activity-status": {
             "task": "locations.refresh_activity_status",
             "schedule": crontab(hour=21, minute=10),
-            "options": {"queue": "default"},
+            "options": {"queue": "celery"},
         },
         "five-verst-registry-daily": {
             "task": "five_verst_sync.sync_locations_registry",
