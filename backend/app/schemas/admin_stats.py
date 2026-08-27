@@ -57,6 +57,24 @@ class AdminLinkCombinationRow(BaseModel):
     users: int = 0
 
 
+class AdminOnboardingCohortRow(BaseModel):
+    """Неделя регистрации и сколько из этой когорты дошло до привязки."""
+
+    week: date
+    registered: int = 0
+    linked_1d: int = 0
+    linked_7d: int = 0
+    linked_any: int = 0
+
+
+class AdminLinksByMethodRow(BaseModel):
+    """Привязки за неделю в разрезе способа (search / url / claim / …)."""
+
+    week: date
+    total: int = 0
+    by_method: dict[str, int] = Field(default_factory=dict)
+
+
 class AdminSiteStatsResponse(BaseModel):
     period_days: int
     generated_at: datetime
@@ -68,6 +86,8 @@ class AdminSiteStatsResponse(BaseModel):
     logins_by_day: list[AdminSiteStatsDayPoint]
     login_requests_by_day: list[AdminSiteStatsDayPoint]
     pageviews_by_day: list[AdminSiteStatsPageviewsDay]
+    onboarding_cohorts: list[AdminOnboardingCohortRow] = Field(default_factory=list)
+    links_by_method_weekly: list[AdminLinksByMethodRow] = Field(default_factory=list)
 
 
 class AdminGeographyCityRow(BaseModel):

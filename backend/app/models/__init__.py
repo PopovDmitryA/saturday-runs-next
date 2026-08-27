@@ -159,7 +159,7 @@ class Location(Base):
     # Причина отмены ближайшего старта словами организатора — её пишет только
     # s95 (плашка на странице площадки); у 5 вёрст в реестре одна пометка
     # «(отмена)» без текста. Живёт вместе с флагом: снимается отмена — стирается
-    # и причина (миграция 073).
+    # и причина (миграция 074).
     cancel_reason: Mapped[str | None] = mapped_column(Text)
     # Площадка объявлена, но ещё не стартовала. Отдельно от is_paused: там
     # старты кончились, здесь их ещё не было (см. миграцию 064).
@@ -1132,6 +1132,10 @@ class PlatformLink(Base):
     participant_id: Mapped[UUID | None] = mapped_column(ForeignKey("participants.id"))
     external_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
     external_url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    # Каким путём человек привязал профиль: search — нашёл себя в поиске
+    # (имя/код), url — вставил ссылку, claim — тизер на главной, s95_pair —
+    # parkrun, привязанный заодно с С95, legacy — до появления этой отметки.
+    link_method: Mapped[str] = mapped_column(String(16), nullable=False, server_default="legacy")
     linked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     last_user_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sync_status: Mapped[PlatformLinkSyncStatus] = mapped_column(

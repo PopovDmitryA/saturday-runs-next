@@ -195,7 +195,94 @@ def get_admin_site_stats(db: Session, *, period_days: int = 30) -> dict[str, obj
         "logins_by_day": logins_by_day,
         "login_requests_by_day": login_requests_by_day,
         "pageviews_by_day": pageviews_by_day,
+        "onboarding_cohorts": _onboarding_cohorts(db),
+        "links_by_method_weekly": _links_by_method_weekly(db),
     }
+
+
+# Сколько недель показываем в отчёте онбординга: хватает, чтобы рядом стояли
+# несколько недель до релиза поиска по ФИО и несколько после.
+ONBOARDING_COHORT_WEEKS = 16
+
+
+def _onboarding_cohorts(db: Session, *, weeks: int = ONBOARDING_COHORT_WEEKS) -> list[dict[str, object]]:
+    """Конверсия «зарегистрировался → привязал профиль» по неделям регистрации.
+
+    Главный показатель эффекта онбординга: доля новичков, дошедших до первой
+    привязки в первые сутки. Считается из created_at/linked_at, поэтому недели
+    ДО релиза видны задним числом — есть с чем сравнивать.
+    """
+    since = _utcnow() - timedelta(weeks=weeks)
+    first_link = (
+        db.query(
+            PlatformLink.user_id.label("user_id"),
+            func.min(PlatformLink.linked_at).label("first_linked_at"),
+        )
+        .group_by(PlatformLink.user_id)
+        .subquery()
+    )
+    week_expr = cast(func.date_trunc("week", User.created_at), Date)
+    first_linked_at = first_link.c.first_linked_at
+    rows = (
+        db.query(
+            week_expr.label("week"),
+            func.count().label("registered"),
+            func.count(first_linked_at).label("linked_any"),
+            func.count()
+            .filter(first_linked_at <= User.created_at + timedelta(days=1))
+            .label("linked_1d"),
+            func.count()
+            .filter(first_linked_at <= User.created_at + timedelta(days=7))
+            .label("linked_7d"),
+        )
+        .select_from(User)
+        .outerjoin(first_link, first_link.c.user_id == User.id)
+        .filter(User.created_at >= since)
+        .group_by(week_expr)
+        .order_by(week_expr)
+        .all()
+    )
+    return [
+        {
+            "week": row.week,
+            "registered": int(row.registered or 0),
+            "linked_any": int(row.linked_any or 0),
+            "linked_1d": int(row.linked_1d or 0),
+            "linked_7d": int(row.linked_7d or 0),
+        }
+        for row in rows
+        if row.week is not None
+    ]
+
+
+def _links_by_method_weekly(
+    db: Session,
+    *,
+    weeks: int = ONBOARDING_COHORT_WEEKS,
+) -> list[dict[str, object]]:
+    """Привязки по неделям в разрезе способа (поиск / ссылка / тизер).
+
+    Считает все привязки, не только у новичков: существующие участники тоже
+    добирают недостающие системы — это часть эффекта поиска.
+    """
+    since = _utcnow() - timedelta(weeks=weeks)
+    week_expr = cast(func.date_trunc("week", PlatformLink.linked_at), Date)
+    rows = (
+        db.query(week_expr.label("week"), PlatformLink.link_method, func.count().label("value"))
+        .filter(PlatformLink.linked_at >= since)
+        .group_by(week_expr, PlatformLink.link_method)
+        .order_by(week_expr)
+        .all()
+    )
+    by_week: dict[object, dict[str, int]] = defaultdict(dict)
+    for row in rows:
+        if row.week is None:
+            continue
+        by_week[row.week][row.link_method or "legacy"] = int(row.value or 0)
+    return [
+        {"week": week, "total": sum(methods.values()), "by_method": methods}
+        for week, methods in sorted(by_week.items())
+    ]
 
 
 def _series_from_db(

@@ -5,8 +5,8 @@ s95 пишет её на странице площадки красной пла
 отвечает на вопрос «побегут ли в субботу», а человеку у экрана нужно ещё и
 «почему и когда снова» — это здесь.
 
-Revision ID: 073_location_cancel_reason
-Revises: 072_protocol_watch
+Revision ID: 074_location_cancel_reason
+Revises: 073_platform_link_method
 Create Date: 2026-08-27
 """
 
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "073_location_cancel_reason"
-down_revision = "072_protocol_watch"
+revision = "074_location_cancel_reason"
+down_revision = "073_platform_link_method"
 branch_labels = None
 depends_on = None
 

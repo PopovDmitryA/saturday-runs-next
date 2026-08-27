@@ -354,6 +354,28 @@ export function runClubsLabel(count: number): string {
   return pluralFormRu(count, CLUB_FORMS);
 }
 
+/**
+ * Доля финишёра среди всех участников старта: 5-й из 100 → 5. Null, когда места
+ * или числа участников нет (неполный протокол — бэкенд отдаёт participants_total
+ * пустым). Место может оказаться больше известного числа участников только при
+ * расхождении данных — тогда честнее промолчать, чем показать «110%».
+ */
+export function topPercentValue(position: number | null, total: number | null | undefined): number | null {
+  if (position == null || position <= 0 || !total || total <= 0 || position > total) {
+    return null;
+  }
+  return (position / total) * 100;
+}
+
+/** «5%», а меньше процента — с десятыми: «0,4%» у лидера тысячного старта. */
+export function formatTopPercent(value: number): string {
+  if (value >= 10) {
+    return `${Math.round(value)}%`;
+  }
+  const rounded = Math.round(value * 10) / 10;
+  return `${String(rounded).replace(".", ",")}%`;
+}
+
 export function formatVsFieldPct(value: number): string {
   const abs = Math.abs(value);
   const formatted = Number.isInteger(abs) ? String(abs) : abs.toFixed(1);
