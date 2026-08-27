@@ -66,6 +66,11 @@ class LeaderboardRowResponse(BaseModel):
     locations_total: int | None = None
     cities_total: int | None = None
     regions_total: int | None = None
+    # Прогноз завершения туризма (только у FORECAST_METRICS): сколько
+    # действующих единиц зачёта осталось и когда они закончатся, если брать по
+    # новой каждый старт. Дата пустая, когда брать уже нечего.
+    remaining_total: int | None = None
+    forecast_date: str | None = None
     # Колонка «Последняя неделя» (см. WEEK_LOCATIONS_METRICS).
     week_location: WeekLocationResponse | None = None
 
@@ -83,6 +88,8 @@ class LeaderboardResponse(BaseModel):
     count_by_options: list[str] = []
     # Есть ли у рейтинга колонка «Последняя неделя».
     has_week_locations: bool = False
+    # Есть ли колонки «Осталось» и «Прогноз» (прогноз завершения туризма).
+    has_forecast: bool = False
     # Фильтр «только очевидный дом» (есть у дальности от дома) и его состояние.
     has_home_filter: bool = False
     hide_ambiguous_home: bool = False
@@ -112,6 +119,8 @@ class MyLeaderboardRowResponse(BaseModel):
     locations_total: int | None = None
     cities_total: int | None = None
     regions_total: int | None = None
+    remaining_total: int | None = None
+    forecast_date: str | None = None
     week_location: WeekLocationResponse | None = None
     display_name: str | None
     site_serial_id: int

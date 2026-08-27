@@ -71,7 +71,7 @@ type LeaderboardPageProps = {
 // Колонки-системы больше не сортируются: чтобы посмотреть зачёт одной системы,
 // есть фильтр «Система» — он пересчитывает и место, и «Всего», а не просто
 // переставляет строки по одному столбцу (решение Дмитрия 01.08.2026).
-type SortKey = "rank" | "total" | "best_time" | `light:${string}`;
+type SortKey = "rank" | "total" | "best_time" | "remaining" | `light:${string}`;
 
 /** Фильтр столбца светофоров: показать только побывавших или только тех, кто нет. */
 type LightFilter = "yes" | "no";
@@ -170,6 +170,28 @@ const COUNT_BY_HINT =
 const CITIES_HINT =
   "Сколько РАЗНЫХ городов набрано засчитанными локациями: несколько парков " +
   "одного города дают один город.";
+
+// Прогноз завершения туризма — перенос дашборда Grafana «Прогноз даты
+// завершения туризма» (просьба Дмитрия 27.08.2026). Знаменатель остатка — те
+// же действующие площадки каталога, что показывает карта.
+const REMAINING_WHAT: Record<CountBy, string> = {
+  locations: "действующих локаций",
+  cities: "городов с действующими локациями",
+  regions: "регионов с действующими локациями",
+};
+
+function remainingHint(countBy: CountBy): string {
+  return (
+    `Сколько ${REMAINING_WHAT[countBy]} участник ещё не закрыл. Считаются ` +
+    "действующие площадки 5 вёрст, С95 и RunPark; закрытые, «скоро» и весь " +
+    "parkrun в остаток не идут — приехать туда уже нельзя."
+  );
+}
+
+const FORECAST_HINT =
+  "Когда туризм закончится, если с ближайшего старта брать по новой локации " +
+  "каждую субботу: в расписании учтены бонусные старты 1 января (их два) и " +
+  "12 июня. Пропуск сдвигает дату, новая площадка в каталоге — тоже.";
 
 const REGIONS_HINT =
   "Сколько РАЗНЫХ регионов набрано засчитанными локациями. Зарубежные старты " +
@@ -514,6 +536,27 @@ function WeekLocationCell({ item }: { item?: WeekLocation | null }) {
   );
 }
 
+function ForecastDate({
+  remaining,
+  date,
+}: {
+  remaining?: number | null;
+  date?: string | null;
+}) {
+  // Остаток ноль — квест закрыт: даты у такой строки нет и быть не может.
+  if (remaining === 0) {
+    return (
+      <span className="lb-forecast-done" title="Все действующие локации уже закрыты">
+        всё пройдено
+      </span>
+    );
+  }
+  if (!date) {
+    return <span className="lb-zero">—</span>;
+  }
+  return <span className="lb-cell lb-forecast">{formatDate(date)}</span>;
+}
+
 function GeoCount({ value }: { value?: number | null }) {
   if (value == null) {
     return <span className="lb-zero">—</span>;
@@ -669,6 +712,13 @@ function sortValue(row: LeaderboardRow, key: SortKey): number {
     // Строки без времени уходят в конец при любом направлении.
     const seconds = row.best_time_sec;
     return seconds != null && seconds > 0 ? -seconds : Number.NEGATIVE_INFINITY;
+  }
+  if (key === "remaining") {
+    // «Осталось» интересно с малого конца — кто ближе всех к финишу квеста,
+    // поэтому инвертируем, как у лучшего времени. Прогноз по дате сортировать
+    // отдельно незачем: он растёт ровно с остатком.
+    const left = row.remaining_total;
+    return left != null ? -left : Number.NEGATIVE_INFINITY;
   }
   return row.total;
 }
@@ -1049,6 +1099,9 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
   const hasCountByFilter = countByOptions.length > 1;
   const hasGeoColumns = hasCountByFilter;
   const hasWeekLocations = data?.has_week_locations ?? false;
+  // Прогноз завершения туризма: колонки «Осталось» и «Прогноз». Есть ли они у
+  // этого варианта рейтинга — решает бэкенд (в зачёте parkrun прогноза нет).
+  const hasForecast = data?.has_forecast ?? false;
   // В туризме «Всего» называет единицу зачёта («Всего городов»): рядом стоят
   // столбцы «Городов» и «Регионов», и без уточнения непонятно, что в итоге.
   const totalLabel = hasCountByFilter
@@ -1095,6 +1148,11 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     if (hasGeoColumns) {
       list.push({ key: "geo", width: 160 });
     }
+    // «Осталось» + «Прогноз» идут одной группой: дата без остатка не читается,
+    // а остаток без даты — половина ответа.
+    if (hasForecast) {
+      list.push({ key: "forecast", width: 196 });
+    }
     if (isHomeDistance) {
       list.push({ key: "home", width: 232 });
     }
@@ -1116,6 +1174,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     return list;
   }, [
     columns.length,
+    hasForecast,
     hasGeoColumns,
     hasWeekLocations,
     hasWinExtras,
@@ -1171,6 +1230,8 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
       locations_total: me.locations_total,
       cities_total: me.cities_total,
       regions_total: me.regions_total,
+      remaining_total: me.remaining_total,
+      forecast_date: me.forecast_date,
       week_location: me.week_location,
     };
     return [...data.rows, myRow];
@@ -1241,7 +1302,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     if (column.key === "platforms") {
       return sum + columns.length;
     }
-    if (column.key === "geo" || column.key === "home") {
+    if (column.key === "geo" || column.key === "home" || column.key === "forecast") {
       return sum + 2;
     }
     return sum + 1;
@@ -1565,6 +1626,25 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                           </span>
                         </>
                       )}
+                      {hasForecast && (
+                        <>
+                          <span className="lb-me-value">
+                            <span className="lb-me-platform">
+                              Осталось <InfoHint text={remainingHint(effectiveCountBy)} />
+                            </span>
+                            <GeoCount value={me.remaining_total} />
+                          </span>
+                          <span className="lb-me-value">
+                            <span className="lb-me-platform">
+                              Прогноз <InfoHint text={FORECAST_HINT} />
+                            </span>
+                            <ForecastDate
+                              remaining={me.remaining_total}
+                              date={me.forecast_date}
+                            />
+                          </span>
+                        </>
+                      )}
                       {isRoles && me.top_role && (
                         <span className="lb-me-value">
                           <span className="lb-me-platform">
@@ -1839,6 +1919,19 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         </th>
                       </>
                     )}
+                    {show("forecast") && hasForecast && (
+                      <>
+                        {headerCell(
+                          "remaining",
+                          "Осталось",
+                          "lb-col-num lb-col-geo",
+                          remainingHint(effectiveCountBy),
+                        )}
+                        <th className="lb-col-forecast">
+                          Прогноз <InfoHint text={FORECAST_HINT} />
+                        </th>
+                      </>
+                    )}
                     {show("home") && isHomeDistance && (
                       <>
                         <th className="lb-col-num lb-col-geo">
@@ -1963,6 +2056,19 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                             </td>
                             <td className="lb-col-num lb-col-geo">
                               <GeoCount value={row.regions_total} />
+                            </td>
+                          </>
+                        )}
+                        {show("forecast") && hasForecast && (
+                          <>
+                            <td className="lb-col-num lb-col-geo">
+                              <GeoCount value={row.remaining_total} />
+                            </td>
+                            <td className="lb-col-forecast">
+                              <ForecastDate
+                                remaining={row.remaining_total}
+                                date={row.forecast_date}
+                              />
                             </td>
                           </>
                         )}

@@ -27,6 +27,8 @@ from app.services.leaderboard_service import (
     _WEEK_VOLUNTEER_LOCATIONS_SQL,
     COUNT_BY_METRICS,
     COUNT_BY_VALUES,
+    FORECAST_LIVE_PLATFORMS,
+    FORECAST_METRICS,
     GENDERED_METRICS,
     LEADERBOARD_GENDERS,
     LEADERBOARD_METRICS,
@@ -52,6 +54,7 @@ from app.services.leaderboard_service import (
     _entity_key,
     _geo_keys,
     _latest_week_location,
+    _LocationGeo,
     _LocationVisits,
     _merge_visit_row,
     _my_gendered_win_values,
@@ -62,10 +65,12 @@ from app.services.leaderboard_service import (
     _normalize_gender,
     _normalize_min_visits,
     _normalize_platform_filter,
+    _OpenLocations,
     _percentile,
     _pick_home,
     _pick_last,
     _ranked,
+    _remaining_units,
     _RoleUsage,
     _row_key,
     _SiteLink,
@@ -78,7 +83,10 @@ from app.services.leaderboard_service import (
     _unit_key_getters,
     _week_start,
     count_by_values,
+    forecast_available,
+    forecast_finish_date,
     metric_description,
+    start_schedule,
     metric_title,
     metric_unit,
     platform_columns_for,
@@ -1049,3 +1057,107 @@ def test_my_week_location_shows_the_venue_behind_the_plus_one(db_session: Sessio
     )
     assert plain is not None
     assert plain["name"] == repeat_name
+
+
+# ─── Прогноз завершения туризма ──────────────────────────────────────────────
+# Перенос дашборда Grafana «Прогноз даты завершения туризма»: колонки «Осталось»
+# и «Прогноз» в рейтинге туризма.
+
+
+def test_start_schedule_walks_saturdays() -> None:
+    # 22.08.2026 — суббота: следующие возможности взять площадку это следующие
+    # субботы, сама отбеганная суббота в расписание не входит.
+    assert start_schedule(date(2026, 8, 22), 3) == [
+        date(2026, 8, 29),
+        date(2026, 9, 5),
+        date(2026, 9, 12),
+    ]
+
+
+def test_start_schedule_counts_new_year_twice() -> None:
+    # 1 января стартов два (в этот день реально закрыть две площадки), 12 июня —
+    # один. 01.01.2027 — пятница, обычной субботой он не был бы вовсе.
+    slots = start_schedule(date(2026, 12, 26), 4)
+    assert slots == [
+        date(2027, 1, 1),
+        date(2027, 1, 1),
+        date(2027, 1, 2),
+        date(2027, 1, 9),
+    ]
+
+
+def test_start_schedule_bonus_on_saturday_is_not_doubled() -> None:
+    # 12.06.2027 — суббота: бонусный день не добавляет к своему старту ещё и
+    # субботний, иначе один день дал бы две площадки на ровном месте.
+    slots = start_schedule(date(2027, 6, 5), 3)
+    assert slots == [date(2027, 6, 12), date(2027, 6, 19), date(2027, 6, 26)]
+    # 01.01.2028 — суббота, и там стартов по-прежнему два.
+    assert start_schedule(date(2027, 12, 25), 3) == [
+        date(2028, 1, 1),
+        date(2028, 1, 1),
+        date(2028, 1, 8),
+    ]
+
+
+def test_forecast_finish_date_by_remaining() -> None:
+    latest = date(2026, 8, 22)
+    assert forecast_finish_date(latest, 1) == date(2026, 8, 29)
+    assert forecast_finish_date(latest, 3) == date(2026, 9, 12)
+    # Брать больше нечего — даты нет.
+    assert forecast_finish_date(latest, 0) is None
+    assert forecast_finish_date(latest, -2) is None
+
+
+def test_forecast_available_only_for_live_systems() -> None:
+    assert FORECAST_METRICS == ("locations",)
+    assert forecast_available("locations", "all")
+    for code in FORECAST_LIVE_PLATFORMS:
+        assert forecast_available("locations", code)
+    # parkrun в России не работает: непосещённые площадки там не «осталось».
+    assert not forecast_available("locations", "parkrun")
+    # У остальных рейтингов прогноза нет вовсе.
+    assert not forecast_available("volunteer_locations", "all")
+    assert not forecast_available("runs", "all")
+
+
+def _open_locations_fixture() -> _OpenLocations:
+    return _OpenLocations(
+        by_identity={
+            "catalog:a": frozenset({"five_verst"}),
+            "catalog:b": frozenset({"five_verst", "s95"}),
+            "catalog:c": frozenset({"runpark"}),
+        }
+    )
+
+
+def test_open_locations_unit_keys_respect_platform_filter() -> None:
+    open_locations = _open_locations_fixture()
+    identity = _unit_key_getters({})["locations"]
+    assert open_locations.unit_keys(identity) == {"catalog:a", "catalog:b", "catalog:c"}
+    assert open_locations.unit_keys(identity, "five_verst") == {"catalog:a", "catalog:b"}
+    assert open_locations.unit_keys(identity, "runpark") == {"catalog:c"}
+
+
+def test_remaining_units_ignores_closed_locations() -> None:
+    getters = _unit_key_getters({})
+    open_units = _open_locations_fixture().unit_keys(getters["locations"])
+    counted = {
+        "catalog:a": _LocationVisits(first_date=date(2026, 8, 1), visits=1),
+        # Площадка закрыта и в знаменатель не входит — остаток она не уменьшает.
+        "catalog:closed": _LocationVisits(first_date=date(2026, 8, 1), visits=1),
+    }
+    assert _remaining_units(counted, getters, "locations", open_units) == 2
+
+
+def test_remaining_units_counts_cities() -> None:
+    geo = {
+        "catalog:a": _LocationGeo(city="москва|москва", region="москва"),
+        "catalog:b": _LocationGeo(city="москва|москва", region="москва"),
+        "catalog:c": _LocationGeo(city="тверская|тверь", region="тверская"),
+    }
+    getters = _unit_key_getters(geo)
+    open_cities = _open_locations_fixture().unit_keys(getters["cities"])
+    counted = {"catalog:a": _LocationVisits(first_date=date(2026, 8, 1), visits=1)}
+    # Два города всего, один закрыт визитом в один из его парков.
+    assert open_cities == {"москва|москва", "тверская|тверь"}
+    assert _remaining_units(counted, getters, "cities", open_cities) == 1
