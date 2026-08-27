@@ -1142,41 +1142,26 @@ def _event_summary_source_urls(
     return {(row.platform_id, row.location_id, row.event_date): row.source_url for row in rows}
 
 
-# Ниже этого числа строк протокол «сам за себя» не отвечает: столько мест подряд
-# может занять и горстка наших участников в чужом протоколе. Настоящие старты
-# такого размера почти всегда приходят с заявленным числом финишёров и считаются
-# по нему.
-MIN_TRUSTED_PROTOCOL_ROWS = 10
-
-
 def _event_participant_totals(
     db: Session,
-    events: list[Event],
+    events: list[tuple[Event, str]],
+    catalog_index: LocationCatalogIndex,
 ) -> dict[UUID, int | None]:
     """Сколько всего человек в протоколе старта — чтобы показать долю участника.
 
-    Источники по убыванию доверия: заявленное системой число (events.finishers_count
-    → event_summaries.finishers_count) и сам протокол в БД. Пока по площадке
-    собраны только строки наших участников (так приезжает parkrun — из профилей
-    атлетов), строк мало, а места большие: такой протокол неполон, и число
-    участников мы честно не знаем (та же проверка, что is_partial в
-    location_protocol_service). Тогда None, и доля в кабинете не показывается
-    вместо выдуманной.
+    parkrun живёт по своему правилу, тому же, что и места (см.
+    russian_parkrun_location_ids): русские площадки собраны протоколами целиком,
+    и по ним просто считаем строки, а от зарубежной в БД лежат только строки
+    наших же участников — там число участников не считаем вовсе.
 
-    Одной проверки «мест не больше, чем строк» мало: если из закрытого протокола к
-    нам попали двое и они финишировали 1-м и 2-м, огрызок выглядит целым — старт
-    превратился бы в «2 участника, топ 100%». Такое совпадение живёт только на
-    крошечных выборках: на 27.08.2026 все 254 таких parkrun-старта в БД — это 1–3
-    строки, настоящее поле столько не бывает. Поэтому целым считаем протокол,
-    который либо выкачан как протокол (protocol_sync_states — 5 вёрст, S95,
-    RunPark), либо крупнее MIN_TRUSTED_PROTOCOL_ROWS. Второе важно для parkrun:
-    его строки приезжают из профилей атлетов, записи о выкачке протокола у них
-    нет никогда, и по мере обхода российских площадок протокол собирается целиком
-    и должен считаться сам.
+    У остальных систем по убыванию доверия: заявленное системой число
+    (events.finishers_count → event_summaries.finishers_count), затем сам
+    протокол, если он выкачан как протокол и мест в нём не больше, чем строк.
+    Иначе None, и доля в кабинете не показывается вместо выдуманной.
     """
     from sqlalchemy import tuple_
 
-    event_ids = list({event.id for event in events})
+    event_ids = list({event.id for event, _code in events})
     if not event_ids:
         return {}
 
@@ -1192,7 +1177,7 @@ def _event_participant_totals(
 
     # У сводок event_id бывает пуст (пришли раньше протокола) — ключ тот же, что в
     # _event_summary_source_urls.
-    summary_keys = {(event.platform_id, event.location_id, event.event_date) for event in events}
+    summary_keys = {(event.platform_id, event.location_id, event.event_date) for event, _code in events}
     declared_by_key: dict[tuple[UUID, UUID, date], int | None] = {
         (platform_id, location_id, event_date): finishers_count
         for platform_id, location_id, event_date, finishers_count in db.query(
@@ -1216,25 +1201,25 @@ def _event_participant_totals(
             ProtocolSyncState.last_protocol_fetched_at.isnot(None),
         )
     }
+    russian_parkrun_ids = russian_parkrun_location_ids(db, catalog_index)
 
     totals: dict[UUID, int | None] = {}
-    for event in events:
+    for event, platform_code in events:
         rows, max_position = protocol_stats.get(event.id, (0, 0))
+        if platform_code == PARKRUN_PLATFORM_CODE:
+            russian = event.location_id in russian_parkrun_ids
+            totals[event.id] = rows if russian and rows else None
+            continue
         declared = event.finishers_count or declared_by_key.get(
             (event.platform_id, event.location_id, event.event_date)
         )
         if declared:
             totals[event.id] = max(declared, max_position, rows)
-        elif (
-            max_position
-            and rows >= max_position
-            and (event.id in fetched_protocol_ids or rows >= MIN_TRUSTED_PROTOCOL_ROWS)
-        ):
+        elif event.id in fetched_protocol_ids and max_position and rows >= max_position:
             totals[event.id] = rows
         else:
-            # Строки без мест или пригоршня строк неизвестно какого протокола:
-            # у 5 вёрст такие дни приезжают до сверки, у parkrun — из профилей
-            # участников. «1 участник» и «2 участника, топ 100%» там соврали бы.
+            # Строки без мест — это ещё не протокол: у 5 вёрст такие дни приезжают
+            # из профиля участника до сверки, и «1 участник» там соврал бы.
             totals[event.id] = None
     return totals
 
@@ -1330,7 +1315,11 @@ def list_user_runs(
     catalog_index = LocationCatalogIndex(db)
     run_events = [event for _run, event, _loc, _plat, _link in rows]
     summary_urls = _event_summary_source_urls(db, run_events)
-    participant_totals = _event_participant_totals(db, run_events)
+    participant_totals = _event_participant_totals(
+        db,
+        [(event, platform.code) for _run, event, _loc, platform, _link in rows],
+        catalog_index,
+    )
     return [
         {
             "run_result_id": run.id,
