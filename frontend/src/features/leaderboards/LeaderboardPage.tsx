@@ -1121,6 +1121,10 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
           "lb-table-week"
         : "";
   const wideTable = wideTableKind !== "";
+  // Фильтр «по системе» убирает колонки-системы целиком, и жёсткая раскладка
+  // набора становится шире фактической таблицы. Модификатор возвращает
+  // min-width к реальной сумме колонок (см. .lb-table-no-platforms).
+  const noPlatformColumns = columns.length === 0;
 
   // Единый механизм со всеми таблицами сайта: краткий вид набирает колонки под
   // ширину блока. Порядок — по важности, а не по выводу; колонки систем стоят
@@ -1807,9 +1811,9 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                 ref={tableRef}
                 className={`data-table lb-table${
                   fixedLayout ? ` lb-table-fixed ${wideTableKind}` : ""
-                }${showFull ? " lb-table-full" : ""}${
-                  isHomeDistance ? " lb-table-wide-values" : ""
-                }`}
+                }${fixedLayout && noPlatformColumns ? " lb-table-no-platforms" : ""}${
+                  showFull ? " lb-table-full" : ""
+                }${isHomeDistance ? " lb-table-wide-values" : ""}`}
                 style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
               >
                 <thead>
