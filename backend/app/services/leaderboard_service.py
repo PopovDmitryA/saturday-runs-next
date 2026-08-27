@@ -128,6 +128,14 @@ FORECAST_METRICS: tuple[LeaderboardMetric, ...] = ("locations",)
 # «уже никогда» (та же граница, что у карты: MAP_LIVE_PLATFORMS).
 FORECAST_LIVE_PLATFORMS: tuple[str, ...] = MAP_LIVE_PLATFORMS
 
+# Рейтинги, куда идут только участники действующих систем: хотя бы один финиш
+# в 5 вёрст, С95 или RunPark за всю историю. Правило Дмитрия (27.08.2026): тот,
+# кто бегал ТОЛЬКО в parkrun, в туризме не участвует — квест про действующие
+# площадки, а его коллекция закрылась вместе с российским parkrun в 2022-м.
+# Проверяется по ВСЕЙ истории участника, ДО фильтра «по системе»: иначе зачёт
+# одной системы выбрасывал бы из рейтинга всех подряд.
+REQUIRE_LIVE_SYSTEM_METRICS: tuple[LeaderboardMetric, ...] = ("locations",)
+
 # Сколько стартов даёт один день. Суббота — обычная возможность, 1 января у
 # 5 вёрст традиционно два старта (в один день реально закрыть две площадки),
 # 12 июня — один дополнительный. Ровно этот набор считал дашборд Grafana.
@@ -255,7 +263,9 @@ REFRESH_INTERVAL_HOURS = 2
 # v8 — в строках рейтинга туризма появились «осталось» и дата прогноза
 # (27.08.2026): старые снапшоты этих полей не несут, и колонки стояли бы
 # пустыми до конца TTL.
-CACHE_KEY_PREFIX = "leaderboards:v8"
+# v9 — из рейтинга туризма убраны те, кто бегал только в parkrun (27.08.2026):
+# меняется сам состав таблицы и порог входа, ждать TTL незачем.
+CACHE_KEY_PREFIX = "leaderboards:v9"
 
 # Победные рейтинги показывают две дополнительные колонки: глобальный рекорд
 # участника и последнюю победу (у win_locations — последнюю НОВУЮ локацию с
@@ -319,7 +329,9 @@ METRIC_META: dict[str, dict[str, str]] = {
         "description": (
             "Уникальные локации, где участник финишировал. Одна и та же локация "
             "в разных системах считается одной. «Всего» — уникальные локации "
-            "по всем системам (не сумма колонок)."
+            "по всем системам (не сумма колонок). Те, кто бегал только в "
+            "parkrun, в рейтинг не идут: его российские площадки закрыты с "
+            "2022 года, и туризм по ним не продолжить."
         ),
     },
     "volunteer_locations": {
@@ -2640,6 +2652,7 @@ def _collect_location_entities(
     with_geo: bool = False,
     role_filter: frozenset[str] | None = None,
     with_forecast: bool = False,
+    require_live_system: bool = False,
 ) -> dict[str, _Entity]:
     """Уникальные локации участника. with_last_win — для рейтинга локаций с
     победами: дополнительно заполняет последнюю НОВУЮ локацию (её первая
@@ -2650,7 +2663,9 @@ def _collect_location_entities(
     по коду системы, так что дополнительной SQL-выборки не нужно). with_geo —
     туристические рейтинги: считать заодно города и регионы (и ранжировать по
     count_by), плюс заполнять «Последнюю неделю». with_forecast — прогноз
-    завершения туризма: сколько действующих единиц зачёта ещё не закрыто."""
+    завершения туризма: сколько действующих единиц зачёта ещё не закрыто.
+    require_live_system — в рейтинг идут только те, кто хотя бы раз финишировал
+    в действующей системе (см. REQUIRE_LIVE_SYSTEM_METRICS)."""
     links = source.links()
     identity_by_location, identity_names, identity_slugs = source.identity_maps()
     getters = _unit_key_getters(source.geo_map() if with_geo else {})
@@ -2674,7 +2689,12 @@ def _collect_location_entities(
     per_entity: dict[str, dict[str, _LocationVisits]] = {}
     meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
     pids_by_entity: dict[str, set[UUID]] = {}
+    # Кто вообще бегал в действующих системах — считаем по всем строкам, ДО
+    # фильтра «по системе» (см. REQUIRE_LIVE_SYSTEM_METRICS).
+    live_system_entities: set[str] = set()
     for pid, code, location_id, first_date, visits, week_visits in rows:
+        if require_live_system and code in FORECAST_LIVE_PLATFORMS:
+            live_system_entities.add(_entity_key(pid, links.get(pid)))
         if platform != "all" and code != platform:
             continue
         identity = identity_by_location.get(location_id, str(location_id))
@@ -2695,6 +2715,9 @@ def _collect_location_entities(
     names = source.names()
     entities: dict[str, _Entity] = {}
     for key, identities in per_entity.items():
+        # Только parkrun за всю историю — это не турист действующих систем.
+        if require_live_system and key not in live_system_entities:
+            continue
         pid, link = meta[key]
         entity = _Entity(key=key)
         if link is not None and not link.private:
@@ -3102,6 +3125,7 @@ def _build_snapshot(
             count_by=count_by,
             with_geo=True,
             with_forecast=forecast_available(metric, platform),
+            require_live_system=metric in REQUIRE_LIVE_SYSTEM_METRICS,
         )
     elif metric == "volunteer_locations":
         entities = _collect_location_entities(
@@ -4244,6 +4268,7 @@ def _my_location_values(
     count_by: str = "locations",
     with_geo: bool = False,
     with_forecast: bool = False,
+    require_live_system: bool = False,
 ) -> _MyLocationRow:
     if not participant_ids:
         return _MyLocationRow(values={}, total=0, week=0)
@@ -4258,11 +4283,18 @@ def _my_location_values(
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     getters = _unit_key_getters(_location_geo_map(db) if with_geo else {})
     identities: dict[str, _LocationVisits] = {}
+    has_live_system = False
     for _pid, code, location_id, first_date, visits, week_visits in rows:
+        if code in FORECAST_LIVE_PLATFORMS:
+            has_live_system = True
         if platform != "all" and code != platform:
             continue
         identity = identity_by_location.get(location_id, str(location_id))
         _merge_visit_row(identities, identity, code, first_date, int(visits), int(week_visits))
+    if require_live_system and not has_live_system:
+        # Только parkrun за всю историю — в рейтинге туризма такой строки нет
+        # (см. REQUIRE_LIVE_SYSTEM_METRICS), значит нет ни места, ни прогноза.
+        return _MyLocationRow(values={}, total=0, week=0)
     counted = {
         identity: visits for identity, visits in identities.items() if visits.counts(min_visits)
     }
@@ -4491,6 +4523,7 @@ def get_my_leaderboard_row(
             count_by=unit,
             with_geo=True,
             with_forecast=forecast_available(metric, platform_resolved),
+            require_live_system=metric in REQUIRE_LIVE_SYSTEM_METRICS,
         )
         values, total, week = my_geo.values, my_geo.total, my_geo.week
     elif metric == "openings":

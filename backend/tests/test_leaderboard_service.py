@@ -49,6 +49,7 @@ from app.services.leaderboard_service import (
     _add_role_row,
     _apply_last_win,
     _cache_key,
+    _collect_location_entities,
     _dominant_gender,
     _Entity,
     _entity_key,
@@ -86,11 +87,11 @@ from app.services.leaderboard_service import (
     forecast_available,
     forecast_finish_date,
     metric_description,
-    start_schedule,
     metric_title,
     metric_unit,
     platform_columns_for,
     platform_filter_values,
+    start_schedule,
 )
 
 
@@ -1161,3 +1162,108 @@ def test_remaining_units_counts_cities() -> None:
     # Два города всего, один закрыт визитом в один из его парков.
     assert open_cities == {"москва|москва", "тверская|тверь"}
     assert _remaining_units(counted, getters, "cities", open_cities) == 1
+
+# ─── Кто идёт в рейтинг туризма ──────────────────────────────────────────────
+# Правило Дмитрия 27.08.2026: тот, кто бегал ТОЛЬКО в parkrun, в туризме не
+# участвует — российский parkrun закрыт с 2022 года, продолжить коллекцию там
+# нельзя. Проверяется по всей истории, поэтому в зачёте самого parkrun строки
+# «наших» туристов остаются.
+
+
+class _StubSource:
+    """Источник снапшота без базы: только справочники и сырые строки визитов."""
+
+    db = None
+
+    def __init__(self, rows: list[tuple[UUID, str, UUID, date, int, int]]) -> None:
+        self._rows = rows
+        self.latest = date(2026, 8, 22)
+        self.week_start = _week_start(self.latest)
+
+    def links(self) -> dict[UUID, _SiteLink]:
+        return {}
+
+    def identity_maps(self) -> tuple[dict[UUID, str], dict[str, str], dict[str, str]]:
+        return _STUB_IDENTITY, _STUB_NAMES, _STUB_SLUGS
+
+    def geo_map(self) -> dict[str, _LocationGeo]:
+        return {
+            "catalog:live": _LocationGeo(city="моск|москва", region="моск"),
+            "catalog:live2": _LocationGeo(city="твер|тверь", region="твер"),
+            "catalog:gone": _LocationGeo(city="кург|курган", region="кург"),
+        }
+
+    def open_locations(self) -> _OpenLocations:
+        return _OpenLocations(
+            by_identity={
+                "catalog:live": frozenset({"five_verst"}),
+                "catalog:live2": frozenset({"s95"}),
+            }
+        )
+
+    def names(self) -> dict[UUID, str | None]:
+        return {_TOURIST: "Турист", _PARKRUN_ONLY: "Только Паркран"}
+
+    def rows(self, sql: str) -> list[tuple[UUID, str, UUID, date, int, int]]:
+        return self._rows
+
+
+_LOC_LIVE, _LOC_LIVE2, _LOC_GONE = uuid4(), uuid4(), uuid4()
+_STUB_IDENTITY = {
+    _LOC_LIVE: "catalog:live",
+    _LOC_LIVE2: "catalog:live2",
+    _LOC_GONE: "catalog:gone",
+}
+_STUB_NAMES = {
+    "catalog:live": "Живой парк",
+    "catalog:live2": "Второй живой парк",
+    "catalog:gone": "Закрытый парк",
+}
+_STUB_SLUGS = {key: key.split(":")[1] for key in _STUB_NAMES}
+_TOURIST, _PARKRUN_ONLY = uuid4(), uuid4()
+
+_VISIT_ROWS = [
+    # турист: живая система + прошлое в parkrun на закрытой площадке
+    (_TOURIST, "five_verst", _LOC_LIVE, date(2025, 1, 4), 5, 0),
+    (_TOURIST, "parkrun", _LOC_GONE, date(2019, 5, 4), 9, 0),
+    # только parkrun за всю историю
+    (_PARKRUN_ONLY, "parkrun", _LOC_GONE, date(2019, 5, 4), 40, 0),
+    (_PARKRUN_ONLY, "parkrun", _LOC_LIVE, date(2019, 6, 1), 12, 0),
+]
+
+
+def _tourism_entities(platform: str = "all", count_by: str = "locations") -> dict[str, object]:
+    entities = _collect_location_entities(
+        _StubSource(_VISIT_ROWS),  # type: ignore[arg-type]
+        platform=platform,
+        count_by=count_by,
+        with_geo=True,
+        with_forecast=True,
+        require_live_system=True,
+    )
+    return {entity.display_name: entity for entity in entities.values()}
+
+
+def test_parkrun_only_participant_is_out_of_tourism() -> None:
+    by_name = _tourism_entities()
+    assert "Только Паркран" not in by_name
+    assert "Турист" in by_name
+    # У туриста две площадки (живая и закрытая), а осталось — одна живая из двух.
+    assert by_name["Турист"].total == 2
+    assert by_name["Турист"].remaining_total == 1
+
+
+def test_parkrun_scope_keeps_our_tourists() -> None:
+    # Зачёт самого parkrun: правило смотрит всю историю, поэтому турист с
+    # пробежками в живых системах остаётся, а «только parkrun» — нет.
+    by_name = _tourism_entities(platform="parkrun")
+    assert set(by_name) == {"Турист"}
+
+
+def test_remaining_recounts_under_platform_filter() -> None:
+    # Знаменатель прогноза следует фильтру: в зачёте 5 вёрст живая площадка
+    # одна и она закрыта, в зачёте С95 — одна и не закрыта.
+    assert _tourism_entities(platform="five_verst")["Турист"].remaining_total == 0
+    assert _tourism_entities(platform="s95") == {}
+    # В общем зачёте остаётся вторая живая площадка.
+    assert _tourism_entities()["Турист"].remaining_total == 1
