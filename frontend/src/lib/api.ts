@@ -305,6 +305,8 @@ export type RunItem = {
   location_is_cancelled?: boolean;
   position: number | null;
   gender_position?: number | null;
+  // Всего человек в протоколе старта; null — протокол неполон, честного числа нет.
+  participants_total?: number | null;
   finish_time_display: string | null;
   finish_time_sec: number | null;
   pace_display: string | null;

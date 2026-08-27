@@ -2095,6 +2095,15 @@ a.on-this-day-location {
   width: 8.5rem;
 }
 
+/* «Участников» и «Топ %» — под полные подписи с иконкой подсказки. */
+.runs-table .col-participants {
+  width: 8.25rem;
+}
+
+.runs-table .col-top-percent {
+  width: 7rem;
+}
+
 .runs-table .col-time {
   width: 7rem;
 }

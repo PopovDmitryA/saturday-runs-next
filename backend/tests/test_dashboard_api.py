@@ -1787,3 +1787,108 @@ def test_sync_refresh_rate_limited(authenticated_client: TestClient) -> None:
         second = authenticated_client.post("/api/sync/refresh/five_verst")
     assert first.status_code == 202
     assert second.status_code == 429
+
+
+def test_list_user_runs_reports_event_participants_total(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """Число участников старта и, значит, доля финишёра.
+
+    Полный протокол считаем по строкам, при заявленном числе верим ему, а у
+    обрывка чужой системы (одна наша строка с большим местом) честно молчим —
+    иначе «40-й из 40» превратилось бы в «топ 100%».
+    """
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+    suffix = uuid4().hex[:8]
+    location = Location(
+        platform_id=platform.id,
+        external_key=f"participants-total-{suffix}",
+        name="Participants Total Park",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=f"participants-total-{suffix}",
+        display_name="Total Tester",
+        profile_url=f"https://5verst.ru/userstats/{suffix}/",
+    )
+    other = Participant(
+        platform_id=platform.id,
+        external_user_id=f"participants-total-other-{suffix}",
+        display_name="Someone Else",
+        profile_url=f"https://5verst.ru/userstats/other-{suffix}/",
+    )
+    db_session.add_all([participant, other])
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=platform.id,
+            participant_id=participant.id,
+            external_user_id=participant.external_user_id,
+            external_url=participant.profile_url,
+        )
+    )
+
+    def _event(day: int, declared: int | None) -> Event:
+        event = Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=f"participants-total-{suffix}-{day}",
+            event_date=date(2098, 5, day),
+            event_number=900_000 + day,
+            title=f"Participants Total #{day}",
+            finishers_count=declared,
+        )
+        db_session.add(event)
+        return event
+
+    complete = _event(1, None)
+    declared = _event(8, 120)
+    partial = _event(15, None)
+    stub = _event(22, None)
+    db_session.flush()
+
+    def _result(event: Event, who: Participant, position: int | None, tag: str) -> RunResult:
+        return RunResult(
+            event_id=event.id,
+            participant_id=who.id,
+            external_result_key=f"participants-total-{suffix}-{tag}",
+            position=position,
+            finish_time_sec=20 * 60 + (position or 0),
+            finish_time_display="00:20:00",
+            status="finished",
+        )
+
+    db_session.add_all(
+        [
+            # Протокол целиком: три строки, места 1–3 → участников ровно 3.
+            _result(complete, other, 1, "c1"),
+            _result(complete, participant, 2, "c2"),
+            _result(complete, other, 3, "c3"),
+            # Заявлено 120 при одной нашей строке — верим заявленному.
+            _result(declared, participant, 40, "d1"),
+            # Ни заявленного числа, ни полного протокола — участников не знаем.
+            _result(partial, participant, 40, "p1"),
+            # Огрызок из профиля участника: строка есть, места нет — не «1 участник».
+            _result(stub, participant, None, "s1"),
+        ]
+    )
+    db_session.commit()
+
+    response = authenticated_client.get("/api/runs", params={"limit": 200})
+    assert response.status_code == 200
+    by_date = {row["event_date"]: row for row in response.json()}
+
+    assert by_date["2098-05-01"]["participants_total"] == 3
+    assert by_date["2098-05-08"]["participants_total"] == 120
+    assert by_date["2098-05-15"]["participants_total"] is None
+    assert by_date["2098-05-22"]["participants_total"] is None

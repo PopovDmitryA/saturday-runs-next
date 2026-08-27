@@ -25,8 +25,18 @@ import {
 } from "../../lib/api";
 import { useAppDataSource } from "../../lib/appDataSource";
 import { useOptionalUser } from "../../lib/useOptionalUser";
-import { createFullSelection, sortRuns, toggleDateSort, toggleFinishSort, togglePaceSort, togglePositionSort, uniquePlatforms } from "../../lib/activityList";
-import { formatFinishTimeValue, formatInt, platformCodeLabel } from "../../lib/format";
+import {
+  createFullSelection,
+  runTopPercent,
+  sortRuns,
+  toggleDateSort,
+  toggleFinishSort,
+  togglePaceSort,
+  togglePositionSort,
+  toggleTopPercentSort,
+  uniquePlatforms,
+} from "../../lib/activityList";
+import { formatFinishTimeValue, formatInt, formatTopPercent, platformCodeLabel } from "../../lib/format";
 import { ShareRowButton } from "../sharing/ShareRowButton";
 import { runSubject } from "../sharing/subjects";
 import { TableWrap } from "../../components/tableUx/TableWrap";
@@ -44,6 +54,9 @@ const RUNS_COLUMNS: AdaptiveColumn[] = [
   { key: "time", width: 112, required: true },
   { key: "position", width: 104 },
   { key: "platform", width: 112 },
+  // «Участников» и «Топ %» идут парой: процент без размера старта не читается.
+  { key: "participants", width: 132 },
+  { key: "top_percent", width: 112 },
   { key: "pace", width: 120 },
   { key: "gender_position", width: 136 },
   // 68px: в ячейке две иконки — оценка старта и «Поделиться» (см. .col-rating).
@@ -179,6 +192,8 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const finishSortActive = filters.sort === "finish_asc" || filters.sort === "finish_desc";
   const paceSortActive = filters.sort === "pace_asc" || filters.sort === "pace_desc";
   const positionSortActive = filters.sort === "position_asc" || filters.sort === "position_desc";
+  const topPercentSortActive =
+    filters.sort === "top_percent_asc" || filters.sort === "top_percent_desc";
 
   const visibleRunCount = useMemo(
     () => (includeDuplicates ? runs : runs.filter((r) => !r.is_crosslinked)).length,
@@ -287,6 +302,8 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                 {show("platform") && <col className="col-platform" />}
                 <col className="col-location" />
                 {show("position") && <col className="col-compact" />}
+                {show("participants") && <col className="col-participants" />}
+                {show("top_percent") && <col className="col-top-percent" />}
                 {show("gender_position") && <col className="col-gender" />}
                 <col className="col-time" />
                 {show("pace") && <col className="col-pace" />}
@@ -359,6 +376,23 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       sortActive={positionSortActive}
                       sortAsc={filters.sort === "position_asc"}
                       onSort={() => filters.setSort((current) => togglePositionSort(current))}
+                    />
+                  )}
+                  {show("participants") && (
+                    <ColumnHeader
+                      label="Участников"
+                      filterable={false}
+                      hint="Сколько всего человек в протоколе этого старта"
+                    />
+                  )}
+                  {show("top_percent") && (
+                    <ColumnHeader
+                      label="Топ %"
+                      filterable={false}
+                      sortActive={topPercentSortActive}
+                      sortAsc={filters.sort === "top_percent_asc"}
+                      onSort={() => filters.setSort((current) => toggleTopPercentSort(current))}
+                      hint="Доля от всех участников старта: 5-й из 100 — это топ 5%"
                     />
                   )}
                   {show("gender_position") && (
@@ -445,6 +479,19 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                         </LocationPrLocationName>
                       </td>
                       {show("position") && <td className="td-compact">{run.position ?? "—"}</td>}
+                      {show("participants") && (
+                        <td className="td-compact">
+                          {run.participants_total != null ? formatInt(run.participants_total) : "—"}
+                        </td>
+                      )}
+                      {show("top_percent") && (
+                        <td className="td-compact">
+                          {(() => {
+                            const percent = runTopPercent(run);
+                            return percent == null ? "—" : formatTopPercent(percent);
+                          })()}
+                        </td>
+                      )}
                       {show("gender_position") && (
                         <td className="td-compact">{run.gender_position ?? "—"}</td>
                       )}
