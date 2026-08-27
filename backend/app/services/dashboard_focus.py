@@ -33,7 +33,7 @@ VOLUNTEER_MIN_OCCASIONS = 10
 # Скоростник: стабильно высокие места ЛИБО время из 21 минуты.
 RACER_MAX_AVG_POSITION = 10
 RACER_MAX_BEST_FINISH_SEC = 21 * 60
-# Завсегдатай: активен хотя бы в 40% суббот года ЛИБО держит серию.
+# Постоянный участник: активен хотя бы в 40% суббот года ЛИБО держит серию.
 REGULAR_MIN_CONSISTENCY_PCT = 40.0
 REGULAR_MIN_STREAK = 8
 

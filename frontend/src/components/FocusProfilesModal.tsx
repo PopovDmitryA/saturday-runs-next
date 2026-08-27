@@ -7,7 +7,7 @@ export const FOCUS_PROFILE_META: Record<
 > = {
   regular: {
     icon: "📅",
-    title: "Завсегдатай",
+    title: "Постоянный участник",
     description: "Суббота — это ритуал: серии, регулярность, календарь активности.",
   },
   racer: {
