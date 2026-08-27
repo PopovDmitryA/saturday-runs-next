@@ -14975,3 +14975,27 @@ a.admin-system-chip:hover {
   border-color: var(--tint-blue-border, rgba(9, 105, 218, 0.4));
   color: var(--link-strong, #0969da);
 }
+
+/* Отмена ближайшего старта на странице локации. Красный тинт — тот же, что у
+   чипа «Отмена старта» в заголовке: это одна и та же новость, просто здесь
+   она с причиной и её видно, не приглядываясь. */
+.loc-cancel-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.6rem 0 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.6rem;
+  background: var(--tint-rose-bg);
+  color: var(--tint-rose-text);
+}
+
+.loc-cancel-notice-icon {
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+
+.loc-cancel-notice-text {
+  margin: 0;
+  line-height: 1.45;
+}

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Location, Platform
 from app.s95.api_client import S95ApiLocation
+from app.sync.s95_location_status import S95LocationStatus
 from app.sync.s95_locations_registry import S95LocationRegistrySyncOptions, sync_s95_locations_registry
 
 
@@ -39,14 +40,14 @@ def s95_platform(db_session: Session) -> Platform:
     return row
 
 
-def test_s95_sync_registry_marks_inactive_location_not_working(
+def test_s95_sync_registry_marks_closed_location_not_working(
     db_session: Session, s95_platform: Platform
 ) -> None:
     """Закрытая карточка s95 — это «не действует», а не отмена ближайшего старта.
 
-    Недельных отмен реестр s95 не публикует (проверено 19.08.2026), поэтому
-    is_cancelled там остаётся свободным под будущий парсер отмен, а закрытая
-    площадка уходит в is_paused (решение Дмитрия 20.08.2026).
+    `active=false` сам по себе неоднозначен: так выглядит и закрытая площадка,
+    и отменённая суббота. Различает их страница площадки — здесь на ней нет
+    красной плашки, значит закрыта (решение Дмитрия 20.08.2026).
     """
     slug = f"registry-{uuid4().hex[:8]}"
     location = Location(
@@ -64,7 +65,13 @@ def test_s95_sync_registry_marks_inactive_location_not_working(
 
     entries = [_api_location(slug, "Новое имя", active=False)]
 
-    with patch("app.sync.s95_locations_registry.fetch_all_locations", return_value=entries):
+    with (
+        patch("app.sync.s95_locations_registry.fetch_all_locations", return_value=entries),
+        patch(
+            "app.sync.s95_locations_registry.resolve_s95_location_status",
+            return_value=S95LocationStatus(is_paused=True, is_cancelled=False),
+        ),
+    ):
         result = sync_s95_locations_registry(
             db_session,
             S95LocationRegistrySyncOptions(),
@@ -72,10 +79,91 @@ def test_s95_sync_registry_marks_inactive_location_not_working(
 
     db_session.refresh(location)
     assert result.entries_total == 1
-    assert result.cancel_status_changed == 1
+    assert result.pause_status_changed == 1
+    assert result.cancel_status_changed == 0
     assert location.name == "Новое имя"
     assert location.is_paused is True
     assert location.is_cancelled is False
+
+
+def test_s95_sync_registry_marks_cancelled_saturday(
+    db_session: Session, s95_platform: Platform
+) -> None:
+    """Плашка на странице площадки превращает `active=false` в отмену старта.
+
+    Так выглядело Иваново 27.08.2026 — первая недельная отмена у s95. Прежний
+    синк отправил бы работающую площадку в «не действует» навсегда.
+    """
+    slug = f"cancel-{uuid4().hex[:8]}"
+    location = Location(
+        platform_id=s95_platform.id,
+        external_key=slug,
+        name="Иваново",
+        is_paused=False,
+        is_cancelled=False,
+        latitude=57.00297,
+        longitude=40.976711,
+        source_url=f"https://s95.ru/events/{slug}",
+    )
+    db_session.add(location)
+    db_session.commit()
+
+    entries = [_api_location(slug, "Иваново", active=False, lat=57.00297, lon=40.976711)]
+    status = S95LocationStatus(
+        is_paused=False,
+        is_cancelled=True,
+        cancel_reason="Отмена забега 29 августа",
+    )
+
+    with (
+        patch("app.sync.s95_locations_registry.fetch_all_locations", return_value=entries),
+        patch("app.sync.s95_locations_registry.resolve_s95_location_status", return_value=status),
+        patch("app.sync.s95_locations_registry.notify_cancellation_changes") as notify,
+        patch("app.sync.s95_locations_registry.flush_location_page_caches"),
+    ):
+        result = sync_s95_locations_registry(db_session, S95LocationRegistrySyncOptions())
+
+    db_session.refresh(location)
+    assert result.cancel_status_changed == 1
+    assert result.pause_status_changed == 0
+    assert location.is_cancelled is True
+    assert location.is_paused is False
+    assert location.cancel_reason == "Отмена забега 29 августа"
+    assert notify.call_count == 1
+
+
+def test_s95_sync_registry_keeps_flags_when_page_unreadable(
+    db_session: Session, s95_platform: Platform
+) -> None:
+    """Страница не открылась — прежние признаки лучше догадки."""
+    slug = f"unreadable-{uuid4().hex[:8]}"
+    location = Location(
+        platform_id=s95_platform.id,
+        external_key=slug,
+        name="Иваново",
+        is_paused=False,
+        is_cancelled=True,
+        cancel_reason="Отмена забега 29 августа",
+        source_url=f"https://s95.ru/events/{slug}",
+    )
+    db_session.add(location)
+    db_session.commit()
+
+    entries = [_api_location(slug, "Иваново", active=False)]
+
+    with (
+        patch("app.sync.s95_locations_registry.fetch_all_locations", return_value=entries),
+        patch(
+            "app.sync.s95_locations_registry.resolve_s95_location_status",
+            side_effect=RuntimeError("503"),
+        ),
+    ):
+        result = sync_s95_locations_registry(db_session, S95LocationRegistrySyncOptions())
+
+    db_session.refresh(location)
+    assert result.errors
+    assert location.is_cancelled is True
+    assert location.is_paused is False
 
 
 def test_s95_sync_registry_creates_new_location(db_session: Session, s95_platform: Platform) -> None:

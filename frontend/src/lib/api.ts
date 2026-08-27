@@ -2420,6 +2420,8 @@ export type LocationPage = {
   country: string | null;
   is_paused: boolean;
   is_cancelled: boolean;
+  /** Причина отмены ближайшего старта словами организатора (её пишет s95). */
+  cancel_reason: string | null;
   latitude: number | null;
   longitude: number | null;
   map_url: string | null;

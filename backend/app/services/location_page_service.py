@@ -75,10 +75,10 @@ _TRAVEL_HEADING_RE = re.compile(r"\s*как\s+добраться\s*[?:.]*\s*", r
 
 
 def location_page_cache_key(slug: str) -> str:
-    # v13 — обе ветки бампали v11→v12: в описании появилось время старта
-    # (start_time_current), в last_event — номер старта, победители поимённо,
-    # разбивка по полу и клубные юбиляры.
-    return f"locations:page:v13:{slug.strip().lower()}"
+    # v14 — в payload добавилась причина отмены ближайшего старта
+    # (cancel_reason): без бампа страница до истечения TTL отдавала бы её как
+    # None и плашка отмены осталась бы без текста.
+    return f"locations:page:v14:{slug.strip().lower()}"
 
 
 def location_events_cache_key(slug: str) -> str:
@@ -203,6 +203,18 @@ def _identity_status(
     is_paused = parkrun_only or any(catalog_index.is_paused(location, code) for location, code in locations)
     is_cancelled = not parkrun_only and all(location.is_cancelled for location, _code in locations)
     return is_paused, is_cancelled
+
+
+def _identity_cancel_reason(locations: list[tuple[Location, str]]) -> str | None:
+    """Причина отмены ближайшего старта — первая непустая среди отменённых строк.
+
+    Пишет её только s95; у 5 вёрст в реестре одна пометка «(отмена)» без текста,
+    поэтому у большинства отмен причины не будет вовсе.
+    """
+    for location, _code in locations:
+        if location.is_cancelled and (location.cancel_reason or "").strip():
+            return location.cancel_reason.strip()
+    return None
 
 
 def _identity_country(locations: list[tuple[Location, str]]) -> str | None:
@@ -1464,6 +1476,7 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
         "country": _identity_country(identity.locations),
         "is_paused": is_paused,
         "is_cancelled": is_cancelled,
+        "cancel_reason": _identity_cancel_reason(identity.locations) if is_cancelled else None,
         "latitude": latitude,
         "longitude": longitude,
         "map_url": _first_by_platform_order(identity.locations, lambda loc: loc.map_url),

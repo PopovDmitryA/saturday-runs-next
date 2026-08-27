@@ -54,7 +54,10 @@ def _stalest_locations(db: Session, platform_id: UUID, limit: int) -> list[Locat
         .filter(
             Location.platform_id == platform_id,
             Location.source_url.isnot(None),
-            Location.is_cancelled.is_(False),
+            # Пропускаем закрытые площадки, а не отменённые: с 27.08.2026
+            # is_cancelled означает «в эту субботу не бегут» — описание такой
+            # площадки обновлять по-прежнему нужно.
+            Location.is_paused.is_(False),
         )
         .order_by(nulls_first(LocationDescription.fetched_at.asc()), Location.external_key.asc())
         .limit(limit)

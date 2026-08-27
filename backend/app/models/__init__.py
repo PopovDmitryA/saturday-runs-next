@@ -156,6 +156,11 @@ class Location(Base):
     longitude: Mapped[float | None] = mapped_column()
     is_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Причина отмены ближайшего старта словами организатора — её пишет только
+    # s95 (плашка на странице площадки); у 5 вёрст в реестре одна пометка
+    # «(отмена)» без текста. Живёт вместе с флагом: снимается отмена — стирается
+    # и причина (миграция 073).
+    cancel_reason: Mapped[str | None] = mapped_column(Text)
     # Площадка объявлена, но ещё не стартовала. Отдельно от is_paused: там
     # старты кончились, здесь их ещё не было (см. миграцию 064).
     is_upcoming: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")

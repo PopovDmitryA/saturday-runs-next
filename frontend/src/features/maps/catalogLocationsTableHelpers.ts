@@ -28,7 +28,7 @@ export type CatalogTableFilters = {
 export const LOCATION_STATUS_OPTIONS: Array<{ value: LocationRegistryStatus; label: string }> = [
   { value: "active", label: "Активна" },
   { value: "paused", label: "Не действует" },
-  { value: "cancelled", label: "Отменена" },
+  { value: "cancelled", label: "Отмена старта" },
 ];
 
 export const EMPTY_CATALOG_TABLE_FILTERS: CatalogTableFilters = {
@@ -56,11 +56,13 @@ export function catalogRowPlatformCode(row: CatalogLocationTableRow): MapPlatfor
 }
 
 export function catalogRowStatus(row: CatalogLocationTableRow): LocationRegistryStatus {
-  if (row.is_cancelled) {
-    return "cancelled";
-  }
+  // «Не действует» сильнее отмены: у закрытой площадки отменённая суббота уже
+  // ничего не добавляет. Тот же порядок в LocationStatusBadge и в подписи строки.
   if (row.is_paused) {
     return "paused";
+  }
+  if (row.is_cancelled) {
+    return "cancelled";
   }
   return "active";
 }

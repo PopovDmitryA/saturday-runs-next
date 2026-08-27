@@ -91,33 +91,39 @@ def fetch_events(domain: str) -> list[dict]:
 
 
 def fetch_all_locations() -> list[S95ApiLocation]:
-    """
-    Fetch locations from all three domains, merging pages.json (full list)
-    with events.json (coordinates). Returns deduplicated list keyed by (domain, slug).
+    """Локации всех трёх доменов: `pages.json` + `events.json`, без дублей.
+
+    Два источника нужны потому, что каждый по отдельности неполон:
+
+    * `pages.json` отдаёт только работающие площадки — координат там нет, зато
+      есть разъездные серии вроде «С95 и друзья»;
+    * `events.json` отдаёт координаты и — что важнее — единственный признак
+      неработающей субботы: `active=false`. Иваново 27.08.2026 отменило старт,
+      и в `pages.json` его карточка просто исчезла, а в `events.json` осталась
+      с `active=false`.
+
+    Раньше обход шёл только по `pages.json`, поэтому отменённая площадка
+    выпадала из синка целиком: её статус у нас так и оставался вчерашним.
     """
     result: list[S95ApiLocation] = []
 
     for domain in S95_DOMAINS:
-        # slug → coords from events.json
-        coords: dict[str, tuple[float, float]] = {}
+        events_by_slug: dict[str, dict] = {}
         try:
             for item in fetch_events(domain):
                 slug = item.get("code_name")
-                lat = item.get("latitude")
-                lon = item.get("longitude")
-                if slug and lat is not None and lon is not None:
-                    try:
-                        coords[slug] = (float(lat), float(lon))
-                    except (TypeError, ValueError):
-                        pass
+                if slug:
+                    events_by_slug[slug] = item
         except Exception:
-            pass  # coords not critical — proceed with pages only
+            pass  # events.json не критичен — останутся хотя бы pages.json
 
         try:
             pages = fetch_pages(domain)
         except Exception:
-            continue  # skip domain if unreachable
+            pages = []  # домен недоступен — но events.json мог и ответить
 
+        merged: dict[str, dict] = {}
+        order: list[str] = []
         for item in pages:
             url = item.get("url", "")
             slug = url.rstrip("/").removesuffix(".json").rsplit("/", 1)[-1] if url else None
@@ -125,8 +131,24 @@ def fetch_all_locations() -> list[S95ApiLocation]:
                 slug = item.get("code_name")
             if not slug:
                 continue
+            if slug not in merged:
+                order.append(slug)
+            merged[slug] = dict(item)
 
-            lat, lon = coords.get(slug, (None, None))
+        for slug, item in events_by_slug.items():
+            if slug not in merged:
+                order.append(slug)
+                merged[slug] = dict(item)
+                continue
+            # Активность берём по строгому «и»: если хоть один источник говорит,
+            # что площадка не бежит, значит не бежит.
+            merged[slug]["active"] = bool(merged[slug].get("active", True)) and bool(
+                item.get("active", True)
+            )
+
+        for slug in order:
+            item = merged[slug]
+            lat, lon = _coordinates(events_by_slug.get(slug))
             result.append(
                 S95ApiLocation(
                     domain=domain,
@@ -141,3 +163,16 @@ def fetch_all_locations() -> list[S95ApiLocation]:
             )
 
     return result
+
+
+def _coordinates(item: dict | None) -> tuple[float | None, float | None]:
+    if not item:
+        return None, None
+    lat = item.get("latitude")
+    lon = item.get("longitude")
+    if lat is None or lon is None:
+        return None, None
+    try:
+        return float(lat), float(lon)
+    except (TypeError, ValueError):
+        return None, None
