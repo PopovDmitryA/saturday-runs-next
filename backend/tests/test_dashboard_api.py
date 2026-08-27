@@ -1796,10 +1796,11 @@ def test_list_user_runs_reports_event_participants_total(
 ) -> None:
     """Число участников старта и, значит, доля финишёра.
 
-    При заявленном числе верим ему; выкачанному протоколу — по строкам. А у
-    обрывка (одна строка с большим местом; две строки, занявшие 1-е и 2-е места
-    в закрытом протоколе) честно молчим — иначе «40-й из 40» и «2-й из 2»
-    превратились бы в «топ 100%».
+    При заявленном числе верим ему; протоколу — по строкам, если он выкачан как
+    протокол или просто крупный (так соберётся parkrun по мере обхода атлетов:
+    записи о выкачке у него не будет никогда). А у обрывка — одна строка с
+    большим местом, две строки, занявшие 1-е и 2-е места в закрытом протоколе, —
+    честно молчим: иначе «40-й из 40» и «2-й из 2» стали бы «топ 100%».
     """
     me = authenticated_client.get("/api/auth/me")
     user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
@@ -1859,6 +1860,8 @@ def test_list_user_runs_reports_event_participants_total(
     stub = _event(22, None)
     # Огрызок закрытого протокола, который выглядит целым: две строки, места 1–2.
     looks_complete = _event(29, None)
+    # Крупный целый протокол без записи о выкачке — так приедет parkrun.
+    big = _event(30, None)
     db_session.flush()
     # Протокол выкачан только у первого старта — только его строкам и верим.
     db_session.add(
@@ -1895,6 +1898,11 @@ def test_list_user_runs_reports_event_participants_total(
             # Места идут подряд с первого, но протокол не выкачан — не «2 участника».
             _result(looks_complete, other, 1, "l1"),
             _result(looks_complete, participant, 2, "l2"),
+            # 12 строк, места 1–12: столько подряд горстка своих не занимает.
+            *[
+                _result(big, participant if place == 7 else other, place, f"b{place}")
+                for place in range(1, 13)
+            ],
         ]
     )
     db_session.commit()
@@ -1908,3 +1916,4 @@ def test_list_user_runs_reports_event_participants_total(
     assert by_date["2098-05-15"]["participants_total"] is None
     assert by_date["2098-05-22"]["participants_total"] is None
     assert by_date["2098-05-29"]["participants_total"] is None
+    assert by_date["2098-05-30"]["participants_total"] == 12
