@@ -23,6 +23,7 @@ import {
 } from "./locationRecordsApi";
 import { formatFinishTime } from "./formatFinishTime";
 import { getFastestRating, type FastestRatingResponse } from "./fastestApi";
+import { getRegionsRating, type RegionRatingRow, type RegionsPlatform } from "./regionsApi";
 import "./leaderboards.css";
 
 const HUB_TOP_N = 3;
@@ -348,6 +349,68 @@ function LocationRecordsHubCard({ platform }: { platform: PlatformFilter }) {
   );
 }
 
+/**
+ * Карточка «Локации по регионам»: строка — регион, а не участник, поэтому у
+ * неё свой фетч. parkrun этот рейтинг не считает (закрыт с 2022, регион у его
+ * строк почти везде пуст) — при выборе parkrun на хабе карточка честно
+ * показывает общий зачёт и подписывает это, как остальные.
+ */
+function RegionsHubCard({ platform }: { platform: PlatformFilter }) {
+  const [rows, setRows] = useState<RegionRatingRow[] | null>(null);
+  const [error, setError] = useState(false);
+  const supported = platform !== "parkrun";
+
+  useEffect(() => {
+    let cancelled = false;
+    setRows(null);
+    setError(false);
+    getRegionsRating(supported ? (platform as RegionsPlatform) : "all")
+      .then((payload) => {
+        if (!cancelled) {
+          setRows(payload.regions.slice(0, HUB_TOP_N));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [platform, supported]);
+
+  return (
+    <a className="lb-hub-card lb-hub-card-live" href="/ratings/regions">
+      <div className="lb-hub-card-top">
+        <span className="lb-hub-card-title">Локации по регионам</span>
+      </div>
+      {rows === null && !error && <p className="lb-hub-loading muted">Считаем…</p>}
+      {error && <p className="lb-hub-loading muted">Не удалось загрузить</p>}
+      {!supported && (
+        <p className="lb-hub-card-fallback muted">
+          {HUB_PLATFORM_TAB_LABELS.parkrun} не участвует — показан общий зачёт
+        </p>
+      )}
+      {rows && (
+        <div className="lb-hub-top3">
+          <p className="lb-hub-top3-label">Больше всего площадок</p>
+          {rows.map((row, index) => (
+            <div className="lb-hub-rank-row" key={row.name}>
+              <span className={`lb-hub-rank-chip lb-hub-rank-${RANK_TIER[index] ?? "silver"}`}>
+                {row.place}
+              </span>
+              <span className="lb-hub-rank-name">{row.name}</span>
+              <span className="lb-hub-rank-value">{formatInt(row.locations)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <span className="lb-hub-see-all">Смотреть топ →</span>
+    </a>
+  );
+}
+
 export function LeaderboardsHubPage() {
   const [platform, setPlatform] = useState<PlatformFilter>("all");
   // Закрытые рейтинги показываем только админу: карточка тянет данные, а API
@@ -412,14 +475,15 @@ export function LeaderboardsHubPage() {
           </section>
         ))}
 
-        {/* Секция «Локации»: здесь рейтингуются локации, а не люди. Пока в
-            ней одна карточка — рекорды трасс (Р18/Р19 из бэклога ещё в плане). */}
+        {/* Секция «Локации»: здесь рейтингуются сами площадки и их география, а
+            не люди (Р18/Р19 из бэклога ещё в плане). */}
         <section className="lb-hub-section">
           <h2>
             <span aria-hidden>📍</span> Локации
           </h2>
           <div className="lb-hub-cards">
             <LocationRecordsHubCard platform={platform} />
+            <RegionsHubCard platform={platform} />
           </div>
         </section>
       </div>

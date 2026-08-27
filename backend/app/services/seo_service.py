@@ -193,6 +193,12 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "женщин и рекорды возрастных групп.",
         indexable=True,
     ),
+    "/ratings/regions": _meta(
+        "Локации по регионам — run5k.run",
+        "Сколько площадок субботних пятёрок в каждом регионе России: 5 вёрст, S95 и "
+        "RunPark в одной таблице, зарубежье — по странам.",
+        indexable=True,
+    ),
     # Публичная доска предложений: смотреть может любой, но в поиске ей делать
     # нечего — это рабочая кухня, а не витрина.
     "/backlog": _meta(
@@ -695,6 +701,7 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/ratings/win-locations", "0.6"),
     ("/ratings/home-distance", "0.6"),
     ("/ratings/location-records", "0.7"),
+    ("/ratings/regions", "0.7"),
     ("/blog", "0.7"),
     ("/about", "0.6"),
     ("/login", "0.4"),

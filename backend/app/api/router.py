@@ -14,6 +14,7 @@ from app.api.routes import (
     leaderboards,
     location_ratings,
     location_records,
+    location_regions,
     locations,
     media,
     newsletter,
@@ -45,6 +46,7 @@ api_router.include_router(leaderboards.router)
 api_router.include_router(fastest.router)
 api_router.include_router(location_ratings.router)
 api_router.include_router(location_records.router)
+api_router.include_router(location_regions.router)
 api_router.include_router(locations.router)
 api_router.include_router(unified_protocol.router)
 api_router.include_router(media.router)
