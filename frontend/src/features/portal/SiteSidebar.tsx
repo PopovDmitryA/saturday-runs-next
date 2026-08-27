@@ -710,6 +710,23 @@ export function SiteSidebar({
             <span className="portal-cab-nav-label">{location.name}</span>
           </a>
         )}
+        {/* Постоянный состав живёт под самой площадкой, а не в «Результатах»
+            (правка Дмитрия 27.08.2026): это срез конкретной локации, а не
+            общесайтовая витрина результатов. Потому и появляется только тогда,
+            когда локация открыта, — в отличие от журнала протоколов, который
+            висит в «Результатах» всегда и вне локации задизейблен. */}
+        {location && (
+          <a
+            href={`/locations/${location.slug}/participants`}
+            className={`portal-cab-nav-item portal-cab-nav-subitem${
+              pathname === `/locations/${location.slug}/participants` ? " active" : ""
+            }`}
+            title={collapsed ? "Постоянный состав" : undefined}
+          >
+            <span className="portal-cab-nav-icon">{REGULARS_ICON}</span>
+            <span className="portal-cab-nav-label">Постоянный состав</span>
+          </a>
+        )}
 
         {/* Кабинет организатора — постоянный подпункт, как «Последние
             пробежки». Ведёт всегда к СПИСКУ своих локаций (/organizer): раньше
@@ -787,25 +804,6 @@ export function SiteSidebar({
         >
           <span className="portal-cab-nav-icon">{PROTOCOL_ICON}</span>
           <span className="portal-cab-nav-label">Журнал протоколов</span>
-        </a>
-        {/* Постоянный состав площадки — та же логика, что у журнала: вне
-            локации пункт задизейблен и объясняет, что открыть. */}
-        <a
-          href={location ? `/locations/${location.slug}/participants` : undefined}
-          className={`portal-cab-nav-item portal-cab-nav-subitem${
-            location && pathname.endsWith("/participants") ? " active" : ""
-          }${location ? "" : " portal-cab-nav-item-disabled"}`}
-          aria-disabled={location ? undefined : true}
-          title={
-            location
-              ? collapsed
-                ? "Постоянный состав"
-                : undefined
-              : "Сначала откройте локацию — постоянный состав у каждой площадки свой"
-          }
-        >
-          <span className="portal-cab-nav-icon">{REGULARS_ICON}</span>
-          <span className="portal-cab-nav-label">Постоянный состав</span>
         </a>
         <a
           href="/ratings"
