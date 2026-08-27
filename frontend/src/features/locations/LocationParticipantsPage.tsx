@@ -91,6 +91,7 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [scope, setScope] = useState<Scope>(initialScope);
   const [sort, setSort] = useState<SortState>({ key: "place", asc: true });
+  const [query, setQuery] = useState("");
   // Копия шапки встаёт под липкую полосу «Кратко | Полно», а не под шапку сайта.
   const attachFloatingHead = useFloatingTableHead(".tview-bar");
   const tableColumns = useTableColumns(PEOPLE_COLUMNS);
@@ -125,7 +126,7 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
     };
   }, [slug]);
 
-  const rows = useMemo(() => {
+  const scopeRows = useMemo(() => {
     if (!data) {
       return [];
     }
@@ -150,6 +151,14 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
     });
     return sorted;
   }, [data, scope, sort]);
+
+  const rows = useMemo(() => {
+    const needle = normalizeName(query);
+    if (!needle) {
+      return scopeRows;
+    }
+    return scopeRows.filter((row) => normalizeName(row.name ?? "").includes(needle));
+  }, [scopeRows, query]);
 
   const toggleSort = (key: SortKey) => {
     setSort((current) =>
@@ -221,8 +230,7 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
           <h1>{data.name} — постоянный состав</h1>
         </div>
         <p className="muted loc-people-lead">
-          Все, кто {words.verb} здесь {threshold}. Случайные гости в список не попадают — это те,
-          для кого площадка своя.
+          Все, кто {words.verb} здесь {threshold}.
         </p>
       </header>
 
@@ -239,6 +247,24 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
             {SCOPE_WORDS[key].label} ({formatInt((key === "runners" ? data.runners : data.volunteers).length)})
           </button>
         ))}
+      </div>
+
+      <div className="loc-people-filter">
+        <input
+          className="input loc-people-search"
+          type="search"
+          placeholder="Поиск по имени или фамилии…"
+          aria-label="Поиск по имени или фамилии"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        {query.trim() && (
+          <span className="muted">
+            {rows.length > 0
+              ? `Найдено: ${formatInt(rows.length)}`
+              : "Никого не нашли"}
+          </span>
+        )}
       </div>
 
       <section className="loc-section">
@@ -311,7 +337,11 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={visibleCount} className="table-empty-cell">
-                    <span className="muted">Здесь пока никто не {words.verb} {threshold}</span>
+                    <span className="muted">
+                      {query.trim()
+                        ? "Никого не нашли — попробуйте другую часть имени"
+                        : `Здесь пока никто не ${words.verb} ${threshold}`}
+                    </span>
                   </td>
                 </tr>
               ) : (
@@ -338,9 +368,10 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
           </table>
         </TableWrap>
         <p className="table-foot muted">
-          {rows.length > 0 && peopleTotal > 0 ? (
+          {scopeRows.length > 0 && peopleTotal > 0 ? (
             <>
-              {formatInt(rows.length)} из {pluralizeRu(peopleTotal, ["человека", "человек", "человек"])},
+              {formatInt(scopeRows.length)} из{" "}
+              {pluralizeRu(peopleTotal, ["человека", "человек", "человек"])},
               кто {words.verb} здесь хотя бы раз.{" "}
             </>
           ) : null}
@@ -368,6 +399,11 @@ function PersonName({ name, handle }: { name: string | null; handle?: string | n
       {label}
     </a>
   );
+}
+
+/** Регистр и «ё» поиску не мешают: «фёдоров» находит «ФЕДОРОВ» и наоборот. */
+function normalizeName(value: string): string {
+  return value.trim().toLowerCase().replace(/ё/g, "е");
 }
 
 /** Дата или прочерк: у волонтёрских строк дореформенной эпохи даты может не быть. */

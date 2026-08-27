@@ -86,11 +86,11 @@ def location_events_cache_key(slug: str) -> str:
 
 
 def location_leaders_cache_key(slug: str) -> str:
-    return f"locations:leaders:v2:{slug.strip().lower()}"
+    return f"locations:leaders:v3:{slug.strip().lower()}"
 
 
 def location_participants_cache_key(slug: str) -> str:
-    return f"locations:participants:v1:{slug.strip().lower()}"
+    return f"locations:participants:v2:{slug.strip().lower()}"
 
 
 # Порог «активного участника» страницы деталей — три участия, как в легаси-
@@ -98,6 +98,36 @@ def location_participants_cache_key(slug: str) -> str:
 # Случайный гость, забежавший раз в отпуске, в постоянный состав площадки не
 # входит, а без отсечки список большой локации — это тысячи строк ни о чём.
 LOCATION_ACTIVE_MIN_COUNT = 3
+
+# Заглушки вместо имени: безымянного финишёра каждая система печатает по-своему,
+# а s95 ещё и складывает всех таких в один аккаунт «unknown:НЕИЗВЕСТНЫЙ» — в
+# рейтинге Кузьминок он занимал пятое место со 124 пробежками, хотя за строкой
+# нет человека. Сравниваем имя ЦЕЛИКОМ, а не по подстроке: «Андрей НЕИЗВЕСТНЫХ»
+# — настоящая фамилия, и такие строки остаются.
+UNKNOWN_DISPLAY_NAMES = frozenset(
+    {
+        "неизвестный",
+        "неизвестная",
+        "неизвестный бегун",
+        "неизвестный участник",
+        "неизвестно",
+        "неизвестен",
+        "nepoznato",
+        "unknown",
+    }
+)
+
+
+def _identified_name_clause(name_expr: Any) -> Any:
+    """Строка про живого человека, а не про заглушку протокола."""
+    normalized = func.lower(func.trim(name_expr))
+    return and_(
+        name_expr.isnot(None),
+        normalized != "",
+        normalized.notin_(UNKNOWN_DISPLAY_NAMES),
+        # «Unknown #67» — так 5 вёрст помечает строку со штрихкодом, но без имени.
+        normalized.notlike("unknown #%"),
+    )
 # Незачётные статусы протоколов не влияют на finish_time (он у них NULL),
 # поэтому отдельного фильтра по status нет: гистограмма и рекорды строятся
 # только по строкам с известным временем.
@@ -493,6 +523,7 @@ def _compute_location_leaders(db: Session, slug: str, *, limit: int = 20) -> dic
             .outerjoin(User, PlatformLink.user_id == User.id)
             .filter(RunResult.event_id.in_(event_ids))
             .group_by(runner_group_key)
+            .having(_identified_name_clause(display_name))
             .order_by(func.count(func.distinct(RunResult.event_id)).desc(), display_name.asc())
             .limit(limit)
             .all()
@@ -520,6 +551,7 @@ def _compute_location_leaders(db: Session, slug: str, *, limit: int = 20) -> dic
             .outerjoin(User, PlatformLink.user_id == User.id)
             .filter(VolunteerResult.event_id.in_(event_ids))
             .group_by(volunteer_group_key)
+            .having(_identified_name_clause(display_name))
             .order_by(func.count(func.distinct(VolunteerResult.event_id)).desc(), display_name.asc())
             .limit(limit)
             .all()
@@ -653,6 +685,9 @@ def _active_participant_rows(
         .outerjoin(User, PlatformLink.user_id == User.id)
         .filter(model.event_id.in_(event_ids))
         .group_by(group_key)
+        # Заглушки вместо имени отсекаем здесь, а не в Python: они не люди и не
+        # должны попадать ни в список, ни в знаменатель «показаны N из M».
+        .having(_identified_name_clause(display_name))
         .all()
     )
     people_total = len(local_rows)

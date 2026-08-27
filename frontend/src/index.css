@@ -15055,3 +15055,18 @@ a.admin-system-chip:hover {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* Строка поиска над таблицей постоянного состава: список на большой площадке
+   — это полторы тысячи имён, листать его глазами бессмысленно. */
+.loc-people-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0.75rem 0 0;
+}
+
+.loc-people-search {
+  max-width: 22rem;
+  flex: 1 1 14rem;
+}
