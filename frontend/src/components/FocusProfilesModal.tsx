@@ -74,6 +74,7 @@ export function FocusProfilesModal({
     try {
       const next = await updateDashboardFocus(
         FOCUS_PROFILE_ORDER.filter((profile) => checked.has(profile)),
+        focus.suggested,
       );
       onSaved(next);
     } catch (err) {

@@ -62,6 +62,7 @@ export function FocusProfilesSection() {
     try {
       const next = await updateDashboardFocus(
         FOCUS_PROFILE_ORDER.filter((profile) => checked.has(profile)),
+        focus.suggested,
       );
       setFocus(next);
       setChecked(new Set(next.selected ?? []));

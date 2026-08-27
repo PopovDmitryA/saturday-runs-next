@@ -330,11 +330,14 @@ export async function getDashboardFocus(): Promise<DashboardFocus> {
   return apiFetch<DashboardFocus>("/dashboard/focus");
 }
 
-export async function updateDashboardFocus(profiles: FocusProfile[]): Promise<DashboardFocus> {
+export async function updateDashboardFocus(
+  profiles: FocusProfile[],
+  seenSuggested: FocusProfile[],
+): Promise<DashboardFocus> {
   return apiFetch<DashboardFocus>("/dashboard/focus", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ profiles }),
+    body: JSON.stringify({ profiles, seen_suggested: seenSuggested }),
   });
 }
 

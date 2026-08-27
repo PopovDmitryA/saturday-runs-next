@@ -307,6 +307,9 @@ class DashboardFocusResponse(BaseModel):
 
 class DashboardFocusUpdateRequest(BaseModel):
     profiles: list[str] = Field(default_factory=list)
+    # Автонабор, который клиент показал в модалке (из GET): фиксируется как
+    # dashboard_focus_auto, чтобы не переспрашивать уже виденное.
+    seen_suggested: list[str] = Field(default_factory=list)
 
 
 class DashboardResponse(BaseModel):

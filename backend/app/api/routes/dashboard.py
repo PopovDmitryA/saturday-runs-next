@@ -88,24 +88,25 @@ def update_dashboard_focus(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> DashboardFocusResponse:
-    """Сохранить выбор профилей и зафиксировать автонабор этого момента."""
+    """Сохранить выбор профилей.
+
+    Автонабором фиксируем seen_suggested — то, что человек видел в модалке
+    в момент подтверждения (клиент получил его из GET). Пересчитывать
+    аналитику здесь нельзя: на холодном кэше полный расчёт дашборда
+    занимает десятки секунд и «Сохранить» упирается в клиентский таймаут.
+    """
     try:
         selection = normalize_focus_selection(body.profiles)
+        seen = normalize_focus_selection(body.seen_suggested)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    payload = get_dashboard_payload(db, user)
-    stats = payload["stats"]
-    suggested = detect_focus_profiles(
-        stats.get("analytics") or {},
-        total_volunteering=stats.get("total_volunteering") or 0,
-    )
     user.dashboard_focus = selection if selection is not None else []
-    user.dashboard_focus_auto = suggested
+    user.dashboard_focus_auto = seen if seen is not None else []
     db.add(user)
     db.commit()
     return DashboardFocusResponse(
         selected=user.dashboard_focus,
-        suggested=suggested,
+        suggested=user.dashboard_focus_auto or [],
         newly_suggested=[],
     )
 
