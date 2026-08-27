@@ -20,6 +20,7 @@ from app.models import (
     Participant,
     Platform,
     PlatformLink,
+    ProtocolSyncState,
     RunResult,
     SyncJob,
     SyncJobStatus,
@@ -1148,11 +1149,16 @@ def _event_participant_totals(
     """Сколько всего человек в протоколе старта — чтобы показать долю участника.
 
     Источники по убыванию доверия: заявленное системой число (events.finishers_count
-    → event_summaries.finishers_count) и сам протокол в БД. У зарубежных parkrun в
-    БД лежат только строки наших участников, вытянутые из их профилей: строк мало,
-    а места большие — такой протокол неполон, и число участников мы честно не знаем
+    → event_summaries.finishers_count) и сам протокол в БД. У parkrun в БД
+    лежат только строки наших участников, вытянутые из их профилей: строк мало, а
+    места большие — такой протокол неполон, и число участников мы честно не знаем
     (та же проверка, что is_partial в location_protocol_service). Тогда None, и
     доля в кабинете не показывается вместо выдуманной.
+
+    Одной проверки «мест не больше, чем строк» мало: если из закрытого протокола к
+    нам попали двое и они финишировали 1-м и 2-м, огрызок выглядит целым — старт
+    превратился бы в «2 участника, топ 100%». Поэтому счёту строк верим только там,
+    где протокол действительно выкачан (protocol_sync_states).
     """
     from sqlalchemy import tuple_
 
@@ -1189,6 +1195,14 @@ def _event_participant_totals(
         .all()
     }
 
+    fetched_protocol_ids = {
+        event_id
+        for (event_id,) in db.query(ProtocolSyncState.event_id).filter(
+            ProtocolSyncState.event_id.in_(event_ids),
+            ProtocolSyncState.last_protocol_fetched_at.isnot(None),
+        )
+    }
+
     totals: dict[UUID, int | None] = {}
     for event in events:
         rows, max_position = protocol_stats.get(event.id, (0, 0))
@@ -1197,11 +1211,12 @@ def _event_participant_totals(
         )
         if declared:
             totals[event.id] = max(declared, max_position, rows)
-        elif max_position and rows >= max_position:
+        elif event.id in fetched_protocol_ids and max_position and rows >= max_position:
             totals[event.id] = rows
         else:
-            # Строки без мест — это не протокол, а огрызок из профиля участника
-            # (у 5 вёрст такие дни приезжают до сверки): «1 участник» там соврёт.
+            # Строки без мест или без выкачанного протокола: у 5 вёрст такие дни
+            # приезжают до сверки, у parkrun — из профилей участников. «1 участник»
+            # и «2 участника, топ 100%» там соврали бы.
             totals[event.id] = None
     return totals
 
