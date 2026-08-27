@@ -5,8 +5,8 @@
 не восстановить — поэтому колонка заводится вместе с релизом, а всё, что
 привязано до неё, помечается 'legacy'.
 
-Revision ID: 070_platform_link_method
-Revises: 069_onboarding_no_account
+Revision ID: 073_platform_link_method
+Revises: 072_protocol_watch
 Create Date: 2026-08-25
 """
 
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "070_platform_link_method"
-down_revision = "069_onboarding_no_account"
+revision = "073_platform_link_method"
+down_revision = "072_protocol_watch"
 branch_labels = None
 depends_on = None
 
