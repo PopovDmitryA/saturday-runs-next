@@ -1153,9 +1153,10 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
       list.push({ key: "geo", width: 160 });
     }
     // «Осталось» + «Прогноз» идут одной группой: дата без остатка не читается,
-    // а остаток без даты — половина ответа.
+    // а остаток без даты — половина ответа. Ширина — сумма их колонок в CSS
+    // (5.2rem + 5.8rem), иначе краткий вид ошибётся в том, что влезло.
     if (hasForecast) {
-      list.push({ key: "forecast", width: 196 });
+      list.push({ key: "forecast", width: 176 });
     }
     if (isHomeDistance) {
       list.push({ key: "home", width: 232 });
