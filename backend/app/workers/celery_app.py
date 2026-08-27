@@ -143,13 +143,19 @@ celery_app.conf.update(
         # поймать и Дальний Восток, и вечерние догрузки), будни — раз в
         # 30 минут (спецзабеги 1 января и переносы). Очередь общая: запрос
         # один и крошечный, а в five_verst он вставал бы за reconcile.
+        # Очередь приходится задавать явно: без options задачу забирает правило
+        # `five_verst_sync.*` из task_routes и уводит ровно в ту очередь, от
+        # которой её здесь и отводят (обнаружено 27.08.2026 — падал тест
+        # test_five_verst_queue_no_same_minute_collisions).
         "five-verst-protocol-watch-weekend": {
             "task": "five_verst_sync.protocol_upload_watch",
             "schedule": crontab(minute="*", hour="1-23", day_of_week="6,0"),
+            "options": {"queue": "celery"},
         },
         "five-verst-protocol-watch-weekday": {
             "task": "five_verst_sync.protocol_upload_watch",
             "schedule": crontab(minute="0,30", day_of_week="1-5"),
+            "options": {"queue": "celery"},
         },
         # Сверка истории протоколов — только по будням: прогон занимает пару
         # часов (200 протоколов через паузы между фетчами), и в выходные он
