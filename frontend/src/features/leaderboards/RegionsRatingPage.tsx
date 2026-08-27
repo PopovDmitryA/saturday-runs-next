@@ -61,6 +61,69 @@ function platformSummary(row: RegionRatingRow): string {
     .join(" · ");
 }
 
+// Сортировка по столбцам. Ключ «name» — алфавит области, остальные — числовые
+// колонки, включая счётчики систем.
+type SortKey = "name" | "locations" | "cities" | (typeof PLATFORM_COLUMNS)[number];
+
+type SortState = { key: SortKey; direction: "asc" | "desc" };
+
+/** Первый клик по столбцу: у чисел интересен максимум, у названия — алфавит. */
+function defaultDirection(key: SortKey): SortState["direction"] {
+  return key === "name" ? "asc" : "desc";
+}
+
+function sortValue(row: RegionRatingRow, key: SortKey): number {
+  if (key === "locations") {
+    return row.locations;
+  }
+  if (key === "cities") {
+    return row.cities;
+  }
+  return row.by_platform[key] ?? 0;
+}
+
+function compareRows(left: RegionRatingRow, right: RegionRatingRow, sort: SortState): number {
+  const factor = sort.direction === "asc" ? 1 : -1;
+  if (sort.key === "name") {
+    return left.name.localeCompare(right.name, "ru") * factor;
+  }
+  const delta = sortValue(left, sort.key) - sortValue(right, sort.key);
+  // При равных числах порядок — по месту в рейтинге: иначе строки с одним и тем
+  // же счётчиком (а их десятки) прыгали бы при каждой пересортировке.
+  return delta !== 0 ? delta * factor : left.place - right.place;
+}
+
+function SortableHeader({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  className,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: SortState;
+  onSort: (key: SortKey) => void;
+  className?: string;
+}) {
+  const active = sort.key === sortKey;
+  return (
+    <th
+      className={`${className ?? ""} lb-sortable${active ? " lb-sorted" : ""}`}
+      onClick={() => onSort(sortKey)}
+      title="Сортировать по этому столбцу"
+      aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}
+      // Тап по заголовку сортирует — подсказку тач-режима здесь не показываем.
+      data-tap-tooltip="off"
+    >
+      {label}
+      <span className="lb-sort-mark" aria-hidden>
+        {active ? (sort.direction === "asc" ? "▴" : "▾") : "↕"}
+      </span>
+    </th>
+  );
+}
+
 function RegionsTable({
   rows,
   showPlatforms,
@@ -72,12 +135,29 @@ function RegionsTable({
 }) {
   const narrowViewport = useNarrowViewport();
   const attachFloatingHead = useFloatingTableHead();
+  // Таблица приходит отсортированной по числу локаций — это и есть место в
+  // рейтинге. Остальные столбцы читают иначе: где больше городов, где сильнее
+  // одна система.
+  const [sort, setSort] = useState<SortState>({ key: "locations", direction: "desc" });
   const max = rows.length > 0 ? Math.max(...rows.map((row) => row.locations)) : 0;
+  const sortedRows = useMemo(
+    () => [...rows].sort((left, right) => compareRows(left, right, sort)),
+    [rows, sort],
+  );
+  // Повторный клик по тому же столбцу переворачивает порядок, по новому —
+  // ставит осмысленное направление по умолчанию.
+  const toggleSort = useCallback((key: SortKey) => {
+    setSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: defaultDirection(key) },
+    );
+  }, []);
 
   if (narrowViewport) {
     return (
       <div className="rowcards">
-        {rows.map((row) => (
+        {sortedRows.map((row) => (
           <div className="rowcard" key={row.name}>
             <div className="rowcard-rank">{row.place}</div>
             <div className="rowcard-mid">
@@ -104,19 +184,36 @@ function RegionsTable({
         <thead>
           <tr>
             <th>#</th>
-            <th>{areaLabel}</th>
-            <th className="lb-regions-count">Локаций</th>
+            <SortableHeader label={areaLabel} sortKey="name" sort={sort} onSort={toggleSort} />
+            <SortableHeader
+              label="Локаций"
+              sortKey="locations"
+              sort={sort}
+              onSort={toggleSort}
+              className="lb-regions-count"
+            />
             {showPlatforms &&
               PLATFORM_COLUMNS.map((code) => (
-                <th key={code} className="lb-regions-platform">
-                  {REGIONS_PLATFORM_LABELS[code]}
-                </th>
+                <SortableHeader
+                  key={code}
+                  label={REGIONS_PLATFORM_LABELS[code]}
+                  sortKey={code}
+                  sort={sort}
+                  onSort={toggleSort}
+                  className="lb-regions-platform"
+                />
               ))}
-            <th className="lb-regions-cities">Городов</th>
+            <SortableHeader
+              label="Городов"
+              sortKey="cities"
+              sort={sort}
+              onSort={toggleSort}
+              className="lb-regions-cities"
+            />
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {sortedRows.map((row) => (
             <tr key={row.name}>
               <td className="lb-regions-rank">{row.place}</td>
               <td>{row.name}</td>
