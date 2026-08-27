@@ -186,6 +186,7 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
   },
   "/oauth/yandex/callback": { title: "Вход — run5k.run", description: "Завершаем вход через Яндекс." },
   "/oauth/vk/callback": { title: "Вход — run5k.run", description: "Завершаем вход через VK." },
+  "/auth/telegram/return": { title: "Вход — run5k.run", description: "Завершаем вход через Telegram." },
 };
 
 // Адреса-заглушки: сами ничего не показывают, сразу уводят на другой адрес.
