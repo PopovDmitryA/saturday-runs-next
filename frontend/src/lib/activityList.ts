@@ -1,5 +1,5 @@
 import type { RunItem, VolunteeringItem } from "./api";
-import { platformCodeLabel } from "./format";
+import { platformCodeLabel, topPercentValue } from "./format";
 
 export type ActivitySort =
   | "date_desc"
@@ -9,7 +9,9 @@ export type ActivitySort =
   | "pace_asc"
   | "pace_desc"
   | "position_asc"
-  | "position_desc";
+  | "position_desc"
+  | "top_percent_asc"
+  | "top_percent_desc";
 
 export type ActivityItem = {
   platform_code: string;
@@ -40,6 +42,14 @@ function positionSortKey(run: RunItem): number {
     return run.position;
   }
   return Number.MAX_SAFE_INTEGER;
+}
+
+export function runTopPercent(run: RunItem): number | null {
+  return topPercentValue(run.position, run.participants_total);
+}
+
+function topPercentSortKey(run: RunItem): number {
+  return runTopPercent(run) ?? Number.MAX_SAFE_INTEGER;
 }
 
 export function uniquePlatforms(items: ActivityItem[]): string[] {
@@ -239,6 +249,29 @@ export function sortRuns(items: RunItem[], sort: ActivitySort): RunItem[] {
         return byPosition !== 0 ? byPosition : compareDates(b.event_date, a.event_date);
       });
       break;
+    case "top_percent_asc":
+      sorted.sort((a, b) => {
+        const byPercent = topPercentSortKey(a) - topPercentSortKey(b);
+        return byPercent !== 0 ? byPercent : compareDates(b.event_date, a.event_date);
+      });
+      break;
+    case "top_percent_desc":
+      sorted.sort((a, b) => {
+        const aKey = runTopPercent(a);
+        const bKey = runTopPercent(b);
+        if (aKey == null && bKey == null) {
+          return compareDates(b.event_date, a.event_date);
+        }
+        if (aKey == null) {
+          return 1;
+        }
+        if (bKey == null) {
+          return -1;
+        }
+        const byPercent = bKey - aKey;
+        return byPercent !== 0 ? byPercent : compareDates(b.event_date, a.event_date);
+      });
+      break;
     case "date_desc":
     default:
       sorted.sort((a, b) => compareDates(b.event_date, a.event_date));
@@ -271,4 +304,8 @@ export function togglePaceSort(sort: ActivitySort): ActivitySort {
 
 export function togglePositionSort(sort: ActivitySort): ActivitySort {
   return sort === "position_asc" ? "position_desc" : "position_asc";
+}
+
+export function toggleTopPercentSort(sort: ActivitySort): ActivitySort {
+  return sort === "top_percent_asc" ? "top_percent_desc" : "top_percent_asc";
 }

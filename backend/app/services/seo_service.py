@@ -218,6 +218,7 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
     ),
     "/oauth/yandex/callback": _meta("Вход — run5k.run", "Завершаем вход через Яндекс."),
     "/oauth/vk/callback": _meta("Вход — run5k.run", "Завершаем вход через VK."),
+    "/auth/telegram/return": _meta("Вход — run5k.run", "Завершаем вход через Telegram."),
 }
 
 # Адреса-заглушки: сами ничего не показывают, сразу уводят на другой адрес.

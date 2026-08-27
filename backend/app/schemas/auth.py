@@ -199,6 +199,32 @@ class EmailVerifyResponse(BaseModel):
     redirect: str
 
 
+class TelegramLoginConfigResponse(BaseModel):
+    enabled: bool
+    # Числовая часть токена — её ждёт виджет в браузере. Сам токен наружу
+    # не отдаём никогда: он равносилен полному доступу к боту.
+    bot_id: str = ""
+    bot_username: str = ""
+
+
+class TelegramWidgetLoginRequest(BaseModel):
+    # Набор полей задаёт Telegram, а не мы: id, first_name, username, photo_url,
+    # auth_date, hash. Принимаем как есть — подпись считается по всем полям,
+    # и выкидывание «лишнего» её сломает.
+    data: dict[str, str]
+    # Метка сессии из /telegram/start: подтверждает, что это возврат человека,
+    # который начинал вход у нас, и что согласие он дал до перехода.
+    state: str = ""
+    consent: bool = False
+
+
+class TelegramWidgetLoginResponse(BaseModel):
+    redirect: str
+    # Не пуст, когда этим телеграмом владеет другой профиль: человек решает,
+    # объединять ли их, — как при привязке VK или Яндекса.
+    merge_token: str | None = None
+
+
 class EmailLinkResponse(BaseModel):
     # merge_token не пуст, когда ящиком владеет другой профиль: тогда человек
     # решает, объединять ли их, — как при привязке VK или Яндекса.

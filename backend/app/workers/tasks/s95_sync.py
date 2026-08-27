@@ -97,7 +97,11 @@ def s95_sync_locations_registry_task(limit: int | None = None, *, force: bool = 
                 db,
                 S95LocationRegistrySyncOptions(limit=limit),
             )
-            return asdict(result)
+            payload = asdict(result)
+            # Разобранные изменения отмен нужны мониторингу, а не истории
+            # запусков: в отчёте их место занимает cancel_changed_locations.
+            payload.pop("cancellation_changes", None)
+            return payload
         finally:
             db.close()
 
@@ -111,6 +115,33 @@ def s95_sync_locations_registry_task(limit: int | None = None, *, force: bool = 
             kwargs={"limit": limit, "force": force},
             queue="s95",
         ),
+    )
+
+
+@celery_app.task(name="s95_sync.watch_cancellations", queue="s95")
+def s95_watch_cancellations_task(*, force: bool = False) -> dict[str, object]:
+    """Отмены ближайшего старта у s95 — отдельным лёгким проходом.
+
+    Реестр локаций ходит раз в трое суток, а отмена живёт одну субботу: без
+    своего расписания объявление доезжало бы до сайта уже после старта.
+    """
+
+    from app.sync.s95_cancellations import watch_s95_cancellations
+
+    def _run() -> dict[str, object]:
+        db = get_session_factory()()
+        try:
+            return asdict(watch_s95_cancellations(db))
+        finally:
+            db.close()
+
+    return run_s95_batch_reported_sync(
+        "s95 cancellations",
+        _run,
+        details="отмены ближайшего старта",
+        hour_slot_key="s95:cancellations",
+        force=force,
+        reenqueue=lambda: s95_watch_cancellations_task.apply_async(kwargs={"force": force}, queue="s95"),
     )
 
 

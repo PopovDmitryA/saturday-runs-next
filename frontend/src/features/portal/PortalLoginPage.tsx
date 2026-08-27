@@ -3,8 +3,10 @@ import { trackAuthStart } from "../../lib/abTest";
 import {
   ApiError,
   getCurrentUser,
+  getTelegramLoginConfig,
   oauthStartUrl,
   requestEmailCode,
+  telegramStartUrl,
   verifyEmailCode,
 } from "../../lib/api";
 import { PORTAL_ABOUT_PRIVACY_HREF } from "../../lib/portalRoutes";
@@ -22,6 +24,22 @@ const RETURNING_KEY = "portalReturningUser";
 // согласие лежит в профиле — переспрашивать не за чем.
 const KNOWN_DEVICE_COOKIE = "sr_known";
 
+function isReturningUser(): boolean {
+  try {
+    return window.localStorage.getItem(RETURNING_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markReturningUser(): void {
+  try {
+    window.localStorage.setItem(RETURNING_KEY, "1");
+  } catch {
+    // localStorage может быть недоступен (приватный режим) — не критично
+  }
+}
+
 function hasLoggedInBefore(): boolean {
   try {
     return document.cookie.split("; ").some((item) => item.startsWith(`${KNOWN_DEVICE_COOKIE}=`));
@@ -29,6 +47,7 @@ function hasLoggedInBefore(): boolean {
     return false;
   }
 }
+
 // Адрес, на который только что ушёл код. Нужен, чтобы обновление страницы или
 // переход в почту и обратно не выбрасывали человека на первый шаг: код у него
 // на руках, а запросить новый мешает лимит на ящик.
@@ -69,22 +88,6 @@ function forgetPendingEmail(): void {
     window.sessionStorage.removeItem(PENDING_EMAIL_KEY);
   } catch {
     // см. выше
-  }
-}
-
-function isReturningUser(): boolean {
-  try {
-    return window.localStorage.getItem(RETURNING_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function markReturningUser(): void {
-  try {
-    window.localStorage.setItem(RETURNING_KEY, "1");
-  } catch {
-    // localStorage может быть недоступен (приватный режим) — не критично
   }
 }
 
@@ -150,6 +153,18 @@ function YandexMark() {
   );
 }
 
+function TelegramMark() {
+  return (
+    <svg className="portal-login-scope-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="12" fill="#29a9eb" />
+      <path
+        d="M5.6 11.9l11-4.3c.6-.2 1.2.3 1 .9l-2 8.7c-.1.6-.8.8-1.2.4l-2.6-2-1.3 1.3c-.3.3-.7.2-.8-.2l-.8-2.8-2.4-.9c-.5-.2-.5-.9.1-1.1z"
+        fill="#ffffff"
+      />
+    </svg>
+  );
+}
+
 // Вход по коду: своей марки у почты нет, рисуем нейтральный конверт.
 function MailMark() {
   return (
@@ -189,6 +204,8 @@ export function PortalLoginPage() {
   const [emailCode, setEmailCode] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
+  // Кнопку Telegram показываем, когда бот настроен на сервере.
+  const [telegramReady, setTelegramReady] = useState(false);
   const [emailNotice, setEmailNotice] = useState<string | null>(() => {
     const pending = readPendingEmail();
     return pending ? `Код отправлен на ${pending.email}. Он действует 10 минут.` : null;
@@ -210,6 +227,22 @@ export function PortalLoginPage() {
         window.clearTimeout(timeoutId);
         setCheckingAuth(false);
       });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getTelegramLoginConfig()
+      .then((config) => {
+        if (!cancelled && config.enabled && config.bot_id) {
+          setTelegramReady(true);
+        }
+      })
+      .catch(() => {
+        // Telegram — дополнительный способ: не смогли узнать — обходимся без него.
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const dismissOAuthError = () => {
@@ -359,6 +392,30 @@ export function PortalLoginPage() {
                 </span>
                 {redirectingProvider === "yandex" ? "Переход…" : "Войти через Яндекс"}
               </a>
+              {telegramReady && (
+                <a
+                  href={telegramStartUrl("login", true)}
+                  className="portal-login-provider portal-login-provider-telegram"
+                  data-full-nav
+                  onClick={(event) => {
+                    if (!requireConsent()) {
+                      event.preventDefault();
+                      return;
+                    }
+                    markReturningUser();
+                  }}
+                >
+                  <span className="portal-login-provider-logo" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path
+                        d="M4.5 11.8l13.2-5.1c.7-.3 1.4.3 1.2 1L16.6 18c-.2.7-1 .9-1.5.5l-3-2.3-1.6 1.6c-.3.3-.8.2-.9-.2l-1-3.4-3-1c-.7-.2-.7-1.1-.1-1.4z"
+                        fill="currentColor"
+                      />
+                    </svg>
+                  </span>
+                  Войти через Telegram
+                </a>
+              )}
               <button
                 type="button"
                 className="portal-login-provider portal-login-provider-email"
@@ -508,6 +565,12 @@ export function PortalLoginPage() {
                   <YandexMark />
                   Яндекс — адрес почты и имя
                 </li>
+                {telegramReady && (
+                  <li>
+                    <TelegramMark />
+                    Telegram — идентификатор, имя и ник
+                  </li>
+                )}
                 <li>
                   <MailMark />
                   Почта — только сам адрес

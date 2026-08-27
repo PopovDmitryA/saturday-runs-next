@@ -333,15 +333,18 @@ function CatalogLocationTableRowView({
     row.name
   );
 
-  const statusNote = row.is_cancelled ? "Отменена" : row.is_paused ? "Не действует" : null;
+  // Порядок тот же, что у LocationStatusBadge: «не действует» сильнее отмены.
+  // Отмена с 27.08.2026 значит «в эту субботу не бегут» (её начал публиковать и
+  // s95), а не «площадки больше нет, — сообщать её про закрытую бессмысленно.
+  const statusNote = row.is_paused ? "Не действует" : row.is_cancelled ? "Отмена старта" : null;
 
   return (
     <tr
       className={
-        row.is_cancelled
-          ? "map-locations-table-row-cancelled"
-          : row.is_paused
-            ? "map-locations-table-row-paused"
+        row.is_paused
+          ? "map-locations-table-row-paused"
+          : row.is_cancelled
+            ? "map-locations-table-row-cancelled"
             : undefined
       }
     >

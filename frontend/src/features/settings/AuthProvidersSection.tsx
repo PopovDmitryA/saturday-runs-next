@@ -8,15 +8,17 @@ import {
   linkEmailIdentity,
   oauthStartUrl,
   requestEmailCode,
+  telegramStartUrl,
   unlinkAuthProvider,
   type AuthIdentity,
   type MergePreview,
 } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
 
-const PROVIDERS: Array<{ id: "vk" | "yandex"; title: string; hint: string }> = [
+const PROVIDERS: Array<{ id: "vk" | "yandex" | "telegram"; title: string; hint: string }> = [
   { id: "vk", title: "VK", hint: "Вход через VK ID" },
   { id: "yandex", title: "Яндекс", hint: "Вход через Яндекс ID" },
+  { id: "telegram", title: "Telegram", hint: "Вход подтверждением в Telegram" },
 ];
 
 type AuthProvidersSectionProps = {
@@ -75,10 +77,13 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
       .finally(() => setMergeLoading(false));
   }, [initialMergeToken]);
 
-  const handleLink = (provider: "vk" | "yandex") => {
+  const handleLink = (provider: "vk" | "yandex" | "telegram") => {
     setError(null);
     setLinkingProvider(provider);
-    window.location.href = oauthStartUrl(provider, "link");
+    // У Telegram свой старт: он не OAuth-провайдер, подтверждение приходит
+    // подписанными данными, а не кодом обмена.
+    window.location.href =
+      provider === "telegram" ? telegramStartUrl("link") : oauthStartUrl(provider, "link");
   };
 
   const handleEmailCodeRequest = async () => {

@@ -2500,6 +2500,32 @@
   border-radius: 50%;
 }
 
+/* Telegram — фирменный голубой, как VK свой синий. */
+.portal-login-provider-telegram {
+  width: 100%;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  background: #29a9eb;
+  border-color: #29a9eb;
+  color: #ffffff;
+}
+
+.portal-login-provider-telegram .portal-login-provider-logo {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.portal-login-provider-telegram .portal-login-provider-logo svg {
+  width: 18px;
+  height: 18px;
+}
+
+.portal-login-provider-telegram[disabled] {
+  opacity: 0.7;
+  cursor: default;
+}
+
 /* Почта — такая же кнопка способа входа, только вместо перехода к провайдеру
    раскрывает форму на месте. Обрамление берём от кнопки Яндекса, чтобы ряд
    читался как один список способов. */

@@ -276,16 +276,19 @@ function ModalContent({
                       {activityFilter !== "volunteering" && !row.location.has_coordinates && (
                         <span className="unique-locations-badge-muted">нет на карте</span>
                       )}
+                      {/* «Не действует» сильнее отмены — тот же порядок, что в
+                          LocationStatusBadge: у закрытой площадки отменённая
+                          суббота уже ничего не добавляет. */}
                       {activityFilter !== "volunteering" &&
                         row.location.has_coordinates &&
-                        row.location.is_cancelled && (
-                        <span className="unique-locations-badge-cancelled">отменена</span>
+                        row.location.is_paused && (
+                        <span className="unique-locations-badge-paused">не действует</span>
                       )}
                       {activityFilter !== "volunteering" &&
                         row.location.has_coordinates &&
-                        !row.location.is_cancelled &&
-                        row.location.is_paused && (
-                        <span className="unique-locations-badge-paused">не действует</span>
+                        !row.location.is_paused &&
+                        row.location.is_cancelled && (
+                        <span className="unique-locations-badge-cancelled">отмена старта</span>
                       )}
                     </td>
                     <td className="col-city muted">{row.location.city ?? "—"}</td>
