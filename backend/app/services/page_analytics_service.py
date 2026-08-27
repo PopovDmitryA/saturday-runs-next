@@ -42,6 +42,7 @@ _PROFILE_TAB_RE = re.compile(r"^/users/([^/]+)/[^/]+$")
 # не кладём — он одноразовый и в отчёте бесполезен.
 _SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
 _LOCATION_EVENTS_RE = re.compile(r"^/locations/([^/]+)/events$")
+_LOCATION_PARTICIPANTS_RE = re.compile(r"^/locations/([^/]+)/participants$")
 # Единый протокол недели: /protocol/{дата-субботы}. В entity_key едет дата —
 # по ней видно, какие недели открывают (свежая суббота или архив).
 _UNIFIED_PROTOCOL_RE = re.compile(r"^/protocol/(\d{4}-\d{2}-\d{2})$")
@@ -172,6 +173,10 @@ def classify_page(path: str) -> tuple[str, str]:
     location_events = _LOCATION_EVENTS_RE.match(normalized)
     if location_events:
         return "location_events", location_events.group(1)[:128]
+
+    location_participants = _LOCATION_PARTICIPANTS_RE.match(normalized)
+    if location_participants:
+        return "location_participants", location_participants.group(1)[:128]
 
     location = _LOCATION_RE.match(normalized)
     if location:

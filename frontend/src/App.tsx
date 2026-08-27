@@ -49,6 +49,7 @@ import {
   PortalCabinetSharePage,
 } from "./features/portal/cabinet/PortalCabinetPages";
 import { LocationEventsPage } from "./features/locations/LocationEventsPage";
+import { LocationParticipantsPage } from "./features/locations/LocationParticipantsPage";
 import { LocationProtocolPage } from "./features/locations/LocationProtocolPage";
 import { LocationPage } from "./features/locations/LocationPage";
 import { LastResultsPage } from "./features/locations/LastResultsPage";
@@ -420,6 +421,11 @@ function renderRoute(path: string): ReactElement {
   const locationEventsMatch = path.match(/^\/locations\/([^/]+)\/events$/);
   if (locationEventsMatch) {
     return <LocationEventsPage slug={decodeURIComponent(locationEventsMatch[1])} />;
+  }
+  // Постоянный состав локации: развёрнутый топ со страницы площадки.
+  const locationParticipantsMatch = path.match(/^\/locations\/([^/]+)\/participants$/);
+  if (locationParticipantsMatch) {
+    return <LocationParticipantsPage slug={decodeURIComponent(locationParticipantsMatch[1])} />;
   }
   const locationMatch = path.match(/^\/locations\/([^/]+)$/);
   if (locationMatch) {

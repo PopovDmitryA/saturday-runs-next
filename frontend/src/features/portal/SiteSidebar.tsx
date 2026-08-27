@@ -187,6 +187,16 @@ const PROTOCOL_ICON = icon(
   </>,
 );
 
+// «Постоянный состав» локации: двое рядом — регулярные участники площадки.
+const REGULARS_ICON = icon(
+  <>
+    <circle cx="9.5" cy="8.5" r="3" />
+    <path d="M3.5 19.5c.7-3.1 3.1-4.9 6-4.9s5.3 1.8 6 4.9" />
+    <circle cx="17.5" cy="7.5" r="2.2" />
+    <path d="M16 13.6c2.3-.4 4.1 1.2 4.5 3.6" />
+  </>,
+);
+
 // «Результаты последней субботы»: секундомер — свежие результаты стартов.
 const LAST_RESULTS_ICON = icon(
   <>
@@ -777,6 +787,25 @@ export function SiteSidebar({
         >
           <span className="portal-cab-nav-icon">{PROTOCOL_ICON}</span>
           <span className="portal-cab-nav-label">Журнал протоколов</span>
+        </a>
+        {/* Постоянный состав площадки — та же логика, что у журнала: вне
+            локации пункт задизейблен и объясняет, что открыть. */}
+        <a
+          href={location ? `/locations/${location.slug}/participants` : undefined}
+          className={`portal-cab-nav-item portal-cab-nav-subitem${
+            location && pathname.endsWith("/participants") ? " active" : ""
+          }${location ? "" : " portal-cab-nav-item-disabled"}`}
+          aria-disabled={location ? undefined : true}
+          title={
+            location
+              ? collapsed
+                ? "Постоянный состав"
+                : undefined
+              : "Сначала откройте локацию — постоянный состав у каждой площадки свой"
+          }
+        >
+          <span className="portal-cab-nav-icon">{REGULARS_ICON}</span>
+          <span className="portal-cab-nav-label">Постоянный состав</span>
         </a>
         <a
           href="/ratings"

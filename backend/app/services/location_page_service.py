@@ -87,6 +87,17 @@ def location_events_cache_key(slug: str) -> str:
 
 def location_leaders_cache_key(slug: str) -> str:
     return f"locations:leaders:v2:{slug.strip().lower()}"
+
+
+def location_participants_cache_key(slug: str) -> str:
+    return f"locations:participants:v1:{slug.strip().lower()}"
+
+
+# Порог «активного участника» страницы деталей — три участия, как в легаси-
+# дашборде «Рейтинг участников и волонтёров внутри локации» (having count > 2).
+# Случайный гость, забежавший раз в отпуске, в постоянный состав площадки не
+# входит, а без отсечки список большой локации — это тысячи строк ни о чём.
+LOCATION_ACTIVE_MIN_COUNT = 3
 # Незачётные статусы протоколов не влияют на finish_time (он у них NULL),
 # поэтому отдельного фильтра по status нет: гистограмма и рекорды строятся
 # только по строкам с известным временем.
@@ -528,6 +539,209 @@ def _compute_location_leaders(db: Session, slug: str, *, limit: int = 20) -> dic
         "runners": runners,
         "volunteers": volunteers,
     }
+
+
+def build_location_participants(
+    db: Session, slug: str, *, use_cache: bool = True, refresh: bool = False
+) -> dict[str, object] | None:
+    cache_key = location_participants_cache_key(slug)
+    if use_cache and not refresh:
+        cached = _read_json_cache(cache_key)
+        if cached is not None:
+            return cached
+
+    payload = _compute_location_participants(db, slug)
+
+    if use_cache and payload is not None:
+        _write_json_cache(cache_key, payload, LOCATION_PAGE_CACHE_TTL_SECONDS)
+    return payload
+
+
+def _compute_location_participants(db: Session, slug: str) -> dict[str, object] | None:
+    """Постоянный состав локации: все, кто был здесь от трёх раз.
+
+    Развёрнутая версия топ-20 со страницы локации (_compute_location_leaders).
+    Отличий два: нет лимита (вместо него отсечка LOCATION_ACTIVE_MIN_COUNT) и
+    к числу участий здесь добавлены три колонки легаси-дашборда — сколько у
+    человека участий во всех локациях вместе (видно, домашняя это площадка
+    или заезжий турист) и границы стажа здесь (первый и последний старт).
+
+    Склейка платформ та же, что в рейтингах локации: строка — это профиль
+    сайта (coalesce(platform_links.user_id, participant_id)), непривязанные
+    аккаунты разных систем остаются разными строками.
+    """
+    identity = resolve_location_identity(db, slug)
+    if identity is None:
+        return None
+    event_ids = _location_event_ids(db, [location.id for location, _code in identity.locations])
+
+    # Список тестовых событий один на оба зачёта — читаем его здесь, а не
+    # дважды внутри.
+    test_event_ids = [row[0] for row in db.query(Event.id).filter(Event.is_test_event.is_(True)).all()]
+    runners, runners_people = _active_participant_rows(db, RunResult, event_ids, test_event_ids=test_event_ids)
+    volunteers, volunteers_people = _active_participant_rows(
+        db, VolunteerResult, event_ids, test_event_ids=test_event_ids
+    )
+
+    return {
+        "slug": identity.slug,
+        "name": identity.name,
+        "min_count": LOCATION_ACTIVE_MIN_COUNT,
+        "runners": runners,
+        "volunteers": volunteers,
+        # Знаменатель для подписи «показаны N из M побывавших здесь»: без него
+        # не видно, какую долю состава площадки составляют постоянные.
+        "runners_people_total": runners_people,
+        "volunteers_people_total": volunteers_people,
+    }
+
+
+def _active_participant_rows(
+    db: Session,
+    model: type[RunResult] | type[VolunteerResult],
+    event_ids: list[UUID],
+    *,
+    test_event_ids: list[UUID],
+    min_count: int = LOCATION_ACTIVE_MIN_COUNT,
+) -> tuple[list[dict[str, object]], int]:
+    """Строки постоянного состава по одному зачёту (пробежки или волонтёрства).
+
+    Три запроса: группа по локации, участники этих групп (включая привязанные
+    аккаунты, которые здесь ни разу не бегали) и «всего участий» по ним.
+
+    Почему «всего» нельзя посчитать тем же group by, что и участия здесь:
+    фильтр по событиям локации отсекает как раз то, что нужно сложить.
+    Отдельный запрос по всем событиям намеренно сделан голым — только
+    run_results/volunteer_results по participant_id (это индекс
+    ix_*_participant_event), без join к participants, platform_links и events.
+    Первая версия тащила туда всю связку джойнов и считала большую площадку
+    минутами: на «всего» приходятся сотни тысяч строк, и каждый join умножал
+    их. Склейка аккаунтов в профиль сайта делается после, в Python.
+
+    Следствие голого запроса: кросслинки (один физический старт в протоколах
+    двух систем) в «всего» не схлопываются — у человека с аккаунтами в обеих
+    системах такой старт даст +2. Случай редкий, а глобальный дедуп стоил бы
+    обхода всех событий страны на каждую локацию.
+    """
+    if not event_ids:
+        return [], 0
+
+    group_key = func.coalesce(PlatformLink.user_id, model.participant_id)
+    display_name = func.max(func.coalesce(User.display_name, Participant.display_name))
+    here_count = func.count(func.distinct(model.event_id))
+
+    # Без HAVING: те, кто не дотянул до порога, всё равно нужны — по ним
+    # считается знаменатель «показаны N из M побывавших здесь». Отдельный
+    # count(distinct) обошёлся бы во второй такой же проход по протоколам.
+    local_rows = (
+        db.query(
+            group_key.label("group_key"),
+            # max() по uuid в Postgres нет — признак «строка про профиль
+            # сайта» берём булевым агрегатом, сам user_id и так в group_key.
+            func.bool_or(PlatformLink.user_id.isnot(None)).label("is_user"),
+            display_name.label("name"),
+            here_count.label("count"),
+            func.min(Event.event_date).label("first_date"),
+            func.max(Event.event_date).label("last_date"),
+            func.max(User.public_slug).label("slug"),
+            func.max(User.serial_id).label("serial_id"),
+        )
+        .select_from(model)
+        .join(Event, model.event_id == Event.id)
+        .join(Participant, model.participant_id == Participant.id)
+        .outerjoin(PlatformLink, _platform_link_join())
+        .outerjoin(User, PlatformLink.user_id == User.id)
+        .filter(model.event_id.in_(event_ids))
+        .group_by(group_key)
+        .all()
+    )
+    people_total = len(local_rows)
+
+    active = [row for row in local_rows if int(row.count) >= min_count]
+    active.sort(key=lambda row: (-int(row.count), (row.name or "").lower()))
+    if not active:
+        return [], people_total
+
+    # Участники группы: у профиля сайта это все привязанные аккаунты, включая
+    # те, которыми человек здесь ни разу не отмечался.
+    user_ids = [row.group_key for row in active if row.is_user]
+    participant_to_group: dict[UUID, UUID] = {
+        row.group_key: row.group_key for row in active if not row.is_user
+    }
+    if user_ids:
+        linked = (
+            db.query(Participant.id, PlatformLink.user_id)
+            .join(PlatformLink, _platform_link_join())
+            .filter(PlatformLink.user_id.in_(user_ids))
+            .all()
+        )
+        for participant_id, user_id in linked:
+            participant_to_group[participant_id] = user_id
+
+    totals = _totals_by_group(db, model, participant_to_group, test_event_ids)
+
+    rows: list[dict[str, object]] = []
+    place = 0
+    previous_count: int | None = None
+    for index, row in enumerate(active):
+        count = int(row.count)
+        # Место по-спортивному: равное число участий — равное место, следующий
+        # за парой третьих получает пятое.
+        if count != previous_count:
+            place = index + 1
+            previous_count = count
+        rows.append(
+            {
+                "place": place,
+                "name": row.name,
+                "handle": row.slug or (str(row.serial_id) if row.serial_id else None),
+                "count": count,
+                # max() — страховка от кросслинков: «всего» не может быть
+                # меньше, чем участий на одной этой площадке.
+                "total_count": max(totals.get(row.group_key, count), count),
+                "first_date": row.first_date.isoformat() if row.first_date else None,
+                "last_date": row.last_date.isoformat() if row.last_date else None,
+            }
+        )
+    return rows, people_total
+
+
+def _totals_by_group(
+    db: Session,
+    model: type[RunResult] | type[VolunteerResult],
+    participant_to_group: dict[UUID, UUID],
+    test_event_ids: list[UUID],
+) -> dict[UUID, int]:
+    """Участий во всех локациях — по каждому профилю страницы.
+
+    Считается по participant_id и складывается в Python: см. комментарий в
+    _active_participant_rows о том, почему запрос держим без join'ов.
+    """
+    participant_ids = list(participant_to_group)
+    if not participant_ids:
+        return {}
+
+    # Тестовые события (проверочные протоколы) исключаем списком id, а не
+    # join'ом к events: их считанные сотни, а join развернул бы весь этот
+    # запрос обратно в тяжёлый.
+    counted_event: Any = model.event_id
+    if test_event_ids:
+        counted_event = case((model.event_id.in_(test_event_ids), None), else_=model.event_id)
+
+    rows = (
+        db.query(model.participant_id, func.count(func.distinct(counted_event)))
+        .filter(model.participant_id.in_(participant_ids))
+        .group_by(model.participant_id)
+        .all()
+    )
+
+    totals: dict[UUID, int] = {}
+    for participant_id, count in rows:
+        group = participant_to_group.get(participant_id)
+        if group is None:
+            continue
+        totals[group] = totals.get(group, 0) + int(count)
+    return totals
 
 
 def _start_point_url(latitude: float | None, longitude: float | None) -> str | None:
@@ -1925,6 +2139,7 @@ def invalidate_location_page_cache(slug: str) -> None:
             location_page_cache_key(normalized),
             location_events_cache_key(normalized),
             location_leaders_cache_key(normalized),
+            location_participants_cache_key(normalized),
         )
     except redis.RedisError:
         pass

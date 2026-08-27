@@ -2511,6 +2511,37 @@ export function getLocationLeaders(slug: string) {
   return apiFetch<LocationLeaders>(`/locations/page/${encodeURIComponent(slug)}/leaders`);
 }
 
+/** Строка «постоянного состава» локации — и для бегунов, и для волонтёров. */
+export type LocationActiveParticipant = {
+  place: number;
+  name: string | null;
+  handle?: string | null;
+  /** Участий на этой локации. */
+  count: number;
+  /** Участий во всех локациях вместе — знаменатель для доли «здесь». */
+  total_count: number;
+  first_date: string | null;
+  last_date: string | null;
+};
+
+export type LocationParticipants = {
+  slug: string;
+  name: string;
+  /** Порог попадания в список: участий на локации. */
+  min_count: number;
+  runners: LocationActiveParticipant[];
+  volunteers: LocationActiveParticipant[];
+  /** Сколько человек всего бывало здесь — знаменатель подписи под таблицей. */
+  runners_people_total: number;
+  volunteers_people_total: number;
+};
+
+export function getLocationParticipants(slug: string) {
+  return apiFetch<LocationParticipants>(
+    `/locations/page/${encodeURIComponent(slug)}/participants`,
+  );
+}
+
 /** Соседний старт локации в сквозной хронологии — стрелки «‹ ›» над протоколом. */
 export type ProtocolNeighbour = {
   platform_code: string;

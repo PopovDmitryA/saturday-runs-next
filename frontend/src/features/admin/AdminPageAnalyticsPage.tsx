@@ -34,6 +34,7 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   unified_protocol: "Единый протокол недели",
   location: "Локация (карточка)",
   location_events: "Локация (забеги)",
+  location_participants: "Локация (постоянный состав)",
   location_protocol: "Локация (протокол)",
   ratings_hub: "Рейтинги (хаб)",
   ratings_runs: "Рейтинг: пробежки",

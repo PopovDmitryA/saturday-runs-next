@@ -14975,3 +14975,83 @@ a.admin-system-chip:hover {
   border-color: var(--tint-blue-border, rgba(9, 105, 218, 0.4));
   color: var(--link-strong, #0969da);
 }
+
+/* ── Постоянный состав локации (/locations/{slug}/participants) ─────────────
+   Таблица живёт по тем же правилам, что журнал протоколов: fixed-раскладка,
+   набор колонок подбирает useAdaptiveColumns, всё, что не влезло, — в
+   горизонтальный скролл обёртки. Ширины обязаны совпадать с PEOPLE_COLUMNS
+   в LocationParticipantsPage.tsx, иначе краткий вид посчитает минимум мимо. */
+.loc-people-lead {
+  margin: 0.35rem 0 0;
+  max-width: 46rem;
+}
+
+/* Ссылка на полный состав под топ-10 на странице локации. */
+.loc-leaders-more {
+  margin: 0.75rem 0 0;
+}
+
+.loc-people-table .col-place {
+  width: 3.5rem;
+}
+
+.loc-people-table .col-name {
+  width: 9.375rem;
+}
+
+.loc-people-table .col-count {
+  width: 8.125rem;
+}
+
+.loc-people-table .col-total {
+  width: 7.5rem;
+}
+
+.loc-people-table .col-share {
+  width: 8.125rem;
+}
+
+.loc-people-table .col-date {
+  width: 9.375rem;
+}
+
+/* Полный набор — семь колонок с фиксированными ширинами (сумма PEOPLE_COLUMNS). */
+.loc-people-table:not(.data-table-short) {
+  min-width: 55.375rem;
+}
+
+/* В кратком виде минимум проставляет inline-стиль по сумме видимых колонок. */
+.loc-people-table.data-table-short {
+  min-width: 0;
+}
+
+/* Имя не должно разваливаться по буквам, когда колонка ужимается. */
+.loc-people-table.data-table-short td {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+/* Подписи колонок не режем многоточием — лучше скролл, чем «Посл.» вместо
+   «Последний старт». */
+.loc-people-table .th-col-text {
+  overflow: visible;
+  text-overflow: clip;
+  min-width: max-content;
+}
+
+/* Своя подложка: под липкой шапкой при прокрутке проезжают строки. */
+.loc-people-table thead th {
+  background: var(--surface);
+  top: var(--table-head-top, 0);
+}
+
+.loc-people-table td.td-date,
+.loc-people-table td.td-compact {
+  white-space: nowrap;
+}
+
+/* Место — вторичная цифра рядом с именем, тоном тише самого имени. */
+.loc-people-place {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

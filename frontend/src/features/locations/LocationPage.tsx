@@ -485,6 +485,11 @@ function AgeGroupRecordsSection({
   );
 }
 
+// На странице локации показываем десятку, а не весь топ: страница и без того
+// длинная, а полный постоянный состав живёт на /locations/{slug}/participants
+// (там же — сколько у человека участий всего и с какого старта он здесь свой).
+const LEADERS_PREVIEW_LIMIT = 10;
+
 function LocationLeadersSection({ slug }: { slug: string }) {
   const [leaders, setLeaders] = useState<LocationLeaders | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -524,6 +529,10 @@ function LocationLeadersSection({ slug }: { slug: string }) {
     return null;
   }
 
+  const topRunners = leaders.runners.slice(0, LEADERS_PREVIEW_LIMIT);
+  const topVolunteers = leaders.volunteers.slice(0, LEADERS_PREVIEW_LIMIT);
+  const detailsHref = `/locations/${encodeURIComponent(slug)}/participants`;
+
   return (
     <div className="loc-columns">
       {leaders.runners.length > 0 && (
@@ -538,7 +547,7 @@ function LocationLeadersSection({ slug }: { slug: string }) {
           </h2>
           {narrowViewport ? (
             <div className="rowcards loc-leaders-cards">
-              {leaders.runners.map((runner, index) => (
+              {topRunners.map((runner, index) => (
                 <div className="rowcard" key={`${runner.name}-${index}`}>
                   <div className="rowcard-rank">{index + 1}</div>
                   <div className="rowcard-mid">
@@ -573,7 +582,7 @@ function LocationLeadersSection({ slug }: { slug: string }) {
                 </tr>
               </thead>
               <tbody>
-                {leaders.runners.map((runner, index) => (
+                {topRunners.map((runner, index) => (
                   <tr key={`${runner.name}-${index}`}>
                     <td className="loc-leaders-rank">{index + 1}</td>
                     <td>
@@ -586,6 +595,11 @@ function LocationLeadersSection({ slug }: { slug: string }) {
               </tbody>
             </table>
           )}
+          <p className="loc-leaders-more">
+            <a className="loc-events-link" href={detailsHref}>
+              Весь постоянный состав →
+            </a>
+          </p>
         </section>
       )}
       {leaders.volunteers.length > 0 && (
@@ -600,7 +614,7 @@ function LocationLeadersSection({ slug }: { slug: string }) {
           </h2>
           {narrowViewport ? (
             <div className="rowcards loc-leaders-cards">
-              {leaders.volunteers.map((volunteer, index) => (
+              {topVolunteers.map((volunteer, index) => (
                 <div className="rowcard" key={`${volunteer.name}-${index}`}>
                   <div className="rowcard-rank">{index + 1}</div>
                   <div className="rowcard-mid">
@@ -630,7 +644,7 @@ function LocationLeadersSection({ slug }: { slug: string }) {
                 </tr>
               </thead>
               <tbody>
-                {leaders.volunteers.map((volunteer, index) => (
+                {topVolunteers.map((volunteer, index) => (
                   <tr key={`${volunteer.name}-${index}`}>
                     <td className="loc-leaders-rank">{index + 1}</td>
                     <td>
@@ -642,6 +656,11 @@ function LocationLeadersSection({ slug }: { slug: string }) {
               </tbody>
             </table>
           )}
+          <p className="loc-leaders-more">
+            <a className="loc-events-link" href={`${detailsHref}?scope=volunteers`}>
+              Весь постоянный состав →
+            </a>
+          </p>
         </section>
       )}
     </div>

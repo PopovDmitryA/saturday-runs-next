@@ -346,6 +346,28 @@ class LocationLeadersResponse(BaseModel):
     volunteers: list[LocationLeaderVolunteerResponse] = Field(default_factory=list)
 
 
+class LocationActiveParticipantResponse(BaseModel):
+    place: int
+    name: str | None = None
+    handle: str | None = None
+    # Участий здесь и во всех локациях вместе: отношение показывает, домашняя
+    # это площадка для человека или он сюда заезжает.
+    count: int
+    total_count: int
+    first_date: date | None = None
+    last_date: date | None = None
+
+
+class LocationParticipantsResponse(BaseModel):
+    slug: str
+    name: str
+    min_count: int
+    runners: list[LocationActiveParticipantResponse] = Field(default_factory=list)
+    volunteers: list[LocationActiveParticipantResponse] = Field(default_factory=list)
+    runners_people_total: int = 0
+    volunteers_people_total: int = 0
+
+
 class LocationIndexItemResponse(BaseModel):
     slug: str
     identity_key: str

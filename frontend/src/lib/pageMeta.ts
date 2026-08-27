@@ -226,6 +226,7 @@ const ADMIN_META: PageMeta = {
 const PROFILE_RE = /^\/users\/([^/]+)(?:\/([^/]+))?$/;
 const UNIFIED_PROTOCOL_RE = /^\/protocol\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_EVENTS_RE = /^\/locations\/([^/]+)\/events$/;
+const LOCATION_PARTICIPANTS_RE = /^\/locations\/([^/]+)\/participants$/;
 const LOCATION_PROTOCOL_RE = /^\/locations\/([^/]+)\/protocol\/([^/]+)\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_RE = /^\/locations\/([^/]+)$/;
 const SWEEP_HQ_RE = /^\/hq\/.+$/;
@@ -236,7 +237,11 @@ const SWEEP_HQ_RE = /^\/hq\/.+$/;
  */
 export function isLocationEntityPath(rawPath: string): boolean {
   const path = normalizePath(rawPath);
-  return LOCATION_RE.test(path) || LOCATION_EVENTS_RE.test(path);
+  return (
+    LOCATION_RE.test(path) ||
+    LOCATION_EVENTS_RE.test(path) ||
+    LOCATION_PARTICIPANTS_RE.test(path)
+  );
 }
 
 export function normalizePath(rawPath: string): string {
@@ -318,6 +323,16 @@ export function resolvePageMeta(rawPath: string): PageMeta {
       indexable: true,
     };
   }
+  // Единственная витрина локации без indexable: поимённый список живых людей
+  // в поиске не место (зеркало page_meta_for_path в seo_service.py).
+  if (LOCATION_PARTICIPANTS_RE.test(path)) {
+    return {
+      title: "Постоянный состав локации — run5k.run",
+      description:
+        "Кто бегает и волонтёрит на площадке от трёх раз: число участий здесь и во " +
+        "всех локациях, первый и последний старт.",
+    };
+  }
   if (LOCATION_RE.test(path)) {
     return {
       title: "Локация — run5k.run",
@@ -397,7 +412,7 @@ type LocationMetaSource = {
  */
 export function locationPageMeta(
   payload: LocationMetaSource,
-  options: { eventsLog?: boolean } = {},
+  options: { eventsLog?: boolean; participants?: boolean } = {},
 ): PageMeta {
   const name = payload.name || "Локация";
   const city = payload.city ?? null;
@@ -422,6 +437,18 @@ export function locationPageMeta(
   const numbers = parts.join(", ");
 
   // Описание держим в 160 символах: длиннее поисковик обрежет многоточием.
+  if (options.participants) {
+    // indexable не выставляем сознательно — см. resolvePageMeta.
+    return {
+      title: fitTitle(`${where}: постоянный состав`),
+      description: describe(
+        `Кто регулярно бегает и волонтёрит на локации «${name}»`,
+        numbers,
+        ". Участий здесь и во всех локациях, первый и последний старт.",
+        ". Участий здесь и всего, первый и последний старт.",
+      ),
+    };
+  }
   if (options.eventsLog) {
     // «журнал протоколов» — часть head, а не хвост: только он отличает эту
     // страницу от основной, и отбрасывать его нельзя.
