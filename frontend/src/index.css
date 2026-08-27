@@ -15146,9 +15146,12 @@ a.admin-system-chip:hover {
    ============================================================ */
 
 .focus-modal {
-  max-width: 480px;
+  /* Шире базовой панели: четыре карточки с описаниями в 22.5rem не дышат. */
+  width: min(100%, 30rem);
   display: grid;
   gap: 0.85rem;
+  max-height: calc(100vh - 3rem);
+  overflow-y: auto;
 }
 
 .focus-modal-title {

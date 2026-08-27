@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models import Participant, Platform, PlatformLink, User
+from app.models import DashboardCache, Participant, Platform, PlatformLink, User
 from app.platform_adapters.canonical import ProfilePreview
 from app.platform_adapters.five_verst.parser import ProfileNotFoundError as FvProfileNotFoundError
 from app.platform_adapters.five_verst.parser import ProfileParseError as FvProfileParseError
@@ -374,6 +374,12 @@ def confirm_profile_link(db: Session, user: User, platform_code: str, profile_ur
     else:
         complete_link_without_sync(db, link)
 
+    # Результаты привязанного аккаунта уже лежат в БД, а кэш дашборда мог
+    # быть посчитан до привязки: без сброса человек до фонового синка (или
+    # устаревания кэша) видит в кабинете нули — и автонабор профилей пуст.
+    db.query(DashboardCache).filter(DashboardCache.user_id == user.id).delete()
+    db.commit()
+
     return link
 
 
@@ -443,6 +449,12 @@ def confirm_profile_link_by_participant(db: Session, user: User, participant_id:
         db.commit()
     else:
         complete_link_without_sync(db, link)
+
+    # Результаты привязанного аккаунта уже лежат в БД, а кэш дашборда мог
+    # быть посчитан до привязки: без сброса человек до фонового синка (или
+    # устаревания кэша) видит в кабинете нули — и автонабор профилей пуст.
+    db.query(DashboardCache).filter(DashboardCache.user_id == user.id).delete()
+    db.commit()
 
     return link
 

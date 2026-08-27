@@ -85,7 +85,7 @@ export function FocusProfilesModal({
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Профили участника">
-      <div className="modal focus-modal">
+      <div className="modal-panel focus-modal">
         <h2 className="focus-modal-title">
           {isFirstRun ? "Мы присмотрелись к вашей статистике" : "Ваш профиль дополнен"}
         </h2>
