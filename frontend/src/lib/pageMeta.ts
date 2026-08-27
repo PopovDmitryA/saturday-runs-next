@@ -155,6 +155,13 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
       "женщин и рекорды возрастных групп.",
     indexable: true,
   },
+  "/ratings/regions": {
+    title: "Локации по регионам — run5k.run",
+    description:
+      "Сколько площадок субботних пятёрок в каждом регионе России: 5 вёрст, S95 и " +
+      "RunPark в одной таблице, зарубежье — по странам.",
+    indexable: true,
+  },
   "/backlog": {
     title: "Бэклог — run5k.run",
     description: "Что участники предлагают добавить на сайт и за что голосуют.",

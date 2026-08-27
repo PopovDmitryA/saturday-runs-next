@@ -70,6 +70,7 @@ import { OrganizerTeamPage } from "./features/organizer/OrganizerTeamPage";
 import { OrganizerLocationHubPage } from "./features/organizer/OrganizerLocationHubPage";
 import { OrganizerLocationPage } from "./features/organizer/OrganizerLocationPage";
 import { LocationRecordsRatingPage } from "./features/leaderboards/LocationRecordsRatingPage";
+import { RegionsRatingPage } from "./features/leaderboards/RegionsRatingPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
@@ -260,6 +261,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/win-locations": () => <LeaderboardPage metric="win_locations" />,
   "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
   "/ratings/location-records": () => <LocationRecordsRatingPage />,
+  "/ratings/regions": () => <RegionsRatingPage />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,
