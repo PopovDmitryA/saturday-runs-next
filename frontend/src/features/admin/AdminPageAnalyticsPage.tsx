@@ -20,6 +20,7 @@ const PAGE_TYPE_LABELS: Record<string, string> = {
   landing: "Главная (старый лендинг, до портала)",
   login: "Вход (старый, до портала)",
   oauth_callback: "Возврат из OAuth",
+  telegram_return: "Возврат из Telegram",
   welcome: "Онбординг (/welcome)",
   dashboard: "Дашборд",
   runs: "Пробежки",

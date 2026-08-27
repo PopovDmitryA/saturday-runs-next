@@ -177,6 +177,10 @@ def classify_page(path: str) -> tuple[str, str]:
     if location:
         return "location", location.group(1)[:128]
 
+    # Возврат из Telegram — своя страница со своим типом: у неё другой поток
+    # (данные приезжают во фрагменте адреса) и другая воронка.
+    if normalized == "/auth/telegram/return":
+        return "telegram_return", ""
     if normalized.startswith("/oauth/"):
         return "oauth_callback", ""
     # Служебный рендер OG-картинок (Playwright): фронт такие просмотры не шлёт

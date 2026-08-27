@@ -1,4 +1,4 @@
-const API_BASE = "/api";
+export const API_BASE = "/api";
 const DEFAULT_FETCH_TIMEOUT_MS = 20_000;
 
 export class ApiError extends Error {
@@ -632,6 +632,28 @@ export function verifyEmailCode(email: string, code: string) {
   return apiFetch<{ redirect: string }>("/auth/email/verify", {
     method: "POST",
     body: JSON.stringify({ email, code }),
+  });
+}
+
+export type TelegramLoginConfig = {
+  enabled: boolean;
+  bot_id: string;
+  bot_username: string;
+};
+
+export function getTelegramLoginConfig() {
+  return apiFetch<TelegramLoginConfig>("/auth/telegram/config");
+}
+
+export function telegramStartUrl(mode: "login" | "link", consent = false) {
+  const params = new URLSearchParams({ mode, consent: consent ? "true" : "false" });
+  return `${API_BASE}/auth/telegram/start?${params.toString()}`;
+}
+
+export function loginWithTelegramWidget(data: Record<string, string>, state: string) {
+  return apiFetch<{ redirect: string; merge_token: string | null }>("/auth/telegram/widget", {
+    method: "POST",
+    body: JSON.stringify({ data, state }),
   });
 }
 
