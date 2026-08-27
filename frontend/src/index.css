@@ -15057,16 +15057,30 @@ a.admin-system-chip:hover {
 }
 
 /* Строка поиска над таблицей постоянного состава: список на большой площадке
-   — это полторы тысячи имён, листать его глазами бессмысленно. */
-.loc-people-filter {
+   — это полторы тысячи имён, листать его глазами бессмысленно. Живёт в одной
+   строке с сегментом зачёта (просьба Дмитрия 27.08.2026): два отдельных ряда
+   управления съедали экран телефона до первой фамилии. */
+.loc-people-toolbar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
-  margin: 0.75rem 0 0;
+  margin-bottom: 0.75rem;
 }
 
+.loc-people-toolbar .map-mode-tabs {
+  margin-bottom: 0;
+}
+
+/* Поле ровно под запрос из пары букв — фамилию целиком в него не набирают. */
 .loc-people-search {
-  max-width: 22rem;
-  flex: 1 1 14rem;
+  flex: 0 1 12rem;
+  min-width: 8rem;
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+
+.loc-people-found {
+  white-space: nowrap;
+  font-size: 0.85rem;
 }

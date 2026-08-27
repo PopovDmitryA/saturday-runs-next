@@ -226,43 +226,45 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
           <a href="/locations">← Все локации</a> /{" "}
           <a href={`/locations/${data.slug}`}>{data.name}</a> / Постоянный состав
         </p>
+        {/* Условие отбора стоит строкой в заголовке, а не абзацем под ним:
+            это полстроки текста, ради которых не стоит отодвигать таблицу. */}
         <div className="loc-header-title">
           <h1>{data.name} — постоянный состав</h1>
+          <span className="muted loc-people-lead">
+            Все, кто {words.verb} здесь {threshold}.
+          </span>
         </div>
-        <p className="muted loc-people-lead">
-          Все, кто {words.verb} здесь {threshold}.
-        </p>
       </header>
 
-      <div className="map-mode-tabs" role="tablist" aria-label="Зачёт">
-        {(["runners", "volunteers"] as Scope[]).map((key) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={scope === key}
-            className={scope === key ? "map-mode-tab active" : "map-mode-tab"}
-            onClick={() => setScope(key)}
-          >
-            {SCOPE_WORDS[key].label} ({formatInt((key === "runners" ? data.runners : data.volunteers).length)})
-          </button>
-        ))}
-      </div>
-
-      <div className="loc-people-filter">
+      {/* Зачёт и поиск — одной строкой: два ряда управления над таблицей
+          съедали экран телефона до первой фамилии. */}
+      <div className="loc-people-toolbar">
+        <div className="map-mode-tabs" role="tablist" aria-label="Зачёт">
+          {(["runners", "volunteers"] as Scope[]).map((key) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={scope === key}
+              className={scope === key ? "map-mode-tab active" : "map-mode-tab"}
+              onClick={() => setScope(key)}
+            >
+              {SCOPE_WORDS[key].label} (
+              {formatInt((key === "runners" ? data.runners : data.volunteers).length)})
+            </button>
+          ))}
+        </div>
         <input
           className="input loc-people-search"
           type="search"
-          placeholder="Поиск по имени или фамилии…"
+          placeholder="Поиск по имени…"
           aria-label="Поиск по имени или фамилии"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
         {query.trim() && (
-          <span className="muted">
-            {rows.length > 0
-              ? `Найдено: ${formatInt(rows.length)}`
-              : "Никого не нашли"}
+          <span className="muted loc-people-found">
+            {rows.length > 0 ? `Найдено: ${formatInt(rows.length)}` : "Никого не нашли"}
           </span>
         )}
       </div>
