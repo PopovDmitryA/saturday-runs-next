@@ -19,6 +19,7 @@ from app.schemas.locations import (
     LocationEventsResponse,
     LocationLeadersResponse,
     LocationPageResponse,
+    LocationParticipantsResponse,
     LocationPersonalStatsResponse,
     LocationProtocolResponse,
     LocationsIndexResponse,
@@ -35,6 +36,7 @@ from app.services.location_page_service import (
     build_location_events,
     build_location_leaders,
     build_location_page,
+    build_location_participants,
     build_location_personal_stats,
     build_locations_index,
 )
@@ -93,6 +95,18 @@ def location_leaders(
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
     return LocationLeadersResponse.model_validate(payload)
+
+
+@router.get("/page/{slug}/participants", response_model=LocationParticipantsResponse)
+def location_participants(
+    slug: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> LocationParticipantsResponse:
+    """Постоянный состав локации: все, кто бегал или волонтёрил здесь от трёх раз."""
+    payload = build_location_participants(db, slug)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
+    return LocationParticipantsResponse.model_validate(payload)
 
 
 @router.get("/page/{slug}/events", response_model=LocationEventsResponse)

@@ -2188,3 +2188,106 @@ body.has-pinned-me .lb-scroll-top {
 .lb-fastest-select-wrap {
   display: inline-flex;
 }
+
+/* ─── Локации по регионам (/ratings/regions) ────────────────────────────────
+   Строка здесь — регион или страна, а колонки систем — счётчики, из которых
+   складывается общее число. Главную колонку читают взглядом, поэтому под
+   числом идёт полоса длиной от лидера рейтинга. */
+.lb-regions-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.lb-regions-table th:first-child,
+.lb-regions-rank {
+  width: 3.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-regions-count {
+  width: 9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-regions-count-value {
+  font-weight: 600;
+}
+
+/* Колонки-счётчики прижаты вправо вместе с заголовками: у .data-table th
+   выравнивание задано селектором посильнее, поэтому шапку правим отдельно —
+   иначе «5 вёрст» стоит слева, а число под ним справа. */
+.lb-regions-platform,
+.lb-regions-cities,
+.lb-regions-table th.lb-regions-platform,
+.lb-regions-table th.lb-regions-cities {
+  width: 5.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+
+/* Полоса живёт под числом и тянется на всю ширину колонки: сравнивают соседние
+   строки по длине, а не по цифрам. */
+.lb-regions-bar {
+  display: block;
+  margin-top: 4px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  overflow: hidden;
+}
+
+.lb-regions-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent-indigo);
+}
+
+/* «+2 не действует» — подпись под числом, и переносить её по словам незачем:
+   в две строки она распирает строку таблицы вдвое. */
+.lb-regions-note {
+  font-size: 0.78rem;
+  line-height: 1.2;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* Сводка над таблицей: сколько всего регионов, локаций в них и зарубежных
+   площадок. Не плитки-карточки — рейтинг открывают ради таблицы, и шапка не
+   должна её отодвигать. */
+.lb-regions-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.lb-regions-total {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.lb-regions-total-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-regions-total-label {
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+
+/* Зарубежье — отдельная таблица под основной: ранжировать Сербию рядом с
+   Московской областью незачем, но и прятать её нельзя. */
+.lb-regions-foreign {
+  margin-top: 1.75rem;
+}
+
+.lb-regions-foreign h2 {
+  font-size: 1.05rem;
+  margin-bottom: 0.6rem;
+}

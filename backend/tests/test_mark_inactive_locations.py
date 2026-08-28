@@ -31,6 +31,8 @@ def test_mark_inactive_locations_paused_skips_upcoming(
         is_cancelled=False,
         is_paused=False,
         is_upcoming=True,
+        latitude=55.75,
+        longitude=37.62,
     )
     db_session.add(location)
     db_session.flush()
@@ -59,6 +61,8 @@ def test_mark_inactive_locations_paused_marks_stale_events(db_session: Session, 
         name="Inactive Active",
         is_cancelled=False,
         is_paused=False,
+        latitude=55.75,
+        longitude=37.62,
     )
     db_session.add(location)
     db_session.flush()
@@ -95,6 +99,8 @@ def test_mark_inactive_locations_revives_returned_location(
         name="Returned",
         is_cancelled=False,
         is_paused=True,
+        latitude=55.75,
+        longitude=37.62,
     )
     db_session.add(location)
     db_session.flush()
@@ -116,3 +122,44 @@ def test_mark_inactive_locations_revives_returned_location(
     db_session.refresh(location)
     assert location.is_paused is False
     assert result.locations_revived == 1
+
+
+def test_mark_inactive_locations_skips_roving_series(
+    db_session: Session, s95_platform: Platform
+) -> None:
+    """Разъездную серию без координат правило не трогает.
+
+    «С95 и друзья» и «S95 & Friends» — не место, а формат: собираются
+    нерегулярно, и «не действует» после ста тихих дней было бы про них неправдой.
+    На проде 27.08.2026 это были ровно те две строки, которые правило и хотело
+    пометить.
+    """
+    slug = f"roving-{uuid4().hex[:8]}"
+    location = Location(
+        platform_id=s95_platform.id,
+        external_key=slug,
+        name="С95 и друзья",
+        is_cancelled=False,
+        is_paused=False,
+    )
+    db_session.add(location)
+    db_session.flush()
+    db_session.add(
+        EventSummary(
+            platform_id=s95_platform.id,
+            location_id=location.id,
+            external_event_key=f"{slug}:old",
+            event_date=date.today() - timedelta(days=334),
+            event_number=1,
+            summary_hash="roving",
+        )
+    )
+    db_session.commit()
+
+    result = mark_inactive_locations_paused(
+        db_session, inactive_days=100, platform_codes=("s95",)
+    )
+
+    db_session.refresh(location)
+    assert location.is_paused is False
+    assert result.locations_skipped_no_coords >= 1

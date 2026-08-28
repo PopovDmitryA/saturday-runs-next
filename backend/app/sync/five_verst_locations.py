@@ -18,7 +18,14 @@ from app.platform_adapters.five_verst.bulk_parser import (
 )
 from app.platform_adapters.five_verst.http import NotFoundError
 from app.services.admin_notify import notify_admin
-from app.services.location_catalog_cache import flush_location_catalog_caches
+from app.services.location_cancellation_notify import (
+    CancellationChange,
+    notify_cancellation_changes,
+)
+from app.services.location_catalog_cache import (
+    flush_location_catalog_caches,
+    flush_location_page_caches,
+)
 from app.services.location_geo_service import apply_reverse_geocode_to_location
 from app.sync import upsert
 from app.sync.iteration_commit import commit_step, rollback_step
@@ -55,6 +62,10 @@ class LocationRegistrySyncResult:
     coords_fetched_locations: list[str] = field(default_factory=list)
     pause_changed_locations: list[str] = field(default_factory=list)
     cancel_changed_locations: list[str] = field(default_factory=list)
+    # Изменения отмены в разобранном виде — для мониторинга (одно сообщение
+    # админу на весь прогон). В отчёт синка не попадает: там уже есть список
+    # cancel_changed_locations.
+    cancellation_changes: list[CancellationChange] = field(default_factory=list, repr=False)
     merge_request_locations: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -270,6 +281,24 @@ def _friendly_fetch_error(exc: Exception) -> str:
     return message
 
 
+def _record_cancel_change(
+    result: LocationRegistrySyncResult,
+    entry: ParsedRegistryEntry,
+) -> None:
+    """Запомнить смену статуса «отмена» — и для отчёта, и для мониторинга."""
+
+    result.cancel_status_changed += 1
+    _record_location(result, "cancel_changed_locations", entry.slug, entry.name)
+    result.cancellation_changes.append(
+        CancellationChange(
+            platform_code=PLATFORM_CODE,
+            slug=entry.slug,
+            name=entry.name,
+            cancelled=registry_entry_is_cancelled(entry.status),
+        )
+    )
+
+
 def _record_location(result: LocationRegistrySyncResult, field: str, slug: str, name: str | None) -> None:
     label = _location_label(slug, name)
     bucket: list[str] = getattr(result, field)
@@ -307,8 +336,7 @@ def _process_registry_entry(
             result.pause_status_changed += 1
             _record_location(result, "pause_changed_locations", entry.slug, entry.name)
         if cancel_changed:
-            result.cancel_status_changed += 1
-            _record_location(result, "cancel_changed_locations", entry.slug, entry.name)
+            _record_cancel_change(result, entry)
 
         needs_coords = row.latitude is None or row.longitude is None
         if needs_coords and fetch_missing_coordinates:
@@ -337,8 +365,7 @@ def _process_registry_entry(
                         result.pause_status_changed += 1
                         _record_location(result, "pause_changed_locations", entry.slug, entry.name)
                     if cancel_changed:
-                        result.cancel_status_changed += 1
-                        _record_location(result, "cancel_changed_locations", entry.slug, entry.name)
+                        _record_cancel_change(result, entry)
                     row = updated_row
             except NotFoundError:
                 result.locations_skipped_no_coords += 1
@@ -394,8 +421,7 @@ def _process_registry_entry(
         result.pause_status_changed += 1
         _record_location(result, "pause_changed_locations", entry.slug, entry.name)
     if cancel_changed:
-        result.cancel_status_changed += 1
-        _record_location(result, "cancel_changed_locations", entry.slug, entry.name)
+        _record_cancel_change(result, entry)
     result.locations_created += 1
     _record_location(result, "created_locations", entry.slug, entry.name)
 
@@ -469,6 +495,16 @@ def sync_locations_registry(
         # ближайшего старта доедет до карты только к протуханию кэша.
         if result.locations_created or result.locations_updated:
             flush_location_catalog_caches("синк реестра 5 вёрст")
+        # Мониторинг отмен: одно сообщение админу на весь прогон и только когда
+        # что-то поменялось. Отмена касается ближайшей субботы, и узнать о ней
+        # надо раньше, чем из суточной сводки.
+        if result.cancellation_changes:
+            flush_location_page_caches(
+                db,
+                [item.slug for item in result.cancellation_changes],
+                "синк реестра 5 вёрст",
+            )
+            notify_cancellation_changes(result.cancellation_changes)
         return result
     except Exception as exc:
         db.rollback()

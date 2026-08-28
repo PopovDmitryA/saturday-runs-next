@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from bs4 import BeautifulSoup, Tag
 
@@ -41,6 +42,53 @@ TRACK_LENGTH_BOILERPLATE_RE = re.compile(
     r"^Длина\s+трассы\s*[—-]\s*[^.]*\.\s*Замер\s+произведён[^.]*\.\s*",
     re.I,
 )
+
+
+# Отмена ближайшего старта у s95 живёт единственным блоком на странице
+# площадки: <div class="alert alert-danger" role="alert"> с текстом
+# «Внимание! Ближайший старт отменён.» и необязательной строкой
+# «Причина: …» (пример — Иваново, 27.08.2026: «Отмена забега 29 августа.
+# Увидимся на Набережной 5 сентября»). В JSON-реестре это же событие видно
+# как active=false в /events.json, но текста причины там нет вовсе.
+CANCEL_ALERT_RE = re.compile(r"старт[а-яё]*\s+отмен|отмен[её]н[аоы]?\s+ближайш", re.I)
+CANCEL_REASON_RE = re.compile(r"Причина\s*:?\s*(.+)$", re.I | re.S)
+# Причина — текст организатора, и в плашку она попадает как есть. Обрезаем на
+# случай, если туда однажды вставят простыню: на странице локации это одна
+# строка под заголовком.
+CANCEL_REASON_MAX_LEN = 400
+
+
+@dataclass(frozen=True)
+class S95LocationAlert:
+    """Красная плашка со страницы площадки s95."""
+
+    is_cancelled: bool
+    reason: str | None
+    text: str
+
+
+def parse_location_alert(html: str) -> S95LocationAlert | None:
+    """Красная плашка `div.alert-danger` со страницы `/events/{slug}`.
+
+    Возвращает None, когда плашки нет — то есть площадка ничего про отмену не
+    объявляла. Отличать отмену от закрытия приходится именно здесь: в JSON
+    реестре и та, и другая выглядят одинаково (active=false).
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for block in soup.select("div.alert-danger"):
+        text = re.sub(r"\s+", " ", block.get_text(" ", strip=True)).strip()
+        if not text:
+            continue
+        if not CANCEL_ALERT_RE.search(text):
+            continue
+        reason = None
+        match = CANCEL_REASON_RE.search(text)
+        if match:
+            reason = re.sub(r"\s+", " ", match.group(1)).strip(" .;—-") or None
+            if reason:
+                reason = reason[:CANCEL_REASON_MAX_LEN].strip()
+        return S95LocationAlert(is_cancelled=True, reason=reason, text=text)
+    return None
 
 
 def parse_map_url(html: str) -> str | None:

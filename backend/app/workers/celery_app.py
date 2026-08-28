@@ -107,10 +107,15 @@ celery_app.conf.update(
         # :00 — у latest: это свежие субботние протоколы.
         # Правило молчания: после реестра 5 вёрст, чтобы догадка по датам
         # ложилась поверх свежих заявлений систем, а не спорила с ними.
+        # Очередь celery, а не "default": так называется дефолтная очередь
+        # (task_default_queue), и только её слушает сервис worker — он стартует
+        # без -Q. Очередь с буквальным именем "default" не разбирает никто, и
+        # правило молчания с 20.08.2026 копилось в ней невостребованным
+        # (проверено на проде 27.08.2026: ни один статус пересчитан не был).
         "locations-activity-status": {
             "task": "locations.refresh_activity_status",
             "schedule": crontab(hour=21, minute=10),
-            "options": {"queue": "default"},
+            "options": {"queue": "celery"},
         },
         "five-verst-registry-daily": {
             "task": "five_verst_sync.sync_locations_registry",
@@ -143,13 +148,19 @@ celery_app.conf.update(
         # поймать и Дальний Восток, и вечерние догрузки), будни — раз в
         # 30 минут (спецзабеги 1 января и переносы). Очередь общая: запрос
         # один и крошечный, а в five_verst он вставал бы за reconcile.
+        # Очередь приходится задавать явно: без options задачу забирает правило
+        # `five_verst_sync.*` из task_routes и уводит ровно в ту очередь, от
+        # которой её здесь и отводят (обнаружено 27.08.2026 — падал тест
+        # test_five_verst_queue_no_same_minute_collisions).
         "five-verst-protocol-watch-weekend": {
             "task": "five_verst_sync.protocol_upload_watch",
             "schedule": crontab(minute="*", hour="1-23", day_of_week="6,0"),
+            "options": {"queue": "celery"},
         },
         "five-verst-protocol-watch-weekday": {
             "task": "five_verst_sync.protocol_upload_watch",
             "schedule": crontab(minute="0,30", day_of_week="1-5"),
+            "options": {"queue": "celery"},
         },
         # Сверка истории протоколов — только по будням: прогон занимает пару
         # часов (200 протоколов через паузы между фетчами), и в выходные он
@@ -177,6 +188,16 @@ celery_app.conf.update(
         "s95-registry-3days": {
             "task": "s95_sync.sync_locations_registry",
             "schedule": crontab(hour=20, minute=30, day_of_month="*/3"),
+            "options": {"queue": "s95"},
+        },
+        # Отмены ближайшего старта у S95 — четыре раза в сутки, отдельно от
+        # реестра. Реестр ходит раз в трое суток: объявление про субботу
+        # (Иваново, 27.08.2026) при таком темпе могло доехать до сайта уже
+        # после старта. Проход дешёвый: два JSON-запроса на домен и страница
+        # только у тех площадок, что реестр объявил неработающими.
+        "s95-cancellations-watch": {
+            "task": "s95_sync.watch_cancellations",
+            "schedule": crontab(minute=40, hour="0,6,12,18"),
             "options": {"queue": "s95"},
         },
         # Описания площадок S95 (HTML /events/{slug}) — каждые 4 часа по 5 самых

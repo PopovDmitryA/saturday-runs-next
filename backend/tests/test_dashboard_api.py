@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from datetime import date
+from datetime import date, datetime, timezone
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -23,6 +23,7 @@ from app.models import (
     Participant,
     Platform,
     PlatformLink,
+    ProtocolSyncState,
     RunResult,
     SyncJobTrigger,
     User,
@@ -1787,3 +1788,228 @@ def test_sync_refresh_rate_limited(authenticated_client: TestClient) -> None:
         second = authenticated_client.post("/api/sync/refresh/five_verst")
     assert first.status_code == 202
     assert second.status_code == 429
+
+
+def test_list_user_runs_reports_event_participants_total(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """Число участников старта и, значит, доля финишёра.
+
+    При заявленном числе верим ему, иначе — выкачанному протоколу по строкам. А у
+    обрывка (одна наша строка с большим местом; строка вообще без места) честно
+    молчим: иначе «40-й из 40» превратилось бы в «топ 100%». Про parkrun — в
+    test_list_user_runs_participants_total_parkrun_by_country.
+    """
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+    suffix = uuid4().hex[:8]
+    location = Location(
+        platform_id=platform.id,
+        external_key=f"participants-total-{suffix}",
+        name="Participants Total Park",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=f"participants-total-{suffix}",
+        display_name="Total Tester",
+        profile_url=f"https://5verst.ru/userstats/{suffix}/",
+    )
+    other = Participant(
+        platform_id=platform.id,
+        external_user_id=f"participants-total-other-{suffix}",
+        display_name="Someone Else",
+        profile_url=f"https://5verst.ru/userstats/other-{suffix}/",
+    )
+    db_session.add_all([participant, other])
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=platform.id,
+            participant_id=participant.id,
+            external_user_id=participant.external_user_id,
+            external_url=participant.profile_url,
+        )
+    )
+
+    def _event(day: int, declared: int | None) -> Event:
+        event = Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=f"participants-total-{suffix}-{day}",
+            event_date=date(2098, 5, day),
+            event_number=900_000 + day,
+            title=f"Participants Total #{day}",
+            finishers_count=declared,
+        )
+        db_session.add(event)
+        return event
+
+    complete = _event(1, None)
+    declared = _event(8, 120)
+    partial = _event(15, None)
+    stub = _event(22, None)
+    db_session.flush()
+    # Протокол выкачан только у первого старта — только его строкам и верим.
+    db_session.add(
+        ProtocolSyncState(
+            event_id=complete.id,
+            last_protocol_fetched_at=datetime(2098, 5, 1, 12, 0, tzinfo=timezone.utc),
+            run_results_count=3,
+        )
+    )
+
+    def _result(event: Event, who: Participant, position: int | None, tag: str) -> RunResult:
+        return RunResult(
+            event_id=event.id,
+            participant_id=who.id,
+            external_result_key=f"participants-total-{suffix}-{tag}",
+            position=position,
+            finish_time_sec=20 * 60 + (position or 0),
+            finish_time_display="00:20:00",
+            status="finished",
+        )
+
+    db_session.add_all(
+        [
+            # Протокол целиком: три строки, места 1–3 → участников ровно 3.
+            _result(complete, other, 1, "c1"),
+            _result(complete, participant, 2, "c2"),
+            _result(complete, other, 3, "c3"),
+            # Заявлено 120 при одной нашей строке — верим заявленному.
+            _result(declared, participant, 40, "d1"),
+            # Ни заявленного числа, ни полного протокола — участников не знаем.
+            _result(partial, participant, 40, "p1"),
+            # Огрызок из профиля участника: строка есть, места нет — не «1 участник».
+            _result(stub, participant, None, "s1"),
+        ]
+    )
+    db_session.commit()
+
+    response = authenticated_client.get("/api/runs", params={"limit": 200})
+    assert response.status_code == 200
+    by_date = {row["event_date"]: row for row in response.json()}
+
+    assert by_date["2098-05-01"]["participants_total"] == 3
+    assert by_date["2098-05-08"]["participants_total"] == 120
+    assert by_date["2098-05-15"]["participants_total"] is None
+    assert by_date["2098-05-22"]["participants_total"] is None
+
+
+@pytest.mark.parametrize(
+    ("catalogued", "expected"),
+    [(True, 4), (False, None)],
+    ids=["russian", "foreign"],
+)
+def test_list_user_runs_participants_total_parkrun_by_country(
+    authenticated_client: TestClient,
+    db_session: Session,
+    catalogued: bool,
+    expected: int | None,
+) -> None:
+    """parkrun считаем по стране площадки, как и места.
+
+    Русский parkrun собран протоколами целиком — просто считаем строки. От
+    зарубежной площадки в БД лежат только строки наших же участников, так что
+    числа участников там нет вовсе (см. russian_parkrun_location_ids).
+    """
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+
+    parkrun = db_session.query(Platform).filter(Platform.code == "parkrun").one_or_none()
+    if parkrun is None:
+        parkrun = Platform(code="parkrun", name="parkrun")
+        db_session.add(parkrun)
+        db_session.flush()
+
+    suffix = uuid4().hex[:8]
+    location = Location(
+        platform_id=parkrun.id,
+        external_key=f"parkrun-total-{suffix}",
+        name="Parkrun Total Park",
+        country="United Kingdom",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    if catalogued:
+        catalog = LocationCatalog(
+            canonical_name=f"Parkrun Total Park {suffix}",
+            active_platform="five_verst",
+            is_closed=False,
+        )
+        db_session.add(catalog)
+        db_session.flush()
+        db_session.add(
+            LocationCatalogLink(
+                catalog_id=catalog.id,
+                platform_id=parkrun.id,
+                external_key=location.external_key,
+                location_id=location.id,
+            )
+        )
+
+    participant = Participant(
+        platform_id=parkrun.id,
+        external_user_id=f"parkrun-total-{suffix}",
+        display_name="Parkrun Tester",
+        profile_url=f"https://www.parkrun.com/parkrunner/{suffix}/",
+    )
+    other = Participant(
+        platform_id=parkrun.id,
+        external_user_id=f"parkrun-total-other-{suffix}",
+        display_name="Someone Else",
+        profile_url=f"https://www.parkrun.com/parkrunner/other-{suffix}/",
+    )
+    db_session.add_all([participant, other])
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=parkrun.id,
+            participant_id=participant.id,
+            external_user_id=participant.external_user_id,
+            external_url=participant.profile_url,
+        )
+    )
+
+    event = Event(
+        platform_id=parkrun.id,
+        location_id=location.id,
+        external_event_key=f"parkrun-total-{suffix}",
+        event_date=date(2097, 4, 6),
+        event_number=901_000,
+        title="Parkrun Total",
+    )
+    db_session.add(event)
+    db_session.flush()
+    # Записи о выкачке протокола у parkrun не бывает: строки приезжают из
+    # профилей атлетов. Считаем по ним и только по ним.
+    db_session.add_all(
+        [
+            RunResult(
+                event_id=event.id,
+                participant_id=participant.id if place == 2 else other.id,
+                external_result_key=f"parkrun-total-{suffix}-{place}",
+                position=place,
+                finish_time_sec=20 * 60 + place,
+                finish_time_display="00:20:00",
+                status="finished",
+            )
+            for place in range(1, 5)
+        ]
+    )
+    db_session.commit()
+
+    response = authenticated_client.get("/api/runs", params={"limit": 200})
+    assert response.status_code == 200
+    row = next(item for item in response.json() if item["event_date"] == "2097-04-06")
+    assert row["participants_total"] == expected
