@@ -15,6 +15,16 @@ _TIMEOUT = 30.0
 _HEADERS = {"Accept": "application/json", "User-Agent": "saturday-runs/1.0"}
 
 
+class S95RegistryUnavailable(RuntimeError):
+    """Ни один домен s95 не отдал реестр локаций.
+
+    Пустой список раньше возвращался молча, и синк отчитывался «ok» с нулями:
+    24-25.08.2026 s95.ru закрылся от нашего IP (403, затем connection refused),
+    а «Автообновление» пять суток показывало зелёные прогоны — протоколы за
+    22 августа так и не доехали. Обрыв связи обязан валить прогон.
+    """
+
+
 @dataclass(frozen=True)
 class S95ApiLocation:
     domain: str
@@ -106,6 +116,7 @@ def fetch_all_locations() -> list[S95ApiLocation]:
     выпадала из синка целиком: её статус у нас так и оставался вчерашним.
     """
     result: list[S95ApiLocation] = []
+    failures: list[str] = []
 
     for domain in S95_DOMAINS:
         events_by_slug: dict[str, dict] = {}
@@ -114,12 +125,14 @@ def fetch_all_locations() -> list[S95ApiLocation]:
                 slug = item.get("code_name")
                 if slug:
                     events_by_slug[slug] = item
-        except Exception:
-            pass  # events.json не критичен — останутся хотя бы pages.json
+        except Exception as exc:
+            failures.append(f"{domain}/events.json: {exc}")
+            # events.json не критичен — останутся хотя бы pages.json
 
         try:
             pages = fetch_pages(domain)
-        except Exception:
+        except Exception as exc:
+            failures.append(f"{domain}/pages.json: {exc}")
             pages = []  # домен недоступен — но events.json мог и ответить
 
         merged: dict[str, dict] = {}
@@ -161,6 +174,11 @@ def fetch_all_locations() -> list[S95ApiLocation]:
                     longitude=lon,
                 )
             )
+
+    if not result:
+        raise S95RegistryUnavailable(
+            "реестр локаций s95 пуст: " + ("; ".join(failures) or "все домены ответили пустым списком")
+        )
 
     return result
 

@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from app.s95.api_client import fetch_all_locations
+import pytest
+
+from app.s95.api_client import S95RegistryUnavailable, fetch_all_locations
 
 PAGES = [
     {"url": "https://s95.ru/events/lensk.json", "name": "Ленск", "town": "Ленск", "active": True},
@@ -69,3 +71,21 @@ def test_broken_pages_endpoint_leaves_events_alone() -> None:
         rows = {row.slug: row for row in fetch_all_locations()}
 
     assert set(rows) == {"lensk", "ivanovo"}
+
+
+def test_unreachable_domains_raise_instead_of_empty_list() -> None:
+    """Пустой реестр — это обрыв связи, а не «локаций нет».
+
+    24-25.08.2026 s95 закрылся от нашего IP (сперва 403, потом connection
+    refused), а `fetch_all_locations` молча возвращал `[]` — синк отчитывался
+    «ok» с нулями, и пять суток никто не видел, что данных нет.
+    """
+    with (
+        patch("app.s95.api_client.S95_DOMAINS", ["https://s95.ru"]),
+        patch("app.s95.api_client.fetch_pages", side_effect=OSError("Connection refused")),
+        patch("app.s95.api_client.fetch_events", side_effect=OSError("Connection refused")),
+        pytest.raises(S95RegistryUnavailable) as exc_info,
+    ):
+        fetch_all_locations()
+
+    assert "Connection refused" in str(exc_info.value)
