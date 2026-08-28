@@ -20,6 +20,11 @@ import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
+import {
+  FilterGroup,
+  FilterPanel,
+  FilterRow,
+} from "../../components/filters/FilterPanel";
 import { LocationAttendanceJournal } from "../journal/LocationAttendanceJournal";
 
 type SortKey = "date" | "finishers" | "volunteers" | "best_male" | "best_female" | "avg" | "newcomers" | "prs";
@@ -235,6 +240,10 @@ function LocationEventsContent({ slug }: { slug: string }) {
       {/* Два вида одного журнала: «Протоколы» — сводка по стартам,
           «Посещаемость» — матрица «участник × даты». Тот же приём, что в
           рейтингах пробежек и туризма. */}
+      {/* Вид журнала и фильтр систем — в одной панели, как на прочих витринах. */}
+      <FilterPanel>
+        <FilterRow>
+        <FilterGroup label="Вид">
       <div className="aj-tabs loc-events-view" role="tablist" aria-label="Вид журнала">
         {(
           [
@@ -254,6 +263,36 @@ function LocationEventsContent({ slug }: { slug: string }) {
           </button>
         ))}
       </div>
+        </FilterGroup>
+        {view === "protocols" && platformCounts.size > 1 && (
+          <FilterGroup label="Система">
+            <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по системам">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={platformFilter === null}
+                className={platformFilter === null ? "map-mode-tab active" : "map-mode-tab"}
+                onClick={() => setPlatformFilter(null)}
+              >
+                Все ({data.items.length})
+              </button>
+              {[...platformCounts.entries()].map(([code, count]) => (
+                <button
+                  key={code}
+                  type="button"
+                  role="tab"
+                  aria-selected={platformFilter === code}
+                  className={platformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
+                  onClick={() => setPlatformFilter(platformFilter === code ? null : code)}
+                >
+                  {platformCodeLabel(code)} ({formatInt(count)})
+                </button>
+              ))}
+            </div>
+          </FilterGroup>
+        )}
+        </FilterRow>
+      </FilterPanel>
 
       {view === "attendance" ? (
         <section className="loc-section loc-attendance-section">
@@ -266,34 +305,6 @@ function LocationEventsContent({ slug }: { slug: string }) {
         </section>
       ) : (
         <>
-      {/* У большинства локаций протоколы одной системы — фильтровать нечего,
-          и ряд из «Все (N)» и единственной кнопки только утяжеляет страницу. */}
-      {platformCounts.size > 1 && (
-        <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по системам">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={platformFilter === null}
-            className={platformFilter === null ? "map-mode-tab active" : "map-mode-tab"}
-            onClick={() => setPlatformFilter(null)}
-          >
-            Все ({data.items.length})
-          </button>
-          {[...platformCounts.entries()].map(([code, count]) => (
-            <button
-              key={code}
-              type="button"
-              role="tab"
-              aria-selected={platformFilter === code}
-              className={platformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
-              onClick={() => setPlatformFilter(platformFilter === code ? null : code)}
-            >
-              {platformCodeLabel(code)} ({formatInt(count)})
-            </button>
-          ))}
-        </div>
-      )}
-
       <section className="loc-section">
         <TableViewToggle columns={tableColumns} />
         <TableWrap
