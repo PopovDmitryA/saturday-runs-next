@@ -408,7 +408,10 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-top: 0.6rem;
+  /* Своего отступа нет: секция-карточка — grid с gap 12px, а внутри списка
+     строки разделяет его собственный gap. Любой margin здесь складывался
+     с gap и делал шаг до «Почты» шире, чем между VK и Яндексом. */
+  margin-top: -4px;
   padding: 0.85rem 1rem;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -11721,8 +11724,8 @@ a.admin-system-chip:hover {
 .profile-platform-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
+  gap: 4px;
+  padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--bg-muted, var(--surface));
@@ -11768,6 +11771,18 @@ a.admin-system-chip:hover {
   flex: 1;
 }
 
+/* Код участника, время обновления и кнопка ↻ — одной строкой: раньше это
+   были три отдельных блока, и карточка вытягивалась в столбик на треть
+   экрана (просьба Дмитрия сделать компактнее, 28.08.2026). */
+.profile-platform-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
 .profile-platform-card-sync {
   display: flex;
   align-items: center;
@@ -11793,10 +11808,25 @@ a.admin-system-chip:hover {
 
 .profile-platform-card-actions {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   flex-wrap: wrap;
   margin-top: auto;
-  padding-top: 4px;
+  padding-top: 6px;
+}
+
+/* QR — иконка без подписи: смысл читается по значку, а строка кнопок
+   встаёт в один ряд вместо переноса. Высоту равняем руками: у кнопки,
+   ссылки и ghost-кнопки свои паддинги, и ряд получался ступенькой. */
+.profile-platform-card-actions > * {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+}
+
+.profile-platform-card-actions .qr-btn {
+  padding: 0.3rem 0.5rem;
 }
 
 .profile-platform-card-syncing {
