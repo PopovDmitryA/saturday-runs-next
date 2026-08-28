@@ -5,6 +5,7 @@ import { FinishTimeDistribution } from "./FinishTimeDistribution";
 import type { DashboardAnalytics as DashboardAnalyticsData } from "../lib/api";
 import {
   DASHBOARD_ANALYTICS_GROUPS,
+  GROUP_HEADLINE_LIMIT,
   type DashboardAnalyticsGroup,
 } from "../lib/dashboardLayout";
 import { PlatformBadge } from "./PlatformBadge";
@@ -1028,7 +1029,7 @@ export function DashboardAnalytics({
   const panelByKey = new Map(panels.map((panel) => [panel.key, panel.node]));
   const groupedKeys = new Set<string>();
   for (const group of DASHBOARD_ANALYTICS_GROUPS) {
-    for (const key of [...group.headline, ...group.rest, ...group.panels]) {
+    for (const key of [...group.cards, ...group.panels]) {
       groupedKeys.add(key);
     }
   }
@@ -1057,8 +1058,13 @@ export function DashboardAnalytics({
         const card = cardByKey.get(key);
         return card ? [card] : [];
       });
-    const headlineCards = pick(group.headline);
-    const restCards = pick(group.rest);
+    // Витрина — ровно одна строка: берём первые существующие плитки по
+    // приоритету. Полуширинные (частая локация/роль) в строку не встают —
+    // им место только в свёрнутой части.
+    const available = pick(group.cards);
+    const headlineCards = available.filter((card) => !card.half).slice(0, GROUP_HEADLINE_LIMIT);
+    const headlineKeys = new Set(headlineCards.map((card) => card.key));
+    const restCards = available.filter((card) => !headlineKeys.has(card.key));
     const groupPanels = group.panels.flatMap((key) => {
       const node = panelByKey.get(key);
       return node ? [{ key, node }] : [];
