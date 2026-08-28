@@ -148,20 +148,29 @@ export function LocationAttendanceJournal({ slug }: LocationAttendanceJournalPro
     return result;
   }, [data, extraRows]);
 
+  // Итоговая строка следует срезу: в «Бегунах» считает бегунов, в
+  // «Волонтёрах» — волонтёров, в «Все» — и тех, и других.
   const totals = useMemo(() => {
     if (!data) {
       return undefined;
     }
     const values: Record<string, number> = {};
     for (const [date, counters] of Object.entries(data.date_totals)) {
-      values[date] = counters.runners + counters.volunteers;
+      values[date] =
+        kind === "runners"
+          ? counters.runners
+          : kind === "volunteers"
+            ? counters.volunteers
+            : counters.runners + counters.volunteers;
     }
+    const label =
+      kind === "runners" ? "Бегунов" : kind === "volunteers" ? "Волонтёров" : "Участников";
     return {
-      label: "Участников",
+      label,
       values,
-      title: "Бегуны и волонтёры этого старта — по всем участникам года, не только по видимым строкам",
+      title: `${label} на этом старте — по всем за год, не только по видимым строкам`,
     };
-  }, [data]);
+  }, [data, kind]);
 
   const shownRows = data ? data.rows.length + extraRows.length : 0;
   const hasMore = data ? shownRows < data.total_rows : false;
@@ -199,19 +208,27 @@ export function LocationAttendanceJournal({ slug }: LocationAttendanceJournalPro
         </div>
       </div>
 
+      {/* Легенда — под выбранный срез: в «Бегунах» синих клеток не бывает
+          вовсе, и обещать их в легенде незачем. */}
       <div className="aj-legend">
-        <span>
-          <i className="ajm-swatch ajm-dot-run" />
-          пробежка
-        </span>
-        <span>
-          <i className="ajm-swatch ajm-dot-vol" />
-          волонтёрство
-        </span>
-        <span>
-          <i className="ajm-swatch ajm-dot-both" />
-          и то и другое
-        </span>
+        {kind !== "volunteers" && (
+          <span>
+            <i className="ajm-swatch ajm-dot-run" />
+            пробежка
+          </span>
+        )}
+        {kind !== "runners" && (
+          <span>
+            <i className="ajm-swatch ajm-dot-vol" />
+            волонтёрство
+          </span>
+        )}
+        {kind === "all" && (
+          <span>
+            <i className="ajm-swatch ajm-dot-both" />
+            и то и другое
+          </span>
+        )}
         <span>
           <i className="ajm-swatch" />
           пропуск
@@ -225,8 +242,16 @@ export function LocationAttendanceJournal({ slug }: LocationAttendanceJournalPro
           <AttendanceMatrix
             columns={columns}
             rows={rows}
-            totalLabel="Всего"
-            totalHint="Дней активности в выбранном году: день с пробежкой и волонтёрством считается одним днём"
+            totalLabel={
+              kind === "runners" ? "Пробежек" : kind === "volunteers" ? "Волонтёрств" : "Всего"
+            }
+            totalHint={
+              kind === "all"
+                ? "Дней активности в выбранном году: день с пробежкой и волонтёрством считается одним днём"
+                : kind === "runners"
+                  ? "Пробежек на этой площадке в выбранном году"
+                  : "Волонтёрств на этой площадке в выбранном году"
+            }
             totals={totals}
             emptyNote="За этот год стартов не было."
           />

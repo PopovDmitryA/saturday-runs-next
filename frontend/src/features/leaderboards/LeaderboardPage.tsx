@@ -73,7 +73,7 @@ type LeaderboardPageProps = {
 // Колонки-системы больше не сортируются: чтобы посмотреть зачёт одной системы,
 // есть фильтр «Система» — он пересчитывает и место, и «Всего», а не просто
 // переставляет строки по одному столбцу (решение Дмитрия 01.08.2026).
-type SortKey = "rank" | "total" | "best_time" | `light:${string}`;
+type SortKey = "rank" | "total" | "best_time" | "remaining" | `light:${string}`;
 
 /** Фильтр столбца светофоров: показать только побывавших или только тех, кто нет. */
 type LightFilter = "yes" | "no";
@@ -172,6 +172,31 @@ const COUNT_BY_HINT =
 const CITIES_HINT =
   "Сколько РАЗНЫХ городов набрано засчитанными локациями: несколько парков " +
   "одного города дают один город.";
+
+// Прогноз завершения туризма — перенос дашборда Grafana «Прогноз даты
+// завершения туризма» (просьба Дмитрия 27.08.2026). Знаменатель остатка — те
+// же действующие площадки каталога, что показывает карта.
+const REMAINING_WHAT: Record<CountBy, string> = {
+  locations: "действующих локаций",
+  cities: "городов с действующими локациями",
+  regions: "регионов с действующими локациями",
+};
+
+function remainingHint(countBy: CountBy): string {
+  return (
+    `Сколько ${REMAINING_WHAT[countBy]} участник ещё не закрыл. Считаются ` +
+    "действующие площадки 5 вёрст, С95 и RunPark; закрытые, «скоро» и весь " +
+    "parkrun в остаток не идут — приехать туда уже нельзя. Прочерк — у тех, " +
+    "кто бегал только в parkrun: считать остаток им не от чего."
+  );
+}
+
+const FORECAST_HINT =
+  "Когда туризм закончится, если с ближайшего старта брать по новой локации " +
+  "каждую субботу: в расписании учтены бонусные старты 1 января (их два) и " +
+  "12 июня. Пропуск сдвигает дату, новая площадка в каталоге — тоже. " +
+  "У тех, кто бегал только в parkrun, прогноза нет: в действующих системах " +
+  "они ещё не стартовали, и считать дату не из чего.";
 
 const REGIONS_HINT =
   "Сколько РАЗНЫХ регионов набрано засчитанными локациями. Зарубежные старты " +
@@ -516,6 +541,27 @@ function WeekLocationCell({ item }: { item?: WeekLocation | null }) {
   );
 }
 
+function ForecastDate({
+  remaining,
+  date,
+}: {
+  remaining?: number | null;
+  date?: string | null;
+}) {
+  // Остаток ноль — квест закрыт: даты у такой строки нет и быть не может.
+  if (remaining === 0) {
+    return (
+      <span className="lb-forecast-done" title="Все действующие локации уже закрыты">
+        всё пройдено
+      </span>
+    );
+  }
+  if (!date) {
+    return <span className="lb-zero">—</span>;
+  }
+  return <span className="lb-cell lb-forecast">{formatDate(date)}</span>;
+}
+
 function GeoCount({ value }: { value?: number | null }) {
   if (value == null) {
     return <span className="lb-zero">—</span>;
@@ -671,6 +717,13 @@ function sortValue(row: LeaderboardRow, key: SortKey): number {
     // Строки без времени уходят в конец при любом направлении.
     const seconds = row.best_time_sec;
     return seconds != null && seconds > 0 ? -seconds : Number.NEGATIVE_INFINITY;
+  }
+  if (key === "remaining") {
+    // «Осталось» интересно с малого конца — кто ближе всех к финишу квеста,
+    // поэтому инвертируем, как у лучшего времени. Прогноз по дате сортировать
+    // отдельно незачем: он растёт ровно с остатком.
+    const left = row.remaining_total;
+    return left != null ? -left : Number.NEGATIVE_INFINITY;
   }
   return row.total;
 }
@@ -1071,6 +1124,9 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
   const hasCountByFilter = countByOptions.length > 1;
   const hasGeoColumns = hasCountByFilter;
   const hasWeekLocations = data?.has_week_locations ?? false;
+  // Прогноз завершения туризма: колонки «Осталось» и «Прогноз». Есть ли они у
+  // этого варианта рейтинга — решает бэкенд (в зачёте parkrun прогноза нет).
+  const hasForecast = data?.has_forecast ?? false;
   // В туризме «Всего» называет единицу зачёта («Всего городов»): рядом стоят
   // столбцы «Городов» и «Регионов», и без уточнения непонятно, что в итоге.
   const totalLabel = hasCountByFilter
@@ -1090,6 +1146,10 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
           "lb-table-week"
         : "";
   const wideTable = wideTableKind !== "";
+  // Фильтр «по системе» убирает колонки-системы целиком, и жёсткая раскладка
+  // набора становится шире фактической таблицы. Модификатор возвращает
+  // min-width к реальной сумме колонок (см. .lb-table-no-platforms).
+  const noPlatformColumns = columns.length === 0;
 
   // Единый механизм со всеми таблицами сайта: краткий вид набирает колонки под
   // ширину блока. Порядок — по важности, а не по выводу; колонки систем стоят
@@ -1117,6 +1177,14 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     if (hasGeoColumns) {
       list.push({ key: "geo", width: 160 });
     }
+    // «Прогноз» — главный ответ этого рейтинга после «Всего», поэтому стоит
+    // высоко в порядке важности. «Осталось» уходит гораздо ниже (ключ remaining
+    // после «Последней недели», решение Дмитрия 28.08.2026): дата отвечает на
+    // вопрос целиком, а остаток — уточнение к ней. Ширины равны CSS-ширинам
+    // колонок, иначе краткий вид ошибётся в том, что влезло.
+    if (hasForecast) {
+      list.push({ key: "forecast", width: 92 });
+    }
     if (isHomeDistance) {
       list.push({ key: "home", width: 232 });
     }
@@ -1132,12 +1200,19 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     if (hasWeekLocations) {
       list.push({ key: "week", width: 176 });
     }
+    // «Осталось» — предпоследняя по важности: прячется раньше всех, кроме
+    // колонок систем. В самой таблице колонка при этом остаётся на своём
+    // месте — слева от «Прогноза», а не дописывается в конец.
+    if (hasForecast) {
+      list.push({ key: "remaining", width: 84 });
+    }
     if (columns.length > 0) {
       list.push({ key: "platforms", width: columns.length * numWidth });
     }
     return list;
   }, [
     columns.length,
+    hasForecast,
     hasGeoColumns,
     hasWeekLocations,
     hasWinExtras,
@@ -1193,6 +1268,8 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
       locations_total: me.locations_total,
       cities_total: me.cities_total,
       regions_total: me.regions_total,
+      remaining_total: me.remaining_total,
+      forecast_date: me.forecast_date,
       week_location: me.week_location,
     };
     return [...data.rows, myRow];
@@ -1424,7 +1501,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
               />
             )}
 
-            <div className="lb-controls-row">
+            <div className="lb-controls-shell">
               <div className="lb-controls-left">
                 {hasGenderSplit && (
                   <div className="lb-gender">
@@ -1520,6 +1597,10 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         </div>
                       </div>
                     )}
+                    {/* «Система» и поиск занимают отдельную строку: поле
+                        встаёт справа от фильтра систем, а не уезжает под ряд
+                        (просьба Дмитрия 27.08.2026). */}
+                    <div className="lb-filters-tail">
                     {hasPlatformFilter && (
                       <div className="lb-visits">
                         <span className="lb-visits-label">
@@ -1544,15 +1625,6 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         </div>
                       </div>
                     )}
-                    <div className="lb-search-inline">
-                      <input
-                        className="lb-search"
-                        type="search"
-                        placeholder="Поиск по имени…"
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                      />
-                    </div>
                     {hasRoleFilter && roleCatalog.length > 0 && (
                       <div className="lb-visits lb-roles-filter">
                         <span className="lb-visits-label">
@@ -1572,6 +1644,19 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         </button>
                       </div>
                     )}
+                    {/* Поиск — последний в ряду фильтров и прижат вправо: на
+                        широком экране он встаёт справа от «Системы», на узком
+                        переезжает вместе с ней (просьба Дмитрия 27.08.2026). */}
+                    <div className="lb-controls-right">
+                      <input
+                        className="lb-search"
+                        type="search"
+                        placeholder="Поиск по имени…"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                      />
+                    </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1617,6 +1702,25 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                               Регионов <InfoHint text={REGIONS_HINT} />
                             </span>
                             <GeoCount value={me.regions_total} />
+                          </span>
+                        </>
+                      )}
+                      {hasForecast && (
+                        <>
+                          <span className="lb-me-value">
+                            <span className="lb-me-platform">
+                              Осталось <InfoHint text={remainingHint(effectiveCountBy)} />
+                            </span>
+                            <GeoCount value={me.remaining_total} />
+                          </span>
+                          <span className="lb-me-value">
+                            <span className="lb-me-platform">
+                              Прогноз <InfoHint text={FORECAST_HINT} />
+                            </span>
+                            <ForecastDate
+                              remaining={me.remaining_total}
+                              date={me.forecast_date}
+                            />
                           </span>
                         </>
                       )}
@@ -1782,9 +1886,9 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                 ref={tableRef}
                 className={`data-table lb-table${
                   fixedLayout ? ` lb-table-fixed ${wideTableKind}` : ""
-                }${showFull ? " lb-table-full" : ""}${
-                  isHomeDistance ? " lb-table-wide-values" : ""
-                }`}
+                }${fixedLayout && noPlatformColumns ? " lb-table-no-platforms" : ""}${
+                  showFull ? " lb-table-full" : ""
+                }${isHomeDistance ? " lb-table-wide-values" : ""}`}
                 style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
               >
                 <thead>
@@ -1893,6 +1997,19 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                           Регионов <InfoHint text={REGIONS_HINT} />
                         </th>
                       </>
+                    )}
+                    {show("remaining") &&
+                      hasForecast &&
+                      headerCell(
+                        "remaining",
+                        "Осталось",
+                        "lb-col-num lb-col-geo",
+                        remainingHint(effectiveCountBy),
+                      )}
+                    {show("forecast") && hasForecast && (
+                      <th className="lb-col-forecast">
+                        Прогноз <InfoHint text={FORECAST_HINT} />
+                      </th>
                     )}
                     {show("home") && isHomeDistance && (
                       <>
@@ -2020,6 +2137,19 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                               <GeoCount value={row.regions_total} />
                             </td>
                           </>
+                        )}
+                        {show("remaining") && hasForecast && (
+                          <td className="lb-col-num lb-col-geo">
+                            <GeoCount value={row.remaining_total} />
+                          </td>
+                        )}
+                        {show("forecast") && hasForecast && (
+                          <td className="lb-col-forecast">
+                            <ForecastDate
+                              remaining={row.remaining_total}
+                              date={row.forecast_date}
+                            />
+                          </td>
                         )}
                         {show("home") && isHomeDistance && (
                           <>

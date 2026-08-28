@@ -147,3 +147,35 @@ def test_attendance_row_payload_marks_run_and_roles() -> None:
     item = payload["items"][0]
     assert item["run"] is True
     assert item["roles"] == ["Фотограф"]
+
+
+def test_attendance_kind_is_a_slice_not_a_row_filter() -> None:
+    """«Бегуны»/«Волонтёры» режут САМИ КЛЕТКИ, а не только набор строк.
+
+    До 28.08.2026 фильтр лишь выбрасывал тех, у кого нет пробежек (или
+    волонтёрств), а клетки оставались прежними — у человека с обеими ролями
+    переключатель не менял ровным счётом ничего.
+    """
+    person = _AttendancePerson(name="Иван ИВАНОВ")
+    person.run_dates.add(date(2026, 2, 7))
+    person.run_dates.add(date(2026, 2, 14))
+    person.vol_roles[date(2026, 2, 7)] = {"Маршал"}
+    person.vol_roles[date(2026, 2, 21)] = {"Фотограф"}
+
+    runners = _attendance_row_payload(person, kind="runners")
+    assert runners["year_total"] == 2
+    assert [item["date"] for item in runners["items"]] == ["2026-02-14", "2026-02-07"]
+    # В беговом срезе роли не показываются даже там, где они были.
+    assert all(item["roles"] == [] for item in runners["items"])
+
+    volunteers = _attendance_row_payload(person, kind="volunteers")
+    assert volunteers["year_total"] == 2
+    assert [item["date"] for item in volunteers["items"]] == ["2026-02-21", "2026-02-07"]
+    assert all(item["run"] is False for item in volunteers["items"])
+
+    # «Все» — дни обеих ролей, день с пробежкой и волонтёрством считается один раз.
+    both = _attendance_row_payload(person, kind="all")
+    assert both["year_total"] == 3
+    day_with_both = next(item for item in both["items"] if item["date"] == "2026-02-07")
+    assert day_with_both["run"] is True
+    assert day_with_both["roles"] == ["Маршал"]

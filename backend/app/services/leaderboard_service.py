@@ -43,6 +43,7 @@ from app.services.location_catalog_service import (
     is_foreign_location,
     russian_parkrun_location_ids,
 )
+from app.services.location_map_service import MAP_LIVE_PLATFORMS
 from app.services.location_openings_service import (
     OPENING_EVENT_CONDITION,
     OPENING_EVENT_JOIN,
@@ -114,6 +115,39 @@ MAX_MIN_VISITS = 5
 # (возрождение карты из старой Grafana, просьба Дмитрия 15.08.2026). Глубина
 # расчёта — TOURIST_MAP_LIMIT, объявлен рядом с TOP_LIMIT.
 TOURIST_MAP_METRICS: tuple[str, ...] = ("locations", "volunteer_locations")
+
+# Прогноз завершения туризма (перенос дашборда Grafana «Прогноз даты завершения
+# туризма», просьба Дмитрия 27.08.2026): две колонки — сколько площадок ещё не
+# закрыто и когда квест закончится, если брать по новой площадке каждый старт.
+# Только беговой туризм: волонтёрский туризм квестом никто не звал, а колонки
+# там стоили бы той же ширины таблицы. Расширить — дописать метрику сюда.
+FORECAST_METRICS: tuple[LeaderboardMetric, ...] = ("locations",)
+
+# Где сегодня ещё можно взять новую площадку. parkrun сюда не входит: в России
+# он не работает с 2022 года, и его непосещённые площадки — не «осталось», а
+# «уже никогда» (та же граница, что у карты: MAP_LIVE_PLATFORMS).
+FORECAST_LIVE_PLATFORMS: tuple[str, ...] = MAP_LIVE_PLATFORMS
+
+# Прогноз считаем только тем, кто хотя бы раз финишировал в действующей
+# системе (5 вёрст, С95, RunPark). Решение Дмитрия 27.08.2026: в САМОМ рейтинге
+# туристы паркран-эпохи остаются — среди них есть и те, кто просто не завёл
+# аккаунт на сайте, и те, кто перестал бегать, и их коллекции честно заработаны.
+# Но обещать им дату завершения нельзя: в действующих системах они ещё не
+# стартовали, и «каждую субботу по новой площадке» им считать не из чего —
+# у таких строк колонки «Осталось» и «Прогноз» пустые.
+# Проверяется по ВСЕЙ истории участника, ДО фильтра «по системе»: иначе в
+# зачёте одной системы прогноз пропал бы у всех разом.
+
+# Сколько стартов даёт один день. Суббота — обычная возможность, 1 января у
+# 5 вёрст традиционно два старта (в один день реально закрыть две площадки),
+# 12 июня — один дополнительный. Ровно этот набор считал дашборд Grafana.
+_NEW_YEAR_STARTS = 2
+_JUNE_HOLIDAY_STARTS = 1
+
+# Горизонт расписания. Сегодняшним 255 действующим площадкам хватило бы и пяти
+# лет, но у новичка с одной пробежкой остаток почти полный, а каталог растёт —
+# запас держим заведомо большой, цикл по дням от этого не дорожает.
+FORECAST_HORIZON_YEARS = 60
 
 CountBy = Literal["locations", "cities", "regions"]
 COUNT_BY_VALUES: tuple[str, ...] = ("locations", "cities", "regions")
@@ -228,7 +262,14 @@ REFRESH_INTERVAL_HOURS = 2
 # «+1» (22.08.2026). Здесь меняется не форма payload'а, а значение поля:
 # старые снапшоты продолжали бы показывать повтор рядом с плюсом до конца TTL,
 # и правка выглядела бы неработающей.
-CACHE_KEY_PREFIX = "leaderboards:v7"
+# v8 — в строках рейтинга туризма появились «осталось» и дата прогноза
+# (27.08.2026): старые снапшоты этих полей не несут, и колонки стояли бы
+# пустыми до конца TTL.
+# v9 — из рейтинга туризма убраны те, кто бегал только в parkrun (27.08.2026):
+# меняется сам состав таблицы и порог входа, ждать TTL незачем.
+# v10 — они же возвращены в рейтинг, но без прогноза (27.08.2026, решение
+# Дмитрия): состав таблицы и порог входа меняются обратно.
+CACHE_KEY_PREFIX = "leaderboards:v10"
 
 # Победные рейтинги показывают две дополнительные колонки: глобальный рекорд
 # участника и последнюю победу (у win_locations — последнюю НОВУЮ локацию с
@@ -1125,6 +1166,10 @@ class _Entity:
     top_role_count: int = 0
     # Детализация «роль × система × волонтёрств» — раскрывается по клику на строке.
     role_details: list[dict[str, object]] = field(default_factory=list)
+    # Только у рейтингов с прогнозом (FORECAST_METRICS): сколько действующих
+    # единиц зачёта участник ещё не закрыл. Дата прогноза считается из этого
+    # числа уже в снапшоте — она одна и та же у всех с одинаковым остатком.
+    remaining_total: int | None = None
     # Только у туристических рейтингов: сколько площадок / городов / регионов
     # набрано. Одно из этих трёх чисел совпадает с total — какое, решает
     # фильтр «единица зачёта» (см. CountBy).
@@ -1422,6 +1467,120 @@ def _location_geo_map(db: Session) -> dict[str, _LocationGeo]:
     return geo_map
 
 
+@dataclass(frozen=True)
+class _OpenLocations:
+    """Действующие площадки каталога: identity-ключ -> системы, где сегодня
+    ещё можно стартовать.
+
+    Это знаменатель прогноза: «осталось» — площадки отсюда, куда участник ещё
+    не доехал. Закрытые, «скоро» и весь parkrun в него не входят — приехать
+    туда нельзя, и обещать им дату было бы враньём.
+    """
+
+    by_identity: dict[str, frozenset[str]]
+
+    def unit_keys(
+        self, unit_key: Callable[[str], str | None], platform: str = "all"
+    ) -> set[str]:
+        """Единицы зачёта (площадки / города / регионы), которые ещё можно взять.
+
+        platform — тот же фильтр «по одной системе», что и у самого рейтинга:
+        в зачёте 5 вёрст знаменатель — только её действующие площадки.
+        """
+        keys: set[str] = set()
+        for identity, codes in self.by_identity.items():
+            if platform != "all" and platform not in codes:
+                continue
+            key = unit_key(identity)
+            if key is not None:
+                keys.add(key)
+        return keys
+
+
+def _open_locations(db: Session) -> _OpenLocations:
+    """Площадки, где сегодня ещё можно взять новую локацию.
+
+    Отбор совпадает с каталогом и картой (см. map_location_filter): строка
+    действующей системы, помеченная официальной, без паузы и не «скоро».
+    Пауза читается по самой строке, а не по каталожному узлу: узел, живой хотя
+    бы в одной системе, обязан остаться в знаменателе зачёта «все системы» и
+    выпасть из зачёта той системы, где площадка встала.
+    """
+    catalog_index = LocationCatalogIndex(db)
+    rows = (
+        db.query(Location, Platform.code)
+        .join(Platform, Location.platform_id == Platform.id)
+        .filter(Platform.code.in_(FORECAST_LIVE_PLATFORMS))
+        .filter(Location.is_official_map.is_(True))
+        .filter(Location.is_paused.is_(False))
+        .filter(Location.is_upcoming.is_(False))
+        .all()
+    )
+    by_identity: dict[str, set[str]] = {}
+    for location, platform_code in rows:
+        identity = catalog_index.canonical_identity_key(location, platform_code)
+        by_identity.setdefault(identity, set()).add(platform_code)
+    return _OpenLocations(
+        by_identity={
+            identity: frozenset(codes) for identity, codes in by_identity.items()
+        }
+    )
+
+
+def forecast_available(metric: str, platform: str) -> bool:
+    """Есть ли у этого варианта рейтинга прогноз завершения.
+
+    В зачёте parkrun его нет: система закрыта, новых площадок в ней не будет, и
+    колонки «осталось» с датой обещали бы несуществующий квест.
+    """
+    return metric in FORECAST_METRICS and (
+        platform == "all" or platform in FORECAST_LIVE_PLATFORMS
+    )
+
+
+def start_schedule(latest: date, needed: int) -> list[date]:
+    """Ближайшие возможности взять новую площадку — по одной дате на старт.
+
+    Расписание то же, что считал дашборд Grafana: каждая суббота плюс
+    традиционные бонусные старты — 1 января (в этот день стартов два, и за
+    сутки реально закрыть две площадки) и 12 июня. Если бонусный день сам
+    выпал на субботу, он не добавляет к своим стартам ещё и субботний: день
+    один, и возможностей в нём столько, сколько стартов.
+
+    Отсчёт идёт строго после latest — последней даты, которая уже в
+    протоколах: та суббота отбегана и новой площадки больше не даст.
+    """
+    if needed <= 0:
+        return []
+    slots: list[date] = []
+    cursor = latest + timedelta(days=1)
+    horizon = date(latest.year + FORECAST_HORIZON_YEARS, 12, 31)
+    while cursor <= horizon and len(slots) < needed:
+        if (cursor.month, cursor.day) == (1, 1):
+            starts = _NEW_YEAR_STARTS
+        elif (cursor.month, cursor.day) == (6, 12):
+            starts = _JUNE_HOLIDAY_STARTS
+        elif cursor.weekday() == 5:
+            starts = 1
+        else:
+            starts = 0
+        slots.extend([cursor] * starts)
+        cursor += timedelta(days=1)
+    return slots[:needed]
+
+
+def forecast_finish_date(latest: date, remaining: int) -> date | None:
+    """Когда закончится туризм, если брать по новой площадке каждый старт.
+
+    None — либо брать уже нечего (квест закрыт), либо площадок больше, чем
+    стартов на горизонте расчёта.
+    """
+    if remaining <= 0:
+        return None
+    slots = start_schedule(latest, remaining)
+    return slots[-1] if len(slots) == remaining else None
+
+
 def _location_coordinates_map(db: Session) -> dict[str, tuple[float, float]]:
     """identity-ключ площадки -> её координаты.
 
@@ -1550,6 +1709,7 @@ class _MetricSource:
         self._links: dict[UUID, _SiteLink] | None = None
         self._identity: tuple[dict[UUID, str], dict[str, str], dict[str, str]] | None = None
         self._geo: dict[str, _LocationGeo] | None = None
+        self._open_locations: _OpenLocations | None = None
         self._coordinates: dict[str, tuple[float, float]] | None = None
         self._manual_homes: dict[UUID, str] | None = None
         self._home_eligible: set[str] | None = None
@@ -1579,6 +1739,13 @@ class _MetricSource:
         if self._geo is None:
             self._geo = _location_geo_map(self.db)
         return self._geo
+
+    def open_locations(self) -> _OpenLocations:
+        """Действующие площадки — знаменатель прогноза завершения туризма.
+        Справочник того же рода, что geo_map, и переживает release()."""
+        if self._open_locations is None:
+            self._open_locations = _open_locations(self.db)
+        return self._open_locations
 
     def coordinates_map(self) -> dict[str, tuple[float, float]]:
         """Координаты площадок — справочник того же рода, что geo_map."""
@@ -2458,6 +2625,24 @@ def _unit_counts(
     return _UnitTally(total=total, week=week, values=values, new_identities=new_identities)
 
 
+def _remaining_units(
+    counted: dict[str, _LocationVisits],
+    getters: dict[str, Callable[[str], str | None]],
+    count_by: str,
+    open_units: set[str],
+) -> int:
+    """Сколько действующих единиц зачёта участник ещё не закрыл.
+
+    Вычитаем именно из действующих: закрытые площадки в его коллекции остаток
+    не уменьшают (их и так никто не считает), а посещённая когда-то площадка,
+    которая сегодня на паузе, из остатка выпадает вместе со всеми — приехать
+    туда всё равно нельзя.
+    """
+    unit_key = getters[count_by if count_by in getters else "locations"]
+    visited = {unit_key(identity) for identity in counted}
+    return len(open_units - visited)
+
+
 def _collect_location_entities(
     source: _MetricSource,
     *,
@@ -2468,6 +2653,7 @@ def _collect_location_entities(
     count_by: str = "locations",
     with_geo: bool = False,
     role_filter: frozenset[str] | None = None,
+    with_forecast: bool = False,
 ) -> dict[str, _Entity]:
     """Уникальные локации участника. with_last_win — для рейтинга локаций с
     победами: дополнительно заполняет последнюю НОВУЮ локацию (её первая
@@ -2477,11 +2663,23 @@ def _collect_location_entities(
     выборку (мерж по identity тут ни при чём — сырые строки уже отфильтрованы
     по коду системы, так что дополнительной SQL-выборки не нужно). with_geo —
     туристические рейтинги: считать заодно города и регионы (и ранжировать по
-    count_by), плюс заполнять «Последнюю неделю»."""
+    count_by), плюс заполнять «Последнюю неделю». with_forecast — прогноз
+    завершения туризма: сколько действующих единиц зачёта ещё не закрыто (у тех,
+    кто бегал только в parkrun, прогноза нет — см. live_system_entities)."""
     links = source.links()
     identity_by_location, identity_names, identity_slugs = source.identity_maps()
     getters = _unit_key_getters(source.geo_map() if with_geo else {})
     units = COUNT_BY_VALUES if with_geo else ("locations",)
+    # Знаменатель прогноза общий на весь рейтинг: действующие единицы зачёта в
+    # выбранной системе. Считается один раз, дальше на каждого участника
+    # остаётся только вычесть его коллекцию.
+    open_units = (
+        source.open_locations().unit_keys(
+            getters[count_by if count_by in getters else "locations"], platform
+        )
+        if with_forecast
+        else None
+    )
     rows = (
         _volunteer_location_rows_filtered(source, role_filter)
         if role_filter is not None
@@ -2491,7 +2689,12 @@ def _collect_location_entities(
     per_entity: dict[str, dict[str, _LocationVisits]] = {}
     meta: dict[str, tuple[UUID, _SiteLink | None]] = {}
     pids_by_entity: dict[str, set[UUID]] = {}
+    # Кто вообще бегал в действующих системах — считаем по всем строкам, ДО
+    # фильтра «по системе»: только этим строкам полагается прогноз.
+    live_system_entities: set[str] = set()
     for pid, code, location_id, first_date, visits, week_visits in rows:
+        if open_units is not None and code in FORECAST_LIVE_PLATFORMS:
+            live_system_entities.add(_entity_key(pid, links.get(pid)))
         if platform != "all" and code != platform:
             continue
         identity = identity_by_location.get(location_id, str(location_id))
@@ -2534,6 +2737,8 @@ def _collect_location_entities(
             entity.locations_total = tallies["locations"].total
             entity.cities_total = tallies["cities"].total
             entity.regions_total = tallies["regions"].total
+        if open_units is not None and key in live_system_entities:
+            entity.remaining_total = _remaining_units(counted, getters, count_by, open_units)
         if with_last_win:
             entity.participant_ids = pids_by_entity.get(key, {pid})
             _apply_last_win(
@@ -2916,6 +3121,7 @@ def _build_snapshot(
             platform=platform,
             count_by=count_by,
             with_geo=True,
+            with_forecast=forecast_available(metric, platform),
         )
     elif metric == "volunteer_locations":
         entities = _collect_location_entities(
@@ -2985,6 +3191,16 @@ def _build_snapshot(
     if metric in WIN_EXTRAS_METRICS:
         _attach_best_times(db, {entity.key: entity for entity in visible})
 
+    # Прогноз: одна лесенка стартов на весь снапшот. Самый длинный остаток
+    # среди видимых строк задаёт её глубину, дальше дата берётся по номеру.
+    remainders = [e.remaining_total for e in visible if e.remaining_total is not None]
+    slots = start_schedule(latest, max(remainders)) if remainders else []
+    forecast_by_remaining = {
+        remaining: slots[remaining - 1]
+        for remaining in set(remainders)
+        if 0 < remaining <= len(slots)
+    }
+
     rows: list[dict[str, object]] = []
     for entity in visible:
         rank = _ranked(totals_desc, entity.total)
@@ -3003,6 +3219,12 @@ def _build_snapshot(
             "total": entity.total,
             "total_delta": entity.week,
         }
+        if entity.remaining_total is not None:
+            row["remaining_total"] = entity.remaining_total
+            # Дата зависит только от остатка, поэтому расписание считаем один
+            # раз на снапшот, а строкам раздаём готовые даты.
+            finish = forecast_by_remaining.get(entity.remaining_total)
+            row["forecast_date"] = finish.isoformat() if finish is not None else None
         if entity.locations_total is not None:
             row["locations_total"] = entity.locations_total
             row["cities_total"] = entity.cities_total
@@ -3364,6 +3586,9 @@ def get_leaderboard(
         # на бэкенде, фронт их не повторяет.
         "count_by_options": list(count_by_values(metric)),
         "has_week_locations": metric in WEEK_LOCATIONS_METRICS,
+        # Колонки «Осталось» и «Прогноз»: есть ли они у этого варианта рейтинга
+        # (в зачёте parkrun прогноза нет — система закрыта).
+        "has_forecast": forecast_available(metric, platform_resolved),
         # Фильтр «только очевидный дом»: есть ли он у рейтинга и включён ли.
         "has_home_filter": metric in AMBIGUOUS_HOME_METRICS,
         "hide_ambiguous_home": hide_ambiguous,
@@ -4021,6 +4246,8 @@ class _MyLocationRow:
     locations_total: int | None = None
     cities_total: int | None = None
     regions_total: int | None = None
+    # Прогноз завершения туризма: сколько действующих единиц зачёта не закрыто.
+    remaining_total: int | None = None
     # Площадки, давшие прибавку недели — из них выбирается «Последняя неделя».
     new_identities: set[str] = field(default_factory=set)
 
@@ -4036,6 +4263,7 @@ def _my_location_values(
     platform: str = "all",
     count_by: str = "locations",
     with_geo: bool = False,
+    with_forecast: bool = False,
 ) -> _MyLocationRow:
     if not participant_ids:
         return _MyLocationRow(values={}, total=0, week=0)
@@ -4050,11 +4278,15 @@ def _my_location_values(
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     getters = _unit_key_getters(_location_geo_map(db) if with_geo else {})
     identities: dict[str, _LocationVisits] = {}
+    has_live_system = False
     for _pid, code, location_id, first_date, visits, week_visits in rows:
+        if code in FORECAST_LIVE_PLATFORMS:
+            has_live_system = True
         if platform != "all" and code != platform:
             continue
         identity = identity_by_location.get(location_id, str(location_id))
         _merge_visit_row(identities, identity, code, first_date, int(visits), int(week_visits))
+
     counted = {
         identity: visits for identity, visits in identities.items() if visits.counts(min_visits)
     }
@@ -4071,6 +4303,14 @@ def _my_location_values(
         row.locations_total = tallies["locations"].total
         row.cities_total = tallies["cities"].total
         row.regions_total = tallies["regions"].total
+    # Прогноз — только тем, кто бегал в действующих системах: у паркран-туристов
+    # он был бы обещанием из ниоткуда (см. комментарий у FORECAST_LIVE_PLATFORMS).
+    if with_forecast and has_live_system:
+        # Тот же знаменатель, что в таблице: действующие площадки каталога.
+        open_units = _open_locations(db).unit_keys(
+            getters[count_by if count_by in getters else "locations"], platform
+        )
+        row.remaining_total = _remaining_units(counted, getters, count_by, open_units)
     if with_last_win:
         row.last_win = _resolve_last_win(
             {identity: visits.first_date for identity, visits in counted.items()},
@@ -4276,6 +4516,7 @@ def get_my_leaderboard_row(
             platform=platform_resolved,
             count_by=unit,
             with_geo=True,
+            with_forecast=forecast_available(metric, platform_resolved),
         )
         values, total, week = my_geo.values, my_geo.total, my_geo.week
     elif metric == "openings":
@@ -4360,6 +4601,20 @@ def get_my_leaderboard_row(
         best = _best_times(db, participant_ids)
         my_best_time = min(best.values()) if best else None
 
+    my_remaining = my_geo.remaining_total if my_geo is not None else None
+    # Дату считаем от той же последней субботы, что и таблица: свой снапшот
+    # мог быть посчитан до свежего протокола, и «моя» дата иначе разошлась бы
+    # со строками рейтинга на неделю.
+    snapshot_latest_raw = snapshot.get("latest_event_date")
+    forecast_latest = (
+        date.fromisoformat(str(snapshot_latest_raw)) if snapshot_latest_raw else latest
+    )
+    my_forecast = (
+        forecast_finish_date(forecast_latest, my_remaining)
+        if my_remaining is not None and forecast_latest is not None
+        else None
+    )
+
     gender_mismatch = False
     if not included and resolved != "all" and metric in GENDERED_METRICS:
         account_gender = _account_gender(db, participant_ids)
@@ -4373,6 +4628,10 @@ def get_my_leaderboard_row(
         "locations_total": my_geo.locations_total if my_geo else my_locations_total,
         "cities_total": my_geo.cities_total if my_geo else None,
         "regions_total": my_geo.regions_total if my_geo else None,
+        # Прогноз завершения туризма — по тому же расписанию стартов, что в
+        # таблице (латест берётся из снапшота, поэтому дата совпадает).
+        "remaining_total": my_remaining,
+        "forecast_date": my_forecast.isoformat() if my_forecast is not None else None,
         "week_location": my_week_location,
         "display_name": user.display_name,
         "site_serial_id": user.serial_id,

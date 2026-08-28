@@ -674,22 +674,42 @@ def _collect_attendance_people(
     return people
 
 
-def _attendance_row_payload(person: _AttendancePerson, *, me: bool = False) -> dict[str, object]:
+def _attendance_dates(person: _AttendancePerson, kind: str) -> set[date]:
+    """Дни человека в выбранном разрезе журнала."""
+    if kind == "runners":
+        return set(person.run_dates)
+    if kind == "volunteers":
+        return set(person.vol_roles)
+    return person.dates
+
+
+def _attendance_row_payload(
+    person: _AttendancePerson, *, me: bool = False, kind: str = "all"
+) -> dict[str, object]:
+    """Строка журнала в выбранном разрезе.
+
+    kind — это именно СРЕЗ, а не отбор строк: в «Бегунах» клетки показывают
+    только пробежки, и «Всего» считает их же. Раньше фильтр лишь выбрасывал
+    тех, у кого совсем нет пробежек (или волонтёрств), а клетки оставались
+    прежними — и переключатель почти ничего не менял (репорт Дмитрия
+    28.08.2026: у большинства есть и то, и другое).
+    """
+    dates = _attendance_dates(person, kind)
     items: list[dict[str, object]] = []
     if not person.private or me:
-        for day in sorted(person.dates, reverse=True):
+        for day in sorted(dates, reverse=True):
             items.append(
                 {
                     "date": day.isoformat(),
-                    "run": day in person.run_dates,
-                    "roles": sorted(person.vol_roles.get(day, ())),
+                    "run": kind != "volunteers" and day in person.run_dates,
+                    "roles": [] if kind == "runners" else sorted(person.vol_roles.get(day, ())),
                 }
             )
     return {
         "name": person.display_name,
         "handle": person.handle,
         "private": person.private,
-        "year_total": len(person.dates),
+        "year_total": len(dates),
         "runs_total": len(person.run_dates),
         "volunteering_total": len(person.vol_roles),
         "items": items,
@@ -796,13 +816,14 @@ def build_location_attendance(
                 if totals is not None:
                     totals["volunteers"] += 1
 
+        # Строка попадает в таблицу, если в ВЫБРАННОМ разрезе у человека есть
+        # хоть один день, и место в ней — по числу дней того же разреза.
         selected = [
-            person
-            for person in people.values()
-            if (kind != "runners" or person.run_dates)
-            and (kind != "volunteers" or person.vol_roles)
+            person for person in people.values() if _attendance_dates(person, kind)
         ]
-        selected.sort(key=lambda person: (-len(person.dates), person.display_name or ""))
+        selected.sort(
+            key=lambda person: (-len(_attendance_dates(person, kind)), person.display_name or "")
+        )
         page = selected[offset : offset + limit]
 
         payload = {
@@ -816,7 +837,7 @@ def build_location_attendance(
             "total_rows": len(selected),
             "columns": columns,
             "date_totals": date_totals,
-            "rows": [_attendance_row_payload(person) for person in page],
+            "rows": [_attendance_row_payload(person, kind=kind) for person in page],
         }
         if use_cache:
             _write_json_cache(cache_key, payload, LOCATION_PAGE_CACHE_TTL_SECONDS)
@@ -827,7 +848,7 @@ def build_location_attendance(
 
     result = dict(payload)
     result["me"] = (
-        _viewer_location_attendance(db, year_event_ids, viewer_user_id, people)
+        _viewer_location_attendance(db, year_event_ids, viewer_user_id, people, kind)
         if viewer_user_id is not None
         else None
     )
@@ -839,6 +860,7 @@ def _viewer_location_attendance(
     year_event_ids: list[UUID],
     viewer_user_id: UUID,
     people: dict[object, _AttendancePerson] | None,
+    kind: str = "all",
 ) -> dict[str, object] | None:
     """Строка «Вы» журнала локации — даже когда страница пришла из кэша.
 
@@ -847,7 +869,7 @@ def _viewer_location_attendance(
     """
     if people is not None:
         person = people.get(viewer_user_id)
-        return _attendance_row_payload(person, me=True) if person is not None else None
+        return _attendance_row_payload(person, me=True, kind=kind) if person is not None else None
 
     participant_ids = [
         row[0]
@@ -885,9 +907,9 @@ def _viewer_location_attendance(
         canonical = canonical_volunteer_role(role)
         if canonical is not None:
             roles.add(canonical.label)
-    if not person.dates:
+    if not _attendance_dates(person, kind):
         return None
-    return _attendance_row_payload(person, me=True)
+    return _attendance_row_payload(person, me=True, kind=kind)
 
 
 def build_location_participants(
