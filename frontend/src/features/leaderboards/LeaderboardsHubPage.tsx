@@ -442,6 +442,9 @@ export function LeaderboardsHubPage() {
 
         <RatingsLoginBanner />
 
+        {/* Фильтр в такой же панели с рамкой, что и на страницах рейтингов:
+            голый переключатель над карточками выбивался из общего вида. */}
+        <div className="lb-controls-left lb-hub-controls">
         <div className="lb-visits lb-hub-platform-filter">
           <span className="lb-visits-label">
             Система <InfoHint text={HUB_PLATFORM_FILTER_HINT} />
@@ -459,6 +462,7 @@ export function LeaderboardsHubPage() {
               </button>
             ))}
           </div>
+        </div>
         </div>
 
         {sections.map((section) => (

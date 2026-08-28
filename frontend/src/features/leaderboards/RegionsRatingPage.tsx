@@ -336,7 +336,8 @@ export function RegionsRatingPage() {
                 ))}
               </div>
             </div>
-          </div>
+          {/* Поиск внутри панели — чтобы попадать в её рамку, как на
+              остальных рейтингах. */}
           <div className="lb-controls-right">
             <input
               className="lb-search lb-locrec-search"
@@ -345,6 +346,7 @@ export function RegionsRatingPage() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
+          </div>
           </div>
         </div>
 

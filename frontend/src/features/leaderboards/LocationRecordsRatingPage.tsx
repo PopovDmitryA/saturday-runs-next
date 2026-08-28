@@ -368,10 +368,10 @@ export function LocationRecordsRatingPage() {
                 </div>
               </div>
             )}
-          </div>
           {/* Поиск — на одной линии с последним рядом фильтров (в абсолютном
               зачёте это «Система»), а не отдельной полосой над таблицей: справа
-              от фильтров всё равно пустовало пол-экрана. */}
+              от фильтров всё равно пустовало пол-экрана. Живёт внутри панели,
+              чтобы попадать в её рамку, как на остальных рейтингах. */}
           <div className="lb-controls-right">
             <input
               className="lb-search lb-locrec-search"
@@ -380,6 +380,7 @@ export function LocationRecordsRatingPage() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
+          </div>
           </div>
         </div>
 

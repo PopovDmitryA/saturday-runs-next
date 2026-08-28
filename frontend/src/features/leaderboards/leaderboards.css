@@ -2044,10 +2044,17 @@ body.has-pinned-me .lb-scroll-top {
   gap: 0.6rem 1.25rem;
 }
 
-/* Контейнер фильтров становится прозрачным для раскладки: в общий ряд встают
-   сами фильтры, а не их обёртка. */
+/* Рамка панели — как у остальных рейтингов (решение Дмитрия 28.08.2026:
+   «блок с фильтрами по всем дашбордам такой же, с обрамлением»). Раньше здесь
+   стояло display:contents — обёртка растворялась ради раскладки в один ряд, а
+   вместе с ней пропадали и рамка с фоном. Тот же ряд получается и внутри
+   панели: сама .lb-controls-left раскладывает детей в flex-строку. */
 .lb-locrec-controls .lb-controls-left {
-  display: contents;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 1.25rem;
+  flex: 1 1 100%;
 }
 
 .lb-locrec-controls .lb-controls-right {
@@ -2150,11 +2157,25 @@ body.has-pinned-me .lb-scroll-top {
    кобыле хвост», репорт Дмитрия 25.08.2026). Поэтому ряды заданы явно:
    сверху переключатели, снизу выпадающие списки и поиск. Ничего не ужимаем —
    каждый контрол своей естественной ширины. */
+/* Та же панель с рамкой, что у остальных рейтингов (решение Дмитрия
+   28.08.2026). Раньше это была просто flex-колонка без обрамления, и на фоне
+   соседних витрин фильтры «быстрых» висели в воздухе. */
 .lb-fastest-controls {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0.85rem;
+  min-width: 0;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
   margin-bottom: 1rem;
+}
+
+/* Второй ряд отделён линией — как .lb-filters-tail в эталонной панели. */
+.lb-fastest-controls-row + .lb-fastest-controls-row {
+  border-top: 1px solid var(--border);
+  padding-top: 0.85rem;
 }
 
 .lb-fastest-controls-row {
@@ -2165,10 +2186,13 @@ body.has-pinned-me .lb-scroll-top {
   gap: 0.9rem 1.75rem;
 }
 
-/* Поиск заметно шире соседних селектов: в него вводят фамилию или название
-   локации целиком, а не выбирают из готового. */
-.lb-fastest-controls .lb-search {
-  min-width: 18rem;
+/* Поиск занимает остаток строки, как в эталонной панели: жёсткие 18rem
+   выбивались из общего стандарта — на соседних витринах поле было заметно
+   уже при той же роли. */
+.lb-fastest-search {
+  margin-left: auto;
+  flex: 1 1 14rem;
+  align-items: stretch;
 }
 
 @media (max-width: 640px) {
@@ -2290,4 +2314,10 @@ body.has-pinned-me .lb-scroll-top {
 .lb-regions-foreign h2 {
   font-size: 1.05rem;
   margin-bottom: 0.6rem;
+}
+
+/* Панель фильтра на хабе рейтингов: одна группа, поэтому ряд не нужен —
+   рамка просто обнимает переключатель «Система». */
+.lb-hub-controls {
+  margin-bottom: 1rem;
 }
