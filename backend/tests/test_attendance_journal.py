@@ -5,9 +5,9 @@ import pytest
 
 from app.services.attendance_journal_service import (
     JOURNAL_METRICS,
+    _journal_cache_key,
     _JournalEntry,
     _JournalRowDraft,
-    _journal_cache_key,
     _row_items,
     _volunteering_year_total,
     _year_bounds,
@@ -15,8 +15,8 @@ from app.services.attendance_journal_service import (
 )
 from app.services.leaderboard_service import LEADERBOARD_METRICS
 from app.services.location_page_service import (
-    _AttendancePerson,
     _attendance_row_payload,
+    _AttendancePerson,
     location_attendance_cache_key,
 )
 
