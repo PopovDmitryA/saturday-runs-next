@@ -8672,6 +8672,8 @@ a.admin-system-chip:hover {
 
 .goal-card {
   gap: 0.55rem;
+  /* Грид-ячейка по умолчанию не сжимается ниже своего содержимого. */
+  min-width: 0;
 }
 
 .goal-card-done {
@@ -8679,8 +8681,21 @@ a.admin-system-chip:hover {
   background: var(--tint-green-bg);
 }
 
+/* Грид, а не flex-строка: у названия своя колонка minmax(0, 1fr), поэтому
+   длинное имя переносится внутри неё и не наезжает на соседей — flex давал
+   названию переползать на них, а карточке (она сама грид) растягиваться шире
+   своей ячейки. */
 .goal-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Полоса + процент + «Поделиться» одной строкой. */
+.goal-progress-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.5rem;
   /* Заголовок, бейдж дельты и проценты переносятся на вторую строку,
@@ -8698,8 +8713,10 @@ a.admin-system-chip:hover {
 .goal-title {
   font-weight: 600;
   font-size: 0.95rem;
-  flex: 1;
   min-width: 0;
+  /* Узкая карточка тизера: «Регулярность» длиннее своей колонки — рвём слово,
+     а не выпускаем его на процент. */
+  overflow-wrap: anywhere;
 }
 
 .goal-pct {
@@ -8769,12 +8786,20 @@ a.admin-system-chip:hover {
   color: var(--text-2);
 }
 
+/* Дельта живёт в строке прогресса — отбивка, чтобы не липла к тексту. */
+.goal-progress-label .recent-delta-badge {
+  margin-left: 0.15rem;
+  vertical-align: baseline;
+}
+
 .goal-chip {
   font-size: 0.78rem;
   font-weight: 600;
   padding: 0.15rem 0.55rem;
   border-radius: 999px;
-  white-space: nowrap;
+  /* Без переноса длинный прогноз («Прогноз: ~23 — нужно поднажать») тянул
+     колонку карточки шире её самой — та же беда, что и у шапки выше. */
+  min-width: 0;
 }
 
 .goal-chip-ok {
@@ -9926,6 +9951,12 @@ a.admin-system-chip:hover {
 
 .goals-teaser-grid .goal-progress-label {
   overflow-wrap: anywhere;
+}
+
+/* Подложка карточки тизера — тот же --bg-muted, что и у дорожки полосы:
+   у цели с нулевым прогрессом полоса пропадала целиком. */
+.goals-teaser-grid .goal-bar {
+  background: var(--border);
 }
 
 .goals-teaser-empty .btn {
@@ -12982,6 +13013,37 @@ a.admin-system-chip:hover {
   letter-spacing: 0.08em;
 }
 
+/* Полоса выполнения цели: та же логика, что у мини-календаря суббот —
+   дорожка приглушена, заполнение идёт акцентом лука. */
+.s2-progress {
+  align-self: stretch;
+}
+
+.s2-progress-track {
+  height: 0.32em;
+  border-radius: 999em;
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+}
+
+.s2-tone-light .s2-progress-track {
+  background: #dbe2f4;
+}
+
+.s2-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--s2-accent, #fbbf24);
+}
+
+.s2-progress-caption {
+  font-size: 0.4em;
+  opacity: 0.7;
+  margin-top: 0.55em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .s2-fact {
   font-size: 0.5em;
   opacity: 0.78;
@@ -13068,6 +13130,10 @@ a.admin-system-chip:hover {
   height: 0.4em;
 }
 
+.s2-card--story .s2-progress-track {
+  height: 0.42em;
+}
+
 /* Широкий формат: слева стопка «плашка → герой/таймлайн → факт», справа
    сетка плиток на всю высоту. Грид, а не flex-строка: плитки получают
    честную половину ширины и не сжимаются в столбик по буквам. */
@@ -13128,6 +13194,10 @@ a.admin-system-chip:hover {
 
 .s2-card--wide .s2-body > .s2-heat-wrap {
   grid-column: 1 / -1;
+  justify-self: stretch;
+}
+
+.s2-card--wide .s2-body > .s2-progress {
   justify-self: stretch;
 }
 
@@ -13546,6 +13616,7 @@ a.admin-system-chip:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   border: none;
   background: none;
   padding: 0.2rem;

@@ -16,6 +16,7 @@ import {
   type GoalsResponse,
 } from "../../lib/api";
 import { formatDate, parseIsoDate, platformCodeLabel, pluralizeRu } from "../../lib/format";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import { GoalCard } from "./GoalCard";
 import { GoalsEditModal } from "./GoalsEditModal";
 import { StartNumbersPlanModal } from "./StartNumbersPlanModal";
@@ -1002,6 +1003,9 @@ function GoalsSection({
   goals: GoalsResponse;
   onEdit: () => void;
 }) {
+  // Имя для постера «Поделиться»: спрашиваем один раз на всю секцию, а не
+  // в каждой карточке — иначе /auth/me улетал бы по разу на цель.
+  const user = useOptionalUser();
   return (
     <section className="achv-section">
       <div className="achv-section-head">
@@ -1023,7 +1027,7 @@ function GoalsSection({
       ) : (
         <div className="goal-grid">
           {goals.goals.map((goal) => (
-            <GoalCard key={goal.goal_type} goal={goal} />
+            <GoalCard key={goal.goal_type} goal={goal} user={user} />
           ))}
         </div>
       )}
