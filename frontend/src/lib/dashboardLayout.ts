@@ -46,14 +46,16 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
   {
     key: "speed",
     title: "Скорость и рекорды",
+    // Лучший результат открывает витрину, следом трофеи — победы и рекорды
+    // (решение Дмитрия, 28.08.2026).
     cards: [
       "best_finish",
-      "avg_finish",
-      "avg_pace",
-      "pr_count",
       "wins",
       "location_records",
       "age_group_records",
+      "avg_finish",
+      "avg_pace",
+      "pr_count",
       "avg_position",
       "avg_gender_position",
     ],
@@ -74,12 +76,16 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
   {
     key: "volunteering",
     title: "Волонтёрство",
+    // Порядок витрины задан Дмитрием (28.08.2026): всего — за год —
+    // локации — индекс. «Всего» здесь потому, что до группы человек
+    // долистывает, когда шапка кабинета уже ушла за экран.
     cards: [
+      "volunteering_total",
       "volunteering_year",
-      "volunteering_12m",
-      "volunteering_index",
-      "unique_roles",
       "unique_volunteer_locations",
+      "volunteering_index",
+      "volunteering_12m",
+      "unique_roles",
       "unique_volunteer_regions",
       "unique_volunteer_cities",
       "top_role",

@@ -320,6 +320,18 @@ function buildAnalyticsCards(
     });
   }
 
+  // Всего волонтёрств: та же цифра, что в шапке кабинета, но здесь она нужна
+  // ещё раз — долистав до группы, шапку человек уже не видит (решение
+  // Дмитрия, 28.08.2026).
+  if (totalVolunteering > 0) {
+    cards.push({
+      key: "volunteering_total",
+      value: formatNumber(totalVolunteering),
+      label: `${volunteeringCapLabel(totalVolunteering)} всего`,
+      category: "volunteering",
+    });
+  }
+
   if ((analytics.volunteering_current_year ?? 0) > 0) {
     cards.push({
       key: "volunteering_year",

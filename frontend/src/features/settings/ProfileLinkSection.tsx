@@ -21,6 +21,7 @@ export function ProfileLinkSection() {
   const [check, setCheck] = useState<CheckState>({ kind: "idle" });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
 
@@ -111,6 +112,16 @@ export function ProfileLinkSection() {
 
   const canSave = !saving && !unchanged && trimmed !== "" && check.kind === "available";
 
+  const copyPublicUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Буфер недоступен — ссылку всё равно можно выделить и скопировать руками.
+    }
+  };
+
   return (
     <section className="card">
       <h2 className="section-title">Ссылка на профиль</h2>
@@ -130,7 +141,16 @@ export function ProfileLinkSection() {
               Текущая ссылка:{" "}
               <a href={`/users/${settings.slug}`} target="_blank" rel="noreferrer">
                 {settings.public_url}
-              </a>
+              </a>{" "}
+              {/* Копирование переехало сюда с дашборда вместе с блоком
+                  «Мой публичный профиль» (решение Дмитрия, 28.08.2026). */}
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => void copyPublicUrl(settings.public_url!)}
+              >
+                {copied ? "Скопировано ✓" : "Скопировать"}
+              </button>
             </p>
           )}
 

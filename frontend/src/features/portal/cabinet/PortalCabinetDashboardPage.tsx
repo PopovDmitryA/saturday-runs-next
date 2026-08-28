@@ -8,7 +8,6 @@ import { ProfileLinkSection } from "../../../components/ProfileLinkSection";
 import { RecentRunsRating } from "../../../components/RecentRunsRating";
 import { RequireAuth } from "../../../components/RequireAuth";
 import { GoalsTeaser } from "../../dashboard/GoalsTeaser";
-import { PublicProfileShareBlock } from "../../dashboard/DashboardPage";
 import {
   getDashboard,
   getMyHistory,
@@ -360,10 +359,6 @@ function PortalDashboardContent({ user }: { user: User }) {
             totalRuns={stats?.total_runs ?? 0}
             totalVolunteering={stats?.total_volunteering ?? 0}
           />
-
-          {(data.public_slug ?? data.serial_id) != null && (
-            <PublicProfileShareBlock handle={data.public_slug ?? data.serial_id!} />
-          )}
 
           {data.sync_enqueued && (
             <div className="banner info">

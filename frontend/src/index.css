@@ -398,14 +398,21 @@ body {
 }
 
 /* Привязка почты: в отличие от VK и Яндекса, здесь не редирект, а два поля. */
+/* Почта — такая же карточка способа входа, как VK/Яндекс/Telegram: раньше
+   она висела под списком плоской строкой с разделителем и читалась как
+   чужеродный блок (решение Дмитрия, 28.08.2026). Отличие одно: внутри
+   может разворачиваться форма кода, поэтому строка переносимая. */
 .auth-provider-email {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border);
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.6rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
 }
 
 .auth-provider-email .settings-platform-info {
@@ -591,28 +598,6 @@ body {
 .card.error {
   border-color: var(--tint-red-border-strong);
   background: var(--tint-red-bg);
-}
-
-.public-profile-share {
-  border-color: var(--tint-blue-border);
-  background: var(--tint-blue-bg);
-}
-
-.public-profile-share-title {
-  font-weight: 600;
-  margin: 0;
-}
-
-.public-profile-share-row {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.public-profile-share-row .input {
-  flex: 1 1 260px;
-  min-width: 0;
 }
 
 .banner {
