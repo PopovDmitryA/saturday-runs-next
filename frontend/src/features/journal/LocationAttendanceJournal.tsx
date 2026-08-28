@@ -22,9 +22,10 @@ type LocationAttendanceJournalProps = {
   slug: string;
 };
 
+// «Все» первым — как во всех остальных фильтрах сайта («Все / 5 вёрст / С95…»).
 const KIND_TABS: { value: LocationAttendanceKind; label: string }[] = [
-  { value: "runners", label: "Бегуны" },
   { value: "all", label: "Все" },
+  { value: "runners", label: "Бегуны" },
   { value: "volunteers", label: "Волонтёры" },
 ];
 
@@ -257,8 +258,11 @@ export function LocationAttendanceJournal({ slug }: LocationAttendanceJournalPro
           />
           <p className="aj-meta muted">
             Показаны {formatInt(Math.min(shownRows, data.total_rows))} из{" "}
-            {formatInt(data.total_rows)}{" "}
-            {kind === "volunteers" ? "волонтёров" : kind === "runners" ? "бегунов" : "участников"}
+            {formatInt(data.total_rows)} участников
+            {kind !== "all" &&
+              (kind === "runners"
+                ? " · сверху те, кто чаще бегал; волонтёрства не закрашены"
+                : " · сверху те, кто чаще волонтёрил; пробежки не закрашены")}
           </p>
           {hasMore && (
             <div className="aj-more">

@@ -1408,6 +1408,31 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     </th>
   );
 
+  // «Рейтинг | Журнал» — первый ряд общей панели фильтров, а не отдельная
+  // пилюля над ней (правка Дмитрия 28.08.2026). В режиме журнала ту же панель
+  // рисует RatingJournalPanel, поэтому переключатель едет туда пропом.
+  const viewTabs = hasJournal ? (
+    <div className="lb-view-tabs" role="tablist" aria-label="Вид раздела">
+      {(
+        [
+          { value: "rating", label: "Рейтинг" },
+          { value: "journal", label: "Журнал" },
+        ] as const
+      ).map((tab) => (
+        <button
+          key={tab.value}
+          type="button"
+          role="tab"
+          aria-selected={view === tab.value}
+          className={`lb-gender-tab${view === tab.value ? " lb-gender-tab-active" : ""}`}
+          onClick={() => switchView(tab.value)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  ) : null;
+
   return (
     <PortalSectionShell sidebar={{ active: "ratings" }}>
       <div className="lb-page">
@@ -1459,36 +1484,13 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
 
             <RatingsLoginBanner />
 
-            {hasJournal && (
-              <div className="lb-controls-row">
-                <div className="lb-gender-tabs" role="tablist" aria-label="Вид раздела">
-                  {(
-                    [
-                      { value: "rating", label: "Рейтинг" },
-                      { value: "journal", label: "Журнал" },
-                    ] as const
-                  ).map((tab) => (
-                    <button
-                      key={tab.value}
-                      type="button"
-                      role="tab"
-                      aria-selected={view === tab.value}
-                      className={`lb-gender-tab${view === tab.value ? " lb-gender-tab-active" : ""}`}
-                      onClick={() => switchView(tab.value)}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {showJournal ? (
               <RatingJournalPanel
                 metric={metric as JournalMetric}
                 platform={platform}
                 platformOptions={data.platform_options ?? []}
                 onPlatformChange={(value) => setPlatform(value as PlatformFilter)}
+                viewTabs={viewTabs}
               />
             ) : (
               <>
@@ -1503,6 +1505,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
 
             <div className="lb-controls-shell">
               <div className="lb-controls-left">
+                {viewTabs}
                 {hasGenderSplit && (
                   <div className="lb-gender">
                     <div className="lb-gender-tabs" role="tablist" aria-label="Зачёт по полу">

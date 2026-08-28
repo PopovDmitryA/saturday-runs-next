@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
 import {
   getAttendanceJournal,
@@ -24,6 +24,8 @@ type RatingJournalPanelProps = {
   platform: string;
   platformOptions: string[];
   onPlatformChange: (platform: string) => void;
+  /** Переключатель «Рейтинг | Журнал» — первый ряд общей панели фильтров. */
+  viewTabs?: ReactNode;
 };
 
 const TOTAL_LABELS: Record<JournalMetric, string> = {
@@ -144,6 +146,7 @@ export function RatingJournalPanel({
   platform,
   platformOptions,
   onPlatformChange,
+  viewTabs,
 }: RatingJournalPanelProps) {
   const [year, setYear] = useState<number | null>(null);
   const [data, setData] = useState<AttendanceJournal | null>(null);
@@ -224,37 +227,51 @@ export function RatingJournalPanel({
 
   return (
     <div className="aj-panel">
-      <div className="aj-controls">
-        {data && data.years.length > 1 && (
-          <div className="aj-tabs aj-years" role="group" aria-label="Год">
-            {data.years.map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={value === data.year}
-                className={`aj-tab${value === data.year ? " aj-tab-active" : ""}`}
-                onClick={() => setYear(value)}
-              >
-                {value}
-              </button>
-            ))}
+      {/* Та же панель фильтров, что у таблицы рейтинга (.lb-controls-left):
+          рамка, ширина и ряды общие — журнал не должен выглядеть приставленным
+          сбоку блоком (правка Дмитрия 28.08.2026). */}
+      <div className="lb-controls-shell">
+        <div className="lb-controls-left">
+          {viewTabs}
+          <div className="lb-filters-row">
+            {data && data.years.length > 1 && (
+              <div className="lb-visits">
+                <span className="lb-visits-label">Год</span>
+                <div className="lb-gender-tabs" role="group" aria-label="Год">
+                  {data.years.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={value === data.year}
+                      className={`lb-gender-tab${value === data.year ? " lb-gender-tab-active" : ""}`}
+                      onClick={() => setYear(value)}
+                    >
+                      {value}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {platformOptions.length > 1 && (
+              <div className="lb-visits">
+                <span className="lb-visits-label">Система</span>
+                <div className="lb-gender-tabs" role="group" aria-label="Система">
+                  {platformOptions.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={platform === value}
+                      className={`lb-gender-tab${platform === value ? " lb-gender-tab-active" : ""}`}
+                      onClick={() => onPlatformChange(value)}
+                    >
+                      {value === "all" ? "Все" : platformCodeLabel(value)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        )}
-        {platformOptions.length > 1 && (
-          <div className="aj-tabs" role="group" aria-label="Система">
-            {platformOptions.map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={platform === value}
-                className={`aj-tab${platform === value ? " aj-tab-active" : ""}`}
-                onClick={() => onPlatformChange(value)}
-              >
-                {value === "all" ? "Все" : platformCodeLabel(value)}
-              </button>
-            ))}
-          </div>
-        )}
+        </div>
       </div>
 
       <div className="aj-legend">

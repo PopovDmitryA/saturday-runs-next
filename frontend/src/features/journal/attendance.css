@@ -17,6 +17,25 @@
   margin-bottom: 0.6rem;
 }
 
+/* Переключатель «Рейтинг | Журнал» — отдельный ряд панели фильтров: своей
+   ширины (не на всю строку), чтобы читаться кнопкой вида, а не фильтром. */
+.lb-view-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Легенда журнала внутри страницы рейтинга стоит под панелью фильтров. */
+.aj-panel .aj-legend {
+  margin-top: 0.75rem;
+}
+
 .aj-legend {
   display: flex;
   flex-wrap: wrap;
