@@ -1155,11 +1155,13 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     if (hasGeoColumns) {
       list.push({ key: "geo", width: 160 });
     }
-    // «Осталось» + «Прогноз» идут одной группой: дата без остатка не читается,
-    // а остаток без даты — половина ответа. Ширина — сумма их колонок в CSS
-    // (5.2rem + 5.8rem), иначе краткий вид ошибётся в том, что влезло.
+    // «Прогноз» — главный ответ этого рейтинга после «Всего», поэтому стоит
+    // высоко в порядке важности. «Осталось» уходит гораздо ниже (ключ remaining
+    // после «Последней недели», решение Дмитрия 28.08.2026): дата отвечает на
+    // вопрос целиком, а остаток — уточнение к ней. Ширины равны CSS-ширинам
+    // колонок, иначе краткий вид ошибётся в том, что влезло.
     if (hasForecast) {
-      list.push({ key: "forecast", width: 176 });
+      list.push({ key: "forecast", width: 92 });
     }
     if (isHomeDistance) {
       list.push({ key: "home", width: 232 });
@@ -1175,6 +1177,12 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     }
     if (hasWeekLocations) {
       list.push({ key: "week", width: 176 });
+    }
+    // «Осталось» — предпоследняя по важности: прячется раньше всех, кроме
+    // колонок систем. В самой таблице колонка при этом остаётся на своём
+    // месте — слева от «Прогноза», а не дописывается в конец.
+    if (hasForecast) {
+      list.push({ key: "remaining", width: 84 });
     }
     if (columns.length > 0) {
       list.push({ key: "platforms", width: columns.length * numWidth });
@@ -1310,7 +1318,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     if (column.key === "platforms") {
       return sum + columns.length;
     }
-    if (column.key === "geo" || column.key === "home" || column.key === "forecast") {
+    if (column.key === "geo" || column.key === "home") {
       return sum + 2;
     }
     return sum + 1;
@@ -1935,18 +1943,18 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         </th>
                       </>
                     )}
+                    {show("remaining") &&
+                      hasForecast &&
+                      headerCell(
+                        "remaining",
+                        "Осталось",
+                        "lb-col-num lb-col-geo",
+                        remainingHint(effectiveCountBy),
+                      )}
                     {show("forecast") && hasForecast && (
-                      <>
-                        {headerCell(
-                          "remaining",
-                          "Осталось",
-                          "lb-col-num lb-col-geo",
-                          remainingHint(effectiveCountBy),
-                        )}
-                        <th className="lb-col-forecast">
-                          Прогноз <InfoHint text={FORECAST_HINT} />
-                        </th>
-                      </>
+                      <th className="lb-col-forecast">
+                        Прогноз <InfoHint text={FORECAST_HINT} />
+                      </th>
                     )}
                     {show("home") && isHomeDistance && (
                       <>
@@ -2075,18 +2083,18 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                             </td>
                           </>
                         )}
+                        {show("remaining") && hasForecast && (
+                          <td className="lb-col-num lb-col-geo">
+                            <GeoCount value={row.remaining_total} />
+                          </td>
+                        )}
                         {show("forecast") && hasForecast && (
-                          <>
-                            <td className="lb-col-num lb-col-geo">
-                              <GeoCount value={row.remaining_total} />
-                            </td>
-                            <td className="lb-col-forecast">
-                              <ForecastDate
-                                remaining={row.remaining_total}
-                                date={row.forecast_date}
-                              />
-                            </td>
-                          </>
+                          <td className="lb-col-forecast">
+                            <ForecastDate
+                              remaining={row.remaining_total}
+                              date={row.forecast_date}
+                            />
+                          </td>
                         )}
                         {show("home") && isHomeDistance && (
                           <>
