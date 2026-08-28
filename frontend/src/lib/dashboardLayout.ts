@@ -25,16 +25,18 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
     key: "regularity",
     title: "Регулярность",
     // Дата первой пробежки — в витрине (решение Дмитрия, 28.08.2026).
-    headline: [
-      "saturday_streak",
-      "saturday_consistency",
-      "first_run_date",
-      "runs_year",
-      "next_milestone",
-    ],
+    headline: ["saturday_streak", "saturday_consistency", "first_run_date", "runs_year"],
     // Суммарный километраж — про объём набеганного, а не про поездки:
-    // место ему здесь, а не в туризме (решение Дмитрия, 09.08.2026).
-    rest: ["runs_12m", "total_distance", "days_since_first_run"],
+    // место ему здесь, а не в туризме (09.08.2026). «Самая частая локация»
+    // считается по пробежкам (runs_query), поэтому стоит здесь, а не в
+    // волонтёрстве, где была раньше (решение Дмитрия, 28.08.2026).
+    rest: [
+      "runs_12m",
+      "total_distance",
+      "days_since_first_run",
+      "next_milestone",
+      "top_location",
+    ],
     panels: ["activity_calendar", "activity_chart"],
   },
   {
@@ -72,13 +74,7 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
       "unique_roles",
       "unique_volunteer_locations",
     ],
-    rest: [
-      "volunteering_12m",
-      "unique_volunteer_regions",
-      "unique_volunteer_cities",
-      "top_role",
-      "top_location",
-    ],
+    rest: ["volunteering_12m", "unique_volunteer_regions", "unique_volunteer_cities", "top_role"],
     panels: [],
   },
 ];
