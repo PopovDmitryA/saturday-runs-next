@@ -1544,6 +1544,15 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         </div>
                       </div>
                     )}
+                    <div className="lb-search-inline">
+                      <input
+                        className="lb-search"
+                        type="search"
+                        placeholder="Поиск по имени…"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                      />
+                    </div>
                     {hasRoleFilter && roleCatalog.length > 0 && (
                       <div className="lb-visits lb-roles-filter">
                         <span className="lb-visits-label">
@@ -1565,15 +1574,6 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                     )}
                   </div>
                 )}
-              </div>
-              <div className="lb-controls-right">
-                <input
-                  className="lb-search"
-                  type="search"
-                  placeholder="Поиск по имени…"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
               </div>
             </div>
 

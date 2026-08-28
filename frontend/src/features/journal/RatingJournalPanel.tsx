@@ -110,7 +110,8 @@ function rowCells(metric: JournalMetric, row: JournalRow): Record<string, Matrix
     cells[key] = {
       kind,
       count: items.length,
-      title: items.map((item) => itemLine(metric, item)).join("\n"),
+      tooltipTitle: formatDate(key),
+      tooltipLines: items.map((item) => itemLine(metric, item)),
     };
   }
   return cells;

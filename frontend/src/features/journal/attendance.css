@@ -24,7 +24,11 @@
   margin: 0 0 0.6rem;
 }
 
-.aj-legend .ajm-swatch {
+/* Однокласный селектор — специфичность та же, что у .ajm-dot-run/-vol/…
+   (тоже одноклассовые); раньше здесь был составной .aj-legend .ajm-swatch
+   (специфичность выше), и его background:var(--chip-bg) перебивал цвет
+   клетки независимо от порядка правил — вся легенда красилась серым. */
+.ajm-swatch {
   display: inline-block;
   width: 13px;
   height: 13px;
@@ -72,9 +76,22 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
-/* Переключатель «Рейтинг | Журнал» над топами страницы локации. */
-.loc-leaders-view {
-  margin-bottom: 0.75rem;
+/* Заголовок + переключатель «Рейтинг | Журнал» над топами страницы локации.
+   Заголовок делает пилюлю узнаваемой — раньше она стояла безымянной, и
+   журнал было не найти на странице (жалоба Дмитрия 27.08.2026). */
+.loc-leaders-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.loc-leaders-journal-intro {
+  margin: -0.4rem 0 0.9rem;
+  font-size: 0.88rem;
+  max-width: 46rem;
 }
 
 .aj-error {
@@ -94,12 +111,47 @@
 
 /* ── таблица-матрица ─────────────────────────────────────── */
 
+/* Скролл-контейнер: overflow-x:auto из .table-wrap форсит overflow-y в auto
+   (правило CSS «одна ось не visible — вторая тоже»), поэтому подсказка,
+   всплывающая НАД первой строкой, обрезалась бы верхним краем контейнера.
+   Запас сверху решает это тем же приёмом, что activity-cal-scroll в ЛК —
+   там его вернуть отрицательным отступом нельзя (у матрицы есть своя рамка,
+   в отличие от бесфонового ЛК-графика), поэтому просто оставляем видимый
+   отступ: чуть воздуха над шапкой — приемлемая цена за не обрезанный тултип. */
+.ajm-wrap {
+  padding-top: 2.6rem;
+}
+
 .ajm-table {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.85rem;
   /* Не растягиваем на всю ширину: у короткого года таблица уже экрана. */
   width: auto;
+}
+
+/* Первые/последние колонки: подсказка центрирована над клеткой съезжала бы
+   за край скролл-контейнера — прижимаем её к своему краю клетки. */
+.ajm-table td[data-edge="start"] .analytics-chart-tooltip {
+  left: 0;
+  transform: none;
+}
+
+.ajm-table td[data-edge="start"] .analytics-chart-tooltip::after {
+  left: 14px;
+  transform: none;
+}
+
+.ajm-table td[data-edge="end"] .analytics-chart-tooltip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.ajm-table td[data-edge="end"] .analytics-chart-tooltip::after {
+  left: auto;
+  right: 14px;
+  transform: none;
 }
 
 .ajm-table th,

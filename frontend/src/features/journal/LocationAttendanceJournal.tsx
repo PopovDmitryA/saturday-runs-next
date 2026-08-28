@@ -33,17 +33,18 @@ function cellFor(row: LocationAttendanceRow): Record<string, MatrixCell> {
   for (const item of row.items) {
     const hasVol = item.roles.length > 0;
     const kind: MatrixCell["kind"] = item.run && hasVol ? "both" : hasVol ? "vol" : "run";
-    const parts = [formatDate(item.date)];
+    const lines: string[] = [];
     if (item.run) {
-      parts.push("пробежка");
+      lines.push("пробежка");
     }
     if (hasVol) {
-      parts.push(`волонтёрство: ${item.roles.join(", ")}`);
+      lines.push(`волонтёрство: ${item.roles.join(", ")}`);
     }
     cells[item.date] = {
       kind,
       count: 1,
-      title: parts.join(" · "),
+      tooltipTitle: formatDate(item.date),
+      tooltipLines: lines,
     };
   }
   return cells;

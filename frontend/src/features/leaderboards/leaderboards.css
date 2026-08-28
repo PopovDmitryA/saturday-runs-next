@@ -192,7 +192,16 @@
 .lb-filters-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.6rem 2rem;
+}
+
+/* Поиск встаёт в общий ряд фильтров, справа от «Системы» (по «Кратко-Полно»)
+   — не тянется по высоте вместе с колонками label+пилюли соседей, ложится
+   как самостоятельная кнопка своей высоты. */
+.lb-search-inline {
+  display: flex;
+  align-items: center;
 }
 
 .lb-controls-right {

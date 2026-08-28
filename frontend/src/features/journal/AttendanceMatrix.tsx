@@ -1,4 +1,5 @@
 import { useCallback, useRef, type ReactNode } from "react";
+import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 
 // Матрица журнала посещаемости: строки — участники, колонки — даты (свежие
@@ -13,8 +14,10 @@ export type MatrixCell = {
   kind: MatrixCellKind;
   // Отметок в клетке: > 1 показывается цифрой (два старта за неделю).
   count: number;
-  // Подсказка клетки — глобальный слой тап-подсказок читает title.
-  title: string;
+  // Заголовок и строки быстрой подсказки (ChartColumnTooltip — та же, что у
+  // календаря-хитмэпа ЛК: всплывает по :hover без задержки нативного title).
+  tooltipTitle: string;
+  tooltipLines: string[];
 };
 
 export type MatrixColumn = {
@@ -188,18 +191,26 @@ export function AttendanceMatrix({
               <td className="ajm-col-total">{row.total}</td>
               {columns.map((column, index) => {
                 const cell = row.private ? undefined : row.cells[column.key];
+                // Подсказка центрирована над клеткой — у первых/последних
+                // колонок центр съезжал бы за край скролл-контейнера, поэтому
+                // возле краёв она прижимается к своему краю клетки (см. CSS
+                // ajm-table td[data-edge]).
+                const edge = index < 3 ? "start" : index >= columns.length - 3 ? "end" : undefined;
                 return (
                   <td
                     key={column.key}
                     className={`ajm-col-date${monthStarts.has(index) ? " ajm-month-start" : ""}`}
                     data-col={index}
+                    data-edge={edge}
                   >
                     {cell ? (
-                      <span className={`ajm-dot ajm-dot-${cell.kind}`} title={cell.title}>
-                        {cell.count > 1 ? cell.count : ""}
-                      </span>
+                      <ChartColumnTooltip title={cell.tooltipTitle} lines={cell.tooltipLines}>
+                        <span className={`ajm-dot ajm-dot-${cell.kind}`}>
+                          {cell.count > 1 ? cell.count : ""}
+                        </span>
+                      </ChartColumnTooltip>
                     ) : (
-                      <span className="ajm-dot" data-tap-tooltip="off" />
+                      <span className="ajm-dot" />
                     )}
                   </td>
                 );

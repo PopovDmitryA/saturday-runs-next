@@ -529,40 +529,44 @@ function LocationLeadersSection({ slug }: { slug: string }) {
     return null;
   }
 
-  const viewToggle = (
-    <div className="aj-tabs loc-leaders-view" role="tablist" aria-label="Вид раздела">
-      {(
-        [
-          { value: "rating", label: "Рейтинг" },
-          { value: "journal", label: "Журнал" },
-        ] as const
-      ).map((tab) => (
-        <button
-          key={tab.value}
-          type="button"
-          role="tab"
-          aria-selected={view === tab.value}
-          className={`aj-tab${view === tab.value ? " aj-tab-active" : ""}`}
-          onClick={() => setView(tab.value)}
-        >
-          {tab.label}
-        </button>
-      ))}
+  // Заголовок и переключатель — общие для обоих видов, одной строкой над
+  // содержимым: без этой якорной подписи «Журнал» терялся среди соседних
+  // блоков как безымянная пилюля (жалоба Дмитрия 27.08.2026 — не нашёл, куда
+  // попасть в журнал).
+  const heading = (
+    <div className="loc-leaders-heading">
+      <h2 className="section-title">Рейтинги локации</h2>
+      <div className="aj-tabs loc-leaders-view" role="tablist" aria-label="Вид раздела">
+        {(
+          [
+            { value: "rating", label: "Рейтинг" },
+            { value: "journal", label: "Журнал посещаемости" },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            role="tab"
+            aria-selected={view === tab.value}
+            className={`aj-tab${view === tab.value ? " aj-tab-active" : ""}`}
+            onClick={() => setView(tab.value)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 
   if (view === "journal") {
     return (
       <section className="card loc-section">
-        <h2 className="section-title">
-          Журнал посещаемости
-          <StatHintTooltip text="Кто был на каждом старте этой площадки в выбранном году: пробежки и волонтёрства по датам. Свежие даты слева, наведение или тап на клетку подсвечивает весь столбец — видно, кто был в конкретную дату.">
-            <span className="loc-section-title-info" aria-label="Как устроен журнал">
-              ⓘ
-            </span>
-          </StatHintTooltip>
-        </h2>
-        {viewToggle}
+        {heading}
+        <p className="muted loc-leaders-journal-intro">
+          Кто был на каждом старте этой площадки в выбранном году — пробежки и
+          волонтёрства по датам. Свежие даты слева, наведение или тап на
+          клетку подсвечивает весь столбец — видно, кто был в конкретную дату.
+        </p>
         <LocationAttendanceJournal slug={slug} />
       </section>
     );
@@ -570,7 +574,7 @@ function LocationLeadersSection({ slug }: { slug: string }) {
 
   return (
     <>
-      {viewToggle}
+      {heading}
       <div className="loc-columns">
       {leaders.runners.length > 0 && (
         <section className="card loc-section">
