@@ -409,7 +409,7 @@ function LocationsIndexContent() {
                 неактивные
               </label>
             </FilterGroup>
-            <FilterGroup trailing>
+            <FilterGroup label="Поиск" trailing>
               <FilterSearch
                 value={query}
                 onChange={setQuery}

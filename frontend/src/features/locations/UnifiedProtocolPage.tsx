@@ -700,7 +700,7 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
             </select>
             </FilterGroup>
           )}
-          <FilterGroup trailing>
+          <FilterGroup label="Поиск" trailing>
             <FilterSearch
               value={search}
               onChange={setSearch}
@@ -708,13 +708,13 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
               ariaLabel="Поиск по имени, площадке или клубу"
             />
           </FilterGroup>
-          {loading && <span className="muted uniprot-total">Считаем…</span>}
+          {tableColumns.hasToggle && (
+            <FilterGroup label="Колонки">
+              <TableViewToggle columns={tableColumns} inline />
+            </FilterGroup>
+          )}
           </FilterRow>
-          {/* «Кратко | Полно» — в той же строке, что фильтры (просьба Дмитрия
-              25.08.2026): отдельной строкой он занимал место зря. */}
-          <span className="uniprot-view-toggle">
-            <TableViewToggle columns={tableColumns} />
-          </span>
+          {loading && <span className="muted uniprot-total">Считаем…</span>}
         </FilterPanel>
 
         <TableWrap

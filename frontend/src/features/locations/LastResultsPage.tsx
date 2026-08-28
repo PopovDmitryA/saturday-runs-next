@@ -404,7 +404,7 @@ function LastResultsContent() {
                 </label>
               </div>
             </FilterGroup>
-            <FilterGroup trailing>
+            <FilterGroup label="Поиск" trailing>
               <FilterSearch
                 value={query}
                 onChange={setQuery}

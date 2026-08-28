@@ -3,6 +3,12 @@ import type { TableColumns } from "./useTableColumns";
 type TableViewToggleProps = {
   /** Результат useTableColumns: он же решает, нужен ли сегмент вообще. */
   columns: TableColumns;
+  /**
+   * Сегмент внутри панели фильтров: без собственной липкой полосы — панель
+   * стоит над таблицей одним блоком, и вторая полоса поверх неё выглядела бы
+   * отдельным этажом управления (правка Дмитрия 28.08.2026).
+   */
+  inline?: boolean;
 };
 
 /**
@@ -16,13 +22,13 @@ type TableViewToggleProps = {
  * пропорции, не добавляя ни одной колонки. Полоса пропадает вместе с сегментом,
  * иначе от неё осталась бы пустая строка над таблицей.
  */
-export function TableViewToggle({ columns }: TableViewToggleProps) {
+export function TableViewToggle({ columns, inline = false }: TableViewToggleProps) {
   if (!columns.hasToggle) {
     return null;
   }
 
   return (
-    <div className="tview-bar">
+    <div className={inline ? "tview-inline" : "tview-bar"}>
       <div className="tview-toggle" role="group" aria-label="Набор колонок таблицы">
         <button
           type="button"

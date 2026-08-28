@@ -245,7 +245,7 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
 
       {/* Зачёт и поиск — одной строкой: два ряда управления над таблицей
           съедали экран телефона до первой фамилии. */}
-      <FilterPanel className="loc-people-toolbar">
+      <FilterPanel>
         <FilterRow>
           <FilterGroup label="Зачёт">
             <FilterTabs
@@ -261,13 +261,18 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
               }))}
             />
           </FilterGroup>
-          <FilterGroup trailing>
+          <FilterGroup label="Поиск" trailing>
             <FilterSearch
               value={query}
               onChange={setQuery}
               ariaLabel="Поиск по имени или фамилии"
             />
           </FilterGroup>
+          {tableColumns.hasToggle && (
+            <FilterGroup label="Колонки">
+              <TableViewToggle columns={tableColumns} inline />
+            </FilterGroup>
+          )}
         </FilterRow>
         {query.trim() && (
           <span className="muted loc-people-found">
@@ -277,7 +282,6 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
       </FilterPanel>
 
       <section className="loc-section">
-        <TableViewToggle columns={tableColumns} />
         <TableWrap
           innerRef={attachFloatingHead}
           outerRef={tableColumns.measureRef}

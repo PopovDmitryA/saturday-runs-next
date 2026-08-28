@@ -291,6 +291,11 @@ function LocationEventsContent({ slug }: { slug: string }) {
             </div>
           </FilterGroup>
         )}
+          {view === "protocols" && tableColumns.hasToggle && (
+            <FilterGroup label="Колонки">
+              <TableViewToggle columns={tableColumns} inline />
+            </FilterGroup>
+          )}
         </FilterRow>
       </FilterPanel>
 
@@ -306,7 +311,6 @@ function LocationEventsContent({ slug }: { slug: string }) {
       ) : (
         <>
       <section className="loc-section">
-        <TableViewToggle columns={tableColumns} />
         <TableWrap
           innerRef={attachFloatingHead}
           outerRef={tableColumns.measureRef}
