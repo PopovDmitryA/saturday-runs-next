@@ -68,13 +68,15 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
   {
     key: "volunteering",
     title: "Волонтёрство",
+    // Волонтёрства за 12 месяцев — всегда на виду (решение Дмитрия, 28.08.2026).
     headline: [
       "volunteering_year",
+      "volunteering_12m",
       "volunteering_index",
       "unique_roles",
       "unique_volunteer_locations",
     ],
-    rest: ["volunteering_12m", "unique_volunteer_regions", "unique_volunteer_cities", "top_role"],
+    rest: ["unique_volunteer_regions", "unique_volunteer_cities", "top_role"],
     panels: [],
   },
 ];
