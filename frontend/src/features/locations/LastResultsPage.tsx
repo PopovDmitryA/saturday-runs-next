@@ -392,7 +392,7 @@ function LastResultsContent() {
                     checked={onlySaturday}
                     onChange={(event) => setOnlySaturday(event.target.checked)}
                   />{" "}
-                  только последняя суббота
+                  только суббота
                 </label>
                 <label className="loc-index-paused">
                   <input

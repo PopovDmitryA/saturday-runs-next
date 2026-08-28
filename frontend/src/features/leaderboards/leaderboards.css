@@ -2058,10 +2058,11 @@ body.has-pinned-me .lb-scroll-top {
 }
 
 .lb-locrec-controls .lb-controls-right {
-  /* Поиск прижат к правому краю строки и занимает остаток места; ниже 13rem
-     плейсхолдер обрезается, выше 22rem поле выглядит распухшим. */
-  margin-left: auto;
-  flex: 1 1 13rem;
+  /* Поиск — своей строкой, как .lb-filters-tail в эталонной панели: ряд
+     «Зачёт + Пол + Система» и так занимает всю контентную колонку, и поле
+     всё равно переносилось — но переносилось само, оставаясь висеть с краю
+     (репорт Дмитрия 28.08.2026). Явная строка выглядит ровно и предсказуемо. */
+  flex: 1 1 100%;
   max-width: 22rem;
 }
 
@@ -2320,4 +2321,40 @@ body.has-pinned-me .lb-scroll-top {
    рамка просто обнимает переключатель «Система». */
 .lb-hub-controls {
   margin-bottom: 1rem;
+}
+
+/* Единая высота контролов панели — как в components/filters/filters.css.
+   Свои метрики у таблеток, поля поиска и селектов чуть разные, и разница в
+   пару пикселей ставила соседние группы на разные линии (репорт Дмитрия
+   28.08.2026: «почему не на одной горизонтали фильтры?»). */
+.lb-controls-left .lb-gender-tabs,
+.lb-controls-left .lb-search,
+.lb-controls-left .lb-roles-gear,
+.lb-controls-left .protocol-age-select,
+.lb-fastest-controls .lb-gender-tabs,
+.lb-fastest-controls .lb-search,
+.lb-fastest-controls .protocol-age-select,
+.lb-fastest-controls .lb-fastest-select-wrap > select {
+  box-sizing: border-box;
+  min-height: 2.25rem;
+}
+
+.lb-controls-left .lb-gender-tabs,
+.lb-fastest-controls .lb-gender-tabs {
+  align-items: center;
+}
+
+/* Поиск встаёт по верхней линии ряда — вровень с таблетками соседних групп,
+   а не прижимается к его низу. */
+.lb-controls-left .lb-controls-right,
+.lb-locrec-controls .lb-controls-right {
+  align-self: flex-start;
+}
+
+/* Поиск — такая же группа «подпись + контрол», как соседние фильтры: без
+   подписи он стоял на высоту строки выше их таблеток. */
+.lb-controls-right {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
 }

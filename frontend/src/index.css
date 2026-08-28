@@ -12102,34 +12102,41 @@ a.admin-system-chip:hover {
   background: var(--surface);
 }
 
+/* «Кратко | Полно» — тот же сегмент-контрол, что все переключатели сайта
+   (решение Дмитрия 28.08.2026). Раньше это был прямоугольник с рамкой и
+   ярко-синей активной половиной: рядом с таблетками фильтров в одной панели
+   он читался как контрол из другого интерфейса и был выше их на пару
+   пикселей — из-за чего подписи групп разъезжались по вертикали. */
 .tview-toggle {
   display: inline-flex;
   /* Родители таблиц — flex-колонки: без align-self ребёнок растягивается
-     на всю ширину (stretch), и рамка сегмента уезжала бы через весь экран. */
+     на всю ширину (stretch), и подложка сегмента уехала бы через весь экран. */
   align-self: flex-start;
   width: fit-content;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
 }
 
 .tview-tab {
+  appearance: none;
   border: 0;
-  background: var(--surface);
-  color: var(--text-2);
-  padding: 7px 16px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted, inherit);
+  padding: 0.35rem 0.9rem;
+  font: inherit;
   font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.tview-tab + .tview-tab {
-  border-left: 1px solid var(--border);
-}
-
 .tview-tab-active {
-  background: var(--link);
-  border-color: var(--link);
-  color: #fff;
+  background: var(--surface, #fff);
+  color: var(--text, inherit);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .tview-tab:focus-visible {

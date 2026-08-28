@@ -1651,6 +1651,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         широком экране он встаёт справа от «Системы», на узком
                         переезжает вместе с ней (просьба Дмитрия 27.08.2026). */}
                     <div className="lb-controls-right">
+                      <span className="lb-visits-label">Поиск</span>
                       <input
                         className="lb-search"
                         type="search"

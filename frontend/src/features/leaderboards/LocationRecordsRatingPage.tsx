@@ -373,6 +373,7 @@ export function LocationRecordsRatingPage() {
               от фильтров всё равно пустовало пол-экрана. Живёт внутри панели,
               чтобы попадать в её рамку, как на остальных рейтингах. */}
           <div className="lb-controls-right">
+            <span className="lb-visits-label">Поиск</span>
             <input
               className="lb-search lb-locrec-search"
               type="search"

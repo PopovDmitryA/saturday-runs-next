@@ -14,12 +14,15 @@
   margin-bottom: 1rem;
 }
 
-/* Ряд групп: выравниваем по низу, чтобы таблетки всех групп стояли на одной
-   линии, даже когда подписи разной длины и переносятся. */
+/* Ряд групп: выравниваем по ВЕРХУ. Подписи всех групп встают на одну
+   горизонталь, и контролы под ними — тоже, потому что у всех переключателей
+   и поля поиска одна высота. Выравнивание по низу (как было) держало на
+   линии контролы, но подписи над контролами разной высоты разъезжались
+   по вертикали — репорт Дмитрия 28.08.2026 про «Вид» и «Колонки». */
 .fp-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 0.85rem 1.75rem;
   min-width: 0;
 }
@@ -47,8 +50,12 @@
    ~22rem выглядит распухшим, когда рядом всего один-два фильтра. */
 .fp-group-trailing {
   margin-left: auto;
-  flex: 0 1 22rem;
-  min-width: 12rem;
+  /* Растёт по остатку строки, но не безгранично: поле шире ~22rem выглядит
+     распухшим, когда рядом всего один-два фильтра. Базы в 14rem хватает,
+     чтобы поиск оставался в одной строке с соседями и не сваливался вниз. */
+  flex: 1 1 14rem;
+  min-width: 11rem;
+  max-width: 22rem;
   align-items: stretch;
 }
 
@@ -69,6 +76,36 @@
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-muted, inherit);
+}
+
+/* Все контролы панели — одной высоты. Собственные метрики у них чуть разные
+   (у таблеток она набегает из padding, у поля поиска — из шрифта), и разница
+   в пару пикселей ставила соседние группы на разные линии. */
+.fp-group > .fp-tabs,
+.fp-group > .map-mode-tabs,
+.fp-group > .tview-inline,
+.fp-group > .tview-inline > .tview-toggle,
+.fp-group > .fp-search,
+.fp-group > .loc-index-filters,
+.fp-group > label {
+  box-sizing: border-box;
+  min-height: 2.25rem;
+}
+
+/* Чекбоксы («показывать неактивные») сами по себе вдвое ниже таблеток —
+   без выравнивания по центру они липли к верху своей группы. */
+.fp-group > .loc-index-filters,
+.fp-group > label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+}
+
+.fp-group > .fp-tabs,
+.fp-group > .map-mode-tabs,
+.fp-group > .tview-inline > .tview-toggle {
+  align-items: center;
 }
 
 /* Сегментированный переключатель — та же «таблетка», что в рейтингах. */
