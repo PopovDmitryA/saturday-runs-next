@@ -24,7 +24,14 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
   {
     key: "regularity",
     title: "Регулярность",
-    headline: ["saturday_streak", "saturday_consistency", "runs_year", "next_milestone"],
+    // Дата первой пробежки — в витрине (решение Дмитрия, 28.08.2026).
+    headline: [
+      "saturday_streak",
+      "saturday_consistency",
+      "first_run_date",
+      "runs_year",
+      "next_milestone",
+    ],
     // Суммарный километраж — про объём набеганного, а не про поездки:
     // место ему здесь, а не в туризме (решение Дмитрия, 09.08.2026).
     rest: ["runs_12m", "total_distance", "days_since_first_run"],
@@ -34,14 +41,19 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
     key: "speed",
     title: "Скорость и рекорды",
     // Среднее время финиша — базовая цифра «как я обычно бегу», её прячать
-    // за «Ещё N» нельзя: решение Дмитрия (09.08.2026).
-    headline: ["best_finish", "avg_finish", "avg_pace", "pr_count", "wins"],
-    rest: [
-      "avg_position",
-      "avg_gender_position",
+    // за «Ещё N» нельзя (09.08.2026). Победы и рекорды локаций/возрастных
+    // групп — тоже витрина: это главные трофеи раздела (решение Дмитрия,
+    // 28.08.2026).
+    headline: [
+      "best_finish",
+      "avg_finish",
+      "avg_pace",
+      "pr_count",
+      "wins",
       "location_records",
       "age_group_records",
     ],
+    rest: ["avg_position", "avg_gender_position"],
     panels: ["pace_trend", "finish_distribution", "platform_metrics"],
   },
   {

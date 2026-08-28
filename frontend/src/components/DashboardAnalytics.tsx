@@ -20,6 +20,7 @@ import { WinsModal } from "./WinsModal";
 import { RegionsCitiesModal, type GroupBy } from "./RegionsCitiesModal";
 import { LocationRecordsModal } from "./LocationRecordsModal";
 import {
+  formatDate,
   formatDuration,
   formatMonthShort,
   formatMonthYear,
@@ -468,6 +469,14 @@ function buildAnalyticsCards(
       key: "saturday_streak",
       value: formatNumber(analytics.saturday_streak),
       label: `${saturdaysLabel(analytics.saturday_streak)} подряд`,
+    });
+  }
+
+  if (analytics.first_run_date) {
+    cards.push({
+      key: "first_run_date",
+      value: formatDate(analytics.first_run_date),
+      label: "Первая пробежка",
     });
   }
 
