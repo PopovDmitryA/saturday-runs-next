@@ -1163,11 +1163,11 @@ def test_remaining_units_counts_cities() -> None:
     assert open_cities == {"москва|москва", "тверская|тверь"}
     assert _remaining_units(counted, getters, "cities", open_cities) == 1
 
-# ─── Кто идёт в рейтинг туризма ──────────────────────────────────────────────
-# Правило Дмитрия 27.08.2026: тот, кто бегал ТОЛЬКО в parkrun, в туризме не
-# участвует — российский parkrun закрыт с 2022 года, продолжить коллекцию там
-# нельзя. Проверяется по всей истории, поэтому в зачёте самого parkrun строки
-# «наших» туристов остаются.
+# ─── Кому полагается прогноз ─────────────────────────────────────────────────
+# Решение Дмитрия 27.08.2026: паркран-туристы в рейтинге остаются (среди них и
+# те, кто не завёл аккаунт, и те, кто перестал бегать), но прогноз по ним не
+# считается — в действующих системах они ещё не стартовали. Проверка идёт по
+# всей истории, до фильтра «по системе».
 
 
 class _StubSource:
@@ -1239,31 +1239,33 @@ def _tourism_entities(platform: str = "all", count_by: str = "locations") -> dic
         count_by=count_by,
         with_geo=True,
         with_forecast=True,
-        require_live_system=True,
     )
     return {entity.display_name: entity for entity in entities.values()}
 
 
-def test_parkrun_only_participant_is_out_of_tourism() -> None:
+def test_parkrun_only_participant_stays_but_without_forecast() -> None:
     by_name = _tourism_entities()
-    assert "Только Паркран" not in by_name
-    assert "Турист" in by_name
+    # Паркран-турист в рейтинге есть: коллекция заработана честно.
+    assert set(by_name) == {"Турист", "Только Паркран"}
+    assert by_name["Только Паркран"].total == 2
+    # …но прогноза у него нет — в действующих системах он не стартовал.
+    assert by_name["Только Паркран"].remaining_total is None
     # У туриста две площадки (живая и закрытая), а осталось — одна живая из двух.
     assert by_name["Турист"].total == 2
     assert by_name["Турист"].remaining_total == 1
 
 
-def test_parkrun_scope_keeps_our_tourists() -> None:
-    # Зачёт самого parkrun: правило смотрит всю историю, поэтому турист с
-    # пробежками в живых системах остаётся, а «только parkrun» — нет.
+def test_parkrun_scope_keeps_everyone() -> None:
+    # Зачёт самого parkrun: строки обоих на месте, прогноза там нет ни у кого
+    # (forecast_available отдаёт False, и снапшот колонки не отдаёт).
     by_name = _tourism_entities(platform="parkrun")
-    assert set(by_name) == {"Турист"}
+    assert set(by_name) == {"Турист", "Только Паркран"}
 
 
 def test_remaining_recounts_under_platform_filter() -> None:
     # Знаменатель прогноза следует фильтру: в зачёте 5 вёрст живая площадка
-    # одна и она закрыта, в зачёте С95 — одна и не закрыта.
+    # одна и она закрыта, в зачёте С95 у туриста стартов нет вовсе.
     assert _tourism_entities(platform="five_verst")["Турист"].remaining_total == 0
-    assert _tourism_entities(platform="s95") == {}
+    assert "Турист" not in _tourism_entities(platform="s95")
     # В общем зачёте остаётся вторая живая площадка.
     assert _tourism_entities()["Турист"].remaining_total == 1
