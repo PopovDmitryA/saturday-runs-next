@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DashboardAnalytics } from "../../../components/DashboardAnalytics";
-import { FocusProfilesModal } from "../../../components/FocusProfilesModal";
 import { MyHistoryTeaser } from "../../../components/MyHistoryTeaser";
 import { LastSaturdayCard } from "../../../components/LastSaturdayCard";
 import { OnThisDayCard } from "../../../components/OnThisDayCard";
@@ -245,10 +244,6 @@ export function DashboardHero({
 function PortalDashboardContent({ user }: { user: User }) {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  // Модалка профилей участника: открывается один раз на загрузку данных —
-  // при первом входе с привязками (selected === null) или когда привязка
-  // нового аккаунта добавила профили (newly_suggested).
-  const [focusModalOpen, setFocusModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [linksCount, setLinksCount] = useState<number | null>(null);
   // Две разные плашки про имя, обе гасятся одной кнопкой «Понятно»:
@@ -269,15 +264,6 @@ function PortalDashboardContent({ user }: { user: User }) {
       const response = await getDashboard();
       setData(response);
       hasLoadedRef.current = true;
-      // Первый вход с привязками — предложить автонабор; новая привязка
-      // добавила профили — показать «профиль дополнен» с подсветкой.
-      const hasLinks = response.platform_links.length > 0;
-      if (
-        (response.focus.selected === null && hasLinks) ||
-        response.focus.newly_suggested.length > 0
-      ) {
-        setFocusModalOpen(true);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить данные");
     } finally {
@@ -373,19 +359,7 @@ function PortalDashboardContent({ user }: { user: User }) {
             analytics={stats?.analytics}
             totalRuns={stats?.total_runs ?? 0}
             totalVolunteering={stats?.total_volunteering ?? 0}
-            focusProfiles={data.focus.selected}
           />
-
-          {focusModalOpen && (
-            <FocusProfilesModal
-              focus={data.focus}
-              onSaved={(next) => {
-                setFocusModalOpen(false);
-                setData((prev) => (prev ? { ...prev, focus: next } : prev));
-              }}
-              onDismiss={() => setFocusModalOpen(false)}
-            />
-          )}
 
           {(data.public_slug ?? data.serial_id) != null && (
             <PublicProfileShareBlock handle={data.public_slug ?? data.serial_id!} />

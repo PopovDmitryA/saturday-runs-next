@@ -3,7 +3,6 @@ import { AppShell } from "../../components/AppShell";
 import { AuthProvidersSection } from "./AuthProvidersSection";
 import { AvatarSection } from "./AvatarSection";
 import { DisplayNameSection } from "./DisplayNameSection";
-import { FocusProfilesSection } from "./FocusProfilesSection";
 import { HistoryMilestonesSection } from "./HistoryMilestonesSection";
 import { HomeLocationSection } from "./HomeLocationSection";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
@@ -22,7 +21,6 @@ export function SettingsContent({ bare = false }: { bare?: boolean } = {}) {
     <>
       <AvatarSection />
       <DisplayNameSection />
-      <FocusProfilesSection />
       <PrivacySettingsSection />
       <NotificationSettingsSection />
       <ProfileLinkSection />

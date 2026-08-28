@@ -1044,15 +1044,6 @@ class User(Base):
         nullable=False,
         server_default='{"five_verst": false, "s95": false, "parkrun": false}',
     )
-    # Профили участника (фокус дашборда): tourist / racer / volunteer / regular.
-    # NULL — человек ещё не выбирал: блоки показываются все, а при первом
-    # входе в кабинет предлагается автонабор. Канон ключей и пороги —
-    # app.services.dashboard_focus.
-    dashboard_focus: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
-    # Автонабор на момент последнего подтверждения выбора: с ним сравнивается
-    # свежий автоподбор после привязки нового аккаунта — предлагаем только
-    # действительно новые профили, а не переспрашиваем всё заново.
-    dashboard_focus_auto: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     # Виды вех «Моя история», которые пользователь скрыл у себя (список kind'ов).
     # Отсутствие kind в списке = включён (по умолчанию). Персональный аналог
     # админского history_milestone_settings; канон kind'ов —

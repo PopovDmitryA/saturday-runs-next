@@ -376,7 +376,8 @@ def confirm_profile_link(db: Session, user: User, platform_code: str, profile_ur
 
     # Результаты привязанного аккаунта уже лежат в БД, а кэш дашборда мог
     # быть посчитан до привязки: без сброса человек до фонового синка (или
-    # устаревания кэша) видит в кабинете нули — и автонабор профилей пуст.
+    # устаревания кэша) видит в кабинете нули. Отвязка кэш пересчитывает
+    # давно (profile_unlink_service) — привязка должна не отставать.
     db.query(DashboardCache).filter(DashboardCache.user_id == user.id).delete()
     db.commit()
 
@@ -452,7 +453,8 @@ def confirm_profile_link_by_participant(db: Session, user: User, participant_id:
 
     # Результаты привязанного аккаунта уже лежат в БД, а кэш дашборда мог
     # быть посчитан до привязки: без сброса человек до фонового синка (или
-    # устаревания кэша) видит в кабинете нули — и автонабор профилей пуст.
+    # устаревания кэша) видит в кабинете нули. Отвязка кэш пересчитывает
+    # давно (profile_unlink_service) — привязка должна не отставать.
     db.query(DashboardCache).filter(DashboardCache.user_id == user.id).delete()
     db.commit()
 
