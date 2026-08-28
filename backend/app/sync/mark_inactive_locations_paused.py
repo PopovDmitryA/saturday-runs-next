@@ -23,6 +23,7 @@ class MarkInactiveLocationsResult:
     locations_checked: int = 0
     locations_paused: int = 0
     locations_revived: int = 0
+    locations_skipped_no_coords: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -39,6 +40,10 @@ def mark_inactive_locations_paused(
     снимает с себя статус сама (Бузулук зимовал 126 дней и вернулся). Не
     трогаем те, что помечены реестром системы вручную, — там заявление
     владельца, и оно сильнее нашей догадки по датам.
+
+    Мимо правила проходят три случая: «скоро» (стартов ещё не было), строки без
+    координат (разъездные серии — не место, а формат) и площадки без единого
+    протокола (сравнивать не с чем).
     """
     result = MarkInactiveLocationsResult()
     cutoff = (as_of or date.today()) - timedelta(days=inactive_days)
@@ -52,6 +57,16 @@ def mark_inactive_locations_paused(
         # Отмена ближайшего старта статуса не меняет: площадка работает, просто
         # в эту субботу не побегут.
         if location.is_upcoming:
+            continue
+
+        # Без координат площадки как места у нас нет — судить о её молчании
+        # нечем. Так живут разъездные серии («С95 и друзья», «S95 & Friends»):
+        # они не место, а формат, собираются нерегулярно, и «не действует»
+        # после ста тихих дней было бы про них просто неправдой. На карту и в
+        # каталог безкоординатные строки всё равно не попадают, зато страница
+        # локации у них открывается — там эта плашка и была бы видна.
+        if location.latitude is None or location.longitude is None:
+            result.locations_skipped_no_coords += 1
             continue
 
         latest_event_date = (

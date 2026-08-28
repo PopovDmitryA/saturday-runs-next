@@ -187,6 +187,16 @@ const PROTOCOL_ICON = icon(
   </>,
 );
 
+// «Постоянный состав» локации: двое рядом — регулярные участники площадки.
+const REGULARS_ICON = icon(
+  <>
+    <circle cx="9.5" cy="8.5" r="3" />
+    <path d="M3.5 19.5c.7-3.1 3.1-4.9 6-4.9s5.3 1.8 6 4.9" />
+    <circle cx="17.5" cy="7.5" r="2.2" />
+    <path d="M16 13.6c2.3-.4 4.1 1.2 4.5 3.6" />
+  </>,
+);
+
 // «Результаты последней субботы»: секундомер — свежие результаты стартов.
 const LAST_RESULTS_ICON = icon(
   <>
@@ -698,6 +708,23 @@ export function SiteSidebar({
           >
             <span className="portal-cab-nav-icon">{LOCATION_PIN_ICON}</span>
             <span className="portal-cab-nav-label">{location.name}</span>
+          </a>
+        )}
+        {/* Постоянный состав живёт под самой площадкой, а не в «Результатах»
+            (правка Дмитрия 27.08.2026): это срез конкретной локации, а не
+            общесайтовая витрина результатов. Потому и появляется только тогда,
+            когда локация открыта, — в отличие от журнала протоколов, который
+            висит в «Результатах» всегда и вне локации задизейблен. */}
+        {location && (
+          <a
+            href={`/locations/${location.slug}/participants`}
+            className={`portal-cab-nav-item portal-cab-nav-subitem${
+              pathname === `/locations/${location.slug}/participants` ? " active" : ""
+            }`}
+            title={collapsed ? "Постоянный состав" : undefined}
+          >
+            <span className="portal-cab-nav-icon">{REGULARS_ICON}</span>
+            <span className="portal-cab-nav-label">Постоянный состав</span>
           </a>
         )}
 

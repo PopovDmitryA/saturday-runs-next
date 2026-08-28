@@ -20,6 +20,7 @@ from app.models import (
     Participant,
     Platform,
     PlatformLink,
+    ProtocolSyncState,
     RunResult,
     SyncJob,
     SyncJobStatus,
@@ -1141,6 +1142,88 @@ def _event_summary_source_urls(
     return {(row.platform_id, row.location_id, row.event_date): row.source_url for row in rows}
 
 
+def _event_participant_totals(
+    db: Session,
+    events: list[tuple[Event, str]],
+    catalog_index: LocationCatalogIndex,
+) -> dict[UUID, int | None]:
+    """Сколько всего человек в протоколе старта — чтобы показать долю участника.
+
+    parkrun живёт по своему правилу, тому же, что и места (см.
+    russian_parkrun_location_ids): русские площадки собраны протоколами целиком,
+    и по ним просто считаем строки, а от зарубежной в БД лежат только строки
+    наших же участников — там число участников не считаем вовсе.
+
+    У остальных систем по убыванию доверия: заявленное системой число
+    (events.finishers_count → event_summaries.finishers_count), затем сам
+    протокол, если он выкачан как протокол и мест в нём не больше, чем строк.
+    Иначе None, и доля в кабинете не показывается вместо выдуманной.
+    """
+    from sqlalchemy import tuple_
+
+    event_ids = list({event.id for event, _code in events})
+    if not event_ids:
+        return {}
+
+    protocol_stats: dict[UUID, tuple[int, int]] = {
+        event_id: (int(rows or 0), int(max_position or 0))
+        for event_id, rows, max_position in db.query(
+            RunResult.event_id, func.count(), func.max(RunResult.position)
+        )
+        .filter(RunResult.event_id.in_(event_ids))
+        .group_by(RunResult.event_id)
+        .all()
+    }
+
+    # У сводок event_id бывает пуст (пришли раньше протокола) — ключ тот же, что в
+    # _event_summary_source_urls.
+    summary_keys = {(event.platform_id, event.location_id, event.event_date) for event, _code in events}
+    declared_by_key: dict[tuple[UUID, UUID, date], int | None] = {
+        (platform_id, location_id, event_date): finishers_count
+        for platform_id, location_id, event_date, finishers_count in db.query(
+            EventSummary.platform_id,
+            EventSummary.location_id,
+            EventSummary.event_date,
+            EventSummary.finishers_count,
+        )
+        .filter(
+            tuple_(EventSummary.platform_id, EventSummary.location_id, EventSummary.event_date).in_(
+                summary_keys
+            )
+        )
+        .all()
+    }
+
+    fetched_protocol_ids = {
+        event_id
+        for (event_id,) in db.query(ProtocolSyncState.event_id).filter(
+            ProtocolSyncState.event_id.in_(event_ids),
+            ProtocolSyncState.last_protocol_fetched_at.isnot(None),
+        )
+    }
+    russian_parkrun_ids = russian_parkrun_location_ids(db, catalog_index)
+
+    totals: dict[UUID, int | None] = {}
+    for event, platform_code in events:
+        rows, max_position = protocol_stats.get(event.id, (0, 0))
+        if platform_code == PARKRUN_PLATFORM_CODE:
+            russian = event.location_id in russian_parkrun_ids
+            totals[event.id] = rows if russian and rows else None
+            continue
+        declared = event.finishers_count or declared_by_key.get(
+            (event.platform_id, event.location_id, event.event_date)
+        )
+        if declared:
+            totals[event.id] = max(declared, max_position, rows)
+        elif event.id in fetched_protocol_ids and max_position and rows >= max_position:
+            totals[event.id] = rows
+        else:
+            # Строки без мест — это ещё не протокол: у 5 вёрст такие дни приезжают
+            # из профиля участника до сверки, и «1 участник» там соврал бы.
+            totals[event.id] = None
+    return totals
+
+
 def _location_status_fields(
     catalog_index: LocationCatalogIndex,
     location: Location,
@@ -1230,7 +1313,13 @@ def list_user_runs(
         excluded_ids=secondary_crosslinked_ids,
     )
     catalog_index = LocationCatalogIndex(db)
-    summary_urls = _event_summary_source_urls(db, [event for _run, event, _loc, _plat, _link in rows])
+    run_events = [event for _run, event, _loc, _plat, _link in rows]
+    summary_urls = _event_summary_source_urls(db, run_events)
+    participant_totals = _event_participant_totals(
+        db,
+        [(event, platform.code) for _run, event, _loc, platform, _link in rows],
+        catalog_index,
+    )
     return [
         {
             "run_result_id": run.id,
@@ -1244,6 +1333,7 @@ def list_user_runs(
             "location_slug": location.external_key.strip().lower(),
             "position": run.position,
             "gender_position": run.gender_position,
+            "participants_total": participant_totals.get(event.id),
             "finish_time_display": normalize_finish_time_display(
                 run.finish_time_sec,
                 run.finish_time_display,

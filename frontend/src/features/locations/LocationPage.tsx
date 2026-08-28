@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
+import { LocationCancellationNotice } from "../../components/LocationCancellationNotice";
 import { LocationStatusLabel } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
@@ -38,7 +39,6 @@ import { useOptionalUser } from "../../lib/useOptionalUser";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
 import { locationCardSubject, locationEventSubject, locationMeSubject } from "../sharing/subjects";
-import { LocationAttendanceJournal } from "../journal/LocationAttendanceJournal";
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { LocationMiniMap } from "./LocationMiniMap";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
@@ -486,13 +486,14 @@ function AgeGroupRecordsSection({
   );
 }
 
+// На странице локации показываем десятку, а не весь топ: страница и без того
+// длинная, а полный постоянный состав живёт на /locations/{slug}/participants
+// (там же — сколько у человека участий всего и с какого старта он здесь свой).
+const LEADERS_PREVIEW_LIMIT = 10;
+
 function LocationLeadersSection({ slug }: { slug: string }) {
   const [leaders, setLeaders] = useState<LocationLeaders | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // «Рейтинг | Журнал» — тот же переключатель, что в глобальных рейтингах:
-  // рейтинг — топ-20, журнал — матрица «участник × даты стартов» (перенос
-  // Grafana-дашборда «Журнал посещаемости локации»).
-  const [view, setView] = useState<"rating" | "journal">("rating");
   // На телефоне топы — карточки: имя не тесно соседствует с цифрами.
   const narrowViewport = useNarrowViewport();
 
@@ -529,53 +530,12 @@ function LocationLeadersSection({ slug }: { slug: string }) {
     return null;
   }
 
-  // Заголовок и переключатель — общие для обоих видов, одной строкой над
-  // содержимым: без этой якорной подписи «Журнал» терялся среди соседних
-  // блоков как безымянная пилюля (жалоба Дмитрия 27.08.2026 — не нашёл, куда
-  // попасть в журнал).
-  const heading = (
-    <div className="loc-leaders-heading">
-      <h2 className="section-title">Рейтинги локации</h2>
-      <div className="aj-tabs loc-leaders-view" role="tablist" aria-label="Вид раздела">
-        {(
-          [
-            { value: "rating", label: "Рейтинг" },
-            { value: "journal", label: "Журнал посещаемости" },
-          ] as const
-        ).map((tab) => (
-          <button
-            key={tab.value}
-            type="button"
-            role="tab"
-            aria-selected={view === tab.value}
-            className={`aj-tab${view === tab.value ? " aj-tab-active" : ""}`}
-            onClick={() => setView(tab.value)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
-  if (view === "journal") {
-    return (
-      <section className="card loc-section">
-        {heading}
-        <p className="muted loc-leaders-journal-intro">
-          Кто был на каждом старте этой площадки в выбранном году — пробежки и
-          волонтёрства по датам. Свежие даты слева, наведение или тап на
-          клетку подсвечивает весь столбец — видно, кто был в конкретную дату.
-        </p>
-        <LocationAttendanceJournal slug={slug} />
-      </section>
-    );
-  }
+  const topRunners = leaders.runners.slice(0, LEADERS_PREVIEW_LIMIT);
+  const topVolunteers = leaders.volunteers.slice(0, LEADERS_PREVIEW_LIMIT);
+  const detailsHref = `/locations/${encodeURIComponent(slug)}/participants`;
 
   return (
-    <>
-      {heading}
-      <div className="loc-columns">
+    <div className="loc-columns">
       {leaders.runners.length > 0 && (
         <section className="card loc-section">
           <h2 className="section-title">
@@ -588,7 +548,7 @@ function LocationLeadersSection({ slug }: { slug: string }) {
           </h2>
           {narrowViewport ? (
             <div className="rowcards loc-leaders-cards">
-              {leaders.runners.map((runner, index) => (
+              {topRunners.map((runner, index) => (
                 <div className="rowcard" key={`${runner.name}-${index}`}>
                   <div className="rowcard-rank">{index + 1}</div>
                   <div className="rowcard-mid">
@@ -623,7 +583,7 @@ function LocationLeadersSection({ slug }: { slug: string }) {
                 </tr>
               </thead>
               <tbody>
-                {leaders.runners.map((runner, index) => (
+                {topRunners.map((runner, index) => (
                   <tr key={`${runner.name}-${index}`}>
                     <td className="loc-leaders-rank">{index + 1}</td>
                     <td>
@@ -636,6 +596,11 @@ function LocationLeadersSection({ slug }: { slug: string }) {
               </tbody>
             </table>
           )}
+          <p className="loc-leaders-more">
+            <a className="loc-events-link" href={detailsHref}>
+              Весь постоянный состав →
+            </a>
+          </p>
         </section>
       )}
       {leaders.volunteers.length > 0 && (
@@ -650,7 +615,7 @@ function LocationLeadersSection({ slug }: { slug: string }) {
           </h2>
           {narrowViewport ? (
             <div className="rowcards loc-leaders-cards">
-              {leaders.volunteers.map((volunteer, index) => (
+              {topVolunteers.map((volunteer, index) => (
                 <div className="rowcard" key={`${volunteer.name}-${index}`}>
                   <div className="rowcard-rank">{index + 1}</div>
                   <div className="rowcard-mid">
@@ -680,7 +645,7 @@ function LocationLeadersSection({ slug }: { slug: string }) {
                 </tr>
               </thead>
               <tbody>
-                {leaders.volunteers.map((volunteer, index) => (
+                {topVolunteers.map((volunteer, index) => (
                   <tr key={`${volunteer.name}-${index}`}>
                     <td className="loc-leaders-rank">{index + 1}</td>
                     <td>
@@ -692,10 +657,14 @@ function LocationLeadersSection({ slug }: { slug: string }) {
               </tbody>
             </table>
           )}
+          <p className="loc-leaders-more">
+            <a className="loc-events-link" href={`${detailsHref}?scope=volunteers`}>
+              Весь постоянный состав →
+            </a>
+          </p>
         </section>
       )}
-      </div>
-    </>
+    </div>
   );
 }
 
@@ -1290,6 +1259,14 @@ function LocationPageContent({ slug }: { slug: string }) {
             связная фраза полезнее плашек тому, кто попал сюда из поиска и
             ещё не понял, что за место. */}
         <p className="loc-header-lead">{locationLeadSentences(page).join(" ")}</p>
+        {/* Отмена ближайшего старта — новость с коротким сроком годности:
+            ставим её выше навигации и таблиц, чтобы человек увидел раньше,
+            чем начнёт читать статистику. */}
+        <LocationCancellationNotice
+          isPaused={page.is_paused}
+          isCancelled={page.is_cancelled}
+          reason={page.cancel_reason}
+        />
         {/* Навигация по разделам локации одним рядом (редизайн 24.08.2026):
             раньше журнал жил текстовой ссылкой в плитке, а кабинет — кнопкой
             в середине страницы, и оба терялись. Кнопка кабинета появляется

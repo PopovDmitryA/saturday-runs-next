@@ -10,11 +10,20 @@ from app.migration.helpers import s95_country_from_url
 from app.models import Location, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalLocation
 from app.s95.api_client import S95ApiLocation, fetch_all_locations
-from app.services.location_catalog_cache import flush_location_catalog_caches
+from app.services.location_cancellation_notify import (
+    CancellationChange,
+    notify_cancellation_changes,
+)
+from app.services.location_catalog_cache import (
+    flush_location_catalog_caches,
+    flush_location_page_caches,
+)
 from app.services.location_geo_service import apply_reverse_geocode_to_location
+from app.services.sync_report_labels import location_detail_label
 from app.sync import upsert
 from app.sync.iteration_commit import commit_step, rollback_step
 from app.sync.location_registry_status import apply_location_registry_flags
+from app.sync.s95_location_status import ACTIVE_STATUS, S95LocationStatus, resolve_s95_location_status
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +41,12 @@ class S95LocationRegistrySyncResult:
     locations_updated: int = 0
     locations_created: int = 0
     regions_backfilled: int = 0
+    pause_status_changed: int = 0
     cancel_status_changed: int = 0
+    cancel_changed_locations: list[str] = field(default_factory=list)
+    # Изменения отмены в разобранном виде — для мониторинга; в отчёт синка не
+    # идут (там уже есть cancel_changed_locations).
+    cancellation_changes: list[CancellationChange] = field(default_factory=list, repr=False)
     errors: list[str] = field(default_factory=list)
 
 
@@ -81,16 +95,63 @@ def _to_canonical(entry: S95ApiLocation) -> CanonicalLocation:
     )
 
 
+def _entry_status(entry: S95ApiLocation, result: S95LocationRegistrySyncResult) -> S95LocationStatus | None:
+    """Что реестр говорит про площадку — с походом на страницу для неработающих.
+
+    `entry.active=false` само по себе неоднозначно: так выглядит и закрытая
+    навсегда площадка, и отменённая суббота (Иваново 27.08.2026). Разбирает их
+    `resolve_s95_location_status` по красной плашке страницы. Если страница не
+    открылась, возвращаем None — признаки строки лучше оставить прежними, чем
+    записать в них догадку.
+    """
+    if entry.active:
+        return ACTIVE_STATUS
+    try:
+        return resolve_s95_location_status(entry)
+    except Exception as exc:
+        result.errors.append(f"{entry.slug}: статус — {exc}")
+        logger.warning("S95 status resolve failed for %s: %s", entry.slug, exc, exc_info=True)
+        return None
+
+
+def _apply_status(
+    row: Location,
+    status: S95LocationStatus | None,
+    entry: S95ApiLocation,
+    result: S95LocationRegistrySyncResult,
+) -> bool:
+    if status is None:
+        return False
+    changed, pause_changed, cancel_changed = apply_location_registry_flags(
+        row,
+        is_paused=status.is_paused,
+        is_cancelled=status.is_cancelled,
+        cancel_reason=status.cancel_reason,
+    )
+    if pause_changed:
+        result.pause_status_changed += 1
+    if cancel_changed:
+        result.cancel_status_changed += 1
+        result.cancel_changed_locations.append(location_detail_label(entry.slug, entry.name))
+        result.cancellation_changes.append(
+            CancellationChange(
+                platform_code=PLATFORM_CODE,
+                slug=entry.slug,
+                name=entry.name,
+                cancelled=status.is_cancelled,
+                reason=status.cancel_reason,
+            )
+        )
+    return changed
+
+
 def _process_entry(
     db: Session,
     platform: Platform,
     entry: S95ApiLocation,
     result: S95LocationRegistrySyncResult,
 ) -> None:
-    # entry.active=false у s95 означает «площадка закрыта», а не «в эту субботу
-    # отмена»: недельных отмен их реестр не публикует. Поэтому закрытая уходит
-    # в «не действует» (is_paused), а is_cancelled остаётся под отмену старта.
-    is_inactive = not entry.active
+    status = _entry_status(entry, result)
 
     row = (
         db.query(Location)
@@ -103,11 +164,7 @@ def _process_entry(
         row, _ = upsert.upsert_location(db, platform, canonical)
         if entry.latitude is not None:
             row.is_official_map = True
-        _, pause_changed, _ = apply_location_registry_flags(
-            row, is_paused=is_inactive, is_cancelled=False
-        )
-        if pause_changed:
-            result.cancel_status_changed += 1
+        _apply_status(row, status, entry, result)
         if apply_reverse_geocode_to_location(row):
             result.regions_backfilled += 1
         result.locations_created += 1
@@ -161,11 +218,7 @@ def _process_entry(
         row.is_official_map = True
         changed = True
 
-    _, pause_changed, _ = apply_location_registry_flags(
-        row, is_paused=is_inactive, is_cancelled=False
-    )
-    if pause_changed:
-        result.cancel_status_changed += 1
+    if _apply_status(row, status, entry, result):
         changed = True
 
     if changed:
@@ -223,6 +276,13 @@ def sync_s95_locations_registry(
         db.commit()
         if result.locations_created or result.locations_updated:
             flush_location_catalog_caches("синк реестра s95")
+        if result.cancellation_changes:
+            flush_location_page_caches(
+                db,
+                [item.slug for item in result.cancellation_changes],
+                "синк реестра s95",
+            )
+            notify_cancellation_changes(result.cancellation_changes)
         return result
 
     except Exception as exc:

@@ -171,6 +171,9 @@ def test_normalize_path(raw: str, expected: str) -> None:
         ("/locations", True),
         ("/locations/kuzminki", True),
         ("/locations/kuzminki/events", True),
+        # Постоянный состав — поимённый список живых людей: страница живая,
+        # но в поиске ей не место.
+        ("/locations/kuzminki/participants", False),
         ("/ratings/wins", True),
         # Карточка участника индексируется с 15.08.2026: под noindex ВК и
         # Telegram строят превью без картинки. Вкладки — по-прежнему нет.
@@ -427,6 +430,7 @@ def test_catalog_body_lists_locations_with_links() -> None:
         ("/ratings/wins", True),
         ("/locations/kuzminki", True),
         ("/locations/kuzminki/events", True),
+        ("/locations/kuzminki/participants", True),
         ("/users/ivan", True),
         ("/admin/users", True),
         ("/world", True),

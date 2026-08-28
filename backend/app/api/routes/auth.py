@@ -12,8 +12,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_client_ip, get_current_user, get_optional_session_user_id
 from app.auth.providers import vk as vk_provider
+from app.auth.providers.telegram_widget import bot_id as telegram_bot_id
 from app.config import Settings, get_settings
 from app.core.admin import user_response
+from app.core.redis_client import get_redis_client
+from app.core.security import generate_token
 from app.core.session import delete_session
 from app.core.signup_guard import SignupContext, ensure_device_cookie, read_device_id
 from app.core.site_stats import record_login
@@ -41,6 +44,9 @@ from app.schemas.auth import (
     NoAccountPlatformsResponse,
     OAuthFinishRequest,
     OAuthFinishResponse,
+    TelegramLoginConfigResponse,
+    TelegramWidgetLoginRequest,
+    TelegramWidgetLoginResponse,
     UserResponse,
 )
 from app.services.auth_identity_service import (
@@ -72,6 +78,19 @@ from app.services.oauth_service import (
     handle_oauth_callback,
     start_oauth_flow,
 )
+from app.services.telegram_login_service import (
+    authorize_url as telegram_authorize_url,
+)
+from app.services.telegram_login_service import (
+    is_configured as telegram_login_configured,
+)
+from app.services.telegram_login_service import (
+    link_telegram,
+    login_bot_token,
+    login_bot_username,
+    login_with_widget,
+    telegram_fields,
+)
 from app.services.user_display_name_service import (
     dismiss_display_name_notice,
     display_name_options,
@@ -84,6 +103,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 KNOWN_DEVICE_COOKIE_MAX_AGE_SECONDS = 400 * 86400  # предел, который браузеры хранят
+
+TELEGRAM_STATE_PREFIX = "auth:tg:state:"
+TELEGRAM_STATE_TTL_SECONDS = 600
+
+
+def _request_origin(request: Request) -> str:
+    """Схема и домен, на которых человек сейчас находится.
+
+    Не app_base_url: дев-стенд живёт на другом домене (туннель), а Telegram
+    сверяет и origin, и return_to с доменом, прописанным боту.
+    """
+    host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or request.url.netloc
+    # Схему определяем по хосту, а не по X-Forwarded-Proto: заголовок ставит
+    # внутренний nginx, который сам получает запрос по http — TLS терминируется
+    # раньше, на внешнем прокси. Доверять такому заголовку нельзя, иначе origin
+    # уезжает в Telegram как http://, и тот его не принимает. Наружу сайт всегда
+    # за TLS; http остаётся только у localhost, где мы и разрабатываем.
+    bare_host = host.split(":")[0]
+    scheme = "http" if bare_host in {"localhost", "127.0.0.1"} else "https"
+    return f"{scheme}://{host}"
 
 
 def _verify_bot_secret(
@@ -425,6 +464,117 @@ def email_verify(
     from app.services.onboarding_service import post_login_redirect_target
 
     return EmailVerifyResponse(redirect=post_login_redirect_target(db, user_id))
+
+
+@router.get("/telegram/config", response_model=TelegramLoginConfigResponse)
+def telegram_login_config(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> TelegramLoginConfigResponse:
+    """Что нужно виджету в браузере, чтобы нарисовать вход через Telegram."""
+    if not telegram_login_configured(settings):
+        return TelegramLoginConfigResponse(enabled=False)
+    return TelegramLoginConfigResponse(
+        enabled=True,
+        bot_id=telegram_bot_id(login_bot_token(settings)),
+        bot_username=login_bot_username(settings),
+    )
+
+
+@router.get("/telegram/start", response_model=None)
+def telegram_login_start(
+    settings: Annotated[Settings, Depends(get_settings)],
+    request: Request,
+    consent: Annotated[bool, Query()] = False,
+    mode: Annotated[str, Query()] = "login",
+    user_id: Annotated[UUID | None, Depends(get_optional_session_user_id)] = None,
+) -> RedirectResponse:
+    """Отправить человека подтверждать вход в Telegram.
+
+    mode=link — привязка к профилю, в котором человек уже сидит; тогда согласие
+    спрашивать не нужно, оно давно дано.
+
+    И режим, и согласие храним в Redis под state, а не в адресе: всё, что
+    вернётся в return_to, Telegram не подписывает, и подменить такой параметр
+    может кто угодно.
+    """
+    if not telegram_login_configured(settings):
+        raise _handle_auth_error(AuthError("Вход через Telegram недоступен.", 503))
+    if mode == "link" and user_id is None:
+        raise _handle_auth_error(AuthError("Для привязки нужно войти в профиль.", 401))
+    if mode != "link" and not consent:
+        raise _handle_auth_error(
+            AuthError("Для входа необходимо принять условия обработки персональных данных.", 400)
+        )
+
+    # Домен берём из самого запроса: у дев-стенда он свой (туннель), у прода —
+    # свой, и оба должны совпасть с тем, что прописан боту через /setdomain.
+    origin = _request_origin(request)
+    state = generate_token(24)
+    get_redis_client().setex(
+        f"{TELEGRAM_STATE_PREFIX}{state}",
+        TELEGRAM_STATE_TTL_SECONDS,
+        json.dumps({"mode": mode, "link_user_id": str(user_id) if mode == "link" else None}),
+    )
+    return_to = f"{origin}/auth/telegram/return?state={state}"
+    url = telegram_authorize_url(settings, origin=origin, return_to=return_to)
+    response = RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)
+    ensure_device_cookie(request, response, settings)
+    return response
+
+
+@router.post("/telegram/widget", response_model=TelegramWidgetLoginResponse)
+def telegram_widget_login(
+    body: TelegramWidgetLoginRequest,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    request: Request,
+    response: Response,
+) -> TelegramWidgetLoginResponse:
+    # Метку выдал /telegram/start и она одноразовая: без неё это чужой POST,
+    # а не возврат человека из Telegram.
+    raw_state = get_redis_client().getdel(f"{TELEGRAM_STATE_PREFIX}{body.state}") if body.state else None
+    if not raw_state:
+        raise _handle_auth_error(AuthError("Сессия входа истекла. Попробуйте ещё раз.", 400))
+    state_payload = json.loads(raw_state)
+    link_user_id = state_payload.get("link_user_id")
+
+    if link_user_id:
+        try:
+            merge_token = link_telegram(
+                db,
+                settings,
+                UUID(str(link_user_id)),
+                telegram_fields(body.data),
+            )
+        except AuthError as exc:
+            raise _handle_auth_error(exc) from exc
+        return TelegramWidgetLoginResponse(redirect="settings", merge_token=merge_token)
+
+    try:
+        user_id = login_with_widget(
+            db,
+            settings,
+            telegram_fields(body.data),
+            consent=True,
+            signup_context=_signup_context(request, settings),
+        )
+    except AuthError as exc:
+        raise _handle_auth_error(exc) from exc
+
+    signed_session = create_user_session(settings, user_id)
+    _log_login(
+        db,
+        settings,
+        user_id=user_id,
+        provider="telegram",
+        signed_session=signed_session,
+        request=request,
+    )
+    _set_session_cookie(response, settings, signed_session)
+
+    from app.services.onboarding_service import post_login_redirect_target
+
+    return TelegramWidgetLoginResponse(redirect=post_login_redirect_target(db, user_id))
 
 
 @router.post("/email/link", response_model=EmailLinkResponse)

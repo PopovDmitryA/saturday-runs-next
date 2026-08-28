@@ -18,7 +18,6 @@ import logging
 from datetime import date, datetime, time, timedelta, timezone
 from statistics import median
 from typing import Any
-from uuid import UUID
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session

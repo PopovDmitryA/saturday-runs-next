@@ -405,7 +405,7 @@ function AdminLocationContactsContent() {
                               <PlatformBadge code={platform.platform_code} />
                               {(platform.is_cancelled || platform.is_paused) && (
                                 <span className="muted contact-platform-flags">
-                                  {platform.is_cancelled ? " закрыта" : ""}
+                                  {platform.is_cancelled ? " отмена старта" : ""}
                                   {platform.is_paused ? " пауза" : ""}
                                 </span>
                               )}
