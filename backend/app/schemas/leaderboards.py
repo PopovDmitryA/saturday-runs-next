@@ -66,6 +66,11 @@ class LeaderboardRowResponse(BaseModel):
     locations_total: int | None = None
     cities_total: int | None = None
     regions_total: int | None = None
+    # Прогноз завершения туризма (только у FORECAST_METRICS): сколько
+    # действующих единиц зачёта осталось и когда они закончатся, если брать по
+    # новой каждый старт. Дата пустая, когда брать уже нечего.
+    remaining_total: int | None = None
+    forecast_date: str | None = None
     # Колонка «Последняя неделя» (см. WEEK_LOCATIONS_METRICS).
     week_location: WeekLocationResponse | None = None
 
@@ -83,6 +88,8 @@ class LeaderboardResponse(BaseModel):
     count_by_options: list[str] = []
     # Есть ли у рейтинга колонка «Последняя неделя».
     has_week_locations: bool = False
+    # Есть ли колонки «Осталось» и «Прогноз» (прогноз завершения туризма).
+    has_forecast: bool = False
     # Фильтр «только очевидный дом» (есть у дальности от дома) и его состояние.
     has_home_filter: bool = False
     hide_ambiguous_home: bool = False
@@ -112,6 +119,8 @@ class MyLeaderboardRowResponse(BaseModel):
     locations_total: int | None = None
     cities_total: int | None = None
     regions_total: int | None = None
+    remaining_total: int | None = None
+    forecast_date: str | None = None
     week_location: WeekLocationResponse | None = None
     display_name: str | None
     site_serial_id: int
@@ -143,6 +152,50 @@ class MyLeaderboardRowResponse(BaseModel):
     top_role: str | None = None
     top_role_count: int | None = None
     role_details: list[VolunteerRoleDetailResponse] = []
+
+
+class JournalItemResponse(BaseModel):
+    """Одна отметка журнала посещаемости: дата и где это было."""
+
+    date: str
+    location: str | None = None
+    slug: str | None = None
+    platform: str
+    # Только у журнала волонтёрств: роль (канонический ярлык).
+    role: str | None = None
+    # Только у журнала туризма: первый визит на площадку за всю историю.
+    new: bool | None = None
+
+
+class JournalRowResponse(BaseModel):
+    row_key: str
+    # Место в рейтинге (все годы, текущие фильтры) — как в таблице рядом.
+    rank: int | None = None
+    display_name: str | None = None
+    site_serial_id: int | None = None
+    # «Всего» рейтинга за всю историю — для сверки с таблицей.
+    total: int | None = None
+    # Счёт выбранного года в единицах метрики (у туризма — новые площадки года).
+    year_total: int
+    # Закрытый профиль: счёт года остаётся, отметки по датам не отдаются.
+    private: bool = False
+    items: list[JournalItemResponse] = []
+
+
+class AttendanceJournalResponse(BaseModel):
+    metric: str
+    year: int
+    years: list[int] = []
+    platform: str = "all"
+    offset: int = 0
+    limit: int = 50
+    # Сколько строк всего в рейтинге — для «показать ещё».
+    total_rows: int = 0
+    latest_event_date: str | None = None
+    built_at: str | None = None
+    rows: list[JournalRowResponse] = []
+    # Строка зрителя — с его отметками, даже если он за пределами страницы.
+    me: JournalRowResponse | None = None
 
 
 class VolunteerRoleItem(BaseModel):

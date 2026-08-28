@@ -16,6 +16,7 @@ from app.schemas.dashboard import HomeDistanceDetailResponse
 from app.schemas.locations import (
     CatalogLocationsTableResponse,
     LastResultsResponse,
+    LocationAttendanceResponse,
     LocationEventsResponse,
     LocationLeadersResponse,
     LocationPageResponse,
@@ -32,7 +33,10 @@ from app.services.home_distance_service import build_home_distance_detail
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_catalog_map_locations, list_user_visited_map_locations
 from app.services.location_page_service import (
+    LOCATION_ATTENDANCE_MAX_LIMIT,
+    LOCATION_ATTENDANCE_PAGE_LIMIT,
     build_last_results,
+    build_location_attendance,
     build_location_events,
     build_location_leaders,
     build_location_page,
@@ -95,6 +99,33 @@ def location_leaders(
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
     return LocationLeadersResponse.model_validate(payload)
+
+
+@router.get("/page/{slug}/attendance", response_model=LocationAttendanceResponse)
+def location_attendance(
+    slug: str,
+    db: Annotated[Session, Depends(get_db)],
+    viewer: Annotated[User | None, Depends(get_optional_user)],
+    year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
+    kind: str = "all",
+    offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+    limit: Annotated[
+        int, Query(ge=1, le=LOCATION_ATTENDANCE_MAX_LIMIT)
+    ] = LOCATION_ATTENDANCE_PAGE_LIMIT,
+) -> LocationAttendanceResponse:
+    """Журнал посещаемости локации: участники × даты стартов выбранного года."""
+    payload = build_location_attendance(
+        db,
+        slug,
+        year=year,
+        kind=kind,
+        offset=offset,
+        limit=limit,
+        viewer_user_id=viewer.id if viewer is not None else None,
+    )
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
+    return LocationAttendanceResponse.model_validate(payload)
 
 
 @router.get("/page/{slug}/participants", response_model=LocationParticipantsResponse)

@@ -585,6 +585,340 @@ def _compute_location_leaders(db: Session, slug: str, *, limit: int = 20) -> dic
     }
 
 
+LOCATION_ATTENDANCE_PAGE_LIMIT = 50
+LOCATION_ATTENDANCE_MAX_LIMIT = 100
+LOCATION_ATTENDANCE_KINDS = ("all", "runners", "volunteers")
+
+
+def location_attendance_cache_key(slug: str, year: int, kind: str, offset: int, limit: int) -> str:
+    return (
+        f"locations:attendance:v1:{slug.strip().lower()}:{year}:{kind}:o{offset}:l{limit}"
+    )
+
+
+@dataclass
+class _AttendancePerson:
+    name: str | None = None
+    user_name: str | None = None
+    handle: str | None = None
+    private: bool = False
+    run_dates: set[date] = field(default_factory=set)
+    # дата -> роли волонтёрства в этот день (канонические ярлыки).
+    vol_roles: dict[date, set[str]] = field(default_factory=dict)
+
+    @property
+    def display_name(self) -> str | None:
+        return self.user_name or self.name
+
+    @property
+    def dates(self) -> set[date]:
+        return self.run_dates | set(self.vol_roles)
+
+
+def _attendance_rows_query(db: Session, event_ids: list[UUID], result_model: Any) -> list[Any]:
+    """Сырые строки протоколов года: кто, когда, (роль). Группировка по
+    человеку — та же, что в рейтингах локации: coalesce(platform_links.user_id,
+    participant_id) склеивает привязанные аккаунты в одну строку."""
+    group_key = func.coalesce(PlatformLink.user_id, result_model.participant_id)
+    columns = [
+        group_key.label("gkey"),
+        Participant.display_name.label("name"),
+        User.display_name.label("user_name"),
+        User.public_slug.label("public_slug"),
+        User.serial_id.label("serial_id"),
+        User.profile_private.label("private"),
+        Event.event_date.label("event_date"),
+    ]
+    if result_model is VolunteerResult:
+        columns.append(VolunteerResult.role.label("role"))
+    return (
+        db.query(*columns)
+        .select_from(result_model)
+        .join(Event, result_model.event_id == Event.id)
+        .join(Participant, result_model.participant_id == Participant.id)
+        .outerjoin(PlatformLink, _platform_link_join())
+        .outerjoin(User, PlatformLink.user_id == User.id)
+        .filter(result_model.event_id.in_(event_ids))
+        .all()
+    )
+
+
+def _collect_attendance_people(
+    db: Session, event_ids: list[UUID]
+) -> dict[object, _AttendancePerson]:
+    people: dict[object, _AttendancePerson] = {}
+
+    def person_for(row: Any) -> _AttendancePerson:
+        person = people.setdefault(row.gkey, _AttendancePerson())
+        if row.name and not person.name:
+            person.name = str(row.name)
+        if row.user_name and not person.user_name:
+            person.user_name = str(row.user_name)
+        if row.private:
+            person.private = True
+        # Хендл — только у открытых профилей: тот же принцип, что у публичных
+        # ссылок протокола (public_serial в протоколах страницы локации).
+        if not row.private and person.handle is None:
+            handle = row.public_slug or (str(row.serial_id) if row.serial_id else None)
+            person.handle = handle
+        return person
+
+    for row in _attendance_rows_query(db, event_ids, RunResult):
+        person_for(row).run_dates.add(row.event_date)
+    for row in _attendance_rows_query(db, event_ids, VolunteerResult):
+        person = person_for(row)
+        roles = person.vol_roles.setdefault(row.event_date, set())
+        canonical = canonical_volunteer_role(row.role)
+        if canonical is not None:
+            roles.add(canonical.label)
+    return people
+
+
+def _attendance_dates(person: _AttendancePerson, kind: str) -> set[date]:
+    """Дни человека в выбранном разрезе журнала."""
+    if kind == "runners":
+        return set(person.run_dates)
+    if kind == "volunteers":
+        return set(person.vol_roles)
+    return person.dates
+
+
+def _attendance_row_payload(
+    person: _AttendancePerson, *, me: bool = False, kind: str = "all"
+) -> dict[str, object]:
+    """Строка журнала в выбранном разрезе.
+
+    kind — это именно СРЕЗ, а не отбор строк: в «Бегунах» клетки показывают
+    только пробежки, и «Всего» считает их же. Никого при этом не выбрасываем —
+    человек, который и бежал, и волонтёрил, остаётся в журнале в обоих
+    разрезах, просто теряет заливку «чужой» роли (правки Дмитрия 28.08.2026).
+    Раньше же фильтр лишь выбрасывал тех, у кого совсем нет пробежек (или
+    волонтёрств), а клетки оставались прежними — и переключатель почти ничего
+    не менял: у большинства есть и то, и другое.
+    """
+    dates = _attendance_dates(person, kind)
+    items: list[dict[str, object]] = []
+    if not person.private or me:
+        for day in sorted(dates, reverse=True):
+            items.append(
+                {
+                    "date": day.isoformat(),
+                    "run": kind != "volunteers" and day in person.run_dates,
+                    "roles": [] if kind == "runners" else sorted(person.vol_roles.get(day, ())),
+                }
+            )
+    return {
+        "name": person.display_name,
+        "handle": person.handle,
+        "private": person.private,
+        "year_total": len(dates),
+        "runs_total": len(person.run_dates),
+        "volunteering_total": len(person.vol_roles),
+        "items": items,
+    }
+
+
+def build_location_attendance(
+    db: Session,
+    slug: str,
+    *,
+    year: int | None = None,
+    kind: str = "all",
+    offset: int = 0,
+    limit: int = LOCATION_ATTENDANCE_PAGE_LIMIT,
+    viewer_user_id: UUID | None = None,
+    use_cache: bool = True,
+) -> dict[str, object] | None:
+    """Журнал посещаемости локации: участники × даты стартов выбранного года.
+
+    Перенос Grafana-дашборда «Журнал посещаемости локации», но в одном журнале
+    сразу и бегуны, и волонтёры: клетка даты различает пробежку, волонтёрство
+    и «и то и другое». Фильтр kind сужает СТРОКИ (кто попал в таблицу), клетки
+    строки всегда показывают обе роли.
+    """
+    if kind not in LOCATION_ATTENDANCE_KINDS:
+        kind = "all"
+    limit = max(1, min(limit, LOCATION_ATTENDANCE_MAX_LIMIT))
+    offset = max(0, offset)
+
+    # Быстрый путь анонима: ключ на ЗАПРОШЕННЫЙ slug (год 0 = «последний»),
+    # чтобы попадание в кэш не тянуло резолв идентичности (он перечитывает все
+    # локации и каталог). Залогиненному нужен блок «Вы» — ему полный путь.
+    requested_key = location_attendance_cache_key(slug, year or 0, kind, offset, limit)
+    if use_cache and viewer_user_id is None:
+        cached = _read_json_cache(requested_key)
+        if cached is not None:
+            return dict(cached, me=None)
+
+    identity = resolve_location_identity(db, slug)
+    if identity is None:
+        return None
+    location_ids = [location.id for location, _code in identity.locations]
+    event_rows = (
+        db.query(Event.id, Event.event_date, Platform.code)
+        .join(Platform, Event.platform_id == Platform.id)
+        .filter(Event.location_id.in_(location_ids), Event.is_test_event.is_(False))
+        .all()
+    )
+    kept = _dedupe_crosslinked_events(db, [row[0] for row in event_rows])
+    event_rows = [row for row in event_rows if row[0] in kept]
+
+    years = sorted({row[1].year for row in event_rows}, reverse=True)
+    if not years:
+        return {
+            "slug": identity.slug,
+            "name": identity.name,
+            "year": year or date.today().year,
+            "years": [],
+            "kind": kind,
+            "offset": offset,
+            "limit": limit,
+            "total_rows": 0,
+            "columns": [],
+            "date_totals": {},
+            "rows": [],
+            "me": None,
+        }
+    if year is None or year not in years:
+        year = years[0]
+
+    cache_key = location_attendance_cache_key(identity.slug, year, kind, offset, limit)
+    payload: dict[str, object] | None = None
+    if use_cache:
+        payload = _read_json_cache(cache_key)
+
+    year_events = [row for row in event_rows if row[1].year == year]
+    year_event_ids = [row[0] for row in year_events]
+    people: dict[object, _AttendancePerson] | None = None
+
+    if payload is None:
+        people = _collect_attendance_people(db, year_event_ids)
+
+        columns_by_date: dict[date, set[str]] = {}
+        for _event_id, event_date, platform_code in year_events:
+            columns_by_date.setdefault(event_date, set()).add(platform_code)
+        columns = [
+            {"date": day.isoformat(), "platforms": sorted(codes)}
+            for day, codes in sorted(columns_by_date.items(), reverse=True)
+        ]
+
+        # Итоговая строка «Участников»: посещаемость каждого старта читается
+        # прямо из журнала — бегуны и волонтёры считаются по всем людям года,
+        # а не по видимой странице.
+        date_totals: dict[str, dict[str, int]] = {
+            day.isoformat(): {"runners": 0, "volunteers": 0} for day in columns_by_date
+        }
+        for person in people.values():
+            for day in person.run_dates:
+                totals = date_totals.get(day.isoformat())
+                if totals is not None:
+                    totals["runners"] += 1
+            for day in person.vol_roles:
+                totals = date_totals.get(day.isoformat())
+                if totals is not None:
+                    totals["volunteers"] += 1
+
+        # Состав строк от разреза НЕ зависит: в журнале остаются все, кто был
+        # здесь в этом году (правка Дмитрия 28.08.2026 — «не должен исключать
+        # тех, кто и бежал, и волонтёрил»). Разрез меняет заливку клеток и счёт,
+        # а порядок ставит наверх самых активных именно в нём: у кого в разрезе
+        # пусто, тот честно уезжает вниз, но из журнала не пропадает.
+        selected = sorted(
+            people.values(),
+            key=lambda person: (
+                -len(_attendance_dates(person, kind)),
+                -len(person.dates),
+                person.display_name or "",
+            ),
+        )
+        page = selected[offset : offset + limit]
+
+        payload = {
+            "slug": identity.slug,
+            "name": identity.name,
+            "year": year,
+            "years": years,
+            "kind": kind,
+            "offset": offset,
+            "limit": limit,
+            "total_rows": len(selected),
+            "columns": columns,
+            "date_totals": date_totals,
+            "rows": [_attendance_row_payload(person, kind=kind) for person in page],
+        }
+        if use_cache:
+            _write_json_cache(cache_key, payload, LOCATION_PAGE_CACHE_TTL_SECONDS)
+            # Продублировать под ключом запроса (год «последний», slug как в
+            # адресе) — иначе быстрый путь анонима никогда бы не попадал в кэш.
+            if requested_key != cache_key:
+                _write_json_cache(requested_key, payload, LOCATION_PAGE_CACHE_TTL_SECONDS)
+
+    result = dict(payload)
+    result["me"] = (
+        _viewer_location_attendance(db, year_event_ids, viewer_user_id, people, kind)
+        if viewer_user_id is not None
+        else None
+    )
+    return result
+
+
+def _viewer_location_attendance(
+    db: Session,
+    year_event_ids: list[UUID],
+    viewer_user_id: UUID,
+    people: dict[object, _AttendancePerson] | None,
+    kind: str = "all",
+) -> dict[str, object] | None:
+    """Строка «Вы» журнала локации — даже когда страница пришла из кэша.
+
+    Если агрегация года уже посчитана в этом запросе, берём готовую; иначе —
+    точечные выборки только по участникам зрителя.
+    """
+    if people is not None:
+        person = people.get(viewer_user_id)
+        return _attendance_row_payload(person, me=True, kind=kind) if person is not None else None
+
+    participant_ids = [
+        row[0]
+        for row in db.query(PlatformLink.participant_id)
+        .filter(PlatformLink.user_id == viewer_user_id, PlatformLink.participant_id.isnot(None))
+        .all()
+    ]
+    if not participant_ids or not year_event_ids:
+        return None
+    person = _AttendancePerson()
+    run_rows = (
+        db.query(Event.event_date)
+        .select_from(RunResult)
+        .join(Event, RunResult.event_id == Event.id)
+        .filter(
+            RunResult.event_id.in_(year_event_ids),
+            RunResult.participant_id.in_(participant_ids),
+        )
+        .all()
+    )
+    for (event_date,) in run_rows:
+        person.run_dates.add(event_date)
+    vol_rows = (
+        db.query(Event.event_date, VolunteerResult.role)
+        .select_from(VolunteerResult)
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .filter(
+            VolunteerResult.event_id.in_(year_event_ids),
+            VolunteerResult.participant_id.in_(participant_ids),
+        )
+        .all()
+    )
+    for event_date, role in vol_rows:
+        roles = person.vol_roles.setdefault(event_date, set())
+        canonical = canonical_volunteer_role(role)
+        if canonical is not None:
+            roles.add(canonical.label)
+    if not _attendance_dates(person, kind):
+        return None
+    return _attendance_row_payload(person, me=True, kind=kind)
+
+
 def build_location_participants(
     db: Session, slug: str, *, use_cache: bool = True, refresh: bool = False
 ) -> dict[str, object] | None:

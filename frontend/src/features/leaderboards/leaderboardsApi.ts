@@ -173,6 +173,11 @@ export type LeaderboardRow = {
   locations_total?: number | null;
   cities_total?: number | null;
   regions_total?: number | null;
+  // Прогноз завершения туризма: сколько действующих локаций (городов,
+  // регионов — по фильтру count_by) ещё не закрыто и когда квест закончится,
+  // если брать по новой каждый старт. Даты нет, когда брать уже нечего.
+  remaining_total?: number | null;
+  forecast_date?: string | null;
   // Колонка «Последняя неделя»: где участник был за окно дельты.
   week_location?: WeekLocation | null;
 };
@@ -186,6 +191,8 @@ export type LeaderboardResponse = {
   // Кнопки фильтра «единица зачёта»; пусто — у рейтинга такого фильтра нет.
   count_by_options?: CountBy[];
   has_week_locations?: boolean;
+  /** Есть ли у этого варианта рейтинга колонки «Осталось» и «Прогноз». */
+  has_forecast?: boolean;
   /** Фильтр «только очевидный дом»: есть ли он у рейтинга и включён ли. */
   has_home_filter?: boolean;
   hide_ambiguous_home?: boolean;
@@ -217,6 +224,9 @@ export type MyLeaderboardRow = {
   locations_total?: number | null;
   cities_total?: number | null;
   regions_total?: number | null;
+  // Прогноз завершения туризма — как в строках таблицы.
+  remaining_total?: number | null;
+  forecast_date?: string | null;
   week_location?: WeekLocation | null;
   display_name: string | null;
   site_serial_id: number;

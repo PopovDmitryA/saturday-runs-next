@@ -20,6 +20,7 @@ import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
+import { LocationAttendanceJournal } from "../journal/LocationAttendanceJournal";
 
 type SortKey = "date" | "finishers" | "volunteers" | "best_male" | "best_female" | "avg" | "newcomers" | "prs";
 
@@ -74,6 +75,24 @@ function LocationEventsContent({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [platformFilter, setPlatformFilter] = useState<string | null>(null);
   const [sort, setSort] = useState<SortState>({ key: "date", asc: false });
+  // Второй вид журнала — посещаемость: те же старты, но не сводкой по
+  // событиям, а матрицей «участник × даты» (перенос дашборда Grafana).
+  // Стартовое значение из ссылки, чтобы видом можно было делиться.
+  const [view, setView] = useState<"protocols" | "attendance">(() =>
+    new URLSearchParams(window.location.search).get("view") === "attendance"
+      ? "attendance"
+      : "protocols",
+  );
+  const switchView = (next: "protocols" | "attendance") => {
+    setView(next);
+    const url = new URL(window.location.href);
+    if (next === "attendance") {
+      url.searchParams.set("view", "attendance");
+    } else {
+      url.searchParams.delete("view");
+    }
+    window.history.replaceState(null, "", url.toString());
+  };
   // Копия шапки встаёт под липкую полосу «Кратко | Полно», а не под шапку сайта.
   const attachFloatingHead = useFloatingTableHead(".tview-bar");
   // Краткий вид набирает колонки под ширину: минимум — номер, дата и финишёры.
@@ -213,6 +232,40 @@ function LocationEventsContent({ slug }: { slug: string }) {
         </div>
       </header>
 
+      {/* Два вида одного журнала: «Протоколы» — сводка по стартам,
+          «Посещаемость» — матрица «участник × даты». Тот же приём, что в
+          рейтингах пробежек и туризма. */}
+      <div className="aj-tabs loc-events-view" role="tablist" aria-label="Вид журнала">
+        {(
+          [
+            { value: "protocols", label: "Протоколы" },
+            { value: "attendance", label: "Посещаемость" },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            role="tab"
+            aria-selected={view === tab.value}
+            className={`aj-tab${view === tab.value ? " aj-tab-active" : ""}`}
+            onClick={() => switchView(tab.value)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {view === "attendance" ? (
+        <section className="loc-section loc-attendance-section">
+          <p className="muted loc-attendance-intro">
+            Кто был на каждом старте этой площадки: пробежки и волонтёрства по
+            датам. Свежие даты слева, наведение или тап на клетку подсвечивает
+            весь столбец — видно, кто был в конкретную дату.
+          </p>
+          <LocationAttendanceJournal slug={slug} />
+        </section>
+      ) : (
+        <>
       {/* У большинства локаций протоколы одной системы — фильтровать нечего,
           и ряд из «Все (N)» и единственной кнопки только утяжеляет страницу. */}
       {platformCounts.size > 1 && (
@@ -422,6 +475,8 @@ function LocationEventsContent({ slug }: { slug: string }) {
           </p>
         )}
       </section>
+        </>
+      )}
       <ScrollToTopButton />
     </PortalSectionShell>
   );

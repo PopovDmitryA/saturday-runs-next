@@ -11,11 +11,18 @@ from app.core.admin import is_admin_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas.leaderboards import (
+    AttendanceJournalResponse,
     LeaderboardResponse,
     MyLeaderboardRowResponse,
     TouristMapResponse,
     VolunteerRoleCatalogResponse,
     VolunteerRoleItem,
+)
+from app.services.attendance_journal_service import (
+    JOURNAL_MAX_LIMIT,
+    JOURNAL_METRICS,
+    JOURNAL_PAGE_LIMIT,
+    get_attendance_journal,
 )
 from app.services.leaderboard_service import (
     ADMIN_ONLY_METRICS,
@@ -156,6 +163,35 @@ def tourist_map(
         location_key=location_key,
     )
     return TouristMapResponse.model_validate(payload)
+
+
+# Режим «Журнал» рейтинга: визиты строк таблицы по датам выбранного года.
+# Публичный, как и сама таблица; строка «Вы» приезжает в том же ответе, если
+# зритель залогинен.
+@router.get("/{metric}/journal", response_model=AttendanceJournalResponse)
+def attendance_journal(
+    metric: str,
+    db: Annotated[Session, Depends(get_db)],
+    viewer: Annotated[User | None, Depends(get_optional_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
+    platform: str = "all",
+    offset: Annotated[int, Query(ge=0, le=1000)] = 0,
+    limit: Annotated[int, Query(ge=1, le=JOURNAL_MAX_LIMIT)] = JOURNAL_PAGE_LIMIT,
+) -> AttendanceJournalResponse:
+    validated = _validate_metric(metric, viewer, settings)
+    if validated not in JOURNAL_METRICS:
+        raise HTTPException(status_code=404, detail="У этого рейтинга нет журнала")
+    payload = get_attendance_journal(
+        db,
+        validated,
+        year=year,
+        platform=platform,
+        offset=offset,
+        limit=limit,
+        viewer=viewer,
+    )
+    return AttendanceJournalResponse.model_validate(payload)
 
 
 # Строка «Вы» — только своя, поэтому логин обязателен и здесь.
