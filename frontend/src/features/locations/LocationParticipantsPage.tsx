@@ -3,6 +3,13 @@ import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
+  FilterGroup,
+  FilterPanel,
+  FilterRow,
+  FilterSearch,
+  FilterTabs,
+} from "../../components/filters/FilterPanel";
+import {
   ApiError,
   getLocationParticipants,
   type LocationActiveParticipant,
@@ -238,36 +245,36 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
 
       {/* Зачёт и поиск — одной строкой: два ряда управления над таблицей
           съедали экран телефона до первой фамилии. */}
-      <div className="loc-people-toolbar">
-        <div className="map-mode-tabs" role="tablist" aria-label="Зачёт">
-          {(["runners", "volunteers"] as Scope[]).map((key) => (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={scope === key}
-              className={scope === key ? "map-mode-tab active" : "map-mode-tab"}
-              onClick={() => setScope(key)}
-            >
-              {SCOPE_WORDS[key].label} (
-              {formatInt((key === "runners" ? data.runners : data.volunteers).length)})
-            </button>
-          ))}
-        </div>
-        <input
-          className="input loc-people-search"
-          type="search"
-          placeholder="Поиск по имени…"
-          aria-label="Поиск по имени или фамилии"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+      <FilterPanel className="loc-people-toolbar">
+        <FilterRow>
+          <FilterGroup label="Зачёт">
+            <FilterTabs
+              asTablist
+              ariaLabel="Зачёт"
+              value={scope}
+              onChange={(value) => setScope(value as Scope)}
+              options={(["runners", "volunteers"] as Scope[]).map((key) => ({
+                value: key,
+                label: `${SCOPE_WORDS[key].label} (${formatInt(
+                  (key === "runners" ? data.runners : data.volunteers).length,
+                )})`,
+              }))}
+            />
+          </FilterGroup>
+          <FilterGroup trailing>
+            <FilterSearch
+              value={query}
+              onChange={setQuery}
+              ariaLabel="Поиск по имени или фамилии"
+            />
+          </FilterGroup>
+        </FilterRow>
         {query.trim() && (
           <span className="muted loc-people-found">
             {rows.length > 0 ? `Найдено: ${formatInt(rows.length)}` : "Никого не нашли"}
           </span>
         )}
-      </div>
+      </FilterPanel>
 
       <section className="loc-section">
         <TableViewToggle columns={tableColumns} />

@@ -2009,6 +2009,42 @@ a.on-this-day-location {
   font-size: 1rem;
 }
 
+/* ЕДИНЫЙ СТАНДАРТ ПОЛЯ ПОИСКА (решение Дмитрия 28.08.2026: «чтобы не было
+   строки для поиска где-то большой, где-то маленькой»).
+
+   До этого поля поиска расходились по всем осям: 6 разных border-radius
+   (8px / 10px / 12px / 13px / 999px), 4 padding (.75rem у .input против
+   .45rem .75rem у .lb-search и .4rem .5rem у поповера), два цвета рамки и
+   два фона. Правило по атрибуту накрывает ВСЕ поля поиска разом, не требуя
+   переписывать разметку двух десятков страниц; ширины остаются за страницей
+   (где-то поле во всю строку панели, где-то в 12rem), а высота, радиус,
+   фон и шрифт — общие. Тот же вид описан классом .fp-search в
+   components/filters/filters.css — это его зеркало для legacy-разметки. */
+input[type="search"],
+.protocol-name-filter {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+input[type="search"]:focus,
+.protocol-name-filter:focus {
+  outline: none;
+  border-color: var(--border-heavy);
+}
+
+/* Поиск внутри поповера фильтра колонки — единственное осознанное исключение:
+   он живёт в узкой всплывашке, где общий размер занял бы всю её ширину. */
+.filter-popover-search {
+  padding: 0.4rem 0.5rem;
+  font-size: 0.85rem;
+  border-radius: 8px;
+}
+
 .checkbox-row-group {
   display: flex;
   flex-wrap: wrap;
@@ -3925,28 +3961,42 @@ button.badge-platform-btn:hover {
   }
 }
 
+/* Сегментированный переключатель — единый на весь сайт (решение Дмитрия
+   28.08.2026: «все элементы должны быть в едином стиле»). Раньше .map-mode-tab
+   был набором отдельных пилюль с ярко-синей заливкой активного, а рейтинги и
+   журналы рисовали таблетки внутри общей подложки — рядом это читалось как
+   два разных контрола. Теперь метрики общие с .fp-tabs (components/filters)
+   и .lb-gender-tabs; разметку страниц переписывать не потребовалось. */
 .map-mode-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   margin-bottom: 0.75rem;
 }
 
 .map-mode-tab {
-  border: 1px solid var(--border-strong);
+  appearance: none;
+  border: none;
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-3);
-  padding: 0.45rem 0.85rem;
+  background: transparent;
+  color: var(--text-muted, inherit);
+  padding: 0.35rem 0.9rem;
   font: inherit;
-  font-size: 0.92rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .map-mode-tab.active {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
+  background: var(--surface, #fff);
+  color: var(--text, inherit);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .map-mode-tab:disabled {
@@ -13701,15 +13751,18 @@ a.admin-system-chip:hover {
   margin-bottom: 0;
 }
 
+/* Селект возрастной группы стоит в одном ряду с полем поиска, поэтому носит
+   те же метрики, что общий стандарт поиска (см. input[type="search"]):
+   раньше оба были пилюлями radius 999px и выбивались из всех прочих витрин. */
 .protocol-age-select,
 .protocol-name-filter {
   padding: 0.45rem 0.75rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
   color: var(--text);
   font: inherit;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
 }
 
 .protocol-name-filter {
@@ -14651,7 +14704,9 @@ a.admin-system-chip:hover {
   pointer-events: none;
 }
 
-.participant-name-search-input {
+/* Осознанное исключение из общего стандарта поиска: слева иконка лупы, под
+   неё отведён padding-left, и поле крупнее — это первый экран онбординга. */
+input.participant-name-search-input {
   width: 100%;
   padding: 13px 16px 13px 42px;
   border-radius: 13px;
@@ -14659,7 +14714,7 @@ a.admin-system-chip:hover {
   transition: border-color 0.25s, box-shadow 0.25s;
 }
 
-.participant-name-search-input:focus {
+input.participant-name-search-input:focus {
   border-color: var(--link);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--link) 16%, transparent);
   outline: none;
@@ -15280,7 +15335,9 @@ a.admin-system-chip:hover {
   pointer-events: none;
 }
 
-.participant-name-search-input {
+/* Осознанное исключение из общего стандарта поиска: слева иконка лупы, под
+   неё отведён padding-left, и поле крупнее — это первый экран онбординга. */
+input.participant-name-search-input {
   width: 100%;
   padding: 13px 16px 13px 42px;
   border-radius: 13px;
@@ -15288,7 +15345,7 @@ a.admin-system-chip:hover {
   transition: border-color 0.25s, box-shadow 0.25s;
 }
 
-.participant-name-search-input:focus {
+input.participant-name-search-input:focus {
   border-color: var(--link);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--link) 16%, transparent);
   outline: none;

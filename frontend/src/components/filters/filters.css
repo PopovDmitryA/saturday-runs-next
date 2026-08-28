@@ -1,0 +1,124 @@
+/* Единая панель фильтров витрин (см. components/filters/FilterPanel.tsx).
+   Образец — панель рейтингов; здесь те же метрики, но без привязки к
+   leaderboards.css, который грузится только в разделе «Рейтинги». */
+
+.fp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  margin-bottom: 1rem;
+}
+
+/* Ряд групп: выравниваем по низу, чтобы таблетки всех групп стояли на одной
+   линии, даже когда подписи разной длины и переносятся. */
+.fp-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem 1.75rem;
+  min-width: 0;
+}
+
+/* Вторая строка панели отделена линией: без неё два ряда читаются как
+   случайно перенесённые куски одного. */
+.fp-row-divided {
+  border-top: 1px solid var(--border);
+  padding-top: 0.85rem;
+}
+
+.fp-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  /* Flex-item по умолчанию не сжимается ниже контента: без этого длинный
+     переключатель распирал бы страницу вбок вместо того, чтобы скроллиться
+     внутри себя. */
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Поиск прижат к правому краю ряда и занимает его остаток. */
+.fp-group-trailing {
+  margin-left: auto;
+  flex: 1 1 14rem;
+  align-items: stretch;
+}
+
+.fp-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted, inherit);
+}
+
+/* Сегментированный переключатель — та же «таблетка», что в рейтингах. */
+.fp-tabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.fp-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, inherit);
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fp-tab-active {
+  background: var(--surface, #fff);
+  color: var(--text, inherit);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+/* Единый стандарт поля поиска на весь сайт: одна высота, один радиус, один
+   фон. Раньше .input давал padding 0.75rem и шрифт 1rem, а .lb-search —
+   0.45rem/0.75rem, и рядом на соседних страницах поля выглядели полями
+   разных размеров (репорт Дмитрия 28.08.2026). */
+.fp-search {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  width: 100%;
+  min-width: 9.5rem;
+}
+
+.fp-search:focus {
+  outline: none;
+  border-color: var(--border-heavy);
+}
+
+@media (max-width: 640px) {
+  .fp-panel {
+    padding: 0.8rem 0.9rem;
+  }
+
+  /* На телефоне поиску тесно рядом с фильтрами — отдаём ему всю строку. */
+  .fp-group-trailing {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+}

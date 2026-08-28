@@ -3,6 +3,12 @@ import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
+import {
+  FilterGroup,
+  FilterPanel,
+  FilterRow,
+  FilterSearch,
+} from "../../components/filters/FilterPanel";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { getLocationsIndex, type LocationIndexItem } from "../../lib/api";
 import { formatDate, formatFinishTimeValue, formatInt, pluralizeRu } from "../../lib/format";
@@ -377,35 +383,41 @@ function LocationsIndexContent() {
       </header>
 
       <section className="card loc-section loc-wide-page">
-        <div className="loc-index-toolbar">
-          <input
-            className="input loc-index-search"
-            type="search"
-            placeholder="Поиск: название, город или регион"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <div className="loc-index-filters">
-            {PLATFORM_FILTERS.map((code) => (
-              <button
-                key={code}
-                type="button"
-                className={`btn btn-ghost btn-sm${platformFilter === code ? " loc-hist-mode-active" : ""}`}
-                onClick={() => setPlatformFilter(platformFilter === code ? null : code)}
-              >
-                <PlatformBadge code={code} />
-              </button>
-            ))}
-            <label className="loc-index-paused">
-              <input
-                type="checkbox"
-                checked={showPaused}
-                onChange={(event) => setShowPaused(event.target.checked)}
-              />{" "}
-              показывать неактивные
-            </label>
-          </div>
-        </div>
+        <FilterPanel>
+          <FilterRow>
+            <FilterGroup label="Система">
+              <div className="loc-index-filters">
+                {PLATFORM_FILTERS.map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    className={`btn btn-ghost btn-sm${platformFilter === code ? " loc-hist-mode-active" : ""}`}
+                    onClick={() => setPlatformFilter(platformFilter === code ? null : code)}
+                  >
+                    <PlatformBadge code={code} />
+                  </button>
+                ))}
+              </div>
+            </FilterGroup>
+            <FilterGroup label="Показывать">
+              <label className="loc-index-paused">
+                <input
+                  type="checkbox"
+                  checked={showPaused}
+                  onChange={(event) => setShowPaused(event.target.checked)}
+                />{" "}
+                неактивные
+              </label>
+            </FilterGroup>
+            <FilterGroup trailing>
+              <FilterSearch
+                value={query}
+                onChange={setQuery}
+                placeholder="Поиск: название, город или регион"
+              />
+            </FilterGroup>
+          </FilterRow>
+        </FilterPanel>
 
         {error && <div className="card error"><p>{error}</p></div>}
         {!items && !error && <p className="muted">Загрузка…</p>}

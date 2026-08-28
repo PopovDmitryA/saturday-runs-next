@@ -4,6 +4,12 @@ import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { TableWrap } from "../../components/tableUx/TableWrap";
+import {
+  FilterGroup,
+  FilterPanel,
+  FilterRow,
+  FilterSearch,
+} from "../../components/filters/FilterPanel";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
@@ -652,7 +658,9 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
 
       <section className="loc-section" ref={tableSectionRef}>
         <h2>Протокол</h2>
-        <div className="protocol-filters">
+        <FilterPanel>
+          <FilterRow>
+          <FilterGroup label="Пол">
           <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по полу">
             {(
               [
@@ -674,7 +682,9 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
               </button>
             ))}
           </div>
+          </FilterGroup>
           {hasAgeGroups && (
+            <FilterGroup label="Возрастная группа">
             <select
               className="protocol-age-select"
               value={ageGroup ?? ""}
@@ -688,22 +698,24 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
                 </option>
               ))}
             </select>
+            </FilterGroup>
           )}
-          <input
-            type="search"
-            className="protocol-name-filter"
-            placeholder="Имя, площадка или клуб"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            aria-label="Поиск по имени, площадке или клубу"
-          />
+          <FilterGroup trailing>
+            <FilterSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="Имя, площадка или клуб"
+              ariaLabel="Поиск по имени, площадке или клубу"
+            />
+          </FilterGroup>
           {loading && <span className="muted uniprot-total">Считаем…</span>}
+          </FilterRow>
           {/* «Кратко | Полно» — в той же строке, что фильтры (просьба Дмитрия
               25.08.2026): отдельной строкой он занимал место зря. */}
           <span className="uniprot-view-toggle">
             <TableViewToggle columns={tableColumns} />
           </span>
-        </div>
+        </FilterPanel>
 
         <TableWrap
           innerRef={attachFloatingHead}
