@@ -25,6 +25,13 @@ from app.services.profile_preview_persist import (
 )
 from app.services.user_display_name_service import rebind_display_name_source
 
+# Способы привязки — пишутся в platform_links.link_method, по ним считается
+# эффект онбординга (сколько людей пришло через поиск, а не через ссылку).
+LINK_METHOD_SEARCH = "search"
+LINK_METHOD_URL = "url"
+LINK_METHOD_CLAIM = "claim"
+LINK_METHOD_S95_PAIR = "s95_pair"
+
 
 class ProfileLinkingError(Exception):
     def __init__(self, message: str, status_code: int = 400) -> None:
@@ -238,8 +245,9 @@ def confirm_s95_profile_link(
     profile_url: str,
     *,
     link_parkrun: bool = False,
+    method: str = LINK_METHOD_URL,
 ) -> tuple[PlatformLink, PlatformLink | None]:
-    s95_link = confirm_profile_link(db, user, "s95", profile_url)
+    s95_link = confirm_profile_link(db, user, "s95", profile_url, method=method)
     if not link_parkrun:
         return s95_link, None
 
@@ -261,7 +269,11 @@ def confirm_s95_profile_link(
         )
 
     try:
-        parkrun_link = confirm_profile_link(db, user, "parkrun", parkrun_input)
+        # parkrun привязан «прицепом» к С95 — это не самостоятельный выбор
+        # способа, отмечаем отдельно, чтобы не завышать долю ссылок.
+        parkrun_link = confirm_profile_link(
+            db, user, "parkrun", parkrun_input, method=LINK_METHOD_S95_PAIR
+        )
     except ProfileLinkingError as exc:
         if exc.status_code == 409:
             return s95_link, None
@@ -295,7 +307,14 @@ def preview_runpark_profile_link(
     return preview
 
 
-def confirm_profile_link(db: Session, user: User, platform_code: str, profile_url: str) -> PlatformLink:
+def confirm_profile_link(
+    db: Session,
+    user: User,
+    platform_code: str,
+    profile_url: str,
+    *,
+    method: str = LINK_METHOD_URL,
+) -> PlatformLink:
     _require_personal_data_consent(user)
     ensure_adapters_registered()
     platform = _get_active_platform(db, platform_code)
@@ -355,6 +374,7 @@ def confirm_profile_link(db: Session, user: User, platform_code: str, profile_ur
             participant_id=participant.id,
             external_user_id=preview.external_user_id,
             external_url=preview.profile_url,
+            link_method=method,
         )
         db.add(link)
 
@@ -434,6 +454,7 @@ def confirm_profile_link_by_participant(db: Session, user: User, participant_id:
         participant_id=participant.id,
         external_user_id=participant.external_user_id,
         external_url=external_url,
+        link_method=LINK_METHOD_SEARCH,
     )
     db.add(link)
     db.commit()
@@ -571,7 +592,9 @@ def claim_profile_by_athlete_id(
         preview_profile_link(db, platform_code, claim_input, user=user)
 
     try:
-        return "linked", confirm_profile_link(db, user, platform_code, claim_input)
+        return "linked", confirm_profile_link(
+            db, user, platform_code, claim_input, method=LINK_METHOD_CLAIM
+        )
     except ProfileLinkingError as exc:
         if exc.status_code == 409:
             return "already_linked", None

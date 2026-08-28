@@ -193,6 +193,12 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "женщин и рекорды возрастных групп.",
         indexable=True,
     ),
+    "/ratings/regions": _meta(
+        "Локации по регионам — run5k.run",
+        "Сколько площадок субботних пятёрок в каждом регионе России: 5 вёрст, S95 и "
+        "RunPark в одной таблице, зарубежье — по странам.",
+        indexable=True,
+    ),
     # Публичная доска предложений: смотреть может любой, но в поиске ей делать
     # нечего — это рабочая кухня, а не витрина.
     "/backlog": _meta(
@@ -214,6 +220,7 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
     ),
     "/oauth/yandex/callback": _meta("Вход — run5k.run", "Завершаем вход через Яндекс."),
     "/oauth/vk/callback": _meta("Вход — run5k.run", "Завершаем вход через VK."),
+    "/auth/telegram/return": _meta("Вход — run5k.run", "Завершаем вход через Telegram."),
 }
 
 # Адреса-заглушки: сами ничего не показывают, сразу уводят на другой адрес.
@@ -247,6 +254,7 @@ _ADMIN_META = _meta("Админка — run5k.run", "Служебный разд
 
 _PROFILE_RE = re.compile(r"^/users/([^/]+)(?:/([^/]+))?$")
 _LOCATION_EVENTS_RE = re.compile(r"^/locations/([^/]+)/events$")
+_LOCATION_PARTICIPANTS_RE = re.compile(r"^/locations/([^/]+)/participants$")
 # Единый протокол конкретной недели: /protocol/{дата-субботы}.
 _UNIFIED_PROTOCOL_RE = re.compile(r"^/protocol/(\d{4}-\d{2}-\d{2})$")
 
@@ -337,6 +345,16 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
             "результаты дня.",
             indexable=True,
         )
+    # Постоянный состав — единственная витрина локации без indexable=True:
+    # это поимённый список живых людей, и в поиске ему делать нечего
+    # (позиция Дмитрия «сайт не источник профилей»). Робот получает нормальную
+    # страницу, а не 404, — но с noindex и без строки в sitemap.
+    if _LOCATION_PARTICIPANTS_RE.match(path):
+        return _meta(
+            "Постоянный состав локации — run5k.run",
+            "Кто бегает и волонтёрит на площадке от трёх раз: число участий здесь и во "
+            "всех локациях, первый и последний старт.",
+        )
     if _LOCATION_RE.match(path):
         return _meta(
             "Локация — run5k.run",
@@ -426,7 +444,9 @@ def _strip_leading_hours(display: str | None) -> str | None:
     return display[3:] if display.startswith("00:") else display
 
 
-def build_location_meta(payload: dict[str, Any], *, events_log: bool = False) -> PageMeta:
+def build_location_meta(
+    payload: dict[str, Any], *, events_log: bool = False, participants: bool = False
+) -> PageMeta:
     """Мета-теги конкретной локации — по данным её страницы.
 
     Зеркало этой же сборки на клиенте: locationPageMeta в
@@ -460,6 +480,17 @@ def build_location_meta(payload: dict[str, Any], *, events_log: bool = False) ->
 
     numbers = ", ".join(parts)
     # Описание держим в ~155 символах: длиннее поисковик обрежет многоточием.
+    if participants:
+        # indexable здесь не выставляется сознательно — см. page_meta_for_path.
+        return _meta(
+            _fit_title(f"{where}: постоянный состав"),
+            _describe(
+                f"Кто регулярно бегает и волонтёрит на локации «{name}»",
+                numbers,
+                ". Участий здесь и во всех локациях, первый и последний старт.",
+                ". Участий здесь и всего, первый и последний старт.",
+            ),
+        )
     if events_log:
         # «журнал протоколов» здесь не хвост, а то, что отличает эту страницу
         # от основной, — поэтому он часть head и не отбрасывается никогда.
@@ -666,6 +697,7 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/ratings/win-locations", "0.6"),
     ("/ratings/home-distance", "0.6"),
     ("/ratings/location-records", "0.7"),
+    ("/ratings/regions", "0.7"),
     ("/blog", "0.7"),
     ("/about", "0.6"),
     ("/login", "0.4"),
@@ -917,7 +949,9 @@ def _breadcrumbs(*crumbs: tuple[str, str]) -> dict[str, Any]:
     }
 
 
-def location_json_ld(payload: dict[str, Any], *, events_log: bool = False) -> list[dict[str, Any]]:
+def location_json_ld(
+    payload: dict[str, Any], *, events_log: bool = False, participants: bool = False
+) -> list[dict[str, Any]]:
     """Разметка страницы локации: площадка + последний старт + крошки.
 
     SportsActivityLocation — площадка (адрес, координаты, ссылка на страницу
@@ -998,6 +1032,8 @@ def location_json_ld(payload: dict[str, Any], *, events_log: bool = False) -> li
     crumbs = [("Главная", "/"), ("Локации", "/locations"), (name, f"/locations/{slug}")]
     if events_log:
         crumbs.append(("Журнал протоколов", f"/locations/{slug}/events"))
+    if participants:
+        crumbs.append(("Постоянный состав", f"/locations/{slug}/participants"))
     objects.append(_breadcrumbs(*crumbs))
     return objects
 
@@ -1475,7 +1511,7 @@ def is_known_path(raw_path: str) -> bool:
     if unified:
         # Только настоящая дата: «/protocol/2026-08-99» — не адрес сайта, а 404.
         return _iso_to_ru_date(unified.group(1)) is not None
-    for pattern in (_PROFILE_RE, _LOCATION_EVENTS_RE, _LOCATION_RE, _SWEEP_HQ_RE):
+    for pattern in (_PROFILE_RE, _LOCATION_EVENTS_RE, _LOCATION_PARTICIPANTS_RE, _LOCATION_RE, _SWEEP_HQ_RE):
         if pattern.match(path):
             return True
     return False
@@ -1596,22 +1632,29 @@ def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
         return _not_found_page(canonical), 404
 
     events_match = _LOCATION_EVENTS_RE.match(path)
+    participants_match = _LOCATION_PARTICIPANTS_RE.match(path)
     location_match = _LOCATION_RE.match(path)
-    if events_match or location_match:
-        slug = (events_match or location_match).group(1)  # type: ignore[union-attr]
+    if events_match or participants_match or location_match:
+        slug = (events_match or participants_match or location_match).group(1)  # type: ignore[union-attr]
         try:
             payload = build_location_page(db, slug)
         except Exception:  # noqa: BLE001 — робот получит родовую страницу, не 500
             payload = None
         if payload is not None:
-            meta = build_location_meta(payload, events_log=bool(events_match))
+            # Постоянный состав роботу отдаём теми же фактами площадки, что и
+            # карточку: поимённый список в prerender не кладём намеренно.
+            meta = build_location_meta(
+                payload, events_log=bool(events_match), participants=bool(participants_match)
+            )
             return (
                 _render_html(
                     meta=meta,
                     canonical=canonical,
                     body_html=_location_body(payload, events_log=bool(events_match)),
                     og_image_url=location_og_image_url(payload),
-                    json_ld=location_json_ld(payload, events_log=bool(events_match)),
+                    json_ld=location_json_ld(
+                        payload, events_log=bool(events_match), participants=bool(participants_match)
+                    ),
                 ),
                 200,
             )

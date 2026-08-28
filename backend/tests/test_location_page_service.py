@@ -11,6 +11,7 @@ from app.services import location_page_service
 from app.services.location_page_service import (
     LOCATIONS_INDEX_CACHE_KEY,
     LOCATIONS_INDEX_CACHE_TTL_SECONDS,
+    UNKNOWN_DISPLAY_NAMES,
     _age_group_sort_key,
     _read_locations_index_cache,
     _sort_identity_locations,
@@ -119,6 +120,20 @@ def test_sort_identity_locations_platform_order_without_catalog() -> None:
     ]
     ordered = _sort_identity_locations(None, locations)  # type: ignore[arg-type]
     assert [code for _loc, code in ordered] == ["five_verst", "runpark", "parkrun"]
+
+
+def test_unknown_display_names_match_whole_name_only() -> None:
+    """Заглушку убираем, настоящую фамилию — нет.
+
+    Отсечка «неизвестных» из топов локации сравнивает имя целиком. Проверка
+    ровно об этом: «Андрей НЕИЗВЕСТНЫХ» — живой участник Чебоксар с 25
+    пробежками, и фильтр по подстроке «неизвест» выкинул бы его вместе с
+    безымянными строками протокола.
+    """
+    assert "неизвестный" in UNKNOWN_DISPLAY_NAMES
+    assert "неизвестный бегун" in UNKNOWN_DISPLAY_NAMES
+    assert "андрей неизвестных" not in UNKNOWN_DISPLAY_NAMES
+    assert not any(name.startswith("андрей") for name in UNKNOWN_DISPLAY_NAMES)
 
 
 def test_start_point_url() -> None:

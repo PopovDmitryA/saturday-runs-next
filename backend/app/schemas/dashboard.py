@@ -315,6 +315,9 @@ class RunItemResponse(BaseModel):
     location_is_cancelled: bool = False
     position: int | None = None
     gender_position: int | None = None
+    # Сколько всего человек было в протоколе старта; None — протокол неполон и
+    # честное число неизвестно (см. _event_participant_totals).
+    participants_total: int | None = None
     finish_time_display: str | None = None
     finish_time_sec: int | None = None
     pace_display: str | None = None

@@ -200,7 +200,7 @@ export function UserMapPanel({
       </span>
       <span className="map-legend-item">
         <span className="map-legend-dot map-legend-dot-cancelled" aria-hidden />
-        Отменена
+        Отмена старта
       </span>
     </>
   );

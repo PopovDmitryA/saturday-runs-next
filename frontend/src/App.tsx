@@ -13,6 +13,7 @@ import { AdminRecordsDigestPage } from "./features/admin/AdminRecordsDigestPage"
 import { ProfileRoute } from "./features/profile/ProfileRoute";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
+import { TelegramReturnPage } from "./features/auth/TelegramReturnPage";
 import { OnboardingPage } from "./features/onboarding/OnboardingPage";
 import { PortalAboutPage } from "./features/portal/PortalAboutPage";
 import { PortalBlogPage } from "./features/portal/PortalBlogPage";
@@ -48,6 +49,7 @@ import {
   PortalCabinetSharePage,
 } from "./features/portal/cabinet/PortalCabinetPages";
 import { LocationEventsPage } from "./features/locations/LocationEventsPage";
+import { LocationParticipantsPage } from "./features/locations/LocationParticipantsPage";
 import { LocationProtocolPage } from "./features/locations/LocationProtocolPage";
 import { LocationPage } from "./features/locations/LocationPage";
 import { LastResultsPage } from "./features/locations/LastResultsPage";
@@ -69,6 +71,7 @@ import { OrganizerTeamPage } from "./features/organizer/OrganizerTeamPage";
 import { OrganizerLocationHubPage } from "./features/organizer/OrganizerLocationHubPage";
 import { OrganizerLocationPage } from "./features/organizer/OrganizerLocationPage";
 import { LocationRecordsRatingPage } from "./features/leaderboards/LocationRecordsRatingPage";
+import { RegionsRatingPage } from "./features/leaderboards/RegionsRatingPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
@@ -225,6 +228,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/new/settings": () => <PathRedirect to={PORTAL_CABINET_SETTINGS_HREF} />,
   "/oauth/yandex/callback": () => <OAuthCallbackPage provider="yandex" />,
   "/oauth/vk/callback": () => <OAuthCallbackPage provider="vk" />,
+  // Telegram возвращает данные во фрагменте адреса — разбирает их страница.
+  "/auth/telegram/return": () => <TelegramReturnPage />,
   // Онбординг первичного входа: поиск себя по ФИО и привязка профилей.
   "/welcome": () => <OnboardingPage />,
   // Старые адреса кабинета уводят на публичный адрес участника. Демо-режим
@@ -258,6 +263,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/win-locations": () => <LeaderboardPage metric="win_locations" />,
   "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
   "/ratings/location-records": () => <LocationRecordsRatingPage />,
+  "/ratings/regions": () => <RegionsRatingPage />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,
@@ -418,6 +424,11 @@ function renderRoute(path: string): ReactElement {
   const locationEventsMatch = path.match(/^\/locations\/([^/]+)\/events$/);
   if (locationEventsMatch) {
     return <LocationEventsPage slug={decodeURIComponent(locationEventsMatch[1])} />;
+  }
+  // Постоянный состав локации: развёрнутый топ со страницы площадки.
+  const locationParticipantsMatch = path.match(/^\/locations\/([^/]+)\/participants$/);
+  if (locationParticipantsMatch) {
+    return <LocationParticipantsPage slug={decodeURIComponent(locationParticipantsMatch[1])} />;
   }
   const locationMatch = path.match(/^\/locations\/([^/]+)$/);
   if (locationMatch) {

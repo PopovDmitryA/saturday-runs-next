@@ -3,6 +3,43 @@ from __future__ import annotations
 from app.workers.celery_app import celery_app
 
 
+def beat_queue(entry: dict) -> str:
+    """Очередь, в которую beat реально поставит задачу этой записи.
+
+    Судить по имени записи нельзя: очередь задаёт либо `options`, либо
+    `task_routes`, и с префиксом имени они не обязаны совпадать. Именно так
+    поминутный наблюдатель протоколов, заведённый «в общей очереди», молча
+    уезжал в five_verst — под тот самый воркер с concurrency=1, от которого его
+    и уводили (27.08.2026).
+    """
+    routed = celery_app.amqp.router.route(dict(entry.get("options") or {}), entry["task"])
+    return routed["queue"].name
+
+
+# Очереди, которые кто-то реально разбирает (docker-compose.yml, команды
+# воркеров): worker без -Q слушает дефолтную celery, остальные — свои.
+# Записать задачу в очередь вне этого списка — значит отправить её в никуда:
+# kombu молча создаст очередь, сообщения будут копиться, и ошибки не будет
+# нигде. Так с 20.08.2026 простаивало правило молчания с queue="default".
+CONSUMED_QUEUES = frozenset(
+    {"celery", "five_verst", "five_verst_user", "s95", "s95_user", "parkrun", "runpark"}
+)
+
+
+def test_every_beat_entry_lands_in_a_consumed_queue() -> None:
+    for key, entry in celery_app.conf.beat_schedule.items():
+        assert beat_queue(entry) in CONSUMED_QUEUES, f"{key}: очередь никто не слушает"
+
+
+def test_activity_status_runs_in_the_default_queue() -> None:
+    """Правило молчания — в общей очереди: сетевых запросов нет, занимать ею
+    очередь синков незачем (так и написано в самой задаче)."""
+    entry = celery_app.conf.beat_schedule["locations-activity-status"]
+    assert beat_queue(entry) == celery_app.conf.task_default_queue
+    assert entry["schedule"].hour == {21}
+    assert entry["schedule"].minute == {10}
+
+
 def test_s95_registry_every_3_days() -> None:
     schedule = celery_app.conf.beat_schedule
     reg = schedule["s95-registry-3days"]
@@ -21,7 +58,12 @@ def test_five_verst_schedule_intact() -> None:
 
 def test_five_verst_queue_no_same_minute_collisions() -> None:
     """Очередь five_verst — один воркер (concurrency=1): задачи разведены по
-    минутам, чтобы beat не ставил несколько батчей в хвост в одну и ту же минуту."""
+    минутам, чтобы beat не ставил несколько батчей в хвост в одну и ту же минуту.
+
+    Проверяем по фактической очереди записи, а не по префиксу её имени: имя
+    ничего не решает, а расхождение имени с очередью — как раз то, что этот
+    инвариант и должен ловить.
+    """
     schedule = celery_app.conf.beat_schedule
     assert schedule["five-verst-registry-daily"]["schedule"].minute == {50}
     assert schedule["five-verst-registry-daily"]["schedule"].hour == {20}
@@ -30,8 +72,20 @@ def test_five_verst_queue_no_same_minute_collisions() -> None:
     # latest на минуте :00 — единственный: свежие протоколы не ждут пачку соседей.
     latest_keys = [key for key in schedule if key.startswith("five-verst-latest")]
     for key, entry in schedule.items():
-        if key.startswith("five-verst") and key not in latest_keys:
+        if beat_queue(entry) == "five_verst" and key not in latest_keys:
             assert 0 not in entry["schedule"].minute, key
+
+
+def test_protocol_watch_stays_out_of_the_five_verst_queue() -> None:
+    """Поминутный наблюдатель ходит в общей очереди — как обещает его docstring.
+
+    Без явного options его забирало правило `five_verst_sync.*` из task_routes,
+    и минутная задача вставала в хвост за многочасовым reconcile на воркере с
+    concurrency=1 — ровно то, ради чего её оттуда и уводили.
+    """
+    schedule = celery_app.conf.beat_schedule
+    for key in ("five-verst-protocol-watch-weekday", "five-verst-protocol-watch-weekend"):
+        assert beat_queue(schedule[key]) == celery_app.conf.task_default_queue, key
 
 
 def test_five_verst_reconcile_weekdays_only() -> None:

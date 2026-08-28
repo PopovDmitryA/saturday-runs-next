@@ -16,8 +16,10 @@ from app.workers.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
-# Очередь default: правило ходит по локациям и их сводкам, тяжёлых сетевых
-# запросов не делает, занимать им очередь синков незачем.
+# Общая очередь (celery): правило ходит по локациям и их сводкам, тяжёлых
+# сетевых запросов не делает, занимать им очередь синков незачем. Очередь
+# задаётся в beat_schedule — и именно там она до 27.08.2026 была написана как
+# "default", то есть в очередь, которую никто не слушает.
 @celery_app.task(name="locations.refresh_activity_status")
 def refresh_location_activity_status() -> dict[str, object]:
     db = get_session_factory()()
@@ -28,6 +30,7 @@ def refresh_location_activity_status() -> dict[str, object]:
             "checked": result.locations_checked,
             "paused": result.locations_paused,
             "revived": result.locations_revived,
+            "skipped_no_coords": result.locations_skipped_no_coords,
         }
         logger.info("Статусы активности пересчитаны: %s", payload)
         return payload
