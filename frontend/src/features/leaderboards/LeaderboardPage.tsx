@@ -1650,6 +1650,12 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                     {/* Поиск — последний в ряду фильтров и прижат вправо: на
                         широком экране он встаёт справа от «Системы», на узком
                         переезжает вместе с ней (просьба Дмитрия 27.08.2026). */}
+                    {tableColumns.hasToggle && (
+                      <div className="lb-visits">
+                        <span className="lb-visits-label">Колонки</span>
+                        <TableViewToggle columns={tableColumns} inline />
+                      </div>
+                    )}
                     <div className="lb-controls-right">
                       <span className="lb-visits-label">Поиск</span>
                       <input
@@ -1878,7 +1884,6 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
 
             {/* Сегмент появляется, только пока краткий вид что-то прячет
                 (обычно колонки систем — самая тяжёлая часть таблицы). */}
-            <TableViewToggle columns={tableColumns} />
             <TableWrap
               innerRef={attachFloatingHead}
               className={`lb-table-wrap${fixedLayout ? " lb-table-wrap-wide" : ""}${

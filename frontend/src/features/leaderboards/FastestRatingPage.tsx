@@ -455,6 +455,12 @@ export function FastestRatingPage() {
                   </span>
                 </div>
 
+                {tableColumns.hasToggle && (
+                  <div className="lb-visits">
+                    <span className="lb-visits-label">Колонки</span>
+                    <TableViewToggle columns={tableColumns} inline />
+                  </div>
+                )}
                 <div className="lb-visits lb-fastest-search">
                   <span className="lb-visits-label">Поиск в таблице</span>
                   <input
@@ -543,7 +549,6 @@ export function FastestRatingPage() {
               </section>
             )}
 
-            <TableViewToggle columns={tableColumns} />
             <TableWrap
               innerRef={attachFloatingHead}
               className={`lb-table-wrap${tableColumns.hasToggle ? "" : " lb-table-wrap-flat"}`}

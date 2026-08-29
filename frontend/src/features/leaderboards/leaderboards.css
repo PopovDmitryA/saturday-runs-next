@@ -2331,6 +2331,10 @@ body.has-pinned-me .lb-scroll-top {
 .lb-controls-left .lb-search,
 .lb-controls-left .lb-roles-gear,
 .lb-controls-left .protocol-age-select,
+.lb-controls-left .tview-inline,
+.lb-controls-left .tview-inline > .tview-toggle,
+.lb-fastest-controls .tview-inline,
+.lb-fastest-controls .tview-inline > .tview-toggle,
 .lb-fastest-controls .lb-gender-tabs,
 .lb-fastest-controls .lb-search,
 .lb-fastest-controls .protocol-age-select,
@@ -2340,7 +2344,9 @@ body.has-pinned-me .lb-scroll-top {
 }
 
 .lb-controls-left .lb-gender-tabs,
-.lb-fastest-controls .lb-gender-tabs {
+.lb-fastest-controls .lb-gender-tabs,
+.lb-controls-left .tview-inline > .tview-toggle,
+.lb-fastest-controls .tview-inline > .tview-toggle {
   align-items: center;
 }
 

@@ -558,45 +558,6 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
         </section>
       )}
 
-      <section className="loc-section">
-        <h2>Зачёт</h2>
-        <p className="muted uniprot-scope-note">
-          Система, пол и возрастная группа — отдельные зачёты: что выберете, внутри того и
-          пересчитаются места.
-        </p>
-        <div className="map-mode-tabs" role="tablist" aria-label="Система">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={platform === null}
-            className={platform === null ? "map-mode-tab active" : "map-mode-tab"}
-            onClick={() => setPlatform(null)}
-          >
-            Все системы
-          </button>
-          {data.platforms.map((item) => (
-            <button
-              key={item.platform_code}
-              type="button"
-              role="tab"
-              aria-selected={platform === item.platform_code}
-              className={platform === item.platform_code ? "map-mode-tab active" : "map-mode-tab"}
-              onClick={() => setPlatform(item.platform_code)}
-            >
-              {item.title} ({formatInt(item.finishers)})
-            </button>
-          ))}
-        </div>
-        {summary.skipped_foreign_parkrun > 0 && (
-          <p className="muted uniprot-scope-note">
-            Зарубежный parkrun в зачёт не входит ({formatInt(summary.skipped_foreign_parkrun)}{" "}
-            {summary.skipped_foreign_parkrun === 1 ? "результат" : "результатов"}): по таким
-            площадкам в базе не протокол, а результаты наших туристов, среди них попадаются
-            junior parkrun на 2 км.
-          </p>
-        )}
-      </section>
-
       {hasAgeGroups && (
         <details className="card uniprot-groups-spoiler">
           <summary className="uniprot-groups-summary">
@@ -658,8 +619,42 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
 
       <section className="loc-section" ref={tableSectionRef}>
         <h2>Протокол</h2>
+        {/* Система, пол и возрастная группа — отдельные зачёты: что выберете,
+            внутри того и пересчитаются места. Отдельной секцией «Зачёт» система
+            стояла в стороне от остальных фильтров (правка Дмитрия 29.08.2026). */}
+        <p className="muted uniprot-scope-note">
+          Система, пол и возрастная группа — отдельные зачёты: что выберете, внутри того и
+          пересчитаются места.
+        </p>
         <FilterPanel>
           <FilterRow>
+          <FilterGroup label="Система">
+            <div className="map-mode-tabs" role="tablist" aria-label="Система">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={platform === null}
+                className={platform === null ? "map-mode-tab active" : "map-mode-tab"}
+                onClick={() => setPlatform(null)}
+              >
+                Все системы
+              </button>
+              {data.platforms.map((item) => (
+                <button
+                  key={item.platform_code}
+                  type="button"
+                  role="tab"
+                  aria-selected={platform === item.platform_code}
+                  className={
+                    platform === item.platform_code ? "map-mode-tab active" : "map-mode-tab"
+                  }
+                  onClick={() => setPlatform(item.platform_code)}
+                >
+                  {item.title} ({formatInt(item.finishers)})
+                </button>
+              ))}
+            </div>
+          </FilterGroup>
           <FilterGroup label="Пол">
           <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по полу">
             {(
@@ -716,6 +711,14 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
           </FilterRow>
           {loading && <span className="muted uniprot-total">Считаем…</span>}
         </FilterPanel>
+        {summary.skipped_foreign_parkrun > 0 && (
+          <p className="muted uniprot-scope-note">
+            Зарубежный parkrun в зачёт не входит ({formatInt(summary.skipped_foreign_parkrun)}{" "}
+            {summary.skipped_foreign_parkrun === 1 ? "результат" : "результатов"}): по таким
+            площадкам в базе не протокол, а результаты наших туристов, среди них попадаются
+            junior parkrun на 2 км.
+          </p>
+        )}
 
         <TableWrap
           innerRef={attachFloatingHead}
