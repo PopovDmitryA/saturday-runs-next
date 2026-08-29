@@ -22,6 +22,12 @@ import {
   pluralizeRu,
 } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
+import {
+  FilterGroup,
+  FilterPanel,
+  FilterRow,
+  FilterSearch,
+} from "../../components/filters/FilterPanel";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns } from "../../components/tableUx/useTableColumns";
@@ -819,7 +825,9 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
 
       <section className="loc-section" ref={protocolSectionRef}>
         <h2>Протокол</h2>
-        <div className="protocol-filters">
+        <FilterPanel>
+          <FilterRow>
+          <FilterGroup label="Пол">
           <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по полу">
             {(
               [
@@ -841,7 +849,9 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
               </button>
             ))}
           </div>
+          </FilterGroup>
           {ageCategories.length > 1 && (
+            <FilterGroup label="Возрастная группа">
             <select
               className="protocol-age-select"
               value={ageFilter ?? ""}
@@ -855,28 +865,35 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                 </option>
               ))}
             </select>
+            </FilterGroup>
           )}
-          <input
-            type="search"
-            className="protocol-name-filter"
-            placeholder="Поиск по имени"
-            value={nameFilter}
-            onChange={(event) => setNameFilter(event.target.value)}
-            aria-label="Поиск по имени"
-          />
           {clubFilter && (
-            <button
-              type="button"
-              className="protocol-club-chip"
-              onClick={() => setClubFilter(null)}
-              title="Снять фильтр по клубу"
-            >
-              Клуб: {clubFilter} ✕
-            </button>
+            <FilterGroup label="Клуб">
+              <button
+                type="button"
+                className="protocol-club-chip"
+                onClick={() => setClubFilter(null)}
+                title="Снять фильтр по клубу"
+              >
+                {clubFilter} ✕
+              </button>
+            </FilterGroup>
           )}
-        </div>
+          <FilterGroup label="Поиск" trailing>
+            <FilterSearch
+              value={nameFilter}
+              onChange={setNameFilter}
+              placeholder="Поиск по имени"
+            />
+          </FilterGroup>
+          {tableColumns.hasToggle && (
+            <FilterGroup label="Колонки">
+              <TableViewToggle columns={tableColumns} inline />
+            </FilterGroup>
+          )}
+          </FilterRow>
+        </FilterPanel>
 
-        <TableViewToggle columns={tableColumns} />
         <TableWrap
           innerRef={attachFloatingHead}
           outerRef={tableColumns.measureRef}

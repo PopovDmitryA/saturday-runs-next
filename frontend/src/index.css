@@ -4004,16 +4004,19 @@ button.badge-platform-btn:hover {
   opacity: 0.5;
 }
 
+/* Панель фильтров карт — те же метрики, что у общей .fp-panel (радиус 14,
+   фон поверхности, отступы 0.9/1.1rem): до 28.08.2026 у неё был свой радиус
+   12px и фон страницы, и рядом с прочими витринами она выглядела чужой. */
 .map-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem 0.6rem;
-  padding: 0.5rem 0.65rem;
-  margin-bottom: 0.75rem;
-  background: var(--bg);
+  gap: 0.5rem 0.85rem;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1rem;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
 }
 
 .map-toolbar-group {

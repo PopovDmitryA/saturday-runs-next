@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatDate, formatInt } from "../../lib/format";
 import {
   getLocationAttendance,
@@ -6,6 +6,11 @@ import {
   type LocationAttendanceKind,
   type LocationAttendanceRow,
 } from "./attendanceApi";
+import {
+  FilterGroup,
+  FilterPanel,
+  FilterRow,
+} from "../../components/filters/FilterPanel";
 import {
   AttendanceMatrix,
   type MatrixCell,
@@ -20,6 +25,8 @@ import "./attendance.css";
 
 type LocationAttendanceJournalProps = {
   slug: string;
+  /** Переключатель «Протоколы | Посещаемость» — первый ряд общей панели. */
+  viewTabs?: ReactNode;
 };
 
 // «Все» первым — как во всех остальных фильтрах сайта («Все / 5 вёрст / С95…»).
@@ -76,7 +83,7 @@ function matrixRow(
   };
 }
 
-export function LocationAttendanceJournal({ slug }: LocationAttendanceJournalProps) {
+export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendanceJournalProps) {
   const [year, setYear] = useState<number | null>(null);
   const [kind, setKind] = useState<LocationAttendanceKind>("all");
   const [data, setData] = useState<LocationAttendance | null>(null);
@@ -178,8 +185,12 @@ export function LocationAttendanceJournal({ slug }: LocationAttendanceJournalPro
 
   return (
     <div className="aj-panel">
-      <div className="aj-controls">
+      {/* Та же панель, что у остальных витрин: вид, год и зачёт одной рамкой. */}
+      <FilterPanel>
+        <FilterRow>
+        {viewTabs && <FilterGroup label="Вид">{viewTabs}</FilterGroup>}
         {data && data.years.length > 1 && (
+          <FilterGroup label="Год">
           <div className="aj-tabs aj-years" role="group" aria-label="Год">
             {data.years.map((value) => (
               <button
@@ -193,7 +204,9 @@ export function LocationAttendanceJournal({ slug }: LocationAttendanceJournalPro
               </button>
             ))}
           </div>
+          </FilterGroup>
         )}
+        <FilterGroup label="Зачёт">
         <div className="aj-tabs" role="group" aria-label="Кого показывать">
           {KIND_TABS.map((tab) => (
             <button
@@ -207,7 +220,9 @@ export function LocationAttendanceJournal({ slug }: LocationAttendanceJournalPro
             </button>
           ))}
         </div>
-      </div>
+        </FilterGroup>
+        </FilterRow>
+      </FilterPanel>
 
       {/* Легенда — под выбранный срез: в «Бегунах» синих клеток не бывает
           вовсе, и обещать их в легенде незачем. */}

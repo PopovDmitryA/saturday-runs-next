@@ -40,6 +40,11 @@ import { formatFinishTimeValue, formatInt, formatTopPercent, platformCodeLabel }
 import { ShareRowButton } from "../sharing/ShareRowButton";
 import { runSubject } from "../sharing/subjects";
 import { TableWrap } from "../../components/tableUx/TableWrap";
+import {
+  FilterGroup,
+  FilterPanel,
+  FilterRow,
+} from "../../components/filters/FilterPanel";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
@@ -265,6 +270,9 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
 
       {!loading && !error && runs.length > 0 && (
         <>
+          <FilterPanel>
+            <FilterRow>
+              <FilterGroup label="Система">
           <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по системам">
             <button
               type="button"
@@ -288,8 +296,15 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
               </button>
             ))}
           </div>
+              </FilterGroup>
+              {tableColumns.hasToggle && (
+                <FilterGroup label="Колонки">
+                  <TableViewToggle columns={tableColumns} inline />
+                </FilterGroup>
+              )}
+            </FilterRow>
+          </FilterPanel>
 
-          <TableViewToggle columns={tableColumns} />
           <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
             <table
               className={`data-table data-table-filterable data-table-layout-fixed runs-table${

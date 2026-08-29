@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FilterGroup,
+  FilterPanel,
+  FilterRow,
+} from "../../components/filters/FilterPanel";
 import { ActivityTableCols } from "../../components/activityTable/ActivityTableCols";
 import { CheckboxListFilter } from "../../components/activityTable/CheckboxListFilter";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
@@ -231,6 +236,9 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
 
       {!loading && !error && items.length > 0 && (
         <>
+          <FilterPanel>
+            <FilterRow>
+              <FilterGroup label="Система">
           <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по системам">
             <button
               type="button"
@@ -266,6 +274,9 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
               </button>
             )}
           </div>
+              </FilterGroup>
+            </FilterRow>
+          </FilterPanel>
 
           {narrowViewport ? (
             <TableWrap>

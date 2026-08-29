@@ -7,6 +7,12 @@ import {
 } from "../../lib/api";
 import { formatDate, formatDuration, platformCodeLabel, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
+import {
+  FilterGroup,
+  FilterPanel,
+  FilterRow,
+  FilterSearch,
+} from "../../components/filters/FilterPanel";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
@@ -298,14 +304,22 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
 
         {!loading && !error && items.length > 0 && (
           <>
-            <input
-              className="input co-runners-search"
-              type="search"
-              placeholder="Поиск по имени"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            <TableViewToggle columns={tableColumns} />
+            <FilterPanel>
+              <FilterRow>
+                <FilterGroup label="Поиск" trailing>
+                  <FilterSearch
+                    value={query}
+                    onChange={setQuery}
+                    placeholder="Поиск по имени"
+                  />
+                </FilterGroup>
+                {tableColumns.hasToggle && (
+                  <FilterGroup label="Колонки">
+                    <TableViewToggle columns={tableColumns} inline />
+                  </FilterGroup>
+                )}
+              </FilterRow>
+            </FilterPanel>
             <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
               <table
                 className="data-table co-runners-table"

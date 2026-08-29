@@ -225,6 +225,28 @@ function LocationEventsContent({ slug }: { slug: string }) {
     );
   }
 
+  const viewTabs = (
+    <div className="aj-tabs loc-events-view" role="tablist" aria-label="Вид журнала">
+      {(
+        [
+          { value: "protocols", label: "Протоколы" },
+          { value: "attendance", label: "Посещаемость" },
+        ] as const
+      ).map((tab) => (
+        <button
+          key={tab.value}
+          type="button"
+          role="tab"
+          aria-selected={view === tab.value}
+          className={`aj-tab${view === tab.value ? " aj-tab-active" : ""}`}
+          onClick={() => switchView(tab.value)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
       <header className="loc-header loc-wide-page">
@@ -240,29 +262,15 @@ function LocationEventsContent({ slug }: { slug: string }) {
       {/* Два вида одного журнала: «Протоколы» — сводка по стартам,
           «Посещаемость» — матрица «участник × даты». Тот же приём, что в
           рейтингах пробежек и туризма. */}
-      {/* Вид журнала и фильтр систем — в одной панели, как на прочих витринах. */}
+      {/* Вид журнала и фильтр систем — в одной панели, как на прочих витринах.
+          В режиме «Посещаемость» ту же панель рисует сам журнал (свои фильтры
+          «Год» и «Кого показывать» он держит там же), поэтому переключатель
+          вида уезжает к нему пропом. */}
+      {view === "protocols" ? (
       <FilterPanel>
         <FilterRow>
         <FilterGroup label="Вид">
-      <div className="aj-tabs loc-events-view" role="tablist" aria-label="Вид журнала">
-        {(
-          [
-            { value: "protocols", label: "Протоколы" },
-            { value: "attendance", label: "Посещаемость" },
-          ] as const
-        ).map((tab) => (
-          <button
-            key={tab.value}
-            type="button"
-            role="tab"
-            aria-selected={view === tab.value}
-            className={`aj-tab${view === tab.value ? " aj-tab-active" : ""}`}
-            onClick={() => switchView(tab.value)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {viewTabs}
         </FilterGroup>
         {view === "protocols" && platformCounts.size > 1 && (
           <FilterGroup label="Система">
@@ -298,6 +306,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
           )}
         </FilterRow>
       </FilterPanel>
+      ) : null}
 
       {view === "attendance" ? (
         <section className="loc-section loc-attendance-section">
@@ -306,7 +315,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
             датам. Свежие даты слева, наведение или тап на клетку подсвечивает
             весь столбец — видно, кто был в конкретную дату.
           </p>
-          <LocationAttendanceJournal slug={slug} />
+          <LocationAttendanceJournal slug={slug} viewTabs={viewTabs} />
         </section>
       ) : (
         <>
