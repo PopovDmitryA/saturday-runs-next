@@ -16,7 +16,7 @@ def fake_redis() -> fakeredis.FakeRedis:
 
 def test_fetch_serializes_with_lock_and_rate_limit(fake_redis: fakeredis.FakeRedis) -> None:
     with (
-        patch("app.s95.fetch.coordinator.get_redis_client", return_value=fake_redis),
+        patch("app.s95.fetch.ban_state.get_redis_client", return_value=fake_redis),
         patch("app.s95.fetch.rate_limit.get_redis_client", return_value=fake_redis),
         patch("app.s95.fetch.lock.get_redis_client", return_value=fake_redis),
         patch("app.s95.fetch.coordinator.fetch_html_with_httpx", return_value="<html>ok</html>"),
@@ -27,7 +27,7 @@ def test_fetch_serializes_with_lock_and_rate_limit(fake_redis: fakeredis.FakeRed
 
 def test_fetch_detects_ban(fake_redis: fakeredis.FakeRedis) -> None:
     with (
-        patch("app.s95.fetch.coordinator.get_redis_client", return_value=fake_redis),
+        patch("app.s95.fetch.ban_state.get_redis_client", return_value=fake_redis),
         patch("app.s95.fetch.rate_limit.get_redis_client", return_value=fake_redis),
         patch("app.s95.fetch.lock.get_redis_client", return_value=fake_redis),
         patch(
@@ -45,7 +45,7 @@ def test_fetch_detects_forbidden_page(fake_redis: fakeredis.FakeRedis) -> None:
         '<body><pre>Forbidden</pre></body></html>'
     )
     with (
-        patch("app.s95.fetch.coordinator.get_redis_client", return_value=fake_redis),
+        patch("app.s95.fetch.ban_state.get_redis_client", return_value=fake_redis),
         patch("app.s95.fetch.rate_limit.get_redis_client", return_value=fake_redis),
         patch("app.s95.fetch.lock.get_redis_client", return_value=fake_redis),
         patch(

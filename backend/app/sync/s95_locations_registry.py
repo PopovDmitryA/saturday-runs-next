@@ -10,6 +10,7 @@ from app.migration.helpers import s95_country_from_url
 from app.models import Location, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalLocation
 from app.s95.api_client import S95ApiLocation, fetch_all_locations
+from app.s95.fetch.priority import S95YieldForUserSync
 from app.services.location_cancellation_notify import (
     CancellationChange,
     notify_cancellation_changes,
@@ -243,7 +244,14 @@ def sync_s95_locations_registry(
     db.commit()
 
     try:
-        entries = fetch_all_locations()
+        try:
+            entries = fetch_all_locations()
+        except S95YieldForUserSync:
+            # Пользовательский синк вперёд: реестр подождёт следующего прохода.
+            logger.info("S95 registry sync: уступили пользовательскому синку")
+            _finish_sync_run(db, sync_run, success=True, fetched=0, upserted=0, unchanged=0, error=None)
+            db.commit()
+            return result
         if options.limit is not None:
             entries = entries[: options.limit]
 

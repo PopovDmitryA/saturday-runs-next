@@ -3,16 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-import httpx
+from app.s95.fetch import S95_STOP_EXCEPTIONS, fetch_json
 
 S95_DOMAINS = [
     "https://s95.ru",
     "https://s95.by",
     "https://s95.rs",
 ]
-
-_TIMEOUT = 30.0
-_HEADERS = {"Accept": "application/json", "User-Agent": "saturday-runs/1.0"}
 
 
 class S95RegistryUnavailable(RuntimeError):
@@ -37,11 +34,12 @@ class S95ApiLocation:
     longitude: float | None = None
 
 
-def _get(url: str) -> list | dict:
-    with httpx.Client(timeout=_TIMEOUT, headers=_HEADERS, follow_redirects=True) as client:
-        resp = client.get(url)
-        resp.raise_for_status()
-        return resp.json()
+def _get(url: str, *, reason: str = "api") -> list | dict:
+    """JSON API s95 — через общий координатор: очередь, пауза, охлаждение.
+
+    Раньше ходили напрямую своим httpx-клиентом, мимо всех ограничителей.
+    """
+    return fetch_json(url, reason=reason)
 
 
 @dataclass(frozen=True)
@@ -64,7 +62,7 @@ class S95ApiActivityRef:
 
 def fetch_pages(domain: str) -> list[dict]:
     """GET /pages.json — all locations including those without coordinates."""
-    data = _get(f"{domain}/pages.json")
+    data = _get(f"{domain}/pages.json", reason="s95_pages")
     return data.get("events", [])
 
 
@@ -74,7 +72,7 @@ def fetch_event_activities(event_url: str) -> list[S95ApiActivityRef]:
     `event_url` is the full URL from pages.json (already ends with .json).
     Order is NOT chronological — caller must sort if needed.
     """
-    data = _get(event_url)
+    data = _get(event_url, reason="s95_event_activities")
     refs: list[S95ApiActivityRef] = []
     for item in data.get("activities", []) or []:
         url = item.get("url")
@@ -86,7 +84,7 @@ def fetch_event_activities(event_url: str) -> list[S95ApiActivityRef]:
 
 def fetch_activity(activity_url: str) -> dict:
     """GET /activities/{id}.json — full protocol payload."""
-    data = _get(activity_url)
+    data = _get(activity_url, reason="s95_activity")
     if not isinstance(data, dict):
         raise ValueError(f"Unexpected activity payload for {activity_url}")
     return data
@@ -94,7 +92,7 @@ def fetch_activity(activity_url: str) -> dict:
 
 def fetch_events(domain: str) -> list[dict]:
     """GET /events.json — locations with coordinates only."""
-    data = _get(f"{domain}/events.json")
+    data = _get(f"{domain}/events.json", reason="s95_events")
     if isinstance(data, list):
         return data
     return data.get("events", [])
@@ -125,12 +123,18 @@ def fetch_all_locations() -> list[S95ApiLocation]:
                 slug = item.get("code_name")
                 if slug:
                     events_by_slug[slug] = item
+        except S95_STOP_EXCEPTIONS:
+            # Не «домен не ответил», а «нас не пускают» либо «ждёт пользователь»:
+            # такое решает вызывающий проход, а не сборщик реестра.
+            raise
         except Exception as exc:
             failures.append(f"{domain}/events.json: {exc}")
             # events.json не критичен — останутся хотя бы pages.json
 
         try:
             pages = fetch_pages(domain)
+        except S95_STOP_EXCEPTIONS:
+            raise
         except Exception as exc:
             failures.append(f"{domain}/pages.json: {exc}")
             pages = []  # домен недоступен — но events.json мог и ответить

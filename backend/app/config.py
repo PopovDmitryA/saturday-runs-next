@@ -227,7 +227,12 @@ class Settings(BaseSettings):
     s95_fetch_lock_timeout_seconds: int = 180
     s95_fetch_lock_blocking_seconds: int = 300
     s95_http_timeout_seconds: float = 30.0
-    s95_ban_cooldown_seconds: int = 3600
+    # Эскалация охлаждения после отказа s95: 1ч → 5ч → 24ч → 72ч → неделя.
+    # Плоский час был короче интервала расписания (описания площадок ходят раз
+    # в 4 часа), поэтому не подавлял ни одного прогона: 24.08.2026 сайт сутки
+    # отвечал 403, мы стучались девять раз подряд и получили бан на фаерволе.
+    # Успешный запрос сбрасывает лестницу.
+    s95_ban_cooldown_steps_seconds: str = "3600,18000,86400,259200,604800"
     s95_parkrun_barcode_max_length: int = 8
     parkrun_participant_discovery_enabled: bool = True
     parkrun_participant_discovery_min_refetch_days: int = 7
