@@ -109,11 +109,16 @@ def record_protocol_revision(db: Session, event_id, before: dict[str, tuple], af
     # такие пары (та же позиция и время у убранной и добавленной строки),
     # правкой это тоже не считаем.
     if not time_changes_count and not position_changes and (added or removed):
-        removed_unknown = {
-            (before[key][0], before[key][1]) for key in removed if before[key][2] == "unknown"
-        }
-        added_known = {(after[key][0], after[key][1]) for key in added if after[key][2] != "unknown"}
-        if removed_unknown and removed_unknown == added_known:
+        # Сравниваем мультимножества ВСЕХ убранных и добавленных строк, а не
+        # только отфильтрованных «неизвестных»: иначе настоящая пропажа
+        # известной строки, пришедшая вместе с парами «неизвестный→имя»
+        # (удаления не дают добавлений, равенство отфильтрованных наборов
+        # сохранялось), молча проглатывалась без записи в журнал.
+        all_removed_unknown = all(before[key][2] == "unknown" for key in removed)
+        all_added_known = all(after[key][2] != "unknown" for key in added)
+        removed_pairs = sorted((before[key][0], before[key][1]) for key in removed)
+        added_pairs = sorted((after[key][0], after[key][1]) for key in added)
+        if removed and all_removed_unknown and all_added_known and removed_pairs == added_pairs:
             return
 
     if not added and not removed and not time_changes_count and not position_changes:

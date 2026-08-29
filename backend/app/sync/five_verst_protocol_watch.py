@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from uuid import UUID
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -61,6 +62,7 @@ def record_protocol_upload_facts(db: Session, *, source: str = "site") -> Protoc
     }
 
     now = datetime.now(timezone.utc)
+    candidates: list[tuple[str, UUID, date]] = []  # (slug, location_id, event_date)
     for summary in summaries:
         if summary.is_test_event:
             continue
@@ -71,17 +73,37 @@ def record_protocol_upload_facts(db: Session, *, source: str = "site") -> Protoc
             result.unknown_slugs.append(summary.location_external_key)
             continue
         result.checked += 1
+        candidates.append((summary.location_external_key, location.id, summary.event_date))
+
+    if not candidates:
+        return result
+
+    # Прогон каждую минуту все выходные, и в устоявшемся состоянии ВСЕ факты
+    # уже записаны. Один SELECT по датам страницы дешевле сотни холостых
+    # INSERT ON CONFLICT (~140 тыс. пустых запросов за субботу+воскресенье).
+    page_dates = {event_date for _slug, _location_id, event_date in candidates}
+    existing = {
+        (row.location_id, row.event_date)
+        for row in db.query(ProtocolUploadFact.location_id, ProtocolUploadFact.event_date)
+        .filter(ProtocolUploadFact.event_date.in_(page_dates))
+        .all()
+    }
+
+    for slug, location_id, event_date in candidates:
+        if (location_id, event_date) in existing:
+            continue
         insert = (
             pg_insert(ProtocolUploadFact)
             .values(
-                location_id=location.id,
-                event_date=summary.event_date,
+                location_id=location_id,
+                event_date=event_date,
                 first_seen_at=now,
                 source=source,
             )
+            # Гонка с параллельным прогоном всё ещё возможна — конфликт
+            # по-прежнему глотаем, а не падаем. RETURNING отдаёт строку только
+            # при реальной вставке: rowcount у psycopg3 здесь всегда -1.
             .on_conflict_do_nothing(constraint="uq_protocol_upload_facts_location_date")
-            # RETURNING отдаёт строку только при реальной вставке: rowcount
-            # у psycopg3 здесь всегда -1 и для дедупликации бесполезен.
             .returning(ProtocolUploadFact.id)
         )
         inserted = db.execute(insert).first() is not None
@@ -89,8 +111,8 @@ def record_protocol_upload_facts(db: Session, *, source: str = "site") -> Protoc
             result.new_facts += 1
             logger.info(
                 "protocol watch: %s %s протокол замечен в %s",
-                summary.location_external_key,
-                summary.event_date.isoformat(),
+                slug,
+                event_date.isoformat(),
                 now.isoformat(),
             )
     if result.new_facts:

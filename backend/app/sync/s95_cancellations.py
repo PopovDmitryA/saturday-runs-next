@@ -59,14 +59,27 @@ def watch_s95_cancellations(db: Session, *, notify: bool = True) -> S95Cancellat
     platform = upsert.get_platform(db, PLATFORM_CODE)
     result = S95CancellationsWatchResult()
 
+    fetch_errors: list[str] = []
     try:
-        entries = fetch_all_locations()
+        entries = fetch_all_locations(errors=fetch_errors)
     except Exception as exc:
         result.errors.append(f"реестр s95: {exc}")
         logger.warning("S95 cancellations watch: реестр недоступен (%s)", exc, exc_info=True)
         return result
 
     result.entries_total = len(entries)
+    # Реестр прочитан целиком только когда ни один запрос не упал и хоть что-то
+    # вернулось. Частичный (s95 закрылся по IP, лёг один из доменов) для снятия
+    # отметок непригоден: площадки недоступного домена в нём просто отсутствуют,
+    # и цикл «не в списке — значит бежит» снял бы реальные отмены и разослал
+    # ложные «✅ Отмена снята». Ставить новые отмены по частичным данным можно.
+    registry_complete = not fetch_errors and bool(entries)
+    if fetch_errors:
+        result.errors.extend(f"реестр s95: {item}" for item in fetch_errors)
+        logger.warning(
+            "S95 cancellations watch: реестр прочитан не целиком (%s) — отметки не снимаем",
+            "; ".join(fetch_errors),
+        )
 
     candidates = [entry for entry in entries if not entry.active]
     result.candidates = len(candidates)
@@ -132,6 +145,8 @@ def watch_s95_cancellations(db: Session, *, notify: bool = True) -> S95Cancellat
             )
 
     for row in rows:
+        if not registry_complete:
+            break  # неполный реестр: «нет в списке» не означает «отмена снята»
         if not row.is_cancelled:
             continue
         if row.external_key in cancelled or row.external_key in unknown:

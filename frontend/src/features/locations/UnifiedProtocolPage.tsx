@@ -237,7 +237,11 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
 
   const weekOptions = useMemo(() => [...weeks].reverse(), [weeks]);
 
-  if (error) {
+  // Полноэкранная ошибка — только пока нечего показывать. Когда данные уже
+  // есть (упал запрос при листании или смене фильтра), страница остаётся:
+  // карточка ошибки выводится над таблицей, а фильтры и пагинация живы —
+  // ими же и повторяется запрос.
+  if (error && !data) {
     return (
       <PortalSectionShell sidebar={{ active: "unified-protocol" }}>
         <div className="card error">
@@ -359,6 +363,11 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
         <p className="protocol-subtitle">
           Все площадки всех систем за одну неделю, выстроенные по времени финиша.
         </p>
+        {error && (
+          <div className="card error">
+            <p>{error} — показана предыдущая выборка, попробуйте ещё раз.</p>
+          </div>
+        )}
         <nav className="protocol-nav" aria-label="Выбор недели">
           {data.previous_saturday ? (
             <a href={unifiedProtocolHref(data.previous_saturday)}>

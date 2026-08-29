@@ -49,8 +49,16 @@ function weekSaturdayIso(isoDate: string): string {
   if (!match) {
     return isoDate;
   }
-  const value = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const sourceYear = Number(match[1]);
+  const value = new Date(sourceYear, Number(match[2]) - 1, Number(match[3]));
   value.setDate(value.getDate() + (6 - value.getDay()));
+  // Хвост года: активность после последней субботы (вс 28.12 и позже) закрывалась
+  // бы субботой уже СЛЕДУЮЩЕГО года, которой нет среди колонок выбранного года, —
+  // отметка молча выпадала из матрицы, хотя «За год» её считает (бэкенд режет по
+  // календарному году). Прижимаем такую неделю к последней субботе своего года.
+  if (value.getFullYear() !== sourceYear) {
+    value.setDate(value.getDate() - 7);
+  }
   const month = String(value.getMonth() + 1).padStart(2, "0");
   const day = String(value.getDate()).padStart(2, "0");
   return `${value.getFullYear()}-${month}-${day}`;

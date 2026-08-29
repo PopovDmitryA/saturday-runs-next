@@ -90,7 +90,7 @@ def fetch_events(domain: str) -> list[dict]:
     return data.get("events", [])
 
 
-def fetch_all_locations() -> list[S95ApiLocation]:
+def fetch_all_locations(*, errors: list[str] | None = None) -> list[S95ApiLocation]:
     """Локации всех трёх доменов: `pages.json` + `events.json`, без дублей.
 
     Два источника нужны потому, что каждый по отдельности неполон:
@@ -104,6 +104,11 @@ def fetch_all_locations() -> list[S95ApiLocation]:
 
     Раньше обход шёл только по `pages.json`, поэтому отменённая площадка
     выпадала из синка целиком: её статус у нас так и оставался вчерашним.
+
+    `errors`, если передан, собирает описания несработавших запросов. Пустой
+    список после вызова означает «реестр прочитан целиком»; непустой — что
+    результат частичный и отсутствие площадки в нём ещё ничего не значит
+    (важно для наблюдателя отмен: снимать отметку по неполным данным нельзя).
     """
     result: list[S95ApiLocation] = []
 
@@ -114,13 +119,17 @@ def fetch_all_locations() -> list[S95ApiLocation]:
                 slug = item.get("code_name")
                 if slug:
                     events_by_slug[slug] = item
-        except Exception:
-            pass  # events.json не критичен — останутся хотя бы pages.json
+        except Exception as exc:
+            # events.json не критичен — останутся хотя бы pages.json
+            if errors is not None:
+                errors.append(f"{domain}: events.json: {exc}")
 
         try:
             pages = fetch_pages(domain)
-        except Exception:
+        except Exception as exc:
             pages = []  # домен недоступен — но events.json мог и ответить
+            if errors is not None:
+                errors.append(f"{domain}: pages.json: {exc}")
 
         merged: dict[str, dict] = {}
         order: list[str] = []

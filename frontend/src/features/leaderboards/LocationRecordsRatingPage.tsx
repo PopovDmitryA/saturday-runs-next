@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
@@ -86,13 +86,14 @@ const DEFAULT_DIRECTION: Record<SortKey, SortState["direction"]> = {
   date: "desc",
 };
 
-function sortValue(row: LocationRecordRow, key: SortKey): number {
+function sortValue(row: LocationRecordRow, key: SortKey): number | null {
   if (key === "time") {
     return row.finish_time_sec;
   }
-  // Площадка без даты рекорда (протокол parkrun-эры без дня) — в самый конец
-  // при любом направлении сортировки по дате.
-  return row.event_date ? Date.parse(row.event_date) : Number.NEGATIVE_INFINITY;
+  // Площадка без даты рекорда (протокол parkrun-эры без дня): null, а «в самый
+  // конец при любом направлении» обеспечивает компаратор — бесконечность здесь
+  // попадала бы в начало при asc, а пара таких строк давала NaN в разности.
+  return row.event_date ? Date.parse(row.event_date) : null;
 }
 
 function SortableHeader({
@@ -175,11 +176,20 @@ export function LocationRecordsRatingPage() {
   const [ageGroup, setAgeGroup] = useState<string | null>(initial.ageGroup);
   const [platform, setPlatform] = useState<LocationRecordsPlatform>(initial.platform);
 
+  // requestId отсекает устаревшие ответы: без него медленный ответ прежнего
+  // среза перезаписывал бы свежий — вместе с только что выбранным полом
+  // (setGender ниже) и адресом страницы.
+  const requestIdRef = useRef(0);
+
   const load = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     try {
       const payload = await getLocationRecords({ scope, gender, ageGroup, platform });
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
       setData(payload);
       // Что бэкенд выбрал за нас (своя ступень зрителя, ступень по умолчанию)
       // — сразу становится текущим выбором, иначе селектор показывал бы пустоту.
@@ -189,9 +199,13 @@ export function LocationRecordsRatingPage() {
       }
       setVisibleCount(PAGE_STEP);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить рейтинг");
+      if (requestId === requestIdRef.current) {
+        setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить рейтинг");
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
     // ageGroup специально не в зависимостях: он меняется и ответом сервера,
     // иначе загрузка зациклилась бы. Смена группы руками грузит данные сама.
@@ -225,17 +239,24 @@ export function LocationRecordsRatingPage() {
 
   const changeAgeGroup = useCallback(
     async (value: string) => {
+      const requestId = ++requestIdRef.current;
       setAgeGroup(value);
       setLoading(true);
       setError(null);
       try {
         const payload = await getLocationRecords({ scope: "age_group", gender, ageGroup: value, platform });
-        setData(payload);
-        setVisibleCount(PAGE_STEP);
+        if (requestId === requestIdRef.current) {
+          setData(payload);
+          setVisibleCount(PAGE_STEP);
+        }
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить рейтинг");
+        if (requestId === requestIdRef.current) {
+          setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить рейтинг");
+        }
       } finally {
-        setLoading(false);
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+        }
       }
     },
     [gender, platform],
@@ -245,7 +266,17 @@ export function LocationRecordsRatingPage() {
     const filtered = (data?.rows ?? []).filter((row) => matchesQuery(row, query));
     const factor = sort.direction === "asc" ? 1 : -1;
     return [...filtered].sort((left, right) => {
-      const delta = sortValue(left, sort.key) - sortValue(right, sort.key);
+      const leftValue = sortValue(left, sort.key);
+      const rightValue = sortValue(right, sort.key);
+      // Строки без значения — в самый конец при любом направлении, между
+      // собой — по месту в зачёте.
+      if (leftValue === null || rightValue === null) {
+        if (leftValue === rightValue) {
+          return left.place - right.place;
+        }
+        return leftValue === null ? 1 : -1;
+      }
+      const delta = leftValue - rightValue;
       return delta !== 0 ? delta * factor : left.place - right.place;
     });
   }, [data, query, sort]);

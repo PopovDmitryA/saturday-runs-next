@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from app.models import AuthIdentity, Event, Participant, Platform, PlatformLink, RunResult, User
@@ -149,10 +149,21 @@ def name_candidates(db: Session, user: User) -> list[NameCandidate]:
     """Все варианты имени для пользователя, от самого предпочтительного к запасным."""
     last_run_by_participant = _last_run_dates(db, user.id)
 
+    # Джойн по (platform_id, external_user_id), а не по participant_id: тот «не
+    # всегда проставлен» у легаси-привязок (см. _platform_link_join в
+    # location_page_service). Иначе такая привязка не даёт ни одного кандидата
+    # от беговой системы, и ночной refresh перетирал бы правильное протокольное
+    # имя логином из VK/Яндекса.
     rows = (
-        db.query(Platform.code, Participant.display_name, PlatformLink.participant_id)
+        db.query(Platform.code, Participant.display_name, Participant.id)
         .join(PlatformLink, PlatformLink.platform_id == Platform.id)
-        .join(Participant, Participant.id == PlatformLink.participant_id)
+        .join(
+            Participant,
+            and_(
+                Participant.platform_id == PlatformLink.platform_id,
+                Participant.external_user_id == PlatformLink.external_user_id,
+            ),
+        )
         .filter(PlatformLink.user_id == user.id)
         .all()
     )
@@ -213,7 +224,16 @@ def _last_run_dates(db: Session, user_id: UUID) -> dict[UUID, date]:
     rows = (
         db.query(RunResult.participant_id, func.max(Event.event_date))
         .join(Event, Event.id == RunResult.event_id)
-        .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
+        .join(Participant, Participant.id == RunResult.participant_id)
+        # Тот же надёжный ключ, что в name_candidates: participant_id у
+        # легаси-привязок бывает NULL.
+        .join(
+            PlatformLink,
+            and_(
+                PlatformLink.platform_id == Participant.platform_id,
+                PlatformLink.external_user_id == Participant.external_user_id,
+            ),
+        )
         .filter(PlatformLink.user_id == user_id, RunResult.finish_time_sec.isnot(None))
         .group_by(RunResult.participant_id)
         .all()

@@ -885,9 +885,11 @@ def participant_home_keys(db: Session, candidate_ids: set[Any]) -> dict[Any, str
     from app.services.home_location_service import (
         HomeLocationCandidate,
         _auto_home_location,
-        resolve_home_location,
+        home_location_candidates_from_detail,
+        resolve_home_location_from_candidates,
     )
     from app.services.location_catalog_service import LocationCatalogIndex
+    from app.services.user_unique_locations_detail import build_user_unique_location_details
 
     linked_rows = (
         db.query(Participant.id, PlatformLink.user_id)
@@ -898,13 +900,24 @@ def participant_home_keys(db: Session, candidate_ids: set[Any]) -> dict[Any, str
     pid_to_user = {pid: user_id for pid, user_id in linked_rows}
     homes: dict[Any, str] = {}
 
-    # Привязанные: общесайтовый резолвер по пользователю.
+    # Индекс каталога — ОДИН на весь отчёт: его загрузка тянет все локации и
+    # связки каталога, и когда resolve_home_location строил его заново на
+    # каждого привязанного участника, отчёт большой локации превращался в
+    # десятки полных загрузок каталога за один запрос.
+    catalog_index = LocationCatalogIndex(db)
+
+    # Привязанные: общесайтовый резолвер по пользователю (ручной выбор + три
+    # ступени), но с общим catalog_index вместо построения своего на каждого.
+    users_by_id = {
+        user.id: user
+        for user in db.query(User).filter(User.id.in_(set(pid_to_user.values()))).all()
+    }
     user_home: dict[Any, str | None] = {}
-    for user_id in set(pid_to_user.values()):
-        user = db.query(User).filter(User.id == user_id).one_or_none()
-        if user is None:
-            continue
-        candidate, _is_auto = resolve_home_location(db, user)
+    for user_id, user in users_by_id.items():
+        candidates = home_location_candidates_from_detail(
+            build_user_unique_location_details(db, user_id, catalog_index=catalog_index)
+        )
+        candidate, _is_auto = resolve_home_location_from_candidates(candidates, user)
         user_home[user_id] = candidate.catalog_identity_key if candidate else None
     for pid, user_id in pid_to_user.items():
         key = user_home.get(user_id)
@@ -916,7 +929,6 @@ def participant_home_keys(db: Session, candidate_ids: set[Any]) -> dict[Any, str
         return homes
 
     # Непривязанные: собираем те же ступени по платформенным данным участника.
-    catalog_index = LocationCatalogIndex(db)
     secondary_events = select(EventCrosslink.secondary_event_id)
 
     def _identity_of(location: Location, platform_code: str) -> str:

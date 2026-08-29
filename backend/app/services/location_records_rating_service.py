@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 
 from app.core.redis_client import get_redis_client
 from app.models import Event, Participant, Platform, PlatformLink, RunResult
+from app.services.gender_position_service import gender_from_age_category
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.location_page_service import (
     FIVE_VERST_PLATFORM_CODE,
@@ -114,13 +115,12 @@ class _IdentityRecords:
 
 
 def _protocol_gender(age_category: str) -> str | None:
-    """Пол по категории протокола 5 вёрст: «М35-39» → male. Кириллица, не латиница."""
-    first = age_category.strip()[:1]
-    if first == "М":
-        return "male"
-    if first == "Ж":
-        return "female"
-    return None
+    """Пол по категории протокола 5 вёрст: «М35-39» → male.
+
+    Делегирует единственному источнику разбора категорий
+    (gender_position_service): своя копия молча разъехалась бы при смене букв.
+    """
+    return gender_from_age_category("five_verst", age_category.strip())
 
 
 def _age_group_is_plausible(age_group: str) -> bool:

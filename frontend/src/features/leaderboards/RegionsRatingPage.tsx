@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
@@ -251,15 +251,27 @@ export function RegionsRatingPage() {
   }, []);
   const [platform, setPlatform] = useState<RegionsPlatform>(initialPlatform);
 
+  // requestId отсекает устаревшие ответы: без него медленный ответ прежней
+  // системы перезаписывал бы только что показанную новую (и URL за ним).
+  const requestIdRef = useRef(0);
+
   const load = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     try {
-      setData(await getRegionsRating(platform));
+      const payload = await getRegionsRating(platform);
+      if (requestId === requestIdRef.current) {
+        setData(payload);
+      }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить рейтинг");
+      if (requestId === requestIdRef.current) {
+        setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить рейтинг");
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [platform]);
 
