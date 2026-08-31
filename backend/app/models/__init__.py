@@ -1425,6 +1425,11 @@ class PageViewEvent(Base):
     # Владелец смотрит свой собственный профиль (только для page_type=profile).
     is_self: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     duration_sec: Mapped[int | None] = mapped_column(Integer)
+    # Событие оставлено краулером. Новые такие события не пишутся вовсе (фильтр
+    # по user-agent в /api/stats/pageview); флаг проставляется задним числом
+    # скриптом mark_bot_page_events.py по накопленным до фильтра строкам и
+    # исключает их из дневных агрегатов.
+    is_bot: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
 
 class UserGeoPing(Base):

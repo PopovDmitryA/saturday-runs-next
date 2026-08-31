@@ -311,7 +311,11 @@ def rollup_day(db: Session, day: date) -> int:
             func.coalesce(func.sum(PageViewEvent.duration_sec), 0).label("total_duration_sec"),
             func.count(PageViewEvent.duration_sec).label("duration_views"),
         )
-        .filter(PageViewEvent.ts >= start, PageViewEvent.ts < end)
+        .filter(
+            PageViewEvent.ts >= start,
+            PageViewEvent.ts < end,
+            PageViewEvent.is_bot.is_(False),
+        )
         .group_by(PageViewEvent.page_type, PageViewEvent.entity_key)
         .all()
     )
