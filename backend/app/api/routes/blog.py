@@ -3,12 +3,13 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_optional_user
 from app.config import Settings, get_settings
 from app.core.admin import is_admin_user
+from app.core.bot_detection import is_bot_user_agent
 from app.db.session import get_db
 from app.models import User
 from app.schemas.blog import (
@@ -54,6 +55,7 @@ def blog_posts(
 @router.post("/posts/{post_id}/click", response_model=BlogClickResponse)
 def blog_post_click(
     post_id: UUID,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     viewer: Annotated[User | None, Depends(get_optional_user)],
     settings: Annotated[Settings, Depends(get_settings)],
@@ -66,7 +68,8 @@ def blog_post_click(
     # В «Популярность» клик не пишем для админа — по той же логике, что и
     # просмотры страниц в /api/stats/pageview: обходы сайта для проверки не
     # должны двигать аналитику. Публичный clicks_count при этом растёт как рос.
-    if viewer is None or not is_admin_user(viewer, settings):
+    is_bot = is_bot_user_agent(request.headers.get("user-agent"))
+    if not is_bot and (viewer is None or not is_admin_user(viewer, settings)):
         record_blog_post_click(
             db,
             path=body.path if body else None,

@@ -170,6 +170,38 @@ def test_pageview_endpoint_records_event(client: TestClient, db_session: Session
     assert db_session.query(PageViewEvent).filter(PageViewEvent.view_id == UUID(view_id)).count() == 1
 
 
+def test_pageview_endpoint_ignores_crawler(
+    client: TestClient,
+    db_session: Session,
+    fake_redis: fakeredis.FakeRedis,
+) -> None:
+    """Краулер, исполняющий JS, доходит до счётчика наравне с людьми, но
+    localStorage не хранит — visitor_key у него новый на каждой странице, и один
+    обход сайта выглядел как тысячи «уникальных посетителей» (meta-externalagent
+    на страницах протоколов, 30.08.2026)."""
+    view_id = "33333333-3333-4333-8333-333333333333"
+    response = client.post(
+        "/api/stats/pageview",
+        json={
+            "path": "/locations/kuzminki/protocol/2026-08-29",
+            "authenticated": False,
+            "visitor_key": "a:crawler-visitor",
+            "view_id": view_id,
+        },
+        headers={
+            "user-agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/145.0.0.0 Safari/537.36 (compatible; meta-externalagent/1.1 "
+                "(+https://developers.facebook.com/docs/sharing/webmasters/crawler))"
+            )
+        },
+    )
+    assert response.status_code == 204
+    assert db_session.query(PageViewEvent).filter(PageViewEvent.view_id == UUID(view_id)).count() == 0
+    today = datetime.now(timezone.utc).date().isoformat()
+    assert int(fake_redis.get(f"stats:day:{today}:pv:total") or 0) == 0
+
+
 def test_pageview_endpoint_ignores_admin(
     admin_client: TestClient,
     db_session: Session,
