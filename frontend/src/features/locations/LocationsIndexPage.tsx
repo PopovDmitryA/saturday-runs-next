@@ -14,7 +14,7 @@ import { getLocationsIndex, type LocationIndexItem } from "../../lib/api";
 import { formatDate, formatFinishTimeValue, formatInt, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
-import { useTableColumns } from "../../components/tableUx/useTableColumns";
+import { useTableColumns, type TableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 
 const PLATFORM_FILTERS = ["five_verst", "s95", "runpark"] as const;
@@ -118,12 +118,14 @@ const LOCATIONS_COLUMNS: AdaptiveColumn[] = [
   { key: "first_event_date_in_system", width: 200 },
 ];
 
-function LocationsTable({ items }: { items: LocationIndexItem[] }) {
+function LocationsTable({
+  items,
+  tableColumns,
+}: {
+  items: LocationIndexItem[];
+  tableColumns: TableColumns;
+}) {
   const [sort, setSort] = useState<SortState>({ key: "events_count", asc: false });
-  // «Полно» — весь набор с горизонтальным скроллом. «Кратко» — столько колонок,
-  // сколько влезает в ширину блока: на телефоне это три, на широком мониторе —
-  // почти всё (решение Дмитрия 11.08.2026, вместо порога 820px).
-  const tableColumns = useTableColumns(LOCATIONS_COLUMNS);
   const showFull = tableColumns.showFull;
   const show = tableColumns.show;
 
@@ -169,7 +171,6 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
 
   return (
     <>
-      <TableViewToggle columns={tableColumns} />
       <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
         <table
           className={`data-table data-table-layout-fixed loc-index-table${
@@ -339,6 +340,11 @@ function LocationsTable({ items }: { items: LocationIndexItem[] }) {
 }
 
 function LocationsIndexContent() {
+  // «Полно» — весь набор с горизонтальным скроллом. «Кратко» — столько колонок,
+  // сколько влезает в ширину блока (решение Дмитрия 11.08.2026). Состояние
+  // живёт здесь, а не в самой таблице: сегмент «Кратко | Полно» стоит в общей
+  // панели фильтров над ней (правка Дмитрия 30.08.2026).
+  const tableColumns = useTableColumns(LOCATIONS_COLUMNS);
   const [items, setItems] = useState<LocationIndexItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -416,6 +422,11 @@ function LocationsIndexContent() {
                 placeholder="Поиск: название, город или регион"
               />
             </FilterGroup>
+            {tableColumns.hasToggle && (
+              <FilterGroup label="Колонки">
+                <TableViewToggle columns={tableColumns} inline />
+              </FilterGroup>
+            )}
           </FilterRow>
         </FilterPanel>
 
@@ -427,7 +438,7 @@ function LocationsIndexContent() {
             <p className="muted loc-index-count">
               {pluralizeRu(filtered.length, ["локация", "локации", "локаций"])}
             </p>
-            <LocationsTable items={filtered} />
+            <LocationsTable items={filtered} tableColumns={tableColumns} />
           </>
         )}
       </section>

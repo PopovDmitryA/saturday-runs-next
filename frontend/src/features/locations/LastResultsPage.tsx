@@ -14,7 +14,7 @@ import { getLastResults, type LastResultsItem } from "../../lib/api";
 import { formatDate, formatFinishTimeValue, formatInt, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
-import { useTableColumns } from "../../components/tableUx/useTableColumns";
+import { useTableColumns, type TableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 
 const PLATFORM_FILTERS = ["five_verst", "s95", "runpark"] as const;
@@ -93,11 +93,14 @@ const LAST_RESULTS_COLUMNS: AdaptiveColumn[] = [
   { key: "prs", width: 184 },
 ];
 
-function LastResultsTable({ items }: { items: LastResultsItem[] }) {
+function LastResultsTable({
+  items,
+  tableColumns,
+}: {
+  items: LastResultsItem[];
+  tableColumns: TableColumns;
+}) {
   const [sort, setSort] = useState<SortState>({ key: "event_date", asc: false });
-  // Краткий вид набирает колонки по ширине экрана: минимум — локация, дата и
-  // финишёры, дальше город, система, волонтёры и так до полного набора.
-  const tableColumns = useTableColumns(LAST_RESULTS_COLUMNS);
   const showFull = tableColumns.showFull;
   const show = tableColumns.show;
 
@@ -147,7 +150,6 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
 
   return (
     <>
-      <TableViewToggle columns={tableColumns} />
       <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
         <table
           className={`data-table data-table-layout-fixed loc-index-table last-results-table${
@@ -300,6 +302,10 @@ function LastResultsTable({ items }: { items: LastResultsItem[] }) {
 }
 
 function LastResultsContent() {
+  // Краткий вид набирает колонки по ширине экрана. Состояние живёт здесь, а не
+  // в самой таблице: сегмент «Кратко | Полно» стоит в общей панели фильтров
+  // над ней (правка Дмитрия 30.08.2026).
+  const tableColumns = useTableColumns(LAST_RESULTS_COLUMNS);
   const [items, setItems] = useState<LastResultsItem[] | null>(null);
   const [saturdayDate, setSaturdayDate] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -411,6 +417,11 @@ function LastResultsContent() {
                 placeholder="Поиск: название, город или регион"
               />
             </FilterGroup>
+            {tableColumns.hasToggle && (
+              <FilterGroup label="Колонки">
+                <TableViewToggle columns={tableColumns} inline />
+              </FilterGroup>
+            )}
           </FilterRow>
         </FilterPanel>
 
@@ -422,7 +433,7 @@ function LastResultsContent() {
             <p className="muted loc-index-count">
               {pluralizeRu(filtered.length, ["локация", "локации", "локаций"])}
             </p>
-            <LastResultsTable items={filtered} />
+            <LastResultsTable items={filtered} tableColumns={tableColumns} />
           </>
         )}
       </section>
