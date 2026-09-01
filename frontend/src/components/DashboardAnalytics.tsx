@@ -4,9 +4,9 @@ import { ChartColumnTooltip } from "./ChartColumnTooltip";
 import { FinishTimeDistribution } from "./FinishTimeDistribution";
 import type { DashboardAnalytics as DashboardAnalyticsData } from "../lib/api";
 import {
-  DASHBOARD_ANALYTICS_CARD_ORDER,
-  DASHBOARD_ANALYTICS_PANEL_ORDER,
-  sortByLayoutOrder,
+  DASHBOARD_ANALYTICS_GROUPS,
+  GROUP_HEADLINE_LIMIT,
+  type DashboardAnalyticsGroup,
 } from "../lib/dashboardLayout";
 import { PlatformBadge } from "./PlatformBadge";
 import { BestResultsModal } from "./BestResultsModal";
@@ -320,6 +320,18 @@ function buildAnalyticsCards(
     });
   }
 
+  // Всего волонтёрств: та же цифра, что в шапке кабинета, но здесь она нужна
+  // ещё раз — долистав до группы, шапку человек уже не видит (решение
+  // Дмитрия, 28.08.2026).
+  if (totalVolunteering > 0) {
+    cards.push({
+      key: "volunteering_total",
+      value: formatNumber(totalVolunteering),
+      label: `${volunteeringCapLabel(totalVolunteering)} всего`,
+      category: "volunteering",
+    });
+  }
+
   if ((analytics.volunteering_current_year ?? 0) > 0) {
     cards.push({
       key: "volunteering_year",
@@ -445,17 +457,8 @@ function buildAnalyticsCards(
   }
 
   // Плашка «Последний PR» временно скрыта (02.07.2026) — вернём, если попросят пользователи.
-
-  if (analytics.last_global_pr_date) {
-    cards.push({
-      key: "last_global_pr_date",
-      value: formatDate(analytics.last_global_pr_date),
-      label: "Последний глобальный PR",
-      category: "runs",
-      clickable: true,
-      modalTarget: "personal_records",
-    });
-  }
+  // Плитка «Последний глобальный PR» убрана (09.08.2026): дата последнего
+  // рекорда уже видна в модалке личных рекордов, куда ведёт плитка «PR-пробежки».
 
   if ((analytics.new_locations_last_12_months ?? 0) > 0) {
     cards.push({
@@ -479,6 +482,14 @@ function buildAnalyticsCards(
       key: "saturday_streak",
       value: formatNumber(analytics.saturday_streak),
       label: `${saturdaysLabel(analytics.saturday_streak)} подряд`,
+    });
+  }
+
+  if (analytics.first_run_date) {
+    cards.push({
+      key: "first_run_date",
+      value: formatDate(analytics.first_run_date),
+      label: "Первая пробежка",
     });
   }
 
@@ -769,6 +780,29 @@ export function DashboardAnalytics({
   const [uniqueLocationsFirstVisitSince, setUniqueLocationsFirstVisitSince] = useState<
     string | undefined
   >();
+  // Раскрытые группы аналитики; выбор переживает перезагрузку страницы.
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("dashboardAnalyticsGroups") ?? "{}") as Record<
+        string,
+        boolean
+      >;
+    } catch {
+      return {};
+    }
+  });
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem("dashboardAnalyticsGroups", JSON.stringify(next));
+      } catch {
+        // приватный режим — просто не запоминаем
+      }
+      return next;
+    });
+  };
 
   const openUniqueLocations = (
     activity: "all" | "runs" | "volunteering",
@@ -835,10 +869,7 @@ export function DashboardAnalytics({
       ? analytics.home_distance.home
       : null;
 
-  const cards = sortByLayoutOrder(
-    buildAnalyticsCards(analytics, totalRuns, totalVolunteering),
-    DASHBOARD_ANALYTICS_CARD_ORDER,
-  );
+  const cards = buildAnalyticsCards(analytics, totalRuns, totalVolunteering);
   const hasActivityChart = analytics.activity_by_month.some(
     (item) => item.runs > 0 || item.volunteering > 0,
   );
@@ -922,11 +953,16 @@ export function DashboardAnalytics({
             {analytics.platform_metrics.map((item) => (
               <li key={item.platform_code} className="platform-metrics-row">
                 <PlatformBadge code={item.platform_code} />
-                {(item.runs_count ?? 0) > 0 && (
-                  <span className="platform-metrics-count">
-                    <b>{formatNumber(item.runs_count ?? 0)}</b> {runsFormLabel(item.runs_count ?? 0)}
-                  </span>
-                )}
+                {/* Ячейка рендерится всегда, даже пустая: список — общая
+                    сетка, и пропуск сдвинул бы колонки этой строки. */}
+                <span className="platform-metrics-count">
+                  {(item.runs_count ?? 0) > 0 && (
+                    <>
+                      <b>{formatNumber(item.runs_count ?? 0)}</b>{" "}
+                      {runsFormLabel(item.runs_count ?? 0)}
+                    </>
+                  )}
+                </span>
                 <div className="platform-metrics-values">
                   {item.avg_finish_time_sec != null && (
                     <span>{formatDuration(item.avg_finish_time_sec)}</span>
@@ -1001,10 +1037,80 @@ export function DashboardAnalytics({
     });
   }
 
-  const orderedPanels = sortByLayoutOrder(panels, DASHBOARD_ANALYTICS_PANEL_ORDER);
+  const cardByKey = new Map(cards.map((card) => [card.key, card]));
+  const panelByKey = new Map(panels.map((panel) => [panel.key, panel.node]));
+  const groupedKeys = new Set<string>();
+  for (const group of DASHBOARD_ANALYTICS_GROUPS) {
+    for (const key of [...group.cards, ...group.panels]) {
+      groupedKeys.add(key);
+    }
+  }
+  // Страховка: карточка/панель, не расписанная по группам, не должна пропасть.
+  const leftoverCards = cards.filter((card) => !groupedKeys.has(card.key));
+  const leftoverPanels = panels.filter((panel) => !groupedKeys.has(panel.key));
 
-  const gridCards = cards.filter((card) => !card.half);
-  const halfCards = cards.filter((card) => card.half);
+  const renderCardsGrid = (items: AnalyticsCard[]) => {
+    const grid = items.filter((card) => !card.half);
+    const halves = items.filter((card) => card.half);
+    return (
+      <>
+        {grid.length > 0 && (
+          <div className="stats-grid stats-grid-secondary">{grid.map((card) => renderCard(card))}</div>
+        )}
+        {halves.length > 0 && (
+          <div className="stats-grid stats-grid-halves">{halves.map((card) => renderCard(card))}</div>
+        )}
+      </>
+    );
+  };
+
+  const renderGroup = (group: DashboardAnalyticsGroup) => {
+    const pick = (keys: readonly string[]) =>
+      keys.flatMap((key) => {
+        const card = cardByKey.get(key);
+        return card ? [card] : [];
+      });
+    // Витрина — ровно одна строка: берём первые существующие плитки по
+    // приоритету. Полуширинные (частая локация/роль) в строку не встают —
+    // им место только в свёрнутой части.
+    const available = pick(group.cards);
+    const headlineCards = available.filter((card) => !card.half).slice(0, GROUP_HEADLINE_LIMIT);
+    const headlineKeys = new Set(headlineCards.map((card) => card.key));
+    const restCards = available.filter((card) => !headlineKeys.has(card.key));
+    const groupPanels = group.panels.flatMap((key) => {
+      const node = panelByKey.get(key);
+      return node ? [{ key, node }] : [];
+    });
+    if (headlineCards.length === 0 && restCards.length === 0 && groupPanels.length === 0) {
+      return null;
+    }
+    const expanded = Boolean(expandedGroups[group.key]);
+    return (
+      <section key={group.key} className="analytics-group" aria-label={group.title}>
+        <div className="analytics-group-head">
+          <h2 className="section-title">{group.title}</h2>
+          {restCards.length > 0 && (
+            <button
+              type="button"
+              className="analytics-group-toggle"
+              aria-expanded={expanded}
+              onClick={() => toggleGroup(group.key)}
+            >
+              {expanded
+                ? "Свернуть"
+                : `Ещё ${pluralizeRu(restCards.length, ["показатель", "показателя", "показателей"])}`}
+            </button>
+          )}
+        </div>
+        {renderCardsGrid(expanded ? [...headlineCards, ...restCards] : headlineCards)}
+        {groupPanels.map((panel) => (
+          <div key={panel.key} className="card analytics-panel">
+            {panel.node}
+          </div>
+        ))}
+      </section>
+    );
+  };
 
   return (
     <section className="dashboard-analytics" aria-label="Дополнительная аналитика">
@@ -1021,15 +1127,12 @@ export function DashboardAnalytics({
           <a href={PORTAL_CABINET_SETTINGS_HREF}>настройках</a>.
         </p>
       )}
-      {gridCards.length > 0 && (
-        <div className="stats-grid stats-grid-secondary">{gridCards.map((card) => renderCard(card))}</div>
-      )}
 
-      {halfCards.length > 0 && (
-        <div className="stats-grid stats-grid-halves">{halfCards.map((card) => renderCard(card))}</div>
-      )}
+      {DASHBOARD_ANALYTICS_GROUPS.map((group) => renderGroup(group))}
 
-      {orderedPanels.map((panel) => (
+      {leftoverCards.length > 0 && renderCardsGrid(leftoverCards)}
+
+      {leftoverPanels.map((panel) => (
         <div key={panel.key} className="card analytics-panel">
           {panel.node}
         </div>

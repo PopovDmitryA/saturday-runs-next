@@ -72,6 +72,11 @@ export type ShareCardData = {
   metrics: ShareMetric[];
   /** Строка-факт мелким кеглем («4 года · 12 локаций · 3 региона»). */
   fact?: string;
+  /**
+   * Полоса выполнения: цель года на постере читается только вместе с ней —
+   * «31 из 50» без полосы не показывает, много это или мало.
+   */
+  progress?: { pct: number; label?: string };
   /** Таймлайн систем (визитка локации). */
   timeline?: ShareTimelineEntry[];
   /** Мини-календарь суббот: true = была активность. */
@@ -84,6 +89,7 @@ export type ShareCardData = {
  */
 export type ShareSubjectKind =
   | "milestone"
+  | "goal"
   | "run"
   | "volunteering"
   | "summary"
@@ -105,6 +111,7 @@ export type ShareSubject = {
 /** Точка входа для аналитики: откуда открыли шторку. */
 export type ShareEntryPoint =
   | "dashboard"
+  | "goals"
   | "runs"
   | "volunteering"
   | "history"

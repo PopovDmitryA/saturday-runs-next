@@ -44,7 +44,6 @@ import {
   PORTAL_LOGIN_HREF,
   PORTAL_UPDATES_HREF,
 } from "./lib/portalRoutes";
-import { PortalCabinetPreviewPage } from "./features/portal/cabinet/PortalCabinetPreviewPage";
 import {
   PortalCabinetSettingsPage,
   PortalCabinetSharePage,
@@ -215,7 +214,6 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   // Личный кабинет в портальном дизайне — тёмный запуск под /new/*, рядом со
   // старым кабинетом на канонических адресах. Превью на демо-данных (без
   // логина) — для выбора вариантов дизайна; удалить вместе с /new/* при релизе.
-  "/new/cabinet-preview": () => <PortalCabinetPreviewPage />,
   [PORTAL_CABINET_HREF]: () => <CabinetLegacyRedirect tab="dashboard" />,
   [PORTAL_CABINET_RUNS_HREF]: () => <CabinetLegacyRedirect tab="runs" />,
   [PORTAL_CABINET_VOLUNTEERING_HREF]: () => <CabinetLegacyRedirect tab="volunteering" />,

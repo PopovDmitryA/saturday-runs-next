@@ -188,7 +188,9 @@ def s95_api_new_protocols_task() -> dict[str, object]:
     def _run() -> dict[str, object]:
         return _run_api_sync(sync_updated_protocols)
 
-    return run_reported_sync("s95 API: новые протоколы", _run)
+    # batch_queue_name="s95" включает проверку охлаждения: пока s95 нас не пускает,
+    # прогон пропускается со скипом в истории, а не идёт стучаться.
+    return run_reported_sync("s95 API: новые протоколы", _run, batch_queue_name="s95")
 
 
 @celery_app.task(name="s95_sync.api_sync_updated", queue="s95")
@@ -200,7 +202,7 @@ def s95_api_sync_updated_task() -> dict[str, object]:
     def _run() -> dict[str, object]:
         return _run_api_sync(sync_updated_protocols)
 
-    return run_reported_sync("s95 API: обновлённые протоколы", _run)
+    return run_reported_sync("s95 API: обновлённые протоколы", _run, batch_queue_name="s95")
 
 
 @celery_app.task(name="s95_sync.api_reconcile_date", queue="s95")
@@ -220,6 +222,7 @@ def s95_api_reconcile_date_task(weeks_ago: int = 0) -> dict[str, object]:
         "s95 API: сверка протоколов",
         _run,
         details=f"дата {target.isoformat()} (−{weeks_ago} нед)",
+        batch_queue_name="s95",
     )
 
 

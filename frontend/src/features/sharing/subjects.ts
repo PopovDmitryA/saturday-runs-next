@@ -5,6 +5,7 @@
 
 import type {
   DashboardStats,
+  GoalProgress,
   LocationPage,
   LocationProtocol,
   LocationPersonalStats,
@@ -346,6 +347,162 @@ export function milestoneSubject(milestone: MyHistoryMilestone, user: User | nul
     kind: "milestone",
     data,
     fileName: `run5k-milestone-${milestone.event_date}`,
+    defaultFormat: "story",
+  };
+}
+
+// ── Цель на год ─────────────────────────────────────────────────────────────
+
+/**
+ * Сколько суббот осталось до конца года, считая ближайшую. Тот же счёт, что
+ * у бэкенда в _saturdays_left: цель года меряется субботами, а не днями.
+ */
+function saturdaysLeftInYear(today: Date = new Date()): number {
+  const nextSaturday = new Date(today);
+  nextSaturday.setHours(0, 0, 0, 0);
+  nextSaturday.setDate(nextSaturday.getDate() + ((6 - nextSaturday.getDay() + 7) % 7));
+  const yearEnd = new Date(today.getFullYear(), 11, 31);
+  if (nextSaturday > yearEnd) {
+    return 0;
+  }
+  return Math.floor((yearEnd.getTime() - nextSaturday.getTime()) / (7 * 24 * 3600 * 1000)) + 1;
+}
+
+/** Чип-прогноз постера — те же формулировки, что и на карточке цели в ЛК. */
+function goalChip(goal: GoalProgress): string | undefined {
+  if (goal.done) {
+    return "Цель выполнена 🎉";
+  }
+  if (goal.kind === "count" && goal.forecast_value != null && goal.on_track != null) {
+    return goal.on_track
+      ? `Прогноз: ~${formatInt(goal.forecast_value)} — успеваю`
+      : `Прогноз: ~${formatInt(goal.forecast_value)} — надо поднажать`;
+  }
+  if (goal.kind === "streak" && goal.on_track != null) {
+    return goal.on_track ? "Ещё достижима в этом году" : "В этом году суббот уже не хватит";
+  }
+  if (goal.kind === "percent" && goal.on_track != null) {
+    return goal.on_track ? "Ещё достижимо в этом году" : "Суббот до конца года уже не хватит";
+  }
+  return undefined;
+}
+
+/**
+ * Подпись под полосой. Процент показываем только там, где он честный —
+ * «сколько из скольких». У цели на время (94% = отношение времён) и у
+ * регулярности (доля от целевой доли) он спорил бы с цифрой в герое.
+ */
+function progressCaption(goal: GoalProgress): string {
+  if (goal.done) {
+    return "цель выполнена";
+  }
+  return goal.kind === "count" || goal.kind === "streak"
+    ? `выполнено ${Math.round(goal.pct)}%`
+    : "прогресс к цели";
+}
+
+/**
+ * Цель года: выполненная — как победа, невыполненная — как прогресс
+ * (герой «31 / 50», полоса выполнения и что осталось). Приглашение
+ * поболеть, а не только отчёт о результате.
+ */
+export function goalSubject(goal: GoalProgress, user: User | null): ShareSubject {
+  const metrics: ShareMetric[] = [];
+  const chip = goalChip(goal);
+  const saturdaysLeft = saturdaysLeftInYear();
+  const remaining = Math.max(0, goal.target_value - goal.current_value);
+  let hero: ShareCardData["hero"];
+
+  if (goal.kind === "time") {
+    const best = stripLeadingHours(goal.current_display);
+    const target = stripLeadingHours(goal.target_display) ?? "";
+    if (goal.done && best) {
+      hero = { value: best, caption: `цель — выбежать из ${target}` };
+    } else if (best) {
+      hero = { value: best, caption: `лучшее в этом году · цель ${target}` };
+      pushMetric(
+        metrics,
+        "gap",
+        `−${formatGap(goal.current_value - goal.target_value)}`,
+        "снять до цели",
+      );
+    } else {
+      hero = { value: target, caption: "цель года · пока нет результатов" };
+    }
+  } else if (goal.kind === "percent") {
+    const current = goal.current_display ?? "0%";
+    const target = goal.target_display ?? "";
+    hero = {
+      value: current,
+      caption: goal.done ? `цель ${target} взята` : `активных суббот · цель ${target}`,
+    };
+    pushCountMetric(metrics, "active", goal.current_value, SATURDAY_FORMS, { suffix: "с активностью" });
+  } else if (goal.kind === "streak") {
+    hero = goal.done
+      ? { value: formatInt(goal.current_value), caption: "суббот подряд" }
+      : {
+          value: `${formatInt(goal.current_value)} / ${formatInt(goal.target_value)}`,
+          caption: "суббот подряд",
+        };
+    if (!goal.done) {
+      pushCountMetric(metrics, "remaining", remaining, SATURDAY_FORMS, { suffix: "до цели" });
+    }
+  } else {
+    hero = goal.done
+      ? {
+          value: formatInt(goal.current_value),
+          caption: `${goal.unit} · цель ${formatInt(goal.target_value)}`,
+        }
+      : {
+          value: `${formatInt(goal.current_value)} / ${formatInt(goal.target_value)}`,
+          caption: goal.unit,
+        };
+    if (!goal.done) {
+      pushMetric(metrics, "remaining", formatInt(remaining), `${goal.unit} осталось`);
+      // Темп, который выводит к цели: «сколько за субботу» понятнее остатка.
+      if (saturdaysLeft > 0 && remaining > 0) {
+        pushMetric(
+          metrics,
+          "per_saturday",
+          formatNumber(Math.round((remaining / saturdaysLeft) * 10) / 10),
+          "нужно за субботу",
+        );
+      }
+    }
+  }
+
+  // Процент не дублируем плиткой: его несёт подпись под полосой выполнения.
+  // Субботы до конца года нужны обоим случаям: невыполненной цели это срок,
+  // выполненной — «закрыл, а впереди ещё столько».
+  pushCountMetric(metrics, "saturdays_left", saturdaysLeft, SATURDAY_FORMS, {
+    suffix: "до конца года",
+  });
+  // Прогноз — только когда его не проговорил чип: иначе одна и та же цифра
+  // стоит на карточке дважды.
+  if (chip === undefined) {
+    pushMetric(
+      metrics,
+      "forecast",
+      goal.forecast_value != null ? `~${formatInt(goal.forecast_value)}` : null,
+      "прогноз к 31 декабря",
+    );
+  }
+
+  const data: ShareCardData = {
+    audience: "runner",
+    title: displayName(user),
+    subtitle: `${goal.icon} ${goal.title}`,
+    plate: `Цель ${goal.year} года`,
+    hero,
+    chip,
+    progress: { pct: goal.pct, label: progressCaption(goal) },
+    metrics,
+  };
+
+  return {
+    kind: "goal",
+    data,
+    fileName: `run5k-goal-${goal.goal_type}-${goal.year}`,
     defaultFormat: "story",
   };
 }

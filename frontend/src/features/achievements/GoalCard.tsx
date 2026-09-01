@@ -1,4 +1,8 @@
-import type { GoalProgress } from "../../lib/api";
+import { useMemo } from "react";
+import type { GoalProgress, User } from "../../lib/api";
+import { ShareRowButton } from "../sharing/ShareRowButton";
+import { goalSubject } from "../sharing/subjects";
+import type { ShareEntryPoint } from "../sharing/types";
 
 function forecastChip(goal: GoalProgress) {
   if (goal.done) {
@@ -56,25 +60,48 @@ function progressLabel(goal: GoalProgress): string {
   return `${goal.current_value} из ${goal.target_value} ${goal.unit}`.trim();
 }
 
-export function GoalCard({ goal, compact }: { goal: GoalProgress; compact?: boolean }) {
+export function GoalCard({
+  goal,
+  compact,
+  user,
+  shareEntry = "goals",
+}: {
+  goal: GoalProgress;
+  compact?: boolean;
+  /** Нужен постеру: имя на карточке. undefined — сессия ещё проверяется. */
+  user?: User | null;
+  shareEntry?: ShareEntryPoint;
+}) {
+  // Постер собирается заранее: невыполненная цель уходит в сториз прогрессом
+  // («31 / 50» + полоса), выполненная — победой.
+  const subject = useMemo(() => goalSubject(goal, user ?? null), [goal, user]);
   return (
     <div className={`card goal-card${goal.done ? " goal-card-done" : ""}${compact ? " goal-card-compact" : ""}`}>
+      {/* Название занимает всю ширину карточки: в узкой колонке тизера оно
+          иначе делит строку с процентом и рвётся посреди слова. Процент и
+          «Поделиться» встали к полосе — процент там ещё и подписывает её. */}
       <div className="goal-head">
         <span className="goal-icon" aria-hidden="true">
           {goal.icon}
         </span>
         <span className="goal-title">{goal.title}</span>
-        <RecentDeltaBadge goal={goal} />
-        <span className="goal-pct">{Math.round(goal.pct)}%</span>
       </div>
-      <div className="goal-bar">
-        <div
-          className={`goal-bar-fill${goal.done ? " goal-bar-done" : ""}`}
-          style={{ width: `${goal.pct}%` }}
-        />
+      <div className="goal-progress-row">
+        <div className="goal-bar">
+          <div
+            className={`goal-bar-fill${goal.done ? " goal-bar-done" : ""}`}
+            style={{ width: `${goal.pct}%` }}
+          />
+        </div>
+        <span className="goal-pct">{Math.round(goal.pct)}%</span>
+        <ShareRowButton subject={subject} entry={shareEntry} />
       </div>
       <div className="goal-meta">
-        <span className="goal-progress-label">{progressLabel(goal)}</span>
+        {/* Бейдж-дельта стоит в строке прогресса, а не в шапке: в шапке он
+            отнимал у названия последние миллиметры и лез на процент. */}
+        <span className="goal-progress-label">
+          {progressLabel(goal)} <RecentDeltaBadge goal={goal} />
+        </span>
         {!compact && forecastChip(goal)}
       </div>
     </div>

@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.models import Event, Location, Platform, ProtocolSyncState, SyncWatermark
 from app.s95.api_client import S95ApiActivityRef, S95ApiLocation
+from app.s95.errors import S95BanDetected
+from app.s95.fetch.priority import S95YieldForUserSync
 from app.services.sync_watermark_service import S95_PROTOCOLS_RECONCILED_THROUGH
 from app.sync.s95_global_sync_api import event_numbers_by_date, sync_updated_protocols
 from app.sync.s95_protocol_api import upsert_activity_protocol_api
@@ -83,7 +85,7 @@ def test_sync_updated_fetches_new_protocol(
     with patch("app.sync.s95_global_sync_api.fetch_all_locations", return_value=[_api_location(slug)]), \
          patch("app.sync.s95_global_sync_api.fetch_event_activities", return_value=[ref]), \
          patch("app.sync.s95_protocol_api.fetch_activity", return_value=ACTIVITY_JSON):
-        result = sync_updated_protocols(db_session, delay_min_sec=0, delay_max_sec=0)
+        result = sync_updated_protocols(db_session)
 
     assert not result.errors
     assert result.protocols_created == 1
@@ -123,7 +125,7 @@ def test_sync_updated_skips_when_updated_at_not_newer(db_session: Session, s95_p
     with patch("app.sync.s95_global_sync_api.fetch_all_locations", return_value=[_api_location(slug)]), \
          patch("app.sync.s95_global_sync_api.fetch_event_activities", return_value=[same_ref]), \
          patch("app.sync.s95_protocol_api.fetch_activity") as mock_fetch:
-        result = sync_updated_protocols(db_session, delay_min_sec=0, delay_max_sec=0)
+        result = sync_updated_protocols(db_session)
 
     mock_fetch.assert_not_called()
     assert not result.errors
@@ -151,7 +153,7 @@ def test_sync_updated_refetches_when_updated_at_newer(
     with patch("app.sync.s95_global_sync_api.fetch_all_locations", return_value=[_api_location(slug)]), \
          patch("app.sync.s95_global_sync_api.fetch_event_activities", return_value=[newer_ref]), \
          patch("app.sync.s95_protocol_api.fetch_activity", return_value=ACTIVITY_JSON_EDITED) as mock_fetch:
-        result = sync_updated_protocols(db_session, delay_min_sec=0, delay_max_sec=0)
+        result = sync_updated_protocols(db_session)
 
     mock_fetch.assert_called_once()
     assert not result.errors
@@ -182,7 +184,7 @@ def test_sync_updated_seeds_null_source_updated_at_without_fetch(db_session: Ses
     with patch("app.sync.s95_global_sync_api.fetch_all_locations", return_value=[_api_location(slug)]), \
          patch("app.sync.s95_global_sync_api.fetch_event_activities", return_value=[older_ref]), \
          patch("app.sync.s95_protocol_api.fetch_activity") as mock_fetch:
-        result = sync_updated_protocols(db_session, delay_min_sec=0, delay_max_sec=0)
+        result = sync_updated_protocols(db_session)
 
     mock_fetch.assert_not_called()
     assert not result.errors
@@ -216,7 +218,7 @@ def test_sync_updated_fetches_when_null_source_updated_at_and_newer_than_last_fe
     with patch("app.sync.s95_global_sync_api.fetch_all_locations", return_value=[_api_location(slug)]), \
          patch("app.sync.s95_global_sync_api.fetch_event_activities", return_value=[newer_ref]), \
          patch("app.sync.s95_protocol_api.fetch_activity", return_value=ACTIVITY_JSON_EDITED) as mock_fetch:
-        result = sync_updated_protocols(db_session, delay_min_sec=0, delay_max_sec=0)
+        result = sync_updated_protocols(db_session)
 
     mock_fetch.assert_called_once()
     assert not result.errors
@@ -234,7 +236,7 @@ def test_sync_updated_sets_watermark_on_success(
     with patch("app.sync.s95_global_sync_api.fetch_all_locations", return_value=[_api_location(slug)]), \
          patch("app.sync.s95_global_sync_api.fetch_event_activities", return_value=[ref]), \
          patch("app.sync.s95_protocol_api.fetch_activity", return_value=ACTIVITY_JSON):
-        sync_updated_protocols(db_session, delay_min_sec=0, delay_max_sec=0)
+        sync_updated_protocols(db_session)
 
     watermark = db_session.query(SyncWatermark).filter(
         SyncWatermark.platform_id == s95_platform.id,
@@ -247,7 +249,7 @@ def test_sync_updated_skips_watermark_on_error(db_session: Session, s95_platform
     slug = f"penza-{uuid4().hex[:6]}"
     with patch("app.sync.s95_global_sync_api.fetch_all_locations", return_value=[_api_location(slug)]), \
          patch("app.sync.s95_global_sync_api.fetch_event_activities", side_effect=RuntimeError("boom")):
-        result = sync_updated_protocols(db_session, delay_min_sec=0, delay_max_sec=0)
+        result = sync_updated_protocols(db_session)
 
     assert result.errors
     watermark = db_session.query(SyncWatermark).filter(
@@ -255,3 +257,44 @@ def test_sync_updated_skips_watermark_on_error(db_session: Session, s95_platform
         SyncWatermark.key == S95_PROTOCOLS_RECONCILED_THROUGH,
     ).one_or_none()
     assert watermark is None
+
+
+def test_refusal_stops_the_run_instead_of_erroring_per_location(
+    db_session: Session, s95_platform: Platform, monkeypatch: pytest.MonkeyPatch
+):
+    """Отказ s95 общий для домена: незачем обходить с ним все тридцать площадок.
+
+    Раньше цикл ловил любое исключение и шёл дальше — один бан превращался в
+    тридцать одинаковых ошибок и тридцать бесполезных попыток достучаться.
+    """
+    _flush_instead_of_commit(db_session, monkeypatch)
+    locations = [_api_location(f"penza-{uuid4().hex[:6]}") for _ in range(3)]
+
+    with patch("app.sync.s95_global_sync_api.fetch_all_locations", return_value=locations), \
+         patch(
+             "app.sync.s95_global_sync_api.fetch_event_activities",
+             side_effect=S95BanDetected("HTTP 403 from S95"),
+         ) as fetcher:
+        result = sync_updated_protocols(db_session)
+
+    assert fetcher.call_count == 1
+    assert len(result.errors) == 1
+    assert result.stopped_reason is not None
+
+
+def test_yielding_to_a_user_sync_is_not_an_error(
+    db_session: Session, s95_platform: Platform, monkeypatch: pytest.MonkeyPatch
+):
+    """Пользователь вперёд батча — штатное дело, прогон не должен краснеть."""
+    _flush_instead_of_commit(db_session, monkeypatch)
+    locations = [_api_location(f"penza-{uuid4().hex[:6]}") for _ in range(3)]
+
+    with patch("app.sync.s95_global_sync_api.fetch_all_locations", return_value=locations), \
+         patch(
+             "app.sync.s95_global_sync_api.fetch_event_activities",
+             side_effect=S95YieldForUserSync(),
+         ):
+        result = sync_updated_protocols(db_session)
+
+    assert not result.errors
+    assert result.stopped_reason == "уступили пользовательскому синку"

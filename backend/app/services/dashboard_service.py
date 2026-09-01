@@ -70,7 +70,12 @@ class SyncRefreshRateLimitedError(Exception):
 # gender_position=1 из среднего места по полу.
 # 34: плитка «Дальность от дома» — сумма км до уникальных посещённых площадок,
 # самый дальний старт и признак неоднозначной домашней локации.
-ANALYTICS_VERSION = 34
+# 35: блок last_saturday — герой дашборда «последняя суббота» с дельтой
+# к прошлому визиту на ту же площадку.
+# 36: notables последней субботы — чем она примечательна, словами.
+# 37: среднее место по полу считается только женщинам — у мужчин женский
+# зачёт совпадает с абсолютом, и плитка дублировала «Среднее место».
+ANALYTICS_VERSION = 37
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 
@@ -187,6 +192,44 @@ def _saturday_consistency(activity_dates: set[date], today: date) -> tuple[float
     active = sum(1 for value in saturdays if value in active_weeks)
     pct = round(active / len(saturdays) * 100, 1)
     return pct, active, len(saturdays)
+
+
+def _last_saturday_notables(
+    run: RunResult,
+    *,
+    total_runs: int,
+    unique_run_locations: int,
+    avg_finish_sec: int | None,
+    saturday_streak: int,
+) -> list[str]:
+    """Чем именно была примечательна последняя пробежка — словами.
+
+    Одна строка текста поверх цифр даёт эффект «сайт меня знает» (паттерн
+    notables у Smashrun). Считается из протоколов, GPS не нужен. Возвращаем
+    не больше двух: третья строка уже читается как шум. Формулировки без
+    «вашей» — тот же блок показывается и в чужом публичном профиле.
+    """
+    notables: list[str] = []
+
+    if total_runs in RUN_MILESTONES:
+        notables.append(f"Юбилейная — {total_runs}-я пробежка")
+    if run.is_global_pr:
+        notables.append("Личный рекорд по всем системам")
+    elif run.is_pr:
+        notables.append("Личный рекорд")
+    if run.is_first_run_at_location and unique_run_locations > 1:
+        notables.append(f"{unique_run_locations}-я площадка в коллекции")
+    if (
+        run.finish_time_sec is not None
+        and avg_finish_sec is not None
+        and run.finish_time_sec < avg_finish_sec - 30
+    ):
+        faster = avg_finish_sec - int(run.finish_time_sec)
+        notables.append(f"На {faster} сек быстрее среднего")
+    if saturday_streak >= 5:
+        notables.append(f"{saturday_streak} суббот подряд — серия продолжается")
+
+    return notables[:2]
 
 
 def _next_run_milestone(total_runs: int) -> tuple[int | None, int | None]:
@@ -552,10 +595,18 @@ def _compute_dashboard_analytics(
     best_results_platform_count = timed_runs.with_entities(Platform.code).distinct().count()
     avg_pace = paced_runs.with_entities(func.avg(RunResult.pace_sec_per_km)).scalar()
     avg_position = positioned_runs.with_entities(func.avg(RunResult.position)).scalar()
+    # Среднее место по полу показываем только женщинам: у мужчин женский
+    # зачёт совпадает с абсолютом и плитка дублирует «Среднее место в
+    # протоколе» (решение Дмитрия, 09.08.2026 — как и с зачётом побед ниже).
+    gender = user_gender(db, user_id)
     avg_gender_position = (
-        runs_query.filter(RunResult.gender_position.isnot(None))
-        .with_entities(func.avg(RunResult.gender_position))
-        .scalar()
+        (
+            runs_query.filter(RunResult.gender_position.isnot(None))
+            .with_entities(func.avg(RunResult.gender_position))
+            .scalar()
+        )
+        if gender == "female"
+        else None
     )
     # Победы: у женщин — среди женщин (gender_position), у мужчин — в абсолюте
     # (position). Счётчик и список в модалке считаются одним фильтром
@@ -563,7 +614,7 @@ def _compute_dashboard_analytics(
     # кросслинк-дубли уже отсечены выше, поэтому цифра плитки и число строк
     # детализации совпадают по построению. Зарубежный parkrun отсекается тем же
     # фильтром в обоих местах (foreign_parkrun_exclusion_filter).
-    wins_scope = win_scope_for_gender(user_gender(db, user_id))
+    wins_scope = win_scope_for_gender(gender)
     wins_count = (
         runs_query.filter(
             run_win_sql_filter(wins_scope),
@@ -877,6 +928,56 @@ def _compute_dashboard_analytics(
         else None
     )
 
+    # «Последняя суббота» — герой дашборда: свежайший результат с дельтой
+    # к прошлому визиту на ту же площадку. Считается из уже отфильтрованного
+    # runs_query (без тестовых стартов и кросслинк-дублей).
+    last_saturday: dict[str, object] | None = None
+    last_row = runs_query.order_by(
+        Event.event_date.desc(), RunResult.finish_time_sec.asc().nullslast()
+    ).first()
+    if last_row is not None:
+        last_run, last_event, last_location, last_platform = last_row
+        delta_vs_prev_sec: int | None = None
+        prev_date_iso: str | None = None
+        if last_run.finish_time_sec is not None:
+            prev_same_loc = (
+                runs_query.filter(
+                    Event.location_id == last_event.location_id,
+                    Event.event_date < last_event.event_date,
+                    RunResult.finish_time_sec.isnot(None),
+                )
+                .order_by(Event.event_date.desc())
+                .first()
+            )
+            if prev_same_loc is not None:
+                prev_run, prev_event, _prev_loc, _prev_platform = prev_same_loc
+                delta_vs_prev_sec = int(last_run.finish_time_sec) - int(prev_run.finish_time_sec)
+                prev_date_iso = prev_event.event_date.isoformat()
+        last_saturday = {
+            "event_date": last_event.event_date.isoformat(),
+            "platform_code": last_platform.code,
+            "location_name": catalog_index.display_name(last_location, last_platform.code),
+            "location_slug": last_location.external_key.strip().lower(),
+            "finish_time_sec": last_run.finish_time_sec,
+            "finish_time_display": normalize_finish_time_display(
+                last_run.finish_time_sec, last_run.finish_time_display
+            ),
+            "pace_display": last_run.pace_display,
+            "position": last_run.position,
+            "gender_position": last_run.gender_position,
+            "is_pr": bool(last_run.is_pr),
+            "is_first_run_at_location": bool(last_run.is_first_run_at_location),
+            "delta_vs_prev_sec": delta_vs_prev_sec,
+            "prev_date": prev_date_iso,
+            "notables": _last_saturday_notables(
+                last_run,
+                total_runs=total_runs,
+                unique_run_locations=run_unique_counts.unique_total,
+                avg_finish_sec=_to_int(avg_finish),
+                saturday_streak=_current_saturday_streak(all_activity_dates, today),
+            ),
+        }
+
     return {
         "analytics_version": ANALYTICS_VERSION,
         "unique_locations": all_unique_counts.unique_total,
@@ -937,6 +1038,7 @@ def _compute_dashboard_analytics(
         "location_records": location_records["course"],
         "age_group_records": location_records["age_group"],
         "home_distance": home_distance,
+        "last_saturday": last_saturday,
     }
 
 

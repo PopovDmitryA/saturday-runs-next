@@ -234,6 +234,14 @@ celery_app.conf.update(
             "schedule": crontab(hour="3,8,13,18,23", minute=0),
             "options": {"queue": "runpark"},
         },
+        # Досвязка отставших протоколов RunPark — раз в сутки, через полчаса
+        # после ночного батча. Обычно связывать нечего; работа появляется, когда
+        # протокол основной платформы доехал позже семидневного окна батча.
+        "runpark-backfill-crosslinks": {
+            "task": "runpark_sync.backfill_crosslinks",
+            "schedule": crontab(hour=3, minute=30),
+            "options": {"queue": "runpark"},
+        },
         # Прогрев кэша рейтингов (TTL 6ч): каждые 2 часа, со сдвигом от :00,
         # чтобы не толкаться с runpark-latest на том же воркере. Это страховка и
         # обещанный витриной срок пересчёта (REFRESH_INTERVAL_HOURS в

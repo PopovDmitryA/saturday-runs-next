@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
+import { LastSaturdayCard } from "../../components/LastSaturdayCard";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { ImageLightbox } from "../../components/ImageLightbox";
@@ -416,6 +417,9 @@ function PublicProfileContent({
                 variant="volunteering"
               />
             </div>
+            {stats.analytics?.last_saturday && (
+              <LastSaturdayCard data={stats.analytics.last_saturday} />
+            )}
             <DashboardAnalytics
               analytics={stats.analytics}
               totalRuns={stats.total_runs ?? 0}

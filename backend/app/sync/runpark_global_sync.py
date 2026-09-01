@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from uuid import UUID
@@ -34,6 +35,11 @@ from app.sync.iteration_commit import commit_step, rollback_step
 logger = logging.getLogger(__name__)
 
 PLATFORM_CODE = "runpark"
+
+# Потолок досвязки за один прогон: обычный хвост — единицы протоколов в неделю,
+# но если площадку только что перевели в dual_load, разбирать её историю
+# целиком внутри синка незачем — доберём следующими прогонами (их 5 в сутки).
+BACKFILL_CROSSLINKS_LIMIT = 500
 
 # RunPark проводит на одной локации в один день несколько разных стартов
 # (ночной забег, детский, 3 км, эстафета…). В зачёт нашего сервиса идёт только
@@ -231,6 +237,67 @@ def _upsert_crosslinks_for_event(db: Session, runpark_event: Event) -> bool:
         db.flush()
         return True
     return False
+
+
+def backfill_dual_load_crosslinks(
+    db: Session,
+    *,
+    location_ids: Sequence[UUID] | None = None,
+    limit: int = BACKFILL_CROSSLINKS_LIMIT,
+) -> int:
+    """Досвязать старые dual_load-протоколы RunPark с их парой на основной платформе.
+
+    Кросслинк ставится, когда синк RunPark трогает событие, а окно у него — семь
+    дней. Если протокол s95 доехал позже (у нас так вышло с Великим Новгородом
+    22.08.2026: s95 выложил его через двое суток, а наш IP к тому времени уже
+    закрыли — забрать удалось сильно позже), пара не склеивалась уже никогда:
+    протокол RunPark оставался самостоятельным стартом и уходил в статистику
+    как RunPark, хотя это тот же забег той же площадки.
+
+    Проход дешёвый — только БД, без походов в MSSQL, — и разбирает накопленные
+    хвосты, а не только последнюю неделю. `location_ids` сужает разбор до
+    конкретных площадок RunPark (точечный прогон и тесты).
+    """
+    query = (
+        db.query(Event)
+        .join(
+            RunparkLocationMapping,
+            RunparkLocationMapping.runpark_location_row_id == Event.location_id,
+        )
+        .filter(
+            RunparkLocationMapping.decision == "dual_load",
+            RunparkLocationMapping.matched_location_id.isnot(None),
+            Event.is_test_event.is_(False),
+            ~db.query(EventCrosslink.id)
+            .filter(EventCrosslink.secondary_event_id == Event.id)
+            .exists(),
+        )
+        .order_by(Event.event_date.desc())
+    )
+    if location_ids is not None:
+        query = query.filter(Event.location_id.in_(list(location_ids)))
+    orphans = query.limit(limit + 1).all()
+    if len(orphans) > limit:
+        orphans = orphans[:limit]
+        logger.warning(
+            "RunPark: несвязанных протоколов больше %d — разбираем свежие, "
+            "остаток уйдёт в следующие прогоны",
+            limit,
+        )
+
+    linked = 0
+    for event_row in orphans:
+        try:
+            if _upsert_crosslinks_for_event(db, event_row):
+                _recalculate_event_prs(db, event_row)
+                linked += 1
+                commit_step(db)
+        except Exception:
+            rollback_step(db)
+            logger.exception("RunPark crosslink backfill failed for event %s", event_row.id)
+    if linked:
+        logger.info("RunPark: досвязано %d протоколов с основной платформой", linked)
+    return linked
 
 
 def _recalculate_event_prs(db: Session, event_row: Event) -> None:

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_client_ip, get_optional_user
 from app.config import Settings, get_settings
 from app.core.admin import is_admin_user
+from app.core.bot_detection import is_bot_user_agent
 from app.core.rate_limit import check_rate_limit
 from app.core.site_stats import record_pageview
 from app.db.session import get_db
@@ -27,6 +28,10 @@ def _rate_limited(request: Request, bucket: str) -> bool:
     return not check_rate_limit(f"stats:{bucket}:ip:{client_ip}", 120, 60)
 
 
+def _is_bot(request: Request) -> bool:
+    return is_bot_user_agent(request.headers.get("user-agent"))
+
+
 @router.post("/pageview", status_code=204)
 def record_page_view_endpoint(
     body: PageviewRecordRequest,
@@ -36,6 +41,11 @@ def record_page_view_endpoint(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
     if _rate_limited(request, "pageview"):
+        return Response(status_code=204)
+    # Краулеры, исполняющие JS, доходят сюда наравне с людьми, но localStorage
+    # между страницами не хранят — visitor_key у них новый на каждой странице,
+    # поэтому один обход сайта выглядел как тысячи «уникальных посетителей».
+    if _is_bot(request):
         return Response(status_code=204)
     # Админ ходит по сайту, чтобы его проверять, а не пользоваться им: на фоне
     # десятков просмотров в сутки его обходы заметно двигают и «Популярность»,
@@ -69,6 +79,8 @@ def record_ab_event_endpoint(
 ) -> Response:
     if _rate_limited(request, "abevent"):
         return Response(status_code=204)
+    if _is_bot(request):
+        return Response(status_code=204)
     # Обходы админа не должны двигать продуктовые метрики — как в pageview.
     if viewer is not None and is_admin_user(viewer, settings):
         return Response(status_code=204)
@@ -92,6 +104,10 @@ def record_page_leave_endpoint(
     db: Annotated[Session, Depends(get_db)],
 ) -> Response:
     if _rate_limited(request, "pageleave"):
+        return Response(status_code=204)
+    # Просмотра от бота в базе нет, дозаполнять нечего — но и лишний UPDATE по
+    # несуществующему view_id делать незачем.
+    if _is_bot(request):
         return Response(status_code=204)
     record_page_leave(db, view_id=body.view_id, duration_sec=body.duration_sec)
     return Response(status_code=204)

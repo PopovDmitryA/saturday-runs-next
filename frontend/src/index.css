@@ -398,14 +398,24 @@ body {
 }
 
 /* Привязка почты: в отличие от VK и Яндекса, здесь не редирект, а два поля. */
+/* Почта — такая же карточка способа входа, как VK/Яндекс/Telegram: раньше
+   она висела под списком плоской строкой с разделителем и читалась как
+   чужеродный блок (решение Дмитрия, 28.08.2026). Отличие одно: внутри
+   может разворачиваться форма кода, поэтому строка переносимая. */
 .auth-provider-email {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border);
+  justify-content: space-between;
+  gap: 1rem;
+  /* Своего отступа нет: секция-карточка — grid с gap 12px, а внутри списка
+     строки разделяет его собственный gap. Любой margin здесь складывался
+     с gap и делал шаг до «Почты» шире, чем между VK и Яндексом. */
+  margin-top: -4px;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
 }
 
 .auth-provider-email .settings-platform-info {
@@ -591,28 +601,6 @@ body {
 .card.error {
   border-color: var(--tint-red-border-strong);
   background: var(--tint-red-bg);
-}
-
-.public-profile-share {
-  border-color: var(--tint-blue-border);
-  background: var(--tint-blue-bg);
-}
-
-.public-profile-share-title {
-  font-weight: 600;
-  margin: 0;
-}
-
-.public-profile-share-row {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.public-profile-share-row .input {
-  flex: 1 1 260px;
-  min-width: 0;
 }
 
 .banner {
@@ -1169,6 +1157,152 @@ a.on-this-day-location {
   margin-top: 0.75rem;
 }
 
+/* Герой дашборда «Твоя последняя суббота»: карточка события — локация,
+   время, темп, место, дельта к прошлому визиту. Акцентная рамка отличает
+   её от плиток статистики: это новость недели, а не вечный счётчик. */
+.last-saturday-card {
+  display: grid;
+  gap: 0.5rem;
+  border-left: 3px solid var(--accent-indigo);
+}
+
+.last-saturday-kicker {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.last-saturday-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.last-saturday-location {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.last-saturday-location:hover {
+  text-decoration: underline;
+}
+
+.last-saturday-first {
+  font-size: 0.8rem;
+  color: var(--accent-teal-text);
+  font-weight: 600;
+}
+
+.last-saturday-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.9rem;
+}
+
+.last-saturday-stat b {
+  font-size: 1.35rem;
+}
+
+.last-saturday-delta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.last-saturday-delta-faster {
+  color: var(--accent-green-text);
+}
+
+.last-saturday-delta-slower {
+  color: var(--accent-amber-text);
+}
+
+/* Авто-инсайты «чем примечательна эта пробежка» — фразы, а не цифры. */
+.last-saturday-notables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.last-saturday-notables li {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: var(--tint-indigo-bg);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 0.82rem;
+}
+
+
+/* Тематическая группа аналитики: заголовок + витрина карточек + свои панели.
+   Первая группа не отбивается — заголовок сам задаёт ритм. */
+.analytics-group {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.analytics-group + .analytics-group {
+  margin-top: 0.75rem;
+}
+
+.analytics-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.analytics-group-head .section-title {
+  font-size: 1.05rem;
+}
+
+.analytics-group-toggle {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--link);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.analytics-group-toggle:hover {
+  color: var(--link-strong);
+  text-decoration: underline;
+}
+
+/* Внутри группы отступ сетке даёт gap группы, свой margin ей не нужен. */
+.analytics-group .stats-grid-secondary {
+  margin-top: 0;
+}
+
+/* Витрины групп — по 4 карточки в ряд на десктопе: ряды выходят полными,
+   а карточки заметно крупнее, чем в общей сетке на 5 колонок. */
+@media (min-width: 900px) {
+  .analytics-group .stats-grid-secondary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* На телефоне общая .stats-grid складывается в одну колонку, но компактные
+   плитки аналитики в один столбец раздувают страницу на десятки экранов —
+   держим две колонки, цифры в них читаются и так. */
+@media (max-width: 520px) {
+  .analytics-group .stats-grid-secondary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .stat-card-wide {
   grid-column: 1 / -1;
 }
@@ -1273,19 +1407,21 @@ a.on-this-day-location {
   border-color: var(--tint-blue-border);
 }
 
+/* Общая сетка на весь список: пока каждая строка была своим гридом,
+   колонки подгонялись под её содержимое и счётчики не совпадали по
+   вертикали. Строки отдают ячейки наверх через display: contents. */
 .platform-metrics-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.65rem;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.65rem 0.75rem;
 }
 
 .platform-metrics-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  display: contents;
 }
 
 /* Между бейджем системы и средними — сколько пробежек в неё набежало.
@@ -1294,6 +1430,8 @@ a.on-this-day-location {
   font-size: 0.88rem;
   color: var(--text-muted);
   white-space: nowrap;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .platform-metrics-count b {
@@ -1307,6 +1445,7 @@ a.on-this-day-location {
   gap: 0.5rem;
   justify-content: flex-end;
   font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .analytics-chart {
@@ -6555,7 +6694,7 @@ button.badge-platform-btn:hover {
   display: inline-block;
   min-width: 4.5rem;
   margin-right: 0.35rem;
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 0.82rem;
 }
 
@@ -6653,7 +6792,7 @@ a.admin-system-chip:hover {
   flex-shrink: 0;
   border: 1px solid var(--border);
   background: transparent;
-  color: var(--muted);
+  color: var(--text-muted);
   border-radius: 0.35rem;
   width: 1.5rem;
   height: 1.5rem;
@@ -8586,6 +8725,8 @@ a.admin-system-chip:hover {
 
 .goal-card {
   gap: 0.55rem;
+  /* Грид-ячейка по умолчанию не сжимается ниже своего содержимого. */
+  min-width: 0;
 }
 
 .goal-card-done {
@@ -8593,10 +8734,28 @@ a.admin-system-chip:hover {
   background: var(--tint-green-bg);
 }
 
+/* Грид, а не flex-строка: у названия своя колонка minmax(0, 1fr), поэтому
+   длинное имя переносится внутри неё и не наезжает на соседей — flex давал
+   названию переползать на них, а карточке (она сама грид) растягиваться шире
+   своей ячейки. */
 .goal-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0.5rem;
+}
+
+/* Полоса + процент + «Поделиться» одной строкой. */
+.goal-progress-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  /* Заголовок, бейдж дельты и проценты переносятся на вторую строку,
+     когда в одну не помещаются, — иначе бейдж выталкивал проценты
+     за пределы карточки. */
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .goal-icon {
@@ -8607,14 +8766,17 @@ a.admin-system-chip:hover {
 .goal-title {
   font-weight: 600;
   font-size: 0.95rem;
-  flex: 1;
   min-width: 0;
+  /* Узкая карточка тизера: «Регулярность» длиннее своей колонки — рвём слово,
+     а не выпускаем его на процент. */
+  overflow-wrap: anywhere;
 }
 
 .goal-pct {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text-3);
+  margin-left: auto;
 }
 
 /* Зелёная стрелка-дельта: сколько прогресса дала последняя пробежка —
@@ -8677,12 +8839,20 @@ a.admin-system-chip:hover {
   color: var(--text-2);
 }
 
+/* Дельта живёт в строке прогресса — отбивка, чтобы не липла к тексту. */
+.goal-progress-label .recent-delta-badge {
+  margin-left: 0.15rem;
+  vertical-align: baseline;
+}
+
 .goal-chip {
   font-size: 0.78rem;
   font-weight: 600;
   padding: 0.15rem 0.55rem;
   border-radius: 999px;
-  white-space: nowrap;
+  /* Без переноса длинный прогноз («Прогноз: ~23 — нужно поднажать») тянул
+     колонку карточки шире её самой — та же беда, что и у шапки выше. */
+  min-width: 0;
 }
 
 .goal-chip-ok {
@@ -9826,6 +9996,20 @@ a.admin-system-chip:hover {
   background: var(--bg-muted);
   padding: 0.7rem 0.8rem;
   gap: 0.4rem;
+  /* Без этого ячейка грида не сжимается ниже своего содержимого, и
+     длинная подпись («Лучшее в этом году: 21:52 · цель 21:00») вылезала
+     за правый край плитки. */
+  min-width: 0;
+}
+
+.goals-teaser-grid .goal-progress-label {
+  overflow-wrap: anywhere;
+}
+
+/* Подложка карточки тизера — тот же --bg-muted, что и у дорожки полосы:
+   у цели с нулевым прогрессом полоса пропадала целиком. */
+.goals-teaser-grid .goal-bar {
+  background: var(--border);
 }
 
 .goals-teaser-empty .btn {
@@ -11541,7 +11725,7 @@ a.admin-system-chip:hover {
   align-items: center;
   gap: 10px;
   width: 100%;
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 18px;
   font-weight: 700;
 }
@@ -11624,8 +11808,8 @@ a.admin-system-chip:hover {
 .profile-platform-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
+  gap: 4px;
+  padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--bg-muted, var(--surface));
@@ -11671,6 +11855,18 @@ a.admin-system-chip:hover {
   flex: 1;
 }
 
+/* Код участника, время обновления и кнопка ↻ — одной строкой: раньше это
+   были три отдельных блока, и карточка вытягивалась в столбик на треть
+   экрана (просьба Дмитрия сделать компактнее, 28.08.2026). */
+.profile-platform-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
 .profile-platform-card-sync {
   display: flex;
   align-items: center;
@@ -11696,10 +11892,25 @@ a.admin-system-chip:hover {
 
 .profile-platform-card-actions {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   flex-wrap: wrap;
   margin-top: auto;
-  padding-top: 4px;
+  padding-top: 6px;
+}
+
+/* QR — иконка без подписи: смысл читается по значку, а строка кнопок
+   встаёт в один ряд вместо переноса. Высоту равняем руками: у кнопки,
+   ссылки и ghost-кнопки свои паддинги, и ряд получался ступенькой. */
+.profile-platform-card-actions > * {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+}
+
+.profile-platform-card-actions .qr-btn {
+  padding: 0.3rem 0.5rem;
 }
 
 .profile-platform-card-syncing {
@@ -12862,6 +13073,37 @@ a.admin-system-chip:hover {
   letter-spacing: 0.08em;
 }
 
+/* Полоса выполнения цели: та же логика, что у мини-календаря суббот —
+   дорожка приглушена, заполнение идёт акцентом лука. */
+.s2-progress {
+  align-self: stretch;
+}
+
+.s2-progress-track {
+  height: 0.32em;
+  border-radius: 999em;
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+}
+
+.s2-tone-light .s2-progress-track {
+  background: #dbe2f4;
+}
+
+.s2-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--s2-accent, #fbbf24);
+}
+
+.s2-progress-caption {
+  font-size: 0.4em;
+  opacity: 0.7;
+  margin-top: 0.55em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .s2-fact {
   font-size: 0.5em;
   opacity: 0.78;
@@ -12948,6 +13190,10 @@ a.admin-system-chip:hover {
   height: 0.4em;
 }
 
+.s2-card--story .s2-progress-track {
+  height: 0.42em;
+}
+
 /* Широкий формат: слева стопка «плашка → герой/таймлайн → факт», справа
    сетка плиток на всю высоту. Грид, а не flex-строка: плитки получают
    честную половину ширины и не сжимаются в столбик по буквам. */
@@ -13008,6 +13254,10 @@ a.admin-system-chip:hover {
 
 .s2-card--wide .s2-body > .s2-heat-wrap {
   grid-column: 1 / -1;
+  justify-self: stretch;
+}
+
+.s2-card--wide .s2-body > .s2-progress {
   justify-self: stretch;
 }
 
@@ -13426,6 +13676,7 @@ a.admin-system-chip:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   border: none;
   background: none;
   padding: 0.2rem;

@@ -7,7 +7,11 @@ from uuid import UUID
 from app.db.session import get_session_factory
 from app.models import SyncJob, SyncJobTrigger
 from app.services.sync_job_service import fail_sync_job
-from app.sync.runpark_global_sync import sync_runpark_batch, sync_runpark_for_participant
+from app.sync.runpark_global_sync import (
+    backfill_dual_load_crosslinks,
+    sync_runpark_batch,
+    sync_runpark_for_participant,
+)
 from app.workers.celery_app import celery_app
 from app.workers.tasks.sync_task_reporting import run_reported_sync
 
@@ -50,6 +54,28 @@ def runpark_sync_latest() -> dict[str, object]:
         _run,
         details=f"since {since.isoformat()}",
     )
+
+
+@celery_app.task(name="runpark_sync.backfill_crosslinks", queue="runpark")
+def runpark_backfill_crosslinks() -> dict[str, object]:
+    """Досвязать dual_load-протоколы RunPark с парой на основной платформе.
+
+    Отдельной задачей, а не внутри батча: батч ходит пять раз в сутки и должен
+    оставаться быстрым, а разбор хвоста — редкая уборка. Обычно связывать нечего
+    (ноль), но если протокол s95 доехал позже семидневного окна батча, пара
+    склеится здесь, а не останется самостоятельным стартом RunPark навсегда.
+    """
+
+    def _run() -> dict[str, object]:
+        db = get_session_factory()()
+        try:
+            linked = backfill_dual_load_crosslinks(db)
+            db.commit()
+            return {"crosslinks_backfilled": linked, "errors": []}
+        finally:
+            db.close()
+
+    return run_reported_sync("runpark crosslinks", _run)
 
 
 @celery_app.task(name="runpark_sync.user_sync", queue="runpark")

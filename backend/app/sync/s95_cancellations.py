@@ -61,6 +61,10 @@ def watch_s95_cancellations(db: Session, *, notify: bool = True) -> S95Cancellat
 
     try:
         entries = fetch_all_locations()
+    except S95YieldForUserSync:
+        # Пользовательский синк вперёд: отмены подождут до следующего прохода.
+        logger.info("S95 cancellations watch: уступили пользовательскому синку")
+        return result
     except Exception as exc:
         result.errors.append(f"реестр s95: {exc}")
         logger.warning("S95 cancellations watch: реестр недоступен (%s)", exc, exc_info=True)

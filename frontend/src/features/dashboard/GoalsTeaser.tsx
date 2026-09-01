@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { getGoals, type GoalsResponse } from "../../lib/api";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import { GoalCard } from "../achievements/GoalCard";
 
 /** Компактный трекер целей на главной: только прогресс + кнопка настройки,
  * вся работа с целями — на странице «Достижения». */
 export function GoalsTeaser() {
   const [goals, setGoals] = useState<GoalsResponse | null>(null);
+  // Имя участника для постера «Поделиться» на карточке цели.
+  const user = useOptionalUser();
 
   useEffect(() => {
     getGoals()
@@ -48,7 +51,7 @@ export function GoalsTeaser() {
       </div>
       <div className="goals-teaser-grid">
         {goals.goals.map((goal) => (
-          <GoalCard key={goal.goal_type} goal={goal} compact />
+          <GoalCard key={goal.goal_type} goal={goal} compact user={user} shareEntry="dashboard" />
         ))}
       </div>
     </div>

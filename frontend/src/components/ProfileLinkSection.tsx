@@ -118,17 +118,17 @@ function PlatformCard({
               {pluralizeRu(stats.runs, COUNT_FORMS.runs)} · {pluralizeRu(stats.volunteering, COUNT_FORMS.volunteering)}
             </p>
           )}
-          {config.participantId && (() => {
-            const id = linked[config.participantId.field];
-            if (!id) return null;
-            if (config.participantId.show && !config.participantId.show(id)) return null;
-            return (
-              <p className="profile-platform-card-id muted">
-                {config.participantId.label}: <span className="profile-participant-id">{id}</span>
-              </p>
-            );
-          })()}
-          <div className="profile-platform-card-sync">
+          <div className="profile-platform-card-meta">
+            {config.participantId && (() => {
+              const id = linked[config.participantId.field];
+              if (!id) return null;
+              if (config.participantId.show && !config.participantId.show(id)) return null;
+              return (
+                <span className="profile-platform-card-id muted">
+                  {config.participantId.label}: <span className="profile-participant-id">{id}</span>
+                </span>
+              );
+            })()}
             <span className="profile-sync-updated" title="Последнее обновление данных с сайта">
               {syncTimeLabel}
             </span>
@@ -136,7 +136,11 @@ function PlatformCard({
               type="button"
               className={`profile-sync-refresh-btn${isSyncing ? " profile-sync-refresh-btn-spinning" : ""}`}
               aria-label={`Обновить данные ${platformCodeLabel(config.code)}`}
-              title="Запросить свежие результаты (не чаще раза в 30 минут)"
+              title={
+                config.code === "parkrun"
+                  ? "Запросить свежие результаты (не чаще раза в 30 минут). У parkrun автообновления нет: после своей пробежки жмите эту кнопку."
+                  : "Запросить свежие результаты (не чаще раза в 30 минут)"
+              }
               disabled={isSyncing || syncLoading}
               onClick={() => onSyncRequest()}
             >
@@ -148,27 +152,26 @@ function PlatformCard({
               </svg>
             </button>
           </div>
-          {config.code === "parkrun" && (
-            <p className="profile-platform-card-manual-note">
-              Автообновление по системе parkrun невозможно, если вы побегали — нажмите кнопку
-              обновления.
-            </p>
-          )}
           <div className="profile-platform-card-actions">
             {scanCode && (
-              <button type="button" className="btn secondary btn-sm qr-btn" onClick={() => onShowQr()}>
+              <button
+                type="button"
+                className="btn secondary btn-sm qr-btn"
+                title="QR-код участника"
+                aria-label="QR-код участника"
+                onClick={() => onShowQr()}
+              >
                 <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
                   <path
                     fill="currentColor"
                     d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm10-2h2v2h-2v-2zm4 0h2v2h-2v-2zm-4 4h2v2h-2v-2zm4 0h2v2h-2v-2zm-2 4h2v2h-2v-2zm-4 0h2v2h-2v-2z"
                   />
                 </svg>
-                QR-код
               </button>
             )}
             {externalUrl && (
               <a className="btn secondary btn-sm" href={externalUrl} target="_blank" rel="noreferrer">
-                Открыть профиль ↗
+                Профиль ↗
               </a>
             )}
             <button

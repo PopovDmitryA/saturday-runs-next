@@ -72,7 +72,6 @@ const RUNS_COLUMNS: AdaptiveColumn[] = [
 
 function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const { listRuns, mode } = useAppDataSource();
-  const isDemo = mode === "demo";
   const [runs, setRuns] = useState<RunItem[]>([]);
   const [hasProfileLink, setHasProfileLink] = useState(false);
   const [includeTest, setIncludeTest] = useState(false);
@@ -119,7 +118,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
     try {
       const data = await listRuns(includeTest);
       setRuns(data);
-      if (isDemo || mode === "public-profile") {
+      if (mode === "public-profile") {
         setHasProfileLink(false);
       } else {
         const links = await listProfileLinks();
@@ -130,7 +129,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
     } finally {
       setLoading(false);
     }
-  }, [includeTest, isDemo, mode, listRuns]);
+  }, [includeTest, mode, listRuns]);
 
   useEffect(() => {
     void load();
@@ -234,20 +233,15 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
         </div>
       )}
 
-      {showEmpty &&
-        (isDemo ? (
-          <div className="card">
-            <p className="muted">В демо-профиле нет пробежек для отображения.</p>
-          </div>
-        ) : (
-          <EmptyActivityState
-            activityLabel="Пробежек"
-            ownerHint="Придите на ближайший субботний старт — и он появится здесь."
-            publicHint="Как только появится первая пробежка, она окажется здесь."
-            hasProfileLink={hasProfileLink}
-            isPublicProfile={mode === "public-profile"}
-          />
-        ))}
+      {showEmpty && (
+        <EmptyActivityState
+          activityLabel="Пробежек"
+          ownerHint="Придите на ближайший субботний старт — и он появится здесь."
+          publicHint="Как только появится первая пробежка, она окажется здесь."
+          hasProfileLink={hasProfileLink}
+          isPublicProfile={mode === "public-profile"}
+        />
+      )}
 
       {!loading && !error && runs.length > 0 && (
         <>
@@ -283,8 +277,9 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                   <TableViewToggle columns={tableColumns} inline />
                 </FilterGroup>
               )}
-              {!isDemo && (
-                <FilterGroup label="Показывать">
+              {/* Видны и в демо (main убрал !isDemo 31.08.2026): гость тоже
+                  волен смотреть тестовые и незачётные. */}
+              <FilterGroup label="Показывать">
                   <div className="loc-index-filters">
                     <label className="loc-index-paused">
                       <input
@@ -303,8 +298,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       незачётные
                     </label>
                   </div>
-                </FilterGroup>
-              )}
+              </FilterGroup>
             </FilterRow>
           </FilterPanel>
 

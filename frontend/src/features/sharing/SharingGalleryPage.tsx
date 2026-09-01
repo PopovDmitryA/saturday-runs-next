@@ -7,9 +7,11 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import {
   getDashboard,
+  getGoals,
   getMyHistory,
   listRuns,
   type DashboardResponse,
+  type GoalProgress,
   type MyHistoryMilestone,
   type RunItem,
 } from "../../lib/api";
@@ -19,7 +21,7 @@ import { ensureShareFontsLoaded, shareFontFromQuery } from "./fonts";
 import { looksFor } from "./looks";
 import { ShareCardView } from "./ShareCardView";
 import { useOptionalShareSheet } from "./ShareSheetContext";
-import { milestoneSubject, runSubject, summarySubject } from "./subjects";
+import { goalSubject, milestoneSubject, runSubject, summarySubject } from "./subjects";
 import type { ShareSubject } from "./types";
 import { shareFormat } from "./types";
 
@@ -55,6 +57,7 @@ export function SharingContent({ bare = false }: { bare?: boolean } = {}) {
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [runs, setRuns] = useState<RunItem[] | null>(null);
   const [milestones, setMilestones] = useState<MyHistoryMilestone[] | null>(null);
+  const [goals, setGoals] = useState<GoalProgress[]>([]);
   const [fontsReady, setFontsReady] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -65,6 +68,15 @@ export function SharingContent({ bare = false }: { bare?: boolean } = {}) {
         setFontsReady(true);
       }
     });
+    // Цели тянем отдельно: их может не быть вовсе (никто не обязан их ставить),
+    // и промах не должен уронить всю галерею.
+    getGoals()
+      .then((response) => {
+        if (!cancelled) {
+          setGoals(response.goals);
+        }
+      })
+      .catch(() => undefined);
     Promise.all([getDashboard(), listRuns(false, 200), getMyHistory()])
       .then(([dashboardResponse, runsResponse, historyResponse]) => {
         if (cancelled) {
@@ -116,6 +128,19 @@ export function SharingContent({ bare = false }: { bare?: boolean } = {}) {
         subject: summarySubject(dashboard.stats, user ?? null, "all", runs),
       });
     }
+    // Цели: сперва взятые, дальше — самые близкие к цели. Невыполненная цель
+    // тоже сюжет: постер показывает прогресс и сколько осталось.
+    const rankedGoals = [...goals].sort(
+      (a, b) => Number(b.done) - Number(a.done) || b.pct - a.pct,
+    );
+    for (const goal of rankedGoals.slice(0, 3)) {
+      result.push({
+        id: `goal-${goal.goal_type}-${goal.year}`,
+        title: goal.done ? "Цель выполнена" : "Цель года",
+        subtitle: `${goal.title} · ${Math.round(goal.pct)}%`,
+        subject: goalSubject(goal, user ?? null),
+      });
+    }
     for (const milestone of (milestones ?? []).slice(0, 4)) {
       result.push({
         id: `milestone-${milestone.kind}-${milestone.event_date}`,
@@ -125,7 +150,7 @@ export function SharingContent({ bare = false }: { bare?: boolean } = {}) {
       });
     }
     return result;
-  }, [dashboard, runs, milestones, user]);
+  }, [dashboard, runs, milestones, goals, user]);
 
   useEffect(() => {
     if (items.length > 0) {

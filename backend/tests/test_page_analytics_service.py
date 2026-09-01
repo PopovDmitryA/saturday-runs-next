@@ -53,7 +53,8 @@ from app.services.page_analytics_service import (
         ("/users/12345/achievements", ("profile", "12345")),
         ("/users/ivan/co-runners", ("profile", "ivan")),
         ("/hq/hq-2kl5kfrlzmnvn8sc", ("sweep_hq", "")),
-        ("/new/cabinet-preview", ("cabinet_preview", "")),
+        # Превью кабинета удалено (08.2026) — адрес падает в «прочее».
+        ("/new/cabinet-preview", ("other", "/new/cabinet-preview")),
         # Старые адреса кабинета сами ничего не показывают — это редиректы.
         ("/new/dashboard", ("redirect", "/new/dashboard")),
         ("/new/maps", ("redirect", "/new/maps")),
@@ -406,6 +407,37 @@ def test_rollup_day_aggregates_and_is_idempotent(db_session: Session) -> None:
     assert row.unique_viewers == 2
     assert row.total_duration_sec == 60
     assert row.duration_views == 2
+
+
+def test_rollup_day_skips_bot_events(db_session: Session) -> None:
+    """События, размеченные как ботовые задним числом, не должны попадать в
+    «Популярность» — иначе один обход краулера так и остаётся тысячами уников."""
+    today = local_today()
+    ts = datetime.now(STATS_TIMEZONE)
+    entity_key = f"test-{uuid4()}"
+    for visitor, is_bot in (("a:human1111", False), ("a:crawler111", True), ("a:crawler222", True)):
+        db_session.add(
+            PageViewEvent(
+                view_id=uuid4(),
+                ts=ts,
+                path=f"/locations/{entity_key}/protocol/2026-08-29",
+                page_type="location_protocol",
+                entity_key=entity_key,
+                visitor_key=visitor,
+                is_bot=is_bot,
+            )
+        )
+    db_session.commit()
+
+    rollup_day(db_session, today)
+
+    row = (
+        db_session.query(PageStatsDaily)
+        .filter(PageStatsDaily.date == today, PageStatsDaily.entity_key == entity_key)
+        .one()
+    )
+    assert row.views == 1
+    assert row.unique_viewers == 1
 
 
 def test_cleanup_old_events(db_session: Session) -> None:

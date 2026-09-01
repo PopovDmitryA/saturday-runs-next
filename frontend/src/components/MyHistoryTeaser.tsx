@@ -36,7 +36,7 @@ function ShareIcon() {
 
 type MyHistoryTeaserProps = {
   load: () => Promise<MyHistory>;
-  /** Ссылка на полный таймлайн: /history или /demo/history. */
+  /** Ссылка на полный таймлайн («Моя история»). */
   href: string;
 };
 

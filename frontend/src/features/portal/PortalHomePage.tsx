@@ -5,6 +5,7 @@ import { cabinetTabHref, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { CountUpNumber } from "./CountUpNumber";
 import { PortalBlogSection } from "./PortalBlogSection";
+import { PortalHomeAnchors } from "./PortalHomeAnchors";
 import { PortalFooter } from "./PortalFooter";
 import { PortalGeoMap } from "./PortalGeoMap";
 import { PortalHeader } from "./PortalHeader";
@@ -283,6 +284,8 @@ export function PortalHomePage() {
   useFunnelHomeView();
 
   const [data, setData] = useState<PortalHomeResponse | null>(null);
+  // Блок блога скрывается, когда постов нет, — оглавление это учитывает.
+  const [hasBlogPosts, setHasBlogPosts] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Личная сводка для залогиненного (Т4). Грузится отдельным запросом ПОСЛЕ
   // главной: анонимный путь — самый массовый — ждать её не должен.
@@ -609,7 +612,7 @@ export function PortalHomePage() {
 
   const weekSection = data ? (
     <>
-            <section className="portal-week-scope" aria-label="Итоги последней недели">
+            <section id="week" className="portal-week-scope" aria-label="Итоги последней недели">
             <div className="portal-week-heading">Последняя беговая неделя</div>
 
             {data.pulse && (
@@ -923,6 +926,8 @@ export function PortalHomePage() {
               </section>
             )}
 
+            <PortalHomeAnchors hasBlog={hasBlogPosts} />
+
             {weekSection}
             {scopeSection}
 
@@ -949,7 +954,7 @@ export function PortalHomePage() {
               </div>
             </section>
 
-            <PortalBlogSection />
+            <PortalBlogSection onPostsLoaded={setHasBlogPosts} />
 
             <section id="systems" className="portal-systems" aria-label="Беговые системы">
               {data.systems.map((system) => (
@@ -1043,7 +1048,7 @@ export function PortalHomePage() {
               </div>
             </section>
 
-            <section className="portal-panel" aria-label="Самые быстрые 5 км">
+            <section id="fastest" className="portal-panel" aria-label="Самые быстрые 5 км">
               <div className="portal-panel-head">
                 <div>
                   <h2>Самые быстрые 5 км</h2>

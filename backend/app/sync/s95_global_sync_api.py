@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-import random
-import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
@@ -12,6 +10,8 @@ from app.migration.helpers import s95_country_from_url
 from app.models import Event, Location, Participant, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalLocation
 from app.s95.api_client import S95ApiActivityRef, S95ApiLocation, fetch_all_locations, fetch_event_activities
+from app.s95.errors import S95BanDetected
+from app.s95.fetch.priority import S95YieldForUserSync
 from app.services.sync_watermark_service import (
     S95_PROTOCOLS_RECONCILED_THROUGH,
     set_watermark,
@@ -23,17 +23,6 @@ from app.sync.s95_protocol_api import upsert_activity_protocol_api
 logger = logging.getLogger(__name__)
 
 PLATFORM_CODE = "s95"
-
-# Gentle randomised pacing between protocol fetches (seconds). IPs are whitelisted,
-# but we deliberately keep requests sparse to stay friendly to s95.ru.
-DELAY_MIN_SEC = 10.0
-DELAY_MAX_SEC = 40.0
-
-
-def _pace(delay_min_sec: float, delay_max_sec: float) -> None:
-    if delay_max_sec > 0:
-        time.sleep(random.uniform(delay_min_sec, delay_max_sec))
-
 
 def most_recent_saturday(today: date) -> date:
     """The Saturday on or before `today` (Saturday == weekday 5)."""
@@ -56,7 +45,22 @@ class S95ApiSyncResult:
     protocols_created: int = 0
     protocols_updated: int = 0
     protocols_unchanged: int = 0
+    # Прогон свернули на полпути: s95 закрылся или ждёт пользовательский синк.
+    stopped_reason: str | None = None
     errors: list[str] = field(default_factory=list)
+
+
+def _record_stop(result: S95ApiSyncResult, exc: Exception) -> None:
+    """Дальше в этом прогоне не ходим.
+
+    Уступка пользовательскому синку — штатное дело и не ошибка; отказ s95 —
+    ошибка, иначе прогон отчитается зелёным, ничего не сделав.
+    """
+    if isinstance(exc, S95YieldForUserSync):
+        result.stopped_reason = "уступили пользовательскому синку"
+        return
+    result.stopped_reason = str(exc)
+    result.errors.append(f"остановлено: {exc}")
 
 
 def _start_run(db: Session, platform: Platform, sync_type: str) -> SyncRun:
@@ -165,6 +169,9 @@ def _apply_protocol(
             result.protocols_created += 1
         else:
             result.protocols_updated += 1
+    except (S95BanDetected, S95YieldForUserSync) as exc:
+        rollback_step(db)
+        _record_stop(result, exc)
     except Exception as exc:
         rollback_step(db)
         result.errors.append(f"{location.external_key} {ref.date}: {exc}")
@@ -205,9 +212,6 @@ def _already_checked(db: Session, platform: Platform, location: Location, ref) -
 
 def sync_updated_protocols(
     db: Session,
-    *,
-    delay_min_sec: float = DELAY_MIN_SEC,
-    delay_max_sec: float = DELAY_MAX_SEC,
 ) -> S95ApiSyncResult:
     """Import new protocols and refresh any whose server-side `updated_at` moved past what
     we've stored, across every location. Cheap: a protocol body is only fetched when it is
@@ -224,14 +228,26 @@ def sync_updated_protocols(
     run = _start_run(db, platform, "s95:api:sync_updated")
     db.commit()
     try:
-        locations = fetch_all_locations()
+        try:
+            locations = fetch_all_locations()
+        except (S95BanDetected, S95YieldForUserSync) as exc:
+            # Реестр — первый же запрос прохода. Если нас не пустили или ждёт
+            # пользователь, прогон сворачиваем здесь, а не роняем целиком.
+            _record_stop(result, exc)
+            locations = []
         result.locations_total = len(locations)
         for api_loc in locations:
+            if result.stopped_reason:
+                break
             try:
                 location = _ensure_location(db, platform, api_loc)
                 commit_step(db)
                 event_url = f"{api_loc.domain}/events/{api_loc.slug}.json"
                 refs = fetch_event_activities(event_url)
+            except (S95BanDetected, S95YieldForUserSync) as exc:
+                rollback_step(db)
+                _record_stop(result, exc)
+                break
             except Exception as exc:
                 rollback_step(db)
                 result.errors.append(f"{api_loc.slug}: list fetch failed: {exc}")
@@ -240,12 +256,13 @@ def sync_updated_protocols(
             freshness = _protocol_freshness_map(db, platform, location)
             numbers = event_numbers_by_date(refs)
             for ref in refs:
+                if result.stopped_reason:
+                    break
                 key = f"{api_loc.slug}:{ref.date}"
                 known = freshness.get(key)
                 if known is None:
                     # Not in our DB yet.
                     _apply_protocol(db, platform, location, ref, result, event_number=numbers.get(ref.date))
-                    _pace(delay_min_sec, delay_max_sec)
                     continue
 
                 source_updated_at, last_fetched_at = known
@@ -258,7 +275,6 @@ def sync_updated_protocols(
                 if source_updated_at is not None:
                     if ref_updated_at > source_updated_at:
                         _apply_protocol(db, platform, location, ref, result, event_number=numbers.get(ref.date))
-                        _pace(delay_min_sec, delay_max_sec)
                     else:
                         result.protocols_unchanged += 1
                     continue
@@ -269,9 +285,8 @@ def sync_updated_protocols(
                     result.protocols_unchanged += 1
                 else:
                     _apply_protocol(db, platform, location, ref, result, event_number=numbers.get(ref.date))
-                    _pace(delay_min_sec, delay_max_sec)
 
-        if not result.errors:
+        if not result.errors and result.stopped_reason is None:
             set_watermark(
                 db,
                 platform,
@@ -296,9 +311,6 @@ def sync_updated_protocols(
 def reconcile_protocols_for_date(
     db: Session,
     target_date: date,
-    *,
-    delay_min_sec: float = DELAY_MIN_SEC,
-    delay_max_sec: float = DELAY_MAX_SEC,
 ) -> S95ApiSyncResult:
     """Re-fetch every protocol dated target_date across all locations, updating any that
     changed and bumping the check timestamp on those that did not."""
@@ -308,14 +320,26 @@ def reconcile_protocols_for_date(
     db.commit()
     date_str = target_date.isoformat()
     try:
-        locations = fetch_all_locations()
+        try:
+            locations = fetch_all_locations()
+        except (S95BanDetected, S95YieldForUserSync) as exc:
+            # Реестр — первый же запрос прохода. Если нас не пустили или ждёт
+            # пользователь, прогон сворачиваем здесь, а не роняем целиком.
+            _record_stop(result, exc)
+            locations = []
         result.locations_total = len(locations)
         for api_loc in locations:
+            if result.stopped_reason:
+                break
             try:
                 location = _ensure_location(db, platform, api_loc)
                 commit_step(db)
                 event_url = f"{api_loc.domain}/events/{api_loc.slug}.json"
                 refs = fetch_event_activities(event_url)
+            except (S95BanDetected, S95YieldForUserSync) as exc:
+                rollback_step(db)
+                _record_stop(result, exc)
+                break
             except Exception as exc:
                 rollback_step(db)
                 result.errors.append(f"{api_loc.slug}: list fetch failed: {exc}")
@@ -323,10 +347,11 @@ def reconcile_protocols_for_date(
 
             numbers = event_numbers_by_date(refs)
             for ref in refs:
+                if result.stopped_reason:
+                    break
                 if ref.date != date_str:
                     continue
                 _apply_protocol(db, platform, location, ref, result, event_number=numbers.get(ref.date))
-                _pace(delay_min_sec, delay_max_sec)
         _finish_run(db, run, result)
         db.commit()
         return result
@@ -344,14 +369,12 @@ def full_backfill(
     db: Session,
     *,
     limit_per_location: int | None = None,
-    delay_min_sec: float = DELAY_MIN_SEC,
-    delay_max_sec: float = DELAY_MAX_SEC,
     resume: bool = True,
     reset_dates: bool = False,
 ) -> S95ApiSyncResult:
     """One-time pass over every protocol of every location.
 
-    - Gentle randomised pacing (delay_min_sec..delay_max_sec) between protocol fetches.
+    - Pacing between fetches is the fetch coordinator's job (app/s95/fetch).
     - resume=True skips protocols already given a check date in this run (set reset_dates
       first, or call reset_s95_protocol_check_dates manually, so a crash can be resumed).
     - PR is recomputed once at the end (not per protocol) for efficiency.
@@ -368,14 +391,26 @@ def full_backfill(
     run = _start_run(db, platform, "s95:api:full_backfill")
     db.commit()
     try:
-        locations = fetch_all_locations()
+        try:
+            locations = fetch_all_locations()
+        except (S95BanDetected, S95YieldForUserSync) as exc:
+            # Реестр — первый же запрос прохода. Если нас не пустили или ждёт
+            # пользователь, прогон сворачиваем здесь, а не роняем целиком.
+            _record_stop(result, exc)
+            locations = []
         result.locations_total = len(locations)
         for api_loc in locations:
+            if result.stopped_reason:
+                break
             try:
                 location = _ensure_location(db, platform, api_loc)
                 commit_step(db)
                 event_url = f"{api_loc.domain}/events/{api_loc.slug}.json"
                 refs = fetch_event_activities(event_url)
+            except (S95BanDetected, S95YieldForUserSync) as exc:
+                rollback_step(db)
+                _record_stop(result, exc)
+                break
             except Exception as exc:
                 rollback_step(db)
                 result.errors.append(f"{api_loc.slug}: list fetch failed: {exc}")
@@ -386,6 +421,8 @@ def full_backfill(
             if limit_per_location is not None:
                 refs = refs[:limit_per_location]
             for ref in refs:
+                if result.stopped_reason:
+                    break
                 if resume and _already_checked(db, platform, location, ref):
                     result.protocols_unchanged += 1
                     continue
@@ -394,10 +431,9 @@ def full_backfill(
                     recalculate_pr=False,
                     event_number=numbers.get(ref.date),
                 )
-                _pace(delay_min_sec, delay_max_sec)
 
         # Recompute personal records once over the whole platform after the bulk load.
-        if not result.errors:
+        if not result.errors and result.stopped_reason is None:
             from app.services.personal_record_service import (
                 recalculate_participants_cross_platform_personal_records,
                 recalculate_personal_records,

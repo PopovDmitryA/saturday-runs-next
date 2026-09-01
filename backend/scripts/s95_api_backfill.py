@@ -4,6 +4,9 @@
 Iterates every protocol of every location across s95.ru / s95.by / s95.rs, upserts
 results, and records the reconciled-through watermark. Idempotent — unchanged protocols
 are skipped cheaply, so it is safe to re-run if interrupted.
+
+Паузу между запросами держит общий координатор (app/s95/fetch), поэтому своих
+ключей задержки у скрипта больше нет.
 """
 from __future__ import annotations
 
@@ -38,8 +41,6 @@ def main() -> int:
     )
     parser.add_argument("--limit-per-location", type=int, default=None)
     parser.add_argument("--date", type=str, default=None, help="YYYY-MM-DD for --mode reconcile")
-    parser.add_argument("--delay-min", type=float, default=10.0, help="Min seconds between fetches (backfill)")
-    parser.add_argument("--delay-max", type=float, default=40.0, help="Max seconds between fetches (backfill)")
     parser.add_argument("--reset-dates", action="store_true", help="Clear protocol check dates before backfill")
     parser.add_argument("--no-resume", action="store_true", help="Do not skip already-checked protocols")
     parser.add_argument("--pretty", action="store_true")
@@ -52,8 +53,6 @@ def main() -> int:
             result = full_backfill(
                 db,
                 limit_per_location=args.limit_per_location,
-                delay_min_sec=args.delay_min,
-                delay_max_sec=args.delay_max,
                 resume=not args.no_resume,
                 reset_dates=args.reset_dates,
             )

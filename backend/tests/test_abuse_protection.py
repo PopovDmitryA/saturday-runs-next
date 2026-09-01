@@ -45,7 +45,7 @@ def abuse_settings() -> Settings:
 def test_classify_route_tiers() -> None:
     assert classify_route("/health", "GET") is RouteTier.exempt
     assert classify_route("/api/auth/bot/confirm", "POST") is RouteTier.exempt
-    assert classify_route("/api/demo/dashboard", "GET") is RouteTier.public_read
+    assert classify_route("/api/stats/summary", "GET") is RouteTier.public_read
     assert classify_route("/api/auth/login-request", "POST") is RouteTier.auth
     assert classify_route("/api/auth/oauth/vk/start", "GET") is RouteTier.auth
     assert classify_route("/api/auth/oauth/vk/callback", "GET") is RouteTier.auth
@@ -89,15 +89,15 @@ def test_middleware_returns_429(
     app = FastAPI()
     app.add_middleware(AbuseProtectionMiddleware)
 
-    @app.get("/api/demo/dashboard")
-    def demo_dashboard() -> dict[str, str]:
+    @app.get("/api/stats/summary")
+    def stats_summary() -> dict[str, str]:
         return {"ok": "1"}
 
     client = TestClient(app)
     for _ in range(3):
-        assert client.get("/api/demo/dashboard").status_code == 200
+        assert client.get("/api/stats/summary").status_code == 200
 
-    response = client.get("/api/demo/dashboard")
+    response = client.get("/api/stats/summary")
     assert response.status_code == 429
     assert response.headers.get("Retry-After")
 

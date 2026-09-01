@@ -186,6 +186,19 @@ export function ShareCardView({
             </div>
           ) : null}
           {data.chip ? <div className="s2-chip">{data.chip}</div> : null}
+          {data.progress ? (
+            <div className="s2-progress">
+              <div className="s2-progress-track">
+                <div
+                  className="s2-progress-fill"
+                  style={{ width: `${Math.max(0, Math.min(100, data.progress.pct))}%` }}
+                />
+              </div>
+              {data.progress.label ? (
+                <div className="s2-progress-caption">{data.progress.label}</div>
+              ) : null}
+            </div>
+          ) : null}
           {data.timeline && data.timeline.length > 0 ? (
             <div className="s2-timeline">
               {data.timeline.map((entry) => (

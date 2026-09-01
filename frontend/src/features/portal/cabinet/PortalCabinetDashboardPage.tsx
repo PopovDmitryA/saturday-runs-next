@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DashboardAnalytics } from "../../../components/DashboardAnalytics";
 import { MyHistoryTeaser } from "../../../components/MyHistoryTeaser";
+import { LastSaturdayCard } from "../../../components/LastSaturdayCard";
 import { OnThisDayCard } from "../../../components/OnThisDayCard";
 import { PlatformBadge } from "../../../components/PlatformBadge";
 import { ProfileLinkSection } from "../../../components/ProfileLinkSection";
 import { RecentRunsRating } from "../../../components/RecentRunsRating";
 import { RequireAuth } from "../../../components/RequireAuth";
 import { GoalsTeaser } from "../../dashboard/GoalsTeaser";
-import { PublicProfileShareBlock } from "../../dashboard/DashboardPage";
 import {
   getDashboard,
   getMyHistory,
@@ -339,6 +339,10 @@ function PortalDashboardContent({ user }: { user: User }) {
         <>
           <DashboardHero data={data} userName={userLabel(user)} />
 
+          {stats?.analytics?.last_saturday && (
+            <LastSaturdayCard data={stats.analytics.last_saturday} own />
+          )}
+
           {stats && <ShareMomentCard stats={stats} user={user} />}
 
           <OnThisDayCard load={getOnThisDay} />
@@ -355,10 +359,6 @@ function PortalDashboardContent({ user }: { user: User }) {
             totalRuns={stats?.total_runs ?? 0}
             totalVolunteering={stats?.total_volunteering ?? 0}
           />
-
-          {(data.public_slug ?? data.serial_id) != null && (
-            <PublicProfileShareBlock handle={data.public_slug ?? data.serial_id!} />
-          )}
 
           {data.sync_enqueued && (
             <div className="banner info">

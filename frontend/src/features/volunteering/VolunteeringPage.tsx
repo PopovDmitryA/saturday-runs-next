@@ -38,7 +38,6 @@ import { volunteeringSubject } from "../sharing/subjects";
 // оборачивает контент в собственный каркас с сайдбаром.
 function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
   const { listVolunteering, mode } = useAppDataSource();
-  const isDemo = mode === "demo";
   const [items, setItems] = useState<VolunteeringItem[]>([]);
   const [hasProfileLink, setHasProfileLink] = useState(false);
   const [includeTest, setIncludeTest] = useState(false);
@@ -108,7 +107,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
     try {
       const data = await listVolunteering(includeTest);
       setItems(data);
-      if (isDemo || mode === "public-profile") {
+      if (mode === "public-profile") {
         setHasProfileLink(false);
       } else {
         const links = await listProfileLinks();
@@ -119,7 +118,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
     } finally {
       setLoading(false);
     }
-  }, [includeTest, isDemo, mode, listVolunteering]);
+  }, [includeTest, mode, listVolunteering]);
 
   useEffect(() => {
     void load();
@@ -198,20 +197,15 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
         </div>
       )}
 
-      {showEmpty &&
-        (isDemo ? (
-          <div className="card">
-            <p className="muted">В демо-профиле нет записей о волонтёрстве.</p>
-          </div>
-        ) : (
-          <EmptyActivityState
-            activityLabel="Волонтёрств"
-            ownerHint="Попробуйте себя волонтёром на ближайшем старте — и записи появятся здесь."
-            publicHint="Как только появится первое волонтёрство, оно окажется здесь."
-            hasProfileLink={hasProfileLink}
-            isPublicProfile={mode === "public-profile"}
-          />
-        ))}
+      {showEmpty && (
+        <EmptyActivityState
+          activityLabel="Волонтёрств"
+          ownerHint="Попробуйте себя волонтёром на ближайшем старте — и записи появятся здесь."
+          publicHint="Как только появится первое волонтёрство, оно окажется здесь."
+          hasProfileLink={hasProfileLink}
+          isPublicProfile={mode === "public-profile"}
+        />
+      )}
 
       {!loading && !error && items.length > 0 && (
         <>
@@ -254,8 +248,9 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
             )}
           </div>
               </FilterGroup>
-              {!isDemo && (
-                <FilterGroup label="Показывать">
+              {/* Видны и в демо (main убрал !isDemo 31.08.2026): гость тоже
+                  волен смотреть тестовые и незачётные. */}
+              <FilterGroup label="Показывать">
                   <div className="loc-index-filters">
                     <label className="loc-index-paused">
                       <input
@@ -274,8 +269,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                       незачётные
                     </label>
                   </div>
-                </FilterGroup>
-              )}
+              </FilterGroup>
             </FilterRow>
           </FilterPanel>
 
