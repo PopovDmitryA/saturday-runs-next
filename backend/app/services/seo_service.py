@@ -444,6 +444,92 @@ def _strip_leading_hours(display: str | None) -> str | None:
     return display[3:] if display.startswith("00:") else display
 
 
+_MONTHS_GENITIVE = (
+    "января",
+    "февраля",
+    "марта",
+    "апреля",
+    "мая",
+    "июня",
+    "июля",
+    "августа",
+    "сентября",
+    "октября",
+    "ноября",
+    "декабря",
+)
+
+
+def _event_date_phrase(value: Any, *, today: date | None = None) -> str | None:
+    """«2026-08-29» → «29 августа». Год добавляем, только если он не нынешний.
+
+    Год ради года съедает пять символов из ста шестидесяти. Но у закрытых
+    площадок последний старт был давно, и «29 августа» без года там врёт.
+    """
+    if isinstance(value, date):
+        moment = value
+    else:
+        try:
+            moment = date.fromisoformat(str(value)[:10])
+        except (TypeError, ValueError):
+            return None
+    phrase = f"{moment.day} {_MONTHS_GENITIVE[moment.month - 1]}"
+    if moment.year != (today or date.today()).year:
+        phrase += f" {moment.year}"
+    return phrase
+
+
+def _best_time_of_day(last_event: dict[str, Any]) -> str | None:
+    """Быстрейшее время последнего старта — из мужского и женского.
+
+    Сравниваем строки, а не секунды: формат всегда ЧЧ:ММ:СС с ведущими
+    нулями, поэтому лексикографический порядок совпадает с числовым. Поля
+    *_time_sec тут не годятся — в схеме ответа API их может не быть, а
+    зеркало на клиенте обязано считать ровно то же самое.
+    """
+    known = [
+        str(display)
+        for display in (
+            last_event.get("best_male_time_display"),
+            last_event.get("best_female_time_display"),
+        )
+        if display
+    ]
+    if not known:
+        return None
+    return _strip_leading_hours(min(known))
+
+
+def _last_event_phrase(stats: dict[str, Any]) -> str | None:
+    """«Последний старт 29 августа: 168 финишёров, лучшее время 16:12».
+
+    Почему это встало в описание впереди исторических сумм. В выгрузке
+    Вебмастера за 30.07–30.08.2026 половина запросов с нулевым CTR — вида
+    «5 верст затюменский результаты»: человек ищет результаты конкретной
+    субботы. Мы отвечали ему «592 старта, 35 820 финишей» — правдой, но не
+    про то, что он спросил. На позициях 3,5–4,5 при 5 265 показах было 165
+    кликов (3,1 %) — вдвое ниже обычного для четвёртого места. Значит
+    теряли на сниппете, а не на ранжировании: нас видели и не выбирали.
+    """
+    last_event = stats.get("last_event") or {}
+    when = _event_date_phrase(last_event.get("event_date"))
+    if not when:
+        return None
+
+    facts: list[str] = []
+    finishers = last_event.get("finishers")
+    if finishers:
+        count = int(finishers)
+        facts.append(f"{_num(count)} {_plural(count, 'финишёр', 'финишёра', 'финишёров')}")
+    best = _best_time_of_day(last_event)
+    if best:
+        facts.append(f"лучшее время {best}")
+
+    if not facts:
+        return f"Последний старт {when}"
+    return f"Последний старт {when}: {', '.join(facts)}"
+
+
 def build_location_meta(
     payload: dict[str, Any], *, events_log: bool = False, participants: bool = False
 ) -> PageMeta:
@@ -509,6 +595,27 @@ def build_location_meta(
     lead = f"{platform}, «{name}»" if platform else f"Локация «{name}»"
     if city:
         lead += f" ({city})"
+
+    # Свежий старт вперёд, историческая сумма — следом и только если влезет:
+    # см. _last_event_phrase о том, что показала выгрузка Вебмастера.
+    recent = _last_event_phrase(stats)
+    if recent:
+        candidates = []
+        if parts:
+            # parts[0] — «271 старт»: сколько их всего за историю площадки.
+            candidates.append(f"{lead}. {recent}. Всего {parts[0]}. Результаты и рейтинги.")
+        candidates += [
+            f"{lead}. {recent}. Результаты и рейтинги участников.",
+            f"{lead}. {recent}. Результаты забегов.",
+            f"{lead}. {recent}.",
+        ]
+        description = next(
+            (text for text in candidates if len(text) <= DESCRIPTION_BUDGET),
+            _fit_description(f"{lead}. {recent}."),
+        )
+        return _meta(title, description, indexable=True)
+
+    # Свежего старта нет (площадка без событий) — прежнее описание по суммам.
     description = _describe(
         lead,
         numbers,
