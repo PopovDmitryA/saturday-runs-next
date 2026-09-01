@@ -66,9 +66,15 @@ function StatTile({
   // Ссылка-действие внизу плитки (например «журнал протоколов →» у стартов).
   link?: { href: string; label: string };
 }) {
+  // Длинное словесное значение («Хранение и доставка оборудования» в любимой
+  // роли) не помещается в плитку шириной 150px крупным кеглем и вылезало за
+  // её край (репорт Дмитрия 01.09.2026). Числам и коротким словам («дом»,
+  // времени, датам) размер не трогаем — их и так видно.
+  const longText = typeof value === "string" && value.length > 14;
+
   return (
     <div className="stat-card loc-stat-card">
-      <span className="stat-value loc-stat-value">
+      <span className={`stat-value loc-stat-value${longText ? " loc-stat-value-text" : ""}`}>
         {formatStatValue(value)}
         {/* Значок «i» сразу после цифры: подсказка относится к самому числу,
             а не к подписи под ним. */}
