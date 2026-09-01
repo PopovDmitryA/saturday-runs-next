@@ -10,6 +10,7 @@ import pytest
 from app.core.abuse_protection import RouteTier, classify_route
 from app.services.release_service import ReleasesPage
 from app.services.seo_service import (
+    _SITEMAP_STATIC,
     DEFAULT_DESCRIPTION,
     DEFAULT_TITLE,
     DESCRIPTION_BUDGET,
@@ -18,7 +19,10 @@ from app.services.seo_service import (
     TITLE_BUDGET,
     PageMeta,
     _catalog_body,
+    _generic_body,
     _location_body,
+    _login_body,
+    _meta,
     _og_image_tags,
     _page_number,
     _releases_body,
@@ -145,8 +149,17 @@ def test_frontend_mirror_keeps_location_wording_in_sync() -> None:
         "журнал протоколов",
         " — результаты и статистика",
         ". Результаты субботних забегов, посещаемость и рейтинги участников.",
+        # Свежий старт в описании: порядок слов тут — суть правки, разъедется
+        # зеркало — робот и человек снова увидят разные сниппеты.
+        "Последний старт ",
+        "лучшее время ",
+        "Результаты и рейтинги участников.",
+        "Результаты забегов.",
     ):
         assert phrase in src, f"Формулировка {phrase!r} есть на бэкенде, но не на клиенте"
+
+    for month in ("января", "августа", "декабря"):
+        assert month in src, f"Название месяца {month!r} есть на бэкенде, но не на клиенте"
 
 
 @pytest.mark.parametrize(
@@ -247,6 +260,82 @@ def test_location_meta_uses_name_and_numbers() -> None:
     # Заголовок журнала обязан отличаться от заголовка самой локации: два
     # разных адреса с одним title поисковик считает дублем.
     assert log_meta.title != meta.title
+
+
+def _stats_with_last_event(**overrides: object) -> dict[str, object]:
+    stats: dict[str, object] = {
+        "events_count": 271,
+        "finishers_total": 40123,
+        "course_records": {
+            "male": {"finish_time_display": "00:15:42"},
+            "female": {"finish_time_display": "00:18:03"},
+        },
+        "last_event": {
+            "event_date": date(date.today().year, 8, 29),
+            "finishers": 168,
+            "best_male_time_display": "00:16:12",
+            "best_female_time_display": "00:19:04",
+        },
+    }
+    stats.update(overrides)
+    return stats
+
+
+def test_location_description_leads_with_the_last_event() -> None:
+    """Свежий старт впереди исторической суммы.
+
+    Половина запросов с нулевым CTR в выгрузке Вебмастера — «<локация>
+    результаты»: спрашивают про конкретную субботу, а мы отвечали суммой за
+    всю историю. Порядок предложений здесь и есть суть правки.
+    """
+    meta = build_location_meta(_location_payload(stats=_stats_with_last_event()))
+
+    assert "Последний старт 29 августа" in meta.description
+    assert "168 финишёров" in meta.description
+    # Из двух лучших времён дня берём быстрейшее, часы отброшены.
+    assert "лучшее время 16:12" in meta.description
+    assert "19:04" not in meta.description
+    # Свежий старт стоит раньше суммы за историю.
+    assert meta.description.index("Последний старт") < meta.description.index("Всего")
+    assert len(meta.description) <= DESCRIPTION_BUDGET
+
+
+def test_location_description_dates_older_events_with_the_year() -> None:
+    """У закрытой площадки «29 августа» без года врёт — год дописываем."""
+    stats = _stats_with_last_event(
+        last_event={
+            "event_date": date(2021, 6, 12),
+            "finishers": 34,
+            "best_male_time_display": "00:17:30",
+        }
+    )
+    meta = build_location_meta(_location_payload(stats=stats))
+    assert "Последний старт 12 июня 2021" in meta.description
+
+
+def test_location_description_falls_back_without_last_event() -> None:
+    """Площадка без событий — прежнее описание по суммам, а не пустота."""
+    meta = build_location_meta(_location_payload())
+    assert "Последний старт" not in meta.description
+    assert "271 старт" in meta.description
+    assert len(meta.description) <= DESCRIPTION_BUDGET
+
+
+def test_location_description_survives_last_event_without_facts() -> None:
+    """Дата есть, цифр нет — предложение всё равно осмысленное."""
+    stats = _stats_with_last_event(last_event={"event_date": date(date.today().year, 8, 29)})
+    meta = build_location_meta(_location_payload(stats=stats))
+    assert "Последний старт 29 августа" in meta.description
+    assert "финишёр" not in meta.description
+    assert len(meta.description) <= DESCRIPTION_BUDGET
+
+
+def test_location_description_ignores_broken_event_date() -> None:
+    """Мусор в дате не должен ронять сборку описания."""
+    stats = _stats_with_last_event(last_event={"event_date": "не дата", "finishers": 10})
+    meta = build_location_meta(_location_payload(stats=stats))
+    assert "Последний старт" not in meta.description
+    assert "271 старт" in meta.description
 
 
 @pytest.mark.parametrize(
@@ -404,6 +493,43 @@ def test_events_log_body_does_not_repeat_description() -> None:
     """Журнал протоколов — отдельный адрес; тот же текст там был бы дублем."""
     body = _location_body(_location_payload(description=_DESCRIPTION_PAYLOAD), events_log=True)
     assert "Маршрут проходит по дорожкам парка" not in body
+
+
+def test_login_body_explains_the_cabinet() -> None:
+    """Робот на /login получает содержимое, а не заголовок с одним предложением.
+
+    «5 вёрст личный кабинет» — 143 показа за месяц при позиции 6,7 и одном
+    клике. Тонкая страница так и будет висеть внизу первой десятки.
+    """
+    body = _login_body(STATIC_PAGE_META["/login"])
+
+    # Заголовок без бренда: «… — run5k.run» на самой странице читается
+    # как ошибка вёрстки, бренд нужен только в title для выдачи.
+    assert "<h1>Личный кабинет участника — вход</h1>" in body
+    assert "run5k.run</h1>" not in body
+
+    for system in ("5 вёрст", "С95", "parkrun", "RunPark"):
+        assert system in body, f"Система {system} не названа на посадочной кабинета"
+    for feature in ("История стартов", "Личные рекорды", "Волонтёрство", "Место в рейтингах"):
+        assert feature in body
+
+    # Внутренние ссылки: страница не тупик, робот уходит с неё в каталог.
+    assert 'href="/locations"' in body
+    assert 'href="/ratings"' in body
+    assert len(body) > len(_generic_body(STATIC_PAGE_META["/login"])) * 3
+
+
+def test_generic_body_heading_drops_the_brand() -> None:
+    """Бренд в <h1> — дубль title, на странице он лишний."""
+    body = _generic_body(_meta("О проекте — run5k.run", "Описание."))
+    assert "<h1>О проекте</h1>" in body
+
+
+def test_login_is_a_landing_not_a_service_page_in_sitemap() -> None:
+    """Приоритет входа выше служебных: это посадочная под «личный кабинет»."""
+    priorities = dict(_SITEMAP_STATIC)
+    assert priorities["/login"] == "0.7"
+    assert priorities["/login"] > priorities["/updates"]
 
 
 def test_catalog_body_lists_locations_with_links() -> None:

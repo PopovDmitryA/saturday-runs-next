@@ -444,6 +444,92 @@ def _strip_leading_hours(display: str | None) -> str | None:
     return display[3:] if display.startswith("00:") else display
 
 
+_MONTHS_GENITIVE = (
+    "января",
+    "февраля",
+    "марта",
+    "апреля",
+    "мая",
+    "июня",
+    "июля",
+    "августа",
+    "сентября",
+    "октября",
+    "ноября",
+    "декабря",
+)
+
+
+def _event_date_phrase(value: Any, *, today: date | None = None) -> str | None:
+    """«2026-08-29» → «29 августа». Год добавляем, только если он не нынешний.
+
+    Год ради года съедает пять символов из ста шестидесяти. Но у закрытых
+    площадок последний старт был давно, и «29 августа» без года там врёт.
+    """
+    if isinstance(value, date):
+        moment = value
+    else:
+        try:
+            moment = date.fromisoformat(str(value)[:10])
+        except (TypeError, ValueError):
+            return None
+    phrase = f"{moment.day} {_MONTHS_GENITIVE[moment.month - 1]}"
+    if moment.year != (today or date.today()).year:
+        phrase += f" {moment.year}"
+    return phrase
+
+
+def _best_time_of_day(last_event: dict[str, Any]) -> str | None:
+    """Быстрейшее время последнего старта — из мужского и женского.
+
+    Сравниваем строки, а не секунды: формат всегда ЧЧ:ММ:СС с ведущими
+    нулями, поэтому лексикографический порядок совпадает с числовым. Поля
+    *_time_sec тут не годятся — в схеме ответа API их может не быть, а
+    зеркало на клиенте обязано считать ровно то же самое.
+    """
+    known = [
+        str(display)
+        for display in (
+            last_event.get("best_male_time_display"),
+            last_event.get("best_female_time_display"),
+        )
+        if display
+    ]
+    if not known:
+        return None
+    return _strip_leading_hours(min(known))
+
+
+def _last_event_phrase(stats: dict[str, Any]) -> str | None:
+    """«Последний старт 29 августа: 168 финишёров, лучшее время 16:12».
+
+    Почему это встало в описание впереди исторических сумм. В выгрузке
+    Вебмастера за 30.07–30.08.2026 половина запросов с нулевым CTR — вида
+    «5 верст затюменский результаты»: человек ищет результаты конкретной
+    субботы. Мы отвечали ему «592 старта, 35 820 финишей» — правдой, но не
+    про то, что он спросил. На позициях 3,5–4,5 при 5 265 показах было 165
+    кликов (3,1 %) — вдвое ниже обычного для четвёртого места. Значит
+    теряли на сниппете, а не на ранжировании: нас видели и не выбирали.
+    """
+    last_event = stats.get("last_event") or {}
+    when = _event_date_phrase(last_event.get("event_date"))
+    if not when:
+        return None
+
+    facts: list[str] = []
+    finishers = last_event.get("finishers")
+    if finishers:
+        count = int(finishers)
+        facts.append(f"{_num(count)} {_plural(count, 'финишёр', 'финишёра', 'финишёров')}")
+    best = _best_time_of_day(last_event)
+    if best:
+        facts.append(f"лучшее время {best}")
+
+    if not facts:
+        return f"Последний старт {when}"
+    return f"Последний старт {when}: {', '.join(facts)}"
+
+
 def build_location_meta(
     payload: dict[str, Any], *, events_log: bool = False, participants: bool = False
 ) -> PageMeta:
@@ -509,6 +595,27 @@ def build_location_meta(
     lead = f"{platform}, «{name}»" if platform else f"Локация «{name}»"
     if city:
         lead += f" ({city})"
+
+    # Свежий старт вперёд, историческая сумма — следом и только если влезет:
+    # см. _last_event_phrase о том, что показала выгрузка Вебмастера.
+    recent = _last_event_phrase(stats)
+    if recent:
+        candidates = []
+        if parts:
+            # parts[0] — «271 старт»: сколько их всего за историю площадки.
+            candidates.append(f"{lead}. {recent}. Всего {parts[0]}. Результаты и рейтинги.")
+        candidates += [
+            f"{lead}. {recent}. Результаты и рейтинги участников.",
+            f"{lead}. {recent}. Результаты забегов.",
+            f"{lead}. {recent}.",
+        ]
+        description = next(
+            (text for text in candidates if len(text) <= DESCRIPTION_BUDGET),
+            _fit_description(f"{lead}. {recent}."),
+        )
+        return _meta(title, description, indexable=True)
+
+    # Свежего старта нет (площадка без событий) — прежнее описание по суммам.
     description = _describe(
         lead,
         numbers,
@@ -700,7 +807,10 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/ratings/regions", "0.7"),
     ("/blog", "0.7"),
     ("/about", "0.6"),
-    ("/login", "0.4"),
+    # Не служебная страница, а посадочная под «личный кабинет»: 143 показа за
+    # месяц только по одному этому запросу. Приоритет 0.4 занижал её вровень
+    # с историей релизов.
+    ("/login", "0.7"),
     ("/updates", "0.4"),
 )
 
@@ -1341,7 +1451,68 @@ def _location_body(payload: dict[str, Any], *, events_log: bool) -> str:
 
 
 def _generic_body(meta: PageMeta) -> str:
-    return f"    <h1>{escape(meta.title)}</h1>\n    <p>{escape(meta.description)}</p>"
+    # В <h1> бренд не повторяем: в title он нужен для выдачи, а на самой
+    # странице заголовок «… — run5k.run» читается как ошибка вёрстки.
+    heading = meta.title.removesuffix(f" — {SITE_NAME}")
+    return f"    <h1>{escape(heading)}</h1>\n    <p>{escape(meta.description)}</p>"
+
+
+def _login_body(meta: PageMeta) -> str:
+    """Тело страницы входа для робота: что такое личный кабинет.
+
+    «5 вёрст личный кабинет» — 143 показа за месяц при средней позиции 6,7 и
+    одном клике (Вебмастер, 30.07–30.08.2026), вся группа запросов про
+    кабинет и приложение — 97 показов и ноль кликов. Причина видна в самом
+    пререндере: роботу доставались заголовок и одно предложение, то есть
+    страница без содержимого. Ниже — то же, что человек получает после
+    входа, только словами и без цифр конкретного участника.
+    """
+    heading = meta.title.removesuffix(f" — {SITE_NAME}")
+    features = (
+        (
+            "История стартов",
+            "Все забеги в одном списке — 5 вёрст, С95, parkrun и RunPark вместе, "
+            "с датой, временем, местом в протоколе и локацией.",
+        ),
+        (
+            "Личные рекорды",
+            "Рекорд в каждой системе, лучший результат среди всех систем и отдельно "
+            "рекорд на каждой площадке, где вы бегали.",
+        ),
+        (
+            "Волонтёрство",
+            "Сколько раз и в каких ролях вы помогали на стартах — учитывается наравне "
+            "с забегами.",
+        ),
+        (
+            "Достижения и цели",
+            "Клубные пороги по числу забегов, туризм по локациям и цели на год "
+            "с подсчётом, сколько осталось.",
+        ),
+        (
+            "Место в рейтингах",
+            "Ваша строка в общих таблицах: по забегам, волонтёрству, скорости, "
+            "числу площадок и победам.",
+        ),
+    )
+    rows = [
+        f"    <h1>{escape(heading)}</h1>",
+        "    <p>Личный кабинет участника субботних пробежек. Вход через VK или Яндекс, "
+        "регистрация не нужна: профиль подтягивается по вашим результатам в системах "
+        "5 вёрст, С95, parkrun и RunPark.</p>",
+        "    <h2>Что внутри</h2>",
+        "    <dl>",
+    ]
+    for term, text in features:
+        rows.append(f"      <dt>{escape(term)}</dt>")
+        rows.append(f"      <dd>{escape(text)}</dd>")
+    rows.append("    </dl>")
+    rows.append(
+        '    <p>Без входа тоже открыты <a href="/locations">каталог площадок</a>, '
+        '<a href="/ratings">рейтинги участников</a> и результаты каждого старта. '
+        'Как всё устроено — <a href="/about">на странице о проекте</a>.</p>'
+    )
+    return "\n".join(rows)
 
 
 def _catalog_body(items: list[dict[str, Any]]) -> str:
@@ -1703,6 +1874,10 @@ def render_prerendered_page(db: Session, raw_path: str) -> tuple[str, int]:
 
     if not is_known_path(path):
         return _not_found_page(canonical), 404
+
+    # Вход — посадочная под «личный кабинет», ей родового тела мало.
+    if path == "/login":
+        return _render_html(meta=meta, canonical=canonical, body_html=_login_body(meta)), 200
 
     return _render_html(meta=meta, canonical=canonical, body_html=_generic_body(meta)), 200
 
