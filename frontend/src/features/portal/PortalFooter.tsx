@@ -162,7 +162,7 @@ export function PortalFooter() {
             © {FOUNDED_YEAR}—{year} run5k.run
           </span>
           <span className="portal-footer-sources">
-            Данные систем «5 вёрст», S95, parkrun и RunPark. Проект независимый и некоммерческий.
+            Данные систем 5 вёрст, S95, parkrun и RunPark. Проект независимый и некоммерческий.
           </span>
           {version && (
             <a
