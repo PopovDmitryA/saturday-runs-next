@@ -33,6 +33,19 @@ from app.models import Location, Platform, ProtocolUploadFact  # noqa: E402
 MSK = timezone(timedelta(hours=3))
 
 
+# Площадки, которых нет в general_link_all_location вовсе (строку со ссылкой там
+# просто не завели), — выводить слаг не из чего. Сопоставлено вручную и сверено
+# по датам: у всех четырёх ВСЕ наблюдения легаси совпали с датами наших стартов
+# (16/16, 52/52, 40/40, 18/18), так что это не догадка. Легаси-имя совпадает со
+# смыслом слага, а у нас площадки давно переименованы — отсюда и промах.
+MANUAL_SLUGS: dict[str, str] = {
+    "Губернский парк": "gubernskypark",  # у нас «Калуга»
+    "Оренбург Березка": "orenburgberezka",  # у нас «Оренбург Берёзка», через «ё»
+    "Парк 30-Летия Октября": "park30letiyaoktyabrya",  # у нас «Боровичи»
+    "Петергоф Александрийский": "petergofaleksandriysky",  # у нас «Петергоф»
+}
+
+
 def _slug_from_link(link: str) -> str | None:
     marker = "5verst.ru/"
     if marker not in link:
@@ -57,6 +70,11 @@ def main() -> None:
                 sa.text("select name_point, link_point from general_link_all_location")
             )
         }
+        # Ручные сопоставления добавляем только там, где легаси не дал слага:
+        # появится однажды строка со ссылкой — она и победит.
+        for name, slug in MANUAL_SLUGS.items():
+            if not links.get(name):
+                links[name] = slug
         tz_rows = {
             name: tz
             for name, tz in conn.execute(
