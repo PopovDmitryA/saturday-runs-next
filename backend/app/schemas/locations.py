@@ -376,6 +376,9 @@ class LocationAttendanceColumnResponse(BaseModel):
 class LocationAttendanceDateTotalsResponse(BaseModel):
     runners: int = 0
     volunteers: int = 0
+    # Люди без повторов: бежал и волонтёрил в один день — один человек.
+    # 0 у кэшированных ответов, записанных до появления поля.
+    people: int = 0
 
 
 class LocationAttendanceResponse(BaseModel):

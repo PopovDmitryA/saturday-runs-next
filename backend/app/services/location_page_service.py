@@ -805,8 +805,13 @@ def build_location_attendance(
         # Итоговая строка «Участников»: посещаемость каждого старта читается
         # прямо из журнала — бегуны и волонтёры считаются по всем людям года,
         # а не по видимой странице.
+        # `people` — люди без повторов: кто в один день и бежал, и волонтёрил,
+        # попадает и в runners, и в volunteers, поэтому для разреза «Все»
+        # runners+volunteers завышали бы число людей — держим отдельный
+        # дедуплицированный счётчик.
         date_totals: dict[str, dict[str, int]] = {
-            day.isoformat(): {"runners": 0, "volunteers": 0} for day in columns_by_date
+            day.isoformat(): {"runners": 0, "volunteers": 0, "people": 0}
+            for day in columns_by_date
         }
         for person in people.values():
             for day in person.run_dates:
@@ -817,6 +822,10 @@ def build_location_attendance(
                 totals = date_totals.get(day.isoformat())
                 if totals is not None:
                     totals["volunteers"] += 1
+            for day in person.dates:
+                totals = date_totals.get(day.isoformat())
+                if totals is not None:
+                    totals["people"] += 1
 
         # Состав строк от разреза НЕ зависит: в журнале остаются все, кто был
         # здесь в этом году (правка Дмитрия 28.08.2026 — «не должен исключать
@@ -1018,6 +1027,8 @@ def _active_participant_rows(
             # сайта» берём булевым агрегатом, сам user_id и так в group_key.
             func.bool_or(PlatformLink.user_id.isnot(None)).label("is_user"),
             display_name.label("name"),
+            func.max(Participant.display_name).label("protocol_name"),
+            func.bool_or(func.coalesce(User.profile_private, False)).label("private"),
             here_count.label("count"),
             func.min(Event.event_date).label("first_date"),
             func.max(Event.event_date).label("last_date"),
@@ -1071,11 +1082,15 @@ def _active_participant_rows(
         if count != previous_count:
             place = index + 1
             previous_count = count
+        # Закрытый профиль — как в рейтингах и журнале: без ссылки на профиль
+        # сайта и с протокольным именем вместо имени аккаунта.
         rows.append(
             {
                 "place": place,
-                "name": row.name,
-                "handle": row.slug or (str(row.serial_id) if row.serial_id else None),
+                "name": (row.protocol_name or row.name) if row.private else row.name,
+                "handle": None
+                if row.private
+                else row.slug or (str(row.serial_id) if row.serial_id else None),
                 "count": count,
                 # max() — страховка от кросслинков: «всего» не может быть
                 # меньше, чем участий на одной этой площадке.
@@ -1511,7 +1526,12 @@ def _merge_age_group_bests(rows: Iterable[Any]) -> dict[tuple[str, str], list[di
 def _participant_display_names(
     db: Session, participant_ids: Iterable[UUID]
 ) -> dict[UUID, tuple[str | None, str | None]]:
-    """participants.id → (имя, хендл профиля на сайте) для показываемых строк."""
+    """participants.id → (имя, хендл профиля на сайте) для показываемых строк.
+
+    Закрытые профили (`users.profile_private`) отдаются как неавторизованным:
+    протокольное имя и без хендла — тот же принцип, что в рейтингах
+    (fastest_rating_service) и журнале посещаемости.
+    """
     ids = list(participant_ids)
     if not ids:
         return {}
@@ -1519,6 +1539,8 @@ def _participant_display_names(
         db.query(
             Participant.id,
             func.coalesce(User.display_name, Participant.display_name).label("name"),
+            Participant.display_name.label("protocol_name"),
+            User.profile_private.label("private"),
             User.public_slug,
             User.serial_id,
         )
@@ -1527,10 +1549,16 @@ def _participant_display_names(
         .filter(Participant.id.in_(ids))
         .all()
     )
-    return {
-        row.id: (row.name, row.public_slug or (str(row.serial_id) if row.serial_id else None))
-        for row in rows
-    }
+    result: dict[UUID, tuple[str | None, str | None]] = {}
+    for row in rows:
+        if row.private:
+            result[row.id] = (row.protocol_name or row.name, None)
+        else:
+            result[row.id] = (
+                row.name,
+                row.public_slug or (str(row.serial_id) if row.serial_id else None),
+            )
+    return result
 
 
 def _age_group_tops(

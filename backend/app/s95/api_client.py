@@ -98,7 +98,7 @@ def fetch_events(domain: str) -> list[dict]:
     return data.get("events", [])
 
 
-def fetch_all_locations() -> list[S95ApiLocation]:
+def fetch_all_locations(*, errors: list[str] | None = None) -> list[S95ApiLocation]:
     """Локации всех трёх доменов: `pages.json` + `events.json`, без дублей.
 
     Два источника нужны потому, что каждый по отдельности неполон:
@@ -112,6 +112,12 @@ def fetch_all_locations() -> list[S95ApiLocation]:
 
     Раньше обход шёл только по `pages.json`, поэтому отменённая площадка
     выпадала из синка целиком: её статус у нас так и оставался вчерашним.
+
+    `errors`, если передан, собирает описания несработавших запросов. Пустой
+    список после вызова означает «реестр прочитан целиком»; непустой — что
+    результат ЧАСТИЧНЫЙ и отсутствие площадки в нём ещё ничего не значит
+    (важно наблюдателю отмен: снимать отметку по неполным данным нельзя).
+    Полный провал всех доменов по-прежнему валит вызов S95RegistryUnavailable.
     """
     result: list[S95ApiLocation] = []
     failures: list[str] = []
@@ -178,6 +184,9 @@ def fetch_all_locations() -> list[S95ApiLocation]:
                     longitude=lon,
                 )
             )
+
+    if errors is not None:
+        errors.extend(failures)
 
     if not result:
         raise S95RegistryUnavailable(

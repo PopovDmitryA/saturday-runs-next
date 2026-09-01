@@ -189,9 +189,20 @@ def latest_protocol_saturday(db: Session) -> date | None:
     Считается отдельным дешёвым запросом, а не по кэшу списка недель: в
     субботу утром протоколы только начинают приезжать, и «последняя неделя»
     обязана переключиться сразу, а не когда протухнет список.
+
+    Фильтр по зарубежному parkrun — тот же, что в списке недель и в самом
+    протоколе: иначе свежесинканный забег туриста за границей (спецстарт
+    четверга, ранняя суббота на востоке) открывал бы по умолчанию неделю, в
+    которой на странице ноль строк и которой нет в списке недель.
     """
+    russian_parkrun = russian_parkrun_location_ids(db)
+    in_scope = (Platform.code != PARKRUN_PLATFORM_CODE) | Event.location_id.in_(russian_parkrun)
     last_event_date = (
-        db.query(func.max(Event.event_date)).filter(Event.is_test_event.is_(False)).scalar()
+        db.query(func.max(Event.event_date))
+        .select_from(Event)
+        .join(Platform, Platform.id == Event.platform_id)
+        .filter(Event.is_test_event.is_(False), in_scope)
+        .scalar()
     )
     return saturday_of(last_event_date) if last_event_date is not None else None
 

@@ -161,6 +161,11 @@ def classify_page(path: str) -> tuple[str, str]:
     if _SWEEP_HQ_RE.match(normalized):
         return "sweep_hq", ""
 
+    # /world рендерится условной веткой renderRoute (не STATIC_ROUTES), поэтому
+    # тест-стражник его не видел, и весь трафик страницы копился в «Прочем».
+    if normalized in ("/world", "/world/"):
+        return "world", ""
+
     unified_protocol = _UNIFIED_PROTOCOL_RE.match(normalized)
     if unified_protocol:
         return "unified_protocol", unified_protocol.group(1)

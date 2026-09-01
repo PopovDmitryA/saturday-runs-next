@@ -1211,6 +1211,42 @@ def test_protocol_revision_ignores_identified_unknown(db_session: Session) -> No
     assert revisions[0].details["time_changes_total"] == 1
 
 
+def test_protocol_revision_catches_removal_next_to_identified_unknown(
+    db_session: Session,
+) -> None:
+    """Пропажа известной строки не прячется за парой «неизвестный → имя».
+
+    Удаление не даёт добавления, поэтому старое сравнение отфильтрованных
+    наборов (только unknown-удаления против known-добавлений) её проглатывало.
+    """
+    from app.sync.five_verst_protocol import record_protocol_revision
+
+    suffix = str(uuid4().int % 1_000_000)
+    platform = _platform(db_session, "five_verst", "5 вёрст")
+    location = _location(db_session, platform, f"org-rev2-{suffix}")
+    event = _event(db_session, platform, location, date.today() - timedelta(days=7), 1)
+    db_session.commit()
+
+    record_protocol_revision(
+        db_session,
+        event.id,
+        {
+            "k1": (1, 1200, "finished"),
+            "k2": (2, 1300, "unknown"),
+            "k3": (3, 1400, "finished"),  # последний известный — пропал
+        },
+        {
+            "k1": (1, 1200, "finished"),
+            "k2-known": (2, 1300, "finished"),
+        },
+    )
+    revisions = db_session.query(ProtocolRevision).filter(ProtocolRevision.event_id == event.id).all()
+    assert len(revisions) == 1
+    assert revisions[0].kind == "results_changed"
+    assert revisions[0].details["removed"] == 2
+    assert revisions[0].details["added"] == 1
+
+
 def test_health_endpoint_smoke(
     client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
 ) -> None:

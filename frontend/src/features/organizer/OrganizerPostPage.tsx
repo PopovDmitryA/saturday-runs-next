@@ -157,6 +157,9 @@ function OrganizerPostContent({ slug }: { slug: string }) {
     setPostLoading(true);
     setPostText(null);
     setCopied(false);
+    // Сброс прошлой ошибки: без него один упавший запрос гасил страницу
+    // навсегда — контролы размонтированы, зависимости эффекта меняться нечем.
+    setError(null);
     getOrganizerEventPost(slug, needsEvent ? selectedEventId : null, template, {
       minRunMilestone,
       minVolMilestone,
@@ -241,7 +244,7 @@ function OrganizerPostContent({ slug }: { slug: string }) {
 
       {!error && dates === null && <p className="muted">Загрузка…</p>}
 
-      {!error && dates !== null && (
+      {dates !== null && (
         <div className="org-post-layout">
           <aside className="org-post-formats" role="tablist" aria-label="Формат поста">
             {TEMPLATES.map((item) => (

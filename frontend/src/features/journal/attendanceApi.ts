@@ -75,7 +75,7 @@ export type LocationAttendance = {
   limit: number;
   total_rows: number;
   columns: { date: string; platforms: string[] }[];
-  date_totals: Record<string, { runners: number; volunteers: number }>;
+  date_totals: Record<string, { runners: number; volunteers: number; people?: number }>;
   rows: LocationAttendanceRow[];
   me: LocationAttendanceRow | null;
 };

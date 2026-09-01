@@ -197,3 +197,63 @@ def test_watch_survives_broken_registry(db_session: Session, s95_platform: Platf
 
     assert result.errors
     assert result.entries_total == 0
+
+
+def test_watch_does_not_clear_on_partial_registry(
+    db_session: Session, s95_platform: Platform
+) -> None:
+    """Реестр прочитан не целиком — «нет в списке» не означает «отмена снята».
+
+    s95 закрылся от прода по IP (или лёг один из доменов): fetch_all_locations
+    молча вернёт пустой/частичный список. Снимать по нему отметки нельзя —
+    иначе каждый прогон слал бы ложные «✅ Отмена снята» при живой отмене.
+    """
+    slug = f"partial-{uuid4().hex[:8]}"
+    row = _location(
+        db_session,
+        s95_platform,
+        slug,
+        is_paused=False,
+        is_cancelled=True,
+        cancel_reason="Отмена забега 29 августа",
+    )
+
+    def _partial_fetch(*, errors: list[str] | None = None) -> list[S95ApiLocation]:
+        if errors is not None:
+            errors.append("https://s95.ru: pages.json: connection refused")
+        return []
+
+    with (
+        patch("app.sync.s95_cancellations.fetch_all_locations", side_effect=_partial_fetch),
+        patch("app.sync.s95_cancellations.notify_cancellation_changes") as notify,
+        patch("app.sync.s95_cancellations.flush_location_catalog_caches"),
+        patch("app.sync.s95_cancellations.flush_location_page_caches"),
+    ):
+        result = watch_s95_cancellations(db_session)
+
+    db_session.refresh(row)
+    assert row.is_cancelled is True
+    assert row.cancel_reason == "Отмена забега 29 августа"
+    assert any("pages.json" in error for error in result.errors)
+    assert _changes_for(notify, slug) == []
+
+
+def test_watch_does_not_clear_on_empty_registry(
+    db_session: Session, s95_platform: Platform
+) -> None:
+    """Пустой (но «успешный») реестр так же непригоден для снятия отметок."""
+    slug = f"empty-{uuid4().hex[:8]}"
+    row = _location(
+        db_session,
+        s95_platform,
+        slug,
+        is_paused=False,
+        is_cancelled=True,
+        cancel_reason="Отмена забега 29 августа",
+    )
+
+    result, notify = _run(db_session, [], lambda entry: None)
+
+    db_session.refresh(row)
+    assert row.is_cancelled is True
+    assert _changes_for(notify, slug) == []

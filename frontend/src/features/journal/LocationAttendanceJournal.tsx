@@ -169,7 +169,9 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
           ? counters.runners
           : kind === "volunteers"
             ? counters.volunteers
-            : counters.runners + counters.volunteers;
+            : // Люди без повторов: кто бежал и волонтёрил в один день — один
+              // человек. Сумма — фолбэк для кэшированных ответов без поля.
+              counters.people || counters.runners + counters.volunteers;
     }
     const label =
       kind === "runners" ? "Бегунов" : kind === "volunteers" ? "Волонтёров" : "Участников";
