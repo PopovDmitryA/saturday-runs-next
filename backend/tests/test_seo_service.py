@@ -10,6 +10,7 @@ import pytest
 from app.core.abuse_protection import RouteTier, classify_route
 from app.services.release_service import ReleasesPage
 from app.services.seo_service import (
+    _SITEMAP_STATIC,
     DEFAULT_DESCRIPTION,
     DEFAULT_TITLE,
     DESCRIPTION_BUDGET,
@@ -18,7 +19,10 @@ from app.services.seo_service import (
     TITLE_BUDGET,
     PageMeta,
     _catalog_body,
+    _generic_body,
     _location_body,
+    _login_body,
+    _meta,
     _og_image_tags,
     _page_number,
     _releases_body,
@@ -489,6 +493,43 @@ def test_events_log_body_does_not_repeat_description() -> None:
     """Журнал протоколов — отдельный адрес; тот же текст там был бы дублем."""
     body = _location_body(_location_payload(description=_DESCRIPTION_PAYLOAD), events_log=True)
     assert "Маршрут проходит по дорожкам парка" not in body
+
+
+def test_login_body_explains_the_cabinet() -> None:
+    """Робот на /login получает содержимое, а не заголовок с одним предложением.
+
+    «5 вёрст личный кабинет» — 143 показа за месяц при позиции 6,7 и одном
+    клике. Тонкая страница так и будет висеть внизу первой десятки.
+    """
+    body = _login_body(STATIC_PAGE_META["/login"])
+
+    # Заголовок без бренда: «… — run5k.run» на самой странице читается
+    # как ошибка вёрстки, бренд нужен только в title для выдачи.
+    assert "<h1>Личный кабинет участника — вход</h1>" in body
+    assert "run5k.run</h1>" not in body
+
+    for system in ("5 вёрст", "С95", "parkrun", "RunPark"):
+        assert system in body, f"Система {system} не названа на посадочной кабинета"
+    for feature in ("История стартов", "Личные рекорды", "Волонтёрство", "Место в рейтингах"):
+        assert feature in body
+
+    # Внутренние ссылки: страница не тупик, робот уходит с неё в каталог.
+    assert 'href="/locations"' in body
+    assert 'href="/ratings"' in body
+    assert len(body) > len(_generic_body(STATIC_PAGE_META["/login"])) * 3
+
+
+def test_generic_body_heading_drops_the_brand() -> None:
+    """Бренд в <h1> — дубль title, на странице он лишний."""
+    body = _generic_body(_meta("О проекте — run5k.run", "Описание."))
+    assert "<h1>О проекте</h1>" in body
+
+
+def test_login_is_a_landing_not_a_service_page_in_sitemap() -> None:
+    """Приоритет входа выше служебных: это посадочная под «личный кабинет»."""
+    priorities = dict(_SITEMAP_STATIC)
+    assert priorities["/login"] == "0.7"
+    assert priorities["/login"] > priorities["/updates"]
 
 
 def test_catalog_body_lists_locations_with_links() -> None:
