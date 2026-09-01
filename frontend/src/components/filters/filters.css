@@ -11,7 +11,9 @@
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface);
-  margin-bottom: 1rem;
+  /* 0.6rem, а не 1rem: между панелью, строкой «N локаций» и таблицей
+     набегало слишком много воздуха (правка Дмитрия 01.09.2026). */
+  margin-bottom: 0.6rem;
 }
 
 /* Ряд групп: выравниваем по ВЕРХУ. Подписи всех групп встают на одну

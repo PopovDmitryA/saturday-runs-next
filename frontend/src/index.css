@@ -10782,7 +10782,7 @@ a.admin-system-chip:hover {
 }
 
 .loc-index-count {
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.35rem;
   font-size: 0.85rem;
 }
 
@@ -15765,4 +15765,10 @@ input.participant-name-search-input:focus {
 .loc-people-found {
   white-space: nowrap;
   font-size: 0.85rem;
+}
+
+/* Сегменты внутри тулбара карты стоят в один ряд с тумблерами — без нижнего
+   отступа, который .map-mode-tabs носит на обычных страницах. */
+.map-toolbar .map-mode-tabs {
+  margin-bottom: 0;
 }

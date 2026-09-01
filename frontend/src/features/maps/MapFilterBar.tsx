@@ -92,7 +92,9 @@ export function MapFilterBar({
 }: MapFilterBarProps) {
   return (
     <div className="map-toolbar map-toolbar-shared">
-      <div className="map-toolbar-group" role="tablist" aria-label="Вид карты">
+      {/* Сегменты с общей подложкой — тот же вид, что «Кратко | Полно»
+          (правка Дмитрия 01.09.2026: отдельные пилюли выглядели чужими). */}
+      <div className="map-mode-tabs" role="tablist" aria-label="Вид карты">
         <button
           type="button"
           role="tab"
@@ -113,7 +115,7 @@ export function MapFilterBar({
         </button>
       </div>
       <span className="map-toolbar-sep" aria-hidden />
-      <div className="map-toolbar-group" role="tablist" aria-label="Активность">
+      <div className="map-mode-tabs" role="tablist" aria-label="Активность">
         <button
           type="button"
           role="tab"

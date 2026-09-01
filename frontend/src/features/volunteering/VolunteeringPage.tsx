@@ -187,27 +187,6 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
 
   const pageBody = (
     <>
-      {!isDemo && (
-        <div className="checkbox-row-group">
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={includeTest}
-              onChange={(event) => setIncludeTest(event.target.checked)}
-            />
-            Показывать тестовые мероприятия
-          </label>
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={includeDuplicates}
-              onChange={(event) => setIncludeDuplicates(event.target.checked)}
-            />
-            Показывать незачётные волонтёрства
-          </label>
-        </div>
-      )}
-
       {loading && <p className="muted">Загрузка…</p>}
 
       {error && (
@@ -275,6 +254,28 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
             )}
           </div>
               </FilterGroup>
+              {!isDemo && (
+                <FilterGroup label="Показывать">
+                  <div className="loc-index-filters">
+                    <label className="loc-index-paused">
+                      <input
+                        type="checkbox"
+                        checked={includeTest}
+                        onChange={(event) => setIncludeTest(event.target.checked)}
+                      />{" "}
+                      тестовые
+                    </label>
+                    <label className="loc-index-paused">
+                      <input
+                        type="checkbox"
+                        checked={includeDuplicates}
+                        onChange={(event) => setIncludeDuplicates(event.target.checked)}
+                      />{" "}
+                      незачётные
+                    </label>
+                  </div>
+                </FilterGroup>
+              )}
             </FilterRow>
           </FilterPanel>
 

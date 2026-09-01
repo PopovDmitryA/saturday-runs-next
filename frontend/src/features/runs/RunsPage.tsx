@@ -65,7 +65,9 @@ const RUNS_COLUMNS: AdaptiveColumn[] = [
   { key: "pace", width: 120 },
   { key: "gender_position", width: 136 },
   // 68px: в ячейке две иконки — оценка старта и «Поделиться» (см. .col-rating).
-  { key: "rating", width: 68 },
+  // Обязательная и в кратком виде: оценка и шеринг — действия, а не данные,
+  // прятать их вместе с второстепенными колонками нельзя (Дмитрий 01.09.2026).
+  { key: "rating", width: 68, required: true },
 ];
 
 function RunsContent({ bare = false }: { bare?: boolean } = {}) {
@@ -221,27 +223,6 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
 
   const pageBody = (
     <>
-      {!isDemo && (
-        <div className="checkbox-row-group">
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={includeTest}
-              onChange={(event) => setIncludeTest(event.target.checked)}
-            />
-            Показывать тестовые мероприятия
-          </label>
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={includeDuplicates}
-              onChange={(event) => setIncludeDuplicates(event.target.checked)}
-            />
-            Показывать незачётные пробежки
-          </label>
-        </div>
-      )}
-
       {loading && <p className="muted">Загрузка…</p>}
 
       {error && (
@@ -300,6 +281,28 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
               {tableColumns.hasToggle && (
                 <FilterGroup label="Колонки">
                   <TableViewToggle columns={tableColumns} inline />
+                </FilterGroup>
+              )}
+              {!isDemo && (
+                <FilterGroup label="Показывать">
+                  <div className="loc-index-filters">
+                    <label className="loc-index-paused">
+                      <input
+                        type="checkbox"
+                        checked={includeTest}
+                        onChange={(event) => setIncludeTest(event.target.checked)}
+                      />{" "}
+                      тестовые
+                    </label>
+                    <label className="loc-index-paused">
+                      <input
+                        type="checkbox"
+                        checked={includeDuplicates}
+                        onChange={(event) => setIncludeDuplicates(event.target.checked)}
+                      />{" "}
+                      незачётные
+                    </label>
+                  </div>
                 </FilterGroup>
               )}
             </FilterRow>

@@ -1534,10 +1534,9 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                       </div>
                     )}
                     {isHomeDistance && (
-                      <div className="lb-controls-row">
-                        <span className="lb-controls-label">
-                          Домашняя локация{" "}
-                          <InfoHint text={HOME_FILTER_HINT} />
+                      <div className="lb-visits">
+                        <span className="lb-visits-label">
+                          Домашняя локация <InfoHint text={HOME_FILTER_HINT} />
                         </span>
                         <div className="lb-gender-tabs" role="group" aria-label="Домашняя локация">
                           <button
