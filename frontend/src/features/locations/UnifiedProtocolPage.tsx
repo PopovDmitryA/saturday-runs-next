@@ -668,6 +668,11 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
             </select>
             </FilterGroup>
           )}
+          {tableColumns.hasToggle && (
+            <FilterGroup label="Колонки">
+              <TableViewToggle columns={tableColumns} inline />
+            </FilterGroup>
+          )}
           <FilterGroup label="Поиск" trailing>
             <FilterSearch
               value={search}
@@ -676,11 +681,6 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
               ariaLabel="Поиск по имени, площадке или клубу"
             />
           </FilterGroup>
-          {tableColumns.hasToggle && (
-            <FilterGroup label="Колонки">
-              <TableViewToggle columns={tableColumns} inline />
-            </FilterGroup>
-          )}
           </FilterRow>
           {loading && <span className="muted uniprot-total">Считаем…</span>}
         </FilterPanel>

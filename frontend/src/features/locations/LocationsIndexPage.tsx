@@ -419,6 +419,11 @@ function LocationsIndexContent() {
                 неактивные
               </label>
             </FilterGroup>
+            {tableColumns.hasToggle && (
+              <FilterGroup label="Колонки">
+                <TableViewToggle columns={tableColumns} inline />
+              </FilterGroup>
+            )}
             <FilterGroup label="Поиск" trailing>
               <FilterSearch
                 value={query}
@@ -426,11 +431,6 @@ function LocationsIndexContent() {
                 placeholder="Поиск: название, город или регион"
               />
             </FilterGroup>
-            {tableColumns.hasToggle && (
-              <FilterGroup label="Колонки">
-                <TableViewToggle columns={tableColumns} inline />
-              </FilterGroup>
-            )}
           </FilterRow>
         </FilterPanel>
 

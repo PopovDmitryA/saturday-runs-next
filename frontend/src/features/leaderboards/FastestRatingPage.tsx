@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GenderFilter } from "../../components/filters/GenderFilter";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { PinnedMeBar } from "../../components/tableUx/PinnedMeBar";
@@ -369,26 +370,13 @@ export function FastestRatingPage() {
                   </div>
                 </div>
 
-                <div className="lb-visits">
-                  <span className="lb-visits-label">
-                    Зачёт <InfoHint text={GENDER_HINT} />
-                  </span>
-                  <div className="lb-gender-tabs" role="group" aria-label="Зачёт по полу">
-                    {FASTEST_GENDER_TABS.map((tab) => (
-                      <button
-                        key={tab.value}
-                        type="button"
-                        aria-pressed={filters.gender === tab.value}
-                        className={`lb-gender-tab${
-                          filters.gender === tab.value ? " lb-gender-tab-active" : ""
-                        }`}
-                        onClick={() => setFilter({ gender: tab.value as FastestGender })}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <GenderFilter
+                  label="Зачёт"
+                  hint={<InfoHint text={GENDER_HINT} />}
+                  value={filters.gender as "male" | "female"}
+                  onChange={(next) => setFilter({ gender: next as FastestGender })}
+                  options={FASTEST_GENDER_TABS.map((tab) => ({ value: tab.value }))}
+                />
 
                 <div className="lb-visits">
                   <span className="lb-visits-label">Год</span>

@@ -414,6 +414,11 @@ function LastResultsContent() {
                 </label>
               </div>
             </FilterGroup>
+            {tableColumns.hasToggle && (
+              <FilterGroup label="Колонки">
+                <TableViewToggle columns={tableColumns} inline />
+              </FilterGroup>
+            )}
             <FilterGroup label="Поиск" trailing>
               <FilterSearch
                 value={query}
@@ -421,11 +426,6 @@ function LastResultsContent() {
                 placeholder="Поиск: название, город или регион"
               />
             </FilterGroup>
-            {tableColumns.hasToggle && (
-              <FilterGroup label="Колонки">
-                <TableViewToggle columns={tableColumns} inline />
-              </FilterGroup>
-            )}
           </FilterRow>
         </FilterPanel>
 

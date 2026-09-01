@@ -866,6 +866,11 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
               </button>
             </FilterGroup>
           )}
+          {tableColumns.hasToggle && (
+            <FilterGroup label="Колонки">
+              <TableViewToggle columns={tableColumns} inline />
+            </FilterGroup>
+          )}
           <FilterGroup label="Поиск" trailing>
             <FilterSearch
               value={nameFilter}
@@ -873,11 +878,6 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
               placeholder="Поиск по имени"
             />
           </FilterGroup>
-          {tableColumns.hasToggle && (
-            <FilterGroup label="Колонки">
-              <TableViewToggle columns={tableColumns} inline />
-            </FilterGroup>
-          )}
           </FilterRow>
         </FilterPanel>
 

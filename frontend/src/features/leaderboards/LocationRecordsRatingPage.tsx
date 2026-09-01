@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { GenderFilter } from "../../components/filters/GenderFilter";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
@@ -304,22 +305,11 @@ export function LocationRecordsRatingPage() {
               </div>
             </div>
 
-            <div className="lb-visits">
-              <span className="lb-visits-label">Пол</span>
-              <div className="lb-gender-tabs" role="group" aria-label="Зачёт по полу">
-                {GENDER_TABS.map((tab) => (
-                  <button
-                    key={tab.value}
-                    type="button"
-                    aria-pressed={gender === tab.value}
-                    className={`lb-gender-tab${gender === tab.value ? " lb-gender-tab-active" : ""}`}
-                    onClick={() => setGender(tab.value)}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <GenderFilter
+              value={gender ?? "male"}
+              onChange={(next) => setGender(next as LocationRecordsGender)}
+              options={GENDER_TABS.map((tab) => ({ value: tab.value }))}
+            />
 
             {scope === "age_group" && data && data.age_groups.length > 0 && (
               <div className="lb-visits">

@@ -1507,15 +1507,6 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
 
             <div className="lb-controls-shell">
               <div className="lb-controls-left">
-                {hasGenderSplit && (
-                  <GenderFilter
-                    label="Зачёт"
-                    allLabel="Абсолют"
-                    value={gender}
-                    onChange={(next) => setGender(next as LeaderboardGender)}
-                    options={GENDER_TABS.map((tab) => ({ value: tab.value }))}
-                  />
-                )}
                 {(hasMinVisits || hasPlatformFilter || hasCountByFilter) && (
                   <div className="lb-filters-row">
                     {hasCountByFilter && (
@@ -1596,6 +1587,18 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         встаёт справа от фильтра систем, а не уезжает под ряд
                         (просьба Дмитрия 27.08.2026). */}
                     <div className="lb-filters-tail">
+                    {/* Зачёт — в общем ряду с видом, системой и поиском: своей
+                        строкой он оставлял пустую вторую (правка Дмитрия
+                        01.09.2026, рейтинги побед). */}
+                    {hasGenderSplit && (
+                      <GenderFilter
+                        label="Зачёт"
+                        allLabel="Абсолют"
+                        value={gender}
+                        onChange={(next) => setGender(next as LeaderboardGender)}
+                        options={GENDER_TABS.map((tab) => ({ value: tab.value }))}
+                      />
+                    )}
                     {viewTabs && (
                       <div className="lb-visits">
                         <span className="lb-visits-label">Вид</span>

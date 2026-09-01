@@ -261,6 +261,11 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
               }))}
             />
           </FilterGroup>
+          {tableColumns.hasToggle && (
+            <FilterGroup label="Колонки">
+              <TableViewToggle columns={tableColumns} inline />
+            </FilterGroup>
+          )}
           <FilterGroup label="Поиск" trailing>
             <FilterSearch
               value={query}
@@ -268,11 +273,6 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
               ariaLabel="Поиск по имени или фамилии"
             />
           </FilterGroup>
-          {tableColumns.hasToggle && (
-            <FilterGroup label="Колонки">
-              <TableViewToggle columns={tableColumns} inline />
-            </FilterGroup>
-          )}
         </FilterRow>
         {query.trim() && (
           <span className="muted loc-people-found">

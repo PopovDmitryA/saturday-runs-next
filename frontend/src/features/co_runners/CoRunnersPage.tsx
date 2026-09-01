@@ -306,6 +306,11 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
           <>
             <FilterPanel>
               <FilterRow>
+                {tableColumns.hasToggle && (
+                  <FilterGroup label="Колонки">
+                    <TableViewToggle columns={tableColumns} inline />
+                  </FilterGroup>
+                )}
                 <FilterGroup label="Поиск" trailing>
                   <FilterSearch
                     value={query}
@@ -313,11 +318,6 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
                     placeholder="Поиск по имени"
                   />
                 </FilterGroup>
-                {tableColumns.hasToggle && (
-                  <FilterGroup label="Колонки">
-                    <TableViewToggle columns={tableColumns} inline />
-                  </FilterGroup>
-                )}
               </FilterRow>
             </FilterPanel>
             <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
