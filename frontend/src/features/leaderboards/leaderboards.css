@@ -234,9 +234,14 @@
 .lb-controls-right {
   display: flex;
   justify-content: flex-end;
-  flex: 1 1 12rem;
-  min-width: 0;
-  align-self: flex-end;
+  /* Поле ужато (было 12rem базы и рост по остатку): «Рейтинг | Журнал»,
+     «Система» и поиск теперь помещаются в одну строку панели — просьба
+     Дмитрия 01.09.2026. Плейсхолдер «Поиск по имени…» влезает и в 11rem. */
+  flex: 0 1 15rem;
+  min-width: 11rem;
+  /* По верхней линии ряда — вровень с подписями соседних групп. flex-end
+     прижимал поле к низу, и оно оказывалось строкой ниже «Системы». */
+  align-self: flex-start;
 }
 
 @media (max-width: 640px) {
@@ -2327,6 +2332,7 @@ body.has-pinned-me .lb-scroll-top {
    Свои метрики у таблеток, поля поиска и селектов чуть разные, и разница в
    пару пикселей ставила соседние группы на разные линии (репорт Дмитрия
    28.08.2026: «почему не на одной горизонтали фильтры?»). */
+.lb-controls-left .lb-view-tabs,
 .lb-controls-left .lb-gender-tabs,
 .lb-controls-left .lb-search,
 .lb-controls-left .lb-roles-gear,
@@ -2343,6 +2349,7 @@ body.has-pinned-me .lb-scroll-top {
   min-height: 2.25rem;
 }
 
+.lb-controls-left .lb-view-tabs,
 .lb-controls-left .lb-gender-tabs,
 .lb-fastest-controls .lb-gender-tabs,
 .lb-controls-left .tview-inline > .tview-toggle,

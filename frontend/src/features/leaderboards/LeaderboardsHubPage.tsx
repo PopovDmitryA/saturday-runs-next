@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { PlatformFilter as PlatformFilterControl } from "../../components/filters/PlatformFilter";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
@@ -445,24 +446,17 @@ export function LeaderboardsHubPage() {
         {/* Фильтр в такой же панели с рамкой, что и на страницах рейтингов:
             голый переключатель над карточками выбивался из общего вида. */}
         <div className="lb-controls-left lb-hub-controls">
-        <div className="lb-visits lb-hub-platform-filter">
-          <span className="lb-visits-label">
-            Система <InfoHint text={HUB_PLATFORM_FILTER_HINT} />
-          </span>
-          <div className="lb-gender-tabs" role="group" aria-label="Смотреть по системе">
-            {HUB_PLATFORM_OPTIONS.map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={platform === value}
-                className={`lb-gender-tab${platform === value ? " lb-gender-tab-active" : ""}`}
-                onClick={() => setPlatform(value)}
-              >
-                {HUB_PLATFORM_TAB_LABELS[value] ?? value}
-              </button>
-            ))}
-          </div>
-        </div>
+        <PlatformFilterControl
+          mode="single"
+          value={platform}
+          onChange={(next) => setPlatform(next as typeof platform)}
+          hint={<InfoHint text={HUB_PLATFORM_FILTER_HINT} />}
+          ariaLabel="Смотреть по системе"
+          options={HUB_PLATFORM_OPTIONS.filter((value) => value !== "all").map((value) => ({
+            code: value,
+            label: HUB_PLATFORM_TAB_LABELS[value] ?? value,
+          }))}
+        />
         </div>
 
         {sections.map((section) => (

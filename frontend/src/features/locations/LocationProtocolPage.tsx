@@ -28,6 +28,7 @@ import {
   FilterRow,
   FilterSearch,
 } from "../../components/filters/FilterPanel";
+import { GenderFilter } from "../../components/filters/GenderFilter";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns } from "../../components/tableUx/useTableColumns";
@@ -827,29 +828,15 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
         <h2>Протокол</h2>
         <FilterPanel>
           <FilterRow>
-          <FilterGroup label="Пол">
-          <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по полу">
-            {(
-              [
-                ["all", `Все (${data.results.length})`],
-                ["male", `Мужчины (${summary.male})`],
-                ["female", `Женщины (${summary.female})`],
-              ] as [GenderFilter, string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={genderFilter === key}
-                className={genderFilter === key ? "map-mode-tab active" : "map-mode-tab"}
-                onClick={() => setGenderFilter(key)}
-                disabled={key !== "all" && !genderKnown}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          </FilterGroup>
+          <GenderFilter
+            value={genderFilter}
+            onChange={(next) => setGenderFilter(next as GenderFilter)}
+            options={[
+              { value: "all", count: data.results.length },
+              { value: "male", count: summary.male, disabled: !genderKnown },
+              { value: "female", count: summary.female, disabled: !genderKnown },
+            ]}
+          />
           {ageCategories.length > 1 && (
             <FilterGroup label="Возрастная группа">
             <select

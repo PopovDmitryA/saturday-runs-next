@@ -43,6 +43,8 @@ import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
 import { ratingSubject } from "../sharing/subjects";
 import { formatFinishTime } from "./formatFinishTime";
 import { unitLabel } from "./pluralize";
+import { GenderFilter } from "../../components/filters/GenderFilter";
+import { PlatformFilter as PlatformFilterControl } from "../../components/filters/PlatformFilter";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import { JOURNAL_METRICS, type JournalMetric } from "../journal/attendanceApi";
 import { RatingJournalPanel } from "../journal/RatingJournalPanel";
@@ -1505,24 +1507,14 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
 
             <div className="lb-controls-shell">
               <div className="lb-controls-left">
-                {viewTabs}
                 {hasGenderSplit && (
-                  <div className="lb-gender">
-                    <div className="lb-gender-tabs" role="tablist" aria-label="Зачёт по полу">
-                      {GENDER_TABS.map((tab) => (
-                        <button
-                          key={tab.value}
-                          type="button"
-                          role="tab"
-                          aria-selected={gender === tab.value}
-                          className={`lb-gender-tab${gender === tab.value ? " lb-gender-tab-active" : ""}`}
-                          onClick={() => setGender(tab.value)}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <GenderFilter
+                    label="Зачёт"
+                    allLabel="Абсолют"
+                    value={gender}
+                    onChange={(next) => setGender(next as LeaderboardGender)}
+                    options={GENDER_TABS.map((tab) => ({ value: tab.value }))}
+                  />
                 )}
                 {(hasMinVisits || hasPlatformFilter || hasCountByFilter) && (
                   <div className="lb-filters-row">
@@ -1604,29 +1596,26 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         встаёт справа от фильтра систем, а не уезжает под ряд
                         (просьба Дмитрия 27.08.2026). */}
                     <div className="lb-filters-tail">
-                    {hasPlatformFilter && (
+                    {viewTabs && (
                       <div className="lb-visits">
-                        <span className="lb-visits-label">
-                          Система <InfoHint text={PLATFORM_FILTER_HINT} />
-                        </span>
-                        <div
-                          className="lb-gender-tabs"
-                          role="group"
-                          aria-label="Смотреть по системе"
-                        >
-                          {platformOptions.map((value) => (
-                            <button
-                              key={value}
-                              type="button"
-                              aria-pressed={platform === value}
-                              className={`lb-gender-tab${platform === value ? " lb-gender-tab-active" : ""}`}
-                              onClick={() => setPlatform(value)}
-                            >
-                              {PLATFORM_TAB_LABELS[value] ?? value}
-                            </button>
-                          ))}
-                        </div>
+                        <span className="lb-visits-label">Вид</span>
+                        {viewTabs}
                       </div>
+                    )}
+                    {hasPlatformFilter && (
+                      <PlatformFilterControl
+                        mode="single"
+                        value={platform}
+                        onChange={(next) => setPlatform(next as PlatformFilter)}
+                        hint={<InfoHint text={PLATFORM_FILTER_HINT} />}
+                        ariaLabel="Смотреть по системе"
+                        options={platformOptions
+                          .filter((value) => value !== "all")
+                          .map((value) => ({
+                            code: value,
+                            label: PLATFORM_TAB_LABELS[value] ?? value,
+                          }))}
+                      />
                     )}
                     {hasRoleFilter && roleCatalog.length > 0 && (
                       <div className="lb-visits lb-roles-filter">

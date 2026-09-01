@@ -10,6 +10,8 @@ import {
   FilterRow,
   FilterSearch,
 } from "../../components/filters/FilterPanel";
+import { GenderFilter } from "../../components/filters/GenderFilter";
+import { PlatformFilter } from "../../components/filters/PlatformFilter";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
@@ -628,56 +630,27 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
         </p>
         <FilterPanel>
           <FilterRow>
-          <FilterGroup label="Система">
-            <div className="map-mode-tabs" role="tablist" aria-label="Система">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={platform === null}
-                className={platform === null ? "map-mode-tab active" : "map-mode-tab"}
-                onClick={() => setPlatform(null)}
-              >
-                Все системы
-              </button>
-              {data.platforms.map((item) => (
-                <button
-                  key={item.platform_code}
-                  type="button"
-                  role="tab"
-                  aria-selected={platform === item.platform_code}
-                  className={
-                    platform === item.platform_code ? "map-mode-tab active" : "map-mode-tab"
-                  }
-                  onClick={() => setPlatform(item.platform_code)}
-                >
-                  {item.title} ({formatInt(item.finishers)})
-                </button>
-              ))}
-            </div>
-          </FilterGroup>
-          <FilterGroup label="Пол">
-          <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по полу">
-            {(
-              [
-                ["all", `Все (${formatInt(genderCounts.total)})`],
-                ["male", `Мужчины (${formatInt(genderCounts.male)})`],
-                ["female", `Женщины (${formatInt(genderCounts.female)})`],
-              ] as [GenderFilter, string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={gender === key}
-                className={gender === key ? "map-mode-tab active" : "map-mode-tab"}
-                onClick={() => setGender(key)}
-                disabled={key !== "all" && !genderKnown}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          </FilterGroup>
+          {/* Зачёт: внутри выбранной системы места пересчитываются, поэтому
+              выбор ровно один (mode="single"). */}
+          <PlatformFilter
+            mode="single"
+            value={platform ?? "all"}
+            onChange={(next) => setPlatform(next === "all" ? null : next)}
+            options={data.platforms.map((item) => ({
+              code: item.platform_code,
+              label: item.title,
+              count: item.finishers,
+            }))}
+          />
+          <GenderFilter
+            value={gender}
+            onChange={(next) => setGender(next as GenderFilter)}
+            options={[
+              { value: "all", count: genderCounts.total },
+              { value: "male", count: genderCounts.male, disabled: !genderKnown },
+              { value: "female", count: genderCounts.female, disabled: !genderKnown },
+            ]}
+          />
           {hasAgeGroups && (
             <FilterGroup label="Возрастная группа">
             <select

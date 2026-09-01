@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
+import { PlatformFilter } from "../../components/filters/PlatformFilter";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import {
   FilterGroup,
@@ -11,7 +12,13 @@ import {
 } from "../../components/filters/FilterPanel";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { getLocationsIndex, type LocationIndexItem } from "../../lib/api";
-import { formatDate, formatFinishTimeValue, formatInt, pluralizeRu } from "../../lib/format";
+import {
+  formatDate,
+  formatFinishTimeValue,
+  formatInt,
+  platformCodeLabel,
+  pluralizeRu,
+} from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns, type TableColumns } from "../../components/tableUx/useTableColumns";
@@ -348,7 +355,9 @@ function LocationsIndexContent() {
   const [items, setItems] = useState<LocationIndexItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [platformFilter, setPlatformFilter] = useState<string | null>(null);
+  // Мультивыбор: систем можно отметить сколько угодно, пустое множество —
+  // «Все» (правка Дмитрия 01.09.2026; раньше выбиралась ровно одна).
+  const [platforms, setPlatforms] = useState<Set<string>>(new Set());
   const [showPaused, setShowPaused] = useState(false);
 
   useEffect(() => {
@@ -366,7 +375,7 @@ function LocationsIndexContent() {
       if (normalizedQuery && !matchesQuery(item, normalizedQuery)) {
         return false;
       }
-      if (platformFilter && !item.platform_codes.includes(platformFilter)) {
+      if (platforms.size > 0 && !item.platform_codes.some((code) => platforms.has(code))) {
         return false;
       }
       if (!showPaused && (item.is_paused || item.is_cancelled)) {
@@ -374,7 +383,7 @@ function LocationsIndexContent() {
       }
       return true;
     });
-  }, [items, query, platformFilter, showPaused]);
+  }, [items, query, platforms, showPaused]);
 
   return (
     <PortalSectionShell sidebar={{ active: "locations" }}>
@@ -391,20 +400,15 @@ function LocationsIndexContent() {
       <section className="card loc-section loc-wide-page">
         <FilterPanel>
           <FilterRow>
-            <FilterGroup label="Система">
-              <div className="loc-index-filters">
-                {PLATFORM_FILTERS.map((code) => (
-                  <button
-                    key={code}
-                    type="button"
-                    className={`btn btn-ghost btn-sm${platformFilter === code ? " loc-hist-mode-active" : ""}`}
-                    onClick={() => setPlatformFilter(platformFilter === code ? null : code)}
-                  >
-                    <PlatformBadge code={code} />
-                  </button>
-                ))}
-              </div>
-            </FilterGroup>
+            <PlatformFilter
+              mode="multi"
+              value={platforms}
+              onChange={setPlatforms}
+              options={PLATFORM_FILTERS.map((code) => ({
+                code,
+                label: platformCodeLabel(code),
+              }))}
+            />
             <FilterGroup label="Показывать">
               <label className="loc-index-paused">
                 <input

@@ -171,3 +171,44 @@
     flex-basis: 100%;
   }
 }
+
+/* Число рядом с подписью таблетки («5 вёрст 12», «М 3») — приглушённое и
+   моноширинное по цифрам, чтобы не спорило с самой подписью. */
+.fp-tab-count {
+  margin-left: 0.35rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.65;
+  font-weight: 600;
+}
+
+/* Пол: короткие теги М и Ж в цветах гистограммы финишей — мужчины синие,
+   женщины розовые. Цвет держим и в активном состоянии, и в спокойном:
+   именно он, а не текст, опознаёт тег с одного взгляда. */
+.fp-gender .fp-tab-male {
+  color: var(--tint-blue-text);
+}
+
+.fp-gender .fp-tab-female {
+  color: var(--tint-rose-text);
+}
+
+.fp-gender .fp-tab-male.fp-tab-active {
+  background: var(--tint-blue-bg-strong);
+  color: var(--tint-blue-text);
+}
+
+.fp-gender .fp-tab-female.fp-tab-active {
+  background: var(--tint-rose-bg);
+  color: var(--tint-rose-text);
+}
+
+.fp-gender .fp-tab:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Ширину тега держим не уже квадрата: одна буква «М» в таблетке выглядела бы
+   случайной точкой рядом с многословными соседями. */
+.fp-gender .fp-tab {
+  min-width: 2.6rem;
+}

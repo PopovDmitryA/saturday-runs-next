@@ -25,6 +25,7 @@ import {
   FilterPanel,
   FilterRow,
 } from "../../components/filters/FilterPanel";
+import { PlatformFilter } from "../../components/filters/PlatformFilter";
 import { LocationAttendanceJournal } from "../journal/LocationAttendanceJournal";
 
 type SortKey = "date" | "finishers" | "volunteers" | "best_male" | "best_female" | "avg" | "newcomers" | "prs";
@@ -78,7 +79,8 @@ function LocationEventsContent({ slug }: { slug: string }) {
   const [data, setData] = useState<LocationEvents | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [platformFilter, setPlatformFilter] = useState<string | null>(null);
+  // Мультивыбор систем: пустое множество — «Все» (правка Дмитрия 01.09.2026).
+  const [platforms, setPlatforms] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<SortState>({ key: "date", asc: false });
   // Второй вид журнала — посещаемость: те же старты, но не сводкой по
   // событиям, а матрицей «участник × даты» (перенос дашборда Grafana).
@@ -151,8 +153,8 @@ function LocationEventsContent({ slug }: { slug: string }) {
     if (!data) {
       return [];
     }
-    const filtered = platformFilter
-      ? data.items.filter((item) => item.platform_code === platformFilter)
+    const filtered = platforms.size > 0
+      ? data.items.filter((item) => platforms.has(item.platform_code))
       : [...data.items];
     filtered.sort((a, b) => {
       const left = sortValue(a, sort.key);
@@ -171,7 +173,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
       return sort.asc ? compare : -compare;
     });
     return filtered;
-  }, [data, platformFilter, sort]);
+  }, [data, platforms, sort]);
 
   const toggleSort = (key: SortKey) => {
     setSort((current) =>
@@ -273,31 +275,17 @@ function LocationEventsContent({ slug }: { slug: string }) {
       {viewTabs}
         </FilterGroup>
         {view === "protocols" && platformCounts.size > 1 && (
-          <FilterGroup label="Система">
-            <div className="map-mode-tabs" role="tablist" aria-label="Фильтр по системам">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={platformFilter === null}
-                className={platformFilter === null ? "map-mode-tab active" : "map-mode-tab"}
-                onClick={() => setPlatformFilter(null)}
-              >
-                Все ({data.items.length})
-              </button>
-              {[...platformCounts.entries()].map(([code, count]) => (
-                <button
-                  key={code}
-                  type="button"
-                  role="tab"
-                  aria-selected={platformFilter === code}
-                  className={platformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
-                  onClick={() => setPlatformFilter(platformFilter === code ? null : code)}
-                >
-                  {platformCodeLabel(code)} ({formatInt(count)})
-                </button>
-              ))}
-            </div>
-          </FilterGroup>
+          <PlatformFilter
+            mode="multi"
+            value={platforms}
+            onChange={setPlatforms}
+            allLabel={`Все (${formatInt(data.items.length)})`}
+            options={[...platformCounts.entries()].map(([code, count]) => ({
+              code,
+              label: platformCodeLabel(code),
+              count,
+            }))}
+          />
         )}
           {view === "protocols" && tableColumns.hasToggle && (
             <FilterGroup label="Колонки">
