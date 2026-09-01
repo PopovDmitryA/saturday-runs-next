@@ -27,6 +27,7 @@ from app.parkrun.fetch.cdp_session import (
 )
 from app.parkrun.fetch.daemon_log import cline
 from app.parkrun.fetch.diagnostics import inspect_html_response
+from app.parkrun.fetch.proxy_pool import ProxyPool
 from app.parkrun.fetch.rate_limit import mark_fetch_completed, wait_for_turn
 from app.platform_fetch.cooldown import clear_platform_cooldown
 
@@ -67,6 +68,7 @@ class ParkrunDaemonSession:
         use_httpx: bool = False,
         fast_delay_seconds: float | None = None,
         solve_captcha: bool = False,
+        proxies: list[str] | None = None,
     ) -> None:
         settings = get_settings()
         self._use_cdp = (
@@ -95,6 +97,11 @@ class ParkrunDaemonSession:
         self.solve_captcha = solve_captcha
         self._waf_token: str | None = None
         self._solver = None  # WafTokenHarvester, лениво при первой капче
+        # Выходы для httpx-режима. Пусто — ходим со своего адреса, как раньше.
+        # Смысл пула в том, чтобы упёршись в защиту на одном выходе, взять
+        # следующий, а не останавливать всю пачку: так очередь разбирается
+        # без человека.
+        self._proxies = ProxyPool(proxies)
 
     def __enter__(self) -> ParkrunDaemonSession:
         if self.use_httpx:
@@ -104,9 +111,7 @@ class ParkrunDaemonSession:
         return self._enter_playwright()
 
     def _enter_httpx(self) -> ParkrunDaemonSession:
-        import httpx
 
-        from app.parkrun.fetch.browser import PARKRUN_USER_AGENT
 
         if self.solve_captcha:
             from app.parkrun.fetch.captcha_solver import WafTokenHarvester
@@ -119,7 +124,6 @@ class ParkrunDaemonSession:
                 )
                 self.solve_captcha = False
             else:
-                self._solver = WafTokenHarvester(PARKRUN_USER_AGENT)
                 cline(
                     "Быстрый режим: httpx + решатель капчи (CLIP). Страницы качает "
                     "httpx; при капче браузер поднимается в фоне, решает её сам и "
@@ -131,12 +135,40 @@ class ParkrunDaemonSession:
                 "сессии/капчи. Первый же признак защиты WAF останавливает всю "
                 "оставшуюся пачку — это эксперимент, не постоянный режим."
             )
-        self._httpx_client = httpx.Client(
-            headers={"User-Agent": PARKRUN_USER_AGENT},
-            timeout=20.0,
-            follow_redirects=True,
-        )
+        cline(f"Исходящий канал: {self._proxies.describe()}")
+        self._rebuild_transport()
         return self
+
+    def _rebuild_transport(self) -> None:
+        """Пересобирает httpx-клиент и решателя под текущий выход пула.
+
+        Оба обязаны ходить через один адрес: токен AWS WAF привязан к клиенту,
+        и добытый браузером с другого выхода httpx не поможет.
+        """
+        import httpx
+
+        from app.parkrun.fetch.browser import PARKRUN_USER_AGENT
+
+        proxy = self._proxies.current()
+        if self._httpx_client is not None:
+            try:
+                self._httpx_client.close()
+            except Exception:  # noqa: BLE001 — закрытие не должно ронять пачку
+                pass
+        kwargs: dict = {
+            "headers": {"User-Agent": PARKRUN_USER_AGENT},
+            "timeout": 20.0,
+            "follow_redirects": True,
+        }
+        if proxy:
+            kwargs["proxy"] = proxy
+        self._httpx_client = httpx.Client(**kwargs)
+        # токен принадлежал прежнему выходу — с новым он недействителен
+        self._waf_token = None
+        if self.solve_captcha:
+            from app.parkrun.fetch.captcha_solver import WafTokenHarvester
+
+            self._solver = WafTokenHarvester(PARKRUN_USER_AGENT, proxy=proxy)
 
     def _enter_playwright(self) -> ParkrunDaemonSession:
         from app.parkrun.fetch.browser import _ensure_context
@@ -367,8 +399,48 @@ class ParkrunDaemonSession:
             )
         else:
             wait_for_turn(reason="daemon-httpx")
-        # attempt 1 — с текущим токеном (или без него); если прилетела защита и
-        # включён решатель, добываем свежий токен браузером и пробуем ещё раз.
+        # Обходим выходы по кругу: на каждом сначала пробуем с имеющимся токеном,
+        # при защите зовём решателя и повторяем. Не помогло — берём следующий
+        # выход. Раньше здесь всегда останавливалась вся пачка, из-за чего
+        # очередь и требовала человека.
+        tries = max(1, len(self._proxies))
+        inspection = None
+        for proxy_try in range(tries):
+            html, inspection = self._fetch_via_current_proxy(url)
+            if html is not None:
+                return html
+            if proxy_try + 1 < tries:
+                self._proxies.rotate()
+                self._rebuild_transport()
+                self.show_status(
+                    f"Защита на выходе — меняю на {self._proxies.current()} "
+                    f"({proxy_try + 2} из {tries})…"
+                )
+
+        summary = inspection.summary if inspection is not None else "unknown"
+        set_captcha_pending(f"httpx:{summary}")
+        escalate_ban_cooldown()
+        self.httpx_aborted = True
+        logger.warning(
+            "parkrun httpx: protection on %s (%s) — %s",
+            url,
+            summary,
+            f"перебрал {tries} выход(ов), пачка остановлена",
+        )
+        raise ParkrunBanDetected(
+            f"Ban/protection loading {url} via httpx ({summary}). "
+            f"Перебрано выходов: {tries}. Пачка остановлена, кулдаун включён."
+        )
+
+    def _fetch_via_current_proxy(self, url: str):
+        """Качает страницу текущим выходом. Возвращает (html, inspection).
+
+        html=None означает, что выход не пустил: либо решателя нет, либо он не
+        справился. Решение о смене выхода принимает вызывающий.
+        """
+        assert self._httpx_client is not None
+        inspection = None
+        # попытка 1 — с текущим токеном; при защите добываем свежий и повторяем
         for attempt in (1, 2):
             cookies = {"aws-waf-token": self._waf_token} if self._waf_token else None
             response = self._httpx_client.get(url, cookies=cookies)
@@ -377,7 +449,7 @@ class ParkrunDaemonSession:
             if not inspection.is_protection:
                 mark_fetch_completed()
                 clear_captcha_pending()
-                return html
+                return html, inspection
             if self._solver is not None and attempt == 1:
                 self.show_status("Капча/WAF — решаю в фоне (CLIP), это ~25 с…")
                 token, cleared = self._solver.harvest(url)
@@ -394,20 +466,7 @@ class ParkrunDaemonSession:
                     )
                     continue
             break
-        # решателя нет или он не справился — ведём себя как прежний --no-browser
-        set_captcha_pending(f"httpx:{inspection.summary}")
-        escalate_ban_cooldown()
-        self.httpx_aborted = True
-        logger.warning(
-            "parkrun httpx: protection on %s (%s) — %s",
-            url,
-            inspection.summary,
-            "solver failed, aborting batch" if self._solver else "aborting batch",
-        )
-        raise ParkrunBanDetected(
-            f"Ban/protection loading {url} via httpx ({inspection.summary}). "
-            "Пачка остановлена, обычный кулдаун-механизм включён."
-        )
+        return None, inspection
 
     def _fetch_playwright(self, url: str, *, extra_wait_ms: int | None) -> str:
         from app.parkrun.fetch.browser import fetch_html_on_page, save_browser_session

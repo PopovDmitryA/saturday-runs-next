@@ -338,6 +338,7 @@ def run_daemon(
     use_httpx: bool = False,
     fast_delay_seconds: float | None = None,
     solve_captcha: bool = False,
+    proxies: list[str] | None = None,
 ) -> dict[str, object]:
     from app.config import get_settings
     from app.services.parkrun_monitoring_bridge import (
@@ -415,6 +416,7 @@ def run_daemon(
             use_httpx=use_httpx,
             fast_delay_seconds=fast_delay_seconds,
             solve_captcha=solve_captcha,
+            proxies=proxies,
         ) as browser_session:
             token = activate_daemon_session(browser_session)
             try:
