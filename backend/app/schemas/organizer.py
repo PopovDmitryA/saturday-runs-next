@@ -40,6 +40,9 @@ class AbsenceItem(BaseModel):
     runs_here: int
     runs_total: int
     missed_events: int
+    # Эта площадка — домашняя для человека (общесайтовая логика дома).
+    # По отметке страница прячет заезжих, забежавших сюда однажды.
+    is_home: bool = False
 
 
 class AbsenceResponse(BaseModel):

@@ -3365,6 +3365,8 @@ export type OrganizerAbsenceItem = {
   runs_here: number;
   runs_total: number;
   missed_events: number;
+  /** Эта площадка — домашняя для человека (та же логика, что везде на сайте). */
+  is_home?: boolean;
 };
 
 export type OrganizerAbsenceResponse = {

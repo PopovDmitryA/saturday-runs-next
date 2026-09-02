@@ -83,8 +83,13 @@ function OrganizerAbsenceContent({ slug }: { slug: string }) {
     };
   }, [slug, minRuns, minMissed]);
 
+  // Показывать только тех, для кого эта площадка домашняя: иначе в списке
+  // соседствуют свои и туристы, забежавшие сюда однажды в поездке.
+  const [homeOnly, setHomeOnly] = useState(false);
+
   const rows = useMemo(() => {
-    const items = [...(data?.items ?? [])];
+    const source = homeOnly ? (data?.items ?? []).filter((item) => item.is_home) : (data?.items ?? []);
+    const items = [...source];
     items.sort((a, b) => {
       const left = sortValue(a, sort.key);
       const right = sortValue(b, sort.key);
@@ -101,7 +106,7 @@ function OrganizerAbsenceContent({ slug }: { slug: string }) {
       return sort.asc ? compare : -compare;
     });
     return items;
-  }, [data, sort]);
+  }, [data, sort, homeOnly]);
 
   const toggleSort = (key: SortKey) => {
     setSort((current) =>
@@ -163,9 +168,18 @@ function OrganizerAbsenceContent({ slug }: { slug: string }) {
             options={MIN_MISSED_OPTIONS.map((value) => ({ value, label: String(value) }))}
           />
         </label>
+        <label className="org-toolbar-label org-toolbar-checkbox">
+          <input
+            type="checkbox"
+            checked={homeOnly}
+            onChange={(event) => setHomeOnly(event.target.checked)}
+          />{" "}
+          Только свои
+        </label>
         {data && (
           <span className="muted">
-            Найдено: {formatInt(data.total)} · событий у локации: {formatInt(data.events_total)}
+            Найдено: {formatInt(homeOnly ? rows.length : data.total)} · событий у локации:{" "}
+            {formatInt(data.events_total)}
           </span>
         )}
         </div>
@@ -197,7 +211,7 @@ function OrganizerAbsenceContent({ slug }: { slug: string }) {
                   <ColumnHeader label="Имя" {...sortProps("name")} />
                   <ColumnHeader
                     label="Последний визит"
-                    hint="Дата последней пробежки на этой локации"
+                    hint="Дата последнего появления на этой локации — пробежки или волонтёрства"
                     {...sortProps("last_date")}
                   />
                   <ColumnHeader
