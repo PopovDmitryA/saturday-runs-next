@@ -1889,7 +1889,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                 }${fixedLayout && noPlatformColumns ? " lb-table-no-platforms" : ""}${
                   showFull ? " lb-table-full" : ""
                 }${isHomeDistance ? " lb-table-wide-values" : ""}`}
-                style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
+                style={{ minWidth: tableColumns.minWidth }}
               >
                 <thead>
                   <tr>

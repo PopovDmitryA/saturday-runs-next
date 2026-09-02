@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { FilterSelect } from "../../components/filters/FilterPanel";
 import { RequireAuth } from "../../components/RequireAuth";
 import {
   ApiError,
@@ -273,48 +274,33 @@ function OrganizerPostContent({ slug }: { slug: string }) {
                 {needsEvent && dates.length > 0 && (
                   <label className="org-toolbar-label">
                     Событие{" "}
-                    <select
-                      className="input"
+                    <FilterSelect
+                      ariaLabel="Событие"
                       value={selectedEventId ?? ""}
-                      onChange={(event) => setSelectedEventId(event.target.value)}
-                    >
-                      {dates.map((item) => (
-                        <option key={item.event_id} value={item.event_id}>
-                          {eventOptionLabel(item)}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => setSelectedEventId(String(value))}
+                      options={dates.map((item) => ({ value: item.event_id, label: eventOptionLabel(item) }))}
+                    />
                   </label>
                 )}
                 {template === "upcoming" && (
                   <>
                     <label className="org-toolbar-label">
                       Пробежки от{" "}
-                      <select
-                        className="input org-select-compact"
+                      <FilterSelect
+                        ariaLabel="Пробежки от"
                         value={minRunMilestone}
-                        onChange={(event) => setMinRunMilestone(Number(event.target.value))}
-                      >
-                        {[10, 25, 50, 100].map((value) => (
-                          <option key={value} value={value}>
-                            {value}-й
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setMinRunMilestone}
+                        options={[10, 25, 50, 100].map((value) => ({ value, label: `${value}-й` }))}
+                      />
                     </label>
                     <label className="org-toolbar-label">
                       Волонтёрства от{" "}
-                      <select
-                        className="input org-select-compact"
+                      <FilterSelect
+                        ariaLabel="Волонтёрства от"
                         value={minVolMilestone}
-                        onChange={(event) => setMinVolMilestone(Number(event.target.value))}
-                      >
-                        {[10, 25, 50, 100].map((value) => (
-                          <option key={value} value={value}>
-                            {value}-го
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setMinVolMilestone}
+                        options={[10, 25, 50, 100].map((value) => ({ value, label: `${value}-го` }))}
+                      />
                     </label>
                     <span className="muted">Публикуйте в пятницу — про завтрашний старт.</span>
                   </>
@@ -322,17 +308,12 @@ function OrganizerPostContent({ slug }: { slug: string }) {
                 {template === "travelers" && (
                   <label className="org-toolbar-label">
                     Свои — от{" "}
-                    <select
-                      className="input org-select-compact"
+                    <FilterSelect
+                      ariaLabel="Свои — от скольких финишей"
                       value={travelersMinRuns}
-                      onChange={(event) => setTravelersMinRuns(Number(event.target.value))}
-                    >
-                      {[3, 5, 10, 20].map((value) => (
-                        <option key={value} value={value}>
-                          {value} финишей у нас
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setTravelersMinRuns}
+                      options={[3, 5, 10, 20].map((value) => ({ value, label: `${value} финишей у нас` }))}
+                    />
                   </label>
                 )}
                 {template === "vacancies" && (

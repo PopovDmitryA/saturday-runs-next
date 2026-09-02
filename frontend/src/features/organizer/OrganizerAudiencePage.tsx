@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { FilterSelect } from "../../components/filters/FilterPanel";
 import { RequireAuth } from "../../components/RequireAuth";
 import {
   ApiError,
@@ -247,18 +248,13 @@ function OrganizerAudienceContent({ slug }: { slug: string }) {
                 ))}
               </div>
               <span className="muted org-benchmark-controls-label">за</span>
-              <select
-                className="input org-benchmark-period"
-                value={months}
-                onChange={(event) => setMonths(Number(event.target.value))}
+              <FilterSelect
+                ariaLabel="Период сравнения"
                 title="За какой период сравниваем локации"
-              >
-                {PERIOD_OPTIONS.map((option) => (
-                  <option key={option.months} value={option.months}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                value={months}
+                onChange={setMonths}
+                options={PERIOD_OPTIONS.map((option) => ({ value: option.months, label: option.label }))}
+              />
             </div>
             {benchmark === null && <p className="muted">Считаем сравнение…</p>}
             {benchmark !== null && benchmark.metrics.length === 0 && (

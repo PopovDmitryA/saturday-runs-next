@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type React from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import "./filters.css";
 
@@ -119,29 +120,28 @@ export function FilterTabs<T extends string | number>({
  * Выпадающий список для фильтров с длинным перечнем значений.
  *
  * Ряд кнопок хорош, пока значений 3-5; годы площадки (2015…2026) и недели
- * протокола (сотни) в него не помещаются и уезжают за край экрана — там нужен
- * именно select (просьба Дмитрия 02.09.2026).
- */
-/**
- * Выпадающий список для фильтров с длинным перечнем значений.
- *
- * Ряд кнопок хорош, пока значений 3-5; годы площадки (2015…2026) и недели
  * протокола (сотни) в него не помещаются. Родной `select` тоже не годится:
  * системное меню раскрывается на всю высоту экрана, накрывает саму кнопку и
  * расползается в обе стороны от неё (Дмитрий 02.09.2026). Поэтому свой
  * listbox: высота ограничена долей экрана, открывается ПОД полем и только
- * вниз, а вверх — лишь когда снизу места нет.
+ * вниз, а вверх — лишь когда снизу места нет. Клавиатура — как у родного:
+ * стрелки ходят по пунктам, Enter выбирает, Esc закрывает.
  */
 export function FilterSelect<T extends string | number>({
   options,
   value,
   onChange,
   ariaLabel,
+  disabled = false,
+  title,
 }: {
   options: readonly FilterTabOption<T>[];
   value: T;
   onChange: (value: T) => void;
   ariaLabel: string;
+  disabled?: boolean;
+  /** Подсказка на кнопке — например, почему список выключен. */
+  title?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [dropUp, setDropUp] = useState(false);
@@ -149,7 +149,7 @@ export function FilterSelect<T extends string | number>({
   const listRef = useRef<HTMLDivElement | null>(null);
   const selected = options.find((option) => option.value === value);
 
-  // Клик мимо и Esc закрывают список.
+  // Клик мимо и Esc закрывают список; Esc возвращает фокус на кнопку.
   useEffect(() => {
     if (!open) {
       return;
@@ -162,6 +162,7 @@ export function FilterSelect<T extends string | number>({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpen(false);
+        rootRef.current?.querySelector("button")?.focus();
       }
     };
     document.addEventListener("mousedown", onPointerDown);
@@ -172,7 +173,7 @@ export function FilterSelect<T extends string | number>({
     };
   }, [open]);
 
-  // Куда раскрыться и подвести выбранное значение к глазам.
+  // Куда раскрыться, подвести выбранное к глазам и отдать ему фокус.
   useEffect(() => {
     if (!open) {
       return;
@@ -183,10 +184,41 @@ export function FilterSelect<T extends string | number>({
       // Ниже кнопки места меньше, чем выше, — открываемся вверх.
       setDropUp(window.innerHeight - box.bottom < box.top && window.innerHeight - box.bottom < 220);
     }
-    listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({
-      block: "nearest",
-    });
+    const current =
+      listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]') ??
+      listRef.current?.querySelector<HTMLElement>('[role="option"]');
+    current?.scrollIntoView({ block: "nearest" });
+    current?.focus({ preventScroll: true });
   }, [open]);
+
+  // Стрелки внутри списка ходят по пунктам, Home/End — в края.
+  const onListKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(
+      listRef.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? [],
+    );
+    if (items.length === 0) {
+      return;
+    }
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    let next = -1;
+    if (event.key === "ArrowDown") {
+      next = Math.min(items.length - 1, index + 1);
+    } else if (event.key === "ArrowUp") {
+      next = Math.max(0, index - 1);
+    } else if (event.key === "Home") {
+      next = 0;
+    } else if (event.key === "End") {
+      next = items.length - 1;
+    } else if (event.key === "Tab") {
+      setOpen(false);
+      return;
+    }
+    if (next >= 0) {
+      event.preventDefault();
+      items[next].focus();
+      items[next].scrollIntoView({ block: "nearest" });
+    }
+  };
 
   return (
     <div className="fp-select" ref={rootRef}>
@@ -196,7 +228,16 @@ export function FilterSelect<T extends string | number>({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
+        disabled={disabled}
+        title={title}
         onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          // Стрелка вниз на закрытой кнопке — открыть, как у родного select.
+          if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
       >
         <span className="fp-select-value">{selected?.label ?? String(value)}</span>
         <span className="fp-select-caret" aria-hidden="true" />
@@ -207,6 +248,7 @@ export function FilterSelect<T extends string | number>({
           role="listbox"
           aria-label={ariaLabel}
           ref={listRef}
+          onKeyDown={onListKeyDown}
         >
           {options.map((option) => {
             const active = option.value === value;
@@ -217,10 +259,12 @@ export function FilterSelect<T extends string | number>({
                 role="option"
                 aria-selected={active}
                 title={option.title}
+                tabIndex={-1}
                 className={`fp-select-option${active ? " fp-select-option-active" : ""}`}
                 onClick={() => {
                   onChange(option.value);
                   setOpen(false);
+                  rootRef.current?.querySelector("button")?.focus();
                 }}
               >
                 {option.label}

@@ -149,21 +149,25 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
     // Срез по системе: берём участия только в ней, отсекаем тех, кто в этой
     // системе не дотянул до порога, и заново нумеруем места — иначе в списке
     // остались бы дыры от выпавших строк.
-    const scoped =
-      platform === "all"
-        ? source
-        : source
-            .map((row) => ({ ...row, count: row.platform_counts?.[platform] ?? 0 }))
-            .filter((row) => row.count >= data.min_count)
-            .sort((a, b) => b.count - a.count || (a.name ?? "").localeCompare(b.name ?? ""))
-            .map((row, index, all) => ({
-              ...row,
-              // Место по-спортивному: равное число участий — равное место.
-              place:
-                index > 0 && all[index - 1].count === row.count
-                  ? (all[index - 1] as { place: number }).place
-                  : index + 1,
-            }));
+    let scoped = source;
+    if (platform !== "all") {
+      scoped = source
+        .map((row) => ({ ...row, count: row.platform_counts?.[platform] ?? 0 }))
+        .filter((row) => row.count >= data.min_count)
+        .sort((a, b) => b.count - a.count || (a.name ?? "").localeCompare(b.name ?? ""));
+      // Место по-спортивному: равное число участий — равное место, следующий
+      // за парой третьих получает пятое. Считаем бегущим значением: в map()
+      // третий аргумент — ИСХОДНЫЙ массив, и место соседа там ещё старое.
+      let place = 0;
+      let previous: number | null = null;
+      scoped = scoped.map((row, index) => {
+        if (row.count !== previous) {
+          place = index + 1;
+          previous = row.count;
+        }
+        return { ...row, place };
+      });
+    }
     const sorted = [...scoped];
     sorted.sort((a, b) => {
       const left = sortValue(a, sort.key);
@@ -353,7 +357,7 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
             className={`data-table data-table-layout-fixed loc-people-table${
               showFull ? "" : " data-table-short"
             }`}
-            style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
+            style={{ minWidth: tableColumns.minWidth }}
           >
             <colgroup>
               <col className="col-place" />
@@ -454,7 +458,9 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
           </div>
         )}
         <p className="table-foot muted">
-          {scopeRows.length > 0 && peopleTotal > 0 ? (
+          {/* Знаменатель считается по всем системам сразу, поэтому в срезе
+              одной системы его не показываем — «N из M» было бы про разное. */}
+          {scopeRows.length > 0 && peopleTotal > 0 && platform === "all" ? (
             <>
               {formatInt(scopeRows.length)} из{" "}
               {pluralizeRu(peopleTotal, ["человека", "человек", "человек"])},

@@ -172,6 +172,15 @@ def _platform_order_index(code: str) -> int:
 # Своих «11–14»/«15–17» больше нет ни у одной системы — сверено по базе.
 _RUNPARK_JUNIOR_GROUPS = {"11–14": "10–14", "15–17": "15–19"}
 
+# Правдоподобный потолок возраста для возрастных зачётов. «М120», «Ж105-109»,
+# «М110-114» — обрезки старого парсера 5 вёрст (138 строк на базу), а не
+# столетние бегуны; всё старше отсекается и в рейтингах, и в протоколах.
+MAX_PLAUSIBLE_AGE = 100
+
+
+def age_group_is_plausible(age_group: str) -> bool:
+    return _age_group_sort_key(age_group)[0] <= MAX_PLAUSIBLE_AGE
+
 
 def normalize_age_group(age_category: str | None) -> str | None:
     """«М18-24», «SM25-29», «VM35-39» → «18–24»; «М75+» → «75+»; «М10» → «<10»; «М110-114» → «110–114»."""

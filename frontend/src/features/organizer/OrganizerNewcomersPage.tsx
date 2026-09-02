@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { FilterSelect } from "../../components/filters/FilterPanel";
 import { RequireAuth } from "../../components/RequireAuth";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import {
@@ -151,17 +152,12 @@ function OrganizerNewcomersContent({ slug }: { slug: string }) {
         <div className="org-toolbar-row">
           <label className="org-toolbar-label">
             Дебюты за{" "}
-            <select
-              className="input"
+            <FilterSelect
+              ariaLabel="Дебюты за период"
               value={days}
-              onChange={(event) => setDays(Number(event.target.value))}
-            >
-              {PERIOD_OPTIONS.map((option) => (
-                <option key={option.days} value={option.days}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              onChange={setDays}
+              options={PERIOD_OPTIONS.map((option) => ({ value: option.days, label: option.label }))}
+            />
           </label>
           <input
             className="input org-newcomers-search"

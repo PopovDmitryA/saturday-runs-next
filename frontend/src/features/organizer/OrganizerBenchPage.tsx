@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { FilterSelect } from "../../components/filters/FilterPanel";
 import { RequireAuth } from "../../components/RequireAuth";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import {
@@ -317,31 +318,21 @@ function OrganizerBenchContent({ slug }: { slug: string }) {
         <div className="org-toolbar-row">
           <label className="org-toolbar-label">
             Бегуны от{" "}
-            <select
-              className="input"
+            <FilterSelect
+              ariaLabel="Бегуны от скольких пробежек"
               value={minRuns}
-              onChange={(event) => setMinRuns(Number(event.target.value))}
-            >
-              {MIN_RUNS_OPTIONS.map((value) => (
-                <option key={value} value={value}>
-                  {value} пробежек здесь
-                </option>
-              ))}
-            </select>
+              onChange={setMinRuns}
+              options={MIN_RUNS_OPTIONS.map((value) => ({ value, label: `${value} пробежек здесь` }))}
+            />
           </label>
           <label className="org-toolbar-label">
             Появлялись за{" "}
-            <select
-              className="input org-select-compact"
+            <FilterSelect
+              ariaLabel="Появлялись за период"
               value={activityMonths}
-              onChange={(event) => setActivityMonths(Number(event.target.value))}
-            >
-              {ACTIVITY_OPTIONS.map((option) => (
-                <option key={option.months} value={option.months}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              onChange={setActivityMonths}
+              options={ACTIVITY_OPTIONS.map((option) => ({ value: option.months, label: option.label }))}
+            />
           </label>
           <input
             className="input org-newcomers-search"

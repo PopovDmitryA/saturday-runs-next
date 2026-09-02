@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { FilterSelect } from "../../components/filters/FilterPanel";
 import { RequireAuth } from "../../components/RequireAuth";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import {
@@ -146,31 +147,21 @@ function OrganizerAbsenceContent({ slug }: { slug: string }) {
         <div className="org-toolbar-row">
         <label className="org-toolbar-label">
           Пробежек на локации от{" "}
-          <select
-            className="input"
+          <FilterSelect
+            ariaLabel="Пробежек на локации от"
             value={minRuns}
-            onChange={(event) => setMinRuns(Number(event.target.value))}
-          >
-            {MIN_RUNS_OPTIONS.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
+            onChange={setMinRuns}
+            options={MIN_RUNS_OPTIONS.map((value) => ({ value, label: String(value) }))}
+          />
         </label>
         <label className="org-toolbar-label">
           Пропущено событий от{" "}
-          <select
-            className="input"
+          <FilterSelect
+            ariaLabel="Пропущено событий от"
             value={minMissed}
-            onChange={(event) => setMinMissed(Number(event.target.value))}
-          >
-            {MIN_MISSED_OPTIONS.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
+            onChange={setMinMissed}
+            options={MIN_MISSED_OPTIONS.map((value) => ({ value, label: String(value) }))}
+          />
         </label>
         {data && (
           <span className="muted">

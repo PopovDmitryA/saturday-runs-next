@@ -61,6 +61,7 @@ from app.services.location_page_service import (
     _dedupe_crosslinked_events,
     _platform_link_join,
     _sort_identity_locations,
+    age_group_is_plausible,
     normalize_age_group,
 )
 from app.services.location_protocol_service import _age_grade, _row_gender
@@ -81,10 +82,6 @@ DEFAULT_PAGE_SIZE = 100
 MAX_PAGE_SIZE = 500
 
 GENDER_FILTERS = ("male", "female")
-
-
-# Правдоподобный потолок возраста: см. одноимённую константу в рейтингах.
-MAX_PLAUSIBLE_AGE = 100
 
 
 def week_start_of(anchor: date) -> date:
@@ -348,7 +345,7 @@ def _compute_week_rows(db: Session, saturday: date) -> dict[str, Any]:
         # бегуны: 138 строк на всю базу. В рейтингах их уже отсекает
         # MAX_PLAUSIBLE_AGE, здесь они вылезали ступенью «<120» в конце
         # возрастного зачёта (Дмитрий 02.09.2026).
-        if age_group is not None and _age_group_sort_key(age_group)[0] > MAX_PLAUSIBLE_AGE:
+        if age_group is not None and not age_group_is_plausible(age_group):
             age_group = None
         gender = _row_gender(platform_code, raw_category, row.gender, row.participant_age_category)
         display_name = (row.display_name or "").strip()

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FilterSelect } from "../../components/filters/FilterPanel";
 import { GenderFilter } from "../../components/filters/GenderFilter";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { PlatformBadge } from "../../components/PlatformBadge";
@@ -381,19 +382,15 @@ export function FastestRatingPage() {
 
                 <div className="lb-visits">
                   <span className="lb-visits-label">Год</span>
-                  <select
-                    className="protocol-age-select"
+                  <FilterSelect
+                    ariaLabel="Год"
                     value={filters.year}
-                    onChange={(event) => setFilter({ year: event.target.value })}
-                    aria-label="Год"
-                  >
-                    <option value={YEAR_ALL}>За всё время</option>
-                    {yearOptions.map((year) => (
-                      <option key={year} value={String(year)}>
-                        {year}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => setFilter({ year: String(value) })}
+                    options={[
+                      { value: YEAR_ALL, label: "За всё время" },
+                      ...yearOptions.map((year) => ({ value: String(year), label: String(year) })),
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -423,25 +420,17 @@ export function FastestRatingPage() {
                   <span className="lb-visits-label">
                     Группа <InfoHint text={ageGroupsAvailable ? AGE_HINT : AGE_LOCKED_HINT} />
                   </span>
-                  <span
-                    className="lb-fastest-select-wrap"
+                  <FilterSelect
+                    ariaLabel="Возрастная группа"
+                    value={filters.ageGroup}
+                    disabled={!ageGroupsAvailable}
                     title={ageGroupsAvailable ? undefined : AGE_LOCKED_HINT}
-                  >
-                    <select
-                      className="protocol-age-select"
-                      value={filters.ageGroup}
-                      disabled={!ageGroupsAvailable}
-                      onChange={(event) => setFilter({ ageGroup: event.target.value })}
-                      aria-label="Возрастная группа"
-                    >
-                      <option value={AGE_GROUP_ALL}>Все группы</option>
-                      {data.age_group_options.map((group) => (
-                        <option key={group} value={group}>
-                          {group}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
+                    onChange={(value) => setFilter({ ageGroup: String(value) })}
+                    options={[
+                      { value: AGE_GROUP_ALL, label: "Все группы" },
+                      ...data.age_group_options.map((group) => ({ value: group, label: group })),
+                    ]}
+                  />
                 </div>
 
                 {tableColumns.hasToggle && (
@@ -546,7 +535,7 @@ export function FastestRatingPage() {
               <table
                 ref={tableRef}
                 className="data-table lb-table lb-fastest-table"
-                style={tableColumns.showFull ? undefined : { minWidth: tableColumns.minWidth }}
+                style={{ minWidth: tableColumns.minWidth }}
               >
                 <thead>
                   <tr>

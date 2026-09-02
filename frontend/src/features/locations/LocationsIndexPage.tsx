@@ -194,7 +194,7 @@ function LocationsTable({
           className={`data-table data-table-layout-fixed loc-index-table${
             showFull ? "" : " data-table-short"
           }`}
-          style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
+          style={{ minWidth: tableColumns.minWidth }}
         >
         <colgroup>
           <col />

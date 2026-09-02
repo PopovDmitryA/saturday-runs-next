@@ -709,7 +709,7 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
             className={`data-table data-table-layout-fixed uniprot-table${
               showFull ? "" : " data-table-short"
             }`}
-            style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
+            style={{ minWidth: tableColumns.minWidth }}
           >
             <colgroup>
               <col className="col-number" />
