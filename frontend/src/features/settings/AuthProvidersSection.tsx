@@ -247,6 +247,15 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
                     placeholder="you@example.com"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
+                    onKeyDown={(event) => {
+                      // Enter в поле = нажатие кнопки рядом: набрал адрес и жмёшь
+                      // ввод, не целясь мышью (Дмитрий 02.09.2026). Формы здесь нет,
+                      // поэтому браузер сам этого не делает.
+                      if (event.key === "Enter" && !emailBusy && email.trim()) {
+                        event.preventDefault();
+                        void handleEmailCodeRequest();
+                      }
+                    }}
                   />
                   <button
                     type="button"
@@ -267,6 +276,13 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
                     maxLength={6}
                     value={emailCode}
                     onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, ""))}
+                    onKeyDown={(event) => {
+                      // Тот же приём на шаге кода: ввёл шесть цифр — Enter привязывает.
+                      if (event.key === "Enter" && !emailBusy && emailCode.length >= 6) {
+                        event.preventDefault();
+                        void handleEmailLink();
+                      }
+                    }}
                   />
                   <button
                     type="button"
