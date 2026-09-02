@@ -65,6 +65,8 @@ class AdminUserListItem(BaseModel):
     consent_accepted: bool = False
     created_at: datetime
     last_login_at: datetime | None = None
+    # Последний просмотр страницы: «когда человек последний раз был на сайте».
+    last_seen_at: datetime | None = None
     total_runs: int | None = None
     total_volunteering: int | None = None
     platform_links: list[AdminPlatformLinkBrief] = Field(default_factory=list)
@@ -101,6 +103,44 @@ class AdminLoginEventsResponse(BaseModel):
     logouts: int
     devices: int
     unexpected_relogins: int
+
+
+class AdminVisitPageItem(BaseModel):
+    ts: datetime
+    path: str
+    page_type: str
+    entity_key: str = ""
+    duration_sec: int | None = None
+
+
+class AdminVisitItem(BaseModel):
+    """Один заход: подряд идущие страницы с разрывом меньше получаса."""
+
+    started_at: datetime
+    ended_at: datetime
+    views: int
+    duration_sec: int
+    pages: list[AdminVisitPageItem] = Field(default_factory=list)
+    pages_hidden: int = 0
+
+
+class AdminUserVisitsResponse(BaseModel):
+    """Журнал визитов пользователя: когда и по каким страницам он ходил.
+
+    Итоги (total_views, days, first_view_at) считаются по всему сроку хранения
+    сырых просмотров — retention_days; сами визиты показываются за последнюю
+    пачку событий, truncated говорит, что заходов было больше.
+    """
+
+    items: list[AdminVisitItem] = Field(default_factory=list)
+    total_views: int = 0
+    visits_shown: int = 0
+    days: int = 0
+    first_view_at: datetime | None = None
+    last_view_at: datetime | None = None
+    last_seen_at: datetime | None = None
+    retention_days: int = 0
+    truncated: bool = False
 
 
 class AdminUserPreviewUser(BaseModel):

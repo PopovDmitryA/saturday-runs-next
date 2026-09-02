@@ -57,17 +57,18 @@ const RUNS_COLUMNS: AdaptiveColumn[] = [
   { key: "date", width: 160, required: true },
   { key: "location", width: 200, required: true },
   { key: "time", width: 112, required: true },
+  // 68px: в ячейке две иконки — оценка старта и «Поделиться» (см. .col-rating).
+  // Стоит сразу за обязательной тройкой: это действия, а не данные, и уступать
+  // место темпу с «Топ %» они не должны (Дмитрий 02.09.2026).
+  { key: "rating", width: 68, required: true },
   { key: "position", width: 104 },
   { key: "platform", width: 112 },
-  // «Участников» и «Топ %» идут парой: процент без размера старта не читается.
   { key: "participants", width: 132 },
+  { key: "gender_position", width: 136 },
+  // «Топ %» — после «Участников»: процент без размера старта не читается, а
+  // набор колонок всегда префикс этого списка, так что порядок это и гарантирует.
   { key: "top_percent", width: 112 },
   { key: "pace", width: 120 },
-  { key: "gender_position", width: 136 },
-  // 68px: в ячейке две иконки — оценка старта и «Поделиться» (см. .col-rating).
-  // Обязательная и в кратком виде: оценка и шеринг — действия, а не данные,
-  // прятать их вместе с второстепенными колонками нельзя (Дмитрий 01.09.2026).
-  { key: "rating", width: 68, required: true },
 ];
 
 function RunsContent({ bare = false }: { bare?: boolean } = {}) {
@@ -307,7 +308,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
               className={`data-table data-table-filterable data-table-layout-fixed runs-table${
                 showFull ? "" : " data-table-short"
               }`}
-              style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
+              style={{ minWidth: tableColumns.minWidth }}
             >
               <colgroup>
                 <col className="col-date" />

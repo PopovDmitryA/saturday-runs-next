@@ -323,7 +323,7 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
             <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
               <table
                 className="data-table co-runners-table"
-                style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
+                style={{ minWidth: tableColumns.minWidth }}
               >
                 <thead>
                   <tr>

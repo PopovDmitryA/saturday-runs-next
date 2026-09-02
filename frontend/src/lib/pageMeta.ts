@@ -396,6 +396,13 @@ type LocationMetaPlatform = {
   last_event_date?: string | null;
 };
 
+type LocationMetaLastEvent = {
+  event_date?: string | null;
+  finishers?: number | null;
+  best_male_time_display?: string | null;
+  best_female_time_display?: string | null;
+};
+
 type LocationMetaSource = {
   name: string;
   city?: string | null;
@@ -403,12 +410,90 @@ type LocationMetaSource = {
   stats?: {
     events_count?: number;
     finishers_total?: number;
+    last_event?: LocationMetaLastEvent | null;
     course_records?: {
       male?: { finish_time_display?: string | null } | null;
       female?: { finish_time_display?: string | null } | null;
     } | null;
   } | null;
 };
+
+const MONTHS_GENITIVE = [
+  "января",
+  "февраля",
+  "марта",
+  "апреля",
+  "мая",
+  "июня",
+  "июля",
+  "августа",
+  "сентября",
+  "октября",
+  "ноября",
+  "декабря",
+] as const;
+
+/** «2026-08-29» → «29 августа»; год пишем, только если он не нынешний. */
+function eventDatePhrase(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) {
+    return null;
+  }
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  if (month < 1 || month > 12) {
+    return null;
+  }
+  const phrase = `${day} ${MONTHS_GENITIVE[month - 1]}`;
+  return year === new Date().getFullYear() ? phrase : `${phrase} ${year}`;
+}
+
+/**
+ * Быстрейшее время последнего старта — из мужского и женского.
+ * Сравниваем строки: формат ЧЧ:ММ:СС с ведущими нулями, порядок совпадает
+ * с числовым. Зеркало _best_time_of_day, там же и объяснение.
+ */
+function bestTimeOfDay(lastEvent: LocationMetaLastEvent): string | null {
+  const known = [lastEvent.best_male_time_display, lastEvent.best_female_time_display].filter(
+    (display): display is string => Boolean(display),
+  );
+  if (!known.length) {
+    return null;
+  }
+  known.sort();
+  return stripLeadingHours(known[0]);
+}
+
+/**
+ * «Последний старт 29 августа: 168 финишёров, лучшее время 16:12».
+ * Зеркало _last_event_phrase из seo_service.py — там же и объяснение,
+ * почему свежий старт важнее исторической суммы.
+ */
+function lastEventPhrase(stats: LocationMetaSource["stats"]): string | null {
+  const lastEvent = stats?.last_event ?? null;
+  if (!lastEvent) {
+    return null;
+  }
+  const when = eventDatePhrase(lastEvent.event_date);
+  if (!when) {
+    return null;
+  }
+  const facts: string[] = [];
+  const finishers = lastEvent.finishers ?? 0;
+  if (finishers) {
+    facts.push(`${num(finishers)} ${plural(finishers, "финишёр", "финишёра", "финишёров")}`);
+  }
+  const best = bestTimeOfDay(lastEvent);
+  if (best) {
+    facts.push(`лучшее время ${best}`);
+  }
+  if (!facts.length) {
+    return `Последний старт ${when}`;
+  }
+  return `Последний старт ${when}: ${facts.join(", ")}`;
+}
 
 /**
  * Мета-теги локации по загруженным данным — зеркало build_location_meta
@@ -475,6 +560,31 @@ export function locationPageMeta(
     lead += ` (${city})`;
   }
 
+  // Свежий старт вперёд, историческая сумма — следом и только если влезет:
+  // см. lastEventPhrase о том, что показала выгрузка Вебмастера.
+  const recent = lastEventPhrase(stats);
+  if (recent) {
+    const candidates: string[] = [];
+    if (parts.length) {
+      // parts[0] — «271 старт»: сколько их всего за историю площадки.
+      candidates.push(`${lead}. ${recent}. Всего ${parts[0]}. Результаты и рейтинги.`);
+    }
+    candidates.push(
+      `${lead}. ${recent}. Результаты и рейтинги участников.`,
+      `${lead}. ${recent}. Результаты забегов.`,
+      `${lead}. ${recent}.`,
+    );
+    const description =
+      candidates.find((text) => text.length <= DESCRIPTION_BUDGET) ??
+      fitDescription(`${lead}. ${recent}.`);
+    return {
+      title: fitTitle(where, " — результаты и статистика", " — результаты"),
+      description,
+      indexable: true,
+    };
+  }
+
+  // Свежего старта нет (площадка без событий) — прежнее описание по суммам.
   return {
     title: fitTitle(where, " — результаты и статистика", " — результаты"),
     description: describe(
@@ -567,6 +677,17 @@ function fitTitle(head: string, ...tails: string[]): string {
   return head;
 }
 
+/** Обрезка до DESCRIPTION_BUDGET целыми предложениями — зеркало _fit_description. */
+function fitDescription(text: string): string {
+  const withDot = text.endsWith(".") ? text : `${text}.`;
+  if (withDot.length <= DESCRIPTION_BUDGET) {
+    return withDot;
+  }
+  const cut = withDot.slice(0, DESCRIPTION_BUDGET);
+  const dot = cut.lastIndexOf(". ");
+  return dot > DESCRIPTION_BUDGET / 2 ? cut.slice(0, dot + 1) : `${cut.replace(/[ ,;:—-]+$/, "")}…`;
+}
+
 /** Описание под DESCRIPTION_BUDGET — зеркало _describe. */
 function describe(lead: string, numbers: string, ...tails: string[]): string {
   const head = numbers ? `${lead}: ${numbers}` : lead;
@@ -576,13 +697,7 @@ function describe(lead: string, numbers: string, ...tails: string[]): string {
       return candidate;
     }
   }
-  const withDot = head.endsWith(".") ? head : `${head}.`;
-  if (withDot.length <= DESCRIPTION_BUDGET) {
-    return withDot;
-  }
-  const cut = withDot.slice(0, DESCRIPTION_BUDGET);
-  const dot = cut.lastIndexOf(". ");
-  return dot > DESCRIPTION_BUDGET / 2 ? cut.slice(0, dot + 1) : `${cut.replace(/[ ,;:—-]+$/, "")}…`;
+  return fitDescription(head);
 }
 
 /**

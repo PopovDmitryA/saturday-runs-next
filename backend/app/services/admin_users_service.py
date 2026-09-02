@@ -171,7 +171,7 @@ def _user_result_count_subquery(result_model: type[RunResult] | type[VolunteerRe
     )
 
 
-SORT_KEYS = {"created", "runs", "volunteering", "profile"}
+SORT_KEYS = {"created", "runs", "volunteering", "profile", "seen"}
 
 
 def search_admin_users(
@@ -233,12 +233,18 @@ def search_admin_users(
         sort_col = func.coalesce(runs_sq.c.cnt, 0)
     elif sort == "volunteering":
         sort_col = func.coalesce(vol_sq.c.cnt, 0)
+    elif sort == "seen":
+        # Последний визит: у кого его нет, тот в самом конце при любом порядке
+        # (nullslast ниже) — иначе «кто давно не заходил» упирается в NULL.
+        sort_col = User.last_seen_at
     elif sort == "profile":
         # 1 — есть ссылка на профиль (public_slug), 0 — нет; desc = непустые сверху.
         sort_col = case((User.public_slug.isnot(None), 1), else_=0)
     else:
         sort_col = User.created_at
     order_clause = sort_col.desc() if descending else sort_col.asc()
+    if sort == "seen":
+        order_clause = order_clause.nullslast()
 
     users = (
         ordered.order_by(order_clause, User.created_at.desc(), User.id)
@@ -284,6 +290,7 @@ def search_admin_users(
                 "consent_accepted": user.consent_accepted,
                 "created_at": user.created_at,
                 "last_login_at": user.last_login_at,
+                "last_seen_at": user.last_seen_at,
                 "total_runs": total_runs,
                 "total_volunteering": total_volunteering,
                 "platform_links": links,

@@ -392,3 +392,21 @@ def test_setting_preferences_clears_notice(db_session: Session) -> None:
 
     set_display_name_preferences(db_session, user, style=STYLE_AUTO, platform_code=None)
     assert user.display_name_notice is None
+
+
+def test_word_order_change_is_not_suggested(db_session: Session) -> None:
+    """Перестановка имени и фамилии проходит молча, без баннера.
+
+    «Попов Дмитрий» и «Дмитрий Попов» — одно и то же имя: спрашивать о таком
+    человека незачем, порядок просто берётся как в беговой системе
+    (просьба Дмитрия 02.09.2026).
+    """
+    from app.services.user_display_name_service import _same_words
+
+    assert _same_words("Попов Дмитрий", "Дмитрий Попов")
+    assert _same_words("ПОПОВ дмитрий", "Дмитрий Попов")
+    assert _same_words("Семён Фёдоров", "Федоров Семен")
+    # Разные имена перестановкой не становятся.
+    assert not _same_words("Дмитрий Попов", "Дмитрий Петров")
+    assert not _same_words("Дмитрий Попов", None)
+    assert not _same_words("", "Дмитрий Попов")

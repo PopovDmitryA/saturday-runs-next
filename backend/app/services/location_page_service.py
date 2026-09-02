@@ -164,6 +164,24 @@ def _platform_order_index(code: str) -> int:
         return len(PLATFORM_ORDER)
 
 
+# Юниорская лестница RunPark — единственная, которая не ложится на общие
+# ступени: JM11-14/JW11-14 и JM15-17/JW15-17 против «10–14» и «15–19» у
+# 5 вёрст. В зачёте эти системы идут в одних ступенях (см. подпись под
+# возрастными группами), поэтому «11–14» и «15–17» вылезали отдельными
+# строками на 1–3 человека и выглядели ошибкой данных (Дмитрий 02.09.2026).
+# Своих «11–14»/«15–17» больше нет ни у одной системы — сверено по базе.
+_RUNPARK_JUNIOR_GROUPS = {"11–14": "10–14", "15–17": "15–19"}
+
+# Правдоподобный потолок возраста для возрастных зачётов. «М120», «Ж105-109»,
+# «М110-114» — обрезки старого парсера 5 вёрст (138 строк на базу), а не
+# столетние бегуны; всё старше отсекается и в рейтингах, и в протоколах.
+MAX_PLAUSIBLE_AGE = 100
+
+
+def age_group_is_plausible(age_group: str) -> bool:
+    return _age_group_sort_key(age_group)[0] <= MAX_PLAUSIBLE_AGE
+
+
 def normalize_age_group(age_category: str | None) -> str | None:
     """«М18-24», «SM25-29», «VM35-39» → «18–24»; «М75+» → «75+»; «М10» → «<10»; «М110-114» → «110–114»."""
     if not age_category:
@@ -171,7 +189,8 @@ def normalize_age_group(age_category: str | None) -> str | None:
     cleaned = age_category.strip()
     match = _AGE_RANGE_RE.match(cleaned)
     if match:
-        return f"{int(match.group(1))}–{int(match.group(2))}"
+        group = f"{int(match.group(1))}–{int(match.group(2))}"
+        return _RUNPARK_JUNIOR_GROUPS.get(group, group)
     match = _AGE_PLUS_RE.match(cleaned)
     if match:
         return f"{int(match.group(1))}+"
@@ -970,10 +989,15 @@ def _compute_location_participants(db: Session, slug: str) -> dict[str, object] 
         db, VolunteerResult, event_ids, test_event_ids=test_event_ids
     )
 
+    # Системы этой площадки — по ним фильтр. У одиночной системы фильтр
+    # показывать незачем, поэтому фронт смотрит на длину списка.
+    platform_codes = sorted({code for _location, code in identity.locations}, key=_platform_order_index)
+
     return {
         "slug": identity.slug,
         "name": identity.name,
         "min_count": LOCATION_ACTIVE_MIN_COUNT,
+        "platform_codes": platform_codes,
         "runners": runners,
         "volunteers": volunteers,
         # Знаменатель для подписи «показаны N из M побывавших здесь»: без него
@@ -1049,6 +1073,23 @@ def _active_participant_rows(
     )
     people_total = len(local_rows)
 
+    # Участия в разрезе систем: нужны фильтру «Система» на странице состава.
+    # Отдельным запросом, а не в основном: там группировка по человеку, и
+    # добавление платформы в GROUP BY размножило бы строки.
+    platform_counts: dict[Any, dict[str, int]] = {}
+    for gkey, platform_code, count in (
+        db.query(group_key.label("group_key"), Platform.code, func.count(func.distinct(model.event_id)))
+        .select_from(model)
+        .join(Event, model.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(Participant, model.participant_id == Participant.id)
+        .outerjoin(PlatformLink, _platform_link_join())
+        .filter(model.event_id.in_(event_ids))
+        .group_by(group_key, Platform.code)
+        .all()
+    ):
+        platform_counts.setdefault(gkey, {})[str(platform_code)] = int(count)
+
     active = [row for row in local_rows if int(row.count) >= min_count]
     active.sort(key=lambda row: (-int(row.count), (row.name or "").lower()))
     if not active:
@@ -1097,6 +1138,9 @@ def _active_participant_rows(
                 "total_count": max(totals.get(row.group_key, count), count),
                 "first_date": row.first_date.isoformat() if row.first_date else None,
                 "last_date": row.last_date.isoformat() if row.last_date else None,
+                # Сколько раз человек был здесь в каждой системе — по этим
+                # числам фильтр «Система» пересобирает список и места.
+                "platform_counts": platform_counts.get(row.group_key, {}),
             }
         )
     return rows, people_total
@@ -2396,6 +2440,11 @@ class _IndexIdentityStat:
     best_female_time_sec: int | None = None
     attendance_record_finishers: int | None = None
     attendance_record_date: date | None = None
+    # Сумма и число финишей — из них считается среднее время площадки.
+    # Держим слагаемые, а не готовое среднее: идентичность склеивает
+    # несколько локаций, и усреднять уже усреднённое было бы неверно.
+    finish_time_sum_sec: int = 0
+    finish_time_count: int = 0
 
 
 def _bulk_identity_stats(
@@ -2501,6 +2550,33 @@ def _bulk_identity_stats(
                 stat.best_male_time_sec = int(best)
         elif stat.best_female_time_sec is None or int(best) < stat.best_female_time_sec:
             stat.best_female_time_sec = int(best)
+
+    # Среднее время финишёров площадки: тем же фильтром финишёров, что и
+    # рекорды (finish_time_sec IS NOT NULL AND > 0). Вторичные события
+    # кросслинков не исключаем сознательно — у зеркала те же самые времена,
+    # и на среднее они не влияют, а join к списку исключений стоил бы дорого.
+    avg_rows = (
+        db.query(
+            Event.location_id,
+            func.sum(RunResult.finish_time_sec).label("total"),
+            func.count(RunResult.id).label("count"),
+        )
+        .join(Event, RunResult.event_id == Event.id)
+        .filter(
+            Event.location_id.in_(location_ids),
+            Event.is_test_event.is_(False),
+            RunResult.finish_time_sec.isnot(None),
+            RunResult.finish_time_sec > 0,
+        )
+        .group_by(Event.location_id)
+        .all()
+    )
+    for location_id, total, count in avg_rows:
+        if not count:
+            continue
+        stat = stats.setdefault(location_id_to_identity[location_id], _IndexIdentityStat())
+        stat.finish_time_sum_sec += int(total or 0)
+        stat.finish_time_count += int(count)
 
     return stats
 
@@ -2713,6 +2789,13 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
         stat = identity_stats.get(identity_key)
         is_paused, is_cancelled = _identity_status(catalog_index, ordered)
         system_code, system_first_date = _first_event_in_current_system(ordered, stat)
+        # Среднее время финишёра площадки — по сумме и числу финишей всех её
+        # локаций: усреднять уже усреднённое по системам было бы неверно.
+        avg_finish_sec = (
+            round(stat.finish_time_sum_sec / stat.finish_time_count)
+            if stat and stat.finish_time_count
+            else None
+        )
         items.append(
             {
                 "slug": primary_location.external_key.strip().lower(),
@@ -2738,6 +2821,10 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
                 ),
                 "attendance_record_finishers": stat.attendance_record_finishers if stat else None,
                 "attendance_record_date": stat.attendance_record_date if stat else None,
+                "avg_finish_time_sec": avg_finish_sec,
+                "avg_finish_time_display": (
+                    format_finish_time_display(avg_finish_sec) if avg_finish_sec is not None else None
+                ),
                 "best_female_time_sec": stat.best_female_time_sec if stat else None,
                 "best_female_time_display": (
                     format_finish_time_display(stat.best_female_time_sec)

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FilterSelect } from "../../components/filters/FilterPanel";
+import { PlatformBadge } from "../../components/PlatformBadge";
 import { GenderFilter } from "../../components/filters/GenderFilter";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { TableWrap } from "../../components/tableUx/TableWrap";
@@ -345,24 +347,18 @@ export function LocationRecordsRatingPage() {
             {scope === "age_group" && data && data.age_groups.length > 0 && (
               <div className="lb-visits">
                 <span className="lb-visits-label">Группа</span>
-                {/* Тот же контрол, что фильтрует возрастные группы в протоколе
-                    локации (.protocol-age-select) — не заводим второй вид
-                    выпадающего списка ради одной страницы. */}
-                <select
-                  className="protocol-age-select lb-locrec-select"
+                <FilterSelect
+                  ariaLabel="Возрастная группа"
                   value={ageGroup ?? data.age_group ?? ""}
-                  onChange={(event) => void changeAgeGroup(event.target.value)}
-                  aria-label="Возрастная группа"
-                >
-                  {data.age_groups.map((group) => (
-                    <option key={group.key} value={group.age_group}>
-                      {group.age_group}
-                      {data.viewer_age_group === group.age_group && data.viewer_gender === data.gender
-                        ? " — ваша"
-                        : ""}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => void changeAgeGroup(String(value))}
+                  options={data.age_groups.map((group) => ({
+                    value: group.age_group,
+                    label:
+                      data.viewer_age_group === group.age_group && data.viewer_gender === data.gender
+                        ? `${group.age_group} — ваша`
+                        : group.age_group,
+                  }))}
+                />
               </div>
             )}
 
@@ -437,7 +433,13 @@ export function LocationRecordsRatingPage() {
                     <div className="rowcard-right">
                       <div className="rowcard-value">{stripLeadingHours(row.finish_time_display)}</div>
                       {data.scope === "absolute" && data.platform === "all" && (
-                        <div className="rowcard-sub">{row.platform_label}</div>
+                        <div className="rowcard-sub">
+                          {row.platform_code ? (
+                            <PlatformBadge code={row.platform_code} />
+                          ) : (
+                            (row.platform_label ?? "—")
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -483,7 +485,13 @@ export function LocationRecordsRatingPage() {
                           <RecordDate row={row} />
                         </td>
                         {data.scope === "absolute" && data.platform === "all" && (
-                          <td className="lb-locrec-platform">{row.platform_label}</td>
+                          <td className="lb-locrec-platform">
+                            {row.platform_code ? (
+                              <PlatformBadge code={row.platform_code} />
+                            ) : (
+                              (row.platform_label ?? "—")
+                            )}
+                          </td>
                         )}
                       </tr>
                     ))}

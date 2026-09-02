@@ -9,6 +9,7 @@ import {
   FilterPanel,
   FilterRow,
   FilterSearch,
+  FilterSelect,
 } from "../../components/filters/FilterPanel";
 import { GenderFilter } from "../../components/filters/GenderFilter";
 import { PlatformFilter } from "../../components/filters/PlatformFilter";
@@ -385,20 +386,17 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
             <span className="muted">первая неделя</span>
           )}
           {weekOptions.length > 1 && (
-            <select
-              className="protocol-age-select uniprot-week-select"
+            <FilterSelect
+              ariaLabel="Неделя"
               value={data.saturday}
-              onChange={(event) => {
-                window.location.href = unifiedProtocolHref(event.target.value || null);
+              onChange={(value) => {
+                window.location.href = unifiedProtocolHref(String(value) || null);
               }}
-              aria-label="Неделя"
-            >
-              {weekOptions.map((week) => (
-                <option key={week.saturday} value={week.saturday}>
-                  {formatDate(week.saturday)} · {formatInt(week.finishers)}
-                </option>
-              ))}
-            </select>
+              options={weekOptions.map((week) => ({
+                value: week.saturday,
+                label: `${formatDate(week.saturday)} · ${formatInt(week.finishers)}`,
+              }))}
+            />
           )}
           {data.next_saturday ? (
             <a href={unifiedProtocolHref(data.next_saturday)}>
@@ -662,19 +660,18 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
           />
           {hasAgeGroups && (
             <FilterGroup label="Возрастная группа">
-            <select
-              className="protocol-age-select"
+            <FilterSelect
+              ariaLabel="Фильтр по возрастной группе"
               value={ageGroup ?? ""}
-              onChange={(event) => setAgeGroup(event.target.value || null)}
-              aria-label="Фильтр по возрастной группе"
-            >
-              <option value="">Все группы</option>
-              {data.age_groups.map((group) => (
-                <option key={group.age_group} value={group.age_group}>
-                  {group.age_group} ({formatInt(group.total)})
-                </option>
-              ))}
-            </select>
+              onChange={(value) => setAgeGroup(String(value) || null)}
+              options={[
+                { value: "", label: "Все группы" },
+                ...data.age_groups.map((group) => ({
+                  value: group.age_group,
+                  label: `${group.age_group} (${formatInt(group.total)})`,
+                })),
+              ]}
+            />
             </FilterGroup>
           )}
           {tableColumns.hasToggle && (
@@ -712,7 +709,7 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
             className={`data-table data-table-layout-fixed uniprot-table${
               showFull ? "" : " data-table-short"
             }`}
-            style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
+            style={{ minWidth: tableColumns.minWidth }}
           >
             <colgroup>
               <col className="col-number" />

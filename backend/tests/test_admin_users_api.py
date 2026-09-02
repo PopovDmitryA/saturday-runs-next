@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -12,7 +13,15 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.main import app
-from app.models import AuthIdentity, AuthProvider, Participant, Platform, PlatformLink, User
+from app.models import (
+    AuthIdentity,
+    AuthProvider,
+    PageViewEvent,
+    Participant,
+    Platform,
+    PlatformLink,
+    User,
+)
 
 
 @pytest.fixture
@@ -231,3 +240,51 @@ def test_admin_users_search_by_platform_participant_name(client: TestClient, db_
     link = next(link for link in item["platform_links"] if link["platform_code"] == "five_verst")
     assert link["display_name"] == "Кузин Олег"
     assert link["external_user_id"] == external_id
+
+
+def test_admin_user_visits_journal(client: TestClient, db_session: Session) -> None:
+    target = User(
+        telegram_id=int(uuid4().int % 10_000_000_000),
+        telegram_username="visited_user",
+        consent_accepted=True,
+    )
+    db_session.add(target)
+    db_session.flush()
+    base = datetime.now(timezone.utc) - timedelta(days=2)
+    for offset_minutes, path in ((0, "/dashboard"), (7, "/runs"), (300, "/locations")):
+        db_session.add(
+            PageViewEvent(
+                view_id=uuid4(),
+                ts=base + timedelta(minutes=offset_minutes),
+                path=path,
+                page_type=path.strip("/"),
+                entity_key="",
+                visitor_key=f"u:{target.id}",
+                viewer_user_id=target.id,
+            )
+        )
+    target.last_seen_at = base + timedelta(minutes=300)
+    db_session.commit()
+
+    _login_admin(client)
+
+    response = client.get(f"/api/admin/users/{target.id}/visits")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_views"] == 3
+    # Два захода: между /runs и /locations разрыв почти пять часов.
+    assert payload["visits_shown"] == 2
+    assert len(payload["items"]) == 2
+    assert payload["last_seen_at"] is not None
+    assert payload["retention_days"] > 0
+
+    listed = client.get("/api/admin/users", params={"q": "visited_user"})
+    item = next(row for row in listed.json()["items"] if row["id"] == str(target.id))
+    assert item["last_seen_at"] is not None
+
+
+def test_admin_user_visits_unknown_user(client: TestClient) -> None:
+    _login_admin(client)
+
+    response = client.get(f"/api/admin/users/{uuid4()}/visits")
+    assert response.status_code == 404

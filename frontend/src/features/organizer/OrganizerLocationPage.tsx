@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { FilterSelect } from "../../components/filters/FilterPanel";
 import { RequireAuth } from "../../components/RequireAuth";
 import {
   ApiError,
@@ -235,17 +236,12 @@ function OrganizerLocationContent({ slug }: { slug: string }) {
             <div className="org-toolbar-row">
             <label className="org-toolbar-label">
               Событие{" "}
-              <select
-                className="input"
+              <FilterSelect
+                ariaLabel="Событие"
                 value={selectedEventId ?? ""}
-                onChange={(event) => setSelectedEventId(event.target.value)}
-              >
-                {dates.map((item) => (
-                  <option key={item.event_id} value={item.event_id}>
-                    {eventOptionLabel(item)}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => setSelectedEventId(String(value))}
+                options={dates.map((item) => ({ value: item.event_id, label: eventOptionLabel(item) }))}
+              />
             </label>
             {/* Кнопка «Скачать .xlsx» убрана по решению Дмитрия 24.08.2026;
                 эндпоинт экспорта на бэкенде остался. */}

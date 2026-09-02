@@ -8,6 +8,7 @@ import {
   deleteAdminOrganizerGrant,
   getAdminUserLoginEvents,
   getAdminUserOrganizerAccess,
+  getAdminUserVisits,
   getLocationsIndex,
   listAdminUsers,
   triggerAdminUserSyncPlatform,
@@ -16,13 +17,15 @@ import {
   type AdminPlatformLinkBrief,
   type AdminUserHomeLocation,
   type AdminUserListItem,
+  type AdminUserVisitsResponse,
   type AdminUsersSort,
   type AdminUsersSortDirection,
   type LocationIndexItem,
 } from "../../lib/api";
-import { formatDateTime, formatInt, platformCodeLabel } from "../../lib/format";
+import { formatDateTime, formatInt, formatRelativeTime, platformCodeLabel } from "../../lib/format";
 import { platformProfileUrl } from "../../lib/platformProfileUrl";
 import { authLoginUrl, authProviderLabel, userLoginLines } from "./adminUserDisplay";
+import { pageTypeLabel } from "./pageTypeLabels";
 
 // Платформы, для которых бэкенд поддерживает ручной запуск синка (см. ADMIN_SUPPORTED_SYNC_PLATFORMS).
 const SYNCABLE_PLATFORMS = new Set(["five_verst", "s95", "parkrun"]);
@@ -83,6 +86,110 @@ function LoginJournal({ data }: { data: AdminLoginEventsResponse }) {
               <td>{loginProviderLabel(event.provider) || "—"}</td>
               <td>{event.ip || "—"}</td>
               <td title={event.user_agent}>{shortUserAgent(event.user_agent)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// «Был на сайте»: в списке важно не точное время, а давность — «вчера» и
+// «полгода назад» видно с одного взгляда. Точная дата — в подсказке.
+function LastSeenCell({ value }: { value: string | null }) {
+  if (!value) {
+    return (
+      <span className="muted" title="Ни одного просмотра страницы после включения отметки визитов">
+        —
+      </span>
+    );
+  }
+  return <span title={formatDateTime(value)}>{formatRelativeTime(value)}</span>;
+}
+
+function formatVisitDuration(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds} с`;
+  }
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} мин`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours} ч ${rest} мин` : `${hours} ч`;
+}
+
+function visitTimeRange(visit: { started_at: string; ended_at: string }): string {
+  const start = new Date(visit.started_at);
+  const end = new Date(visit.ended_at);
+  const time = (date: Date) =>
+    date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return formatDateTime(visit.started_at);
+  }
+  return `${formatDateTime(visit.started_at)} — ${time(end)}`;
+}
+
+// Журнал визитов: страницы, склеенные в заходы (разрыв меньше получаса — один
+// заход). Отвечает на «когда человек последний раз пользовался сайтом», на что
+// журнал входов не отвечает: сессия живёт месяцами.
+function VisitsJournal({ data }: { data: AdminUserVisitsResponse }) {
+  if (data.items.length === 0) {
+    return (
+      <p className="muted">
+        {data.last_seen_at
+          ? `Просмотров за последние ${data.retention_days} дней нет. Последний визит: ${formatDateTime(data.last_seen_at)} (${formatRelativeTime(data.last_seen_at)}).`
+          : "Ни одного просмотра страницы — человек не заходил на сайт (или заходил до того, как визиты начали отмечаться)."}
+      </p>
+    );
+  }
+  return (
+    <div className="admin-login-journal">
+      <p className="admin-login-journal-summary">
+        Последний визит: <strong>{formatDateTime(data.last_seen_at ?? data.last_view_at)}</strong>
+        {data.last_seen_at && <> ({formatRelativeTime(data.last_seen_at)})</>} · заходов в журнале:{" "}
+        <strong>{formatInt(data.visits_shown)}</strong> · страниц за {data.retention_days} дней:{" "}
+        <strong>{formatInt(data.total_views)}</strong> · дней с визитами:{" "}
+        <strong>{formatInt(data.days)}</strong>
+      </p>
+      {data.truncated && (
+        <p className="muted">
+          Показаны последние заходы: просмотров в окне больше, чем помещается в журнал.
+        </p>
+      )}
+      <table className="admin-table admin-login-journal-table">
+        <thead>
+          <tr>
+            <th>Заход</th>
+            <th>Длительность</th>
+            <th>Страниц</th>
+            <th>Что смотрел</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.items.map((visit) => (
+            <tr key={visit.started_at}>
+              <td>{visitTimeRange(visit)}</td>
+              <td>{formatVisitDuration(visit.duration_sec)}</td>
+              <td>{formatInt(visit.views)}</td>
+              <td>
+                <ul className="admin-visit-pages">
+                  {visit.pages.map((page, index) => (
+                    <li key={`${page.ts}-${index}`} title={page.path}>
+                      <a href={page.path} target="_blank" rel="noreferrer">
+                        {pageTypeLabel(page.page_type)}
+                      </a>
+                      {page.duration_sec != null && (
+                        <span className="muted"> · {formatVisitDuration(page.duration_sec)}</span>
+                      )}
+                    </li>
+                  ))}
+                  {visit.pages_hidden > 0 && (
+                    <li className="muted">…и ещё {formatInt(visit.pages_hidden)}</li>
+                  )}
+                </ul>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -442,6 +549,10 @@ function AdminUsersContent() {
   const [journal, setJournal] = useState<AdminLoginEventsResponse | null>(null);
   const [journalLoading, setJournalLoading] = useState(false);
   const [journalError, setJournalError] = useState<string | null>(null);
+  const [visitsUserId, setVisitsUserId] = useState<string | null>(null);
+  const [visits, setVisits] = useState<AdminUserVisitsResponse | null>(null);
+  const [visitsLoading, setVisitsLoading] = useState(false);
+  const [visitsError, setVisitsError] = useState<string | null>(null);
   const [accessUserId, setAccessUserId] = useState<string | null>(null);
   const [access, setAccess] = useState<AdminOrganizerAccessResponse | null>(null);
   const [accessLoading, setAccessLoading] = useState(false);
@@ -456,8 +567,8 @@ function AdminUsersContent() {
   }>({ open: false, title: "", message: "", variant: "default" });
 
   const platformsFull = platformsView === "full";
-  // Колонок в строке: восемь постоянных плюс одна свёрнутая или четыре системы.
-  const columnCount = 8 + (platformsFull ? PLATFORM_CODES.length : 1);
+  // Колонок в строке: девять постоянных плюс одна свёрнутая или четыре системы.
+  const columnCount = 9 + (platformsFull ? PLATFORM_CODES.length : 1);
 
   const changePlatformsView = useCallback((view: "short" | "full") => {
     setPlatformsView(view);
@@ -507,6 +618,27 @@ function AdminUsersContent() {
       }
     },
     [journalUserId],
+  );
+
+  const handleToggleVisits = useCallback(
+    async (userId: string) => {
+      if (visitsUserId === userId) {
+        setVisitsUserId(null);
+        return;
+      }
+      setVisitsUserId(userId);
+      setVisits(null);
+      setVisitsError(null);
+      setVisitsLoading(true);
+      try {
+        setVisits(await getAdminUserVisits(userId));
+      } catch (err) {
+        setVisitsError(err instanceof Error ? err.message : "Не удалось загрузить журнал визитов");
+      } finally {
+        setVisitsLoading(false);
+      }
+    },
+    [visitsUserId],
   );
 
   const handleToggleAccess = useCallback(
@@ -708,6 +840,16 @@ function AdminUsersContent() {
                   <th>
                     <button
                       type="button"
+                      className={`admin-sort-th${sort === "seen" ? " active" : ""}`}
+                      onClick={() => handleSort("seen")}
+                      title="Последний просмотр страницы на сайте — в отличие от входа, обновляется на каждом заходе"
+                    >
+                      Был на сайте {sort === "seen" ? (direction === "asc" ? "▲" : "▼") : ""}
+                    </button>
+                  </th>
+                  <th>
+                    <button
+                      type="button"
                       className={`admin-sort-th${sort === "profile" ? " active" : ""}`}
                       onClick={() => handleSort("profile")}
                       title="Сортировка: сначала пользователи со ссылкой на профиль"
@@ -774,6 +916,7 @@ function AdminUsersContent() {
                       <td title={formatDateTime(user.created_at)}>
                         {formatDateTime(user.created_at)}
                       </td>
+                      <td><LastSeenCell value={user.last_seen_at} /></td>
                       <td>
                         {user.public_slug ? (
                           <a
@@ -806,6 +949,14 @@ function AdminUsersContent() {
                           <button
                             type="button"
                             className="btn btn-ghost btn-sm"
+                            onClick={() => void handleToggleVisits(user.id)}
+                            title="Заходы на сайт: когда и по каким страницам ходил"
+                          >
+                            {visitsUserId === user.id ? "Скрыть визиты" : "Визиты"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
                             onClick={() => void handleToggleAccess(user.id)}
                           >
                             {accessUserId === user.id ? "Скрыть оргдоступ" : "Оргдоступ"}
@@ -822,9 +973,18 @@ function AdminUsersContent() {
                         </td>
                       </tr>
                     )}
+                    {visitsUserId === user.id && (
+                      <tr className="admin-login-journal-row">
+                        <td colSpan={columnCount}>
+                          {visitsLoading && <p className="muted">Загружаем журнал визитов…</p>}
+                          {visitsError && <p className="form-error">{visitsError}</p>}
+                          {!visitsLoading && !visitsError && visits && <VisitsJournal data={visits} />}
+                        </td>
+                      </tr>
+                    )}
                     {accessUserId === user.id && (
                       <tr className="admin-login-journal-row">
-                        <td colSpan={11}>
+                        <td colSpan={columnCount}>
                           {accessLoading && <p className="muted">Загружаем оргдоступ…</p>}
                           {accessError && <p className="form-error">{accessError}</p>}
                           {!accessLoading && !accessError && access && (

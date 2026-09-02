@@ -122,6 +122,115 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Выпадающий список в панели фильтров — та же «таблетка», что у сегментов,
+   только для перечней, которые в ряд кнопок не помещаются (годы, недели).
+   Список свой, а не родное меню браузера: то раскрывалось на всю высоту
+   экрана, накрывало саму кнопку и расползалось в обе стороны от неё. */
+.fp-select {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.fp-select-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  color: var(--text, inherit);
+  padding: 0.45rem 0.9rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.fp-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fp-select-caret {
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 0.28rem solid transparent;
+  border-right: 0.28rem solid transparent;
+  border-top: 0.3rem solid currentColor;
+}
+
+.fp-select-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.fp-select-option:focus-visible {
+  outline: 2px solid var(--accent-indigo, #4f46e5);
+  outline-offset: -2px;
+}
+
+.fp-select-button:focus-visible {
+  outline: 2px solid var(--accent-indigo, #4f46e5);
+  outline-offset: 2px;
+}
+
+/* Открывается ПОД кнопкой и строго вниз; отступ в 6px оставляет саму кнопку
+   видимой, чтобы было понятно, что именно раскрыто. Высота — доля экрана:
+   на длинных перечнях (сотни недель) список иначе уходит за край. */
+.fp-select-list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 100%;
+  max-width: min(20rem, 90vw);
+  max-height: min(50vh, 22rem);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem;
+  border-radius: 12px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.25));
+  background: var(--surface, #fff);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+}
+
+/* Снизу места нет — раскрываемся вверх, но так же строго в одну сторону. */
+.fp-select-list-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.fp-select-option {
+  appearance: none;
+  border: none;
+  background: none;
+  color: var(--text, inherit);
+  text-align: left;
+  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.fp-select-option:hover {
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+}
+
+.fp-select-option-active {
+  font-weight: 700;
+  background: var(--tint-indigo-bg, rgba(79, 70, 229, 0.12));
+}
+
 .fp-tab {
   appearance: none;
   border: none;

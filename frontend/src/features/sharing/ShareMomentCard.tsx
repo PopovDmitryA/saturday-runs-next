@@ -3,6 +3,7 @@
 // Паттерн Duolingo: предлагать шаринг на пике, а не кнопкой в углу.
 
 import { useEffect, useMemo, useState } from "react";
+import { ShareIcon } from "../../components/ShareIcon";
 import { listRuns, type DashboardStats, type RunItem, type User } from "../../lib/api";
 import { formatDate, pluralFormRu } from "../../lib/format";
 import { trackShareMomentShown } from "./analytics";
@@ -23,6 +24,7 @@ type Moment = {
   subtitle: string;
   subject: ShareSubject;
 };
+
 
 export function ShareMomentCard({ stats, user }: { stats: DashboardStats; user: User }) {
   const sheet = useOptionalShareSheet();
@@ -112,9 +114,10 @@ export function ShareMomentCard({ stats, user }: { stats: DashboardStats; user: 
       </div>
       <button
         type="button"
-        className="s2-share-btn"
+        className="share-cta"
         onClick={() => sheet.open({ subject: moment.subject, entry: "dashboard" })}
       >
+        <ShareIcon />
         Поделиться
       </button>
     </section>

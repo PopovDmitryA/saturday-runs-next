@@ -4,6 +4,7 @@ import { RequireAdmin } from "../../components/RequireAdmin";
 import { getAdminPageAnalytics, type PageAnalyticsEntity, type PageAnalyticsResponse } from "../../lib/api";
 import { formatDate, formatDateTime } from "../../lib/format";
 import { AdminSubnav } from "./AdminSubnav";
+import { pageTypeLabel } from "./pageTypeLabels";
 
 const PERIODS = [
   { label: "1 день", days: 1 },
@@ -13,70 +14,6 @@ const PERIODS = [
   { label: "90 дней", days: 90 },
   { label: "Год", days: 365 },
 ] as const;
-
-// Канон page_type — _STATIC_PAGE_TYPES в backend/app/services/page_analytics_service.py.
-// Добавили роут — добавьте строку и там, и здесь.
-const PAGE_TYPE_LABELS: Record<string, string> = {
-  landing: "Главная (старый лендинг, до портала)",
-  login: "Вход (старый, до портала)",
-  oauth_callback: "Возврат из OAuth",
-  telegram_return: "Возврат из Telegram",
-  welcome: "Онбординг (/welcome)",
-  dashboard: "Дашборд",
-  runs: "Пробежки",
-  achievements: "Достижения",
-  co_runners: "Встречи",
-  volunteering: "Волонтёрство",
-  maps: "Карта",
-  history: "Моя история",
-  profile: "Публичные профили",
-  locations_index: "Локации (список)",
-  last_results: "Результаты последней субботы",
-  unified_protocol: "Единый протокол недели",
-  location: "Локация (карточка)",
-  location_events: "Локация (забеги)",
-  location_participants: "Локация (постоянный состав)",
-  location_protocol: "Локация (протокол)",
-  ratings_hub: "Рейтинги (хаб)",
-  ratings_runs: "Рейтинг: пробежки",
-  ratings_volunteering: "Рейтинг: волонтёрство",
-  ratings_locations: "Рейтинг: локации",
-  ratings_wins: "Рейтинг: победы",
-  ratings_win_locations: "Рейтинг: победные локации",
-  ratings_volunteer_roles: "Рейтинг: роли волонтёров",
-  ratings_volunteer_locations: "Рейтинг: локации волонтёрства",
-  ratings_openings: "Рейтинг: первопроходцы",
-  ratings_home_distance: "Рейтинг: дальность от дома",
-  ratings_fastest: "Рейтинг: быстрые",
-  ratings_location_records: "Рейтинг: рекорды локаций",
-  ratings_regions: "Рейтинг: локации по регионам",
-  world: "Мировое табло (/world)",
-  share: "Поделиться",
-  settings: "Настройки",
-  about: "О проекте (старый, до портала)",
-  demo: "Демо (все страницы)",
-  portal_home: "Главная",
-  portal_about: "О проекте",
-  portal_blog: "Блог",
-  updates: "Обновления (релизы)",
-  blog_post_click: "Блог: переходы на посты",
-  portal_login: "Вход",
-  portal_map_lab: "Портал: карта (лаб)",
-  admin: "Админка",
-  backlog: "Бэклог",
-  organizer_index: "Кабинет организатора (список)",
-  organizer_location: "Кабинет организатора (локация)",
-  cabinet_preview: "Превью кабинета (демо)",
-  sweep_hq: "Штаб обхода parkrun",
-  og_render: "Служебный рендер OG-картинок",
-  redirect: "Редиректы и старые адреса кабинета",
-  legacy_grafana: "Старые адреса Grafana",
-  other: "Прочее (неизвестные адреса)",
-};
-
-function pageTypeLabel(pageType: string): string {
-  return PAGE_TYPE_LABELS[pageType] ?? pageType;
-}
 
 // Ярлыки событий шаринга. Канон значений — frontend/src/features/sharing/.
 const SHARE_FUNNEL_LABELS: Record<string, string> = {

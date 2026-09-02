@@ -6654,7 +6654,9 @@ button.badge-platform-btn:hover {
 .admin-users-actions {
   display: flex;
   gap: 0.25rem;
-  flex-wrap: nowrap;
+  /* Кнопок в строке четыре — на узком экране пусть переносятся, иначе колонка
+     действий уезжает за край таблицы. */
+  flex-wrap: wrap;
 }
 
 .admin-users-telegram a {
@@ -6679,6 +6681,17 @@ button.badge-platform-btn:hover {
   display: block;
   max-height: 20rem;
   overflow: auto;
+}
+
+/* Страницы одного захода: компактный список внутри ячейки журнала визитов. */
+.admin-visit-pages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.6rem;
+  font-size: 0.85rem;
 }
 
 .admin-users-login-list {
@@ -7984,6 +7997,44 @@ a.admin-system-chip:hover {
   justify-content: center;
   gap: 0.4rem;
   margin-left: auto;
+}
+
+/* Единая кнопка «Поделиться» на карточках витрины: одна анатомия — иконка,
+   подпись, «таблетка». Раньше карточка момента давала прямоугольный блок без
+   иконки, а «В этот день» — пилюлю с иконкой, и рядом они выглядели как две
+   разные кнопки (Дмитрий 02.09.2026). Строчные шеринги в таблицах
+   (.s2-row-share) и в списке вех — отдельный жанр, они остаются иконками. */
+.share-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+  white-space: nowrap;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent-indigo);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.share-cta:hover {
+  filter: brightness(1.08);
+}
+
+/* На насыщенной подложке (карточка «В этот день») индиго на индиго не читается
+   — там та же кнопка светлой заливкой. */
+.share-cta-on-dark {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.share-cta-on-dark:hover {
+  background: var(--bg-muted);
+  filter: none;
 }
 
 .history-share {
@@ -15914,6 +15965,13 @@ input.participant-name-search-input:focus {
    набор колонок подбирает useAdaptiveColumns, всё, что не влезло, — в
    горизонтальный скролл обёртки. Ширины обязаны совпадать с PEOPLE_COLUMNS
    в LocationParticipantsPage.tsx, иначе краткий вид посчитает минимум мимо. */
+/* «Показать ещё» под составом локации — как в рейтингах: кнопка по центру. */
+.loc-people-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
 .loc-people-lead {
   margin: 0.35rem 0 0;
   max-width: 46rem;

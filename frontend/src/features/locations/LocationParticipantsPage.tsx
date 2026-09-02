@@ -17,7 +17,7 @@ import {
 } from "../../lib/api";
 import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
 import { flushMetrikaHit } from "../../lib/metrika";
-import { formatDate, formatInt, pluralizeRu } from "../../lib/format";
+import { formatDate, formatInt, platformCodeLabel, pluralizeRu } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
@@ -91,6 +91,9 @@ function scopeFromLocation(): Scope {
     : "runners";
 }
 
+/** Сколько строк показываем сразу и сколько добавляет «Показать ещё». */
+const PAGE_STEP = 100;
+
 function LocationParticipantsContent({ slug }: { slug: string }) {
   const [initialScope] = useState(scopeFromLocation);
   const [data, setData] = useState<LocationParticipants | null>(null);
@@ -99,6 +102,11 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
   const [scope, setScope] = useState<Scope>(initialScope);
   const [sort, setSort] = useState<SortState>({ key: "place", asc: true });
   const [query, setQuery] = useState("");
+  // Система, по которой смотрим состав («all» — все сразу).
+  const [platform, setPlatform] = useState("all");
+  // Показываем по сотне строк, как в рейтингах: у крупной площадки список
+  // уходит за тысячу, и рисовать его целиком незачем.
+  const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
   // Копия шапки встаёт под липкую полосу «Кратко | Полно», а не под шапку сайта.
   const attachFloatingHead = useFloatingTableHead(".tview-bar");
   const tableColumns = useTableColumns(PEOPLE_COLUMNS);
@@ -138,7 +146,29 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
       return [];
     }
     const source = scope === "runners" ? data.runners : data.volunteers;
-    const sorted = [...source];
+    // Срез по системе: берём участия только в ней, отсекаем тех, кто в этой
+    // системе не дотянул до порога, и заново нумеруем места — иначе в списке
+    // остались бы дыры от выпавших строк.
+    let scoped = source;
+    if (platform !== "all") {
+      scoped = source
+        .map((row) => ({ ...row, count: row.platform_counts?.[platform] ?? 0 }))
+        .filter((row) => row.count >= data.min_count)
+        .sort((a, b) => b.count - a.count || (a.name ?? "").localeCompare(b.name ?? ""));
+      // Место по-спортивному: равное число участий — равное место, следующий
+      // за парой третьих получает пятое. Считаем бегущим значением: в map()
+      // третий аргумент — ИСХОДНЫЙ массив, и место соседа там ещё старое.
+      let place = 0;
+      let previous: number | null = null;
+      scoped = scoped.map((row, index) => {
+        if (row.count !== previous) {
+          place = index + 1;
+          previous = row.count;
+        }
+        return { ...row, place };
+      });
+    }
+    const sorted = [...scoped];
     sorted.sort((a, b) => {
       const left = sortValue(a, sort.key);
       const right = sortValue(b, sort.key);
@@ -157,7 +187,7 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
       return sort.asc ? compare : -compare;
     });
     return sorted;
-  }, [data, scope, sort]);
+  }, [data, scope, sort, platform]);
 
   const rows = useMemo(() => {
     const needle = normalizeName(query);
@@ -166,6 +196,14 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
     }
     return scopeRows.filter((row) => normalizeName(row.name ?? "").includes(needle));
   }, [scopeRows, query]);
+
+  // Смена зачёта, системы или запроса начинает список заново.
+  useEffect(() => {
+    setVisibleCount(PAGE_STEP);
+  }, [scope, platform, query]);
+
+  const shownRows = useMemo(() => rows.slice(0, visibleCount), [rows, visibleCount]);
+  const hasMore = rows.length > shownRows.length;
 
   const toggleSort = (key: SortKey) => {
     setSort((current) =>
@@ -183,7 +221,7 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
     onSort: () => toggleSort(key),
   });
 
-  const visibleCount = PEOPLE_COLUMNS.filter((column) => show(column.key)).length;
+  const visibleColumnCount = PEOPLE_COLUMNS.filter((column) => show(column.key)).length;
 
   // Пока данные едут, имя берём из подсказки — иначе подпункт сайдбара с
   // названием площадки мигает при каждом переходе внутри локации.
@@ -221,6 +259,9 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
   }
 
   const words = SCOPE_WORDS[scope];
+  // Фильтр по системе нужен только там, где площадка жила больше чем в одной.
+  const platformOptions = data.platform_codes ?? [];
+  const hasParkrun = platformOptions.includes("parkrun");
   const peopleTotal = scope === "runners" ? data.runners_people_total : data.volunteers_people_total;
   // «от 3 раз» вместо «от 3 пробежек»: порог один на оба зачёта, а падежи
   // числительного с двумя наборами слов читаются хуже, чем нейтральное «раз».
@@ -239,6 +280,13 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
           <h1>{data.name} — постоянный состав</h1>
           <span className="muted loc-people-lead">
             Все, кто {words.verb} здесь {threshold}.
+            {hasParkrun && scope === "volunteers" && (
+              <>
+                {" "}
+                Годы parkrun сюда не входят: поимённых списков волонтёров той эпохи не
+                сохранилось — в отличие от протоколов финишёров, которые собраны целиком.
+              </>
+            )}
           </span>
         </div>
       </header>
@@ -261,6 +309,23 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
               }))}
             />
           </FilterGroup>
+          {platformOptions.length > 1 && (
+            <FilterGroup label="Система">
+              <FilterTabs
+                asTablist
+                ariaLabel="Система"
+                value={platform}
+                onChange={setPlatform}
+                options={[
+                  { value: "all", label: "Все" },
+                  ...platformOptions.map((code) => ({
+                    value: code,
+                    label: platformCodeLabel(code),
+                  })),
+                ]}
+              />
+            </FilterGroup>
+          )}
           {tableColumns.hasToggle && (
             <FilterGroup label="Колонки">
               <TableViewToggle columns={tableColumns} inline />
@@ -292,7 +357,7 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
             className={`data-table data-table-layout-fixed loc-people-table${
               showFull ? "" : " data-table-short"
             }`}
-            style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
+            style={{ minWidth: tableColumns.minWidth }}
           >
             <colgroup>
               <col className="col-place" />
@@ -347,9 +412,9 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {shownRows.length === 0 ? (
                 <tr>
-                  <td colSpan={visibleCount} className="table-empty-cell">
+                  <td colSpan={visibleColumnCount} className="table-empty-cell">
                     <span className="muted">
                       {query.trim()
                         ? "Никого не нашли — попробуйте другую часть имени"
@@ -363,7 +428,7 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
                 // с непривязанными аккаунтами в разных системах строки
                 // полностью совпадают (React ругался на дубли ключей и
                 // перемешивал порядок при смене зачёта).
-                rows.map((row, index) => (
+                shownRows.map((row, index) => (
                   <tr key={`${scope}-${index}`}>
                     <td className="td-compact loc-people-place">{row.place}</td>
                     <td>
@@ -380,8 +445,22 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
             </tbody>
           </table>
         </TableWrap>
+        {hasMore && (
+          <div className="loc-people-more">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setVisibleCount((current) => current + PAGE_STEP)}
+            >
+              Показать ещё (места {visibleCount + 1}–
+              {Math.min(visibleCount + PAGE_STEP, rows.length)})
+            </button>
+          </div>
+        )}
         <p className="table-foot muted">
-          {scopeRows.length > 0 && peopleTotal > 0 ? (
+          {/* Знаменатель считается по всем системам сразу, поэтому в срезе
+              одной системы его не показываем — «N из M» было бы про разное. */}
+          {scopeRows.length > 0 && peopleTotal > 0 && platform === "all" ? (
             <>
               {formatInt(scopeRows.length)} из{" "}
               {pluralizeRu(peopleTotal, ["человека", "человек", "человек"])},

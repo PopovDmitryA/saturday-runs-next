@@ -51,6 +51,7 @@ from app.services.location_page_service import (
     _platform_link_join,
     _platform_order_index,
     _sort_identity_locations,
+    age_group_is_plausible,
     age_group_key,
     normalize_age_group,
 )
@@ -78,11 +79,6 @@ PLATFORM_LABELS: dict[str, str] = {
 # результат на всю страну), и выбрать в нём нужное невозможно.
 MIN_GROUP_LOCATIONS = 5
 
-# …и только если ступень правдоподобна. «М120», «Ж105–109» — это обрезки
-# старого парсера (см. комментарий к _AGE_UNDER_RE в location_page_service), а
-# не бегуны за сотню: по 1–10 результатов, но на двух десятках площадок, так
-# что порогом выше они не отсеиваются.
-MAX_PLAUSIBLE_AGE = 100
 
 RATING_CACHE_KEY = "location-records-rating:v1"
 RATING_CACHE_TTL_SECONDS = 6 * 60 * 60
@@ -121,11 +117,6 @@ def _protocol_gender(age_category: str) -> str | None:
     (gender_position_service): своя копия молча разъехалась бы при смене букв.
     """
     return gender_from_age_category("five_verst", age_category.strip())
-
-
-def _age_group_is_plausible(age_group: str) -> bool:
-    age, _ = _age_group_sort_key(age_group)
-    return age <= MAX_PLAUSIBLE_AGE
 
 
 def _better(current: _RecordRow | None, candidate: _RecordRow) -> _RecordRow:
@@ -276,7 +267,7 @@ def _fill_age_group_records(
     for row in rows:
         gender = _protocol_gender(row.age_category)
         age_group = normalize_age_group(row.age_category)
-        if gender is None or age_group is None or not _age_group_is_plausible(age_group):
+        if gender is None or age_group is None or not age_group_is_plausible(age_group):
             continue
         identity = identities.get(location_id_to_identity[row.location_id])
         if identity is None:
@@ -599,6 +590,6 @@ def viewer_age_group(db: Session, user_id: UUID | None) -> dict[str, str] | None
         return None
     gender = _protocol_gender(row[0])
     age_group = normalize_age_group(row[0])
-    if gender is None or age_group is None or not _age_group_is_plausible(age_group):
+    if gender is None or age_group is None or not age_group_is_plausible(age_group):
         return None
     return {"gender": gender, "age_group": age_group}

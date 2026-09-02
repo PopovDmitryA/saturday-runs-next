@@ -23,6 +23,7 @@ import {
 } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import {
+  FilterSelect,
   FilterGroup,
   FilterPanel,
   FilterRow,
@@ -839,19 +840,18 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           />
           {ageCategories.length > 1 && (
             <FilterGroup label="Возрастная группа">
-            <select
-              className="protocol-age-select"
+            <FilterSelect
+              ariaLabel="Фильтр по возрастной группе"
               value={ageFilter ?? ""}
-              onChange={(event) => setAgeFilter(event.target.value || null)}
-              aria-label="Фильтр по возрастной группе"
-            >
-              <option value="">Все группы</option>
-              {ageCategories.map(([category, count]) => (
-                <option key={category} value={category}>
-                  {category} ({count})
-                </option>
-              ))}
-            </select>
+              onChange={(value) => setAgeFilter(String(value) || null)}
+              options={[
+                { value: "", label: "Все группы" },
+                ...ageCategories.map(([category, count]) => ({
+                  value: category,
+                  label: `${category} (${count})`,
+                })),
+              ]}
+            />
             </FilterGroup>
           )}
           {clubFilter && (
@@ -891,7 +891,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
             className={`data-table data-table-layout-fixed protocol-table${
               showFull ? "" : " data-table-short"
             }`}
-            style={showFull ? undefined : { minWidth: tableColumns.minWidth }}
+            style={{ minWidth: tableColumns.minWidth }}
           >
             <colgroup>
               <col className="col-number" />
@@ -1157,19 +1157,18 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           <h2>Волонтёры ({data.volunteers.length})</h2>
           {volunteerRoles.length > 1 && (
             <div className="protocol-filters">
-              <select
-                className="protocol-age-select"
+              <FilterSelect
+                ariaLabel="Фильтр по роли"
                 value={roleFilter ?? ""}
-                onChange={(event) => setRoleFilter(event.target.value || null)}
-                aria-label="Фильтр по роли"
-              >
-                <option value="">Все роли</option>
-                {volunteerRoles.map((item) => (
-                  <option key={item.role} value={item.role}>
-                    {item.role} ({item.count})
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => setRoleFilter(String(value) || null)}
+                options={[
+                  { value: "", label: "Все роли" },
+                  ...volunteerRoles.map((item) => ({
+                    value: item.role,
+                    label: `${item.role} (${item.count})`,
+                  })),
+                ]}
+              />
             </div>
           )}
           <TableWrap className="protocol-volunteers-wrap">

@@ -53,6 +53,7 @@ from app.services.leaderboard_service import (
 from app.services.location_catalog_service import russian_parkrun_location_ids
 from app.services.location_page_service import (
     FIVE_VERST_PLATFORM_CODE,
+    MAX_PLAUSIBLE_AGE,
     _age_group_sort_key,
     _read_json_cache,
     _write_json_cache,
@@ -84,9 +85,6 @@ FASTEST_GENDERS: tuple[FastestGender, ...] = ("all", "male", "female")
 # 22.08.2026): иначе в группе «35–39» молча пропадали бы две системы из четырёх.
 AGE_GROUP_PLATFORM = FIVE_VERST_PLATFORM_CODE
 
-# Возраст выше этого в категории — мусор старого парсера («М120», «Ж105-109»):
-# такие ступени в селектор не пускаем.
-MAX_PLAUSIBLE_AGE = 100
 # И ступень должна быть не единичным артефактом.
 MIN_AGE_GROUP_RESULTS = 50
 

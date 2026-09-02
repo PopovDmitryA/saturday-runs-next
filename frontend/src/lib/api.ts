@@ -2473,6 +2473,8 @@ export type LocationIndexItem = {
   best_female_time_display: string | null;
   attendance_record_finishers: number | null;
   attendance_record_date: string | null;
+  avg_finish_time_sec: number | null;
+  avg_finish_time_display: string | null;
 };
 
 export type LocationsIndexResponse = {
@@ -2561,6 +2563,8 @@ export type LocationActiveParticipant = {
   total_count: number;
   first_date: string | null;
   last_date: string | null;
+  /** Участий здесь в разрезе систем — по ним работает фильтр «Система». */
+  platform_counts?: Record<string, number>;
 };
 
 export type LocationParticipants = {
@@ -2568,6 +2572,8 @@ export type LocationParticipants = {
   name: string;
   /** Порог попадания в список: участий на локации. */
   min_count: number;
+  /** Системы площадки; фильтр показываем, только когда их больше одной. */
+  platform_codes?: string[];
   runners: LocationActiveParticipant[];
   volunteers: LocationActiveParticipant[];
   /** Сколько человек всего бывало здесь — знаменатель подписи под таблицей. */
@@ -3173,6 +3179,8 @@ export type AdminUserListItem = {
   consent_accepted: boolean;
   created_at: string;
   last_login_at: string | null;
+  // Последний просмотр страницы: когда человек в последний раз был на сайте.
+  last_seen_at: string | null;
   total_runs: number | null;
   total_volunteering: number | null;
   platform_links: AdminPlatformLinkBrief[];
@@ -3227,7 +3235,40 @@ export function getAdminUserLoginEvents(userId: string, limit = 100) {
   );
 }
 
-export type AdminUsersSort = "created" | "runs" | "volunteering" | "profile";
+export type AdminVisitPageItem = {
+  ts: string;
+  path: string;
+  page_type: string;
+  entity_key: string;
+  duration_sec: number | null;
+};
+
+export type AdminVisitItem = {
+  started_at: string;
+  ended_at: string;
+  views: number;
+  duration_sec: number;
+  pages: AdminVisitPageItem[];
+  pages_hidden: number;
+};
+
+export type AdminUserVisitsResponse = {
+  items: AdminVisitItem[];
+  total_views: number;
+  visits_shown: number;
+  days: number;
+  first_view_at: string | null;
+  last_view_at: string | null;
+  last_seen_at: string | null;
+  retention_days: number;
+  truncated: boolean;
+};
+
+export function getAdminUserVisits(userId: string, limit = 300) {
+  return apiFetch<AdminUserVisitsResponse>(`/admin/users/${userId}/visits?limit=${limit}`);
+}
+
+export type AdminUsersSort = "created" | "runs" | "volunteering" | "profile" | "seen";
 export type AdminUsersSortDirection = "asc" | "desc";
 
 export function listAdminUsers(

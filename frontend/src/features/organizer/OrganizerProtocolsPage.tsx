@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { FilterSelect } from "../../components/filters/FilterPanel";
 import { RequireAuth } from "../../components/RequireAuth";
 import {
   ApiError,
@@ -293,16 +294,17 @@ function OrganizerProtocolsContent({ slug }: { slug: string }) {
                 </h2>
                 <label className="muted org-period-label">
                   Период:{" "}
-                  <select
-                    className="input org-select-compact"
-                    value={directorMonths}
-                    onChange={(event) => setDirectorMonths(Number(event.target.value))}
+                  <FilterSelect
+                    ariaLabel="Период"
                     title="За какой период считаем среднее"
-                  >
-                    <option value={6}>полгода</option>
-                    <option value={12}>год</option>
-                    <option value={0}>всё время</option>
-                  </select>
+                    value={directorMonths}
+                    onChange={setDirectorMonths}
+                    options={[
+                      { value: 6, label: "полгода" },
+                      { value: 12, label: "год" },
+                      { value: 0, label: "всё время" },
+                    ]}
+                  />
                 </label>
               </header>
               {/* Рамка этики — как на волонтёрской скамейке: метрика справочная,

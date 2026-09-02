@@ -28,6 +28,8 @@ STATS_TIMEZONE = ZoneInfo("Europe/Moscow")
 MAX_DURATION_SEC = 8 * 3600
 
 DEFAULT_PERIOD_DAYS = 30
+# Реже этого users.last_seen_at не обновляется: см. touch_last_seen.
+LAST_SEEN_THROTTLE = timedelta(minutes=5)
 # Эксперимент главной — единственный; зеркало HOME_EXPERIMENT из frontend/src/lib/abTest.ts.
 HOME_EXPERIMENT = "home_v1"
 # Нижняя граница для открытого «по такое-то число»: раньше аналитики не было.
@@ -241,7 +243,32 @@ def record_page_view(
         .on_conflict_do_nothing(index_elements=["view_id"])
     )
     db.execute(stmt)
+    if viewer_user_id is not None:
+        touch_last_seen(db, viewer_user_id)
     db.commit()
+
+
+def touch_last_seen(db: Session, user_id: UUID) -> None:
+    """Отметить, что человек прямо сейчас пользуется сайтом.
+
+    Сырые события просмотров живут ограниченный срок, а вопрос «когда он
+    заходил в последний раз» задают и про тех, кто пропал полгода назад —
+    поэтому последний визит дублируется в users.last_seen_at навсегда.
+
+    Прореживание: обновляем не чаще раза в LAST_SEEN_THROTTLE, иначе каждый
+    переход по сайту дёргал бы UPDATE строки пользователя. Точность в пять
+    минут для ответа «был вчера / был в июне» избыточна с запасом.
+    """
+    # Голый SQL, а не update(User): у модели на updated_at висит onupdate, и
+    # через ORM отметка визита сдвигала бы ещё и «когда правили пользователя».
+    db.execute(
+        text(
+            "UPDATE users SET last_seen_at = now() "
+            "WHERE id = CAST(:user_id AS uuid) "
+            "  AND (last_seen_at IS NULL OR last_seen_at < now() - :throttle * interval '1 second')"
+        ),
+        {"user_id": str(user_id), "throttle": int(LAST_SEEN_THROTTLE.total_seconds())},
+    )
 
 
 def record_blog_post_click(
@@ -277,6 +304,8 @@ def record_blog_post_click(
         is_self=False,
     )
     db.execute(stmt)
+    if viewer_user_id is not None:
+        touch_last_seen(db, viewer_user_id)
     db.commit()
 
 
