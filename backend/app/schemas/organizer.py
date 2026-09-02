@@ -252,6 +252,18 @@ class TeamLoadPerson(BaseModel):
     share_pct: int
 
 
+class DirectorRotation(BaseModel):
+    """Светофор ротации организаторов: не держится ли старт на одном человеке."""
+
+    months: int
+    slots: int
+    people: int
+    top_name: str | None = None
+    top_count: int
+    top_share_pct: int
+    level: str
+
+
 class TeamLoadResponse(BaseModel):
     location: OrganizerLocationBrief
     months: int
@@ -261,6 +273,7 @@ class TeamLoadResponse(BaseModel):
     avg_per_event: float | None = None
     top_load: list[TeamLoadPerson] = Field(default_factory=list)
     roles: list[TeamRoleLoad] = Field(default_factory=list)
+    director_rotation: DirectorRotation | None = None
 
 
 class AttendanceEvent(BaseModel):

@@ -3646,6 +3646,16 @@ export type OrganizerTeamLoadResponse = {
     share_pct: number;
   }[];
   roles: OrganizerTeamRole[];
+  /** Светофор ротации организаторов: не держится ли старт на одном человеке. */
+  director_rotation?: {
+    months: number;
+    slots: number;
+    people: number;
+    top_name: string | null;
+    top_count: number;
+    top_share_pct: number;
+    level: "green" | "yellow" | "red";
+  } | null;
 };
 
 export function getOrganizerTeamLoad(slug: string, months = 12) {

@@ -37,6 +37,7 @@ from app.services.location_page_service import (
     _read_json_cache,
     _write_json_cache,
 )
+from app.services.organizer_access_service import ORGANIZER_ROLE_KEY
 from app.volunteer_role_taxonomy import canonical_volunteer_role, strip_role_counters
 
 ANALYTICS_CACHE_TTL_SECONDS = 3 * 60 * 60
@@ -118,6 +119,54 @@ def _bus_factor(shares: list[int]) -> int:
     return len(shares)
 
 
+def _director_rotation(
+    role_people: dict[str, dict[Any, int]],
+    person_names: dict[Any, tuple[str | None, str | None]],
+    months: int,
+) -> dict[str, Any] | None:
+    """Светофор ротации организаторов: сколько людей ведут старт и не держится
+    ли он на одном человеке.
+
+    Отдельная метрика, а не строка в общей таблице ролей: организатор — та роль,
+    выгорание в которой закрывает площадку целиком (просьба Дмитрия 03.09.2026).
+
+    Пороги не выдуманы, а взяты из распределения по стране. На снимке прода
+    250 площадок с 10+ стартами за год: разных организаторов медиана 9
+    (10-й перцентиль 4), доля самого частого медиана 32% (75-й — 47%, 90-й — 67%).
+    Отсюда:
+      зелёный  — доля ≤ 40% и людей ≥ 4: так живут две трети площадок;
+      жёлтый   — 41-70% либо людей 2-3: хвост между 75-м и 90-м перцентилем;
+      красный  — больше 70% либо один человек: худшие 7% (17 площадок из 250).
+    """
+    people = role_people.get(ORGANIZER_ROLE_KEY)
+    if not people:
+        return None
+    slots = sum(people.values())
+    if not slots:
+        return None
+    top_pid = max(people, key=lambda pid: people[pid])
+    top_count = people[top_pid]
+    top_share = round(top_count / slots * 100)
+    count = len(people)
+
+    if count <= 1 or top_share > 70:
+        level = "red"
+    elif count <= 3 or top_share > 40:
+        level = "yellow"
+    else:
+        level = "green"
+
+    return {
+        "months": months,
+        "slots": slots,
+        "people": count,
+        "top_name": person_names.get(top_pid, (None, None))[0],
+        "top_count": top_count,
+        "top_share_pct": top_share,
+        "level": level,
+    }
+
+
 def _compute_team_load(
     db: Session, identity: LocationIdentity, *, months: int
 ) -> dict[str, Any]:
@@ -134,6 +183,7 @@ def _compute_team_load(
         "avg_per_event": None,
         "top_load": [],
         "roles": [],
+        "director_rotation": None,
         "network_note": None,
     }
     if not event_ids:
@@ -176,6 +226,8 @@ def _compute_team_load(
         role_people[canonical.key][pid] = role_people[canonical.key].get(pid, 0) + 1
         person_slots[pid] = person_slots.get(pid, 0) + 1
         person_names[pid] = (name, profile_url)
+
+    director_rotation = _director_rotation(role_people, person_names, months)
 
     network = network_role_rotation(db, identity, months=months)
 
@@ -240,6 +292,7 @@ def _compute_team_load(
             "avg_per_event": round(slots_total / events_count, 1) if events_count else None,
             "top_load": top_load,
             "roles": roles,
+        "director_rotation": director_rotation,
         }
     )
     return base
