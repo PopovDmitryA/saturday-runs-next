@@ -205,7 +205,7 @@ export function OnThisDayCard({ load }: OnThisDayCardProps) {
         </div>
         <button
           type="button"
-          className="btn on-this-day-share"
+          className="share-cta share-cta-on-dark"
           onClick={(event) => {
             event.stopPropagation();
             openShare(run);

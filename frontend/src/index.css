@@ -7986,6 +7986,44 @@ a.admin-system-chip:hover {
   margin-left: auto;
 }
 
+/* Единая кнопка «Поделиться» на карточках витрины: одна анатомия — иконка,
+   подпись, «таблетка». Раньше карточка момента давала прямоугольный блок без
+   иконки, а «В этот день» — пилюлю с иконкой, и рядом они выглядели как две
+   разные кнопки (Дмитрий 02.09.2026). Строчные шеринги в таблицах
+   (.s2-row-share) и в списке вех — отдельный жанр, они остаются иконками. */
+.share-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+  white-space: nowrap;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent-indigo);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.share-cta:hover {
+  filter: brightness(1.08);
+}
+
+/* На насыщенной подложке (карточка «В этот день») индиго на индиго не читается
+   — там та же кнопка светлой заливкой. */
+.share-cta-on-dark {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.share-cta-on-dark:hover {
+  background: var(--bg-muted);
+  filter: none;
+}
+
 .history-share {
   display: inline-flex;
   align-items: center;
