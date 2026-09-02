@@ -780,28 +780,14 @@ export function DashboardAnalytics({
   const [uniqueLocationsFirstVisitSince, setUniqueLocationsFirstVisitSince] = useState<
     string | undefined
   >();
-  // Раскрытые группы аналитики; выбор переживает перезагрузку страницы.
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("dashboardAnalyticsGroups") ?? "{}") as Record<
-        string,
-        boolean
-      >;
-    } catch {
-      return {};
-    }
-  });
+  // Раскрытые группы аналитики. Состояние НЕ переживает перезагрузку: кабинет
+  // открывается свёрнутым всегда. Иначе однажды раскрытые «Беговой туризм» и
+  // соседи оставались раскрытыми навсегда, и мы возвращались ровно к той
+  // простыне, ради которой группы и заводили (Дмитрий 02.09.2026).
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   const toggleGroup = (key: string) => {
-    setExpandedGroups((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      try {
-        localStorage.setItem("dashboardAnalyticsGroups", JSON.stringify(next));
-      } catch {
-        // приватный режим — просто не запоминаем
-      }
-      return next;
-    });
+    setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const openUniqueLocations = (

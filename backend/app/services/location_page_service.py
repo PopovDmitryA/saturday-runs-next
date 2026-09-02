@@ -164,6 +164,15 @@ def _platform_order_index(code: str) -> int:
         return len(PLATFORM_ORDER)
 
 
+# Юниорская лестница RunPark — единственная, которая не ложится на общие
+# ступени: JM11-14/JW11-14 и JM15-17/JW15-17 против «10–14» и «15–19» у
+# 5 вёрст. В зачёте эти системы идут в одних ступенях (см. подпись под
+# возрастными группами), поэтому «11–14» и «15–17» вылезали отдельными
+# строками на 1–3 человека и выглядели ошибкой данных (Дмитрий 02.09.2026).
+# Своих «11–14»/«15–17» больше нет ни у одной системы — сверено по базе.
+_RUNPARK_JUNIOR_GROUPS = {"11–14": "10–14", "15–17": "15–19"}
+
+
 def normalize_age_group(age_category: str | None) -> str | None:
     """«М18-24», «SM25-29», «VM35-39» → «18–24»; «М75+» → «75+»; «М10» → «<10»; «М110-114» → «110–114»."""
     if not age_category:
@@ -171,7 +180,8 @@ def normalize_age_group(age_category: str | None) -> str | None:
     cleaned = age_category.strip()
     match = _AGE_RANGE_RE.match(cleaned)
     if match:
-        return f"{int(match.group(1))}–{int(match.group(2))}"
+        group = f"{int(match.group(1))}–{int(match.group(2))}"
+        return _RUNPARK_JUNIOR_GROUPS.get(group, group)
     match = _AGE_PLUS_RE.match(cleaned)
     if match:
         return f"{int(match.group(1))}+"

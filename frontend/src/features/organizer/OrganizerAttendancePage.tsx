@@ -325,9 +325,12 @@ function OrganizerAttendanceContent({ slug }: { slug: string }) {
                           </span>
                         )}
                       </td>
+                      {/* Минус к прошлому старту — обычные колебания явки, а не
+                          авария: янтарный вместо красного, красный тут читался
+                          как поломка (Дмитрий 02.09.2026). */}
                       <td>
                         {event.delta != null ? (
-                          <span className={event.delta >= 0 ? "org-delta-good" : "org-delta-bad"}>
+                          <span className={event.delta >= 0 ? "org-delta-good" : "org-delta-mid"}>
                             {event.delta > 0 ? "+" : ""}
                             {formatInt(event.delta)}
                           </span>

@@ -59,9 +59,11 @@
   color: #0969da;
 }
 
+/* «Бегает в другом месте» — не потеря и не тревога: человек бегает, просто не
+   здесь. Красный читался как ошибка, поэтому янтарный (Дмитрий 02.09.2026). */
 .org-badge-comeback {
-  background: rgba(207, 34, 46, 0.12);
-  color: #cf222e;
+  background: rgba(191, 135, 0, 0.14);
+  color: #bf8700;
 }
 
 .org-badge-role {
@@ -534,8 +536,27 @@
   width: 0.65rem;
   height: 0.65rem;
   border-radius: 999px;
+  /* Зелёный — цвет 5 вёрст, он же основание: у остальных систем свой цвет
+     ниже. Раньше правила систем стояли ВЫШЕ этого блока и при равной
+     специфичности проигрывали ему — точка в легенде всегда была зелёной,
+     хотя столбики рисовались правильно (Дмитрий 02.09.2026). */
   background: var(--tint-green-bg-strong);
   border: 1px solid var(--tint-green-border);
+}
+
+.org-legend-dot.org-hist-plat-s95 {
+  background: var(--tint-blue-bg-strong);
+  border-color: var(--tint-blue-border);
+}
+
+.org-legend-dot.org-hist-plat-parkrun {
+  background: var(--tint-violet-bg-strong);
+  border-color: var(--tint-violet-border);
+}
+
+.org-legend-dot.org-hist-plat-runpark {
+  background: var(--tint-orange-bg);
+  border-color: var(--tint-orange-text);
 }
 
 /* Бейдж системы в таблице стартов. */
@@ -772,6 +793,7 @@ select.org-select-compact {
 /* Жёлтая ступень ротации: чуть ниже системы (в пределах −15%). */
 .org-delta-mid {
   color: #9a6700;
+  font-size: 0.85em;
 }
 
 /* Возрастная группа в своде: «М35-39» не должна переноситься. */

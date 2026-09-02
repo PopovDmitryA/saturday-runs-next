@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import "./filters.css";
 
@@ -121,6 +122,16 @@ export function FilterTabs<T extends string | number>({
  * протокола (сотни) в него не помещаются и уезжают за край экрана — там нужен
  * именно select (просьба Дмитрия 02.09.2026).
  */
+/**
+ * Выпадающий список для фильтров с длинным перечнем значений.
+ *
+ * Ряд кнопок хорош, пока значений 3-5; годы площадки (2015…2026) и недели
+ * протокола (сотни) в него не помещаются. Родной `select` тоже не годится:
+ * системное меню раскрывается на всю высоту экрана, накрывает саму кнопку и
+ * расползается в обе стороны от неё (Дмитрий 02.09.2026). Поэтому свой
+ * listbox: высота ограничена долей экрана, открывается ПОД полем и только
+ * вниз, а вверх — лишь когда снизу места нет.
+ */
 export function FilterSelect<T extends string | number>({
   options,
   value,
@@ -132,24 +143,93 @@ export function FilterSelect<T extends string | number>({
   onChange: (value: T) => void;
   ariaLabel: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const selected = options.find((option) => option.value === value);
+
+  // Клик мимо и Esc закрывают список.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  // Куда раскрыться и подвести выбранное значение к глазам.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const button = rootRef.current?.querySelector("button");
+    if (button) {
+      const box = button.getBoundingClientRect();
+      // Ниже кнопки места меньше, чем выше, — открываемся вверх.
+      setDropUp(window.innerHeight - box.bottom < box.top && window.innerHeight - box.bottom < 220);
+    }
+    listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({
+      block: "nearest",
+    });
+  }, [open]);
+
   return (
-    <select
-      className="fp-select"
-      aria-label={ariaLabel}
-      value={String(value)}
-      onChange={(event) => {
-        const picked = options.find((option) => String(option.value) === event.target.value);
-        if (picked) {
-          onChange(picked.value);
-        }
-      }}
-    >
-      {options.map((option) => (
-        <option key={String(option.value)} value={String(option.value)} title={option.title}>
-          {option.label}
-        </option>
-      ))}
-    </select>
+    <div className="fp-select" ref={rootRef}>
+      <button
+        type="button"
+        className="fp-select-button"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="fp-select-value">{selected?.label ?? String(value)}</span>
+        <span className="fp-select-caret" aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          className={`fp-select-list${dropUp ? " fp-select-list-up" : ""}`}
+          role="listbox"
+          aria-label={ariaLabel}
+          ref={listRef}
+        >
+          {options.map((option) => {
+            const active = option.value === value;
+            return (
+              <button
+                key={String(option.value)}
+                type="button"
+                role="option"
+                aria-selected={active}
+                title={option.title}
+                className={`fp-select-option${active ? " fp-select-option-active" : ""}`}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

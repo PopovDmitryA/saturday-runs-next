@@ -379,7 +379,9 @@ function LocationsIndexContent() {
   const [query, setQuery] = useState("");
   // Мультивыбор: систем можно отметить сколько угодно, пустое множество —
   // «Все» (правка Дмитрия 01.09.2026; раньше выбиралась ровно одна).
-  const [platforms, setPlatforms] = useState<Set<string>>(new Set());
+  // Одна система за раз: каталог смотрят «покажи мне 5 вёрст», а не «5 вёрст
+  // и S95 вместе» — мультивыбор здесь только путал (Дмитрий 02.09.2026).
+  const [platform, setPlatform] = useState("all");
   const [showPaused, setShowPaused] = useState(false);
 
   useEffect(() => {
@@ -397,7 +399,7 @@ function LocationsIndexContent() {
       if (normalizedQuery && !matchesQuery(item, normalizedQuery)) {
         return false;
       }
-      if (platforms.size > 0 && !item.platform_codes.some((code) => platforms.has(code))) {
+      if (platform !== "all" && !item.platform_codes.includes(platform)) {
         return false;
       }
       if (!showPaused && (item.is_paused || item.is_cancelled)) {
@@ -405,7 +407,7 @@ function LocationsIndexContent() {
       }
       return true;
     });
-  }, [items, query, platforms, showPaused]);
+  }, [items, query, platform, showPaused]);
 
   return (
     <PortalSectionShell sidebar={{ active: "locations" }}>
@@ -423,9 +425,9 @@ function LocationsIndexContent() {
         <FilterPanel>
           <FilterRow>
             <PlatformFilter
-              mode="multi"
-              value={platforms}
-              onChange={setPlatforms}
+              mode="single"
+              value={platform}
+              onChange={setPlatform}
               options={PLATFORM_FILTERS.map((code) => ({
                 code,
                 label: platformCodeLabel(code),
