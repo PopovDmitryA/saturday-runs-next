@@ -1092,7 +1092,11 @@ def _apply_event_fields(
     now = datetime.now(timezone.utc)
     row.location_id = location.id
     row.event_date = event_date
-    row.event_number = event_number
+    # None — это «источник номера не знает», а не «номера нет»: волонтёрская
+    # таблица профиля его больше не сообщает, и затирать ей уже известный
+    # номер нечем.
+    if event_number is not None:
+        row.event_number = event_number
     row.is_test_event = is_test_event
     row.title = title
     preferred_source_url = prefer_event_source_url(platform_code, row.source_url, source_url)
@@ -1130,7 +1134,13 @@ def upsert_event_for_profile(
         location_name=location_name,
     )
     now = datetime.now(timezone.utc)
-    title = _profile_event_title(location_name, event_number)
+    # Заголовок держим на том номере, который в итоге останется у события:
+    # иначе волонтёрский импорт, номера не знающий, превратил бы «Дружба #228»
+    # обратно в «Дружба».
+    effective_number = event_number if event_number is not None else (
+        row.event_number if row is not None else None
+    )
+    title = _profile_event_title(location_name, effective_number)
     if is_test_event:
         title = f"{location_name} (тестовый)"
 
@@ -1523,7 +1533,14 @@ def import_profile_volunteer_results(
             location,
             external_event_key=external_event_key,
             event_date=item.event_date,
-            event_number=item.event_number,
+            # Номер забега отсюда НЕ берём. Волонтёрская таблица профиля 5 вёрст
+            # показывает не тот номер, что страница локации и таблица пробежек:
+            # у Дружбы за 15.08.2026 в волонтёрствах «#226», а на самом деле
+            # #228 (проверено на 5verst.ru/druzhba/results/all/ и на том же
+            # профиле). Мы этот номер записывали поверх правильного, и журнал
+            # протоколов шёл вразнобой: 220-219-222-221-224-225-224-227-226-229.
+            # Номер приезжает со страницы локации, здесь его трогать нечем.
+            event_number=None,
             location_name=display_name,
             location_slug=slug,
             source_url=source_url,
