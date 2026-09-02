@@ -19,6 +19,34 @@ function formatDate(iso: string): string {
  * Текст релиза без markdown-библиотеки: блоки разделяются пустой строкой,
  * блок из строк «- …» становится списком, остальное — абзацами.
  */
+/**
+ * Выделение внутри строки: «*текст*» становится жирным.
+ *
+ * Единственная разметка, которую понимает страница обновлений, — маркдауна
+ * тут нет. Пара звёздочек должна стоять в одной строке и что-то обрамлять:
+ * одинокая звёздочка и «5 * 5» остаются обычным текстом.
+ */
+function renderInline(text: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  const pattern = /\*([^*\n]+)\*/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > cursor) {
+      parts.push(text.slice(cursor, match.index));
+    }
+    parts.push(<strong key={match.index}>{match[1]}</strong>);
+    cursor = match.index + match[0].length;
+  }
+  if (cursor === 0) {
+    return [text];
+  }
+  if (cursor < text.length) {
+    parts.push(text.slice(cursor));
+  }
+  return parts;
+}
+
 function renderReleaseBody(body: string): ReactNode[] {
   return body
     .split(/\n\s*\n/)
@@ -30,12 +58,12 @@ function renderReleaseBody(body: string): ReactNode[] {
         return (
           <ul key={index}>
             {lines.map((line, li) => (
-              <li key={li}>{line.slice(2)}</li>
+              <li key={li}>{renderInline(line.slice(2))}</li>
             ))}
           </ul>
         );
       }
-      return <p key={index}>{block}</p>;
+      return <p key={index}>{renderInline(block)}</p>;
     });
 }
 
