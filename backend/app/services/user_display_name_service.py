@@ -383,6 +383,21 @@ def refresh_all_display_names(db: Session, *, commit: bool = True) -> int:
     return changed
 
 
+def _same_words(left: str | None, right: str | None) -> bool:
+    """Одни и те же слова в другом порядке: «Попов Дмитрий» и «Дмитрий Попов».
+
+    Регистр и «ё» не различаем — иначе перестановка с разным написанием
+    считалась бы разными именами.
+    """
+    if not left or not right:
+        return False
+
+    def words(value: str) -> list[str]:
+        return sorted(part.casefold().replace("ё", "е") for part in value.split())
+
+    return words(left) == words(right)
+
+
 def display_name_suggestion(db: Session, user: User) -> dict[str, object] | None:
     """Что предложил бы алгоритм, если он расходится с нынешним именем.
 
@@ -396,6 +411,12 @@ def display_name_suggestion(db: Session, user: User) -> dict[str, object] | None
     if auto_name is None or auto_source is None:
         return None
     if auto_name == user.display_name:
+        return None
+    # Те же слова в другом порядке («Попов Дмитрий» → «Дмитрий Попов») — не
+    # повод о чём-то спрашивать: порядок берём как в беговой системе, и
+    # ночной refresh_user_display_name поставит его молча. Баннер здесь только
+    # мешал бы: человек такой правки даже не заметит (Дмитрий 02.09.2026).
+    if _same_words(auto_name, user.display_name):
         return None
     if auto_name == user.display_name_dismissed_name:
         return None
