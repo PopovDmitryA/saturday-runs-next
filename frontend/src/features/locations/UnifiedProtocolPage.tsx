@@ -660,19 +660,18 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
           />
           {hasAgeGroups && (
             <FilterGroup label="Возрастная группа">
-            <select
-              className="protocol-age-select"
+            <FilterSelect
+              ariaLabel="Фильтр по возрастной группе"
               value={ageGroup ?? ""}
-              onChange={(event) => setAgeGroup(event.target.value || null)}
-              aria-label="Фильтр по возрастной группе"
-            >
-              <option value="">Все группы</option>
-              {data.age_groups.map((group) => (
-                <option key={group.age_group} value={group.age_group}>
-                  {group.age_group} ({formatInt(group.total)})
-                </option>
-              ))}
-            </select>
+              onChange={(value) => setAgeGroup(String(value) || null)}
+              options={[
+                { value: "", label: "Все группы" },
+                ...data.age_groups.map((group) => ({
+                  value: group.age_group,
+                  label: `${group.age_group} (${formatInt(group.total)})`,
+                })),
+              ]}
+            />
             </FilterGroup>
           )}
           {tableColumns.hasToggle && (
