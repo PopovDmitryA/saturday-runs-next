@@ -1031,6 +1031,10 @@ class User(Base):
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_login_auto_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Последний визит: обновляется просмотром страницы (не входом), поэтому
+    # отвечает на вопрос «когда человек последний раз пользовался сайтом».
+    # Пишется с прореживанием — см. touch_last_seen в page_analytics_service.
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Онбординг (/welcome) пройден или пропущен: пока NULL и нет привязок,
     # после входа пользователя ведём на /welcome, а не в кабинет.
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

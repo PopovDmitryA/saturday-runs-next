@@ -26,6 +26,9 @@ from app.schemas.admin import (
     AdminOrganizerAccessResponse,
     AdminOrganizerGrantCreate,
     AdminUserListResponse,
+    AdminUserVisitsResponse,
+    AdminVisitItem,
+    AdminVisitPageItem,
 )
 from app.schemas.admin_event_report import (
     EventReportDatesResponse,
@@ -173,6 +176,7 @@ from app.services.scheduled_run_log_service import list_runs as list_scheduled_r
 from app.services.scheduled_run_log_service import resolve_period as resolve_runs_period
 from app.services.scheduled_run_log_service import summarize as summarize_scheduled_runs
 from app.services.sync_enqueue_service import enqueue_manual_platform_sync, enqueue_sync_for_all_platforms
+from app.services.user_visits_service import get_user_visits
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -204,7 +208,7 @@ def list_admin_users(
     q: Annotated[str | None, Query(max_length=128)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
-    sort: Annotated[str, Query(pattern="^(created|runs|volunteering|profile)$")] = "created",
+    sort: Annotated[str, Query(pattern="^(created|runs|volunteering|profile|seen)$")] = "created",
     direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
 ) -> AdminUserListResponse:
     items, total = search_admin_users(
@@ -237,6 +241,49 @@ def admin_user_login_events(
         logouts=int(summary["logouts"]),  # type: ignore[arg-type]
         devices=int(summary["devices"]),  # type: ignore[arg-type]
         unexpected_relogins=int(summary["unexpected_relogins"]),  # type: ignore[arg-type]
+    )
+
+
+@router.get("/users/{user_id}/visits", response_model=AdminUserVisitsResponse)
+def admin_user_visits(
+    user_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    limit: Annotated[int, Query(ge=1, le=1000)] = 300,
+) -> AdminUserVisitsResponse:
+    """Когда человек последний раз пользовался сайтом и по каким страницам ходил.
+
+    Дополняет журнал входов: вход бывает раз в полгода, а заходы — каждую
+    субботу.
+    """
+    user = get_admin_user(db, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    journal = get_user_visits(db, user_id, limit_events=limit)
+    return AdminUserVisitsResponse(
+        items=[
+            AdminVisitItem(
+                started_at=visit.started_at,
+                ended_at=visit.ended_at,
+                views=visit.views,
+                duration_sec=visit.duration_sec,
+                pages=[
+                    AdminVisitPageItem.model_validate(page, from_attributes=True)
+                    for page in visit.pages
+                ],
+                pages_hidden=visit.pages_hidden,
+            )
+            for visit in journal.visits
+        ],
+        total_views=journal.total_views,
+        visits_shown=journal.visits_shown,
+        days=journal.days,
+        first_view_at=journal.first_view_at,
+        last_view_at=journal.last_view_at,
+        last_seen_at=user.last_seen_at,
+        retention_days=get_settings().page_events_retention_days,
+        truncated=journal.truncated,
     )
 
 
