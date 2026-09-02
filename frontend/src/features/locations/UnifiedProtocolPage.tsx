@@ -9,6 +9,7 @@ import {
   FilterPanel,
   FilterRow,
   FilterSearch,
+  FilterSelect,
 } from "../../components/filters/FilterPanel";
 import { GenderFilter } from "../../components/filters/GenderFilter";
 import { PlatformFilter } from "../../components/filters/PlatformFilter";
@@ -385,20 +386,17 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
             <span className="muted">первая неделя</span>
           )}
           {weekOptions.length > 1 && (
-            <select
-              className="protocol-age-select uniprot-week-select"
+            <FilterSelect
+              ariaLabel="Неделя"
               value={data.saturday}
-              onChange={(event) => {
-                window.location.href = unifiedProtocolHref(event.target.value || null);
+              onChange={(value) => {
+                window.location.href = unifiedProtocolHref(String(value) || null);
               }}
-              aria-label="Неделя"
-            >
-              {weekOptions.map((week) => (
-                <option key={week.saturday} value={week.saturday}>
-                  {formatDate(week.saturday)} · {formatInt(week.finishers)}
-                </option>
-              ))}
-            </select>
+              options={weekOptions.map((week) => ({
+                value: week.saturday,
+                label: `${formatDate(week.saturday)} · ${formatInt(week.finishers)}`,
+              }))}
+            />
           )}
           {data.next_saturday ? (
             <a href={unifiedProtocolHref(data.next_saturday)}>

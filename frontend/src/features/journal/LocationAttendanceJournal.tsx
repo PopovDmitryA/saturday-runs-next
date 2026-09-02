@@ -10,6 +10,7 @@ import {
   FilterGroup,
   FilterPanel,
   FilterRow,
+  FilterSelect,
 } from "../../components/filters/FilterPanel";
 import {
   AttendanceMatrix,
@@ -148,10 +149,21 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
     }
     const listed = [...data.rows, ...extraRows];
     const result = listed.map((row, index) => matrixRow(row, index));
+    // Своя строка сверху — только если зрителя ещё не видно в загруженном
+    // куске. Если он уже в списке, дублировать его незачем: раньше человек
+    // из топа встречал себя дважды — закреплённым и на своём месте
+    // (Дмитрий 02.09.2026). Тот же приём, что в журнале рейтингов.
     if (data.me && data.me.year_total > 0) {
-      // Свою строку закрепляем сверху; из общего списка её не вычёркиваем —
-      // там она стоит на своём месте по счёту года.
-      result.unshift(matrixRow(data.me, -1, true));
+      const meHandle = data.me.handle;
+      const existing = meHandle
+        ? result.find((row) => row.id.endsWith(`-${meHandle}`))
+        : undefined;
+      if (existing) {
+        existing.me = true;
+        existing.name = matrixRow(data.me, -1, true).name;
+      } else {
+        result.unshift(matrixRow(data.me, -1, true));
+      }
     }
     return result;
   }, [data, extraRows]);
@@ -193,19 +205,12 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
         {viewTabs && <FilterGroup label="Вид">{viewTabs}</FilterGroup>}
         {data && data.years.length > 1 && (
           <FilterGroup label="Год">
-          <div className="aj-tabs aj-years" role="group" aria-label="Год">
-            {data.years.map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={value === data.year}
-                className={`aj-tab${value === data.year ? " aj-tab-active" : ""}`}
-                onClick={() => setYear(value)}
-              >
-                {value}
-              </button>
-            ))}
-          </div>
+            <FilterSelect
+              ariaLabel="Год"
+              value={data.year}
+              onChange={(value) => setYear(value)}
+              options={data.years.map((value) => ({ value, label: String(value) }))}
+            />
           </FilterGroup>
         )}
         <FilterGroup label="Зачёт">

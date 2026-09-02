@@ -114,6 +114,45 @@ export function FilterTabs<T extends string | number>({
   );
 }
 
+/**
+ * Выпадающий список для фильтров с длинным перечнем значений.
+ *
+ * Ряд кнопок хорош, пока значений 3-5; годы площадки (2015…2026) и недели
+ * протокола (сотни) в него не помещаются и уезжают за край экрана — там нужен
+ * именно select (просьба Дмитрия 02.09.2026).
+ */
+export function FilterSelect<T extends string | number>({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  options: readonly FilterTabOption<T>[];
+  value: T;
+  onChange: (value: T) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <select
+      className="fp-select"
+      aria-label={ariaLabel}
+      value={String(value)}
+      onChange={(event) => {
+        const picked = options.find((option) => String(option.value) === event.target.value);
+        if (picked) {
+          onChange(picked.value);
+        }
+      }}
+    >
+      {options.map((option) => (
+        <option key={String(option.value)} value={String(option.value)} title={option.title}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export function FilterSearch({
   value,
   onChange,

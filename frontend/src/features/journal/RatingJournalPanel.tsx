@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
+import { FilterSelect } from "../../components/filters/FilterPanel";
 import {
   getAttendanceJournal,
   type AttendanceJournal,
@@ -245,19 +246,12 @@ export function RatingJournalPanel({
             {data && data.years.length > 1 && (
               <div className="lb-visits">
                 <span className="lb-visits-label">Год</span>
-                <div className="lb-gender-tabs" role="group" aria-label="Год">
-                  {data.years.map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      aria-pressed={value === data.year}
-                      className={`lb-gender-tab${value === data.year ? " lb-gender-tab-active" : ""}`}
-                      onClick={() => setYear(value)}
-                    >
-                      {value}
-                    </button>
-                  ))}
-                </div>
+                <FilterSelect
+                  ariaLabel="Год"
+                  value={data.year}
+                  onChange={(value) => setYear(value)}
+                  options={data.years.map((value) => ({ value, label: String(value) }))}
+                />
               </div>
             )}
             {platformOptions.length > 1 && (

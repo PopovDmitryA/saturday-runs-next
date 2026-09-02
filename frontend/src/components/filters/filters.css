@@ -122,6 +122,37 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Выпадающий список в панели фильтров — та же «таблетка», что у сегментов,
+   только для перечней, которые в ряд кнопок не помещаются (годы, недели). */
+.fp-select {
+  appearance: none;
+  border: none;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  color: var(--text, inherit);
+  padding: 0.45rem 2rem 0.45rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  max-width: 100%;
+  /* Стрелка рисуется фоном: своя у каждой ОС ломает высоту «таблетки». */
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.05rem) center,
+    calc(100% - 0.75rem) center;
+  background-size:
+    0.3rem 0.3rem,
+    0.3rem 0.3rem;
+  background-repeat: no-repeat;
+}
+
+.fp-select:focus-visible {
+  outline: 2px solid var(--accent-indigo, #4f46e5);
+  outline-offset: 2px;
+}
+
 .fp-tab {
   appearance: none;
   border: none;
