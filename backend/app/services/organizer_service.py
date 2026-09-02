@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -438,11 +438,29 @@ def _compute_location_newcomers(
     from datetime import timedelta
 
     cutoff = date_type.today() - timedelta(days=days)
-    secondary_events = select(EventCrosslink.secondary_event_id)
+    # NOT EXISTS, а не NOT IN: тот же антиджойн, что на главной, где замена
+    # ускорила выборку с 17.4 с до 2.0 с. NOT IN по всей таблице кросслинков
+    # планировщик разворачивает в проход по каждой строке.
+    not_crosslink_secondary = ~exists().where(EventCrosslink.secondary_event_id == Event.id)
 
-    # Первая пробежка каждого участника в его системе (не-тест, без дублей,
-    # только опознанные строки со временем — как везде в счётчиках).
     timed = RunResult.finish_time_sec.isnot(None)
+    # Участники, бежавшие на этой площадке. Без этого сужения min(event_date)
+    # считался по ВСЕЙ таблице результатов — сотни тысяч строк ради нескольких
+    # десятков дебютантов. 03.09.2026 такой запрос шёл на проде 30-70 минут,
+    # копии копились до 37 штук и выедали пул соединений: сайт отвечал
+    # «QueuePool limit of size 5 overflow 10 reached».
+    local_participants = (
+        select(RunResult.participant_id)
+        .where(
+            RunResult.event_id.in_(event_ids),
+            RunResult.participant_id.isnot(None),
+            timed,
+        )
+        .scalar_subquery()
+    )
+
+    # Первая пробежка каждого такого участника в его системе (не-тест, без
+    # дублей, только опознанные строки со временем — как везде в счётчиках).
     firsts = (
         db.query(
             RunResult.participant_id.label("pid"),
@@ -450,10 +468,10 @@ def _compute_location_newcomers(
         )
         .join(Event, RunResult.event_id == Event.id)
         .filter(
-            RunResult.participant_id.isnot(None),
+            RunResult.participant_id.in_(local_participants),
             timed,
             Event.is_test_event.is_(False),
-            Event.id.notin_(secondary_events),
+            not_crosslink_secondary,
         )
         .group_by(RunResult.participant_id)
         .subquery()
@@ -508,7 +526,7 @@ def _compute_location_newcomers(
             RunResult.participant_id.in_(novice_ids),
             timed,
             Event.is_test_event.is_(False),
-            Event.id.notin_(secondary_events),
+            not_crosslink_secondary,
         )
         .group_by(RunResult.participant_id)
         .all()

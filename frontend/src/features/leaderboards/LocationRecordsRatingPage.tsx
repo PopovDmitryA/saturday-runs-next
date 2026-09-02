@@ -18,6 +18,7 @@ import {
   type LocationRecordsResponse,
   type LocationRecordsScope,
 } from "./locationRecordsApi";
+import { surnameFirst } from "../../lib/personName";
 
 const PAGE_STEP = 100;
 
@@ -49,7 +50,7 @@ function stripLeadingHours(display: string | null): string {
 }
 
 function RunnerName({ name, handle }: { name: string | null; handle: string | null }) {
-  const label = name?.trim() || "—";
+  const label = surnameFirst(name) || "—";
   if (!handle || label === "—") {
     return <>{label}</>;
   }

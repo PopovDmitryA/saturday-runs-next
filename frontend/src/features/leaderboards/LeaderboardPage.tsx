@@ -56,6 +56,7 @@ import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { PinnedMeBar } from "../../components/tableUx/PinnedMeBar";
+import { surnameFirst } from "../../lib/personName";
 import "./leaderboards.css";
 
 const PAGE_STEP = 100;
@@ -75,7 +76,7 @@ type LeaderboardPageProps = {
 // Колонки-системы больше не сортируются: чтобы посмотреть зачёт одной системы,
 // есть фильтр «Система» — он пересчитывает и место, и «Всего», а не просто
 // переставляет строки по одному столбцу (решение Дмитрия 01.08.2026).
-type SortKey = "rank" | "total" | "best_time" | "remaining" | `light:${string}`;
+type SortKey = "rank" | "name" | "total" | "best_time" | "remaining" | `light:${string}`;
 
 /** Фильтр столбца светофоров: показать только побывавших или только тех, кто нет. */
 type LightFilter = "yes" | "no";
@@ -695,7 +696,7 @@ function CellValue({
 }
 
 function ParticipantName({ row }: { row: { display_name: string | null; site_serial_id: number | null } }) {
-  const name = row.display_name?.trim() || "Участник";
+  const name = surnameFirst(row.display_name) || "Участник";
   if (row.site_serial_id != null) {
     return (
       <a
@@ -1290,6 +1291,15 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
         (row.row_key && sortedColumn.visits.has(row.row_key) ? 1 : 0) *
         (lightSortMissingFirst ? -1 : 1);
       result.sort((a, b) => wasHere(b) - wasHere(a));
+    } else if (sortKey === "name") {
+      // По алфавиту фамилий: имя в таблице начинается с фамилии, поэтому
+      // сравниваем ту же строку, что видит человек. Единственный столбец, где
+      // порядок восходящий — «от А до Я», а не «от большего к меньшему».
+      result.sort((a, b) =>
+        surnameFirst(a.display_name).localeCompare(surnameFirst(b.display_name), "ru", {
+          sensitivity: "base",
+        }),
+      );
     } else {
       result.sort((a, b) => sortValue(b, sortKey) - sortValue(a, sortKey));
     }
@@ -1406,7 +1416,11 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     >
       {label}
       {hint && <InfoHint text={hint} />}
-      {sortKey === key && <span className="lb-sort-mark" aria-hidden>▾</span>}
+      {sortKey === key && (
+        <span className="lb-sort-mark" aria-hidden>
+          {key === "name" ? "▴" : "▾"}
+        </span>
+      )}
     </th>
   );
 
@@ -1674,7 +1688,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                       {me.rank != null ? formatInt(me.rank) : "—"}
                       <RankDelta delta={me.rank_delta} />
                     </span>
-                    <span className="lb-me-name">{me.display_name ?? "Вы"}</span>
+                    <span className="lb-me-name">{surnameFirst(me.display_name) || "Вы"}</span>
                     <span className="lb-me-values">
                       {columns.map((code) => (
                         <span key={code} className="lb-me-value">
@@ -1894,7 +1908,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                 <thead>
                   <tr>
                     {headerCell("rank", "Место", "lb-col-rank")}
-                    <th className="lb-col-name">Участник</th>
+                    {headerCell("name", "Участник", "lb-col-name")}
                     {lightColumns.map(({ location }, index) => {
                       const columnKey: SortKey = `light:${location.key}`;
                       const sorted = sortKey === columnKey;

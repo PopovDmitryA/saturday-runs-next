@@ -25,6 +25,7 @@ import {
 import { formatFinishTime } from "./formatFinishTime";
 import { getFastestRating, type FastestRatingResponse } from "./fastestApi";
 import { getRegionsRating, type RegionRatingRow, type RegionsPlatform } from "./regionsApi";
+import { surnameFirst } from "../../lib/personName";
 import "./leaderboards.css";
 
 const HUB_TOP_N = 3;
@@ -182,7 +183,7 @@ function LiveRatingCard({ card, platform }: { card: LiveCard; platform: Platform
               <span className={`lb-hub-rank-chip lb-hub-rank-${RANK_TIER[index] ?? "silver"}`}>
                 {row.rank}
               </span>
-              <span className="lb-hub-rank-name">{row.display_name?.trim() || "Участник"}</span>
+              <span className="lb-hub-rank-name">{surnameFirst(row.display_name) || "Участник"}</span>
               <span className="lb-hub-rank-value">
                 {formatInt(row.total)}
                 {valueUnit && <span className="lb-unit">{valueUnit}</span>}
@@ -269,7 +270,7 @@ function FastestRatingCard({ platform }: { platform: PlatformFilter }) {
               <span className={`lb-hub-rank-chip lb-hub-rank-${RANK_TIER[index] ?? "silver"}`}>
                 {row.rank}
               </span>
-              <span className="lb-hub-rank-name">{row.display_name?.trim() || "Участник"}</span>
+              <span className="lb-hub-rank-name">{surnameFirst(row.display_name) || "Участник"}</span>
               <span className="lb-hub-rank-value">
                 {formatFinishTime(row.finish_time_sec, row.finish_time_display)}
               </span>

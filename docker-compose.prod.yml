@@ -16,6 +16,10 @@ services:
       APP_BASE_URL: ${APP_BASE_URL}
       ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID:-}
       TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
+      # Потолок на один запрос из веба. Холодный пересчёт главной укладывается
+      # в ~2 минуты, так что 180s не мешает живым страницам, но не даёт одному
+      # сорвавшемуся запросу держать слот пула часами (см. app/db/session.py).
+      DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-180s}
     ports: []
     volumes:
       - ./.env:/app/.env:ro
