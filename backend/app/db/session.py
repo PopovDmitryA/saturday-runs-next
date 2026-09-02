@@ -29,6 +29,18 @@ def _engine_connect_args() -> dict[str, object]:
         # Локальные прогоны на prod: не висеть бесконечно на lock от worker-five-verst.
         server_opts += ["-c lock_timeout=30s", "-c statement_timeout=600s"]
 
+    # Потолок на один запрос — для веб-процесса. Ни одна страница не считается
+    # минутами, а вот сорваться в такой запрос она может: 03.09.2026 панель
+    # дебютантов в кабинете организатора собирала первую пробежку КАЖДОГО
+    # участника, шла 30-70 минут, накопила 37 одновременных копий и выела пул
+    # соединений — сайт отвечал «QueuePool limit of size 5 overflow 10 reached».
+    # С потолком такой запрос умирает сам и слот в пуле не держит.
+    # Воркерам таймаут НЕ ставим: там пересчёты рекордов и импорты легитимно
+    # идут долго, поэтому переменная задаётся только сервису api.
+    statement_timeout = os.environ.get("DB_STATEMENT_TIMEOUT", "").strip()
+    if statement_timeout:
+        server_opts.append(f"-c statement_timeout={statement_timeout}")
+
     if not server_opts:
         return {}
     return {"options": " ".join(server_opts)}
