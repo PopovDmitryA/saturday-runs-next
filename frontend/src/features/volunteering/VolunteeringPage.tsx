@@ -58,6 +58,12 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
   // entry_id в списке не находит. Без этой карты она показывала прочерк с
   // подсказкой про 30 дней — неправдой.
   const [eligibleByPlace, setEligibleByPlace] = useState<Map<string, EligibleRun>>(new Map());
+  // Уже поставленные оценки ПРОБЕЖЕК по тому же ключу «дата + площадка».
+  // Список доступных стартов покрывает только окно 30 дней и добор истории;
+  // пробежка старше, но оценённая, в нём отсутствует — а «Пробежки» её звезду
+  // показывают. Правило одно: у старта одна оценка, и волонтёрская строка
+  // обязана показывать её так же (Дмитрий 02.09.2026).
+  const [runRatingsByPlace, setRunRatingsByPlace] = useState<Map<string, MyRating>>(new Map());
   const [ratingsVersion, setRatingsVersion] = useState(0);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
   const { snackbar, showSnackbar, dismissSnackbar } = useSnackbar();
@@ -156,6 +162,13 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
               .map((item) => [item.entry_id, item]),
           ),
         );
+        setRunRatingsByPlace(
+          new Map(
+            res.ratings
+              .filter((item) => item.participation_type === "run")
+              .map((item) => [`${item.event_date}|${item.location_name}`, item]),
+          ),
+        );
       })
       .catch(() => {
         // тихо — звёзды просто не покажутся
@@ -180,10 +193,34 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
    * ту же карточку, просто это будет оценка бегуна. */
   const runEntryFor = useCallback(
     (item: VolunteeringItem): EligibleRun | undefined => {
-      const entry = eligibleByPlace.get(`${item.event_date}|${item.location_name}`);
-      return entry && entry.participation_type === "run" ? entry : undefined;
+      const key = `${item.event_date}|${item.location_name}`;
+      const entry = eligibleByPlace.get(key);
+      if (entry && entry.participation_type === "run") {
+        return entry;
+      }
+      // Пробежка вне окна оценки, но уже оценённая: собираем карточку из
+      // самой оценки — та же форма, что строит «Пробежки» в buildEligibleRun.
+      const rated = runRatingsByPlace.get(key);
+      if (!rated) {
+        return undefined;
+      }
+      return {
+        entry_id: rated.entry_id,
+        participation_type: "run",
+        run_result_id: rated.run_result_id,
+        event_date: rated.event_date,
+        platform_code: rated.platform_code,
+        location_name: rated.location_name,
+        location_city: rated.location_city,
+        finish_time_display: rated.finish_time_display,
+        position: rated.position,
+        is_pr: rated.is_pr,
+        volunteer_role: null,
+        event_url: rated.event_url,
+        my_rating: rated,
+      };
     },
-    [eligibleByPlace],
+    [eligibleByPlace, runRatingsByPlace],
   );
 
   /** Оценка из карточки доступного старта в виде, который ждёт звезда:
