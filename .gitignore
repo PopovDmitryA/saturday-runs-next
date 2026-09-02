@@ -73,3 +73,4 @@ deploy/nginx/maintenance_current.html
 # содержит приватный VLESS-профиль (UUID, reality public key). Шаблон см. config.example.json.
 deploy/tg-proxy/config.json
 data/og/
+deploy/nginx/maintenance_on

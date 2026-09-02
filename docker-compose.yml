@@ -247,6 +247,8 @@ services:
       # OG-картинки локаций: пишет celery-задача og_render (worker-parkrun),
       # nginx раздаёт как /og/locations/* (location ^~ /og/locations/).
       - ./data/og:/og-static/og:ro
+      # Страницы обслуживания и флаг планового окна (deploy/nginx/maintenance_on).
+      - ./deploy/nginx:/usr/share/nginx/maintenance:ro
     depends_on:
       - api
 
