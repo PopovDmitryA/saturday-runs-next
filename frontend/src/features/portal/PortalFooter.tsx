@@ -122,7 +122,7 @@ export function PortalFooter() {
             <p className="portal-footer-tagline">Статистика парковых пробежек</p>
             <p className="portal-footer-note">
               Проект живёт с {FOUNDED_YEAR} года: собираем результаты субботних стартов
-              «5 вёрст», S95, parkrun и RunPark в одну историю участника.
+              5 вёрст, S95, parkrun и RunPark в одну историю участника.
             </p>
             <a
               className="portal-footer-channel"

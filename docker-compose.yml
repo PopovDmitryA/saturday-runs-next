@@ -7,6 +7,12 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-saturday_runs_lk}
     ports:
       - "${POSTGRES_PUBLISH_PORT:-5433}:5432"
+    # Докер по умолчанию даёт контейнеру 64 МБ /dev/shm, а Postgres кладёт туда
+    # сегменты параллельных хеш-джойнов (dynamic_shared_memory_type=posix). На
+    # снимке прода (2.3 млн результатов) страница локации падала с
+    # «could not resize shared memory segment … No space left on device»
+    # (стенд 02.09.2026). На проде PG на хосте — там лимита нет.
+    shm_size: "1g"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
