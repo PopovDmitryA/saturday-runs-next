@@ -16,7 +16,9 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User, VolunteerResult
+from app.parkrun.volunteer_credits import count_parkrun_volunteering
 from app.services.co_runners_service import _is_unknown_participant_name
+from app.services.location_catalog_service import PARKRUN_PLATFORM_CODE
 
 MIN_QUERY_LENGTH = 3
 MAX_QUERY_LENGTH = 100
@@ -166,7 +168,7 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
 
     participant_ids = [participant.id for participant, _ in candidates]
     run_stats = _load_run_stats(db, participant_ids)
-    volunteering_counts = _load_volunteering_counts(db, participant_ids)
+    volunteering_counts = _load_volunteering_counts(db, candidates)
     home_locations = _load_home_locations(db, participant_ids)
     linked_owners = _load_linked_owners(db, candidates)
 
@@ -341,7 +343,22 @@ def _load_run_stats(db: Session, participant_ids: list[UUID]) -> dict[UUID, tupl
     return {participant_id: (count, last_date) for participant_id, count, last_date in rows}
 
 
-def _load_volunteering_counts(db: Session, participant_ids: list[UUID]) -> dict[UUID, int]:
+def _load_volunteering_counts(
+    db: Session, candidates: list[tuple[Participant, Platform]]
+) -> dict[UUID, int]:
+    """Волонтёрств у каждого кандидата поиска.
+
+    У parkrun считать строки нельзя: волонтёрская история приезжает из профиля
+    атлета не событиями, а сводкой («Run Director (22×)»), и все её строки лежат
+    на дате-заглушке 1970-01-01. Фильтр по дате отсекал их целиком, и карточка
+    parkrun показывала «0 волонтёрств» человеку со 112 сменами (Дмитрий
+    02.09.2026). Для parkrun берём тот же счётчик, что и кабинет, —
+    count_parkrun_volunteering (parkrun называет это Total Credits).
+    """
+    participant_ids = [participant.id for participant, _ in candidates]
+    if not participant_ids:
+        return {}
+
     rows = (
         db.query(VolunteerResult.participant_id, func.count(VolunteerResult.id))
         .join(Event, VolunteerResult.event_id == Event.id)
@@ -353,7 +370,12 @@ def _load_volunteering_counts(db: Session, participant_ids: list[UUID]) -> dict[
         .group_by(VolunteerResult.participant_id)
         .all()
     )
-    return dict(rows)
+    counts: dict[UUID, int] = dict(rows)
+
+    for participant, platform in candidates:
+        if platform.code == PARKRUN_PLATFORM_CODE:
+            counts[participant.id] = count_parkrun_volunteering(db, participant, platform.id)
+    return counts
 
 
 def _load_home_locations(db: Session, participant_ids: list[UUID]) -> dict[UUID, tuple[str, str | None]]:
