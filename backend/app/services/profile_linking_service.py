@@ -15,6 +15,7 @@ from app.platform_adapters.parkrun.url import InvalidProfileUrlError as ParkrunI
 from app.platform_adapters.registry import ensure_adapters_registered, get_adapter
 from app.platform_adapters.s95.parser import ProfileNotFoundError as S95ProfileNotFoundError
 from app.platform_adapters.s95.parser import ProfileParseError as S95ProfileParseError
+from app.services.organizer_access_service import invalidate_organizer_locations_cache
 from app.services.participant_profile_service import get_participant_data_freshness, try_profile_preview_from_db
 from app.services.profile_fetch_pending_service import is_fetch_cooldown_error, raise_or_enqueue_fetch_error
 from app.services.profile_preview_cache import get_cached_profile_preview, store_profile_preview
@@ -385,6 +386,11 @@ def confirm_profile_link(
     # здесь: привязка — действие самого человека, он видит результат сразу. В
     # фоне источник не меняется, иначе имя гуляло бы само по себе.
     rebind_display_name_source(db, user, commit=True)
+    # Доступ в кабинет организатора выводится из волонтёрских ролей привязанных
+    # профилей и кэшируется на час. Без сброса человек, только что привязавший
+    # профиль с ролью «Организатор», не видел пункта меню до протухания кэша
+    # (Дмитрий 02.09.2026, на приёмке релиза).
+    invalidate_organizer_locations_cache(user.id)
 
     from app.services.sync_enqueue_service import enqueue_linking_platform_sync
 
@@ -463,6 +469,11 @@ def confirm_profile_link_by_participant(db: Session, user: User, participant_id:
     # Как и в confirm_profile_link: привязка — момент пересмотра источника
     # имени на сайте.
     rebind_display_name_source(db, user, commit=True)
+    # Доступ в кабинет организатора выводится из волонтёрских ролей привязанных
+    # профилей и кэшируется на час. Без сброса человек, только что привязавший
+    # профиль с ролью «Организатор», не видел пункта меню до протухания кэша
+    # (Дмитрий 02.09.2026, на приёмке релиза).
+    invalidate_organizer_locations_cache(user.id)
 
     from app.services.sync_enqueue_service import enqueue_linking_platform_sync
 

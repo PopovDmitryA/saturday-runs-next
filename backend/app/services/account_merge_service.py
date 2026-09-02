@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models import AuthIdentity, DashboardCache, Platform, PlatformLink, SyncJob, User
 from app.services.auth_identity_service import list_user_identities, merge_preview_payload
 from app.services.dashboard_service import recompute_dashboard_cache
+from app.services.organizer_access_service import invalidate_organizer_locations_cache
 from app.services.profile_unlink_service import unlink_user_profile
 from app.services.user_display_name_service import rebind_display_name_source
 
@@ -91,6 +92,8 @@ def merge_users(db: Session, survivor_id: UUID, merged_id: UUID) -> User:
     recompute_dashboard_cache(db, survivor.id)
     # Привязки и способы входа переехали — источник имени пересматриваем заново.
     rebind_display_name_source(db, survivor, commit=True)
+    # К выжившему профилю переехали чужие привязки — доступ мог появиться.
+    invalidate_organizer_locations_cache(survivor.id)
     return survivor
 
 

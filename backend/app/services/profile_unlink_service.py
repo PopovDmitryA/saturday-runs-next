@@ -15,6 +15,7 @@ from app.models import (
 from app.platform_adapters.registry import ensure_adapters_registered
 from app.services.celery_queue_inspector import celery_task_id_for_job
 from app.services.dashboard_service import recompute_dashboard_cache
+from app.services.organizer_access_service import invalidate_organizer_locations_cache
 from app.services.profile_linking_service import ProfileLinkingError, _get_active_platform
 from app.services.profile_preview_cache import clear_profile_preview_cache
 from app.services.user_display_name_service import rebind_display_name_source, selected_source_code
@@ -110,6 +111,8 @@ def unlink_user_profile(db: Session, user: User, platform_code: str) -> dict[str
     if selected_source_code(db, user) == platform_code:
         user.display_name_source_manual = False
     rebind_display_name_source(db, user)
+    # Отвязали профиль — доступ мог пропасть; кэш обязан это увидеть сразу.
+    invalidate_organizer_locations_cache(user.id)
     recompute_dashboard_cache(db, user.id)
     db.commit()
 
