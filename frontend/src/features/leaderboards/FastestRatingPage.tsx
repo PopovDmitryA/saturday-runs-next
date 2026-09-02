@@ -31,6 +31,7 @@ import {
   type MyFastestRow,
 } from "./fastestApi";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
+import { surnameFirst } from "../../lib/personName";
 import "./leaderboards.css";
 
 const PAGE_STEP = 100;
@@ -115,7 +116,7 @@ function writeFilters(filters: FastestFilters): void {
 }
 
 function ParticipantName({ row }: { row: FastestRow }) {
-  const name = row.display_name?.trim() || "Участник";
+  const name = surnameFirst(row.display_name) || "Участник";
   if (row.site_serial_id != null) {
     return (
       <a className="lb-name lb-name-link" href={`/users/${row.site_serial_id}`}>
@@ -494,7 +495,7 @@ export function FastestRatingPage() {
               >
                 <div className="lb-me-row">
                   <span className="lb-me-rank">{formatInt(me.rank ?? 0)}</span>
-                  <span className="lb-me-name">{me.row.display_name ?? "Вы"}</span>
+                  <span className="lb-me-name">{surnameFirst(me.row.display_name) || "Вы"}</span>
                   <span className="lb-me-values">
                     <span className="lb-me-value">
                       <span className="lb-me-platform">Ваш лучший результат</span>
