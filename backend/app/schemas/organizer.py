@@ -250,6 +250,11 @@ class TeamLoadPerson(BaseModel):
     profile_url: str | None = None
     slots: int
     share_pct: int
+    # Пробежки на этой площадке за тот же период — вторая половина баланса
+    # «человек бегает или только помогает».
+    runs_here: int = 0
+    # Смены, когда человек в этот день нигде не бежал: пришёл только помогать.
+    pure_slots: int = 0
 
 
 class DirectorRotation(BaseModel):

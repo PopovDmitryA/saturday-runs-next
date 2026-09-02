@@ -3644,6 +3644,10 @@ export type OrganizerTeamLoadResponse = {
     profile_url: string | null;
     slots: number;
     share_pct: number;
+    /** Пробежки на этой площадке за тот же период. */
+    runs_here?: number;
+    /** Смены, когда человек в этот день нигде не бежал. */
+    pure_slots?: number;
   }[];
   roles: OrganizerTeamRole[];
   /** Светофор ротации организаторов: не держится ли старт на одном человеке. */

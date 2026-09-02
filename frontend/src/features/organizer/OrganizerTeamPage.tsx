@@ -146,6 +146,27 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  // «Только чистые смены»: не засчитывать дни, когда человек в этот же день
+  // где-то бежал — здесь или на соседней площадке.
+  const [pureOnly, setPureOnly] = useState(false);
+
+  // В этом режиме и число, и доля, и порядок считаются по чистым сменам:
+  // иначе список остался бы отсортированным по общему счёту, и первым стоял бы
+  // тот, кто почти всегда совмещал волонтёрство с пробежкой.
+  const loadRows = useMemo(() => {
+    const rows = data?.top_load ?? [];
+    if (!pureOnly) {
+      return rows;
+    }
+    const total = rows.reduce((sum, person) => sum + (person.pure_slots ?? person.slots), 0);
+    return [...rows]
+      .map((person) => {
+        const value = person.pure_slots ?? person.slots;
+        return { ...person, share_pct: total ? Math.round((value / total) * 100) : 0 };
+      })
+      .filter((person) => (person.pure_slots ?? person.slots) > 0)
+      .sort((a, b) => (b.pure_slots ?? b.slots) - (a.pure_slots ?? a.slots));
+  }, [data, pureOnly]);
 
   useEffect(() => {
     let cancelled = false;
@@ -354,6 +375,20 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
                 топ по числу волонтёрств за год — этим людям особенно нужны подмена и отдых
               </span>
             </header>
+            <div className="org-toolbar-row org-load-controls">
+              <label className="org-toolbar-label org-toolbar-checkbox">
+                <input
+                  type="checkbox"
+                  checked={pureOnly}
+                  onChange={(event) => setPureOnly(event.target.checked)}
+                />{" "}
+                Только чистые смены
+              </label>
+              <span className="muted">
+                Не засчитывать дни, когда человек в этот же день ещё и бежал — здесь или на
+                любой другой площадке.
+              </span>
+            </div>
             <TableWrap innerRef={attachLoadHead}>
               <table className="data-table org-svod-table">
                 <thead>
@@ -364,13 +399,17 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
                       <HeaderHint text="Сколько раз человек выходил волонтёрить на этой локации за последние 12 месяцев, во всех ролях" />
                     </th>
                     <th>
+                      Пробежек за год
+                      <HeaderHint text="Сколько раз человек бегал на этой локации за тот же период — видно, только помогает он или ещё и бегает" />
+                    </th>
+                    <th>
                       Доля нагрузки
                       <HeaderHint text="Какая часть всех волонтёрств локации за год приходится на этого человека" />
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.top_load.map((person) => (
+                  {loadRows.map((person) => (
                     <tr key={person.participant_id}>
                       <td>
                         {person.profile_url ? (
@@ -381,7 +420,8 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
                           person.name ?? "—"
                         )}
                       </td>
-                      <td>{formatInt(person.slots)}</td>
+                      <td>{formatInt(pureOnly ? (person.pure_slots ?? person.slots) : person.slots)}</td>
+                      <td>{formatInt(person.runs_here ?? 0)}</td>
                       <td>
                         <div className="org-bar-row">
                           <div

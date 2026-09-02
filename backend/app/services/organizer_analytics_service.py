@@ -28,12 +28,14 @@ from app.models import (
     Location,
     Participant,
     Platform,
+    PlatformLink,
     RunResult,
     VolunteerResult,
 )
 from app.services.location_page_service import (
     LocationIdentity,
     _location_event_ids,
+    _platform_link_join,
     _read_json_cache,
     _write_json_cache,
 )
@@ -196,6 +198,7 @@ def _compute_team_load(
             VolunteerResult.event_id,
             Participant.display_name,
             Participant.profile_url,
+            Event.event_date,
         )
         .join(Event, VolunteerResult.event_id == Event.id)
         .join(Participant, VolunteerResult.participant_id == Participant.id)
@@ -215,7 +218,13 @@ def _compute_team_load(
     role_labels: dict[str, str] = {}
     person_slots: dict[Any, int] = {}
     person_names: dict[Any, tuple[str | None, str | None]] = {}
-    for pid, role, _event_id, name, profile_url in rows:
+    # Смены по дням: считаем именно смены (роль на старте), а не дни, иначе
+    # «из 128 волонтёрств чистых 51» сравнивало бы строки с датами — у человека,
+    # берущего по две роли за старт, число падало бы вдвое просто так.
+    vol_slots_by_day: dict[Any, dict[date, int]] = {}
+    for pid, role, _event_id, name, profile_url, event_date in rows:
+        by_day = vol_slots_by_day.setdefault(pid, {})
+        by_day[event_date] = by_day.get(event_date, 0) + 1
         canonical = canonical_volunteer_role(role)
         if canonical is None:
             continue
@@ -226,6 +235,55 @@ def _compute_team_load(
         role_people[canonical.key][pid] = role_people[canonical.key].get(pid, 0) + 1
         person_slots[pid] = person_slots.get(pid, 0) + 1
         person_names[pid] = (name, profile_url)
+
+    # Пробежки тех же людей: сколько раз бегали ЗДЕСЬ (это баланс «бегает или
+    # только помогает») и в какие дни бегали ГДЕ УГОДНО. Второе нужно фильтру
+    # «только чистые смены»: если человек бежал в Пестовском, а волонтёрил в
+    # тот же день в Мещерском, для Мещерского это не чистая смена
+    # (Дмитрий 03.09.2026). Ключ группировки — профиль сайта, иначе пробежка в
+    # соседней системе не нашлась бы.
+    participant_ids = list(person_slots)
+    group_of: dict[Any, Any] = {}
+    for pid, gkey in (
+        db.query(Participant.id, func.coalesce(PlatformLink.user_id, Participant.id))
+        .outerjoin(PlatformLink, _platform_link_join())
+        .filter(Participant.id.in_(participant_ids))
+        .all()
+    ):
+        group_of[pid] = gkey
+
+    runs_here: dict[Any, int] = {}
+    for pid, count in (
+        db.query(RunResult.participant_id, func.count(func.distinct(RunResult.event_id)))
+        .join(Event, RunResult.event_id == Event.id)
+        .filter(
+            RunResult.participant_id.in_(participant_ids),
+            RunResult.event_id.in_(event_ids),
+            Event.event_date >= since,
+        )
+        .group_by(RunResult.participant_id)
+        .all()
+    ):
+        runs_here[pid] = int(count)
+
+    run_dates_by_group: dict[Any, set[date]] = {}
+    if group_of:
+        group_key = func.coalesce(PlatformLink.user_id, RunResult.participant_id)
+        for gkey, event_date in (
+            db.query(group_key.label("gkey"), Event.event_date)
+            .select_from(RunResult)
+            .join(Event, RunResult.event_id == Event.id)
+            .join(Participant, RunResult.participant_id == Participant.id)
+            .outerjoin(PlatformLink, _platform_link_join())
+            .filter(
+                group_key.in_(set(group_of.values())),
+                Event.event_date >= since,
+                Event.is_test_event.is_(False),
+            )
+            .distinct()
+            .all()
+        ):
+            run_dates_by_group.setdefault(gkey, set()).add(event_date)
 
     director_rotation = _director_rotation(role_people, person_names, months)
 
@@ -276,6 +334,14 @@ def _compute_team_load(
                 "profile_url": person_names.get(pid, (None, None))[1],
                 "slots": count,
                 "share_pct": round(count / sum(person_slots.values()) * 100),
+                # Пробежки здесь за тот же период — вторая половина баланса.
+                "runs_here": runs_here.get(pid, 0),
+                # Смены, когда человек в этот день нигде не бежал.
+                "pure_slots": sum(
+                    slots_that_day
+                    for day, slots_that_day in vol_slots_by_day.get(pid, {}).items()
+                    if day not in run_dates_by_group.get(group_of.get(pid), set())
+                ),
             }
             for pid, count in person_slots.items()
         ),
