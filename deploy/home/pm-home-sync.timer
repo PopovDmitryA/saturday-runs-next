@@ -1,0 +1,10 @@
+[Unit]
+Description=Проверять выкаченный коммит раз в 5 минут
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=5min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

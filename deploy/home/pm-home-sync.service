@@ -1,0 +1,13 @@
+[Unit]
+Description=Догнать домашний сервер до выкаченного на прод коммита
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=dmitry
+ExecStart=/bin/bash /home/dmitry/saturday-runs-next/scripts/home_sync.sh
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target

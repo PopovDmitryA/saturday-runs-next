@@ -23,8 +23,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.config import get_settings
+from app.db.schema_guard import SchemaMismatch, assert_schema_matches
 from app.db.session import get_session_factory
 from app.parkrun.fetch.daemon_log import cline, setup_daemon_logging
+from app.parkrun.fetch.proxy_pool import load_proxies
 from app.services.parkrun_queue_daemon import run_daemon
 
 logger = logging.getLogger(__name__)
@@ -85,6 +87,29 @@ def main() -> int:
         default=3.0,
         help="With --no-browser: seconds between requests (jittered ±30%%)",
     )
+
+    parser.add_argument(
+
+        "--proxies",
+
+        default="",
+
+        help=(
+
+            "Список исходящих прокси через запятую, например "
+
+            "socks5://127.0.0.1:10865,socks5://127.0.0.1:10866. Упёрлись в "
+
+            "защиту на одном выходе — берём следующий, вместо остановки "
+
+            "пачки. Пусто — берём из PARKRUN_FETCH_PROXIES, иначе идём "
+
+            "напрямую."
+
+        ),
+
+    )
+
     parser.add_argument(
         "--solve-captcha",
         action="store_true",
@@ -103,6 +128,11 @@ def main() -> int:
     Session = get_session_factory()
     try:
         with Session() as db:
+            # Сначала сверяем схему: этот скрипт теперь запускается и на домашнем
+            # сервере, где копия кода живёт отдельно от прода и может отстать.
+            # Расхождение проявляется как ошибка по несуществующей колонке
+            # посреди разбора очереди — по ней причину не угадать.
+            assert_schema_matches(db, what="разбор очереди")
             result = run_daemon(
                 db,
                 use_cdp=args.use_cdp,
@@ -113,7 +143,12 @@ def main() -> int:
                 use_httpx=args.no_browser,
                 fast_delay_seconds=args.fast_delay if args.no_browser else None,
                 solve_captcha=args.solve_captcha and args.no_browser,
+                proxies=load_proxies(args.proxies or None),
             )
+    except SchemaMismatch as exc:
+        # Не поломка, а рассинхрон: трейсбэк тут только мешает.
+        cline(str(exc))
+        return 2
     except Exception:
         # Полное падение скрипта (не отдельная строка очереди) — единственный
         # случай, когда трейсбэк уместен и в терминале. Полный текст — в файле.

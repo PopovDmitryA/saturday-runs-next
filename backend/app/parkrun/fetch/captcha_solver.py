@@ -6,6 +6,9 @@
 httpx ходит с этим токеном (пока WAF не попросит новый). Так очередь сайта
 run5k.run обрабатывается на скорости httpx, но без ручного прохождения капчи.
 
+Ходить может через прокси (параметр proxy) — тот же выход, что и httpx-клиент
+сессии. Разные адреса у браузера и у качалки делают токен бесполезным.
+
 Сам решатель (CLIP-модель + логика капчи) живёт в соседнем проекте
 parkrun-monitoring и переиспользуется отсюда — дублировать его в бэкенд смысла
 нет. Если проект не склонирован или нет ML-зависимостей (torch/open_clip),
@@ -38,8 +41,11 @@ class WafTokenHarvester:
     чтение контента в этот момент бросает исключение — это признак УСПЕХА, надо
     просто проверить куки (см. pass_captcha в parkrun-monitoring)."""
 
-    def __init__(self, user_agent: str) -> None:
+    def __init__(self, user_agent: str, proxy: str | None = None) -> None:
         self._ua = user_agent
+        # Тот же выход, которым ходит httpx: токен AWS WAF привязан к клиенту,
+        # и добытый с другого адреса он не подойдёт.
+        self._proxy = proxy
         self._clip = None
         self._round = 0
         self._playwright = None
@@ -100,7 +106,14 @@ class WafTokenHarvester:
             logger.warning("captcha solver unavailable: %r", exc)
             return None, False
 
-        br = self._playwright.chromium.launch(headless=True, args=["--no-proxy-server"])
+        # Без прокси браузеру явно запрещаем системный: иначе он может подхватить
+        # настройки окружения и уйти не туда, куда ходит httpx.
+        launch_kwargs: dict = {"headless": True}
+        if self._proxy:
+            launch_kwargs["proxy"] = {"server": self._proxy}
+        else:
+            launch_kwargs["args"] = ["--no-proxy-server"]
+        br = self._playwright.chromium.launch(**launch_kwargs)
         ctx = br.new_context(user_agent=self._ua, viewport={"width": 1280, "height": 900})
         token = None
         cleared = False
