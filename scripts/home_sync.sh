@@ -48,11 +48,13 @@ was_active=$(systemctl is-active "$QUEUE_TIMER" 2>/dev/null || true)
 
 pyproject_before=$(md5sum "$LOCAL_DIR/backend/pyproject.toml" 2>/dev/null | cut -d' ' -f1)
 
-# .env и data/ — наши, локальные: настройки подключения к базе через туннель и
-# каталог с картинками. Их с прода не тянем.
+# .env* и data/ — наши, локальные: настройки подключения к базе через туннель и
+# каталог с картинками. Маска со звёздочкой не случайна: рядом с .env прод
+# держит резервные копии вида .env.backup-ГГГГММДД-ЧЧММСС, они принадлежат root
+# с правами 600, и rsync на них падает целиком (Permission denied).
 rsync -a --delete \
     --exclude '.git/' --exclude 'node_modules/' --exclude '__pycache__/' \
-    --exclude '.env' --exclude '.env.prod' --exclude 'data/' \
+    --exclude '.env*' --exclude 'data/' \
     -e "ssh -o BatchMode=yes" "$VPS:$REMOTE_DIR/" "$LOCAL_DIR/" || {
         log "rsync не прошёл — оставляю как было"
         [ "$was_active" = "active" ] && sudo systemctl start "$QUEUE_TIMER" 2>/dev/null
