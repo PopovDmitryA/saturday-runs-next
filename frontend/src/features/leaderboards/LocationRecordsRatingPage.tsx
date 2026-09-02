@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PlatformBadge } from "../../components/PlatformBadge";
 import { GenderFilter } from "../../components/filters/GenderFilter";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { TableWrap } from "../../components/tableUx/TableWrap";
@@ -437,7 +438,13 @@ export function LocationRecordsRatingPage() {
                     <div className="rowcard-right">
                       <div className="rowcard-value">{stripLeadingHours(row.finish_time_display)}</div>
                       {data.scope === "absolute" && data.platform === "all" && (
-                        <div className="rowcard-sub">{row.platform_label}</div>
+                        <div className="rowcard-sub">
+                          {row.platform_code ? (
+                            <PlatformBadge code={row.platform_code} />
+                          ) : (
+                            (row.platform_label ?? "—")
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -483,7 +490,13 @@ export function LocationRecordsRatingPage() {
                           <RecordDate row={row} />
                         </td>
                         {data.scope === "absolute" && data.platform === "all" && (
-                          <td className="lb-locrec-platform">{row.platform_label}</td>
+                          <td className="lb-locrec-platform">
+                            {row.platform_code ? (
+                              <PlatformBadge code={row.platform_code} />
+                            ) : (
+                              (row.platform_label ?? "—")
+                            )}
+                          </td>
                         )}
                       </tr>
                     ))}

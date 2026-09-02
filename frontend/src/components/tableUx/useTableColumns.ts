@@ -46,7 +46,13 @@ export function useTableColumns(columns: AdaptiveColumn[]): TableColumns {
     showFull,
     show: (key: string) => showFull || adaptive.isVisible(key),
     measureRef: adaptive.measureRef,
-    minWidth: adaptive.minWidth,
+    // В полном виде минимум — сумма ВСЕХ колонок, а не только влезших: иначе
+    // table-layout:fixed раздаёт фиксированные ширины остальным, а колонке без
+    // ширины («Локация») достаётся остаток, и она схлопывалась до «Л…»
+    // (Дмитрий 02.09.2026). С минимумом таблица честно листается вбок.
+    minWidth: showFull
+      ? columns.reduce((sum, column) => sum + column.width, 0)
+      : adaptive.minWidth,
     hasToggle: !adaptive.showsEverything,
   };
 }

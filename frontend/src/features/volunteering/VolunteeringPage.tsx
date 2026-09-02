@@ -52,6 +52,12 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
   const [canRate, setCanRate] = useState(false);
   // entry_id стартов, доступных к оценке прямо сейчас (правило считает бэк).
   const [eligibleIds, setEligibleIds] = useState<Set<string>>(new Set());
+  // Доступные старты по ключу «дата + площадка». Нужны для случая, когда в этот
+  // день на площадке была и пробежка: бэкенд намеренно оставляет один старт —
+  // как пробежку (см. list_eligible_runs), и волонтёрская строка своего
+  // entry_id в списке не находит. Без этой карты она показывала прочерк с
+  // подсказкой про 30 дней — неправдой.
+  const [eligibleByPlace, setEligibleByPlace] = useState<Map<string, EligibleRun>>(new Map());
   const [ratingsVersion, setRatingsVersion] = useState(0);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
   const { snackbar, showSnackbar, dismissSnackbar } = useSnackbar();
@@ -136,6 +142,11 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
         }
         setCanRate(res.can_rate);
         setEligibleIds(new Set(eligible.runs.map((entry) => entry.entry_id)));
+        setEligibleByPlace(
+          new Map(
+            eligible.runs.map((entry) => [`${entry.event_date}|${entry.location_name}`, entry]),
+          ),
+        );
         // В таблице волонтёрств показываем только волонтёрские оценки
         // (run_result_id пуст), keyed по entry_id.
         setRatingsMap(
@@ -161,6 +172,38 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
     (ratingEntryId: string) => eligibleIds.has(ratingEntryId),
     [eligibleIds],
   );
+
+  /** Старт этого дня на этой площадке, если он оценивается как пробежка.
+   *
+   * В такой день человек и бежал, и волонтёрил: оценка у старта одна, и бэкенд
+   * отдаёт её как пробежку. Оценить из волонтёрств всё равно даём — открываем
+   * ту же карточку, просто это будет оценка бегуна. */
+  const runEntryFor = useCallback(
+    (item: VolunteeringItem): EligibleRun | undefined => {
+      const entry = eligibleByPlace.get(`${item.event_date}|${item.location_name}`);
+      return entry && entry.participation_type === "run" ? entry : undefined;
+    },
+    [eligibleByPlace],
+  );
+
+  /** Оценка из карточки доступного старта в виде, который ждёт звезда:
+   * контекст (дата, площадка, время) лежит рядом, в самой карточке. */
+  const ratingOfEntry = useCallback((entry: EligibleRun | undefined): MyRating | undefined => {
+    if (!entry?.my_rating) {
+      return undefined;
+    }
+    return {
+      ...entry.my_rating,
+      event_date: entry.event_date,
+      platform_code: entry.platform_code,
+      location_name: entry.location_name,
+      location_city: entry.location_city,
+      finish_time_display: entry.finish_time_display,
+      position: entry.position,
+      is_pr: entry.is_pr,
+      event_url: entry.event_url ?? null,
+    };
+  }, []);
 
   const buildEligibleRun = useCallback(
     (item: VolunteeringItem, rating: MyRating | undefined): EligibleRun => ({
@@ -387,12 +430,14 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                       const rating = item.rating_entry_id
                         ? ratingsMap.get(item.rating_entry_id)
                         : undefined;
-                      const canCreate =
-                        canRate &&
-                        !rating &&
-                        !!item.rating_entry_id &&
-                        !item.is_crosslinked &&
-                        isEligible(item.rating_entry_id);
+                      const ownEligible =
+                        !!item.rating_entry_id && !item.is_crosslinked && isEligible(item.rating_entry_id);
+                      // Своей строки в списке нет — возможно, старт этого дня оценивается
+                      // как пробежка. Тогда звезду показываем и открываем её карточку.
+                      const viaRun =
+                        ownEligible || item.is_crosslinked ? undefined : runEntryFor(item);
+                      const shownRating = rating ?? ratingOfEntry(viaRun);
+                      const canCreate = canRate && !shownRating && (ownEligible || !!viaRun);
                       return (
                         <tr
                           key={`${item.platform_code}-${item.event_date}-${item.location_name}-${index}`}
@@ -419,10 +464,15 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                             <td className="td-rating">
                               <span className="s2-row-actions">
                                 <RunRatingStar
-                                  rating={rating}
+                                  rating={shownRating}
                                   canCreate={canCreate}
                                   canRate={canRate}
-                                  onOpen={() => setActiveRun(buildEligibleRun(item, rating))}
+                                  naTitle={
+                                    item.is_crosslinked
+                                      ? "Старт не в зачёте — оценка не ставится"
+                                      : "Оценить можно только старты за последние 30 дней"
+                                  }
+                                  onOpen={() => setActiveRun(viaRun ?? buildEligibleRun(item, shownRating))}
                                 />
                                 <ShareRowButton
                                   subject={volunteeringSubject(item, currentUser ?? null)}
@@ -573,20 +623,27 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                           const rating = item.rating_entry_id
                             ? ratingsMap.get(item.rating_entry_id)
                             : undefined;
-                          const canCreate =
-                            canRate &&
-                            !rating &&
-                            !!item.rating_entry_id &&
-                            !item.is_crosslinked &&
-                            isEligible(item.rating_entry_id);
+                          const ownEligible =
+                            !!item.rating_entry_id && !item.is_crosslinked && isEligible(item.rating_entry_id);
+                          // Своей строки в списке нет — возможно, старт этого дня оценивается
+                          // как пробежка. Тогда звезду показываем и открываем её карточку.
+                          const viaRun =
+                            ownEligible || item.is_crosslinked ? undefined : runEntryFor(item);
+                          const shownRating = rating ?? ratingOfEntry(viaRun);
+                          const canCreate = canRate && !shownRating && (ownEligible || !!viaRun);
                           return (
                             <td className="td-rating">
                               <span className="s2-row-actions">
                                 <RunRatingStar
-                                  rating={rating}
+                                  rating={shownRating}
                                   canCreate={canCreate}
                                   canRate={canRate}
-                                  onOpen={() => setActiveRun(buildEligibleRun(item, rating))}
+                                  naTitle={
+                                    item.is_crosslinked
+                                      ? "Старт не в зачёте — оценка не ставится"
+                                      : "Оценить можно только старты за последние 30 дней"
+                                  }
+                                  onOpen={() => setActiveRun(viaRun ?? buildEligibleRun(item, shownRating))}
                                 />
                                 <ShareRowButton
                                   subject={volunteeringSubject(item, currentUser ?? null)}

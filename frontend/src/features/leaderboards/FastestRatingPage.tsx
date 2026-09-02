@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GenderFilter } from "../../components/filters/GenderFilter";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
+import { PlatformBadge } from "../../components/PlatformBadge";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { PinnedMeBar } from "../../components/tableUx/PinnedMeBar";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
@@ -591,9 +592,7 @@ export function FastestRatingPage() {
                         )}
                         {show("platform") && (
                           <td className="lb-col-system">
-                            <span className="lb-fastest-platform">
-                              {platformLabels[row.platform] ?? row.platform}
-                            </span>
+                            <PlatformBadge code={row.platform} />
                           </td>
                         )}
                         {show("age") && (

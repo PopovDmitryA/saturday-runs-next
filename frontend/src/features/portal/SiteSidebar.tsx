@@ -329,7 +329,7 @@ export function CabinetUserCard({ initialUser, collapsed = false }: { initialUse
     <>
       <button
         type="button"
-        className="portal-cab-user-avatar portal-cab-user-avatar-btn"
+        className="portal-cab-user-avatar portal-cab-user-avatar-button"
         onClick={() => setAvatarZoomed(true)}
         aria-label="Открыть аватарку"
         title="Открыть аватарку"
