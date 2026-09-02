@@ -445,6 +445,9 @@ class LocationIndexItemResponse(BaseModel):
     best_female_time_display: str | None = None
     attendance_record_finishers: int | None = None
     attendance_record_date: date | None = None
+    # Среднее время финишёра за всю историю площадки (по всем её системам).
+    avg_finish_time_sec: int | None = None
+    avg_finish_time_display: str | None = None
 
 
 class LocationsIndexResponse(BaseModel):

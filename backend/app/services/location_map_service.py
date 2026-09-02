@@ -8,7 +8,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.location_page_url import location_page_url, pick_primary_location_url
 from app.models import Location, Platform
-from app.services.location_catalog_service import LocationCatalogIndex
+from app.services.location_catalog_service import LocationCatalogIndex, normalize_platform_code
 from app.services.user_unique_locations_detail import build_user_unique_location_details
 
 # Системы с действующими точками. parkrun стоит отдельно: он ушёл из России в
@@ -82,6 +82,16 @@ def _location_is_paused(location: Location, catalog_index: LocationCatalogIndex,
     # Для каталожных узлов пауза считается по всем платформам сразу
     # (см. LocationCatalogIndex._catalog_is_paused), а не по одной строке.
     return catalog_index.is_paused(location, platform_code)
+
+
+def _catalog_active_platform(
+    catalog_index: LocationCatalogIndex, location: Location, platform_code: str
+) -> str | None:
+    """Код системы, в которой площадка работает сейчас (по узлу каталога)."""
+    catalog = catalog_index.get_for_location(location, platform_code)
+    if catalog is None:
+        return None
+    return normalize_platform_code(catalog.active_platform)
 
 
 def _location_is_cancelled(location: Location, platform_code: str | None = None) -> bool:
@@ -207,6 +217,10 @@ def list_catalog_map_locations(db: Session) -> dict[str, object]:
                 "platform_codes": set(),
                 "platform_urls": {},
                 "active_platform": platform.code,
+                # Действующая система узла каталога — она же цвет точки на карте.
+                "catalog_active_platform": _catalog_active_platform(
+                    catalog_index, location, platform.code
+                ),
                 "is_paused": _location_is_paused(location, catalog_index, platform.code),
                 "is_cancelled": _location_is_cancelled(location, platform.code),
                 "is_upcoming": _location_is_upcoming(location, platform.code),
@@ -255,10 +269,22 @@ def list_catalog_map_locations(db: Session) -> dict[str, object]:
     points: list[dict[str, object]] = []
     for bucket in buckets.values():
         platform_codes = sorted(bucket["platform_codes"])  # type: ignore[arg-type]
-        active = platform_codes[0] if len(platform_codes) == 1 else None
+        # Действующая система: сперва то, что говорит каталог, и лишь потом
+        # «единственная платформа». Раньше правило было только вторым, и парк,
+        # переживший parkrun и уехавший в 5 вёрст или S95 (Тверь, Подольск,
+        # Великий Новгород и ещё десятки), оставался без системы вовсе — на
+        # карте такая точка красилась серым, как «не действует»
+        # (Дмитрий 02.09.2026).
+        catalog_active = bucket.get("catalog_active_platform")
+        if catalog_active and str(catalog_active) in platform_codes:
+            active = str(catalog_active)
+        else:
+            active = platform_codes[0] if len(platform_codes) == 1 else None
         platform_urls: dict[str, str] = bucket.get("platform_urls") or {}  # type: ignore[assignment]
         point = {
-            key: value for key, value in bucket.items() if key not in {"platform_codes", "platform_urls"}
+            key: value
+            for key, value in bucket.items()
+            if key not in {"platform_codes", "platform_urls", "catalog_active_platform"}
         }
         points.append(
             {

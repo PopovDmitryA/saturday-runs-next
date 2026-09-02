@@ -2473,6 +2473,8 @@ export type LocationIndexItem = {
   best_female_time_display: string | null;
   attendance_record_finishers: number | null;
   attendance_record_date: string | null;
+  avg_finish_time_sec: number | null;
+  avg_finish_time_display: string | null;
 };
 
 export type LocationsIndexResponse = {

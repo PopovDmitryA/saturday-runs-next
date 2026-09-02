@@ -32,6 +32,7 @@ type SortKey =
   | "events_count"
   | "finishers_total"
   | "avg_finishers"
+  | "avg_finish_time"
   | "attendance_record"
   | "best_male"
   | "best_female"
@@ -40,7 +41,14 @@ type SortKey =
 
 // Колонки, которые логичнее открывать по возрастанию: алфавит и рекорды
 // (у времени «лучше» = меньше).
-const ASC_FIRST_KEYS: SortKey[] = ["name", "city", "best_male", "best_female"];
+const ASC_FIRST_KEYS: SortKey[] = [
+  "name",
+  "city",
+  "best_male",
+  "best_female",
+  // Среднее время: «лучше» — меньше, как и у рекордов.
+  "avg_finish_time",
+];
 type SortState = { key: SortKey; asc: boolean };
 
 /** Средняя явка — сколько человек финиширует на этой площадке в обычную субботу. */
@@ -89,6 +97,8 @@ function sortValue(item: LocationIndexItem, key: SortKey): number | string | nul
       return item.finishers_total;
     case "avg_finishers":
       return avgFinishers(item);
+    case "avg_finish_time":
+      return item.avg_finish_time_sec;
     case "attendance_record":
       return item.attendance_record_finishers;
     case "best_male":
@@ -118,6 +128,7 @@ const LOCATIONS_COLUMNS: AdaptiveColumn[] = [
   { key: "city", width: 160 },
   { key: "finishers_total", width: 148 },
   { key: "avg_finishers", width: 148 },
+  { key: "avg_finish_time", width: 164 },
   { key: "attendance_record", width: 148 },
   { key: "best_male", width: 184 },
   { key: "best_female", width: 184 },
@@ -192,6 +203,7 @@ function LocationsTable({
           <col className="col-metric" />
           {show("finishers_total") && <col className="col-metric" />}
           {show("avg_finishers") && <col className="col-metric" />}
+          {show("avg_finish_time") && <col className="col-metric" />}
           {show("attendance_record") && <col className="col-metric" />}
           {show("best_male") && <col className="col-metric-wide" />}
           {show("best_female") && <col className="col-metric-wide" />}
@@ -220,6 +232,13 @@ function LocationsTable({
                 label="В среднем"
                 hint="Средняя явка: финишей за всё время ÷ число стартов"
                 {...sortProps("avg_finishers")}
+              />
+            )}
+            {show("avg_finish_time") && (
+              <ColumnHeader
+                label="Среднее время"
+                hint="Среднее время финишёра за всю историю площадки"
+                {...sortProps("avg_finish_time")}
               />
             )}
             {show("attendance_record") && (
@@ -291,6 +310,9 @@ function LocationsTable({
                   <td className="td-compact">{item.finishers_total ? formatInt(item.finishers_total) : "—"}</td>
                 )}
                 {show("avg_finishers") && <td className="td-compact">{formatAvgFinishers(item)}</td>}
+                {show("avg_finish_time") && (
+                  <td className="td-compact">{item.avg_finish_time_display ?? "—"}</td>
+                )}
                 {show("attendance_record") && (
                   <td
                     className="td-compact"

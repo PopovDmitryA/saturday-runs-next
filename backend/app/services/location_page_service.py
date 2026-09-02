@@ -2396,6 +2396,11 @@ class _IndexIdentityStat:
     best_female_time_sec: int | None = None
     attendance_record_finishers: int | None = None
     attendance_record_date: date | None = None
+    # Сумма и число финишей — из них считается среднее время площадки.
+    # Держим слагаемые, а не готовое среднее: идентичность склеивает
+    # несколько локаций, и усреднять уже усреднённое было бы неверно.
+    finish_time_sum_sec: int = 0
+    finish_time_count: int = 0
 
 
 def _bulk_identity_stats(
@@ -2501,6 +2506,33 @@ def _bulk_identity_stats(
                 stat.best_male_time_sec = int(best)
         elif stat.best_female_time_sec is None or int(best) < stat.best_female_time_sec:
             stat.best_female_time_sec = int(best)
+
+    # Среднее время финишёров площадки: тем же фильтром финишёров, что и
+    # рекорды (finish_time_sec IS NOT NULL AND > 0). Вторичные события
+    # кросслинков не исключаем сознательно — у зеркала те же самые времена,
+    # и на среднее они не влияют, а join к списку исключений стоил бы дорого.
+    avg_rows = (
+        db.query(
+            Event.location_id,
+            func.sum(RunResult.finish_time_sec).label("total"),
+            func.count(RunResult.id).label("count"),
+        )
+        .join(Event, RunResult.event_id == Event.id)
+        .filter(
+            Event.location_id.in_(location_ids),
+            Event.is_test_event.is_(False),
+            RunResult.finish_time_sec.isnot(None),
+            RunResult.finish_time_sec > 0,
+        )
+        .group_by(Event.location_id)
+        .all()
+    )
+    for location_id, total, count in avg_rows:
+        if not count:
+            continue
+        stat = stats.setdefault(location_id_to_identity[location_id], _IndexIdentityStat())
+        stat.finish_time_sum_sec += int(total or 0)
+        stat.finish_time_count += int(count)
 
     return stats
 
@@ -2713,6 +2745,13 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
         stat = identity_stats.get(identity_key)
         is_paused, is_cancelled = _identity_status(catalog_index, ordered)
         system_code, system_first_date = _first_event_in_current_system(ordered, stat)
+        # Среднее время финишёра площадки — по сумме и числу финишей всех её
+        # локаций: усреднять уже усреднённое по системам было бы неверно.
+        avg_finish_sec = (
+            round(stat.finish_time_sum_sec / stat.finish_time_count)
+            if stat and stat.finish_time_count
+            else None
+        )
         items.append(
             {
                 "slug": primary_location.external_key.strip().lower(),
@@ -2738,6 +2777,10 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
                 ),
                 "attendance_record_finishers": stat.attendance_record_finishers if stat else None,
                 "attendance_record_date": stat.attendance_record_date if stat else None,
+                "avg_finish_time_sec": avg_finish_sec,
+                "avg_finish_time_display": (
+                    format_finish_time_display(avg_finish_sec) if avg_finish_sec is not None else None
+                ),
                 "best_female_time_sec": stat.best_female_time_sec if stat else None,
                 "best_female_time_display": (
                     format_finish_time_display(stat.best_female_time_sec)
