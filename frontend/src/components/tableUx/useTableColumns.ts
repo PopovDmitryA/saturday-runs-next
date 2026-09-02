@@ -16,8 +16,17 @@ export type TableColumns = {
   show: (key: string) => boolean;
   /** Ref на блок, по ширине которого набирается краткий вид. */
   measureRef: (node: HTMLElement | null) => void;
-  /** Минимальная ширина таблицы в кратком виде. */
-  minWidth: number;
+  /**
+   * Минимальная ширина таблицы: `max(100%, Npx)`.
+   *
+   * Именно строка с max(), а не число. Голое число в inline-стиле перебивает
+   * CSS-правило `min-width: 100%`, которым таблицы рейтингов растягиваются на
+   * всю обёртку, — и таблица застывала на сумме своих колонок, оставляя
+   * справа пустоту (880px в контейнере 1136px, Дмитрий 02.09.2026).
+   * С max() оба условия выполняются разом: не уже суммы колонок (иначе
+   * колонки схлопнутся) и не уже контейнера (иначе пустота справа).
+   */
+  minWidth: string;
   /** Нужен ли сегмент «Кратко | Полно»: краткий вид что-то прячет. */
   hasToggle: boolean;
 };
@@ -50,9 +59,9 @@ export function useTableColumns(columns: AdaptiveColumn[]): TableColumns {
     // table-layout:fixed раздаёт фиксированные ширины остальным, а колонке без
     // ширины («Локация») достаётся остаток, и она схлопывалась до «Л…»
     // (Дмитрий 02.09.2026). С минимумом таблица честно листается вбок.
-    minWidth: showFull
-      ? columns.reduce((sum, column) => sum + column.width, 0)
-      : adaptive.minWidth,
+    minWidth: `max(100%, ${
+      showFull ? columns.reduce((sum, column) => sum + column.width, 0) : adaptive.minWidth
+    }px)`,
     hasToggle: !adaptive.showsEverything,
   };
 }
