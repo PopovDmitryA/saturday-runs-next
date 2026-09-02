@@ -146,11 +146,11 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [notFound, setNotFound] = useState(false);
-  // «Только чистые смены»: не засчитывать дни, когда человек в этот же день
+  // «Только чистые волонтёрства»: не засчитывать дни, когда человек в этот же день
   // где-то бежал — здесь или на соседней площадке.
   const [pureOnly, setPureOnly] = useState(false);
 
-  // В этом режиме и число, и доля, и порядок считаются по чистым сменам:
+  // В этом режиме и число, и доля, и порядок считаются по чистым волонтёрствам:
   // иначе список остался бы отсортированным по общему счёту, и первым стоял бы
   // тот, кто почти всегда совмещал волонтёрство с пробежкой.
   const loadRows = useMemo(() => {
@@ -382,7 +382,7 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
                   checked={pureOnly}
                   onChange={(event) => setPureOnly(event.target.checked)}
                 />{" "}
-                Только чистые смены
+                Только чистые волонтёрства
               </label>
               <span className="muted">
                 Не засчитывать дни, когда человек в этот же день ещё и бежал — здесь или на

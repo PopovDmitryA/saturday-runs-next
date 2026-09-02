@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User
 from app.services.portal_home_service import (
+    CHART_WEEKS,
     PORTAL_HOME_CACHE_KEY,
     _city_label,
     _course_minima_before,
@@ -15,10 +16,12 @@ from app.services.portal_home_service import (
     _runner_handles,
     _week_attendance_records,
     _write_portal_home_cache,
+    chart_window,
     clean_time_display,
     format_finish_time,
     invalidate_portal_home_cache,
 )
+from app.services.unified_protocol_service import saturday_of
 
 WEEK_START = date(2026, 7, 20)
 WEEK_END = date(2026, 7, 25)
@@ -324,3 +327,28 @@ def test_runner_handle_skips_private_profile(db_session: Session) -> None:
 
 def test_runner_handles_empty_input_makes_no_query() -> None:
     assert _runner_handles(None, []) == {}  # type: ignore[arg-type]
+
+
+def test_chart_window_closes_on_sunday_of_the_pulse_week() -> None:
+    """Воскресный старт принадлежит неделе своей субботы.
+
+    Кулибин 30.08.2026 (воскресенье, 14 финишёров) выпадал из последней недели
+    графика, хотя единый протокол за субботу 29.08 его считал — расхождение
+    RunPark 82 против 68 (Дмитрий 03.09.2026).
+    """
+    _, week_end = chart_window(date(2026, 8, 29))
+    assert week_end == date(2026, 8, 30)
+
+
+def test_chart_window_starts_on_a_monday() -> None:
+    """Левый край окна — понедельник, иначе крайний столбец собирался бы из
+    одного воскресенья предыдущей недели."""
+    week_start, _ = chart_window(date(2026, 8, 29))
+    assert week_start.weekday() == 0
+    assert week_start == date(2026, 8, 24) - timedelta(days=7 * (CHART_WEEKS - 1))
+
+
+def test_chart_window_labels_weeks_by_their_saturday() -> None:
+    """Подпись недели на графиках совпадает с адресом единого протокола."""
+    week_start, _ = chart_window(date(2026, 8, 29))
+    assert saturday_of(week_start + timedelta(days=7 * (CHART_WEEKS - 1))) == date(2026, 8, 29)
