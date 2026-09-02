@@ -30,6 +30,7 @@ from app.models import (
     User,
     VolunteerResult,
 )
+from app.services.location_catalog_service import normalize_platform_code
 from app.services.location_page_service import (
     LocationIdentity,
     _location_event_ids,
@@ -44,8 +45,10 @@ ABSENCE_MIN_RUNS_DEFAULT = 10
 ABSENCE_MIN_MISSED_DEFAULT = 4
 
 
-def absence_cache_key(identity_key: str, min_runs: int, min_missed: int) -> str:
-    return f"organizer:absence:v2:{identity_key}:{min_runs}:{min_missed}"
+def absence_cache_key(
+    identity_key: str, min_runs: int, min_missed: int, current_only: bool
+) -> str:
+    return f"organizer:absence:v3:{identity_key}:{min_runs}:{min_missed}:{int(current_only)}"
 
 
 def build_location_absence(
@@ -54,16 +57,19 @@ def build_location_absence(
     *,
     min_runs: int = ABSENCE_MIN_RUNS_DEFAULT,
     min_missed: int = ABSENCE_MIN_MISSED_DEFAULT,
+    current_only: bool = False,
     use_cache: bool = True,
     refresh: bool = False,
 ) -> dict[str, Any]:
-    cache_key = absence_cache_key(identity.identity_key, min_runs, min_missed)
+    cache_key = absence_cache_key(identity.identity_key, min_runs, min_missed, current_only)
     if use_cache and not refresh:
         cached = _read_json_cache(cache_key)
         if cached is not None:
             return cached
 
-    payload = _compute_location_absence(db, identity, min_runs=min_runs, min_missed=min_missed)
+    payload = _compute_location_absence(
+        db, identity, min_runs=min_runs, min_missed=min_missed, current_only=current_only
+    )
 
     if use_cache:
         _write_json_cache(cache_key, payload, ABSENCE_CACHE_TTL_SECONDS)
@@ -71,15 +77,36 @@ def build_location_absence(
 
 
 def _compute_location_absence(
-    db: Session, identity: LocationIdentity, *, min_runs: int, min_missed: int
+    db: Session,
+    identity: LocationIdentity,
+    *,
+    min_runs: int,
+    min_missed: int,
+    current_only: bool = False,
 ) -> dict[str, Any]:
-    location_ids = [location.id for location, _code in identity.locations]
+    # «Только действующая система»: у площадки, пережившей parkrun, стаж
+    # набран в основном там, и в списке висят люди, не приходившие с 2022 года.
+    # Фильтр сужает расчёт до локаций той системы, в которой площадка работает
+    # сейчас (просьба Дмитрия 03.09.2026). Выбирать систему руками смысла нет:
+    # осмысленный вопрос всегда один — «а что у нас сейчас».
+    active_code = (
+        normalize_platform_code(identity.catalog.active_platform) if identity.catalog else None
+    )
+    members = identity.locations
+    if current_only and active_code:
+        current = [(loc, code) for loc, code in members if code == active_code]
+        # Если действующей системы среди локаций нет (данные разъехались),
+        # молча считаем по всем: пустой список дал бы пустую страницу.
+        members = current or members
+    location_ids = [location.id for location, _code in members]
     event_ids = _location_event_ids(db, location_ids)
 
     base: dict[str, Any] = {
         "location": {"slug": identity.slug, "name": identity.name},
         "min_runs": min_runs,
         "min_missed": min_missed,
+        "current_only": current_only,
+        "current_platform": active_code,
         "events_total": len(event_ids),
         "items": [],
         "total": 0,

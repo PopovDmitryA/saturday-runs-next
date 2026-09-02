@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
+import { TableWrap } from "../../components/tableUx/TableWrap";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import {
   getOrganizerLocations,
@@ -92,6 +93,10 @@ function OrganizerIndexContent({ user }: { user: User }) {
               />
             </p>
           )}
+          {/* Без контейнера прокрутки таблица на телефоне вылезала за карточку:
+              последняя колонка с кнопкой «Открыть» уезжала за край экрана
+              (Дмитрий 03.09.2026). */}
+          <TableWrap>
           <table className="data-table">
             <thead>
               <tr>
@@ -136,6 +141,7 @@ function OrganizerIndexContent({ user }: { user: User }) {
               ))}
             </tbody>
           </table>
+          </TableWrap>
         </div>
       )}
     </PortalSectionShell>

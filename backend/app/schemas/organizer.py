@@ -49,6 +49,9 @@ class AbsenceResponse(BaseModel):
     location: OrganizerLocationBrief
     min_runs: int
     min_missed: int
+    # Считали только по действующей системе площадки и какая она.
+    current_only: bool = False
+    current_platform: str | None = None
     events_total: int
     items: list[AbsenceItem]
     total: int

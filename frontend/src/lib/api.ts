@@ -3373,15 +3373,25 @@ export type OrganizerAbsenceResponse = {
   location: { slug: string; name: string };
   min_runs: number;
   min_missed: number;
+  current_only?: boolean;
+  current_platform?: string | null;
   events_total: number;
   items: OrganizerAbsenceItem[];
   total: number;
 };
 
-export function getOrganizerAbsence(slug: string, minRuns: number, minMissed: number) {
+export function getOrganizerAbsence(
+  slug: string,
+  minRuns: number,
+  minMissed: number,
+  currentOnly = false,
+) {
   const params = new URLSearchParams();
   params.set("min_runs", String(minRuns));
   params.set("min_missed", String(minMissed));
+  if (currentOnly) {
+    params.set("current_only", "true");
+  }
   return apiFetch<OrganizerAbsenceResponse>(
     `/organizer/${encodeURIComponent(slug)}/absence?${params.toString()}`,
   );

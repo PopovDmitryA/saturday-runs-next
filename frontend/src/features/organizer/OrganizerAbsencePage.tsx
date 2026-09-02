@@ -8,7 +8,7 @@ import {
   type OrganizerAbsenceItem,
   type OrganizerAbsenceResponse,
 } from "../../lib/api";
-import { formatInt } from "../../lib/format";
+import { formatInt, platformCodeLabel } from "../../lib/format";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { locationHintFor } from "../../lib/locationHint";
 import { TableWrap } from "../../components/tableUx/TableWrap";
@@ -19,8 +19,8 @@ import { OrganizerDenied } from "./OrganizerDenied";
 import "./organizer.css";
 
 // Пороги — как в легаси-дашборде «Долгая пауза».
-const MIN_RUNS_OPTIONS = [5, 10, 15, 20, 25, 30];
-const MIN_MISSED_OPTIONS = [1, 2, 3, 4, 6, 8, 10, 15, 20];
+const MIN_RUNS_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
+const MIN_MISSED_OPTIONS = [1, 2, 3, 4, 6, 8, 10, 15, 20, 30, 40, 50];
 
 type SortKey = "runs_here" | "runs_total" | "missed" | "last_date" | "name";
 type SortState = { key: SortKey; asc: boolean };
@@ -44,6 +44,12 @@ function OrganizerAbsenceContent({ slug }: { slug: string }) {
   const attachFloatingHead = useFloatingTableHead();
   const [minRuns, setMinRuns] = useState(10);
   const [minMissed, setMinMissed] = useState(4);
+  // Показывать только тех, для кого эта площадка домашняя: иначе в списке
+  // соседствуют свои и туристы, забежавшие сюда однажды в поездке.
+  const [homeOnly, setHomeOnly] = useState(false);
+  // Считать только по системе, в которой площадка работает сейчас: у парка с
+  // parkrun-прошлым иначе весь список — люди, не приходившие с 2022 года.
+  const [currentOnly, setCurrentOnly] = useState(false);
   const [data, setData] = useState<OrganizerAbsenceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +60,7 @@ function OrganizerAbsenceContent({ slug }: { slug: string }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getOrganizerAbsence(slug, minRuns, minMissed)
+    getOrganizerAbsence(slug, minRuns, minMissed, currentOnly)
       .then((payload) => {
         if (!cancelled) {
           setData(payload);
@@ -81,11 +87,7 @@ function OrganizerAbsenceContent({ slug }: { slug: string }) {
     return () => {
       cancelled = true;
     };
-  }, [slug, minRuns, minMissed]);
-
-  // Показывать только тех, для кого эта площадка домашняя: иначе в списке
-  // соседствуют свои и туристы, забежавшие сюда однажды в поездке.
-  const [homeOnly, setHomeOnly] = useState(false);
+  }, [slug, minRuns, minMissed, currentOnly]);
 
   const rows = useMemo(() => {
     const source = homeOnly ? (data?.items ?? []).filter((item) => item.is_home) : (data?.items ?? []);
@@ -176,6 +178,16 @@ function OrganizerAbsenceContent({ slug }: { slug: string }) {
           />{" "}
           Только свои
         </label>
+        {data?.current_platform && data.current_platform !== "parkrun" && (
+          <label className="org-toolbar-label org-toolbar-checkbox">
+            <input
+              type="checkbox"
+              checked={currentOnly}
+              onChange={(event) => setCurrentOnly(event.target.checked)}
+            />{" "}
+            Только {platformCodeLabel(data.current_platform)}
+          </label>
+        )}
         {data && (
           <span className="muted">
             Найдено: {formatInt(homeOnly ? rows.length : data.total)} · событий у локации:{" "}
