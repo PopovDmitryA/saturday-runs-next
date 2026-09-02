@@ -23,6 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.config import get_settings
+from app.db.schema_guard import SchemaMismatch, assert_schema_matches
 from app.db.session import get_session_factory
 from app.parkrun.fetch.daemon_log import cline, setup_daemon_logging
 from app.parkrun.fetch.proxy_pool import load_proxies
@@ -127,6 +128,11 @@ def main() -> int:
     Session = get_session_factory()
     try:
         with Session() as db:
+            # Сначала сверяем схему: этот скрипт теперь запускается и на домашнем
+            # сервере, где копия кода живёт отдельно от прода и может отстать.
+            # Расхождение проявляется как ошибка по несуществующей колонке
+            # посреди разбора очереди — по ней причину не угадать.
+            assert_schema_matches(db, what="разбор очереди")
             result = run_daemon(
                 db,
                 use_cdp=args.use_cdp,
@@ -139,6 +145,10 @@ def main() -> int:
                 solve_captcha=args.solve_captcha and args.no_browser,
                 proxies=load_proxies(args.proxies or None),
             )
+    except SchemaMismatch as exc:
+        # Не поломка, а рассинхрон: трейсбэк тут только мешает.
+        cline(str(exc))
+        return 2
     except Exception:
         # Полное падение скрипта (не отдельная строка очереди) — единственный
         # случай, когда трейсбэк уместен и в терминале. Полный текст — в файле.
