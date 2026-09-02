@@ -970,10 +970,15 @@ def _compute_location_participants(db: Session, slug: str) -> dict[str, object] 
         db, VolunteerResult, event_ids, test_event_ids=test_event_ids
     )
 
+    # Системы этой площадки — по ним фильтр. У одиночной системы фильтр
+    # показывать незачем, поэтому фронт смотрит на длину списка.
+    platform_codes = sorted({code for _location, code in identity.locations}, key=_platform_order_index)
+
     return {
         "slug": identity.slug,
         "name": identity.name,
         "min_count": LOCATION_ACTIVE_MIN_COUNT,
+        "platform_codes": platform_codes,
         "runners": runners,
         "volunteers": volunteers,
         # Знаменатель для подписи «показаны N из M побывавших здесь»: без него
@@ -1049,6 +1054,23 @@ def _active_participant_rows(
     )
     people_total = len(local_rows)
 
+    # Участия в разрезе систем: нужны фильтру «Система» на странице состава.
+    # Отдельным запросом, а не в основном: там группировка по человеку, и
+    # добавление платформы в GROUP BY размножило бы строки.
+    platform_counts: dict[Any, dict[str, int]] = {}
+    for gkey, platform_code, count in (
+        db.query(group_key.label("group_key"), Platform.code, func.count(func.distinct(model.event_id)))
+        .select_from(model)
+        .join(Event, model.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(Participant, model.participant_id == Participant.id)
+        .outerjoin(PlatformLink, _platform_link_join())
+        .filter(model.event_id.in_(event_ids))
+        .group_by(group_key, Platform.code)
+        .all()
+    ):
+        platform_counts.setdefault(gkey, {})[str(platform_code)] = int(count)
+
     active = [row for row in local_rows if int(row.count) >= min_count]
     active.sort(key=lambda row: (-int(row.count), (row.name or "").lower()))
     if not active:
@@ -1097,6 +1119,9 @@ def _active_participant_rows(
                 "total_count": max(totals.get(row.group_key, count), count),
                 "first_date": row.first_date.isoformat() if row.first_date else None,
                 "last_date": row.last_date.isoformat() if row.last_date else None,
+                # Сколько раз человек был здесь в каждой системе — по этим
+                # числам фильтр «Система» пересобирает список и места.
+                "platform_counts": platform_counts.get(row.group_key, {}),
             }
         )
     return rows, people_total

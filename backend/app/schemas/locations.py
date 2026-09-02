@@ -407,12 +407,16 @@ class LocationActiveParticipantResponse(BaseModel):
     total_count: int
     first_date: date | None = None
     last_date: date | None = None
+    # Участия в разрезе систем: по ним работает фильтр «Система».
+    platform_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class LocationParticipantsResponse(BaseModel):
     slug: str
     name: str
     min_count: int
+    # Системы площадки; фильтр показываем только когда их больше одной.
+    platform_codes: list[str] = Field(default_factory=list)
     runners: list[LocationActiveParticipantResponse] = Field(default_factory=list)
     volunteers: list[LocationActiveParticipantResponse] = Field(default_factory=list)
     runners_people_total: int = 0

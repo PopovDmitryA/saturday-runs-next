@@ -2563,6 +2563,8 @@ export type LocationActiveParticipant = {
   total_count: number;
   first_date: string | null;
   last_date: string | null;
+  /** Участий здесь в разрезе систем — по ним работает фильтр «Система». */
+  platform_counts?: Record<string, number>;
 };
 
 export type LocationParticipants = {
@@ -2570,6 +2572,8 @@ export type LocationParticipants = {
   name: string;
   /** Порог попадания в список: участий на локации. */
   min_count: number;
+  /** Системы площадки; фильтр показываем, только когда их больше одной. */
+  platform_codes?: string[];
   runners: LocationActiveParticipant[];
   volunteers: LocationActiveParticipant[];
   /** Сколько человек всего бывало здесь — знаменатель подписи под таблицей. */

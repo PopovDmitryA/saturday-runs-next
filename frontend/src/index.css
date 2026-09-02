@@ -15914,6 +15914,13 @@ input.participant-name-search-input:focus {
    набор колонок подбирает useAdaptiveColumns, всё, что не влезло, — в
    горизонтальный скролл обёртки. Ширины обязаны совпадать с PEOPLE_COLUMNS
    в LocationParticipantsPage.tsx, иначе краткий вид посчитает минимум мимо. */
+/* «Показать ещё» под составом локации — как в рейтингах: кнопка по центру. */
+.loc-people-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
 .loc-people-lead {
   margin: 0.35rem 0 0;
   max-width: 46rem;
