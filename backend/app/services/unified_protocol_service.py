@@ -83,6 +83,10 @@ MAX_PAGE_SIZE = 500
 GENDER_FILTERS = ("male", "female")
 
 
+# Правдоподобный потолок возраста: см. одноимённую константу в рейтингах.
+MAX_PLAUSIBLE_AGE = 100
+
+
 def week_start_of(anchor: date) -> date:
     """Понедельник недели, которой принадлежит дата."""
     return anchor - timedelta(days=anchor.weekday())
@@ -340,6 +344,12 @@ def _compute_week_rows(db: Session, saturday: date) -> dict[str, Any]:
 
         raw_category = (row.age_category or "").strip() or None
         age_group = normalize_age_group(raw_category)
+        # «М120», «Ж105-109» — обрезки старого парсера 5 вёрст, а не столетние
+        # бегуны: 138 строк на всю базу. В рейтингах их уже отсекает
+        # MAX_PLAUSIBLE_AGE, здесь они вылезали ступенью «<120» в конце
+        # возрастного зачёта (Дмитрий 02.09.2026).
+        if age_group is not None and _age_group_sort_key(age_group)[0] > MAX_PLAUSIBLE_AGE:
+            age_group = None
         gender = _row_gender(platform_code, raw_category, row.gender, row.participant_age_category)
         display_name = (row.display_name or "").strip()
         is_unknown = (
