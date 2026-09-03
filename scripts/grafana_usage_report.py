@@ -32,6 +32,9 @@ from pathlib import Path
 LOG_GLOB = "/var/log/nginx/grafana_hits.log*"
 DASH_RE = re.compile(r"^/d/(?P<uid>[\w-]+)(?:/(?P<slug>[\w-]*))?")
 MSK = dt.timezone(dt.timedelta(hours=3))
+# Событие-«открытие»: load/nav — живая Grafana, farewell — заход на заглушку
+# после закрытия домена (страница шлёт его сама, см. deploy/grafana/farewell).
+OPEN_KINDS = ("load", "nav", "farewell")
 
 
 def read_remote() -> str:
@@ -101,15 +104,37 @@ def parse(raw: str) -> list[dict]:
     return events
 
 
+def titles_from_export() -> dict[str, str]:
+    """Названия из выгрузки data/grafana/dashboards — работают и после закрытия."""
+    root = Path(__file__).resolve().parent.parent / "data" / "grafana" / "dashboards"
+    out: dict[str, str] = {}
+    for path in sorted(root.glob("*.json")):
+        try:
+            raw = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        board = raw.get("dashboard", raw)
+        uid, title = board.get("uid") or path.stem, board.get("title")
+        if title:
+            out[uid] = title
+    return out
+
+
 def dashboard_titles() -> dict[str, str]:
-    """Человеческие названия дашбордов из самой Grafana (вход анонимный)."""
+    """Названия дашбордов: живая Grafana, если отвечает, иначе — выгрузка.
+
+    После закрытия домена (deploy/nginx/grafana.run5k.run.farewell.conf) /api/search
+    отдаёт HTML-заглушку, а не JSON, — отчёт не должен от этого терять имена.
+    """
+    titles = titles_from_export()
     try:
         with urllib.request.urlopen(
             "https://grafana.run5k.run/api/search?type=dash-db&limit=500", timeout=10
         ) as resp:
-            return {d["uid"]: d["title"] for d in json.load(resp) if d.get("uid")}
+            titles.update({d["uid"]: d["title"] for d in json.load(resp) if d.get("uid")})
     except Exception:
-        return {}
+        pass
+    return titles
 
 
 def label(ev_uid: str | None, ev_slug: str, titles: dict[str, str]) -> str:
@@ -156,7 +181,7 @@ def main() -> None:
     for e in events:
         d = days[e["ts"].date()]
         d["v"].add(e["vid"])
-        if e["kind"] in ("load", "nav"):
+        if e["kind"] in OPEN_KINDS:
             d["loads"] += 1
         if e["uid"]:
             d["d"].add(e["uid"])
@@ -172,7 +197,7 @@ def main() -> None:
             continue
         key = label(e["uid"], e["slug"], titles)
         dash[key][0].add(e["vid"])
-        if e["kind"] in ("load", "nav"):
+        if e["kind"] in OPEN_KINDS:
             dash[key][1] += 1
     for name, (vids, opens) in sorted(dash.items(), key=lambda kv: -len(kv[1][0])):
         print(f"  {len(vids):4} чел. {opens:5} откр.  {name}")
