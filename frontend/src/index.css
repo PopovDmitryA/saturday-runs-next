@@ -6651,12 +6651,37 @@ button.badge-platform-btn:hover {
   min-width: 9rem;
 }
 
-.admin-users-actions {
+/* Действия строки — одной кнопкой с выпадающим списком. Четыре отдельные
+   кнопки переносились по ширине и растягивали строку втрое (03.09.2026). */
+.admin-row-actions-toggle {
+  white-space: nowrap;
+}
+
+.admin-row-actions-menu {
   display: flex;
-  gap: 0.25rem;
-  /* Кнопок в строке четыре — на узком экране пусть переносятся, иначе колонка
-     действий уезжает за край таблицы. */
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.admin-row-actions-item {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.admin-row-actions-item:hover,
+.admin-row-actions-item:focus-visible {
+  /* Тот же приём, что у выбора дома: подсветка фоном страницы поверх
+     белой панели поповера — работает и в тёмной теме. */
+  background: var(--bg);
 }
 
 .admin-users-telegram a {

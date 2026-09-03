@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { AdminShell } from "./AdminShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { Snackbar } from "../../components/Snackbar";
+import { AdminRowActions } from "./AdminRowActions";
 import { AdminSubnav } from "./AdminSubnav";
 import {
   createAdminOrganizerGrant,
@@ -933,35 +934,35 @@ function AdminUsersContent() {
                       </td>
                       <td>{user.profile_private ? "true" : "false"}</td>
                       <td>
-                        <div className="admin-users-actions">
-                          {user.serial_id != null && (
-                            <a className="btn btn-ghost btn-sm" href={`/users/${user.serial_id}`} target="_blank" rel="noreferrer">
-                              Профиль
-                            </a>
-                          )}
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => void handleToggleJournal(user.id)}
-                          >
-                            {journalUserId === user.id ? "Скрыть входы" : "Входы"}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => void handleToggleVisits(user.id)}
-                            title="Заходы на сайт: когда и по каким страницам ходил"
-                          >
-                            {visitsUserId === user.id ? "Скрыть визиты" : "Визиты"}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => void handleToggleAccess(user.id)}
-                          >
-                            {accessUserId === user.id ? "Скрыть оргдоступ" : "Оргдоступ"}
-                          </button>
-                        </div>
+                        <AdminRowActions
+                          actions={[
+                            ...(user.serial_id != null
+                              ? [
+                                  {
+                                    key: "profile",
+                                    label: "Профиль",
+                                    href: `/users/${user.serial_id}`,
+                                  },
+                                ]
+                              : []),
+                            {
+                              key: "journal",
+                              label: journalUserId === user.id ? "Скрыть входы" : "Входы",
+                              onSelect: () => void handleToggleJournal(user.id),
+                            },
+                            {
+                              key: "visits",
+                              label: visitsUserId === user.id ? "Скрыть визиты" : "Визиты",
+                              title: "Заходы на сайт: когда и по каким страницам ходил",
+                              onSelect: () => void handleToggleVisits(user.id),
+                            },
+                            {
+                              key: "access",
+                              label: accessUserId === user.id ? "Скрыть оргдоступ" : "Оргдоступ",
+                              onSelect: () => void handleToggleAccess(user.id),
+                            },
+                          ]}
+                        />
                       </td>
                     </tr>
                     {journalUserId === user.id && (
