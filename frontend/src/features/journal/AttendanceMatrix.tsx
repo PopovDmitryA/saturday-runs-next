@@ -1,5 +1,6 @@
 import { useCallback, useRef, type ReactNode } from "react";
 import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
+import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 
 // Матрица журнала посещаемости: строки — участники, колонки — даты (свежие
@@ -29,6 +30,8 @@ export type MatrixRowData = {
   id: string;
   rank: number | null;
   name: ReactNode;
+  /** Имя простым текстом — для поиска и сортировки: name может быть ссылкой. */
+  searchName?: string;
   total: number;
   me?: boolean;
   // Закрытый профиль: клетки не показываем, счёт года остаётся.
@@ -42,6 +45,8 @@ type MatrixTotals = {
   title?: string;
 };
 
+export type MatrixSortKey = "name" | "total";
+
 type AttendanceMatrixProps = {
   columns: MatrixColumn[];
   rows: MatrixRowData[];
@@ -52,6 +57,13 @@ type AttendanceMatrixProps = {
   totals?: MatrixTotals;
   /** ISO-месяцы для группирующей строки берём из ключа колонки (YYYY-MM-DD). */
   emptyNote?: string;
+  /**
+   * Сортировка по «Участнику» и «Всего». Передаётся вместе с onSort: без
+   * обработчика заголовки остаются обычными, чтобы журнал рейтингов, где
+   * порядок задаёт сервер, не получил нерабочих стрелок.
+   */
+  sort?: { key: MatrixSortKey; asc: boolean } | null;
+  onSort?: (key: MatrixSortKey) => void;
 };
 
 const MONTH_LABELS = [
@@ -97,6 +109,8 @@ export function AttendanceMatrix({
   totalHint,
   totals,
   emptyNote,
+  sort = null,
+  onSort,
 }: AttendanceMatrixProps) {
   const tableRef = useRef<HTMLTableElement | null>(null);
 
@@ -157,10 +171,37 @@ export function AttendanceMatrix({
           </tr>
           <tr>
             <th className="ajm-col-rank">#</th>
-            <th className="ajm-col-name">Участник</th>
-            <th className="ajm-col-total" title={totalHint} data-tap-tooltip={totalHint ? undefined : "off"}>
-              {totalLabel}
-            </th>
+            {onSort ? (
+              <ColumnHeader
+                label="Участник"
+                className="ajm-col-name"
+                filterable={false}
+                sortActive={sort?.key === "name"}
+                sortAsc={sort?.key === "name" ? sort.asc : true}
+                onSort={() => onSort("name")}
+              />
+            ) : (
+              <th className="ajm-col-name">Участник</th>
+            )}
+            {onSort ? (
+              <ColumnHeader
+                label={totalLabel}
+                className="ajm-col-total"
+                filterable={false}
+                hint={totalHint}
+                sortActive={sort?.key === "total"}
+                sortAsc={sort?.key === "total" ? sort.asc : false}
+                onSort={() => onSort("total")}
+              />
+            ) : (
+              <th
+                className="ajm-col-total"
+                title={totalHint}
+                data-tap-tooltip={totalHint ? undefined : "off"}
+              >
+                {totalLabel}
+              </th>
+            )}
             {columns.map((column, index) => (
               <th
                 key={column.key}

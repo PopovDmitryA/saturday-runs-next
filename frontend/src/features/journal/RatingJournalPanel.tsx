@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
+import { surnameFirst } from "../../lib/personName";
 import { FilterSelect } from "../../components/filters/FilterPanel";
 import {
   getAttendanceJournal,
@@ -129,7 +130,8 @@ function rowCells(metric: JournalMetric, row: JournalRow): Record<string, Matrix
 }
 
 function matrixRow(metric: JournalMetric, row: JournalRow, me = false): MatrixRowData {
-  const name = row.display_name?.trim() || "Участник";
+  // С фамилии, как в рейтингах и журнале локации.
+  const name = surnameFirst(row.display_name) || "Участник";
   return {
     id: me ? `me-${row.row_key}` : row.row_key,
     rank: row.rank,

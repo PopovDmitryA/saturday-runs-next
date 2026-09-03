@@ -188,6 +188,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  /* Тот же отступ, что у .org-table-card: без него карточка приклеивалась
+     к таблице «Устойчивость ролей» под ней. */
+  margin-bottom: 1.25rem;
 }
 
 .org-director-line {
