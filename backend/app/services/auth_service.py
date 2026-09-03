@@ -331,6 +331,17 @@ def bot_confirm_login(
 
     existing_user = find_user_by_telegram_id(db, telegram_id)
     needs_consent = existing_user is None or not existing_user.consent_accepted
+
+    # Галка на странице входа — такое же согласие, как кнопка в боте, и она
+    # записана в контексте запроса. Учитывать только флаг бота было нельзя:
+    # бот показывает кнопку с текстом согласия ТОЛЬКО когда галки на сайте не
+    # было, а иначе шлёт consent_accepted=false — и человек, поставивший галку,
+    # получал «необходимо принять условия», которые он только что принял
+    # (жалоба пользователя 03.09.2026).
+    raw_context = redis_client.get(_login_request_context_redis_key(request_token))
+    consent_on_site = bool(json.loads(raw_context).get("consent")) if raw_context else False
+    consent_accepted = consent_accepted or consent_on_site
+
     if needs_consent and not consent_accepted:
         raise AuthError(
             "Для входа необходимо принять условия обработки персональных данных.",

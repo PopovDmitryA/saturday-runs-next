@@ -26,7 +26,7 @@ from app.s95.errors import S95BanDetected
 from app.s95.fetch import fetch_page_html
 from app.s95.parsers.location import parse_location_description
 from app.sync import upsert
-from app.sync.iteration_commit import commit_step, rollback_step
+from app.sync.iteration_commit import commit_step, release_before_fetch, rollback_step
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +80,11 @@ def sync_s95_location_descriptions(
         url = location.source_url or ""
         if not url:
             continue
+        # Коммит именно здесь, а не перед циклом: после каждого commit_step
+        # поля ORM-объектов протухают, и чтение url на следующем витке снова
+        # открывает транзакцию. Держать её через запрос к s95 нельзя — см.
+        # release_before_fetch.
+        release_before_fetch(db)
         try:
             html = fetch_page_html(url, reason="location_description")
         except S95BanDetected as exc:

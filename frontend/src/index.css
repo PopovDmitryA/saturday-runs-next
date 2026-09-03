@@ -67,6 +67,15 @@
   --tint-rose-text: #be123c;
   --tint-orange-bg: #ffedd5;
   --tint-orange-text: #c2410c;
+
+  /* Цвета систем для ГРАФИКОВ. Отдельно от --tint-*: те задуманы фоном бейджа
+     и на белом листе почти не видны — столбик из --tint-green-bg-strong читался
+     как бледное пятно (Дмитрий 03.09.2026). Здесь заливка, поэтому цвет
+     насыщенный; в тёмной теме, наоборот, светлее фона. */
+  --series-five-verst: #16a34a;
+  --series-s95: #2563eb;
+  --series-parkrun: #7c3aed;
+  --series-runpark: #ea580c;
 }
 
 :root[data-theme="dark"] {
@@ -130,6 +139,12 @@
   --tint-rose-text: #fb8096;
   --tint-orange-bg: #3b2516;
   --tint-orange-text: #fca970;
+
+  /* На тёмном фоне заливка светлее полотна — иначе столбик сливается с картой. */
+  --series-five-verst: #4ade80;
+  --series-s95: #60a5fa;
+  --series-parkrun: #a78bfa;
+  --series-runpark: #fb923c;
 }
 
 * {

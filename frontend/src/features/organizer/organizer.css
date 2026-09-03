@@ -467,12 +467,71 @@
 
 /* Гистограмма посещаемости: вся история локации, тонкий столбик = месяц.
    Цвет столбика — система (эра parkrun видна на мультисистемных точках). */
+/* Полотно графика: слева узкая колонка под подписи шкалы. */
+.org-hist-plot {
+  --org-hist-h: 168px;
+  position: relative;
+  padding-left: 2.1rem;
+  margin-top: 0.75rem;
+}
+
+/* Подписи шкалы — максимум и половина. Без них график читался только
+   наведением: двенадцать одинаковых столбиков не называли ни одной цифры
+   (Дмитрий 03.09.2026). */
+.org-hist-axis {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1.75rem;
+  height: var(--org-hist-h);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.org-hist-axis span {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+}
+
 .org-hist {
+  position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 1px;
-  height: 220px;
-  padding: 0.5rem 0 1.5rem;
+  gap: 3px;
+  height: var(--org-hist-h);
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-strong, #cbd5e1);
+  /* Две линии сетки — по максимуму и по половине; основание рисует border. */
+  background-image: linear-gradient(to right, var(--border) 0 100%),
+    linear-gradient(to right, var(--border-soft) 0 100%);
+  background-size: 100% 1px;
+  /* Линии едут вниз ровно на ту полосу, что отдана подписям над столбиками:
+     верхняя всегда совпадает с макушкой самого высокого месяца. */
+  background-position: 0 var(--org-hist-top, 0%), 0 var(--org-hist-mid, 50%);
+  background-repeat: no-repeat;
+}
+
+.org-hist-value {
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-2, #57606a);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  margin-bottom: 0.2rem;
+}
+
+/* На телефоне колонка сужается до двух десятков пикселей. Подпись не прячем —
+   иначе полоса, отданная под неё, осталась бы пустой, — а ужимаем шрифт:
+   трёхзначное число в такую колонку всё ещё влезает. */
+@media (max-width: 560px) {
+  .org-hist-value {
+    font-size: 0.56rem;
+    letter-spacing: -0.02em;
+  }
 }
 
 .org-hist-col {
@@ -498,11 +557,17 @@
 
 .org-hist-bar {
   width: 100%;
-  border-radius: 2px 2px 0 0;
-  background: var(--tint-green-bg-strong);
-  border: 1px solid var(--tint-green-border);
-  border-bottom: none;
-  opacity: 0.85;
+  /* Столбик не растягивается на всю колонку: при дюжине месяцев полотно
+     превращалось в сплошную плиту без единого просвета. Потолок тот же, что у
+     гистограммы финишей на «Обзоре», — графики сайта смотрятся одинаково. */
+  max-width: 26px;
+  border-radius: 3px 3px 0 0;
+  background: var(--series-five-verst);
+  transition: filter 0.12s ease;
+}
+
+.org-hist-col:hover .org-hist-bar {
+  filter: brightness(1.12);
 }
 
 .org-hist-year {
@@ -510,11 +575,10 @@
   top: 100%;
   left: 0;
   font-size: 0.68rem;
-  opacity: 0.6;
+  color: var(--text-muted);
   white-space: nowrap;
-  padding-top: 0.25rem;
-  border-left: 1px solid var(--border-soft, #d0d7de);
-  padding-left: 3px;
+  padding: 0.3rem 0 0 4px;
+  border-left: 1px solid var(--border-strong, #cbd5e1);
 }
 
 .org-hist-note {
@@ -524,18 +588,18 @@
 
 /* Палитра систем — как у коллекционных челленджей (cell-plat-*). */
 .org-hist-plat-s95 {
-  background: var(--tint-blue-bg-strong);
-  border-color: var(--tint-blue-border);
+  background: var(--series-s95);
+  border-color: var(--series-s95);
 }
 
 .org-hist-plat-parkrun {
-  background: var(--tint-violet-bg-strong);
-  border-color: var(--tint-violet-border);
+  background: var(--series-parkrun);
+  border-color: var(--series-parkrun);
 }
 
 .org-hist-plat-runpark {
-  background: var(--tint-orange-bg);
-  border-color: var(--tint-orange-text);
+  background: var(--series-runpark);
+  border-color: var(--series-runpark);
 }
 
 .org-legend {
@@ -561,23 +625,23 @@
      ниже. Раньше правила систем стояли ВЫШЕ этого блока и при равной
      специфичности проигрывали ему — точка в легенде всегда была зелёной,
      хотя столбики рисовались правильно (Дмитрий 02.09.2026). */
-  background: var(--tint-green-bg-strong);
-  border: 1px solid var(--tint-green-border);
+  background: var(--series-five-verst);
+  border: 1px solid var(--series-five-verst);
 }
 
 .org-legend-dot.org-hist-plat-s95 {
-  background: var(--tint-blue-bg-strong);
-  border-color: var(--tint-blue-border);
+  background: var(--series-s95);
+  border-color: var(--series-s95);
 }
 
 .org-legend-dot.org-hist-plat-parkrun {
-  background: var(--tint-violet-bg-strong);
-  border-color: var(--tint-violet-border);
+  background: var(--series-parkrun);
+  border-color: var(--series-parkrun);
 }
 
 .org-legend-dot.org-hist-plat-runpark {
-  background: var(--tint-orange-bg);
-  border-color: var(--tint-orange-text);
+  background: var(--series-runpark);
+  border-color: var(--series-runpark);
 }
 
 /* Бейдж системы в таблице стартов. */

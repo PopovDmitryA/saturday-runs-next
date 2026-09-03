@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import {
   ApiError,
@@ -18,6 +18,10 @@ import { OrganizerDenied } from "./OrganizerDenied";
 import "./organizer.css";
 
 const MONTH_LABELS = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+
+/* До этого числа месяцев над столбиками рисуются значения: дальше трёхзначные
+   числа начинают наезжать друг на друга. */
+const VALUE_LABEL_MAX_MONTHS = 18;
 
 function monthLabel(key: string): string {
   const [year, month] = key.split("-");
@@ -105,6 +109,14 @@ function OrganizerAttendanceContent({ slug }: { slug: string }) {
       Math.max(1, ...chartMonths.map((item) => (item.empty ? 0 : item.avg_finishers))),
     [chartMonths],
   );
+  // Подписи над столбиками — только когда месяцев мало: иначе трёхзначные
+  // числа налезают друг на друга. Под них резервируется полоса сверху, а
+  // столбики считаются от укороченной шкалы — иначе самый высокий упирался бы
+  // в потолок и выталкивал свою подпись за пределы графика (Дмитрий 03.09.2026).
+  const showValues = chartMonths.length <= VALUE_LABEL_MAX_MONTHS;
+  const headroomPct = showValues ? 14 : 0;
+  const scalePct = 100 - headroomPct;
+
   const platformsInChart = useMemo(() => {
     const seen: string[] = [];
     for (const item of chartMonths) {
@@ -221,37 +233,68 @@ function OrganizerAttendanceContent({ slug }: { slug: string }) {
                 ))}
               </div>
             )}
-            <div className="org-hist" role="img" aria-label="Посещаемость по месяцам за всю историю">
-              {chartMonths.map((item) => (
-                <div key={item.month} className="org-hist-col">
-                  {/* Нативный title у браузера всплывает с секундной задержкой и
-                      «не работает» на глаз — поэтому канонический ChartColumnTooltip,
-                      как у гистограммы финишей: мгновенный ховер + тап на телефоне. */}
-                  <ChartColumnTooltip
-                    title={monthLabel(item.month)}
-                    lines={
-                      item.empty
-                        ? ["Стартов с протоколами не было"]
-                        : [
-                            pluralizeRu(item.events, ["старт", "старта", "стартов"]),
-                            `Финишёров в среднем: ${item.avg_finishers}`,
-                            `Максимум: ${formatInt(item.max_finishers)}`,
-                            platformCodeLabel(item.platform_code),
-                          ]
-                    }
-                  >
-                    {!item.empty && (
-                      <div
-                        className={`org-hist-bar ${platformClass(item.platform_code)}`}
-                        style={{ height: `${Math.max(3, (item.avg_finishers / chartMax) * 100)}%` }}
-                      />
+            <div className="org-hist-plot">
+              <div className="org-hist-axis" aria-hidden="true">
+                <span style={{ top: `${headroomPct}%` }}>{formatInt(chartMax)}</span>
+                <span style={{ top: `${headroomPct + scalePct / 2}%` }}>
+                  {formatInt(Math.round(chartMax / 2))}
+                </span>
+              </div>
+              {/* У старых площадок в «истории» под сотню месяцев, и зазор в три
+                  пикселя съел бы полполотна: сужаем его по числу колонок. */}
+              <div
+                className="org-hist"
+                role="img"
+                aria-label="Посещаемость по месяцам за всю историю"
+                style={
+                  {
+                    gap: chartMonths.length > 40 ? 1 : chartMonths.length > 20 ? 2 : 3,
+                    "--org-hist-top": `${headroomPct}%`,
+                    "--org-hist-mid": `${headroomPct + scalePct / 2}%`,
+                  } as CSSProperties
+                }
+              >
+                {chartMonths.map((item) => (
+                  <div key={item.month} className="org-hist-col">
+                    {/* Нативный title у браузера всплывает с секундной задержкой и
+                        «не работает» на глаз — поэтому канонический ChartColumnTooltip,
+                        как у гистограммы финишей: мгновенный ховер + тап на телефоне. */}
+                    <ChartColumnTooltip
+                      title={monthLabel(item.month)}
+                      lines={
+                        item.empty
+                          ? ["Стартов с протоколами не было"]
+                          : [
+                              pluralizeRu(item.events, ["старт", "старта", "стартов"]),
+                              `Финишёров в среднем: ${item.avg_finishers}`,
+                              `Максимум: ${formatInt(item.max_finishers)}`,
+                              platformCodeLabel(item.platform_code),
+                            ]
+                      }
+                    >
+                      {/* В подписи целое: среднее приходит с десятой долей
+                          («58.4»), и в колонку шириной с ноготь она не лезет.
+                          Точное значение остаётся в подсказке. */}
+                      {!item.empty && showValues && (
+                        <span className="org-hist-value">
+                          {formatInt(Math.round(item.avg_finishers))}
+                        </span>
+                      )}
+                      {!item.empty && (
+                        <div
+                          className={`org-hist-bar ${platformClass(item.platform_code)}`}
+                          style={{
+                            height: `${Math.max(2, (item.avg_finishers / chartMax) * scalePct)}%`,
+                          }}
+                        />
+                      )}
+                    </ChartColumnTooltip>
+                    {item.month.endsWith("-01") && (
+                      <span className="org-hist-year">{item.month.slice(0, 4)}</span>
                     )}
-                  </ChartColumnTooltip>
-                  {item.month.endsWith("-01") && (
-                    <span className="org-hist-year">{item.month.slice(0, 4)}</span>
-                  )}
-                </div>
-              ))}
+                  </div>
+                ))}
+              </div>
             </div>
             <p className="muted org-hist-note">
               Наведите на столбик (на телефоне — тапните), чтобы увидеть месяц и цифры. Цвет
