@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
+import { FilterSelect } from "../../components/filters/FilterPanel";
 import {
   ApiError,
   getOrganizerMilestones,
@@ -77,12 +78,15 @@ function OrganizerMilestonesContent({ slug }: { slug: string }) {
   const [notFound, setNotFound] = useState(false);
   const [kindFilter, setKindFilter] = useState("all");
   const [query, setQuery] = useState("");
+  // Длина пропуска, после которой человек выпадает из календаря. Тринадцать
+  // недель — прежнее зашитое поведение (90 дней).
+  const [absenceWeeks, setAbsenceWeeks] = useState(13);
   // По умолчанию — ближайшие юбилеи; клик по «Юбилей» покажет самые крупные.
   const [sort, setSort] = useState<SortState>({ key: "remaining", asc: true });
 
   useEffect(() => {
     let cancelled = false;
-    getOrganizerMilestones(slug)
+    getOrganizerMilestones(slug, absenceWeeks)
       .then((payload) => {
         if (!cancelled) {
           setData(payload);
@@ -103,7 +107,7 @@ function OrganizerMilestonesContent({ slug }: { slug: string }) {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, absenceWeeks]);
 
   const rows = useMemo(() => {
     const merged = mergeMilestoneRows(data?.items ?? []);
@@ -198,8 +202,25 @@ function OrganizerMilestonesContent({ slug }: { slug: string }) {
               </button>
             ))}
             <span className="muted org-subnav-note">
-              юбилеи на ближайшие {pluralizeRu(data.horizon, ["участие", "участия", "участий"])} ·
-              активные за {data.active_days} дней
+              юбилеи на ближайшие {pluralizeRu(data.horizon, ["участие", "участия", "участий"])}
+            </span>
+          </div>
+
+          <div className="org-toolbar-row">
+            <label className="org-toolbar-label">
+              Пропуск не больше{" "}
+              <FilterSelect
+                ariaLabel="Исключать при пропуске дольше"
+                value={absenceWeeks}
+                onChange={setAbsenceWeeks}
+                options={ABSENCE_WEEK_OPTIONS.map((value) => ({
+                  value,
+                  label: `${value} ${pluralizeRu(value, ["недели", "недель", "недель"])}`,
+                }))}
+              />
+            </label>
+            <span className="muted">
+              Кто не приходил дольше выбранного срока, в календарь не попадает.
             </span>
           </div>
 
@@ -301,6 +322,9 @@ function OrganizerMilestonesContent({ slug }: { slug: string }) {
     </PortalSectionShell>
   );
 }
+
+// Та же лестница, что на странице пост-отчёта: пороги должны совпадать.
+const ABSENCE_WEEK_OPTIONS = [2, 4, 8, 13, 20, 26, 39, 52, 78, 100];
 
 export function OrganizerMilestonesPage({ slug }: { slug: string }) {
   return (

@@ -360,9 +360,12 @@ def list_identity_event_dates(db: Session, identity: LocationIdentity) -> list[d
 MILESTONES_CACHE_TTL_SECONDS = 3 * 60 * 60
 # Сколько стартов до юбилея показываем (юбилей «через 1..N участий»).
 MILESTONE_HORIZON = 4
-# Активные участники локации: были здесь за последние N дней. Без среза
-# календарь забит теми, кто застыл в шаге от юбилея годы назад.
-MILESTONE_ACTIVE_DAYS = 90
+# Активные участники локации: были здесь не дольше N недель назад. Без среза
+# календарь забит теми, кто застыл в шаге от юбилея годы назад. Порог
+# настраивается организатором — у площадки с редким составом тринадцати недель
+# мало, а в столице и они щедры (Дмитрий 04.09.2026).
+MILESTONE_ABSENCE_WEEKS_DEFAULT = 13
+MILESTONE_ABSENCE_WEEKS_MAX = 100
 
 
 def _next_milestone(total: int) -> int:
@@ -374,31 +377,35 @@ def _next_milestone(total: int) -> int:
     return (total // 25 + 1) * 25
 
 
-def milestones_cache_key(identity_key: str) -> str:
-    return f"organizer:milestones:v1:{identity_key}"
+def milestones_cache_key(identity_key: str, absence_weeks: int) -> str:
+    return f"organizer:milestones:v2:{identity_key}:{absence_weeks}"
 
 
 def build_location_milestones(
     db: Session,
     identity: LocationIdentity,
     *,
+    absence_weeks: int = MILESTONE_ABSENCE_WEEKS_DEFAULT,
     use_cache: bool = True,
     refresh: bool = False,
 ) -> dict[str, Any]:
-    cache_key = milestones_cache_key(identity.identity_key)
+    absence_weeks = max(1, min(MILESTONE_ABSENCE_WEEKS_MAX, absence_weeks))
+    cache_key = milestones_cache_key(identity.identity_key, absence_weeks)
     if use_cache and not refresh:
         cached = _read_json_cache(cache_key)
         if cached is not None:
             return cached
 
-    payload = _compute_location_milestones(db, identity)
+    payload = _compute_location_milestones(db, identity, absence_weeks)
 
     if use_cache:
         _write_json_cache(cache_key, payload, MILESTONES_CACHE_TTL_SECONDS)
     return payload
 
 
-def _compute_location_milestones(db: Session, identity: LocationIdentity) -> dict[str, Any]:
+def _compute_location_milestones(
+    db: Session, identity: LocationIdentity, absence_weeks: int
+) -> dict[str, Any]:
     """Кто из активных участников локации в 1–4 участиях от юбилея.
 
     Обратная сторона свода: там юбилей виден уже после старта, здесь — заранее,
@@ -411,7 +418,7 @@ def _compute_location_milestones(db: Session, identity: LocationIdentity) -> dic
     base: dict[str, Any] = {
         "location": {"slug": identity.slug, "name": identity.name},
         "horizon": MILESTONE_HORIZON,
-        "active_days": MILESTONE_ACTIVE_DAYS,
+        "absence_weeks": absence_weeks,
         "items": [],
         "total": 0,
     }
@@ -421,7 +428,7 @@ def _compute_location_milestones(db: Session, identity: LocationIdentity) -> dic
     from datetime import date as date_type
     from datetime import timedelta
 
-    cutoff = date_type.today() - timedelta(days=MILESTONE_ACTIVE_DAYS)
+    cutoff = date_type.today() - timedelta(weeks=absence_weeks)
 
     def _local_counts(model: type[RunResult] | Any) -> dict[Any, tuple[int, date]]:
         rows = (

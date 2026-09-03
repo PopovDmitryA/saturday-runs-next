@@ -1598,3 +1598,77 @@ def test_health_skips_protocol_for_non_five_verst(
     protocols = client.get(f"/api/organizer/{location.external_key}/protocols")
     assert protocols.status_code == 200
     assert protocols.json()["supported"] is False
+
+
+def test_milestones_absence_filter_drops_the_long_gone(
+    client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Фильтр пропуска выкидывает того, кто давно не приходил.
+
+    Юбиляр стоит в шаге от десятки, но последний раз бежал двадцать недель
+    назад: при пороге «не больше 8 недель» поздравлять некого, при «52» — он
+    снова в календаре (Дмитрий 04.09.2026).
+    """
+    from datetime import date as date_type
+
+    suffix = str(uuid4().int % 1_000_000)
+    platform = _platform(db_session, "five_verst", "5 вёрст")
+    location = _location(db_session, platform, f"org-loc-{suffix}")
+    today = date_type.today()
+    # Девять стартов подряд, последний — двадцать недель назад.
+    events = [
+        _event(db_session, platform, location, today - timedelta(weeks=20 + (8 - i)), i + 1)
+        for i in range(9)
+    ]
+    runner = _participant(db_session, platform, f"{suffix}-r9", "Давно Не Был")
+    for event in events:
+        _run(db_session, event, runner)
+
+    organizer = _participant(db_session, platform, f"{suffix}-org", "Организатор")
+    _volunteer(db_session, events[-1], organizer, "Организатор")
+    user = User(telegram_id=int(uuid4().int % 10_000_000_000), telegram_username=f"u{suffix}")
+    db_session.add(user)
+    db_session.flush()
+    _link(db_session, user, platform, organizer)
+    db_session.commit()
+    fake_redis.delete(LOCATIONS_INDEX_CACHE_KEY)
+    _login(client, user.telegram_id or 0, "organizer")
+
+    def _names(absence_weeks: int) -> list[str]:
+        response = client.get(
+            f"/api/organizer/{location.external_key}/milestones",
+            params={"absence_weeks": absence_weeks},
+        )
+        assert response.status_code == 200, response.text
+        return [item["name"] for item in response.json()["items"]]
+
+    assert "Давно Не Был" not in _names(8)
+    # Тот же ответ из кэша соседнего порога был бы ошибкой: ключ обязан
+    # различать пороги, иначе фильтр «работает» только до первого запроса.
+    assert "Давно Не Был" in _names(52)
+
+
+def test_milestones_absence_filter_rejects_values_over_the_cap(
+    client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Верхняя ступень фильтра — 100 недель, выше API не принимает."""
+    suffix = str(uuid4().int % 1_000_000)
+    platform = _platform(db_session, "five_verst", "5 вёрст")
+    location = _location(db_session, platform, f"org-loc-{suffix}")
+    event = _event(db_session, platform, location, date.today() - timedelta(days=7), 1)
+    organizer = _participant(db_session, platform, f"{suffix}-org", "Организатор")
+    _volunteer(db_session, event, organizer, "Организатор")
+    user = User(telegram_id=int(uuid4().int % 10_000_000_000), telegram_username=f"u{suffix}")
+    db_session.add(user)
+    db_session.flush()
+    _link(db_session, user, platform, organizer)
+    db_session.commit()
+    fake_redis.delete(LOCATIONS_INDEX_CACHE_KEY)
+    _login(client, user.telegram_id or 0, "organizer")
+
+    ok = client.get(f"/api/organizer/{location.external_key}/milestones", params={"absence_weeks": 100})
+    assert ok.status_code == 200
+    too_much = client.get(
+        f"/api/organizer/{location.external_key}/milestones", params={"absence_weeks": 101}
+    )
+    assert too_much.status_code == 422

@@ -3522,7 +3522,12 @@ export function getOrganizerEventPost(
   eventId: string | null,
   template: OrganizerPostTemplate = "full",
   // Пороги «Юбилеев завтра» и «своих» в «Наших в гостях».
-  options?: { minRunMilestone?: number; minVolMilestone?: number; travelersMinRuns?: number },
+  options?: {
+    minRunMilestone?: number;
+    minVolMilestone?: number;
+    travelersMinRuns?: number;
+    absenceWeeks?: number;
+  },
 ) {
   const params = new URLSearchParams();
   // «Юбилеи завтра» строится по локации — событие не передаётся.
@@ -3538,6 +3543,9 @@ export function getOrganizerEventPost(
   }
   if (options?.travelersMinRuns) {
     params.set("travelers_min_runs", String(options.travelersMinRuns));
+  }
+  if (options?.absenceWeeks) {
+    params.set("absence_weeks", String(options.absenceWeeks));
   }
   return apiFetch<{ post_text: string; template: string }>(
     `/organizer/${encodeURIComponent(slug)}/event-post?${params.toString()}`,
@@ -3559,14 +3567,15 @@ export type OrganizerMilestoneItem = {
 export type OrganizerMilestonesResponse = {
   location: { slug: string; name: string };
   horizon: number;
-  active_days: number;
+  absence_weeks: number;
   items: OrganizerMilestoneItem[];
   total: number;
 };
 
-export function getOrganizerMilestones(slug: string) {
+export function getOrganizerMilestones(slug: string, absenceWeeks?: number) {
+  const query = absenceWeeks ? `?absence_weeks=${absenceWeeks}` : "";
   return apiFetch<OrganizerMilestonesResponse>(
-    `/organizer/${encodeURIComponent(slug)}/milestones`,
+    `/organizer/${encodeURIComponent(slug)}/milestones${query}`,
   );
 }
 

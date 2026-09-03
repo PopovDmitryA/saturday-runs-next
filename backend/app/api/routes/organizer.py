@@ -62,6 +62,8 @@ from app.services.organizer_service import (
     ABSENCE_MIN_MISSED_DEFAULT,
     ABSENCE_MIN_RUNS_DEFAULT,
     BENCH_MIN_RUNS_DEFAULT,
+    MILESTONE_ABSENCE_WEEKS_DEFAULT,
+    MILESTONE_ABSENCE_WEEKS_MAX,
     NEWCOMERS_DEFAULT_DAYS,
     build_location_absence,
     build_location_milestones,
@@ -193,6 +195,10 @@ def organizer_event_post(
     template: Annotated[str, Query()] = "full",
     min_run_milestone: Annotated[int, Query(ge=10, le=1000)] = 10,
     min_vol_milestone: Annotated[int, Query(ge=10, le=1000)] = 10,
+    # «Юбилеи завтра»: кого выкидываем из выборки по длине пропуска.
+    absence_weeks: Annotated[
+        int, Query(ge=1, le=MILESTONE_ABSENCE_WEEKS_MAX)
+    ] = MILESTONE_ABSENCE_WEEKS_DEFAULT,
     travelers_min_runs: Annotated[int, Query(ge=1, le=100)] = 5,
 ) -> OrganizerPostResponse:
     """Пост для Telegram по выбранному шаблону.
@@ -205,7 +211,7 @@ def organizer_event_post(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Неизвестный шаблон")
     identity = _require_identity_access(db, user, settings, slug)
     if template == "upcoming":
-        milestones = build_location_milestones(db, identity)
+        milestones = build_location_milestones(db, identity, absence_weeks=absence_weeks)
         return OrganizerPostResponse(
             post_text=build_upcoming_post(
                 milestones,
@@ -250,9 +256,14 @@ def organizer_milestones(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     settings: Annotated[Settings, Depends(get_settings)],
+    absence_weeks: Annotated[
+        int, Query(ge=1, le=MILESTONE_ABSENCE_WEEKS_MAX)
+    ] = MILESTONE_ABSENCE_WEEKS_DEFAULT,
 ) -> MilestonesResponse:
     identity = _require_identity_access(db, user, settings, slug)
-    return MilestonesResponse.model_validate(build_location_milestones(db, identity))
+    return MilestonesResponse.model_validate(
+        build_location_milestones(db, identity, absence_weeks=absence_weeks)
+    )
 
 
 @router.get("/{slug}/newcomers", response_model=NewcomersResponse)

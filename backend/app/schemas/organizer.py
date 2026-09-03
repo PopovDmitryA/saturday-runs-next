@@ -158,7 +158,7 @@ class MilestoneItem(BaseModel):
 class MilestonesResponse(BaseModel):
     location: OrganizerLocationBrief
     horizon: int
-    active_days: int
+    absence_weeks: int
     items: list[MilestoneItem]
     total: int
 
