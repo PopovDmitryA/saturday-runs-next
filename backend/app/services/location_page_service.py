@@ -613,8 +613,11 @@ LOCATION_ATTENDANCE_KINDS = ("all", "runners", "volunteers")
 
 
 def location_attendance_cache_key(slug: str, year: int, kind: str, offset: int, limit: int) -> str:
+    # v2 — в строках появились month_totals. Без бампа страница до истечения
+    # TTL отдавала бы payload без них, и «Всего» в срезе месяца считалось бы
+    # по клеткам (у закрытого профиля их нет — вышел бы ноль).
     return (
-        f"locations:attendance:v1:{slug.strip().lower()}:{year}:{kind}:o{offset}:l{limit}"
+        f"locations:attendance:v2:{slug.strip().lower()}:{year}:{kind}:o{offset}:l{limit}"
     )
 
 
@@ -729,11 +732,18 @@ def _attendance_row_payload(
                     "roles": [] if kind == "runners" else sorted(person.vol_roles.get(day, ())),
                 }
             )
+    month_totals: dict[str, int] = {}
+    for day in dates:
+        key = day.strftime("%Y-%m")
+        month_totals[key] = month_totals.get(key, 0) + 1
     return {
         "name": person.display_name,
         "handle": person.handle,
         "private": person.private,
         "year_total": len(dates),
+        # Счёт по месяцам считаем всегда, в том числе закрытому профилю: items
+        # ему не отдаём, а колонку «Всего» в срезе месяца заполнить нужно.
+        "month_totals": month_totals,
         "runs_total": len(person.run_dates),
         "volunteering_total": len(person.vol_roles),
         "items": items,

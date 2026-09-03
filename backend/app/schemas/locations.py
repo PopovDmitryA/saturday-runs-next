@@ -363,6 +363,10 @@ class LocationAttendanceRowResponse(BaseModel):
     private: bool = False
     # Дней активности в году (день с пробежкой и волонтёрством — один).
     year_total: int
+    # То же по месяцам, «YYYY-MM» → счёт: колонка «Всего» в срезе месяца
+    # показывает его, а не годовую сумму. Отдаём и для закрытого профиля —
+    # это счёт, а не даты, а клеток такому человеку по-прежнему не даём.
+    month_totals: dict[str, int] = Field(default_factory=dict)
     runs_total: int = 0
     volunteering_total: int = 0
     items: list[LocationAttendanceItemResponse] = Field(default_factory=list)

@@ -28,6 +28,7 @@ export type JournalRow = {
   total: number | null;
   // Счёт выбранного года (у туризма — новые площадки года).
   year_total: number;
+  month_totals?: Record<string, number>;
   // Закрытый профиль: счёт года есть, отметки по датам скрыты.
   private: boolean;
   items: JournalItem[];
@@ -58,6 +59,7 @@ export type LocationAttendanceRow = {
   private: boolean;
   // Дней активности в году: день с пробежкой и волонтёрством — один день.
   year_total: number;
+  month_totals?: Record<string, number>;
   runs_total: number;
   volunteering_total: number;
   items: LocationAttendanceItem[];

@@ -413,6 +413,43 @@ def _compute_location_health(db: Session, identity: LocationIdentity) -> dict[st
         }
     )
 
+    # 2b. Ротация организаторов — сразу за ротацией волонтёров: роль та же по
+    # смыслу, но выгорание в ней закрывает площадку целиком. Пороги свои,
+    # посчитанные по стране, поэтому берём готовый уровень из «Команды и
+    # нагрузки», а не сравниваем с медианой (просьба Дмитрия 03.09.2026 —
+    # именно лампочкой в общем светофоре, а не отдельной карточкой).
+    from app.services.organizer_analytics_service import build_team_load
+
+    director = None
+    try:
+        director = build_team_load(db, identity).get("director_rotation")
+    except Exception:
+        logger.exception("health: не удалось получить ротацию организаторов")
+    if director:
+        top_share = director.get("top_share_pct")
+        people = director.get("people")
+        indicators.append(
+            {
+                "key": "director_rotation",
+                "title": "Ротация организаторов",
+                "level": director.get("level"),
+                "value_display": (
+                    f"{people} чел., на самого частого {top_share}% стартов"
+                    if people is not None and top_share is not None
+                    else None
+                ),
+                "hint": (
+                    "Сколько человек вели старт за год и какую долю закрывает самый "
+                    "частый. Зелёная зона — людей хотя бы четверо и на самого частого "
+                    "не больше 40%; красная — организатор один или на нём больше 70%."
+                ),
+                "advice": (
+                    "Как улучшить: готовьте сменщиков заранее — роль организатора "
+                    "единственная, выгорание в которой закрывает площадку целиком."
+                ),
+            }
+        )
+
     # Индикатор «фотограф на старте» убран из светофора (решение Дмитрия
     # 23.08.2026, «пока уберём») — _photographer_share остаётся на будущее.
 

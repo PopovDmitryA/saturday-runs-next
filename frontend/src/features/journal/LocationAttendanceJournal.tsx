@@ -90,6 +90,7 @@ function matrixRow(
     id: me ? "me" : `${index}-${row.handle ?? name}`,
     rank: me ? null : index + 1,
     searchName: name,
+    monthTotals: row.month_totals,
     name: row.handle ? (
       <a className="ajm-name-link" href={`/users/${row.handle}`}>
         {me ? `${name} (вы)` : name}
@@ -216,18 +217,19 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
 
   // Счёт следует за выбранным месяцем: с фильтром «Всего» показывает участия
   // этого месяца, а не всего года — иначе колонка спорит с клетками рядом
-  // (Дмитрий 03.09.2026). У закрытого профиля клеток нет вовсе (сервер их не
-  // отдаёт), поэтому там прочерк, а не ноль: месячный счёт по трём-четырём
-  // субботам выдал бы ровно те даты, которые мы и прячем.
+  // (Дмитрий 03.09.2026). Число берём с сервера (month_totals): у закрытого
+  // профиля клеток нет вовсе, и по ним посчитать было бы нечего, а цифра
+  // нужна во всех строках. Счёт по клеткам — запасной путь для старого
+  // payload из кэша.
   const monthRows = useMemo(() => {
     if (month === "all") {
       return rows;
     }
     return rows.map((row) => ({
       ...row,
-      total: row.private
-        ? null
-        : Object.keys(row.cells).filter((date) => date.slice(0, 7) === month).length,
+      total:
+        row.monthTotals?.[month] ??
+        Object.keys(row.cells).filter((date) => date.slice(0, 7) === month).length,
     }));
   }, [rows, month]);
 
@@ -246,8 +248,7 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
       if (sort.key === "name") {
         return (a.searchName ?? "").localeCompare(b.searchName ?? "", "ru");
       }
-      // Неизвестный счёт (закрытый профиль) — вниз при любом направлении.
-      return (a.total ?? -1) - (b.total ?? -1);
+      return (a.total ?? 0) - (b.total ?? 0);
     });
     if (!sort.asc) {
       sorted.reverse();

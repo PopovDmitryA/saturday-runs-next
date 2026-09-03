@@ -120,7 +120,7 @@ def test_row_items_volunteering_carries_role_label() -> None:
 
 def test_location_attendance_cache_key_normalizes_slug() -> None:
     assert location_attendance_cache_key(" Meshchersky ", 2026, "all", 0, 50) == (
-        "locations:attendance:v1:meshchersky:2026:all:o0:l50"
+        "locations:attendance:v2:meshchersky:2026:all:o0:l50"
     )
 
 
@@ -132,6 +132,10 @@ def test_attendance_row_payload_hides_private_cells() -> None:
     payload = _attendance_row_payload(person)
     assert payload["year_total"] == 2
     assert payload["items"] == []
+    # Счёт по месяцам отдаём и закрытому профилю: колонка «Всего» в срезе
+    # месяца должна быть заполнена у всех (Дмитрий 03.09.2026). Это счёт, а не
+    # даты — клетки такому человеку по-прежнему не рисуются.
+    assert payload["month_totals"] == {"2026-02": 2}
 
     # Свою строку человек видит целиком, даже с закрытым профилем.
     own = _attendance_row_payload(person, me=True)

@@ -1272,7 +1272,16 @@ def test_health_endpoint_smoke(
     payload = response.json()
     keys = [indicator["key"] for indicator in payload["indicators"]]
     # Фотограф из светофора убран (23.08.2026), _photographer_share остался на будущее.
-    assert keys == ["protocol", "rotation", "attendance", "protocol_quality", "newcomers"]
+    # Ротация организаторов стоит сразу за ротацией волонтёров: та же по смыслу
+    # роль, но выгорание в ней закрывает площадку целиком (Дмитрий 03.09.2026).
+    assert keys == [
+        "protocol",
+        "rotation",
+        "director_rotation",
+        "attendance",
+        "protocol_quality",
+        "newcomers",
+    ]
     # Подсказка «что это» обязательна у всех; advice остался у протокола
     # («на что влияет») и у ротации с новичками («как улучшить»).
     for indicator in payload["indicators"]:

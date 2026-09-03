@@ -5,7 +5,6 @@ import {
   getOrganizerEventDates,
   getOrganizerHealth,
   getOrganizerNewcomers,
-  getOrganizerTeamLoad,
   type OrganizerEventDateItem,
   type OrganizerHealthResponse,
   type OrganizerNewcomersResponse,
@@ -15,7 +14,6 @@ import { HeaderHint } from "../../components/tableUx/HeaderHint";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
-import { DirectorRotationCard, type DirectorRotation } from "./DirectorRotationCard";
 import { OrganizerBreadcrumbs } from "./OrganizerBreadcrumbs";
 import { OrganizerDenied } from "./OrganizerDenied";
 import "./organizer.css";
@@ -34,10 +32,6 @@ function OrganizerHubContent({ slug }: { slug: string }) {
   // медиан занимает десятки секунд, хаб его не ждёт.
   const [health, setHealth] = useState<OrganizerHealthResponse | null>(null);
   const [healthFailed, setHealthFailed] = useState(false);
-  // Ротация организаторов — та же карточка, что на «Команде и нагрузке»:
-  // выгорание организатора закрывает площадку целиком, поэтому цифра нужна
-  // на входе, а не через клик (просьба Дмитрия 03.09.2026).
-  const [rotation, setRotation] = useState<DirectorRotation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -71,15 +65,6 @@ function OrganizerHubContent({ slug }: { slug: string }) {
             if (!cancelled) {
               setHealthFailed(true);
             }
-          });
-        getOrganizerTeamLoad(slug)
-          .then((stats) => {
-            if (!cancelled && stats.director_rotation) {
-              setRotation(stats.director_rotation);
-            }
-          })
-          .catch(() => {
-            // Тихо: карточка просто не появится.
           });
       })
       .catch((err) => {
@@ -172,8 +157,6 @@ function OrganizerHubContent({ slug }: { slug: string }) {
           </div>
         )}
       </section>
-
-      {rotation && <DirectorRotationCard rotation={rotation} />}
 
       <div className="org-hub-grid">
         <a className="card org-hub-card" href={`/organizer/${slug}/report`}>
