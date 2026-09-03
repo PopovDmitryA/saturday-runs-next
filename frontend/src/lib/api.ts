@@ -3365,21 +3365,33 @@ export type OrganizerAbsenceItem = {
   runs_here: number;
   runs_total: number;
   missed_events: number;
+  /** Эта площадка — домашняя для человека (та же логика, что везде на сайте). */
+  is_home?: boolean;
 };
 
 export type OrganizerAbsenceResponse = {
   location: { slug: string; name: string };
   min_runs: number;
   min_missed: number;
+  current_only?: boolean;
+  current_platform?: string | null;
   events_total: number;
   items: OrganizerAbsenceItem[];
   total: number;
 };
 
-export function getOrganizerAbsence(slug: string, minRuns: number, minMissed: number) {
+export function getOrganizerAbsence(
+  slug: string,
+  minRuns: number,
+  minMissed: number,
+  currentOnly = false,
+) {
   const params = new URLSearchParams();
   params.set("min_runs", String(minRuns));
   params.set("min_missed", String(minMissed));
+  if (currentOnly) {
+    params.set("current_only", "true");
+  }
   return apiFetch<OrganizerAbsenceResponse>(
     `/organizer/${encodeURIComponent(slug)}/absence?${params.toString()}`,
   );
@@ -3632,8 +3644,22 @@ export type OrganizerTeamLoadResponse = {
     profile_url: string | null;
     slots: number;
     share_pct: number;
+    /** Пробежки на этой площадке за тот же период. */
+    runs_here?: number;
+    /** Смены, когда человек в этот день нигде не бежал. */
+    pure_slots?: number;
   }[];
   roles: OrganizerTeamRole[];
+  /** Светофор ротации организаторов: не держится ли старт на одном человеке. */
+  director_rotation?: {
+    months: number;
+    slots: number;
+    people: number;
+    top_name: string | null;
+    top_count: number;
+    top_share_pct: number;
+    level: "green" | "yellow" | "red";
+  } | null;
 };
 
 export function getOrganizerTeamLoad(slug: string, months = 12) {

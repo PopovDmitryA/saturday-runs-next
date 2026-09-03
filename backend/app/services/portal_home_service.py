@@ -37,10 +37,11 @@ from app.models import (
 from app.schemas.portal import PortalHomeResponse
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.platform_titles import PLATFORM_TITLES
+from app.services.unified_protocol_service import saturday_of, week_start_of
 
 logger = logging.getLogger(__name__)
 
-PORTAL_HOME_CACHE_KEY = "portal:home:v21"
+PORTAL_HOME_CACHE_KEY = "portal:home:v22"
 # TTL сильно больше периода прогрева (раз в час): пересчёт занимает ~2 мин и идёт
 # синхронно в запросе пользователя, поэтому пустой кэш — это минута ожидания на
 # главной. Запас в 24 часа переживает и пропущенные прогревы, и рестарт воркера:
@@ -52,6 +53,10 @@ DISTANCE_KM = 5
 # парковых пробежек — мусор парсинга, в рекорды не берём.
 MIN_SANE_FINISH_SEC = 13 * 60
 WEEK_RECORD_WINDOW_DAYS = 7
+
+# Глубина недельных графиков. Окно отсчитывается понедельниками, иначе самый
+# левый столбец собирался бы из одного воскресенья предыдущей недели.
+CHART_WEEKS = 52
 GEO_POINTS_LIMIT = 400
 WEEK_RECORDS_LIMIT = 12
 # У parkrun-волонтёрств и части легаси-записей даты обнулены в 1970 —
@@ -66,6 +71,23 @@ PLATFORM_ORDER = ["five_verst", "s95", "runpark", "parkrun"]
 # parkrun в России закрыт в 2022-м (зарубежные старты участников синкаются,
 # но система для аудитории — архивная эпоха).
 ACTIVE_PLATFORM_CODES = {"five_verst", "s95", "runpark"}
+
+
+def chart_window(pulse_date: date) -> tuple[date, date]:
+    """Окно недельных графиков: понедельник самой левой недели и воскресенье
+    пульсовой.
+
+    Неделя здесь ровно та же, что в едином протоколе, — понедельник–воскресенье,
+    подписанная своей субботой. Прежде окно закрывалось самой субботой, и
+    воскресные старты выпадали из последней недели: 30.08.2026 Кулибин с его
+    14 финишёрами не попадал в график, хотя в протоколе за 29.08 стоял. Отсюда
+    и было расхождение RunPark 82 против 68 (Дмитрий 03.09.2026).
+
+    Левый край выравнен по понедельнику: от «субботы минус 363 дня» получалось
+    воскресенье, и самый левый столбец собирался из одного этого дня.
+    """
+    week_start = week_start_of(pulse_date)
+    return week_start - timedelta(days=7 * (CHART_WEEKS - 1)), week_start + timedelta(days=6)
 
 
 def _not_crosslink_secondary(query: Any) -> Any:
@@ -1018,15 +1040,20 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
             "personal_records": personal_records,
         }
 
+    weeks_start: date | None = None
+    weeks_end: date | None = None
+    if pulse_date is not None:
+        weeks_start, weeks_end = chart_window(pulse_date)
+
     # --- герой за последний год (окно 52 недели, как недельный график) ---
     hero_last_year: dict[str, Any] | None = None
-    if pulse_date is not None:
-        year_start = pulse_date - timedelta(days=7 * 52 - 1)
-        year_events = [row for row in events if year_start <= row.event_date <= pulse_date]
+    if pulse_date is not None and weeks_start is not None and weeks_end is not None:
+        year_start, year_end = weeks_start, weeks_end
+        year_events = [row for row in events if year_start <= row.event_date <= year_end]
         hero_last_year = {
             "finishes_total": sum(row.finishers for row in year_events),
             "participants_total": _participants_in_window(
-                db, year_start, pulse_date, excluded_location_ids
+                db, year_start, year_end, excluded_location_ids
             ),
             "locations_total": len(
                 {identity_of(row.location_id) for row in year_events}
@@ -1061,8 +1088,8 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
     # --- рекорды недели ---
     week_records: dict[str, Any] | None = None
     if pulse_date is not None:
-        week_end = pulse_date
-        week_start = week_end - timedelta(days=WEEK_RECORD_WINDOW_DAYS - 1)
+        week_start = week_start_of(pulse_date)
+        week_end = week_start + timedelta(days=WEEK_RECORD_WINDOW_DAYS - 1)
 
         attendance_list = _week_attendance_records(
             events, week_start, week_end, identity_of, display_of, slug_of, city_of
@@ -1260,15 +1287,14 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
     locations_by_week: list[dict[str, Any]] = []
     newcomers_by_week: list[dict[str, Any]] = []
     personal_records_by_week: list[dict[str, Any]] = []
-    if pulse_date is not None:
-        weeks_start = pulse_date - timedelta(days=7 * 52 - 1)
+    if pulse_date is not None and weeks_start is not None and weeks_end is not None:
         finishes_by_week: dict[date, int] = defaultdict(int)
         finishes_week_platform: dict[tuple[date, str], int] = defaultdict(int)
         locations_week_platform: dict[tuple[date, str], set[str]] = defaultdict(set)
         for row in events:
-            if row.event_date < weeks_start or row.event_date > pulse_date:
+            if row.event_date < weeks_start or row.event_date > weeks_end:
                 continue
-            week_key = row.event_date - timedelta(days=row.event_date.weekday())
+            week_key = week_start_of(row.event_date)
             finishes_by_week[week_key] += row.finishers
             finishes_week_platform[(week_key, row.platform_code)] += row.finishers
             locations_week_platform[(week_key, row.platform_code)].add(
@@ -1276,7 +1302,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
             )
         chart_weeks = [
             {
-                "week_start": week,
+                "saturday": saturday_of(week),
                 "total": finishes_by_week[week],
                 "platforms": {
                     code: finishes_week_platform[(week, code)]
@@ -1288,7 +1314,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         ]
         locations_by_week = [
             {
-                "week_start": week,
+                "saturday": saturday_of(week),
                 "platforms": {
                     code: len(locations_week_platform[(week, code)])
                     for code in PLATFORM_ORDER
@@ -1299,14 +1325,14 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         ]
 
         # --- новички по системам (последние 52 недели) ---
-        newcomers_by_date = _newcomers_by_date(db, excluded_location_ids, weeks_start, pulse_date)
+        newcomers_by_date = _newcomers_by_date(db, excluded_location_ids, weeks_start, weeks_end)
         newcomers_week_platform: dict[tuple[date, str], int] = defaultdict(int)
         for (event_date, platform_code), count in newcomers_by_date.items():
-            week_key = event_date - timedelta(days=event_date.weekday())
+            week_key = week_start_of(event_date)
             newcomers_week_platform[(week_key, platform_code)] += count
         newcomers_by_week = [
             {
-                "week_start": week,
+                "saturday": saturday_of(week),
                 "total": sum(newcomers_week_platform[(week, code)] for code in PLATFORM_ORDER),
                 "platforms": {
                     code: newcomers_week_platform[(week, code)]
@@ -1319,15 +1345,15 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
 
         # --- личные рекорды по системам (последние 52 недели) ---
         personal_records_by_date = _personal_records_by_date(
-            db, excluded_location_ids, weeks_start, pulse_date
+            db, excluded_location_ids, weeks_start, weeks_end
         )
         personal_records_week_platform: dict[tuple[date, str], int] = defaultdict(int)
         for (event_date, platform_code), count in personal_records_by_date.items():
-            week_key = event_date - timedelta(days=event_date.weekday())
+            week_key = week_start_of(event_date)
             personal_records_week_platform[(week_key, platform_code)] += count
         personal_records_by_week = [
             {
-                "week_start": week,
+                "saturday": saturday_of(week),
                 "total": sum(
                     personal_records_week_platform[(week, code)] for code in PLATFORM_ORDER
                 ),

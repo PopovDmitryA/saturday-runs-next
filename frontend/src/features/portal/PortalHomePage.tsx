@@ -367,7 +367,7 @@ export function PortalHomePage() {
       }));
     }
     return data.chart_weeks.map((point) => ({
-      label: weekLabel(point.week_start),
+      label: weekLabel(point.saturday),
       platforms: point.platforms,
     }));
   }, [data, period]);
@@ -405,7 +405,7 @@ export function PortalHomePage() {
       }));
     }
     return data.locations_by_week.map((point) => ({
-      label: weekLabel(point.week_start),
+      label: weekLabel(point.saturday),
       platforms: point.platforms,
     }));
   }, [data, period]);
@@ -421,7 +421,7 @@ export function PortalHomePage() {
       }));
     }
     return data.newcomers_by_week.map((point) => ({
-      label: weekLabel(point.week_start),
+      label: weekLabel(point.saturday),
       platforms: point.platforms,
     }));
   }, [data, period]);
@@ -448,7 +448,7 @@ export function PortalHomePage() {
       }));
     }
     return data.personal_records_by_week.map((point) => ({
-      label: weekLabel(point.week_start),
+      label: weekLabel(point.saturday),
       platforms: point.platforms,
     }));
   }, [data, period]);
@@ -463,7 +463,7 @@ export function PortalHomePage() {
         label: "Финиши",
         title: "Финиши по системам",
         sub: weekly
-          ? "Последние 52 недели — наведите на график, чтобы увидеть детали"
+          ? "Последние 52 недели, каждая подписана своей субботой — наведите на график"
           : "Сколько финишей набрала каждая система в каждом году",
         points: chartPoints,
         projection: chartProjection,

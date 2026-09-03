@@ -40,12 +40,18 @@ class AbsenceItem(BaseModel):
     runs_here: int
     runs_total: int
     missed_events: int
+    # Эта площадка — домашняя для человека (общесайтовая логика дома).
+    # По отметке страница прячет заезжих, забежавших сюда однажды.
+    is_home: bool = False
 
 
 class AbsenceResponse(BaseModel):
     location: OrganizerLocationBrief
     min_runs: int
     min_missed: int
+    # Считали только по действующей системе площадки и какая она.
+    current_only: bool = False
+    current_platform: str | None = None
     events_total: int
     items: list[AbsenceItem]
     total: int
@@ -244,6 +250,23 @@ class TeamLoadPerson(BaseModel):
     profile_url: str | None = None
     slots: int
     share_pct: int
+    # Пробежки на этой площадке за тот же период — вторая половина баланса
+    # «человек бегает или только помогает».
+    runs_here: int = 0
+    # Смены, когда человек в этот день нигде не бежал: пришёл только помогать.
+    pure_slots: int = 0
+
+
+class DirectorRotation(BaseModel):
+    """Светофор ротации организаторов: не держится ли старт на одном человеке."""
+
+    months: int
+    slots: int
+    people: int
+    top_name: str | None = None
+    top_count: int
+    top_share_pct: int
+    level: str
 
 
 class TeamLoadResponse(BaseModel):
@@ -255,6 +278,7 @@ class TeamLoadResponse(BaseModel):
     avg_per_event: float | None = None
     top_load: list[TeamLoadPerson] = Field(default_factory=list)
     roles: list[TeamRoleLoad] = Field(default_factory=list)
+    director_rotation: DirectorRotation | None = None
 
 
 class AttendanceEvent(BaseModel):

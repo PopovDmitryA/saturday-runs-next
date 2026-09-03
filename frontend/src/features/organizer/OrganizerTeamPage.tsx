@@ -86,6 +86,57 @@ function teamSortValue(role: OrganizerTeamRole, key: TeamSortKey): number {
   }
 }
 
+function DirectorRotationCard({
+  rotation,
+}: {
+  rotation: NonNullable<OrganizerTeamLoadResponse["director_rotation"]>;
+}) {
+  // Организатор — роль, выгорание в которой закрывает площадку целиком,
+  // поэтому она вынесена из общей таблицы отдельным светофором.
+  const label =
+    rotation.level === "green"
+      ? "ротация здоровая"
+      : rotation.level === "yellow"
+        ? "стоит подстраховаться"
+        : "держится на одном человеке";
+  const badge =
+    rotation.level === "green"
+      ? "org-badge org-badge-new"
+      : rotation.level === "yellow"
+        ? "org-badge org-badge-pb"
+        : "org-badge org-badge-comeback";
+  return (
+    <section className="card org-director-card">
+      <header className="org-table-head">
+        <h2 className="section-title">
+          <span className="org-table-emoji" aria-hidden="true">
+            🚦
+          </span>
+          Ротация организаторов
+        </h2>
+        <span className={badge}>{label}</span>
+      </header>
+      <p className="org-director-line">
+        За {rotation.months} месяцев старт вели{" "}
+        <strong>{pluralizeRu(rotation.people, ["человек", "человека", "человек"])}</strong> на{" "}
+        {pluralizeRu(rotation.slots, ["старт", "старта", "стартов"])}.
+        {rotation.top_name && (
+          <>
+            {" "}
+            Чаще всех — {rotation.top_name}: <strong>{rotation.top_share_pct}%</strong> стартов
+            ({rotation.top_count}).
+          </>
+        )}
+      </p>
+      <p className="muted org-director-note">
+        Здоровой считается ротация, где самый частый организатор ведёт не больше 40% стартов, а
+        людей в роли хотя бы четверо — так живут две трети площадок страны. Больше 70% у одного
+        человека или один организатор на всё — повод искать сменщиков.
+      </p>
+    </section>
+  );
+}
+
 function OrganizerTeamContent({ slug }: { slug: string }) {
   const attachRolesHead = useFloatingTableHead();
   const attachLoadHead = useFloatingTableHead();
@@ -95,6 +146,27 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  // «Только чистые волонтёрства»: не засчитывать дни, когда человек в этот же день
+  // где-то бежал — здесь или на соседней площадке.
+  const [pureOnly, setPureOnly] = useState(false);
+
+  // В этом режиме и число, и доля, и порядок считаются по чистым волонтёрствам:
+  // иначе список остался бы отсортированным по общему счёту, и первым стоял бы
+  // тот, кто почти всегда совмещал волонтёрство с пробежкой.
+  const loadRows = useMemo(() => {
+    const rows = data?.top_load ?? [];
+    if (!pureOnly) {
+      return rows;
+    }
+    const total = rows.reduce((sum, person) => sum + (person.pure_slots ?? person.slots), 0);
+    return [...rows]
+      .map((person) => {
+        const value = person.pure_slots ?? person.slots;
+        return { ...person, share_pct: total ? Math.round((value / total) * 100) : 0 };
+      })
+      .filter((person) => (person.pure_slots ?? person.slots) > 0)
+      .sort((a, b) => (b.pure_slots ?? b.slots) - (a.pure_slots ?? a.slots));
+  }, [data, pureOnly]);
 
   useEffect(() => {
     let cancelled = false;
@@ -207,6 +279,10 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
             </div>
           </section>
 
+          {data.director_rotation && (
+            <DirectorRotationCard rotation={data.director_rotation} />
+          )}
+
           <section className="card org-table-card">
             <header className="org-table-head">
               <h2 className="section-title">
@@ -299,6 +375,20 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
                 топ по числу волонтёрств за год — этим людям особенно нужны подмена и отдых
               </span>
             </header>
+            <div className="org-toolbar-row org-load-controls">
+              <label className="org-toolbar-label org-toolbar-checkbox">
+                <input
+                  type="checkbox"
+                  checked={pureOnly}
+                  onChange={(event) => setPureOnly(event.target.checked)}
+                />{" "}
+                Только чистые волонтёрства
+              </label>
+              <span className="muted">
+                Не засчитывать дни, когда человек в этот же день ещё и бежал — здесь или на
+                любой другой площадке.
+              </span>
+            </div>
             <TableWrap innerRef={attachLoadHead}>
               <table className="data-table org-svod-table">
                 <thead>
@@ -309,13 +399,17 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
                       <HeaderHint text="Сколько раз человек выходил волонтёрить на этой локации за последние 12 месяцев, во всех ролях" />
                     </th>
                     <th>
+                      Пробежек за год
+                      <HeaderHint text="Сколько раз человек бегал на этой локации за тот же период — видно, только помогает он или ещё и бегает" />
+                    </th>
+                    <th>
                       Доля нагрузки
                       <HeaderHint text="Какая часть всех волонтёрств локации за год приходится на этого человека" />
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.top_load.map((person) => (
+                  {loadRows.map((person) => (
                     <tr key={person.participant_id}>
                       <td>
                         {person.profile_url ? (
@@ -326,7 +420,8 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
                           person.name ?? "—"
                         )}
                       </td>
-                      <td>{formatInt(person.slots)}</td>
+                      <td>{formatInt(pureOnly ? (person.pure_slots ?? person.slots) : person.slots)}</td>
+                      <td>{formatInt(person.runs_here ?? 0)}</td>
                       <td>
                         <div className="org-bar-row">
                           <div

@@ -182,6 +182,24 @@
   font-size: 0.85rem;
 }
 
+/* Светофор ротации организаторов — карточка над таблицей ролей: метрика
+   отдельная, потому что выгорание организатора закрывает площадку целиком. */
+.org-director-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.org-director-line {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.org-director-note {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
 .org-toolbar-checkbox input {
   margin-right: 0.25rem;
 }

@@ -28,15 +28,18 @@ from app.models import (
     Location,
     Participant,
     Platform,
+    PlatformLink,
     RunResult,
     VolunteerResult,
 )
 from app.services.location_page_service import (
     LocationIdentity,
     _location_event_ids,
+    _platform_link_join,
     _read_json_cache,
     _write_json_cache,
 )
+from app.services.organizer_access_service import ORGANIZER_ROLE_KEY
 from app.volunteer_role_taxonomy import canonical_volunteer_role, strip_role_counters
 
 ANALYTICS_CACHE_TTL_SECONDS = 3 * 60 * 60
@@ -118,6 +121,54 @@ def _bus_factor(shares: list[int]) -> int:
     return len(shares)
 
 
+def _director_rotation(
+    role_people: dict[str, dict[Any, int]],
+    person_names: dict[Any, tuple[str | None, str | None]],
+    months: int,
+) -> dict[str, Any] | None:
+    """Светофор ротации организаторов: сколько людей ведут старт и не держится
+    ли он на одном человеке.
+
+    Отдельная метрика, а не строка в общей таблице ролей: организатор — та роль,
+    выгорание в которой закрывает площадку целиком (просьба Дмитрия 03.09.2026).
+
+    Пороги не выдуманы, а взяты из распределения по стране. На снимке прода
+    250 площадок с 10+ стартами за год: разных организаторов медиана 9
+    (10-й перцентиль 4), доля самого частого медиана 32% (75-й — 47%, 90-й — 67%).
+    Отсюда:
+      зелёный  — доля ≤ 40% и людей ≥ 4: так живут две трети площадок;
+      жёлтый   — 41-70% либо людей 2-3: хвост между 75-м и 90-м перцентилем;
+      красный  — больше 70% либо один человек: худшие 7% (17 площадок из 250).
+    """
+    people = role_people.get(ORGANIZER_ROLE_KEY)
+    if not people:
+        return None
+    slots = sum(people.values())
+    if not slots:
+        return None
+    top_pid = max(people, key=lambda pid: people[pid])
+    top_count = people[top_pid]
+    top_share = round(top_count / slots * 100)
+    count = len(people)
+
+    if count <= 1 or top_share > 70:
+        level = "red"
+    elif count <= 3 or top_share > 40:
+        level = "yellow"
+    else:
+        level = "green"
+
+    return {
+        "months": months,
+        "slots": slots,
+        "people": count,
+        "top_name": person_names.get(top_pid, (None, None))[0],
+        "top_count": top_count,
+        "top_share_pct": top_share,
+        "level": level,
+    }
+
+
 def _compute_team_load(
     db: Session, identity: LocationIdentity, *, months: int
 ) -> dict[str, Any]:
@@ -134,6 +185,7 @@ def _compute_team_load(
         "avg_per_event": None,
         "top_load": [],
         "roles": [],
+        "director_rotation": None,
         "network_note": None,
     }
     if not event_ids:
@@ -146,6 +198,7 @@ def _compute_team_load(
             VolunteerResult.event_id,
             Participant.display_name,
             Participant.profile_url,
+            Event.event_date,
         )
         .join(Event, VolunteerResult.event_id == Event.id)
         .join(Participant, VolunteerResult.participant_id == Participant.id)
@@ -165,7 +218,14 @@ def _compute_team_load(
     role_labels: dict[str, str] = {}
     person_slots: dict[Any, int] = {}
     person_names: dict[Any, tuple[str | None, str | None]] = {}
-    for pid, role, _event_id, name, profile_url in rows:
+    # Волонтёрства по дням: считаем именно волонтёрства (роль на старте), а не
+    # дни, иначе
+    # «из 128 волонтёрств чистых 51» сравнивало бы строки с датами — у человека,
+    # берущего по две роли за старт, число падало бы вдвое просто так.
+    vol_slots_by_day: dict[Any, dict[date, int]] = {}
+    for pid, role, _event_id, name, profile_url, event_date in rows:
+        by_day = vol_slots_by_day.setdefault(pid, {})
+        by_day[event_date] = by_day.get(event_date, 0) + 1
         canonical = canonical_volunteer_role(role)
         if canonical is None:
             continue
@@ -176,6 +236,57 @@ def _compute_team_load(
         role_people[canonical.key][pid] = role_people[canonical.key].get(pid, 0) + 1
         person_slots[pid] = person_slots.get(pid, 0) + 1
         person_names[pid] = (name, profile_url)
+
+    # Пробежки тех же людей: сколько раз бегали ЗДЕСЬ (это баланс «бегает или
+    # только помогает») и в какие дни бегали ГДЕ УГОДНО. Второе нужно фильтру
+    # «только чистые волонтёрства»: если человек бежал в Пестовском, а волонтёрил
+    # в тот же день в Мещерском, для Мещерского это волонтёрство не чистое
+    # (Дмитрий 03.09.2026). Ключ группировки — профиль сайта, иначе пробежка в
+    # соседней системе не нашлась бы.
+    participant_ids = list(person_slots)
+    group_of: dict[Any, Any] = {}
+    for pid, gkey in (
+        db.query(Participant.id, func.coalesce(PlatformLink.user_id, Participant.id))
+        .outerjoin(PlatformLink, _platform_link_join())
+        .filter(Participant.id.in_(participant_ids))
+        .all()
+    ):
+        group_of[pid] = gkey
+
+    runs_here: dict[Any, int] = {}
+    for pid, count in (
+        db.query(RunResult.participant_id, func.count(func.distinct(RunResult.event_id)))
+        .join(Event, RunResult.event_id == Event.id)
+        .filter(
+            RunResult.participant_id.in_(participant_ids),
+            RunResult.event_id.in_(event_ids),
+            Event.event_date >= since,
+        )
+        .group_by(RunResult.participant_id)
+        .all()
+    ):
+        runs_here[pid] = int(count)
+
+    run_dates_by_group: dict[Any, set[date]] = {}
+    if group_of:
+        group_key = func.coalesce(PlatformLink.user_id, RunResult.participant_id)
+        for gkey, event_date in (
+            db.query(group_key.label("gkey"), Event.event_date)
+            .select_from(RunResult)
+            .join(Event, RunResult.event_id == Event.id)
+            .join(Participant, RunResult.participant_id == Participant.id)
+            .outerjoin(PlatformLink, _platform_link_join())
+            .filter(
+                group_key.in_(set(group_of.values())),
+                Event.event_date >= since,
+                Event.is_test_event.is_(False),
+            )
+            .distinct()
+            .all()
+        ):
+            run_dates_by_group.setdefault(gkey, set()).add(event_date)
+
+    director_rotation = _director_rotation(role_people, person_names, months)
 
     network = network_role_rotation(db, identity, months=months)
 
@@ -224,6 +335,14 @@ def _compute_team_load(
                 "profile_url": person_names.get(pid, (None, None))[1],
                 "slots": count,
                 "share_pct": round(count / sum(person_slots.values()) * 100),
+                # Пробежки здесь за тот же период — вторая половина баланса.
+                "runs_here": runs_here.get(pid, 0),
+                # Волонтёрства в дни, когда человек нигде не бежал.
+                "pure_slots": sum(
+                    slots_that_day
+                    for day, slots_that_day in vol_slots_by_day.get(pid, {}).items()
+                    if day not in run_dates_by_group.get(group_of.get(pid), set())
+                ),
             }
             for pid, count in person_slots.items()
         ),
@@ -240,6 +359,7 @@ def _compute_team_load(
             "avg_per_event": round(slots_total / events_count, 1) if events_count else None,
             "top_load": top_load,
             "roles": roles,
+        "director_rotation": director_rotation,
         }
     )
     return base

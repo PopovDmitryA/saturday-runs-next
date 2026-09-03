@@ -83,7 +83,8 @@ class PortalYearProjectionResponse(BaseModel):
 
 
 class PortalWeekPointResponse(BaseModel):
-    week_start: date
+    # Неделя подписывается своей субботой — как в едином протоколе.
+    saturday: date
     total: int
     platforms: dict[str, int]
 
@@ -94,7 +95,7 @@ class PortalLocationsYearPointResponse(BaseModel):
 
 
 class PortalLocationsWeekPointResponse(BaseModel):
-    week_start: date
+    saturday: date
     platforms: dict[str, int]
 
 

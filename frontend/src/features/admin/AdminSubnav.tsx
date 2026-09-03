@@ -40,6 +40,13 @@ const EXTERNAL_LINKS = [
     label: "Яндекс.Метрика",
   },
   { href: "https://search.google.com/search-console", label: "Google Search Console" },
+  {
+    // Постмастер mail.ru: доля спама и жалоб по нашему домену. Домен
+    // подтверждён 02.09.2026 файлом в корне (frontend/public), поэтому
+    // ведём сразу на его страницу, а не на общий вход.
+    href: "https://postmaster.mail.ru/run5k.run/",
+    label: "Постмастер mail.ru",
+  },
 ] as const;
 
 export function AdminSubnav({ activePath }: AdminSubnavProps) {

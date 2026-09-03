@@ -28,7 +28,9 @@ from app.models import (
     PlatformLink,
     RunResult,
     User,
+    VolunteerResult,
 )
+from app.services.location_catalog_service import normalize_platform_code
 from app.services.location_page_service import (
     LocationIdentity,
     _location_event_ids,
@@ -43,8 +45,10 @@ ABSENCE_MIN_RUNS_DEFAULT = 10
 ABSENCE_MIN_MISSED_DEFAULT = 4
 
 
-def absence_cache_key(identity_key: str, min_runs: int, min_missed: int) -> str:
-    return f"organizer:absence:v1:{identity_key}:{min_runs}:{min_missed}"
+def absence_cache_key(
+    identity_key: str, min_runs: int, min_missed: int, current_only: bool
+) -> str:
+    return f"organizer:absence:v3:{identity_key}:{min_runs}:{min_missed}:{int(current_only)}"
 
 
 def build_location_absence(
@@ -53,16 +57,19 @@ def build_location_absence(
     *,
     min_runs: int = ABSENCE_MIN_RUNS_DEFAULT,
     min_missed: int = ABSENCE_MIN_MISSED_DEFAULT,
+    current_only: bool = False,
     use_cache: bool = True,
     refresh: bool = False,
 ) -> dict[str, Any]:
-    cache_key = absence_cache_key(identity.identity_key, min_runs, min_missed)
+    cache_key = absence_cache_key(identity.identity_key, min_runs, min_missed, current_only)
     if use_cache and not refresh:
         cached = _read_json_cache(cache_key)
         if cached is not None:
             return cached
 
-    payload = _compute_location_absence(db, identity, min_runs=min_runs, min_missed=min_missed)
+    payload = _compute_location_absence(
+        db, identity, min_runs=min_runs, min_missed=min_missed, current_only=current_only
+    )
 
     if use_cache:
         _write_json_cache(cache_key, payload, ABSENCE_CACHE_TTL_SECONDS)
@@ -70,15 +77,36 @@ def build_location_absence(
 
 
 def _compute_location_absence(
-    db: Session, identity: LocationIdentity, *, min_runs: int, min_missed: int
+    db: Session,
+    identity: LocationIdentity,
+    *,
+    min_runs: int,
+    min_missed: int,
+    current_only: bool = False,
 ) -> dict[str, Any]:
-    location_ids = [location.id for location, _code in identity.locations]
+    # «Только действующая система»: у площадки, пережившей parkrun, стаж
+    # набран в основном там, и в списке висят люди, не приходившие с 2022 года.
+    # Фильтр сужает расчёт до локаций той системы, в которой площадка работает
+    # сейчас (просьба Дмитрия 03.09.2026). Выбирать систему руками смысла нет:
+    # осмысленный вопрос всегда один — «а что у нас сейчас».
+    active_code = (
+        normalize_platform_code(identity.catalog.active_platform) if identity.catalog else None
+    )
+    members = identity.locations
+    if current_only and active_code:
+        current = [(loc, code) for loc, code in members if code == active_code]
+        # Если действующей системы среди локаций нет (данные разъехались),
+        # молча считаем по всем: пустой список дал бы пустую страницу.
+        members = current or members
+    location_ids = [location.id for location, _code in members]
     event_ids = _location_event_ids(db, location_ids)
 
     base: dict[str, Any] = {
         "location": {"slug": identity.slug, "name": identity.name},
         "min_runs": min_runs,
         "min_missed": min_missed,
+        "current_only": current_only,
+        "current_platform": active_code,
         "events_total": len(event_ids),
         "items": [],
         "total": 0,
@@ -139,9 +167,64 @@ def _compute_location_absence(
     )
     totals = {row.group_key: int(row.runs_total) for row in total_rows}
 
+    # Последний визит — это и волонтёрство тоже: человек, который перестал
+    # бегать, но каждую субботу стоит на позиции, никуда не пропадал, и
+    # показывать его в «долгой паузе» неправильно (Дмитрий 02.09.2026).
+    # Отдельным запросом по волонтёрским строкам той же площадки, ключ
+    # группировки тот же — профиль сайта либо участник системы.
+    vol_group_key = func.coalesce(PlatformLink.user_id, VolunteerResult.participant_id)
+    vol_last: dict[Any, date] = {
+        row.group_key: row.last_date
+        for row in (
+            db.query(
+                vol_group_key.label("group_key"),
+                func.max(Event.event_date).label("last_date"),
+            )
+            # select_from обязателен: ключ группировки начинается с
+            # platform_links, и без явного якоря SQLAlchemy делает её ведущей
+            # таблицей — получается декартово произведение.
+            .select_from(VolunteerResult)
+            .join(Event, VolunteerResult.event_id == Event.id)
+            .join(Participant, VolunteerResult.participant_id == Participant.id)
+            .outerjoin(PlatformLink, _platform_link_join())
+            .filter(
+                VolunteerResult.event_id.in_(event_ids),
+                vol_group_key.in_(group_keys),
+                # Волонтёрства parkrun-эпохи лежат на дате-заглушке 1970-01-01
+                # (сводка профиля, а не событие) — они не про «был здесь тогда-то».
+                Event.event_date > date(1970, 1, 1),
+            )
+            .group_by(vol_group_key)
+            .all()
+        )
+    }
+
+    # Кому эта площадка — дом. Логика общесайтовая (ручной выбор плюс три
+    # ступени), поэтому переиспользуем home_participant_ids: строка получает
+    # отметку, а фильтровать по ней или нет — решает страница.
+    participant_by_group: dict[Any, set[Any]] = {}
+    for gkey, pid in (
+        db.query(group_key.label("group_key"), Participant.id)
+        .select_from(RunResult)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Participant, RunResult.participant_id == Participant.id)
+        .outerjoin(PlatformLink, _platform_link_join())
+        .filter(RunResult.event_id.in_(event_ids), group_key.in_(group_keys))
+        .distinct()
+        .all()
+    ):
+        participant_by_group.setdefault(gkey, set()).add(pid)
+    home_ids = home_participant_ids(
+        db, identity.identity_key, {pid for pids in participant_by_group.values() for pid in pids}
+    )
+
     items: list[dict[str, Any]] = []
     for row in local_rows:
+        # Последний визит: позднейшая из двух дат — пробежки и волонтёрства.
         last_date: date = row.last_date
+        volunteered = vol_last.get(row.group_key)
+        if volunteered is not None and volunteered > last_date:
+            last_date = volunteered
         missed = sum(1 for event_date in event_dates if event_date > last_date)
         if missed < min_missed:
             continue
@@ -154,6 +237,9 @@ def _compute_location_absence(
                 "runs_here": int(row.runs_here),
                 "runs_total": totals.get(row.group_key, int(row.runs_here)),
                 "missed_events": missed,
+                # Своя площадка или заезжий: по этой отметке страница может
+                # спрятать тех, кто забежал сюда однажды в путешествии.
+                "is_home": bool(participant_by_group.get(row.group_key, set()) & home_ids),
             }
         )
 

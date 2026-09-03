@@ -112,9 +112,12 @@ def organizer_absence(
     settings: Annotated[Settings, Depends(get_settings)],
     min_runs: Annotated[int, Query(ge=1, le=100)] = ABSENCE_MIN_RUNS_DEFAULT,
     min_missed: Annotated[int, Query(ge=1, le=100)] = ABSENCE_MIN_MISSED_DEFAULT,
+    current_only: Annotated[bool, Query()] = False,
 ) -> AbsenceResponse:
     identity = _require_identity_access(db, user, settings, slug)
-    payload = build_location_absence(db, identity, min_runs=min_runs, min_missed=min_missed)
+    payload = build_location_absence(
+        db, identity, min_runs=min_runs, min_missed=min_missed, current_only=current_only
+    )
     return AbsenceResponse.model_validate(payload)
 
 

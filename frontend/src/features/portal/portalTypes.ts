@@ -65,9 +65,9 @@ export type PortalYearProjection = {
   total: number;
   platforms: Record<string, number>;
 };
-export type PortalWeekPoint = { week_start: string; total: number; platforms: Record<string, number> };
+export type PortalWeekPoint = { saturday: string; total: number; platforms: Record<string, number> };
 export type PortalLocationsYearPoint = { year: number; platforms: Record<string, number> };
-export type PortalLocationsWeekPoint = { week_start: string; platforms: Record<string, number> };
+export type PortalLocationsWeekPoint = { saturday: string; platforms: Record<string, number> };
 
 export type PortalBusiestDay = { event_date: string; finishers: number };
 export type PortalBusiestDayPlatform = {
