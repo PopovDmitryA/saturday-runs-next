@@ -1446,6 +1446,118 @@ def test_protocol_watch_marks_cold_start_as_unconfirmed(
     assert warm_fact.first_seen_confirmed is True
 
 
+def _watch_summary(location: Location, event_day: date, number: int = 10):
+    from app.platform_adapters.canonical import CanonicalEventSummary
+
+    return CanonicalEventSummary(
+        external_event_key=f"{location.external_key}-{event_day.isoformat()}",
+        event_date=event_day,
+        event_number=number,
+        location_external_key=location.external_key,
+        location_name=location.name,
+    )
+
+
+def test_protocol_watch_gap_in_observation_is_unconfirmed(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Предыдущий взгляд был давно — момент появления неизвестен."""
+    from datetime import datetime, timezone
+
+    from app.sync import five_verst_protocol_watch as watch
+
+    suffix = str(uuid4().int % 1_000_000)
+    platform = _platform(db_session, "five_verst", "5 вёрст")
+    location = _location(db_session, platform, f"org-gap-{suffix}")
+    db_session.commit()
+    event_day = date.today() - timedelta(days=1)
+    monkeypatch.setattr(watch.bulk_parser, "fetch_latest_results", lambda: ([_watch_summary(location, event_day)], "<html>"))
+
+    stale = datetime.now(timezone.utc) - timedelta(seconds=watch.MAX_OBSERVATION_GAP_SECONDS + 60)
+    fake_redis.set(watch.WATCH_HEARTBEAT_KEY, stale.isoformat())
+
+    result = watch.record_protocol_upload_facts(db_session)
+    assert result.new_facts == 1
+    assert result.unconfirmed_facts == 1
+
+
+def test_protocol_watch_big_batch_is_unconfirmed_even_with_heartbeat(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Пачка в десятки протоколов за минуту — холодный старт, что бы ни говорил Redis."""
+    from datetime import datetime, timezone
+
+    from app.sync import five_verst_protocol_watch as watch
+
+    suffix = str(uuid4().int % 1_000_000)
+    platform = _platform(db_session, "five_verst", "5 вёрст")
+    event_day = date.today() - timedelta(days=1)
+    locations = [
+        _location(db_session, platform, f"org-batch-{suffix}-{i}")
+        for i in range(watch.MAX_PLAUSIBLE_NEW_FACTS_PER_RUN + 1)
+    ]
+    db_session.commit()
+    monkeypatch.setattr(
+        watch.bulk_parser,
+        "fetch_latest_results",
+        lambda: ([_watch_summary(loc, event_day) for loc in locations], "<html>"),
+    )
+    fake_redis.set(watch.WATCH_HEARTBEAT_KEY, datetime.now(timezone.utc).isoformat())
+
+    result = watch.record_protocol_upload_facts(db_session)
+    assert result.new_facts == len(locations)
+    assert result.unconfirmed_facts == len(locations)
+
+
+def test_protocol_watch_skips_future_dates(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.sync import five_verst_protocol_watch as watch
+
+    suffix = str(uuid4().int % 1_000_000)
+    platform = _platform(db_session, "five_verst", "5 вёрст")
+    location = _location(db_session, platform, f"org-future-{suffix}")
+    db_session.commit()
+    tomorrow = date.today() + timedelta(days=1)
+    monkeypatch.setattr(watch.bulk_parser, "fetch_latest_results", lambda: ([_watch_summary(location, tomorrow)], "<html>"))
+
+    result = watch.record_protocol_upload_facts(db_session)
+    assert result.new_facts == 0
+    assert db_session.query(ProtocolUploadFact).filter(ProtocolUploadFact.location_id == location.id).count() == 0
+
+
+def test_protocol_timeline_shows_local_time_not_shifted(
+    client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Момент из БД приходит уже в московском поясе; показ не должен прибавлять ещё +3."""
+    from datetime import datetime, timezone
+
+    suffix = str(uuid4().int % 1_000_000)
+    platform = _platform(db_session, "five_verst", "5 вёрст")
+    location = _location(db_session, platform, f"org-tz-{suffix}")
+    event = _event(db_session, platform, location, date(2026, 8, 29), 20)
+    organizer = _participant(db_session, platform, f"{suffix}-org", "Организатор")
+    _volunteer(db_session, event, organizer, "Организатор")
+    user = User(telegram_id=int(uuid4().int % 10_000_000_000), telegram_username=f"u{suffix}")
+    db_session.add(user)
+    db_session.flush()
+    _link(db_session, user, platform, organizer)
+    # 21:00 МСК = 18:00 UTC, сохраняем как aware-момент с московским смещением —
+    # ровно так его отдаёт соединение с прод-БД (TimeZone=Europe/Moscow).
+    seen_msk = datetime(2026, 9, 2, 21, 0, tzinfo=timezone(timedelta(hours=3)))
+    db_session.add(
+        ProtocolUploadFact(location_id=location.id, event_date=date(2026, 8, 29), first_seen_at=seen_msk, source="site")
+    )
+    db_session.commit()
+    fake_redis.delete(LOCATIONS_INDEX_CACHE_KEY)
+    _login(client, user.telegram_id or 0, "organizer")
+
+    response = client.get(f"/api/organizer/{location.external_key}/protocols")
+    assert response.status_code == 200
+    row = next(item for item in response.json()["items"] if item["date"] == "2026-08-29")
+    assert row["first_seen_display"] == "02.09 21:00"
+
+
 def test_health_skips_protocol_for_non_five_verst(
     client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
 ) -> None:

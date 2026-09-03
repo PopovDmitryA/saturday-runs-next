@@ -209,7 +209,10 @@ def _compute_protocol_timeline(db: Session, identity: LocationIdentity, *, limit
         first_seen_local_display: str | None = None
         if fact is not None:
             first_seen_iso = fact.first_seen_at.isoformat()
-            local_seen = fact.first_seen_at + timedelta(hours=3 + tz_offset)
+            # astimezone, а не «+3 часа»: соединение с БД отдаёт момент уже в
+            # московском поясе, и наивное сложение уводило показ на три часа
+            # вперёд — 21:00 превращалось в «00:00 следующего дня».
+            local_seen = fact.first_seen_at.astimezone(timezone(timedelta(hours=3 + tz_offset)))
             first_seen_local_display = local_seen.strftime("%d.%m %H:%M")
             published_same_day = local_seen.date() == event.event_date
             if start_local is not None:

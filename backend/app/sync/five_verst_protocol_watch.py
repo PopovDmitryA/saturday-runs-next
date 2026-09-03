@@ -35,7 +35,13 @@ logger = logging.getLogger(__name__)
 # зияет дыра, и «протокол появился только что» утверждать нельзя.
 WATCH_HEARTBEAT_KEY = "five_verst:protocol_watch:last_seen_at"
 WATCH_HEARTBEAT_TTL_SECONDS = 24 * 3600
-MAX_OBSERVATION_GAP_SECONDS = 15 * 60
+# Прогон ежеминутный (crontab в celery_app); порог с запасом на задержку
+# очереди. Разрыв длиннее — дыра в наблюдении, момент появления неизвестен.
+MAX_OBSERVATION_GAP_SECONDS = 10 * 60
+# Вторая защита, независимая от Redis: в обычную минуту на странице появляется
+# несколько протоколов, а не десятки. Пачка крупнее — холодный старт (первый
+# прогон 02.09.2026 принёс 20 разом), даже если отметка в Redis жива.
+MAX_PLAUSIBLE_NEW_FACTS_PER_RUN = 12
 
 
 @dataclass
@@ -56,22 +62,28 @@ class ProtocolWatchResult:
         }
 
 
-def _observation_is_continuous(now: datetime) -> bool:
-    """Смотрели ли мы на страницу только что.
-
-    Первый прогон наблюдателя 02.09.2026 записал 20 площадок разом, как будто
-    все их протоколы появились в 21:00, — а они лежали там уже несколько дней.
-    Теперь факт считается подтверждённым, только если предыдущий взгляд был
-    не позже пятнадцати минут назад.
-    """
-    redis = get_redis_client()
-    raw = redis.get(WATCH_HEARTBEAT_KEY)
-    redis.set(WATCH_HEARTBEAT_KEY, now.isoformat(), ex=WATCH_HEARTBEAT_TTL_SECONDS)
+def _previous_observation() -> datetime | None:
+    """Когда мы в последний раз успешно смотрели на страницу."""
+    raw = get_redis_client().get(WATCH_HEARTBEAT_KEY)
     if not raw:
-        return False
+        return None
     try:
-        previous = datetime.fromisoformat(raw)
+        return datetime.fromisoformat(raw)
     except ValueError:
+        return None
+
+
+def _mark_observed(now: datetime) -> None:
+    """Отметка ставится только после успешного разбора страницы: пустая или
+    сломанная страница наблюдением не считается."""
+    get_redis_client().set(WATCH_HEARTBEAT_KEY, now.isoformat(), ex=WATCH_HEARTBEAT_TTL_SECONDS)
+
+
+def _observation_is_continuous(now: datetime, previous: datetime | None) -> bool:
+    """Первый прогон 02.09.2026 записал 20 площадок разом, как будто все их
+    протоколы появились в 21:00, — а они лежали там уже несколько дней. Факт
+    подтверждён, только если предыдущий взгляд был недавно."""
+    if previous is None:
         return False
     return (now - previous).total_seconds() <= MAX_OBSERVATION_GAP_SECONDS
 
@@ -94,10 +106,19 @@ def record_protocol_upload_facts(db: Session, *, source: str = "site") -> Protoc
     }
 
     now = datetime.now(timezone.utc)
-    confirmed = _observation_is_continuous(now)
+    previous = _previous_observation()
     candidates: list[tuple[str, UUID, date]] = []  # (slug, location_id, event_date)
     for summary in summaries:
         if summary.is_test_event:
+            continue
+        # Протокол не появляется раньше самого старта: дата из будущего — ошибка
+        # разбора, факт по ней ставить нельзя.
+        if summary.event_date > now.date():
+            logger.warning(
+                "protocol watch: дата %s из будущего у %s — пропуск",
+                summary.event_date,
+                summary.location_external_key,
+            )
             continue
         location = locations.get(summary.location_external_key)
         if location is None:
@@ -122,9 +143,20 @@ def record_protocol_upload_facts(db: Session, *, source: str = "site") -> Protoc
         .all()
     }
 
-    for slug, location_id, event_date in candidates:
-        if (location_id, event_date) in existing:
-            continue
+    new_pairs = [
+        (slug, location_id, event_date)
+        for slug, location_id, event_date in candidates
+        if (location_id, event_date) not in existing
+    ]
+    confirmed = _observation_is_continuous(now, previous)
+    if confirmed and len(new_pairs) > MAX_PLAUSIBLE_NEW_FACTS_PER_RUN:
+        logger.warning(
+            "protocol watch: %d новых протоколов за прогон — похоже на холодный старт, пишем без подтверждения",
+            len(new_pairs),
+        )
+        confirmed = False
+
+    for slug, location_id, event_date in new_pairs:
         insert = (
             pg_insert(ProtocolUploadFact)
             .values(
@@ -154,4 +186,6 @@ def record_protocol_upload_facts(db: Session, *, source: str = "site") -> Protoc
             )
     if result.new_facts:
         db.flush()
+    # Страница разобрана, факты записаны — вот теперь этот взгляд считается.
+    _mark_observed(now)
     return result
