@@ -257,3 +257,43 @@ def test_watch_does_not_clear_on_empty_registry(
     db_session.refresh(row)
     assert row.is_cancelled is True
     assert _changes_for(notify, slug) == []
+
+
+def test_registry_is_fetched_outside_an_open_transaction(
+    db_session: Session, s95_platform: Platform
+) -> None:
+    """Обход s95 идёт без открытой транзакции.
+
+    На проде стоит idle_in_transaction_session_timeout=60s. Раньше чтение
+    платформы открывало транзакцию, и она висела весь обход — Postgres рвал
+    соединение, а падал первый запрос ПОСЛЕ обхода, показывая невиновный
+    SELECT по locations. За 03.09.2026 так слегли четыре прохода из десяти.
+
+    Проверяем порядок вызовов, а не `in_transaction()`: фикстура держит сессию
+    внутри SAVEPOINT, и флаг там всегда поднят.
+    """
+    calls: list[str] = []
+    real_commit = db_session.commit
+
+    def _spy_commit() -> None:
+        calls.append("commit")
+        real_commit()
+
+    def _fetch(*, errors: list[str] | None = None) -> list[S95ApiLocation]:
+        calls.append("fetch")
+        return []
+
+    db_session.commit = _spy_commit  # type: ignore[method-assign]
+    try:
+        with (
+            patch("app.sync.s95_cancellations.fetch_all_locations", side_effect=_fetch),
+            patch("app.sync.s95_cancellations.notify_cancellation_changes"),
+            patch("app.sync.s95_cancellations.flush_location_catalog_caches"),
+            patch("app.sync.s95_cancellations.flush_location_page_caches"),
+        ):
+            watch_s95_cancellations(db_session)
+    finally:
+        del db_session.commit  # type: ignore[attr-defined]
+
+    assert "fetch" in calls, calls
+    assert calls.index("commit") < calls.index("fetch"), calls

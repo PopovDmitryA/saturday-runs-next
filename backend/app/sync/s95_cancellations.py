@@ -36,6 +36,7 @@ from app.services.location_catalog_cache import (
 )
 from app.services.sync_report_labels import location_detail_label
 from app.sync import upsert
+from app.sync.iteration_commit import release_before_fetch
 from app.sync.location_registry_status import apply_location_registry_flags
 from app.sync.s95_location_status import resolve_s95_location_status
 
@@ -56,7 +57,11 @@ class S95CancellationsWatchResult:
 
 
 def watch_s95_cancellations(db: Session, *, notify: bool = True) -> S95CancellationsWatchResult:
-    platform = upsert.get_platform(db, PLATFORM_CODE)
+    # Ниже — обход s95: реестр плюс страница на каждую подозрительную площадку,
+    # это минуты сетевых запросов. Держать транзакцию всё это время нельзя.
+    # id платформы забираем значением, чтобы после коммита не дёргать ORM.
+    platform_id = upsert.get_platform(db, PLATFORM_CODE).id
+    release_before_fetch(db)
     result = S95CancellationsWatchResult()
 
     fetch_errors: list[str] = []
@@ -117,7 +122,7 @@ def watch_s95_cancellations(db: Session, *, notify: bool = True) -> S95Cancellat
 
     result.cancellations_active = len(cancelled)
 
-    rows = db.query(Location).filter(Location.platform_id == platform.id).all()
+    rows = db.query(Location).filter(Location.platform_id == platform_id).all()
     by_key = {row.external_key: row for row in rows}
     changes: list[CancellationChange] = []
 

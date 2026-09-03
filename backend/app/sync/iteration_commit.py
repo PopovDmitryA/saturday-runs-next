@@ -18,6 +18,22 @@ def rollback_step(db: Session) -> None:
     db.rollback()
 
 
+def release_before_fetch(db: Session) -> None:
+    """Закрыть транзакцию перед походом в сеть.
+
+    На проде стоит `idle_in_transaction_session_timeout=60s`: Postgres рвёт
+    соединение, которое висит «idle in transaction». Любое чтение из базы
+    открывает транзакцию, и если следом идёт фетч на минуты, соединение
+    умирает — а падает при этом первый запрос ПОСЛЕ фетча, из-за чего ошибка
+    показывает совершенно невиновный SELECT.
+
+    Так за 03.09.2026 упали четыре прохода «отмены ближайшего старта» у s95 и
+    один клуб у 5 вёрст. Вызывать перед сетевой работой, когда писать ещё
+    нечего: коммит здесь ничего не сохраняет, он только отпускает транзакцию.
+    """
+    db.commit()
+
+
 def persist_step_error(db: Session, *, apply: Callable[[Session], None]) -> None:
     """Rollback failed iteration, persist error markers, commit."""
     db.rollback()

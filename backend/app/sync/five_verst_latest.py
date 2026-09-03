@@ -15,7 +15,7 @@ from app.platform_adapters.five_verst import bulk_parser
 from app.services.sync_report_labels import protocol_detail_label
 from app.sync import upsert
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
-from app.sync.iteration_commit import commit_step, persist_summary_error, rollback_step
+from app.sync.iteration_commit import commit_step, persist_summary_error, release_before_fetch, rollback_step
 from app.sync.protocol_debt import protocol_is_stale
 
 PLATFORM_CODE = "five_verst"
@@ -263,6 +263,7 @@ def sync_latest_results(
     platform = upsert.get_platform(db, PLATFORM_CODE)
     result = LatestResultsSyncResult()
 
+    release_before_fetch(db)
     summaries, _ = bulk_parser.fetch_latest_results()
     result.summaries_total = len(summaries)
 

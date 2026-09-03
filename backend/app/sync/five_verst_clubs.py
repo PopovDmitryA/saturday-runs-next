@@ -24,7 +24,7 @@ from app.platform_adapters.five_verst.clubs_parser import ParsedClubsListEntry
 from app.platform_adapters.five_verst.http import NotFoundError, source_hash
 from app.services.admin_notify import notify_admin
 from app.sync import upsert
-from app.sync.iteration_commit import commit_step, rollback_step
+from app.sync.iteration_commit import commit_step, release_before_fetch, rollback_step
 
 logger = logging.getLogger(__name__)
 
@@ -397,8 +397,16 @@ def sync_club_details_batch(db: Session, limit: int = 20) -> ClubDetailsSyncResu
             try:
                 first_detail_sync = club.detail_synced_at is None
                 now = datetime.now(timezone.utc)
+                # Ключ забираем ДО коммита: после него поля ORM-объекта
+                # протухают, и обращение к club.external_key открыло бы новую
+                # транзакцию ровно перед запросом к 5 вёрст. Медленная страница
+                # клуба переживала таймаут соединения, и падал первый запрос
+                # после неё: 03.09.2026 так слёг syktyvkar_runners_club на
+                # выборке club_members.
+                external_key = club.external_key
+                release_before_fetch(db)
                 try:
-                    detail, html = clubs_parser.fetch_club_detail(club.external_key)
+                    detail, html = clubs_parser.fetch_club_detail(external_key)
                 except NotFoundError:
                     club.is_active = False
                     club.needs_detail_sync = False
