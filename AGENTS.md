@@ -334,6 +334,29 @@ Redis **хэшем** (не открытым текстом), 10 минут, 5 п
 
 Проверка почты с прода: `docker compose exec api python scripts/send_test_email.py --to …`.
 
+### Вход через Telegram: подтверждение в боте или виджет
+
+Два пути под одной кнопкой «Войти через Telegram», выбирает сервер по
+`GET /auth/telegram/config` → `bot_login`:
+
+- **Бот жив** — `POST /auth/login-request` (контекст запроса: IP, User-Agent,
+  согласие, время — в Redis `login_req_ctx:*`), deep link `t.me/<бот>?start=login_<token>`.
+  Бот через `POST /auth/bot/login-context` показывает, откуда вход (браузер и
+  ОС — `core/user_agent.py`, город по IP — `services/ip_geo_service.py`,
+  ip-api.com с кэшем на сутки), кнопки «Подтвердить вход» / «Это не я»
+  (`POST /auth/bot/deny`). После confirm статус `confirmed`, user_id лежит в
+  `login_req_claim:<token>`; вкладка сайта опрашивает статус раз в 2 с и
+  забирает сессию `POST /auth/login-request/{token}/claim`. Ссылка-страховка
+  с magic link в боте остаётся (вкладку могли закрыть).
+- **Бот молчит** — Telegram Login Widget (`telegram_login_service.py`), подпись
+  проверяется локально, сервер в Telegram не ходит.
+
+«Жив» = метка `bot:heartbeat` в Redis (`core/bot_heartbeat.py`): бот раз в 30 с
+делает `get_me()` и зовёт `POST /internal/bot/heartbeat`, TTL 90 с. Упала
+прокси или контейнер — метка гаснет, сайт ведёт в виджет; если бот умер
+посреди входа, вкладка по `bot_alive=false` в статусе предлагает виджет сама.
+Фронт: `features/auth/TelegramBotLogin.tsx` (страница входа и «Способы входа»).
+
 ### Лимит новых профилей
 
 `core/signup_guard.py` — суточный потолок на **создание** аккаунта: 3 с одного

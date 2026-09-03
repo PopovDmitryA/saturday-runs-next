@@ -66,8 +66,12 @@ export type LoginRequestResponse = {
 };
 
 export type LoginRequestStatus = {
+  // pending → confirmed → claimed; denied («Это не я» в боте), linked /
+  // merge_required (привязка), expired.
   status: string;
   merge_token?: string | null;
+  // Бот перестал отмечаться: подтверждения не дождаться, пора предлагать виджет.
+  bot_alive?: boolean;
 };
 
 export type ProfilePreviewActivity = {
@@ -630,9 +634,25 @@ async function apiFetch<T>(
   return JSON.parse(rawText) as T;
 }
 
-export function createLoginRequest(link = false) {
-  const query = link ? "?link=true" : "";
-  return apiFetch<LoginRequestResponse>(`/auth/login-request${query}`, { method: "POST" });
+export function createLoginRequest(options: { link?: boolean; consent?: boolean } = {}) {
+  const params = new URLSearchParams();
+  if (options.link) {
+    params.set("link", "true");
+  }
+  if (options.consent) {
+    params.set("consent", "true");
+  }
+  const query = params.toString();
+  return apiFetch<LoginRequestResponse>(`/auth/login-request${query ? `?${query}` : ""}`, {
+    method: "POST",
+  });
+}
+
+// Вкладка забирает вход, подтверждённый в боте: кука сессии ставится сюда.
+export function claimLoginRequest(requestToken: string) {
+  return apiFetch<{ redirect: string }>(`/auth/login-request/${requestToken}/claim`, {
+    method: "POST",
+  });
 }
 
 export function oauthStartUrl(provider: "vk" | "yandex", mode: "login" | "link", consent = false) {
@@ -660,6 +680,8 @@ export function verifyEmailCode(email: string, code: string) {
 
 export type TelegramLoginConfig = {
   enabled: boolean;
+  // Бот жив — вход подтверждением в боте; иначе Telegram Login Widget.
+  bot_login: boolean;
   bot_id: string;
   bot_username: string;
 };

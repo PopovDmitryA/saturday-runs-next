@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     # Сколько живёт подпись виджета. Сутки — как в примерах Telegram: человек
     # мог подтвердить вход и уйти заваривать чай, но не на неделю.
     telegram_login_max_age_seconds: int = 86400
+    # Вход подтверждением в боте (deep link → «Подтвердить вход» → вкладка сайта
+    # входит сама). Работает, только пока бот отмечается в Redis
+    # (core/bot_heartbeat.py): нет метки дольше TTL — сайт ведёт в виджет.
+    telegram_bot_heartbeat_ttl_seconds: int = 90
+    # Город по IP для сообщения «откуда вход» в боте (services/ip_geo_service.py).
+    # {ip} подставляется адресом. Пусто или выключено — строки с городом нет.
+    ip_geo_lookup_enabled: bool = True
+    ip_geo_lookup_url: str = "http://ip-api.com/json/{ip}?lang=ru&fields=status,country,city"
 
     # Comma-separated emails (OAuth). Grants admin if any linked auth_identity matches (case-insensitive).
     admin_emails: str = ""

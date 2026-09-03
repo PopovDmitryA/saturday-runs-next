@@ -1,0 +1,85 @@
+/* Ожидание подтверждения входа в боте: один блок на странице входа и в
+   «Способах входа». Цвета — из общих переменных, чтобы не зависеть от
+   portal.css, которого на странице настроек нет. */
+.tg-bot-login {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.tg-bot-login-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.tg-bot-login-open {
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+  background: #29a9eb;
+  border-color: #29a9eb;
+}
+
+.tg-bot-login-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted, #64748b);
+}
+
+.tg-bot-login-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.tg-bot-login-spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(41, 169, 235, 0.3);
+  border-top-color: #29a9eb;
+  animation: tg-bot-login-spin 0.9s linear infinite;
+}
+
+@keyframes tg-bot-login-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tg-bot-login-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.12);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.tg-bot-login-fallback p {
+  margin: 0;
+}
+
+.tg-bot-login-cancel {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted, #64748b);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}

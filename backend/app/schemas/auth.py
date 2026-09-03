@@ -11,8 +11,42 @@ class LoginRequestResponse(BaseModel):
 
 
 class LoginRequestStatusResponse(BaseModel):
+    # pending → confirmed (бот подтвердил, вкладка может забрать сессию) →
+    # claimed; либо denied («Это не я»), linked / merge_required (привязка),
+    # expired. link_sent — прежний статус, когда вход был только по ссылке.
     status: str
     merge_token: str | None = None
+    # Бот перестал отмечаться — подтверждения не дождаться; вкладка предлагает
+    # запасной путь через виджет, не дожидаясь истечения запроса.
+    bot_alive: bool = True
+
+
+class LoginRequestClaimResponse(BaseModel):
+    redirect: str
+
+
+class BotLoginContextRequest(BaseModel):
+    request_token: str
+    telegram_id: int
+
+
+class BotLoginContextResponse(BaseModel):
+    """Что бот показывает перед кнопкой «Подтвердить вход»."""
+
+    status: str
+    needs_consent: bool = False
+    # Согласие уже поставлено галочкой на сайте — бот не переспрашивает.
+    consent_given: bool = False
+    link_mode: bool = False
+    browser: str = ""
+    os: str = ""
+    city: str = ""
+    requested_at_label: str = ""
+
+
+class BotDenyRequest(BaseModel):
+    request_token: str
+    telegram_id: int
 
 
 class BotConfirmRequest(BaseModel):
@@ -201,6 +235,9 @@ class EmailVerifyResponse(BaseModel):
 
 class TelegramLoginConfigResponse(BaseModel):
     enabled: bool
+    # Бот жив (core/bot_heartbeat.py) — вход подтверждением в боте, а не
+    # виджетом. Ложь — виджет, ему сервер с доступом к Telegram не нужен.
+    bot_login: bool = False
     # Числовая часть токена — её ждёт виджет в браузере. Сам токен наружу
     # не отдаём никогда: он равносилен полному доступу к боту.
     bot_id: str = ""

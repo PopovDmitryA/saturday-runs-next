@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -13,6 +15,7 @@ from app.core.redis_client import get_redis_client
 from app.core.security import generate_token, hash_token
 from app.core.session import create_session
 from app.core.site_stats import record_login_request
+from app.core.user_agent import describe_user_agent
 from app.models import (
     AuthLoginRequest,
     AuthLoginRequestStatus,
@@ -25,6 +28,14 @@ LOGIN_REQUEST_REDIS_PREFIX = "login_req:"
 LOGIN_REQUEST_LINK_PREFIX = "login_req_link:"
 MERGE_REQUIRED_PREFIX = "login_req_merge:"
 MAGIC_TOKEN_REDIS_PREFIX = "magic_token:"
+# Откуда пришёл запрос (IP, User-Agent, согласие, время) — бот показывает это
+# человеку перед «Подтвердить вход», чтобы чужой запрос не подтвердили вслепую.
+LOGIN_REQUEST_CONTEXT_PREFIX = "login_req_ctx:"
+# Подтверждённый в боте вход, который вкладка сайта ещё не забрала: user_id
+# под токеном запроса. Живёт столько же, сколько ссылка-страховка в боте.
+LOGIN_REQUEST_CLAIM_PREFIX = "login_req_claim:"
+
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 
 class AuthError(Exception):
@@ -56,12 +67,22 @@ def _login_request_merge_redis_key(token: str) -> str:
     return f"{MERGE_REQUIRED_PREFIX}{token}"
 
 
+def _login_request_context_redis_key(token: str) -> str:
+    return f"{LOGIN_REQUEST_CONTEXT_PREFIX}{token}"
+
+
+def _login_request_claim_redis_key(token: str) -> str:
+    return f"{LOGIN_REQUEST_CLAIM_PREFIX}{token}"
+
+
 def create_login_request(
     db: Session,
     settings: Settings,
     client_ip: str,
     *,
     link_user_id: UUID | None = None,
+    user_agent: str = "",
+    consent: bool = False,
 ) -> dict[str, object]:
     rate_key = f"auth:login:ip:{client_ip}"
     if not check_rate_limit(rate_key, settings.auth_rate_limit_login_per_ip, settings.auth_rate_limit_login_window_seconds):
@@ -91,6 +112,18 @@ def create_login_request(
             settings.login_request_ttl_seconds,
             str(link_user_id),
         )
+    redis_client.setex(
+        _login_request_context_redis_key(request_token),
+        settings.login_request_ttl_seconds,
+        json.dumps(
+            {
+                "ip": client_ip[:64],
+                "user_agent": user_agent[:256],
+                "consent": bool(consent),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ),
+    )
 
     bot_username = settings.telegram_bot_username.lstrip("@")
     if not bot_username:
@@ -138,6 +171,96 @@ def get_login_request_status(db: Session, request_token: str) -> dict[str, str |
         return {"status": "pending", "merge_token": None}
 
     return {"status": "expired", "merge_token": None}
+
+
+def _requested_at_label(created_at_raw: str | None) -> str:
+    if not created_at_raw:
+        return ""
+    try:
+        created_at = _ensure_utc(datetime.fromisoformat(created_at_raw))
+    except ValueError:
+        return ""
+    local = created_at.astimezone(MOSCOW_TZ)
+    today = datetime.now(MOSCOW_TZ).date()
+    if local.date() == today:
+        return f"сегодня в {local:%H:%M} (МСК)"
+    return f"{local:%d.%m.%Y в %H:%M} (МСК)"
+
+
+def get_login_request_context(
+    db: Session,
+    settings: Settings,
+    request_token: str,
+    telegram_id: int,
+) -> dict[str, object]:
+    """Что бот показывает перед кнопкой «Подтвердить вход».
+
+    Статус берём тем же путём, что и вкладка сайта; остальное — из контекста,
+    записанного при создании запроса. Город ищем здесь, а не при создании:
+    внешний сервис дёргается только когда до бота вообще дошли.
+    """
+    status = get_login_request_status(db, request_token)["status"]
+    redis_client = get_redis_client()
+    raw_context = redis_client.get(_login_request_context_redis_key(request_token))
+    context = json.loads(raw_context) if raw_context else {}
+
+    existing_user = find_user_by_telegram_id(db, telegram_id)
+    needs_consent = existing_user is None or not existing_user.consent_accepted
+
+    ua = describe_user_agent(str(context.get("user_agent") or ""))
+    city = ""
+    if status == "pending":
+        # Локальный импорт: сервис тянет httpx и настройки, нужен только здесь.
+        from app.services.ip_geo_service import city_for_ip
+
+        city = city_for_ip(str(context.get("ip") or ""), settings)
+
+    return {
+        "status": status,
+        "needs_consent": needs_consent,
+        "consent_given": bool(context.get("consent")),
+        "link_mode": redis_client.exists(_login_request_link_redis_key(request_token)) > 0,
+        "browser": ua.browser,
+        "os": ua.os,
+        "city": city,
+        "requested_at_label": _requested_at_label(context.get("created_at")),
+    }
+
+
+def bot_deny_login(db: Session, settings: Settings, request_token: str) -> None:
+    """«Это не я»: запрос гасим, вкладка сайта увидит denied и объяснит, что случилось."""
+    redis_client = get_redis_client()
+    login_request = db.query(AuthLoginRequest).filter(AuthLoginRequest.request_token == request_token).one_or_none()
+    if login_request is not None and login_request.status == AuthLoginRequestStatus.pending:
+        login_request.status = AuthLoginRequestStatus.expired
+        db.commit()
+    redis_client.setex(_login_request_redis_key(request_token), settings.login_request_ttl_seconds, "denied")
+    redis_client.delete(_login_request_context_redis_key(request_token))
+    redis_client.delete(_login_request_link_redis_key(request_token))
+
+
+def claim_login_request(db: Session, settings: Settings, request_token: str) -> UUID:
+    """Вкладка сайта забирает подтверждённый в боте вход.
+
+    Токен запроса знает только та вкладка, что его создала (и Telegram, куда
+    его унёс сам человек), поэтому предъявить его — значит быть той вкладкой.
+    Забрать можно один раз: второй claim упрётся в 409.
+    """
+    redis_client = get_redis_client()
+    user_id_raw = redis_client.getdel(_login_request_claim_redis_key(request_token))
+    if user_id_raw is None:
+        status = redis_client.get(_login_request_redis_key(request_token))
+        if status == "claimed":
+            raise AuthError("Вход уже выполнен в этой вкладке.", 409)
+        raise AuthError("Подтверждение не найдено или истекло.", 404)
+
+    redis_client.setex(_login_request_redis_key(request_token), settings.magic_link_ttl_seconds, "claimed")
+    user = db.query(User).filter(User.id == UUID(user_id_raw)).one_or_none()
+    if user is None:
+        raise AuthError("Профиль не найден.", 404)
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+    return user.id
 
 
 def _telegram_default_display_name(
@@ -233,6 +356,7 @@ def bot_confirm_login(
             login_request.status = AuthLoginRequestStatus.completed
             login_request.telegram_id = telegram_id
             db.commit()
+            redis_client.delete(_login_request_context_redis_key(request_token))
             return ""
         user = survivor
     elif existing_user is not None:
@@ -265,6 +389,7 @@ def bot_confirm_login(
         login_request.telegram_id = telegram_id
         db.commit()
         redis_client.setex(redis_key, settings.magic_link_ttl_seconds, "linked")
+        redis_client.delete(_login_request_context_redis_key(request_token))
         return ""
 
     raw_magic_token = generate_token(32)
@@ -283,7 +408,15 @@ def bot_confirm_login(
     login_request.telegram_id = telegram_id
     db.commit()
 
-    redis_client.setex(redis_key, settings.magic_link_ttl_seconds, "link_sent")
+    # Вкладка сайта ждёт именно этого: заберёт сессию сама по токену запроса.
+    # Ссылка в боте остаётся страховкой на случай, если вкладку закрыли.
+    redis_client.setex(redis_key, settings.magic_link_ttl_seconds, "confirmed")
+    redis_client.setex(
+        _login_request_claim_redis_key(request_token),
+        settings.magic_link_ttl_seconds,
+        str(user.id),
+    )
+    redis_client.delete(_login_request_context_redis_key(request_token))
     redis_client.setex(
         _magic_token_redis_key(token_hash),
         settings.magic_link_ttl_seconds,

@@ -15,6 +15,7 @@ from app.auth.providers import vk as vk_provider
 from app.auth.providers.telegram_widget import bot_id as telegram_bot_id
 from app.config import Settings, get_settings
 from app.core.admin import user_response
+from app.core.bot_heartbeat import is_bot_alive
 from app.core.redis_client import get_redis_client
 from app.core.security import generate_token
 from app.core.session import delete_session
@@ -26,6 +27,9 @@ from app.schemas.auth import (
     AuthIdentityResponse,
     BotConfirmRequest,
     BotConfirmResponse,
+    BotDenyRequest,
+    BotLoginContextRequest,
+    BotLoginContextResponse,
     BotLoginStatusRequest,
     BotLoginStatusResponse,
     DisplayNameOptionsResponse,
@@ -35,6 +39,7 @@ from app.schemas.auth import (
     EmailLinkResponse,
     EmailVerifyRequest,
     EmailVerifyResponse,
+    LoginRequestClaimResponse,
     LoginRequestResponse,
     LoginRequestStatusResponse,
     MergeConfirmRequest,
@@ -58,9 +63,12 @@ from app.services.auth_identity_service import (
 from app.services.auth_service import (
     AuthError,
     bot_confirm_login,
+    bot_deny_login,
+    claim_login_request,
     consume_magic_link,
     create_login_request,
     create_user_session,
+    get_login_request_context,
     get_login_request_status,
 )
 from app.services.email_auth_service import link_email
@@ -317,16 +325,32 @@ def login_request(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
+    response: Response,
     link: Annotated[bool, Query()] = False,
+    consent: Annotated[bool, Query()] = False,
     user_id: Annotated[UUID | None, Depends(get_optional_session_user_id)] = None,
 ) -> LoginRequestResponse:
+    """Начать вход подтверждением в боте.
+
+    consent — галочка согласия уже стоит на сайте: бот не станет переспрашивать
+    у нового человека. Без неё новому покажут условия прямо в боте.
+    """
     try:
         link_user_id = user_id if link else None
         if link and link_user_id is None:
             raise AuthError("Authentication required for linking.", 401)
-        result = create_login_request(db, settings, get_client_ip(request), link_user_id=link_user_id)
+        result = create_login_request(
+            db,
+            settings,
+            get_client_ip(request),
+            link_user_id=link_user_id,
+            user_agent=request.headers.get("User-Agent") or "",
+            consent=consent or link,
+        )
     except AuthError as exc:
         raise _handle_auth_error(exc) from exc
+    # Метка устройства — для лимита регистраций, как у OAuth-провайдеров.
+    ensure_device_cookie(request, response, settings)
     return LoginRequestResponse.model_validate(result)
 
 
@@ -335,7 +359,42 @@ def login_request_status(
     request_token: str,
     db: Annotated[Session, Depends(get_db)],
 ) -> LoginRequestStatusResponse:
-    return LoginRequestStatusResponse.model_validate(get_login_request_status(db, request_token))
+    payload = get_login_request_status(db, request_token)
+    return LoginRequestStatusResponse(
+        status=str(payload["status"]),
+        merge_token=payload.get("merge_token"),
+        bot_alive=is_bot_alive(),
+    )
+
+
+@router.post("/login-request/{request_token}/claim", response_model=LoginRequestClaimResponse)
+def login_request_claim(
+    request_token: str,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    request: Request,
+    response: Response,
+) -> LoginRequestClaimResponse:
+    """Вкладка сайта забирает вход, подтверждённый в боте: кука ставится сюда."""
+    try:
+        user_id = claim_login_request(db, settings, request_token)
+    except AuthError as exc:
+        raise _handle_auth_error(exc) from exc
+
+    signed_session = create_user_session(settings, user_id)
+    _log_login(
+        db,
+        settings,
+        user_id=user_id,
+        provider="telegram",
+        signed_session=signed_session,
+        request=request,
+    )
+    _set_session_cookie(response, settings, signed_session)
+
+    from app.services.onboarding_service import post_login_redirect_target
+
+    return LoginRequestClaimResponse(redirect=post_login_redirect_target(db, user_id))
 
 
 @router.post("/bot/confirm", response_model=BotConfirmResponse, dependencies=[Depends(_verify_bot_secret)])
@@ -359,6 +418,32 @@ def bot_confirm(
     except AuthError as exc:
         raise _handle_auth_error(exc) from exc
     return BotConfirmResponse(magic_link=magic_link or "")
+
+
+@router.post(
+    "/bot/login-context", response_model=BotLoginContextResponse, dependencies=[Depends(_verify_bot_secret)]
+)
+def bot_login_context(
+    body: BotLoginContextRequest,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> BotLoginContextResponse:
+    """Откуда вход и нужно ли согласие — бот показывает это перед «Подтвердить»."""
+    return BotLoginContextResponse.model_validate(
+        get_login_request_context(db, settings, body.request_token, body.telegram_id)
+    )
+
+
+@router.post("/bot/deny", response_model=MessageResponse, dependencies=[Depends(_verify_bot_secret)])
+def bot_deny(
+    body: BotDenyRequest,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> MessageResponse:
+    """«Это не я» в боте: запрос гасим, вкладка сайта увидит отказ."""
+    bot_deny_login(db, settings, body.request_token)
+    logger.info("telegram login denied in bot by telegram_id=%s", body.telegram_id)
+    return MessageResponse(message="denied")
 
 
 @router.post("/bot/login-status", response_model=BotLoginStatusResponse, dependencies=[Depends(_verify_bot_secret)])
@@ -470,11 +555,21 @@ def email_verify(
 def telegram_login_config(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> TelegramLoginConfigResponse:
-    """Что нужно виджету в браузере, чтобы нарисовать вход через Telegram."""
+    """Что нужно виджету в браузере, чтобы нарисовать вход через Telegram.
+
+    bot_login — бот сейчас жив, и вход идёт подтверждением в нём; иначе виджет.
+    Признак не зависит от enabled: бот и виджет могут жить по отдельности.
+    """
+    bot_login = bool(
+        settings.telegram_bot_username.strip() and settings.telegram_bot_internal_secret and is_bot_alive()
+    )
     if not telegram_login_configured(settings):
-        return TelegramLoginConfigResponse(enabled=False)
+        return TelegramLoginConfigResponse(
+            enabled=False, bot_login=bot_login, bot_username=settings.telegram_bot_username.lstrip("@")
+        )
     return TelegramLoginConfigResponse(
         enabled=True,
+        bot_login=bot_login,
         bot_id=telegram_bot_id(login_bot_token(settings)),
         bot_username=login_bot_username(settings),
     )

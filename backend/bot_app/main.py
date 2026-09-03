@@ -28,14 +28,35 @@ from bot_app.settings import BotSettings, bot_headers
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
+# Кнопки под сообщением «откуда вход». Согласие и подтверждение — одна кнопка:
+# новому человеку показываем условия и сразу подтверждаем вход, старому —
+# только подтверждение. «Это не я» гасит запрос на сайте.
+LOGIN_CONFIRM_PREFIX = "login_confirm:"
 LOGIN_CONSENT_PREFIX = "login_consent:"
 LOGIN_DECLINE_PREFIX = "login_decline:"
+
+# Раз в полминуты бот отмечается в api после удачного запроса к Bot API: пока
+# метка жива, сайт ведёт людей сюда, а не в виджет (core/bot_heartbeat.py).
+HEARTBEAT_INTERVAL_SECONDS = 30
 
 settings = BotSettings()
 
 LOGIN_MESSAGE = (
-    "Ссылка для входа в личный кабинет.\n"
+    "Вход подтверждён ✅\n"
+    "Вернитесь во вкладку сайта — она войдёт сама.\n\n"
+    "Если вкладка закрылась, откройте кабинет по кнопке. "
     "Она действует 5 минут и работает один раз."
+)
+
+LOGIN_EXPIRED_MESSAGE = (
+    "Эта ссылка для входа уже не действует.\n"
+    "Откройте run5k.run и нажмите «Войти через Telegram» ещё раз."
+)
+
+LOGIN_DENIED_MESSAGE = (
+    "Запрос отменён, вход не выполнен.\n\n"
+    "Если вы не начинали вход на сайте, делать ничего не нужно: "
+    "без подтверждения здесь войти в ваш профиль нельзя."
 )
 
 ADMIN_HELP_TEXT = (
@@ -69,6 +90,93 @@ def _is_telegram_inline_button_url(url: str) -> bool:
     return host not in {"localhost", "127.0.0.1", "0.0.0.0"}
 
 
+def format_login_context(context: dict[str, object], *, link_mode: bool = False) -> str:
+    """Текст перед кнопкой «Подтвердить вход»: откуда пришёл запрос.
+
+    Человек должен узнать свой телефон или ноутбук. Чужой запрос выглядит
+    чужим: не тот браузер, не тот город — и его отклоняют кнопкой «Это не я».
+    """
+    title = "Привязка Telegram к профилю на run5k.run" if link_mode else "Вход на run5k.run"
+    device = ", ".join(str(part) for part in (context.get("browser"), context.get("os")) if part)
+    lines = [title, ""]
+    lines.append(f"🖥 {device or 'устройство не определено'}")
+    if context.get("city"):
+        lines.append(f"📍 {context['city']}")
+    if context.get("requested_at_label"):
+        lines.append(f"🕒 {context['requested_at_label']}")
+    lines.append("")
+    lines.append(
+        "Если это вы — подтвердите. Если вход начинали не вы, нажмите «Это не я»: "
+        "запрос будет отменён."
+    )
+    return "\n".join(lines)
+
+
+def _login_keyboard(request_token: str, *, with_consent: bool) -> InlineKeyboardMarkup:
+    confirm_text = "✅ Принимаю условия и подтверждаю вход" if with_consent else "✅ Подтвердить вход"
+    confirm_prefix = LOGIN_CONSENT_PREFIX if with_consent else LOGIN_CONFIRM_PREFIX
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=confirm_text, callback_data=f"{confirm_prefix}{request_token}")],
+            [InlineKeyboardButton(text="🚫 Это не я", callback_data=f"{LOGIN_DECLINE_PREFIX}{request_token}")],
+        ]
+    )
+
+
+async def _fetch_login_context(request_token: str, telegram_id: int) -> dict[str, object] | None:
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.post(
+            f"{settings.api_base_url.rstrip('/')}/api/auth/bot/login-context",
+            json={"request_token": request_token, "telegram_id": telegram_id},
+            headers=_bot_headers(),
+        )
+    if response.status_code != 200:
+        logger.warning("login-context failed: %s %s", response.status_code, response.text)
+        return None
+    data = response.json()
+    return data if isinstance(data, dict) else None
+
+
+async def _deny_login(request_token: str, telegram_id: int) -> bool:
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.post(
+            f"{settings.api_base_url.rstrip('/')}/api/auth/bot/deny",
+            json={"request_token": request_token, "telegram_id": telegram_id},
+            headers=_bot_headers(),
+        )
+    if response.status_code != 200:
+        logger.warning("bot deny failed: %s %s", response.status_code, response.text)
+        return False
+    return True
+
+
+async def _send_heartbeat() -> None:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            f"{settings.api_base_url.rstrip('/')}/api/internal/bot/heartbeat",
+            headers=_bot_headers(),
+        )
+    if response.status_code != 200:
+        logger.warning("heartbeat failed: %s %s", response.status_code, response.text)
+
+
+async def _heartbeat_loop(bot: Bot) -> None:
+    """Пока Bot API отвечает (через прокси или VPN — неважно), отмечаемся в api.
+
+    Проверка именно запросом к Telegram, а не «процесс жив»: бот в крэш-лупе
+    из-за лежащей прокси метку не обновит, и сайт уведёт людей в виджет.
+    """
+    while True:
+        try:
+            await bot.get_me()
+            await _send_heartbeat()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — цикл не должен умирать от одной ошибки
+            logger.warning("heartbeat skipped: %s", exc)
+        await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)
+
+
 async def _send_magic_link(message: Message, magic_link: str) -> None:
     if _is_telegram_inline_button_url(magic_link):
         keyboard = InlineKeyboardMarkup(
@@ -81,19 +189,6 @@ async def _send_magic_link(message: Message, magic_link: str) -> None:
 
     logger.info("Magic link is not valid for Telegram button URL, sending as text: %s", magic_link)
     await message.answer(f"{LOGIN_MESSAGE}\n\n{magic_link}")
-
-
-async def _needs_consent(telegram_id: int) -> bool:
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.post(
-            f"{settings.api_base_url.rstrip('/')}/api/auth/bot/login-status",
-            json={"telegram_id": telegram_id},
-            headers=_bot_headers(),
-        )
-    if response.status_code != 200:
-        logger.warning("login-status failed: %s %s", response.status_code, response.text)
-        return True
-    return bool(response.json().get("needs_consent", True))
 
 
 async def confirm_login(
@@ -133,34 +228,21 @@ async def confirm_login(
     magic_link = response.json().get("magic_link") or ""
     if not magic_link:
         await message.answer(
-            "Telegram привязан. Вернитесь на сайт — там может потребоваться подтвердить объединение профилей."
+            "Telegram привязан ✅ Вернитесь во вкладку сайта — она обновится сама. "
+            "Если этим Telegram уже владеет другой профиль, сайт предложит объединить их."
         )
         return
     await _send_magic_link(message, magic_link)
 
 
-def _consent_keyboard(request_token: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Принимаю",
-                    callback_data=f"{LOGIN_CONSENT_PREFIX}{request_token}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="❌ Не сейчас",
-                    callback_data=f"{LOGIN_DECLINE_PREFIX}{request_token}",
-                )
-            ],
-        ]
-    )
-
-
-async def _prompt_login_consent(message: Message, request_token: str) -> None:
-    text = consent_bot_message(about_url=settings.app_base_url.rstrip("/"))
-    await message.answer(text, reply_markup=_consent_keyboard(request_token))
+async def _prompt_login_confirmation(message: Message, request_token: str, context: dict[str, object]) -> None:
+    """Показать, откуда вход, и кнопки. Новому человеку — ещё и условия."""
+    link_mode = bool(context.get("link_mode"))
+    with_consent = bool(context.get("needs_consent")) and not context.get("consent_given")
+    text = format_login_context(context, link_mode=link_mode)
+    if with_consent:
+        text = f"{consent_bot_message(about_url=settings.app_base_url.rstrip('/'))}\n\n{text}"
+    await message.answer(text, reply_markup=_login_keyboard(request_token, with_consent=with_consent))
 
 
 async def _handle_coordinate_admin_message(message: Message) -> bool:
@@ -304,10 +386,14 @@ async def on_start(message: Message, command: CommandObject) -> None:
         request_token = command.args.removeprefix("login_")
         if message.from_user is None:
             return
-        if await _needs_consent(message.from_user.id):
-            await _prompt_login_consent(message, request_token)
+        context = await _fetch_login_context(request_token, message.from_user.id)
+        if context is None:
+            await message.answer("Сайт сейчас не отвечает. Попробуйте ещё раз через минуту.")
             return
-        await confirm_login(message, request_token, consent_accepted=False)
+        if context.get("status") != "pending":
+            await message.answer(LOGIN_EXPIRED_MESSAGE)
+            return
+        await _prompt_login_confirmation(message, request_token, context)
         return
 
     await message.answer(
@@ -324,23 +410,33 @@ async def on_login_callback(callback: CallbackQuery) -> None:
     if callback.data is None or callback.message is None:
         return
 
+    # Кнопки одноразовые: убираем их, чтобы повторное нажатие не плодило запросов.
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:  # noqa: BLE001 — сообщение могли удалить, это не повод молчать
+        pass
+
     if callback.data.startswith(LOGIN_DECLINE_PREFIX):
-        await callback.answer("Вход отменён")
-        await callback.message.answer(
-            "Вход не выполнен. Без согласия на обработку данных личный кабинет недоступен.\n"
-            f"Подробнее: {settings.app_base_url.rstrip('/')}/about#privacy"
-        )
+        request_token = callback.data.removeprefix(LOGIN_DECLINE_PREFIX)
+        await callback.answer("Запрос отменён")
+        await _deny_login(request_token, callback.from_user.id)
+        await callback.message.answer(LOGIN_DENIED_MESSAGE)
         return
 
-    if not callback.data.startswith(LOGIN_CONSENT_PREFIX):
+    if callback.data.startswith(LOGIN_CONSENT_PREFIX):
+        request_token = callback.data.removeprefix(LOGIN_CONSENT_PREFIX)
+        consent_accepted = True
+    elif callback.data.startswith(LOGIN_CONFIRM_PREFIX):
+        request_token = callback.data.removeprefix(LOGIN_CONFIRM_PREFIX)
+        consent_accepted = False
+    else:
         return
 
-    request_token = callback.data.removeprefix(LOGIN_CONSENT_PREFIX)
-    await callback.answer("Принято, отправляю ссылку…")
+    await callback.answer("Подтверждаю…")
     await confirm_login(
         callback.message,
         request_token,
-        consent_accepted=True,
+        consent_accepted=consent_accepted,
         from_user=callback.from_user,
     )
 
@@ -395,7 +491,9 @@ async def main() -> None:
     dispatcher.message.register(on_text, F.text & ~F.text.startswith("/"))
     dispatcher.callback_query.register(
         on_login_callback,
-        F.data.startswith(LOGIN_CONSENT_PREFIX) | F.data.startswith(LOGIN_DECLINE_PREFIX),
+        F.data.startswith(LOGIN_CONSENT_PREFIX)
+        | F.data.startswith(LOGIN_CONFIRM_PREFIX)
+        | F.data.startswith(LOGIN_DECLINE_PREFIX),
     )
     dispatcher.callback_query.register(
         on_cmd_broadcast_callback,
@@ -403,7 +501,11 @@ async def main() -> None:
     )
 
     logger.info("Starting Telegram bot")
-    await dispatcher.start_polling(bot)
+    heartbeat = asyncio.create_task(_heartbeat_loop(bot))
+    try:
+        await dispatcher.start_polling(bot)
+    finally:
+        heartbeat.cancel()
 
 
 def run() -> None:

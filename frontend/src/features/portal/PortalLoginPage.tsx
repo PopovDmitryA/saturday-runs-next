@@ -10,6 +10,7 @@ import {
   verifyEmailCode,
 } from "../../lib/api";
 import { PORTAL_ABOUT_PRIVACY_HREF } from "../../lib/portalRoutes";
+import { TelegramBotLogin } from "../auth/TelegramBotLogin";
 import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
 import "./portal.css";
@@ -204,8 +205,11 @@ export function PortalLoginPage() {
   const [emailCode, setEmailCode] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
-  // Кнопку Telegram показываем, когда бот настроен на сервере.
+  // Кнопку Telegram показываем, когда бот настроен на сервере. Пока бот жив,
+  // вход идёт подтверждением в нём; молчит — виджетом в браузере.
   const [telegramReady, setTelegramReady] = useState(false);
+  const [telegramBotLogin, setTelegramBotLogin] = useState(false);
+  const [telegramBotFlow, setTelegramBotFlow] = useState(false);
   const [emailNotice, setEmailNotice] = useState<string | null>(() => {
     const pending = readPendingEmail();
     return pending ? `Код отправлен на ${pending.email}. Он действует 10 минут.` : null;
@@ -233,9 +237,13 @@ export function PortalLoginPage() {
     let cancelled = false;
     void getTelegramLoginConfig()
       .then((config) => {
-        if (!cancelled && config.enabled && config.bot_id) {
+        if (cancelled) {
+          return;
+        }
+        if ((config.enabled && config.bot_id) || config.bot_login) {
           setTelegramReady(true);
         }
+        setTelegramBotLogin(Boolean(config.bot_login));
       })
       .catch(() => {
         // Telegram — дополнительный способ: не смогли узнать — обходимся без него.
@@ -369,6 +377,13 @@ export function PortalLoginPage() {
               </div>
             )}
 
+            {telegramBotFlow ? (
+              <TelegramBotLogin
+                mode="login"
+                fallbackHref={telegramStartUrl("login", true)}
+                onCancel={() => setTelegramBotFlow(false)}
+              />
+            ) : (
             <div className="portal-login-providers">
               <a
                 href={oauthStartUrl("vk", "login", true)}
@@ -403,6 +418,13 @@ export function PortalLoginPage() {
                       return;
                     }
                     markReturningUser();
+                    trackAuthStart("telegram");
+                    if (telegramBotLogin) {
+                      // Бот жив: остаёмся на странице и ждём подтверждения
+                      // оттуда, вместо окна входа Telegram в браузере.
+                      event.preventDefault();
+                      setTelegramBotFlow(true);
+                    }
                   }}
                 >
                   <span className="portal-login-provider-logo" aria-hidden="true">
@@ -438,6 +460,7 @@ export function PortalLoginPage() {
                 Войти по почте
               </button>
             </div>
+            )}
 
             {knownDevice ? (
               <p className="portal-login-consent-note">

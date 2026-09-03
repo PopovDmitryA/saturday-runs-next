@@ -5,6 +5,7 @@ import {
   confirmAccountMerge,
   getAuthIdentities,
   getMergePreview,
+  getTelegramLoginConfig,
   linkEmailIdentity,
   oauthStartUrl,
   requestEmailCode,
@@ -14,6 +15,7 @@ import {
   type MergePreview,
 } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
+import { TelegramBotLogin } from "../auth/TelegramBotLogin";
 
 const PROVIDERS: Array<{ id: "vk" | "yandex" | "telegram"; title: string; hint: string }> = [
   { id: "vk", title: "VK", hint: "Вход через VK ID" },
@@ -40,6 +42,10 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
   const [emailCode, setEmailCode] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
   const [emailNotice, setEmailNotice] = useState<string | null>(null);
+  // Бот жив — привязка подтверждением в нём, прямо в этой карточке; иначе
+  // редирект в виджет Telegram, как у OAuth-провайдеров.
+  const [telegramBotLogin, setTelegramBotLogin] = useState(false);
+  const [telegramBotFlow, setTelegramBotFlow] = useState(false);
 
   const linkedProviders = useMemo(
     () => new Set(identities.map((item) => item.provider)),
@@ -67,6 +73,22 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
   }, [load]);
 
   useEffect(() => {
+    let cancelled = false;
+    void getTelegramLoginConfig()
+      .then((config) => {
+        if (!cancelled) {
+          setTelegramBotLogin(Boolean(config.bot_login));
+        }
+      })
+      .catch(() => {
+        // Не узнали — привязываем виджетом, как раньше.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!initialMergeToken) {
       return;
     }
@@ -79,6 +101,10 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
 
   const handleLink = (provider: "vk" | "yandex" | "telegram") => {
     setError(null);
+    if (provider === "telegram" && telegramBotLogin) {
+      setTelegramBotFlow(true);
+      return;
+    }
     setLinkingProvider(provider);
     // У Telegram свой старт: он не OAuth-провайдер, подтверждение приходит
     // подписанными данными, а не кодом обмена.
@@ -210,6 +236,28 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
             );
           })}
         </ul>
+      )}
+
+      {telegramBotFlow && (
+        <TelegramBotLogin
+          mode="link"
+          fallbackHref={telegramStartUrl("link")}
+          onCancel={() => setTelegramBotFlow(false)}
+          onLinked={() => {
+            setTelegramBotFlow(false);
+            void load();
+          }}
+          onMergeRequired={(token) => {
+            setTelegramBotFlow(false);
+            setMergeLoading(true);
+            void getMergePreview(token)
+              .then(setMergePreview)
+              .catch((err) =>
+                setError(err instanceof Error ? err.message : "Не удалось загрузить объединение"),
+              )
+              .finally(() => setMergeLoading(false));
+          }}
+        />
       )}
 
       {!loading && (

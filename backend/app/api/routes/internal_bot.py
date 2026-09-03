@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.core.admin import is_admin_telegram_id
+from app.core.bot_heartbeat import mark_bot_alive
 from app.db.session import get_db
 from app.schemas.admin_stats import AdminSiteStatsResponse
 from app.services.admin_pipeline_status_service import get_admin_pipeline_status
@@ -42,6 +43,14 @@ def _verify_bot_secret(
 def _require_admin_telegram_id(telegram_id: int, settings: Settings) -> None:
     if not is_admin_telegram_id(telegram_id, settings):
         raise HTTPException(status_code=403, detail="Admin access required")
+
+
+@router.post("/heartbeat")
+def bot_heartbeat(settings: Annotated[Settings, Depends(_verify_bot_secret)]) -> dict[str, str]:
+    """Бот отмечается после удачного запроса к Bot API: пока метка жива,
+    сайт ведёт людей на вход подтверждением в боте (core/bot_heartbeat.py)."""
+    mark_bot_alive(settings.telegram_bot_heartbeat_ttl_seconds)
+    return {"status": "ok"}
 
 
 class BotCoordinateMessage(BaseModel):
