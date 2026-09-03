@@ -91,7 +91,7 @@ import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
 import { applyPageMeta, isLocationEntityPath, resolvePageMeta } from "./lib/pageMeta";
 import { deferMetrikaHit, reportMetrikaHit } from "./lib/metrika";
-import { isLegacyGrafanaPath, legacyGrafanaHref } from "./lib/siteBrand";
+import { isLegacyGrafanaPath, legacyGrafanaTarget } from "./lib/siteBrand";
 import { buildVisitorKey } from "./lib/siteVisitor";
 
 function useSitePageviewTracking(path: string) {
@@ -292,18 +292,26 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
 
 };
 
+/**
+ * Старые адреса дашбордов (/d/<uid>/…) достались сайту от Grafana, которая
+ * жила на этом же домене. Пока она работала — отсюда уводили на неё; теперь
+ * grafana.run5k.run закрыт, поэтому известный дашборд открывает свою страницу
+ * на сайте, а незнакомый уходит в NotFoundPage с объяснением (иначе получалось
+ * кольцо «сайт → заглушка Grafana → сайт»).
+ */
 function LegacyGrafanaRedirect() {
+  const target = legacyGrafanaTarget(window.location.pathname);
   useEffect(() => {
-    const target = legacyGrafanaHref(
-      window.location.pathname,
-      window.location.search,
-      window.location.hash,
-    );
-    window.location.replace(target);
-  }, []);
+    if (target) {
+      window.location.replace(target);
+    }
+  }, [target]);
+  if (!target) {
+    return <NotFoundPage />;
+  }
   return (
     <main className="app">
-      <p className="muted">Переход на прежний сайт (Grafana)…</p>
+      <p className="muted">Этот дашборд переехал на сайт, открываем…</p>
     </main>
   );
 }

@@ -3,7 +3,7 @@ import { PlatformBadge } from "../../components/PlatformBadge";
 import { PROJECT_MISSION } from "../../lib/projectMission";
 import { cabinetTabHref, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
-import { LEGACY_SITE_HREF, LEGACY_SITE_LABEL } from "../../lib/siteBrand";
+import { LEGACY_SITE_LABEL } from "../../lib/siteBrand";
 import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
 import "./portal.css";
@@ -348,11 +348,10 @@ export function PortalAboutPage() {
             </div>
           </div>
           <p className="portal-about-legacy">
-            Ищете старые дашборды? Прежняя версия сайта живёт на{" "}
-            <a href={LEGACY_SITE_HREF} target="_blank" rel="noreferrer">
-              {LEGACY_SITE_LABEL}
-            </a>{" "}
-            — по мере переноса разделов она уходит на покой.
+            Ищете старые дашборды? Прежняя версия сайта ({LEGACY_SITE_LABEL})
+            закрыта — всё переехало сюда: рейтинги, журналы посещаемости,
+            локации и протоколы. Если чего-то из старого не хватает, напишите
+            автору — исправим.
           </p>
         </section>
 
