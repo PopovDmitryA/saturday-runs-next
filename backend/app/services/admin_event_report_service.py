@@ -369,7 +369,11 @@ def build_event_report(
     )[0]
     volunteers_count = _query(
         db,
-        "SELECT count(*) AS cnt FROM volunteer_results WHERE event_id = :event_id",
+        # Людей, а не строк: роль — это строка, и человек с двумя ролями за
+        # старт считался дважды. В Домодедово 29.08.2026 отчёт обещал 43
+        # волонтёра при 28 живых людях (Дмитрий 03.09.2026). Везде на сайте
+        # волонтёры считаются count(distinct participant_id) — здесь так же.
+        "SELECT count(DISTINCT participant_id) AS cnt FROM volunteer_results WHERE event_id = :event_id",
         params,
     )[0]["cnt"]
 
@@ -1002,7 +1006,11 @@ def build_event_svod(db: Session, event_id: UUID) -> dict[str, Any] | None:
     )[0]["cnt"]
     volunteers_total = _query(
         db,
-        "SELECT count(*) AS cnt FROM volunteer_results WHERE event_id = :event_id",
+        # Людей, а не строк: роль — это строка, и человек с двумя ролями за
+        # старт считался дважды. В Домодедово 29.08.2026 отчёт обещал 43
+        # волонтёра при 28 живых людях (Дмитрий 03.09.2026). Везде на сайте
+        # волонтёры считаются count(distinct participant_id) — здесь так же.
+        "SELECT count(DISTINCT participant_id) AS cnt FROM volunteer_results WHERE event_id = :event_id",
         params,
     )[0]["cnt"]
 

@@ -184,6 +184,36 @@ def test_course_record_and_attendance_record(db_session: Session) -> None:
     assert "Рекорд трассы среди мужчин" in report["post_text"]
 
 
+def test_volunteers_counted_as_people_not_roles(db_session: Session) -> None:
+    """Человек на двух ролях — один волонтёр.
+
+    Отчёт считал строки volunteer_results: в Домодедово 29.08.2026 он обещал
+    43 волонтёра при 28 живых людях (03.09.2026).
+    """
+    suffix = str(uuid4().int % 1_000_000)
+    platform, location = _setup_location(db_session, suffix)
+    today = _make_event(db_session, platform, location, suffix, date(2024, 6, 8), 1)
+
+    busy = _make_participant(db_session, platform, f"{suffix}-busy", "Двурукий")
+    single = _make_participant(db_session, platform, f"{suffix}-one", "Однорукий")
+    for participant, roles in ((busy, ("Маршал", "Хронометрист", "Фотограф")), (single, ("Маршал",))):
+        for role in roles:
+            db_session.add(
+                VolunteerResult(
+                    event_id=today.id,
+                    participant_id=participant.id,
+                    external_result_key=f"vol-{uuid4()}",
+                    role=role,
+                )
+            )
+    db_session.commit()
+
+    report = build_event_report(db_session, today.id)
+    assert report is not None
+    # Строк четыре, людей двое.
+    assert report["header"]["volunteers"] == 2
+
+
 def test_first_volunteering_and_new_role(db_session: Session) -> None:
     suffix = str(uuid4().int % 1_000_000)
     platform, location = _setup_location(db_session, suffix)
