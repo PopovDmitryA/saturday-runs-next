@@ -10,13 +10,16 @@ import {
   FilterGroup,
   FilterPanel,
   FilterRow,
+  FilterSearch,
   FilterSelect,
 } from "../../components/filters/FilterPanel";
 import {
   AttendanceMatrix,
   type MatrixCell,
   type MatrixRowData,
+  type MatrixSortKey,
 } from "./AttendanceMatrix";
+import { surnameFirst } from "../../lib/personName";
 import "./attendance.css";
 
 // Журнал посещаемости локации: участники × даты стартов площадки. В отличие
@@ -29,6 +32,23 @@ type LocationAttendanceJournalProps = {
   /** Переключатель «Протоколы | Посещаемость» — первый ряд общей панели. */
   viewTabs?: ReactNode;
 };
+
+// Полными словами, а не «янв»: в выпадающем списке сокращения читаются хуже,
+// чем в шапке таблицы, где место дороже.
+const MONTH_LABELS = [
+  "Январь",
+  "Февраль",
+  "Март",
+  "Апрель",
+  "Май",
+  "Июнь",
+  "Июль",
+  "Август",
+  "Сентябрь",
+  "Октябрь",
+  "Ноябрь",
+  "Декабрь",
+];
 
 // «Все» первым — как во всех остальных фильтрах сайта («Все / 5 вёрст / С95…»).
 const KIND_TABS: { value: LocationAttendanceKind; label: string }[] = [
@@ -64,10 +84,12 @@ function matrixRow(
   index: number,
   me = false,
 ): MatrixRowData {
-  const name = row.name?.trim() || "Участник";
+  // С фамилии, как в рейтингах: столбец читается и сортируется как список.
+  const name = surnameFirst(row.name) || "Участник";
   return {
     id: me ? "me" : `${index}-${row.handle ?? name}`,
     rank: me ? null : index + 1,
+    searchName: name,
     name: row.handle ? (
       <a className="ajm-name-link" href={`/users/${row.handle}`}>
         {me ? `${name} (вы)` : name}
@@ -86,6 +108,12 @@ function matrixRow(
 
 export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendanceJournalProps) {
   const [year, setYear] = useState<number | null>(null);
+  // Месяц сужает видимые колонки дат: за год их набирается полсотни, и найти
+  // конкретную субботу глазами тяжело. Счёт в «Всего» остаётся годовым —
+  // так и подписан.
+  const [month, setMonth] = useState<string>("all");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<{ key: MatrixSortKey; asc: boolean } | null>(null);
   const [kind, setKind] = useState<LocationAttendanceKind>("all");
   const [data, setData] = useState<LocationAttendance | null>(null);
   const [extraRows, setExtraRows] = useState<LocationAttendanceRow[]>([]);
@@ -119,6 +147,11 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
     };
   }, [slug, year, kind]);
 
+  // Год сменился — прежний месяц к новому набору колонок отношения не имеет.
+  useEffect(() => {
+    setMonth("all");
+  }, [year, slug]);
+
   const loadMore = () => {
     if (!data) {
       return;
@@ -134,13 +167,26 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
       .finally(() => setLoadingMore(false));
   };
 
+  // Месяцы, в которых у площадки были старты, — только они и предлагаются.
+  const monthOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const column of data?.columns ?? []) {
+      seen.add(column.date.slice(0, 7));
+    }
+    return [...seen]
+      .sort()
+      .map((value) => ({ value, label: MONTH_LABELS[Number(value.slice(5, 7)) - 1] }));
+  }, [data]);
+
   const columns = useMemo(
     () =>
-      (data?.columns ?? []).map((column) => ({
-        key: column.date,
-        label: formatDate(column.date).slice(0, 5),
-      })),
-    [data],
+      (data?.columns ?? [])
+        .filter((column) => month === "all" || column.date.slice(0, 7) === month)
+        .map((column) => ({
+          key: column.date,
+          label: formatDate(column.date).slice(0, 5),
+        })),
+    [data, month],
   );
 
   const rows = useMemo(() => {
@@ -167,6 +213,39 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
     }
     return result;
   }, [data, extraRows]);
+
+  // Поиск и сортировка идут по уже загруженным строкам: сервер отдаёт журнал
+  // порциями, и «Показать ещё» подтягивает следующие. Об этом честно написано
+  // под таблицей — «Показаны N из M».
+  const visibleRows = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const filtered = needle
+      ? rows.filter((row) => (row.searchName ?? "").toLowerCase().includes(needle))
+      : rows;
+    if (!sort) {
+      return filtered;
+    }
+    const sorted = [...filtered].sort((a, b) => {
+      if (sort.key === "name") {
+        return (a.searchName ?? "").localeCompare(b.searchName ?? "", "ru");
+      }
+      return a.total - b.total;
+    });
+    if (!sort.asc) {
+      sorted.reverse();
+    }
+    return sorted;
+  }, [rows, query, sort]);
+
+  const toggleSort = (key: MatrixSortKey) => {
+    setSort((current) => {
+      if (current?.key !== key) {
+        // Имя — от А, счёт — от большего: так их и читают.
+        return { key, asc: key === "name" };
+      }
+      return current.asc ? { key, asc: false } : null;
+    });
+  };
 
   // Итоговая строка следует срезу: в «Бегунах» считает бегунов, в
   // «Волонтёрах» — волонтёров, в «Все» — и тех, и других.
@@ -213,6 +292,16 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
             />
           </FilterGroup>
         )}
+        {monthOptions.length > 1 && (
+          <FilterGroup label="Месяц">
+            <FilterSelect
+              ariaLabel="Месяц"
+              value={month}
+              onChange={(value) => setMonth(String(value))}
+              options={[{ value: "all", label: "Все" }, ...monthOptions]}
+            />
+          </FilterGroup>
+        )}
         <FilterGroup label="Зачёт">
         <div className="aj-tabs" role="group" aria-label="Кого показывать">
           {KIND_TABS.map((tab) => (
@@ -228,6 +317,11 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
           ))}
         </div>
         </FilterGroup>
+        <FilterSearch
+          value={query}
+          onChange={setQuery}
+          ariaLabel="Поиск участника в журнале"
+        />
         </FilterRow>
       </FilterPanel>
 
@@ -264,7 +358,9 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
         <div className={loading ? "aj-refreshing" : undefined}>
           <AttendanceMatrix
             columns={columns}
-            rows={rows}
+            rows={visibleRows}
+            sort={sort}
+            onSort={toggleSort}
             totalLabel={
               kind === "runners" ? "Пробежек" : kind === "volunteers" ? "Волонтёрств" : "Всего"
             }
@@ -279,8 +375,18 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
             emptyNote="За этот год стартов не было."
           />
           <p className="aj-meta muted">
-            Показаны {formatInt(Math.min(shownRows, data.total_rows))} из{" "}
-            {formatInt(data.total_rows)} участников
+            {query.trim() ? (
+              <>
+                Найдено {formatInt(visibleRows.length)} среди загруженных{" "}
+                {formatInt(Math.min(shownRows, data.total_rows))} из{" "}
+                {formatInt(data.total_rows)} участников
+              </>
+            ) : (
+              <>
+                Показаны {formatInt(Math.min(shownRows, data.total_rows))} из{" "}
+                {formatInt(data.total_rows)} участников
+              </>
+            )}
             {kind !== "all" &&
               (kind === "runners"
                 ? " · сверху те, кто чаще бегал; волонтёрства не закрашены"
