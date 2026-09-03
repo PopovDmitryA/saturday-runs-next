@@ -291,13 +291,7 @@ function OrganizerLocationContent({ slug }: { slug: string }) {
                         <tr key={`${row.participant_id}-${row.position}`}>
                           <td>{row.position ?? "—"}</td>
                           <td>
-                            {row.profile_url ? (
-                              <a href={row.profile_url} target="_blank" rel="noreferrer">
-                                {row.name ?? "—"}
-                              </a>
-                            ) : (
-                              row.name ?? "—"
-                            )}
+                            {row.name ?? "—"}
                           </td>
                           <td>{row.finish_time_display}</td>
                           <td className="org-nowrap">{row.age_group ?? "—"}</td>
@@ -340,13 +334,7 @@ function OrganizerLocationContent({ slug }: { slug: string }) {
                       {report.volunteers.map((row, index) => (
                         <tr key={row.participant_id ?? index}>
                           <td>
-                            {row.profile_url ? (
-                              <a href={row.profile_url} target="_blank" rel="noreferrer">
-                                {row.name ?? "—"}
-                              </a>
-                            ) : (
-                              row.name ?? "—"
-                            )}
+                            {row.name ?? "—"}
                           </td>
                           <td>
                             {row.roles

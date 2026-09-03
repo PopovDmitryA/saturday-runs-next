@@ -9,7 +9,7 @@ import {
   type OrganizerPostTemplate,
 } from "../../lib/api";
 import { copyToClipboard } from "../../lib/clipboard";
-import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
+import { formatDate, formatInt, platformCodeLabel, pluralizeRu } from "../../lib/format";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { locationHintFor } from "../../lib/locationHint";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
@@ -98,6 +98,9 @@ function OrganizerPostContent({ slug }: { slug: string }) {
   // Пороги «Юбилеев завтра»: отдельно пробежки и волонтёрства.
   const [minRunMilestone, setMinRunMilestone] = useState(10);
   const [minVolMilestone, setMinVolMilestone] = useState(10);
+  // Длина пропуска, после которой человек выпадает из «Юбилеев завтра».
+  // Тринадцать недель — прежнее зашитое поведение (90 дней).
+  const [absenceWeeks, setAbsenceWeeks] = useState(13);
   // «Наши в гостях»: от скольких финишей у нас человек считается своим.
   const [travelersMinRuns, setTravelersMinRuns] = useState(5);
   const [postText, setPostText] = useState<string | null>(null);
@@ -165,6 +168,7 @@ function OrganizerPostContent({ slug }: { slug: string }) {
       minRunMilestone,
       minVolMilestone,
       travelersMinRuns,
+      absenceWeeks,
     })
       .then((payload) => {
         if (!cancelled) {
@@ -184,7 +188,16 @@ function OrganizerPostContent({ slug }: { slug: string }) {
     return () => {
       cancelled = true;
     };
-  }, [slug, selectedEventId, template, needsEvent, minRunMilestone, minVolMilestone, travelersMinRuns]);
+  }, [
+    slug,
+    selectedEventId,
+    template,
+    needsEvent,
+    minRunMilestone,
+    minVolMilestone,
+    travelersMinRuns,
+    absenceWeeks,
+  ]);
 
   const displayText = postText === null ? null : plainMode ? postText.replace(/\*\*/g, "") : postText;
 
@@ -302,7 +315,22 @@ function OrganizerPostContent({ slug }: { slug: string }) {
                         options={[10, 25, 50, 100].map((value) => ({ value, label: `${value}-го` }))}
                       />
                     </label>
-                    <span className="muted">Публикуйте в пятницу — про завтрашний старт.</span>
+                    <label className="org-toolbar-label">
+                      Пропуск не больше{" "}
+                      <FilterSelect
+                        ariaLabel="Исключать при пропуске дольше"
+                        value={absenceWeeks}
+                        onChange={setAbsenceWeeks}
+                        options={ABSENCE_WEEK_OPTIONS.map((value) => ({
+                          value,
+                          label: `${value} ${pluralizeRu(value, ["недели", "недель", "недель"])}`,
+                        }))}
+                      />
+                    </label>
+                    <span className="muted">
+                      Публикуйте в пятницу — про завтрашний старт. Кто не приходил дольше
+                      выбранного срока, в поздравления не попадёт.
+                    </span>
                   </>
                 )}
                 {template === "travelers" && (
@@ -379,6 +407,10 @@ function OrganizerPostContent({ slug }: { slug: string }) {
     </PortalSectionShell>
   );
 }
+
+// Лестница порогов пропуска для «Юбилеев завтра». Верхняя ступень — 100 недель:
+// про столько просил Дмитрий (04.09.2026), это почти два года.
+const ABSENCE_WEEK_OPTIONS = [2, 4, 8, 13, 20, 26, 39, 52, 78, 100];
 
 export function OrganizerPostPage({ slug }: { slug: string }) {
   return (

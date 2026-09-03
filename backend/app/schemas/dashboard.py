@@ -395,8 +395,6 @@ class WinResponse(BaseModel):
 class CoRunnerResponse(BaseModel):
     participant_key: str
     display_name: str | None = None
-    # platform_code -> ссылка на профиль соперника в этой системе (см. co_runners_service).
-    profile_urls: dict[str, str] = Field(default_factory=dict)
     platform_codes: list[str] = Field(default_factory=list)
     site_serial_id: int | None = None
     meetings: int = 0

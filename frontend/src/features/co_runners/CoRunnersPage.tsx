@@ -5,7 +5,7 @@ import {
   type CoRunnerItem,
   type CoRunnerMeetingItem,
 } from "../../lib/api";
-import { formatDate, formatDuration, platformCodeLabel, pluralizeRu } from "../../lib/format";
+import { formatDate, formatDuration, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import {
   FilterGroup,
@@ -359,30 +359,15 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
                         {show("platform") && (
                           <td>
                           <span className="co-runners-badges">
-                            {item.platform_codes.map((code) => {
-                              const profileUrl = item.profile_urls[code];
-                              const badge = <PlatformBadge code={code} />;
-                              if (!profileUrl) {
-                                return <span key={code}>{badge}</span>;
-                              }
-                              return (
-                                <StatHintTooltip
-                                  key={code}
-                                  text={`Откроется профиль в ${platformCodeLabel(code)} в новой вкладке`}
-                                  className="co-runners-badge-link"
-                                >
-                                  <a
-                                    href={profileUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    onClick={stopPropagation}
-                                    aria-label={`Профиль в ${platformCodeLabel(code)}`}
-                                  >
-                                    {badge}
-                                  </a>
-                                </StatHintTooltip>
-                              );
-                            })}
+                            {/* Бейдж системы больше не ссылка: она вела в чужой
+                                профиль на 5verst/S95/parkrun, а согласия на
+                                обработку данных эти люди нам не давали
+                                (Дмитрий 04.09.2026). */}
+                            {item.platform_codes.map((code) => (
+                              <span key={code}>
+                                <PlatformBadge code={code} />
+                              </span>
+                            ))}
                           </span>
                           </td>
                         )}
