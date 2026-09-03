@@ -84,7 +84,11 @@ def test_protocol_watch_stays_out_of_the_five_verst_queue() -> None:
     concurrency=1 — ровно то, ради чего её оттуда и уводили.
     """
     schedule = celery_app.conf.beat_schedule
-    for key in ("five-verst-protocol-watch-weekday", "five-verst-protocol-watch-weekend"):
+    # Записей три (суббота / воскресенье / будни) — проверяем все по префиксу,
+    # чтобы новая запись не проскочила мимо проверки.
+    keys = [key for key in schedule if key.startswith("five-verst-protocol-watch-")]
+    assert len(keys) == 3, keys
+    for key in keys:
         assert beat_queue(schedule[key]) == celery_app.conf.task_default_queue, key
 
 
