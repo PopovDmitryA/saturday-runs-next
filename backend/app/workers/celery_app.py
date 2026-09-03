@@ -152,19 +152,24 @@ celery_app.conf.update(
         # `five_verst_sync.*` из task_routes и уводит ровно в ту очередь, от
         # которой её здесь и отводят (обнаружено 27.08.2026 — падал тест
         # test_five_verst_queue_no_same_minute_collisions).
-        "five-verst-protocol-watch-weekend": {
+        # Ритм согласован с Дмитрием 03.09.2026: суббота с 01:00 МСК — раз в
+        # минуту (основная волна выгрузок), воскресенье — раз в 5 минут
+        # (догрузки и Дальний Восток), будни — раз в 30 минут (1 января,
+        # переносы). Порог непрерывности наблюдения в five_verst_protocol_watch
+        # подобран под самый редкий шаг — менять вместе.
+        "five-verst-protocol-watch-saturday": {
             "task": "five_verst_sync.protocol_upload_watch",
-            # Круглые сутки: раньше 00:xx выпадал, и первый прогон в 01:00
-            # видел ночные выгрузки «уже лежащими» — без подтверждения.
-            "schedule": crontab(minute="*", hour="*", day_of_week="6,0"),
+            "schedule": crontab(minute="*", hour="1-23", day_of_week="6"),
+            "options": {"queue": "celery"},
+        },
+        "five-verst-protocol-watch-sunday": {
+            "task": "five_verst_sync.protocol_upload_watch",
+            "schedule": crontab(minute="*/5", day_of_week="0"),
             "options": {"queue": "celery"},
         },
         "five-verst-protocol-watch-weekday": {
             "task": "five_verst_sync.protocol_upload_watch",
-            # Будни — тоже ежеминутно: иначе шаг в 30 минут длиннее порога
-            # непрерывности наблюдения, и будние выгрузки (1 января, переносы)
-            # никогда не были бы подтверждены. Запрос крошечный.
-            "schedule": crontab(minute="*", day_of_week="1-5"),
+            "schedule": crontab(minute="0,30", day_of_week="1-5"),
             "options": {"queue": "celery"},
         },
         # Сверка истории протоколов — только по будням: прогон занимает пару
