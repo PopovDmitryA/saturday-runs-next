@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.main import app
+from app.services.auth_identity_service import find_user_by_telegram_id
 
 BOT_HEADERS = {"X-Bot-Secret": "bot-secret"}
 CHROME_ANDROID = (
@@ -176,3 +177,66 @@ def test_magic_link_still_works_after_claim(client: TestClient) -> None:
     magic_token = magic_link.split("token=")[1]
     callback = client.get("/api/auth/callback", params={"token": magic_token}, follow_redirects=False)
     assert callback.status_code == 302
+
+
+def test_consent_on_site_is_enough_for_the_bot(client: TestClient) -> None:
+    """Галку поставили на сайте — бот подтверждает вход без второго вопроса.
+
+    Бот показывает кнопку с текстом согласия только когда галки не было, а
+    иначе шлёт consent_accepted=false. Раньше сервер смотрел лишь на этот флаг
+    и отвечал «необходимо принять условия» человеку, который их только что
+    принял (жалоба пользователя 03.09.2026).
+    """
+    token = _start(client, consent=True)
+    response = client.post(
+        "/api/auth/bot/confirm",
+        json={
+            "request_token": token,
+            "telegram_id": 555000222,
+            "telegram_username": "runner",
+            "telegram_chat_id": 555000222,
+            "consent_accepted": False,
+        },
+        headers=BOT_HEADERS,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["magic_link"]
+
+
+def test_consent_recorded_when_it_came_from_the_site(
+    client: TestClient, db_session: Session
+) -> None:
+    """Согласие с сайта попадает в профиль — иначе на следующем входе спросят снова."""
+    token = _start(client, consent=True)
+    client.post(
+        "/api/auth/bot/confirm",
+        json={
+            "request_token": token,
+            "telegram_id": 555000333,
+            "telegram_username": "runner",
+            "telegram_chat_id": 555000333,
+            "consent_accepted": False,
+        },
+        headers=BOT_HEADERS,
+    )
+    user = find_user_by_telegram_id(db_session, 555000333)
+    assert user is not None
+    assert user.consent_accepted is True
+    assert user.consent_ts is not None
+
+
+def test_without_consent_anywhere_login_is_refused(client: TestClient) -> None:
+    """Ни галки на сайте, ни кнопки в боте — вход по-прежнему не проходит."""
+    token = _start(client, consent=False)
+    response = client.post(
+        "/api/auth/bot/confirm",
+        json={
+            "request_token": token,
+            "telegram_id": 555000444,
+            "telegram_username": "runner",
+            "telegram_chat_id": 555000444,
+            "consent_accepted": False,
+        },
+        headers=BOT_HEADERS,
+    )
+    assert response.status_code == 400
