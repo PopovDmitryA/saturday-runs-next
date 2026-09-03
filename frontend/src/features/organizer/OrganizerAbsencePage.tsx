@@ -22,7 +22,7 @@ import "./organizer.css";
 const MIN_RUNS_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
 const MIN_MISSED_OPTIONS = [1, 2, 3, 4, 6, 8, 10, 15, 20, 30, 40, 50];
 
-type SortKey = "runs_here" | "runs_total" | "missed" | "last_date" | "name";
+type SortKey = "runs_here" | "runs_total" | "missed" | "last_date" | "elsewhere" | "name";
 type SortState = { key: SortKey; asc: boolean };
 
 function sortValue(row: OrganizerAbsenceItem, key: SortKey): number | string | null {
@@ -35,6 +35,11 @@ function sortValue(row: OrganizerAbsenceItem, key: SortKey): number | string | n
       return row.missed_events;
     case "last_date":
       return row.last_date;
+    case "elsewhere":
+      // Прочерк — «никуда не переехал»: такие строки уходят в конец списка.
+      return row.elsewhere_date_display
+        ? row.elsewhere_date_display.split(".").reverse().join("-")
+        : "";
     case "name":
       return row.name ?? "";
   }
@@ -227,6 +232,11 @@ function OrganizerAbsenceContent({ slug }: { slug: string }) {
                     {...sortProps("last_date")}
                   />
                   <ColumnHeader
+                    label="Бегает ещё"
+                    hint="Последняя активность человека на любой площадке, если она позже визита сюда: значит, он не пропал, а ходит в другое место. Совпадает с последним визитом — прочерк. Наведите на дату, чтобы увидеть где и что."
+                    {...sortProps("elsewhere")}
+                  />
+                  <ColumnHeader
                     label="Пропущено"
                     hint="Сколько событий локации прошло после последнего визита"
                     {...sortProps("missed")}
@@ -256,6 +266,15 @@ function OrganizerAbsenceContent({ slug }: { slug: string }) {
                       )}
                     </td>
                     <td>{row.last_date_display}</td>
+                    <td>
+                      {row.elsewhere_date_display ? (
+                        <span title={row.elsewhere_hint ?? undefined}>
+                          {row.elsewhere_date_display}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td>{formatInt(row.missed_events)}</td>
                     <td>{formatInt(row.runs_here)}</td>
                     <td>{formatInt(row.runs_total)}</td>

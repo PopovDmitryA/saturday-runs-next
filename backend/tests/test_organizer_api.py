@@ -437,6 +437,53 @@ def test_absence_thresholds(
     assert stricter_missed.json()["total"] == 0
 
 
+def test_absence_marks_who_still_runs_elsewhere(
+    client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Ушёл на соседнюю площадку — дата и подсказка; никуда не ушёл — пусто."""
+    location, platform, user = _absence_fixture(db_session)
+    suffix = str(uuid4().int % 1_000_000)
+    other = _location(db_session, platform, f"org-other-{suffix}")
+    later = _event(db_session, platform, other, date(2026, 6, 6), 1)
+
+    lost = (
+        db_session.query(Participant)
+        .filter(Participant.display_name == "Пропавший Иванов")
+        .order_by(Participant.created_at.desc())
+        .first()
+    )
+    _run(db_session, later, lost)
+    db_session.commit()
+    fake_redis.delete(LOCATIONS_INDEX_CACHE_KEY)
+    _login(client, user.telegram_id or 0, "organizer")
+
+    response = client.get(
+        f"/api/organizer/{location.external_key}/absence",
+        params={"min_runs": 3, "min_missed": 1},
+    )
+    assert response.status_code == 200
+    row = next(item for item in response.json()["items"] if item["name"] == "Пропавший Иванов")
+    assert row["elsewhere_date_display"] == "06.06.2026"
+    assert row["elsewhere_hint"] == f"{other.name} — пробежка"
+
+
+def test_absence_leaves_elsewhere_empty_when_dates_match(
+    client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Последняя активность человека — здесь же: колонка пустая, страница рисует прочерк."""
+    location, _platform_obj, user = _absence_fixture(db_session)
+    fake_redis.delete(LOCATIONS_INDEX_CACHE_KEY)
+    _login(client, user.telegram_id or 0, "organizer")
+
+    response = client.get(
+        f"/api/organizer/{location.external_key}/absence",
+        params={"min_runs": 3, "min_missed": 1},
+    )
+    row = next(item for item in response.json()["items"] if item["name"] == "Пропавший Иванов")
+    assert row["elsewhere_date_display"] is None
+    assert row["elsewhere_hint"] is None
+
+
 # ===== Свод по пробежке =====
 
 

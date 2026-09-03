@@ -48,7 +48,8 @@ ABSENCE_MIN_MISSED_DEFAULT = 4
 def absence_cache_key(
     identity_key: str, min_runs: int, min_missed: int, current_only: bool
 ) -> str:
-    return f"organizer:absence:v3:{identity_key}:{min_runs}:{min_missed}:{int(current_only)}"
+    # v4 — в строках появилась «последняя активность где-то ещё».
+    return f"organizer:absence:v4:{identity_key}:{min_runs}:{min_missed}:{int(current_only)}"
 
 
 def build_location_absence(
@@ -74,6 +75,58 @@ def build_location_absence(
     if use_cache:
         _write_json_cache(cache_key, payload, ABSENCE_CACHE_TTL_SECONDS)
     return payload
+
+
+def _last_activity_anywhere(
+    db: Session, group_keys: list[Any]
+) -> dict[Any, tuple[date, str, str]]:
+    """По каждому человеку — его последняя активность на любой площадке.
+
+    Возвращает (дата, название площадки, вид). Нужно «Долгой паузе»: человек
+    мог перестать ходить сюда, но продолжать бегать в соседнем парке — это
+    разные истории, и в списке они должны различаться (Дмитрий 03.09.2026).
+
+    DISTINCT ON вместо max(): вместе с датой нужна ещё и площадка, а обычная
+    группировка её не отдаёт. Запрос сужен до уже отобранных людей — обходить
+    ради этого все протоколы страны незачем (см. историю с пулом соединений
+    03.09.2026).
+    """
+    if not group_keys:
+        return {}
+
+    result: dict[Any, tuple[date, str, str]] = {}
+    for model, kind in ((RunResult, "пробежка"), (VolunteerResult, "волонтёрство")):
+        key = func.coalesce(PlatformLink.user_id, model.participant_id)
+        rows = (
+            db.query(
+                key.label("group_key"),
+                Event.event_date.label("event_date"),
+                Location.name.label("location_name"),
+            )
+            .select_from(model)
+            .join(Event, model.event_id == Event.id)
+            .join(Location, Event.location_id == Location.id)
+            .join(Participant, model.participant_id == Participant.id)
+            .outerjoin(PlatformLink, _platform_link_join())
+            .filter(
+                key.in_(group_keys),
+                Event.is_test_event.is_(False),
+                # Волонтёрства parkrun-эпохи лежат на дате-заглушке 1970-01-01.
+                Event.event_date > date(1970, 1, 1),
+                ~exists().where(EventCrosslink.secondary_event_id == Event.id),
+            )
+            .distinct(key)
+            .order_by(key, Event.event_date.desc())
+            .all()
+        )
+        for row in rows:
+            current = result.get(row.group_key)
+            if current is None or row.event_date > current[0]:
+                result[row.group_key] = (row.event_date, row.location_name, kind)
+            elif row.event_date == current[0] and kind not in current[2]:
+                # В один день и бежал, и волонтёрил — говорим об обоих.
+                result[row.group_key] = (row.event_date, current[1], f"{current[2]} и {kind}")
+    return result
 
 
 def _compute_location_absence(
@@ -218,6 +271,8 @@ def _compute_location_absence(
         db, identity.identity_key, {pid for pids in participant_by_group.values() for pid in pids}
     )
 
+    elsewhere = _last_activity_anywhere(db, group_keys)
+
     items: list[dict[str, Any]] = []
     for row in local_rows:
         # Последний визит: позднейшая из двух дат — пробежки и волонтёрства.
@@ -228,12 +283,21 @@ def _compute_location_absence(
         missed = sum(1 for event_date in event_dates if event_date > last_date)
         if missed < min_missed:
             continue
+        # «Бегает где-то ещё»: показываем, только если последняя активность
+        # человека позже его последнего визита сюда. Совпали — значит никуда
+        # не переехал, и в колонке прочерк.
+        after = elsewhere.get(row.group_key)
+        after_date = after[0] if after and after[0] > last_date else None
         items.append(
             {
                 "name": row.name,
                 "handle": row.slug or (str(row.serial_id) if row.serial_id else None),
                 "last_date": last_date.isoformat(),
                 "last_date_display": last_date.strftime("%d.%m.%Y"),
+                "elsewhere_date_display": after_date.strftime("%d.%m.%Y") if after_date else None,
+                "elsewhere_hint": (
+                    f"{after[1]} — {after[2]}" if after_date and after else None
+                ),
                 "runs_here": int(row.runs_here),
                 "runs_total": totals.get(row.group_key, int(row.runs_here)),
                 "missed_events": missed,

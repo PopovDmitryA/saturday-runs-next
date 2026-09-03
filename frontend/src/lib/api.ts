@@ -3364,6 +3364,8 @@ export type OrganizerAbsenceItem = {
   handle: string | null;
   last_date: string;
   last_date_display: string;
+  elsewhere_date_display?: string | null;
+  elsewhere_hint?: string | null;
   runs_here: number;
   runs_total: number;
   missed_events: number;

@@ -37,6 +37,11 @@ class AbsenceItem(BaseModel):
     handle: str | None = None
     last_date: date
     last_date_display: str
+    # Последняя активность человека где угодно, если она позже визита сюда:
+    # значит, он не пропал, а ходит в другое место. Совпали даты — пусто,
+    # страница рисует прочерк. hint — «Площадка — пробежка/волонтёрство».
+    elsewhere_date_display: str | None = None
+    elsewhere_hint: str | None = None
     runs_here: int
     runs_total: int
     missed_events: int

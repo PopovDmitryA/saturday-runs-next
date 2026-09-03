@@ -54,8 +54,9 @@ def protocol_timeline_cache_key(identity_key: str) -> str:
 
 
 def health_cache_key(identity_key: str) -> str:
-    # v6 — у локаций без 5в-половины индикатор скорости протокола не показывается.
-    return f"organizer:health:v6:{identity_key}"
+    # v7 — добавилась лампочка «Ротация организаторов». Без бампа площадки с
+    # прогретым кэшем показывали бы светофор без неё до истечения TTL.
+    return f"organizer:health:v7:{identity_key}"
 
 
 def _five_verst_locations(identity: LocationIdentity) -> list[Location]:
