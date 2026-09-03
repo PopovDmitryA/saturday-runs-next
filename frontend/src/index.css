@@ -13450,6 +13450,14 @@ a.admin-system-chip:hover {
   text-align: center;
 }
 
+/* Почему фото не встало: раньше сбой декодирования глотался молча, и кнопка
+   «Фото» выглядела сломанной (03.09.2026). */
+.s2-photo-error {
+  margin: 0.25rem 0 0.5rem;
+  color: var(--danger, #c0392b);
+  font-size: 0.9rem;
+}
+
 .s2-looks {
   display: flex;
   align-items: center;

@@ -38,9 +38,9 @@ import { ShareCardView, metricLimit, photoGeometry } from "./ShareCardView";
 import type { ShareFormatId, ShareSubject } from "./types";
 import { SHARE_FORMATS, shareFormat } from "./types";
 
-function loadPhotoFile(file: File): Promise<SharePhoto> {
+function decodeInBrowser(blob: Blob): Promise<SharePhoto> {
   return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
+    const objectUrl = URL.createObjectURL(blob);
     const image = new Image();
     image.onload = () =>
       resolve({ objectUrl, width: image.naturalWidth, height: image.naturalHeight, transforms: {} });
@@ -50,6 +50,39 @@ function loadPhotoFile(file: File): Promise<SharePhoto> {
     };
     image.src = objectUrl;
   });
+}
+
+const HEIC_LIKE = /\.(heic|heif)$/i;
+
+async function convertOnServer(file: File): Promise<Blob> {
+  const body = new FormData();
+  body.append("file", file, file.name || "photo");
+  const response = await fetch("/api/media/convert-image", { method: "POST", body, credentials: "include" });
+  if (!response.ok) {
+    let detail = "Не удалось прочитать фото";
+    try {
+      detail = (await response.json()).detail ?? detail;
+    } catch {
+      // тело не JSON — оставляем общий текст
+    }
+    throw new Error(detail);
+  }
+  return response.blob();
+}
+
+async function loadPhotoFile(file: File): Promise<SharePhoto> {
+  try {
+    return await decodeInBrowser(file);
+  } catch (error) {
+    // HEIC с айфона умеет показывать только Safari; остальные браузеры
+    // тихо роняли картинку, и кнопка «Фото» «ничего не делала» (03.09.2026).
+    // Такой файл перекодирует сервер — он читает HEIC и отдаёт JPEG.
+    const looksHeic = /image\/hei[cf]/i.test(file.type) || HEIC_LIKE.test(file.name) || file.type === "";
+    if (!looksHeic) {
+      throw error;
+    }
+    return decodeInBrowser(await convertOnServer(file));
+  }
 }
 
 export function ShareSheet({
@@ -64,6 +97,7 @@ export function ShareSheet({
   const looks = looksFor(subject.data.audience);
   const [lookId, setLookId] = useState<string>(looks[0].id);
   const [photo, setPhoto] = useState<SharePhoto | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [metricIds, setMetricIds] = useState<string[] | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -193,6 +227,7 @@ export function ShareSheet({
     if (!file) {
       return;
     }
+    setPhotoError(null);
     try {
       const next = await loadPhotoFile(file);
       setPhoto((prev) => {
@@ -203,8 +238,10 @@ export function ShareSheet({
       });
       setLookId(PHOTO_LOOK.id);
       trackShareCustomize("photo");
-    } catch {
-      // Битый файл — остаёмся на текущем луке.
+    } catch (error) {
+      // Остаёмся на текущем луке, но говорим почему — молчание читалось как
+      // «кнопка не работает».
+      setPhotoError(error instanceof Error ? error.message : "Не удалось прочитать фото");
     }
   };
 
@@ -514,10 +551,16 @@ export function ShareSheet({
           </div>
         ) : null}
 
+        {photoError ? (
+          <p className="s2-photo-error" role="alert">
+            {photoError}
+          </p>
+        ) : null}
+
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           hidden
           onChange={(event) => {
             void onPickPhoto(event.target.files?.[0]);

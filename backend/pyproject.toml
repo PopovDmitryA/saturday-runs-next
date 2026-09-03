@@ -23,6 +23,9 @@ dependencies = [
     "playwright>=1.49.0",
     "pymssql>=2.3.0",
     "pillow>=11.0.0",
+    # HEIC/HEIF с айфонов: Pillow сам их не читает, декодер приходит отсюда
+    # (manylinux-колёса несут libheif внутри, apt не нужен).
+    "pillow-heif>=0.20.0",
     "python-multipart>=0.0.18",
     "boto3>=1.35.0",
     # Экспорт таблиц кабинета организатора в .xlsx (свод по пробежке).

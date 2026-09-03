@@ -40,7 +40,10 @@ type Props = {
   hint?: string;
 };
 
-const ACCEPT = "image/jpeg,image/png,image/webp";
+// HEIC/HEIF — снимки с айфона: без них в списке галерея на iOS предлагала бы
+// только старые фото или молча конвертировала. Сервер перекодирует в JPEG.
+const ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif";
+const IMAGE_EXTENSION = /\.(jpe?g|png|webp|heic|heif)$/i;
 
 export function PhotoAttachments({
   photos,
@@ -125,8 +128,9 @@ export function PhotoAttachments({
     if (!canAdd) return;
     // Из проводника прилетают любые файлы — берём только картинки, остальное
     // молча игнорируем (сервер их всё равно не примет).
-    const images = Array.from(event.dataTransfer.files).filter((file) =>
-      file.type.startsWith("image/"),
+    // У HEIC из проводника MIME-тип бывает пустым — смотрим ещё на расширение.
+    const images = Array.from(event.dataTransfer.files).filter(
+      (file) => file.type.startsWith("image/") || IMAGE_EXTENSION.test(file.name),
     );
     if (images.length === 0) return;
     const list = new DataTransfer();

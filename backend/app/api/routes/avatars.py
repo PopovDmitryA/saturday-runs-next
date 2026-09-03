@@ -28,6 +28,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
+from pillow_heif import register_heif_opener  # type: ignore[import-untyped]
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -69,6 +70,10 @@ def _delete_stored(key: str | None, settings: Settings) -> None:
         pass
 
 
+# HEIC с айфонов — см. app/core/image_processing.py.
+register_heif_opener()
+
+
 def _read_image(raw: bytes) -> Image.Image:
     try:
         image = Image.open(io.BytesIO(raw))
@@ -76,7 +81,7 @@ def _read_image(raw: bytes) -> Image.Image:
     except (UnidentifiedImageError, OSError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Не удалось прочитать изображение — поддерживаются JPEG, PNG и WebP",
+            detail="Не удалось прочитать изображение — поддерживаются JPEG, PNG, WebP и HEIC",
         ) from exc
     return image
 

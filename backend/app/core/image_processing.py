@@ -14,6 +14,12 @@ from __future__ import annotations
 import io
 
 from PIL import Image, ImageOps, UnidentifiedImageError  # type: ignore[import-untyped]
+from pillow_heif import register_heif_opener  # type: ignore[import-untyped]
+
+# Айфон снимает в HEIC, и люди грузят фото прямо из галереи. Без этой
+# регистрации Pillow такой файл не узнаёт (03.09.2026: «сайт не принимает
+# фотки в heic»). Регистрируем один раз при импорте модуля.
+register_heif_opener()
 
 # 2K по длинной стороне (решение Дмитрия 28.07.2026: «сжимаем до 2К»).
 # Одной константой меняется на 1920, если захочется экономнее.
@@ -34,8 +40,7 @@ def process_photo(raw: bytes, *, max_side: int = MAX_SIDE_PX) -> tuple[bytes, in
         image.load()
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ImageProcessingError(
-            "Не удалось прочитать изображение — поддерживаются JPEG, PNG, WebP и HEIC-снимки, "
-            "сохранённые как JPEG"
+            "Не удалось прочитать изображение — поддерживаются JPEG, PNG, WebP и HEIC"
         ) from exc
 
     # Фото с телефона часто «лежит на боку» из-за EXIF-ориентации; заодно
