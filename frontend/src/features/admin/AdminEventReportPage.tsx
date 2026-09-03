@@ -36,13 +36,7 @@ function PersonList({ people }: { people: EventReportPerson[] }) {
       {people.map((person, index) => (
         <span key={person.participant_id ?? index}>
           {index > 0 && ", "}
-          {person.profile_url ? (
-            <a href={person.profile_url} target="_blank" rel="noreferrer">
-              {person.name ?? "Без имени"}
-            </a>
-          ) : (
-            (person.name ?? "Без имени")
-          )}
+          {person.name ?? "Без имени"}
         </span>
       ))}
     </>

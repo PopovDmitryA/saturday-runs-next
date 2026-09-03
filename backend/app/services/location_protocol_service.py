@@ -474,7 +474,6 @@ def _build_results(
                 "participant_id": result.participant_id,
                 "name": row.display_name,
                 "external_user_id": row.external_user_id,
-                "profile_url": row.profile_url,
                 "serial_id": row.serial_id if row.profile_private is False else None,
                 "gender": gender,
                 "gender_position": result.gender_position,
@@ -672,7 +671,6 @@ def _build_volunteers(
             {
                 "name": row.display_name,
                 "external_user_id": row.external_user_id,
-                "profile_url": row.profile_url,
                 "serial_id": row.serial_id if row.profile_private is False else None,
                 "roles": [],
                 "new_roles": [],

@@ -362,13 +362,7 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
                   {loadRows.map((person) => (
                     <tr key={person.participant_id}>
                       <td>
-                        {person.profile_url ? (
-                          <a href={person.profile_url} target="_blank" rel="noreferrer">
-                            {person.name ?? "—"}
-                          </a>
-                        ) : (
-                          person.name ?? "—"
-                        )}
+                        {person.name ?? "—"}
                       </td>
                       <td>{formatInt(pureOnly ? (person.pure_slots ?? person.slots) : person.slots)}</td>
                       <td>{formatInt(person.runs_here ?? 0)}</td>

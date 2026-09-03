@@ -92,7 +92,6 @@ class SvodRunnerRow(BaseModel):
     position: int | None = None
     participant_id: UUID | None = None
     name: str | None = None
-    profile_url: str | None = None
     finish_time_sec: int | None = None
     finish_time_display: str
     # Возрастная группа без места в группе («М40-44»).
@@ -120,7 +119,6 @@ class SvodVolunteerRole(BaseModel):
 class SvodVolunteerRow(BaseModel):
     participant_id: UUID | None = None
     name: str | None = None
-    profile_url: str | None = None
     roles: list[SvodVolunteerRole] = Field(default_factory=list)
     new_roles: list[str] = Field(default_factory=list)
     first_volunteering: bool
@@ -147,7 +145,6 @@ class OrganizerPostResponse(BaseModel):
 class MilestoneItem(BaseModel):
     participant_id: str
     name: str | None = None
-    profile_url: str | None = None
     # runs_here / runs_platform / vols_here / vols_platform
     kind: str
     kind_label: str
@@ -169,7 +166,6 @@ class MilestonesResponse(BaseModel):
 class NewcomerItem(BaseModel):
     participant_id: str
     name: str | None = None
-    profile_url: str | None = None
     debut_date: date
     debut_date_display: str
     runs_here: int
@@ -199,7 +195,6 @@ class BenchRole(BaseModel):
 class BenchItem(BaseModel):
     participant_id: str
     name: str | None = None
-    profile_url: str | None = None
     vols_here: int
     vols_total: int
     # Пробежек на этой локации — видно, живой ли это участник или только история.
@@ -252,7 +247,6 @@ class TeamRoleLoad(BaseModel):
 class TeamLoadPerson(BaseModel):
     participant_id: str
     name: str | None = None
-    profile_url: str | None = None
     slots: int
     share_pct: int
     # Пробежки на этой площадке за тот же период — вторая половина баланса

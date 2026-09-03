@@ -101,7 +101,6 @@ function unknownProtocolRow(position: number): ProtocolResult {
     position,
     name: "Неизвестный",
     external_user_id: null,
-    profile_url: null,
     serial_id: null,
     gender: null,
     gender_position: null,

@@ -1371,7 +1371,6 @@ export type EventReportDateItem = {
 export type EventReportPerson = {
   participant_id: string | null;
   name: string | null;
-  profile_url: string | null;
 };
 
 export type EventReportCountedPerson = EventReportPerson & { count: number };
@@ -2041,7 +2040,6 @@ export async function deleteRatingPhoto(photoId: string): Promise<void> {
 export type CoRunnerItem = {
   participant_key: string;
   display_name: string | null;
-  profile_urls: Record<string, string>;
   platform_codes: string[];
   site_serial_id: number | null;
   meetings: number;
@@ -2674,7 +2672,6 @@ export type ProtocolResult = {
   position: number | null;
   name: string | null;
   external_user_id: string | null;
-  profile_url: string | null;
   serial_id: number | null;
   gender: "male" | "female" | null;
   gender_position: number | null;
@@ -2714,7 +2711,6 @@ export type ProtocolResult = {
 export type ProtocolVolunteer = {
   name: string | null;
   external_user_id: string | null;
-  profile_url: string | null;
   serial_id: number | null;
   roles: string[];
   // Роли, которые человек исполняет впервые в карьере.
@@ -3446,7 +3442,6 @@ export type SvodRunnerRow = {
   position: number | null;
   participant_id: string | null;
   name: string | null;
-  profile_url: string | null;
   finish_time_sec: number | null;
   finish_time_display: string;
   age_group: string | null;
@@ -3472,7 +3467,6 @@ export type SvodVolunteerRole = {
 export type SvodVolunteerRow = {
   participant_id: string | null;
   name: string | null;
-  profile_url: string | null;
   roles: SvodVolunteerRole[];
   new_roles: string[];
   first_volunteering: boolean;
@@ -3553,7 +3547,6 @@ export function getOrganizerEventPost(
 export type OrganizerMilestoneItem = {
   participant_id: string;
   name: string | null;
-  profile_url: string | null;
   kind: "runs_here" | "runs_platform" | "vols_here" | "vols_platform";
   kind_label: string;
   current: number;
@@ -3580,7 +3573,6 @@ export function getOrganizerMilestones(slug: string) {
 export type OrganizerNewcomerItem = {
   participant_id: string;
   name: string | null;
-  profile_url: string | null;
   debut_date: string;
   debut_date_display: string;
   runs_here: number;
@@ -3613,7 +3605,6 @@ export type OrganizerBenchStatus = "never" | "paused" | "active";
 export type OrganizerBenchItem = {
   participant_id: string;
   name: string | null;
-  profile_url: string | null;
   vols_here: number;
   vols_total: number;
   runs_here: number;
@@ -3667,7 +3658,6 @@ export type OrganizerTeamLoadResponse = {
   top_load: {
     participant_id: string;
     name: string | null;
-    profile_url: string | null;
     slots: number;
     share_pct: number;
     /** Пробежки на этой площадке за тот же период. */

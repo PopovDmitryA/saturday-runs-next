@@ -711,7 +711,6 @@ class ProtocolResultResponse(BaseModel):
     position: int | None = None
     name: str | None = None
     external_user_id: str | None = None
-    profile_url: str | None = None
     serial_id: int | None = None
     gender: str | None = None
     gender_position: int | None = None
@@ -751,7 +750,6 @@ class ProtocolResultResponse(BaseModel):
 class ProtocolVolunteerResponse(BaseModel):
     name: str | None = None
     external_user_id: str | None = None
-    profile_url: str | None = None
     serial_id: int | None = None
     roles: list[str] = Field(default_factory=list)
     # Роли, которые человек исполняет впервые в карьере.

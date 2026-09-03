@@ -36,7 +36,6 @@ class EventReportDatesResponse(BaseModel):
 class ReportPerson(BaseModel):
     participant_id: UUID | None = None
     name: str | None = None
-    profile_url: str | None = None
 
 
 class ReportCountedPerson(ReportPerson):

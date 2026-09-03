@@ -545,16 +545,12 @@ export function ParticipantNameSearch({
                 <div className="participant-search-card-head">
                   <PlatformBadge code={result.platform_code} />
                   <span className="participant-search-card-name">{result.display_name}</span>
-                  {result.profile_url && result.profile_url.startsWith("http") && (
-                    <a
-                      className="link participant-search-card-open"
-                      href={result.profile_url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Открыть профиль ↗
-                    </a>
-                  )}
+                  {/* Ссылки на найденный профиль здесь нет: в выдаче по имени
+                      это чужие люди (однофамильцы), а согласия на обработку
+                      данных они нам не давали. Отличить себя помогают локация,
+                      счётчики и клуб на карточке. Ссылка осталась только в
+                      разборе адреса, который человек вставил сам
+                      (Дмитрий 04.09.2026). */}
                 </div>
                 <div className="participant-search-card-body">
                   <div className="participant-search-card-meta">

@@ -255,13 +255,7 @@ function OrganizerMilestonesContent({ slug }: { slug: string }) {
                     {rows.map((row) => (
                       <tr key={`${row.participant_id}-${row.kinds.map((k) => k.kind).join("+")}-${row.milestone}`}>
                         <td>
-                          {row.profile_url ? (
-                            <a href={row.profile_url} target="_blank" rel="noreferrer">
-                              {row.name ?? "—"}
-                            </a>
-                          ) : (
-                            row.name ?? "—"
-                          )}
+                          {row.name ?? "—"}
                         </td>
                         <td>
                           <span className="org-badges">

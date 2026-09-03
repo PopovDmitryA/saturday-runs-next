@@ -403,13 +403,7 @@ function OrganizerBenchContent({ slug }: { slug: string }) {
                 {rows.map((row) => (
                   <tr key={row.participant_id}>
                     <td>
-                      {row.profile_url ? (
-                        <a href={row.profile_url} target="_blank" rel="noreferrer">
-                          {row.name ?? "—"}
-                        </a>
-                      ) : (
-                        row.name ?? "—"
-                      )}
+                      {row.name ?? "—"}
                     </td>
                     <td>
                       <StatusBadge row={row} />
