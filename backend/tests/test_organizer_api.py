@@ -1473,7 +1473,7 @@ def test_protocol_watch_gap_in_observation_is_unconfirmed(
     event_day = date.today() - timedelta(days=1)
     monkeypatch.setattr(watch.bulk_parser, "fetch_latest_results", lambda: ([_watch_summary(location, event_day)], "<html>"))
 
-    stale = datetime.now(timezone.utc) - timedelta(seconds=watch.MAX_OBSERVATION_GAP_SECONDS + 60)
+    stale = datetime.now(timezone.utc) - timedelta(seconds=watch.max_observation_gap_seconds(datetime.now(timezone.utc)) + 60)
     fake_redis.set(watch.WATCH_HEARTBEAT_KEY, stale.isoformat())
 
     result = watch.record_protocol_upload_facts(db_session)
@@ -1481,32 +1481,44 @@ def test_protocol_watch_gap_in_observation_is_unconfirmed(
     assert result.unconfirmed_facts == 1
 
 
-def test_protocol_watch_big_batch_is_unconfirmed_even_with_heartbeat(
-    db_session: Session, monkeypatch: pytest.MonkeyPatch, fake_redis: fakeredis.FakeRedis
+def test_protocol_watch_prefers_earlier_db_sighting(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Пачка в десятки протоколов за минуту — холодный старт, что бы ни говорил Redis."""
+    """База знала протокол раньше обходчика — выгрузкой считается тот момент."""
     from datetime import datetime, timezone
 
     from app.sync import five_verst_protocol_watch as watch
 
     suffix = str(uuid4().int % 1_000_000)
     platform = _platform(db_session, "five_verst", "5 вёрст")
-    event_day = date.today() - timedelta(days=1)
-    locations = [
-        _location(db_session, platform, f"org-batch-{suffix}-{i}")
-        for i in range(watch.MAX_PLAUSIBLE_NEW_FACTS_PER_RUN + 1)
-    ]
+    location = _location(db_session, platform, f"org-dbseen-{suffix}")
+    event_day = date.today() - timedelta(days=4)
+    event = _event(db_session, platform, location, event_day, 7)
+    seen_in_db = datetime.now(timezone.utc) - timedelta(days=3)
+    event.created_at = seen_in_db
     db_session.commit()
-    monkeypatch.setattr(
-        watch.bulk_parser,
-        "fetch_latest_results",
-        lambda: ([_watch_summary(loc, event_day) for loc in locations], "<html>"),
-    )
-    fake_redis.set(watch.WATCH_HEARTBEAT_KEY, datetime.now(timezone.utc).isoformat())
+    monkeypatch.setattr(watch.bulk_parser, "fetch_latest_results", lambda: ([_watch_summary(location, event_day)], "<html>"))
 
-    result = watch.record_protocol_upload_facts(db_session)
-    assert result.new_facts == len(locations)
-    assert result.unconfirmed_facts == len(locations)
+    result = watch.record_protocol_upload_facts(db_session)  # холодный старт: отметки в Redis нет
+    assert result.new_facts == 1
+    assert result.unconfirmed_facts == 0
+    fact = db_session.query(ProtocolUploadFact).filter(ProtocolUploadFact.location_id == location.id).one()
+    assert fact.first_seen_confirmed is True
+    assert fact.source == "db"
+    assert abs((fact.first_seen_at - seen_in_db).total_seconds()) < 1
+
+
+def test_protocol_watch_gap_threshold_depends_on_weekday() -> None:
+    from datetime import datetime
+
+    from app.sync import five_verst_protocol_watch as watch
+
+    saturday = datetime(2026, 9, 5, 12, 0, tzinfo=watch.MSK)
+    sunday = datetime(2026, 9, 6, 12, 0, tzinfo=watch.MSK)
+    thursday = datetime(2026, 9, 3, 12, 0, tzinfo=watch.MSK)
+    assert watch.max_observation_gap_seconds(saturday) == 30 * 60
+    assert watch.max_observation_gap_seconds(sunday) == 2 * 3600
+    assert watch.max_observation_gap_seconds(thursday) == 5 * 3600
 
 
 def test_protocol_watch_skips_future_dates(

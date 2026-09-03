@@ -18,14 +18,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.core.redis_client import get_redis_client
-from app.models import Location, Platform, ProtocolUploadFact
+from app.models import Event, EventSummary, Location, Platform, ProtocolUploadFact
 from app.platform_adapters.five_verst import bulk_parser
 
 logger = logging.getLogger(__name__)
@@ -35,13 +36,18 @@ logger = logging.getLogger(__name__)
 # зияет дыра, и «протокол появился только что» утверждать нельзя.
 WATCH_HEARTBEAT_KEY = "five_verst:protocol_watch:last_seen_at"
 WATCH_HEARTBEAT_TTL_SECONDS = 24 * 3600
-# Прогон ежеминутный (crontab в celery_app); порог с запасом на задержку
-# очереди. Разрыв длиннее — дыра в наблюдении, момент появления неизвестен.
-MAX_OBSERVATION_GAP_SECONDS = 10 * 60
-# Вторая защита, независимая от Redis: в обычную минуту на странице появляется
-# несколько протоколов, а не десятки. Пачка крупнее — холодный старт (первый
-# прогон 02.09.2026 принёс 20 разом), даже если отметка в Redis жива.
-MAX_PLAUSIBLE_NEW_FACTS_PER_RUN = 12
+# Порог непрерывности наблюдения — по дню недели по Москве (Дмитрий
+# 03.09.2026): суббота ходит ежеминутно и разрыв длиннее получаса уже дыра;
+# воскресенье — раз в 5 минут, будни — раз в 30, и там терпимы 2 и 5 часов.
+# Разрыв длиннее порога означает: протокол увидели уже лежащим, момент
+# появления неизвестен. Размер пачки признаком дыры НЕ считается — страница
+# одна на все площадки, и десятки протоколов за минуту в субботу штатны.
+MSK = timezone(timedelta(hours=3))
+OBSERVATION_GAP_BY_WEEKDAY_SECONDS = {
+    5: 30 * 60,  # суббота
+    6: 2 * 3600,  # воскресенье
+}
+OBSERVATION_GAP_WEEKDAY_SECONDS = 5 * 3600
 
 
 @dataclass
@@ -79,13 +85,47 @@ def _mark_observed(now: datetime) -> None:
     get_redis_client().set(WATCH_HEARTBEAT_KEY, now.isoformat(), ex=WATCH_HEARTBEAT_TTL_SECONDS)
 
 
+def max_observation_gap_seconds(now: datetime) -> int:
+    weekday = now.astimezone(MSK).weekday()
+    return OBSERVATION_GAP_BY_WEEKDAY_SECONDS.get(weekday, OBSERVATION_GAP_WEEKDAY_SECONDS)
+
+
 def _observation_is_continuous(now: datetime, previous: datetime | None) -> bool:
     """Первый прогон 02.09.2026 записал 20 площадок разом, как будто все их
     протоколы появились в 21:00, — а они лежали там уже несколько дней. Факт
     подтверждён, только если предыдущий взгляд был недавно."""
     if previous is None:
         return False
-    return (now - previous).total_seconds() <= MAX_OBSERVATION_GAP_SECONDS
+    return (now - previous).total_seconds() <= max_observation_gap_seconds(now)
+
+
+def earliest_db_sightings(
+    db: Session, pairs: list[tuple[UUID, date]]
+) -> dict[tuple[UUID, date], datetime]:
+    """Когда протокол впервые попал в нашу базу другими путями.
+
+    Часовой синк latest и загрузка протоколов заводят сводку и событие — и
+    момент их создания доказывает, что протокол к тому времени уже лежал на
+    сайте. Если это раньше, чем его увидел обходчик, выгрузкой считаем именно
+    этот момент (Дмитрий 03.09.2026): так закрылись 20 площадок холодного
+    старта, у Ставрополя вышло 29.08 09:00 вместо 02.09 21:00.
+    """
+    if not pairs:
+        return {}
+    location_ids = {location_id for location_id, _ in pairs}
+    dates = {event_date for _, event_date in pairs}
+    rows = (
+        db.query(
+            Event.location_id,
+            Event.event_date,
+            func.min(func.least(Event.created_at, func.coalesce(EventSummary.created_at, Event.created_at))),
+        )
+        .outerjoin(EventSummary, EventSummary.event_id == Event.id)
+        .filter(Event.location_id.in_(location_ids), Event.event_date.in_(dates))
+        .group_by(Event.location_id, Event.event_date)
+        .all()
+    )
+    return {(location_id, event_date): seen for location_id, event_date, seen in rows if seen is not None}
 
 
 def record_protocol_upload_facts(db: Session, *, source: str = "site") -> ProtocolWatchResult:
@@ -148,23 +188,24 @@ def record_protocol_upload_facts(db: Session, *, source: str = "site") -> Protoc
         for slug, location_id, event_date in candidates
         if (location_id, event_date) not in existing
     ]
-    confirmed = _observation_is_continuous(now, previous)
-    if confirmed and len(new_pairs) > MAX_PLAUSIBLE_NEW_FACTS_PER_RUN:
-        logger.warning(
-            "protocol watch: %d новых протоколов за прогон — похоже на холодный старт, пишем без подтверждения",
-            len(new_pairs),
-        )
-        confirmed = False
+    continuous = _observation_is_continuous(now, previous)
+    db_seen = earliest_db_sightings(db, [(location_id, event_date) for _s, location_id, event_date in new_pairs])
 
     for slug, location_id, event_date in new_pairs:
+        seen_in_db = db_seen.get((location_id, event_date))
+        if seen_in_db is not None and seen_in_db < now:
+            # База знала протокол раньше обходчика — этот момент точнее.
+            first_seen_at, confirmed, fact_source = seen_in_db, True, "db"
+        else:
+            first_seen_at, confirmed, fact_source = now, continuous, source
         insert = (
             pg_insert(ProtocolUploadFact)
             .values(
                 location_id=location_id,
                 event_date=event_date,
-                first_seen_at=now,
+                first_seen_at=first_seen_at,
                 first_seen_confirmed=confirmed,
-                source=source,
+                source=fact_source,
             )
             # Гонка с параллельным прогоном всё ещё возможна — конфликт
             # по-прежнему глотаем, а не падаем. RETURNING отдаёт строку только
@@ -181,8 +222,8 @@ def record_protocol_upload_facts(db: Session, *, source: str = "site") -> Protoc
                 "protocol watch: %s %s протокол %s в %s",
                 slug,
                 event_date.isoformat(),
-                "замечен" if confirmed else "увиден уже лежащим",
-                now.isoformat(),
+                "известен базе с" if fact_source == "db" else ("замечен" if confirmed else "увиден уже лежащим"),
+                first_seen_at.isoformat(),
             )
     if result.new_facts:
         db.flush()
