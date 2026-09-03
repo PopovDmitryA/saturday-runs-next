@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import {
   ApiError,
@@ -18,6 +18,10 @@ import { OrganizerDenied } from "./OrganizerDenied";
 import "./organizer.css";
 
 const MONTH_LABELS = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+
+/* До этого числа месяцев над столбиками рисуются значения: дальше трёхзначные
+   числа начинают наезжать друг на друга. */
+const VALUE_LABEL_MAX_MONTHS = 18;
 
 function monthLabel(key: string): string {
   const [year, month] = key.split("-");
@@ -105,6 +109,14 @@ function OrganizerAttendanceContent({ slug }: { slug: string }) {
       Math.max(1, ...chartMonths.map((item) => (item.empty ? 0 : item.avg_finishers))),
     [chartMonths],
   );
+  // Подписи над столбиками — только когда месяцев мало: иначе трёхзначные
+  // числа налезают друг на друга. Под них резервируется полоса сверху, а
+  // столбики считаются от укороченной шкалы — иначе самый высокий упирался бы
+  // в потолок и выталкивал свою подпись за пределы графика (Дмитрий 03.09.2026).
+  const showValues = chartMonths.length <= VALUE_LABEL_MAX_MONTHS;
+  const headroomPct = showValues ? 14 : 0;
+  const scalePct = 100 - headroomPct;
+
   const platformsInChart = useMemo(() => {
     const seen: string[] = [];
     for (const item of chartMonths) {
@@ -223,8 +235,10 @@ function OrganizerAttendanceContent({ slug }: { slug: string }) {
             )}
             <div className="org-hist-plot">
               <div className="org-hist-axis" aria-hidden="true">
-                <span style={{ top: 0 }}>{formatInt(chartMax)}</span>
-                <span style={{ top: "50%" }}>{formatInt(Math.round(chartMax / 2))}</span>
+                <span style={{ top: `${headroomPct}%` }}>{formatInt(chartMax)}</span>
+                <span style={{ top: `${headroomPct + scalePct / 2}%` }}>
+                  {formatInt(Math.round(chartMax / 2))}
+                </span>
               </div>
               {/* У старых площадок в «истории» под сотню месяцев, и зазор в три
                   пикселя съел бы полполотна: сужаем его по числу колонок. */}
@@ -232,7 +246,13 @@ function OrganizerAttendanceContent({ slug }: { slug: string }) {
                 className="org-hist"
                 role="img"
                 aria-label="Посещаемость по месяцам за всю историю"
-                style={{ gap: chartMonths.length > 40 ? 1 : chartMonths.length > 20 ? 2 : 3 }}
+                style={
+                  {
+                    gap: chartMonths.length > 40 ? 1 : chartMonths.length > 20 ? 2 : 3,
+                    "--org-hist-top": `${headroomPct}%`,
+                    "--org-hist-mid": `${headroomPct + scalePct / 2}%`,
+                  } as CSSProperties
+                }
               >
                 {chartMonths.map((item) => (
                   <div key={item.month} className="org-hist-col">
@@ -252,10 +272,20 @@ function OrganizerAttendanceContent({ slug }: { slug: string }) {
                             ]
                       }
                     >
+                      {/* В подписи целое: среднее приходит с десятой долей
+                          («58.4»), и в колонку шириной с ноготь она не лезет.
+                          Точное значение остаётся в подсказке. */}
+                      {!item.empty && showValues && (
+                        <span className="org-hist-value">
+                          {formatInt(Math.round(item.avg_finishers))}
+                        </span>
+                      )}
                       {!item.empty && (
                         <div
                           className={`org-hist-bar ${platformClass(item.platform_code)}`}
-                          style={{ height: `${Math.max(3, (item.avg_finishers / chartMax) * 100)}%` }}
+                          style={{
+                            height: `${Math.max(2, (item.avg_finishers / chartMax) * scalePct)}%`,
+                          }}
                         />
                       )}
                     </ChartColumnTooltip>

@@ -508,8 +508,30 @@
   background-image: linear-gradient(to right, var(--border) 0 100%),
     linear-gradient(to right, var(--border-soft) 0 100%);
   background-size: 100% 1px;
-  background-position: 0 0, 0 50%;
+  /* Линии едут вниз ровно на ту полосу, что отдана подписям над столбиками:
+     верхняя всегда совпадает с макушкой самого высокого месяца. */
+  background-position: 0 var(--org-hist-top, 0%), 0 var(--org-hist-mid, 50%);
   background-repeat: no-repeat;
+}
+
+.org-hist-value {
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-2, #57606a);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  margin-bottom: 0.2rem;
+}
+
+/* На телефоне колонка сужается до двух десятков пикселей. Подпись не прячем —
+   иначе полоса, отданная под неё, осталась бы пустой, — а ужимаем шрифт:
+   трёхзначное число в такую колонку всё ещё влезает. */
+@media (max-width: 560px) {
+  .org-hist-value {
+    font-size: 0.56rem;
+    letter-spacing: -0.02em;
+  }
 }
 
 .org-hist-col {
