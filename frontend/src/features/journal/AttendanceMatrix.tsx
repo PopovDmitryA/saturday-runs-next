@@ -32,7 +32,8 @@ export type MatrixRowData = {
   name: ReactNode;
   /** Имя простым текстом — для поиска и сортировки: name может быть ссылкой. */
   searchName?: string;
-  total: number;
+  /** null — счёт неизвестен и показывается прочерком (закрытый профиль в срезе месяца). */
+  total: number | null;
   me?: boolean;
   // Закрытый профиль: клетки не показываем, счёт года остаётся.
   private?: boolean;
@@ -229,7 +230,7 @@ export function AttendanceMatrix({
                   </span>
                 )}
               </td>
-              <td className="ajm-col-total">{row.total}</td>
+              <td className="ajm-col-total">{row.total ?? "—"}</td>
               {columns.map((column, index) => {
                 const cell = row.private ? undefined : row.cells[column.key];
                 // Подсказка центрирована над клеткой — у первых/последних

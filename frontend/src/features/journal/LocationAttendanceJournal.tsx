@@ -214,14 +214,31 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
     return result;
   }, [data, extraRows]);
 
+  // Счёт следует за выбранным месяцем: с фильтром «Всего» показывает участия
+  // этого месяца, а не всего года — иначе колонка спорит с клетками рядом
+  // (Дмитрий 03.09.2026). У закрытого профиля клеток нет вовсе (сервер их не
+  // отдаёт), поэтому там прочерк, а не ноль: месячный счёт по трём-четырём
+  // субботам выдал бы ровно те даты, которые мы и прячем.
+  const monthRows = useMemo(() => {
+    if (month === "all") {
+      return rows;
+    }
+    return rows.map((row) => ({
+      ...row,
+      total: row.private
+        ? null
+        : Object.keys(row.cells).filter((date) => date.slice(0, 7) === month).length,
+    }));
+  }, [rows, month]);
+
   // Поиск и сортировка идут по уже загруженным строкам: сервер отдаёт журнал
   // порциями, и «Показать ещё» подтягивает следующие. Об этом честно написано
   // под таблицей — «Показаны N из M».
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const filtered = needle
-      ? rows.filter((row) => (row.searchName ?? "").toLowerCase().includes(needle))
-      : rows;
+      ? monthRows.filter((row) => (row.searchName ?? "").toLowerCase().includes(needle))
+      : monthRows;
     if (!sort) {
       return filtered;
     }
@@ -229,13 +246,14 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
       if (sort.key === "name") {
         return (a.searchName ?? "").localeCompare(b.searchName ?? "", "ru");
       }
-      return a.total - b.total;
+      // Неизвестный счёт (закрытый профиль) — вниз при любом направлении.
+      return (a.total ?? -1) - (b.total ?? -1);
     });
     if (!sort.asc) {
       sorted.reverse();
     }
     return sorted;
-  }, [rows, query, sort]);
+  }, [monthRows, query, sort]);
 
   const toggleSort = (key: MatrixSortKey) => {
     setSort((current) => {
@@ -273,6 +291,7 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
     };
   }, [data, kind]);
 
+  const period = month === "all" ? "году" : "месяце";
   const shownRows = data ? data.rows.length + extraRows.length : 0;
   const hasMore = data ? shownRows < data.total_rows : false;
 
@@ -364,12 +383,14 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
             totalLabel={
               kind === "runners" ? "Пробежек" : kind === "volunteers" ? "Волонтёрств" : "Всего"
             }
+            // Подпись обязана совпадать с тем, что в колонке: с выбранным
+            // месяцем там уже не год.
             totalHint={
               kind === "all"
-                ? "Дней активности в выбранном году: день с пробежкой и волонтёрством считается одним днём"
+                ? `Дней активности в выбранном ${period}: день с пробежкой и волонтёрством считается одним днём`
                 : kind === "runners"
-                  ? "Пробежек на этой площадке в выбранном году"
-                  : "Волонтёрств на этой площадке в выбранном году"
+                  ? `Пробежек на этой площадке в выбранном ${period}`
+                  : `Волонтёрств на этой площадке в выбранном ${period}`
             }
             totals={totals}
             emptyNote="За этот год стартов не было."
