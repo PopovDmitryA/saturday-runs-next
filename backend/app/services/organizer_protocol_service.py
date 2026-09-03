@@ -153,9 +153,16 @@ def _compute_protocol_timeline(db: Session, identity: LocationIdentity, *, limit
     )
     finish_by_event = {event_id: (int(count or 0), max_sec) for event_id, count, max_sec in finish_rows}
 
+    # Только подтверждённые наблюдением моменты. «Увидели протокол уже
+    # лежащим» — это не выгрузка в тот момент, а отсутствие данных: строка
+    # уйдёт в прочерк, задержка не посчитается, ярлык «с опозданием» не
+    # появится. Лучше пустота, чем ложное обвинение (Дмитрий 03.09.2026).
     facts = (
         db.query(ProtocolUploadFact)
-        .filter(ProtocolUploadFact.location_id.in_(fv_ids))
+        .filter(
+            ProtocolUploadFact.location_id.in_(fv_ids),
+            ProtocolUploadFact.first_seen_confirmed.is_(True),
+        )
         .all()
     )
     fact_by_date = {fact.event_date: fact for fact in facts}

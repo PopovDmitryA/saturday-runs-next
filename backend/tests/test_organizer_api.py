@@ -1391,6 +1391,61 @@ def test_protocol_watch_records_first_seen_once(
     assert fact_again.first_seen_at == seen_at
 
 
+def test_protocol_watch_marks_cold_start_as_unconfirmed(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Первый прогон видит протоколы уже лежащими — момент появления неизвестен.
+
+    02.09.2026 наблюдатель на своём первом прогоне записал 20 площадок разом,
+    как будто все протоколы появились в 21:00. У Ставрополя протокол лежал с
+    29 августа, а кабинет обвинял организатора в задержке 109 часов.
+    """
+    from app.platform_adapters.canonical import CanonicalEventSummary
+    from app.sync import five_verst_protocol_watch as watch
+
+    suffix = str(uuid4().int % 1_000_000)
+    platform = _platform(db_session, "five_verst", "5 вёрст")
+    cold = _location(db_session, platform, f"org-cold-{suffix}")
+    warm = _location(db_session, platform, f"org-warm-{suffix}")
+    db_session.commit()
+
+    event_day = date.today() - timedelta(days=1)
+
+    def _summary(location: Location) -> CanonicalEventSummary:
+        return CanonicalEventSummary(
+            external_event_key=f"{location.external_key}-{event_day.isoformat()}",
+            event_date=event_day,
+            event_number=10,
+            location_external_key=location.external_key,
+            location_name=location.name,
+        )
+
+    # Первый прогон: наблюдения до него не было.
+    monkeypatch.setattr(watch.bulk_parser, "fetch_latest_results", lambda: ([_summary(cold)], "<html>"))
+    first = watch.record_protocol_upload_facts(db_session)
+    assert first.new_facts == 1
+    assert first.unconfirmed_facts == 1
+    cold_fact = (
+        db_session.query(ProtocolUploadFact)
+        .filter(ProtocolUploadFact.location_id == cold.id)
+        .one()
+    )
+    assert cold_fact.first_seen_confirmed is False
+
+    # Следующий прогон идёт сразу за предыдущим — наблюдение непрерывно, и
+    # протокол, которого минуту назад не было, записывается подтверждённым.
+    monkeypatch.setattr(watch.bulk_parser, "fetch_latest_results", lambda: ([_summary(warm)], "<html>"))
+    second = watch.record_protocol_upload_facts(db_session)
+    assert second.new_facts == 1
+    assert second.unconfirmed_facts == 0
+    warm_fact = (
+        db_session.query(ProtocolUploadFact)
+        .filter(ProtocolUploadFact.location_id == warm.id)
+        .one()
+    )
+    assert warm_fact.first_seen_confirmed is True
+
+
 def test_health_skips_protocol_for_non_five_verst(
     client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
 ) -> None:

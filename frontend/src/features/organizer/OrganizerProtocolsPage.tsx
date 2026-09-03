@@ -259,7 +259,11 @@ function OrganizerProtocolsContent({ slug }: { slug: string }) {
                       <td>{item.start_time ?? "—"}</td>
                       <td>{item.finishers > 0 ? formatInt(item.finishers) : "—"}</td>
                       <td>{item.last_finish_display ?? "—"}</td>
-                      <td>{item.first_seen_display ?? <span className="muted">не замечен</span>}</td>
+                      {/* Прочерк, а не «не замечен»: за момент выгрузки мы
+                          ручаемся, только если сами видели, как протокол
+                          появился. Не видели — значит не знаем, и говорить
+                          что-либо о скорости организатора не вправе. */}
+                      <td>{item.first_seen_display ?? <span className="muted">—</span>}</td>
                       <td>
                         <DelayBadge item={item} />
                       </td>

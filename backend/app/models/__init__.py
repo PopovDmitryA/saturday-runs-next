@@ -777,6 +777,12 @@ class ProtocolUploadFact(Base):
     location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
     event_date: Mapped[date] = mapped_column(Date, nullable=False)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # False — протокол увидели уже лежащим (холодный старт наблюдателя или
+    # перерыв в наблюдении), момент появления неизвестен. Для кабинета это
+    # равно отсутствию факта: лучше прочерк, чем ложное опоздание.
+    first_seen_confirmed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
     source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="site")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
