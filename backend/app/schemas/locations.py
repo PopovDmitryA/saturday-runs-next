@@ -409,6 +409,12 @@ class LocationActiveParticipantResponse(BaseModel):
     last_date: date | None = None
     # Участия в разрезе систем: по ним работает фильтр «Система».
     platform_counts: dict[str, int] = Field(default_factory=dict)
+    # Границы стажа в разрезе систем. Без них при выбранной системе колонка
+    # «Первый старт» показывала дату из ЧУЖОЙ системы: у Швейцарии, где до
+    # 5 вёрст был RunPark, в срезе «5 вёрст» стояло 13.05.2023, хотя площадка
+    # в 5 вёрст открылась 22.07.2023 (Дмитрий 03.09.2026).
+    platform_first_dates: dict[str, date] = Field(default_factory=dict)
+    platform_last_dates: dict[str, date] = Field(default_factory=dict)
 
 
 class LocationParticipantsResponse(BaseModel):

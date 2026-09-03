@@ -90,7 +90,10 @@ def location_leaders_cache_key(slug: str) -> str:
 
 
 def location_participants_cache_key(slug: str) -> str:
-    return f"locations:participants:v2:{slug.strip().lower()}"
+    # v3 — в строках появились platform_first_dates/platform_last_dates. Без
+    # бампа страница до истечения TTL отдавала бы старый payload, и в срезе по
+    # системе даты остались бы общими.
+    return f"locations:participants:v3:{slug.strip().lower()}"
 
 
 # Порог «активного участника» страницы деталей — три участия, как в легаси-
@@ -1077,8 +1080,20 @@ def _active_participant_rows(
     # Отдельным запросом, а не в основном: там группировка по человеку, и
     # добавление платформы в GROUP BY размножило бы строки.
     platform_counts: dict[Any, dict[str, int]] = {}
-    for gkey, platform_code, count in (
-        db.query(group_key.label("group_key"), Platform.code, func.count(func.distinct(model.event_id)))
+    # Границы стажа тоже в разрезе систем: при выбранной системе колонки
+    # «Первый/Последний старт» обязаны показывать её даты, а не общие. У
+    # Швейцарии, где до 5 вёрст был RunPark, в срезе «5 вёрст» стоял
+    # 13.05.2023 — дата из RunPark (Дмитрий 03.09.2026).
+    platform_first: dict[Any, dict[str, Any]] = {}
+    platform_last: dict[Any, dict[str, Any]] = {}
+    for gkey, platform_code, count, first_date, last_date in (
+        db.query(
+            group_key.label("group_key"),
+            Platform.code,
+            func.count(func.distinct(model.event_id)),
+            func.min(Event.event_date),
+            func.max(Event.event_date),
+        )
         .select_from(model)
         .join(Event, model.event_id == Event.id)
         .join(Platform, Event.platform_id == Platform.id)
@@ -1088,7 +1103,12 @@ def _active_participant_rows(
         .group_by(group_key, Platform.code)
         .all()
     ):
-        platform_counts.setdefault(gkey, {})[str(platform_code)] = int(count)
+        code = str(platform_code)
+        platform_counts.setdefault(gkey, {})[code] = int(count)
+        if first_date is not None:
+            platform_first.setdefault(gkey, {})[code] = first_date
+        if last_date is not None:
+            platform_last.setdefault(gkey, {})[code] = last_date
 
     active = [row for row in local_rows if int(row.count) >= min_count]
     active.sort(key=lambda row: (-int(row.count), (row.name or "").lower()))
@@ -1141,6 +1161,14 @@ def _active_participant_rows(
                 # Сколько раз человек был здесь в каждой системе — по этим
                 # числам фильтр «Система» пересобирает список и места.
                 "platform_counts": platform_counts.get(row.group_key, {}),
+                "platform_first_dates": {
+                    code: value.isoformat()
+                    for code, value in platform_first.get(row.group_key, {}).items()
+                },
+                "platform_last_dates": {
+                    code: value.isoformat()
+                    for code, value in platform_last.get(row.group_key, {}).items()
+                },
             }
         )
     return rows, people_total

@@ -2565,6 +2565,8 @@ export type LocationActiveParticipant = {
   last_date: string | null;
   /** Участий здесь в разрезе систем — по ним работает фильтр «Система». */
   platform_counts?: Record<string, number>;
+  platform_first_dates?: Record<string, string>;
+  platform_last_dates?: Record<string, string>;
 };
 
 export type LocationParticipants = {

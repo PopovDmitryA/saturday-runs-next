@@ -152,7 +152,21 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
     let scoped = source;
     if (platform !== "all") {
       scoped = source
-        .map((row) => ({ ...row, count: row.platform_counts?.[platform] ?? 0 }))
+        .map((row) => ({
+          ...row,
+          count: row.platform_counts?.[platform] ?? 0,
+          // Стаж тоже по выбранной системе: у площадки, сменившей систему,
+          // общий «первый старт» приходится на прежнюю и к срезу отношения
+          // не имеет (Швейцария, 03.09.2026). Если разбивки в ответе нет
+          // вовсе — это старый payload из кэша, показываем общую дату, а не
+          // пустоту.
+          first_date: row.platform_first_dates
+            ? (row.platform_first_dates[platform] ?? null)
+            : row.first_date,
+          last_date: row.platform_last_dates
+            ? (row.platform_last_dates[platform] ?? null)
+            : row.last_date,
+        }))
         .filter((row) => row.count >= data.min_count)
         .sort((a, b) => b.count - a.count || (a.name ?? "").localeCompare(b.name ?? ""));
       // Место по-спортивному: равное число участий — равное место, следующий
