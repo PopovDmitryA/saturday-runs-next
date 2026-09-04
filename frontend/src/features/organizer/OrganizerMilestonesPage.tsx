@@ -215,7 +215,11 @@ function OrganizerMilestonesContent({ slug }: { slug: string }) {
                 onChange={setAbsenceWeeks}
                 options={ABSENCE_WEEK_OPTIONS.map((value) => ({
                   value,
-                  label: `${value} ${pluralizeRu(value, ["недели", "недель", "недель"])}`,
+                  // pluralizeRu САМА возвращает число вместе с формой
+                  // («13 недель»). Число перед ней давало «13 13 недель» на
+                  // экране (Дмитрий 04.09.2026). Формы тоже были сдвинуты:
+                  // именительный — «неделя», а не «недели».
+                  label: pluralizeRu(value, ["неделя", "недели", "недель"]),
                 }))}
               />
             </label>
