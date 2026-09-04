@@ -471,6 +471,25 @@ def consume_magic_link(db: Session, settings: Settings, raw_token: str) -> UUID:
     return user.id
 
 
+def purge_old_one_time_tokens(db: Session, *, retention_days: int) -> int:
+    """Снос отработавших одноразовых токенов входа.
+
+    consume_magic_link токен не удаляет, а помечает used_at, поэтому таблица
+    росла без границы. Сами строки после истечения срока бесполезны, а вот
+    вреда от них хватало: auth_one_time_tokens.user_id ссылается на users без
+    ON DELETE, и накопленная строка не давала удалить профиль при объединении
+    аккаунтов (см. delete_user_with_dependencies).
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    deleted = (
+        db.query(AuthOneTimeToken)
+        .filter(AuthOneTimeToken.expires_at < cutoff)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return int(deleted)
+
+
 def create_user_session(settings: Settings, user_id: UUID) -> str:
     return create_session(settings, str(user_id))
 

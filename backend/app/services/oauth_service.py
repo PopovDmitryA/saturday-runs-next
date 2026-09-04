@@ -173,7 +173,7 @@ def handle_oauth_callback(
                 orphan_identities = list_user_identities(db, merged.id)
                 if len(orphan_identities) == 1 and orphan_identities[0].id == existing.id:
                     upsert_oauth_identity(db, survivor, provider, profile)
-                    delete_user_with_dependencies(db, merged, reassign_sync_jobs_to=survivor.id)
+                    delete_user_with_dependencies(db, merged, reassign_to=survivor.id)
                     survivor.last_login_at = datetime.now(timezone.utc)
                     db.commit()
                     return survivor.id, None, "settings"
@@ -272,8 +272,15 @@ def get_merge_preview_by_token(db: Session, token: str, *, survivor_user_id: UUI
     return preview
 
 
-def confirm_merge(db: Session, token: str, *, survivor_user_id: UUID | None = None) -> UUID:
-    raw = get_redis_client().getdel(_merge_token_key(token))
+def confirm_merge(
+    db: Session,
+    token: str,
+    *,
+    survivor_user_id: UUID | None = None,
+    strategy: str = "union",
+    conflict_choices: dict[str, str] | None = None,
+) -> UUID:
+    raw = get_redis_client().get(_merge_token_key(token))
     if raw is None:
         raise AuthError("Merge token expired or invalid.", 404)
     payload = json.loads(raw)
@@ -282,7 +289,17 @@ def confirm_merge(db: Session, token: str, *, survivor_user_id: UUID | None = No
     if survivor_user_id is not None and survivor_id != survivor_user_id:
         raise AuthError("Merge token does not belong to current user.", 403)
     try:
-        survivor = merge_users(db, survivor_id, merged_id)
+        survivor = merge_users(
+            db,
+            survivor_id,
+            merged_id,
+            strategy=strategy,
+            conflict_choices=conflict_choices,
+        )
     except AccountMergeError as exc:
+        # Токен намеренно не гасим: отказ вроде «выберите, какую учётку
+        # оставить» — это вопрос к человеку, а не конец сценария. Иначе ему
+        # пришлось бы заново проходить вход вторым способом.
         raise AuthError(exc.message, exc.status_code) from exc
+    get_redis_client().delete(_merge_token_key(token))
     return survivor.id

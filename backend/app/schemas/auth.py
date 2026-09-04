@@ -1,7 +1,11 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
+
+MergeStrategy = Literal["union", "survivor_only"]
+MergeConflictChoice = Literal["survivor", "merged"]
 
 
 class LoginRequestResponse(BaseModel):
@@ -184,18 +188,36 @@ class MessageResponse(BaseModel):
 class PlatformLinkPreviewItem(BaseModel):
     platform_code: str
     external_user_id: str
+    display_name: str | None = None
+
+
+class MergeConflictItem(BaseModel):
+    """Система привязана в обоих профилях: одна учётка системы на аккаунт,
+    поэтому объединить эти две привязки нельзя — человек выбирает одну."""
+
+    platform_code: str
+    survivor: PlatformLinkPreviewItem
+    merged: PlatformLinkPreviewItem
 
 
 class MergePreviewResponse(BaseModel):
     merge_token: str
     merged_user_id: str
-    platform_links_to_reset: list[PlatformLinkPreviewItem]
-    conflicting_platform_codes: list[str]
+    survivor_links: list[PlatformLinkPreviewItem]
+    merged_links: list[PlatformLinkPreviewItem]
+    conflicts: list[MergeConflictItem]
+    requires_choice: bool
+    default_strategy: MergeStrategy
     warning: str
 
 
 class MergeConfirmRequest(BaseModel):
     merge_token: str
+    #: union — привязки обоих профилей; survivor_only — только текущего.
+    #: Третьего варианта нет: забрать чужие привязки, выбросив свои, нельзя.
+    strategy: MergeStrategy = "union"
+    #: {код системы: survivor|merged} — ответы по конфликтным системам.
+    conflict_choices: dict[str, MergeConflictChoice] = Field(default_factory=dict)
 
 
 class OAuthFinishRequest(BaseModel):

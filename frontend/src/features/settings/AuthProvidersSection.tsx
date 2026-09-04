@@ -12,7 +12,10 @@ import {
   telegramStartUrl,
   unlinkAuthProvider,
   type AuthIdentity,
+  type MergeConflictChoice,
+  type MergeLinkPreview,
   type MergePreview,
+  type MergeStrategy,
 } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
 import { TelegramBotLogin } from "../auth/TelegramBotLogin";
@@ -35,6 +38,11 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
   const [mergePreview, setMergePreview] = useState<MergePreview | null>(null);
   const [mergeLoading, setMergeLoading] = useState(false);
   const [mergeConfirmLoading, setMergeConfirmLoading] = useState(false);
+  // Развилка объединения: забрать привязки обоих профилей или оставить только
+  // свои. Третьего варианта нет — забрать чужие, выбросив свои, нельзя.
+  const [mergeStrategy, setMergeStrategy] = useState<MergeStrategy>("union");
+  // Ответы по системам, привязанным с обеих сторон: одна учётка на аккаунт.
+  const [conflictChoices, setConflictChoices] = useState<Record<string, MergeConflictChoice>>({});
   // Почту нельзя привязать редиректом к провайдеру: владение ящиком
   // подтверждается кодом, поэтому у неё свои два шага прямо в карточке.
   const [emailStep, setEmailStep] = useState<"idle" | "code">("idle");
@@ -88,13 +96,46 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
     };
   }, []);
 
+  const applyPreview = useCallback((preview: MergePreview) => {
+    setMergePreview(preview);
+    setMergeStrategy(preview.default_strategy);
+    // Ни один конфликт заранее не решён: выбор профиля — сознательное действие
+    // человека, предвыбранная галочка увела бы чужую учётку молча.
+    setConflictChoices({});
+  }, []);
+
+  // Пока по каждой спорной системе не выбран профиль, объединять нечего:
+  // бэкенд такой запрос отклонит, и незачем доводить человека до ошибки.
+  const mergeHasUnresolvedConflicts = useMemo(() => {
+    if (!mergePreview || mergeStrategy !== "union") {
+      return false;
+    }
+    return mergePreview.conflicts.some((item) => !conflictChoices[item.platform_code]);
+  }, [mergePreview, mergeStrategy, conflictChoices]);
+
+  // Спорные системы в список «переедет сюда» не попадают: их судьба решается
+  // отдельным выбором ниже, и показывать там чужой профиль как решённый —
+  // значит противоречить самому себе.
+  const mergedLinksWithoutConflicts = useMemo(() => {
+    if (!mergePreview) {
+      return [];
+    }
+    const disputed = new Set(mergePreview.conflicts.map((item) => item.platform_code));
+    return mergePreview.merged_links.filter((item) => !disputed.has(item.platform_code));
+  }, [mergePreview]);
+
+  const closeMerge = useCallback(() => {
+    setMergePreview(null);
+    setConflictChoices({});
+  }, []);
+
   useEffect(() => {
     if (!initialMergeToken) {
       return;
     }
     setMergeLoading(true);
     void getMergePreview(initialMergeToken)
-      .then(setMergePreview)
+      .then(applyPreview)
       .catch((err) => setError(err instanceof Error ? err.message : "Не удалось загрузить объединение"))
       .finally(() => setMergeLoading(false));
   }, [initialMergeToken]);
@@ -135,7 +176,7 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
         // Ящиком владеет другой профиль — показываем то же окно объединения,
         // что и при привязке VK или Яндекса.
         setMergeLoading(true);
-        setMergePreview(await getMergePreview(result.merge_token));
+        applyPreview(await getMergePreview(result.merge_token));
         setMergeLoading(false);
       }
       setEmailStep("idle");
@@ -167,8 +208,11 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
     setMergeConfirmLoading(true);
     setError(null);
     try {
-      await confirmAccountMerge(mergePreview.merge_token);
-      setMergePreview(null);
+      await confirmAccountMerge(mergePreview.merge_token, {
+        strategy: mergeStrategy,
+        conflictChoices: mergeStrategy === "union" ? conflictChoices : {},
+      });
+      closeMerge();
       const url = new URL(window.location.href);
       url.searchParams.delete("merge_token");
       window.history.replaceState({}, "", url.toString());
@@ -185,8 +229,9 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
       <h2 className="section-title">Способы входа</h2>
       <p className="muted settings-lead">
         Можно войти через VK, Яндекс или по коду на почту и привязать все способы к одному профилю —
-        тогда любой из них приведёт в этот аккаунт. При объединении аккаунтов привязки
-        5 вёрст / S95 / parkrun у поглощаемого профиля будут сброшены.
+        тогда любой из них приведёт в этот аккаунт. Если способ входа уже занят вторым
+        аккаунтом, профили можно объединить: учётки 5 вёрст / S95 / parkrun при этом либо
+        соберутся вместе, либо останутся только у текущего профиля — выбор спросим.
       </p>
 
       {loading && <p className="muted">Загрузка…</p>}
@@ -251,7 +296,7 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
             setTelegramBotFlow(false);
             setMergeLoading(true);
             void getMergePreview(token)
-              .then(setMergePreview)
+              .then(applyPreview)
               .catch((err) =>
                 setError(err instanceof Error ? err.message : "Не удалось загрузить объединение"),
               )
@@ -354,28 +399,129 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
         confirmLabel="Объединить"
         variant="danger"
         confirmLoading={mergeConfirmLoading}
-        onCancel={() => setMergePreview(null)}
+        confirmDisabled={mergeHasUnresolvedConflicts}
+        onCancel={closeMerge}
         onConfirm={() => void handleConfirmMerge()}
       >
         {mergeLoading && <p className="muted">Загрузка…</p>}
-        {mergePreview && (
+        {mergePreview && !mergePreview.requires_choice && (
           <>
-            <p>{mergePreview.warning}</p>
-            {mergePreview.platform_links_to_reset.length > 0 ? (
-              <ul className="auth-merge-links-list">
-                {mergePreview.platform_links_to_reset.map((item) => (
-                  <li key={`${item.platform_code}-${item.external_user_id}`}>
-                    <PlatformBadge code={item.platform_code} />{" "}
-                    {platformCodeLabel(item.platform_code)} — {item.external_user_id}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="muted">У поглощаемого профиля нет привязанных учёток платформ.</p>
-            )}
+            <p>У присоединяемого профиля нет привязанных учёток — объединяем без потерь.</p>
+            <p className="muted">{mergePreview.warning}</p>
           </>
+        )}
+        {mergePreview && mergePreview.requires_choice && (
+          <div className="auth-merge-fork">
+            <p>Что сделать с привязанными учётками беговых систем?</p>
+
+            <label className="auth-merge-option">
+              <input
+                type="radio"
+                name="merge-strategy"
+                checked={mergeStrategy === "union"}
+                onChange={() => setMergeStrategy("union")}
+              />
+              <span>
+                <strong>Объединить</strong>
+                <span className="muted"> — учётки обоих профилей останутся у вас</span>
+                <MergeLinkList
+                  caption="Переедет сюда:"
+                  items={mergedLinksWithoutConflicts}
+                  empty="спорные системы — ниже"
+                />
+              </span>
+            </label>
+
+            <label className="auth-merge-option">
+              <input
+                type="radio"
+                name="merge-strategy"
+                checked={mergeStrategy === "survivor_only"}
+                onChange={() => setMergeStrategy("survivor_only")}
+              />
+              <span>
+                <strong>Оставить только текущие</strong>
+                <span className="muted">
+                  {" "}
+                  — учётки присоединяемого профиля будут отвязаны
+                </span>
+                <MergeLinkList
+                  caption="Останется только это:"
+                  items={mergePreview.survivor_links}
+                  empty="сейчас не привязано ничего"
+                />
+              </span>
+            </label>
+
+            {mergeStrategy === "union" && mergePreview.conflicts.length > 0 && (
+              <div className="auth-merge-conflicts">
+                <p>
+                  Эти системы привязаны в обоих профилях. Учётка системы может быть только
+                  одна — выберите, какую оставить.
+                </p>
+                {mergePreview.conflicts.map((conflict) => (
+                  <fieldset key={conflict.platform_code} className="auth-merge-conflict">
+                    <legend>
+                      <PlatformBadge code={conflict.platform_code} />{" "}
+                      {platformCodeLabel(conflict.platform_code)}
+                    </legend>
+                    {(
+                      [
+                        ["survivor", conflict.survivor, "текущий профиль"],
+                        ["merged", conflict.merged, "присоединяемый профиль"],
+                      ] as Array<[MergeConflictChoice, MergeLinkPreview, string]>
+                    ).map(([side, item, hint]) => (
+                      <label key={side} className="auth-merge-option">
+                        <input
+                          type="radio"
+                          name={`merge-conflict-${conflict.platform_code}`}
+                          checked={conflictChoices[conflict.platform_code] === side}
+                          onChange={() =>
+                            setConflictChoices((prev) => ({
+                              ...prev,
+                              [conflict.platform_code]: side,
+                            }))
+                          }
+                        />
+                        <span>
+                          {item.display_name ?? item.external_user_id}
+                          <span className="muted"> — {hint}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </fieldset>
+                ))}
+              </div>
+            )}
+
+            <p className="muted">{mergePreview.warning}</p>
+          </div>
         )}
       </ConfirmModal>
     </section>
+  );
+}
+
+function MergeLinkList({
+  caption,
+  items,
+  empty = "нет привязанных учёток",
+}: {
+  caption: string;
+  items: MergeLinkPreview[];
+  empty?: string;
+}) {
+  if (items.length === 0) {
+    return <span className="muted auth-merge-links-empty"> ({empty})</span>;
+  }
+  return (
+    <ul className="auth-merge-links-list" aria-label={caption}>
+      {items.map((item) => (
+        <li key={`${item.platform_code}-${item.external_user_id}`}>
+          <PlatformBadge code={item.platform_code} /> {platformCodeLabel(item.platform_code)} —{" "}
+          {item.display_name ?? item.external_user_id}
+        </li>
+      ))}
+    </ul>
   );
 }

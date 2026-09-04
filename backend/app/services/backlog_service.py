@@ -348,7 +348,12 @@ def update_card_admin(
     return _card_to_admin_response(card, comment_count=comment_count)
 
 
-def _recompute_vote_counts(db: Session, card: BacklogCard) -> None:
+def recompute_vote_counts(db: Session, card: BacklogCard) -> None:
+    """Счётчики карточки пересобираются из строк голосов.
+
+    Публичная: этим же пользуется объединение аккаунтов, когда снимает
+    задвоенный голос (оба профиля голосовали за одну карточку).
+    """
     upvotes = db.execute(
         select(func.count()).select_from(BacklogVote).where(BacklogVote.card_id == card.id, BacklogVote.value == 1)
     ).scalar_one()
@@ -378,7 +383,7 @@ def vote_card(db: Session, card_id: UUID, *, user_id: UUID, value: int) -> Backl
         db.add(BacklogVote(card_id=card_id, user_id=user_id, value=value))
 
     db.flush()
-    _recompute_vote_counts(db, card)
+    recompute_vote_counts(db, card)
     db.commit()
     card = _get_card(db, card_id, for_update_author=True)
 

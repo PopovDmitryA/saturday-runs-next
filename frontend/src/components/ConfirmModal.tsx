@@ -8,6 +8,8 @@ type ConfirmModalProps = {
   confirmLabel?: string;
   cancelLabel?: string;
   confirmLoading?: boolean;
+  // Подтверждение недоступно, пока в теле модалки не сделан обязательный выбор.
+  confirmDisabled?: boolean;
   variant?: "default" | "danger";
   onConfirm: () => void;
   onCancel: () => void;
@@ -20,6 +22,7 @@ export function ConfirmModal({
   confirmLabel = "Подтвердить",
   cancelLabel = "Отмена",
   confirmLoading = false,
+  confirmDisabled = false,
   variant = "default",
   onConfirm,
   onCancel,
@@ -82,7 +85,7 @@ export function ConfirmModal({
             type="button"
             className={`btn modal-btn ${variant === "danger" ? "btn-danger-confirm" : "primary"}`}
             onClick={onConfirm}
-            disabled={confirmLoading}
+            disabled={confirmLoading || confirmDisabled}
           >
             {confirmLoading ? "Подождите…" : confirmLabel}
           </button>

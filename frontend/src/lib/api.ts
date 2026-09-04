@@ -51,11 +51,29 @@ export type AuthIdentity = {
   label: string;
 };
 
+export type MergeStrategy = "union" | "survivor_only";
+export type MergeConflictChoice = "survivor" | "merged";
+
+export type MergeLinkPreview = {
+  platform_code: string;
+  external_user_id: string;
+  display_name: string | null;
+};
+
 export type MergePreview = {
   merge_token: string;
   merged_user_id: string;
-  platform_links_to_reset: Array<{ platform_code: string; external_user_id: string }>;
-  conflicting_platform_codes: string[];
+  survivor_links: MergeLinkPreview[];
+  merged_links: MergeLinkPreview[];
+  // Системы, привязанные в обоих профилях: одна учётка системы на аккаунт,
+  // поэтому человеку придётся выбрать один профиль из двух.
+  conflicts: Array<{
+    platform_code: string;
+    survivor: MergeLinkPreview;
+    merged: MergeLinkPreview;
+  }>;
+  requires_choice: boolean;
+  default_strategy: MergeStrategy;
   warning: string;
 };
 
@@ -742,10 +760,20 @@ export function getMergePreview(mergeToken: string) {
   return apiFetch<MergePreview>(`/auth/merge/preview?${params.toString()}`);
 }
 
-export function confirmAccountMerge(mergeToken: string) {
+export function confirmAccountMerge(
+  mergeToken: string,
+  options: {
+    strategy: MergeStrategy;
+    conflictChoices?: Record<string, MergeConflictChoice>;
+  },
+) {
   return apiFetch<{ message: string }>("/auth/merge/confirm", {
     method: "POST",
-    body: JSON.stringify({ merge_token: mergeToken }),
+    body: JSON.stringify({
+      merge_token: mergeToken,
+      strategy: options.strategy,
+      conflict_choices: options.conflictChoices ?? {},
+    }),
   });
 }
 

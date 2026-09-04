@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.auth.providers.base import OAuthProfile
-from app.models import AuthIdentity, AuthProvider, Platform, PlatformLink, User
+from app.models import AuthIdentity, AuthProvider, Participant, Platform, PlatformLink, User
 
 PROVIDER_LABELS = {
     AuthProvider.telegram: "Telegram",
@@ -184,15 +184,22 @@ def unlink_provider(db: Session, user: User, provider: AuthProvider) -> None:
     db.delete(identity)
 
 
-def list_user_platform_links(db: Session, user_id: UUID) -> list[dict[str, str]]:
+def list_user_platform_links(db: Session, user_id: UUID) -> list[dict[str, str | None]]:
+    """Привязанные учётки беговых систем. display_name — имя из профиля системы:
+    без него выбор «чей профиль оставить» при объединении показывал бы человеку
+    два голых внешних идентификатора."""
     rows = (
-        db.query(Platform.code, PlatformLink.external_user_id)
+        db.query(Platform.code, PlatformLink.external_user_id, Participant.display_name)
         .join(PlatformLink, PlatformLink.platform_id == Platform.id)
+        .outerjoin(Participant, Participant.id == PlatformLink.participant_id)
         .filter(PlatformLink.user_id == user_id)
         .order_by(Platform.code.asc())
         .all()
     )
-    return [{"platform_code": code, "external_user_id": external_user_id} for code, external_user_id in rows]
+    return [
+        {"platform_code": code, "external_user_id": external_user_id, "display_name": display_name}
+        for code, external_user_id, display_name in rows
+    ]
 
 
 def _telegram_display_name(
@@ -209,18 +216,46 @@ def _telegram_display_name(
     return None
 
 
+#: Привязки обоих аккаунтов остаются на выжившем.
+MERGE_STRATEGY_UNION = "union"
+#: Остаются только привязки того аккаунта, под которым человек залогинен.
+MERGE_STRATEGY_SURVIVOR_ONLY = "survivor_only"
+MERGE_STRATEGIES = (MERGE_STRATEGY_UNION, MERGE_STRATEGY_SURVIVOR_ONLY)
+
+#: Чей профиль оставить по системе, привязанной в обоих аккаунтах.
+CONFLICT_KEEP_SURVIVOR = "survivor"
+CONFLICT_KEEP_MERGED = "merged"
+
+
 def merge_preview_payload(db: Session, survivor: User, merged: User) -> dict[str, object]:
+    """Что человек увидит до объединения.
+
+    Развилка возникает, только когда у присоединяемого аккаунта есть привязки:
+    иначе объединять нечего и вопрос был бы шумом. Отдельно считаем конфликты —
+    системы, привязанные с обеих сторон: одна учётка системы на аккаунт,
+    поэтому там придётся выбрать один профиль из двух.
+    """
     merged_links = list_user_platform_links(db, merged.id)
-    survivor_links = {item["platform_code"] for item in list_user_platform_links(db, survivor.id)}
-    conflicting = [item for item in merged_links if item["platform_code"] in survivor_links]
+    survivor_links = list_user_platform_links(db, survivor.id)
+    survivor_by_code = {item["platform_code"]: item for item in survivor_links}
+
+    conflicts = []
+    for item in merged_links:
+        rival = survivor_by_code.get(item["platform_code"])
+        if rival is not None:
+            conflicts.append({"platform_code": item["platform_code"], "survivor": rival, "merged": item})
+
     return {
         "merged_user_id": str(merged.id),
-        "platform_links_to_reset": merged_links,
-        "conflicting_platform_codes": [item["platform_code"] for item in conflicting],
+        "survivor_links": survivor_links,
+        "merged_links": merged_links,
+        "conflicts": conflicts,
+        # Нечего переносить — нечего и спрашивать: объединяем молча.
+        "requires_choice": bool(merged_links),
+        "default_strategy": MERGE_STRATEGY_UNION,
         "warning": (
-            "К выбранному аккаунту привязаны профили 5 вёрст / S95 / parkrun. "
-            "При объединении они будут отвязаны от поглощаемого профиля. "
-            "Данные в общей базе сохранятся — их можно привязать заново."
+            "Способы входа обоих профилей останутся у вас — войти можно будет любым. "
+            "Отвязанные учётки систем не пропадают из общей базы, их можно привязать заново."
         ),
     }
 

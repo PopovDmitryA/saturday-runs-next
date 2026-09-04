@@ -79,7 +79,13 @@ def _detach_sync_job_references(db: Session, link_id: UUID) -> None:
     )
 
 
-def unlink_user_profile(db: Session, user: User, platform_code: str) -> dict[str, object]:
+def unlink_user_profile(
+    db: Session,
+    user: User,
+    platform_code: str,
+    *,
+    commit: bool = True,
+) -> dict[str, object]:
     """
     Отвязка профиля платформы от личного кабинета.
 
@@ -87,6 +93,10 @@ def unlink_user_profile(db: Session, user: User, platform_code: str) -> dict[str
     - Participant, events, run_results остаются в глобальном ядре данных.
     - Активные sync_jobs по этой связи отменяются; ссылки в истории jobs обнуляются.
     - Пересчитывается dashboard_cache пользователя.
+
+    commit=False нужен объединению аккаунтов: там отвязка — лишь один шаг
+    длинной операции, и собственный коммит посреди неё фиксировал бы отвязку
+    даже тогда, когда всё остальное откатилось.
     """
     ensure_adapters_registered()
     _get_active_platform(db, platform_code)
@@ -114,7 +124,10 @@ def unlink_user_profile(db: Session, user: User, platform_code: str) -> dict[str
     # Отвязали профиль — доступ мог пропасть; кэш обязан это увидеть сразу.
     invalidate_organizer_locations_cache(user.id)
     recompute_dashboard_cache(db, user.id)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
 
     return {
         "platform_code": platform_code,

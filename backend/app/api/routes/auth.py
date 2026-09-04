@@ -823,7 +823,13 @@ def merge_confirm(
     request: Request,
 ) -> MessageResponse:
     try:
-        survivor_id = confirm_merge(db, body.merge_token, survivor_user_id=user.id)
+        survivor_id = confirm_merge(
+            db,
+            body.merge_token,
+            survivor_user_id=user.id,
+            strategy=body.strategy,
+            conflict_choices=dict(body.conflict_choices),
+        )
     except AuthError as exc:
         raise _handle_auth_error(exc) from exc
     if survivor_id != user.id:

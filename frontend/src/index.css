@@ -460,6 +460,57 @@ body {
   gap: 0.35rem;
 }
 
+/* Развилка объединения профилей: два взаимоисключающих сценария и,
+   при совпадении систем, выбор учётки внутри первого из них.
+   Тело модалки центрировано, но список вариантов с радиокнопками читается
+   только по левому краю — иначе кнопка слева, а текст посередине. */
+.auth-merge-fork {
+  display: grid;
+  gap: 0.9rem;
+  text-align: left;
+}
+
+.auth-merge-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  cursor: pointer;
+}
+
+.auth-merge-option input {
+  margin-top: 0.25rem;
+  flex: 0 0 auto;
+}
+
+.auth-merge-option .auth-merge-links-list {
+  margin-top: 0.4rem;
+}
+
+.auth-merge-links-empty {
+  font-size: 0.9rem;
+}
+
+.auth-merge-conflicts {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+}
+
+.auth-merge-conflict {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.auth-merge-conflict legend {
+  padding: 0;
+  font-weight: 600;
+}
+
 .demo-shell-actions {
   display: flex;
   align-items: center;
