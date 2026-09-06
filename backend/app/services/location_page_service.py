@@ -47,6 +47,7 @@ from app.services.location_catalog_service import (
     normalize_platform_code,
     resolve_location_display_name,
 )
+from app.services.newcomer_counts import debutants_sum, location_guests_sum
 from app.time_format import format_finish_time_display
 from app.volunteer_role_taxonomy import (
     CANONICAL_ROLE_LABELS,
@@ -1503,9 +1504,9 @@ def _last_event_stats(
             func.min(case((time_ok & (gender_expr == "male"), RunResult.finish_time_sec))).label("best_male"),
             func.min(case((time_ok & (gender_expr == "female"), RunResult.finish_time_sec))).label("best_female"),
             # Те же метрики, что в журнале протоколов: дебютанты платформы,
-            # первые визиты на эту локацию, личные рекорды.
-            func.sum(case((RunResult.is_first_run.is_(True), 1), else_=0)).label("debutants"),
-            func.sum(case((RunResult.is_first_run_at_location.is_(True), 1), else_=0)).label("first_here"),
+            # гости площадки (впервые здесь, но в системе не впервые), ЛР.
+            debutants_sum().label("debutants"),
+            location_guests_sum().label("first_here"),
             func.sum(case((RunResult.is_pr.is_(True), 1), else_=0)).label("prs"),
             # Разбивка по полу: локации пишут её в постах «в цифрах»
             # («57 мужчин, 33 девушки, 4 неизвестных»).
@@ -2410,8 +2411,8 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
                 func.min(case((time_ok & (gender_expr == "male"), RunResult.finish_time_sec))).label("best_male"),
                 func.min(case((time_ok & (gender_expr == "female"), RunResult.finish_time_sec))).label("best_female"),
                 func.avg(case((time_ok, RunResult.finish_time_sec))).label("avg_time"),
-                func.sum(case((RunResult.is_first_run.is_(True), 1), else_=0)).label("debutants"),
-                func.sum(case((RunResult.is_first_run_at_location.is_(True), 1), else_=0)).label("first_here"),
+                debutants_sum().label("debutants"),
+                location_guests_sum().label("first_here"),
                 func.sum(case((RunResult.is_pr.is_(True), 1), else_=0)).label("prs"),
             )
             .join(Event, RunResult.event_id == Event.id)

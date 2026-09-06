@@ -30,6 +30,12 @@ export function CheckboxListFilter({
 
   const allValues = useMemo(() => options.map((option) => option.value), [options]);
   const allSelected = selected.size === allValues.length;
+  // Поиск сузил список — значит, человек ищет «показать только это». Само по
+  // себе сужение ничего не выбирает: по умолчанию отмечено ВСЁ, и найденная
+  // строка уже стоит с галочкой — нажимать в ней нечего. Отсюда и берётся
+  // «не понял, как применить фильтр»: пришлось бы сначала «Снять», а потом
+  // отметить найденное заново.
+  const searching = filteredOptions.length > 0 && filteredOptions.length < options.length;
 
   const toggleValue = (value: string, checked: boolean) => {
     const next = new Set(selected);
@@ -43,6 +49,8 @@ export function CheckboxListFilter({
 
   const selectAll = () => onSelectedChange(new Set(allValues));
   const clearAll = () => onSelectedChange(new Set());
+  const selectOnlyFound = () =>
+    onSelectedChange(new Set(filteredOptions.map((option) => option.value)));
 
   return (
     <div className="checkbox-filter">
@@ -62,6 +70,11 @@ export function CheckboxListFilter({
         <button type="button" className="filter-popover-link" onClick={clearAll}>
           Снять
         </button>
+        {searching && (
+          <button type="button" className="filter-popover-link" onClick={selectOnlyFound}>
+            Только найденное
+          </button>
+        )}
       </div>
       <ul className="checkbox-filter-list">
         {filteredOptions.length === 0 ? (

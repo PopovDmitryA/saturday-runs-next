@@ -91,6 +91,7 @@ def _result(
     gender_position: int | None = None,
     is_pr: bool = False,
     is_first_run: bool = False,
+    is_first_run_at_location: bool = False,
     club_name: str | None = None,
 ) -> None:
     db.add(
@@ -104,6 +105,7 @@ def _result(
             age_category=age_category,
             is_pr=is_pr,
             is_first_run=is_first_run,
+            is_first_run_at_location=is_first_run_at_location,
             club_name=club_name,
             status="finished",
         )
@@ -410,3 +412,47 @@ def test_age_grade_parsing() -> None:
     assert _age_grade("М35-39") is None
     assert _age_grade(None) is None
     assert _age_grade("") is None
+
+
+def test_newcomers_split_debutants_and_location_guests(db_session: Session) -> None:
+    """Дебютант системы не должен попадать ещё и в гостей площадки.
+
+    У parkrun/RunPark/S95 флаги проставляет пересчёт по хронологии, и у первого
+    в жизни старта верны оба: он же первый и на этой площадке. Пока сводка
+    складывала «дебютанты + впервые здесь», такой человек считался дважды, и
+    «новичков» на старте выходило больше, чем финишёров-новичков.
+    """
+    parkrun = _platform(db_session, "parkrun", "parkrun")
+    location = _location(db_session, parkrun, "newcomers", "Мытищи Центральный парк")
+    event = _event(db_session, parkrun, location, date(2026, 8, 15), number=42)
+
+    debutant = _participant(db_session, parkrun, "newcomers-deb", "Дебютант Системы")
+    guest = _participant(db_session, parkrun, "newcomers-guest", "Гость Площадки")
+    regular = _participant(db_session, parkrun, "newcomers-reg", "Постоянный Участник")
+
+    # Первый старт в жизни: пересчёт ставит ОБА флага.
+    _result(
+        db_session,
+        event,
+        debutant,
+        position=1,
+        finish_time_sec=1200,
+        is_first_run=True,
+        is_first_run_at_location=True,
+    )
+    # Бегал в системе, сюда приехал впервые.
+    _result(
+        db_session,
+        event,
+        guest,
+        position=2,
+        finish_time_sec=1300,
+        is_first_run_at_location=True,
+    )
+    _result(db_session, event, regular, position=3, finish_time_sec=1400)
+
+    summary = _build(db_session, "proto-newcomers", "parkrun", date(2026, 8, 15))["summary"]
+    assert summary["debutants"] == 1
+    assert summary["first_at_location"] == 1
+    # Новичков на старте ровно двое, а не трое.
+    assert summary["debutants"] + summary["first_at_location"] == 2

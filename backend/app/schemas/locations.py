@@ -152,7 +152,8 @@ class LocationLastEventResponse(BaseModel):
     best_male_time_display: str | None = None
     best_female_time_sec: int | None = None
     best_female_time_display: str | None = None
-    # Те же метрики, что в журнале протоколов.
+    # Те же метрики, что в журнале протоколов. Дебютанты системы и гости
+    # площадки не пересекаются: см. app/services/newcomer_counts.py.
     debutants: int | None = None
     first_at_location: int | None = None
     prs: int | None = None
@@ -307,6 +308,9 @@ class LocationEventRowResponse(BaseModel):
     best_female_runner_serial_id: int | None = None
     avg_time_sec: int | None = None
     avg_time_display: str | None = None
+    # Дебютанты системы (первый старт вообще) и гости площадки (в системе не
+    # впервые, здесь впервые) — непересекающиеся множества, их можно и
+    # складывать, и показывать порознь. См. app/services/newcomer_counts.py.
     debutants: int | None = None
     first_at_location: int | None = None
     prs: int | None = None

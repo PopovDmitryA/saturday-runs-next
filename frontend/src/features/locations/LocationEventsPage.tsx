@@ -28,16 +28,18 @@ import {
 import { PlatformFilter } from "../../components/filters/PlatformFilter";
 import { LocationAttendanceJournal } from "../journal/LocationAttendanceJournal";
 
-type SortKey = "date" | "finishers" | "volunteers" | "best_male" | "best_female" | "avg" | "newcomers" | "prs";
+type SortKey =
+  | "date"
+  | "finishers"
+  | "volunteers"
+  | "best_male"
+  | "best_female"
+  | "avg"
+  | "debutants"
+  | "guests"
+  | "prs";
 
 type SortState = { key: SortKey; asc: boolean };
-
-function rowNewcomers(row: LocationEventRow): number | null {
-  if (row.debutants === null && row.first_at_location === null) {
-    return null;
-  }
-  return (row.debutants ?? 0) + (row.first_at_location ?? 0);
-}
 
 function sortValue(row: LocationEventRow, key: SortKey): number | string | null {
   switch (key) {
@@ -53,8 +55,10 @@ function sortValue(row: LocationEventRow, key: SortKey): number | string | null 
       return row.best_female_time_sec;
     case "avg":
       return row.avg_time_sec;
-    case "newcomers":
-      return rowNewcomers(row);
+    case "debutants":
+      return row.debutants;
+    case "guests":
+      return row.first_at_location;
     case "prs":
       return row.prs;
   }
@@ -70,7 +74,8 @@ const EVENTS_COLUMNS: AdaptiveColumn[] = [
   { key: "best_male", width: 184 },
   { key: "best_female", width: 184 },
   { key: "volunteers", width: 148 },
-  { key: "newcomers", width: 148 },
+  { key: "debutants", width: 148 },
+  { key: "guests", width: 148 },
   { key: "avg", width: 184 },
   { key: "prs", width: 184 },
 ];
@@ -326,7 +331,8 @@ function LocationEventsContent({ slug }: { slug: string }) {
               {show("platform") && <col className="col-platform" />}
               <col className="col-compact" />
               {show("volunteers") && <col className="col-compact" />}
-              {show("newcomers") && <col className="col-compact" />}
+              {show("debutants") && <col className="col-compact" />}
+              {show("guests") && <col className="col-compact" />}
               {show("best_male") && <col className="col-time" />}
               {show("best_female") && <col className="col-time" />}
               {show("avg") && <col className="col-time" />}
@@ -357,11 +363,21 @@ function LocationEventsContent({ slug }: { slug: string }) {
                     {...sortProps("volunteers")}
                   />
                 )}
-                {show("newcomers") && (
+                {/* Новички разведены на две колонки: дебютанты показывают,
+                    сколько людей площадка привела в движение с нуля, гости —
+                    насколько хорошо она зазывает уже бегающих. */}
+                {show("debutants") && (
                   <ColumnHeader
-                    label="Новичков"
-                    hint="Новички: дебютанты движения + впервые на этой локации"
-                    {...sortProps("newcomers")}
+                    label="Дебютантов"
+                    hint="Первый старт в системе: этих людей площадка привела в движение с нуля"
+                    {...sortProps("debutants")}
+                  />
+                )}
+                {show("guests") && (
+                  <ColumnHeader
+                    label="Гостей"
+                    hint="Уже бегали в системе, но на эту площадку приехали впервые"
+                    {...sortProps("guests")}
                   />
                 )}
                 {show("best_male") && (
@@ -443,7 +459,8 @@ function LocationEventsContent({ slug }: { slug: string }) {
                     )}
                     <td className="td-compact">{row.finishers ?? "—"}</td>
                     {show("volunteers") && <td className="td-compact">{row.volunteers ?? "—"}</td>}
-                    {show("newcomers") && <td className="td-compact">{rowNewcomers(row) ?? "—"}</td>}
+                    {show("debutants") && <td className="td-compact">{row.debutants ?? "—"}</td>}
+                    {show("guests") && <td className="td-compact">{row.first_at_location ?? "—"}</td>}
                     {show("best_male") && (
                       <td className="td-time">
                         <span className="loc-events-number">

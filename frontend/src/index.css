@@ -2614,6 +2614,7 @@ input[type="search"]:focus,
 
 .checkbox-filter-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin-bottom: 0.4rem;
 }
@@ -4968,7 +4969,12 @@ button.badge-platform-btn:hover {
   flex: 1 1 auto;
   overflow: auto;
   text-align: left;
-  padding-right: 0.15rem;
+  /* Отступ под полосу прокрутки. На macOS полоса рисуется ПОВЕРХ содержимого
+     (overlay-скроллбар), и при прежних 0.15rem она ложилась на правый край
+     полей: звёзды оценки, счётчик символов, «0 из 5» в фотоблоке. Ширина
+     полосы ~9px + зазор — берём 0.85rem. scrollbar-gutter здесь не помогает:
+     для overlay-полос он места не резервирует. */
+  padding-right: 0.85rem;
 }
 
 .modal-footer {

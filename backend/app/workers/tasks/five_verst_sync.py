@@ -243,6 +243,7 @@ def sync_location_rotation_task(*, force: bool = False) -> dict[str, object]:
     name = "5v location rotation"
     details = five_verst_rotation_details(
         summaries_limit=settings.five_verst_location_batch_summaries_limit,
+        slugs_per_run=settings.five_verst_location_rotation_slugs_per_run,
     )
 
     def _run() -> dict[str, object]:
@@ -250,28 +251,25 @@ def sync_location_rotation_task(*, force: bool = False) -> dict[str, object]:
         try:
             started_at = datetime.now(timezone.utc)
             result = sync_next_location_batch(db)
-            if result.sync is not None and result.sync.run_results_upserted > 0:
+            if result.run_results_upserted > 0:
                 db.commit()
                 _schedule_dashboard_warm(started_at)
             payload: dict[str, Any] = {
                 "location_slug": result.location_slug,
+                "location_slugs": result.location_slugs,
                 "rotation_index": result.rotation_index,
                 "locations_total": result.locations_total,
+                # Цифры сложены по всей пачке слагов, а не по первому из них.
+                "summaries_total": result.summaries_total,
+                "summaries_upserted": result.summaries_upserted,
+                "summaries_unchanged": result.summaries_unchanged,
+                "protocols_fetched": result.protocols_fetched,
+                "fetched_protocols": result.fetched_protocols,
+                "changed_protocols": result.changed_protocols,
+                "run_results_upserted": result.run_results_upserted,
+                "volunteer_results_upserted": result.volunteer_results_upserted,
                 "errors": result.errors,
             }
-            if result.sync is not None:
-                payload.update(
-                    {
-                        "summaries_total": result.sync.summaries_total,
-                        "summaries_upserted": result.sync.summaries_upserted,
-                        "summaries_unchanged": result.sync.summaries_unchanged,
-                        "protocols_fetched": result.sync.protocols_fetched,
-                        "fetched_protocols": result.sync.fetched_protocols,
-                        "changed_protocols": result.sync.changed_protocols,
-                        "run_results_upserted": result.sync.run_results_upserted,
-                        "volunteer_results_upserted": result.sync.volunteer_results_upserted,
-                    }
-                )
             return payload
         finally:
             db.close()

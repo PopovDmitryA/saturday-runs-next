@@ -2547,6 +2547,9 @@ export type LocationEventRow = {
   best_female_runner_serial_id: number | null;
   avg_time_sec: number | null;
   avg_time_display: string | null;
+  // Дебютанты системы и гости площадки не пересекаются: у дебютанта старт
+  // здесь тоже первый, но в first_at_location он не попадает (иначе сумма
+  // «новичков» считала бы его дважды).
   debutants: number | null;
   first_at_location: number | null;
   prs: number | null;

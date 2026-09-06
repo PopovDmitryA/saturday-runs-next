@@ -303,7 +303,12 @@ def _compute_location_protocol(
             "best_female_time_display": _best_display(results, GENDER_FEMALE),
             "best_female_runner_name": _best_name(results, GENDER_FEMALE),
             "debutants": sum(1 for row in results if row["is_first_run"]),
-            "first_at_location": sum(1 for row in results if row["is_first_run_at_location"]),
+            # Гости площадки, а не «все, у кого стоит флаг первого старта
+            # здесь»: у дебютанта системы верны оба флага, и сумма двух чисел
+            # считала бы его дважды (см. app/services/newcomer_counts.py).
+            "first_at_location": sum(
+                1 for row in results if row["is_first_run_at_location"] and not row["is_first_run"]
+            ),
             "prs": sum(1 for row in results if row["is_pr"]),
             "location_prs": sum(1 for row in results if row["is_location_pr"]),
             "clubs_count": len(club_counts),

@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.redis_client import get_redis_client
+from app.five_verst.errors import FiveVerstBanDetected
 from app.platform_adapters.five_verst import bulk_parser
-from app.sync.global_sync import LocationSyncOptions, LocationSyncResult, sync_location
+from app.sync.global_sync import LocationSyncOptions, sync_location
 
 logger = logging.getLogger(__name__)
 
@@ -20,54 +21,95 @@ class LocationRotationSyncResult:
     location_slug: str
     rotation_index: int
     locations_total: int
-    sync: LocationSyncResult | None = None
     errors: list[str] = field(default_factory=list)
+    # Все площадки прогона: у пачки из нескольких слагов первая строка остаётся
+    # в location_slug (журналы и отчёты читают её), а полный состав — здесь.
+    location_slugs: list[str] = field(default_factory=list)
+    # Сводные цифры по всей пачке (у одиночного прогона совпадают с sync).
+    summaries_total: int = 0
+    summaries_upserted: int = 0
+    summaries_unchanged: int = 0
+    protocols_fetched: int = 0
+    run_results_upserted: int = 0
+    volunteer_results_upserted: int = 0
+    fetched_protocols: list[str] = field(default_factory=list)
+    changed_protocols: list[str] = field(default_factory=list)
 
 
-def _next_rotation_slug(slugs: list[str]) -> tuple[str, int, int]:
+def _next_rotation_slugs(slugs: list[str], count: int) -> tuple[list[str], int, int]:
     if not slugs:
         raise RuntimeError("No 5verst locations in registry")
     redis = get_redis_client()
     raw = redis.get(ROTATION_INDEX_KEY)
     index = int(raw) if raw is not None else 0
-    slug = slugs[index % len(slugs)]
-    next_index = (index + 1) % len(slugs)
-    redis.set(ROTATION_INDEX_KEY, str(next_index))
-    return slug, index, len(slugs)
+    total = len(slugs)
+    count = max(1, min(count, total))
+    batch = [slugs[(index + offset) % total] for offset in range(count)]
+    redis.set(ROTATION_INDEX_KEY, str((index + count) % total))
+    return batch, index % total, total
 
 
 def sync_next_location_batch(db: Session) -> LocationRotationSyncResult:
     """
-    Rotate through official locations: each run checks up to N summaries for one slug.
-    Protocols are fetched only for changed or missing summaries (see sync_location).
+    Rotate through official locations: each run checks up to N summaries for a
+    handful of slugs. Protocols are fetched only for changed or missing
+    summaries (see sync_location).
+
+    Размер пачки держит длину круга около недели: страница /results/all/ —
+    единственное место, где видно позднюю правку прошедшего старта (доливка
+    волонтёров, исправленное время). Пока круг шёл по одной площадке за
+    прогон, при ~220 локациях и 6 прогонах в сутки он занимал больше месяца.
+    Видное 15.08.2026 в эту дыру и провалилось: протокол выложили с одним
+    волонтёром, остальных двенадцать долили следом, а сайт три недели держал
+    сводку с нулём — и ждать своей очереди площадке оставалось ещё столько же.
+    Сверка протоколов (five_verst_reconcile) тут не помощник: она сравнивает
+    протокол с НАШЕЙ же сводкой и устаревания сводки не видит по устройству.
     """
     settings = get_settings()
     slugs = bulk_parser.list_location_slugs()
-    slug, index, total = _next_rotation_slug(slugs)
-    logger.info("5verst location rotation: slug=%s index=%s/%s", slug, index, total)
+    batch, index, total = _next_rotation_slugs(
+        slugs, settings.five_verst_location_rotation_slugs_per_run
+    )
+    logger.info(
+        "5verst location rotation: slugs=%s index=%s/%s", ",".join(batch), index, total
+    )
 
-    try:
-        sync_result = sync_location(
-            db,
-            LocationSyncOptions(
-                location_slug=slug,
-                summaries_limit=settings.five_verst_location_batch_summaries_limit,
-                protocol_fetch_limit=None,
-                fetch_all_protocols_on_change=True,
-                location_refresh_interval_days=settings.five_verst_location_refresh_interval_days,
-            ),
-        )
-        return LocationRotationSyncResult(
-            location_slug=slug,
-            rotation_index=index,
-            locations_total=total,
-            sync=sync_result,
-            errors=list(sync_result.errors),
-        )
-    except Exception as exc:
-        return LocationRotationSyncResult(
-            location_slug=slug,
-            rotation_index=index,
-            locations_total=total,
-            errors=[str(exc)],
-        )
+    result = LocationRotationSyncResult(
+        location_slug=batch[0],
+        rotation_index=index,
+        locations_total=total,
+        location_slugs=batch,
+    )
+    for slug in batch:
+        try:
+            sync_result = sync_location(
+                db,
+                LocationSyncOptions(
+                    location_slug=slug,
+                    summaries_limit=settings.five_verst_location_batch_summaries_limit,
+                    protocol_fetch_limit=None,
+                    fetch_all_protocols_on_change=True,
+                    location_refresh_interval_days=settings.five_verst_location_refresh_interval_days,
+                ),
+            )
+        except FiveVerstBanDetected as exc:
+            # Кулдаун общий для всех фетчей: остаток пачки упал бы с той же
+            # ошибкой. Индекс ротации уже сдвинут — недокачанные площадки
+            # заберёт следующий круг.
+            result.errors.append(f"{slug}: {exc}; остаток пачки отложен")
+            break
+        except Exception as exc:
+            result.errors.append(f"{slug}: {exc}")
+            continue
+
+        result.errors.extend(sync_result.errors)
+        result.summaries_total += sync_result.summaries_total
+        result.summaries_upserted += sync_result.summaries_upserted
+        result.summaries_unchanged += sync_result.summaries_unchanged
+        result.protocols_fetched += sync_result.protocols_fetched
+        result.run_results_upserted += sync_result.run_results_upserted
+        result.volunteer_results_upserted += sync_result.volunteer_results_upserted
+        result.fetched_protocols.extend(sync_result.fetched_protocols)
+        result.changed_protocols.extend(sync_result.changed_protocols)
+
+    return result

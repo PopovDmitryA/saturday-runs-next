@@ -36,12 +36,15 @@ def five_verst_reconcile_details(
 def five_verst_rotation_details(
     *,
     summaries_limit: int,
+    slugs_per_run: int = 1,
     locations_total: int | None = None,
     rotation_index: int | None = None,
 ) -> str:
     lines = [
         f"Summary на локацию: {summaries_limit}",
-        "Ротация: одна локация из реестра за запуск",
+        f"Ротация: {slugs_per_run} локаций из реестра за запуск"
+        if slugs_per_run > 1
+        else "Ротация: одна локация из реестра за запуск",
     ]
     if locations_total is not None and rotation_index is not None:
         lines.append(f"Позиция в ротации: {rotation_index + 1} из {locations_total}")
