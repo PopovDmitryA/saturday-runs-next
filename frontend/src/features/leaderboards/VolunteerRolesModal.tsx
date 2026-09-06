@@ -13,6 +13,8 @@ type VolunteerRolesModalProps = {
   onClose: () => void;
   /** Первая строка шторки: у рейтинга роли решают место, у состава — состав. */
   intro?: string;
+  /** Предупреждение под вступлением — например, что срез считается не мгновенно. */
+  note?: string;
 };
 
 const RATING_INTRO =
@@ -71,6 +73,7 @@ export function VolunteerRolesModal({
   onApply,
   onClose,
   intro = RATING_INTRO,
+  note,
 }: VolunteerRolesModalProps) {
   const [draftPreset, setDraftPreset] = useState<VolunteerRolePreset>(preset);
   const [draftKeys, setDraftKeys] = useState<Set<string>>(() => new Set(selected));
@@ -135,6 +138,7 @@ export function VolunteerRolesModal({
         </header>
 
         <p className="vrm-intro muted">{intro}</p>
+        {note && <p className="vrm-intro muted">{note}</p>}
 
         <div className="vrm-presets">
           {PRESET_LABELS.map((item) => (

@@ -144,6 +144,13 @@ const ROLES_MODAL_INTRO =
   "Вы сами выбираете, из каких ролей считать состав: возьмите готовый набор или " +
   "отметьте роли вручную.";
 
+// Честно предупреждаем про ожидание: срез считается на сервере, и на большой
+// площадке первый пересчёт заметен. Лучше сказать заранее, чем оставить
+// человека гадать, завис фильтр или считает (просьба Дмитрия 06.09.2026).
+const ROLES_MODAL_NOTE =
+  "Таблица под выбранные роли пересобирается на сервере: у большой площадки первый " +
+  "такой срез может считаться до минуты. Тот же набор ролей дальше открывается сразу.";
+
 /**
  * Зачёт ролей из адреса: `?roles=on_site` (пресет) или `?roles=k1,k2` (свой
  * набор). Ссылку на «постоянных маршалов» площадки так можно кинуть в чат
@@ -635,7 +642,11 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
             />
           </FilterGroup>
         </FilterRow>
-        {rolesLoading && <span className="muted loc-people-found">Считаем срез по ролям…</span>}
+        {rolesLoading && (
+          <span className="muted loc-people-found">
+            Считаем срез по ролям — на большой площадке это может занять до минуты…
+          </span>
+        )}
         {query.trim() && (
           <span className="muted loc-people-found">
             {rows.length > 0 ? `Найдено: ${formatInt(rows.length)}` : "Никого не нашли"}
@@ -778,6 +789,7 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
           preset={rolePreset}
           selected={rolePreset === "all" ? roleCatalog.map((role) => role.key) : roleKeys}
           intro={ROLES_MODAL_INTRO}
+          note={ROLES_MODAL_NOTE}
           onApply={applyRoleFilter}
           onClose={() => setRolesModalOpen(false)}
         />
