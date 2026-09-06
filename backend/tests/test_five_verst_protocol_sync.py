@@ -166,6 +166,10 @@ def test_classify_reconcile_reason_count_mismatch() -> None:
 
     summary = SimpleNamespace(
         finishers_count=10,
+        # None — «сводка не знает, сколько было волонтёров»: расхождением по
+        # волонтёрам это не считается, иначе проверка ниже ловила бы не ту
+        # причину.
+        volunteers_count=None,
         summary_hash="hash-1",
         best_male_time_sec=None,
         best_female_time_sec=None,
