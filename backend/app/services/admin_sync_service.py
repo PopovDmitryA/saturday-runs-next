@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from app.workers.tasks.five_verst_sync import (
     reconcile_stale_protocols_task,
+    sweep_week_protocols_task,
     sync_latest_results_task,
     sync_location_rotation_task,
     sync_location_task,
@@ -29,6 +30,8 @@ PIPELINES: dict[str, tuple[str, object, str]] = {
     "latest": ("5v latest /results/latest/", sync_latest_results_task, "five_verst"),
     "rotation": ("5v location rotation", sync_location_rotation_task, "five_verst"),
     "reconcile": ("5v reconcile protocols", reconcile_stale_protocols_task, "five_verst"),
+    # Обход протоколов последней субботы: то же, что делает расписание в пн/чт.
+    "week-sweep": ("5v обход протоколов недели", sweep_week_protocols_task, "five_verst"),
     "s95-registry": ("s95 registry /activities", s95_sync_locations_registry_task, "s95"),
     "s95-descriptions": ("s95 location descriptions", s95_sync_location_descriptions_task, "s95"),
     "s95-sync-updated": ("s95 API: обновлённые протоколы", s95_api_sync_updated_task, "s95"),

@@ -33,6 +33,25 @@ def five_verst_reconcile_details(
     return "\n".join(lines)
 
 
+def five_verst_week_sweep_details(
+    *,
+    weeks_back: int,
+    limit: int,
+    week_start: str | None = None,
+    week_end: str | None = None,
+) -> str:
+    week_label = {0: "последняя суббота", 1: "неделя W−1", 2: "неделя W−2"}.get(
+        weeks_back, f"неделя W−{weeks_back}"
+    )
+    lines = [
+        f"Неделя: {week_label}",
+        f"Пакет: {limit} протоколов за заход (перекачиваем без оглядки на сводку)",
+    ]
+    if week_start and week_end:
+        lines.append(f"Даты: {week_start} — {week_end}")
+    return "\n".join(lines)
+
+
 def five_verst_rotation_details(
     *,
     summaries_limit: int,

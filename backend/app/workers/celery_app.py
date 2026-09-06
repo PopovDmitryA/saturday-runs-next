@@ -182,6 +182,39 @@ celery_app.conf.update(
             "schedule": crontab(minute=10, hour="*/3", day_of_week="1-5"),
             "options": {"queue": "five_verst"},
         },
+        # Обход протоколов недели — третья страховка легаси-схемы (см.
+        # app/sync/five_verst_week_sweep.py). Сводка знает только число
+        # финишёров, число волонтёров и три времени; правку внутри протокола
+        # (роль волонтёра, привязка к атлету, имя, позиция) не видит ни сверка,
+        # ни ротация — обе сравнивают наш протокол с нашей же сводкой. Здесь
+        # протоколы субботы перекачиваются целиком, без оглядки на сводку.
+        # График Дмитрия: пн и чт — последняя суббота W (догрузки приезжают в
+        # начале недели, поэтому два взгляда), ср — W−1, пт — W−2.
+        # Минута :20 свободна: сверка на :10, ротация на :30, latest на :00.
+        "five-verst-week-sweep-w0-monday": {
+            "task": "five_verst_sync.sweep_week_protocols",
+            "schedule": crontab(hour=2, minute=20, day_of_week="1"),
+            "kwargs": {"weeks_back": 0},
+            "options": {"queue": "five_verst"},
+        },
+        "five-verst-week-sweep-w1-wednesday": {
+            "task": "five_verst_sync.sweep_week_protocols",
+            "schedule": crontab(hour=2, minute=20, day_of_week="3"),
+            "kwargs": {"weeks_back": 1},
+            "options": {"queue": "five_verst"},
+        },
+        "five-verst-week-sweep-w0-thursday": {
+            "task": "five_verst_sync.sweep_week_protocols",
+            "schedule": crontab(hour=2, minute=20, day_of_week="4"),
+            "kwargs": {"weeks_back": 0},
+            "options": {"queue": "five_verst"},
+        },
+        "five-verst-week-sweep-w2-friday": {
+            "task": "five_verst_sync.sweep_week_protocols",
+            "schedule": crontab(hour=2, minute=20, day_of_week="5"),
+            "kwargs": {"weeks_back": 2},
+            "options": {"queue": "five_verst"},
+        },
         # Clubs list (/clubs/) — twice a week; changed rows are queued for detail re-sync.
         "five-verst-clubs-registry": {
             "task": "five_verst_sync.sync_clubs_registry",

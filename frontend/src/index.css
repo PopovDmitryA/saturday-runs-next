@@ -2619,6 +2619,27 @@ input[type="search"]:focus,
   margin-bottom: 0.4rem;
 }
 
+/* Кнопка появляется, только когда поиск сузил список: по умолчанию в фильтре
+   отмечено ВСЁ, поэтому найденная строка уже стоит с галочкой и нажимать в
+   ней нечего. Это и есть «применить» для поиска. */
+.checkbox-filter-apply {
+  width: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--link);
+  color: #fff;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.checkbox-filter-apply:hover {
+  filter: brightness(1.08);
+}
+
 .checkbox-filter-list {
   list-style: none;
   margin: 0;

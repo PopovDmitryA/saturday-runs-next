@@ -42,7 +42,7 @@ from sqlalchemy import text
 from app.db.session import get_session_factory
 from app.models import EventSummary, Location, Platform, ProtocolSyncState, RunResult
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
-from app.sync.five_verst_reconcile import _summary_to_canonical
+from app.sync.five_verst_reconcile import summary_to_canonical
 
 FIVE_VERST = "five_verst"
 
@@ -171,7 +171,7 @@ def main() -> int:
             before = db.query(RunResult).filter(RunResult.event_id == row.id).count()
             try:
                 fetch_and_upsert_event_protocol(
-                    db, platform, location, _summary_to_canonical(summary_row, location), summary_row
+                    db, platform, location, summary_to_canonical(summary_row, location), summary_row
                 )
                 db.commit()
             except Exception as exc:  # noqa: BLE001 — одно событие не должно рушить прогон

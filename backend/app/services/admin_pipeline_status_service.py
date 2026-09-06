@@ -32,6 +32,7 @@ CELERY_TASK_LABELS: dict[str, str] = {
     "five_verst_sync.sync_latest_results": "5verst: свежие результаты /results/latest/",
     "five_verst_sync.sync_location_rotation": "5verst: ротация локаций",
     "five_verst_sync.reconcile_stale_protocols": "5verst: сверка протоколов",
+    "five_verst_sync.sweep_week_protocols": "5verst: обход протоколов недели",
     "s95_sync.sync_locations_registry": "s95: реестр /events",
     "s95_sync.api_new_protocols": "s95: новые протоколы (API)",
     "s95_sync.api_sync_updated": "s95: обновлённые протоколы (API)",
@@ -52,6 +53,8 @@ def sync_run_type_label(sync_type: str) -> str:
         return "5verst: свежие результаты /results/latest/"
     if sync_type == "five_verst:reconcile_protocols":
         return "5verst: сверка протоколов"
+    if sync_type == "five_verst:week_sweep":
+        return "5verst: обход протоколов недели"
     if sync_type == "s95:registry":
         return "s95: реестр /events"
     if sync_type == "s95:latest":

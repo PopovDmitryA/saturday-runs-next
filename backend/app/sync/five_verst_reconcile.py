@@ -114,7 +114,7 @@ def _finish_sync_run(
     db.flush()
 
 
-def _summary_to_canonical(summary_row: EventSummary, location: Location) -> CanonicalEventSummary:
+def summary_to_canonical(summary_row: EventSummary, location: Location) -> CanonicalEventSummary:
     return CanonicalEventSummary(
         external_event_key=summary_row.external_event_key,
         event_date=summary_row.event_date,
@@ -393,7 +393,7 @@ def reconcile_stale_protocols(
                 )
                 .one()
             )
-            summary = _summary_to_canonical(summary_row, location)
+            summary = summary_to_canonical(summary_row, location)
             event_id = summary_row.event_id
             try:
                 upsert_result = fetch_and_upsert_event_protocol(

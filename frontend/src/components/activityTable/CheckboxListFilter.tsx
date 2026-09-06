@@ -33,9 +33,14 @@ export function CheckboxListFilter({
   // Поиск сузил список — значит, человек ищет «показать только это». Само по
   // себе сужение ничего не выбирает: по умолчанию отмечено ВСЁ, и найденная
   // строка уже стоит с галочкой — нажимать в ней нечего. Отсюда и берётся
-  // «не понял, как применить фильтр»: пришлось бы сначала «Снять», а потом
-  // отметить найденное заново.
+  // «вписал локацию, она выбралась, но применить не могу»: пришлось бы
+  // сначала «Снять», а потом отметить найденное заново. Кнопка ниже — прямой
+  // ответ на этот шаг: применить поиск как фильтр.
   const searching = filteredOptions.length > 0 && filteredOptions.length < options.length;
+  const onlyFoundSelected =
+    searching &&
+    selected.size === filteredOptions.length &&
+    filteredOptions.every((option) => selected.has(option.value));
 
   const toggleValue = (value: string, checked: boolean) => {
     const next = new Set(selected);
@@ -70,12 +75,13 @@ export function CheckboxListFilter({
         <button type="button" className="filter-popover-link" onClick={clearAll}>
           Снять
         </button>
-        {searching && (
-          <button type="button" className="filter-popover-link" onClick={selectOnlyFound}>
-            Только найденное
-          </button>
-        )}
       </div>
+      {searching && !onlyFoundSelected && (
+        <button type="button" className="checkbox-filter-apply" onClick={selectOnlyFound}>
+          Показать только найденное
+          {filteredOptions.length > 1 ? ` (${filteredOptions.length})` : ""}
+        </button>
+      )}
       <ul className="checkbox-filter-list">
         {filteredOptions.length === 0 ? (
           <li className="muted checkbox-filter-empty">Ничего не найдено</li>

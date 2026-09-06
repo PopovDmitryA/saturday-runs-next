@@ -14,12 +14,14 @@ from app.services.sync_run_params import (
     five_verst_reconcile_details,
     five_verst_registry_details,
     five_verst_rotation_details,
+    five_verst_week_sweep_details,
 )
 from app.sync.five_verst_clubs import ClubsRegistrySyncOptions, sync_club_details_batch, sync_clubs_registry
 from app.sync.five_verst_latest import LatestResultsSyncOptions, sync_latest_results
 from app.sync.five_verst_location_rotation import sync_next_location_batch
 from app.sync.five_verst_locations import LocationRegistrySyncOptions, sync_locations_registry
 from app.sync.five_verst_reconcile import ReconcileProtocolsOptions, reconcile_stale_protocols
+from app.sync.five_verst_week_sweep import WeekSweepOptions, sweep_week_protocols, week_window
 from app.sync.global_sync import LocationSyncOptions, sync_location, sync_location_summaries_only
 from app.workers.celery_app import celery_app
 from app.workers.tasks.sync_task_reporting import run_reported_sync
@@ -406,6 +408,90 @@ def reconcile_stale_protocols_task(
                 "limit": limit,
                 "min_check_interval_days": min_check_interval_days,
                 "location_slug": location_slug,
+                "chunks_left": chunks_left - 1,
+                "force": True,
+            },
+            queue="five_verst",
+        )
+        payload = {**payload, "next_chunk_enqueued": True}
+    return payload
+
+
+@celery_app.task(name="five_verst_sync.sweep_week_protocols", queue="five_verst")
+def sweep_week_protocols_task(
+    weeks_back: int = 0,
+    limit: int | None = None,
+    chunks_left: int | None = None,
+    *,
+    force: bool = False,
+) -> dict[str, object]:
+    """Обход протоколов одной субботы — третья страховка легаси-схемы.
+
+    Перекачивает протоколы недели целиком, не глядя на сводку: правку, которая
+    в сводке не отразилась (роль волонтёра, привязка к атлету, имя, позиция),
+    больше поймать нечем — и сверка, и ротация сравнивают наш протокол с нашей
+    же сводкой. Расписание: пн и чт — последняя суббота, ср — W−1, пт — W−2.
+
+    Пачками, как и сверка: воркер `five_verst` один и с concurrency=1, а неделя
+    — это ~200 протоколов по 20-30 секунд на страницу.
+    """
+    from app.config import get_settings
+
+    settings = get_settings()
+    if limit is None:
+        limit = settings.five_verst_week_sweep_batch_limit
+    if chunks_left is None:
+        chunks_left = settings.five_verst_week_sweep_chunks_per_run
+    name = f"5v week sweep W-{weeks_back}"
+    start, end = week_window(weeks_back)
+    details = five_verst_week_sweep_details(
+        weeks_back=weeks_back,
+        limit=limit,
+        week_start=start.isoformat(),
+        week_end=end.isoformat(),
+    )
+
+    def _run() -> dict[str, object]:
+        db = get_session_factory()()
+        try:
+            started_at = datetime.now(timezone.utc)
+            result = sweep_week_protocols(
+                db,
+                WeekSweepOptions(
+                    weeks_back=weeks_back,
+                    limit=limit,
+                    min_refetch_interval_hours=settings.five_verst_week_sweep_min_refetch_hours,
+                ),
+            )
+            # Обход переписывает существующие протоколы: позиции и метки
+            # рекордов после него меняются так же, как после нового протокола.
+            if result.run_results_upserted > 0:
+                db.commit()
+                _schedule_dashboard_warm(started_at)
+            return asdict(result)
+        finally:
+            db.close()
+
+    payload = run_reported_sync(
+        name,
+        _run,
+        details=details,
+        hour_slot_key=f"five_verst:week_sweep:{weeks_back}",
+        force=force,
+        batch_queue_name="five_verst",
+    )
+
+    # Следующее звено — только если пачка набралась полностью: недобор значит,
+    # что неделя разобрана и качать больше нечего.
+    if (
+        chunks_left > 1
+        and not payload.get("skipped")
+        and int(payload.get("candidates_total") or 0) >= limit
+    ):
+        sweep_week_protocols_task.apply_async(
+            kwargs={
+                "weeks_back": weeks_back,
+                "limit": limit,
                 "chunks_left": chunks_left - 1,
                 "force": True,
             },
