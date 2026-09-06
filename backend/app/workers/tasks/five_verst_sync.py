@@ -246,6 +246,7 @@ def sync_location_rotation_task(*, force: bool = False) -> dict[str, object]:
     details = five_verst_rotation_details(
         summaries_limit=settings.five_verst_location_batch_summaries_limit,
         slugs_per_run=settings.five_verst_location_rotation_slugs_per_run,
+        protocol_fetch_limit=settings.five_verst_location_protocol_fetch_limit,
     )
 
     def _run() -> dict[str, object]:

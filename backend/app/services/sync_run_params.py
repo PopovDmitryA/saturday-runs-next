@@ -54,17 +54,22 @@ def five_verst_week_sweep_details(
 
 def five_verst_rotation_details(
     *,
-    summaries_limit: int,
+    summaries_limit: int | None,
     slugs_per_run: int = 1,
+    protocol_fetch_limit: int | None = None,
     locations_total: int | None = None,
     rotation_index: int | None = None,
 ) -> str:
     lines = [
-        f"Summary на локацию: {summaries_limit}",
+        "Summary на локацию: вся таблица /results/all/"
+        if summaries_limit is None
+        else f"Summary на локацию: {summaries_limit}",
         f"Ротация: {slugs_per_run} локаций из реестра за запуск"
         if slugs_per_run > 1
         else "Ротация: одна локация из реестра за запуск",
     ]
+    if protocol_fetch_limit is not None:
+        lines.append(f"Перекачек протоколов за заход: до {protocol_fetch_limit} (остальное — в долг)")
     if locations_total is not None and rotation_index is not None:
         lines.append(f"Позиция в ротации: {rotation_index + 1} из {locations_total}")
     return "\n".join(lines)

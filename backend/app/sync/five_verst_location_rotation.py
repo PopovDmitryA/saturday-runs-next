@@ -64,6 +64,11 @@ def sync_next_location_batch(db: Session) -> LocationRotationSyncResult:
     сводку с нулём — и ждать своей очереди площадке оставалось ещё столько же.
     Сверка протоколов (five_verst_reconcile) тут не помощник: она сравнивает
     протокол с НАШЕЙ же сводкой и устаревания сводки не видит по устройству.
+
+    Сверяется ВСЯ таблица площадки, а не последние N строк. Страница уже
+    скачана, сравнение хэшей идёт в памяти — резать его незачем, а с окном в
+    20 строк правка старта, скажем, тридцатинедельной давности не находилась
+    никогда: он в окно не попадал ни при каком числе проходов.
     """
     settings = get_settings()
     slugs = bulk_parser.list_location_slugs()
@@ -86,9 +91,16 @@ def sync_next_location_batch(db: Session) -> LocationRotationSyncResult:
                 db,
                 LocationSyncOptions(
                     location_slug=slug,
+                    # Вся таблица, а не последние N строк: страница уже
+                    # скачана, и сравнение хэшей ничего не стоит. Правку
+                    # старого старта иначе не увидеть вовсе — он не попадал
+                    # в окно ни при каком числе проходов.
                     summaries_limit=settings.five_verst_location_batch_summaries_limit,
-                    protocol_fetch_limit=None,
-                    fetch_all_protocols_on_change=True,
+                    # А вот перекачки протоколов ограничены: см. комментарий
+                    # к настройке. Недокачанное остаётся долгом и уходит в
+                    # приоритет сверки, а не ждёт следующего круга.
+                    protocol_fetch_limit=settings.five_verst_location_protocol_fetch_limit,
+                    fetch_all_protocols_on_change=False,
                     location_refresh_interval_days=settings.five_verst_location_refresh_interval_days,
                 ),
             )

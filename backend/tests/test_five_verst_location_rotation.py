@@ -17,6 +17,8 @@ import fakeredis
 
 from app.config import get_settings
 from app.sync.five_verst_location_rotation import ROTATION_INDEX_KEY, _next_rotation_slugs
+from app.sync.five_verst_reconcile import PRIORITY_REASONS, ReconcileReason
+from app.sync.global_sync import _select_summaries_for_protocol_fetch
 
 SLUGS = [f"loc{i}" for i in range(10)]
 
@@ -52,6 +54,41 @@ def test_batch_size_is_at_least_one(fake_redis: fakeredis.FakeRedis) -> None:
     batch, _, _ = _next_rotation_slugs(SLUGS, 0)
     assert batch == ["loc0"]
     assert fake_redis.get(ROTATION_INDEX_KEY) == "1"
+
+
+def test_rotation_reads_the_whole_location_table() -> None:
+    """Ротация сверяет ВСЮ таблицу /results/all/, а не последние N строк.
+
+    Страница уже скачана, сравнение хэшей идёт в памяти — резать его незачем.
+    С окном в 20 строк правка старта тридцатинедельной давности не находилась
+    никогда: он в окно не попадал ни при каком числе проходов.
+    """
+    settings = get_settings()
+    assert settings.five_verst_location_batch_summaries_limit is None
+
+
+def test_unfetched_protocols_become_debt_not_loss() -> None:
+    """Потолок перекачек за заход не теряет находки, а переводит их в долг.
+
+    Сводку прогон записывает всегда, а протокол под ней остаётся от прошлой
+    версии — то есть `summary_hash_at_fetch ≠ summary_hash`, и это
+    приоритетная причина сверки. Иначе потолок означал бы «увидели правку и
+    забыли до следующего круга».
+    """
+    settings = get_settings()
+    assert settings.five_verst_location_protocol_fetch_limit > 0
+    # Отбор режет очередь ровно по потолку — и только при выключенном
+    # fetch_all_protocols_on_change, как его и вызывает ротация.
+    queue = [(f"summary{i}", f"canonical{i}") for i in range(25)]
+    selected = _select_summaries_for_protocol_fetch(
+        queue,
+        protocol_fetch_limit=settings.five_verst_location_protocol_fetch_limit,
+        fetch_all_protocols_on_change=False,
+    )
+    assert len(selected) == settings.five_verst_location_protocol_fetch_limit
+    # Свежие старты вперёд: таблица идёт от новых к старым.
+    assert selected[0] == queue[0]
+    assert ReconcileReason.protocol_debt in PRIORITY_REASONS
 
 
 def test_weekly_cycle_at_default_settings() -> None:
