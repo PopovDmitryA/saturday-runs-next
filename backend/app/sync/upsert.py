@@ -874,18 +874,23 @@ def upsert_volunteer_results(
             from app.s95.parsers.volunteer_roles import canonical_s95_volunteer_role, prefer_s95_volunteer_role
 
             role = canonical_s95_volunteer_role(role) or role
+        # Имя храним только у волонтёра БЕЗ профиля: у остальных оно живёт в
+        # participants и отсюда бы только устаревало.
+        display_name = None if participant_id is not None else (item.participant_name or None)
         if row is None:
             row = VolunteerResult(
                 event_id=event.id,
                 participant_id=participant_id,
                 external_result_key=item.external_result_key,
                 role=role,
+                display_name=display_name,
                 fetched_at=now,
             )
             db.add(row)
             upserted += 1
         else:
             row.participant_id = participant_id
+            row.display_name = display_name
             if platform.code == "s95":
                 row.role = prefer_s95_volunteer_role(row.role, role)
             else:

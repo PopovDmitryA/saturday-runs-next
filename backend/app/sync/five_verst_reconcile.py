@@ -5,13 +5,23 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import String, and_, func, or_
 from sqlalchemy.orm import Query, Session
 from sqlalchemy.sql import Subquery
 
 from app.five_verst.errors import FiveVerstBanDetected
 from app.five_verst.fetch.protocol_pause import wait_between_protocols
-from app.models import Event, EventSummary, Location, Platform, ProtocolSyncState, RunResult, SyncRun, SyncRunStatus
+from app.models import (
+    Event,
+    EventSummary,
+    Location,
+    Platform,
+    ProtocolSyncState,
+    RunResult,
+    SyncRun,
+    SyncRunStatus,
+    VolunteerResult,
+)
 from app.platform_adapters.canonical import CanonicalEventSummary
 from app.platform_adapters.five_verst.http import NotFoundError
 from app.services.sync_report_labels import protocol_detail_label
@@ -31,6 +41,8 @@ class ReconcileReason(str, Enum):
     protocol_debt = "protocol_debt"
     # Сводка обещает время лидера, которого в нашем протоколе нет.
     time_mismatch = "time_mismatch"
+    # Сводка обещает не столько волонтёров, сколько лежит у нас в протоколе.
+    volunteers_mismatch = "volunteers_mismatch"
 
 
 # Причины, ради которых кандидат идёт вне очереди и вне фильтра по давности.
@@ -43,6 +55,7 @@ PRIORITY_REASONS = (
     ReconcileReason.protocol_debt,
     ReconcileReason.summary_changed,
     ReconcileReason.time_mismatch,
+    ReconcileReason.volunteers_mismatch,
 )
 
 
@@ -155,6 +168,7 @@ def _classify_reconcile_reason(
     *,
     check_cutoff: datetime,
     fastest_stored_sec: int | None = None,
+    volunteer_people: int | None = None,
 ) -> ReconcileReason | None:
     del check_cutoff
     if state is None or state.last_protocol_check_at is None:
@@ -163,6 +177,16 @@ def _classify_reconcile_reason(
         return ReconcileReason.protocol_debt
     if summary_row.finishers_count is not None and state.finishers_at_fetch != summary_row.finishers_count:
         return ReconcileReason.summary_changed
+    if (
+        summary_row.volunteers_count is not None
+        and volunteer_people is not None
+        and summary_row.volunteers_count != volunteer_people
+    ):
+        # Проверено на живых протоколах 06.09.2026: расхождение по волонтёрам —
+        # это всегда реальный пропуск (у нас нет человека, которого долили
+        # позже) или лишняя строка (человека с сайта убрали), и перекачка его
+        # лечит — replace_event_volunteer_results и добавляет, и удаляет.
+        return ReconcileReason.volunteers_mismatch
     claimed_fastest = _claimed_fastest_sec(summary_row)
     if claimed_fastest is not None and fastest_stored_sec is not None and claimed_fastest != fastest_stored_sec:
         # Единственный признак, который видит правку времени при неизменном
@@ -172,6 +196,40 @@ def _classify_reconcile_reason(
     if summary_row.finishers_count is not None and run_count != summary_row.finishers_count:
         return ReconcileReason.count_mismatch
     return ReconcileReason.check_due
+
+
+def _volunteer_people(db: Session) -> Subquery:
+    """Сколько ЧЕЛОВЕК у нас в протоколе — так же, как считает сводка 5 вёрст.
+
+    Проверено на живых протоколах 06.09.2026 (Черкизовский 05.09, Кудрово
+    29.08, Тушино 22.08, Владимир 11.07): колонка «волонтёров» на
+    /results/all/ равна числу людей, а не числу строк «человек × роль».
+    Волонтёр без профиля (`participant_id IS NULL`) — тоже человек, и
+    `count(distinct participant_id)` его молча теряет: именно из-за этого
+    расхождения раньше выглядели «шумом на ±1».
+    """
+    return (
+        db.query(
+            VolunteerResult.event_id.label("event_id"),
+            func.count(
+                func.distinct(
+                    # Человек, а не строка «человек × роль». Волонтёр без
+                    # профиля склеивается по имени из протокола: у одного и
+                    # того же может быть две роли. Совсем безымянный
+                    # («НЕИЗВЕСТНЫЙ») склеиванию не поддаётся — отличить двух
+                    # таких друг от друга нечем, и каждая строка считается
+                    # отдельным человеком, как это делает и сама 5 вёрст.
+                    func.coalesce(
+                        func.cast(VolunteerResult.participant_id, String),
+                        "name:" + VolunteerResult.display_name,
+                        "row:" + VolunteerResult.external_result_key,
+                    )
+                )
+            ).label("people"),
+        )
+        .group_by(VolunteerResult.event_id)
+        .subquery()
+    )
 
 
 def _protocol_aggregates(db: Session) -> Subquery:
@@ -191,8 +249,9 @@ def _candidates_query(
     db: Session,
     platform: Platform,
     location_slug: str | None,
-) -> tuple[Query[Any], Subquery]:
+) -> tuple[Query[Any], Subquery, Subquery]:
     aggregates = _protocol_aggregates(db)
+    volunteers = _volunteer_people(db)
     query = (
         db.query(
             EventSummary,
@@ -200,11 +259,13 @@ def _candidates_query(
             ProtocolSyncState,
             aggregates.c.run_count,
             aggregates.c.fastest_sec,
+            volunteers.c.people,
         )
         .join(Event, EventSummary.event_id == Event.id)
         .join(Location, EventSummary.location_id == Location.id)
         .outerjoin(ProtocolSyncState, ProtocolSyncState.event_id == Event.id)
         .outerjoin(aggregates, aggregates.c.event_id == Event.id)
+        .outerjoin(volunteers, volunteers.c.event_id == Event.id)
         .filter(
             EventSummary.platform_id == platform.id,
             EventSummary.event_id.isnot(None),
@@ -212,7 +273,7 @@ def _candidates_query(
     )
     if location_slug:
         query = query.filter(Location.external_key == location_slug)
-    return query, aggregates
+    return query, aggregates, volunteers
 
 
 def _to_candidate(summary_row: EventSummary, location: Location, reason: ReconcileReason) -> ReconcileCandidate:
@@ -249,7 +310,7 @@ def _plan_mismatch_candidates(
     """
     if limit <= 0:
         return []
-    query, aggregates = _candidates_query(db, platform, location_slug)
+    query, aggregates, volunteers = _candidates_query(db, platform, location_slug)
     claimed_fastest = func.least(
         func.nullif(EventSummary.best_male_time_sec, 0),
         func.nullif(EventSummary.best_female_time_sec, 0),
@@ -270,6 +331,10 @@ def _plan_mismatch_candidates(
                 aggregates.c.fastest_sec.isnot(None),
                 claimed_fastest != aggregates.c.fastest_sec,
             ),
+            and_(
+                EventSummary.volunteers_count.isnot(None),
+                EventSummary.volunteers_count != func.coalesce(volunteers.c.people, 0),
+            ),
         )
     )
     if retry_interval_hours > 0:
@@ -285,13 +350,14 @@ def _plan_mismatch_candidates(
     # чем правильный протокол трёхлетней давности.
     rows = query.order_by(EventSummary.event_date.desc()).limit(limit).all()
     candidates: list[ReconcileCandidate] = []
-    for summary_row, location, state, run_count, fastest_sec in rows:
+    for summary_row, location, state, run_count, fastest_sec, volunteer_people in rows:
         reason = _classify_reconcile_reason(
             summary_row,
             state,
             int(run_count or 0),
             check_cutoff=datetime.now(timezone.utc),
             fastest_stored_sec=int(fastest_sec) if fastest_sec is not None else None,
+            volunteer_people=int(volunteer_people or 0),
         )
         if reason not in PRIORITY_REASONS:
             # Строка попала в SQL-фильтр, но точную причину даёт классификатор
@@ -322,7 +388,7 @@ def plan_stale_protocol_reconcile(
         return priority[:limit]
 
     already_planned = {item.external_event_key for item in priority}
-    query, aggregates = _candidates_query(db, platform, location_slug)
+    query, _aggregates, _volunteers = _candidates_query(db, platform, location_slug)
     if min_check_interval_days > 0:
         # Протокол, проверенный недавно, не перечитываем: без этого фильтра
         # reconcile гонял всю историю (~2900 протоколов) по кругу каждые
@@ -342,13 +408,14 @@ def plan_stale_protocol_reconcile(
     rest_limit = limit - len(priority)
     rows = query.order_by(ProtocolSyncState.last_protocol_check_at.asc().nullsfirst()).limit(rest_limit).all()
     candidates = list(priority)
-    for summary_row, location, state, run_count, fastest_sec in rows:
+    for summary_row, location, state, run_count, fastest_sec, volunteer_people in rows:
         reason = _classify_reconcile_reason(
             summary_row,
             state,
             int(run_count or 0),
             check_cutoff=datetime.now(timezone.utc),
             fastest_stored_sec=int(fastest_sec) if fastest_sec is not None else None,
+            volunteer_people=int(volunteer_people or 0),
         )
         candidates.append(_to_candidate(summary_row, location, reason or ReconcileReason.check_due))
     return candidates

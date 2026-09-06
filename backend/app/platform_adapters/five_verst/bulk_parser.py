@@ -489,6 +489,37 @@ def _extract_user_id_from_row(row: Tag) -> str | None:
     return None
 
 
+def _unregistered_volunteer_cell(row: Tag) -> Tag | None:
+    """Ячейка волонтёра без профиля на 5 вёрст, если строка именно такая.
+
+    Сайт помечает их `<div class="notRegistered">` со ссылкой на регистрацию
+    вместо /userstats/<id>. Признак обязателен: без него сюда попадала бы
+    любая строка со сломанной разметкой и превращалась в фантомного волонтёра.
+    """
+    cell = row.find(class_=re.compile(r"notRegistered", re.I))
+    if cell is not None:
+        return cell
+    if "нужна регистрация" in row.get_text(" ", strip=True).lower():
+        cells = row.find_all(["td", "th"])
+        return cells[0] if cells else None
+    return None
+
+
+def _unregistered_volunteer_name(cell: Tag) -> str | None:
+    """Имя из строки без профиля.
+
+    Оно там бывает: «Ольга ДЕРИЗЕМЛЯ (Нужна регистрация)» (Стрежевой
+    23.07.2022). А бывает и не быть — тогда сайт пишет «НЕИЗВЕСТНЫЙ», и имени
+    у человека для нас действительно нет.
+    """
+    link = cell.find("a")
+    text = (link.get_text(" ", strip=True) if link else cell.get_text(" ", strip=True)) or ""
+    text = re.sub(r"\(.*?\)", "", text).strip()
+    if not text or text.upper() == "НЕИЗВЕСТНЫЙ":
+        return None
+    return text
+
+
 def _extract_participant_name_from_row(row: Tag) -> str | None:
     unknown_cell = row.find(class_=re.compile(r"\bunknown\b", re.I))
     if unknown_cell:
@@ -756,6 +787,7 @@ def parse_volunteers_from_event_html(
 
     source_url = _results_date_url(slug, event_date)
     results: list[CanonicalVolunteerResult] = []
+    unregistered_seen = 0
 
     for row in table.find_all("tr"):
         cells = row.find_all(["td", "th"])
@@ -768,18 +800,45 @@ def parse_volunteers_from_event_html(
 
         external_user_id = _extract_user_id_from_row(row)
         participant_name = _extract_participant_name_from_row(row)
-        if external_user_id is None:
+        unregistered_cell = (
+            _unregistered_volunteer_cell(row) if external_user_id is None else None
+        )
+        unregistered = unregistered_cell is not None
+        if external_user_id is None and not unregistered:
             continue
+        if unregistered_cell is not None:
+            participant_name = _unregistered_volunteer_name(unregistered_cell)
 
         role = cells[-1].get_text(" ", strip=True) or "volunteer"
         role_key = _normalize_role_key(role)
 
+        if unregistered:
+            # «НЕИЗВЕСТНЫЙ (Нужна регистрация)» — волонтёр без профиля на
+            # 5 вёрст. Раньше такие строки выбрасывались, и роль просто
+            # исчезала из протокола: у Видного 15.08.2026 в списке не было
+            # организатора, а число волонтёров расходилось со сводкой ровно
+            # на число таких строк (сводка сайта их считает).
+            # У строки нет идентификатора, поэтому ключ — порядковый номер
+            # среди незарегистрированных плюс роль. Двух безымянных с разными
+            # ролями мы неизбежно считаем за двух: отличить их нечем.
+            unregistered_seen += 1
+            # Ключ по имени, когда оно есть: переставили строки местами — запись
+            # осталась той же. Безымянных различаем только порядковым номером.
+            who = _normalize_role_key(participant_name) if participant_name else f"n{unregistered_seen}"
+            external_result_key = (
+                f"{slug}:{event_date.isoformat()}:vol:unregistered:{who}:{role_key}"
+            )
+        else:
+            external_result_key = f"{slug}:{event_date.isoformat()}:vol:{external_user_id}:{role_key}"
+
         results.append(
             CanonicalVolunteerResult(
-                external_result_key=f"{slug}:{event_date.isoformat()}:vol:{external_user_id}:{role_key}",
+                external_result_key=external_result_key,
                 event_date=event_date,
                 external_user_id=external_user_id,
-                participant_name=participant_name or f"User {external_user_id}",
+                participant_name=(
+                    participant_name or (None if unregistered else f"User {external_user_id}")
+                ),
                 role=role,
                 source_url=source_url,
                 location_external_key=slug,

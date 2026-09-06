@@ -937,6 +937,12 @@ class VolunteerResult(Base):
     participant_id: Mapped[UUID | None] = mapped_column(ForeignKey("participants.id"))
     external_result_key: Mapped[str] = mapped_column(String(512), nullable=False)
     role: Mapped[str | None] = mapped_column(String(128))
+    # Имя волонтёра БЕЗ профиля на площадке: в протоколе 5 вёрст такие строки
+    # выглядят как «Имя ФАМИЛИЯ (Нужна регистрация)» или просто «НЕИЗВЕСТНЫЙ».
+    # Привязать их к participants нечем — идентификатора нет, а синтетический
+    # участник испортил бы рейтинги и счётчики карьеры. Заполняется только при
+    # participant_id IS NULL; у остальных имя берётся из participants.
+    display_name: Mapped[str | None] = mapped_column(String(255))
     source_hash: Mapped[str | None] = mapped_column(String(64))
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

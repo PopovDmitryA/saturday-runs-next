@@ -646,6 +646,7 @@ def _build_volunteers(
             VolunteerResult.role,
             VolunteerResult.participant_id,
             VolunteerResult.external_result_key,
+            VolunteerResult.display_name.label("fallback_name"),
             Participant.display_name,
             Participant.external_user_id,
             Participant.profile_url,
@@ -669,12 +670,21 @@ def _build_volunteers(
     people: dict[str, dict[str, Any]] = {}
     seen_role_keys: set[tuple[str, str]] = set()
     for row in rows:
-        key = str(row.participant_id or row.external_result_key)
+        # Волонтёр без профиля склеивается по имени из протокола: у одного
+        # человека бывает две роли, и без этого он расплодился бы в две
+        # строки. Совсем безымянного («НЕИЗВЕСТНЫЙ») склеить нечем.
+        key = str(row.participant_id or row.fallback_name or row.external_result_key)
         career_before = career.get(row.participant_id, 0) if row.participant_id else 0
         person = people.setdefault(
             key,
             {
-                "name": row.display_name,
+                # Волонтёр без профиля на площадке: имени в participants нет,
+                # берём то, что написано в самом протоколе. Если и там только
+                # «НЕИЗВЕСТНЫЙ» — так и пишем: иначе роль (а это часто
+                # организатор) выглядела бы безымянной строкой.
+                "name": row.display_name
+                or row.fallback_name
+                or ("НЕИЗВЕСТНЫЙ" if row.participant_id is None else None),
                 "external_user_id": row.external_user_id,
                 "serial_id": row.serial_id if row.profile_private is False else None,
                 "roles": [],

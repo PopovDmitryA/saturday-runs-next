@@ -42,6 +42,7 @@ def _summary(**kwargs: object) -> SimpleNamespace:
     base = {
         "summary_hash": "hash-1",
         "finishers_count": 38,
+        "volunteers_count": 12,
         "best_male_time_sec": 1315,
         "best_female_time_sec": 1601,
     }
@@ -230,11 +231,16 @@ def test_fresh_time_mismatch_beats_the_age_rotation(db_session: Session) -> None
     keys = [item.external_event_key for item in plan]
 
     assert mismatched in keys, "свежее расхождение обязано попасть в план вопреки фильтру давности"
-    assert keys.index(mismatched) == 0, "расхождение идёт вперёд обычной ротации"
-    assert plan[0].reason == ReconcileReason.time_mismatch
+    by_key = {item.external_event_key: item for item in plan}
+    assert by_key[mismatched].reason == ReconcileReason.time_mismatch
+    # Не «строго первый»: в базе могут лежать другие расхождения (в dev-БД это
+    # реальные площадки), и порядок внутри приоритета — по дате старта. Важно
+    # ровно одно — что этот протокол попал в приоритет, а не в общую ротацию.
+    assert by_key[mismatched].reason in PRIORITY_REASONS
     # Давно не проверявшийся, но целый протокол — в плане есть, но позже.
     if consistent in keys:
         assert keys.index(consistent) > keys.index(mismatched)
+        assert by_key[consistent].reason not in PRIORITY_REASONS
 
 
 def test_mismatch_retry_interval_stops_the_loop(db_session: Session) -> None:
@@ -277,3 +283,50 @@ def test_mismatch_retry_interval_stops_the_loop(db_session: Session) -> None:
     db_session.flush()
 
     assert mismatched not in priority_keys(6)
+
+
+def test_volunteers_mismatch_is_a_priority_reason() -> None:
+    """Сводка обещает 13 волонтёров, у нас 12 — протокол надо перечитать.
+
+    Проверено на живых протоколах 06.09.2026 (Черкизовский 05.09, Кудрово
+    29.08, Тушино 22.08, Владимир 11.07): расхождение по волонтёрам — всегда
+    реальный пропуск или лишняя строка, и перекачка его лечит
+    (replace_event_volunteer_results и добавляет, и удаляет). Раньше это
+    выглядело «шумом на ±1» из-за count(distinct participant_id), который
+    молча терял волонтёров без профиля.
+    """
+    reason = _classify_reconcile_reason(
+        _summary(volunteers_count=13),
+        _state(),
+        38,
+        check_cutoff=NOW,
+        fastest_stored_sec=1315,
+        volunteer_people=12,
+    )
+    assert reason is ReconcileReason.volunteers_mismatch
+    assert reason in PRIORITY_REASONS
+
+
+def test_volunteers_match_leaves_the_protocol_alone() -> None:
+    reason = _classify_reconcile_reason(
+        _summary(volunteers_count=12),
+        _state(),
+        38,
+        check_cutoff=NOW,
+        fastest_stored_sec=1315,
+        volunteer_people=12,
+    )
+    assert reason is ReconcileReason.check_due
+
+
+def test_volunteers_unknown_in_summary_is_not_a_mismatch() -> None:
+    """NULL в сводке — «не знаем», а не «ноль волонтёров»."""
+    reason = _classify_reconcile_reason(
+        _summary(volunteers_count=None),
+        _state(),
+        38,
+        check_cutoff=NOW,
+        fastest_stored_sec=1315,
+        volunteer_people=12,
+    )
+    assert reason is ReconcileReason.check_due

@@ -156,6 +156,74 @@ def test_parse_volunteers_from_event_html() -> None:
     assert volunteers[0].location_external_key == "babushkinskynayauze"
 
 
+def test_parse_volunteers_keeps_unregistered_rows() -> None:
+    """Волонтёр без профиля («НЕИЗВЕСТНЫЙ») — тоже волонтёр.
+
+    Такие строки выбрасывались, и роль исчезала из протокола целиком: у
+    Видного 15.08.2026 в списке не было организатора. Заодно ровно на число
+    таких строк расходилось наше число волонтёров со сводкой сайта — она их
+    считает (проверено на живых протоколах 06.09.2026).
+    """
+    html = """
+    <h2 class="results-title">Команда организаторов</h2>
+    <table>
+      <tr><th>Волонтёр</th><th>Роль</th></tr>
+      <tr>
+        <td><div class="notRegistered"><a href="https://5verst.ru/register/?utm_source=5verst">НЕИЗВЕСТНЫЙ</a></div>
+            <div>(Нужна регистрация)</div></td>
+        <td>Организатор</td>
+      </tr>
+      <tr>
+        <td><a href="https://5verst.ru/userstats/790277595">Ольга ГРАЧЁВА</a></td>
+        <td>Секундомер</td>
+      </tr>
+      <tr>
+        <td><div class="notRegistered"><a href="https://5verst.ru/register/">Ольга ДЕРИЗЕМЛЯ</a></div>
+            <div>(Нужна регистрация)</div></td>
+        <td>Маршал</td>
+      </tr>
+    </table>
+    """
+    volunteers = bulk_parser.parse_volunteers_from_event_html(
+        html,
+        slug="vysota",
+        event_date=date(2026, 8, 15),
+    )
+    assert len(volunteers) == 3
+    unregistered = [item for item in volunteers if item.external_user_id is None]
+    assert [item.role for item in unregistered] == ["Организатор", "Маршал"]
+    # Имя в такой строке бывает («Ольга ДЕРИЗЕМЛЯ (Нужна регистрация)»,
+    # Стрежевой 23.07.2022) — тогда сохраняем его; «НЕИЗВЕСТНЫЙ» именем не
+    # считаем, у человека его для нас действительно нет.
+    assert unregistered[0].participant_name is None
+    assert unregistered[1].participant_name == "Ольга ДЕРИЗЕМЛЯ"
+    # Ключи различаются, иначе вторая строка затёрла бы первую.
+    assert len({item.external_result_key for item in volunteers}) == 3
+    assert unregistered[0].external_result_key == "vysota:2026-08-15:vol:unregistered:n1:организатор"
+    assert (
+        unregistered[1].external_result_key
+        == "vysota:2026-08-15:vol:unregistered:ольга_дериземля:маршал"
+    )
+
+
+def test_parse_volunteers_ignores_rows_without_id_or_marker() -> None:
+    """Признак «не зарегистрирован» обязателен: иначе сюда попадёт любая
+    строка со сломанной разметкой и превратится в фантомного волонтёра."""
+    html = """
+    <h2 class="results-title">Команда организаторов</h2>
+    <table>
+      <tr><th>Волонтёр</th><th>Роль</th></tr>
+      <tr><td><span>Просто текст без ссылки</span></td><td>Маршал</td></tr>
+    </table>
+    """
+    assert (
+        bulk_parser.parse_volunteers_from_event_html(
+            html, slug="vysota", event_date=date(2026, 8, 15)
+        )
+        == []
+    )
+
+
 def test_parse_run_protocol_html() -> None:
     results = bulk_parser.parse_run_protocol_html(
         PROTOCOL_HTML,
