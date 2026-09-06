@@ -2631,9 +2631,21 @@ export type LocationParticipants = {
   volunteers_people_total: number;
 };
 
-export function getLocationParticipants(slug: string) {
+/**
+ * Постоянный состав локации.
+ *
+ * roles — канонические ключи волонтёрских ролей (справочник тот же, что у
+ * рейтингов). Сужают волонтёрский зачёт до выходов в этих ролях; на бегунов не
+ * влияют, поэтому пустой список и null равнозначны «всем ролям».
+ */
+export function getLocationParticipants(slug: string, roles?: string[] | null) {
+  const params = new URLSearchParams();
+  for (const role of roles ?? []) {
+    params.append("roles", role);
+  }
+  const query = params.toString();
   return apiFetch<LocationParticipants>(
-    `/locations/page/${encodeURIComponent(slug)}/participants`,
+    `/locations/page/${encodeURIComponent(slug)}/participants${query ? `?${query}` : ""}`,
   );
 }
 

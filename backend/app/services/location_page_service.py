@@ -9,6 +9,7 @@ external_key «основной» платформы идентичности (a
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Callable, Iterable, Sequence
@@ -47,7 +48,11 @@ from app.services.location_catalog_service import (
     resolve_location_display_name,
 )
 from app.time_format import format_finish_time_display
-from app.volunteer_role_taxonomy import canonical_volunteer_role
+from app.volunteer_role_taxonomy import (
+    CANONICAL_ROLE_LABELS,
+    canonical_volunteer_role,
+    preset_role_keys,
+)
 
 HISTOGRAM_BIN_SEC = 10
 # Индекс локаций — тяжёлая агрегация (~35 тыс. событий + join по протоколам
@@ -89,11 +94,85 @@ def location_leaders_cache_key(slug: str) -> str:
     return f"locations:leaders:v3:{slug.strip().lower()}"
 
 
-def location_participants_cache_key(slug: str) -> str:
+LOCATION_PARTICIPANTS_CACHE_PREFIX = "locations:participants:v3"
+
+
+def location_participants_cache_key(slug: str, roles_key: str = "") -> str:
     # v3 — в строках появились platform_first_dates/platform_last_dates. Без
     # бампа страница до истечения TTL отдавала бы старый payload, и в срезе по
     # системе даты остались бы общими.
-    return f"locations:participants:v3:{slug.strip().lower()}"
+    #
+    # roles_key — срез по волонтёрским ролям. Пресеты дают читаемый суффикс
+    # (:ron_site), свой набор — хэш, как в рейтингах (см. normalize_role_filter
+    # в leaderboard_service): ключей на пресеты немного, а произвольные наборы
+    # редки и сами протухнут по TTL.
+    base = f"{LOCATION_PARTICIPANTS_CACHE_PREFIX}:{slug.strip().lower()}"
+    return f"{base}:r{roles_key}" if roles_key else base
+
+
+def normalize_participant_role_filter(
+    roles: Sequence[str] | None,
+) -> tuple[frozenset[str] | None, str]:
+    """Роли из запроса → (канонические ключи, суффикс кэша).
+
+    Повторяет правила рейтингов: неизвестные ключи молча отбрасываются, пустой
+    и полный набор — это «все роли», то есть фильтра нет вовсе. Так один и тот
+    же список ролей всегда даёт один и тот же ключ кэша.
+    """
+    if not roles:
+        return None, ""
+    known = set(CANONICAL_ROLE_LABELS)
+    selected = frozenset(role for role in roles if role in known)
+    if not selected or selected == known:
+        return None, ""
+    for preset in ("on_site", "on_site_no_run", "remote"):
+        if preset_role_keys(preset) == selected:
+            return selected, preset
+    digest = hashlib.sha1(",".join(sorted(selected)).encode()).hexdigest()[:10]
+    return selected, f"c{digest}"
+
+
+_ROLE_LABEL_MAP_CACHE_KEY = "locations:participants:role_labels:v1"
+_ROLE_LABEL_MAP_TTL_SECONDS = 24 * 3600
+
+
+def _volunteer_role_labels(db: Session, keys: frozenset[str]) -> list[str]:
+    """Сырые ярлыки ролей, которые схлопываются в выбранные канонические ключи.
+
+    Фильтр приходит в канонических ключах таксономии, а в volunteer_results
+    лежат исходные названия систем («Сканирование штрих-кодов», «Barcode
+    Scanning», «Сканер 25»). Приведение живёт в Python, поэтому в SQL уходит
+    список ярлыков, а не ключей.
+
+    Карта «ярлык → ключ» считается полным DISTINCT по volunteer_results и
+    кэшируется на сутки: новые названия ролей появляются от силы раз в месяц,
+    а проход по ярлыкам стоит заметно дороже самой страницы.
+    """
+    mapping: dict[str, str] | None = None
+    try:
+        cached = get_redis_client().get(_ROLE_LABEL_MAP_CACHE_KEY)
+        if isinstance(cached, str):
+            parsed = json.loads(cached)
+            if isinstance(parsed, dict):
+                mapping = {str(k): str(v) for k, v in parsed.items()}
+    except (redis.RedisError, TypeError, ValueError):
+        mapping = None
+
+    if mapping is None:
+        mapping = {}
+        for (label,) in db.execute(
+            text("SELECT DISTINCT role FROM volunteer_results WHERE role IS NOT NULL")
+        ).all():
+            canonical = canonical_volunteer_role(label)
+            if canonical is not None:
+                mapping[str(label)] = canonical.key
+        _write_json_cache(
+            _ROLE_LABEL_MAP_CACHE_KEY,
+            cast(dict[str, object], mapping),
+            _ROLE_LABEL_MAP_TTL_SECONDS,
+        )
+
+    return sorted(label for label, key in mapping.items() if key in keys)
 
 
 # Порог «активного участника» страницы деталей — три участия, как в легаси-
@@ -961,18 +1040,60 @@ def _viewer_location_attendance(
 
 
 def build_location_participants(
-    db: Session, slug: str, *, use_cache: bool = True, refresh: bool = False
+    db: Session,
+    slug: str,
+    *,
+    use_cache: bool = True,
+    refresh: bool = False,
+    roles: Sequence[str] | None = None,
 ) -> dict[str, object] | None:
-    cache_key = location_participants_cache_key(slug)
+    role_filter, roles_key = normalize_participant_role_filter(roles)
+    cache_key = location_participants_cache_key(slug, roles_key)
     if use_cache and not refresh:
         cached = _read_json_cache(cache_key)
         if cached is not None:
             return cached
 
-    payload = _compute_location_participants(db, slug)
+    if role_filter is None:
+        payload = _compute_location_participants(db, slug)
+    else:
+        # Бегунов роли не касаются, а считаются они дороже всего (см. докстринг
+        # _active_participant_rows). Поэтому в срезе по ролям берём их готовыми
+        # из основного payload'а — он к этому моменту почти всегда уже в кэше,
+        # его греет locations.warm_cache — и пересчитываем только волонтёров.
+        base = build_location_participants(db, slug, use_cache=use_cache, refresh=refresh)
+        payload = None if base is None else _volunteers_by_roles(db, slug, base, role_filter)
 
     if use_cache and payload is not None:
         _write_json_cache(cache_key, payload, LOCATION_PAGE_CACHE_TTL_SECONDS)
+    return payload
+
+
+def _volunteers_by_roles(
+    db: Session, slug: str, base: dict[str, object], role_filter: frozenset[str]
+) -> dict[str, object] | None:
+    """Тот же payload, но волонтёрский зачёт пересчитан по выбранным ролям.
+
+    Считаются только выходы в этих ролях — и в колонке «Волонтёрств», и в
+    «Всего», и в знаменателе «N из M». Порог в три участия применяется уже
+    после фильтра: в строгом зачёте «только на площадке» человек с двумя
+    маршальствами и десятком удалённых ролей постоянным составом не считается.
+    """
+    identity = resolve_location_identity(db, slug)
+    if identity is None:
+        return None
+    event_ids = _location_event_ids(db, [location.id for location, _code in identity.locations])
+    test_event_ids = [row[0] for row in db.query(Event.id).filter(Event.is_test_event.is_(True)).all()]
+    volunteers, volunteers_people = _active_participant_rows(
+        db,
+        VolunteerResult,
+        event_ids,
+        test_event_ids=test_event_ids,
+        role_labels=_volunteer_role_labels(db, role_filter),
+    )
+    payload = dict(base)
+    payload["volunteers"] = volunteers
+    payload["volunteers_people_total"] = volunteers_people
     return payload
 
 
@@ -1027,6 +1148,7 @@ def _active_participant_rows(
     *,
     test_event_ids: list[UUID],
     min_count: int = LOCATION_ACTIVE_MIN_COUNT,
+    role_labels: list[str] | None = None,
 ) -> tuple[list[dict[str, object]], int]:
     """Строки постоянного состава по одному зачёту (пробежки или волонтёрства).
 
@@ -1049,6 +1171,16 @@ def _active_participant_rows(
     """
     if not event_ids:
         return [], 0
+
+    # Срез по волонтёрским ролям: в зачёт идут только выходы в выбранных ролях.
+    # Пустой список ярлыков (роли есть в таксономии, но в данных не встречались)
+    # честно даёт пустой зачёт, а не «все роли». У пробежек ролей нет вовсе,
+    # поэтому фильтр к ним не то что не применяется — он и приехать не может.
+    role_clause = None
+    if role_labels is not None:
+        if model is not VolunteerResult:
+            raise ValueError("Фильтр ролей применим только к волонтёрскому зачёту")
+        role_clause = VolunteerResult.role.in_(role_labels)
 
     group_key = func.coalesce(PlatformLink.user_id, model.participant_id)
     display_name = func.max(func.coalesce(User.display_name, Participant.display_name))
@@ -1078,6 +1210,7 @@ def _active_participant_rows(
         .outerjoin(PlatformLink, _platform_link_join())
         .outerjoin(User, PlatformLink.user_id == User.id)
         .filter(model.event_id.in_(event_ids))
+        .filter(*([] if role_clause is None else [role_clause]))
         .group_by(group_key)
         # Заглушки вместо имени отсекаем здесь, а не в Python: они не люди и не
         # должны попадать ни в список, ни в знаменатель «показаны N из M».
@@ -1110,6 +1243,7 @@ def _active_participant_rows(
         .join(Participant, model.participant_id == Participant.id)
         .outerjoin(PlatformLink, _platform_link_join())
         .filter(model.event_id.in_(event_ids))
+        .filter(*([] if role_clause is None else [role_clause]))
         .group_by(group_key, Platform.code)
         .all()
     ):
@@ -1141,7 +1275,9 @@ def _active_participant_rows(
         for participant_id, user_id in linked:
             participant_to_group[participant_id] = user_id
 
-    totals = _totals_by_group(db, model, participant_to_group, test_event_ids)
+    totals = _totals_by_group(
+        db, model, participant_to_group, test_event_ids, role_labels=role_labels
+    )
 
     rows: list[dict[str, object]] = []
     place = 0
@@ -1189,11 +1325,18 @@ def _totals_by_group(
     model: type[RunResult] | type[VolunteerResult],
     participant_to_group: dict[UUID, UUID],
     test_event_ids: list[UUID],
+    *,
+    role_labels: list[str] | None = None,
 ) -> dict[UUID, int]:
     """Участий во всех локациях — по каждому профилю страницы.
 
     Считается по participant_id и складывается в Python: см. комментарий в
     _active_participant_rows о том, почему запрос держим без join'ов.
+
+    role_labels сужает и «всего»: если колонка «Волонтёрств» показывает только
+    выбранные роли, то и доля «здесь» обязана считаться от них же — иначе у
+    маршала, который в других ролях объездил полстраны, доля вышла бы смешной
+    и необъяснимой.
     """
     participant_ids = list(participant_to_group)
     if not participant_ids:
@@ -1206,12 +1349,12 @@ def _totals_by_group(
     if test_event_ids:
         counted_event = case((model.event_id.in_(test_event_ids), None), else_=model.event_id)
 
-    rows = (
-        db.query(model.participant_id, func.count(func.distinct(counted_event)))
-        .filter(model.participant_id.in_(participant_ids))
-        .group_by(model.participant_id)
-        .all()
+    query = db.query(model.participant_id, func.count(func.distinct(counted_event))).filter(
+        model.participant_id.in_(participant_ids)
     )
+    if role_labels is not None:
+        query = query.filter(VolunteerResult.role.in_(role_labels))
+    rows = query.group_by(model.participant_id).all()
 
     totals: dict[UUID, int] = {}
     for participant_id, count in rows:
@@ -2665,6 +2808,15 @@ def invalidate_location_page_cache(slug: str) -> None:
             location_leaders_cache_key(normalized),
             location_participants_cache_key(normalized),
         )
+        # Срезы постоянного состава по ролям лежат отдельными ключами с
+        # суффиксом (:ron_site, :rc1a2b3…) — точечный delete их не достанет.
+        # Ключей на локацию единицы, поэтому scan по узкой маске дешевле, чем
+        # хранить их список. FLUSHDB здесь запрещён — база общая с сессиями.
+        role_keys = list(
+            client.scan_iter(match=f"{location_participants_cache_key(normalized)}:r*", count=100)
+        )
+        if role_keys:
+            client.delete(*role_keys)
     except redis.RedisError:
         pass
 

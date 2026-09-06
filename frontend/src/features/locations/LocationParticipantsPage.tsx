@@ -26,6 +26,17 @@ import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
+import { VolunteerRolesModal } from "../leaderboards/VolunteerRolesModal";
+// Стили шторки ролей (.vrm-*) и самой «шестерёнки» (.lb-roles-gear) живут в
+// рейтингах вместе с компонентом. Тянем их сюда, а не копируем в index.css:
+// фильтр обязан выглядеть одинаково в обеих витринах.
+import "../leaderboards/leaderboards.css";
+import {
+  getVolunteerRoleCatalog,
+  presetRoleKeys,
+  type VolunteerRoleItem,
+  type VolunteerRolePreset,
+} from "../leaderboards/leaderboardsApi";
 
 type Scope = "runners" | "volunteers";
 type SortKey = "place" | "name" | "count" | "total" | "share" | "first" | "last";
@@ -105,6 +116,54 @@ const PAGE_STEP = 100;
  */
 const MIN_COUNT_STEPS = [3, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300, 500];
 
+// Подпись на «шестерёнке» ролей и хвост в заголовке — те же слова, что в
+// рейтингах волонтёрского туризма: фильтр один и тот же, и называться он должен
+// одинаково, в какой бы витрине ни встретился.
+const ROLE_PRESET_SHORT: Record<VolunteerRolePreset, string> = {
+  all: "все роли",
+  on_site: "на площадке",
+  on_site_no_run: "вместо бега",
+  remote: "не приезжая",
+  custom: "свой набор",
+};
+
+const ROLE_PRESET_LEAD: Record<VolunteerRolePreset, string> = {
+  all: "",
+  on_site: "Только роли, ради которых надо приехать на старт.",
+  on_site_no_run: "Только роли, которые нельзя совместить с пробежкой.",
+  remote: "Только роли, которые выполняют не приезжая на площадку.",
+  custom: "Только выбранные роли.",
+};
+
+const ROLE_FILTER_HINT =
+  "Какие волонтёрские роли идут в зачёт: только те, ради которых надо приехать " +
+  "на старт, только «вместо бега» или свой набор. По умолчанию — все роли.";
+
+// Та же шторка, что в рейтингах, но здесь она собирает состав, а не место.
+const ROLES_MODAL_INTRO =
+  "Вы сами выбираете, из каких ролей считать состав: возьмите готовый набор или " +
+  "отметьте роли вручную.";
+
+/**
+ * Зачёт ролей из адреса: `?roles=on_site` (пресет) или `?roles=k1,k2` (свой
+ * набор). Ссылку на «постоянных маршалов» площадки так можно кинуть в чат
+ * организаторов — она откроется с тем же срезом.
+ */
+function rolePresetFromLocation(): { preset: VolunteerRolePreset; keys: string[] } {
+  if (typeof window === "undefined") {
+    return { preset: "all", keys: [] };
+  }
+  const raw = new URLSearchParams(window.location.search).get("roles");
+  if (!raw) {
+    return { preset: "all", keys: [] };
+  }
+  if (raw === "on_site" || raw === "on_site_no_run" || raw === "remote") {
+    return { preset: raw, keys: [] };
+  }
+  const keys = raw.split(",").map((key) => key.trim()).filter(Boolean);
+  return keys.length > 0 ? { preset: "custom", keys } : { preset: "all", keys: [] };
+}
+
 /** Участий в выбранной системе — или во всех сразу, когда система не выбрана. */
 function countIn(row: LocationActiveParticipant, platform: string): number {
   if (platform === "all") {
@@ -126,6 +185,21 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
   // Порог участий: сколько раз человек должен был здесь отметиться, чтобы
   // попасть в список. Стартуем с нижней ступени — это порог самого списка.
   const [minCount, setMinCount] = useState(MIN_COUNT_STEPS[0]);
+  // Срез волонтёрского зачёта по ролям. Пресет — что выбрано в шторке, keys —
+  // конкретные ключи ролей (у пресета они подставляются из справочника).
+  const [initialRoles] = useState(rolePresetFromLocation);
+  const [rolePreset, setRolePreset] = useState<VolunteerRolePreset>(initialRoles.preset);
+  const [roleKeys, setRoleKeys] = useState<string[]>(initialRoles.keys);
+  const [roleCatalog, setRoleCatalog] = useState<VolunteerRoleItem[]>([]);
+  const [rolesModalOpen, setRolesModalOpen] = useState(false);
+  // Волонтёрские строки в срезе по ролям приезжают отдельным запросом: бегунов
+  // роли не касаются, и гонять их заново незачем.
+  const [roleRows, setRoleRows] = useState<{
+    key: string;
+    rows: LocationActiveParticipant[];
+    peopleTotal: number;
+  } | null>(null);
+  const [rolesLoading, setRolesLoading] = useState(false);
   // Показываем по сотне строк, как в рейтингах: у крупной площадки список
   // уходит за тысячу, и рисовать его целиком незачем.
   const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
@@ -163,13 +237,115 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
     };
   }, [slug]);
 
+  // Ключи, которые реально уходят в запрос: у «всех ролей» фильтра нет вовсе.
+  const effectiveRoles = rolePreset === "all" ? null : roleKeys;
+  const roleFilterKey = effectiveRoles ? [...effectiveRoles].sort().join(",") : "";
+
+  // Справочник ролей нужен и шторке, и пресетам (в них ключи подставляются из
+  // него). Тянем один раз, когда человек впервые открыл волонтёрский зачёт или
+  // пришёл по ссылке с готовым срезом.
+  useEffect(() => {
+    if (roleCatalog.length > 0 || (scope !== "volunteers" && rolePreset === "all")) {
+      return;
+    }
+    let cancelled = false;
+    getVolunteerRoleCatalog()
+      .then((catalog) => {
+        if (!cancelled) {
+          setRoleCatalog(catalog.roles);
+        }
+      })
+      .catch(() => {
+        // Справочник не приехал — страница живёт без фильтра ролей, это не
+        // повод показывать ошибку вместо состава.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [scope, rolePreset, roleCatalog.length]);
+
+  // Пресет знает только своё имя; ключи к нему приходят из справочника — в том
+  // числе когда срез приехал ссылкой (?roles=on_site) и выбирать его руками
+  // никто не будет.
+  useEffect(() => {
+    if (roleCatalog.length === 0 || rolePreset === "all" || rolePreset === "custom") {
+      return;
+    }
+    if (roleKeys.length === 0) {
+      setRoleKeys(presetRoleKeys(rolePreset, roleCatalog) ?? []);
+    }
+  }, [roleCatalog, rolePreset, roleKeys.length]);
+
+  // Волонтёрские строки под выбранные роли.
+  useEffect(() => {
+    if (!roleFilterKey) {
+      setRoleRows(null);
+      setRolesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setRolesLoading(true);
+    getLocationParticipants(slug, roleFilterKey.split(","))
+      .then((payload) => {
+        if (!cancelled) {
+          setRoleRows({
+            key: roleFilterKey,
+            rows: payload.volunteers,
+            peopleTotal: payload.volunteers_people_total,
+          });
+        }
+      })
+      .catch(() => {
+        // Срез не посчитался — остаёмся на полном зачёте, а не на пустоте.
+        if (!cancelled) {
+          setRoleRows(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRolesLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, roleFilterKey]);
+
+  const applyRoleFilter = (preset: VolunteerRolePreset, keys: string[]) => {
+    setRolePreset(preset);
+    setRoleKeys(keys);
+    setRolesModalOpen(false);
+    // Срез — в адресе: ссылку с ним можно отправить, а F5 её не потеряет.
+    // localStorage сознательно не трогаем, в отличие от рейтингов: там фильтр
+    // общий на витрину, здесь он про конкретную площадку, и «прилипший» срез
+    // на соседней локации только запутает.
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (preset === "all") {
+        url.searchParams.delete("roles");
+      } else {
+        url.searchParams.set("roles", preset === "custom" ? keys.join(",") : preset);
+      }
+      window.history.replaceState(null, "", url.toString());
+    }
+  };
+
   // Срез по системе — отдельным слоем: по нему считаются доступные ступени
   // порога, а сортировка и сам порог накладываются уже поверх.
   const platformRows = useMemo(() => {
     if (!data) {
       return [];
     }
-    const source = scope === "runners" ? data.runners : data.volunteers;
+    // Волонтёров в срезе по ролям считает бэкенд: сложить их из строк «все
+    // роли» нельзя — человек, вышедший в одну субботу в двух ролях, дал бы
+    // два волонтёрства вместо одного. Пока новый срез едет, показываем
+    // предыдущий, а не пустоту.
+    const source =
+      scope === "runners"
+        ? data.runners
+        : roleFilterKey && roleRows
+          ? roleRows.rows
+          : data.volunteers;
     if (platform === "all") {
       return source;
     }
@@ -206,7 +382,7 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
       }
       return { ...row, place };
     });
-  }, [data, scope, platform]);
+  }, [data, scope, platform, roleFilterKey, roleRows]);
 
   // Нижняя ступень — порог самого списка с бэкенда: строк ниже него в ответе
   // просто нет. Верхняя — рекорд площадки в текущем срезе: ступени выше
@@ -325,7 +501,12 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
   // Фильтр по системе нужен только там, где площадка жила больше чем в одной.
   const platformOptions = data.platform_codes ?? [];
   const hasParkrun = platformOptions.includes("parkrun");
-  const peopleTotal = scope === "runners" ? data.runners_people_total : data.volunteers_people_total;
+  const peopleTotal =
+    scope === "runners"
+      ? data.runners_people_total
+      : roleFilterKey && roleRows
+        ? roleRows.peopleTotal
+        : data.volunteers_people_total;
   // «от 3 раз» вместо «от 3 пробежек»: слово одно на оба зачёта, а падежи
   // числительного с двумя наборами слов читаются хуже, чем нейтральное «раз».
   const threshold = `от ${minCount} раз`;
@@ -343,6 +524,9 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
           <h1>{data.name} — постоянный состав</h1>
           <span className="muted loc-people-lead">
             Все, кто {words.verb} здесь {threshold}.
+            {scope === "volunteers" && rolePreset !== "all" && (
+              <> {ROLE_PRESET_LEAD[rolePreset]}</>
+            )}
             {hasParkrun && scope === "volunteers" && (
               <>
                 {" "}
@@ -367,7 +551,12 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
               options={(["runners", "volunteers"] as Scope[]).map((key) => ({
                 value: key,
                 label: `${SCOPE_WORDS[key].label} (${formatInt(
-                  (key === "runners" ? data.runners : data.volunteers).length,
+                  (key === "runners"
+                    ? data.runners
+                    : roleFilterKey && roleRows
+                      ? roleRows.rows
+                      : data.volunteers
+                  ).length,
                 )})`,
               }))}
             />
@@ -387,6 +576,33 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
                   })),
                 ]}
               />
+            </FilterGroup>
+          )}
+          {/* Роли — только в волонтёрском зачёте: у пробежек ролей нет.
+              Шторка и слова те же, что в рейтингах волонтёрского туризма
+              (просьба Дмитрия 06.09.2026: «такой же фильтр»), поэтому и
+              компонент переиспользуем, а не копируем. */}
+          {scope === "volunteers" && roleCatalog.length > 0 && (
+            <FilterGroup
+              label="Роли"
+              hint={
+                <StatHintTooltip text={ROLE_FILTER_HINT}>
+                  <span className="loc-section-title-info" aria-label="Про фильтр ролей">
+                    ⓘ
+                  </span>
+                </StatHintTooltip>
+              }
+            >
+              <button
+                type="button"
+                className={`lb-roles-gear${rolePreset !== "all" ? " lb-roles-gear-active" : ""}`}
+                aria-label="Настроить, какие роли считать"
+                title="Какие роли считать"
+                onClick={() => setRolesModalOpen(true)}
+              >
+                <span aria-hidden="true">⚙</span>
+                <span className="lb-roles-gear-text">{ROLE_PRESET_SHORT[rolePreset]}</span>
+              </button>
             </FilterGroup>
           )}
           {/* Порог участий: с тройкой в списке крупной площадки тонут
@@ -419,6 +635,7 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
             />
           </FilterGroup>
         </FilterRow>
+        {rolesLoading && <span className="muted loc-people-found">Считаем срез по ролям…</span>}
         {query.trim() && (
           <span className="muted loc-people-found">
             {rows.length > 0 ? `Найдено: ${formatInt(rows.length)}` : "Никого не нашли"}
@@ -555,6 +772,16 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
           Как считается
         </p>
       </section>
+      {rolesModalOpen && roleCatalog.length > 0 && (
+        <VolunteerRolesModal
+          roles={roleCatalog}
+          preset={rolePreset}
+          selected={rolePreset === "all" ? roleCatalog.map((role) => role.key) : roleKeys}
+          intro={ROLES_MODAL_INTRO}
+          onApply={applyRoleFilter}
+          onClose={() => setRolesModalOpen(false)}
+        />
+      )}
       <ScrollToTopButton />
     </PortalSectionShell>
   );

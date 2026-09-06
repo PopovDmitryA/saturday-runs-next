@@ -132,9 +132,15 @@ def location_attendance(
 def location_participants(
     slug: str,
     db: Annotated[Session, Depends(get_db)],
+    roles: Annotated[list[str] | None, Query()] = None,
 ) -> LocationParticipantsResponse:
-    """Постоянный состав локации: все, кто бегал или волонтёрил здесь от трёх раз."""
-    payload = build_location_participants(db, slug)
+    """Постоянный состав локации: все, кто бегал или волонтёрил здесь от трёх раз.
+
+    roles — канонические ключи волонтёрских ролей (те же, что у рейтингов).
+    Сужают волонтёрский зачёт: в него идут только выходы в этих ролях. На
+    бегунов не влияют — у пробежек ролей нет.
+    """
+    payload = build_location_participants(db, slug, roles=roles)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
     return LocationParticipantsResponse.model_validate(payload)
