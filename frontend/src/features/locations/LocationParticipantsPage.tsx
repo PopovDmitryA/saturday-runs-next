@@ -7,6 +7,7 @@ import {
   FilterPanel,
   FilterRow,
   FilterSearch,
+  FilterSelect,
   FilterTabs,
 } from "../../components/filters/FilterPanel";
 import {
@@ -94,6 +95,24 @@ function scopeFromLocation(): Scope {
 /** Сколько строк показываем сразу и сколько добавляет «Показать ещё». */
 const PAGE_STEP = 100;
 
+/**
+ * Ступени фильтра «участий здесь».
+ *
+ * Ниже тройки страница не опускается: это порог самого списка на бэкенде
+ * (LOCATION_ACTIVE_MIN_COUNT), и с двойкой он превратился бы в перепись всех,
+ * кто когда-либо здесь пробегал. Верх ступеней подрезается рекордом площадки,
+ * чтобы в перечне не висели заведомо пустые значения.
+ */
+const MIN_COUNT_STEPS = [3, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300, 500];
+
+/** Участий в выбранной системе — или во всех сразу, когда система не выбрана. */
+function countIn(row: LocationActiveParticipant, platform: string): number {
+  if (platform === "all") {
+    return row.count;
+  }
+  return row.platform_counts?.[platform] ?? 0;
+}
+
 function LocationParticipantsContent({ slug }: { slug: string }) {
   const [initialScope] = useState(scopeFromLocation);
   const [data, setData] = useState<LocationParticipants | null>(null);
@@ -104,6 +123,9 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
   const [query, setQuery] = useState("");
   // Система, по которой смотрим состав («all» — все сразу).
   const [platform, setPlatform] = useState("all");
+  // Порог участий: сколько раз человек должен был здесь отметиться, чтобы
+  // попасть в список. Стартуем с нижней ступени — это порог самого списка.
+  const [minCount, setMinCount] = useState(MIN_COUNT_STEPS[0]);
   // Показываем по сотне строк, как в рейтингах: у крупной площадки список
   // уходит за тысячу, и рисовать его целиком незачем.
   const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
@@ -141,47 +163,74 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
     };
   }, [slug]);
 
-  const scopeRows = useMemo(() => {
+  // Срез по системе — отдельным слоем: по нему считаются доступные ступени
+  // порога, а сортировка и сам порог накладываются уже поверх.
+  const platformRows = useMemo(() => {
     if (!data) {
       return [];
     }
     const source = scope === "runners" ? data.runners : data.volunteers;
-    // Срез по системе: берём участия только в ней, отсекаем тех, кто в этой
-    // системе не дотянул до порога, и заново нумеруем места — иначе в списке
-    // остались бы дыры от выпавших строк.
-    let scoped = source;
-    if (platform !== "all") {
-      scoped = source
-        .map((row) => ({
-          ...row,
-          count: row.platform_counts?.[platform] ?? 0,
-          // Стаж тоже по выбранной системе: у площадки, сменившей систему,
-          // общий «первый старт» приходится на прежнюю и к срезу отношения
-          // не имеет (Швейцария, 03.09.2026). Если разбивки в ответе нет
-          // вовсе — это старый payload из кэша, показываем общую дату, а не
-          // пустоту.
-          first_date: row.platform_first_dates
-            ? (row.platform_first_dates[platform] ?? null)
-            : row.first_date,
-          last_date: row.platform_last_dates
-            ? (row.platform_last_dates[platform] ?? null)
-            : row.last_date,
-        }))
-        .filter((row) => row.count >= data.min_count)
-        .sort((a, b) => b.count - a.count || (a.name ?? "").localeCompare(b.name ?? ""));
-      // Место по-спортивному: равное число участий — равное место, следующий
-      // за парой третьих получает пятое. Считаем бегущим значением: в map()
-      // третий аргумент — ИСХОДНЫЙ массив, и место соседа там ещё старое.
-      let place = 0;
-      let previous: number | null = null;
-      scoped = scoped.map((row, index) => {
-        if (row.count !== previous) {
-          place = index + 1;
-          previous = row.count;
-        }
-        return { ...row, place };
-      });
+    if (platform === "all") {
+      return source;
     }
+    // Берём участия только в выбранной системе, отсекаем тех, кто в ней не
+    // дотянул до порога списка, и заново нумеруем места — иначе в списке
+    // остались бы дыры от выпавших строк.
+    const scoped = source
+      .map((row) => ({
+        ...row,
+        count: countIn(row, platform),
+        // Стаж тоже по выбранной системе: у площадки, сменившей систему,
+        // общий «первый старт» приходится на прежнюю и к срезу отношения
+        // не имеет (Швейцария, 03.09.2026). Если разбивки в ответе нет
+        // вовсе — это старый payload из кэша, показываем общую дату, а не
+        // пустоту.
+        first_date: row.platform_first_dates
+          ? (row.platform_first_dates[platform] ?? null)
+          : row.first_date,
+        last_date: row.platform_last_dates
+          ? (row.platform_last_dates[platform] ?? null)
+          : row.last_date,
+      }))
+      .filter((row) => row.count >= data.min_count)
+      .sort((a, b) => b.count - a.count || (a.name ?? "").localeCompare(b.name ?? ""));
+    // Место по-спортивному: равное число участий — равное место, следующий
+    // за парой третьих получает пятое. Считаем бегущим значением: в map()
+    // третий аргумент — ИСХОДНЫЙ массив, и место соседа там ещё старое.
+    let place = 0;
+    let previous: number | null = null;
+    return scoped.map((row, index) => {
+      if (row.count !== previous) {
+        place = index + 1;
+        previous = row.count;
+      }
+      return { ...row, place };
+    });
+  }, [data, scope, platform]);
+
+  // Нижняя ступень — порог самого списка с бэкенда: строк ниже него в ответе
+  // просто нет. Верхняя — рекорд площадки в текущем срезе: ступени выше
+  // очищали бы таблицу до пустоты.
+  const minCountFloor = data?.min_count ?? MIN_COUNT_STEPS[0];
+  const minCountOptions = useMemo(() => {
+    const top = platformRows.reduce((best, row) => Math.max(best, row.count), 0);
+    const steps = MIN_COUNT_STEPS.filter((step) => step >= minCountFloor && step <= top);
+    return steps.length > 0 ? steps : [minCountFloor];
+  }, [platformRows, minCountFloor]);
+
+  // Смена зачёта или системы опускает потолок: у волонтёров рекорд обычно
+  // куда скромнее, чем у бегунов. Съезжаем на самую высокую доступную
+  // ступень, иначе в фильтре остаётся значение, которого в перечне уже нет.
+  useEffect(() => {
+    if (!minCountOptions.includes(minCount)) {
+      setMinCount(minCountOptions[minCountOptions.length - 1]);
+    }
+  }, [minCountOptions, minCount]);
+
+  const scopeRows = useMemo(() => {
+    // Строки идут по убыванию участий, поэтому порог срезает ровно хвост —
+    // места оставшихся остаются теми же, что и в полном списке.
+    const scoped = platformRows.filter((row) => row.count >= minCount);
     const sorted = [...scoped];
     sorted.sort((a, b) => {
       const left = sortValue(a, sort.key);
@@ -201,7 +250,7 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
       return sort.asc ? compare : -compare;
     });
     return sorted;
-  }, [data, scope, sort, platform]);
+  }, [platformRows, minCount, sort]);
 
   const rows = useMemo(() => {
     const needle = normalizeName(query);
@@ -211,10 +260,10 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
     return scopeRows.filter((row) => normalizeName(row.name ?? "").includes(needle));
   }, [scopeRows, query]);
 
-  // Смена зачёта, системы или запроса начинает список заново.
+  // Смена зачёта, системы, порога или запроса начинает список заново.
   useEffect(() => {
     setVisibleCount(PAGE_STEP);
-  }, [scope, platform, query]);
+  }, [scope, platform, minCount, query]);
 
   const shownRows = useMemo(() => rows.slice(0, visibleCount), [rows, visibleCount]);
   const hasMore = rows.length > shownRows.length;
@@ -277,9 +326,9 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
   const platformOptions = data.platform_codes ?? [];
   const hasParkrun = platformOptions.includes("parkrun");
   const peopleTotal = scope === "runners" ? data.runners_people_total : data.volunteers_people_total;
-  // «от 3 раз» вместо «от 3 пробежек»: порог один на оба зачёта, а падежи
+  // «от 3 раз» вместо «от 3 пробежек»: слово одно на оба зачёта, а падежи
   // числительного с двумя наборами слов читаются хуже, чем нейтральное «раз».
-  const threshold = `от ${data.min_count} раз`;
+  const threshold = `от ${minCount} раз`;
 
   return (
     <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
@@ -337,6 +386,23 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
                     label: platformCodeLabel(code),
                   })),
                 ]}
+              />
+            </FilterGroup>
+          )}
+          {/* Порог участий: с тройкой в списке крупной площадки тонут
+              локалы — на «от 3» половина строк это туристы, забежавшие сюда
+              трижды за годы (Дмитрий 06.09.2026). Показываем фильтр только
+              там, где ступень выше нижней вообще кому-то по силам. */}
+          {minCountOptions.length > 1 && (
+            <FilterGroup label="Участий здесь">
+              <FilterSelect
+                ariaLabel="Сколько раз человек был здесь"
+                value={minCount}
+                onChange={setMinCount}
+                options={minCountOptions.map((step) => ({
+                  value: step,
+                  label: `от ${step}`,
+                }))}
               />
             </FilterGroup>
           )}
