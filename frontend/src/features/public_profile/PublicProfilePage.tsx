@@ -277,9 +277,13 @@ function PublicProfileContent({
   const loadVisitedMap = useCallback(() => getPublicProfileVisitedMap(serialId, false), [serialId]);
   const loadCatalogTable = useCallback(() => getPublicProfileCatalogTable(serialId, false), [serialId]);
   const loadHistory = useCallback(() => getPublicProfileHistory(serialId, false), [serialId]);
-  const loadCoRunners = useCallback(() => getPublicProfileCoRunners(serialId), [serialId]);
+  const loadCoRunners = useCallback(
+    (platforms: string[]) => getPublicProfileCoRunners(serialId, 100, platforms),
+    [serialId],
+  );
   const loadCoRunnerMeetings = useCallback(
-    (participantKey: string) => getPublicProfileCoRunnerMeetings(serialId, participantKey),
+    (participantKey: string, platforms: string[]) =>
+      getPublicProfileCoRunnerMeetings(serialId, participantKey, platforms),
     [serialId],
   );
 

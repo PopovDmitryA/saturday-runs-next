@@ -2091,12 +2091,27 @@ export type CoRunnerMeetingItem = {
   event_url: string | null;
 };
 
-export function getCoRunners(limit = 100) {
-  return apiFetch<CoRunnerItem[]>(`/runs/co-runners?limit=${limit}`);
+/** Пустой список систем = «Все» (параметр не отправляем). */
+function coRunnerQuery(platforms: readonly string[] | undefined, limit?: number): string {
+  const params = new URLSearchParams();
+  if (limit != null) {
+    params.set("limit", String(limit));
+  }
+  if (platforms && platforms.length > 0) {
+    params.set("platforms", platforms.join(","));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }
 
-export function getCoRunnerMeetings(participantKey: string) {
-  return apiFetch<CoRunnerMeetingItem[]>(`/runs/co-runners/${participantKey}/meetings`);
+export function getCoRunners(limit = 100, platforms?: readonly string[]) {
+  return apiFetch<CoRunnerItem[]>(`/runs/co-runners${coRunnerQuery(platforms, limit)}`);
+}
+
+export function getCoRunnerMeetings(participantKey: string, platforms?: readonly string[]) {
+  return apiFetch<CoRunnerMeetingItem[]>(
+    `/runs/co-runners/${participantKey}/meetings${coRunnerQuery(platforms)}`,
+  );
 }
 
 export function listRuns(includeTest = false, limit = 200, offset = 0) {
@@ -3973,13 +3988,23 @@ export function getPublicProfileAchievements(serialId: number, platform?: string
   return apiFetch<AchievementsResponse>(`/users/${serialId}/profile/achievements${query}`);
 }
 
-export function getPublicProfileCoRunners(serialId: number, limit = 100) {
-  return apiFetch<CoRunnerItem[]>(`/users/${serialId}/profile/co-runners?limit=${limit}`);
+export function getPublicProfileCoRunners(
+  serialId: number,
+  limit = 100,
+  platforms?: readonly string[],
+) {
+  return apiFetch<CoRunnerItem[]>(
+    `/users/${serialId}/profile/co-runners${coRunnerQuery(platforms, limit)}`,
+  );
 }
 
-export function getPublicProfileCoRunnerMeetings(serialId: number, participantKey: string) {
+export function getPublicProfileCoRunnerMeetings(
+  serialId: number,
+  participantKey: string,
+  platforms?: readonly string[],
+) {
   return apiFetch<CoRunnerMeetingItem[]>(
-    `/users/${serialId}/profile/co-runners/${participantKey}/meetings`,
+    `/users/${serialId}/profile/co-runners/${participantKey}/meetings${coRunnerQuery(platforms)}`,
   );
 }
 

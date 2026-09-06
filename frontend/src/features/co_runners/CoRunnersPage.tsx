@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
   type CoRunnerItem,
   type CoRunnerMeetingItem,
 } from "../../lib/api";
-import { formatDate, formatDuration, pluralizeRu } from "../../lib/format";
+import { formatDate, formatDuration, platformCodeLabel, pluralizeRu } from "../../lib/format";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import {
   FilterGroup,
@@ -13,6 +13,7 @@ import {
   FilterRow,
   FilterSearch,
 } from "../../components/filters/FilterPanel";
+import { PlatformFilter } from "../../components/filters/PlatformFilter";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
@@ -203,9 +204,12 @@ function MeetingsDetail({ meetings }: { meetings: CoRunnerMeetingItem[] }) {
 }
 
 type CoRunnersContentProps = {
-  load: () => Promise<CoRunnerItem[]>;
-  loadMeetings: (participantKey: string) => Promise<CoRunnerMeetingItem[]>;
+  load: (platforms: string[]) => Promise<CoRunnerItem[]>;
+  loadMeetings: (participantKey: string, platforms: string[]) => Promise<CoRunnerMeetingItem[]>;
 };
+
+// Порядок кнопок фильтра «Система» — общий для сайта (см. PLATFORM_ORDER в бэкенде).
+const PLATFORM_ORDER = ["five_verst", "s95", "parkrun", "runpark"] as const;
 
 // Колонки «Соседей» в порядке важности; ширины — под подписи шапки.
 const CO_RUNNERS_COLUMNS: AdaptiveColumn[] = [
@@ -221,7 +225,15 @@ const CO_RUNNERS_COLUMNS: AdaptiveColumn[] = [
 export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) {
   const [items, setItems] = useState<CoRunnerItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reloading, setReloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [platforms, setPlatforms] = useState<Set<string>>(() => new Set());
+  // Кнопки фильтра — только системы, на которых встречи вообще были: считаем их
+  // по первой (нефильтрованной) загрузке, потом ответ уже сужен фильтром.
+  const [availableCodes, setAvailableCodes] = useState<string[]>([]);
+  // Были ли встречи вообще: пустой ответ под фильтром — это «на этих системах
+  // никого», а не «пересечений нет».
+  const [hasAnyMeetings, setHasAnyMeetings] = useState(false);
   // «Кратко» набирает колонки по ширине блока, «Полно» — весь набор со скроллом.
   const tableColumns = useTableColumns(CO_RUNNERS_COLUMNS);
   const showFull = tableColumns.showFull;
@@ -232,12 +244,32 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
   const [meetingsLoadingKey, setMeetingsLoadingKey] = useState<string | null>(null);
   const [meetingsError, setMeetingsError] = useState<string | null>(null);
 
+  // Фильтр серверный: встречи, счёт и даты пересчитываются внутри выбранных
+  // систем, и топ набирается заново. Клиентский отбор строк оставил бы числа
+  // «по всем системам» — счёт 3:1 у человека, с которым на выбранной системе
+  // виделись один раз.
+  const selectedCodes = useMemo(
+    () => PLATFORM_ORDER.filter((code) => platforms.has(code)),
+    [platforms],
+  );
+  const selectedKey = selectedCodes.join(",");
+
   useEffect(() => {
     let cancelled = false;
-    load()
+    const requested = selectedKey ? selectedKey.split(",") : [];
+    setReloading(true);
+    load(requested)
       .then((data) => {
-        if (!cancelled) {
-          setItems(data);
+        if (cancelled) {
+          return;
+        }
+        setItems(data);
+        setError(null);
+        if (requested.length === 0) {
+          setHasAnyMeetings(data.length > 0);
+          setAvailableCodes(
+            PLATFORM_ORDER.filter((code) => data.some((item) => item.platform_codes.includes(code))),
+          );
         }
       })
       .catch(() => {
@@ -248,12 +280,22 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
       .finally(() => {
         if (!cancelled) {
           setLoading(false);
+          setReloading(false);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [load]);
+  }, [load, selectedKey]);
+
+  // Смена фильтра меняет и набор встреч в развёрнутой строке — кэш деталей
+  // сбрасываем, иначе там осталась бы выдача по прошлому отбору.
+  const changePlatforms = useCallback((next: Set<string>) => {
+    setPlatforms(next);
+    setExpandedKey(null);
+    setMeetingsByKey({});
+    setMeetingsError(null);
+  }, []);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -272,7 +314,7 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
     setMeetingsError(null);
     if (!meetingsByKey[key]) {
       setMeetingsLoadingKey(key);
-      loadMeetings(key)
+      loadMeetings(key, selectedKey ? selectedKey.split(",") : [])
         .then((data) => {
           setMeetingsByKey((prev) => ({ ...prev, [key]: data }));
         })
@@ -298,14 +340,26 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
         {loading && <p className="muted">Загрузка…</p>}
         {error && <p className="error-text">{error}</p>}
 
-        {!loading && !error && items.length === 0 && (
+        {!loading && !error && !hasAnyMeetings && (
           <p className="muted">Пока нет пересечений — нужны пробежки с протоколами.</p>
         )}
 
-        {!loading && !error && items.length > 0 && (
+        {!loading && !error && hasAnyMeetings && (
           <>
             <FilterPanel>
               <FilterRow>
+                {/* Одна система у всех встреч — фильтровать нечего. */}
+                {availableCodes.length > 1 && (
+                  <PlatformFilter
+                    mode="multi"
+                    value={platforms}
+                    onChange={changePlatforms}
+                    options={availableCodes.map((code) => ({
+                      code,
+                      label: platformCodeLabel(code),
+                    }))}
+                  />
+                )}
                 {tableColumns.hasToggle && (
                   <FilterGroup label="Колонки">
                     <TableViewToggle columns={tableColumns} inline />
@@ -320,102 +374,116 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
                 </FilterGroup>
               </FilterRow>
             </FilterPanel>
-            <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
-              <table
-                className="data-table co-runners-table"
-                style={{ minWidth: tableColumns.minWidth }}
-              >
-                <thead>
-                  <tr>
-                    <th className="td-num">#</th>
-                    <th>Участник</th>
-                    {show("platform") && <th>Система</th>}
-                    <th className="td-num">Встреч</th>
-                    {show("score") && <th className="td-num">Счёт</th>}
-                    {show("first_meeting") && <th>Первая встреча</th>}
-                    {show("last_meeting") && <th>Последняя встреча</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((item, index) => {
-                    const expanded = expandedKey === item.participant_key;
-                    return [
-                      <tr
-                        key={item.participant_key}
-                        className={`co-runners-row${expanded ? " co-runners-row-expanded" : ""}`}
-                        onClick={() => toggleRow(item.participant_key)}
-                        // Тап по строке разворачивает детали — подсказки по title
-                        // внутри неё в тач-режиме не показываем.
-                        data-tap-tooltip="off"
-                      >
-                        <td className="td-num muted">{index + 1}</td>
-                        <td className="co-runners-name-cell">
-                          <span
-                            className={`co-runners-caret${expanded ? " co-runners-caret-open" : ""}`}
-                            aria-hidden="true"
-                          />
-                          <ParticipantName item={item} />
-                        </td>
-                        {show("platform") && (
-                          <td>
-                          <span className="co-runners-badges">
-                            {/* Бейдж системы больше не ссылка: она вела в чужой
-                                профиль на 5verst/S95/parkrun, а согласия на
-                                обработку данных эти люди нам не давали
-                                (Дмитрий 04.09.2026). */}
-                            {item.platform_codes.map((code) => (
-                              <span key={code}>
-                                <PlatformBadge code={code} />
-                              </span>
-                            ))}
-                          </span>
+            {/* Первую загрузку показывает общий индикатор выше — этот про смену фильтра. */}
+            {reloading && <p className="muted">Загрузка…</p>}
+            {!reloading && items.length === 0 && (
+              <p className="muted">
+                На выбранных системах встреч нет — снимите фильтр или отметьте другую систему.
+              </p>
+            )}
+            {items.length > 0 && (
+              <>
+              <TableWrap stickyFirstCol={showFull} outerRef={tableColumns.measureRef}>
+                <table
+                  className="data-table co-runners-table"
+                  style={{ minWidth: tableColumns.minWidth }}
+                >
+                  <thead>
+                    <tr>
+                      <th className="td-num">#</th>
+                      <th>Участник</th>
+                      {show("platform") && <th>Система</th>}
+                      <th className="td-num">Встреч</th>
+                      {show("score") && <th className="td-num">Счёт</th>}
+                      {show("first_meeting") && <th>Первая встреча</th>}
+                      {show("last_meeting") && <th>Последняя встреча</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((item, index) => {
+                      const expanded = expandedKey === item.participant_key;
+                      return [
+                        <tr
+                          key={item.participant_key}
+                          className={`co-runners-row${expanded ? " co-runners-row-expanded" : ""}`}
+                          onClick={() => toggleRow(item.participant_key)}
+                          // Тап по строке разворачивает детали — подсказки по title
+                          // внутри неё в тач-режиме не показываем.
+                          data-tap-tooltip="off"
+                        >
+                          <td className="td-num muted">{index + 1}</td>
+                          <td className="co-runners-name-cell">
+                            <span
+                              className={`co-runners-caret${expanded ? " co-runners-caret-open" : ""}`}
+                              aria-hidden="true"
+                            />
+                            <ParticipantName item={item} />
                           </td>
-                        )}
-                        <td className="td-num">{item.meetings}</td>
-                        {show("score") && (
-                          <td className={`td-num co-runners-score${scoreTone(item)}`}>
-                            {scoreLabel(item)}
-                          </td>
-                        )}
-                        {show("first_meeting") && (
-                          <td>{item.first_meeting_date ? formatDate(item.first_meeting_date) : "—"}</td>
-                        )}
-                        {show("last_meeting") && (
-                          <td>{item.last_meeting_date ? formatDate(item.last_meeting_date) : "—"}</td>
-                        )}
-                      </tr>,
-                      expanded ? (
-                        <tr key={`${item.participant_key}-detail`} className="co-runners-detail-row">
-                          <td colSpan={CO_RUNNERS_COLUMNS.filter((column) => show(column.key)).length}>
-                            <div className="co-runners-detail-card">
-                              <p className="co-runners-detail-title">
-                                Встречи с участником · {item.display_name ?? "Без имени"}
-                              </p>
-                              {meetingsLoadingKey === item.participant_key && (
-                                <p className="muted co-runners-detail-note">Загрузка встреч…</p>
-                              )}
-                              {meetingsError && (
-                                <p className="error-text co-runners-detail-note">{meetingsError}</p>
-                              )}
-                              {meetingsByKey[item.participant_key] && (
-                                <MeetingsDetail meetings={meetingsByKey[item.participant_key]} />
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ) : null,
-                    ];
-                  })}
-                </tbody>
-              </table>
-            </TableWrap>
-            <p className="table-foot muted">
-              <span>
-                Показано: {filtered.length} из{" "}
-                {pluralizeRu(items.length, ["участника", "участников", "участников"])}
-                {items.length >= 100 ? " (топ-100 по числу встреч)" : ""}
-              </span>
-            </p>
+                          {show("platform") && (
+                            <td>
+                            <span className="co-runners-badges">
+                              {/* Бейдж системы больше не ссылка: она вела в чужой
+                                  профиль на 5verst/S95/parkrun, а согласия на
+                                  обработку данных эти люди нам не давали
+                                  (Дмитрий 04.09.2026). */}
+                              {item.platform_codes.map((code) => (
+                                <span key={code}>
+                                  <PlatformBadge code={code} />
+                                </span>
+                              ))}
+                            </span>
+                            </td>
+                          )}
+                          <td className="td-num">{item.meetings}</td>
+                          {show("score") && (
+                            <td className={`td-num co-runners-score${scoreTone(item)}`}>
+                              {scoreLabel(item)}
+                            </td>
+                          )}
+                          {show("first_meeting") && (
+                            <td>{item.first_meeting_date ? formatDate(item.first_meeting_date) : "—"}</td>
+                          )}
+                          {show("last_meeting") && (
+                            <td>{item.last_meeting_date ? formatDate(item.last_meeting_date) : "—"}</td>
+                          )}
+                        </tr>,
+                        expanded ? (
+                          <tr key={`${item.participant_key}-detail`} className="co-runners-detail-row">
+                            <td colSpan={CO_RUNNERS_COLUMNS.filter((column) => show(column.key)).length}>
+                              <div className="co-runners-detail-card">
+                                <p className="co-runners-detail-title">
+                                  Встречи с участником · {item.display_name ?? "Без имени"}
+                                </p>
+                                {meetingsLoadingKey === item.participant_key && (
+                                  <p className="muted co-runners-detail-note">Загрузка встреч…</p>
+                                )}
+                                {meetingsError && (
+                                  <p className="error-text co-runners-detail-note">{meetingsError}</p>
+                                )}
+                                {meetingsByKey[item.participant_key] && (
+                                  <MeetingsDetail meetings={meetingsByKey[item.participant_key]} />
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null,
+                      ];
+                    })}
+                  </tbody>
+                </table>
+              </TableWrap>
+              <p className="table-foot muted">
+                <span>
+                  Показано: {filtered.length} из{" "}
+                  {pluralizeRu(items.length, ["участника", "участников", "участников"])}
+                  {items.length >= 100 ? " (топ-100 по числу встреч)" : ""}
+                  {selectedCodes.length > 0
+                    ? ` · только ${selectedCodes.map(platformCodeLabel).join(", ")}`
+                    : ""}
+                </span>
+              </p>
+              </>
+            )}
           </>
         )}
       </div>

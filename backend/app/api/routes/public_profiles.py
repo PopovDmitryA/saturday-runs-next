@@ -34,7 +34,11 @@ from app.services.admin_users_service import (
     get_admin_user_preview_volunteer_role_stats,
     get_admin_user_preview_wins,
 )
-from app.services.co_runners_service import list_co_runner_meetings, list_co_runners
+from app.services.co_runners_service import (
+    list_co_runner_meetings,
+    list_co_runners,
+    parse_platform_codes,
+)
 from app.services.dashboard_service import list_user_runs, list_user_volunteering
 from app.services.home_distance_service import build_home_distance_detail
 from app.services.location_catalog_table_service import build_catalog_locations_table
@@ -268,9 +272,16 @@ def public_profile_co_runners(
     settings: Annotated[Settings, Depends(get_settings)],
     limit: int = 100,
     include_test: bool = False,
+    platforms: str | None = Query(default=None, description="Коды систем через запятую; пусто — все"),
 ) -> list[CoRunnerResponse]:
     user_id = _get_user_uuid(serial_id, db, requester, settings)
-    items = list_co_runners(db, user_id, include_test_events=include_test, limit=limit)
+    items = list_co_runners(
+        db,
+        user_id,
+        include_test_events=include_test,
+        limit=limit,
+        platform_codes=parse_platform_codes(platforms),
+    )
     return [CoRunnerResponse.model_validate(i) for i in items]
 
 
@@ -285,9 +296,16 @@ def public_profile_co_runner_meetings(
     requester: Annotated[User | None, Depends(get_optional_user)],
     settings: Annotated[Settings, Depends(get_settings)],
     include_test: bool = False,
+    platforms: str | None = Query(default=None, description="Коды систем через запятую; пусто — все"),
 ) -> list[CoRunnerMeetingResponse]:
     user_id = _get_user_uuid(serial_id, db, requester, settings)
-    items = list_co_runner_meetings(db, user_id, participant_key, include_test_events=include_test)
+    items = list_co_runner_meetings(
+        db,
+        user_id,
+        participant_key,
+        include_test_events=include_test,
+        platform_codes=parse_platform_codes(platforms),
+    )
     return [CoRunnerMeetingResponse.model_validate(i) for i in items]
 
 

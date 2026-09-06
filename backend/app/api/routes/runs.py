@@ -18,7 +18,11 @@ from app.schemas.dashboard import (
     VolunteerRoleStatResponse,
     WinResponse,
 )
-from app.services.co_runners_service import list_co_runner_meetings, list_co_runners
+from app.services.co_runners_service import (
+    list_co_runner_meetings,
+    list_co_runners,
+    parse_platform_codes,
+)
 from app.services.dashboard_service import (
     list_user_best_results,
     list_user_personal_records,
@@ -55,8 +59,17 @@ def list_run_co_runners(
     user: Annotated[User, Depends(get_current_user)],
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     include_test: Annotated[bool, Query()] = False,
+    platforms: Annotated[
+        str | None, Query(description="Коды систем через запятую; пусто — все")
+    ] = None,
 ) -> list[CoRunnerResponse]:
-    items = list_co_runners(db, user.id, include_test_events=include_test, limit=limit)
+    items = list_co_runners(
+        db,
+        user.id,
+        include_test_events=include_test,
+        limit=limit,
+        platform_codes=parse_platform_codes(platforms),
+    )
     return [CoRunnerResponse.model_validate(item) for item in items]
 
 
@@ -66,8 +79,17 @@ def list_run_co_runner_meetings(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     include_test: Annotated[bool, Query()] = False,
+    platforms: Annotated[
+        str | None, Query(description="Коды систем через запятую; пусто — все")
+    ] = None,
 ) -> list[CoRunnerMeetingResponse]:
-    items = list_co_runner_meetings(db, user.id, participant_key, include_test_events=include_test)
+    items = list_co_runner_meetings(
+        db,
+        user.id,
+        participant_key,
+        include_test_events=include_test,
+        platform_codes=parse_platform_codes(platforms),
+    )
     return [CoRunnerMeetingResponse.model_validate(item) for item in items]
 
 

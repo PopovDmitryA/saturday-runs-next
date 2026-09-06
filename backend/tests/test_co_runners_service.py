@@ -13,7 +13,11 @@ from app.models import (
     RunResult,
     User,
 )
-from app.services.co_runners_service import list_co_runner_meetings, list_co_runners
+from app.services.co_runners_service import (
+    list_co_runner_meetings,
+    list_co_runners,
+    parse_platform_codes,
+)
 
 
 def _get_platform(db_session: Session, code: str, name: str) -> Platform:
@@ -489,3 +493,231 @@ def test_unlinked_runpark_self_copy_is_not_a_meeting(db_session: Session) -> Non
     items = list_co_runners(db_session, user.id)
     # Единственный «другой» участник — собственный RunPark-профиль; встреч нет.
     assert [item["display_name"] for item in items] == []
+
+
+def test_platform_filter_recounts_meetings_and_score(db_session: Session) -> None:
+    """Фильтр «Система» пересчитывает встречи и счёт внутри выбранных систем.
+
+    Клиентский отбор строк оставил бы «5 вёрст» в бейджах со счётом по всем
+    системам сразу — 2:1, хотя на «5 вёрст» соперник не выигрывал ни разу.
+    """
+    suffix = str(uuid4().int % 1_000_000)
+    five_verst = _get_platform(db_session, "five_verst", "5 верст")
+    s95 = _get_platform(db_session, "s95", "S95")
+
+    fv_location = Location(
+        platform_id=five_verst.id,
+        external_key=f"loc-pf-fv-{suffix}",
+        name="Filter FV",
+        city="Москва",
+        country="Россия",
+    )
+    s95_location = Location(
+        platform_id=s95.id,
+        external_key=f"loc-pf-s95-{suffix}",
+        name="Filter S95",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add_all([fv_location, s95_location])
+    db_session.flush()
+
+    user = User()
+    db_session.add(user)
+    db_session.flush()
+
+    me_fv = _make_participant(db_session, five_verst, f"pf-me-fv-{suffix}", "Me FV")
+    me_s95 = _make_participant(db_session, s95, f"pf-me-s95-{suffix}", "Me S95")
+    for platform, participant in ((five_verst, me_fv), (s95, me_s95)):
+        db_session.add(
+            PlatformLink(
+                user_id=user.id,
+                platform_id=platform.id,
+                participant_id=participant.id,
+                external_user_id=participant.external_user_id,
+                external_url=participant.profile_url,
+            )
+        )
+
+    # Соперник — зарегистрированный на сайте участник с открытым профилем: его
+    # платформенные записи склеиваются в одну строку, поэтому у него встречи
+    # сразу на двух системах (ради этого фильтр и нужен).
+    rival_user = User(display_name="Пётр ФИЛЬТРОВ")
+    db_session.add(rival_user)
+    db_session.flush()
+    rival_fv = _make_participant(db_session, five_verst, f"pf-rival-fv-{suffix}", "Пётр ФИЛЬТРОВ")
+    rival_s95 = _make_participant(db_session, s95, f"pf-rival-s95-{suffix}", "Пётр ФИЛЬТРОВ")
+    for platform, participant in ((five_verst, rival_fv), (s95, rival_s95)):
+        db_session.add(
+            PlatformLink(
+                user_id=rival_user.id,
+                platform_id=platform.id,
+                participant_id=participant.id,
+                external_user_id=participant.external_user_id,
+                external_url=participant.profile_url,
+            )
+        )
+
+    # Две встречи на «5 вёрст» — обе выиграны пользователем.
+    for i in range(2):
+        event = _make_event(
+            db_session, five_verst, fv_location, f"pf-fv-{i}-{suffix}", date(2023, 3, 4 + i * 7), 901_100 + i
+        )
+        db_session.add(
+            RunResult(
+                event_id=event.id,
+                participant_id=me_fv.id,
+                external_result_key=f"pf-me-fv-{i}-{suffix}",
+                position=1,
+                finish_time_sec=18 * 60,
+                finish_time_display="00:18:00",
+                status="finished",
+            )
+        )
+        db_session.add(
+            RunResult(
+                event_id=event.id,
+                participant_id=rival_fv.id,
+                external_result_key=f"pf-rival-fv-{i}-{suffix}",
+                position=2,
+                finish_time_sec=19 * 60,
+                finish_time_display="00:19:00",
+                status="finished",
+            )
+        )
+
+    # Одна встреча на S95 — её выиграл соперник.
+    s95_event = _make_event(db_session, s95, s95_location, f"pf-s95-{suffix}", date(2023, 6, 10), 901_200)
+    db_session.add(
+        RunResult(
+            event_id=s95_event.id,
+            participant_id=me_s95.id,
+            external_result_key=f"pf-me-s95-{suffix}",
+            position=2,
+            finish_time_sec=20 * 60,
+            finish_time_display="00:20:00",
+            status="finished",
+        )
+    )
+    db_session.add(
+        RunResult(
+            event_id=s95_event.id,
+            participant_id=rival_s95.id,
+            external_result_key=f"pf-rival-s95-{suffix}",
+            position=1,
+            finish_time_sec=17 * 60,
+            finish_time_display="00:17:00",
+            status="finished",
+        )
+    )
+    db_session.commit()
+
+    def _rival(items: list[dict[str, object]]) -> dict[str, object]:
+        matching = [item for item in items if item["display_name"] == "Пётр ФИЛЬТРОВ"]
+        assert len(matching) == 1
+        return matching[0]
+
+    unfiltered = _rival(list_co_runners(db_session, user.id))
+    assert unfiltered["meetings"] == 3
+    assert (unfiltered["my_wins"], unfiltered["their_wins"]) == (2, 1)
+    assert sorted(unfiltered["platform_codes"]) == ["five_verst", "s95"]
+    assert unfiltered["first_meeting_date"] == date(2023, 3, 4)
+    assert unfiltered["last_meeting_date"] == date(2023, 6, 10)
+
+    only_fv = _rival(list_co_runners(db_session, user.id, platform_codes={"five_verst"}))
+    assert only_fv["meetings"] == 2
+    assert (only_fv["my_wins"], only_fv["their_wins"]) == (2, 0)
+    assert only_fv["platform_codes"] == ["five_verst"]
+    assert only_fv["last_meeting_date"] == date(2023, 3, 11)
+
+    only_s95 = _rival(list_co_runners(db_session, user.id, platform_codes={"s95"}))
+    assert only_s95["meetings"] == 1
+    assert (only_s95["my_wins"], only_s95["their_wins"]) == (0, 1)
+    assert only_s95["platform_codes"] == ["s95"]
+
+    both = _rival(list_co_runners(db_session, user.id, platform_codes={"five_verst", "s95"}))
+    assert both["meetings"] == 3
+
+    # Детали встреч обязаны сходиться со свёрнутой строкой — иначе в раскрытой
+    # строке было бы больше встреч, чем в колонке «Встреч».
+    fv_key = only_fv["participant_key"]
+    meetings = list_co_runner_meetings(db_session, user.id, str(fv_key), platform_codes={"five_verst"})
+    assert len(meetings) == 2
+    assert {meeting["platform_code"] for meeting in meetings} == {"five_verst"}
+
+    s95_key = only_s95["participant_key"]
+    s95_meetings = list_co_runner_meetings(db_session, user.id, str(s95_key), platform_codes={"s95"})
+    assert [meeting["platform_code"] for meeting in s95_meetings] == ["s95"]
+
+
+def test_platform_filter_drops_people_met_only_elsewhere(db_session: Session) -> None:
+    """Соперник, встреченный только на S95, не попадает в отбор по «5 вёрст»."""
+    suffix = str(uuid4().int % 1_000_000)
+    s95 = _get_platform(db_session, "s95", "S95")
+
+    s95_location = Location(
+        platform_id=s95.id,
+        external_key=f"loc-only-s95-{suffix}",
+        name="Only S95",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add(s95_location)
+    db_session.flush()
+
+    user = User()
+    db_session.add(user)
+    db_session.flush()
+
+    me_s95 = _make_participant(db_session, s95, f"only-me-s95-{suffix}", "Me Only S95")
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=s95.id,
+            participant_id=me_s95.id,
+            external_user_id=me_s95.external_user_id,
+            external_url=me_s95.profile_url,
+        )
+    )
+    rival = _make_participant(db_session, s95, f"only-rival-s95-{suffix}", "Анна ТОЛЬКОС95")
+
+    event = _make_event(db_session, s95, s95_location, f"only-s95-{suffix}", date(2023, 7, 15), 901_300)
+    db_session.add(
+        RunResult(
+            event_id=event.id,
+            participant_id=me_s95.id,
+            external_result_key=f"only-me-{suffix}",
+            position=1,
+            finish_time_sec=18 * 60,
+            finish_time_display="00:18:00",
+            status="finished",
+        )
+    )
+    db_session.add(
+        RunResult(
+            event_id=event.id,
+            participant_id=rival.id,
+            external_result_key=f"only-rival-{suffix}",
+            position=2,
+            finish_time_sec=19 * 60,
+            finish_time_display="00:19:00",
+            status="finished",
+        )
+    )
+    db_session.commit()
+
+    assert any(
+        item["display_name"] == "Анна ТОЛЬКОС95" for item in list_co_runners(db_session, user.id)
+    )
+    assert not any(
+        item["display_name"] == "Анна ТОЛЬКОС95"
+        for item in list_co_runners(db_session, user.id, platform_codes={"five_verst"})
+    )
+
+
+def test_parse_platform_codes_keeps_known_codes_only() -> None:
+    assert parse_platform_codes(None) is None
+    assert parse_platform_codes("") is None
+    assert parse_platform_codes("nonsense") is None
+    assert parse_platform_codes("five_verst") == {"five_verst"}
+    assert parse_platform_codes(" Five_Verst , s95 , nonsense ") == {"five_verst", "s95"}

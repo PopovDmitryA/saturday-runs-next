@@ -14,6 +14,23 @@ from app.services.location_catalog_service import LocationCatalogIndex
 PARTICIPANT_KEY_PREFIX = "p:"
 SITE_USER_KEY_PREFIX = "u:"
 
+# Коды систем, которые может прислать фильтр «Система». Неизвестные коды
+# отбрасываем, чтобы опечатка в query не превращалась в «встреч нет».
+KNOWN_PLATFORM_CODES = frozenset({"five_verst", "s95", "parkrun", "runpark"})
+
+
+def parse_platform_codes(raw: str | None) -> set[str] | None:
+    """Разбирает query-параметр platforms ("five_verst,s95") в набор кодов.
+
+    None (в т.ч. для пустой строки и набора из одних неизвестных кодов) означает
+    «все системы» — как кнопка «Все» в фильтре.
+    """
+    if not raw:
+        return None
+    codes = {part.strip().lower() for part in raw.split(",")}
+    codes &= KNOWN_PLATFORM_CODES
+    return codes or None
+
 # Плейсхолдеры вместо реального имени участника: платформа не смогла его
 # распознать (пустой протокол, битая строка и т.п.). Это не настоящий человек,
 # такие строки не должны попадать в топ "Встреч на стартах".
@@ -166,11 +183,17 @@ def list_co_runners(
     *,
     include_test_events: bool = False,
     limit: int = 100,
+    platform_codes: set[str] | None = None,
 ) -> list[dict[str, object]]:
     """Top people who appeared in the same run protocols as the user.
 
     Зарегистрированные на сайте участники с открытым профилем склеиваются в одну
     строку по всем их платформам; остальные остаются по-платформенно.
+
+    platform_codes сужает отбор до встреч на этих системах (None — все):
+    и счёт, и число встреч, и даты первой/последней пересчитываются внутри
+    выбранных систем, а топ набирается заново — иначе фильтр показывал бы топ
+    «по всем системам», отфильтрованный постфактум.
     """
     user_results, user_participant_ids, canonical_map = _user_results_by_canonical_event(
         db, user_id, include_test_events=include_test_events
@@ -256,6 +279,20 @@ def list_co_runners(
                 platform_code=platform_code,
                 rank=rank,
             )
+
+    # Фильтр «Система» применяем к УЖЕ дедуплицированной встрече, а не к сырым
+    # строкам запроса: система встречи — это система события-первоисточника
+    # (см. rank ниже), поэтому забег «5 вёрст», продублированный в RunPark,
+    # остаётся встречей на «5 вёрст». Так фильтр совпадает с бейджами систем в
+    # таблице и с деталями встреч (list_co_runner_meetings фильтрует так же).
+    if platform_codes is not None:
+        for stats in stats_by_key.values():
+            stats.meetings_by_event = {
+                canonical: meeting
+                for canonical, meeting in stats.meetings_by_event.items()
+                if meeting.platform_code in platform_codes
+            }
+        stats_by_key = {key: stats for key, stats in stats_by_key.items() if stats.meetings_by_event}
 
     # Лейблы систем считаем по фактически засчитанным встречам (по одной на
     # canonical-событие), а не по каждой сырой строке — иначе кросслинкнутый
@@ -343,8 +380,13 @@ def list_co_runner_meetings(
     key: str,
     *,
     include_test_events: bool = False,
+    platform_codes: set[str] | None = None,
 ) -> list[dict[str, object]]:
-    """Per-event details of intersections between the user and one person."""
+    """Per-event details of intersections between the user and one person.
+
+    platform_codes — тот же фильтр «Система», что и в list_co_runners: детали
+    обязаны сходиться с числом встреч в свёрнутой строке.
+    """
     participant_ids = _resolve_key_participant_ids(db, key)
     if not participant_ids:
         return []
@@ -405,6 +447,10 @@ def list_co_runner_meetings(
                 profile_url=None,
             ),
         }
-    items = list(by_canonical.values())
+    items = [
+        item
+        for item in by_canonical.values()
+        if platform_codes is None or item["platform_code"] in platform_codes
+    ]
     items.sort(key=lambda item: item["event_date"], reverse=True)  # type: ignore[arg-type,return-value]
     return items

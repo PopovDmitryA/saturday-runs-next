@@ -61,10 +61,16 @@ export function PortalCabinetAchievementsPage() {
   );
 }
 
+// Обёртки на уровне модуля: CoRunnersContent держит load в зависимостях эффекта,
+// поэтому ссылки на функции должны быть неизменными между рендерами.
+const loadMyCoRunners = (platforms: string[]) => getCoRunners(100, platforms);
+const loadMyCoRunnerMeetings = (participantKey: string, platforms: string[]) =>
+  getCoRunnerMeetings(participantKey, platforms);
+
 export function PortalCabinetMeetingsPage() {
   // Заголовок рисует сам CoRunnersContent (интро-карточка «Встречи на стартах»).
   return cabinetPage("meetings", undefined, undefined, () => (
-    <CoRunnersContent load={getCoRunners} loadMeetings={getCoRunnerMeetings} />
+    <CoRunnersContent load={loadMyCoRunners} loadMeetings={loadMyCoRunnerMeetings} />
   ));
 }
 
