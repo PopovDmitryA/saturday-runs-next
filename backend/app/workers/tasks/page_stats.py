@@ -5,6 +5,7 @@ import logging
 from app.config import get_settings
 from app.db.session import get_session_factory
 from app.services.auth_service import purge_old_one_time_tokens
+from app.services.email_login_journal_service import purge_old_requests as purge_old_email_requests
 from app.services.login_journal_service import purge_old_login_events
 from app.services.page_analytics_service import cleanup_old_events, rollup_recent_days
 from app.workers.celery_app import celery_app
@@ -36,6 +37,16 @@ def rollup_task() -> dict[str, object]:
                 deleted_logins,
                 settings.login_events_retention_days,
             )
+        # Журнал писем с кодом живёт по тому же сроку, что и журнал входов.
+        deleted_email_requests = purge_old_email_requests(
+            db, retention_days=settings.login_events_retention_days
+        )
+        if deleted_email_requests:
+            logger.info(
+                "page_stats: удалено %s записей журнала писем с кодом старше %s дней",
+                deleted_email_requests,
+                settings.login_events_retention_days,
+            )
         # Одноразовые токены входа: строка остаётся после использования и
         # держит FK на users — из-за этого падало объединение аккаунтов.
         deleted_tokens = purge_old_one_time_tokens(
@@ -52,6 +63,7 @@ def rollup_task() -> dict[str, object]:
             "groups": groups,
             "deleted_events": deleted,
             "deleted_login_events": deleted_logins,
+            "deleted_email_login_requests": deleted_email_requests,
             "deleted_one_time_tokens": deleted_tokens,
         }
     finally:

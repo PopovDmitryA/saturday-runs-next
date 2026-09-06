@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ConfirmModal } from "../../components/ConfirmModal";
+import { EmailSpamHint } from "../../components/EmailSpamHint";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import {
   confirmAccountMerge,
@@ -50,6 +51,9 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
   const [emailCode, setEmailCode] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
   const [emailNotice, setEmailNotice] = useState<string | null>(null);
+  // Отправитель приходит в ответе на запрос кода: подсказка про «Спам» без
+  // адреса бесполезна — искать письмо человек будет именно по нему.
+  const [emailSender, setEmailSender] = useState("");
   // Бот жив — привязка подтверждением в нём, прямо в этой карточке; иначе
   // редирект в виджет Telegram, как у OAuth-провайдеров.
   const [telegramBotLogin, setTelegramBotLogin] = useState(false);
@@ -157,8 +161,9 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
     setError(null);
     setEmailBusy(true);
     try {
-      await requestEmailCode(email.trim(), true);
+      const sent = await requestEmailCode(email.trim(), true);
       setEmailStep("code");
+      setEmailSender(sent.sender ?? "");
       setEmailNotice(`Код отправлен на ${email.trim()}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось отправить код");
@@ -390,6 +395,10 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
             </div>
           )}
           {emailNotice && <p className="muted settings-platform-hint">{emailNotice}</p>}
+          {/* Про «Спам» пишем и здесь: письмо то же самое, и теряется так же. */}
+          {emailStep === "code" && !emailIdentity && (
+            <EmailSpamHint sender={emailSender} />
+          )}
         </div>
       )}
 

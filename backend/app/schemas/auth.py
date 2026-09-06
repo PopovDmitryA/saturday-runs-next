@@ -244,6 +244,10 @@ class EmailCodeRequest(BaseModel):
 
 class EmailCodeResponse(BaseModel):
     expires_in: int
+    # Адрес отправителя: подсказка «поищите в спаме» без него бесполезна —
+    # искать в почте человек будет именно по адресу, и его же добавит в
+    # белый список, чтобы следующее письмо дошло во «Входящие».
+    sender: str = ""
 
 
 class EmailVerifyRequest(BaseModel):

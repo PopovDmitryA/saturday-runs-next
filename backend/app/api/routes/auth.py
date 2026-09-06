@@ -74,6 +74,7 @@ from app.services.auth_service import (
 from app.services.email_auth_service import link_email
 from app.services.email_auth_service import request_code as request_email_code
 from app.services.email_auth_service import verify_code as verify_email_code
+from app.services.email_login_journal_service import PURPOSE_LINK, PURPOSE_LOGIN
 from app.services.login_journal_service import (
     EVENT_LOGIN,
     EVENT_LOGOUT,
@@ -491,6 +492,7 @@ def email_request_code(
     settings: Annotated[Settings, Depends(get_settings)],
     request: Request,
     response: Response,
+    user_id: Annotated[UUID | None, Depends(get_optional_session_user_id)] = None,
 ) -> EmailCodeResponse:
     if not body.consent:
         raise _handle_auth_error(
@@ -504,6 +506,10 @@ def email_request_code(
             client_ip=get_client_ip(request),
             consent=body.consent,
             news_consent=body.news_consent,
+            # Тот же эндпоинт обслуживает привязку почты в настройках. Там
+            # человек уже внутри профиля и письмо ищет иначе, чем тот, кого
+            # на сайт ещё не пустили, — в воронку входа его мешать нельзя.
+            purpose=PURPOSE_LINK if user_id is not None else PURPOSE_LOGIN,
         )
     except AuthError as exc:
         raise _handle_auth_error(exc) from exc
@@ -512,7 +518,10 @@ def email_request_code(
     # OAuth-провайдеру: к моменту ввода кода лимит регистраций должен уметь
     # отличить второе устройство от второго захода с того же.
     ensure_device_cookie(request, response, settings)
-    return EmailCodeResponse(expires_in=int(result["expires_in"]))
+    return EmailCodeResponse(
+        expires_in=int(result["expires_in"]),
+        sender=str(result.get("sender") or ""),
+    )
 
 
 @router.post("/email/verify", response_model=EmailVerifyResponse)

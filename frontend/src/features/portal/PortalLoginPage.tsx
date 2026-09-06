@@ -10,6 +10,7 @@ import {
   verifyEmailCode,
 } from "../../lib/api";
 import { PORTAL_ABOUT_PRIVACY_HREF } from "../../lib/portalRoutes";
+import { EmailSpamHint } from "../../components/EmailSpamHint";
 import { TelegramBotLogin } from "../auth/TelegramBotLogin";
 import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
@@ -55,7 +56,10 @@ function hasLoggedInBefore(): boolean {
 const PENDING_EMAIL_KEY = "portalPendingLoginEmail";
 const PENDING_EMAIL_TTL_MS = 10 * 60 * 1000;
 
-type PendingEmail = { email: string; sentAt: number };
+// sender храним рядом с адресом: после перезагрузки страницы на шаге кода
+// подсказка про спам должна называть отправителя так же, как сразу после
+// отправки — иначе искать письмо не по чему.
+type PendingEmail = { email: string; sentAt: number; sender?: string };
 
 function readPendingEmail(): PendingEmail | null {
   try {
@@ -73,11 +77,11 @@ function readPendingEmail(): PendingEmail | null {
   }
 }
 
-function rememberPendingEmail(email: string): void {
+function rememberPendingEmail(email: string, sender: string): void {
   try {
     window.sessionStorage.setItem(
       PENDING_EMAIL_KEY,
-      JSON.stringify({ email, sentAt: Date.now() }),
+      JSON.stringify({ email, sentAt: Date.now(), sender }),
     );
   } catch {
     // sessionStorage может быть недоступен (приватный режим) — не критично
@@ -214,6 +218,9 @@ export function PortalLoginPage() {
     const pending = readPendingEmail();
     return pending ? `Код отправлен на ${pending.email}. Он действует 10 минут.` : null;
   });
+  // Отправитель приходит в ответе на запрос кода: подсказка «поищите в спаме»
+  // без адреса бесполезна — искать письмо человек будет именно по нему.
+  const [emailSender, setEmailSender] = useState<string>(() => readPendingEmail()?.sender ?? "");
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setCheckingAuth(false), 8_000);
@@ -297,9 +304,10 @@ export function PortalLoginPage() {
     setEmailError(null);
     setEmailBusy(true);
     try {
-      await requestEmailCode(email.trim(), true, newsConsent);
+      const sent = await requestEmailCode(email.trim(), true, newsConsent);
+      setEmailSender(sent.sender ?? "");
       markReturningUser();
-      rememberPendingEmail(email.trim());
+      rememberPendingEmail(email.trim(), sent.sender ?? "");
       setEmailStep("code");
       setEmailNotice(`Код отправлен на ${email.trim()}. Он действует 10 минут.`);
     } catch (err) {
@@ -532,6 +540,7 @@ export function PortalLoginPage() {
             ) : (
               <form className="portal-login-email" onSubmit={(event) => void handleCodeSubmit(event)}>
                 {emailNotice && <p className="portal-login-email-notice">{emailNotice}</p>}
+                <EmailSpamHint sender={emailSender} />
                 <label className="portal-login-email-label" htmlFor="portal-login-code">
                   Код из письма
                 </label>

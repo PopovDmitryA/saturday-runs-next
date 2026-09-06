@@ -260,3 +260,47 @@ class PageAnalyticsResponse(BaseModel):
     og_fetches: list[OgFetchRow] = Field(default_factory=list)
     top_profiles: list[PageAnalyticsEntity]
     top_locations: list[PageAnalyticsEntity]
+
+
+class AdminEmailLoginSegment(BaseModel):
+    """Срез воронки по ящикам: сколько запросило код и сколько вошло."""
+
+    mailboxes: int = 0
+    verified_mailboxes: int = 0
+    conversion: float = 0.0
+
+
+class AdminEmailLoginTotals(AdminEmailLoginSegment):
+    requests: int = 0
+    # Ящики, не вошедшие вовсе, и из них — не открывшие письмо ни разу
+    # (ни одной попытки ввода кода): верхняя оценка «письмо ушло в спам».
+    lost_mailboxes: int = 0
+    silent_mailboxes: int = 0
+    silent_share: float = 0.0
+    # Ящики, просившие код больше одного раза: «письмо не нашёл, попробую ещё».
+    repeat_mailboxes: int = 0
+    new: AdminEmailLoginSegment = Field(default_factory=AdminEmailLoginSegment)
+    known: AdminEmailLoginSegment = Field(default_factory=AdminEmailLoginSegment)
+
+
+class AdminEmailLoginDomainRow(BaseModel):
+    domain: str
+    requests: int = 0
+    mailboxes: int = 0
+    verified_mailboxes: int = 0
+    conversion: float = 0.0
+    silent_mailboxes: int = 0
+
+
+class AdminEmailLoginDayRow(BaseModel):
+    date: date
+    requests: int = 0
+    verified: int = 0
+
+
+class AdminEmailLoginResponse(BaseModel):
+    period_days: int
+    generated_at: datetime
+    totals: AdminEmailLoginTotals
+    by_domain: list[AdminEmailLoginDomainRow] = Field(default_factory=list)
+    by_day: list[AdminEmailLoginDayRow] = Field(default_factory=list)

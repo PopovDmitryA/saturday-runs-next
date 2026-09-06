@@ -680,6 +680,9 @@ export function oauthStartUrl(provider: "vk" | "yandex", mode: "login" | "link",
 
 export type EmailCodeResult = {
   expires_in: number;
+  // Отправитель письма: показываем в подсказке про папку «Спам», чтобы было
+  // что искать в почте и кого добавить в белый список.
+  sender?: string;
 };
 
 export function requestEmailCode(email: string, consent: boolean, newsConsent = false) {
@@ -4248,6 +4251,43 @@ export function getAdminUsersGeography(periodDays = 30) {
   return apiFetch<AdminUsersGeographyResponse>(
     `/admin/stats/geography?period_days=${periodDays}`,
   );
+}
+
+export type AdminEmailLoginSegment = {
+  mailboxes: number;
+  verified_mailboxes: number;
+  conversion: number;
+};
+
+export type AdminEmailLoginDomainRow = {
+  domain: string;
+  requests: number;
+  mailboxes: number;
+  verified_mailboxes: number;
+  conversion: number;
+  silent_mailboxes: number;
+};
+
+export type AdminEmailLoginResponse = {
+  generated_at: string;
+  period_days: number;
+  totals: AdminEmailLoginSegment & {
+    requests: number;
+    lost_mailboxes: number;
+    silent_mailboxes: number;
+    silent_share: number;
+    repeat_mailboxes: number;
+    new: AdminEmailLoginSegment;
+    known: AdminEmailLoginSegment;
+  };
+  by_domain: AdminEmailLoginDomainRow[];
+  by_day: { date: string; requests: number; verified: number }[];
+};
+
+// Воронка входа по почте: сколько писем с кодом ушло и сколько сработало.
+// Отдельный запрос от /admin/stats — это отчёт про доставку писем.
+export function getAdminEmailLoginFunnel(periodDays = 30) {
+  return apiFetch<AdminEmailLoginResponse>(`/admin/email-login?period_days=${periodDays}`);
 }
 
 export function recordSitePageview(

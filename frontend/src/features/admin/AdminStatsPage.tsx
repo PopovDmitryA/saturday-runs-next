@@ -5,7 +5,9 @@ import { PlatformBadge } from "../../components/PlatformBadge";
 import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
 import {
   getAdminSiteStats,
+  getAdminEmailLoginFunnel,
   getAdminUsersGeography,
+  type AdminEmailLoginResponse,
   type AdminLinkCombinationRow,
   type AdminLinksByMethodRow,
   type AdminOnboardingCohortRow,
@@ -415,6 +417,133 @@ type GeoSort = "users" | "new";
 // «Откуда наши люди»: регистрации по городам и площадкам. Отвечает на вопрос
 // «где сарафанка уже работает» — город и площадка берутся из домашней локации
 // пользователя, той же, что он видит у себя в кабинете.
+// Воронка входа по почте. Вопрос, ради которого она существует, ровно один:
+// сколько людей запросило код и сколько из них потом вошло. Разрыв между
+// этими числами — это в первую очередь письма, осевшие в спаме, и по домену
+// получателя видно, у какого почтовика беда.
+//
+// Считаем по ЯЩИКАМ, а не по письмам: человек, запросивший три кода и
+// вошедший, — одна победа, а не три поражения и одна победа.
+function EmailLoginFunnel({ periodDays }: { periodDays: number }) {
+  const [data, setData] = useState<AdminEmailLoginResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const loadSeq = useRef(0);
+
+  useEffect(() => {
+    const seq = ++loadSeq.current;
+    setLoading(true);
+    setError(null);
+    getAdminEmailLoginFunnel(periodDays)
+      .then((payload) => {
+        if (seq === loadSeq.current) {
+          setData(payload);
+        }
+      })
+      .catch((err) => {
+        if (seq === loadSeq.current) {
+          setError(err instanceof Error ? err.message : "Не удалось загрузить воронку писем");
+        }
+      })
+      .finally(() => {
+        if (seq === loadSeq.current) {
+          setLoading(false);
+        }
+      });
+  }, [periodDays]);
+
+  const totals = data?.totals;
+  const domains = data?.by_domain ?? [];
+
+  return (
+    <section className="card admin-stats-email-login">
+      <h2 className="section-title">Вход по почте: письма и входы</h2>
+      <p className="muted admin-stats-email-login-lead">
+        Одна строка журнала — одно отправленное письмо с кодом. Считаем по ящикам: сколько адресов
+        запросило код и сколько из них дошло до входа. «Не открыли письмо» — ящики, откуда не
+        пришло ни одной попытки ввода кода: верхняя оценка того, сколько писем осело в спаме.
+      </p>
+
+      {loading && <p className="muted">Считаем письма…</p>}
+      {error && <p className="form-error">{error}</p>}
+
+      {!loading && !error && totals && (
+        <>
+          <div className="admin-stats-grid admin-stats-grid-compact">
+            <StatCard
+              label="Запросили код"
+              value={totals.mailboxes}
+              hint={`писем отправлено: ${formatInt(totals.requests)}`}
+            />
+            <StatCard
+              label="Вошли"
+              value={totals.verified_mailboxes}
+              hint={`конверсия ${totals.conversion}%`}
+            />
+            <StatCard
+              label="Не дошли до входа"
+              value={totals.lost_mailboxes}
+              hint={`просили код повторно: ${formatInt(totals.repeat_mailboxes)}`}
+            />
+            <StatCard
+              label="Не открыли письмо"
+              value={totals.silent_mailboxes}
+              hint={`${totals.silent_share}% от запросивших`}
+            />
+            <StatCard
+              label="Новички / знакомые"
+              value={`${totals.new.conversion}% / ${totals.known.conversion}%`}
+              hint={`ящиков: ${formatInt(totals.new.mailboxes)} и ${formatInt(
+                totals.known.mailboxes,
+              )}`}
+            />
+          </div>
+
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Почтовик</th>
+                  <th>Ящиков</th>
+                  <th>Писем</th>
+                  <th>Вошли</th>
+                  <th>Конверсия</th>
+                  <th>Не открыли письмо</th>
+                </tr>
+              </thead>
+              <tbody>
+                {domains.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="muted">
+                      За период кодов на почту не запрашивали
+                    </td>
+                  </tr>
+                )}
+                {domains.map((row) => (
+                  <tr key={row.domain}>
+                    <td>{row.domain}</td>
+                    <td>{formatInt(row.mailboxes)}</td>
+                    <td>{formatInt(row.requests)}</td>
+                    <td>{formatInt(row.verified_mailboxes)}</td>
+                    <td>{row.conversion}%</td>
+                    <td>{formatInt(row.silent_mailboxes)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="muted admin-stats-footnote">
+            Журнал ведётся с выкатки этой страницы: за более ранние дни писем в нём нет. Адресов
+            журнал не хранит — только хэш ящика и домен. Доля спама и жалоб по почтовикам живёт в
+            их собственных панелях: постмастеры mail.ru, Яндекса и Google в шапке админки.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
 function GeographySection({ periodDays }: { periodDays: number }) {
   const [data, setData] = useState<AdminUsersGeographyResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -752,6 +881,8 @@ function AdminStatsContent() {
             cohorts={data.onboarding_cohorts}
             methods={data.links_by_method_weekly}
           />
+
+          <EmailLoginFunnel periodDays={periodDays} />
 
           <GeographySection periodDays={periodDays} />
 

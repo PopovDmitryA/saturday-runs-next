@@ -7062,6 +7062,17 @@ a.admin-system-chip:hover {
   margin-bottom: 1rem;
 }
 
+/* Воронка входа по почте: та же карточка, что и география, с пояснением
+   сверху — без него числа «не открыли письмо» читаются как ошибка. */
+.admin-stats-email-login {
+  margin-bottom: 1rem;
+}
+
+.admin-stats-email-login-lead {
+  margin: 0 0 0.85rem;
+  font-size: 0.9rem;
+}
+
 /* Наборы привязок — таблица под списком систем в той же карточке. */
 .admin-stats-combos {
   margin-top: 1.25rem;

@@ -31,6 +31,7 @@ from app.config import Settings
 from app.core import email_address
 from app.core.email_templates import login_code_email
 from app.core.mailer import is_configured as mailer_is_configured
+from app.core.mailer import sender_email
 from app.core.rate_limit import check_rate_limit
 from app.core.redis_client import get_redis_client
 from app.core.security import hash_token
@@ -48,6 +49,13 @@ from app.services.auth_identity_service import (
     upsert_oauth_identity,
 )
 from app.services.auth_service import AuthError
+from app.services.email_login_journal_service import (
+    PURPOSE_LOGIN,
+    discard_request,
+    mark_failed_attempt,
+    mark_verified,
+    record_request,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +119,7 @@ def request_code(
     client_ip: str,
     consent: bool,
     news_consent: bool = False,
+    purpose: str = PURPOSE_LOGIN,
 ) -> dict[str, object]:
     """Выслать код на указанный адрес.
 
@@ -153,6 +162,16 @@ def request_code(
         raise AuthError("Вход по почте временно недоступен. Попробуйте войти через VK или Яндекс.", 503)
 
     code = _generate_code(settings.email_login_code_length)
+    # Строку журнала заводим до отправки: её id уходит в Redis вместе с кодом,
+    # чтобы потом отметить verified именно то письмо, по которому вошли.
+    # Не ушло — строку убираем, см. except ниже.
+    request_id = record_request(
+        db,
+        normalized_email=normalized,
+        purpose=purpose,
+        known_mailbox=find_identity_by_mailbox(db, normalized) is not None,
+        ip=client_ip,
+    )
     _remember_code(
         settings,
         normalized=normalized,
@@ -160,6 +179,7 @@ def request_code(
         email=email,
         consent=consent,
         news_consent=news_consent,
+        request_id=request_id,
     )
 
     # Подписку предлагаем только тем, кто ещё не подписан: подписанному это
@@ -171,8 +191,15 @@ def request_code(
     if not news_consent and not is_subscribed(db, email):
         offer_url = subscribe_url(settings, normalized)
 
-    _send_code(settings, to=email, code=code, subscribe_url=offer_url)
-    return {"expires_in": settings.email_login_code_ttl_seconds}
+    try:
+        _send_code(settings, to=email, code=code, subscribe_url=offer_url)
+    except AuthError:
+        discard_request(db, request_id)
+        raise
+    return {
+        "expires_in": settings.email_login_code_ttl_seconds,
+        "sender": sender_email(settings),
+    }
 
 
 def _remember_code(
@@ -183,6 +210,7 @@ def _remember_code(
     email: str,
     consent: bool,
     news_consent: bool,
+    request_id: int | None = None,
 ) -> None:
     """Добавить код к действующим для этого ящика.
 
@@ -204,6 +232,7 @@ def _remember_code(
             "email": email,
             "consent": consent,
             "news": news_consent,
+            "req": request_id,
         }
     )
     # Держим только последние: пачка «живых» ключей от профиля ни к чему.
@@ -300,6 +329,9 @@ def _consume_code(
     given = hash_token(code.strip())
     matched = next((item for item in codes if item.get("hash") == given), None)
     if matched is None:
+        # Неверный код — письмо человек всё-таки увидел. В отчёте по доставке
+        # это принципиально другая строка, чем «письмо не открыли вовсе».
+        mark_failed_attempt(db, normalized)
         state["codes"] = codes
         state["attempts"] = attempts + 1
         ttl = max(int(max(float(item["exp"]) for item in codes) - now), 1)
@@ -311,6 +343,11 @@ def _consume_code(
 
     # Код подошёл — гасим все выданные на этот ящик: вход состоялся.
     redis_client.delete(_code_key(normalized))
+
+    # Письмо, по которому вошли, отмечаем сразу здесь: код сработал — значит
+    # человек его получил и нашёл. Всё, что мешает дальше (лимит регистраций),
+    # к доставке отношения не имеет и воронку доставки искажать не должно.
+    mark_verified(db, matched.get("req"))
 
     consent = bool(matched.get("consent"))
     display_email = str(matched.get("email") or email)

@@ -223,3 +223,19 @@ def test_pageview_endpoint_ignores_admin(
     assert db_session.query(PageViewEvent).filter(PageViewEvent.view_id == UUID(view_id)).count() == 0
     today = datetime.now(timezone.utc).date().isoformat()
     assert int(fake_redis.get(f"stats:day:{today}:pv:total") or 0) == 0
+
+
+def test_admin_email_login_funnel_requires_admin(client: TestClient) -> None:
+    response = client.get("/api/admin/email-login")
+    assert response.status_code == 401
+
+
+def test_admin_email_login_funnel_shape(admin_client: TestClient) -> None:
+    """Пустая воронка тоже должна открываться: журнал начинается с выкатки."""
+    response = admin_client.get("/api/admin/email-login?period_days=30")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["period_days"] == 30
+    assert "mailboxes" in payload["totals"]
+    assert "conversion" in payload["totals"]
+    assert isinstance(payload["by_domain"], list)

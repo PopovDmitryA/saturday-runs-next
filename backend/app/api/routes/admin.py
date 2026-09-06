@@ -36,6 +36,7 @@ from app.schemas.admin_event_report import (
     EventReportResponse,
 )
 from app.schemas.admin_stats import (
+    AdminEmailLoginResponse,
     AdminSiteStatsResponse,
     AdminUsersGeographyResponse,
     PageAnalyticsResponse,
@@ -133,6 +134,7 @@ from app.services.blog_service import (
     list_all_posts,
     update_post,
 )
+from app.services.email_login_journal_service import get_email_login_funnel
 from app.services.leaderboard_service import drop_metric_cache
 from app.services.location_contacts_service import (
     LocationContactError,
@@ -524,6 +526,21 @@ def admin_site_stats(
 ) -> AdminSiteStatsResponse:
     payload = get_admin_site_stats(db, period_days=period_days)
     return AdminSiteStatsResponse.model_validate(payload)
+
+
+@router.get("/email-login", response_model=AdminEmailLoginResponse)
+def admin_email_login_funnel(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    period_days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> AdminEmailLoginResponse:
+    """Воронка входа по почте: сколько писем с кодом ушло и сколько сработало.
+
+    Отдельным запросом от /stats: это отчёт про доставку писем, а не про сайт,
+    и смотрят его тогда, когда есть подозрение на спам-фильтры.
+    """
+    payload = get_email_login_funnel(db, period_days=period_days)
+    return AdminEmailLoginResponse.model_validate(payload)
 
 
 @router.get("/stats/geography", response_model=AdminUsersGeographyResponse)

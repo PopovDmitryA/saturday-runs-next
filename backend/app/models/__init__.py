@@ -1516,6 +1516,40 @@ class LoginEvent(Base):
     device_ref: Mapped[str] = mapped_column(String(32), nullable=False, server_default="")
 
 
+class EmailLoginRequest(Base):
+    """Одна строка на каждое отправленное письмо с кодом входа.
+
+    Заведена ради воронки «письмо ушло → человек вошёл»: почтовики любят
+    класть письма нового отправителя в спам, и до этой таблицы несостоявшийся
+    вход не оставлял вообще никакого следа. Разрыв между числом строк и числом
+    verified_at и есть цена доставки, а domain показывает, у какого почтовика
+    она хуже.
+
+    Адреса здесь нет: email_hash — sha256 нормализованного ящика. По хэшу
+    находятся письма конкретного человека, если он придёт с жалобой, но дамп
+    таблицы не выдаёт список чужих почт.
+    """
+
+    __tablename__ = "email_login_requests"
+    __table_args__ = (
+        Index("ix_email_login_requests_requested_at", "requested_at"),
+        Index("ix_email_login_requests_email_hash", "email_hash", "requested_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    email_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    domain: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
+    # login | link
+    purpose: Mapped[str] = mapped_column(String(16), nullable=False, server_default="login")
+    known_mailbox: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    ip: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
+
+
 class AbEvent(Base):
     """Сырое событие АБ-эксперимента (скролл, клики, конверсия) с вариантом.
 
