@@ -18,7 +18,11 @@ from app.models import (
     ProfileFetchPendingStatus,
     User,
 )
-from app.parkrun.errors import ParkrunBanDetected, ParkrunProfileNotFound
+from app.parkrun.errors import (
+    ParkrunBanDetected,
+    ParkrunProfileNotFound,
+    ParkrunProfileParseError,
+)
 from app.platform_adapters.registry import ensure_adapters_registered, get_adapter
 from app.platform_fetch.cooldown import is_platform_in_cooldown, parse_cooldown_until_from_message
 from app.s95.errors import S95BanDetected, S95FetchTimeout
@@ -314,20 +318,41 @@ def _import_five_verst_activity(db: Session, platform: Platform, profile_input: 
 
 
 def _is_permanent_profile_error(exc: BaseException) -> bool:
-    """Профиль не существует (404) — терминальная ошибка, ретраи не помогут.
+    """Ошибка, которую повторами не исправить — строку закрываем окончательно.
 
-    Ловим ParkrunProfileNotFound где угодно в цепочке __cause__ (прямой импорт
-    поднимает его напрямую; preview-путь заворачивает в ProfileLinkingError с
-    from exc). Плюс общий сигнал: ProfileLinkingError со status_code 404 —
-    так же маппятся not-found у five_verst и s95.
+    Ловим по всей цепочке __cause__ (прямой импорт поднимает исключение
+    напрямую; preview-путь заворачивает его в ProfileLinkingError с from exc).
+
+    Что считаем окончательным:
+
+    - **404 и ParkrunProfileNotFound** — профиля нет. Так же маппятся not-found
+      у five_verst и s95.
+    - **409** — конфликт состояния: профиль уже привязан к этому или чужому
+      аккаунту. Разрешается только действием человека (отвязать), повторы лишь
+      воспроизводят тот же отказ.
+    - **ParkrunProfileParseError** — страница СКАЧАЛАСЬ (код 200), но имени и
+      штрихкода в ней нет. У parkrun это ответ для несуществующего или пустого
+      номера: он отдаёт заглушку вместо 404, поэтому по коду ответа такие
+      строки не отсеиваются.
+
+    Оговорка про последний пункт: если parkrun поменяет вёрстку, разбор начнёт
+    падать на ВСЕХ профилях, и они разом уйдут в окончательный отказ. Заметно
+    это будет сразу — перестанет работать и синхронизация привязок, за которой
+    мы следим. Лечится снятием признака у затронутых строк:
+    UPDATE profile_fetch_pending SET status='pending', last_error=NULL … .
+
+    До этой правки такие строки крутились вечно: попытки исчерпывались, строка
+    падала в failed БЕЗ признака, reset_failed_pending её воскрешал — и так
+    каждые 20 минут. Побочный вред был не в нагрузке, а в том, что каждый
+    прогон рапортовал «успешно 0», и на отчёт переставали смотреть.
     """
     cursor: BaseException | None = exc
     for _ in range(10):
         if cursor is None:
             break
-        if isinstance(cursor, ParkrunProfileNotFound):
+        if isinstance(cursor, (ParkrunProfileNotFound, ParkrunProfileParseError)):
             return True
-        if getattr(cursor, "status_code", None) == 404:
+        if getattr(cursor, "status_code", None) in (404, 409):
             return True
         cursor = cursor.__cause__
     return False
@@ -417,7 +442,7 @@ def process_pending_row(db: Session, row: ProfileFetchPending) -> str:
             row.updated_at = datetime.now(timezone.utc)
             db.commit()
             logger.info(
-                "pending profile fetch: профиль не найден, помечаю failed: %s %s",
+                "pending profile fetch: окончательная ошибка, помечаю failed: %s %s",
                 row.platform_code,
                 row.external_user_id or row.profile_input,
             )
